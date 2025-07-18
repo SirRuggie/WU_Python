@@ -55,7 +55,6 @@ async def dashboard_page(
                 Text(content=(
                     "Use the dropdown menu below to:\n"
                     f"{emojis.white_arrow_right}View clan details\n"
-                    f"{emojis.white_arrow_right}Track & Update Clan Points\n"
                     f"{emojis.white_arrow_right}Update Clan Information\n"
                     f"{emojis.white_arrow_right}Update FWA Data\n"
                 )),
@@ -76,11 +75,6 @@ async def dashboard_page(
                                     label="Update Clan Information",
                                     description="Edit or Manage Clan Details",
                                     value="update_clan_information"),
-                                SelectOption(
-                                    emoji=1387884570501710015,
-                                    label="Clan Points",
-                                    description="Track & Update Clan Points",
-                                    value="clan_points"),
                                 SelectOption(
                                     emoji=1387882523358527608,
                                     label="Manage FWA Data",

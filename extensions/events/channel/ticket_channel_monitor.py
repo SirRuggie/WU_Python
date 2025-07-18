@@ -204,6 +204,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
 
     # Prepare the message components based on ticket type
     is_fwa = matched_pattern == "FWA"
+    is_main = matched_pattern == "MAIN"
 
     if is_fwa:
         # Get FWA recruiter role from config
@@ -243,8 +244,8 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                             Text(content=(
                                 "1) CoC Name & Player Tag\n"
                                 "2) Age & Timezone? Country name would be good too.\n"
-                                "3) Do you have other accounts besides the one that you mentioned in question 1?\n"
-                                "4) If yes, please provide all of those player tags.\n"
+                                "3) Do you have any other CoC accounts?\n"
+                                "4) If yes, please provide __all__ of those player tags.\n"
                                 "5) Are you familiar with LazyCWL and the day to day FWA Process?"
                             )),
                         ],
@@ -256,7 +257,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                     Media(
                         items=[
                             MediaItem(
-                                media="https://media.discordapp.net/attachments/888549325712539678/1115751058401148959/FCDF879F-5D17-4972-AA81-624280D56458.png?width=662&height=662&ex=687ab9a5&is=68796825&hm=4dd360640cb297afec822199da386f633b37a948294b04771e11001a8e84d68c&")
+                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836857/misc_images/WU_FWA_Ticket.jpg")
                         ]
                     ),
                     Text(content="-# Patience is key! A Recruiter will be with you soon.")
@@ -275,4 +276,72 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         except Exception as e:
             print(f"[ERROR] Failed to send FWA questionnaire to channel {channel_id}: {e}")
 
-    # For non-FWA tickets, we're not sending anything per your request
+    elif is_main:
+        # Get MAIN recruiter role from config (for now using same config structure)
+        config = await mongo_client.ticket_setup.find_one({"_id": "config"}) or {} if mongo_client else {}
+        main_recruiter_role = config.get("main_recruiter_role")  # You'll need to add this to config later
+
+        # Send initial welcome message (identical structure for now)
+        welcome_message = f"<@{user_id}> Welcome! Thank you for your interest! "
+        if main_recruiter_role:
+            welcome_message += f"<@&{main_recruiter_role}> "
+        else:
+            welcome_message += "**@Main Recruiter** "
+        welcome_message += "will be with you shortly, in the meanwhile, please answer the following questions..."
+
+        try:
+            await event.app.rest.create_message(
+                channel=channel_id,
+                content=welcome_message,
+                user_mentions=True,
+                role_mentions=True if main_recruiter_role else False
+            )
+            print(f"[DEBUG] Sent MAIN welcome message to channel {channel_id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to send MAIN welcome message: {e}")
+
+        # Sleep 1 second
+        await asyncio.sleep(1)
+
+        # Send MAIN entry questionnaire embed (identical structure for now, you can customize later)
+        components = [
+            Container(
+                accent_color=GOLDENROD_ACCENT,
+                components=[
+                    Section(
+                        components=[
+                            Text(content="## **Warriors United Main Clan Entry Ticket**"),
+                            Text(content=(
+                                "1) CoC Name & Player Tag\n"
+                                "2) Age & Timezone? Country name would be good too.\n"
+                                "3) Do you have any other CoC accounts?\n"
+                                "4) If yes, please provide __all__ of those player tags.\n"
+                                "5) Are you familiar with LazyCWL and the day to day FWA Process?"
+                            )),
+                        ],
+                        accessory=Thumbnail(
+                            media="https://cdn.discordapp.com/attachments/753573066587504750/1105692171841044542/warriors_united_png.png?ex=687b0b94&is=6879ba14&hm=f940900150b95af9eac784f1cdea6c6164221f330b5a94f469e6c1424de02236&"
+                        )
+                    ),
+                    # Main image
+                    Media(
+                        items=[
+                            MediaItem(
+                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836911/misc_images/WU_Logo.png")
+                        ]
+                    ),
+                    Text(content="-# Patience is key! A Recruiter will be with you soon.")
+                ]
+            )
+        ]
+
+        # Send message in the new channel
+        try:
+            await event.app.rest.create_message(
+                channel=channel_id,
+                components=components,
+                user_mentions=True  # Enable user mentions so the ping works
+            )
+            print(f"[DEBUG] Successfully sent MAIN questionnaire to channel {channel_id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to send MAIN questionnaire to channel {channel_id}: {e}")
