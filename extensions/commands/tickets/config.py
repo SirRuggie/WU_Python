@@ -19,6 +19,11 @@ from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT
 from extensions.commands.tickets import loader, tickets
 
+# Default configuration values (same as in handlers.py)
+DEFAULT_MAIN_CATEGORY = 1395400463897202738
+DEFAULT_FWA_CATEGORY = 1395653165470191667
+DEFAULT_ADMIN_TO_NOTIFY = 505227988229554179
+
 
 @tickets.register()
 class Config(
@@ -53,30 +58,38 @@ class Config(
     ) -> None:
         """Configure ticket system settings"""
 
+        # Check permissions
+        if not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
+            await ctx.respond(
+                "❌ You need Administrator permissions to use this command!",
+                ephemeral=True
+            )
+            return
+
         updates = []
         update_data = {}
 
-        if ctx.options.main_role:
+        if self.main_role:  # Changed from ctx.options.main_role
             try:
-                role_id = int(ctx.options.main_role)
+                role_id = int(self.main_role)
                 update_data["main_recruiter_role"] = role_id
                 updates.append(f"Main Recruiter Role: <@&{role_id}>")
             except ValueError:
                 await ctx.respond("Invalid Main Role ID!", ephemeral=True)
                 return
 
-        if ctx.options.fwa_role:
+        if self.fwa_role:  # Changed from ctx.options.fwa_role
             try:
-                role_id = int(ctx.options.fwa_role)
+                role_id = int(self.fwa_role)
                 update_data["fwa_recruiter_role"] = role_id
                 updates.append(f"FWA Recruiter Role: <@&{role_id}>")
             except ValueError:
                 await ctx.respond("Invalid FWA Role ID!", ephemeral=True)
                 return
 
-        if ctx.options.admin_notify:
+        if self.admin_notify:  # Changed from ctx.options.admin_notify
             try:
-                user_id = int(ctx.options.admin_notify)
+                user_id = int(self.admin_notify)
                 update_data["admin_to_notify"] = user_id
                 updates.append(f"Admin to Notify: <@{user_id}>")
             except ValueError:
@@ -145,8 +158,16 @@ class ChangeCategory(
     ) -> None:
         """Change the category for ticket creation"""
 
+        # Check permissions
+        if not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
+            await ctx.respond(
+                "❌ You need Administrator permissions to use this command!",
+                ephemeral=True
+            )
+            return
+
         try:
-            category_id = int(ctx.options.new_category)
+            category_id = int(self.new_category)  # Changed from ctx.options.new_category
 
             # Verify the category exists and is accessible
             category = await bot.rest.fetch_channel(category_id)
@@ -165,7 +186,7 @@ class ChangeCategory(
             return
 
         # Update the configuration in database
-        ticket_type = ctx.options.ticket_type
+        ticket_type = self.ticket_type  # Changed from ctx.options.ticket_type
         config_key = f"{ticket_type}_category"
 
         await mongo.ticket_setup.update_one(
@@ -241,8 +262,8 @@ class ResetCounter(
             )
             return
 
-        ticket_type = ctx.options.ticket_type
-        new_value = ctx.options.new_value
+        ticket_type = self.ticket_type  # Changed from ctx.options.ticket_type
+        new_value = self.new_value      # Changed from ctx.options.new_value
 
         update_data = {}
         updated = []

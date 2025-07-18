@@ -2,13 +2,12 @@
 """Event listener for monitoring new channel creation for ticket channels"""
 
 import asyncio
-import aiohttp
 import hikari
 import lightbulb
 import coc
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from utils.mongo import MongoClient
-from utils.constants import RED_ACCENT, GOLD_ACCENT
+from utils.constants import RED_ACCENT, GOLD_ACCENT, GOLDENROD_ACCENT
 from utils.emoji import emojis
 
 # Import Components V2
@@ -18,18 +17,9 @@ from hikari.impl import (
     SeparatorComponentBuilder as Separator,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
+    ThumbnailComponentBuilder as Thumbnail,
+    SectionComponentBuilder as Section,
 )
-
-# Import FWA chocolate components
-try:
-    from extensions.events.message.ticket_automation.fwa.utils.chocolate_components import (
-        send_chocolate_link
-    )
-
-    HAS_FWA_CHOCOLATE = True
-except ImportError:
-    HAS_FWA_CHOCOLATE = False
-    print("[WARNING] FWA chocolate components not found, chocolate links will be disabled")
 
 loader = lightbulb.Loader()
 
@@ -41,16 +31,13 @@ mongo_client = None
 coc_client = None
 
 # Define the patterns we're looking for
-# These are the special characters/patterns to match
 PATTERNS = {
-    "TEST": "𝕋𝔼𝕊𝕋",  # Active
-    "CLAN": "ℂ𝕃𝔸ℕ",  # Disabled for now
-    "FWA": "𝔽𝕎𝔸",  # Disabled for now
-    "FWA_TEST": "𝕋-𝔽𝕎𝔸"  # Add this!
+    "MAIN": "main",
+    "FWA": "fwa",
 }
 
 # Define which patterns are currently active
-ACTIVE_PATTERNS = ["TEST", "FWA_TEST", "CLAN", "FWA"]
+ACTIVE_PATTERNS = ["MAIN", "FWA"]
 
 
 @loader.listener(hikari.StartedEvent)
@@ -89,323 +76,203 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
 
     # If no match, return early
     if not matched:
+        print(f"[DEBUG] Channel {channel_name} does not match any active patterns")
         return
 
-    # Wait 3 seconds before proceeding
-    await asyncio.sleep(5)
+    # Wait a bit for thread creation to complete
+    await asyncio.sleep(3)
 
     # Get the channel ID
     channel_id = event.channel.id
 
-    # Try to find any threads in this channel
+    # Try to find the ticket data from MongoDB - it's stored immediately by ticket creation
+    ticket_data = None
+    user_id = None
     thread_id = None
-    try:
-        # Fetch active threads for the guild
-        active_threads = await event.app.rest.fetch_active_threads(event.guild_id)
 
-        # Look for a thread in our channel
-        for thread in active_threads:
-            if thread.parent_id == channel_id:
-                thread_id = thread.id
-                print(f"[DEBUG] Found thread {thread_id} in channel {channel_id}")
-                break
-
-        # If no active thread found, try to fetch the channel to see if it's a thread
-        if not thread_id:
-            # Sometimes the "channel" itself might be a thread
-            channel_info = await event.app.rest.fetch_channel(channel_id)
-            if channel_info.type in [hikari.ChannelType.GUILD_PUBLIC_THREAD,
-                                     hikari.ChannelType.GUILD_PRIVATE_THREAD,
-                                     hikari.ChannelType.GUILD_NEWS_THREAD]:
-                # The channel itself is a thread
-                thread_id = channel_id
-                channel_id = channel_info.parent_id
-                print(f"[DEBUG] The created channel is actually a thread")
-
-        # If still no thread found, wait a bit more and check again
-        # (sometimes thread creation is delayed)
-        if not thread_id:
-            await asyncio.sleep(2)  # Wait 2 more seconds
-            try:
-                active_threads = await event.app.rest.fetch_active_threads(event.guild_id)
-                for thread in active_threads:
-                    if thread.parent_id == channel_id:
-                        thread_id = thread.id
-                        print(f"[DEBUG] Found thread {thread_id} after additional wait")
-                        break
-            except Exception as e:
-                print(f"[DEBUG] Error on second thread fetch attempt: {e}")
-
-        # Also check for archived threads (in case it was instantly archived)
-        if not thread_id:
-            try:
-                # Check if the channel is a forum channel
-                if event.channel.type == hikari.ChannelType.GUILD_FORUM:
-                    # For forum channels, threads are the posts
-                    threads = await event.app.rest.fetch_public_archived_threads(channel_id)
-                    if threads:
-                        # Get the most recent thread
-                        thread_id = threads[0].id
-                        print(f"[DEBUG] Found forum post/thread: {thread_id}")
-            except Exception as e:
-                print(f"[DEBUG] Error checking for forum threads: {e}")
-
-    except Exception as e:
-        print(f"[DEBUG] Error fetching threads: {e}")
-
-    # Make API call to get ticket information
-    api_data = None
-    player_data = None
-    stored_in_db = False
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            api_url = f"https://api.clashk.ing/ticketing/open/json/{channel_id}"
-            print(f"[DEBUG] Making API call to: {api_url}")
-
-            async with session.get(api_url) as response:
-                if response.status == 200:
-                    api_data = await response.json()
-                    print(f"[DEBUG] API response: {api_data}")
-
-                    # Fetch player data using coc.py if apply_account exists
-                    # Add retry logic here (3 attempts)
-                    if api_data.get('apply_account') and coc_client:
-                        player_tag = api_data.get('apply_account')
-                        print(f"[DEBUG] Fetching player data for tag: {player_tag}")
-
-                        max_retries = 3
-                        retry_count = 0
-
-                        while retry_count < max_retries:
-                            try:
-                                player_data = await coc_client.get_player(player_tag)
-                                print(f"[DEBUG] Player found: {player_data.name} (TH{player_data.town_hall})")
-                                break  # Success, exit retry loop
-                            except coc.NotFound:
-                                print(f"[ERROR] Player not found: {player_tag}")
-                                break  # Don't retry for not found
-                            except Exception as e:
-                                retry_count += 1
-                                print(f"[ERROR] Failed to fetch player (attempt {retry_count}/{max_retries}): {e}")
-                                if retry_count < max_retries:
-                                    await asyncio.sleep(1)  # Wait 1 second before retry
-                                else:
-                                    print(f"[ERROR] Max retries reached for player fetch")
-                else:
-                    print(f"[ERROR] API returned status {response.status}")
-    except Exception as e:
-        print(f"[ERROR] Failed to call API: {e}")
-
-    # Store in MongoDB if we have API data and player info
-    if api_data and api_data.get('apply_account') and mongo_client:
+    if mongo_client:
         try:
-            # Create new recruit entry
-            from datetime import datetime, timedelta, timezone
+            # The ticket is stored with "_id": f"ticket_{channel_id}"
+            lookup_id = f"ticket_{channel_id}"
+            print(f"[DEBUG] Looking for ticket with _id: {lookup_id}")
+            ticket_data = await mongo_client.button_store.find_one({"_id": lookup_id})
+            if ticket_data:
+                user_id = ticket_data.get("user_id")  # This is stored as int
+                thread_id = ticket_data.get("thread_id")  # This is stored as int
+                print(
+                    f"[DEBUG] Found ticket data: user_id={user_id}, thread_id={thread_id}, ticket_type={ticket_data.get('ticket_type')}")
+            else:
+                print(f"[ERROR] No ticket data found for channel {channel_id}")
+                return
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch ticket data from MongoDB: {e}")
+            return
 
-            now = datetime.now(timezone.utc)
-            recruit_doc = {
-                # Player info
-                "player_tag": api_data.get('apply_account'),
-                "player_name": player_data.name if player_data else None,
-                "player_th_level": player_data.town_hall if player_data else None,
+    if not user_id:
+        print(f"[ERROR] Could not find user_id in ticket data for channel {channel_id}")
+        return
 
-                # Discord/Ticket (store as strings)
-                "discord_user_id": str(api_data.get('user')),
-                "ticket_channel_id": str(api_data.get('channel')),
-                "ticket_thread_id": str(api_data.get('thread')),
+    # If we didn't get thread_id from MongoDB, try to find it
+    if not thread_id:
+        try:
+            # Fetch active threads for the guild
+            active_threads = await event.app.rest.fetch_active_threads(event.guild_id)
 
-                # Timestamps
-                "created_at": now,
-                "expires_at": now + timedelta(days=12),
-
-                # Initial state
-                "recruitment_history": [],
-                "current_clan": None,
-                "total_clans_joined": 0,
-                "is_expired": False,
-
-                "activeBid": False
-            }
-
-            # Insert into MongoDB
-            result = await mongo_client.new_recruits.insert_one(recruit_doc)
-            print(f"[DEBUG] Stored new recruit in MongoDB: {result.inserted_id}")
-            stored_in_db = True
-
-            # Create ticket automation state
-            try:
-                automation_doc = {
-                    "_id": str(channel_id),
-                    "ticket_info": {
-                        "channel_id": str(channel_id),
-                        "thread_id": str(api_data.get('thread', '')),
-                        "user_id": str(api_data.get('user')),
-                        "user_tag": api_data.get('apply_account'),  # Add this for FWA
-                        "ticket_type": matched_pattern,  # TEST, CLAN, or FWA
-                        "ticket_number": api_data.get('number'),
-                        "created_at": now,
-                        "last_updated": now
-                    },
-                    "player_info": {
-                        "player_tag": api_data.get('apply_account'),
-                        "player_name": player_data.name if player_data else None,
-                        "town_hall": player_data.town_hall if player_data else None,
-                        "clan_tag": player_data.clan.tag if player_data and player_data.clan else None,
-                        "clan_name": player_data.clan.name if player_data and player_data.clan else None
-                    },
-                    "automation_state": {
-                        "current_step": "awaiting_screenshot",
-                        "current_step_index": 1,
-                        "total_steps": 5,
-                        "status": "active",
-                        "completed_steps": [
-                            {
-                                "step_name": "ticket_created",
-                                "completed_at": now,
-                                "data": {"api_response": api_data}
-                            }
-                        ]
-                    },
-                    "step_data": {
-                        "screenshot": {
-                            "uploaded": False,
-                            "uploaded_at": None,
-                            "reminder_sent": False,
-                            "reminder_count": 0,
-                            "last_reminder_at": None
-                        },
-                        "clan_selection": {
-                            "selected_clan_type": None,
-                            "selected_at": None
-                        },
-                        "questionnaire": {
-                            "responses": {},
-                            "completed_at": None
-                        },
-                        "final_placement": {
-                            "assigned_clan": None,
-                            "assigned_at": None,
-                            "approved_by": None
-                        }
-                    },
-                    "messages": {
-                        "initial_prompt": str(event.channel.id)  # The message we're about to send
-                    },
-                    "interaction_history": [
-                        {
-                            "timestamp": now,
-                            "action": "ticket_created",
-                            "details": f"Ticket created for user {api_data.get('user')}"
-                        }
-                    ]
-                }
-
-                # Insert the automation state
-                await mongo_client.ticket_automation_state.insert_one(automation_doc)
-                print(f"[DEBUG] Created ticket automation state for channel {channel_id}")
-
-            except Exception as e:
-                print(f"[ERROR] Failed to create ticket automation state: {e}")
-                # Don't fail the whole process if automation state fails
+            # Look for a thread in our channel
+            for thread in active_threads:
+                if thread.parent_id == channel_id:
+                    thread_id = thread.id
+                    print(f"[DEBUG] Found thread {thread_id} in channel {channel_id}")
+                    break
 
         except Exception as e:
-            print(f"[ERROR] Failed to store in MongoDB: {e}")
-            stored_in_db = False
-    else:
-        stored_in_db = False
+            print(f"[DEBUG] Error fetching threads: {e}")
 
-    # Prepare the message components
-    if api_data and stored_in_db:
-        # Check if this is an FWA ticket
-        is_fwa = matched_pattern in ["FWA", "FWA_TEST"]
+    # Create automation state document
+    if mongo_client:
+        try:
+            now = datetime.now(timezone.utc)
+            automation_doc = {
+                "_id": str(channel_id),
+                "channel_id": channel_id,
+                "thread_id": thread_id,
+                "user_id": user_id,
+                "ticket_type": matched_pattern.lower(),
+                "created_at": now,
+                "updated_at": now,
+                "automation_state": {
+                    "current_step": "initial",
+                    "halted": False,
+                    "halt_reason": None,
+                    "completed": False,
+                    "completed_at": None
+                },
+                "ticket_info": {
+                    "user_id": user_id,
+                    "thread_id": thread_id,
+                    "player_tags": [],
+                    "user_tag": None,
+                    "clan_tags": []
+                },
+                "step_data": {
+                    "account_collection": {
+                        "started": False,
+                        "completed": False,
+                        "accounts": []
+                    },
+                    "questionnaire": {
+                        "started": False,
+                        "completed": False,
+                        "current_question": None,
+                        "responses": {}
+                    },
+                    "fwa": {
+                        "is_fwa_ticket": matched_pattern == "FWA",
+                        "started": False,
+                        "completed": False
+                    },
+                    "manual_review": {
+                        "required": False,
+                        "reviewed": False,
+                        "reviewer": None,
+                        "review_notes": None
+                    },
+                    "final_placement": {
+                        "assigned_clan": None,
+                        "assigned_at": None,
+                        "approved_by": None
+                    }
+                },
+                "messages": {
+                    "initial_prompt": str(channel_id)
+                },
+                "interaction_history": [
+                    {
+                        "timestamp": now,
+                        "action": "ticket_created",
+                        "details": f"Ticket created for user {user_id}"
+                    }
+                ]
+            }
 
-        if is_fwa:
-            # For FWA tickets, send war weight request using exact recruit questions format
-            components = [
-                Container(
-                    accent_color=GOLD_ACCENT,
-                    components=[
-                        Text(content=f"## ⚖️ **War Weight Check** · <@{api_data.get('user', '')}>"),
-                        Separator(divider=True),
-                        Text(content=(
-                            "We need your **current war weight** to ensure fair matchups. Please:\n\n"
-                            f"{emojis.red_arrow_right} **Post** a Friendly Challenge in-game.\n"
-                            f"{emojis.red_arrow_right} **Scout** that challenge you posted\n"
-                            f"{emojis.red_arrow_right} **Tap** on your Town Hall, then hit **Info**.\n"
-                            f"{emojis.red_arrow_right} **Upload** a screenshot of the Town Hall info popup here.\n\n"
-                            "*See the example below for reference.*"
-                        )),
-                        Media(
-                            items=[
-                                MediaItem(
-                                    media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1751550804/TH_Weight.png"),
-                            ]
-                        ),
-                        Text(content=f"-# Requested by Kings Alliance FWA Recruitment"),
-                    ]
-                )
-            ]
+            # Insert the automation state
+            await mongo_client.ticket_automation_state.insert_one(automation_doc)
+            print(f"[DEBUG] Created ticket automation state for channel {channel_id}")
 
-            # Send chocolate link to thread using centralized function
-            if player_data and thread_id and HAS_FWA_CHOCOLATE:
-                await send_chocolate_link(
-                    bot=event.app,
-                    channel_id=thread_id,
-                    player_tag=player_data.tag,
-                    player_name=player_data.name
-                )
-                print(f"[DEBUG] Sent chocolate link to thread {thread_id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to create ticket automation state: {e}")
+
+    # Prepare the message components based on ticket type
+    is_fwa = matched_pattern == "FWA"
+
+    if is_fwa:
+        # Get FWA recruiter role from config
+        config = await mongo_client.ticket_setup.find_one({"_id": "config"}) or {} if mongo_client else {}
+        fwa_recruiter_role = config.get("fwa_recruiter_role")
+
+        # Send initial welcome message
+        welcome_message = f"<@{user_id}> Welcome! Thank you for your interest! "
+        if fwa_recruiter_role:
+            welcome_message += f"<@&{fwa_recruiter_role}> "
         else:
-            # Regular ticket - existing screenshot request
-            components = [
-                Container(
-                    accent_color=RED_ACCENT,
-                    components=[
-                        Text(content=f"<@{api_data.get('user', '')}>\n\n"),
-                        Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                        Text(content=(
-                            f"{emojis.Alert_Strobing} **SCREENSHOT REQUIRED** {emojis.Alert_Strobing}\n"
-                            "-# Provide a screenshot of your base."
-                        )),
-                        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                        Text(content=(
-                            f"-# **Kings Alliance Recruitment** - Your base layout says a lot about you—make it a good one!"
-                        ))
-                    ]
-                )
-            ]
-    else:
-        # Fallback error message if something went wrong
-        # Try to get user ID from the channel name pattern
-        user_mention = ""
-        if api_data and api_data.get('user'):
-            user_mention = f"<@{api_data.get('user')}> "
+            welcome_message += "**@FWA Recruiter** "
+        welcome_message += "will be with you shortly, in the meanwhile, please answer the following questions..."
 
+        try:
+            await event.app.rest.create_message(
+                channel=channel_id,
+                content=welcome_message,
+                user_mentions=True,
+                role_mentions=True if fwa_recruiter_role else False
+            )
+            print(f"[DEBUG] Sent FWA welcome message to channel {channel_id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to send FWA welcome message: {e}")
+
+        # Sleep 1 second
+        await asyncio.sleep(1)
+
+        # Send FWA entry questionnaire embed
         components = [
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
-                    Text(content=f"{emojis.Alert} **Error Processing Ticket** {emojis.Alert}"),
-                    Separator(divider=True),
-                    Text(content=(
-                        f"{user_mention}**Channel ID:** `{channel_id}`\n"
-                        f"**Thread ID:** `{thread_id if thread_id else 'No thread found'}`\n\n"
-                        f"**Status:** {'❌ Failed to store in database' if api_data else '❌ API unavailable'}\n\n"
-                        f"Please contact an administrator if this issue persists."
-                    )),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
+                    Section(
+                        components=[
+                            Text(content="## **Warriors United FWA Clan Entry Ticket**"),
+                            Text(content=(
+                                "1) CoC Name & Player Tag\n"
+                                "2) Age & Timezone? Country name would be good too.\n"
+                                "3) Do you have other accounts besides the one that you mentioned in question 1?\n"
+                                "4) If yes, please provide all of those player tags.\n"
+                                "5) Are you familiar with LazyCWL and the day to day FWA Process?"
+                            )),
+                        ],
+                        accessory=Thumbnail(
+                            media="https://cdn.discordapp.com/attachments/753573066587504750/1105692171841044542/warriors_united_png.png?ex=687b0b94&is=6879ba14&hm=f940900150b95af9eac784f1cdea6c6164221f330b5a94f469e6c1424de02236&"
+                        )
+                    ),
+                    # Main image
+                    Media(
+                        items=[
+                            MediaItem(
+                                media="https://media.discordapp.net/attachments/888549325712539678/1115751058401148959/FCDF879F-5D17-4972-AA81-624280D56458.png?width=662&height=662&ex=687ab9a5&is=68796825&hm=4dd360640cb297afec822199da386f633b37a948294b04771e11001a8e84d68c&")
+                        ]
+                    ),
+                    Text(content="-# Patience is key! A Recruiter will be with you soon.")
                 ]
             )
         ]
 
-    # Send message in the new channel
-    try:
-        await event.app.rest.create_message(
-            channel=event.channel.id,
-            components=components,
-            user_mentions=True  # Enable user mentions so the ping works
-        )
-        print(f"[DEBUG] Successfully sent message to channel {event.channel.id}")
-    except Exception as e:
-        print(f"[ERROR] Failed to send message to channel {event.channel.id}: {e}")
+        # Send message in the new channel
+        try:
+            await event.app.rest.create_message(
+                channel=channel_id,
+                components=components,
+                user_mentions=True  # Enable user mentions so the ping works
+            )
+            print(f"[DEBUG] Successfully sent FWA questionnaire to channel {channel_id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to send FWA questionnaire to channel {channel_id}: {e}")
+
+    # For non-FWA tickets, we're not sending anything per your request

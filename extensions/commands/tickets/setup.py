@@ -17,7 +17,7 @@ from hikari.impl import (
     InteractiveButtonBuilder as Button,
 )
 
-from utils.constants import RED_ACCENT
+from utils.constants import RED_ACCENT, GOLDENROD_ACCENT
 from extensions.commands.tickets import loader, tickets
 
 
@@ -37,7 +37,7 @@ def create_ticket_embed() -> List[Container]:
                     "We want you to have the best experience possible here! within "
                     "the Warriors United Family!"
                 )),
-
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
                 # Buttons row
                 ActionRow(
                     components=[
@@ -55,10 +55,6 @@ def create_ticket_embed() -> List[Container]:
                         ),
                     ]
                 ),
-
-                # Warriors United logo/footer
-                # Check if logo exists, otherwise use red footer
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
             ]
         )
     ]

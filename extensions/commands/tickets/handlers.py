@@ -219,20 +219,6 @@ async def handle_create_ticket(
         }
         await mongo.button_store.insert_one(ticket_data)
 
-        # Send initial message in the channel
-        initial_message = await bot.rest.create_message(
-            channel.id,
-            content=(
-                f"<@{ctx.user.id}> Welcome to your {ticket_title} entry ticket!\n\n"
-                "A recruiter will be with you shortly. In the meantime, please tell us:\n"
-                "• Your player tag\n"
-                "• Your Town Hall level\n"
-                "• What you're looking for in a clan\n"
-                "• Any questions you have"
-            ),
-            user_mentions=[ctx.user.id]
-        )
-
         # Small delay to ensure thread is fully created
         await asyncio.sleep(0.5)
 

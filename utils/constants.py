@@ -5,6 +5,7 @@ GOLD_ACCENT = hikari.Color.from_hex_code("FFD700")
 BLUE_ACCENT = hikari.Color.from_hex_code("0066FF")
 GREEN_ACCENT = hikari.Color.from_hex_code("00B237")
 MAGENTA_ACCENT = hikari.Color.from_hex_code("FF00FF")
+GOLDENROD_ACCENT = hikari.Color.from_hex_code("EEEEAA")
 
 # Clan Information
 CLAN_TYPES = ["Competitive", "Casual", "FWA", "Zen"]

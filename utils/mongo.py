@@ -17,4 +17,4 @@ class MongoClient(AsyncMongoClient):
         #self.reddit_notifications = self.__settings.get_collection("reddit_notifications")
         #self.clan_bidding = self.__settings.get_collection("clan_bidding")
         #self.new_recruits = self.__settings.get_collection("new_recruits")
-        #self.ticket_automation_state = self.__settings.get_collection("ticket_automation_state")
+        self.ticket_automation_state = self.__settings.get_collection("ticket_automation_state")
