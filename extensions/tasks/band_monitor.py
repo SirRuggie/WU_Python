@@ -382,6 +382,7 @@ async def band_checker_loop(mongo: MongoClient):
 
                                 # Check if this new post contains war sync text
                                 if "PLEASE stop searching when the window closes after 1.5 hours" in latest_content:
+                                #if "🔔🚨This serves as a 30 min reminder, if you don't like it" in latest_content:
                                     debug_print("[BAND Monitor] New post contains War Sync reminder!")
                                     await send_war_sync_to_discord(latest_post)
                                 else:
@@ -424,7 +425,7 @@ async def band_checker_loop(mongo: MongoClient):
             debug_print(f"[BAND Monitor] Traceback: {traceback.format_exc()}")
 
         # Wait 30 seconds before next check
-        debug_print(f"\n[BAND Monitor] Waiting 30 seconds until next check...")
+        debug_print(f"\n[BAND Monitor] Waiting 300 seconds until next check...")
         debug_print(f"{'=' * 60}")
         await asyncio.sleep(300)
 

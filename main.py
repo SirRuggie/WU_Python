@@ -10,7 +10,6 @@ import coc
 from utils.startup import load_cogs
 from utils.cloudinary_client import CloudinaryClient
 from extensions.autocomplete import preload_autocomplete_cache
-from utils.session_cleanup import start_cleanup_task
 from extensions.events.message import dm_screenshot_upload
 from utils import bot_data
 
@@ -64,15 +63,12 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.band_monitor",
         "extensions.commands.fwa.upload_images",
         "extensions.commands.fwa.war_plans",
+        "extensions.commands.tickets",
     ] + load_cogs(disallowed={"example"})
 
     await client.load_extensions(*all_extensions)
     await client.start()
     await clash_client.login_with_tokens("")
-
-    dm_screenshot_upload.load(bot)
-    start_cleanup_task()
-    # print("Bot started with DM screenshot listener and cleanup task")
 
 @bot.listen(hikari.StoppingEvent)
 async def on_stopping(_: hikari.StoppingEvent) -> None:
