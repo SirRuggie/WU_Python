@@ -1,0 +1,35 @@
+# Schedules jobs like timers or repeated tasks (e.g. cron jobs)
+APScheduler
+
+# Main Discord API wrapper for bots
+hikari
+
+# Command framework for hikari (handles slash and prefix commands)
+hikari-lightbulb
+
+# Loads .env file contents into environment variables
+python-dotenv
+
+# MongoDB driver (synchronous)
+pymongo
+
+# Handles timezones and datetime formatting (used by APScheduler)
+pendulum
+
+# Clash of Clans API wrapper (community-maintained)
+coc.py
+
+# Image processing library (resize, convert, etc.)
+Pillow
+
+# HTTP library for sending requests (e.g. API calls)
+requests
+
+# Async version of requests (works with async code)
+aiohttp
+
+# Uploads and manages media on Cloudinary
+cloudinary
+
+# Async Reddit API wrapper (used for bots interacting with Reddit)
+asyncpraw
