@@ -16,6 +16,8 @@ from utils.cloudinary_client import CloudinaryClient
 from utils.text_utils import sanitize_filename
 
 
+SERVER_FAMILY = "Warriors_United"
+
 @clan.register()
 class UploadImages(
     lightbulb.SlashCommand,
@@ -129,9 +131,10 @@ class UploadImages(
                 logo_public_id = clean_clan_name
 
                 # Upload to Cloudinary with proper organization
+                # This will create: clan_logos/Warriors_United/Arcane_Angels
                 logo_result = await cloudinary_client.upload_image_from_bytes(
                     logo_data,
-                    folder="clan_logos",  # Organizes logos in their own folder
+                    folder=f"clan_logos/{SERVER_FAMILY}",  # Warriors_United subfolder
                     public_id=logo_public_id  # Sets the filename
                 )
 
@@ -155,9 +158,10 @@ class UploadImages(
                 banner_public_id = f"{clean_clan_name}_Banner"
 
                 # Upload to Cloudinary with proper organization
+                # This will create: clan_banners/Warriors_United/Arcane_Angels_Banner
                 banner_result = await cloudinary_client.upload_image_from_bytes(
                     banner_data,
-                    folder="clan_banners",  # Banners get their own folder
+                    folder=f"clan_banners/{SERVER_FAMILY}",  # Warriors_United subfolder
                     public_id=banner_public_id
                 )
 

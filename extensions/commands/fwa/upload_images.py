@@ -10,11 +10,14 @@ import lightbulb
 
 from extensions.commands.fwa import loader, fwa
 from utils.cloudinary_client import CloudinaryClient
+from utils.mongo import MongoClient
 from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 
+SERVER_FAMILY = "Warriors_United"
+
 # Cloudinary folders
-CLOUDINARY_WAR_BASE_FOLDER = "fwa/war_bases"
-CLOUDINARY_ACTIVE_BASE_FOLDER = "fwa/active_bases"
+CLOUDINARY_WAR_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/war_bases"
+CLOUDINARY_ACTIVE_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/active_bases"
 
 # TH levels we support
 FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th17"]
@@ -56,6 +59,7 @@ class UploadImages(
             self,
             ctx: lightbulb.Context,
             cloudinary_client: CloudinaryClient = lightbulb.di.INJECTED,
+            mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
 
@@ -96,14 +100,24 @@ class UploadImages(
             if self.war_base:
                 war_data = await self.war_base.read()
 
+                # Create public_id with new naming convention
+                war_public_id = f"TH{th_num}_WarBase"
+
                 war_result = await cloudinary_client.upload_image_from_bytes(
                     war_data,
-                    folder=f"{CLOUDINARY_WAR_BASE_FOLDER}/{self.th_level}",
-                    public_id=self.th_level
+                    folder=CLOUDINARY_WAR_BASE_FOLDER,
+                    public_id=war_public_id
                 )
 
                 # Update the constant in memory
                 FWA_WAR_BASE[self.th_level] = war_result["secure_url"]
+
+                # Update in database - same document as base links
+                await mongo.fwa_data.update_one(
+                    {"_id": "fwa_config"},
+                    {"$set": {f"war_base_images.{self.th_level}": war_result["secure_url"]}},
+                    upsert=True
+                )
 
                 file_size_kb = self.war_base.size // 1024
                 upload_summary.append(
@@ -114,14 +128,24 @@ class UploadImages(
             if self.active_base:
                 active_data = await self.active_base.read()
 
+                # Create public_id with new naming convention
+                active_public_id = f"TH{th_num}_Active_WarBase"
+
                 active_result = await cloudinary_client.upload_image_from_bytes(
                     active_data,
-                    folder=f"{CLOUDINARY_ACTIVE_BASE_FOLDER}/{self.th_level}",
-                    public_id=self.th_level
+                    folder=CLOUDINARY_ACTIVE_BASE_FOLDER,
+                    public_id=active_public_id
                 )
 
                 # Update the constant in memory
                 FWA_ACTIVE_WAR_BASE[self.th_level] = active_result["secure_url"]
+
+                # Update in database - same document as base links
+                await mongo.fwa_data.update_one(
+                    {"_id": "fwa_config"},
+                    {"$set": {f"active_base_images.{self.th_level}": active_result["secure_url"]}},
+                    upsert=True
+                )
 
                 file_size_kb = self.active_base.size // 1024
                 upload_summary.append(
@@ -139,14 +163,14 @@ class UploadImages(
             )
 
             # Add thumbnails of uploaded images
-            if self.war_base and war_result:
+            if self.war_base and 'war_result' in locals():
                 embed.add_field(
                     name="War Base Preview",
                     value=f"[View Full Image]({war_result['secure_url']})",
                     inline=True
                 )
 
-            if self.active_base and active_result:
+            if self.active_base and 'active_result' in locals():
                 embed.add_field(
                     name="Active Base Preview",
                     value=f"[View Full Image]({active_result['secure_url']})",
@@ -154,7 +178,7 @@ class UploadImages(
                 )
 
             embed.set_footer(
-                text="Images stored on Cloudinary CDN",
+                text="Images stored on Cloudinary CDN and saved to database",
                 icon="https://res.cloudinary.com/demo/image/upload/cloudinary_icon.png"
             )
 

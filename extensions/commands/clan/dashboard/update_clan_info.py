@@ -35,7 +35,7 @@ from utils.mongo import MongoClient
 from extensions.commands.clan.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
 
-CLAN_MANAGEMENT_ROLE_ID = 1060318031575793694
+CLAN_MANAGEMENT_ROLE_ID = 993015846442127420
 
 IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)
 
@@ -455,11 +455,9 @@ async def clan_edit_menu(
                     Text(
                         content=(
                             f"{emojis.white_arrow_right}**Clan Type:** {db_clan.type or '⚠️ Data Missing'}\n"
-                            f"{emojis.white_arrow_right}**Clan Status:** {db_clan.status or '⚠️ Data Missing'}\n"
                             f"{emojis.white_arrow_right}**Logo:** {'✅ Uploaded' if db_clan.logo else '⚠️ Data Missing'}\n"
                             f"{emojis.white_arrow_right}**Emoji:** {db_clan.emoji or '⚠️ Data Missing'}\n"
                             f"{emojis.white_arrow_right}**TH Requirement:** {db_clan.th_requirements or '⚠️ Data Missing'}\n"
-                            f"{emojis.white_arrow_right}**TH Attribute:** {db_clan.th_attribute or '⚠️ Data Missing'}"
                         )
                     ),
                 ],

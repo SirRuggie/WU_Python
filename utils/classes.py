@@ -27,42 +27,10 @@ class Clan:
         self.profile: str = data.get("profile")
         self.role_id: int = data.get("role_id")
         self.rules_channel_id: int = data.get("rules_channel_id")
-        self.status: str = data.get("status")
-        self.th_attribute: str = data.get("th_attribute")
         self.th_requirements: int = data.get("th_requirements")
         self.thread_id = data.get("thread_id")
         self.thread_message_id: int = data.get("thread_message_id", 0)
         self.type: str = data.get("type")
-        self.points: float = data.get("points")
-        self.recruit_count: int = data.get("recruit_count", 0)
-        self.placeholder_points: float = data.get("placeholder_points", 0.0)
-
-class Auction:
-    def __init__(self, data: dict):
-        self._data = data
-        self.player_tag: str = data.get("player_tag")
-        self.is_finalized: bool = data.get("is_finalized")
-        self.winner: int = data.get("winner")
-        self.amount: int = data.get("amount")
-        self.bids: list[Bid] = [Bid(d) for d in data.get("bids", [])]
-
-    @property
-    def winning_bid(self):
-        if not self.bids:
-            return None
-        highest_bid = max(self.bids, key=lambda b: b.placed_by)
-        highest_bids = [b for b in self.bids if b.amount == highest_bid]
-        if len(highest_bids) >= 2:
-            return random.choice(highest_bids)
-        return highest_bids[0]
-
-
-class Bid:
-    def __init__(self, data):
-        self._data = data
-        self.clan_tag: str = data.get("clan_tag")
-        self.placed_by: int = data.get("placed_by")
-        self.amount: int = data.get("amount")
 
 class BaseLinks:
     def __init__(self, links_dict):

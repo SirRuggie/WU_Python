@@ -71,6 +71,26 @@ async def on_starting(_: hikari.StartingEvent) -> None:
     await client.start()
     await clash_client.login_with_tokens("")
 
+
+@bot.listen(hikari.StartedEvent)
+async def on_bot_start(event: hikari.StartedEvent):
+    """Load FWA URLs from database on startup"""
+    fwa_data = await mongo_client.fwa_data.find_one({"_id": "fwa_config"})
+
+    if fwa_data:
+        from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
+
+        # Load war base images
+        if "war_base_images" in fwa_data:
+            FWA_WAR_BASE.update(fwa_data["war_base_images"])
+            print(f"[INFO] Loaded {len(fwa_data['war_base_images'])} FWA war base URLs")
+
+        # Load active base images
+        if "active_base_images" in fwa_data:
+            FWA_ACTIVE_WAR_BASE.update(fwa_data["active_base_images"])
+            print(f"[INFO] Loaded {len(fwa_data['active_base_images'])} FWA active base URLs")
+
+
 @bot.listen(hikari.StoppingEvent)
 async def on_stopping(_: hikari.StoppingEvent) -> None:
     """Bot stopping event"""

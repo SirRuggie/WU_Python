@@ -24,11 +24,13 @@ class EmojiType:
 
 class Emojis:
     def __init__(self):
-        self.blank = EmojiType("<:Blank:1035193835225096356>")
-        self.white_arrow_right = EmojiType("<:Arrow_White:1387845178039206019>")
-        self.purple_arrow_right = EmojiType("<:Arrow_Purple:1387846287176761346>")
-        self.red_arrow_right = EmojiType("<:Arrow_Red:1387845254580932769>")
-        self.gold_arrow_right = EmojiType("<:Arrow_Gold:1387845312852398082>")
+        self.blank = EmojiType("<:Blank:1395727790908641370>")
+        self.white_arrow_right = EmojiType("<:Arrow_White:1395727080494469141>")
+        self.purple_arrow_right = EmojiType("<:Arrow_Purple:1395727972165488742>")
+        self.red_arrow_right = EmojiType("<:Arrow_Red:1395728030705520702>")
+        self.gold_arrow_right = EmojiType("<:Arrow_Gold:1395728112725266492>")
+
+        #NEEDS UPDATE
         self.add = EmojiType("<:Add:1387844836916199466>")
         self.remove = EmojiType("<:Remove:1387844866008027229>")
         self.edit = EmojiType("<:Edit:1387850342473011481>")
@@ -43,24 +45,24 @@ class Emojis:
         self.FWA = EmojiType("<a:FWA:1387882523358527608>")
 
         # TH Emojis
-        self.TH2 = EmojiType("<:TH_2:1387845120732172329>")
-        self.TH3 = EmojiType("<:TH_3:1387842982333644903>")
-        self.TH4 = EmojiType("<:TH_4:1387844251731103884>")
-        self.TH5 = EmojiType("<:TH_5:1387844290612559933>")
-        self.TH6 = EmojiType("<:TH_6:1387844317476819074>")
-        self.TH7 = EmojiType("<:TH_7:1387844342156099716>")
-        self.TH8 = EmojiType("<:TH_8:1387844362309992683>")
-        self.TH9 = EmojiType("<:TH_9:1387844388675387513>")
-        self.TH10 = EmojiType("<:TH_10:1387844411609845861>")
-        self.TH11 = EmojiType("<:TH_11:1387844434296836276>")
-        self.TH12 = EmojiType("<:TH_12:1387844458690904245>")
-        self.TH13 = EmojiType("<:TH_13:1387844480849149983>")
-        self.TH14 = EmojiType("<:TH_14:1387844504014295101>")
-        self.TH15 = EmojiType("<:TH_15:1387844534729314344>")
-        self.TH16 = EmojiType("<:TH_16:1387844562059395193>")
-        self.TH17 = EmojiType("<:TH_17:1387844788853801081>")
+        self.TH2 = EmojiType("<:TH_2:1395728426849275997>")
+        self.TH3 = EmojiType("<:TH_3:1395728517299306537>")
+        self.TH4 = EmojiType("<:TH_4:1395728565575618623>")
+        self.TH5 = EmojiType("<:TH_5:1395728620185718796>")
+        self.TH6 = EmojiType("<:TH_6:1395728668583792716>")
+        self.TH7 = EmojiType("<:TH_7:1395728738334806152>")
+        self.TH8 = EmojiType("<:TH_8:1395728783591608360>")
+        self.TH9 = EmojiType("<:TH_9:1395728820471857266>")
+        self.TH10 = EmojiType("<:TH_10:1395728880991735899>")
+        self.TH11 = EmojiType("<:TH_11:1395728917339570186>")
+        self.TH12 = EmojiType("<:TH_12:1395728951854501959>")
+        self.TH13 = EmojiType("<:TH_13:1395728985857458261>")
+        self.TH14 = EmojiType("<:TH_14:1395729011404963843>")
+        self.TH15 = EmojiType("<:TH_15:1395729045962096651>")
+        self.TH16 = EmojiType("<:TH_16:1395729067990319164>")
+        self.TH17 = EmojiType("<:TH_17:1395729126014324837>")
 
-        # League Emojis
+        # League Emojis - not updated
         self.Champ1 = EmojiType("<:CHL_1:1387845952512983222>")
         self.Champ2 = EmojiType("<:CHL_2:1387845931231219763>")
         self.Champ3 = EmojiType("<:CHL_3:1387845906015191131>")

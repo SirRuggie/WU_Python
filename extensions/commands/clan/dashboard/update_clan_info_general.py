@@ -28,14 +28,18 @@ from lightbulb import channel
 from lightbulb.components import MenuContext, ModalContext
 from utils.emoji import EmojiType
 from extensions.autocomplete import clan_types
-from utils.constants import RED_ACCENT ,CLAN_TYPES ,TH_LEVELS ,CLAN_STATUS ,TH_ATTRIBUTE
+from utils.constants import RED_ACCENT ,CLAN_TYPES ,TH_LEVELS
 from utils.emoji import emojis
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.classes import Clan
 
 # 2) Modal‐submit (handles the data)
-import re
+
+
+def get_th_emoji(lvl):
+    """Get TH emoji partial_emoji for a level"""
+    return getattr(emojis, f"TH{lvl}").partial_emoji if hasattr(emojis, f"TH{lvl}") else None
 
 @register_action("update_general_info", ephemeral=True)
 @lightbulb.di.with_di
@@ -70,19 +74,6 @@ async def update_general_info_panel(
                         ],
                     )
                 ]),
-                Text(content=f"{emojis.white_arrow_right}**Clan Status:** {db_clan.status or '⚠️ Missing'}\n"),
-                ActionRow(components=[
-                    TextSelectMenu(
-                        custom_id=f"edit_general:status_{tag}",
-                        placeholder="Select the clan status…",
-                        min_values=1,
-                        max_values=1,
-                        options=[
-                            SelectOption(label=ctype, value=ctype)
-                            for ctype in CLAN_STATUS
-                        ],
-                    )
-                ]),
                 Text
                 (content=f"{emojis.white_arrow_right}**TH Requirement:** {db_clan.th_requirements or '⚠️ Missing'}\n"),
                 ActionRow(components=[
@@ -92,21 +83,12 @@ async def update_general_info_panel(
                         min_values=1,
                         max_values=1,
                         options=[
-                            SelectOption(label=f"{lvl}", value=lvl)
+                            SelectOption(
+                                label=f"TH{lvl}",
+                                value=lvl,
+                                emoji=get_th_emoji(lvl)
+                            )
                             for lvl in reversed(TH_LEVELS)
-                        ],
-                    )
-                ]),
-                Text(content=f"{emojis.white_arrow_right}**TH Attribute:** {db_clan.th_attribute or '⚠️ Missing'}\n"),
-                ActionRow(components=[
-                    TextSelectMenu(
-                        custom_id=f"edit_general:th_attribute_{tag}",
-                        placeholder="Select the TH Attribute…",
-                        min_values=1,
-                        max_values=1,
-                        options=[
-                            SelectOption(label=ctype, value=ctype)
-                            for ctype in TH_ATTRIBUTE
                         ],
                     )
                 ]),

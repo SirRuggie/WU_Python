@@ -32,14 +32,35 @@ from hikari.impl import (
     SectionComponentBuilder as Section,
 )
 
-FWA_REP_ROLE_ID = 1088914884999249940
+FWA_REP_ROLE_ID = 993015846442127420
 
 # TH levels we support for FWA
 FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th17"]
 
-# Cloudinary folders for FWA images
-CLOUDINARY_WAR_BASE_FOLDER = "fwa/war_bases"
-CLOUDINARY_ACTIVE_BASE_FOLDER = "fwa/active_bases"
+SERVER_FAMILY = "Warriors_United"
+
+# Cloudinary folder structure
+CLOUDINARY_WAR_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/war_bases"
+CLOUDINARY_ACTIVE_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/active_bases"
+
+
+# Helper function to generate public IDs
+def get_fwa_public_id(th_level: str, base_type: str) -> str:
+    """Generate consistent public ID for FWA images
+
+    Args:
+        th_level: e.g., "th15" or "TH15"
+        base_type: "war" or "active"
+
+    Returns:
+        str: e.g., "TH15_WarBase" or "TH15_Active_WarBase"
+    """
+    th_num = th_level.upper().replace("TH", "")
+
+    if base_type == "war":
+        return f"TH{th_num}_WarBase"
+    else:
+        return f"TH{th_num}_Active_WarBase"
 
 
 def get_th_emoji(th_level: str):
@@ -59,21 +80,23 @@ def validate_clash_link(link: str) -> bool:
 
 def validate_image_url(url: str) -> bool:
     """Validate if a URL is a valid image URL"""
-    pattern = r'^https?://\S+\.(?:png|jpe?g|gif|webp)$'
+    pattern = r'^https?://.*\.(?:png|jpe?g|gif|webp)'
     return bool(re.match(pattern, url, re.IGNORECASE))
 
 
 async def get_fwa_data(mongo: MongoClient) -> Dict:
     """Get current FWA data from MongoDB"""
-    fwa_data = await mongo.fwa.find_one({})
+    fwa_data = await mongo.fwa_data.find_one({"_id": "fwa_config"})
     if not fwa_data:
         # Initialize empty FWA data if none exists
         fwa_data = {
             "_id": "fwa_config",
             "fwa_base_links": {},
-            "base_descriptions": {}
+            "base_descriptions": {},
+            "war_base_images": {},
+            "active_base_images": {}
         }
-        await mongo.fwa.insert_one(fwa_data)
+        await mongo.fwa_data.insert_one(fwa_data)
     return fwa_data
 
 
@@ -149,6 +172,16 @@ async def manage_fwa_data(
     fwa_data = await get_fwa_data(mongo)
     base_links = fwa_data.get("fwa_base_links", {})
     descriptions = fwa_data.get("base_descriptions", {})
+
+    # Load stored image URLs into memory if available
+    war_images = fwa_data.get("war_base_images", {})
+    active_images = fwa_data.get("active_base_images", {})
+
+    # Update the constants with stored URLs
+    if war_images:
+        FWA_WAR_BASE.update(war_images)
+    if active_images:
+        FWA_ACTIVE_WAR_BASE.update(active_images)
 
     # Build overview of all TH levels
     overview_lines = []
@@ -452,8 +485,8 @@ async def fwa_link_submit(
         return
 
     # Update in database
-    await mongo.fwa.update_one(
-        {},
+    await mongo.fwa_data.update_one(
+        {"_id": "fwa_config"},
         {
             "$set": {
                 f"fwa_base_links.{th_level}": base_link,
@@ -480,6 +513,8 @@ async def fwa_link_submit(
 
     # Refresh the view after a short delay
     await asyncio.sleep(1)
+
+    ctx.interaction.values = [th_level]
 
     # Return to TH edit view
     components = await fwa_th_select.__wrapped__(
@@ -655,32 +690,49 @@ async def fwa_images_submit(
 
         # Upload war base image
         if war_url:
+            war_public_id = get_fwa_public_id(th_level, "war")
+
             result = await cloudinary.upload_image_from_url(
                 war_url,
-                folder=f"{CLOUDINARY_WAR_BASE_FOLDER}/{th_level}",
-                public_id=th_level
+                folder=CLOUDINARY_WAR_BASE_FOLDER,
+                public_id=war_public_id
             )
             war_cloudinary_url = result["secure_url"]
 
             # Update the constant in memory (for this session)
             FWA_WAR_BASE[th_level] = war_cloudinary_url
+
+            # Update in database
+            await mongo.fwa_data.update_one(
+                {"_id": "fwa_config"},
+                {"$set": {f"war_base_images.{th_level}": war_cloudinary_url}},
+                upsert=True
+            )
+
             updates.append(f"✅ War base image uploaded")
 
         # Upload active base image
         if active_url:
+            active_public_id = get_fwa_public_id(th_level, "active")
+
             result = await cloudinary.upload_image_from_url(
                 active_url,
-                folder=f"{CLOUDINARY_ACTIVE_BASE_FOLDER}/{th_level}",
-                public_id=th_level
+                folder=CLOUDINARY_ACTIVE_BASE_FOLDER,
+                public_id=active_public_id
             )
             active_cloudinary_url = result["secure_url"]
 
             # Update the constant in memory (for this session)
             FWA_ACTIVE_WAR_BASE[th_level] = active_cloudinary_url
-            updates.append(f"✅ Active base image uploaded")
 
-        # Note: To persist these URLs, you might want to store them in MongoDB too
-        # This is a design decision - do you want to rely on constants.py or database?
+            # Update in database
+            await mongo.fwa_data.update_one(
+                {"_id": "fwa_config"},
+                {"$set": {f"active_base_images.{th_level}": active_cloudinary_url}},
+                upsert=True
+            )
+
+            updates.append(f"✅ Active base image uploaded")
 
         # Success response
         await ctx.interaction.edit_initial_response(
@@ -698,6 +750,8 @@ async def fwa_images_submit(
 
         # Refresh view after delay
         await asyncio.sleep(1.5)
+
+        ctx.interaction.values = [th_level]
 
         # Return to TH edit view
         components = await fwa_th_select.__wrapped__(
@@ -1009,8 +1063,8 @@ async def fwa_all_submit(
         updates = []
 
         # Update base link
-        await mongo.fwa.update_one(
-            {},
+        await mongo.fwa_data.update_one(
+            {"_id": "fwa_config"},
             {
                 "$set": {
                     f"fwa_base_links.{th_level}": base_link,
@@ -1023,21 +1077,45 @@ async def fwa_all_submit(
 
         # Upload images if provided
         if war_url:
+            war_public_id = get_fwa_public_id(th_level, "war")
+
             result = await cloudinary.upload_image_from_url(
                 war_url,
-                folder=f"{CLOUDINARY_WAR_BASE_FOLDER}/{th_level}",
-                public_id=th_level
+                folder=CLOUDINARY_WAR_BASE_FOLDER,
+                public_id=war_public_id
             )
+
+            # Update in memory
             FWA_WAR_BASE[th_level] = result["secure_url"]
+
+            # Update in database
+            await mongo.fwa_data.update_one(
+                {"_id": "fwa_config"},
+                {"$set": {f"war_base_images.{th_level}": result["secure_url"]}},
+                upsert=True
+            )
+
             updates.append("✅ War base image uploaded")
 
         if active_url:
+            active_public_id = get_fwa_public_id(th_level, "active")
+
             result = await cloudinary.upload_image_from_url(
                 active_url,
-                folder=f"{CLOUDINARY_ACTIVE_BASE_FOLDER}/{th_level}",
-                public_id=th_level
+                folder=CLOUDINARY_ACTIVE_BASE_FOLDER,
+                public_id=active_public_id
             )
+
+            # Update in memory
             FWA_ACTIVE_WAR_BASE[th_level] = result["secure_url"]
+
+            # Update in database
+            await mongo.fwa_data.update_one(
+                {"_id": "fwa_config"},
+                {"$set": {f"active_base_images.{th_level}": result["secure_url"]}},
+                upsert=True
+            )
+
             updates.append("✅ Active base image uploaded")
 
         # Success response
@@ -1056,6 +1134,8 @@ async def fwa_all_submit(
 
         # Refresh view after delay
         await asyncio.sleep(1.5)
+
+        ctx.interaction.values = [th_level]
 
         # Return to TH edit view
         components = await fwa_th_select.__wrapped__(
@@ -1176,15 +1256,15 @@ async def fwa_export_json(
     fwa_data = await get_fwa_data(mongo)
     base_links = fwa_data.get("fwa_base_links", {})
     descriptions = fwa_data.get("base_descriptions", {})
+    war_images = fwa_data.get("war_base_images", {})
+    active_images = fwa_data.get("active_base_images", {})
 
     # Build export data
     export_data = {
         "fwa_base_links": base_links,
         "base_descriptions": descriptions,
-        "image_urls": {
-            "war_bases": {th: url for th, url in FWA_WAR_BASE.items() if th in FWA_TH_LEVELS},
-            "active_bases": {th: url for th, url in FWA_ACTIVE_WAR_BASE.items() if th in FWA_TH_LEVELS}
-        }
+        "war_base_images": war_images,
+        "active_base_images": active_images
     }
 
     # Format as JSON string
@@ -1203,8 +1283,8 @@ async def fwa_export_json(
                         "The FWA data is too large to display here.\n\n"
                         "To export your data:\n"
                         "1. Use a MongoDB client to connect to your database\n"
-                        "2. Export the `fwa` collection\n"
-                        "3. The data includes all base links and descriptions"
+                        "2. Export the `fwa_data` collection\n"
+                        "3. Look for the document with `_id: 'fwa_config'`"
                     )),
                     ActionRow(
                         components=[
@@ -1296,7 +1376,7 @@ async def fwa_clear_confirm(
     """Actually clear all FWA data"""
 
     # Delete all FWA data
-    await mongo.fwa.delete_many({})
+    await mongo.fwa_data.delete_many({})
 
     # Reinitialize empty data
     await get_fwa_data(mongo)
