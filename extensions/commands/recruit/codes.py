@@ -135,7 +135,15 @@ async def on_code_response(
 
             # Check if message contains valid code
             message_content = event.content.strip()  # Now this is safe!
-            if message_content in VALID_EMOJI_CODES:
+
+            # Check if any of the valid codes appear anywhere in the message
+            code_found = None
+            for code in VALID_EMOJI_CODES:
+                if code in message_content:
+                    code_found = code
+                    break
+
+            if code_found:
                 # Valid code received!
                 # Update MongoDB
                 await mongo.recruit_onboarding.update_one(
@@ -144,7 +152,7 @@ async def on_code_response(
                         "$set": {
                             "completed": True,
                             "completed_at": datetime.now(timezone.utc),
-                            "code_used": message_content
+                            "code_used": code_found
                         }
                     }
                 )
@@ -166,7 +174,7 @@ async def on_code_response(
                             Text(content=(
                                 f"{event.author.mention} **Thank you for acknowledging!**\n\n"
                                 f"We encourage and allow temporary movement within the family but if you desire a permanent move to another clan we need to discuss it further with Leadership. So from here forward, the Clan you are assigned to is your **\"Home Clan\"**. Always come back home...👍🏼\n\n"
-                                f"The **{message_content}**; or any of the code combinations; will get you in to any clan within the Family.... remember that...💪🏼.\n\n"
+                                f"The **{code_found}**; or any of the code combinations; will get you in to any clan within the Family.... remember that...💪🏼.\n\n"
                             )),
                             Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
                             Text(content=f"-# Confirmation triggered by {moderator_name}"),
