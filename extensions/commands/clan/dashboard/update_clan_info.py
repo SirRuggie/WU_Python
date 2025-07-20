@@ -471,11 +471,9 @@ async def clan_edit_menu(
             Text(
                 content=(
                     f"{emojis.white_arrow_right}**Clan Type:** {db_clan.type or '⚠️ Data Missing'}\n"
-                    f"{emojis.white_arrow_right}**Clan Status:** {db_clan.status or '⚠️ Data Missing'}\n"
                     f"{emojis.white_arrow_right}**Logo:** {db_clan.logo or '⚠️ Data Missing'}\n"
                     f"{emojis.white_arrow_right}**Emoji:** {db_clan.emoji or '⚠️ Data Missing'}\n"
                     f"{emojis.white_arrow_right}**TH Requirement:** {db_clan.th_requirements or '⚠️ Data Missing'}\n"
-                    f"{emojis.white_arrow_right}**TH Attribute:** {db_clan.th_attribute or '⚠️ Data Missing'}"
                 )
             ),
         ])

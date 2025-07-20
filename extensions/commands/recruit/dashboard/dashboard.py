@@ -68,6 +68,7 @@ class RecruitDashboard(
             member=member,
             recruiter=ctx.member,
             bot=bot,
+            mongo=mongo,
             **data
         )
 
@@ -80,12 +81,74 @@ async def create_dashboard_page(
         member: hikari.Member,
         recruiter: hikari.Member,
         bot: hikari.GatewayBot = None,
+        mongo: MongoClient = None,
         **kwargs
 ) -> list:
     """Create the main dashboard page components"""
 
     # Get member's display name with their timezone/country if in nickname
     display_name = member.display_name if member else user.username
+
+    # Collect current roles
+    role_sections = []
+
+    if member and mongo:
+        # Import TH_LEVELS from set_townhall
+        from .set_townhall import TH_LEVELS
+
+        # Check TH roles
+        th_roles = []
+        for th_config in TH_LEVELS:
+            if th_config["role_id"] in member.role_ids:
+                th_roles.append(f"{th_config['emoji']} TH{th_config['level']}")
+
+        # Check clan roles
+        clan_roles = []
+        clan_data = await mongo.clans.find().to_list(length=None)
+        for clan in clan_data:
+            if clan.get("role_id") in member.role_ids:
+                clan_emoji = clan.get("emoji", "⚔️")
+                clan_roles.append(f"{clan_emoji} {clan.get('name')}")
+
+        # Check standard roles (from manage_roles.py)
+        standard_roles = []
+        try:
+            from .manage_roles import STANDARD_ROLES
+            for role_key, role_info in STANDARD_ROLES.items():
+                if role_info["id"] in member.role_ids:
+                    standard_roles.append(f"{role_info['emoji']} {role_info['name']}")
+        except ImportError:
+            pass
+
+        # Build role display section
+        if th_roles or clan_roles or standard_roles:
+            role_sections.extend([
+                Separator(divider=True),
+                Text(content="### 📋 **Current Roles**"),
+            ])
+
+            if th_roles:
+                role_sections.append(
+                    Text(content=f"**Townhall:** {', '.join(th_roles)}")
+                )
+            else:
+                role_sections.append(
+                    Text(content="**Townhall:** _Not set_")
+                )
+
+            if clan_roles:
+                role_sections.append(
+                    Text(content=f"**Clan Roles:** {', '.join(clan_roles)}")
+                )
+            else:
+                role_sections.append(
+                    Text(content="**Clan Roles:** _Not assigned_")
+                )
+
+            if standard_roles:
+                role_sections.append(
+                    Text(content=f"**Other Roles:** {', '.join(standard_roles)}")
+                )
 
     components = [
         Container(
@@ -113,7 +176,10 @@ async def create_dashboard_page(
 
                 # Nickname Display
                 Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-                Text(content=f"**Nickname**\n{display_name}"),
+                Text(content=f"**Nickname:** {display_name}"),
+
+                # Add role sections here
+                *role_sections,  # This unpacks the role display sections
 
                 # Action Buttons
                 Separator(divider=True, spacing=hikari.SpacingType.LARGE),
@@ -179,20 +245,28 @@ async def create_dashboard_page(
 @lightbulb.di.with_di
 async def refresh_dashboard(
         action_id: str,
-        user_id: int,
+        user_id: int = None,
         mongo: MongoClient = lightbulb.di.INJECTED,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        ctx: lightbulb.components.MenuContext = None,
         **kwargs
 ) -> list:
     """Refresh the dashboard display"""
 
     # Get the cached data
-    ctx = kwargs.get('ctx')
-    guild_id = kwargs.get('guild_id')
+    data = await mongo.button_store.find_one({"_id": action_id})
+    if not data:
+        print(f"[Dashboard] No data found for action_id: {action_id}")
+        return []
+
+    # Use data from MongoDB if not provided
+    user_id = user_id or data.get("user_id")
+    guild_id = kwargs.get('guild_id') or data.get("guild_id")
+
     guild = bot.cache.get_guild(guild_id) if guild_id else None
     user = bot.cache.get_user(user_id)
     member = guild.get_member(user_id) if guild else None
-    recruiter_id = kwargs.get('recruiter_id')
+    recruiter_id = kwargs.get('recruiter_id') or data.get("recruiter_id")
     recruiter = guild.get_member(recruiter_id) if guild and recruiter_id else None
 
     return await create_dashboard_page(
@@ -201,5 +275,6 @@ async def refresh_dashboard(
         member=member,
         recruiter=recruiter,
         bot=bot,
+        mongo=mongo,
         **kwargs
     )
