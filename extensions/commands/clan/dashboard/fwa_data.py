@@ -503,27 +503,27 @@ async def fwa_link_submit(
             Container(
                 accent_color=GREEN_ACCENT,
                 components=[
-                    Text(content=f"✅ **TH{th_num} Base Link Updated!**"),
+                    Text(content=f"## ✅ TH{th_num} Base Link Updated!"),
                     Text(content=f"```\n{base_link}\n```"),
-                    Text(content="*Refreshing view...*")
+                    Separator(divider=True),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.PRIMARY,
+                                label=f"Back to TH{th_num} Edit",
+                                custom_id=f"fwa_th_select_return:{th_level}",
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                label="Back to Main Menu",
+                                custom_id="fwa_quick_edit:main",
+                            )
+                        ]
+                    )
                 ]
             )
         ]
     )
-
-    # Refresh the view after a short delay
-    await asyncio.sleep(1)
-
-    ctx.interaction.values = [th_level]
-
-    # Return to TH edit view
-    components = await fwa_th_select.__wrapped__(
-        ctx=ctx,
-        mongo=mongo,
-        **kwargs
-    )
-    await ctx.interaction.edit_initial_response(components=components)
-
 
 @register_action("fwa_update_images", ephemeral=True)
 @lightbulb.di.with_di
@@ -742,25 +742,26 @@ async def fwa_images_submit(
                     components=[
                         Text(content=f"## ✅ TH{th_num} Images Updated!"),
                         Text(content="\n".join(updates)),
-                        Text(content="*Refreshing view...*")
+                        Separator(divider=True),
+                        Text(content="*Images have been uploaded successfully!*"),
+                        ActionRow(
+                            components=[
+                                Button(
+                                    style=hikari.ButtonStyle.PRIMARY,
+                                    label=f"Back to TH{th_num} Edit",
+                                    custom_id=f"fwa_th_select_return:{th_level}",
+                                ),
+                                Button(
+                                    style=hikari.ButtonStyle.SECONDARY,
+                                    label="Back to Main Menu",
+                                    custom_id="fwa_quick_edit:main",
+                                )
+                            ]
+                        )
                     ]
                 )
             ]
         )
-
-        # Refresh view after delay
-        await asyncio.sleep(1.5)
-
-        ctx.interaction.values = [th_level]
-
-        # Return to TH edit view
-        components = await fwa_th_select.__wrapped__(
-            ctx=ctx,
-            mongo=mongo,
-            cloudinary=cloudinary,
-            **kwargs
-        )
-        await ctx.interaction.edit_initial_response(components=components)
 
     except Exception as e:
         await ctx.interaction.edit_initial_response(
@@ -770,16 +771,19 @@ async def fwa_images_submit(
                     components=[
                         Text(content="## ❌ Upload Failed"),
                         Text(content=f"Error: {str(e)[:200]}"),
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            label="Back",
-                            custom_id=f"fwa_th_select_return:{th_level}",
+                        ActionRow(
+                            components=[
+                                Button(
+                                    style=hikari.ButtonStyle.SECONDARY,
+                                    label="Back",
+                                    custom_id=f"fwa_th_select_return:{th_level}",
+                                )
+                            ]
                         )
                     ]
                 )
             ]
         )
-
 
 @register_action("fwa_update_all", no_return=True, is_modal=True)
 async def fwa_update_all(
@@ -1118,7 +1122,7 @@ async def fwa_all_submit(
 
             updates.append("✅ Active base image uploaded")
 
-        # Success response
+            # Success response - MOVED OUTSIDE THE IF BLOCK
         await ctx.interaction.edit_initial_response(
             components=[
                 Container(
@@ -1126,25 +1130,25 @@ async def fwa_all_submit(
                     components=[
                         Text(content=f"## ✅ TH{th_num} Fully Updated!"),
                         Text(content="\n".join(updates)),
-                        Text(content="*Refreshing view...*")
+                        Separator(divider=True),
+                        ActionRow(
+                            components=[
+                                Button(
+                                    style=hikari.ButtonStyle.PRIMARY,
+                                    label=f"Back to TH{th_num} Edit",
+                                    custom_id=f"fwa_th_select_return:{th_level}",
+                                ),
+                                Button(
+                                    style=hikari.ButtonStyle.SECONDARY,
+                                    label="Back to Main Menu",
+                                    custom_id="fwa_quick_edit:main",
+                                )
+                            ]
+                        )
                     ]
                 )
             ]
         )
-
-        # Refresh view after delay
-        await asyncio.sleep(1.5)
-
-        ctx.interaction.values = [th_level]
-
-        # Return to TH edit view
-        components = await fwa_th_select.__wrapped__(
-            ctx=ctx,
-            mongo=mongo,
-            cloudinary=cloudinary,
-            **kwargs
-        )
-        await ctx.interaction.edit_initial_response(components=components)
 
     except Exception as e:
         await ctx.interaction.edit_initial_response(
@@ -1154,10 +1158,14 @@ async def fwa_all_submit(
                     components=[
                         Text(content="## ❌ Update Failed"),
                         Text(content=f"Error: {str(e)[:200]}"),
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            label="Back",
-                            custom_id=f"fwa_th_select_return:{th_level}",
+                        ActionRow(
+                            components=[
+                                Button(
+                                    style=hikari.ButtonStyle.SECONDARY,
+                                    label="Back",
+                                    custom_id=f"fwa_th_select_return:{th_level}",
+                                )
+                            ]
                         )
                     ]
                 )
