@@ -76,11 +76,14 @@ class Setup(
             bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     ) -> None:
         """Send the ticket creation embed"""
+
+        # Defer the response immediately to avoid timeout
+        await ctx.defer(ephemeral=True)
+
         # Check permissions
         if not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
             await ctx.respond(
-                "❌ You need Administrator permissions to use this command!",
-                ephemeral=True
+                "❌ You need Administrator permissions to use this command!"
             )
             return
 
@@ -91,15 +94,13 @@ class Setup(
                 components=create_ticket_embed()
             )
 
-            # Send success feedback as ephemeral
+            # Send success feedback
             await ctx.respond(
-                "✅ Ticket system embed has been posted!",
-                ephemeral=True
+                "✅ Ticket system embed has been posted!"
             )
 
         except Exception as e:
-            # Send error as ephemeral
+            # Send error
             await ctx.respond(
-                f"❌ Failed to post ticket embed: {str(e)}",
-                ephemeral=True
+                f"❌ Failed to post ticket embed: {str(e)}"
             )

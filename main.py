@@ -65,7 +65,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.commands.fwa.war_plans",
         "extensions.commands.tickets",
         "extensions.events.channel.ticket_channel_monitor",
-    ] + load_cogs(disallowed={"example"})
+    ] + load_cogs(disallowed={"example"}, disallowed_folders={"tickets"})
 
     await client.load_extensions(*all_extensions)
     await client.start()

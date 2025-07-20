@@ -42,8 +42,31 @@ async def check_category_space(bot: hikari.GatewayBot, category_id: int, ticket_
             if hasattr(ch, 'parent_id') and ch.parent_id == category_id
         ]
 
+        # Get category info for better logging
+        try:
+            category = await bot.rest.fetch_channel(category_id)
+            category_name = category.name
+        except:
+            category_name = "Unknown"
+
         # Discord limit is 50 channels per category
-        remaining_slots = 50 - len(channels_in_category)
+        used_slots = len(channels_in_category)
+        remaining_slots = 50 - used_slots
+
+        # Enhanced logging
+        print(f"[Tickets] Category Space Check:")
+        print(f"  - Category: {category_name} (ID: {category_id})")
+        print(f"  - Type: {ticket_type.upper()}")
+        print(f"  - Channels Used: {used_slots}/50")
+        print(f"  - Remaining Slots: {remaining_slots}")
+
+        # Show first 5 channel names as examples
+        if channels_in_category:
+            print(f"  - Example channels:")
+            for i, channel in enumerate(channels_in_category[:5]):
+                print(f"    • {channel.name}")
+            if len(channels_in_category) > 5:
+                print(f"    ... and {len(channels_in_category) - 5} more")
 
         # Check if we need to notify admin
         if remaining_slots <= CHANNEL_WARNING_THRESHOLD:
@@ -51,21 +74,29 @@ async def check_category_space(bot: hikari.GatewayBot, category_id: int, ticket_
                 admin_user = await bot.rest.fetch_user(admin_id)
                 dm_channel = await admin_user.fetch_dm_channel()
 
+                # Enhanced warning message with more details
                 await dm_channel.send(
                     f"⚠️ **Low Channel Space Warning**\n\n"
-                    f"The {ticket_type.upper()} ticket category is running low on space!\n"
-                    f"**Remaining slots:** {remaining_slots}/50\n\n"
-                    f"Please run `/tickets change-category type:{ticket_type}` to set up a new category."
+                    f"**Category:** {category_name}\n"
+                    f"**Type:** {ticket_type.upper()} tickets\n"
+                    f"**Category ID:** `{category_id}`\n\n"
+                    f"**Space Usage:**\n"
+                    f"• Used: {used_slots}/50 channels\n"
+                    f"• Remaining: **{remaining_slots} slots**\n\n"
+                    f"⚠️ **Action Required:**\n"
+                    f"Please run `/ticket change-category type:{ticket_type}` to set up a new category.\n\n"
+                    f"*This warning triggers when 5 or fewer slots remain.*"
                 )
+
+                print(f"[Tickets] ⚠️ Admin notified about low space in {category_name}")
             except Exception as e:
-                print(f"Failed to DM admin about low channel space: {e}")
+                print(f"[Tickets] Failed to DM admin about low channel space: {e}")
 
         return remaining_slots
 
     except Exception as e:
-        print(f"Error checking category space: {e}")
+        print(f"[Tickets] Error checking category space: {e}")
         return -1  # Return -1 to indicate error
-
 
 @register_action("create_ticket", opens_modal=False, no_return=True)
 @lightbulb.di.with_di
@@ -223,37 +254,27 @@ async def handle_create_ticket(
         await asyncio.sleep(0.5)
 
         # Send message in the private thread for recruiters
-        thread_message = await bot.rest.create_message(
-            thread.id,
-            content=(
-                f"**{'@Main Recruiter' if ticket_type == 'main' else '@FWA Recruiter'} (3)**, "
-                "this is a private thread for the candidate. They cannot see this thread, "
-                "so DO NOT ping them, as it will add them.\n\n"
-            )
-        )
-
-        print(f"[Tickets] Posted message in thread {thread.id}")
-
-        # Add recruiters to the thread if role is configured
         if recruiter_role:
-            print(f"[Tickets] Adding recruiters with role {recruiter_role} to thread")
-            # Get recruiters with the role
-            members = await bot.rest.fetch_members(ctx.guild_id)
-            recruiters = [
-                member for member in members
-                if recruiter_role in member.role_ids
-            ]
-
-            print(f"[Tickets] Found {len(recruiters)} recruiters to add")
-
-            # Add recruiters to the thread (up to 3)
-            for recruiter in recruiters[:3]:
-                try:
-                    await bot.rest.add_thread_member(thread.id, recruiter.id)
-                    print(f"[Tickets] Added recruiter {recruiter.username} to thread")
-                except Exception as e:
-                    print(f"[Tickets] Failed to add recruiter {recruiter.username}: {e}")
+            # Ping the actual role using <@&ROLE_ID> format
+            thread_message = await bot.rest.create_message(
+                thread.id,
+                content=(
+                    f"<@&{recruiter_role}> "
+                    "this is a private thread for the candidate. They cannot see this thread, "
+                    "so DO NOT ping them, as it will add them.\n\n"
+                ),
+                role_mentions=True
+            )
+            print(f"[Tickets] Posted message in thread {thread.id} and pinged role {recruiter_role}")
         else:
+            # If no role configured, just post a message
+            thread_message = await bot.rest.create_message(
+                thread.id,
+                content=(
+                    "⚠️ No recruiter role configured for this ticket type. "
+                    "Please configure roles using `/ticket config`"
+                )
+            )
             print(f"[Tickets] No recruiter role configured for {ticket_type} tickets")
 
         # Send success message as ephemeral response
@@ -269,25 +290,3 @@ async def handle_create_ticket(
             f"❌ There was an error creating your ticket.\nPlease try again or contact an administrator.\nError: {str(e)}",
             ephemeral=True
         )
-
-
-# Load configuration on startup
-@loader.listener(hikari.StartedEvent)
-@lightbulb.di.with_di
-async def on_started(
-        event: hikari.StartedEvent,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-) -> None:
-    """Load ticket configuration from database on startup"""
-    config = await mongo.ticket_setup.find_one({"_id": "config"})
-    if config:
-        print(f"[Tickets] Loaded configuration from database")
-        print(f"[Tickets] Main Role: {config.get('main_recruiter_role')}")
-        print(f"[Tickets] FWA Role: {config.get('fwa_recruiter_role')}")
-        print(f"[Tickets] Admin: {config.get('admin_to_notify', DEFAULT_ADMIN_TO_NOTIFY)}")
-        print(
-            f"[Tickets] Categories: Main={config.get('main_category', DEFAULT_MAIN_CATEGORY)}, FWA={config.get('fwa_category', DEFAULT_FWA_CATEGORY)}")
-        print(
-            f"[Tickets] Counters: Main={config.get('main_ticket_counter', 0)}, FWA={config.get('fwa_ticket_counter', 0)}")
-    else:
-        print(f"[Tickets] No configuration found in database, using defaults")
