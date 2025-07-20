@@ -124,13 +124,17 @@ async def on_code_response(
     if event.is_bot:
         return
 
+    # FIX: Check for None content FIRST, before anything else
+    if event.content is None:
+        return  # Skip messages without text content
+
     # Check if this user has an active listener
     for message_id, listener_info in list(active_listeners.items()):
         if (event.author_id == listener_info["user_id"] and
                 event.channel_id == listener_info["channel_id"]):
 
             # Check if message contains valid code
-            message_content = event.content.strip()
+            message_content = event.content.strip()  # Now this is safe!
             if message_content in VALID_EMOJI_CODES:
                 # Valid code received!
                 # Update MongoDB
