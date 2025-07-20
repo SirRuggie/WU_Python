@@ -61,6 +61,9 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
     # Get the channel name
     channel_name = event.channel.name
 
+    guild = event.app.cache.get_guild(event.guild_id)
+    guild_icon_url = guild.make_icon_url() if guild else None
+
     # Debug logging
     print(f"[DEBUG] New channel created: {channel_name} (ID: {event.channel.id})")
 
@@ -250,7 +253,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                             )),
                         ],
                         accessory=Thumbnail(
-                            media="https://cdn.discordapp.com/attachments/753573066587504750/1105692171841044542/warriors_united_png.png?ex=687b0b94&is=6879ba14&hm=f940900150b95af9eac784f1cdea6c6164221f330b5a94f469e6c1424de02236&"
+                            media=guild_icon_url or "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836911/misc_images/WU_Logo.png"
                         )
                     ),
                     # Main image
@@ -320,7 +323,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                             )),
                         ],
                         accessory=Thumbnail(
-                            media="https://cdn.discordapp.com/attachments/753573066587504750/1105692171841044542/warriors_united_png.png?ex=687b0b94&is=6879ba14&hm=f940900150b95af9eac784f1cdea6c6164221f330b5a94f469e6c1424de02236&"
+                            media=guild_icon_url or "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836911/misc_images/WU_Logo.png"
                         )
                     ),
                     # Main image
