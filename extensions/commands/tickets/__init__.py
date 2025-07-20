@@ -2,7 +2,7 @@
 import lightbulb
 
 loader = lightbulb.Loader()
-tickets = lightbulb.Group("tickets", "Warriors United ticket system commands")
+tickets = lightbulb.Group("ticket", "Warriors United ticket system commands")
 
 # Import all ticket modules
 from . import setup
@@ -14,4 +14,4 @@ from . import close
 # Register the tickets group with the loader
 loader.command(tickets)
 
-__all__ = ["loader", "tickets"]
+__all__ = ["loader", "ticket"]

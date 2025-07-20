@@ -34,6 +34,9 @@ class Close(
     ) -> None:
         """Close a ticket"""
 
+        # Defer the response immediately to avoid timeout
+        await ctx.defer(ephemeral=True)
+
         # Get config to check roles
         config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
         main_role = config.get("main_recruiter_role")
@@ -49,8 +52,7 @@ class Close(
 
         if not is_authorized:
             await ctx.respond(
-                "❌ You must be a recruiter or administrator to close tickets!",
-                ephemeral=True
+                "❌ You must be a recruiter or administrator to close tickets!"
             )
             return
 
@@ -68,8 +70,7 @@ class Close(
 
             if not tickets_to_close:
                 await ctx.respond(
-                    f"❌ No open tickets found for <@{user_id}>",
-                    ephemeral=True
+                    f"❌ No open tickets found for <@{user_id}>"
                 )
                 return
 
@@ -98,12 +99,12 @@ class Close(
                         name=new_name,
                         reason=f"Ticket closed by {ctx.user.username}"
                     )
+                    await asyncio.sleep(1)
                 except Exception as e:
                     print(f"[Tickets] Failed to rename channel {ticket.get('channel_id')}: {e}")
 
             await ctx.respond(
-                f"✅ Closed {len(tickets_to_close)} ticket(s) for <@{user_id}>",
-                ephemeral=True
+                f"✅ Closed {len(tickets_to_close)} ticket(s) for <@{user_id}>"
             )
 
         else:
@@ -119,8 +120,7 @@ class Close(
 
             if not ticket:
                 await ctx.respond(
-                    "❌ This channel is not an open ticket!",
-                    ephemeral=True
+                    "❌ This channel is not an open ticket!"
                 )
                 return
 
@@ -149,14 +149,15 @@ class Close(
                     reason=f"Ticket closed by {ctx.user.username}"
                 )
 
+                # Small delay to respect rate limits
+                await asyncio.sleep(1)
+
                 await ctx.respond(
-                    "✅ Ticket closed! The channel has been marked as closed.",
-                    ephemeral=False
+                    "✅ Ticket closed! The channel has been marked as closed."
                 )
             except Exception as e:
                 await ctx.respond(
-                    f"✅ Ticket closed in database, but failed to rename channel: {str(e)}",
-                    ephemeral=True
+                    f"✅ Ticket closed in database, but failed to rename channel: {str(e)}"
                 )
 
 
@@ -182,6 +183,9 @@ class Reopen(
     ) -> None:
         """Reopen a ticket"""
 
+        # Defer the response immediately to avoid timeout
+        await ctx.defer(ephemeral=True)
+
         # Get config to check roles
         config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
         main_role = config.get("main_recruiter_role")
@@ -197,8 +201,7 @@ class Reopen(
 
         if not is_authorized:
             await ctx.respond(
-                "❌ You must be a recruiter or administrator to reopen tickets!",
-                ephemeral=True
+                "❌ You must be a recruiter or administrator to reopen tickets!"
             )
             return
 
@@ -215,8 +218,7 @@ class Reopen(
 
             if not ticket:
                 await ctx.respond(
-                    f"❌ No closed tickets found for <@{user_id}>",
-                    ephemeral=True
+                    f"❌ No closed tickets found for <@{user_id}>"
                 )
                 return
 
@@ -233,8 +235,7 @@ class Reopen(
 
             if not ticket:
                 await ctx.respond(
-                    "❌ This channel is not a closed ticket!",
-                    ephemeral=True
+                    "❌ This channel is not a closed ticket!"
                 )
                 return
 
@@ -264,17 +265,15 @@ class Reopen(
             )
 
             await ctx.respond(
-                f"✅ Ticket reopened for <@{ticket['user_id']}>!",
-                ephemeral=False
+                f"✅ Ticket reopened for <@{ticket['user_id']}>!"
             )
         except Exception as e:
             await ctx.respond(
-                f"✅ Ticket reopened in database, but failed to rename channel: {str(e)}",
-                ephemeral=True
+                f"✅ Ticket reopened in database, but failed to rename channel: {str(e)}"
             )
 
 
-# Add this to clean up orphaned tickets on startup
+# # Add this to clean up orphaned tickets on startup
 @loader.listener(hikari.StartedEvent)
 @lightbulb.di.with_di
 async def cleanup_orphaned_tickets(
@@ -299,6 +298,8 @@ async def cleanup_orphaned_tickets(
         try:
             # Try to fetch the channel
             channel = await bot.rest.fetch_channel(ticket["channel_id"])
+
+            await asyncio.sleep(0.5)
 
             # If channel exists but starts with ❌, mark ticket as closed
             if channel.name.startswith("❌"):
