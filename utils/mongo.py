@@ -18,3 +18,4 @@ class MongoClient(AsyncMongoClient):
         #self.clan_bidding = self.__settings.get_collection("clan_bidding")
         #self.new_recruits = self.__settings.get_collection("new_recruits")
         self.ticket_automation_state = self.__settings.get_collection("ticket_automation_state")
+        self.recruit_onboarding = self.__settings.get_collection("recruit_onboarding")

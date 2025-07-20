@@ -246,18 +246,16 @@ class WarCopyTexts:
             "🔹Second Attack:\n"
             "•Option 1: Hit Base #1 or any higher base for loot.\n"
             "•Option 2: Wait until 8h left, then clean up with a strong 3⭐️.\n"
-            "Let’s max out our stars and secure the win! 💪"
         )
 
     @staticmethod
     def lose_copy(opponent: str) -> str:
         return (
-            f"⚠️War vs {opponent} is a LOSE war – aim for 100⭐!\n"
+            f"⚠️War vs {opponent} is a LOSE war!\n"
             "🔹First Attack: 2⭐️ your mirror.\n"
             "🔹Second Attack:\n"
             "•Option 1: Hit Base #1 or any top base for loot.\n"
             "•Option 2: Wait until 8h left, then go for a safe 2⭐️ cleanup.\n\n"
-            "Finish strong and help hit our star goal! 🌟"
         )
 
     @staticmethod
