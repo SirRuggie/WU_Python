@@ -10,7 +10,6 @@ import coc
 from utils.startup import load_cogs
 from utils.cloudinary_client import CloudinaryClient
 from extensions.autocomplete import preload_autocomplete_cache
-from extensions.events.message import dm_screenshot_upload
 from utils import bot_data
 
 load_dotenv()
@@ -94,8 +93,6 @@ async def on_bot_start(event: hikari.StartedEvent):
 @bot.listen(hikari.StoppingEvent)
 async def on_stopping(_: hikari.StoppingEvent) -> None:
     """Bot stopping event"""
-    dm_screenshot_upload.unload(bot)
-    # print("Bot stopped, event listeners unloaded")
     # Properly close the coc.py client to avoid unclosed session warnings
     await clash_client.close()
 
