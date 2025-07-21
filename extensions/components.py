@@ -71,7 +71,7 @@ async def component_handler(
         ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
         mongo: MongoClient = lightbulb.di.INJECTED,
 ):
-    command_name, action_id = ctx.interaction.custom_id.split(":")
+    command_name, action_id = ctx.interaction.custom_id.split(":", 1)
     function, owner_only, no_return, is_modal, ephemeral, opens_modal, group = registered_functions.get(command_name)
 
     if group:

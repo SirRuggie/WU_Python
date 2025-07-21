@@ -1,10 +1,14 @@
 # extensions/commands/recruit/dashboard/add_clan_roles.py
 """
-Handle the Add ALL Clan Roles to Recruit action from the recruit dashboard
+Handle the Add Clan Roles action from the recruit dashboard.
+
+This uses a single-message flow where the dashboard is edited to show the clan menu,
+and then the clan menu can be edited back to show the dashboard.
 """
 
 import lightbulb
 import hikari
+from typing import List, Optional
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
@@ -25,359 +29,9 @@ from hikari.impl import (
 )
 
 
-@register_action("add_clan_roles")
-@lightbulb.di.with_di
-async def add_clan_roles_handler(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        user_id: int,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-        **kwargs
-) -> list:
-    """Display clan selection interface for adding clan roles"""
-
-    guild_id = kwargs.get("guild_id")
-    guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
-
-    if not member:
-        return [error_response("Member not found", action_id)]
-
-    # Fetch all clans from database
-    clan_data = await mongo.clans.find().to_list(length=None)
-    clans = [Clan(data=d) for d in clan_data]
-
-    if not clans:
-        return [
-            Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content="## ❌ **No Clans Found**"),
-                    Text(content="No clans are configured in the database."),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                custom_id=f"refresh_dashboard:{action_id}",
-                                label="Back to Dashboard",
-                                emoji="↩️"
-                            )
-                        ]
-                    ),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")])
-                ]
-            )
-        ]
-
-    # Check which clan roles the member already has
-    member_role_ids = set(member.role_ids)
-    member_clans = []
-    available_clans = []
-
-    for clan in clans:
-        if clan.role_id and clan.role_id in member_role_ids:
-            member_clans.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
-        else:
-            available_clans.append(clan)
-
-    # Build select menu options
-    options = []
-    for clan in available_clans:
-        if clan.role_id:  # Only show clans with configured roles
-            kwargs = {
-                "label": clan.name,
-                "value": f"{clan.tag}:{clan.role_id}",
-                "description": f"Tag: {clan.tag}"
-            }
-            if clan.partial_emoji:
-                kwargs["emoji"] = clan.partial_emoji
-            options.append(SelectOption(**kwargs))
-
-    if not options:
-        return [
-            Container(
-                accent_color=GOLD_ACCENT,
-                components=[
-                    Text(content="## ℹ️ **All Clan Roles Assigned**"),
-                    Text(content=(
-                        f"This member already has all available clan roles:\n\n"
-                        f"{chr(10).join(member_clans)}"
-                    )),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                custom_id=f"refresh_dashboard:{action_id}",
-                                label="Back to Dashboard",
-                                emoji="↩️"
-                            )
-                        ]
-                    ),
-                    Media(items=[MediaItem(media="assets/Gold_Footer.png")])
-                ]
-            )
-        ]
-
-    components = [
-        Container(
-            accent_color=BLUE_ACCENT,
-            components=[
-                Text(content=f"## ⚔️ **Add Clan Roles to {member.display_name}**"),
-                Separator(divider=True),
-
-                # Current clan roles
-                Text(content="### Current Clan Memberships:"),
-                Text(content="\n".join(member_clans) if member_clans else "_No clan roles assigned_"),
-
-                Separator(divider=True),
-
-                # Instructions
-                Text(content=(
-                    "**Select clans to add:**\n"
-                    "• You can select multiple clans at once\n"
-                    "• This will add the main clan role\n"
-                    "• Additional roles (leader, co-leader) must be added separately"
-                )),
-
-                # Select menu
-                ActionRow(
-                    components=[
-                        TextSelectMenu(
-                            custom_id=f"execute_add_clans:{action_id}",
-                            placeholder="Select clan(s) to add...",
-                            min_values=1,
-                            max_values=min(len(options), 25),  # Discord limit
-                            options=options
-                        )
-                    ]
-                ),
-
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.PRIMARY,
-                            custom_id=f"add_all_clans:{action_id}",
-                            label="Add ALL Clans",
-                            emoji="🌟",
-                            is_disabled=len(options) == 0
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            custom_id=f"refresh_dashboard:{action_id}",
-                            label="Back to Dashboard",
-                            emoji="↩️"
-                        )
-                    ]
-                ),
-
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-            ]
-        )
-    ]
-
-    return components
-
-
-@register_action("execute_add_clans")
-@lightbulb.di.with_di
-async def execute_add_clans_handler(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-        **kwargs
-) -> list:
-    """Execute adding selected clan roles"""
-
-    data = await mongo.button_store.find_one({"_id": action_id})
-    if not data:
-        return [error_response("Session expired", action_id)]
-
-    user_id = data.get("user_id")
-    guild_id = data.get("guild_id")
-
-    guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
-
-    if not member:
-        return [error_response("Member not found", action_id)]
-
-    # Parse selected values
-    selected_values = ctx.interaction.values
-    added_clans = []
-    failed_clans = []
-
-    for value in selected_values:
-        clan_tag, role_id = value.split(":")
-        role_id = int(role_id)
-
-        # Get clan info
-        clan_data = await mongo.clans.find_one({"tag": clan_tag})
-        if clan_data:
-            clan = Clan(data=clan_data)
-            role = guild.get_role(role_id)
-
-            if role:
-                try:
-                    await member.add_role(role, reason="Clan role added via recruit dashboard")
-                    added_clans.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
-                except Exception:
-                    failed_clans.append(f"{clan.name}")
-
-    # Build response
-    components = [
-        Container(
-            accent_color=GREEN_ACCENT if added_clans else RED_ACCENT,
-            components=[
-                Text(content="## ✅ **Clan Roles Updated!**" if added_clans else "## ❌ **Failed to Add Roles**"),
-                Separator(divider=True),
-            ]
-        )
-    ]
-
-    if added_clans:
-        components[0].components.extend([
-            Text(content="**Successfully Added:**"),
-            Text(content="\n".join(added_clans)),
-        ])
-
-    if failed_clans:
-        components[0].components.extend([
-            Separator(divider=True) if added_clans else Text(content=""),
-            Text(content="**Failed to Add:**"),
-            Text(content="\n".join(failed_clans)),
-        ])
-
-    components[0].components.extend([
-        ActionRow(
-            components=[
-                Button(
-                    style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"add_clan_roles:{action_id}",
-                    label="Manage Clan Roles",
-                    emoji="⚔️"
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"refresh_dashboard:{action_id}",
-                    label="Back to Dashboard",
-                    emoji="↩️"
-                )
-            ]
-        ),
-        Media(items=[MediaItem(media="assets/Green_Footer.png" if added_clans else "assets/Red_Footer.png")])
-    ])
-
-    return components
-
-
-@register_action("add_all_clans")
-@lightbulb.di.with_di
-async def add_all_clans_handler(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-        **kwargs
-) -> list:
-    """Add all available clan roles at once"""
-
-    data = await mongo.button_store.find_one({"_id": action_id})
-    if not data:
-        return [error_response("Session expired", action_id)]
-
-    user_id = data.get("user_id")
-    guild_id = data.get("guild_id")
-
-    guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
-
-    if not member:
-        return [error_response("Member not found", action_id)]
-
-    # Get all clans
-    clan_data = await mongo.clans.find().to_list(length=None)
-    clans = [Clan(data=d) for d in clan_data]
-
-    member_role_ids = set(member.role_ids)
-    added_clans = []
-    failed_clans = []
-    already_had = []
-
-    for clan in clans:
-        if not clan.role_id:
-            continue
-
-        if clan.role_id in member_role_ids:
-            already_had.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
-            continue
-
-        role = guild.get_role(clan.role_id)
-        if role:
-            try:
-                await member.add_role(role, reason="All clan roles added via recruit dashboard")
-                added_clans.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
-            except Exception:
-                failed_clans.append(clan.name)
-
-    # Build response
-    if added_clans:
-        components = [
-            Container(
-                accent_color=GREEN_ACCENT,
-                components=[
-                    Text(content="## 🌟 **All Clan Roles Added!**"),
-                    Separator(divider=True),
-                    Text(content="**Successfully Added:**"),
-                    Text(content="\n".join(added_clans)),
-                ]
-            )
-        ]
-
-        if already_had:
-            components[0].components.extend([
-                Separator(divider=True),
-                Text(content="**Already Had:**"),
-                Text(content="\n".join(already_had)),
-            ])
-
-        if failed_clans:
-            components[0].components.extend([
-                Separator(divider=True),
-                Text(content="**Failed to Add:**"),
-                Text(content="\n".join(failed_clans)),
-            ])
-    else:
-        components = [
-            Container(
-                accent_color=GOLD_ACCENT,
-                components=[
-                    Text(content="## ℹ️ **No New Roles Added**"),
-                    Text(content="Member already has all available clan roles."),
-                ]
-            )
-        ]
-
-    components[0].components.extend([
-        ActionRow(
-            components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"refresh_dashboard:{action_id}",
-                    label="Back to Dashboard",
-                    emoji="↩️"
-                )
-            ]
-        ),
-        Media(items=[MediaItem(media="assets/Green_Footer.png" if added_clans else "assets/Gold_Footer.png")])
-    ])
-
-    return components
-
-
 # Helper function for error responses
 def error_response(message: str, action_id: str) -> Container:
+    """Create an error response container"""
     return Container(
         accent_color=RED_ACCENT,
         components=[
@@ -385,8 +39,8 @@ def error_response(message: str, action_id: str) -> Container:
             ActionRow(
                 components=[
                     Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id=f"refresh_dashboard:{action_id}",
+                        style=hikari.ButtonStyle.PRIMARY,
+                        custom_id=f"back_to_dashboard:{action_id}",
                         label="Back to Dashboard",
                         emoji="↩️"
                     )
@@ -395,3 +49,413 @@ def error_response(message: str, action_id: str) -> Container:
             Media(items=[MediaItem(media="assets/Red_Footer.png")])
         ]
     )
+
+
+def build_clan_menu(
+    member: hikari.Member,
+    clans: List[Clan],
+    action_id: str,
+    accent_color: int = BLUE_ACCENT,
+    success_message: Optional[str] = None
+) -> List[Container]:
+    """Build the clan selection menu with current state"""
+    
+    # Check which clan roles the member already has
+    member_role_ids = set(member.role_ids)
+    current_clan_roles = []
+    available_clans = []
+    
+    for clan in clans:
+        if clan.role_id and clan.role_id in member_role_ids:
+            current_clan_roles.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+        elif clan.role_id:  # Only show clans with configured roles
+            available_clans.append(clan)
+    
+    # Build select menu options
+    options = []
+    for clan in available_clans:
+        kwargs = {
+            "label": clan.name,
+            "value": f"{clan.tag}:{clan.role_id}",
+            "description": f"{clan.tag}"
+        }
+        if clan.partial_emoji:
+            kwargs["emoji"] = clan.partial_emoji
+        options.append(SelectOption(**kwargs))
+    
+    # Build component list
+    component_list = [
+        Text(content=f"## ⚔️ **Set Clan Roles for {member.display_name}**"),
+        Separator(divider=True),
+    ]
+    
+    # Add success message if provided
+    if success_message:
+        component_list.append(Text(content=success_message))
+        component_list.append(Separator(divider=True))
+    
+    # Add current roles section
+    component_list.extend([
+        Text(content="### Current Clan Memberships:"),
+        Text(content="\n".join(current_clan_roles) if current_clan_roles else "_No clan roles assigned_"),
+        Separator(divider=True),
+    ])
+    
+    # Build the common button row that we'll use in all cases
+    button_row = ActionRow(
+        components=[
+            Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=f"add_all_clans:{action_id}",
+                label="Add ALL Clans",
+                emoji="🌟",
+                is_disabled=len(available_clans) == 0  # Disabled when no clans available to add
+            ),
+            Button(
+                style=hikari.ButtonStyle.DANGER,
+                custom_id=f"remove_all_clans:{action_id}",
+                label="Remove All Clan Roles",
+                emoji="🗑️",
+                is_disabled=len(current_clan_roles) == 0  # Disabled when no roles to remove
+            ),
+            Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"back_to_dashboard:{action_id}",
+                label="Back to Dashboard",
+                emoji="↩️"
+            )
+        ]
+    )
+    
+    if not options and not current_clan_roles:
+        # No clans configured at all
+        component_list.extend([
+            Text(content="**❌ No clans are configured in the database.**"),
+            button_row,
+        ])
+    elif not options:
+        # Member already has all available clan roles
+        component_list.extend([
+            Text(content="**ℹ️ This member already has all available clan roles.**"),
+            button_row,
+        ])
+    else:
+        # Show selection interface
+        component_list.extend([
+            Text(content=(
+                "**Instructions:**\n"
+                "• Select clans to add from the dropdown\n"
+                "• Existing clan roles will be kept\n"
+                "• Use 'Remove All Clan Roles' to clear all clan assignments"
+            )),
+            Separator(divider=True),
+            ActionRow(
+                components=[
+                    TextSelectMenu(
+                        custom_id=f"execute_add_clans:{action_id}",
+                        placeholder="Select clan(s) to add...",
+                        min_values=1,
+                        max_values=min(len(options), 25),  # Discord limit
+                        options=options
+                    )
+                ]
+            ),
+            button_row,
+        ])
+    
+    component_list.append(
+        Media(items=[MediaItem(media=f"assets/{accent_color == GREEN_ACCENT and 'Green' or accent_color == RED_ACCENT and 'Red' or accent_color == GOLD_ACCENT and 'Gold' or 'Blue'}_Footer.png")])
+    )
+    
+    return [Container(accent_color=accent_color, components=component_list)]
+
+
+@register_action("add_clan_roles", no_return=True)
+@lightbulb.di.with_di
+async def add_clan_roles_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        user_id: int,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Display clan role selection interface"""
+    
+    guild_id = kwargs.get("guild_id")
+    guild = bot.cache.get_guild(guild_id)
+    member = guild.get_member(user_id) if guild else None
+    
+    if not member:
+        # Member not found - refresh the dashboard to show current state
+        from .dashboard import create_dashboard_page
+        
+        # Get stored data for dashboard parameters
+        data = await mongo.button_store.find_one({"_id": action_id})
+        if not data:
+            # Can't refresh without data, just show error
+            await ctx.interaction.edit_initial_response(
+                components=[error_response("Session expired", action_id)]
+            )
+            return
+        
+        user = bot.cache.get_user(user_id)
+        recruiter = guild.get_member(data.get("recruiter_id")) if guild else None
+        
+        dashboard_components = await create_dashboard_page(
+            action_id=action_id,
+            user=user,
+            member=None,  # Pass None to show member left server
+            recruiter=recruiter,
+            bot=bot,
+            mongo=mongo,
+            guild_id=guild_id,
+            channel_id=data.get("channel_id"),
+            recruiter_id=data.get("recruiter_id")
+        )
+        
+        await ctx.interaction.edit_initial_response(components=dashboard_components)
+        return
+    
+    # Fetch all clans from database
+    clan_data = await mongo.clans.find().to_list(length=None)
+    clans = [Clan(data=d) for d in clan_data]
+    
+    components = build_clan_menu(member, clans, action_id)
+    # Edit the existing dashboard message instead of creating a new one
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("execute_add_clans", no_return=True)
+@lightbulb.di.with_di
+async def execute_add_clans_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Execute clan role assignment"""
+    
+    # Get stored data
+    data = await mongo.button_store.find_one({"_id": action_id})
+    if not data:
+        await ctx.respond("Session expired", ephemeral=True)
+        return
+    
+    user_id = data.get("user_id")
+    guild_id = data.get("guild_id")
+    
+    guild = bot.cache.get_guild(guild_id)
+    member = guild.get_member(user_id) if guild else None
+    
+    if not member:
+        await ctx.respond("Member not found", ephemeral=True)
+        return
+    
+    # Get all clans to check current roles
+    clan_data = await mongo.clans.find().to_list(length=None)
+    clans = [Clan(data=d) for d in clan_data]
+    
+    # Parse selected values
+    selected_values = ctx.interaction.values
+    selected_role_ids = set()
+    clan_by_role = {}
+    
+    for value in selected_values:
+        clan_tag, role_id = value.split(":")
+        role_id = int(role_id)
+        selected_role_ids.add(role_id)
+        
+        # Find the clan for this role
+        for clan in clans:
+            if clan.tag == clan_tag:
+                clan_by_role[role_id] = clan
+                break
+    
+    # Get all clan role IDs
+    all_clan_role_ids = {clan.role_id for clan in clans if clan.role_id}
+    
+    # Get current roles, separating clan and non-clan roles
+    current_roles = member.role_ids
+    current_clan_role_ids = {role_id for role_id in current_roles if role_id in all_clan_role_ids}
+    non_clan_roles = [role_id for role_id in current_roles if role_id not in all_clan_role_ids]
+    
+    # Calculate what needs to be added (we don't remove any existing clan roles)
+    roles_to_add = selected_role_ids - current_clan_role_ids
+    
+    # Build the final role list: non-clan roles + existing clan roles + new clan roles
+    # Important: Do NOT include @everyone role as it's managed automatically by Discord
+    final_roles = [r for r in (non_clan_roles + list(current_clan_role_ids | selected_role_ids)) if r != ctx.interaction.guild_id]
+    
+    # Track changes for display
+    added_roles = []
+    
+    for clan in clans:
+        if clan.role_id in roles_to_add:
+            added_roles.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+    
+    # Batch update all roles at once
+    if added_roles:
+        try:
+            await member.edit(roles=final_roles, reason="Clan roles added via dashboard")
+        except Exception as e:
+            # If batch fails, reset the list
+            added_roles = []
+    
+    # Create success message without heading
+    if not added_roles:
+        success_text = "Selected clans were already assigned."
+    else:
+        success_text = f"**Added:** {', '.join(added_roles)}"
+    
+    # Refresh member data and update menu
+    member = guild.get_member(user_id)
+    components = build_clan_menu(member, clans, action_id, GREEN_ACCENT, success_text)
+    
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("add_all_clans", no_return=True)
+@lightbulb.di.with_di
+async def add_all_clans_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Add all available clan roles at once"""
+    
+    data = await mongo.button_store.find_one({"_id": action_id})
+    if not data:
+        await ctx.respond("Session expired", ephemeral=True)
+        return
+    
+    user_id = data.get("user_id")
+    guild_id = data.get("guild_id")
+    
+    guild = bot.cache.get_guild(guild_id)
+    member = guild.get_member(user_id) if guild else None
+    
+    if not member:
+        await ctx.respond("Member not found", ephemeral=True)
+        return
+    
+    # Get all clans
+    clan_data = await mongo.clans.find().to_list(length=None)
+    clans = [Clan(data=d) for d in clan_data]
+    
+    # Get all clan role IDs
+    all_clan_role_ids = {clan.role_id for clan in clans if clan.role_id}
+    
+    # Get current roles
+    current_roles = member.role_ids
+    current_role_set = set(current_roles)
+    
+    # Track what will be added
+    added_clans = []
+    already_had = []
+    
+    # Determine which clan roles to add
+    roles_to_add = []
+    for clan in clans:
+        if not clan.role_id:
+            continue
+        
+        if clan.role_id in current_role_set:
+            already_had.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+        else:
+            roles_to_add.append(clan.role_id)
+            added_clans.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+    
+    # Build final role list: current roles + new clan roles (excluding @everyone)
+    final_roles = [r for r in (list(current_roles) + roles_to_add) if r != ctx.interaction.guild_id]
+    
+    # Batch update all roles at once
+    if roles_to_add:
+        try:
+            await member.edit(roles=final_roles, reason="All clan roles added via recruit dashboard")
+        except Exception:
+            # If batch fails, clear the added list
+            added_clans = []
+    
+    # Create success message without heading
+    if added_clans:
+        success_parts = [f"**Added:** {', '.join(added_clans)}"]
+        if already_had:
+            success_parts.append(f"**Already Had:** {', '.join(already_had)}")
+        success_text = "\n".join(success_parts)
+    else:
+        success_text = "Member already has all available clan roles."
+    
+    # Refresh member and update menu
+    member = guild.get_member(user_id)
+    accent = GREEN_ACCENT if added_clans else GOLD_ACCENT
+    components = build_clan_menu(member, clans, action_id, accent, success_text)
+    
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("remove_all_clans", no_return=True)
+@lightbulb.di.with_di
+async def remove_all_clans_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+):
+    """Remove all clan roles from member"""
+    
+    data = await mongo.button_store.find_one({"_id": action_id})
+    if not data:
+        await ctx.respond("Session expired", ephemeral=True)
+        return
+    
+    user_id = data.get("user_id")
+    guild_id = data.get("guild_id")
+    
+    guild = bot.cache.get_guild(guild_id)
+    member = guild.get_member(user_id) if guild else None
+    
+    if not member:
+        await ctx.respond("Member not found", ephemeral=True)
+        return
+    
+    # Get all clans
+    clan_data = await mongo.clans.find().to_list(length=None)
+    clans = [Clan(data=d) for d in clan_data]
+    
+    # Get all clan role IDs from the database
+    clan_role_ids = {clan.role_id for clan in clans if clan.role_id}
+    
+    # Calculate which roles to keep (all non-clan roles, excluding @everyone)
+    current_roles = member.role_ids
+    roles_to_keep = [role_id for role_id in current_roles if role_id not in clan_role_ids and role_id != ctx.interaction.guild_id]
+    
+    # Track which clan roles were actually removed
+    removed_roles = []
+    for clan in clans:
+        if clan.role_id and clan.role_id in current_roles:
+            removed_roles.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+    
+    # Batch update all roles at once
+    if removed_roles:
+        try:
+            await member.edit(roles=roles_to_keep, reason="Remove all clan roles via dashboard")
+        except Exception:
+            # If batch fails, we won't show any as removed
+            removed_roles = []
+    
+    # Create success message without the heading
+    if removed_roles:
+        success_text = f"**Removed:** {', '.join(removed_roles)}"
+    else:
+        success_text = "No clan roles to remove."
+    
+    # Refresh member and update menu
+    member = guild.get_member(user_id)
+    components = build_clan_menu(member, clans, action_id, GREEN_ACCENT, success_text)
+    
+    await ctx.interaction.edit_initial_response(components=components)
