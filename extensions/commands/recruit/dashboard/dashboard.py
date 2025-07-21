@@ -42,6 +42,7 @@ class RecruitDashboard(
             mongo: MongoClient = lightbulb.di.INJECTED,
             bot: hikari.GatewayBot = lightbulb.di.INJECTED
     ) -> None:
+        # Defer immediately to avoid timeout
         await ctx.defer(ephemeral=True)
 
         # Generate unique action ID for this interaction
@@ -93,9 +94,12 @@ async def create_dashboard_page(
     role_sections = []
 
     if member and mongo:
-        # Import TH_LEVELS from set_townhall
-        from .set_townhall import TH_LEVELS
-
+        # Lazy import to avoid circular dependencies
+        try:
+            from .set_townhall import TH_LEVELS
+        except ImportError:
+            TH_LEVELS = []
+            
         # Check TH roles
         th_roles = []
         for th_config in TH_LEVELS:
@@ -210,7 +214,7 @@ async def create_dashboard_page(
                         Button(
                             style=hikari.ButtonStyle.PRIMARY,
                             custom_id=f"add_clan_roles:{action_id}",
-                            label="4-Add ALL Clan Roles to Recruit",
+                            label="4-Add Clan Roles to Recruit",
                             emoji="⚔️"
                         ),
                     ]
@@ -231,8 +235,7 @@ async def create_dashboard_page(
                     items=[
                         MediaItem(media="assets/Blue_Footer.png")
                     ]
-                ),
-                Text(content=f"-# Dashboard requested by {recruiter.mention}")
+                )
             ]
         )
     ]

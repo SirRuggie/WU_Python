@@ -5,6 +5,7 @@ Handle the Add/Remove Needed Roles action from the recruit dashboard
 
 import lightbulb
 import hikari
+import asyncio
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
@@ -19,37 +20,35 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
     MessageActionRowBuilder as ActionRow,
+    SelectMenuBuilder as SelectMenu,
     TextSelectMenuBuilder as TextSelectMenu,
     SelectOptionBuilder as SelectOption,
 )
 
 # Define standard roles that should be managed for recruits
 STANDARD_ROLES = {
-    "member": {
-        "name": "Kings Alliance",
-        "id": 901627019190657024,  # You'll need to update with actual role IDs
-        "emoji": "👑",
-        "description": "Main alliance membership role"
+    "family": {
+        "name": "Family",
+        "id": 1003749467863924806,
+        "emoji": "👨‍👩‍👧‍👦",
+        "description": "Part of the Warrior family"
     },
     "recruit": {
         "name": "New Recruit",
-        "id": 901627019190657025,  # Update with actual ID
+        "id": 779277305671319572,
         "emoji": "🆕",
-        "description": "Temporary role for new members"
+        "description": "New member being onboarded"
     },
-    "notifications": {
-        "name": "Clan Notifications",
-        "id": 901627019190657026,  # Update with actual ID
-        "emoji": "🔔",
-        "description": "Receive clan announcements"
-    },
-    "war": {
-        "name": "War Participant",
-        "id": 901627019190657027,  # Update with actual ID
-        "emoji": "⚔️",
-        "description": "Participates in clan wars"
+    "strike_accepted": {
+        "name": "Strike System Accepted",
+        "id": 1003797283348946944,
+        "emoji": "✅",
+        "description": "Has accepted the strike system rules"
     }
 }
+
+# Role to remove during quick setup
+VISITOR_ROLE_ID = 1003796476750745751
 
 
 @register_action("manage_roles")
@@ -67,6 +66,10 @@ async def manage_roles_handler(
     guild_id = kwargs.get("guild_id")
     guild = bot.cache.get_guild(guild_id)
     member = guild.get_member(user_id) if guild else None
+    
+    # Get feedback messages from kwargs
+    added_roles = kwargs.get("added_roles", [])
+    removed_roles = kwargs.get("removed_roles", [])
 
     if not member:
         return [
@@ -93,8 +96,7 @@ async def manage_roles_handler(
     # Get member's current roles
     member_role_ids = set(member.role_ids)
 
-    # Build role options for the select menu
-    options = []
+    # Build role lists for display
     current_roles = []
     available_roles = []
 
@@ -103,79 +105,88 @@ async def manage_roles_handler(
         role = guild.get_role(role_id) if guild else None
 
         if role:
-            option = SelectOption(
-                label=role_info["name"],
-                value=f"{role_key}:{role_id}",
-                description=role_info["description"],
-                emoji=role_info["emoji"]
-            )
-
             if role_id in member_role_ids:
                 current_roles.append(f"{role_info['emoji']} {role_info['name']}")
             else:
                 available_roles.append(f"{role_info['emoji']} {role_info['name']}")
 
-            options.append(option)
+    # Build components list
+    container_components = [
+        Text(content=f"## 👤 **Manage Roles for {member.display_name}**"),
+    ]
+    
+    # Add feedback messages if any
+    if added_roles or removed_roles:
+        feedback_parts = []
+        if added_roles:
+            feedback_parts.append(f"**✅ Added:** {', '.join(added_roles)}")
+        if removed_roles:
+            feedback_parts.append(f"**❌ Removed:** {', '.join(removed_roles)}")
+        
+        container_components.extend([
+            Separator(divider=True),
+            Text(content="\n".join(feedback_parts)),
+        ])
+    
+    container_components.extend([
+        Separator(divider=True),
 
+        # Current roles display
+        Text(content="### ✅ Current Roles:"),
+        Text(content="\n".join(current_roles) if current_roles else "_No standard roles assigned_"),
+
+        Separator(divider=True),
+
+        # Available roles display
+        Text(content="### 📋 Available Roles:"),
+        Text(content="\n".join(available_roles) if available_roles else "_All standard roles assigned_"),
+
+        Separator(divider=True),
+
+        # Action buttons
+        Text(content="**Choose an action:**"),
+        ActionRow(
+            components=[
+                Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"add_roles:{action_id}",
+                    label="Add Roles",
+                    emoji="➕"
+                ),
+                Button(
+                    style=hikari.ButtonStyle.DANGER,
+                    custom_id=f"remove_roles:{action_id}",
+                    label="Remove Roles",
+                    emoji="➖",
+                    is_disabled=len(member_role_ids) <= 1  # Only @everyone role
+                ),
+                Button(
+                    style=hikari.ButtonStyle.PRIMARY,
+                    custom_id=f"quick_setup:{action_id}",
+                    label="Quick Setup",
+                    emoji="⚡"
+                ),
+            ]
+        ),
+        ActionRow(
+            components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"refresh_dashboard:{action_id}",
+                    label="Back to Dashboard",
+                    emoji="↩️"
+                )
+            ]
+        ),
+
+        Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+    ])
+    
     # Build the interface
     components = [
         Container(
             accent_color=BLUE_ACCENT,
-            components=[
-                Text(content=f"## 👤 **Manage Roles for {member.display_name}**"),
-                Separator(divider=True),
-
-                # Current roles display
-                Text(content="### ✅ Current Roles:"),
-                Text(content="\n".join(current_roles) if current_roles else "_No standard roles assigned_"),
-
-                Separator(divider=True),
-
-                # Available roles display
-                Text(content="### 📋 Available Roles:"),
-                Text(content="\n".join(available_roles) if available_roles else "_All standard roles assigned_"),
-
-                Separator(divider=True),
-
-                # Action buttons
-                Text(content="**Choose an action:**"),
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SUCCESS,
-                            custom_id=f"add_roles:{action_id}",
-                            label="Add Roles",
-                            emoji="➕",
-                            is_disabled=len(available_roles) == 0
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.DANGER,
-                            custom_id=f"remove_roles:{action_id}",
-                            label="Remove Roles",
-                            emoji="➖",
-                            is_disabled=len(current_roles) == 0
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.PRIMARY,
-                            custom_id=f"quick_setup:{action_id}",
-                            label="Quick Setup",
-                            emoji="⚡"
-                        ),
-                    ]
-                ),
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            custom_id=f"refresh_dashboard:{action_id}",
-                            label="Back to Dashboard",
-                            emoji="↩️"
-                        )
-                    ]
-                ),
-
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")])
-            ]
+            components=container_components
         )
     ]
 
@@ -191,7 +202,7 @@ async def add_roles_handler(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ) -> list:
-    """Show role addition interface"""
+    """Show role addition interface with native role select menu"""
 
     # Get stored data
     data = await mongo.button_store.find_one({"_id": action_id})
@@ -207,60 +218,21 @@ async def add_roles_handler(
     if not member:
         return [error_response("Member not found", action_id)]
 
-    # Build available roles for selection
-    member_role_ids = set(member.role_ids)
-    options = []
-
-    for role_key, role_info in STANDARD_ROLES.items():
-        role_id = role_info["id"]
-        if role_id not in member_role_ids:
-            role = guild.get_role(role_id)
-            if role:
-                options.append(
-                    SelectOption(
-                        label=role_info["name"],
-                        value=f"{role_key}:{role_id}",
-                        description=role_info["description"],
-                        emoji=role_info["emoji"]
-                    )
-                )
-
-    if not options:
-        return [
-            Container(
-                accent_color=GOLD_ACCENT,
-                components=[
-                    Text(content="## ℹ️ **All Roles Assigned**"),
-                    Text(content="This member already has all standard roles."),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                custom_id=f"manage_roles:{action_id}",
-                                label="Back to Role Management",
-                                emoji="↩️"
-                            )
-                        ]
-                    ),
-                    Media(items=[MediaItem(media="assets/Gold_Footer.png")])
-                ]
-            )
-        ]
-
     return [
         Container(
             accent_color=GREEN_ACCENT,
             components=[
                 Text(content="## ➕ **Add Roles**"),
                 Text(content="Select roles to add to the member:"),
+                Text(content="-# You can search for roles by typing their name"),
                 ActionRow(
                     components=[
-                        TextSelectMenu(
+                        SelectMenu(
+                            type=hikari.ComponentType.ROLE_SELECT_MENU,
                             custom_id=f"execute_add_roles:{action_id}",
                             placeholder="Select roles to add...",
                             min_values=1,
-                            max_values=len(options),
-                            options=options
+                            max_values=25,  # Discord's maximum
                         )
                     ]
                 ),
@@ -289,15 +261,15 @@ async def remove_roles_handler(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ) -> list:
-    """Show role removal interface"""
+    """Show role removal interface with paginated role list"""
 
-    # Similar to add_roles but for removing
     data = await mongo.button_store.find_one({"_id": action_id})
     if not data:
         return [error_response("Session expired", action_id)]
 
     user_id = data.get("user_id")
     guild_id = data.get("guild_id")
+    page = kwargs.get("page", 0)  # Get current page from kwargs
 
     guild = bot.cache.get_guild(guild_id)
     member = guild.get_member(user_id) if guild else None
@@ -305,31 +277,27 @@ async def remove_roles_handler(
     if not member:
         return [error_response("Member not found", action_id)]
 
-    # Build current roles for selection
-    member_role_ids = set(member.role_ids)
-    options = []
+    # Build list of removable roles
+    removable_roles = []
+    member_roles = sorted(
+        [guild.get_role(role_id) for role_id in member.role_ids if guild.get_role(role_id)],
+        key=lambda r: r.position,
+        reverse=True
+    )
+    
+    for role in member_roles:
+        # Skip @everyone role and managed roles (bot roles)
+        if role.id == guild_id or role.is_managed:
+            continue
+        removable_roles.append(role)
 
-    for role_key, role_info in STANDARD_ROLES.items():
-        role_id = role_info["id"]
-        if role_id in member_role_ids:
-            role = guild.get_role(role_id)
-            if role:
-                options.append(
-                    SelectOption(
-                        label=role_info["name"],
-                        value=f"{role_key}:{role_id}",
-                        description=role_info["description"],
-                        emoji=role_info["emoji"]
-                    )
-                )
-
-    if not options:
+    if not removable_roles:
         return [
             Container(
                 accent_color=GOLD_ACCENT,
                 components=[
                     Text(content="## ℹ️ **No Roles to Remove**"),
-                    Text(content="This member doesn't have any standard roles."),
+                    Text(content="This member doesn't have any removable roles."),
                     ActionRow(
                         components=[
                             Button(
@@ -345,12 +313,34 @@ async def remove_roles_handler(
             )
         ]
 
-    return [
+    # Pagination logic
+    roles_per_page = 25
+    total_pages = (len(removable_roles) + roles_per_page - 1) // roles_per_page
+    page = max(0, min(page, total_pages - 1))  # Ensure page is within bounds
+    
+    start_idx = page * roles_per_page
+    end_idx = start_idx + roles_per_page
+    page_roles = removable_roles[start_idx:end_idx]
+    
+    # Build options for the current page
+    options = []
+    for role in page_roles:
+        options.append(
+            SelectOption(
+                label=role.name[:100],
+                value=str(role.id),
+                description=f"Position: {role.position}",
+                emoji="🏷️"
+            )
+        )
+
+    components = [
         Container(
             accent_color=RED_ACCENT,
             components=[
                 Text(content="## ➖ **Remove Roles**"),
                 Text(content="Select roles to remove from the member:"),
+                Text(content=f"-# Page {page + 1} of {total_pages} • Showing {len(page_roles)} of {len(removable_roles)} roles"),
                 ActionRow(
                     components=[
                         TextSelectMenu(
@@ -362,20 +352,48 @@ async def remove_roles_handler(
                         )
                     ]
                 ),
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            custom_id=f"manage_roles:{action_id}",
-                            label="Cancel",
-                            emoji="❌"
-                        )
-                    ]
-                ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")])
             ]
         )
     ]
+    
+    # Add navigation buttons if there are multiple pages
+    nav_buttons = []
+    
+    if page > 0:
+        nav_buttons.append(
+            Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"remove_roles_page:{action_id}:{page-1}",
+                label="Previous",
+                emoji="◀️"
+            )
+        )
+    
+    nav_buttons.append(
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"manage_roles:{action_id}",
+            label="Cancel",
+            emoji="❌"
+        )
+    )
+    
+    if page < total_pages - 1:
+        nav_buttons.append(
+            Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"remove_roles_page:{action_id}:{page+1}",
+                label="Next",
+                emoji="▶️"
+            )
+        )
+    
+    components[0].components.extend([
+        ActionRow(components=nav_buttons),
+        Media(items=[MediaItem(media="assets/Red_Footer.png")])
+    ])
+
+    return components
 
 
 @register_action("quick_setup")
@@ -387,7 +405,7 @@ async def quick_setup_handler(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ) -> list:
-    """Quick setup - adds all standard recruit roles at once"""
+    """Quick setup - adds standard recruit roles and removes visitor role"""
 
     data = await mongo.button_store.find_one({"_id": action_id})
     if not data:
@@ -405,7 +423,9 @@ async def quick_setup_handler(
     # Add all standard roles
     added_roles = []
     failed_roles = []
+    removed_roles = []
 
+    # Add standard roles
     for role_key, role_info in STANDARD_ROLES.items():
         role_id = role_info["id"]
         role = guild.get_role(role_id)
@@ -413,67 +433,174 @@ async def quick_setup_handler(
         if role and role_id not in member.role_ids:
             try:
                 await member.add_role(role, reason="Recruit dashboard quick setup")
-                added_roles.append(f"{role_info['emoji']} {role_info['name']}")
+                added_roles.append(role_info['name'])
             except Exception:
-                failed_roles.append(f"{role_info['emoji']} {role_info['name']}")
+                failed_roles.append(role_info['name'])
+    
+    # Remove visitor role if they have it
+    visitor_role = guild.get_role(VISITOR_ROLE_ID)
+    if visitor_role and VISITOR_ROLE_ID in member.role_ids:
+        try:
+            await member.remove_role(visitor_role, reason="Recruit dashboard quick setup - removing visitor role")
+            removed_roles.append(visitor_role.name)
+        except Exception:
+            failed_roles.append(f"Failed to remove: {visitor_role.name}")
+    
+    # Wait a moment for Discord to update
+    await asyncio.sleep(0.5)
 
-    # Build response
-    if added_roles:
-        components = [
-            Container(
-                accent_color=GREEN_ACCENT,
-                components=[
-                    Text(content="## ✅ **Quick Setup Complete!**"),
-                    Separator(divider=True),
-                    Text(content="**Added Roles:**"),
-                    Text(content="\n".join(added_roles)),
-                ]
-            )
-        ]
+    # Refresh the manage roles view to show updated roles
+    return await manage_roles_handler(
+        ctx=ctx,
+        action_id=action_id,
+        user_id=user_id,
+        mongo=mongo,
+        bot=bot,
+        guild_id=guild_id,
+        added_roles=added_roles,
+        removed_roles=removed_roles
+    )
 
-        if failed_roles:
-            components[0].components.extend([
-                Separator(divider=True),
-                Text(content="**Failed to Add:**"),
-                Text(content="\n".join(failed_roles))
-            ])
 
-        components[0].components.extend([
-            ActionRow(
-                components=[
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id=f"manage_roles:{action_id}",
-                        label="Back to Role Management",
-                        emoji="↩️"
-                    )
-                ]
-            ),
-            Media(items=[MediaItem(media="assets/Green_Footer.png")])
-        ])
-    else:
-        components = [
-            Container(
-                accent_color=GOLD_ACCENT,
-                components=[
-                    Text(content="## ℹ️ **No Changes Made**"),
-                    Text(content="Member already has all standard roles."),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                custom_id=f"manage_roles:{action_id}",
-                                label="Back to Role Management",
-                                emoji="↩️"
-                            )
-                        ]
-                    ),
-                    Media(items=[MediaItem(media="assets/Gold_Footer.png")])
-                ]
-            )
-        ]
+@register_action("execute_add_roles")
+@lightbulb.di.with_di
+async def execute_add_roles_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+) -> list:
+    """Execute the role addition and refresh the manage roles view"""
+    
+    data = await mongo.button_store.find_one({"_id": action_id})
+    if not data:
+        return [error_response("Session expired", action_id)]
 
-    return components
+    user_id = data.get("user_id")
+    guild_id = data.get("guild_id")
+
+    guild = bot.cache.get_guild(guild_id)
+    member = guild.get_member(user_id) if guild else None
+
+    if not member:
+        return [error_response("Member not found", action_id)]
+
+    # Get selected role IDs from the interaction
+    selected_values = ctx.interaction.values
+    added_roles = []
+
+    for role_id in selected_values:
+        # Role select menu provides role IDs as integers already
+        role = guild.get_role(role_id)
+        
+        if role and role_id not in member.role_ids:
+            try:
+                await member.add_role(role, reason=f"Added via recruit dashboard by {ctx.user.username}")
+                added_roles.append(role.name)
+            except Exception:
+                pass  # Silently handle errors
+
+    # Wait a moment for Discord to update
+    await asyncio.sleep(0.5)
+    
+    # Refresh the manage roles view
+    return await manage_roles_handler(
+        ctx=ctx,
+        action_id=action_id,
+        user_id=user_id,
+        mongo=mongo,
+        bot=bot,
+        guild_id=guild_id,
+        added_roles=added_roles
+    )
+
+
+@register_action("execute_remove_roles")
+@lightbulb.di.with_di
+async def execute_remove_roles_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+) -> list:
+    """Execute the role removal and refresh the manage roles view"""
+    
+    data = await mongo.button_store.find_one({"_id": action_id})
+    if not data:
+        return [error_response("Session expired", action_id)]
+
+    user_id = data.get("user_id")
+    guild_id = data.get("guild_id")
+
+    guild = bot.cache.get_guild(guild_id)
+    member = guild.get_member(user_id) if guild else None
+
+    if not member:
+        return [error_response("Member not found", action_id)]
+
+    # Get selected role IDs from the interaction
+    selected_values = ctx.interaction.values
+    removed_roles = []
+
+    for role_id_str in selected_values:
+        # TextSelectMenu provides role IDs as strings
+        role_id = int(role_id_str)
+        role = guild.get_role(role_id)
+        
+        if role and role_id in member.role_ids:
+            try:
+                await member.remove_role(role, reason=f"Removed via recruit dashboard by {ctx.user.username}")
+                removed_roles.append(role.name)
+            except Exception:
+                pass  # Silently handle errors
+
+    # Wait a moment for Discord to update
+    await asyncio.sleep(0.5)
+    
+    # Refresh the manage roles view
+    return await manage_roles_handler(
+        ctx=ctx,
+        action_id=action_id,
+        user_id=user_id,
+        mongo=mongo,
+        bot=bot,
+        guild_id=guild_id,
+        removed_roles=removed_roles
+    )
+
+
+@register_action("remove_roles_page")
+@lightbulb.di.with_di
+async def remove_roles_page_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs
+) -> list:
+    """Handle pagination for remove roles"""
+    
+    # Extract the page number from the custom_id
+    # Format: remove_roles_page:action_id:page_number
+    parts = ctx.interaction.custom_id.split(":")
+    page = int(parts[2])
+    
+    # Get the stored data
+    data = await mongo.button_store.find_one({"_id": action_id})
+    if not data:
+        return [error_response("Session expired", action_id)]
+    
+    # Call remove_roles_handler with the page parameter
+    return await remove_roles_handler(
+        ctx=ctx,
+        action_id=action_id,
+        mongo=mongo,
+        bot=bot,
+        page=page,
+        **data
+    )
 
 
 # Helper function for error responses

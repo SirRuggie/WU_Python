@@ -1,3 +1,27 @@
+# Environment files
 .env
+*.venv.env
+
+# IDE
 *.idea
-*.venv
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local files
+todo.md
+CLAUDE.md
+kill_bots.bat
