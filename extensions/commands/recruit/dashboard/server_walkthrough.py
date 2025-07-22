@@ -399,8 +399,8 @@ async def execute_walkthrough_sequence(member: hikari.Member, guild: hikari.Guil
                         Text(content="## ⚔️ **Help me attack this base!**"),
                         Text(content=(
                             "Having doubts or concerns on a base you're going to attack? You have a few choices...\n\n"
-                            "**1)** Take a screenshot of the Base you wish to get info on. Use `/scan` and add the pic into the command.\n"
-                            "_signing up to Burntbase might be required for first time use_\n\n"
+                            "**1)** Take a screenshot of the Base you wish to get info on. \n"
+                            "Use Find This Base <:FTB:1397098130792775781> `/scan` and add the pic into the command.\n\n"
                             "**2)** Bring a screenshot here and ping the\n"
                             "<@&1006460305464905808>\n"
                             "Role for one-on-one help.\n\n"

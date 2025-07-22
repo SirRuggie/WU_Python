@@ -29,14 +29,16 @@ class Emojis:
         self.purple_arrow_right = EmojiType("<:Arrow_Purple:1395727972165488742>")
         self.red_arrow_right = EmojiType("<:Arrow_Red:1395728030705520702>")
         self.gold_arrow_right = EmojiType("<:Arrow_Gold:1395728112725266492>")
+        self.yes = EmojiType("<:Yes:1397096942907166831>")
+        self.no = EmojiType("<:No:1397096986506825778>")
+        self.maybe = EmojiType("<a:Maybe:1397097100256219267>")
 
         #NEEDS UPDATE
         self.add = EmojiType("<:Add:1387844836916199466>")
         self.remove = EmojiType("<:Remove:1387844866008027229>")
         self.edit = EmojiType("<:Edit:1387850342473011481>")
         self.view = EmojiType("<:View:1387842874053234808>")
-        self.confirm = EmojiType("<:Confirm:1387845018139754517>")
-        self.cancel = EmojiType("<:Cancel:1387845041845698652>")
+
         self.BulletPoint = EmojiType("<:BulletPoint:1393247569970331688>")
         self.RedGem = EmojiType("<:Red_Gem:1387846215022022656>")
         self.PurpleGem = EmojiType("<:Purple_Gem:1387846189852135495>")

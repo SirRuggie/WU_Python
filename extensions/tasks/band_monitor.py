@@ -21,6 +21,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GREEN_ACCENT
+from utils.emoji import emojis
 
 loader = lightbulb.Loader()
 
@@ -142,9 +143,9 @@ async def send_war_sync_to_discord(post):
                     "corresponding button below:"
                 )),
                 Separator(divider=True),
-                Text(content="✅ - If you are available to start."),
-                Text(content="📅 - If you may be available to start."),
-                Text(content="❌ - If you are unavailable to start."),
+                Text(content=f"{str(emojis.yes)} - If you are available to start."),
+                Text(content=f"{str(emojis.maybe)} - If you may be available to start."),
+                Text(content=f"{str(emojis.no)} - If you are unavailable to start."),
                 Separator(divider=True),
                 Text(content=(
                     "*Please note that if your availability changes, you can update your response by "
@@ -158,19 +159,19 @@ async def send_war_sync_to_discord(post):
                         Button(
                             style=hikari.ButtonStyle.SUCCESS,
                             label="Yes",
-                            emoji="✅",
+                            emoji=emojis.yes.partial_emoji,
                             custom_id=f"war_response:yes_{message_id}"
                         ),
                         Button(
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Maybe",
-                            emoji="📅",
+                            emoji=emojis.maybe.partial_emoji,
                             custom_id=f"war_response:maybe_{message_id}"
                         ),
                         Button(
                             style=hikari.ButtonStyle.DANGER,
                             label="No",
-                            emoji="❌",
+                            emoji=emojis.no.partial_emoji,
                             custom_id=f"war_response:no_{message_id}"
                         ),
                     ]
@@ -248,11 +249,14 @@ async def on_war_response(
     # Build response text
     response_lines = []
     if yes_users:
-        response_lines.append(f"✅ **Available** - {', '.join(yes_users)}")
+        for user in yes_users:
+            response_lines.append(f"{str(emojis.yes)} **Available** - {user}")
     if maybe_users:
-        response_lines.append(f"📅 **Maybe** - {', '.join(maybe_users)}")
+        for user in maybe_users:
+            response_lines.append(f"{str(emojis.maybe)} **Maybe** - {user}")
     if no_users:
-        response_lines.append(f"❌ **Unavailable** - {', '.join(no_users)}")
+        for user in no_users:
+            response_lines.append(f"{str(emojis.no)} **Unavailable** - {user}")
 
     if not response_lines:
         response_lines.append("*No responses yet...*")
@@ -279,9 +283,9 @@ async def on_war_response(
                     "corresponding button below:"
                 )),
                 Separator(divider=True),
-                Text(content="✅ - If you are available to start."),
-                Text(content="📅 - If you may be available to start."),
-                Text(content="❌ - If you are unavailable to start."),
+                Text(content=f"{str(emojis.yes)} - If you are available to start."),
+                Text(content=f"{str(emojis.maybe)} - If you may be available to start."),
+                Text(content=f"{str(emojis.no)} - If you are unavailable to start."),
                 Separator(divider=True),
                 Text(content=(
                     "*Please note that if your availability changes, you can update your response by "
@@ -295,19 +299,19 @@ async def on_war_response(
                         Button(
                             style=hikari.ButtonStyle.SUCCESS,
                             label="Yes",
-                            emoji="✅",
+                            emoji=emojis.yes.partial_emoji,
                             custom_id=f"war_response:yes_{message_id}"
                         ),
                         Button(
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Maybe",
-                            emoji="📅",
+                            emoji=emojis.maybe.partial_emoji,
                             custom_id=f"war_response:maybe_{message_id}"
                         ),
                         Button(
                             style=hikari.ButtonStyle.DANGER,
                             label="No",
-                            emoji="❌",
+                            emoji=emojis.no.partial_emoji,
                             custom_id=f"war_response:no_{message_id}"
                         ),
                     ]
@@ -320,7 +324,7 @@ async def on_war_response(
     await ctx.interaction.edit_initial_response(components=components)
 
     # Send confirmation to user
-    emoji_map = {"yes": "✅", "maybe": "📅", "no": "❌"}
+    emoji_map = {"yes": str(emojis.yes), "maybe": str(emojis.maybe), "no": str(emojis.no)}
     await ctx.respond(
         f"{emoji_map[response_type]} Your response has been recorded!",
         ephemeral=True
@@ -516,3 +520,37 @@ class TestBandAPI(
                 )
         else:
             await ctx.edit_last_response("❌ **Failed to connect to BAND API!** Check logs for details.")
+
+
+@loader.command
+class TestWarSync(
+    lightbulb.SlashCommand,
+    name="test-war-sync",
+    description="Test the war sync notification with custom emojis",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        await ctx.respond("🚀 Sending test war sync notification...", ephemeral=True)
+        
+        # Create a dummy post for testing
+        test_post = {
+            'author': {
+                'name': 'Test FWA Rep'
+            },
+            'content': 'TEST WAR SYNC - This is a test notification to verify custom emojis are working correctly.',
+            'post_key': 'test_' + str(datetime.now().timestamp())
+        }
+        
+        try:
+            # Call the send function directly
+            await send_war_sync_to_discord(test_post)
+            await ctx.edit_last_response(
+                f"✅ **Test war sync sent!**\n"
+                f"Check <#{NOTIFICATION_CHANNEL_ID}> to see the notification and test the buttons."
+            )
+        except Exception as e:
+            await ctx.edit_last_response(
+                f"❌ **Failed to send test notification!**\n"
+                f"Error: {str(e)}"
+            )
