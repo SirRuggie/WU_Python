@@ -22,10 +22,10 @@ from hikari.impl import (
 from utils.mongo import MongoClient
 from utils.constants import BLUE_ACCENT
 from extensions.components import register_action
-from extensions.commands.tickets import loader, tickets
+from extensions.commands.tickets import loader, ticket
 
 
-@tickets.register()
+@ticket.register()
 class ListTickets(
     lightbulb.SlashCommand,
     name="list",
@@ -131,7 +131,7 @@ class ListTickets(
         )
 
 
-@tickets.register()
+@ticket.register()
 class Dashboard(
     lightbulb.SlashCommand,
     name="dashboard",

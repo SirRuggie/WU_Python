@@ -17,7 +17,7 @@ from hikari.impl import (
 
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT
-from extensions.commands.tickets import loader, tickets
+from extensions.commands.tickets import loader, ticket
 
 # Default configuration values (same as in handlers.py)
 DEFAULT_MAIN_CATEGORY = 1395400463897202738
@@ -25,7 +25,7 @@ DEFAULT_FWA_CATEGORY = 1395653165470191667
 DEFAULT_ADMIN_TO_NOTIFY = 505227988229554179
 
 
-@tickets.register()
+@ticket.register()
 class Config(
     lightbulb.SlashCommand,
     name="config",
@@ -128,7 +128,7 @@ class Config(
             await ctx.respond(config_text, ephemeral=True)
 
 
-@tickets.register()
+@ticket.register()
 class ChangeCategory(
     lightbulb.SlashCommand,
     name="change-category",
@@ -222,7 +222,7 @@ class ChangeCategory(
         )
 
 
-@tickets.register()
+@ticket.register()
 class ResetCounter(
     lightbulb.SlashCommand,
     name="reset-counter",

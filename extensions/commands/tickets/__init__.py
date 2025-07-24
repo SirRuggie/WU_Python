@@ -4,7 +4,7 @@ from utils.mongo import MongoClient
 import hikari
 
 loader = lightbulb.Loader()
-tickets = lightbulb.Group("tickets", "Warriors United ticket system commands")
+ticket = lightbulb.Group("ticket", "Warriors United ticket system commands")
 
 # Store config globally for all ticket modules
 ticket_config = None
@@ -47,7 +47,7 @@ from . import manage
 from . import handlers
 from . import close
 
-# Register the tickets group with the loader
-loader.command(tickets)
+# Register the ticket group with the loader
+loader.command(ticket)
 
-__all__ = ["loader", "tickets", "ticket_config"]
+__all__ = ["loader", "ticket", "ticket_config"]

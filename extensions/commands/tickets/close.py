@@ -1,6 +1,6 @@
 # extensions/commands/tickets/close.py
 """
-Ticket closing functionality
+Ticket deny/approve functionality
 """
 
 import hikari
@@ -9,18 +9,34 @@ from datetime import datetime, timezone
 import asyncio
 
 from utils.mongo import MongoClient
-from extensions.commands.tickets import loader, tickets
+from extensions.commands.tickets import loader, ticket
+import re
 
 
-@tickets.register()
-class Close(
+def get_channel_name_with_new_emoji(channel_name: str, new_emoji: str) -> str:
+    """Replace the emoji prefix in a channel name with a new emoji"""
+    # Common ticket emojis to look for
+    ticket_emojis = ["🆕", "❌", "✅"]
+    
+    # Check if the channel name starts with any of the ticket emojis
+    for emoji in ticket_emojis:
+        if channel_name.startswith(emoji):
+            # Replace the old emoji with the new one
+            return new_emoji + channel_name[len(emoji):]
+    
+    # If no emoji found, just prepend the new emoji
+    return new_emoji + channel_name
+
+
+@ticket.register()
+class Deny(
     lightbulb.SlashCommand,
-    name="close",
-    description="Close a ticket (Admin/Recruiter only)"
+    name="deny",
+    description="Deny a ticket (Admin/Recruiter only)"
 ):
     user = lightbulb.user(
         "user",
-        "User whose ticket to close (optional - closes current channel if not specified)",
+        "User whose ticket to deny (optional - denies current channel if not specified)",
         default=None
     )
 
@@ -32,7 +48,7 @@ class Close(
             mongo: MongoClient = lightbulb.di.INJECTED,
             bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     ) -> None:
-        """Close a ticket"""
+        """Deny a ticket"""
 
         # Defer the response immediately to avoid timeout
         await ctx.defer(ephemeral=True)
@@ -52,25 +68,24 @@ class Close(
 
         if not is_authorized:
             await ctx.respond(
-                "❌ You must be a recruiter or administrator to close tickets!"
+                "❌ You must be a recruiter or administrator to deny tickets!"
             )
             return
 
-        # Determine which ticket to close
+        # Determine which ticket to deny
         if self.user:
-            # Close specific user's tickets
+            # Deny specific user's tickets
             user_id = self.user.id
 
-            # Find all open tickets for this user
+            # Find all tickets for this user
             tickets_to_close = await mongo.button_store.find({
                 "type": "ticket",
-                "user_id": user_id,
-                "status": "open"
+                "user_id": user_id
             }).to_list(length=None)
 
             if not tickets_to_close:
                 await ctx.respond(
-                    f"❌ No open tickets found for <@{user_id}>"
+                    f"❌ No tickets found for <@{user_id}>"
                 )
                 return
 
@@ -80,96 +95,91 @@ class Close(
                     {"_id": ticket["_id"]},
                     {
                         "$set": {
-                            "status": "closed",
-                            "closed_at": datetime.now(timezone.utc),
-                            "closed_by": ctx.user.id
+                            "status": "denied",
+                            "denied_at": datetime.now(timezone.utc),
+                            "denied_by": ctx.user.id
                         }
                     }
                 )
 
-                # Rename the channel from ✅ to ❌
+                # Rename the channel to have ❌ prefix
                 try:
-                    ticket_type = ticket.get("ticket_type", "main")
-                    ticket_number = ticket.get("ticket_number", 0)
-                    username = ticket.get("username", "unknown")
-                    new_name = f"❌{ticket_type}-{ticket_number}-{username}"
+                    channel = await bot.rest.fetch_channel(ticket["channel_id"])
+                    new_name = get_channel_name_with_new_emoji(channel.name, "❌")
 
                     await bot.rest.edit_channel(
                         ticket["channel_id"],
                         name=new_name,
-                        reason=f"Ticket closed by {ctx.user.username}"
+                        reason=f"Ticket denied by {ctx.user.username}"
                     )
                     await asyncio.sleep(1)
                 except Exception as e:
                     print(f"[Tickets] Failed to rename channel {ticket.get('channel_id')}: {e}")
 
             await ctx.respond(
-                f"✅ Closed {len(tickets_to_close)} ticket(s) for <@{user_id}>"
+                f"✅ Denied {len(tickets_to_close)} ticket(s) for <@{user_id}>"
             )
 
         else:
-            # Close ticket in current channel
+            # Deny ticket in current channel
             current_channel_id = ctx.channel_id
 
             # Find ticket for this channel
             ticket = await mongo.button_store.find_one({
                 "type": "ticket",
-                "channel_id": current_channel_id,
-                "status": "open"
+                "channel_id": current_channel_id
             })
 
             if not ticket:
                 await ctx.respond(
-                    "❌ This channel is not an open ticket!"
+                    "❌ This channel is not a ticket!"
                 )
                 return
 
-            # Close the ticket
+            # Deny the ticket
             await mongo.button_store.update_one(
                 {"_id": ticket["_id"]},
                 {
                     "$set": {
-                        "status": "closed",
-                        "closed_at": datetime.now(timezone.utc),
-                        "closed_by": ctx.user.id
+                        "status": "denied",
+                        "denied_at": datetime.now(timezone.utc),
+                        "denied_by": ctx.user.id
                     }
                 }
             )
 
-            # Rename the channel from ✅ to ❌
+            # Rename the channel to have ❌ prefix
             try:
-                ticket_type = ticket.get("ticket_type", "main")
-                ticket_number = ticket.get("ticket_number", 0)
-                username = ticket.get("username", "unknown")
-                new_name = f"❌{ticket_type}-{ticket_number}-{username}"
+                channel = await bot.rest.fetch_channel(current_channel_id)
+                new_name = get_channel_name_with_new_emoji(channel.name, "❌")
 
                 await bot.rest.edit_channel(
                     current_channel_id,
                     name=new_name,
-                    reason=f"Ticket closed by {ctx.user.username}"
+                    reason=f"Ticket denied by {ctx.user.username}"
                 )
 
                 # Small delay to respect rate limits
                 await asyncio.sleep(1)
 
                 await ctx.respond(
-                    "✅ Ticket closed! The channel has been marked as closed."
+                    "✅ Ticket denied! The channel has been marked as denied."
                 )
             except Exception as e:
                 await ctx.respond(
-                    f"✅ Ticket closed in database, but failed to rename channel: {str(e)}"
+                    f"✅ Ticket denied in database, but failed to rename channel: {str(e)}"
                 )
 
 
-@tickets.register()
-class Reopen(
+@ticket.register()
+class Approve(
     lightbulb.SlashCommand,
-    name="reopen",
-    description="Reopen a closed ticket (Admin/Recruiter only)"
+    name="approve",
+    description="Approve a denied ticket (Admin/Recruiter only)"
 ):
     user = lightbulb.user(
         "user",
-        "User whose ticket to reopen (optional - reopens current channel if not specified)",
+        "User whose ticket to approve (optional - approves current channel if not specified)",
         default=None
     )
 
@@ -181,7 +191,7 @@ class Reopen(
             mongo: MongoClient = lightbulb.di.INJECTED,
             bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     ) -> None:
-        """Reopen a ticket"""
+        """Approve a ticket"""
 
         # Defer the response immediately to avoid timeout
         await ctx.defer(ephemeral=True)
@@ -201,75 +211,71 @@ class Reopen(
 
         if not is_authorized:
             await ctx.respond(
-                "❌ You must be a recruiter or administrator to reopen tickets!"
+                "❌ You must be a recruiter or administrator to approve tickets!"
             )
             return
 
         if self.user:
-            # Reopen specific user's most recent closed ticket
+            # Approve specific user's most recent denied ticket
             user_id = self.user.id
 
-            # Find most recent closed ticket for this user
+            # Find most recent ticket for this user
             ticket = await mongo.button_store.find_one({
                 "type": "ticket",
-                "user_id": user_id,
-                "status": "closed"
-            }, sort=[("closed_at", -1)])
+                "user_id": user_id
+            }, sort=[("_id", -1)])
 
             if not ticket:
                 await ctx.respond(
-                    f"❌ No closed tickets found for <@{user_id}>"
+                    f"❌ No tickets found for <@{user_id}>"
                 )
                 return
 
         else:
-            # Reopen ticket in current channel
+            # Approve ticket in current channel
             current_channel_id = ctx.channel_id
 
             # Find ticket for this channel
             ticket = await mongo.button_store.find_one({
                 "type": "ticket",
-                "channel_id": current_channel_id,
-                "status": "closed"
+                "channel_id": current_channel_id
             })
 
             if not ticket:
                 await ctx.respond(
-                    "❌ This channel is not a closed ticket!"
+                    "❌ This channel is not a ticket!"
                 )
                 return
 
-        # Reopen the ticket
+        # Approve the ticket
         await mongo.button_store.update_one(
             {"_id": ticket["_id"]},
             {
                 "$set": {
-                    "status": "open",
-                    "reopened_at": datetime.now(timezone.utc),
-                    "reopened_by": ctx.user.id
+                    "status": "approved",
+                    "approved_at": datetime.now(timezone.utc),
+                    "approved_by": ctx.user.id
                 }
             }
         )
 
-        # Rename the channel from ❌ to ✅
+        # Rename the channel to have ✅ prefix
         try:
-            ticket_type = ticket.get("ticket_type", "main")
-            ticket_number = ticket.get("ticket_number", 0)
-            username = ticket.get("username", "unknown")
-            new_name = f"✅{ticket_type}-{ticket_number}-{username}"
+            channel = await bot.rest.fetch_channel(ticket["channel_id"])
+            new_name = get_channel_name_with_new_emoji(channel.name, "✅")
 
             await bot.rest.edit_channel(
                 ticket["channel_id"],
                 name=new_name,
-                reason=f"Ticket reopened by {ctx.user.username}"
+                reason=f"Ticket approved by {ctx.user.username}"
             )
 
             await ctx.respond(
-                f"✅ Ticket reopened for <@{ticket['user_id']}>!"
+                f"✅ Ticket approved for <@{ticket['user_id']}>!"
             )
         except Exception as e:
             await ctx.respond(
-                f"✅ Ticket reopened in database, but failed to rename channel: {str(e)}"
+                f"✅ Ticket approved in database, but failed to rename channel: {str(e)}"
             )
 
 
@@ -281,7 +287,7 @@ async def cleanup_orphaned_tickets(
         mongo: MongoClient = lightbulb.di.INJECTED,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
 ) -> None:
-    """Check for tickets where the channel no longer exists and mark them as closed"""
+    """Check for tickets where the channel no longer exists and mark them as denied"""
 
     # Wait a bit for bot to be fully ready
     await asyncio.sleep(5)
@@ -301,29 +307,42 @@ async def cleanup_orphaned_tickets(
 
             await asyncio.sleep(0.5)
 
-            # If channel exists but starts with ❌, mark ticket as closed
+            # If channel exists but starts with ❌, mark ticket as denied
             if channel.name.startswith("❌"):
                 await mongo.button_store.update_one(
                     {"_id": ticket["_id"]},
                     {
                         "$set": {
-                            "status": "closed",
-                            "closed_at": datetime.now(timezone.utc),
-                            "closed_reason": "channel_marked_closed"
+                            "status": "denied",
+                            "denied_at": datetime.now(timezone.utc),
+                            "denied_reason": "channel_marked_denied"
+                        }
+                    }
+                )
+                closed_count += 1
+            # If channel exists but starts with ✅, mark ticket as approved
+            elif channel.name.startswith("✅"):
+                await mongo.button_store.update_one(
+                    {"_id": ticket["_id"]},
+                    {
+                        "$set": {
+                            "status": "approved",
+                            "approved_at": datetime.now(timezone.utc),
+                            "approved_reason": "channel_marked_approved"
                         }
                     }
                 )
                 closed_count += 1
 
         except hikari.NotFoundError:
-            # Channel doesn't exist, mark ticket as closed
+            # Channel doesn't exist, mark ticket as denied
             await mongo.button_store.update_one(
                 {"_id": ticket["_id"]},
                 {
                     "$set": {
-                        "status": "closed",
-                        "closed_at": datetime.now(timezone.utc),
-                        "closed_reason": "channel_deleted"
+                        "status": "denied",
+                        "denied_at": datetime.now(timezone.utc),
+                        "denied_reason": "channel_deleted"
                     }
                 }
             )

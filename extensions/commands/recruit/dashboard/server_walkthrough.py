@@ -6,6 +6,7 @@ Handle the Server walk thru action from the recruit dashboard
 import lightbulb
 import hikari
 import asyncio
+from datetime import datetime, timezone
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
@@ -480,6 +481,18 @@ async def begin_walkthrough_handler(
 ):
     """Handle the Begin Walkthrough button from the welcome message"""
     
+    # Check if the user has the recruitment team role
+    RECRUITMENT_TEAM_ROLE_ID = 1003797104088592444
+    guild = bot.cache.get_guild(ctx.interaction.guild_id)
+    clicking_member = guild.get_member(ctx.user.id) if guild else None
+    
+    if not clicking_member or RECRUITMENT_TEAM_ROLE_ID not in clicking_member.role_ids:
+        await ctx.respond(
+            "❌ Only members of the Recruitment Team can start the walkthrough.",
+            ephemeral=True
+        )
+        return
+    
     # Parse the custom_id to get the original action_id and clan tag
     # Format: begin_walkthrough:action_id:clan_tag
     parts = ctx.interaction.custom_id.split(":")
@@ -537,6 +550,23 @@ async def begin_walkthrough_handler(
             await channel.send(components=initial_message, user_mentions=[user_id])
     except Exception as e:
         print(f"Failed to send initial walkthrough message: {e}")
+    
+    # Store walkthrough start timestamp in recruit_onboarding collection
+    walkthrough_data = {
+        "_id": f"walkthrough_{user_id}_{guild_id}",
+        "user_id": user_id,
+        "guild_id": guild_id,
+        "walkthrough_started_at": datetime.now(timezone.utc),
+        "new_recruit_role_removed": False,
+        "clan_tag": clan_tag
+    }
+    
+    # Use upsert to handle multiple walkthroughs for the same user
+    await mongo.recruit_onboarding.update_one(
+        {"_id": f"walkthrough_{user_id}_{guild_id}"},
+        {"$set": walkthrough_data},
+        upsert=True
+    )
     
     # Start the walkthrough sequence in the background
     asyncio.create_task(execute_walkthrough_sequence(member, guild, clan_doc, bot))

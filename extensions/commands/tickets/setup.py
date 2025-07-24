@@ -18,7 +18,7 @@ from hikari.impl import (
 )
 
 from utils.constants import RED_ACCENT, GOLDENROD_ACCENT
-from extensions.commands.tickets import loader, tickets
+from extensions.commands.tickets import loader, ticket
 
 
 def create_ticket_embed() -> List[Container]:
@@ -62,7 +62,7 @@ def create_ticket_embed() -> List[Container]:
     return components
 
 
-@tickets.register()
+@ticket.register()
 class Setup(
     lightbulb.SlashCommand,
     name="setup",

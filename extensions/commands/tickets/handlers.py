@@ -204,8 +204,8 @@ async def handle_create_ticket(
                 )
             )
 
-        # Create the ticket channel with new naming format: ✅{type}-{number}-{username}
-        channel_name = f"✅{ticket_prefix}-{ticket_number}-{ctx.user.username}"
+        # Create the ticket channel with new naming format: 🆕{type}-{number}-{username}
+        channel_name = f"🆕{ticket_prefix}-{ticket_number}-{ctx.user.username}"
 
         channel = await bot.rest.create_guild_text_channel(
             guild=ctx.guild_id,
@@ -276,6 +276,26 @@ async def handle_create_ticket(
                 )
             )
             print(f"[Tickets] No recruiter role configured for {ticket_type} tickets")
+
+        # Send initial message with suggested question based on ticket type
+        initial_message = ""
+        if ticket_type == "main":
+            initial_message = (
+                "Hello there 👋🏻...how you hear about Warriors United?\n\n"
+                "What was the hook that reeled you in? The thing that said \"yeah, I need to check these guys out!!!\""
+            )
+        elif ticket_type == "fwa":
+            initial_message = (
+                "Hello there 👋🏻...how you hear about our FWA Operation?\n\n"
+                "What was the hook that reeled you in? The thing that said \"yeah, I need to check these guys out!!!\""
+            )
+        
+        if initial_message:
+            await bot.rest.create_message(
+                thread.id,
+                content=initial_message
+            )
+            print(f"[Tickets] Posted initial message in thread {thread.id} for {ticket_type} ticket")
 
         # Send success message as ephemeral response
         await ctx.respond(
