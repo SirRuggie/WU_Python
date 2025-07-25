@@ -1,4 +1,5 @@
 # extensions/events/message/ticket_automation/__init__.py
+# DISABLED - 2025-07-25 - Not currently needed, using manual /recruit questions instead
 """
 Ticket automation system for recruitment process.
 """

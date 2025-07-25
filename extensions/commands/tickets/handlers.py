@@ -277,25 +277,27 @@ async def handle_create_ticket(
             )
             print(f"[Tickets] No recruiter role configured for {ticket_type} tickets")
 
-        # Send initial message with suggested question based on ticket type
-        initial_message = ""
-        if ticket_type == "main":
-            initial_message = (
-                "Hello there 👋🏻...how you hear about Warriors United?\n\n"
-                "What was the hook that reeled you in? The thing that said \"yeah, I need to check these guys out!!!\""
-            )
-        elif ticket_type == "fwa":
-            initial_message = (
-                "Hello there 👋🏻...how you hear about our FWA Operation?\n\n"
-                "What was the hook that reeled you in? The thing that said \"yeah, I need to check these guys out!!!\""
-            )
+        # Send initial messages with suggested question based on ticket type
+        first_message = ""
+        second_message = "What was the hook that reeled you in? The thing that said \"yeah, I need to check these guys out!!!\""
         
-        if initial_message:
+        if ticket_type == "main":
+            first_message = "Hello there 👋🏻...how you hear about Warriors United?"
+        elif ticket_type == "fwa":
+            first_message = "Hello there 👋🏻...how you hear about our FWA Operation?"
+        
+        if first_message:
+            # Send first message
             await bot.rest.create_message(
                 thread.id,
-                content=initial_message
+                content=first_message
             )
-            print(f"[Tickets] Posted initial message in thread {thread.id} for {ticket_type} ticket")
+            # Send second message
+            await bot.rest.create_message(
+                thread.id,
+                content=second_message
+            )
+            print(f"[Tickets] Posted initial messages in thread {thread.id} for {ticket_type} ticket")
 
         # Send success message as ephemeral response
         await ctx.respond(

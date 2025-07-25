@@ -2,6 +2,7 @@ import lightbulb
 import asyncio
 import hikari
 import re
+from datetime import datetime, timezone
 from aiohttp.web_routedef import delete
 from hikari import GatewayBot
 from hikari.api import LinkButtonBuilder
@@ -23,6 +24,7 @@ from hikari.impl import (
 from extensions.commands.recruit import recruit
 from extensions.commands.fwa.helpers import get_fwa_base_object
 from utils.constants import (
+    GOLDENROD_ACCENT,
     RED_ACCENT,
     GOLD_ACCENT,
     BLUE_ACCENT,
@@ -69,6 +71,7 @@ class RecruitQuestions(
 async def primary_questions(
     user_id: int,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
 
@@ -86,7 +89,7 @@ async def primary_questions(
     if choice == "attack_strategies":
         components = [
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"## ⚔️ **Attack Strategy Breakdown** · {user.mention}"),
                     Separator(divider=True),
@@ -102,96 +105,48 @@ async def primary_questions(
                     )),
                     Media(
                         items=[
-                            MediaItem(media="assets/Red_Footer.png"),
+                            MediaItem(media="assets/Gold_Footer.png"),
                     ]),
                     Text(content=f"-# Requested by {ctx.member.mention}"),
                 ]
             )
         ]
 
-    elif choice == "future_clan_expectations":
-        components = [
-            Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content=f"## 🔮 **Future Clan Expectations** · {user.mention}"),
-                    Separator(divider=True),
-                    Text(content=(
-                        "Help us tailor your clan experience! Please answer the following:\n\n"
-                        f"{emojis.red_arrow_right} **What do you expect from your future clan?**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} _(e.g., Active wars, good communication, strategic support._)\n\n"
-                        f"{emojis.red_arrow_right} **Minimum clan level you’re looking for?**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} _e.g. Level 5, Level 10_\n\n"
-                        f"{emojis.red_arrow_right}  **Minimum Clan Capital Hall level?**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} _e.g. CH 8 or higher_\n\n"
-                        f"{emojis.red_arrow_right} **CWL league preference?**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} _e.g. Crystal league or no preference_\n\n"
-                        f"{emojis.red_arrow_right} **Preferred playstyle?**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} Competitive\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} Casual\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} Zen _Type __What is Zen__ to learn more._\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} FWA _Type __What is FWA__ to learn more._\n"
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Red_Footer.png"),
-                    ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
-            )
-        ]
     elif choice == "discord_basic_skills":
         components = [
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"## 🎓 **Discord Basics Check** · {user.mention}"),
                     Separator(divider=True),
                     Text(
                         content=(
-                            "Hey there! Before we proceed, let's confirm you’re comfy with our core Discord features:\n\n"
-                            "1️⃣ **React** to this message with any emoji of your choice.\n"
-                            "2️⃣ **Mention** your recruiter in this thread (e.g. <@1386722406051217569>).\n\n"
-                            "*These steps help us make sure you can react and ping others; key skills for smooth clan comms!*"
+                            "We utilize three main methods to communicate within the Warriors United Server:\n\n"
+                            "1️⃣ A comment\n"
+                            "2️⃣ A ping within that comment to a specific person/role.\n"
+                            "3️⃣ An emoji reaction to a comment.\n\n"
+                            "**You've proven #1. Now prove to us you can do #2 and #3...👍🏼**\n\n"
+                            "**Click/touch the🛡below to begin.**"
                         )
                     ),
-                    Media(
-                        items=[
-                            MediaItem(media="https://c.tenor.com/oEkj7apTtT4AAAAC/tenor.gif"),
-                        ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
-            ),
-        ]
-    elif choice == "discord_basic_skills_2":
-        components = [
-            Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content=f"## 🎯 **Master Discord Communication** · {user.mention}"),
                     Separator(divider=True),
-                    Text(
-                        content=(
-                            "In **Kings**, we rely heavily on two key Discord skills:\n\n"
-                            "🔔 **Mentions** (pings) – call out a member or a role to grab attention.\n"
-                            "👍 **Reactions** – respond quickly with an emoji to acknowledge messages.\n\n"
-                            "*These are the fastest ways to keep our clan chat flowing!*"
-                        )
-                    ),
-
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Red_Footer.png"),
-                        ]),
-
                     Text(content=f"-# Requested by {ctx.member.mention}"),
                 ]
             ),
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        emoji="🛡",
+                        custom_id=f"shield_basics:{user.id}",
+                    )
+                ]
+            ),
         ]
-    elif choice == "age_bracket_&_timezone":
+    elif choice == "age_bracket":
         components = [
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"## ⏳ **What's Your Age Bracket?** · {user.mention}"),
                     Separator(divider=True),
@@ -246,7 +201,7 @@ async def primary_questions(
                         content="*Don’t worry, we’re not knocking on your door! Just helps us get to know you better. 😄👍*"),
                     Media(
                         items=[
-                            MediaItem(media="assets/Red_Footer.png"),
+                            MediaItem(media="assets/Gold_Footer.png"),
                         ]),
                     Text(content=f"-# Requested by {ctx.member.mention}"),
                 ]
@@ -276,12 +231,14 @@ async def primary_questions(
                 ]
             )
         ]
-    await bot.rest.create_message(
+    message = await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
         user_mentions = [user.id],
         role_mentions = True,
     )
+    
+    
     await asyncio.sleep(20)
 
     action_id = ctx.interaction.custom_id.split(":", 1)[1]
@@ -290,7 +247,12 @@ async def primary_questions(
         user_id=user_id,
         ctx=ctx,
     )
-    await ctx.interaction.delete_initial_response()
+    try:
+        await ctx.interaction.delete_initial_response()
+    except hikari.NotFoundError:
+        # Message already deleted or interaction expired, that's fine
+        pass
+    
     await ctx.respond(
         components=new_components,
         ephemeral=True,
@@ -324,7 +286,7 @@ async def on_age_button(
             Text(content=f"🎉 **16 & Under Registered!** · {user.mention}"),
 
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(
                         content=(
@@ -352,7 +314,7 @@ async def on_age_button(
             Text(content=f"🎮 **17–25 Confirmed** · {user.mention}"),
 
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(
                         content=(
@@ -379,7 +341,7 @@ async def on_age_button(
             Text(content=f"🏅 **Age Locked In** · {user.mention}"),
 
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(
                         content=(
@@ -401,48 +363,114 @@ async def on_age_button(
             user_mentions = [user.id],
             role_mentions = True,
         )
-    await asyncio.sleep(10)
-    components = [
-        Text(content=f"🌐 **Set Your Time Zone** · {user.mention}"),
 
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Text(content="To help us match you with the right clan and events, let’s set your timezone.\n\n"),
-                Section(
+@register_action("shield_basics", no_return=True)
+@lightbulb.di.with_di
+async def on_shield_basics_button(
+    action_id: str,
+    bot: GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+):
+    ctx: lightbulb.components.MenuContext = kwargs["ctx"]
+    user_id = int(action_id)
+    user = await bot.rest.fetch_member(ctx.guild_id, user_id)
+
+    if int(ctx.user.id) != user_id:
+        await ctx.respond(
+            f"Sorry {ctx.user.mention}, this button is only for {user.mention} to click. Please let them continue!",
+            ephemeral=True
+        )
+        return
+    
+    # Get the original interaction ID from the custom_id
+    original_interaction_id = ctx.interaction.custom_id.split(":")[0].replace("shield_basics", "primary_questions")
+    
+    # Try to get the message ID from the interaction message
+    message_id = ctx.interaction.message.id
+    
+    # Try to edit the message to remove the button
+    if message_id:
+        try:
+            # Create the same message but without the button
+            components_without_button = [
+                Container(
+                    accent_color=GOLDENROD_ACCENT,
                     components=[
+                        Text(content=f"## 🎓 **Discord Basics Check** · <@{user_id}>"),
+                        Separator(divider=True),
                         Text(
                             content=(
-                                f"{emojis.white_arrow_right}"
-                                "**Find Your Time Zone**"
+                                "We utilize three main methods to communicate within the Warriors United Server:\n\n"
+                                "1️⃣ A comment\n"
+                                "2️⃣ A ping within that comment to a specific person/role.\n"
+                                "3️⃣ An emoji reaction to a comment.\n\n"
+                                "**You've proven #1. Now prove to us you can do #2 and #3...👍🏼**\n\n"
+                                "**Shield challenge started!**"
                             )
-                        )
-                    ],
-                    accessory=LinkButton(
-                        url="https://zones.arilyn.cc/",
-                        label="Get My Time Zone 🌐",
-                    ),
+                        ),
+                        Separator(divider=True),
+                        Text(content=f"-# Requested by {ctx.member.mention}"),
+                    ]
                 ),
+            ]
+            await bot.rest.edit_message(ctx.channel_id, message_id, components=components_without_button)
+        except Exception as e:
+            print(f"[ShieldBasics] Could not edit message to remove button: {e}")
+    
+    # Clean up any existing challenges for this user/channel combination
+    delete_result = await mongo.button_store.delete_many({
+        "channel_id": ctx.channel_id,
+        "user_id": user_id,
+        "challenge_type": "goblin_ping"
+    })
+    
+    if delete_result.deleted_count > 0:
+        print(f"[ShieldBasics] Cleaned up {delete_result.deleted_count} existing challenge(s) for user {user_id}")
+    
+    # Store the new goblin challenge in MongoDB
+    challenge_data = {
+        "channel_id": ctx.channel_id,
+        "user_id": user_id,
+        "recruiter_id": ctx.member.id,  # The person who initiated the questions
+        "challenge_type": "goblin_ping",
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc)
+    }
+    result = await mongo.button_store.insert_one(challenge_data)
+    print(f"[ShieldBasics] Stored goblin challenge: channel={ctx.channel_id}, user={user_id}, recruiter={ctx.member.id}, id={result.inserted_id}")
+    
+    # Send the message with goblin gif
+    components = [
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                Text(content=f"Excellent!! {user.mention} You in essence reacted to a reaction."),
+                Separator(divider=True),
                 Text(
                     content=(
-                        "**Example format:** `America/New_York`\n"
-                        "*Please don't just type GMT+1 or EST; use the link to get the correct format.*\n\n"
-                        "Then simply type your timezone in chat, quick and easy!"
+                        "You've proven to be 50% smarter than the average discord user....👍🏻\n\n"
+                        "Now respond with the word Goblin and actually ping the Recruiter helping you with your ticket.\n\n"
+                        "If you don't now how to ping a person/role in Discord, no worries... respond with How to ping."
                     )
                 ),
                 Media(
                     items=[
-                        MediaItem(media="assets/Red_Footer.png"),
-                ]),
-                Text(content="_Kings Alliance Recruitment – Syncing Schedules, Building Teams!_")
-            ],
-        )]
+                        MediaItem(media="https://c.tenor.com/QU6S8dijTV4AAAAC/tenor.gif")
+                    ]
+                ),
+                Text(content=f"-# Requested by {ctx.member.mention}"),
+            ]
+        )
+    ]
+    
     await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
-        user_mentions = [user.id],
+        user_mentions=[user.id],
         role_mentions=True,
     )
+    
 
 ### FWA Questions Section
 @register_action("fwa_questions" ,no_return=True)
@@ -514,7 +542,7 @@ async def fwa_questions(
                     Separator(divider=True),
                     Text(content=(
                         "**What is Lazy CWL?**\n"
-                        "We partner with **Warriors United** to run CWL in a laid-back, flexible way,\n"
+                        "We run CWL in a laid-back, flexible way,\n"
                         "perfect if you’d otherwise go inactive during league week. \n"
                         "No stress over attacks or donations; just jump in when you can."
                     )),
@@ -558,7 +586,6 @@ async def fwa_questions(
                         items=[
                             MediaItem(media="assets/Blue_Footer.png")
                         ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
                 ]
             ),
             Container(
@@ -567,7 +594,7 @@ async def fwa_questions(
                     Text(content=(
                         "**How to Sign Up**\n"
                         "If you **WANT to participate** in CWL, signing up is **mandatory!**\n\n"
-                        f"{emojis.red_arrow_right} Sign up for **each CWL season** in <#1133030890189094932> or channel name #LazyCwl-Sign-ups , visible after joining the clan.\n\n"
+                        f"{emojis.red_arrow_right} Sign up for **each CWL season** in <#1072728485233180692> or channel name #fwa-lazycwl-signups , visible after joining the clan.\n\n"
                         f"{emojis.red_arrow_right} **Last-minute signups are strongly discouraged** and may not be accepted. We run several Lazy CWL clans, and proper planning is crucial.\n\n"
                     )),
                     Section(
@@ -585,7 +612,7 @@ async def fwa_questions(
                         ),
                     ),
                     Text(content=(
-                        "**<a:Alert_01:1043947615429070858>IMPORTANT:**\n"
+                        "**<a:Alert:1398260063075827745>IMPORTANT:**\n"
                         "*Participating in CWL outside of Arcane is **__not allowed if__** you are part of our FWA Operation.*\n\n"
                     )),
 
@@ -715,7 +742,11 @@ async def fwa_questions(
         user_id=user_id,
         ctx=ctx,
     )
-    await ctx.interaction.delete_initial_response()
+    try:
+        await ctx.interaction.delete_initial_response()
+    except hikari.NotFoundError:
+        # Message already deleted or interaction expired, that's fine
+        pass
     await ctx.respond(
         components=new_components,
         ephemeral=True,
@@ -734,9 +765,43 @@ async def th_select(
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
     fwa = await get_fwa_base_object(mongo)
+    
+    # Check if FWA data exists
+    if not fwa:
+        await ctx.respond(
+            "❌ **FWA Data Not Found**\n\n"
+            "The FWA data is not in the database yet. "
+            "Please use the `/clan dashboard` command to add all FWA data first.",
+            ephemeral=True
+        )
+        return
+    
     th_number = choice.lstrip('th')
-
-    base_link = getattr(fwa.fwa_base_links, choice)
+    base_link = getattr(fwa.fwa_base_links, choice, None)
+    
+    # Check if base_link exists
+    if not base_link:
+        await ctx.respond(
+            f"❌ **FWA Base Link Not Found**\n\n"
+            f"The FWA base link for {choice.upper()} is not configured in the database. "
+            "Please use the `/clan dashboard` command to add all FWA base links.",
+            ephemeral=True
+        )
+        return
+    
+    # Check if media URLs exist
+    war_base_media = FWA_WAR_BASE.get(choice)
+    active_war_base_media = FWA_ACTIVE_WAR_BASE.get(choice)
+    
+    if not war_base_media or not active_war_base_media:
+        await ctx.respond(
+            f"❌ **FWA Base Images Not Found**\n\n"
+            f"The FWA base images for {choice.upper()} are not configured. "
+            "Please contact an administrator to add the FWA base images.",
+            ephemeral=True
+        )
+        return
+    
     components = [
         Text(content=f"{user.mention}"),
         Container(
@@ -745,7 +810,7 @@ async def th_select(
                 Text(content=f"## Town Hall {th_number}"),
                 Media(
                     items=[
-                        MediaItem(media=FWA_WAR_BASE[choice]),
+                        MediaItem(media=war_base_media),
                     ]
                 ),
                 ActionRow(
@@ -768,7 +833,7 @@ async def th_select(
                 )),
                 Media(
                     items=[
-                        MediaItem(media=FWA_ACTIVE_WAR_BASE[choice]),
+                        MediaItem(media=active_war_base_media),
                     ]
                 ),
                 Text(content=f"-# Requested by {ctx.member.mention}"),
@@ -795,104 +860,25 @@ async def explanations(
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
-    if choice == "what_is_zen":
-        components = [
-            Container(
-                accent_color=GREEN_ACCENT,
-                components=[
-                    Text(
-                        content=f"## <:BabyYoda:1390465217997312234> **Zen War Clans: A Quick Overview** · {user.mention}"),
-                    Separator(divider=True),
-                    Text(content=(
-                        "## Concept\n"
-                        "We are a laid-back farm/war clan — **NOT A CAMPING CLAN**.\n"
-                        "As Heroes are not required here, we understand that some may not feel confident to attack in war, "
-                        "but we encourage everyone to find their Zen and make their war attacks. "
-                        "Our ultimate goal? A stress-free, Zen-like experience.\n\n"
-                        "## Purpose\n"
-                        " Our goal is to cultivate a Zen war environment. "
-                        "Here, heroes can be down, ensuring every member has the chance to partake in war attacks, "
-                        "freeing the mind from the stress of sitting out due to hero upgrades.\n\n"
-                        "## Core Rules\n"
-                        "> **NOTE:** Each clan has their own set of unique Zen rules. This is **ONLY** a general rule. "
-                        "Once you have been assigned to a clan, refer to your clan’s specific rules.\n"
-                        f"{emojis.gold_arrow_right} **No camping Allowed:** This clan is dedicated to warring. Active participation is a must.\n"
-                        f"{emojis.gold_arrow_right} **Minimum Participation:** Even with heroes down, every member is required to execute at least one war attack. "
-                        "Failure to participate in war earns a strike. Accumulate enough strikes, and you risk replacement."
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Green_Footer.png")
-                        ]),
-                ]
-            ),
-            Container(
-                accent_color=GREEN_ACCENT,
-                components=[
-                    Text(content=(
-                        "## War Strategy\n"
-                        "**__First Attack__**\n"
-                        f"{emojis.gold_arrow_right} **General Rule:** __Drop 2__ from your position.\n"
-                        "*For instance, if you're at the 10th spot, target the 12th base.*\n"
-                        "> Strictly adhere to this — neither attack higher nor lower.\n"
-                        f"{emojis.gold_arrow_right} **Top 3 & Bottom 3 Players**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} Attack your mirror.\n\n"
-                        "**__What if My Target's Already 3-Starred?__**\n"
-                        "Looks like my assigned target’s already three starred, switch to cleanup mode!\n\n"
-                        "**__Second Attack__**\n"
-                        f"{emojis.gold_arrow_right} General Rule: See Clan Specific Rules\n"
-                        "A second attack isn’t required, but if it could help us win, we encourage you to support your clan by making that extra effort.\n"
-                        "> Don’t be that guy who causes a war loss because you’re lazy... you’ll be on the chopping block!\n\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} **Top 3 players:**\n"
-                        "> Clean up any of the top 5 bases that need it.\n\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} **Everyone Else**\n"
-                        "__Option 1: Cleanup__\n"
-                        "Use your second attack to **__clean up a base that’s already been hit__** and grab those extra stars ⭐️⭐️⭐️\n\n"
-                        "__Option 2: Free-for-All__\n"
-                        "**__Wait until 12 hours remain__** then it’s a **free-for-all**. Pick any base you’re confident you can **⭐️⭐️⭐️**"
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Green_Footer.png")
-                        ]),
-                ]
-            ),
-            Container(
-                accent_color=GREEN_ACCENT,
-                components=[
-                    Text(content=(
-                        "## Strike System\n"
-                        f"{emojis.gold_arrow_right} Zen Clans expect participation in wars, clan games, raid weekends, and other clan activities to stay active.\n"
-                        f"{emojis.gold_arrow_right} Strike rules vary by clan (e.g., 1 or 2 war attacks).\n"
-                        f"{emojis.gold_arrow_right} The norm is 4 strikes leading to removal, but check your clan's specific rules.\n"
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="https://c.tenor.com/58O460v-6nEAAAAC/tenor.gif")
-                        ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
-            )
-        ]
-    elif choice == "what_is_fwa":
+    if choice == "what_is_fwa":
         components = [
             Container(
                 accent_color=BLUE_ACCENT,
                 components=[
-                    Text(content=f"## <a:FWA:1387882523358527608> **FWA Clans Quick Overview** · {user.mention}"),
+                    Text(content=f"## <a:FWA:1398229188363948055> **FWA Clans Quick Overview** · {user.mention}"),
                     Separator(divider=True),
                     Text(content=(
                         "## 📌 FWA Clans in Clash of Clans: A Quick Overview\n"
                         f"> Minimum TH for FWA: TH13 {emojis.TH13}\n\n"
                         "FWA, or Farm War Alliance, is a unique concept in Clash of Clans. It's all about maximizing loot and clan XP, rather than focusing solely on winning wars.\n\n"
-                        "### **__<a:FWA:1387882523358527608> What are the benefits?__**\n"
-                        "**<:Money_Gob:1024851096847519794> Maximized Loot and XP**\n"
+                        "### **__<a:FWA:1398229188363948055> What are the benefits?__**\n"
+                        "**<a:Gold_Coins:1398229429892808745> Maximized Loot and XP**\n"
                         "FWA clans aim to ensure a steady stream of resources and XP, perfect for upgrading bases, troops, and heroes.\n\n"
-                        "**<a:sleep_zzz:1125067436601901188> War Participation with Upgrading Heroes**\n"
+                        "**<a:sleep_zzz:1398229533617946646> War Participation with Upgrading Heroes**\n"
                         "Unlike traditional wars, in FWA you can participate even if your heroes are down for upgrades, making continuous progress possible.\n\n"
-                        "**<:CoolOP:1024001628979855360> Fair Wars**\n"
+                        "**<:CoolOP:1398229909339508839> Fair Wars**\n"
                         "War winners are decided via a lottery system, ensuring fair chances and significant loot for both sides.\n\n"
-                        "**<:Waiting:1318704702443094150> Is it against the rules?**"
+                        "**<:Waiting:1398229981003382815> Is it against the rules?**"
                         "No, as long as FWA clans follow the game rules and don't use any hacks or exploits, they are within the game's terms of service. It's a unique and accepted way of playing the game."
                     )),
                     Media(
@@ -939,35 +925,6 @@ async def explanations(
                 ]
             )
         ]
-    elif choice == "wu_fwa_partner":
-        components = [
-            Container(
-                accent_color=RED_ACCENT,
-                components=[
-                    Text(content=f"## 🤝 **FWA Partner Invitation** · {user.mention}"),
-                    Separator(divider=True),
-                    Text(
-                        content=(
-                            "Instead of keeping you on our FWA wait-list, we'd love to invite you directly to our partner server\n"
-                            "**Warriors United**! 🎖️\n\n"
-                            "Click the button below to join their Discord, complete the intro, and open an **FWA Entry Ticket**."
-                        )),
-                    Media(
-                        items=[
-                            MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1751617812/Warriors_United.gif")
-                        ]),
-                    ActionRow(
-                        components=[
-                            LinkButton(
-                                url="https://discord.gg/2edDGBStax",
-                                label="Click Me",
-                            )
-                        ]
-                    ),
-                ]
-            ),
-        ]
     await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
@@ -1006,7 +963,7 @@ async def keep_it_moving(
         components = [
             Text(content=f"{user.mention}"),
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(
                         content=(
@@ -1024,7 +981,7 @@ async def keep_it_moving(
         components = [
             Text(content=f"{user.mention}"),
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(
                         content=(
@@ -1042,7 +999,7 @@ async def keep_it_moving(
         components = [
             Text(content=f"{user.mention}"),
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(
                         content=(
@@ -1060,7 +1017,7 @@ async def keep_it_moving(
         components = [
             Text(content=f"{user.mention}"),
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(
                         content=(
@@ -1101,12 +1058,12 @@ async def recruit_questions_page(
 ):
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=(
-                    "An all-in-one toolkit to efficiently recruit candidates into the Kings Alliance.\n\n"
+                    "An all-in-one toolkit to efficiently recruit candidates into Warriors United\n\n"
                     f"{emojis.red_arrow_right} Primary Questions: Send tailored candidate questions.\n"
-                    f"{emojis.red_arrow_right} Explanations: Summarise FWA, Zen & Alliance essentials.\n"
+                    f"{emojis.red_arrow_right} Explanations: Summarise FWA\n"
                     f"{emojis.red_arrow_right} FWA Questions: Send core FWA questions.\n"
                     f"{emojis.red_arrow_right} Keep It Moving: Send quick “hurry up” GIFs.\n\n"
                     "Stay organized, efficient, and aligned with Kings recruitment standards.\n\n"
@@ -1119,27 +1076,20 @@ async def recruit_questions_page(
                             placeholder="Primary Questions",
                             options=[
                                 SelectOption(
-                                    emoji=1387846413211402352,
+                                    emoji="⚔️",
                                     label="Attack Strategies",
                                     value="attack_strategies"),
                                 SelectOption(
-                                    emoji=1387846432316194837,
-                                    label="Future Clan Expectations",
-                                    value="future_clan_expectations"),
-                                SelectOption(
-                                    emoji=1387846461672132649,
+                                    emoji="💬",
                                     label="Discord Basic Skills",
                                     value="discord_basic_skills"),
+                                # DISABLED - Age Bracket - 2025-07-25
+                                # SelectOption(
+                                #     emoji="🕐",
+                                #     label="Age Bracket",
+                                #     value="age_bracket"),
                                 SelectOption(
-                                    emoji=1387846482220159168,
-                                    label="Discord Basic Skills pt.2",
-                                    value="discord_basic_skills_2"),
-                                SelectOption(
-                                    emoji=1387846506589061220,
-                                    label="Age Bracket & Timezone",
-                                    value="age_bracket_&_timezone"),
-                                SelectOption(
-                                    emoji=1387846529229787246,
+                                    emoji="👀",
                                     label="Leaders Checking You Out",
                                     value="leaders_checking_you_out"),
                     ]),
@@ -1188,19 +1138,9 @@ async def recruit_questions_page(
                             placeholder="Explanations",
                             options=[
                                 SelectOption(
-                                    emoji=1390465217997312234,
-                                    label="What is Zen",
-                                    value="what_is_zen"
-                                ),
-                                SelectOption(
                                     emoji=1387882523358527608,
                                     label="What is FWA",
                                     value="what_is_fwa"
-                                ),
-                                SelectOption(
-                                    emoji=1390465929632153640,
-                                    label="WU FWA Partner",
-                                    value="wu_fwa_partner"
                                 ),
                             ],
                         ),
@@ -1237,11 +1177,11 @@ async def recruit_questions_page(
                         ),
                     ]
                 ),
-                Text(content="-# Kings Alliance - Where Legends Are Made"),
                 Media(
                     items=[
-                        MediaItem(media="assets/Red_Footer.png")
+                        MediaItem(media="assets/Gold_Footer.png")
                 ]),
+                Text(content="-# Warriors United – Where Strength Meets Honor"),
             ]),
         ]
 
