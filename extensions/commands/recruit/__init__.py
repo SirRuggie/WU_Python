@@ -6,7 +6,6 @@ recruit = lightbulb.Group("recruit", "All Recruit-related commands")
 
 # Import all recruit modules
 from . import questions
-from . import codes
 from . import dashboard
 
 __all__ = ["loader", "recruit"]

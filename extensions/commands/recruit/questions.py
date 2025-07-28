@@ -208,6 +208,48 @@ async def primary_questions(
             ),
 
         ]
+    elif choice == "family_codes":
+        # Store listener info in MongoDB
+        listener_data = {
+            "_id": f"codes_{ctx.interaction.id}_{user_id}",
+            "interaction_id": str(ctx.interaction.id),
+            "channel_id": ctx.channel_id,
+            "user_id": user_id,
+            "moderator_id": ctx.member.id,
+            "created_at": datetime.now(timezone.utc),
+            "completed": False,
+            "type": "family_codes"
+        }
+        await mongo.recruit_onboarding.insert_one(listener_data)
+        
+        components = [
+            Container(
+                accent_color=GOLDENROD_ACCENT,
+                components=[
+                    Text(content=f"## 🏰 **Keeping it in the Family** · {user.mention}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "Warriors United family members may move around the family for "
+                        "donations, a Friendly Challenge with an available member, helping "
+                        "with Clan Games, or participation in a Family Event. When sending "
+                        "a Clan Request use one of these three emoji combos as your "
+                        "request message....\n\n"
+                        "**⚔️⚔️⚔️**\n"
+                        "**⚔️🍻⚔️**\n"
+                        "**⚔️☠️⚔️**\n\n"
+                        "**DO NOT** use the default join message... I'd like to join your clan.\n\n"
+                        "Acknowledge you understand this by sending one of the above "
+                        "three codes down below in chat. Just as you would if you were "
+                        "going to request to join!"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Gold_Footer.png"),
+                        ]),
+                    Text(content=f"-# Requested by {ctx.member.mention}"),
+                ]
+            )
+        ]
     elif choice == "leaders_checking_you_out":
         components = [
             Container(
@@ -486,7 +528,34 @@ async def fwa_questions(
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
-    if choice == "get_war_weight":
+    if choice == "fwa_clan_chat":
+        components = [
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content=f"## 💬 **FWA Clan Chat** · {user.mention}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "An important thing that needs to be addressed about our FWA clan activity/chat. "
+                        "Due to how the FWA works we offer one of the easiest methods to gain loot in the game, "
+                        "and that is most attractive to players who aren't as active as players who either play "
+                        "the game socially or competitively. On the norm, the clans aren't that chatty. "
+                        "The clan chat is quiet most of the time, and receiving donations isn't always the quickest either. "
+                        "Not to say you won't get them just not always lighting fast. "
+                        "Our Discord Server is a good means for a social chat if you desire.\n\n"
+                        "**Would any of this be an issue for you?**"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(
+                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753732333/misc_images/WU_ClanChat.jpg"),
+                        ]
+                    ),
+                    Text(content=f"-# Requested by {ctx.member.mention}"),
+                ]
+            )
+        ]
+    elif choice == "get_war_weight":
         components = [
             Container(
                 accent_color=GOLD_ACCENT,
@@ -611,9 +680,12 @@ async def fwa_questions(
                             label="Deep-Dive Lazy CWL Rules",
                         ),
                     ),
+                    Separator(divider=True),
                     Text(content=(
-                        "**<a:Alert:1398260063075827745>IMPORTANT:**\n"
-                        "*Participating in CWL outside of Arcane is **__not allowed if__** you are part of our FWA Operation.*\n\n"
+                        "## **<a:Alert:1398260063075827745>IMPORTANT:**\n"
+                        "*Participating in CWL outside of Warriors United is **__not allowed if__** you are part of our FWA Operation.*\n\n"
+                        "If you're good with the Lazy Way, respond with...\n"
+                        "**__Lazy Way is My Way!!__**"
                     )),
 
                     Media(
@@ -1089,6 +1161,10 @@ async def recruit_questions_page(
                                 #     label="Age Bracket",
                                 #     value="age_bracket"),
                                 SelectOption(
+                                    emoji="🏰",
+                                    label="Family Codes",
+                                    value="family_codes"),
+                                SelectOption(
                                     emoji="👀",
                                     label="Leaders Checking You Out",
                                     value="leaders_checking_you_out"),
@@ -1101,6 +1177,11 @@ async def recruit_questions_page(
                             custom_id=f"fwa_questions:{action_id}",
                             placeholder="FWA Questions",
                             options=[
+                                SelectOption(
+                                    emoji="💬",
+                                    label="FWA Clan Chat",
+                                    value="fwa_clan_chat"
+                                ),
                                 SelectOption(
                                     emoji="⚖️",
                                     label="Get War Weight",
@@ -1186,6 +1267,95 @@ async def recruit_questions_page(
         ]
 
     return components
+
+
+# Valid emoji codes for keeping it in the family
+VALID_EMOJI_CODES = [
+    "⚔️⚔️⚔️",
+    "⚔️🍻⚔️",
+    "⚔️☠️⚔️"
+]
+
+@loader.listener(hikari.GuildMessageCreateEvent)
+@lightbulb.di.with_di
+async def on_family_code_response(
+        event: hikari.GuildMessageCreateEvent,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED
+):
+    """Listen for emoji code responses from recruit questions"""
+    
+    # Ignore bot messages
+    if event.is_bot:
+        return
+    
+    # Check for None content first
+    if event.content is None:
+        return
+    
+    # Check if this user has an active family_codes listener
+    listener = await mongo.recruit_onboarding.find_one({
+        "user_id": event.author_id,
+        "channel_id": event.channel_id,
+        "type": "family_codes",
+        "completed": False
+    })
+    
+    if listener:
+        # Check if message contains valid code
+        message_content = event.content.strip()
+        
+        # Check if any of the valid codes appear anywhere in the message
+        code_found = None
+        for code in VALID_EMOJI_CODES:
+            if code in message_content:
+                code_found = code
+                break
+        
+        if code_found:
+            # Valid code received!
+            # Update MongoDB
+            await mongo.recruit_onboarding.update_one(
+                {"_id": listener["_id"]},
+                {
+                    "$set": {
+                        "completed": True,
+                        "completed_at": datetime.now(timezone.utc),
+                        "code_used": code_found
+                    }
+                }
+            )
+            
+            # Get moderator info for footer
+            try:
+                moderator = await event.app.rest.fetch_member(event.guild_id, listener["moderator_id"])
+                moderator_name = moderator.display_name
+            except:
+                moderator_name = "Unknown"
+            
+            # Send success message
+            success_components = [
+                Container(
+                    accent_color=GOLDENROD_ACCENT,
+                    components=[
+                        Text(content="## ✅ Code Confirmed!"),
+                        Separator(divider=True),
+                        Text(content=(
+                            f"{event.author.mention} **Thank you for acknowledging!**\n\n"
+                            f"We encourage and allow temporary movement within the family but if you desire a permanent move to another clan we need to discuss it further with Leadership. So from here forward, the Clan you are assigned to is your **\"Home Clan\"**. Always come back home...👍🏼\n\n"
+                            f"The **{code_found}**; or any of the code combinations; will get you in to any clan within the Family.... remember that...💪🏼.\n\n"
+                        )),
+                        Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+                        Text(content=f"-# Confirmation triggered by {moderator_name}"),
+                    ]
+                )
+            ]
+            
+            await event.app.rest.create_message(
+                channel=event.channel_id,
+                components=success_components,
+                user_mentions=[event.author_id, listener["moderator_id"]]
+            )
 
 
 loader.command(recruit)
