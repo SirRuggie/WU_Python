@@ -21,7 +21,7 @@ from hikari.impl import (
     LinkButtonBuilder as LinkButton
 )
 
-from extensions.commands.recruit import recruit
+from extensions.commands.recruit import loader, recruit
 from extensions.commands.fwa.helpers import get_fwa_base_object
 from utils.constants import (
     GOLDENROD_ACCENT,
@@ -36,13 +36,6 @@ from utils.emoji import emojis
 from utils.mongo import MongoClient
 from extensions.components import register_action
 
-loader = lightbulb.Loader()
-group = lightbulb.Group(
-    name="recruit",
-    description="Recruit questions description",
-    default_member_permissions=hikari.Permissions.MANAGE_GUILD
-)
-
 @recruit.register()
 class RecruitQuestions(
     lightbulb.SlashCommand,
@@ -55,7 +48,12 @@ class RecruitQuestions(
     )
 
     @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient) -> None:
+    async def invoke(
+        self, 
+        ctx: lightbulb.Context, 
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED
+    ) -> None:
         await ctx.defer(ephemeral=True)
         data = {
             "_id": str(ctx.interaction.id),
@@ -138,7 +136,7 @@ async def primary_questions(
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         emoji="🛡",
-                        custom_id=f"shield_basics:{user.id}",
+                        custom_id=f"shield_basics:{user.id}:{ctx.member.id}",
                     )
                 ]
             ),
@@ -299,8 +297,6 @@ async def primary_questions(
         components=new_components,
         ephemeral=True,
     )
-    ## If I decide to edit instead of deleting and resending
-    #await ctx.interaction.edit_initial_response(components=new_components)
 
 @register_action("age", no_return=True)
 @lightbulb.di.with_di
@@ -415,8 +411,12 @@ async def on_shield_basics_button(
     **kwargs
 ):
     ctx: lightbulb.components.MenuContext = kwargs["ctx"]
-    user_id = int(action_id)
+    # Parse user_id and recruiter_id from action_id
+    parts = action_id.split(":")
+    user_id = int(parts[0])
+    original_recruiter_id = int(parts[1]) if len(parts) > 1 else ctx.member.id
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
+    original_recruiter = await bot.rest.fetch_member(ctx.guild_id, original_recruiter_id)
 
     if int(ctx.user.id) != user_id:
         await ctx.respond(
@@ -452,7 +452,7 @@ async def on_shield_basics_button(
                             )
                         ),
                         Separator(divider=True),
-                        Text(content=f"-# Requested by {ctx.member.mention}"),
+                        Text(content=f"-# Requested by <@{original_recruiter_id}>"),
                     ]
                 ),
             ]
@@ -474,13 +474,13 @@ async def on_shield_basics_button(
     challenge_data = {
         "channel_id": ctx.channel_id,
         "user_id": user_id,
-        "recruiter_id": ctx.member.id,  # The person who initiated the questions
+        "recruiter_id": original_recruiter_id,  # The original recruiter who initiated the questions
         "challenge_type": "goblin_ping",
         "status": "pending",
         "created_at": datetime.now(timezone.utc)
     }
     result = await mongo.button_store.insert_one(challenge_data)
-    print(f"[ShieldBasics] Stored goblin challenge: channel={ctx.channel_id}, user={user_id}, recruiter={ctx.member.id}, id={result.inserted_id}")
+    print(f"[ShieldBasics] Stored goblin challenge: channel={ctx.channel_id}, user={user_id}, recruiter={original_recruiter_id}, id={result.inserted_id}")
     
     # Send the message with goblin gif
     components = [
@@ -501,7 +501,7 @@ async def on_shield_basics_button(
                         MediaItem(media="https://c.tenor.com/QU6S8dijTV4AAAAC/tenor.gif")
                     ]
                 ),
-                Text(content=f"-# Requested by {ctx.member.mention}"),
+                Text(content=f"-# Requested by <@{original_recruiter_id}>"),
             ]
         )
     ]
@@ -997,6 +997,35 @@ async def explanations(
                 ]
             )
         ]
+    elif choice == "what_is_flexible_fun":
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"## 📌 **Flexible Fun War Clan: A Quick Overview** · {user.mention}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "### Concept\n"
+                        "We are a laid-back farm/war clan — **NOT A CAMPING CLAN**. All Town Levels are welcomed here with no Heroes required to be in war. "
+                        "Because of this scenario, we understand that some may not feel confident to attack in war. Solution, simple default war plan...Drop 2. "
+                        "We require everyone to at least make their first war attack. No judgement on passed on the outcome, just do your best. "
+                        "Our ultimate goal is a stress-free, fun and flexible experience.\n\n"
+                        "### Purpose\n"
+                        "Our goal is to cultivate a fun and flexible war environment. Here, heroes can be down, ensuring every member has the chance to partake "
+                        "in war attacks, freeing the mind from the stress of sitting out due to hero upgrades.\n\n"
+                        "### Core Rules\n"
+                        "**No Camping Allowed:** This clan is dedicated to warring. Active participation is a must.\n"
+                        "**Minimum Participation:** Even with heroes down, every member is required to execute at least one war attack. "
+                        "Failure to participate in war earns a strike. Accumulate enough strikes, and you risk replacement."
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Blue_Footer.png")
+                        ]),
+                    Text(content=f"-# Requested by {ctx.member.mention}"),
+                ]
+            )
+        ]
     await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
@@ -1222,6 +1251,11 @@ async def recruit_questions_page(
                                     emoji=1387882523358527608,
                                     label="What is FWA",
                                     value="what_is_fwa"
+                                ),
+                                SelectOption(
+                                    emoji="🎯",
+                                    label="What is Flexible Fun",
+                                    value="what_is_flexible_fun"
                                 ),
                             ],
                         ),

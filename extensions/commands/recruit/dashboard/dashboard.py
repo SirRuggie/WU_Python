@@ -35,7 +35,6 @@ class RecruitDashboard(
     )
 
     @lightbulb.invoke
-    @lightbulb.di.with_di
     async def invoke(
             self,
             ctx: lightbulb.Context,
@@ -245,7 +244,6 @@ async def create_dashboard_page(
 
 # Register the main dashboard refresh action
 @register_action("refresh_dashboard")
-@lightbulb.di.with_di
 async def refresh_dashboard(
         action_id: str,
         user_id: int = None,
