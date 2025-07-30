@@ -531,7 +531,7 @@ async def fwa_questions(
     if choice == "fwa_clan_chat":
         components = [
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"## 💬 **FWA Clan Chat** · {user.mention}"),
                     Separator(divider=True),
@@ -583,7 +583,7 @@ async def fwa_questions(
     elif choice == "heard_of_lazy_cwl":
         components = [
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"## 🛋️ **Lazy CWL Overview** · {user.mention}"),
                     Separator(divider=True),
@@ -699,7 +699,7 @@ async def fwa_questions(
     elif choice == "fwa_leaders_reviewing":
         components = [
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"## 🔎 **FWA Leadership Review** · {user.mention}"),
                     Separator(divider=True),
@@ -1026,6 +1026,80 @@ async def explanations(
                 ]
             )
         ]
+    elif choice == "what_is_tactical":
+        components = [
+            Container(
+                accent_color=GOLDENROD_ACCENT,
+                components=[
+                    Text(content=f"## ⚔️ **Tactical/Competitive Clans** ⚔️ · {user.mention}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "Our Tactical/Competitive War Clans are divided into two groups.\n\n"
+                        "**High Level:** TH13+ Non Rushed\n\n"
+                        "We always strive to obtain 3 ⭐'s in war. Not to worry if you fail; they can't all be perfect; "
+                        "but we expect our members to follow the War Format set in place and are committed to winning every "
+                        "war as part of an overall team effort.\n\n"
+                        "**__WE WIN AS A TEAM. WE LOSE AS A TEAM.__**\n\n"
+                        "Attacks are always at full strength (No major upgrades in place, Heroes, and the like)."
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Gold_Footer.png")
+                        ]),
+                    Text(content=f"-# Requested by {ctx.member.mention}"),
+                ]
+            )
+        ]
+    elif choice == "fwa_war_plans":
+        components = [
+            Container(
+                accent_color=GOLDENROD_ACCENT,
+                components=[
+                    Text(content=f"## ⚔️ **FWA War Plans** ⚔️ · {user.mention}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "Below are your two main war plans for FWA. Follow these and all will be good.\n\n"
+                        "**💎 __WIN WAR__ 💎**\n"
+                        "1st hit: ⭐⭐⭐ star your mirror.\n"
+                        "2nd hit: ⭐⭐ BASE 1 for loot or any base above you for loot or wait for 8 hr cleanup call in Discord. "
+                        "**Goal is 150 Stars!!**\n\n"
+                        "**❌ __LOSE WAR__ ❌**\n"
+                        "1st hit: ⭐⭐ star your mirror.\n"
+                        "2nd hit: ⭐ BASE 1 for loot or wait for 8 hr cleanup call in Discord. The goal is 100 Stars!\n\n"
+                        "There are two other plans \"Blacklisted War\" and \"Mismatch War\" but the above two are the most used.\n\n"
+                        "War Plans are posted via Discord and Clan Mail. Don't hesitate to ping me in your Clan's Chat Channel "
+                        "with any questions you may have.\n\n"
+                        "Following the posted war plans is an important part of FWA. Deviation can cause headaches and potentially "
+                        "harm to the clan. **Don't be \"that guy\"**...🫡"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Blue_Footer.png")
+                        ]),
+                ]
+            ),
+            Container(
+                accent_color=GOLDENROD_ACCENT,
+                components=[
+                    Text(content="## ⚔️ **DAILY FWA EXPECTATIONS** ⚔️"),
+                    Separator(divider=True),
+                    Text(content=(
+                        "✅ **Attack in wars. Every. Single. Time.**\n"
+                        "✅ **Follow posted war plans. They're not suggestions—they're the playbook.**\n"
+                        "✅ **Check Discord & Clan Mail for instructions.**\n\n"
+                        "Wondering what happens if you ghost a war?\n"
+                        "👻 **You land on the Naughty List.**\n"
+                        "That means we start looking for a replacement. No hard feelings, just FWA business.\n\n"
+                        "Let's keep it fun, but let's keep it serious too. 💥"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExMjg1amo0dmdsa2lpbnB3NzAzOWhsYWkyczRuNGwwdmRiZHpxb3YxNiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o6ZtnrDUtbqynaOys/giphy.gif")
+                        ]),
+                    Text(content=f"-# Requested by {ctx.member.mention}"),
+                ]
+            )
+        ]
     await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
@@ -1253,9 +1327,19 @@ async def recruit_questions_page(
                                     value="what_is_fwa"
                                 ),
                                 SelectOption(
+                                    emoji="⚔️",
+                                    label="FWA War Plans",
+                                    value="fwa_war_plans"
+                                ),
+                                SelectOption(
                                     emoji="🎯",
                                     label="What is Flexible Fun",
                                     value="what_is_flexible_fun"
+                                ),
+                                SelectOption(
+                                    emoji="⚔️",
+                                    label="What is Tactical",
+                                    value="what_is_tactical"
                                 ),
                             ],
                         ),
