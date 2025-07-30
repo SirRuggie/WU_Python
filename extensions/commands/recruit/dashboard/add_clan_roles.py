@@ -56,7 +56,8 @@ def build_clan_menu(
     clans: List[Clan],
     action_id: str,
     accent_color: int = BLUE_ACCENT,
-    success_message: Optional[str] = None
+    success_message: Optional[str] = None,
+    bot: hikari.GatewayBot = None
 ) -> List[Container]:
     """Build the clan selection menu with current state"""
     
@@ -67,21 +68,60 @@ def build_clan_menu(
     
     for clan in clans:
         if clan.role_id and clan.role_id in member_role_ids:
-            current_clan_roles.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+            # Add emoji if clan has one, otherwise just show name
+            if clan.partial_emoji:
+                try:
+                    # Test if emoji is valid by converting to string
+                    str(clan.partial_emoji)
+                    current_clan_roles.append(f"{clan.partial_emoji} {clan.name}")
+                except Exception:
+                    # If emoji is invalid, just show name
+                    current_clan_roles.append(clan.name)
+            else:
+                # No emoji, just show name
+                current_clan_roles.append(clan.name)
         elif clan.role_id:  # Only show clans with configured roles
             available_clans.append(clan)
     
     # Build select menu options
     options = []
-    for clan in available_clans:
+    for i, clan in enumerate(available_clans):
         kwargs = {
             "label": clan.name,
             "value": f"{clan.tag}:{clan.role_id}",
             "description": f"{clan.tag}"
         }
+        # Only add emoji if clan has one and it's valid
         if clan.partial_emoji:
-            kwargs["emoji"] = clan.partial_emoji
-        options.append(SelectOption(**kwargs))
+            try:
+                # Try to convert to string to test validity
+                str(clan.partial_emoji)
+                # Additional validation - check if emoji ID is valid
+                if hasattr(clan.partial_emoji, 'id') and clan.partial_emoji.id:
+                    # Try to validate the emoji more thoroughly
+                    try:
+                        # Check if the emoji has required attributes
+                        if not hasattr(clan.partial_emoji, 'name') or not hasattr(clan.partial_emoji, 'id'):
+                            raise ValueError("Emoji missing required attributes")
+                        
+                        # Simply add the emoji if validation passes
+                        kwargs["emoji"] = clan.partial_emoji
+                    except Exception as e:
+                        # Silently skip adding emoji if it fails
+                        pass
+                else:
+                    # Invalid emoji ID, skip it
+                    pass
+            except Exception as e:
+                # Failed to validate emoji, skip it
+                pass
+                # Don't add emoji if it's invalid
+        # If no emoji or invalid emoji, just create option without emoji
+        try:
+            options.append(SelectOption(**kwargs))
+        except Exception as e:
+            # Skip this clan if we can't create an option for it
+            continue
     
     # Build component list
     component_list = [
@@ -221,7 +261,7 @@ async def add_clan_roles_handler(
     clan_data = await mongo.clans.find().to_list(length=None)
     clans = [Clan(data=d) for d in clan_data]
     
-    components = build_clan_menu(member, clans, action_id)
+    components = build_clan_menu(member, clans, action_id, bot=bot)
     # Edit the existing dashboard message instead of creating a new one
     await ctx.interaction.edit_initial_response(components=components)
 
@@ -293,7 +333,17 @@ async def execute_add_clans_handler(
     
     for clan in clans:
         if clan.role_id in roles_to_add:
-            added_roles.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+            # Only add emoji if clan has a valid one
+            if clan.partial_emoji:
+                try:
+                    str(clan.partial_emoji)
+                    added_roles.append(f"{clan.partial_emoji} {clan.name}")
+                except Exception:
+                    # If emoji is invalid, just show name
+                    added_roles.append(clan.name)
+            else:
+                # No emoji, just show name
+                added_roles.append(clan.name)
     
     # Batch update all roles at once
     if added_roles:
@@ -311,7 +361,7 @@ async def execute_add_clans_handler(
     
     # Refresh member data and update menu
     member = guild.get_member(user_id)
-    components = build_clan_menu(member, clans, action_id, GREEN_ACCENT, success_text)
+    components = build_clan_menu(member, clans, action_id, GREEN_ACCENT, success_text, bot)
     
     await ctx.interaction.edit_initial_response(components=components)
 
@@ -364,10 +414,26 @@ async def add_all_clans_handler(
             continue
         
         if clan.role_id in current_role_set:
-            already_had.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+            # Only add emoji if clan has a valid one
+            if clan.partial_emoji:
+                try:
+                    str(clan.partial_emoji)
+                    already_had.append(f"{clan.partial_emoji} {clan.name}")
+                except Exception:
+                    already_had.append(clan.name)
+            else:
+                already_had.append(clan.name)
         else:
             roles_to_add.append(clan.role_id)
-            added_clans.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+            # Only add emoji if clan has a valid one
+            if clan.partial_emoji:
+                try:
+                    str(clan.partial_emoji)
+                    added_clans.append(f"{clan.partial_emoji} {clan.name}")
+                except Exception:
+                    added_clans.append(clan.name)
+            else:
+                added_clans.append(clan.name)
     
     # Build final role list: current roles + new clan roles (excluding @everyone)
     final_roles = [r for r in (list(current_roles) + roles_to_add) if r != ctx.interaction.guild_id]
@@ -392,7 +458,7 @@ async def add_all_clans_handler(
     # Refresh member and update menu
     member = guild.get_member(user_id)
     accent = GREEN_ACCENT if added_clans else GOLD_ACCENT
-    components = build_clan_menu(member, clans, action_id, accent, success_text)
+    components = build_clan_menu(member, clans, action_id, accent, success_text, bot)
     
     await ctx.interaction.edit_initial_response(components=components)
 
@@ -438,7 +504,17 @@ async def remove_all_clans_handler(
     removed_roles = []
     for clan in clans:
         if clan.role_id and clan.role_id in current_roles:
-            removed_roles.append(f"{clan.partial_emoji if clan.partial_emoji else '🏛️'} {clan.name}")
+            # Only add emoji if clan has a valid one
+            if clan.partial_emoji:
+                try:
+                    str(clan.partial_emoji)
+                    removed_roles.append(f"{clan.partial_emoji} {clan.name}")
+                except Exception:
+                    # If emoji is invalid, just show name
+                    removed_roles.append(clan.name)
+            else:
+                # No emoji, just show name
+                removed_roles.append(clan.name)
     
     # Batch update all roles at once
     if removed_roles:
@@ -456,6 +532,6 @@ async def remove_all_clans_handler(
     
     # Refresh member and update menu
     member = guild.get_member(user_id)
-    components = build_clan_menu(member, clans, action_id, GREEN_ACCENT, success_text)
+    components = build_clan_menu(member, clans, action_id, GREEN_ACCENT, success_text, bot)
     
     await ctx.interaction.edit_initial_response(components=components)

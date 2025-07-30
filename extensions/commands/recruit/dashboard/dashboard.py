@@ -110,8 +110,23 @@ async def create_dashboard_page(
         clan_data = await mongo.clans.find().to_list(length=None)
         for clan in clan_data:
             if clan.get("role_id") in member.role_ids:
-                clan_emoji = clan.get("emoji", "⚔️")
-                clan_roles.append(f"{clan_emoji} {clan.get('name')}")
+                clan_name = clan.get('name')
+                # Try to parse clan emoji if it exists
+                emoji_str = clan.get("emoji", "")
+                if emoji_str and emoji_str.count(":") >= 2:
+                    try:
+                        # Test if emoji can be parsed
+                        from utils.emoji import EmojiType
+                        emoji_obj = EmojiType(emoji_str)
+                        partial = emoji_obj.partial_emoji
+                        str(partial)  # Test if it can be converted to string
+                        clan_roles.append(f"{partial} {clan_name}")
+                    except Exception:
+                        # If emoji parsing fails, just show name
+                        clan_roles.append(clan_name)
+                else:
+                    # No emoji, just show name
+                    clan_roles.append(clan_name)
 
         # Check standard roles (from manage_roles.py)
         standard_roles = []
@@ -244,6 +259,7 @@ async def create_dashboard_page(
 
 # Register the main dashboard refresh action
 @register_action("refresh_dashboard")
+@lightbulb.di.with_di
 async def refresh_dashboard(
         action_id: str,
         user_id: int = None,

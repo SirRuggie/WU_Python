@@ -43,6 +43,9 @@ async def check_how_to_ping(event: hikari.GuildMessageCreateEvent) -> bool:
         return False
     
     # Check message content (case-insensitive)
+    if not event.content:
+        return False
+        
     content_lower = event.content.lower()
     
     # Check for "how to ping" in the message

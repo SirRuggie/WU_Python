@@ -181,7 +181,8 @@ async def handle_create_ticket(
                         hikari.Permissions.SEND_MESSAGES |
                         hikari.Permissions.READ_MESSAGE_HISTORY |
                         hikari.Permissions.ATTACH_FILES |
-                        hikari.Permissions.EMBED_LINKS
+                        hikari.Permissions.EMBED_LINKS | 
+                        hikari.Permissions.ADD_REACTIONS
                 ),
             ),
         ]
@@ -199,7 +200,8 @@ async def handle_create_ticket(
                             hikari.Permissions.ATTACH_FILES |
                             hikari.Permissions.EMBED_LINKS |
                             hikari.Permissions.MANAGE_MESSAGES |
-                            hikari.Permissions.MANAGE_CHANNELS
+                            hikari.Permissions.MANAGE_CHANNELS |
+                            hikari.Permissions.ADD_REACTIONS
                     ),
                 )
             )

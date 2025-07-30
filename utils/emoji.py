@@ -15,9 +15,24 @@ class EmojiType:
     def partial_emoji(self):
         emoji = self.emoji_string.split(':')
         animated = '<a:' in self.emoji_string
+        
+        # Extract name properly - if animated, name is at index 1, otherwise also at index 1
+        # But we don't need to slice off the first character
+        name = emoji[1]
+        if animated and name.startswith('a'):
+            name = name[1:]  # Remove the 'a' prefix for animated emojis
+        
+        # Extract ID and validate it
+        try:
+            emoji_id = int(str(emoji[2])[:-1])  # Remove the closing >
+            if emoji_id <= 0:
+                raise ValueError(f"Invalid emoji ID: {emoji_id}")
+        except (ValueError, IndexError) as e:
+            raise ValueError(f"Failed to parse emoji ID from {self.emoji_string}: {e}")
+        
         emoji = hikari.CustomEmoji(
-            name=emoji[1][1:],
-            id=hikari.Snowflake(int(str(emoji[2])[:-1])),
+            name=name,
+            id=hikari.Snowflake(emoji_id),
             is_animated=animated
         )
         return emoji

@@ -29,10 +29,10 @@ from hikari.impl import (
 
 # Walkthrough delay configuration (in seconds)
 WALKTHROUGH_INITIAL_DELAY = 0  # Immediate initial message
-WALKTHROUGH_ANNOUNCEMENT_DELAY = 30  # Wait before announcement channel
-WALKTHROUGH_CHAT_DELAY = 30  # Wait before chat channel
-WALKTHROUGH_HELP_DELAY = 30  # Wait before help me attack channel
-WALKTHROUGH_LOUNGE_DELAY = 30  # Wait before lounge channel
+WALKTHROUGH_ANNOUNCEMENT_DELAY = 10  # Wait before announcement channel
+WALKTHROUGH_CHAT_DELAY = 20  # Wait before chat channel
+WALKTHROUGH_HELP_DELAY = 20  # Wait before help me attack channel
+WALKTHROUGH_LOUNGE_DELAY = 20  # Wait before lounge channel
 
 
 @register_action("server_walkthrough")

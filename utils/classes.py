@@ -10,10 +10,14 @@ class Clan:
         self.emoji: str = data.get("emoji")
 
         # only attempt to parse if it at least has two colons
-        if self.emoji.count(":") >= 2:
+        if self.emoji and self.emoji.count(":") >= 2:
             try:
-                self.partial_emoji = EmojiType(self.emoji).partial_emoji
-            except (IndexError, ValueError):
+                emoji_type = EmojiType(self.emoji)
+                self.partial_emoji = emoji_type.partial_emoji
+                # Test if the emoji is valid by trying to convert to string
+                str(self.partial_emoji)
+            except (IndexError, ValueError, TypeError, AttributeError) as e:
+                print(f"[Clan] Failed to parse emoji for {self.name} ({self.tag}): {e}")
                 self.partial_emoji = None
         else:
             self.partial_emoji = None
