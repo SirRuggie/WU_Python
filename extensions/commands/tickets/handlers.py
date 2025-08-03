@@ -4,8 +4,9 @@ Ticket button and interaction handlers
 """
 
 import hikari
+import hikari.errors
 import lightbulb
-from typing import List
+from typing import List, Dict
 from datetime import datetime, timezone
 import asyncio
 
@@ -27,6 +28,36 @@ DEFAULT_MAIN_CATEGORY = 1395400463897202738
 DEFAULT_FWA_CATEGORY = 1395653165470191667
 DEFAULT_ADMIN_TO_NOTIFY = 505227988229554179
 CHANNEL_WARNING_THRESHOLD = 5
+
+# Cooldown tracking - user_id: timestamp
+user_cooldowns: Dict[int, datetime] = {}
+COOLDOWN_DURATION = 30  # seconds
+COOLDOWN_CLEANUP_INTERVAL = 300  # cleanup every 5 minutes
+last_cleanup = datetime.now(timezone.utc)
+
+
+def cleanup_expired_cooldowns():
+    """Remove expired cooldown entries to prevent memory leak"""
+    global last_cleanup
+    current_time = datetime.now(timezone.utc)
+    
+    # Only cleanup if enough time has passed
+    if (current_time - last_cleanup).total_seconds() < COOLDOWN_CLEANUP_INTERVAL:
+        return
+    
+    # Remove expired entries
+    expired_users = []
+    for user_id, cooldown_time in user_cooldowns.items():
+        if (current_time - cooldown_time).total_seconds() > COOLDOWN_DURATION:
+            expired_users.append(user_id)
+    
+    for user_id in expired_users:
+        user_cooldowns.pop(user_id, None)
+    
+    if expired_users:
+        print(f"[Tickets] Cleaned up {len(expired_users)} expired cooldown entries")
+    
+    last_cleanup = current_time
 
 
 async def check_category_space(bot: hikari.GatewayBot, category_id: int, ticket_type: str, admin_id: int,
@@ -108,6 +139,26 @@ async def handle_create_ticket(
         **kwargs
 ):
     """Handle ticket creation button clicks"""
+
+    # Periodic cleanup of expired cooldowns
+    cleanup_expired_cooldowns()
+
+    # Check cooldown (30 seconds)
+    user_id = ctx.user.id
+    current_time = datetime.now(timezone.utc)
+    
+    if user_id in user_cooldowns:
+        time_since_last = (current_time - user_cooldowns[user_id]).total_seconds()
+        if time_since_last < COOLDOWN_DURATION:
+            remaining = int(COOLDOWN_DURATION - time_since_last)
+            await ctx.respond(
+                f"⏳ Please wait {remaining} seconds before creating another ticket.",
+                ephemeral=True
+            )
+            return
+    
+    # Update cooldown
+    user_cooldowns[user_id] = current_time
 
     # Determine ticket type from action_id
     ticket_type = action_id  # Will be "main" or "fwa"
@@ -209,13 +260,26 @@ async def handle_create_ticket(
         # Create the ticket channel with new naming format: 🆕{type}-{number}-{username}
         channel_name = f"🆕{ticket_prefix}-{ticket_number}-{ctx.user.username}"
 
-        channel = await bot.rest.create_guild_text_channel(
-            guild=ctx.guild_id,
-            name=channel_name,
-            category=category_id,
-            permission_overwrites=permission_overwrites,
-            reason=f"{ticket_title} ticket for {ctx.user.username}"
-        )
+        try:
+            channel = await bot.rest.create_guild_text_channel(
+                guild=ctx.guild_id,
+                name=channel_name,
+                category=category_id,
+                permission_overwrites=permission_overwrites,
+                reason=f"{ticket_title} ticket for {ctx.user.username}"
+            )
+        except hikari.errors.RateLimitTooLongError as e:
+            # Remove cooldown so user can try again later
+            user_cooldowns.pop(user_id, None)
+            
+            print(f"[Tickets] Rate limit error creating ticket: {e}")
+            await ctx.respond(
+                "❌ Discord is currently rate limiting channel creation.\n"
+                "This usually happens when many tickets are created in a short time.\n\n"
+                "Please wait a few minutes and try again.",
+                ephemeral=True
+            )
+            return
 
         # Create the thread under the ticket channel
         thread = await bot.rest.create_thread(
@@ -307,8 +371,14 @@ async def handle_create_ticket(
             ephemeral=True
         )
 
+    except hikari.errors.RateLimitTooLongError:
+        # This is already handled above in the channel creation try-except
+        pass
     except Exception as e:
         print(f"Error creating ticket: {e}")
+        # Remove cooldown on error
+        user_cooldowns.pop(user_id, None)
+        
         # Send error as ephemeral response
         await ctx.respond(
             f"❌ There was an error creating your ticket.\nPlease try again or contact an administrator.\nError: {str(e)}",

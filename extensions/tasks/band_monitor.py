@@ -5,6 +5,7 @@ import hikari
 from datetime import datetime
 import json
 import os
+import time
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -44,6 +45,9 @@ BAND_KEY = "AADMPvOeSi6era-iwqaVkEtP"
 NOTIFICATION_CHANNEL_ID = 1003886984462340166
 ALLOWED_ROLE_ID = 769130325460254740
 
+# Check interval in seconds (10 minutes to reduce API load)
+CHECK_INTERVAL_SECONDS = 600  # 10 minutes
+
 # Global variables
 band_check_task = None
 bot_instance = None  # Store bot reference for sending messages
@@ -51,14 +55,16 @@ mongo_client = None  # Store mongo reference
 
 
 async def fetch_band_posts():
-    """Fetch posts from BAND API with enhanced error handling"""
+    """Fetch posts from BAND API with enhanced error handling and timeout"""
     params = {
         "access_token": BAND_ACCESS_TOKEN,
         "band_key": BAND_KEY,
         "locale": "en_US"
     }
 
-    async with aiohttp.ClientSession() as session:
+    # Create session with timeout
+    timeout = aiohttp.ClientTimeout(total=30)  # 30 second timeout
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         try:
             debug_print(f"[BAND API] Making request to: {BAND_API_BASE}")
             debug_print(f"[BAND API] With params: band_key={BAND_KEY[:10]}..., locale=en_US")
@@ -95,6 +101,9 @@ async def fetch_band_posts():
                     debug_print(f"[BAND API] Error Response: {text}")
                     return None
 
+        except asyncio.TimeoutError:
+            debug_print(f"[BAND API] Request timed out after 30 seconds")
+            return None
         except aiohttp.ClientError as e:
             debug_print(f"[BAND API] Client Error: {type(e).__name__}: {e}")
             return None
@@ -332,7 +341,7 @@ async def on_war_response(
 
 
 async def band_checker_loop(mongo: MongoClient):
-    """Main loop that checks BAND API every 30 seconds"""
+    """Main loop that checks BAND API periodically"""
     debug_print("[BAND Monitor] Starting BAND API monitoring task...")
 
     # Log initial configuration
@@ -342,11 +351,15 @@ async def band_checker_loop(mongo: MongoClient):
     debug_print(f"  - Access Token: {BAND_ACCESS_TOKEN[:20]}... (truncated)")
     debug_print(f"  - Notification Channel: {NOTIFICATION_CHANNEL_ID}")
     debug_print(f"  - Allowed Role: {ALLOWED_ROLE_ID}")
+    debug_print(f"  - Check Interval: {CHECK_INTERVAL_SECONDS} seconds ({CHECK_INTERVAL_SECONDS//60} minutes)")
 
     while True:
         try:
             debug_print(f"\n{'=' * 60}")
             debug_print(f"[BAND Monitor] Checking at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Track execution time
+            start_time = time.time()
 
             # Fetch posts from BAND API
             data = await fetch_band_posts()
@@ -422,16 +435,24 @@ async def band_checker_loop(mongo: MongoClient):
             else:
                 debug_print("[BAND Monitor] Unexpected API response format - no result_code field")
                 debug_print(f"[BAND Monitor] Response keys: {list(data.keys())}")
+            
+            # Log execution time
+            elapsed_time = time.time() - start_time
+            debug_print(f"[BAND Monitor] Check completed in {elapsed_time:.2f} seconds")
 
         except Exception as e:
             debug_print(f"[BAND Monitor] Error in loop: {type(e).__name__}: {e}")
             import traceback
             debug_print(f"[BAND Monitor] Traceback: {traceback.format_exc()}")
+            
+            # Log execution time even on error
+            elapsed_time = time.time() - start_time
+            debug_print(f"[BAND Monitor] Check failed after {elapsed_time:.2f} seconds")
 
-        # Wait 30 seconds before next check
-        debug_print(f"\n[BAND Monitor] Waiting 300 seconds until next check...")
+        # Wait before next check
+        debug_print(f"\n[BAND Monitor] Waiting {CHECK_INTERVAL_SECONDS} seconds ({CHECK_INTERVAL_SECONDS//60} minutes) until next check...")
         debug_print(f"{'=' * 60}")
-        await asyncio.sleep(300)
+        await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 
 @loader.listener(hikari.StartedEvent)

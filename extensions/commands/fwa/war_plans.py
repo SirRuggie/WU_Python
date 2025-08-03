@@ -35,7 +35,7 @@ from hikari.impl import (
 
 # Configuration
 FWA_WAR_PLANS_CONFIG = {
-    "fwa_clan_rep_role_id": 1088914884999249940,
+    "fwa_clan_rep_role_id": 769130325460254740,
     "max_opponent_name_length": 50,
 }
 
