@@ -83,22 +83,32 @@ class WarPlans(
             await ctx.respond("❌ You must have the FWA Clan Rep role to use this command.", ephemeral=True)
             return
 
-        # Extract clan info_hub from autocomplete selection
-        # The autocomplete returns format: "Clan Name|#TAG|role_id" (no spaces)
+        # Extract clan info from autocomplete selection
+        # Desktop returns format: "Clan Name|#TAG|role_id"
+        # Mobile might return just: "Clan Name" (display text)
         parts = self.clan_name.split("|")
-        if len(parts) < 3:
-            # Debug info_hub to help identify the issue
-            await ctx.respond(
-                f"❌ Invalid clan selection format.\n"
-                f"Expected format: 'Name|Tag|RoleID'\n"
-                f"Received: '{self.clan_name}'",
-                ephemeral=True
-            )
-            return
-
-        clan_display_name = parts[0]
-        clan_tag = parts[1]
-        clan_role_id = parts[2]
+        
+        if len(parts) >= 3:
+            # Desktop format - parse normally
+            clan_display_name = parts[0]
+            clan_tag = parts[1]
+            clan_role_id = parts[2]
+        else:
+            # Mobile format - just clan name, need to look up in database
+            clan_display_name = self.clan_name.strip()
+            
+            # Look up clan details from database
+            clan_data = await mongo.clans.find_one({"name": clan_display_name, "type": "FWA"})
+            if not clan_data:
+                await ctx.respond(
+                    f"❌ Could not find FWA clan '{clan_display_name}' in database.\n"
+                    f"Please try selecting the clan again.",
+                    ephemeral=True
+                )
+                return
+            
+            clan_tag = clan_data.get("tag", "")
+            clan_role_id = str(clan_data.get("role_id", ""))
 
         # Validate role_id
         if not clan_role_id or clan_role_id == "None":
@@ -119,12 +129,7 @@ class WarPlans(
             await ctx.respond("❌ This clan doesn't have an announcement channel set!", ephemeral=True)
             return
 
-        # Validate and sanitize opponent name
-        if not validate_opponent_name(self.opponent):
-            await ctx.respond("❌ Invalid opponent clan name. Please use a valid name without special characters.",
-                              ephemeral=True)
-            return
-
+        # Sanitize opponent name (no validation needed - allow all characters)
         opponent_name = sanitize_opponent_name(self.opponent)
 
         # Get author name

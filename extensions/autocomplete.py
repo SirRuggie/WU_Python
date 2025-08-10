@@ -90,8 +90,8 @@ async def fwa_clans(
     # Create list of tuples for clean display
     choices = []
     for clan in filtered_clans[:25]:
-        # Display format: "Clan Name • #TAG"
-        display = f"{clan['name']} • {clan['tag']}"
+        # Display format: Just the clan name for simplicity
+        display = clan['name']
         # Value format: "Name|Tag|RoleID" (what the command receives)
         value = f"{clan['name']}|{clan['tag']}|{clan.get('role_id', '')}"
         choices.append((display, value))

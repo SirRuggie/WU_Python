@@ -294,9 +294,8 @@ def sanitize_opponent_name(name: str) -> str:
     """Sanitize opponent name for safe display"""
     # Remove excess whitespace
     name = ' '.join(name.split())
-    # Remove Discord markdown characters
-    for char in ['*', '_', '~', '|', '`']:
-        name = name.replace(char, '')
+    # Don't remove any characters - the name is wrapped in backticks in the templates
+    # This preserves all special characters in clan names
     return name.strip()
 
 
