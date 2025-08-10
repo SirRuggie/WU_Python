@@ -74,8 +74,8 @@ def get_th_emoji(th_level: str):
 
 def validate_clash_link(link: str) -> bool:
     """Validate if a link is a valid Clash of Clans link"""
-    pattern = r'^https://link\.clashofclans\.com/\?action=OpenLayout&id=[\w%]+$'
-    return bool(re.match(pattern, link))
+    # Simple validation - just check if it's a clash of clans link
+    return link.startswith("https://link.clashofclans.com/")
 
 
 def validate_image_url(url: str) -> bool:
