@@ -35,7 +35,7 @@ from hikari.impl import (
 FWA_REP_ROLE_ID = 993015846442127420
 
 # TH levels we support for FWA
-FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th17"]
+FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th16_new", "th17", "th17_new"]
 
 SERVER_FAMILY = "Warriors_United"
 
@@ -65,7 +65,9 @@ def get_fwa_public_id(th_level: str, base_type: str) -> str:
 
 def get_th_emoji(th_level: str):
     """Get the appropriate TH emoji object"""
-    th_num = th_level.upper().replace("TH", "")
+    # Handle _new variants by removing the suffix
+    clean_th_level = th_level.replace("_new", "")
+    th_num = clean_th_level.upper().replace("TH", "")
     emoji_attr = f"TH{th_num}"
     if hasattr(emojis, emoji_attr):
         return getattr(emojis, emoji_attr)

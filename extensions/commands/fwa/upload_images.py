@@ -20,7 +20,7 @@ CLOUDINARY_WAR_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/war_bases"
 CLOUDINARY_ACTIVE_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/active_bases"
 
 # TH levels we support
-FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th17"]
+FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th16_new", "th17", "th17_new"]
 
 
 @fwa.register()
@@ -34,7 +34,10 @@ class UploadImages(
         "town-hall",
         "Select the Town Hall level (e.g., th9, th10, etc.)",
         choices=[
-            lightbulb.Choice(name=f"Town Hall {th[2:]}", value=th)
+            lightbulb.Choice(
+                name=f"Town Hall {th.replace('th', '').replace('_new', ' New')}",
+                value=th
+            )
             for th in FWA_TH_LEVELS
         ]
     )
@@ -91,8 +94,16 @@ class UploadImages(
                 )
                 return
 
-        # Process uploads
-        th_num = self.th_level.upper().replace("TH", "")
+        # Process uploads and format display name
+        if self.th_level.endswith('_new'):
+            base_th = self.th_level.replace('_new', '')
+            th_num = base_th.upper().replace("TH", "")
+            th_display = f"TH{th_num} New"
+            th_friendly = f"Town Hall {th_num} New"
+        else:
+            th_num = self.th_level.upper().replace("TH", "")
+            th_display = f"TH{th_num}"
+            th_friendly = f"Town Hall {th_num}"
         upload_summary = []
 
         try:
@@ -154,9 +165,9 @@ class UploadImages(
 
             # Build success response
             embed = hikari.Embed(
-                title=f"✅ TH{th_num} Images Uploaded",
+                title=f"✅ {th_display} Images Uploaded",
                 description=(
-                        f"Successfully uploaded FWA base images for Town Hall {th_num}.\n\n"
+                        f"Successfully uploaded FWA base images for {th_friendly}.\n\n"
                         + "\n".join(upload_summary)
                 ),
                 color=0x00FF00
@@ -188,7 +199,7 @@ class UploadImages(
             # Error handling
             error_embed = hikari.Embed(
                 title="❌ Upload Failed",
-                description=f"Failed to upload images for TH{th_num}.",
+                description=f"Failed to upload images for {th_display}.",
                 color=0xFF0000
             )
 

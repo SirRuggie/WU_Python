@@ -743,9 +743,19 @@ async def fwa_questions(
                                         value="th17"
                                     ),
                                     SelectOption(
+                                        emoji=emojis.TH17.partial_emoji,
+                                        label="TH17 New",
+                                        value="th17_new"
+                                    ),
+                                    SelectOption(
                                         emoji=emojis.TH16.partial_emoji,
                                         label="TH16",
                                         value="th16"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH16.partial_emoji,
+                                        label="TH16 New",
+                                        value="th16_new"
                                     ),
                                     SelectOption(
                                         emoji=emojis.TH15.partial_emoji,
@@ -848,14 +858,24 @@ async def th_select(
         )
         return
     
-    th_number = choice.lstrip('th')
+    # Format display name properly for _new variants
+    if choice.endswith('_new'):
+        base_th = choice.replace('_new', '')
+        th_number = base_th.lstrip('th')
+        display_name = f"TH{th_number} New"
+        friendly_name = f"Town Hall {th_number} New"
+    else:
+        th_number = choice.lstrip('th')
+        display_name = f"TH{th_number}"
+        friendly_name = f"Town Hall {th_number}"
+    
     base_link = getattr(fwa.fwa_base_links, choice, None)
     
     # Check if base_link exists
     if not base_link:
         await ctx.respond(
             f"❌ **FWA Base Link Not Found**\n\n"
-            f"The FWA base link for {choice.upper()} is not configured in the database. "
+            f"The FWA base link for {display_name} is not configured in the database. "
             "Please use the `/clan dashboard` command to add all FWA base links.",
             ephemeral=True
         )
@@ -868,7 +888,7 @@ async def th_select(
     if not war_base_media or not active_war_base_media:
         await ctx.respond(
             f"❌ **FWA Base Images Not Found**\n\n"
-            f"The FWA base images for {choice.upper()} are not configured. "
+            f"The FWA base images for {display_name} are not configured. "
             "Please contact an administrator to add the FWA base images.",
             ephemeral=True
         )
@@ -879,7 +899,7 @@ async def th_select(
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content=f"## Town Hall {th_number}"),
+                Text(content=f"## {friendly_name}"),
                 Media(
                     items=[
                         MediaItem(media=war_base_media),
