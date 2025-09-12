@@ -14,7 +14,7 @@ from utils import bot_data
 
 load_dotenv()
 
-# Create a GatewayBot instance with intents
+# Create a GatewayBot instance with intents and custom rate limit settings
 bot = hikari.GatewayBot(
     token=os.getenv("DISCORD_TOKEN"),
     intents=(
@@ -25,6 +25,9 @@ bot = hikari.GatewayBot(
         | hikari.Intents.GUILD_MODERATION
         | hikari.Intents.GUILD_MESSAGE_REACTIONS
     ),
+    # Fix hikari's overly aggressive rate limiting
+    max_rate_limit=30.0,  # Don't wait more than 30 seconds for rate limits
+    max_retries=1,  # Fail fast instead of waiting
 )
 
 client = lightbulb.client_from_app(bot)
