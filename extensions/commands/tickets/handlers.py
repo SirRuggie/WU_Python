@@ -20,7 +20,6 @@ from hikari.impl import (
 
 from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GOLD_ACCENT
-from utils.rest_client import get_custom_rest_client
 from extensions.components import register_action
 from extensions.commands.tickets import loader
 
@@ -261,11 +260,8 @@ async def handle_create_ticket(
             # Create the ticket channel with new naming format: 🆕{type}-{number}-{username}
             channel_name = f"🆕{ticket_prefix}-{ticket_number}-{ctx.user.username}"
 
-            # Get our custom REST client to handle rate limits properly
-            custom_rest = get_custom_rest_client(bot)
-            
             try:
-                channel = await custom_rest.create_guild_text_channel(
+                channel = await bot.rest.create_guild_text_channel(
                     guild=ctx.guild_id,
                     name=channel_name,
                     category=category_id,
@@ -276,22 +272,12 @@ async def handle_create_ticket(
                 # Remove cooldown so user can try again later
                 user_cooldowns.pop(user_id, None)
                 
-                # Get more accurate timing information
-                wait_minutes = int(e.retry_after / 60)
-                wait_seconds = int(e.retry_after % 60)
-                
-                if wait_minutes > 0:
-                    wait_time = f"{wait_minutes}m {wait_seconds}s" if wait_seconds > 0 else f"{wait_minutes}m"
-                else:
-                    wait_time = f"{wait_seconds}s"
-                
-                print(f"[Tickets] Rate limit error creating ticket: waiting {wait_time}")
+                print(f"[Tickets] Rate limit exceeded maximum wait time: {e}")
                 await ctx.interaction.edit_initial_response(
                     content=(
-                        f"⏰ **Discord Rate Limit Active**\n\n"
-                        f"The bot needs to wait **{wait_time}** before creating more channels.\n"
-                        f"This is Discord's protection against spam, not a bot issue.\n\n"
-                        f"**Please try again in {wait_time}** - your request will work then!"
+                        "⏰ **Discord Rate Limit Active**\n\n"
+                        "Too many channels created recently. Please try again in a few minutes.\n\n"
+                        "This is Discord's protection against spam."
                     )
                 )
                 return

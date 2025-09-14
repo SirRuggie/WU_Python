@@ -4,7 +4,9 @@
       "Bash(python:*)",
       "Bash(where python)",
       "Bash(py -m py_compile:*)",
-      "Bash(py:*)"
+      "Bash(py:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []
