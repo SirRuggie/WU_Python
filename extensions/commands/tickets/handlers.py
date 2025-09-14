@@ -143,6 +143,9 @@ async def handle_create_ticket(
 ):
     """Handle ticket creation button clicks"""
 
+    # Defer interaction immediately to prevent timeout
+    await ctx.defer(ephemeral=True)
+
     # Periodic cleanup of expired cooldowns
     cleanup_expired_cooldowns()
 
@@ -154,19 +157,17 @@ async def handle_create_ticket(
         time_since_last = (current_time - user_cooldowns[user_id]).total_seconds()
         if time_since_last < COOLDOWN_DURATION:
             remaining = int(COOLDOWN_DURATION - time_since_last)
-            await ctx.respond(
-                f"⏳ Please wait {remaining} seconds before creating another ticket.",
-                ephemeral=True
+            await ctx.interaction.edit_initial_response(
+                content=f"⏳ Please wait {remaining} seconds before creating another ticket."
             )
             return
     
     # Update cooldown
     user_cooldowns[user_id] = current_time
 
-    # Send immediate response to prevent timeout
-    await ctx.respond(
-        content="🎫 Creating your ticket...",
-        ephemeral=True
+    # Send status update
+    await ctx.interaction.edit_initial_response(
+        content="🎫 Creating your ticket..."
     )
 
     # Determine ticket type from action_id
