@@ -25,6 +25,7 @@ loader = lightbulb.Loader()
 # Configuration
 CWL_CHANNEL_ID = 1072714594625257502
 LAZY_CWL_CHANNEL_ID = 865726525990633472  # Same for testing, change to actual channel later
+TEST_CHANNEL_ID = 947166650321494067  # Test channel for development/testing
 DEFAULT_TIMEZONE = "America/New_York"
 ROLE_TO_PING = 1080521665584308286
 MAIN_FORM_URL = "https://forms.gle/ntB6qFvstu4gKUXc6"
@@ -214,21 +215,26 @@ def create_cwl_reminder_message(reminder_number: int = 0, channel_type: str = "m
     return components
 
 
-async def send_cwl_reminder(reminder_number: int = 0):
-    """Send CWL signup reminder messages to both channels"""
+async def send_cwl_reminder(reminder_number: int = 0, test_mode: bool = False):
+    """Send CWL signup reminder messages to channels"""
     global bot_instance, mongo_client
-    
+
     if not bot_instance:
         print("[CWL Reminder] Bot instance not available!")
         return
-    
+
     reminder_type = "initial" if reminder_number == 0 else f"follow-up #{reminder_number}"
-    
-    # Send to both channels
-    channels = [
-        {"id": CWL_CHANNEL_ID, "type": "main", "name": "Main"},
-        {"id": LAZY_CWL_CHANNEL_ID, "type": "lazy", "name": "Lazy"}
-    ]
+
+    # Choose channels based on test mode
+    if test_mode:
+        channels = [
+            {"id": TEST_CHANNEL_ID, "type": "main", "name": "Test"}
+        ]
+    else:
+        channels = [
+            {"id": CWL_CHANNEL_ID, "type": "main", "name": "Main"},
+            {"id": LAZY_CWL_CHANNEL_ID, "type": "lazy", "name": "Lazy"}
+        ]
     
     for channel_info in channels:
         try:
@@ -603,10 +609,10 @@ class Test(
         await ctx.defer(ephemeral=True)
         
         try:
-            await send_cwl_reminder()
+            await send_cwl_reminder(test_mode=True)
             await ctx.respond(
                 f"✅ **Test reminder sent!**\n"
-                f"Check <#{CWL_CHANNEL_ID}> and <#{LAZY_CWL_CHANNEL_ID}> to see the messages."
+                f"Check <#{TEST_CHANNEL_ID}> to see the message."
             )
         except Exception as e:
             await ctx.respond(
@@ -665,7 +671,7 @@ class AddFollowup(
         "delay",
         "Time delay after the previous reminder",
         min_value=1,
-        max_value=30  # Max 30 (days)
+        max_value=36  # Max 36 (hours/days depending on unit)
     )
     
     unit = lightbulb.string(
@@ -917,18 +923,18 @@ class TestAll(
         await ctx.respond(
             f"🚀 **Testing {total_reminders} reminder(s)...**\n"
             f"Each reminder will be sent with a 5-second delay.\n"
-            f"Check <#{CWL_CHANNEL_ID}> and <#{LAZY_CWL_CHANNEL_ID}> to see the messages."
+            f"Check <#{TEST_CHANNEL_ID}> to see the messages."
         )
-        
+
         # Send initial reminder
-        await send_cwl_reminder(0)
+        await send_cwl_reminder(0, test_mode=True)
         await asyncio.sleep(5)
-        
+
         # Send follow-ups
         for followup in sorted(followups, key=lambda x: x.get("number", 0)):
             if followup.get("enabled", True):
                 number = followup.get("number")
-                await send_cwl_reminder(number)
+                await send_cwl_reminder(number, test_mode=True)
                 await asyncio.sleep(5)
 
 
