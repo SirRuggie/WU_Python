@@ -624,9 +624,15 @@ class Cancel(
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        # Remove the job
-        if scheduler.get_job(cwl_job_id):
-            scheduler.remove_job(cwl_job_id)
+        # Remove the base job
+        if scheduler.get_job(cwl_base_job_id):
+            scheduler.remove_job(cwl_base_job_id)
+
+        # Remove all follow-up jobs
+        for i in range(1, 6):  # Remove follow-ups 1-5
+            followup_job_id = f"{cwl_followup_job_prefix}{i}"
+            if scheduler.get_job(followup_job_id):
+                scheduler.remove_job(followup_job_id)
         
         # Update MongoDB
         await mongo.database.cwl_reminder.update_one(
