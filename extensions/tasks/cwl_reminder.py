@@ -843,16 +843,22 @@ class List(
         day = schedule_data.get("day", "?")
         hour = schedule_data.get("hour", 0)
         minute = schedule_data.get("minute", 0)
-        hour_12 = hour % 12 or 12
-        am_pm = "AM" if hour < 12 else "PM"
-        
+
+        # Calculate the correct base datetime (next month if day has passed)
+        now = pendulum.now(DEFAULT_TIMEZONE)
+        base_datetime = now.replace(day=day, hour=hour, minute=minute, second=0, microsecond=0)
+
+        # If the scheduled day/time has passed this month, use next month
+        if base_datetime <= now:
+            base_datetime = base_datetime.add(months=1)
+
         # Build reminder list
         lines = ["## 📅 CWL Reminder Schedule\n"]
-        
-        # Initial reminder
-        base_time = f"{hour_12}:{minute:02d} {am_pm}"
+
+        # Initial reminder with full date
+        base_time_with_date = base_datetime.format("MMM D [at] h:mm A")
         lines.append(f"**Initial Reminder**")
-        lines.append(f"• Day {day} at {base_time}")
+        lines.append(f"• Sends at: {base_time_with_date}")
         lines.append(f"• Main Channel: <#{CWL_CHANNEL_ID}>")
         lines.append(f"• Lazy Channel: <#{LAZY_CWL_CHANNEL_ID}>")
         lines.append(f"• Message: CWL Time announcement\n")
@@ -861,12 +867,9 @@ class List(
         followups = schedule_data.get("followups", [])
         if followups:
             lines.append("**Follow-up Reminders**")
-            
+
             # Calculate cumulative delays
             current_delay = 0
-            base_datetime = pendulum.now(DEFAULT_TIMEZONE).replace(
-                day=day, hour=hour, minute=minute, second=0
-            )
             
             for followup in sorted(followups, key=lambda x: x.get("number", 0)):
                 if followup.get("enabled", True):
@@ -875,9 +878,9 @@ class List(
                     delay_display = followup.get("delay_display", f"{delay} minutes")
                     current_delay += delay
                     
-                    # Calculate actual time
+                    # Calculate actual time with date
                     followup_time = base_datetime.add(minutes=current_delay)
-                    time_str = followup_time.format("h:mm A")
+                    time_str = followup_time.format("MMM D [at] h:mm A")
                     
                     # Format total delay
                     total_hours = current_delay // 60
