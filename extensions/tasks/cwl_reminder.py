@@ -528,7 +528,8 @@ class Schedule(
                 f"✅ **CWL Reminder Scheduled!**\n"
                 f"• Day: {self.day} of every month\n"
                 f"• Time: {hour_12}:{self.minute:02d} {am_pm} ({DEFAULT_TIMEZONE})\n"
-                f"• Channel: <#{CWL_CHANNEL_ID}>"
+                f"• Main CWL Channel: <#{CWL_CHANNEL_ID}>\n"
+                f"• Lazy CWL Channel: <#{LAZY_CWL_CHANNEL_ID}>"
             )
         except Exception as e:
             await ctx.respond(
@@ -573,7 +574,8 @@ class Status(
         status_text = (
             f"## CWL Reminder Status\n"
             f"• **Schedule**: Day {day} at {hour_12}:{minute:02d} {am_pm} ({DEFAULT_TIMEZONE})\n"
-            f"• **Channel**: <#{CWL_CHANNEL_ID}>\n"
+            f"• **Main CWL Channel**: <#{CWL_CHANNEL_ID}>\n"
+            f"• **Lazy CWL Channel**: <#{LAZY_CWL_CHANNEL_ID}>\n"
             f"• **Status**: {job_status}"
         )
         
@@ -604,7 +606,7 @@ class Test(
             await send_cwl_reminder()
             await ctx.respond(
                 f"✅ **Test reminder sent!**\n"
-                f"Check <#{CWL_CHANNEL_ID}> to see the message."
+                f"Check <#{CWL_CHANNEL_ID}> and <#{LAZY_CWL_CHANNEL_ID}> to see the messages."
             )
         except Exception as e:
             await ctx.respond(
@@ -839,6 +841,8 @@ class List(
         base_time = f"{hour_12}:{minute:02d} {am_pm}"
         lines.append(f"**Initial Reminder**")
         lines.append(f"• Day {day} at {base_time}")
+        lines.append(f"• Main Channel: <#{CWL_CHANNEL_ID}>")
+        lines.append(f"• Lazy Channel: <#{LAZY_CWL_CHANNEL_ID}>")
         lines.append(f"• Message: CWL Time announcement\n")
         
         # Follow-up reminders
