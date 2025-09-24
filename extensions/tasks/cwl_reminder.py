@@ -23,8 +23,8 @@ from utils.constants import GOLDENROD_ACCENT, GREEN_ACCENT, RED_ACCENT, BLUE_ACC
 loader = lightbulb.Loader()
 
 # Configuration
-CWL_CHANNEL_ID = 947166650321494067
-LAZY_CWL_CHANNEL_ID = 947166650321494067  # Same for testing, change to actual channel later
+CWL_CHANNEL_ID = 1072714594625257502
+LAZY_CWL_CHANNEL_ID = 865726525990633472  # Same for testing, change to actual channel later
 DEFAULT_TIMEZONE = "America/New_York"
 ROLE_TO_PING = 1080521665584308286
 MAIN_FORM_URL = "https://forms.gle/ntB6qFvstu4gKUXc6"
