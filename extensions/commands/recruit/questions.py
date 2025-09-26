@@ -251,7 +251,7 @@ async def primary_questions(
     elif choice == "leaders_checking_you_out":
         components = [
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"## 🔍 **Application Under Review** · {user.mention}"),
                     Separator(divider=True),
@@ -281,7 +281,7 @@ async def primary_questions(
                     Text(content=(
                         f"Welcome to the Family!\n\n"
                         f"You are all good to go {user.mention}! Several channels will be available to you on the Main Server shortly. "
-                        f"You will receive a ping in the <https://discord.com/channels/644963518025826315/1128966424082255872> and all the appropriate server roles you will need: "
+                        f"You will receive a ping in the <#1128966424082255872> and all the appropriate server roles you will need: "
                         f"as well as a link to assigned Clan.\n\n"
                         f"**Once you receive the aforementioned ping, __ping__ your Recruiter to acknowledge you're there.**\n\n"
                         f"They will in turn kick off a server walkthrough guiding you to important channels related to your day to day play.\n\n"
