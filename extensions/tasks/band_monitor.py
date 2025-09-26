@@ -332,13 +332,6 @@ async def on_war_response(
     # Update the message
     await ctx.interaction.edit_initial_response(components=components)
 
-    # Send confirmation to user
-    emoji_map = {"yes": str(emojis.yes), "maybe": str(emojis.maybe), "no": str(emojis.no)}
-    await ctx.respond(
-        f"{emoji_map[response_type]} Your response has been recorded!",
-        ephemeral=True
-    )
-
 
 async def band_checker_loop(mongo: MongoClient):
     """Main loop that checks BAND API periodically"""
