@@ -245,11 +245,12 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                         components=[
                             Text(content="## **Warriors United FWA Clan Entry Ticket**"),
                             Text(content=(
-                                "1) CoC Name & Player Tag\n"
-                                "2) Age & Timezone? Country name would be good too.\n"
-                                "3) Do you have any other CoC accounts?\n"
-                                "4) If yes, please provide __all__ of those player tags.\n"
-                                "5) Are you familiar with LazyCWL and the day to day FWA Process?"
+                                "1) In-game name & Player Tag\n"
+                                "2) Age & Timezone. Country name would be good too.\n"
+                                "3) Do you have multiple accounts?\n"
+                                "4) If yes to #3, please provide all Player Tags.\n"
+                                "5) What exactly are you looking for in a Clan?\n"
+                                "6) Are you familiar with LazyCWL and the day to day FWA Process?"
                             )),
                         ],
                         accessory=Thumbnail(
@@ -315,11 +316,11 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                         components=[
                             Text(content="## **Warriors United Main Clan Entry Ticket**"),
                             Text(content=(
-                                "1) CoC Name & Player Tag\n"
-                                "2) Age & Timezone? Country name would be good too.\n"
-                                "3) Do you have any other CoC accounts?\n"
-                                "4) If yes, please provide __all__ of those player tags.\n"
-                                "5) Are you familiar with LazyCWL and the day to day FWA Process?"
+                                "1) In-game name & Player Tag\n"
+                                "2) Age & Timezone. Country name would be good too.\n"
+                                "3) Do you have multiple accounts?\n"
+                                "4) If yes to #3, please provide all Player Tags.\n"
+                                "5) What exactly are you looking for in a Clan?"
                             )),
                         ],
                         accessory=Thumbnail(

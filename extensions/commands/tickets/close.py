@@ -30,16 +30,16 @@ from hikari.impl import (
 
 def get_channel_name_with_new_emoji(channel_name: str, new_emoji: str) -> str:
     """Replace the emoji prefix in a channel name with a new emoji"""
-    # Common ticket emojis to look for
+    # Known ticket emojis to look for
     ticket_emojis = ["🆕", "❌", "✅"]
-    
+
     # Check if the channel name starts with any of the ticket emojis
     for emoji in ticket_emojis:
         if channel_name.startswith(emoji):
             # Replace the old emoji with the new one
             return new_emoji + channel_name[len(emoji):]
-    
-    # If no emoji found, just prepend the new emoji
+
+    # If no emoji found, just prepend the new emoji (this shouldn't happen for tickets)
     return new_emoji + channel_name
 
 
