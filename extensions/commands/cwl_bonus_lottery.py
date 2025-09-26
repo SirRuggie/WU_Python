@@ -22,7 +22,7 @@ from utils.constants import GOLDENROD_ACCENT
 loader = lightbulb.Loader()
 
 # Configuration - Easy to change
-LAZY_CWL_CHANNEL = 947166650321494067
+# LAZY_CWL_CHANNEL = 947166650321494067  # No longer needed - sends to current channel
 
 
 def get_last_three_months():
@@ -138,16 +138,16 @@ class LazyBonusLottery(
             )
         ]
         
-        # Send to the Lazy CWL channel
+        # Send to the current channel
         try:
             await bot.rest.create_message(
-                channel=LAZY_CWL_CHANNEL,
+                channel=ctx.channel_id,
                 components=components
             )
             
             # Confirm to the user
             await ctx.respond(
-                f"✅ Lottery results posted to <#{LAZY_CWL_CHANNEL}>!\n\n"
+                f"✅ Lottery results posted!\n\n"
                 f"**Winners selected:** {', '.join(winners)}",
                 ephemeral=True
             )
