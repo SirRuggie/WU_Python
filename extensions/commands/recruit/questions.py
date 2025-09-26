@@ -271,6 +271,30 @@ async def primary_questions(
                 ]
             )
         ]
+    elif choice == "welcome_to_family":
+        components = [
+            Container(
+                accent_color=GOLDENROD_ACCENT,
+                components=[
+                    Text(content=f"## 🛡️ **Welcome to the Family!** · {user.mention}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        f"Welcome to the Family!\n\n"
+                        f"You are all good to go {user.mention}! Several channels will be available to you on the Main Server shortly. "
+                        f"You will receive a ping in the **「🚀」new-warrior-launch-pad** and all the appropriate server roles you will need: "
+                        f"as well as a link to assigned Clan.\n\n"
+                        f"**Once you receive the aforementioned ping, __ping__ your Recruiter to acknowledge you're there.**\n\n"
+                        f"They will in turn kick off a server walkthrough guiding you to important channels related to your day to day play.\n\n"
+                        f"# Welcome to the Family...here's your 🛡️! Let's get you into Battle!"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="assets/Gold_Footer.png"),
+                        ]),
+                    Text(content=f"-# Requested by {ctx.member.mention}"),
+                ]
+            )
+        ]
     message = await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
@@ -1291,6 +1315,10 @@ async def recruit_questions_page(
                                     emoji="👀",
                                     label="Leaders Checking You Out",
                                     value="leaders_checking_you_out"),
+                                SelectOption(
+                                    emoji="🛡️",
+                                    label="Welcome to the Family",
+                                    value="welcome_to_family"),
                     ]),
                 ]),
                 ActionRow(
