@@ -262,7 +262,14 @@ async def send_cwl_reminder(reminder_number: int = 0, test_mode: bool = False):
             }},
             upsert=True
         )
-        
+
+        # Clean up completed follow-up reminder from pending collection
+        if reminder_number > 0:
+            job_id = f"{cwl_followup_job_prefix}{reminder_number}"
+            result = await mongo_client.database.cwl_pending_reminders.delete_one({"_id": job_id})
+            if result.deleted_count > 0:
+                print(f"[CWL Reminder] Cleaned up completed follow-up #{reminder_number} from pending reminders")
+
         # If this is the initial reminder, schedule all follow-ups
         if reminder_number == 0:
             schedule_data = await mongo_client.database.cwl_reminder.find_one({"_id": "schedule"})
@@ -284,18 +291,18 @@ async def send_cwl_reminder(reminder_number: int = 0, test_mode: bool = False):
 
 async def schedule_followup_reminder(base_time: datetime, reminder_number: int, delay_minutes: int):
     """Schedule a follow-up reminder based on the base time and delay"""
-    global scheduler
-    
+    global scheduler, mongo_client
+
     # Calculate when this follow-up should run
     run_time = base_time + timedelta(minutes=delay_minutes)
-    
+
     # Create job ID for this follow-up
     job_id = f"{cwl_followup_job_prefix}{reminder_number}"
-    
+
     # Remove existing job if any
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
-    
+
     # Schedule the follow-up
     scheduler.add_job(
         send_cwl_reminder,
@@ -304,7 +311,23 @@ async def schedule_followup_reminder(base_time: datetime, reminder_number: int, 
         args=[reminder_number],
         replace_existing=True
     )
-    
+
+    # Save to MongoDB for persistence across restarts
+    if mongo_client:
+        reminder_data = {
+            "_id": job_id,
+            "reminder_number": reminder_number,
+            "run_time": run_time.isoformat(),
+            "job_id": job_id,
+            "created_at": pendulum.now(DEFAULT_TIMEZONE).isoformat()
+        }
+
+        await mongo_client.database.cwl_pending_reminders.update_one(
+            {"_id": job_id},
+            {"$set": reminder_data},
+            upsert=True
+        )
+
     print(f"[CWL Reminder] Scheduled follow-up #{reminder_number} for {run_time}")
 
 
@@ -364,6 +387,73 @@ async def reschedule_all_reminders():
             
             if reminder_number and cumulative_delay > 0:
                 await schedule_followup_reminder(next_run, reminder_number, cumulative_delay)
+
+
+async def restore_pending_reminders():
+    """Restore pending follow-up reminders from MongoDB on bot startup"""
+    global scheduler, mongo_client
+
+    if not mongo_client:
+        return
+
+    print("[CWL Reminder] Checking for pending follow-up reminders...")
+
+    # Get current time for comparison
+    now = pendulum.now(DEFAULT_TIMEZONE)
+
+    # Find all pending reminders
+    pending_reminders = await mongo_client.database.cwl_pending_reminders.find().to_list(length=None)
+
+    if not pending_reminders:
+        print("[CWL Reminder] No pending reminders found")
+        return
+
+    restored_count = 0
+    expired_count = 0
+
+    for reminder in pending_reminders:
+        reminder_id = reminder.get("_id")
+        run_time_str = reminder.get("run_time")
+        reminder_number = reminder.get("reminder_number")
+        job_id = reminder.get("job_id")
+
+        if not all([reminder_id, run_time_str, reminder_number, job_id]):
+            # Invalid reminder data, clean it up
+            await mongo_client.database.cwl_pending_reminders.delete_one({"_id": reminder_id})
+            continue
+
+        try:
+            # Parse the run time
+            run_time = pendulum.parse(run_time_str)
+
+            # Check if the reminder is still in the future
+            if run_time > now:
+                # Reschedule the reminder
+                scheduler.add_job(
+                    send_cwl_reminder,
+                    trigger=DateTrigger(run_date=run_time, timezone=DEFAULT_TIMEZONE),
+                    id=job_id,
+                    args=[reminder_number],
+                    replace_existing=True
+                )
+
+                print(f"[CWL Reminder] Restored follow-up #{reminder_number} for {run_time}")
+                restored_count += 1
+            else:
+                # Reminder has expired, clean it up
+                await mongo_client.database.cwl_pending_reminders.delete_one({"_id": reminder_id})
+                print(f"[CWL Reminder] Cleaned up expired reminder #{reminder_number} (was scheduled for {run_time})")
+                expired_count += 1
+
+        except Exception as e:
+            print(f"[CWL Reminder] Error restoring reminder {reminder_id}: {e}")
+            # Clean up invalid reminder
+            await mongo_client.database.cwl_pending_reminders.delete_one({"_id": reminder_id})
+
+    if restored_count > 0:
+        print(f"[CWL Reminder] Successfully restored {restored_count} pending reminder(s)")
+    if expired_count > 0:
+        print(f"[CWL Reminder] Cleaned up {expired_count} expired reminder(s)")
 
 
 async def schedule_cwl_reminder(day: int, hour: int, minute: int):
@@ -474,6 +564,9 @@ async def on_bot_started(
                             else:
                                 delay_display = f"{minutes} minutes"
                         print(f"  - Reminder #{f.get('number')}: {delay_display or 'unknown delay'}")
+
+    # Restore any pending follow-up reminders that may have been scheduled before a restart
+    await restore_pending_reminders()
 
 
 @loader.listener(hikari.StoppingEvent)
@@ -639,7 +732,12 @@ class Cancel(
             followup_job_id = f"{cwl_followup_job_prefix}{i}"
             if scheduler.get_job(followup_job_id):
                 scheduler.remove_job(followup_job_id)
-        
+
+        # Clear all pending reminders from database
+        result = await mongo.database.cwl_pending_reminders.delete_many({})
+        if result.deleted_count > 0:
+            print(f"[CWL Reminder] Cleared {result.deleted_count} pending reminder(s) from database")
+
         # Update MongoDB
         await mongo.database.cwl_reminder.update_one(
             {"_id": "schedule"},
