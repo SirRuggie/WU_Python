@@ -191,7 +191,15 @@ class LazyCwlPing(
         }
         await mongo.button_store.insert_one(data)
 
-        options = []
+        options = [
+            SelectOption(
+                label="🌍 ALL FWA CLANS",
+                value="ALL",
+                description=f"Ping all {len(snapshots)} active FWA clan snapshots",
+                emoji="🌍"
+            )
+        ]
+
         for snapshot in snapshots:
             player_count = len(snapshot.get("players", []))
             options.append(
@@ -484,6 +492,141 @@ async def handle_snapshot_select(
     await ctx.interaction.edit_initial_response(components=components)
 
 
+async def process_single_snapshot_ping(
+    snapshot: dict,
+    bot: hikari.GatewayBot,
+    coc_client: coc.Client,
+    mongo: MongoClient
+) -> dict:
+    """
+    Process a single snapshot and send ping if needed.
+    Returns dict with results: {
+        'success': bool,
+        'clan_name': str,
+        'missing_count': int,
+        'total_count': int,
+        'error': str (if failed)
+    }
+    """
+    try:
+        # Fetch clan data to get announcement channel
+        clan_data = await mongo.clans.find_one({"tag": snapshot["clan_tag"]})
+        if not clan_data:
+            return {
+                'success': False,
+                'clan_name': snapshot.get('clan_name', 'Unknown'),
+                'error': f"Clan data not found for {snapshot['clan_tag']}"
+            }
+
+        # Get announcement channel ID
+        announcement_channel = clan_data.get("announcement_id")
+        if not announcement_channel:
+            return {
+                'success': False,
+                'clan_name': snapshot['clan_name'],
+                'error': f"No announcement channel set"
+            }
+
+        # Get clan role ID for mentions
+        clan_role_id = clan_data.get("role_id")
+
+        # Get current clan members
+        clan = await coc_client.get_clan(snapshot["clan_tag"])
+        if not clan:
+            return {
+                'success': False,
+                'clan_name': snapshot['clan_name'],
+                'error': f"Clan not found in CoC API"
+            }
+
+        current_member_tags = {member.tag.upper() for member in clan.members}
+        snapshot_players = snapshot.get("players", [])
+
+        # Find missing players
+        missing_players = []
+        for player in snapshot_players:
+            player_tag = player.get("tag", "").upper()
+            if player_tag and player_tag not in current_member_tags:
+                missing_players.append(player)
+
+        # If no missing players, return success without sending message
+        if not missing_players:
+            return {
+                'success': True,
+                'clan_name': snapshot['clan_name'],
+                'missing_count': 0,
+                'total_count': len(snapshot_players),
+                'all_present': True
+            }
+
+        # Create ping message for missing players
+        ping_components = [
+            Text(content=f"## 📢 FWA Sync War - Return to {snapshot['clan_name']}"),
+            Separator(),
+            Text(content=f"⚔️ **FWA SYNC WAR TIME** ⚔️"),
+            Text(content=f"Please return to **{snapshot['clan_name']}** `{snapshot['clan_tag']}` for sync war!"),
+            Separator(),
+            Text(content="**📋 Workflow: Train ⇨ Join ⇨ Attack ⇨ Return (15-30min tops)**"),
+            Separator(),
+            Text(content="**Players to return:**")
+        ]
+
+        # Add individual player details
+        for player in missing_players:
+            player_name = player.get('name', 'Unknown')
+            player_tag = player.get('tag', 'Unknown')
+            discord_id = player.get('discord_id')
+
+            if discord_id:
+                discord_mention = f"<@{discord_id}>"
+            else:
+                discord_mention = "No Discord linked"
+
+            ping_components.append(
+                Text(content=f"**{player_name}** - `{player_tag}` - {discord_mention}")
+            )
+
+        # Add total count and link
+        ping_components.extend([
+            Separator(),
+            Text(content=f"**Total missing:** {len(missing_players)}/{len(snapshot_players)} players"),
+            Separator(),
+            ActionRow(
+                components=[
+                    LinkButton(
+                        url=f"https://link.clashofclans.com/en?action=OpenClanProfile&tag={snapshot['clan_tag'].replace('#', '%23')}",
+                        label=f"Open {snapshot['clan_name']} in-Game",
+                        emoji="🔗"
+                    )
+                ]
+            )
+        ])
+
+        # Send to clan's announcement channel with role ping
+        role_mentions = [int(clan_role_id)] if clan_role_id else []
+        await bot.rest.create_message(
+            channel=announcement_channel,
+            components=[Container(accent_color=GOLD_ACCENT, components=ping_components)],
+            user_mentions=True,
+            role_mentions=role_mentions
+        )
+
+        return {
+            'success': True,
+            'clan_name': snapshot['clan_name'],
+            'missing_count': len(missing_players),
+            'total_count': len(snapshot_players),
+            'all_present': False
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'clan_name': snapshot.get('clan_name', 'Unknown'),
+            'error': str(e)
+        }
+
+
 @register_action("lazycwl_ping_select", no_return=True)
 @lightbulb.di.with_di
 async def handle_ping_select(
@@ -496,143 +639,116 @@ async def handle_ping_select(
     **kwargs
 ) -> None:
     """Handle snapshot selection for pinging missing players."""
-    snapshot_id = ctx.interaction.values[0]
+    selection = ctx.interaction.values[0]
 
     try:
-        # Get the snapshot
-        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
-        if not snapshot:
-            raise Exception("Snapshot not found")
+        if selection == "ALL":
+            # Process all active snapshots
+            snapshots = await mongo.lazy_cwl_snapshots.find({"active": True}).to_list(length=None)
 
-        # Fetch clan data to get announcement channel
-        clan_data = await mongo.clans.find_one({"tag": snapshot["clan_tag"]})
-        if not clan_data:
-            raise Exception(f"Clan data not found for {snapshot['clan_tag']}")
+            if not snapshots:
+                components = [
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ No Active Snapshots"),
+                            Text(content="No active snapshots found to ping."),
+                        ]
+                    )
+                ]
+                await ctx.interaction.edit_initial_response(components=components)
+                return
 
-        # Get announcement channel ID
-        announcement_channel = clan_data.get("announcement_id")
-        if not announcement_channel:
-            raise Exception(f"No announcement channel set for {snapshot['clan_name']}")
+            # Process each snapshot
+            results = []
+            for snapshot in snapshots:
+                result = await process_single_snapshot_ping(snapshot, bot, coc_client, mongo)
+                results.append(result)
 
-        # Get clan role ID for mentions
-        clan_role_id = clan_data.get("role_id")
+            # Build summary response
+            total_clans = len(results)
+            successful = sum(1 for r in results if r['success'])
+            failed = sum(1 for r in results if not r['success'])
+            total_missing = sum(r.get('missing_count', 0) for r in results if r['success'])
+            clans_all_present = sum(1 for r in results if r.get('all_present', False))
 
-        # Get current clan members
-        clan = await coc_client.get_clan(snapshot["clan_tag"])
-        if not clan:
-            raise Exception(f"Clan {snapshot['clan_tag']} not found")
-
-        current_member_tags = {member.tag.upper() for member in clan.members}
-        snapshot_players = snapshot.get("players", [])
-
-        # Debug information
-        print(f"[LazyCWL Debug] Snapshot has {len(snapshot_players)} players")
-        print(f"[LazyCWL Debug] Current clan has {len(current_member_tags)} members")
-        if snapshot_players:
-            print(f"[LazyCWL Debug] Sample snapshot tag: {snapshot_players[0].get('tag')}")
-        if current_member_tags:
-            print(f"[LazyCWL Debug] Sample current tag: {list(current_member_tags)[0]}")
-
-        # Find missing players
-        missing_players = []
-        missing_with_discord = []
-        missing_without_discord = []
-
-        for player in snapshot_players:
-            player_tag = player.get("tag", "").upper()
-            if player_tag and player_tag not in current_member_tags:
-                missing_players.append(player)
-                print(f"[LazyCWL Debug] Missing player: {player.get('name')} ({player_tag})")
-                if player.get("discord_id"):
-                    missing_with_discord.append(player)
-                else:
-                    missing_without_discord.append(player)
-
-        if not missing_players:
-            # Everyone is back!
-            components = [
-                Container(
-                    accent_color=GREEN_ACCENT,
-                    components=[
-                        Text(content="## 🎉 All Players Are Ready!"),
-                        Text(content=f"All **{len(snapshot_players)}** players from **{snapshot['clan_name']}** are in their FWA home clan."),
-                        Text(content=f"Snapshot taken: {snapshot['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}"),
-                        Text(content=f"Current clan size: {len(current_member_tags)} members"),
-                        Text(content="✅ Ready for FWA sync!"),
-                    ]
-                )
-            ]
-        else:
-            # Create Components V2 ping message with individual player details
-            ping_components = [
-                Text(content=f"## 📢 FWA Sync War - Return to {snapshot['clan_name']}"),
+            summary_parts = [
+                Text(content="## 📤 All Clans Ping Complete"),
                 Separator(),
-                Text(content=f"⚔️ **FWA SYNC WAR TIME** ⚔️"),
-                Text(content=f"Please return to **{snapshot['clan_name']}** `{snapshot['clan_tag']}` for sync war!"),
+                Text(content=(
+                    f"**Total Clans Processed:** {total_clans}\n"
+                    f"**Successful:** {successful}\n"
+                    f"**Failed:** {failed}\n"
+                    f"**Clans with all players present:** {clans_all_present}\n"
+                    f"**Total missing players:** {total_missing}"
+                )),
                 Separator(),
-                Text(content="**📋 Workflow: Train ⇨ Join ⇨ Attack ⇨ Return (15-30min tops)**"),
-                Separator(),
-                Text(content="**Players to return:**")
+                Text(content="**Clan Details:**")
             ]
 
-            # Add individual player details
-            for player in missing_players:
-                player_name = player.get('name', 'Unknown')
-                player_tag = player.get('tag', 'Unknown')
-                discord_id = player.get('discord_id')
-
-                if discord_id:
-                    discord_mention = f"<@{discord_id}>"
-                else:
-                    discord_mention = "No Discord linked"
-
-                ping_components.append(
-                    Text(content=f"**{player_name}** - `{player_tag}` - {discord_mention}")
-                )
-
-            # Add total count
-            ping_components.extend([
-                Separator(),
-                Text(content=f"**Total missing:** {len(missing_players)}/{len(snapshot_players)} players"),
-                Separator(),
-                ActionRow(
-                    components=[
-                        LinkButton(
-                            url=f"https://link.clashofclans.com/en?action=OpenClanProfile&tag={snapshot['clan_tag'].replace('#', '%23')}",
-                            label=f"Open {snapshot['clan_name']} in-Game",
-                            emoji="🔗"
+            for result in results:
+                if result['success']:
+                    if result.get('all_present'):
+                        summary_parts.append(
+                            Text(content=f"✅ **{result['clan_name']}**: All players present ({result['total_count']} players)")
                         )
-                    ]
-                )
-            ])
+                    else:
+                        summary_parts.append(
+                            Text(content=f"📢 **{result['clan_name']}**: {result['missing_count']}/{result['total_count']} missing - Ping sent")
+                        )
+                else:
+                    summary_parts.append(
+                        Text(content=f"❌ **{result['clan_name']}**: {result.get('error', 'Unknown error')}")
+                    )
 
-            # Send to clan's announcement channel with role ping
-            role_mentions = [int(clan_role_id)] if clan_role_id else []
-            await bot.rest.create_message(
-                channel=announcement_channel,  # Send to clan's announcement channel
-                components=[Container(accent_color=GOLD_ACCENT, components=ping_components)],
-                user_mentions=True,
-                role_mentions=role_mentions  # Ping the clan role
-            )
+            components = [Container(accent_color=GOLD_ACCENT, components=summary_parts)]
 
-            # Update the original ephemeral response
-            ping_stats = f"{len(missing_with_discord)} pinged, {len(missing_without_discord)} need manual contact"
-            components = [
-                Container(
-                    accent_color=GOLD_ACCENT,
-                    components=[
-                        Text(content="## 📤 Ping Message Sent"),
-                        Separator(),
-                        Text(content=(
-                            f"**Clan:** {snapshot['clan_name']} `{snapshot['clan_tag']}`\n"
-                            f"**Missing Players:** {len(missing_players)}/{len(snapshot_players)}\n"
-                            f"**Action Taken:** {ping_stats}"
-                        )),
-                        Separator(),
-                        Text(content=f"✅ Public ping message has been sent to <#{announcement_channel}>."),
-                    ]
-                )
-            ]
+        else:
+            # Process single snapshot (existing logic)
+            snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": selection})
+            if not snapshot:
+                raise Exception("Snapshot not found")
+
+            result = await process_single_snapshot_ping(snapshot, bot, coc_client, mongo)
+
+            if not result['success']:
+                components = [
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ Ping Failed"),
+                            Text(content=f"Failed to process **{result['clan_name']}**:"),
+                            Text(content=f"```{result.get('error', 'Unknown error')}```"),
+                        ]
+                    )
+                ]
+            elif result.get('all_present'):
+                components = [
+                    Container(
+                        accent_color=GREEN_ACCENT,
+                        components=[
+                            Text(content="## 🎉 All Players Are Ready!"),
+                            Text(content=f"All **{result['total_count']}** players from **{result['clan_name']}** are in their FWA home clan."),
+                            Text(content="✅ Ready for FWA sync!"),
+                        ]
+                    )
+                ]
+            else:
+                components = [
+                    Container(
+                        accent_color=GOLD_ACCENT,
+                        components=[
+                            Text(content="## 📤 Ping Message Sent"),
+                            Separator(),
+                            Text(content=(
+                                f"**Clan:** {result['clan_name']}\n"
+                                f"**Missing Players:** {result['missing_count']}/{result['total_count']}"
+                            )),
+                            Separator(),
+                            Text(content="✅ Public ping message has been sent to the clan's announcement channel."),
+                        ]
+                    )
+                ]
 
     except Exception as e:
         components = [
@@ -640,9 +756,8 @@ async def handle_ping_select(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content="## ❌ Ping Failed"),
-                    Text(content=f"Failed to check for missing players:"),
+                    Text(content=f"Failed to process ping request:"),
                     Text(content=f"```{str(e)}```"),
-                    Text(content="Please try again or contact support if the issue persists."),
                 ]
             )
         ]
