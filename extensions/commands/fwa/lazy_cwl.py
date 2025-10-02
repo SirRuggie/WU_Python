@@ -164,11 +164,9 @@ class LazyCwlPing(
     ) -> None:
         await ctx.defer(ephemeral=True)
 
-        # Get active snapshots for current month
-        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+        # Get active snapshots
         snapshots = await mongo.lazy_cwl_snapshots.find({
-            "active": True,
-            "month": current_month
+            "active": True
         }).to_list(length=None)
 
         if not snapshots:
@@ -177,7 +175,7 @@ class LazyCwlPing(
                     accent_color=RED_ACCENT,
                     components=[
                         Text(content="## ❌ No Active Snapshots"),
-                        Text(content=f"No active CWL snapshots found for {current_month}."),
+                        Text(content="No active CWL snapshots found."),
                         Text(content="Use `/fwa lazycwl-snapshot` first to create snapshots."),
                     ]
                 )
@@ -244,10 +242,8 @@ class LazyCwlStatus(
     ) -> None:
         await ctx.defer(ephemeral=True)
 
-        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
         snapshots = await mongo.lazy_cwl_snapshots.find({
-            "active": True,
-            "month": current_month
+            "active": True
         }).sort("snapshot_date", -1).to_list(length=None)
 
         if not snapshots:
@@ -256,7 +252,7 @@ class LazyCwlStatus(
                     accent_color=RED_ACCENT,
                     components=[
                         Text(content="## 📊 No Active Snapshots"),
-                        Text(content=f"No active FWA LazyCWL snapshots found for **{current_month}**."),
+                        Text(content="No active FWA LazyCWL snapshots found."),
                         Text(content="Use `/fwa lazycwl-snapshot` to create your first snapshot."),
                     ]
                 )
@@ -266,7 +262,7 @@ class LazyCwlStatus(
 
         # Build status display
         components = [
-            Text(content=f"## 📊 Active FWA LazyCWL Snapshots - {current_month}"),
+            Text(content="## 📊 Active FWA LazyCWL Snapshots"),
             Separator(),
         ]
 
@@ -316,10 +312,8 @@ class LazyCwlReset(
     ) -> None:
         await ctx.defer(ephemeral=True)
 
-        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
         active_count = await mongo.lazy_cwl_snapshots.count_documents({
-            "active": True,
-            "month": current_month
+            "active": True
         })
 
         if active_count == 0:
@@ -328,7 +322,7 @@ class LazyCwlReset(
                     accent_color=RED_ACCENT,
                     components=[
                         Text(content="## ℹ️ No Active Snapshots"),
-                        Text(content=f"No active snapshots found for {current_month} to reset."),
+                        Text(content="No active snapshots found to reset."),
                     ]
                 )
             ]
@@ -348,7 +342,7 @@ class LazyCwlReset(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content="## ⚠️ Confirm Reset"),
-                    Text(content=f"This will deactivate **{active_count}** active LazyCWL snapshot(s) for **{current_month}**."),
+                    Text(content=f"This will deactivate **{active_count}** active LazyCWL snapshot(s)."),
                     Text(content="**This action cannot be undone.**"),
                     Separator(),
                     ActionRow(
@@ -402,11 +396,9 @@ async def handle_snapshot_select(
         # Get Discord IDs from ClashKing
         discord_mapping = await get_discord_ids(player_tags)
 
-        # Check if snapshot already exists for this month
-        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+        # Check if snapshot already exists
         existing = await mongo.lazy_cwl_snapshots.find_one({
             "clan_tag": clan_tag,
-            "month": current_month,
             "active": True
         })
 
@@ -416,7 +408,7 @@ async def handle_snapshot_select(
                     accent_color=RED_ACCENT,
                     components=[
                         Text(content="## ⚠️ Snapshot Already Exists"),
-                        Text(content=f"An active snapshot for **{clan.name}** `{clan_tag}` already exists for **{current_month}**."),
+                        Text(content=f"An active snapshot for **{clan.name}** `{clan_tag}` already exists."),
                         Text(content=f"Created: {existing['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}"),
                         Text(content="Use `/fwa lazycwl-reset` to clear existing snapshots first."),
                     ]
@@ -670,11 +662,9 @@ async def handle_confirm_reset(
     """Handle confirmation of snapshot reset."""
 
     try:
-        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-
-        # Deactivate all active snapshots for current month
+        # Deactivate all active snapshots
         result = await mongo.lazy_cwl_snapshots.update_many(
-            {"active": True, "month": current_month},
+            {"active": True},
             {"$set": {"active": False}}
         )
 
@@ -686,7 +676,6 @@ async def handle_confirm_reset(
                     Separator(),
                     Text(content=(
                         f"**Snapshots Deactivated:** {result.modified_count}\n"
-                        f"**Month:** {current_month}\n"
                         f"**Status:** All FWA LazyCWL snapshots have been reset."
                     )),
                     Separator(),
