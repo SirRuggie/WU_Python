@@ -306,6 +306,85 @@ class LazyCwlStatus(
 
 
 @fwa.register()
+class LazyCwlRoster(
+    lightbulb.SlashCommand,
+    name="lazycwl-roster",
+    description="View all players in a LazyCWL snapshot roster"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+
+        # Get all active snapshots
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True
+        }).sort("snapshot_date", -1).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No Active Snapshots"),
+                        Text(content="No active LazyCWL snapshots found."),
+                        Text(content="Use `/fwa lazycwl-snapshot` to create your first snapshot."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
+        action_id = str(uuid.uuid4())
+        data = {
+            "_id": action_id,
+            "command": "roster",
+            "user_id": ctx.member.id
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build dropdown options
+        options = []
+        for snapshot in snapshots:
+            player_count = len(snapshot.get("players", []))
+            options.append(
+                SelectOption(
+                    label=snapshot["clan_name"],
+                    value=snapshot["_id"],
+                    description=f"{snapshot['clan_tag']} • {player_count} players • {snapshot['snapshot_date'].strftime('%m/%d/%Y')}",
+                    emoji=emojis.FWA.partial_emoji
+                )
+            )
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content="## 📋 Select Snapshot to View Roster"),
+                    Text(content="Choose which clan snapshot roster to display:"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_roster_select:{action_id}",
+                                placeholder="Select a clan snapshot...",
+                                max_values=1,
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.respond(components=components, ephemeral=True)
+
+
+@fwa.register()
 class LazyCwlReset(
     lightbulb.SlashCommand,
     name="lazycwl-reset",
@@ -405,6 +484,7 @@ async def handle_snapshot_select(
         discord_mapping = await get_discord_ids(player_tags)
 
         # Check if snapshot already exists
+        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
         existing = await mongo.lazy_cwl_snapshots.find_one({
             "clan_tag": clan_tag,
             "active": True
@@ -757,6 +837,87 @@ async def handle_ping_select(
                 components=[
                     Text(content="## ❌ Ping Failed"),
                     Text(content=f"Failed to process ping request:"),
+                    Text(content=f"```{str(e)}```"),
+                ]
+            )
+        ]
+
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_roster_select", no_return=True)
+@lightbulb.di.with_di
+async def handle_roster_select(
+    ctx,
+    action_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle snapshot selection to view full roster."""
+    snapshot_id = ctx.interaction.values[0]
+
+    try:
+        # Fetch the selected snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        players = snapshot.get("players", [])
+
+        # Sort players by TH level (descending), then alphabetically by name
+        players_sorted = sorted(players, key=lambda p: (-p.get("th_level", 0), p.get("name", "").lower()))
+
+        # Calculate Discord coverage
+        discord_linked = sum(1 for p in players if p.get("discord_id"))
+        coverage_percent = (discord_linked / len(players) * 100) if players else 0
+
+        # Build header
+        components_list = [
+            Text(content=f"## 📋 {snapshot['clan_name']} Roster"),
+            Separator(),
+            Text(content=(
+                f"**Clan Tag:** `{snapshot['clan_tag']}`\n"
+                f"**Snapshot Date:** {snapshot['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}\n"
+                f"**Total Players:** {len(players)}\n"
+                f"**Discord Coverage:** {discord_linked}/{len(players)} ({coverage_percent:.1f}%)"
+            )),
+            Separator(divider=True),
+            Text(content="**Players:**")
+        ]
+
+        # Build player list (grouped for efficiency)
+        player_lines = []
+        for player in players_sorted:
+            th_level = player.get("th_level", 0)
+            name = player.get("name", "Unknown")
+            tag = player.get("tag", "Unknown")
+            discord_id = player.get("discord_id")
+
+            if discord_id:
+                discord_status = f"✅ <@{discord_id}>"
+            else:
+                discord_status = "❌ Not Linked"
+
+            player_lines.append(f"• **TH{th_level}** | {name} | `{tag}` | {discord_status}")
+
+        # Split into chunks to avoid hitting message length limits
+        # Discord Text components can handle ~4000 characters, so we'll use chunks of ~20 players
+        chunk_size = 20
+        for i in range(0, len(player_lines), chunk_size):
+            chunk = player_lines[i:i + chunk_size]
+            components_list.append(Text(content="\n".join(chunk)))
+
+        # Build final response
+        components = [Container(accent_color=BLUE_ACCENT, components=components_list)]
+
+    except Exception as e:
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Failed to Load Roster"),
+                    Text(content=f"Failed to load snapshot roster:"),
                     Text(content=f"```{str(e)}```"),
                 ]
             )

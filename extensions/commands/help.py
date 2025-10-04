@@ -72,6 +72,7 @@ COMMAND_LIST = {
         ("/fwa lazycwl-snapshot", "Snapshot FWA clan players to track war participation during CWL season"),
         ("/fwa lazycwl-ping", "Ping players to return for FWA sync (Train⇨Join⇨Attack⇨Return 15-30min)"),
         ("/fwa lazycwl-status", "View active FWA LazyCWL snapshots for the current month"),
+        ("/fwa lazycwl-roster", "Display complete player roster from any active snapshot - shows all players with TH levels, tags, and Discord link status"),
         ("/fwa lazycwl-reset", "Deactivate all FWA LazyCWL snapshots (use after wars complete)"),
         ("/fwa links", "Quick access to essential FWA links - verification forms and war weight entry"),
         ("/fwa upload-images", "Upload war and active base images for a specific Town Hall level"),
