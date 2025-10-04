@@ -4,6 +4,8 @@ Comprehensive help command for Warriors United bot.
 Lists all bot commands organized by categories with interactive UI.
 """
 
+from typing import Optional
+
 import hikari
 import lightbulb
 
@@ -124,15 +126,22 @@ COMMAND_LIST = {
 }
 
 
-async def create_help_view(selected_category: str = "fwa") -> list:
+async def create_help_view(selected_category: Optional[str] = None) -> list:
     """Create the main help view with category selection."""
-    cat_info = HELP_CATEGORIES.get(selected_category, {"name": "Unknown", "emoji": "❓"})
-
-    components = [
-        Text(content=f"# {cat_info['emoji']} Warriors United Bot Help"),
-        Text(content="Select a category below to view available commands and their descriptions."),
-        Separator(),
-    ]
+    # Show generic header if no category selected, otherwise show category-specific
+    if selected_category is None:
+        components = [
+            Text(content="# 📚 Warriors United Bot Help"),
+            Text(content="Select a category below to view available commands and their descriptions."),
+            Separator(),
+        ]
+    else:
+        cat_info = HELP_CATEGORIES.get(selected_category, {"name": "Unknown", "emoji": "❓"})
+        components = [
+            Text(content=f"# {cat_info['emoji']} Warriors United Bot Help"),
+            Text(content="Select a category below to view available commands and their descriptions."),
+            Separator(),
+        ]
 
     # Category selection dropdown
     select_options = []
@@ -143,7 +152,7 @@ async def create_help_view(selected_category: str = "fwa") -> list:
                 value=cat_id,
                 description=cat_info["description"],
                 emoji=cat_info["emoji"],
-                is_default=(cat_id == selected_category)
+                is_default=(cat_id == selected_category if selected_category else False)
             )
         )
 
