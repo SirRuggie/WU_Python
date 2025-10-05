@@ -10,8 +10,10 @@ import aiohttp
 import hikari
 import lightbulb
 import coc
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 from extensions.commands.fwa import loader, fwa
 from extensions.components import register_action
@@ -30,6 +32,12 @@ from hikari.impl import (
     SeparatorComponentBuilder as Separator,
     LinkButtonBuilder as LinkButton,
 )
+
+# Global variables for auto-ping system
+scheduler: Optional[AsyncIOScheduler] = None
+bot_instance: Optional[hikari.GatewayBot] = None
+coc_client: Optional[coc.Client] = None
+mongo_client: Optional[MongoClient] = None
 
 
 async def get_discord_ids(player_tags: List[str]) -> Dict[str, Optional[str]]:
@@ -455,6 +463,353 @@ class LazyCwlReset(
         await ctx.respond(components=components, ephemeral=True)
 
 
+@fwa.register()
+class LazyCwlAutopingsStart(
+    lightbulb.SlashCommand,
+    name="lazycwl-autopings-start",
+    description="Start automated periodic pinging for missing players (runs for 7 days)"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+
+        # Get active snapshots without auto-ping enabled
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True,
+            "$or": [
+                {"auto_ping_enabled": {"$exists": False}},
+                {"auto_ping_enabled": False}
+            ]
+        }).sort("snapshot_date", -1).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No Available Snapshots"),
+                        Text(content="No active snapshots found without auto-ping enabled."),
+                        Text(content="Use `/fwa lazycwl-snapshot` to create a snapshot first."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
+        action_id = str(uuid.uuid4())
+        data = {
+            "_id": action_id,
+            "command": "autopings_start",
+            "user_id": ctx.member.id
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build dropdown options
+        options = []
+        for snapshot in snapshots:
+            player_count = len(snapshot.get("players", []))
+            options.append(
+                SelectOption(
+                    label=snapshot["clan_name"],
+                    value=snapshot["_id"],
+                    description=f"{snapshot['clan_tag']} • {player_count} players • {snapshot['snapshot_date'].strftime('%m/%d/%Y')}",
+                    emoji=emojis.FWA.partial_emoji
+                )
+            )
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content="## 🔔 Start Auto-Ping"),
+                    Text(content="Select a snapshot to enable automated pinging:"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_autopings_select_snapshot:{action_id}",
+                                placeholder="Select a snapshot...",
+                                max_values=1,
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.respond(components=components, ephemeral=True)
+
+
+@fwa.register()
+class LazyCwlAutopingsStop(
+    lightbulb.SlashCommand,
+    name="lazycwl-autopings-stop",
+    description="Stop automated periodic pinging for a snapshot"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+
+        # Get snapshots with auto-ping enabled
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "auto_ping_enabled": True
+        }).sort("snapshot_date", -1).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No Active Auto-Pings"),
+                        Text(content="No snapshots currently have auto-ping enabled."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
+        action_id = str(uuid.uuid4())
+        data = {
+            "_id": action_id,
+            "command": "autopings_stop",
+            "user_id": ctx.member.id
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build dropdown options
+        options = []
+        for snapshot in snapshots:
+            interval = snapshot.get("auto_ping_interval_minutes", 60)
+            started = snapshot.get("auto_ping_started_at")
+            started_str = started.strftime("%m/%d %I:%M%p") if started else "Unknown"
+
+            options.append(
+                SelectOption(
+                    label=snapshot["clan_name"],
+                    value=snapshot["_id"],
+                    description=f"{snapshot['clan_tag']} • {interval}min interval • Started {started_str}",
+                    emoji=emojis.FWA.partial_emoji
+                )
+            )
+
+        components = [
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content="## 🛑 Stop Auto-Ping"),
+                    Text(content="Select a snapshot to disable automated pinging:"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_autopings_stop_select:{action_id}",
+                                placeholder="Select a snapshot...",
+                                max_values=1,
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.respond(components=components, ephemeral=True)
+
+
+@fwa.register()
+class LazyCwlAutopingsStatus(
+    lightbulb.SlashCommand,
+    name="lazycwl-autopings-status",
+    description="View status of all active auto-pings"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+
+        # Get all snapshots with auto-ping enabled
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "auto_ping_enabled": True
+        }).sort("auto_ping_started_at", -1).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## 📊 No Active Auto-Pings"),
+                        Text(content="No snapshots currently have auto-ping enabled."),
+                        Text(content="Use `/fwa lazycwl-autopings-start` to enable auto-ping for a snapshot."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
+        # Build status display
+        components_list = [
+            Text(content="## 📊 Active Auto-Ping Status"),
+            Separator(),
+        ]
+
+        now = datetime.now(timezone.utc)
+
+        for i, snapshot in enumerate(snapshots, 1):
+            interval = snapshot.get("auto_ping_interval_minutes", 60)
+            started = snapshot.get("auto_ping_started_at")
+            last_ping = snapshot.get("last_auto_ping_at")
+            ping_count = snapshot.get("auto_ping_count", 0)
+
+            if started:
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+
+                elapsed = now - started
+                remaining = timedelta(days=7) - elapsed
+
+                # Calculate days, hours, minutes remaining
+                days = remaining.days
+                hours, remainder = divmod(remaining.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+
+                if remaining.total_seconds() > 0:
+                    time_left = f"{days}d {hours}h {minutes}m"
+                    expires_at = started + timedelta(days=7)
+                else:
+                    time_left = "Expired"
+                    expires_at = started + timedelta(days=7)
+            else:
+                time_left = "Unknown"
+                expires_at = None
+
+            last_ping_str = last_ping.strftime("%m/%d %I:%M%p UTC") if last_ping else "Not yet"
+
+            components_list.extend([
+                Text(content=(
+                    f"**{i}. {snapshot['clan_name']}** `{snapshot['clan_tag']}`\n"
+                    f"• **Interval:** Every {interval} minutes\n"
+                    f"• **Started:** {started.strftime('%B %d, %I:%M %p UTC') if started else 'Unknown'}\n"
+                    f"• **Expires:** {expires_at.strftime('%B %d, %I:%M %p UTC') if expires_at else 'Unknown'}\n"
+                    f"• **Time Remaining:** {time_left}\n"
+                    f"• **Last Ping:** {last_ping_str}\n"
+                    f"• **Total Pings:** {ping_count}"
+                )),
+                Separator(divider=False, spacing=hikari.SpacingType.SMALL),
+            ])
+
+        components_list.extend([
+            Separator(),
+            Text(content=f"**Total Active Auto-Pings:** {len(snapshots)}"),
+            Separator(),
+            Text(content="Use `/fwa lazycwl-autopings-stop` to disable auto-ping for a snapshot."),
+        ])
+
+        final_components = [Container(accent_color=BLUE_ACCENT, components=components_list)]
+        await ctx.respond(components=final_components, ephemeral=True)
+
+
+@fwa.register()
+class LazyCwlRemovePlayer(
+    lightbulb.SlashCommand,
+    name="lazycwl-remove-player",
+    description="Remove player(s) from a snapshot to stop auto-pinging them"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+
+        # Get all active snapshots
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True
+        }).sort("snapshot_date", -1).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No Active Snapshots"),
+                        Text(content="No active snapshots found. Create a snapshot first with `/fwa lazycwl-snapshot`."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
+        # Create action for button store
+        action_id = str(uuid.uuid4())
+        data = {
+            "_id": action_id,
+            "command": "remove_player",
+            "user_id": ctx.member.id
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build snapshot options
+        options = []
+        for snapshot in snapshots:
+            player_count = len(snapshot.get("players", []))
+            snapshot_date = snapshot.get("snapshot_date")
+            date_str = snapshot_date.strftime("%m/%d %I:%M%p") if snapshot_date else "Unknown"
+            auto_ping_status = "🔔 Auto-ping ON" if snapshot.get("auto_ping_enabled") else ""
+
+            description_parts = [f"{snapshot['clan_tag']} • {player_count} players • {date_str}"]
+            if auto_ping_status:
+                description_parts.append(auto_ping_status)
+
+            options.append(
+                SelectOption(
+                    label=snapshot["clan_name"],
+                    value=snapshot["_id"],
+                    description=" • ".join(description_parts),
+                    emoji=emojis.FWA.partial_emoji
+                )
+            )
+
+        components = [
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content="## 🗑️ Remove Player from Snapshot"),
+                    Text(content="Select a snapshot to remove players from:"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_remove_player_select_snapshot:{action_id}",
+                                placeholder="Select a snapshot...",
+                                max_values=1,
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.respond(components=components, ephemeral=True)
+
+
 # ======================== COMPONENT HANDLERS ========================
 
 @register_action("lazycwl_snapshot_select", no_return=True)
@@ -589,26 +944,14 @@ async def process_single_snapshot_ping(
     }
     """
     try:
-        # Fetch clan data to get announcement channel
+        # Hardcoded ping channel for all FWA LazyCWL pings
+        announcement_channel = 1424256751913668770
+
+        # Fetch clan data to get role ID for mentions
         clan_data = await mongo.clans.find_one({"tag": snapshot["clan_tag"]})
-        if not clan_data:
-            return {
-                'success': False,
-                'clan_name': snapshot.get('clan_name', 'Unknown'),
-                'error': f"Clan data not found for {snapshot['clan_tag']}"
-            }
 
-        # Get announcement channel ID
-        announcement_channel = clan_data.get("announcement_id")
-        if not announcement_channel:
-            return {
-                'success': False,
-                'clan_name': snapshot['clan_name'],
-                'error': f"No announcement channel set"
-            }
-
-        # Get clan role ID for mentions
-        clan_role_id = clan_data.get("role_id")
+        # Get clan role ID for mentions (optional)
+        clan_role_id = clan_data.get("role_id") if clan_data else None
 
         # Get current clan members
         clan = await coc_client.get_clan(snapshot["clan_tag"])
@@ -705,6 +1048,197 @@ async def process_single_snapshot_ping(
             'clan_name': snapshot.get('clan_name', 'Unknown'),
             'error': str(e)
         }
+
+
+async def auto_ping_job(snapshot_id: str):
+    """
+    Periodic job to check and ping missing players automatically.
+    Runs at configured interval until 7 days elapsed or snapshot reset.
+    """
+    global bot_instance, coc_client, mongo_client, scheduler
+
+    if not all([bot_instance, coc_client, mongo_client, scheduler]):
+        print(f"[LazyCWL AutoPing] ERROR: Missing required clients for job {snapshot_id}")
+        return
+
+    try:
+        # Fetch snapshot from MongoDB
+        snapshot = await mongo_client.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+
+        if not snapshot:
+            print(f"[LazyCWL AutoPing] Snapshot {snapshot_id} not found, cancelling job")
+            try:
+                scheduler.remove_job(f"autopings_{snapshot_id}")
+            except:
+                pass
+            return
+
+        # Check if still active and enabled
+        if not snapshot.get("active") or not snapshot.get("auto_ping_enabled"):
+            print(f"[LazyCWL AutoPing] Snapshot {snapshot_id} no longer active/enabled, cancelling job")
+            try:
+                scheduler.remove_job(f"autopings_{snapshot_id}")
+            except:
+                pass
+            return
+
+        # Check 7-day limit
+        started_at = snapshot.get("auto_ping_started_at")
+        if started_at:
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+
+            now = datetime.now(timezone.utc)
+            elapsed = now - started_at
+
+            if elapsed > timedelta(days=7):
+                print(f"[LazyCWL AutoPing] 7-day limit reached for {snapshot['clan_name']}, disabling")
+
+                # Disable auto-ping
+                await mongo_client.lazy_cwl_snapshots.update_one(
+                    {"_id": snapshot_id},
+                    {
+                        "$set": {
+                            "auto_ping_enabled": False,
+                        }
+                    }
+                )
+
+                # Cancel job
+                try:
+                    scheduler.remove_job(f"autopings_{snapshot_id}")
+                except:
+                    pass
+
+                # Send expiry notification to hardcoded ping channel
+                try:
+                    ping_count = snapshot.get("auto_ping_count", 0)
+                    expiry_components = [
+                        Container(
+                            accent_color=RED_ACCENT,
+                            components=[
+                                Text(content="## ⏰ Auto-Ping Expired"),
+                                Separator(),
+                                Text(content=(
+                                    f"The automated ping for **{snapshot['clan_name']}** has expired after 7 days.\n\n"
+                                    f"**Snapshot Date:** {snapshot['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}\n"
+                                    f"**Total Pings Sent:** {ping_count}\n\n"
+                                    f"Use `/fwa lazycwl-autopings-start` to restart if needed."
+                                ))
+                            ]
+                        )
+                    ]
+                    await bot_instance.rest.create_message(
+                        channel=1424256751913668770,
+                        components=expiry_components
+                    )
+                except Exception as e:
+                    print(f"[LazyCWL AutoPing] Failed to send expiry notification: {e}")
+
+                return
+
+        # Ping missing players
+        print(f"[LazyCWL AutoPing] Running auto-ping for {snapshot['clan_name']}")
+        result = await process_single_snapshot_ping(snapshot, bot_instance, coc_client, mongo_client)
+
+        if result['success']:
+            # Update last ping time and increment counter
+            await mongo_client.lazy_cwl_snapshots.update_one(
+                {"_id": snapshot_id},
+                {
+                    "$set": {
+                        "last_auto_ping_at": datetime.now(timezone.utc)
+                    },
+                    "$inc": {
+                        "auto_ping_count": 1
+                    }
+                }
+            )
+
+            if result.get('all_present'):
+                print(f"[LazyCWL AutoPing] All players present for {snapshot['clan_name']}")
+            else:
+                print(f"[LazyCWL AutoPing] Pinged {result['missing_count']}/{result['total_count']} missing players for {snapshot['clan_name']}")
+        else:
+            print(f"[LazyCWL AutoPing] Ping failed for {snapshot['clan_name']}: {result.get('error', 'Unknown error')}")
+
+    except Exception as e:
+        print(f"[LazyCWL AutoPing] Error in job {snapshot_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def restore_autopings():
+    """Restore auto-ping jobs on bot restart."""
+    global mongo_client, scheduler
+
+    if not mongo_client or not scheduler:
+        print("[LazyCWL AutoPing] Cannot restore: missing clients")
+        return
+
+    try:
+        # Find all snapshots with auto-ping enabled
+        snapshots = await mongo_client.lazy_cwl_snapshots.find({
+            "auto_ping_enabled": True
+        }).to_list(length=None)
+
+        if not snapshots:
+            print("[LazyCWL AutoPing] No active auto-pings to restore")
+            return
+
+        now = datetime.now(timezone.utc)
+        restored = 0
+        expired = 0
+
+        for snapshot in snapshots:
+            snapshot_id = snapshot["_id"]
+            started_at = snapshot.get("auto_ping_started_at")
+
+            if not started_at:
+                continue
+
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+
+            elapsed = now - started_at
+
+            # Check if expired during downtime
+            if elapsed > timedelta(days=7):
+                print(f"[LazyCWL AutoPing] Snapshot {snapshot['clan_name']} expired during downtime, disabling")
+                await mongo_client.lazy_cwl_snapshots.update_one(
+                    {"_id": snapshot_id},
+                    {"$set": {"auto_ping_enabled": False}}
+                )
+                expired += 1
+                continue
+
+            # Restore job
+            interval_minutes = snapshot.get("auto_ping_interval_minutes", 60)
+
+            try:
+                scheduler.add_job(
+                    auto_ping_job,
+                    trigger=IntervalTrigger(minutes=interval_minutes),
+                    args=[snapshot_id],
+                    id=f"autopings_{snapshot_id}",
+                    replace_existing=True,
+                    max_instances=1
+                )
+
+                print(f"[LazyCWL AutoPing] Restored auto-ping for {snapshot['clan_name']} (interval: {interval_minutes}min)")
+                restored += 1
+            except Exception as e:
+                print(f"[LazyCWL AutoPing] Failed to restore job for {snapshot['clan_name']}: {e}")
+
+        if restored > 0:
+            print(f"[LazyCWL AutoPing] Restored {restored} auto-ping job(s)")
+        if expired > 0:
+            print(f"[LazyCWL AutoPing] Disabled {expired} expired auto-ping(s)")
+
+    except Exception as e:
+        print(f"[LazyCWL AutoPing] Error restoring auto-pings: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @register_action("lazycwl_ping_select", no_return=True)
@@ -936,8 +1470,25 @@ async def handle_confirm_reset(
     **kwargs
 ) -> None:
     """Handle confirmation of snapshot reset."""
+    global scheduler
 
     try:
+        # Cancel any active auto-ping jobs before deactivating snapshots
+        autopings_cancelled = 0
+        if scheduler:
+            snapshots_with_autopings = await mongo.lazy_cwl_snapshots.find({
+                "active": True,
+                "auto_ping_enabled": True
+            }).to_list(length=None)
+
+            for snapshot in snapshots_with_autopings:
+                try:
+                    scheduler.remove_job(f"autopings_{snapshot['_id']}")
+                    autopings_cancelled += 1
+                    print(f"[LazyCWL Reset] Cancelled auto-ping for {snapshot['clan_name']}")
+                except Exception as e:
+                    print(f"[LazyCWL Reset] Failed to cancel auto-ping: {e}")
+
         # Deactivate all active snapshots
         result = await mongo.lazy_cwl_snapshots.update_many(
             {"active": True},
@@ -952,6 +1503,7 @@ async def handle_confirm_reset(
                     Separator(),
                     Text(content=(
                         f"**Snapshots Deactivated:** {result.modified_count}\n"
+                        f"**Auto-Pings Cancelled:** {autopings_cancelled}\n"
                         f"**Status:** All FWA LazyCWL snapshots have been reset."
                     )),
                     Separator(),
@@ -991,6 +1543,779 @@ async def handle_cancel_reset(ctx, action_id: str, **kwargs) -> None:
     ]
 
     await ctx.interaction.edit_initial_response(components=components)
+
+
+# ======================== AUTO-PING COMPONENT HANDLERS ========================
+
+
+@register_action("lazycwl_autopings_select_snapshot", no_return=True)
+@lightbulb.di.with_di
+async def handle_autopings_select_snapshot(
+    ctx,
+    action_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle snapshot selection for auto-ping, show interval selector."""
+    snapshot_id = ctx.interaction.values[0]
+
+    try:
+        # Fetch snapshot to get name
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Create new action for interval selection
+        new_action_id = str(uuid.uuid4())
+        data = {
+            "_id": new_action_id,
+            "command": "autopings_interval",
+            "user_id": user_id,
+            "snapshot_id": snapshot_id
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Interval options
+        interval_options = [
+            SelectOption(
+                label="30 minutes",
+                value="30",
+                description="Check every 30 minutes",
+                emoji="⏱️"
+            ),
+            SelectOption(
+                label="1 hour",
+                value="60",
+                description="Check every hour (recommended)",
+                emoji="⏰"
+            ),
+            SelectOption(
+                label="2 hours",
+                value="120",
+                description="Check every 2 hours",
+                emoji="🕐"
+            ),
+        ]
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"## ⏱️ Select Ping Interval"),
+                    Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+                    Separator(),
+                    Text(content="Choose how often to check for missing players:"),
+                    Text(content="*Auto-ping will run for up to 7 days or until snapshot is reset*"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_autopings_select_interval:{new_action_id}",
+                                placeholder="Select interval...",
+                                max_values=1,
+                                options=interval_options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to process selection: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_autopings_select_interval", no_return=True)
+@lightbulb.di.with_di
+async def handle_autopings_select_interval(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle interval selection and start auto-ping job."""
+    global scheduler
+
+    interval_minutes = int(ctx.interaction.values[0])
+
+    try:
+        if not scheduler:
+            raise Exception("Scheduler not initialized")
+
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Check if auto-ping already enabled (race condition check)
+        if snapshot.get("auto_ping_enabled"):
+            raise Exception("Auto-ping already enabled for this snapshot")
+
+        # Start time
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=7)
+
+        # Update snapshot with auto-ping settings
+        await mongo.lazy_cwl_snapshots.update_one(
+            {"_id": snapshot_id},
+            {
+                "$set": {
+                    "auto_ping_enabled": True,
+                    "auto_ping_started_at": now,
+                    "auto_ping_interval_minutes": interval_minutes,
+                    "auto_ping_job_id": f"autopings_{snapshot_id}",
+                    "last_auto_ping_at": None,
+                    "auto_ping_count": 0
+                }
+            }
+        )
+
+        # Create APScheduler job
+        scheduler.add_job(
+            auto_ping_job,
+            trigger=IntervalTrigger(minutes=interval_minutes),
+            args=[snapshot_id],
+            id=f"autopings_{snapshot_id}",
+            replace_existing=True,
+            max_instances=1
+        )
+
+        print(f"[LazyCWL AutoPing] Started auto-ping for {snapshot['clan_name']} (interval: {interval_minutes}min)")
+
+        # Success response
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content="## ✅ Auto-Ping Started"),
+                    Separator(),
+                    Text(content=(
+                        f"**Clan:** {snapshot['clan_name']} `{snapshot['clan_tag']}`\n"
+                        f"**Interval:** Every {interval_minutes} minutes\n"
+                        f"**Started:** {now.strftime('%B %d, %Y at %I:%M %p UTC')}\n"
+                        f"**Expires:** {expires_at.strftime('%B %d, %Y at %I:%M %p UTC')} (7 days)\n\n"
+                        f"The bot will automatically check for missing players every {interval_minutes} minutes and ping them if needed."
+                    )),
+                    Separator(),
+                    Text(content="Use `/fwa lazycwl-autopings-status` to view active auto-pings."),
+                    Text(content="Use `/fwa lazycwl-autopings-stop` to stop auto-ping manually."),
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        print(f"[LazyCWL AutoPing] Failed to start auto-ping: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Failed to Start Auto-Ping"),
+                    Text(content=f"Error: {str(e)}"),
+                    Text(content="Please try again or contact an administrator."),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_autopings_stop_select", no_return=True)
+@lightbulb.di.with_di
+async def handle_autopings_stop_select(
+    ctx,
+    action_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle snapshot selection to stop auto-ping."""
+    global scheduler
+
+    snapshot_id = ctx.interaction.values[0]
+
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Update MongoDB to disable auto-ping
+        await mongo.lazy_cwl_snapshots.update_one(
+            {"_id": snapshot_id},
+            {
+                "$set": {
+                    "auto_ping_enabled": False
+                }
+            }
+        )
+
+        # Cancel APScheduler job
+        if scheduler:
+            try:
+                scheduler.remove_job(f"autopings_{snapshot_id}")
+                print(f"[LazyCWL AutoPing] Stopped auto-ping for {snapshot['clan_name']}")
+            except Exception as e:
+                print(f"[LazyCWL AutoPing] Job not found or already removed: {e}")
+
+        # Success response
+        ping_count = snapshot.get("auto_ping_count", 0)
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content="## ✅ Auto-Ping Stopped"),
+                    Separator(),
+                    Text(content=(
+                        f"**Clan:** {snapshot['clan_name']} `{snapshot['clan_tag']}`\n\n"
+                        f"Automated pinging has been stopped.\n"
+                        f"**Total Pings Sent:** {ping_count}\n\n"
+                        f"Use `/fwa lazycwl-autopings-start` to restart if needed."
+                    ))
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        print(f"[LazyCWL AutoPing] Failed to stop auto-ping: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Failed to Stop Auto-Ping"),
+                    Text(content=f"Error: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_select_snapshot", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_select_snapshot(
+    ctx,
+    action_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    page: int = 0,
+    **kwargs
+) -> None:
+    """Handle snapshot selection for player removal, show player selector with pagination."""
+    snapshot_id = ctx.interaction.values[0]
+
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        players = snapshot.get("players", [])
+        if not players:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No Players"),
+                        Text(content=f"Snapshot for **{snapshot['clan_name']}** has no players."),
+                    ]
+                )
+            ]
+            await ctx.interaction.edit_initial_response(components=components)
+            return
+
+        # Sort players by TH (desc) then name (asc)
+        players_sorted = sorted(
+            players,
+            key=lambda p: (-p.get("th_level", 0), p.get("name", "").lower())
+        )
+
+        # Pagination calculations
+        players_per_page = 25
+        total_players = len(players_sorted)
+        total_pages = (total_players + players_per_page - 1) // players_per_page  # Ceiling division
+        current_page = page
+
+        # Ensure page is within bounds
+        if current_page < 0:
+            current_page = 0
+        if current_page >= total_pages:
+            current_page = total_pages - 1
+
+        # Get players for current page
+        start_idx = current_page * players_per_page
+        end_idx = min(start_idx + players_per_page, total_players)
+        players_on_page = players_sorted[start_idx:end_idx]
+
+        # Create new action for player selection
+        new_action_id = str(uuid.uuid4())
+        data = {
+            "_id": new_action_id,
+            "command": "remove_player_select",
+            "user_id": user_id,
+            "snapshot_id": snapshot_id,
+            "page": current_page
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build player options for current page
+        options = []
+        for player in players_on_page:
+            th_level = player.get("th_level", 0)
+            name = player.get("name", "Unknown")
+            tag = player.get("tag", "Unknown")
+            discord_id = player.get("discord_id")
+
+            discord_status = "✅" if discord_id else "❌"
+
+            options.append(
+                SelectOption(
+                    label=f"TH{th_level} {name}",
+                    value=tag,
+                    description=f"{tag} • Discord: {discord_status}",
+                    emoji="👤"
+                )
+            )
+
+        auto_ping_warning = ""
+        if snapshot.get("auto_ping_enabled"):
+            auto_ping_warning = "⚠️ **Auto-ping is active** - Removed players will stop being pinged immediately."
+
+        # Build component list
+        component_list = [
+            Text(content=f"## 👥 Select Players to Remove"),
+            Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+            Text(content=f"**Total Players:** {total_players} • **Page {current_page + 1} of {total_pages}** (Players {start_idx + 1}-{end_idx})"),
+            Separator(),
+            Text(content="Select up to 10 players to remove from this snapshot:"),
+        ]
+
+        if auto_ping_warning:
+            component_list.extend([Text(content=auto_ping_warning), Separator()])
+
+        # Player dropdown
+        component_list.append(
+            ActionRow(
+                components=[
+                    TextSelectMenu(
+                        custom_id=f"lazycwl_remove_player_select_players:{new_action_id}",
+                        placeholder="Select players to remove...",
+                        min_values=1,
+                        max_values=min(10, len(options)),
+                        options=options
+                    )
+                ]
+            )
+        )
+
+        # Pagination buttons (if needed)
+        if total_pages > 1:
+            pagination_buttons = []
+
+            if current_page > 0:
+                pagination_buttons.append(
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"lazycwl_remove_player_page_prev:{new_action_id}",
+                        label="◀ Previous Page",
+                        emoji="⬅️"
+                    )
+                )
+
+            if current_page < total_pages - 1:
+                pagination_buttons.append(
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"lazycwl_remove_player_page_next:{new_action_id}",
+                        label="Next Page ▶",
+                        emoji="➡️"
+                    )
+                )
+
+            if pagination_buttons:
+                component_list.extend([
+                    Separator(),
+                    ActionRow(components=pagination_buttons)
+                ])
+
+        components = [Container(accent_color=GOLD_ACCENT, components=component_list)]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error selecting snapshot: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to load snapshot: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_select_players", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_select_players(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle player selection and show confirmation."""
+    selected_player_tags = ctx.interaction.values
+
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Get full player info for selected tags
+        players = snapshot.get("players", [])
+        selected_players = [p for p in players if p.get("tag") in selected_player_tags]
+
+        if not selected_players:
+            raise Exception("Selected players not found in snapshot")
+
+        # Create new action for confirmation
+        new_action_id = str(uuid.uuid4())
+        data = {
+            "_id": new_action_id,
+            "command": "remove_player_confirm",
+            "user_id": user_id,
+            "snapshot_id": snapshot_id,
+            "player_tags": selected_player_tags
+        }
+        await mongo.button_store.insert_one(data)
+
+        # Build player list for confirmation
+        player_list_components = []
+        for player in selected_players:
+            th_level = player.get("th_level", 0)
+            name = player.get("name", "Unknown")
+            tag = player.get("tag", "Unknown")
+            discord_id = player.get("discord_id")
+
+            discord_str = f"<@{discord_id}>" if discord_id else "No Discord"
+            player_list_components.append(
+                Text(content=f"• **TH{th_level}** {name} `{tag}` - {discord_str}")
+            )
+
+        current_count = len(players)
+        new_count = current_count - len(selected_players)
+
+        components = [
+            Container(
+                accent_color=GOLD_ACCENT,
+                components=[
+                    Text(content="## ⚠️ Confirm Player Removal"),
+                    Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+                    Separator(),
+                    Text(content=f"**Players to Remove:** {len(selected_players)}"),
+                    *player_list_components,
+                    Separator(),
+                    Text(content=f"**Current Player Count:** {current_count}"),
+                    Text(content=f"**New Player Count:** {new_count}"),
+                    *(
+                        [
+                            Separator(),
+                            Text(content="⚠️ **Auto-ping is active** - These players will immediately stop being pinged.")
+                        ]
+                        if snapshot.get("auto_ping_enabled")
+                        else []
+                    ),
+                    Separator(),
+                    Text(content="Are you sure you want to remove these players?"),
+                    ActionRow(
+                        components=[
+                            Button(
+                                style=hikari.ButtonStyle.DANGER,
+                                custom_id=f"lazycwl_remove_player_confirm:{new_action_id}",
+                                label="Remove Players",
+                                emoji="✅"
+                            ),
+                            Button(
+                                style=hikari.ButtonStyle.SECONDARY,
+                                custom_id=f"lazycwl_remove_player_cancel:{new_action_id}",
+                                label="Cancel",
+                                emoji="❌"
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error selecting players: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to process selection: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_confirm", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_confirm(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    player_tags: list,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle confirmation and remove players from snapshot."""
+    try:
+        # Fetch snapshot to get current state
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        original_count = len(snapshot.get("players", []))
+
+        # Remove players using $pull operator
+        result = await mongo.lazy_cwl_snapshots.update_one(
+            {"_id": snapshot_id},
+            {"$pull": {"players": {"tag": {"$in": player_tags}}}}
+        )
+
+        if result.modified_count == 0:
+            raise Exception("Failed to update snapshot")
+
+        # Fetch updated snapshot to get new count
+        updated_snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        new_count = len(updated_snapshot.get("players", []))
+        removed_count = original_count - new_count
+
+        print(f"[LazyCWL Remove] Removed {removed_count} players from {snapshot['clan_name']}")
+
+        # Success message
+        components = [
+            Container(
+                accent_color=GREEN_ACCENT,
+                components=[
+                    Text(content="## ✅ Players Removed"),
+                    Separator(),
+                    Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+                    Text(content=f"**Players Removed:** {removed_count}"),
+                    Text(content=f"**Remaining Players:** {new_count}"),
+                    *(
+                        [
+                            Separator(),
+                            Text(content="✅ Auto-ping system will no longer ping these players.")
+                        ]
+                        if snapshot.get("auto_ping_enabled")
+                        else []
+                    ),
+                    Separator(),
+                    Text(content="Players have been successfully removed from the snapshot."),
+                ]
+            )
+        ]
+
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error removing players: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Removal Failed"),
+                    Text(content=f"Failed to remove players: {str(e)}"),
+                    Text(content="Please try again or contact support."),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_page_next", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_page_next(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    user_id: int,
+    page: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle next page button for player selection."""
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Re-render with next page
+        # We need to simulate the dropdown selection to reuse the handler
+        # Create a mock context-like object with the snapshot_id as the selected value
+
+        # Increment page
+        next_page = page + 1
+
+        # Call the snapshot selection handler with new page
+        class MockInteraction:
+            def __init__(self, snapshot_id):
+                self.values = [snapshot_id]
+
+        # Create mock context with new interaction
+        mock_ctx = type('obj', (object,), {
+            'interaction': MockInteraction(snapshot_id)
+        })()
+        mock_ctx.interaction.edit_initial_response = ctx.interaction.edit_initial_response
+
+        await handle_remove_player_select_snapshot(
+            mock_ctx,
+            action_id,
+            user_id,
+            mongo,
+            page=next_page
+        )
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error navigating to next page: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to navigate: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_page_prev", no_return=True)
+@lightbulb.di.with_di
+async def handle_remove_player_page_prev(
+    ctx,
+    action_id: str,
+    snapshot_id: str,
+    user_id: int,
+    page: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle previous page button for player selection."""
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            raise Exception("Snapshot not found")
+
+        # Decrement page
+        prev_page = max(0, page - 1)
+
+        # Call the snapshot selection handler with new page
+        class MockInteraction:
+            def __init__(self, snapshot_id):
+                self.values = [snapshot_id]
+
+        mock_ctx = type('obj', (object,), {
+            'interaction': MockInteraction(snapshot_id)
+        })()
+        mock_ctx.interaction.edit_initial_response = ctx.interaction.edit_initial_response
+
+        await handle_remove_player_select_snapshot(
+            mock_ctx,
+            action_id,
+            user_id,
+            mongo,
+            page=prev_page
+        )
+
+    except Exception as e:
+        print(f"[LazyCWL Remove] Error navigating to previous page: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Error"),
+                    Text(content=f"Failed to navigate: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_remove_player_cancel", no_return=True)
+async def handle_remove_player_cancel(ctx, action_id: str, **kwargs) -> None:
+    """Handle cancellation of player removal."""
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content="## ❌ Removal Cancelled"),
+                Text(content="Player removal has been cancelled. No changes were made."),
+            ]
+        )
+    ]
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+# ======================== BOT STARTUP EVENT ========================
+
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def on_bot_started(
+    event: hikari.StartedEvent,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    coc_api: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+):
+    """Initialize scheduler and restore auto-ping jobs on bot startup."""
+    global bot_instance, coc_client, mongo_client, scheduler
+
+    # Store clients globally for auto_ping_job access
+    bot_instance = bot
+    coc_client = coc_api
+    mongo_client = mongo
+
+    # Initialize and start scheduler
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.start()
+
+    print("[LazyCWL AutoPing] Scheduler initialized")
+
+    # Restore active auto-ping jobs from database
+    try:
+        await restore_autopings()
+        print("[LazyCWL AutoPing] Active auto-ping jobs restored")
+    except Exception as e:
+        print(f"[LazyCWL AutoPing] Failed to restore auto-ping jobs: {e}")
 
 
 # Register the commands with the loader
