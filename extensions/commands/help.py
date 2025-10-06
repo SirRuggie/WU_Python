@@ -126,6 +126,7 @@ COMMAND_LIST = {
         ("/slap", "Slap someone with a random GIF - select a user to target"),
         ("/say", "Send a message as the bot - useful for announcements"),
         ("/steal", "Steal a custom emoji into your bot application, replacing any with the same name"),
+        ("/reboot", "Restart the bot process (Owner only) - gracefully reboots with 5-10 second downtime"),
     ]
 }
 
