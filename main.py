@@ -95,6 +95,46 @@ async def on_bot_start(event: hikari.StartedEvent):
             FWA_ACTIVE_WAR_BASE.update(fwa_data["active_base_images"])
             print(f"[INFO] Loaded {len(fwa_data['active_base_images'])} FWA active base URLs")
 
+    # Check for reboot notification
+    try:
+        reboot_status = await mongo_client.bot_config.find_one({"_id": "reboot_status"})
+        if reboot_status and reboot_status.get("reboot_pending"):
+            user_id = reboot_status.get("user_id")
+            if user_id:
+                try:
+                    from hikari.impl import (
+                        ContainerComponentBuilder as Container,
+                        TextDisplayComponentBuilder as Text,
+                        MediaGalleryComponentBuilder as Media,
+                        MediaGalleryItemBuilder as MediaItem,
+                    )
+                    from utils.constants import GREEN_ACCENT
+
+                    dm_channel = await bot.rest.create_dm_channel(user_id)
+                    await bot.rest.create_message(
+                        channel=dm_channel,
+                        components=[
+                            Container(
+                                accent_color=GREEN_ACCENT,
+                                components=[
+                                    Text(content=(
+                                        "## ✅ Bot is Back Online!\n\n"
+                                        "Reboot completed successfully.\n"
+                                        "All systems operational."
+                                    )),
+                                    Media(items=[MediaItem(media="assets/Green_Footer.png")])
+                                ]
+                            )
+                        ]
+                    )
+                except Exception as e:
+                    print(f"Failed to send reboot notification: {e}")
+
+            # Clear the reboot flag
+            await mongo_client.bot_config.delete_one({"_id": "reboot_status"})
+    except Exception as e:
+        print(f"Failed to check reboot status: {e}")
+
 
 @bot.listen(hikari.StoppingEvent)
 async def on_stopping(_: hikari.StoppingEvent) -> None:
