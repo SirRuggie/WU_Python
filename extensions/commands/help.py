@@ -249,7 +249,7 @@ class HelpCommand(
         await ctx.respond(components=components, ephemeral=True)
 
 
-@register_action("help_category_select", no_return=True, ephemeral=True)
+@register_action("help_category_select", ephemeral=True)
 async def on_category_select(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
@@ -257,30 +257,27 @@ async def on_category_select(
 ):
     """Handle category selection from dropdown."""
     selected_category = ctx.interaction.values[0]
-    components = await create_category_view(selected_category)
-    await ctx.interaction.edit_initial_response(components=components)
+    return await create_category_view(selected_category)
 
 
-@register_action("help_back", no_return=True, ephemeral=True)
+@register_action("help_back", ephemeral=True)
 async def on_help_back(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
     **kwargs
 ):
     """Handle back button to return to main help view."""
-    components = await create_help_view()
-    await ctx.interaction.edit_initial_response(components=components)
+    return await create_help_view()
 
 
-@register_action("help_refresh", no_return=True, ephemeral=True)
+@register_action("help_refresh", ephemeral=True)
 async def on_help_refresh(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
     **kwargs
 ):
     """Handle refresh button to reload help view."""
-    components = await create_help_view()
-    await ctx.interaction.edit_initial_response(components=components)
+    return await create_help_view()
 
 
 loader.command(HelpCommand)
