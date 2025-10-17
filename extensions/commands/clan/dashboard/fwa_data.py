@@ -132,6 +132,8 @@ async def build_fwa_management_screen(
     # Get current FWA data
     fwa_data = await get_fwa_data(mongo)
     base_links = fwa_data.get("fwa_base_links", {})
+    base_information = fwa_data.get("base_information", {})
+    base_upgrade_notes = fwa_data.get("base_upgrade_notes", {})
 
     # Load stored image URLs into memory if available
     war_images = fwa_data.get("war_base_images", {})
@@ -151,8 +153,10 @@ async def build_fwa_management_screen(
         base_link = base_links.get(th)
         war_image = FWA_WAR_BASE.get(th)
         active_image = FWA_ACTIVE_WAR_BASE.get(th)
+        base_info = base_information.get(th)
+        upgrade_notes = base_upgrade_notes.get(th)
 
-        status = format_th_status(th, base_link, war_image, active_image)
+        status = format_th_status(th, base_link, war_image, active_image, base_info, upgrade_notes)
         th_num = th.upper().replace("TH", "")
 
         overview_lines.append(f"{emoji_str} **TH{th_num}** {status}")
@@ -167,8 +171,10 @@ async def build_fwa_management_screen(
         has_link = "✅" if base_links.get(th) else "❌"
         has_war = "✅" if FWA_WAR_BASE.get(th) else "❌"
         has_active = "✅" if FWA_ACTIVE_WAR_BASE.get(th) else "❌"
+        has_info = "✅" if base_information.get(th) else "❌"
+        has_notes = "✅" if base_upgrade_notes.get(th) else "❌"
 
-        description = f"Link {has_link} | War {has_war} | Active {has_active}"
+        description = f"Link {has_link} | War {has_war} | Active {has_active} | Info {has_info} | Notes {has_notes}"
 
         option_kwargs = {
             "label": f"Town Hall {th_num}",
@@ -192,7 +198,7 @@ async def build_fwa_management_screen(
                 Text(content=(
                     "**Status Icons:**\n"
                     "🔗 = Base Link | 🖼️ = War Image | 🎯 = Active Image\n"
-                    "❌ = Missing Data"
+                    "📝 = Base Information | 📋 = Upgrade Notes | ❌ = Missing Data"
                 )),
                 Separator(divider=True),
                 Text(content="### 📊 **Current Status**"),
@@ -220,7 +226,8 @@ async def build_fwa_management_screen(
 
 
 def format_th_status(th_level: str, base_link: Optional[str], war_image: Optional[str],
-                     active_image: Optional[str]) -> str:
+                     active_image: Optional[str], base_info: Optional[str],
+                     upgrade_notes: Optional[str]) -> str:
     """Format the status of a TH level for display"""
     statuses = []
 
@@ -236,6 +243,16 @@ def format_th_status(th_level: str, base_link: Optional[str], war_image: Optiona
 
     if active_image:
         statuses.append("🎯")
+    else:
+        statuses.append("❌")
+
+    if base_info:
+        statuses.append("📝")
+    else:
+        statuses.append("❌")
+
+    if upgrade_notes:
+        statuses.append("📋")
     else:
         statuses.append("❌")
 
