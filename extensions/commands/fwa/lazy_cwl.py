@@ -145,6 +145,19 @@ class LazyCwlSnapshot(
         # Get FWA clans from database
         fwa_clans = await mongo.clans.find({"type": "FWA"}).to_list(length=None)
 
+        if not fwa_clans:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ No FWA Clans Found"),
+                        Text(content="No FWA clans are configured in the database."),
+                    ]
+                )
+            ]
+            await ctx.respond(components=components, ephemeral=True)
+            return
+
         action_id = str(uuid.uuid4())
         data = {
             "_id": action_id,
@@ -153,7 +166,54 @@ class LazyCwlSnapshot(
         }
         await mongo.button_store.insert_one(data)
 
-        components = await create_clan_selector_components(fwa_clans, "lazycwl_snapshot_select", action_id)
+        # Build dropdown options with ALL option first
+        options = [
+            SelectOption(
+                label="🌍 ALL FWA CLANS",
+                value="ALL",
+                description=f"Create snapshots for all {len(fwa_clans)} FWA clans",
+                emoji="🌍"
+            )
+        ]
+
+        # Add individual clan options
+        for clan in fwa_clans:
+            # Use Clan class to properly handle emoji
+            c = Clan(data=clan)
+
+            kwargs = {
+                "label": c.name,
+                "value": c.tag,
+                "description": c.tag
+            }
+
+            # Add emoji if available
+            if getattr(c, "partial_emoji", None):
+                kwargs["emoji"] = c.partial_emoji
+
+            options.append(SelectOption(**kwargs))
+
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"## 📊 Select FWA Clan"),
+                    Text(content="Choose the FWA clan to snapshot for CWL tracking:"),
+                    Separator(),
+                    ActionRow(
+                        components=[
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_snapshot_select:{action_id}",
+                                placeholder="Select an FWA clan...",
+                                max_values=1,
+                                options=options
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
         await ctx.respond(components=components, ephemeral=True)
 
 
@@ -407,11 +467,12 @@ class LazyCwlReset(
     ) -> None:
         await ctx.defer(ephemeral=True)
 
-        active_count = await mongo.lazy_cwl_snapshots.count_documents({
+        # Get all active snapshots
+        snapshots = await mongo.lazy_cwl_snapshots.find({
             "active": True
-        })
+        }).sort("snapshot_date", -1).to_list(length=None)
 
-        if active_count == 0:
+        if not snapshots:
             components = [
                 Container(
                     accent_color=RED_ACCENT,
@@ -432,28 +493,45 @@ class LazyCwlReset(
         }
         await mongo.button_store.insert_one(data)
 
+        # Build dropdown options with ALL option first
+        options = [
+            SelectOption(
+                label="🌍 ALL SNAPSHOTS",
+                value="ALL",
+                description=f"Reset all {len(snapshots)} active snapshots",
+                emoji="🗑️"
+            )
+        ]
+
+        # Add individual snapshot options
+        for snapshot in snapshots:
+            player_count = len(snapshot.get("players", []))
+            auto_ping_indicator = " 🔔" if snapshot.get("auto_ping_enabled") else ""
+
+            options.append(
+                SelectOption(
+                    label=f"{snapshot['clan_name']}{auto_ping_indicator}",
+                    value=snapshot["_id"],
+                    description=f"{snapshot['clan_tag']} • {player_count} players • {snapshot['snapshot_date'].strftime('%m/%d/%Y')}",
+                    emoji=emojis.FWA.partial_emoji
+                )
+            )
+
         components = [
             Container(
                 accent_color=RED_ACCENT,
                 components=[
-                    Text(content="## ⚠️ Confirm Reset"),
-                    Text(content=f"This will deactivate **{active_count}** active LazyCWL snapshot(s)."),
-                    Text(content="**This action cannot be undone.**"),
+                    Text(content="## 🗑️ Select Snapshot to Reset"),
+                    Text(content="Choose which snapshot(s) to deactivate:"),
                     Separator(),
                     ActionRow(
                         components=[
-                            Button(
-                                style=hikari.ButtonStyle.DANGER,
-                                custom_id=f"lazycwl_confirm_reset:{action_id}",
-                                label="Confirm Reset",
-                                emoji="🗑️"
-                            ),
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                custom_id=f"lazycwl_cancel_reset:{action_id}",
-                                label="Cancel",
-                                emoji="❌"
-                            ),
+                            TextSelectMenu(
+                                custom_id=f"lazycwl_reset_select:{action_id}",
+                                placeholder="Select a snapshot to reset...",
+                                max_values=1,
+                                options=options
+                            )
                         ]
                     )
                 ]
@@ -810,27 +888,38 @@ class LazyCwlRemovePlayer(
         await ctx.respond(components=components, ephemeral=True)
 
 
-# ======================== COMPONENT HANDLERS ========================
+# ======================== HELPER FUNCTIONS ========================
 
-@register_action("lazycwl_snapshot_select", no_return=True)
-@lightbulb.di.with_di
-async def handle_snapshot_select(
-    ctx,
-    action_id: str,
+
+async def process_single_clan_snapshot(
+    clan_tag: str,
     user_id: int,
-    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **kwargs
-) -> None:
-    """Handle clan selection for snapshot creation."""
-    clan_tag = ctx.interaction.values[0]
-
+    coc_client: coc.Client,
+    mongo: MongoClient
+) -> dict:
+    """
+    Process a single clan snapshot creation.
+    Returns dict with results: {
+        'success': bool,
+        'clan_name': str,
+        'clan_tag': str,
+        'player_count': int,
+        'discord_coverage': int,
+        'coverage_percent': float,
+        'already_exists': bool (if True),
+        'error': str (if failed)
+    }
+    """
     try:
         # Fetch clan from CoC API
         clan = await coc_client.get_clan(clan_tag)
         if not clan:
-            raise Exception(f"Clan {clan_tag} not found")
+            return {
+                'success': False,
+                'clan_name': 'Unknown',
+                'clan_tag': clan_tag,
+                'error': f"Clan {clan_tag} not found"
+            }
 
         # Prepare player tags for ClashKing API
         player_tags = [member.tag for member in clan.members]
@@ -846,70 +935,275 @@ async def handle_snapshot_select(
         })
 
         if existing:
-            components = [
-                Container(
-                    accent_color=RED_ACCENT,
-                    components=[
-                        Text(content="## ⚠️ Snapshot Already Exists"),
-                        Text(content=f"An active snapshot for **{clan.name}** `{clan_tag}` already exists."),
-                        Text(content=f"Created: {existing['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}"),
-                        Text(content="Use `/fwa lazycwl-reset` to clear existing snapshots first."),
-                    ]
-                )
-            ]
-        else:
-            # Create player data
-            players = []
-            discord_coverage = 0
-
-            for member in clan.members:
-                discord_id = discord_mapping.get(member.tag)
-                if discord_id:
-                    discord_coverage += 1
-
-                players.append({
-                    "tag": member.tag,
-                    "name": member.name,
-                    "th_level": member.town_hall,
-                    "discord_id": discord_id,
-                    "in_home_clan": True
-                })
-
-            # Create snapshot document
-            snapshot = {
-                "_id": str(uuid.uuid4()),
-                "clan_tag": clan_tag,
-                "clan_name": clan.name,
-                "snapshot_date": datetime.now(timezone.utc),
-                "month": current_month,
-                "players": players,
-                "active": True,
-                "created_by": str(user_id)
+            return {
+                'success': False,
+                'clan_name': clan.name,
+                'clan_tag': clan_tag,
+                'already_exists': True,
+                'existing_date': existing['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')
             }
 
-            # Insert into database
-            await mongo.lazy_cwl_snapshots.insert_one(snapshot)
+        # Create player data
+        players = []
+        discord_coverage = 0
 
-            # Success response
-            coverage_percent = (discord_coverage / len(players) * 100) if players else 0
-            components = [
-                Container(
-                    accent_color=GREEN_ACCENT,
-                    components=[
-                        Text(content="## ✅ Snapshot Created Successfully"),
-                        Separator(),
-                        Text(content=(
-                            f"**Clan:** {clan.name} `{clan_tag}`\n"
-                            f"**Players Tracked:** {len(players)}\n"
-                            f"**Discord Coverage:** {discord_coverage}/{len(players)} ({coverage_percent:.1f}%)\n"
-                            f"**Month:** {current_month}\n"
-                            f"**Created:** {snapshot['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC')}"
-                        )),
-                        Separator(),
-                        Text(content="✅ Players tracked for FWA. Use `/fwa lazycwl-ping` to remind players to return for sync."),
-                    ]
-                )
+        for member in clan.members:
+            discord_id = discord_mapping.get(member.tag)
+            if discord_id:
+                discord_coverage += 1
+
+            players.append({
+                "tag": member.tag,
+                "name": member.name,
+                "th_level": member.town_hall,
+                "discord_id": discord_id,
+                "in_home_clan": True
+            })
+
+        # Create snapshot document
+        snapshot = {
+            "_id": str(uuid.uuid4()),
+            "clan_tag": clan_tag,
+            "clan_name": clan.name,
+            "snapshot_date": datetime.now(timezone.utc),
+            "month": current_month,
+            "players": players,
+            "active": True,
+            "created_by": str(user_id)
+        }
+
+        # Insert into database
+        await mongo.lazy_cwl_snapshots.insert_one(snapshot)
+
+        # Return success
+        coverage_percent = (discord_coverage / len(players) * 100) if players else 0
+        return {
+            'success': True,
+            'clan_name': clan.name,
+            'clan_tag': clan_tag,
+            'player_count': len(players),
+            'discord_coverage': discord_coverage,
+            'coverage_percent': coverage_percent,
+            'snapshot_date': snapshot['snapshot_date'].strftime('%B %d, %Y at %I:%M %p UTC'),
+            'month': current_month
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'clan_name': 'Unknown',
+            'clan_tag': clan_tag,
+            'error': str(e)
+        }
+
+
+async def process_single_snapshot_reset(
+    snapshot_id: str,
+    mongo: MongoClient,
+    scheduler_instance: Optional[AsyncIOScheduler]
+) -> dict:
+    """
+    Process a single snapshot reset (deactivation).
+    Returns dict with results: {
+        'success': bool,
+        'clan_name': str,
+        'clan_tag': str,
+        'player_count': int,
+        'autopings_cancelled': bool,
+        'error': str (if failed)
+    }
+    """
+    try:
+        # Fetch snapshot
+        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not snapshot:
+            return {
+                'success': False,
+                'clan_name': 'Unknown',
+                'error': 'Snapshot not found'
+            }
+
+        clan_name = snapshot.get('clan_name', 'Unknown')
+        clan_tag = snapshot.get('clan_tag', 'Unknown')
+        player_count = len(snapshot.get('players', []))
+        autopings_cancelled = False
+
+        # Cancel auto-ping job if enabled
+        if snapshot.get('auto_ping_enabled') and scheduler_instance:
+            try:
+                scheduler_instance.remove_job(f"autopings_{snapshot_id}")
+                autopings_cancelled = True
+                print(f"[LazyCWL Reset] Cancelled auto-ping for {clan_name}")
+            except Exception as e:
+                print(f"[LazyCWL Reset] Failed to cancel auto-ping: {e}")
+
+        # Deactivate snapshot
+        result = await mongo.lazy_cwl_snapshots.update_one(
+            {"_id": snapshot_id},
+            {"$set": {"active": False}}
+        )
+
+        if result.modified_count == 0:
+            return {
+                'success': False,
+                'clan_name': clan_name,
+                'clan_tag': clan_tag,
+                'error': 'Failed to deactivate snapshot'
+            }
+
+        return {
+            'success': True,
+            'clan_name': clan_name,
+            'clan_tag': clan_tag,
+            'player_count': player_count,
+            'autopings_cancelled': autopings_cancelled
+        }
+
+    except Exception as e:
+        return {
+            'success': False,
+            'clan_name': 'Unknown',
+            'error': str(e)
+        }
+
+
+# ======================== COMPONENT HANDLERS ========================
+
+@register_action("lazycwl_snapshot_select", no_return=True)
+@lightbulb.di.with_di
+async def handle_snapshot_select(
+    ctx,
+    action_id: str,
+    user_id: int,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle clan selection for snapshot creation."""
+    selection = ctx.interaction.values[0]
+
+    try:
+        if selection == "ALL":
+            # Process all FWA clans
+            fwa_clans = await mongo.clans.find({"type": "FWA"}).to_list(length=None)
+
+            if not fwa_clans:
+                components = [
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ No FWA Clans Found"),
+                            Text(content="No FWA clans found to snapshot."),
+                        ]
+                    )
+                ]
+                await ctx.interaction.edit_initial_response(components=components)
+                return
+
+            # Process each clan
+            results = []
+            for clan_data in fwa_clans:
+                c = Clan(data=clan_data)
+                result = await process_single_clan_snapshot(c.tag, user_id, coc_client, mongo)
+                results.append(result)
+
+            # Build summary response
+            total_clans = len(results)
+            successful = sum(1 for r in results if r['success'])
+            failed = sum(1 for r in results if not r['success'])
+            already_exist = sum(1 for r in results if r.get('already_exists', False))
+            total_players = sum(r.get('player_count', 0) for r in results if r['success'])
+            total_coverage = sum(r.get('discord_coverage', 0) for r in results if r['success'])
+
+            summary_parts = [
+                Text(content="## 📊 All Clans Snapshot Complete"),
+                Separator(),
+                Text(content=(
+                    f"**Total Clans Processed:** {total_clans}\n"
+                    f"**Successfully Created:** {successful}\n"
+                    f"**Already Existed:** {already_exist}\n"
+                    f"**Failed:** {failed}\n"
+                    f"**Total Players Tracked:** {total_players}\n"
+                    f"**Total Discord Coverage:** {total_coverage}"
+                )),
+                Separator(),
+                Text(content="**Clan Details:**")
             ]
+
+            for result in results:
+                if result['success']:
+                    summary_parts.append(
+                        Text(content=(
+                            f"✅ **{result['clan_name']}** `{result['clan_tag']}`\n"
+                            f"   • Players: {result['player_count']}\n"
+                            f"   • Discord: {result['discord_coverage']}/{result['player_count']} ({result['coverage_percent']:.1f}%)"
+                        ))
+                    )
+                elif result.get('already_exists'):
+                    summary_parts.append(
+                        Text(content=(
+                            f"⚠️ **{result['clan_name']}** `{result['clan_tag']}`\n"
+                            f"   • Already exists (created {result.get('existing_date', 'unknown')})"
+                        ))
+                    )
+                else:
+                    summary_parts.append(
+                        Text(content=f"❌ **{result['clan_name']}** `{result['clan_tag']}`: {result.get('error', 'Unknown error')}")
+                    )
+
+            components = [Container(accent_color=BLUE_ACCENT, components=summary_parts)]
+
+        else:
+            # Process single clan
+            clan_tag = selection
+            result = await process_single_clan_snapshot(clan_tag, user_id, coc_client, mongo)
+
+            if not result['success']:
+                if result.get('already_exists'):
+                    components = [
+                        Container(
+                            accent_color=RED_ACCENT,
+                            components=[
+                                Text(content="## ⚠️ Snapshot Already Exists"),
+                                Text(content=f"An active snapshot for **{result['clan_name']}** `{result['clan_tag']}` already exists."),
+                                Text(content=f"Created: {result.get('existing_date', 'Unknown')}"),
+                                Text(content="Use `/fwa lazycwl-reset` to clear existing snapshots first."),
+                            ]
+                        )
+                    ]
+                else:
+                    components = [
+                        Container(
+                            accent_color=RED_ACCENT,
+                            components=[
+                                Text(content="## ❌ Snapshot Creation Failed"),
+                                Text(content=f"Failed to create snapshot for **{result['clan_name']}** `{result['clan_tag']}`:"),
+                                Text(content=f"```{result.get('error', 'Unknown error')}```"),
+                                Text(content="Please try again or contact support if the issue persists."),
+                            ]
+                        )
+                    ]
+            else:
+                # Success response
+                components = [
+                    Container(
+                        accent_color=GREEN_ACCENT,
+                        components=[
+                            Text(content="## ✅ Snapshot Created Successfully"),
+                            Separator(),
+                            Text(content=(
+                                f"**Clan:** {result['clan_name']} `{result['clan_tag']}`\n"
+                                f"**Players Tracked:** {result['player_count']}\n"
+                                f"**Discord Coverage:** {result['discord_coverage']}/{result['player_count']} ({result['coverage_percent']:.1f}%)\n"
+                                f"**Month:** {result['month']}\n"
+                                f"**Created:** {result['snapshot_date']}"
+                            )),
+                            Separator(),
+                            Text(content="✅ Players tracked for FWA. Use `/fwa lazycwl-ping` to remind players to return for sync."),
+                        ]
+                    )
+                ]
 
     except Exception as e:
         components = [
@@ -917,7 +1211,7 @@ async def handle_snapshot_select(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content="## ❌ Snapshot Creation Failed"),
-                    Text(content=f"Failed to create snapshot for {clan_tag}:"),
+                    Text(content=f"Failed to process snapshot request:"),
                     Text(content=f"```{str(e)}```"),
                     Text(content="Please try again or contact support if the issue persists."),
                 ]
@@ -1453,6 +1747,137 @@ async def handle_roster_select(
                     Text(content="## ❌ Failed to Load Roster"),
                     Text(content=f"Failed to load snapshot roster:"),
                     Text(content=f"```{str(e)}```"),
+                ]
+            )
+        ]
+
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_reset_select", no_return=True)
+@lightbulb.di.with_di
+async def handle_reset_select(
+    ctx,
+    action_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Handle snapshot selection for reset."""
+    global scheduler
+
+    selection = ctx.interaction.values[0]
+
+    try:
+        if selection == "ALL":
+            # Process all active snapshots
+            snapshots = await mongo.lazy_cwl_snapshots.find({"active": True}).to_list(length=None)
+
+            if not snapshots:
+                components = [
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ No Active Snapshots"),
+                            Text(content="No active snapshots found to reset."),
+                        ]
+                    )
+                ]
+                await ctx.interaction.edit_initial_response(components=components)
+                return
+
+            # Process each snapshot
+            results = []
+            for snapshot in snapshots:
+                result = await process_single_snapshot_reset(snapshot["_id"], mongo, scheduler)
+                results.append(result)
+
+            # Build summary response
+            total_snapshots = len(results)
+            successful = sum(1 for r in results if r['success'])
+            failed = sum(1 for r in results if not r['success'])
+            total_autopings_cancelled = sum(1 for r in results if r.get('autopings_cancelled', False))
+
+            summary_parts = [
+                Text(content="## ✅ All Snapshots Reset Complete"),
+                Separator(),
+                Text(content=(
+                    f"**Total Snapshots Processed:** {total_snapshots}\n"
+                    f"**Successfully Reset:** {successful}\n"
+                    f"**Failed:** {failed}\n"
+                    f"**Auto-Pings Cancelled:** {total_autopings_cancelled}"
+                )),
+                Separator(),
+                Text(content="**Snapshot Details:**")
+            ]
+
+            for result in results:
+                if result['success']:
+                    autopings_indicator = " (auto-ping cancelled)" if result.get('autopings_cancelled') else ""
+                    summary_parts.append(
+                        Text(content=(
+                            f"✅ **{result['clan_name']}** `{result['clan_tag']}`\n"
+                            f"   • Players: {result.get('player_count', 0)}{autopings_indicator}"
+                        ))
+                    )
+                else:
+                    summary_parts.append(
+                        Text(content=f"❌ **{result['clan_name']}**: {result.get('error', 'Unknown error')}")
+                    )
+
+            summary_parts.extend([
+                Separator(),
+                Text(content="✅ You can now create new snapshots for the next LazyCWL season.")
+            ])
+
+            components = [Container(accent_color=GREEN_ACCENT, components=summary_parts)]
+
+        else:
+            # Process single snapshot
+            snapshot_id = selection
+            result = await process_single_snapshot_reset(snapshot_id, mongo, scheduler)
+
+            if not result['success']:
+                components = [
+                    Container(
+                        accent_color=RED_ACCENT,
+                        components=[
+                            Text(content="## ❌ Reset Failed"),
+                            Text(content=f"Failed to reset **{result['clan_name']}**:"),
+                            Text(content=f"```{result.get('error', 'Unknown error')}```"),
+                            Text(content="Please try again or contact support if the issue persists."),
+                        ]
+                    )
+                ]
+            else:
+                # Success response
+                autopings_msg = "Auto-ping has been cancelled." if result.get('autopings_cancelled') else "No active auto-ping."
+                components = [
+                    Container(
+                        accent_color=GREEN_ACCENT,
+                        components=[
+                            Text(content="## ✅ Snapshot Reset Successfully"),
+                            Separator(),
+                            Text(content=(
+                                f"**Clan:** {result['clan_name']} `{result['clan_tag']}`\n"
+                                f"**Players:** {result.get('player_count', 0)}\n"
+                                f"**Auto-Ping:** {autopings_msg}"
+                            )),
+                            Separator(),
+                            Text(content="✅ Snapshot has been deactivated. You can create a new one when needed."),
+                        ]
+                    )
+                ]
+
+    except Exception as e:
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Reset Failed"),
+                    Text(content=f"Failed to process reset request:"),
+                    Text(content=f"```{str(e)}```"),
+                    Text(content="Please try again or contact support if the issue persists."),
                 ]
             )
         ]
