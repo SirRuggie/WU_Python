@@ -167,6 +167,7 @@ async def create_help_view(selected_category: Optional[str] = None) -> list:
                 TextSelectMenu(
                     custom_id="help_category_select:menu",
                     placeholder="Pick a category to see commands...",
+                    max_values=1,
                     options=select_options
                 )
             ]
@@ -248,7 +249,7 @@ class HelpCommand(
         await ctx.respond(components=components, ephemeral=True)
 
 
-@register_action("help_category_select", no_return=True)
+@register_action("help_category_select", no_return=True, ephemeral=True)
 async def on_category_select(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
@@ -260,7 +261,7 @@ async def on_category_select(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("help_back", no_return=True)
+@register_action("help_back", no_return=True, ephemeral=True)
 async def on_help_back(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
@@ -271,7 +272,7 @@ async def on_help_back(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("help_refresh", no_return=True)
+@register_action("help_refresh", no_return=True, ephemeral=True)
 async def on_help_refresh(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
