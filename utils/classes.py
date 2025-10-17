@@ -47,6 +47,8 @@ class FWA:
     def __init__(self, data):
         self._data = data
         self.fwa_base_links = BaseLinks(data.get("fwa_base_links", {}))
+        self.base_information = data.get("base_information", {})
+        print(f"[FWA Class] Initialized with base_information keys: {list(self.base_information.keys())}")
 
 
 class NewRecruit:

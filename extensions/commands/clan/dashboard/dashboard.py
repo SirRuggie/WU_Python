@@ -106,12 +106,12 @@ class DashboardCommand(
             bot: hikari.GatewayBot = lightbulb.di.INJECTED,
             mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
-        await ctx.defer(ephemeral=True)  # Keep this ephemeral for the "thinking" message
+        await ctx.defer(ephemeral=True)  # Hide the command response
 
         # Get the components
         comps = await dashboard_page(bot=bot, ctx=ctx, mongo=mongo)
 
-        # Send to channel without replying
+        # Send to channel as standalone message (not a reply)
         await bot.rest.create_message(
             channel=ctx.channel_id,
             components=comps

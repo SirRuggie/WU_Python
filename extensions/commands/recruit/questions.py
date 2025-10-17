@@ -894,7 +894,15 @@ async def th_select(
         friendly_name = f"Town Hall {th_number}"
     
     base_link = getattr(fwa.fwa_base_links, choice, None)
-    
+
+    # Get base information for this TH level
+    base_info = fwa.base_information.get(choice, "")
+    if not base_info:
+        base_info = (
+            "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
+            "Once you have made the switch, please send us a screenshot like below to confirm the update."
+        )
+
     # Check if base_link exists
     if not base_link:
         await ctx.respond(
@@ -942,11 +950,8 @@ async def th_select(
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content="### FWA Base"),
-                Text(content=(
-                    "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
-                    "Once you have made the switch, please send us a screenshot like below to confirm the update.\n"
-                )),
+                Text(content=f"### TH{th_number} FWA War Status and Base Layout"),
+                Text(content=base_info),
                 Media(
                     items=[
                         MediaItem(media=active_war_base_media),

@@ -70,7 +70,7 @@ class Bases(
                         components=[
                             TextSelectMenu(
                                 max_values=1,
-                                custom_id=f"th_select:{action_id}",  # Just use action_id
+                                custom_id=f"fwa_bases_th_select:{action_id}",
                                 placeholder="Select a Base...",
                                 options=[
                                     SelectOption(
@@ -79,9 +79,19 @@ class Bases(
                                         value="th17"
                                     ),
                                     SelectOption(
+                                        emoji=emojis.TH17.partial_emoji,
+                                        label="TH17 New",
+                                        value="th17_new"
+                                    ),
+                                    SelectOption(
                                         emoji=emojis.TH16.partial_emoji,
                                         label="TH16",
                                         value="th16"
+                                    ),
+                                    SelectOption(
+                                        emoji=emojis.TH16.partial_emoji,
+                                        label="TH16 New",
+                                        value="th16_new"
                                     ),
                                     SelectOption(
                                         emoji=emojis.TH15.partial_emoji,
@@ -130,34 +140,75 @@ class Bases(
         await ctx.respond(components=components, ephemeral=True)
 
 
-@register_action("th_select", no_return=True)
+@register_action("fwa_bases_th_select", no_return=True)
 @lightbulb.di.with_di
-async def th_select(
-        user_id: int,  # Now this can be typed because it comes from MongoDB
+async def fwa_bases_th_select(
+        user_id: int,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    ctx: lightbulb.components.MenuContext = kwargs["ctx"]
+    print(f"[FWA Bases] ========== fwa_bases_th_select CALLED ==========")
+    print(f"[FWA Bases] user_id: {user_id}")
+    print(f"[FWA Bases] kwargs keys: {list(kwargs.keys())}")
 
-    # Get the user from the user_id that was stored in MongoDB
-    user = await bot.rest.fetch_member(ctx.guild_id, user_id)
+    try:
+        ctx: lightbulb.components.MenuContext = kwargs["ctx"]
+        print(f"[FWA Bases] Got ctx successfully")
 
-    # Get the selected TH level
-    choice = ctx.interaction.values[0]
+        # Get the user from the user_id that was stored in MongoDB
+        print(f"[FWA Bases] Fetching member...")
+        user = await bot.rest.fetch_member(ctx.guild_id, user_id)
+        print(f"[FWA Bases] Got user: {user.username}")
 
-    # Get FWA data
-    fwa_data = await get_fwa_base_object(mongo)
-    if not fwa_data:
-        await ctx.respond("FWA data not found in database!", ephemeral=True)
+        # Get the selected TH level
+        choice = ctx.interaction.values[0]
+        print(f"[FWA Bases] Choice from dropdown: {choice}")
+
+        # Get FWA data
+        print(f"[FWA Bases] Getting FWA data...")
+        fwa_data = await get_fwa_base_object(mongo)
+        if not fwa_data:
+            print(f"[FWA Bases] ERROR: FWA data not found!")
+            await ctx.respond("FWA data not found in database!", ephemeral=True)
+            return
+        print(f"[FWA Bases] Got FWA data successfully")
+
+        # Format display name properly for _new variants
+        if choice.endswith('_new'):
+            base_th = choice.replace('_new', '')
+            th_number = base_th.lstrip('th')
+            display_name = f"TH{th_number} New"
+            friendly_name = f"Town Hall {th_number} New"
+        else:
+            th_number = choice.lstrip('th')
+            display_name = f"TH{th_number}"
+            friendly_name = f"Town Hall {th_number}"
+
+        base_link = getattr(fwa_data.fwa_base_links, choice, "")
+        print(f"[FWA Bases] Base link: {base_link[:50] if base_link else 'NONE'}")
+
+        if not base_link:
+            print(f"[FWA Bases] ERROR: No base link found for {choice}")
+            await ctx.respond(f"No base link found for {choice}!", ephemeral=True)
+            return
+
+        # Get base information for this TH level
+        print(f"[FWA Bases] Getting base_information...")
+        print(f"[FWA Bases] base_information type: {type(fwa_data.base_information)}")
+        print(f"[FWA Bases] base_information keys: {list(fwa_data.base_information.keys())}")
+        base_info = fwa_data.base_information.get(choice, "")
+        print(f"[FWA Bases] Retrieved base_info for '{choice}': {base_info[:50] if base_info else 'EMPTY'}")
+    except Exception as e:
+        print(f"[FWA Bases] EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
         return
-
-    th_number = choice.lstrip('th')
-    base_link = getattr(fwa_data.fwa_base_links, choice, "")
-
-    if not base_link:
-        await ctx.respond(f"No base link found for {choice}!", ephemeral=True)
-        return
+    if not base_info:
+        base_info = (
+            "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
+            "Once you have made the switch, please send us a screenshot like below to confirm the update."
+        )
 
     # Build the response
     components = [
@@ -165,7 +216,7 @@ async def th_select(
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content=f"## Town Hall {th_number}"),
+                Text(content=f"## {friendly_name}"),
                 Media(
                     items=[
                         MediaItem(media=FWA_WAR_BASE.get(choice, ""))
@@ -184,11 +235,8 @@ async def th_select(
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content="### FWA Base"),
-                Text(content=(
-                    "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
-                    "Once you have made the switch, please send us a screenshot like below to confirm the update.\n"
-                )),
+                Text(content=f"### TH{th_number} FWA War Status and Base Layout"),
+                Text(content=base_info),
                 Media(
                     items=[
                         MediaItem(media=FWA_ACTIVE_WAR_BASE.get(choice, ""))
