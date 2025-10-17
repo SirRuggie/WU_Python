@@ -204,12 +204,12 @@ async def create_category_view(category: str) -> list:
     ]
 
     if commands:
+        # Combine all commands into a single Text component to avoid exceeding 40 component limit
+        command_text = ""
         for cmd, desc in commands:
-            components.extend([
-                Text(content=f"**{cmd}**"),
-                Text(content=desc),
-                Separator(),
-            ])
+            command_text += f"**{cmd}**\n{desc}\n\n"
+
+        components.append(Text(content=command_text.strip()))
     else:
         components.append(Text(content="No commands found in this category."))
 
