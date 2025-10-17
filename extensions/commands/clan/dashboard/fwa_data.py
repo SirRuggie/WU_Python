@@ -34,8 +34,8 @@ from hikari.impl import (
 
 FWA_REP_ROLE_ID = 993015846442127420
 
-# TH levels we support for FWA
-FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th16_new", "th17", "th17_new"]
+# TH levels we support for FWA (ordered from highest to lowest)
+FWA_TH_LEVELS = ["th17_new", "th17", "th16_new", "th16", "th15", "th14", "th13", "th12", "th11", "th10", "th9"]
 
 SERVER_FAMILY = "Warriors_United"
 
