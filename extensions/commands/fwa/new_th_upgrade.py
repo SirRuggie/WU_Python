@@ -27,10 +27,10 @@ from hikari.impl import (
 
 
 @fwa.register()
-class Bases(
+class NewThUpgrade(
     lightbulb.SlashCommand,
-    name="bases",
-    description="Select and display an FWA base Town Hall level",
+    name="new-th-upgrade",
+    description="Display Town Hall upgrade notes for FWA bases",
 ):
     user = lightbulb.user(
         "discord-user",
@@ -70,7 +70,7 @@ class Bases(
                         components=[
                             TextSelectMenu(
                                 max_values=1,
-                                custom_id=f"fwa_bases_th_select:{action_id}",
+                                custom_id=f"fwa_new_th_upgrade_th_select:{action_id}",
                                 placeholder="Select a Base...",
                                 options=[
                                     SelectOption(
@@ -140,29 +140,39 @@ class Bases(
         await ctx.respond(components=components, ephemeral=True)
 
 
-@register_action("fwa_bases_th_select", no_return=True)
+@register_action("fwa_new_th_upgrade_th_select", no_return=True)
 @lightbulb.di.with_di
-async def fwa_bases_th_select(
+async def fwa_new_th_upgrade_th_select(
         user_id: int,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
+    print(f"[FWA New TH Upgrade] ========== fwa_new_th_upgrade_th_select CALLED ==========")
+    print(f"[FWA New TH Upgrade] user_id: {user_id}")
+    print(f"[FWA New TH Upgrade] kwargs keys: {list(kwargs.keys())}")
+
     try:
         ctx: lightbulb.components.MenuContext = kwargs["ctx"]
+        print(f"[FWA New TH Upgrade] Got ctx successfully")
 
         # Get the user from the user_id that was stored in MongoDB
+        print(f"[FWA New TH Upgrade] Fetching member...")
         user = await bot.rest.fetch_member(ctx.guild_id, user_id)
+        print(f"[FWA New TH Upgrade] Got user: {user.username}")
 
         # Get the selected TH level
         choice = ctx.interaction.values[0]
+        print(f"[FWA New TH Upgrade] Choice from dropdown: {choice}")
 
         # Get FWA data
+        print(f"[FWA New TH Upgrade] Getting FWA data...")
         fwa_data = await get_fwa_base_object(mongo)
         if not fwa_data:
-            print(f"[FWA Bases] ERROR: FWA data not found!")
+            print(f"[FWA New TH Upgrade] ERROR: FWA data not found!")
             await ctx.respond("FWA data not found in database!", ephemeral=True)
             return
+        print(f"[FWA New TH Upgrade] Got FWA data successfully")
 
         # Format display name properly for _new variants
         if choice.endswith('_new'):
@@ -176,23 +186,28 @@ async def fwa_bases_th_select(
             friendly_name = f"Town Hall {th_number}"
 
         base_link = getattr(fwa_data.fwa_base_links, choice, "")
+        print(f"[FWA New TH Upgrade] Base link: {base_link[:50] if base_link else 'NONE'}")
 
         if not base_link:
-            print(f"[FWA Bases] ERROR: No base link found for {choice}")
+            print(f"[FWA New TH Upgrade] ERROR: No base link found for {choice}")
             await ctx.respond(f"No base link found for {choice}!", ephemeral=True)
             return
 
-        # Get base information for this TH level
-        base_info = fwa_data.base_information.get(choice, "")
+        # Get base upgrade notes for this TH level
+        print(f"[FWA New TH Upgrade] Getting base_upgrade_notes...")
+        print(f"[FWA New TH Upgrade] base_upgrade_notes type: {type(fwa_data.base_upgrade_notes)}")
+        print(f"[FWA New TH Upgrade] base_upgrade_notes keys: {list(fwa_data.base_upgrade_notes.keys())}")
+        upgrade_notes = fwa_data.base_upgrade_notes.get(choice, "")
+        print(f"[FWA New TH Upgrade] Retrieved upgrade_notes for '{choice}': {upgrade_notes[:50] if upgrade_notes else 'EMPTY'}")
     except Exception as e:
-        print(f"[FWA Bases] EXCEPTION: {e}")
+        print(f"[FWA New TH Upgrade] EXCEPTION: {e}")
         import traceback
         traceback.print_exc()
         return
-    if not base_info:
-        base_info = (
-            "In order to proceed further, we request that you switch your active war base to the link provided above.\n\n"
-            "Once you have made the switch, please send us a screenshot like below to confirm the update."
+    if not upgrade_notes:
+        upgrade_notes = (
+            "No upgrade notes available for this Town Hall level at this time.\n\n"
+            "Please check back later or contact leadership for more information."
         )
 
     # Build the response
@@ -220,8 +235,8 @@ async def fwa_bases_th_select(
         Container(
             accent_color=BLUE_ACCENT,
             components=[
-                Text(content=f"### TH{th_number} FWA War Status and Base Layout"),
-                Text(content=base_info),
+                Text(content=f"### TH{th_number} Upgrade Notes"),
+                Text(content=upgrade_notes),
                 Media(
                     items=[
                         MediaItem(media=FWA_ACTIVE_WAR_BASE.get(choice, ""))
