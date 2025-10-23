@@ -76,10 +76,11 @@ class LazyBonusLottery(
         ctx: lightbulb.Context,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED
     ) -> None:
-        # Check permissions
-        if not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
+        # Check permissions - only specific role can use this command
+        ALLOWED_ROLE_ID = 1430950420926300200
+        if ALLOWED_ROLE_ID not in ctx.member.role_ids:
             await ctx.respond(
-                "❌ You need Administrator permissions to use this command!",
+                "❌ You don't have permission to use this command!",
                 ephemeral=True
             )
             return
