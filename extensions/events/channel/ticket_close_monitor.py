@@ -11,6 +11,9 @@ from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GOLD_ACCENT, GREEN_ACCENT
 from utils.emoji import emojis
 
+# Import discord_skills cleanup function
+from ..message.ticket_automation.handlers import discord_skills
+
 # Import Components V2
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -198,6 +201,12 @@ async def on_channel_delete(event: hikari.GuildChannelDeleteEvent) -> None:
     # If no match, return early
     if not matched:
         return
+
+    # Clean up any active discord skills monitors for this channel
+    try:
+        await discord_skills.cleanup_monitor(channel.id)
+    except Exception as e:
+        print(f"[TicketCloseMonitor] Error cleaning up discord skills monitor: {e}")
 
     # Wait a moment to ensure database operations complete
     await asyncio.sleep(1)

@@ -32,6 +32,9 @@ from ..utils.constants import (
 mongo_client: Optional[MongoClient] = None
 bot_instance: Optional[hikari.GatewayBot] = None
 
+# Active monitor task registry (channel_id -> task)
+active_monitors: dict[int, asyncio.Task] = {}
+
 # Self-contained question data
 DISCORD_SKILLS_QUESTION = {
     "title": "## 🎮 **Discord Basic Skills Check**",
@@ -53,6 +56,20 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     global mongo_client, bot_instance
     mongo_client = mongo
     bot_instance = bot
+
+
+async def cleanup_monitor(channel_id: int) -> None:
+    """Cancel and remove monitor task for a channel"""
+    if channel_id in active_monitors:
+        task = active_monitors[channel_id]
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        del active_monitors[channel_id]
+        print(f"[DiscordSkills] Cleaned up monitor for channel {channel_id}")
 
 
 def create_discord_skills_components(
@@ -136,7 +153,8 @@ async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
                     "step_data.questionnaire.discord_skills_completed": False,
                     "step_data.questionnaire.discord_skills_reaction": False,
                     "step_data.questionnaire.discord_skills_mention": False,
-                    "step_data.questionnaire.last_reminder_time": None
+                    "step_data.questionnaire.last_reminder_time": None,
+                    "step_data.questionnaire.discord_skills_monitor_active": True
                 }
             }
         )
@@ -165,9 +183,11 @@ async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
 
         print(f"[DiscordSkills] Sent question to channel {channel_id}, message ID: {msg.id}")
 
-        # Start monitoring for completion
+        # Start monitoring for completion and register the task
         bot_id = bot_instance.get_me().id
-        asyncio.create_task(monitor_discord_skills_completion(channel_id, user_id, msg.id, bot_id))
+        monitor_task = asyncio.create_task(monitor_discord_skills_completion(channel_id, user_id, msg.id, bot_id))
+        active_monitors[channel_id] = monitor_task
+        print(f"[DiscordSkills] Started monitor task for channel {channel_id}")
 
     except Exception as e:
         print(f"[DiscordSkills] Error sending question: {e}")
@@ -176,21 +196,49 @@ async def send_discord_skills_question(channel_id: int, user_id: int) -> None:
 
 
 async def monitor_discord_skills_completion(channel_id: int, user_id: int, message_id: int, bot_id: int) -> None:
-    """Monitor for completion of Discord skills requirements"""
+    """Monitor for completion of Discord skills requirements with timeout and safety checks"""
 
     print(f"[DiscordSkills] Starting monitor for channel {channel_id}, user {user_id}")
 
+    # Timeout settings
+    max_runtime = 30 * 60  # 30 minutes in seconds
+    start_time = asyncio.get_event_loop().time()
+    check_interval = 5  # Check every 5 seconds
+
     try:
         while True:
-            await asyncio.sleep(5)  # Check every 5 seconds
+            await asyncio.sleep(check_interval)
+
+            # Check timeout
+            elapsed_time = asyncio.get_event_loop().time() - start_time
+            if elapsed_time > max_runtime:
+                print(f"[DiscordSkills] Monitor timeout after {elapsed_time:.0f}s for channel {channel_id}")
+                break
+
+            # Check if channel still exists
+            try:
+                await bot_instance.rest.fetch_channel(channel_id)
+            except hikari.NotFoundError:
+                print(f"[DiscordSkills] Monitor: Channel {channel_id} no longer exists, exiting")
+                break
+            except Exception as e:
+                print(f"[DiscordSkills] Monitor: Error checking channel existence: {e}")
+                # Continue anyway, might be temporary
 
             # Get FRESH state from database
             ticket_state = await mongo_client.ticket_automation_state.find_one({"_id": str(channel_id)})
             if not ticket_state:
-                print(f"[DiscordSkills] Monitor: No ticket state found")
+                print(f"[DiscordSkills] Monitor: No ticket state found, exiting")
                 break
 
             skills_data = ticket_state.get("step_data", {}).get("questionnaire", {})
+
+            # Check if monitor should stop (flag set by ticket close/deny/approve)
+            monitor_active = skills_data.get("discord_skills_monitor_active", True)
+            if not monitor_active:
+                print(f"[DiscordSkills] Monitor: Stop flag detected, exiting")
+                break
+
             reaction_done = skills_data.get("discord_skills_reaction", False)
             mention_done = skills_data.get("discord_skills_mention", False)
 
@@ -200,19 +248,20 @@ async def monitor_discord_skills_completion(channel_id: int, user_id: int, messa
                 print(f"[DiscordSkills] Monitor: Question changed to {current_question}, exiting")
                 break
 
-            print(f"[DiscordSkills] Monitor check: reaction={reaction_done}, mention={mention_done}")
+            print(f"[DiscordSkills] Monitor check: reaction={reaction_done}, mention={mention_done}, elapsed={elapsed_time:.0f}s")
 
             # If both completed, move to next question
             if reaction_done and mention_done:
                 print(f"[DiscordSkills] Both requirements completed!")
 
-                # Update completion
+                # Update completion and set monitor inactive
                 await mongo_client.ticket_automation_state.update_one(
                     {"_id": str(channel_id)},
                     {
                         "$set": {
                             "step_data.questionnaire.discord_skills_completed": True,
-                            "step_data.questionnaire.responses.discord_basic_skills": "completed_requirements"
+                            "step_data.questionnaire.responses.discord_basic_skills": "completed_requirements",
+                            "step_data.questionnaire.discord_skills_monitor_active": False
                         }
                     }
                 )
@@ -241,10 +290,18 @@ async def monitor_discord_skills_completion(channel_id: int, user_id: int, messa
 
                 break
 
+    except asyncio.CancelledError:
+        print(f"[DiscordSkills] Monitor cancelled for channel {channel_id}")
+        raise
     except Exception as e:
         print(f"[DiscordSkills] Error in monitor: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        # Clean up task from registry
+        if channel_id in active_monitors:
+            del active_monitors[channel_id]
+        print(f"[DiscordSkills] Monitor exiting for channel {channel_id}")
 
 
 async def check_reaction_completion(channel_id: int, user_id: int, message_id: int) -> None:
