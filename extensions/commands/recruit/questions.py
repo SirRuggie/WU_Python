@@ -295,6 +295,35 @@ async def primary_questions(
                 ]
             )
         ]
+    elif choice == "warriors_united_cwl":
+        components = [
+            Container(
+                accent_color=GOLDENROD_ACCENT,
+                components=[
+                    Text(content=f"## <:warriorcat:947992348971905035> Warriors United CWL <:warriorcat:947992348971905035> · {user.mention}"),
+                    Separator(divider=True),
+                    Text(content=(
+                        f"We have 20 Clans that we utilize for CWL; with League's ranging from Master 1 to Gold 1. "
+                        f"All but our High Tactical Clans split up into these clans for CWL.\n\n"
+                        f"Three factors determine the League you'll be placed in:\n\n"
+                        f"1) War activity\n"
+                        f"2) War performance\n"
+                        f"3) Account strength\n\n"
+                        f"All are relative to the League you'll be placed in.\n\n"
+                        f"If you are new to the family with no war history then your first CWL season might be lower league "
+                        f"for support and/or strength. Nothing personal, your new so we don't know you yet. *Exceptions may be granted*\n\n"
+                        f"Signing up for CWL is mandatory and is done by way of a Google Form. Sign-ups go live around Clan Games "
+                        f"every month so we can prepare Rosters. It's a super easy form that takes less then a minute.\n\n"
+                        f"## Any issues with filling out a simple form and moving to another clan for CWL?"
+                    )),
+                    Media(
+                        items=[
+                            MediaItem(media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1762095036/misc_images/CW_Leagues.png"),
+                        ]),
+                    Text(content=f"-# Requested by {ctx.member.mention}"),
+                ]
+            )
+        ]
     message = await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
@@ -1324,6 +1353,10 @@ async def recruit_questions_page(
                                     emoji="🛡️",
                                     label="Welcome to the Family",
                                     value="welcome_to_family"),
+                                SelectOption(
+                                    emoji=947992348971905035,
+                                    label="Warriors United CWL",
+                                    value="warriors_united_cwl"),
                     ]),
                 ]),
                 ActionRow(
