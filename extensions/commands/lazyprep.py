@@ -12,8 +12,9 @@ from hikari.impl import (
     SeparatorComponentBuilder as Separator,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
+    ModalActionRowBuilder as ModalActionRow,
 )
-
+from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 
 loader = lightbulb.Loader()
@@ -24,7 +25,7 @@ LAZY_CWL_ROLE = 1080521665584308286
 FWA_FAMILY_ROLE = 772313841090297886  # For Declaration Complete ping
 
 
-def create_declaration_complete_message():
+def create_declaration_complete_message(lazy_clans: str = "84, 83, 82, 81"):
     """Create declaration complete announcement message"""
     return [
         Container(
@@ -40,14 +41,14 @@ def create_declaration_complete_message():
                 )),
                 Separator(),
                 Text(content=(
-                    "```The War Plan in Lazy 84, 83, 82 81 is Mirror Attacks!!(Mirror = same base # as you),\n"
+                    f"```The War Plan in Lazy {lazy_clans} is Mirror Attacks!!(Mirror = same base # as you),\n"
                     "The other clans have a little wiggle room at the bottom, you have two choices...\n\n"
                     "1) Hit your mirror\n\n"
                     "2) Drop down to a TH 3/2 Filler and hit it's mirror. Note I said drop down not up!!\n\n"
                     "Don't abuse this feature...if you have done your 8 Stars...hit your Mirror...don't get greedy.\n"
                     "Another option is if someone lower (or higher) has goose egged (goose egged = zero star)...it's available.```"
                 )),
-                Text(content="**AGAIN...If your in Lazy 84, 83, 82, 81.... MIRROR ATTACKS!!!**"),
+                Text(content=f"**AGAIN...If your in Lazy {lazy_clans}.... MIRROR ATTACKS!!!**"),
                 Separator(),
                 Text(content=(
                     "```We will be continuing the system from last month\n"
@@ -114,7 +115,6 @@ def create_open_message():
     ]
 
 
-@loader.command()
 class LazyPrep(
     lightbulb.SlashCommand,
     name="lazyprep",
@@ -145,14 +145,28 @@ class LazyPrep(
             )
             return
 
+        # For declaration type, open a modal to get lazy clan numbers
+        if self.type == "declaration":
+            lazy_clans_input = ModalActionRow().add_text_input(
+                "lazy_clans",
+                "Lazy Clan Numbers",
+                placeholder="e.g., 84, 83, 82, 81",
+                min_length=1,
+                max_length=50,
+                required=True
+            )
+
+            await ctx.respond_with_modal(
+                title="Declaration Complete - Lazy Clans",
+                custom_id="lazyprep_modal:",
+                components=[lazy_clans_input]
+            )
+            return
+
+        # For other types, proceed normally
         await ctx.defer(ephemeral=True)
 
-        if self.type == "declaration":
-            # Declaration Complete message
-            components = create_declaration_complete_message()
-            role_to_ping = FWA_FAMILY_ROLE
-
-        elif self.type == "closed":
+        if self.type == "closed":
             # Closed message
             components = create_closed_message()
             role_to_ping = LAZY_CWL_ROLE
@@ -180,6 +194,57 @@ class LazyPrep(
                 f"❌ Failed to send announcement: {str(e)}",
                 ephemeral=True
             )
+
+
+@register_action("lazyprep_modal", is_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def lazyprep_modal_handler(
+    ctx,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **kwargs
+):
+    """Handle modal submission for lazy clan numbers"""
+
+    # Extract lazy clan numbers from modal
+    def get_modal_value(custom_id: str) -> str:
+        for row in ctx.interaction.components:
+            for component in row:
+                if component.custom_id == custom_id:
+                    return component.value
+        return "84, 83, 82, 81"  # Default fallback
+
+    lazy_clans = get_modal_value("lazy_clans")
+
+    # Defer the response - since this modal came from a slash command,
+    # we need to create a new response, not update an existing one
+    await ctx.interaction.create_initial_response(
+        hikari.ResponseType.DEFERRED_MESSAGE_CREATE,
+        flags=hikari.MessageFlag.EPHEMERAL
+    )
+
+    # Create declaration complete message with custom lazy clans
+    components = create_declaration_complete_message(lazy_clans=lazy_clans)
+
+    # Send to Lazy CWL channel
+    try:
+        await bot.rest.create_message(
+            channel=LAZY_CWL_CHANNEL,
+            components=components,
+            role_mentions=[FWA_FAMILY_ROLE]
+        )
+
+        # Update the interaction with success message
+        await ctx.interaction.edit_initial_response(
+            content=f"✅ Lazy CWL declaration announcement sent to <#{LAZY_CWL_CHANNEL}> with lazy clans: {lazy_clans}",
+            components=[]
+        )
+
+    except Exception as e:
+        print(f"[LazyPrep] Failed to send declaration announcement: {e}")
+        await ctx.interaction.edit_initial_response(
+            content=f"❌ Failed to send announcement: {str(e)}",
+            components=[]
+        )
 
 
 # Register the command with the loader
