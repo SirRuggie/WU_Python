@@ -78,6 +78,7 @@ class Emojis:
         self.TH15 = EmojiType("<:TH_15:1395729045962096651>")
         self.TH16 = EmojiType("<:TH_16:1395729067990319164>")
         self.TH17 = EmojiType("<:TH_17:1395729126014324837>")
+        self.TH18 = EmojiType("<:TH_17:1395729126014324837>")  # Temporarily using TH17 emoji
 
         # League Emojis - not updated
         self.Champ1 = EmojiType("<:CHL_1:1387845952512983222>")

@@ -9,7 +9,7 @@ GOLDENROD_ACCENT = hikari.Color.from_hex_code("EEEEAA")
 
 # Clan Information
 CLAN_TYPES = ["Tactical", "Flexible Fun", "FWA", "CWL"]
-TH_LEVELS = [str(i) for i in range(3, 18)]
+TH_LEVELS = [str(i) for i in range(3, 19)]
 
 
 # FWA Images
