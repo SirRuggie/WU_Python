@@ -37,6 +37,12 @@ class Bases(
         "Which user to show this for",
     )
 
+    base_only = lightbulb.boolean(
+        "base-only",
+        "Send only the base link button without description",
+        default=False
+    )
+
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(
@@ -48,10 +54,11 @@ class Bases(
 
         action_id = str(uuid.uuid4())
 
-        # Store the user_id in MongoDB like other commands do
+        # Store the user_id and base_only in MongoDB like other commands do
         data = {
             "_id": action_id,
-            "user_id": self.user.id  # Store as integer
+            "user_id": self.user.id,  # Store as integer
+            "base_only": self.base_only
         }
         await mongo.button_store.insert_one(data)
 
@@ -154,6 +161,7 @@ class Bases(
 @lightbulb.di.with_di
 async def fwa_bases_th_select(
         user_id: int,
+        base_only: bool,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
@@ -179,7 +187,7 @@ async def fwa_bases_th_select(
             base_th = choice.replace('_new', '')
             th_number = base_th.lstrip('th')
             display_name = f"TH{th_number} New"
-            friendly_name = f"Town Hall {th_number} New"
+            friendly_name = f"Town Hall {th_number} (Non-Merged Buildings)"
         else:
             th_number = choice.lstrip('th')
             display_name = f"TH{th_number}"
@@ -205,47 +213,72 @@ async def fwa_bases_th_select(
             "Once you have made the switch, please send us a screenshot like below to confirm the update."
         )
 
-    # Build the response
-    components = [
-        Text(content=f"{user.mention}"),
-        Container(
-            accent_color=BLUE_ACCENT,
-            components=[
-                Text(content=f"## {friendly_name}"),
-                Media(
-                    items=[
-                        MediaItem(media=FWA_WAR_BASE.get(choice, ""))
-                    ]
-                ),
-                ActionRow(
-                    components=[
-                        LinkButton(
-                            url=base_link,
-                            label="Click Me!",
-                        )
-                    ]
-                ),
-            ]
-        ),
-        Container(
-            accent_color=BLUE_ACCENT,
-            components=[
-                Text(content=f"### TH{th_number} FWA War Status and Base Layout"),
-                Text(content=base_info),
-                Media(
-                    items=[
-                        MediaItem(media=FWA_ACTIVE_WAR_BASE.get(choice, ""))
-                    ]
-                ),
-                Text(content=f"-# Requested by {ctx.member.mention}")
-            ]
-        )
-    ]
+    # Build the response based on base_only flag
+    if base_only:
+        # Send only the first container (war base with link button)
+        components = [
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"## {friendly_name}"),
+                    Media(
+                        items=[
+                            MediaItem(media=FWA_WAR_BASE.get(choice, ""))
+                        ]
+                    ),
+                    ActionRow(
+                        components=[
+                            LinkButton(
+                                url=base_link,
+                                label="Click Me!",
+                            )
+                        ]
+                    ),
+                ]
+            )
+        ]
+    else:
+        # Send both containers (full response with user mention)
+        components = [
+            Text(content=f"{user.mention}"),
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"## {friendly_name}"),
+                    Media(
+                        items=[
+                            MediaItem(media=FWA_WAR_BASE.get(choice, ""))
+                        ]
+                    ),
+                    ActionRow(
+                        components=[
+                            LinkButton(
+                                url=base_link,
+                                label="Click Me!",
+                            )
+                        ]
+                    ),
+                ]
+            ),
+            Container(
+                accent_color=BLUE_ACCENT,
+                components=[
+                    Text(content=f"### TH{th_number} FWA War Status and Base Layout"),
+                    Text(content=base_info),
+                    Media(
+                        items=[
+                            MediaItem(media=FWA_ACTIVE_WAR_BASE.get(choice, ""))
+                        ]
+                    ),
+                    Text(content=f"-# Requested by {ctx.member.mention}")
+                ]
+            )
+        ]
 
     await bot.rest.create_message(
         components=components,
         channel=ctx.channel_id,
-        user_mentions=[user.id],
+        user_mentions=[user.id] if not base_only else [],
         role_mentions=True,
     )
 
