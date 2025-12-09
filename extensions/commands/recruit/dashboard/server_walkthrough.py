@@ -90,16 +90,15 @@ async def server_walkthrough_handler(
     # Build select menu options
     options = []
     for clan in member_clans:
-        emoji = clan.get("emoji", "🏛️")
-        # Parse emoji if it's a custom emoji format
-        if emoji and emoji.count(":") >= 2:
+        emoji = "🏛️"  # Default fallback
+        clan_emoji = clan.get("emoji")
+        if clan_emoji and clan_emoji.count(":") >= 2:
             try:
                 from utils.emoji import EmojiType
-                partial_emoji = EmojiType(emoji).partial_emoji
-                emoji = partial_emoji if partial_emoji else "🏛️"
-            except:
+                emoji = EmojiType(clan_emoji).partial_emoji
+            except Exception:
                 emoji = "🏛️"
-        
+
         options.append(
             SelectOption(
                 label=clan.get("name", "Unknown Clan"),
