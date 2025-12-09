@@ -82,13 +82,13 @@ class Bases(
                                 options=[
                                     SelectOption(
                                         emoji=emojis.TH18.partial_emoji,
-                                        label="TH18 New",
-                                        value="th18_new"
+                                        label="TH18",
+                                        value="th18"
                                     ),
                                     SelectOption(
                                         emoji=emojis.TH18.partial_emoji,
-                                        label="TH18",
-                                        value="th18"
+                                        label="TH18 New",
+                                        value="th18_new"
                                     ),
                                     SelectOption(
                                         emoji=emojis.TH17.partial_emoji,
