@@ -24,6 +24,7 @@ WAR_WEIGHT_RANGES = {
     15: {"min": 141000, "max": 150000, "display": "141k - 150k"},
     16: {"min": 151000, "max": 160000, "display": "151k - 160k"},
     17: {"min": 161000, "max": 170000, "display": "161k - 170k"},
+    18: {"min": 171000, "max": 180000, "display": "171k - 180k"},
 }
 
 
@@ -37,8 +38,8 @@ def determine_town_hall(total_weight: int) -> tuple[int | None, str, int]:
     if total_weight < 56000:
         return None, "below", RED_ACCENT
 
-    # Check if above TH17 maximum
-    if total_weight > 170000:
+    # Check if above TH18 maximum
+    if total_weight > 180000:
         return None, "above", RED_ACCENT
 
     # Find exact match
@@ -95,7 +96,7 @@ def format_weight_reference_guide(current_weight: int, current_th: int | None) -
 
 def get_upgrade_info(weight: int, th_level: int | None) -> str:
     """Get information about upgrading to next TH level."""
-    if th_level is None or th_level >= 17:
+    if th_level is None or th_level >= 18:
         return ""
 
     next_th = th_level + 1
@@ -136,10 +137,10 @@ class WeightCommand(
             status_msg = "⚠️ **Below TH9 range**\nThis weight is lower than TH9 minimum (56k)."
             th_display = "Below TH9"
         elif status == "above":
-            status_msg = "⚠️ **Above TH17 range**\nThis weight exceeds the maximum range."
-            th_display = "Above TH17"
+            status_msg = "⚠️ **Above TH8 range**\nThis weight exceeds the maximum range."
+            th_display = "Above TH18"
         elif status == "between":
-            if th_level and th_level < 17:
+            if th_level and th_level < 18:
                 next_th = th_level + 1
                 status_msg = f"📊 **Between TH{th_level} and TH{next_th}**"
                 th_display = f"TH{th_level}-{next_th} Gap"
