@@ -23,8 +23,8 @@ from hikari.impl import (
 )
 
 # Configuration
-ABOUT_US_ROLE_ID = 1194706934926946458  # Role to assign when user acknowledges
-STRIKE_SYSTEM_CHANNEL_ID = 1194706935405084766  # Channel to direct users to
+ABOUT_US_ROLE_ID = 1078723854303756301  # Role to assign when user acknowledges
+STRIKE_SYSTEM_CHANNEL_ID = 1078723854316355602  # Channel to direct users to
 
 
 @setup.register()
@@ -151,7 +151,7 @@ class RecruitAboutUs(
                     Text(content="## ⏩ **NEXT STEP**"),
                     Text(content=(
                         "Now react to the ✅ below and follow this link...\n\n"
-                        "https://discord.com/channels/1194706934926946457/1194706935405084766/1270203766498394203\n\n"
+                        "https://discord.com/channels/1078723854303756298/1078723854316355602\n\n"
                         "over to the WU Strike System Channel. Read through and follow the next prompt"
                     )),
                     ActionRow(

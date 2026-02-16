@@ -23,8 +23,8 @@ from hikari.impl import (
 )
 
 # Configuration
-CLAN_RULES_READ_ROLE_ID = 1194706934926946460  # Clan Rules Read role
-APPLY_HERE_CHANNEL_ID = 1194706935405084768  # Apply Here channel
+CLAN_RULES_READ_ROLE_ID = 1078723854303756303  # Clan Rules Read role
+APPLY_HERE_CHANNEL_ID = 1078723854635110530  # Apply Here channel
 
 
 @setup.register()

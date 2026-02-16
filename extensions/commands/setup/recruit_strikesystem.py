@@ -23,8 +23,8 @@ from hikari.impl import (
 )
 
 # Configuration
-STRIKE_SYSTEM_ROLE_ID = 1194706934926946459  # Strike system accepted role
-FAMILY_PARTICULARS_CHANNEL_ID = 1194706935405084767  # Channel to direct users to
+STRIKE_SYSTEM_ROLE_ID = 1078723854303756302  # Strike system accepted role
+FAMILY_PARTICULARS_CHANNEL_ID = 1078723854316355603  # Channel to direct users to
 
 
 @setup.register()
@@ -176,7 +176,7 @@ class RecruitStrikeSystem(
                     Text(content=(
                         "To acknowledge you have read and agree to abide by the Warriors United Strike System, "
                         "react to the ✅ below and follow this link...\n\n"
-                        "https://discord.com/channels/1194706934926946457/1194706935405084767/1270203767274344448\n\n"
+                        "https://discord.com/channels/1078723854303756298/1078723854316355603\n\n"
                         "and head on over to check out our day-to-day family particulars\n"
                         "**Read through and follow the next prompt!**"
                     )),
