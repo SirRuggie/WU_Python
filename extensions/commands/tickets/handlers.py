@@ -362,7 +362,8 @@ async def handle_create_ticket(
             # Send initial messages with suggested question based on ticket type
             first_message = ""
             second_message = "What was the hook that reeled you in? The thing that said \"yeah, I need to check these guys out!!!\""
-            
+            fwa_donation_message = "Donations are better with the update allowing loot to be used but clan chats are and can be sporadic."
+
             if ticket_type == "main":
                 first_message = "Hello there 👋🏻...how you hear about Warriors United?"
             elif ticket_type == "fwa":
@@ -379,6 +380,12 @@ async def handle_create_ticket(
                     thread.id,
                     content=second_message
                 )
+                # Send third FWA message
+                if ticket_type == "fwa":
+                    await bot.rest.create_message(
+                        thread.id,
+                        content=fwa_donation_message
+                    )
                 print(f"[Tickets] Posted initial messages in thread {thread.id} for {ticket_type} ticket")
 
             # Send success message as response
