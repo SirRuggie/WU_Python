@@ -341,7 +341,7 @@ async def handle_create_ticket(
                 thread_message = await bot.rest.create_message(
                     thread.id,
                     content=(
-                        f"<@&{recruiter_role}> "
+                        f"<@&{recruiter_role}> <@&1078723854316355595> "
                         "this is a private thread for the candidate. They cannot see this thread, "
                         "so DO NOT ping them, as it will add them.\n\n"
                     ),
