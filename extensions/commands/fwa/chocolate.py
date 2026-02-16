@@ -159,7 +159,7 @@ class ChocolateCommand(
                             )
                         ]
                     ),
-                    Media(items=[MediaItem(media="assets/Gold_Footer.png")])
+                    Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
                     Separator(divider=True),
                     Text(content=f"-# Requested by <@{ctx.member.id}>"),
                 ]
