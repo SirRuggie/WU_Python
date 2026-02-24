@@ -39,7 +39,13 @@ def debug_print(*args, **kwargs):
 # BAND API Configuration
 BAND_API_BASE = "https://openapi.band.us/v2/band/posts"
 BAND_ACCESS_TOKEN = "ZQAAAR-9LGjvTxYmwok2WaTSYvcrA8M84ZK3s5BQSxxmggdJkyIFUUT4KCFvH1QNz2I3syNF_2aKaPLtownMSAVAC7pprIKu1TD_600hDD8GjhvX"
-BAND_KEY = "AADMPvOeSi6era-iwqaVkEtP"
+
+# Change this band number to monitor a different Band group
+# This is the number from the Band page URL
+TARGET_BAND_NO = "94643112"
+
+# Resolved at startup from TARGET_BAND_NO
+BAND_KEY = None
 
 # Discord channel to send notifications
 NOTIFICATION_CHANNEL_ID = 1003886984462340166
@@ -52,6 +58,31 @@ CHECK_INTERVAL_SECONDS = 600  # 10 minutes
 band_check_task = None
 bot_instance = None  # Store bot reference for sending messages
 mongo_client = None  # Store mongo reference
+
+
+async def resolve_band_key():
+    """Look up the band_key from TARGET_BAND_NO using the BAND API"""
+    global BAND_KEY
+    url = "https://openapi.band.us/v2.1/bands"
+    params = {"access_token": BAND_ACCESS_TOKEN}
+
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, params=params) as response:
+            data = await response.json(content_type=None)
+
+    if data.get("result_code") != 1:
+        print(f"[BAND Monitor] ERROR: Failed to resolve band key - API error {data.get('result_code')}: {data.get('result_msg')}")
+        return False
+
+    for band in data["result_data"]["items"]:
+        if str(band.get("band_no")) == TARGET_BAND_NO:
+            BAND_KEY = band.get("band_key")
+            print(f"[BAND Monitor] Resolved band_key for band '{band.get('name')}' (band_no: {TARGET_BAND_NO})")
+            return True
+
+    print(f"[BAND Monitor] ERROR: No band found matching band_no: {TARGET_BAND_NO}")
+    return False
 
 
 async def fetch_band_posts():
@@ -141,7 +172,7 @@ async def send_war_sync_to_discord(post):
                 ActionRow(
                     components=[
                         LinkButton(
-                            url="https://www.band.us/band/57375315",
+                            url=f"https://www.band.us/band/{TARGET_BAND_NO}",
                             label="Check FWA Sync Time",
                             emoji="🕐"
                         )
@@ -281,7 +312,7 @@ async def on_war_response(
                 ActionRow(
                     components=[
                         LinkButton(
-                            url="https://www.band.us/band/57375315",
+                            url=f"https://www.band.us/band/{TARGET_BAND_NO}",
                             label="Check FWA Sync Time",
                             emoji="🕐"
                         )
@@ -460,6 +491,12 @@ async def on_bot_started(
     # Store bot instance for sending messages
     bot_instance = event.app
     mongo_client = mongo
+
+    # Resolve the band_key from the band number before starting the monitor
+    resolved = await resolve_band_key()
+    if not resolved:
+        print("[BAND Monitor] Failed to resolve band key! Monitor will NOT start.")
+        return
 
     # Create the task with mongo passed in
     band_check_task = asyncio.create_task(band_checker_loop(mongo))
