@@ -40,11 +40,11 @@ def debug_print(*args, **kwargs):
 BAND_API_BASE = "https://openapi.band.us/v2/band/posts"
 BAND_ACCESS_TOKEN = "ZQAAAR-9LGjvTxYmwok2WaTSYvcrA8M84ZK3s5BQSxxmggdJkyIFUUT4KCFvH1QNz2I3syNF_2aKaPLtownMSAVAC7pprIKu1TD_600hDD8GjhvX"
 
-# Change this band number to monitor a different Band group
-# This is the number from the Band page URL
-TARGET_BAND_NO = "94643112"
+# Change these to monitor a different Band group
+TARGET_BAND_NAME = "FWA© New Sync"  # Must match the band name exactly as shown in BAND
+TARGET_BAND_NO = "94643112"          # The number from the Band page URL (used for link buttons)
 
-# Resolved at startup from TARGET_BAND_NO
+# Resolved at startup from TARGET_BAND_NAME
 BAND_KEY = None
 
 # Discord channel to send notifications
@@ -75,13 +75,25 @@ async def resolve_band_key():
         print(f"[BAND Monitor] ERROR: Failed to resolve band key - API error {data.get('result_code')}: {data.get('result_msg')}")
         return False
 
-    for band in data["result_data"]["items"]:
-        if str(band.get("band_no")) == TARGET_BAND_NO:
+    result_data = data.get("result_data", {})
+    # The bands list may be under "items" or "bands" depending on API version
+    bands = result_data.get("bands", result_data.get("items", []))
+
+    if not bands:
+        print(f"[BAND Monitor] ERROR: No bands found in API response. result_data keys: {list(result_data.keys())}")
+        return False
+
+    for band in bands:
+        if band.get("name") == TARGET_BAND_NAME:
             BAND_KEY = band.get("band_key")
-            print(f"[BAND Monitor] Resolved band_key for band '{band.get('name')}' (band_no: {TARGET_BAND_NO})")
+            print(f"[BAND Monitor] Resolved band_key for band '{TARGET_BAND_NAME}': {BAND_KEY}")
             return True
 
-    print(f"[BAND Monitor] ERROR: No band found matching band_no: {TARGET_BAND_NO}")
+    # If not found, print available bands to help debug
+    print(f"[BAND Monitor] ERROR: No band found matching name: '{TARGET_BAND_NAME}'")
+    print(f"[BAND Monitor] Available bands:")
+    for b in bands:
+        print(f"  - {b.get('name')}")
     return False
 
 
