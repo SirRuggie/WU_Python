@@ -199,34 +199,35 @@ async def execute_server_walkthrough_handler(
     clan_tag = clan_doc.get("tag", "")
     clan_role_id = clan_doc.get("role_id")
     clan_banner = clan_doc.get("banner")
-    
+    clan_logo = clan_doc.get("logo")
+
     # Build clan link
     clan_link = f"https://link.clashofclans.com/en/?action=OpenClanProfile&tag={clan_tag.replace('#', '')}"
-    
-    # Get server logo dynamically
-    guild_icon_url = guild.make_icon_url() if guild else None
-    server_logo = str(guild_icon_url) if guild_icon_url else "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836911/misc_images/WU_Logo.png"
-    
+
+    # Build header - show clan logo in top right if one exists
+    if clan_logo:
+        header = [
+            Section(
+                components=[
+                    Text(content=f"{member.mention}"),
+                ],
+                accessory=Thumbnail(media=clan_logo)
+            ),
+            Text(content=f"# {clan_name}"),
+        ]
+    else:
+        header = [
+            Text(content=f"{member.mention}"),
+            Text(content=f"# {clan_name}"),
+        ]
+
     # Build welcome message components
     welcome_components = [
         Container(
             accent_color=GOLD_ACCENT,
             components=[
-                # Section with server logo and member mention
-                Section(
-                    components=[
-                        Text(content=f"{member.mention}"),
-                    ],
-                    accessory=Thumbnail(
-                        media=server_logo
-                    )
-                ),
-                
-                # Large clan name
-                Text(content=f"# {clan_name}"),
+                *header,
                 Separator(divider=True),
-                
-                # Welcome message
                 Text(content=(
                     f"## Welcome to the family!!! 🎉\n\n"
                     f"You've been assigned to **{clan_name}**\n\n"
@@ -240,7 +241,6 @@ async def execute_server_walkthrough_handler(
                     f"making sure you utilize one of the proper join codes already discussed."
                 )),
                 Separator(divider=True),
-                
                 # Clan banner image
                 Media(
                     items=[
@@ -269,7 +269,7 @@ async def execute_server_walkthrough_handler(
             ]
         )
     ]
-    
+
     try:
         # Send the welcome message to the channel
         await welcome_channel.send(
