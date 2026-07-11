@@ -21,3 +21,4 @@ class MongoClient(AsyncMongoClient):
         self.recruit_onboarding = self.__settings.get_collection("recruit_onboarding")
         self.lazy_cwl_snapshots = self.__settings.get_collection("lazy_cwl_snapshots")
         self.cwl_pending_reminders = self.__settings.get_collection("cwl_pending_reminders")
+        self.fwa_points = self.__settings.get_collection("fwa_points")

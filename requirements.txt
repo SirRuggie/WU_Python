@@ -33,3 +33,6 @@ cloudinary
 
 # Async Reddit API wrapper (used for bots interacting with Reddit)
 asyncpraw
+
+# HTML parser for the FWA points scraper
+beautifulsoup4

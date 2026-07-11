@@ -87,6 +87,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.band_monitor",
         "extensions.tasks.recruit_role_cleanup",
         "extensions.tasks.cwl_reminder",
+        "extensions.tasks.fwa_points_monitor",
         "extensions.commands.fwa.upload_images",
         "extensions.commands.fwa.war_plans",
         "extensions.commands.tickets",
