@@ -1,3 +1,17 @@
+# FWA points monitor.
+#
+# SHIPS DISABLED ON PURPOSE (DEFAULT_ENABLED = False below). points.fwafarm.com sits
+# behind Cloudflare, which hard-blocks requests from datacenter IPs. Confirmed from the
+# Hetzner box on 2026-07-11: curl returned HTTP 403 on all three attempts, and because
+# curl has a completely different TLS fingerprint than aiohttp yet was blocked
+# identically, the block is on the datacenter IP, not the client and not the request
+# headers (the exact same headers return HTTP 200 from a non-datacenter IP). The feature
+# works end to end and will populate immediately if that block ever lifts, or if the
+# fetch is ever run from a non-datacenter IP. Until then it stays off; /fwa points
+# degrades to showing the link, which is the pre-existing behavior, so nothing is broken
+# for users. Do not reach for a Cloudflare-bypass library: those defeat TLS/JS
+# challenges, not IP-reputation blocks, so they would not help here.
+
 import asyncio
 import time
 from datetime import datetime, timezone
