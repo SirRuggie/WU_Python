@@ -30,6 +30,7 @@ loader = lightbulb.Loader()
 
 # Town Hall configuration (same as in set_townhall.py)
 TH_LEVELS = [
+    {"level": 18, "emoji": emojis.TH18, "role_id": 1439244282392215552},
     {"level": 17, "emoji": emojis.TH17, "role_id": 1315835882435121152},
     {"level": 16, "emoji": emojis.TH16, "role_id": 1186343231303200848},
     {"level": 15, "emoji": emojis.TH15, "role_id": 1029879502484025474},
