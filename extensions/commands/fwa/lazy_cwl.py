@@ -2729,6 +2729,16 @@ async def on_bot_started(
     coc_client = coc_api
     mongo_client = mongo
 
+    # This listener is attached to the shared `fwa` loader, which every /fwa command
+    # module re-adds when it loads, so hikari fires this once per fwa module (~9x).
+    # Guard so we build and start exactly ONE scheduler. Without it, each firing made a
+    # fresh scheduler and re-ran restore, so an enabled auto-ping ended up registered on
+    # every one of those live schedulers and fired that many times per interval. The
+    # check and the assignment below have no await between them, so this holds even if
+    # the duplicate firings are dispatched concurrently.
+    if scheduler is not None:
+        return
+
     # Initialize and start scheduler
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.start()
