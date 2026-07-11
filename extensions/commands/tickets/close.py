@@ -14,9 +14,6 @@ from extensions.components import register_action
 from utils.constants import RED_ACCENT
 import re
 
-# Import discord_skills for monitor cleanup
-from extensions.events.message.ticket_automation.handlers import discord_skills
-
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
     ContainerComponentBuilder as Container,
@@ -223,15 +220,17 @@ class Approve(
             }
         )
 
-        # Stop discord skills monitor if active
+        # Clear the leftover discord-skills monitor flag on the ticket state doc.
+        # The monitor code was removed with the ticket_automation tree, so nothing
+        # reads this flag anymore; the write is kept to avoid touching the
+        # ticket_automation_state collection.
         try:
             await mongo.ticket_automation_state.update_one(
                 {"_id": str(current_channel_id)},
                 {"$set": {"step_data.questionnaire.discord_skills_monitor_active": False}}
             )
-            await discord_skills.cleanup_monitor(current_channel_id)
         except Exception as e:
-            print(f"[TicketApprove] Error stopping monitor: {e}")
+            print(f"[TicketApprove] Error clearing monitor flag: {e}")
 
         # Rename the channel to have ✅ prefix
         try:
@@ -423,15 +422,17 @@ async def deny_fwa_default_handler(
         }
     )
 
-    # Stop discord skills monitor if active
+    # Clear the leftover discord-skills monitor flag on the ticket state doc.
+    # The monitor code was removed with the ticket_automation tree, so nothing
+    # reads this flag anymore; the write is kept to avoid touching the
+    # ticket_automation_state collection.
     try:
         await mongo.ticket_automation_state.update_one(
             {"_id": str(data['channel_id'])},
             {"$set": {"step_data.questionnaire.discord_skills_monitor_active": False}}
         )
-        await discord_skills.cleanup_monitor(data['channel_id'])
     except Exception as e:
-        print(f"[TicketDeny] Error stopping monitor: {e}")
+        print(f"[TicketDeny] Error clearing monitor flag: {e}")
 
     # Rename channel
     try:
@@ -512,15 +513,17 @@ async def deny_main_default_handler(
         }
     )
 
-    # Stop discord skills monitor if active
+    # Clear the leftover discord-skills monitor flag on the ticket state doc.
+    # The monitor code was removed with the ticket_automation tree, so nothing
+    # reads this flag anymore; the write is kept to avoid touching the
+    # ticket_automation_state collection.
     try:
         await mongo.ticket_automation_state.update_one(
             {"_id": str(data['channel_id'])},
             {"$set": {"step_data.questionnaire.discord_skills_monitor_active": False}}
         )
-        await discord_skills.cleanup_monitor(data['channel_id'])
     except Exception as e:
-        print(f"[TicketDeny] Error stopping monitor: {e}")
+        print(f"[TicketDeny] Error clearing monitor flag: {e}")
 
     # Rename channel
     try:
@@ -634,15 +637,17 @@ async def process_custom_denial_handler(
         }
     )
 
-    # Stop discord skills monitor if active
+    # Clear the leftover discord-skills monitor flag on the ticket state doc.
+    # The monitor code was removed with the ticket_automation tree, so nothing
+    # reads this flag anymore; the write is kept to avoid touching the
+    # ticket_automation_state collection.
     try:
         await mongo.ticket_automation_state.update_one(
             {"_id": str(data['channel_id'])},
             {"$set": {"step_data.questionnaire.discord_skills_monitor_active": False}}
         )
-        await discord_skills.cleanup_monitor(data['channel_id'])
     except Exception as e:
-        print(f"[TicketDeny] Error stopping monitor: {e}")
+        print(f"[TicketDeny] Error clearing monitor flag: {e}")
 
     # Rename channel
     try:
