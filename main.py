@@ -1,6 +1,17 @@
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+import sys
+# Force line-buffered stdout/stderr so logs reach journald immediately.
+# Without this, Python block-buffers output when piped (as under systemd),
+# delaying log delivery by hours. Belt-and-suspenders with PYTHONUNBUFFERED
+# in the systemd unit, and travels with the code if the box is rebuilt.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except (AttributeError, ValueError):
+    pass  # non-standard stream (e.g. already wrapped); env var still covers us
+
 import os
 import hikari
 import lightbulb
