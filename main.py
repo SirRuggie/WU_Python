@@ -12,6 +12,17 @@ try:
 except (AttributeError, ValueError):
     pass  # non-standard stream (e.g. already wrapped); env var still covers us
 
+# Fail fast on an untested interpreter. This bot is developed and deployed on
+# Python 3.12.3; older versions are unvalidated and standard-library behavior
+# can change across point releases, so a mismatch should be a loud startup
+# error rather than a silent runtime bug.
+if sys.version_info < (3, 12, 3):
+    raise RuntimeError(
+        "This bot requires Python 3.12.3 or newer. Detected "
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}. "
+        "Upgrade the interpreter before running."
+    )
+
 import os
 import hikari
 import lightbulb
