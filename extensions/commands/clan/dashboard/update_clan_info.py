@@ -32,6 +32,7 @@ from utils.constants import RED_ACCENT
 from utils.classes import Clan
 from utils.emoji import emojis
 from utils.mongo import MongoClient
+from utils.url_safety import is_safe_public_url, MAX_IMAGE_BYTES
 from extensions.commands.clan.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
 
@@ -1313,6 +1314,33 @@ async def emoji_from_cloudinary(
     )
 
 
+def _download_image_blocking(url: str) -> bytes:
+    """Fetch an image with a timeout, no redirects, and a byte cap.
+
+    Blocking on purpose: it is called via asyncio.to_thread so the download and
+    the (also blocking) PIL work never run on the event loop. allow_redirects is
+    off so a URL we validated as public cannot bounce us to an internal host.
+    """
+    with requests.get(
+        url,
+        timeout=(5, 15),        # (connect seconds, read seconds)
+        allow_redirects=False,
+        stream=True,
+    ) as resp:
+        resp.raise_for_status()
+        declared = resp.headers.get("Content-Length")
+        if declared is not None and declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
+            raise ValueError("Image is larger than the 10 MB limit.")
+        chunks = []
+        total = 0
+        for chunk in resp.iter_content(8192):
+            total += len(chunk)
+            if total > MAX_IMAGE_BYTES:
+                raise ValueError("Image is larger than the 10 MB limit.")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+
 async def process_emoji_upload(
         ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
         tag: str,
@@ -1345,10 +1373,45 @@ async def process_emoji_upload(
         await ctx.respond(components=loading_components, edit=True)
 
     try:
+        # Validate the URL BEFORE doing anything destructive. This is the SSRF
+        # guard, and validating first means a bad URL fails cleanly instead of
+        # deleting the clan's current emoji and then erroring on the download.
+        ok, reason = is_safe_public_url(emoji_url)
+        if not ok:
+            raise ValueError(f"Image URL rejected: {reason}")
+
         # Clean clan name for emoji name (remove spaces, special chars)
         clan_name = re.sub(r'[^a-zA-Z0-9]', '', db_clan.name)
         if not clan_name:
             clan_name = f"clan_{tag.replace('#', '')}"
+
+        # Resize helper (runs off the event loop via asyncio.to_thread).
+        def resize_and_compress_image(image_content, max_size=(128, 128), max_kb=256):
+            image = Image.open(BytesIO(image_content))
+
+            # Convert to RGBA if necessary
+            if image.mode != 'RGBA':
+                image = image.convert('RGBA')
+
+            # Resize with high quality
+            image.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+            # Save as PNG with optimization
+            buffer = BytesIO()
+            image.save(buffer, format="PNG", optimize=True)
+
+            # If still too large, reduce quality
+            if buffer.tell() / 1024 > max_kb:
+                buffer = BytesIO()
+                image.save(buffer, format="PNG", optimize=True, quality=85)
+
+            return buffer.getvalue()
+
+        # Prepare the new image (download + resize) BEFORE deleting the old emoji,
+        # so a download/resize failure leaves the clan's current emoji intact.
+        # Both steps run off the event loop (network + CPU-bound PIL work).
+        raw_bytes = await asyncio.to_thread(_download_image_blocking, emoji_url)
+        img_data = await asyncio.to_thread(resize_and_compress_image, raw_bytes)
 
         application = await bot.rest.fetch_my_user()
 
@@ -1386,33 +1449,6 @@ async def process_emoji_upload(
                 print(f"[DEBUG] Old emoji {old_id} not found (may have been already deleted)")
             except Exception as e:
                 print(f"[DEBUG] Could not delete old emoji {old_id}: {e}")
-
-        # Download and resize image
-        def resize_and_compress_image(image_content, max_size=(128, 128), max_kb=256):
-            image = Image.open(BytesIO(image_content))
-
-            # Convert to RGBA if necessary
-            if image.mode != 'RGBA':
-                image = image.convert('RGBA')
-
-            # Resize with high quality
-            image.thumbnail(max_size, Image.Resampling.LANCZOS)
-
-            # Save as PNG with optimization
-            buffer = BytesIO()
-            image.save(buffer, format="PNG", optimize=True)
-
-            # If still too large, reduce quality
-            if buffer.tell() / 1024 > max_kb:
-                buffer = BytesIO()
-                image.save(buffer, format="PNG", optimize=True, quality=85)
-
-            return buffer.getvalue()
-
-        # Download the image
-        resp = requests.get(emoji_url)
-        resp.raise_for_status()
-        img_data = resize_and_compress_image(resp.content)
 
         # Upload to Discord
         new_emoji = await bot.rest.create_application_emoji(
