@@ -24,6 +24,37 @@ from utils.constants import BLUE_ACCENT
 from extensions.components import register_action
 from extensions.commands.tickets import loader, ticket
 
+# Discord rejects a Components V2 text display whose content is outside 1-4000
+# characters, and BOTH bounds are reachable from a ticket list:
+#   - upper: open tickets are only cleared by /ticket deny and /ticket approve, so
+#     abandoned ones pile up forever and the joined list crosses 4000 at roughly 53
+#     entries (~75 chars each). This is the bound that was actually crashing.
+#   - lower: not reachable today via the if/else grouping below, but guarded anyway so
+#     a future filter that returns nothing degrades to a message instead of a 400.
+MAX_TEXT_CONTENT = 4000
+TRUNCATION_HEADROOM = 120  # leaves room for the "N more" note
+
+
+def safe_text_content(body: str, empty_fallback: str) -> str:
+    """Clamp a text-display body into Discord's 1-4000 character window."""
+    body = (body or "").strip()
+    if not body:
+        return empty_fallback
+    if len(body) <= MAX_TEXT_CONTENT:
+        return body
+
+    lines = body.split("\n")
+    kept, used = [], 0
+    budget = MAX_TEXT_CONTENT - TRUNCATION_HEADROOM
+    for line in lines:
+        if used + len(line) + 1 > budget:
+            break
+        kept.append(line)
+        used += len(line) + 1
+
+    hidden = len(lines) - len(kept)
+    return "\n".join(kept) + f"\n\n-# …truncated, {hidden} more line(s) not shown."
+
 
 @ticket.register()
 class ListTickets(
@@ -122,7 +153,10 @@ class ListTickets(
                     components=[
                         Text(content=f"📋 **Open Tickets ({len(tickets_list)} total)**"),
                         Separator(divider=True),
-                        Text(content="\n".join(description_parts)),
+                        Text(content=safe_text_content(
+                            "\n".join(description_parts),
+                            "No open tickets."
+                        )),
                         Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
                     ]
                 )

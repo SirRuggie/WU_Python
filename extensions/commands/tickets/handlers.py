@@ -7,7 +7,7 @@ import hikari
 import hikari.errors
 import lightbulb
 from typing import List, Dict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import asyncio
 
 from hikari.impl import (
@@ -35,6 +35,10 @@ channel_creation_semaphore = asyncio.Semaphore(1)
 # Cooldown tracking - user_id: timestamp
 user_cooldowns: Dict[int, datetime] = {}
 COOLDOWN_DURATION = 30  # seconds
+# Extra seconds pushed onto a user's cooldown after a 429 on channel creation. The
+# guild channel-create bucket slides to a 60s window, so a plain 30s cooldown would
+# let the retry land back inside the same window; 60 + 30 clears it.
+RATE_LIMIT_BACKOFF = 60  # seconds
 COOLDOWN_CLEANUP_INTERVAL = 300  # cleanup every 5 minutes
 last_cleanup = datetime.now(timezone.utc)
 
@@ -202,6 +206,15 @@ async def handle_create_ticket(
     # Check category space before creating
     remaining_slots = await check_category_space(bot, category_id, ticket_type, admin_to_notify, ctx.guild_id)
 
+    if remaining_slots < 0:
+        # check_category_space returns -1 when the check itself failed. Fail closed:
+        # attempting a create we could not validate is how channels get orphaned.
+        await ctx.interaction.edit_initial_response(
+            content=f"❌ Could not verify space in the {ticket_title} ticket category.\n"
+                    f"Please try again in a moment or contact an administrator."
+        )
+        return
+
     if remaining_slots == 0:
         # Send error response
         await ctx.interaction.edit_initial_response(
@@ -270,9 +283,16 @@ async def handle_create_ticket(
                     reason=f"{ticket_title} ticket for {ctx.user.username}"
                 )
             except hikari.errors.RateLimitTooLongError as e:
-                # Remove cooldown so user can try again later
-                user_cooldowns.pop(user_id, None)
-                
+                # Do NOT clear the cooldown here. Clearing it let a user re-click the
+                # instant they read the error, and every re-click is another POST to
+                # the already-sliding channel-create bucket - that is what kept the
+                # Jul 29 incident alive for 78 minutes instead of the 60s window.
+                # Push the cooldown out past the window instead. Storing a future
+                # timestamp is deliberate: the check below computes a negative
+                # elapsed time, so the user stays blocked for RATE_LIMIT_BACKOFF +
+                # COOLDOWN_DURATION seconds and the countdown shown stays accurate.
+                user_cooldowns[user_id] = current_time + timedelta(seconds=RATE_LIMIT_BACKOFF)
+
                 print(f"[Tickets] Rate limit exceeded maximum wait time: {e}")
                 await ctx.interaction.edit_initial_response(
                     content=(
@@ -398,9 +418,10 @@ async def handle_create_ticket(
             pass
         except Exception as e:
             print(f"Error creating ticket: {e}")
-            # Remove cooldown on error
-            user_cooldowns.pop(user_id, None)
-            
+            # Cooldown deliberately left in place. It used to be cleared here, which
+            # invited immediate re-clicks into whatever condition just failed; the
+            # normal 30s wait set above is enough for a transient error.
+
             # Send error response
             await ctx.interaction.edit_initial_response(
                 content=f"❌ There was an error creating your ticket.\nPlease try again or contact an administrator.\nError: {str(e)}"
