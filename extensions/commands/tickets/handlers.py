@@ -75,9 +75,12 @@ async def check_category_space(bot: hikari.GatewayBot, category_id: int, ticket_
         guild_channels = await bot.rest.fetch_guild_channels(guild_id)
 
         # Count channels in this specific category
+        # int() on both sides: parent_id is a Snowflake and category_id may arrive as
+        # a string from Mongo, and a type mismatch here fails open (reports 50 free).
         channels_in_category = [
             ch for ch in guild_channels
-            if hasattr(ch, 'parent_id') and ch.parent_id == category_id
+            if getattr(ch, 'parent_id', None) is not None
+            and int(ch.parent_id) == int(category_id)
         ]
 
         # Get category info for better logging
@@ -199,6 +202,19 @@ async def handle_create_ticket(
         ticket_title = "FWA Clan"
         # Get ticket counter (don't increment yet)
         ticket_number = config.get("fwa_ticket_counter", 0) + 1
+
+    # Coerce here, not at the comparison site: a string category id from a manual
+    # Mongo edit makes the parent_id comparison in check_category_space always False,
+    # which silently reports 50 free slots on a category that is actually full.
+    try:
+        category_id = int(category_id)
+    except (TypeError, ValueError):
+        print(f"[Tickets] ERROR: {ticket_type} category id is not numeric: {category_id!r}")
+        await ctx.interaction.edit_initial_response(
+            content=f"❌ The {ticket_title} ticket category is misconfigured.\n"
+                    f"Please contact an administrator."
+        )
+        return
 
     print(f"[Tickets] Using category {category_id}, recruiter role: {recruiter_role}, ticket number: {ticket_number}")
 

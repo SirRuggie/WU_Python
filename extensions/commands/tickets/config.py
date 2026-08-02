@@ -114,6 +114,19 @@ class Config(
         else:
             # Show current configuration
             config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+
+            # ChangeCategory has always written these and nothing ever displayed them,
+            # which is why "when was the category last switched" was unanswerable.
+            updated_at = config.get("updated_at")
+            if isinstance(updated_at, datetime):
+                if updated_at.tzinfo is None:
+                    updated_at = updated_at.replace(tzinfo=timezone.utc)
+                last_changed = f"<t:{int(updated_at.timestamp())}:f> (<t:{int(updated_at.timestamp())}:R>)"
+            else:
+                last_changed = "Never recorded"
+            updated_by = config.get("updated_by")
+            changed_by = f"<@{updated_by}>" if updated_by else "Unknown"
+
             config_text = (
                 "**Current Ticket Configuration:**\n"
                 f"Main Recruiter Role: {'<@&' + str(config.get('main_recruiter_role')) + '>' if config.get('main_recruiter_role') else 'Not set'}\n"
@@ -123,7 +136,10 @@ class Config(
                 f"FWA Category: {config.get('fwa_category', 1395653165470191667)}\n\n"
                 f"**Ticket Counters:**\n"
                 f"Main Tickets: {config.get('main_ticket_counter', 0)}\n"
-                f"FWA Tickets: {config.get('fwa_ticket_counter', 0)}"
+                f"FWA Tickets: {config.get('fwa_ticket_counter', 0)}\n\n"
+                f"**Last Config Change:**\n"
+                f"When: {last_changed}\n"
+                f"By: {changed_by}"
             )
             await ctx.respond(config_text, ephemeral=True)
 

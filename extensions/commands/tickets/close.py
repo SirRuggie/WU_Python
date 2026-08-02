@@ -28,6 +28,24 @@ from hikari.impl import (
 )
 
 
+def _status_write_warning(result, doc_id) -> str:
+    """Return a recruiter-facing warning when a status update matched nothing.
+
+    Mongo reports success on a zero-match update_one, so a write against a missing
+    document silently no-ops while the channel rename further down still runs. That
+    divergence is how live channels ended up carrying a ✅/❌ emoji with their ticket
+    document still reading "open". The rename is deliberately still performed - the
+    emoji is the signal recruiters actually read - but the mismatch is surfaced
+    instead of being reported as success.
+    """
+    if getattr(result, "matched_count", 0):
+        return ""
+    return (
+        f"\n\n⚠️ **Status was not recorded** — no ticket document matched `{doc_id}`. "
+        f"The channel was still renamed; please report this to an admin."
+    )
+
+
 def get_channel_name_with_new_emoji(channel_name: str, new_emoji: str) -> str:
     """Replace the emoji prefix in a channel name with a new emoji"""
     # Known ticket emojis to look for
@@ -209,7 +227,7 @@ class Approve(
             return
 
         # Approve the ticket
-        await mongo.button_store.update_one(
+        approve_result = await mongo.button_store.update_one(
             {"_id": ticket["_id"]},
             {
                 "$set": {
@@ -219,6 +237,7 @@ class Approve(
                 }
             }
         )
+        status_warning = _status_write_warning(approve_result, ticket["_id"])
 
         # Clear the leftover discord-skills monitor flag on the ticket state doc.
         # The monitor code was removed with the ticket_automation tree, so nothing
@@ -265,11 +284,12 @@ class Approve(
                 print(f"[Tickets] Failed to send congratulations message: {e}")
 
             await ctx.respond(
-                f"✅ Ticket approved for <@{ticket['user_id']}>!"
+                f"✅ Ticket approved for <@{ticket['user_id']}>!{status_warning}"
             )
         except Exception as e:
             await ctx.respond(
-                f"✅ Ticket approved in database, but failed to rename channel: {str(e)}"
+                f"✅ Ticket approved in database, but failed to rename channel: "
+                f"{str(e)}{status_warning}"
             )
 
 
@@ -410,7 +430,7 @@ async def deny_fwa_default_handler(
     )
     
     # Update ticket status
-    await mongo.button_store.update_one(
+    deny_result = await mongo.button_store.update_one(
         {"_id": data['ticket_id']},
         {
             "$set": {
@@ -421,6 +441,7 @@ async def deny_fwa_default_handler(
             }
         }
     )
+    status_warning = _status_write_warning(deny_result, data['ticket_id'])
 
     # Clear the leftover discord-skills monitor flag on the ticket state doc.
     # The monitor code was removed with the ticket_automation tree, so nothing
@@ -450,7 +471,7 @@ async def deny_fwa_default_handler(
     await mongo.button_store.delete_one({"_id": action_id})
     
     await ctx.interaction.edit_initial_response(
-        content="✅ FWA default denial sent!",
+        content=f"✅ FWA default denial sent!{status_warning}",
         component=None
     )
 
@@ -501,7 +522,7 @@ async def deny_main_default_handler(
     )
     
     # Update ticket status
-    await mongo.button_store.update_one(
+    deny_result = await mongo.button_store.update_one(
         {"_id": data['ticket_id']},
         {
             "$set": {
@@ -512,6 +533,7 @@ async def deny_main_default_handler(
             }
         }
     )
+    status_warning = _status_write_warning(deny_result, data['ticket_id'])
 
     # Clear the leftover discord-skills monitor flag on the ticket state doc.
     # The monitor code was removed with the ticket_automation tree, so nothing
@@ -541,7 +563,7 @@ async def deny_main_default_handler(
     await mongo.button_store.delete_one({"_id": action_id})
     
     await ctx.interaction.edit_initial_response(
-        content="✅ Main default denial sent!",
+        content=f"✅ Main default denial sent!{status_warning}",
         component=None
     )
 
@@ -624,7 +646,7 @@ async def process_custom_denial_handler(
     )
     
     # Update ticket status
-    await mongo.button_store.update_one(
+    deny_result = await mongo.button_store.update_one(
         {"_id": data['ticket_id']},
         {
             "$set": {
@@ -636,6 +658,7 @@ async def process_custom_denial_handler(
             }
         }
     )
+    status_warning = _status_write_warning(deny_result, data['ticket_id'])
 
     # Clear the leftover discord-skills monitor flag on the ticket state doc.
     # The monitor code was removed with the ticket_automation tree, so nothing
@@ -665,6 +688,6 @@ async def process_custom_denial_handler(
     await mongo.button_store.delete_one({"_id": action_id})
     
     await ctx.respond(
-        "✅ Custom denial sent!",
+        f"✅ Custom denial sent!{status_warning}",
         ephemeral=True
     )

@@ -366,6 +366,131 @@ class Diagnostics(
         )
 
 
+@ticket.register()
+class CleanupGhosts(
+    lightbulb.SlashCommand,
+    name="cleanup-ghosts",
+    description="Close ticket rows whose Discord channel no longer exists (Admin only)",
+):
+    confirm = lightbulb.boolean(
+        "confirm",
+        "Actually write the changes. Omit or set false for a dry run.",
+        default=False,
+    )
+
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+            self,
+            ctx: lightbulb.Context,
+            mongo: MongoClient = lightbulb.di.INJECTED,
+            bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    ) -> None:
+        """Reconcile open ticket rows against live channels; close the orphans."""
+
+        if not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
+            await ctx.respond("❌ You need Administrator permissions to use this command!",
+                              ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True)
+
+        # Same two-round-trip reconciliation as /ticket diagnostics. Explicitly NOT a
+        # per-ticket fetch_channel loop - that is what got the startup orphan sweep
+        # disabled in close.py for causing rate limits.
+        guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
+        live_ids = {_as_int(ch.id) for ch in guild_channels}
+        open_docs = await mongo.button_store.find(
+            {"type": "ticket", "status": "open"}
+        ).to_list(length=None)
+
+        ghosts = [d for d in open_docs if _as_int(d.get("channel_id")) not in live_ids]
+
+        if not ghosts:
+            await ctx.respond(
+                f"✅ Nothing to clean up — all {len(open_docs)} open ticket(s) still "
+                f"have a live channel."
+            )
+            return
+
+        header = f"👻 **{len(ghosts)} ghost row(s)** of {len(open_docs)} open tickets"
+        sample = [
+            f"• `{d.get('_id')}` — {d.get('ticket_type', '?')} #{d.get('ticket_number', '?')} "
+            f"({d.get('username', 'unknown')})"
+            for d in ghosts[:10]
+        ]
+        if len(ghosts) > 10:
+            sample.append(f"• …and {len(ghosts) - 10} more")
+
+        if not self.confirm:
+            body = "\n".join([
+                header,
+                "",
+                "**DRY RUN — nothing was written.**",
+                "",
+                *sample,
+                "",
+                "These rows point at channels that no longer exist in Discord. Re-run "
+                "with `confirm: true` to mark them denied with reason "
+                "`channel_deleted`. Documents are updated, never removed, so the audit "
+                "trail survives. Snapshot the collection first.",
+            ])
+            await ctx.respond(
+                components=[
+                    Container(
+                        accent_color=BLUE_ACCENT,
+                        components=[
+                            Text(content="🧹 **Ghost Row Cleanup**"),
+                            Separator(divider=True),
+                            Text(content=safe_text_content(body, "Nothing to report.")),
+                            Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+                        ]
+                    )
+                ],
+            )
+            return
+
+        # Re-assert status == "open" in the filter so a row closed by a recruiter
+        # between the read above and this write is not clobbered.
+        result = await mongo.button_store.update_many(
+            {"_id": {"$in": [d["_id"] for d in ghosts]}, "status": "open"},
+            {"$set": {
+                "status": "denied",
+                "denied_at": datetime.now(timezone.utc),
+                "denied_reason": "channel_deleted",
+                "denied_by": ctx.user.id,
+            }},
+        )
+
+        print(f"[Tickets] cleanup-ghosts by {ctx.user.username}: "
+              f"{result.modified_count} row(s) closed as channel_deleted")
+
+        body = "\n".join([
+            header,
+            "",
+            f"✅ **Wrote {result.modified_count} row(s)** "
+            f"(matched {result.matched_count}).",
+            "",
+            *sample,
+            "",
+            "Marked `denied` with reason `channel_deleted`. No Discord channels were "
+            "touched. Run `/ticket diagnostics` to confirm the new counts.",
+        ])
+        await ctx.respond(
+            components=[
+                Container(
+                    accent_color=BLUE_ACCENT,
+                    components=[
+                        Text(content="🧹 **Ghost Row Cleanup**"),
+                        Separator(divider=True),
+                        Text(content=safe_text_content(body, "Nothing to report.")),
+                        Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+                    ]
+                )
+            ],
+        )
+
+
 @register_action("ticket_dashboard_action", opens_modal=False)
 async def handle_dashboard_action(
         ctx: lightbulb.components.MenuContext,
