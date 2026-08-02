@@ -509,6 +509,8 @@ class Status(lightbulb.SlashCommand, name="status", description="Show config and
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        # Mongo is remote; two round trips can outrun the 3s deadline on a slow link.
+        await ctx.defer(ephemeral=True)
         config = await load_config(mongo)
         coll = _alerts(mongo)
         recipients = ", ".join(f"<@{u}>" for u in config["dm_user_ids"]) or "_none configured_"
@@ -530,7 +532,7 @@ class Status(lightbulb.SlashCommand, name="status", description="Show config and
                          f"{doc.get('calendar')} {discord_timestamp(doc.get('start_at'), 'f')}")
         if not found:
             lines.append("_(none yet)_")
-        await ctx.respond("\n".join(lines), ephemeral=True)
+        await ctx.respond("\n".join(lines))
 
 
 @fwasync.register()
@@ -539,12 +541,14 @@ class Check(lightbulb.SlashCommand, name="check",
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await ctx.respond("🔍 Fetching BAND iCal feeds...", ephemeral=True)
+        # defer + respond, not respond + edit: fetching three feeds can take up to 45s,
+        # well past Discord's 3s initial-response deadline.
+        await ctx.defer(ephemeral=True)
         config = await load_config(mongo)
         try:
             events, errors = await collect_events(config["summary_filter"])
         except Exception as e:
-            await ctx.edit_last_response(f"❌ Fetch failed: `{type(e).__name__}: {e}`")
+            await ctx.respond(f"❌ Fetch failed: `{type(e).__name__}: {e}`")
             return
 
         lines = [f"**Feeds set:** {', '.join(feed_urls().keys()) or '_none_'}"]
@@ -561,7 +565,7 @@ class Check(lightbulb.SlashCommand, name="check",
         if not events:
             lines.append("_(nothing upcoming - normal on a quiet day, but check the feeds "
                          "if this persists)_")
-        await ctx.edit_last_response("\n".join(lines)[:1900])
+        await ctx.respond("\n".join(lines)[:1900])
 
 
 @fwasync.register()
@@ -570,7 +574,7 @@ class Preview(lightbulb.SlashCommand, name="preview",
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await ctx.respond("📨 Building preview...", ephemeral=True)
+        await ctx.defer(ephemeral=True)
         config = await load_config(mongo)
         events, _errors = await collect_events(config["summary_filter"])
 
@@ -590,9 +594,9 @@ class Preview(lightbulb.SlashCommand, name="preview",
         offset = str(config["offsets"][0]) if config["offsets"] else DISCOVERY_OFFSET
         sent = await dm_all([ctx.user.id], build_embed(event, offset))
         if sent:
-            await ctx.edit_last_response(f"✅ Preview DMed to you ({note}). No dedupe state written.")
+            await ctx.respond(f"✅ Preview DMed to you ({note}). No dedupe state written.")
         else:
-            await ctx.edit_last_response("❌ Could not DM you — your DMs are likely closed.")
+            await ctx.respond("❌ Could not DM you — your DMs are likely closed.")
 
 
 @fwasync.register()
