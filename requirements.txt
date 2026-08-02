@@ -36,3 +36,10 @@ asyncpraw
 
 # HTML parser for the FWA points scraper
 beautifulsoup4
+
+# iCalendar parser for the BAND FWA sync feeds (band_sync_ical task).
+# Resolves DTSTART;TZID=Asia/Hong_Kong against a real timezone database rather than
+# reading the digits, which is what keeps sync alerts from drifting an hour across a
+# DST boundary. Needs system tzdata on slim containers: if ZoneInfoNotFoundError shows
+# up in the logs, `pip install tzdata`.
+icalendar
