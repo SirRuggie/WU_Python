@@ -250,6 +250,15 @@ TICKET_NAME_RE = re.compile(r"^[🆕✅❌]-?(main|fwa)-\d+-", re.IGNORECASE)
 CLOSED_EMOJI = ("✅", "❌")
 GUILD_CHANNEL_CAP = 500
 
+# ❌ is only ever applied by a close action - by close.py's rename, or by a recruiter
+# renaming the channel by hand. Either way it records a human decision that the ticket
+# was denied, so a ❌ channel whose document still reads "open" is a data error.
+DENIED_PREFIX = "❌"
+# ✅ is NOT a reliable closed marker: 5be8ef8 CREATED tickets as "✅main-1-user" and
+# b3015f6 only later changed creation to 🆕. A ✅ channel with status "open" is very
+# likely a legitimately open old-format ticket and must never be swept.
+LEGACY_OPEN_PREFIX = "✅"
+
 
 def _as_int(value) -> int:
     """Channel/user ids have been stored as both int and str across schema versions."""
@@ -482,6 +491,126 @@ class CleanupGhosts(
                     accent_color=BLUE_ACCENT,
                     components=[
                         Text(content="🧹 **Ghost Row Cleanup**"),
+                        Separator(divider=True),
+                        Text(content=safe_text_content(body, "Nothing to report.")),
+                        Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+                    ]
+                )
+            ],
+        )
+
+
+@ticket.register()
+class FixMismatched(
+    lightbulb.SlashCommand,
+    name="fix-mismatched",
+    description="Correct tickets whose channel shows ❌ but status is still open (Admin only)",
+):
+    confirm = lightbulb.boolean(
+        "confirm",
+        "Actually write the changes. Omit or set false for a dry run.",
+        default=False,
+    )
+
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+            self,
+            ctx: lightbulb.Context,
+            mongo: MongoClient = lightbulb.di.INJECTED,
+            bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    ) -> None:
+        """Reconcile ❌-prefixed live channels whose status write never landed."""
+
+        if not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
+            await ctx.respond("❌ You need Administrator permissions to use this command!",
+                              ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True)
+
+        guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
+        live_names = {_as_int(ch.id): (ch.name or "") for ch in guild_channels}
+        open_docs = await mongo.button_store.find(
+            {"type": "ticket", "status": "open"}
+        ).to_list(length=None)
+
+        mismatched, legacy_open = [], 0
+        for doc in open_docs:
+            name = live_names.get(_as_int(doc.get("channel_id")))
+            if name is None:
+                continue  # ghost row - /ticket cleanup-ghosts owns those
+            if name.startswith(DENIED_PREFIX):
+                mismatched.append((doc, name))
+            elif name.startswith(LEGACY_OPEN_PREFIX):
+                legacy_open += 1
+
+        if not mismatched:
+            await ctx.respond(
+                f"✅ Nothing to correct — no live channel carries {DENIED_PREFIX} with a "
+                f"status of open.\n"
+                f"({legacy_open} channel(s) carry {LEGACY_OPEN_PREFIX}, left alone: that "
+                f"was the original creation prefix, not a closed marker.)"
+            )
+            return
+
+        # Full list, not a sample - the whole point is eyeballing before confirming.
+        rows = [
+            f"• `{name}` — <#{_as_int(doc.get('channel_id'))}> — `{doc.get('_id')}`"
+            for doc, name in mismatched
+        ]
+
+        preamble = [
+            f"**{len(mismatched)} channel(s)** show {DENIED_PREFIX} while their document "
+            f"still reads `open`.",
+            f"Leaving **{legacy_open}** {LEGACY_OPEN_PREFIX} channel(s) untouched — that "
+            f"was the original *creation* prefix, so those are legitimately open.",
+            "",
+        ]
+
+        if not self.confirm:
+            body = "\n".join([
+                *preamble,
+                "**DRY RUN — nothing was written.**",
+                "",
+                *rows,
+                "",
+                f"Re-run with `confirm: true` to mark these `denied` with reason "
+                f"`name_shows_denied`. Note the recorded `denied_at` will be *now*, not "
+                f"when the denial actually happened — that timestamp is unrecoverable.",
+            ])
+        else:
+            result = await mongo.button_store.update_many(
+                {"_id": {"$in": [doc["_id"] for doc, _ in mismatched]}, "status": "open"},
+                {"$set": {
+                    "status": "denied",
+                    "denied_reason": "name_shows_denied",
+                    # Approximation: the real denial time is not recoverable. Kept for
+                    # schema uniformity with the close paths in close.py.
+                    "denied_at": datetime.now(timezone.utc),
+                    "corrected_by": ctx.user.id,
+                    "corrected_at": datetime.now(timezone.utc),
+                }},
+            )
+            print(f"[Tickets] fix-mismatched by {ctx.user.username}: "
+                  f"{result.modified_count} row(s) corrected to denied/name_shows_denied")
+            body = "\n".join([
+                *preamble,
+                f"✅ **Wrote {result.modified_count} row(s)** "
+                f"(matched {result.matched_count}).",
+                "",
+                *rows,
+                "",
+                "No Discord channels were touched. Run `/ticket diagnostics` to confirm "
+                "the new counts.",
+            ])
+
+        await ctx.respond(
+            components=[
+                Container(
+                    accent_color=BLUE_ACCENT,
+                    components=[
+                        Text(content="🔧 **Mismatched Status Correction**"),
                         Separator(divider=True),
                         Text(content=safe_text_content(body, "Nothing to report.")),
                         Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
