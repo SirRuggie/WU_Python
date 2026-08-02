@@ -5,6 +5,8 @@ Ticket management commands - list, dashboard, etc.
 
 import hikari
 import lightbulb
+import re
+from collections import Counter
 from typing import List
 from datetime import datetime, timezone
 
@@ -237,6 +239,131 @@ class Dashboard(
         ]
 
         await ctx.respond(components=components, ephemeral=True)
+
+
+# A ticket channel across every naming scheme this bot has used:
+#   5be8ef8 created them as "✅main-1-user"  (✅ was the OPEN prefix originally)
+#   b3015f6 changed creation to "🆕main-1-user"
+#   close.py rewrites the leading emoji to ✅/❌ on approve/deny
+# The optional hyphen covers names carrying a separator after the emoji.
+TICKET_NAME_RE = re.compile(r"^[🆕✅❌]-?(main|fwa)-\d+-", re.IGNORECASE)
+CLOSED_EMOJI = ("✅", "❌")
+GUILD_CHANNEL_CAP = 500
+
+
+def _as_int(value) -> int:
+    """Channel/user ids have been stored as both int and str across schema versions."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+@ticket.register()
+class Diagnostics(
+    lightbulb.SlashCommand,
+    name="diagnostics",
+    description="Ticket system health: channel counts, Mongo counts, orphans (Admin only)",
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+            self,
+            ctx: lightbulb.Context,
+            mongo: MongoClient = lightbulb.di.INJECTED,
+            bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    ) -> None:
+        """Reconcile Discord channel state against Mongo ticket state."""
+
+        if not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
+            await ctx.respond("❌ You need Administrator permissions to use this command!",
+                              ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True)
+
+        # Exactly two round trips regardless of ticket count. Deliberately NOT a
+        # per-ticket fetch_channel loop - that is what got the startup orphan sweep
+        # disabled in close.py for causing rate limits.
+        guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
+        docs = await mongo.button_store.find({"type": "ticket"}).to_list(length=None)
+
+        live_ids = {_as_int(ch.id) for ch in guild_channels}
+        live_names = {_as_int(ch.id): (ch.name or "") for ch in guild_channels}
+
+        categories = {
+            _as_int(ch.id): ch.name
+            for ch in guild_channels
+            if ch.type == hikari.ChannelType.GUILD_CATEGORY
+        }
+        per_category = Counter(
+            _as_int(getattr(ch, "parent_id", None))
+            for ch in guild_channels
+            if getattr(ch, "parent_id", None)
+        )
+
+        by_status = Counter(d.get("status") or "(missing)" for d in docs)
+        open_docs = [d for d in docs if d.get("status") == "open"]
+
+        ghost_rows = [d for d in open_docs if _as_int(d.get("channel_id")) not in live_ids]
+        live_open = [d for d in open_docs if _as_int(d.get("channel_id")) in live_ids]
+        closed_name_open_status = [
+            d for d in live_open
+            if live_names.get(_as_int(d.get("channel_id")), "").startswith(CLOSED_EMOJI)
+        ]
+
+        tracked_ids = {_as_int(d.get("channel_id")) for d in docs}
+        untracked = [
+            ch for ch in guild_channels
+            if TICKET_NAME_RE.match(ch.name or "") and _as_int(ch.id) not in tracked_ids
+        ]
+
+        total = len(guild_channels)
+        lines = [
+            "**Guild**",
+            f"• Channels: **{total}/{GUILD_CHANNEL_CAP}** ({GUILD_CHANNEL_CAP - total} free)",
+            f"• Categories: {len(categories)}",
+            "",
+            "**Fullest categories**",
+        ]
+        for cat_id, count in per_category.most_common(8):
+            name = categories.get(cat_id, "(not a category / unknown)")
+            flag = " ⚠️" if count >= 45 else ""
+            lines.append(f"• {name} — {count}/50{flag}")
+
+        lines += [
+            "",
+            "**Mongo `button_store` (type=ticket)**",
+            f"• Documents: {len(docs)}",
+            "• By status: " + ", ".join(f"`{k}`={v}" for k, v in sorted(by_status.items())),
+            "",
+            "**Open-ticket reconciliation**",
+            f"• Marked open: **{len(open_docs)}**",
+            f"• ├ channel still exists: {len(live_open)}",
+            f"• ├ channel gone (ghost rows): **{len(ghost_rows)}**",
+            f"• └ live but name shows ✅/❌ while status is open: **{len(closed_name_open_status)}**",
+            "",
+            f"**Ticket-like channels with no Mongo document:** {len(untracked)}",
+        ]
+        if untracked:
+            for ch in untracked[:10]:
+                lines.append(f"• {ch.name}")
+            if len(untracked) > 10:
+                lines.append(f"• …and {len(untracked) - 10} more")
+
+        await ctx.respond(
+            components=[
+                Container(
+                    accent_color=BLUE_ACCENT,
+                    components=[
+                        Text(content="🩺 **Ticket System Diagnostics**"),
+                        Separator(divider=True),
+                        Text(content=safe_text_content("\n".join(lines), "No data.")),
+                        Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+                    ]
+                )
+            ],
+        )
 
 
 @register_action("ticket_dashboard_action", opens_modal=False)

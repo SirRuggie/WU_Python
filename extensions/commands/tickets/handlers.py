@@ -97,6 +97,7 @@ async def check_category_space(bot: hikari.GatewayBot, category_id: int, ticket_
         print(f"  - Type: {ticket_type.upper()}")
         print(f"  - Channels Used: {used_slots}/50")
         print(f"  - Remaining Slots: {remaining_slots}")
+        print(f"  - Guild Channels Total: {len(guild_channels)}/500")  # free, already fetched above
 
         # Show first 5 channel names as examples
         if channels_in_category:
