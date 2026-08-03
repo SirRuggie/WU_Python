@@ -311,6 +311,18 @@ Driven off `call_stats()["n"]`, not a flag threaded through the load path.
 `reset_calls()` runs in `_Perf.__init__` once per invocation and `_nav_block`
 renders after the fetch, so `n` is this run's total.
 
+**Verified on three consecutive runs:**
+
+| Run | Condition | Panel read |
+|---|---|---|
+| cold | `calls=104 fetch=4761ms total=6.40s` | `fetched …` |
+| warm | `calls=0 fetch=1ms total=2.16s` | `cached, fetched …` |
+| refresh | forced drop, refetched | `fetched …` |
+
+Note what `fetched` means, though — see the two-cache-layer section below. It
+asserts that **this invocation made API calls**, not that any of them reached
+the network.
+
 **Refresh coverage was checked and is clean.** `drop_render_caches()` drops all
 five `DATA_PREFIXES` plus `links:` and `clanlogos` as `extra`, so Refresh drops
 strictly *more* than the stamp reads. This is not a third instance of the
@@ -393,6 +405,77 @@ accounted for.
 **The clan-level entries are keyed by clan, not by user**, in a process-global
 dict. One fetch per clan serves every account in it and every *user* who touches
 it. The only per-user cost is `player:` and `links:`.
+
+---
+
+## THERE ARE TWO CACHE LAYERS, AND `warm=` ONLY REPORTS OURS
+
+This one invalidates a reading of the perf line that looks obvious and is wrong.
+
+**Layer 1 — ours.** `todo_data._cache`, a module-level dict keyed by
+`player:` / `war:` / `cwl:` / `cwlwar:` / `raid:`. `warm=` counts it,
+`oldest_fill()` ages it, `drop_render_caches()` drops it.
+
+**Layer 2 — coc.py's.** `HTTPClient.request` checks its own FIFO **before
+issuing any HTTP request**, keyed on `route.url` (coc.py 3.10.0,
+`coc/http.py:299-307`):
+
+```python
+if isinstance(cache, FIFO) and (lookup_cache or ...):
+    try:
+        data = cache[cache_control_key]
+        ...
+        elif not status_code or 200 <= status_code < 300:
+            return data          # <- returns without touching the network
+```
+
+`cache_max_size` defaults to **10000** and `lookup_cache` to **True**
+(`coc/client.py:224, 231`). `main.py` overrides neither, so it is on. Entries
+expire on the upstream `Cache-Control: max-age` — measured at ~60 s on players
+and ~95-120 s on `currentwar`.
+
+**`drop_render_caches()` reaches layer 1 only.** It has no handle on coc.py's
+FIFO and never did.
+
+### The proof, from one refresh run
+
+```
+[todo-diag] drop_render_caches dropped=106 prefixes=('player:', 'war:', 'cwl:',
+            'cwlwar:', 'raid:', 'links:...', 'clanlogos')
+[todo-perf] path=refresh warm=0/46 clans=16 resolve=253ms fetch=6ms
+            (players=2ms views=4ms) calls=104 mean=0ms up=48s total=0.26s
+```
+
+`calls=104` is **real** — 104 calls were made at our layer and every one was a
+layer-1 miss. They completed in 6 ms because coc.py served them all from layer 2.
+
+The discriminator is `resolve=253ms`. `resolve_tags` is the **only** call on that
+run that does not go through coc.py — `utils/clash_links.py:41-43` posts to
+`api.clashk.ing/discord_links` with its own `aiohttp` session. `links:` had just
+been dropped, so it made a genuine network call and took **253 ms**. Everything
+routed through coc.py took ~0.
+
+And it closes exactly: `resolve 253 + fetch 6 + render 0 = 259 ms`, reported as
+`total=0.26s`.
+
+### KNOWN BEHAVIOUR: Refresh does not force a network refetch
+
+Inside coc.py's TTL window, Refresh drops layer 1, re-requests everything, and
+gets layer 2's copies. The stamp moves, `calls > 0` so the panel says
+**"fetched"**, and all of that is true *at our layer* — but no request reached
+Supercell and the data is identical to what was already held.
+
+`lookup_cache=False` is accepted per-request and popped from kwargs at
+`coc/http.py:295`, so a genuine force is available if we ever want one.
+
+**This is an open decision, not a bug.** Layer 2 is doing exactly what it exists
+to do, and bypassing it means more load on a proxy we use for free.
+
+**The cold/warm framing elsewhere in this document is incomplete**: `warm=0/46`
+means *our* cache was empty, not that the run hit the network. A `warm=0` run
+inside coc.py's TTL window is far cheaper than a genuinely cold one, and the
+perf line cannot currently tell them apart. `mean=0ms` alongside a large
+`calls=` is the tell.
 
 ---
 
@@ -530,6 +613,24 @@ So `render=` measures object construction and **`send=` contains the
 serialisation, the bucket acquire, the HTTP round trip, and the
 deserialisation.** Reading `render=0ms` as "rendering is free" is wrong — the
 expensive half of rendering was never in that timer.
+
+### Reading the line: `-` means not measured, and `total=` says what it spans
+
+Two fields are **path-specific**. The refresh path has no defer, and `_switch`
+cannot time the send because the dispatcher in `extensions/components.py` owns
+the response. Those phases used to print `defer=0ms send=0ms` — a missing key
+returned 0 from `_ms()` and rendered identically to a real zero, next to a
+genuine `send=1055ms` on the command path.
+
+**A phase that was never observed now prints `-`.** Presence in `_phase` is
+exactly "was this measured", so any future path-specific phase gets it free.
+
+`total=` carries its span: **`total=6.16s(to-send)`** on the command path, which
+prints after the send, and **`total=0.26s(to-render)`** on the refresh path,
+which prints after render. **The two are not comparable and the line now says
+so.** The span is derived from whether `send` was observed rather than set by a
+caller, so it cannot drift. The command path's *number* is unchanged — the
+cold-path arc above remains the baseline.
 
 `serialize=` was added to sample the `build()` cost from our side using hikari's
 public API (safe to call twice: `ContainerComponentBuilder.build()` is pure —
