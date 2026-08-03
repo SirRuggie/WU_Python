@@ -25,6 +25,8 @@ from utils.mongo import MongoClient
 from utils.constants import BLUE_ACCENT
 from extensions.components import register_action
 from extensions.commands.tickets import loader, ticket
+from extensions.commands.tickets import store
+from extensions.commands.tickets.store import as_int as _as_int
 
 # Discord rejects a Components V2 text display whose content is outside 1-4000
 # characters, and BOTH bounds are reachable from a ticket list:
@@ -94,10 +96,10 @@ class ListTickets(
             return
 
         # Fetch all open tickets
-        tickets_list = await mongo.button_store.find({
+        tickets_list = await store.find(mongo, {
             "type": "ticket",
             "status": "open"
-        }).to_list(length=None)
+        })
 
         if not tickets_list:
             await ctx.respond(
@@ -260,14 +262,6 @@ DENIED_PREFIX = "❌"
 LEGACY_OPEN_PREFIX = "✅"
 
 
-def _as_int(value) -> int:
-    """Channel/user ids have been stored as both int and str across schema versions."""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
-
-
 # Every reconciliation below compares a ticket's channel_id against the guild's
 # channel list. fetch_guild_channels does NOT return threads, so a thread-backed
 # ticket looks exactly like a ticket whose channel was deleted - and
@@ -320,9 +314,7 @@ class Diagnostics(
         # per-ticket fetch_channel loop - that is what got the startup orphan sweep
         # disabled in close.py for causing rate limits.
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
-        docs = await mongo.button_store.find(
-            {"type": "ticket", **CHANNEL_ERA_ONLY}
-        ).to_list(length=None)
+        docs = await store.find(mongo, {"type": "ticket", **CHANNEL_ERA_ONLY})
 
         live_ids = {_as_int(ch.id) for ch in guild_channels}
         live_ids |= await _active_thread_ids(bot, ctx.guild_id)
@@ -368,9 +360,30 @@ class Diagnostics(
             flag = " ⚠️" if count >= 45 else ""
             lines.append(f"• {name} — {count}/50{flag}")
 
+        # Both sides, always, for the duration of the button_store -> tickets
+        # transition. This is the instrument for verifying every migration step:
+        # the two lines should be identical, and "divergence" is the single word
+        # that says whether the dual-write is holding.
+        bs_counts = await store.status_counts(mongo.button_store)
+        tk_counts = await store.status_counts(mongo.tickets)
+        divergence = [
+            f"`{k}` {bs_counts.get(k, 0)}/{tk_counts.get(k, 0)}"
+            for k in sorted(set(bs_counts) | set(tk_counts))
+            if bs_counts.get(k, 0) != tk_counts.get(k, 0)
+        ]
+
+        def _fmt(counts: dict) -> str:
+            return ", ".join(f"`{k}`={v}" for k, v in sorted(counts.items())) or "(none)"
+
         lines += [
             "",
-            "**Mongo `button_store` (type=ticket)**",
+            "**Ticket documents**",
+            f"• `button_store` (type=ticket): **{sum(bs_counts.values())}** — {_fmt(bs_counts)}",
+            f"• `tickets`: **{sum(tk_counts.values())}** — {_fmt(tk_counts)}",
+            "• Divergence: " + ("none ✅" if not divergence else "⚠️ " + ", ".join(divergence)),
+            f"• Reading from: **`{await store.active_store(mongo)}`**",
+            "",
+            "**Reconciled set (channel-era only)**",
             f"• Documents: {len(docs)}",
             "• By status: " + ", ".join(f"`{k}`={v}" for k, v in sorted(by_status.items())),
             "",
@@ -450,9 +463,9 @@ class CleanupGhosts(
             )
             return
 
-        open_docs = await mongo.button_store.find(
-            {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
-        ).to_list(length=None)
+        open_docs = await store.find(
+            mongo, {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
+        )
 
         ghosts = [d for d in open_docs if _as_int(d.get("channel_id")) not in live_ids]
 
@@ -502,7 +515,8 @@ class CleanupGhosts(
 
         # Re-assert status == "open" in the filter so a row closed by a recruiter
         # between the read above and this write is not clobbered.
-        result = await mongo.button_store.update_many(
+        result = await store.update_many(
+            mongo,
             {"_id": {"$in": [d["_id"] for d in ghosts]}, "status": "open"},
             {"$set": {
                 "status": "denied",
@@ -574,9 +588,9 @@ class FixMismatched(
         live_names = {_as_int(ch.id): (ch.name or "") for ch in guild_channels}
         # Thread-era rows are excluded explicitly rather than relying on the
         # `name is None` skip below to drop them by accident.
-        open_docs = await mongo.button_store.find(
-            {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
-        ).to_list(length=None)
+        open_docs = await store.find(
+            mongo, {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
+        )
 
         mismatched, legacy_open = [], 0
         for doc in open_docs:
@@ -623,7 +637,8 @@ class FixMismatched(
                 f"when the denial actually happened — that timestamp is unrecoverable.",
             ])
         else:
-            result = await mongo.button_store.update_many(
+            result = await store.update_many(
+                mongo,
                 {"_id": {"$in": [doc["_id"] for doc, _ in mismatched]}, "status": "open"},
                 {"$set": {
                     "status": "denied",

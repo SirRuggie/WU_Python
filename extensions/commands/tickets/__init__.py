@@ -40,12 +40,14 @@ async def on_started(
         print(f"[Tickets] No configuration found in database, using defaults")
 
 
-# Import all ticket modules
+# Import all ticket modules.
+# Order matters: migrate imports a helper from manage, so manage must land first.
 from . import setup
 from . import config
 from . import manage
 from . import handlers
 from . import close
+from . import migrate
 
 # Register the ticket group with the loader
 loader.command(ticket)

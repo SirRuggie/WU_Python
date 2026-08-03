@@ -73,6 +73,72 @@ other way round. The `ticket_` prefix is what prevents this.
 All 23 open have live channels; 0 ghost rows, 0 orphaned channels.
 Guild at 125/500 channels, 13 categories, the FWA category stranded at 50/50.
 
+## Phase 1: the `tickets` collection
+
+Ticket documents now live in their own `tickets` collection. Every read and write
+goes through `extensions/commands/tickets/store.py` — that module is the only
+place that knows which collection is authoritative.
+
+**The read switch is a config value, not a deploy.** `ticket_setup._id="config"`
+carries `ticket_store: "button_store" | "tickets"`, defaulting to
+`"button_store"`. The flag is read fresh on every call, never cached, so a flip
+takes effect immediately with no restart. This is deliberate: it means the
+backfill and the code repoint cannot land in the wrong order, and the moment of
+risk is a Mongo write that reverses in a second rather than a deploy.
+
+**Writes always go to both collections** while the transition is live, ordered so
+the collection currently being *read* from is written first. A partial failure
+therefore shows up as divergence in `/ticket diagnostics` rather than as a ticket
+that appears not to exist.
+
+Migration is `/ticket migrate-store` — dry run by default, `confirm: true` to
+write. Idempotent (upsert on the unchanged `_id`), and **nothing is ever deleted
+from `button_store`**, so rollback is a flag flip, not a data restore.
+
+The transform is purely additive: `schema_version: 2`, `venue: "channel"`, and
+`channel_id` coerced to int. The inverse is a `$unset` of two keys.
+
+### Indexes
+
+| Index | Why |
+|---|---|
+| `channel_unique` — `{channel_id: 1}` unique | `close.py:107` and `:219` run this lookup on every approve/deny and it was a collection scan. Also a correctness constraint: one ticket per channel. |
+| `status_created` — `{status: 1, created_at: -1}` | `/ticket list`, cleanup-ghosts, fix-mismatched, and the future queue view |
+
+The unique index is the step most likely to surface a real problem. Because ids
+have been stored as both `int` and `str` historically, two documents can coerce
+to the same `channel_id`. `/ticket migrate-store` checks for that **in the dry
+run, before writing anything**, and stops if it fires. **Do not drop the
+uniqueness to get past a collision** — two documents pointing at one channel
+means one of them is wrong, and burying it makes it permanent.
+
+### ⚠️ No TTL index on `tickets`. Ever.
+
+Ticket history is permanent and referred back to. Do not add a TTL "for
+consistency" with whatever eventually prunes the ephemeral collection.
+
+It is also worth recording why **no TTL shipped in phase 1 on `button_store`
+either**, since separating the two collections was partly motivated by making one
+possible. It is possible now, but it would not do anything useful:
+
+- A TTL index only expires documents that *have* the indexed date field.
+- **The ~30 ephemeral write sites store no date at all** — checked at
+  `war_plans.py:176`, `links.py:49`, `dashboard.py:58`, `lazy_cwl.py:167`. The
+  only `button_store` documents carrying `created_at` are goblin challenges and
+  the ticket copies.
+- So a TTL on `button_store.created_at` would reap goblin challenges and nothing
+  else — and would become actively dangerous the day a long-lived document like
+  `war_message_*` gains a `created_at`.
+
+Making pruning effective requires writing an `expires_at` at the ephemeral sites,
+which belongs with the dispatcher's `component_state` work, not here. Roughly 16
+of those sites key on `uuid4` and only ~5 on `str(interaction.id)`, so deriving
+age from the `_id` covers a minority and is not a substitute.
+
+The extraction still stands on its own: the unique index, the hot-path scan on
+`close.py:107`/`:219`, and not interleaving durable records with throwaway UI
+state.
+
 ## Related
 
 - [ticket-status-lifecycle.md](ticket-status-lifecycle.md) — what the status

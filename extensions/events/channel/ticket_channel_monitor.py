@@ -7,6 +7,7 @@ import lightbulb
 import coc
 from datetime import datetime, timezone
 from utils.mongo import MongoClient
+from extensions.commands.tickets import store
 from utils.constants import RED_ACCENT, GOLD_ACCENT, GOLDENROD_ACCENT
 from utils.emoji import emojis
 
@@ -98,7 +99,7 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
             # The ticket is stored with "_id": f"ticket_{channel_id}"
             lookup_id = f"ticket_{channel_id}"
             print(f"[DEBUG] Looking for ticket with _id: {lookup_id}")
-            ticket_data = await mongo_client.button_store.find_one({"_id": lookup_id})
+            ticket_data = await store.find_one(mongo_client, {"_id": lookup_id})
             if ticket_data:
                 user_id = ticket_data.get("user_id")  # This is stored as int
                 thread_id = ticket_data.get("thread_id")  # This is stored as int

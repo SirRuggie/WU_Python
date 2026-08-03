@@ -10,6 +10,7 @@ import asyncio
 
 from utils.mongo import MongoClient
 from extensions.commands.tickets import loader, ticket
+from extensions.commands.tickets import store
 from extensions.components import register_action
 from utils.constants import RED_ACCENT
 import re
@@ -103,7 +104,7 @@ class Deny(
         current_channel_id = ctx.channel_id
 
         # Find ticket for this channel
-        ticket = await mongo.button_store.find_one({
+        ticket = await store.find_one(mongo, {
             "type": "ticket",
             "channel_id": current_channel_id
         })
@@ -215,7 +216,7 @@ class Approve(
         current_channel_id = ctx.channel_id
 
         # Find ticket for this channel
-        ticket = await mongo.button_store.find_one({
+        ticket = await store.find_one(mongo, {
             "type": "ticket",
             "channel_id": current_channel_id
         })
@@ -227,7 +228,8 @@ class Approve(
             return
 
         # Approve the ticket
-        approve_result = await mongo.button_store.update_one(
+        approve_result = await store.update_one(
+            mongo,
             {"_id": ticket["_id"]},
             {
                 "$set": {
@@ -430,7 +432,8 @@ async def deny_fwa_default_handler(
     )
     
     # Update ticket status
-    deny_result = await mongo.button_store.update_one(
+    deny_result = await store.update_one(
+        mongo,
         {"_id": data['ticket_id']},
         {
             "$set": {
@@ -522,7 +525,8 @@ async def deny_main_default_handler(
     )
     
     # Update ticket status
-    deny_result = await mongo.button_store.update_one(
+    deny_result = await store.update_one(
+        mongo,
         {"_id": data['ticket_id']},
         {
             "$set": {
@@ -646,7 +650,8 @@ async def process_custom_denial_handler(
     )
     
     # Update ticket status
-    deny_result = await mongo.button_store.update_one(
+    deny_result = await store.update_one(
+        mongo,
         {"_id": data['ticket_id']},
         {
             "$set": {

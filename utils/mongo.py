@@ -11,6 +11,10 @@ class MongoClient(AsyncMongoClient):
         self.fwa_data = self.__settings.get_collection("fwa_data")
         self.fwa_band_data = self.__settings.get_collection("fwa_band_data")
         self.ticket_setup = self.__settings.get_collection("ticket_setup")
+        # Durable ticket records. Historically these lived in button_store next to
+        # ephemeral component state; see extensions/commands/tickets/store.py.
+        # NO TTL INDEX ON THIS COLLECTION - ticket history is permanent.
+        self.tickets = self.__settings.get_collection("tickets")
         #self.user_tasks = self.__settings.get_collection("user_tasks")
         self.bot_config = self.__settings.get_collection("bot_config")
         #self.reddit_monitor = self.__settings.get_collection("reddit_monitor")

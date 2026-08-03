@@ -22,6 +22,7 @@ from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GOLD_ACCENT
 from extensions.components import register_action
 from extensions.commands.tickets import loader
+from extensions.commands.tickets import store
 
 # Default configuration values
 DEFAULT_MAIN_CATEGORY = 1395400463897202738
@@ -367,7 +368,7 @@ async def handle_create_ticket(
                 "created_at": datetime.now(timezone.utc),
                 "status": "open",
             }
-            await mongo.button_store.insert_one(ticket_data)
+            await store.insert_one(mongo, ticket_data)
 
             # Small delay to ensure thread is fully created
             await asyncio.sleep(0.5)
