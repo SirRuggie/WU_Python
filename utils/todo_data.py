@@ -258,13 +258,28 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
 
     # coc.py filters "#0" placeholder war tags out of rounds when building the
     # model, so the last remaining round is the newest one that has been drawn.
-    war_tags = [t for t in rounds[-1] if t and t != "#0"]
-    if not war_tags:
+    #
+    # Check the PREVIOUS round too. During a round transition the newest round
+    # is in `preparation` while the previous one is still `inWar` with attacks
+    # owed - and the attacks owed are what this dashboard is for. ClashKingBot
+    # handles the same case via get_current_war(cwl_round=current_preparation)
+    # (classes/bot.py:664); this is the cheaper equivalent, costing one extra
+    # round scan only during the transition window.
+    candidates: list[str] = []
+    for round_tags in (rounds[-1], rounds[-2] if len(rounds) > 1 else []):
+        for war_tag in round_tags:
+            if war_tag and war_tag != "#0" and war_tag not in candidates:
+                candidates.append(war_tag)
+
+    if not candidates:
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
 
-    for war_tag in war_tags:
+    # Prefer an inWar round over a preparation one; remember the fallback.
+    fallback = None
+
+    for war_tag in candidates:
         war_key = f"cwlwar:{war_tag}"
         war = cache_get(war_key)
         if war is None:
@@ -287,12 +302,25 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
 
         ours = getattr(war, "clan", None)
         theirs = getattr(war, "opponent", None)
-        if (ours is not None and ours.tag == clan_tag) or (theirs is not None and theirs.tag == clan_tag):
+        if not ((ours is not None and ours.tag == clan_tag)
+                or (theirs is not None and theirs.tag == clan_tag)):
+            continue
+
+        if str(getattr(war, "state", "")) == "inWar":
             result = ("war", war)
             cache_put(key, result, TTL_CWL_ACTIVE)
             return result
+        if fallback is None:
+            fallback = war
 
-    # The group said we are in CWL but no war in the round names this clan.
+    if fallback is not None:
+        # Our war exists but is not inWar (preparation, or already ended).
+        # Hand it back and let the view decide - it filters on state.
+        result = ("war", fallback)
+        cache_put(key, result, TTL_CWL_ACTIVE)
+        return result
+
+    # The group said we are in CWL but no war in either round names this clan.
     # That is not "nothing to do" - it is a shape we did not expect. Say so.
     print(f"[todo] CWL group for {clan_tag} listed rounds but no war matched the clan")
     return ("error", None)
