@@ -387,6 +387,29 @@ other 56**:
 So the cold path is 46 calls at concurrency 8, then 56 calls strictly one at a
 time. The view phase is the cold-path cost and always was.
 
+### Fixed — measured before and after
+
+`d502c5a` hoisted the semaphore out of `fetch_accounts` and gave the four view
+builders a bounded `asyncio.gather` over their clans. Cold runs, same roster:
+
+```
+before  fetch=9491ms  players=2469  views=7022              total=12.35s
+after   fetch=3947ms  players=1642  views=2305              total=5.53s
+        calls=104 mean=247ms worst=904ms/leaguegroup up=30s
+```
+
+**Views 7022 → 2305 ms; cold total 12.35 → 5.53 s.** No retry warnings in the
+journal at concurrency 8, so the proxy ceiling is not being reached and 8 stays.
+
+The phases remain sequential — players, then views — and the four builders
+remain sequential *relative to each other*, because they share the per-clan
+caches: `build_blocked_view` re-reads the `war:` keys `build_war_view` just
+filled. Running them concurrently would turn those cache hits back into
+duplicate in-flight requests. **The win is inside each builder, not between
+them.**
+
+After this, `send=` is the largest single remaining component.
+
 ### What `send=` spans — ONE call, and not the one previously documented
 
 `send=` wraps exactly one statement, `await ctx.respond(components=...)`
