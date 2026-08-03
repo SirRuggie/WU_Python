@@ -1,5 +1,30 @@
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+# coc.py 3.9.1 calls the stdlib datetime.utcnow(), deprecated in Python 3.12,
+# from coc/utils.py (get_season_start, get_season_end, get_clan_games_start,
+# get_clan_games_end). One /todo run touches those paths ~100 times and buried
+# every other log line. It is coc.py's code, not ours - fixed upstream in 3.9.2,
+# which requirements.txt explains why we have not taken yet.
+#
+# TARGETED, not global. This file previously carried a blanket
+#   warnings.filterwarnings("ignore", category=DeprecationWarning)
+# which hid our own deprecations too - and was NOT actually working, since the
+# spam reached the journal anyway. See the re-assert after load_dotenv().
+_UTCNOW_RE = r"datetime\.datetime\.utcnow\(\) is deprecated"
+
+
+def _install_warning_filters() -> None:
+    """Silence coc.py's utcnow noise. Idempotent - called more than once."""
+    warnings.filterwarnings(
+        "ignore", message=_UTCNOW_RE, category=DeprecationWarning, module=r"coc.*"
+    )
+    # Same warning, raised from OUR call frame rather than inside coc: the
+    # `module` filter matches the module where the warning is RAISED, and
+    # stacklevel can attribute it to the caller. Both spellings, or it leaks.
+    warnings.filterwarnings("ignore", message=_UTCNOW_RE, category=DeprecationWarning)
+
+
+_install_warning_filters()
 
 import sys
 # Force line-buffered stdout/stderr so logs reach journald immediately.
@@ -35,6 +60,26 @@ from extensions.autocomplete import preload_autocomplete_cache
 from utils import bot_data
 
 load_dotenv()
+
+# RE-ASSERTED AFTER EVERY IMPORT, deliberately.
+#
+# The blanket DeprecationWarning ignore that used to sit at line 2 was there
+# since the initial commit, was deployed, and the utcnow spam still reached the
+# journal - so something between line 2 and here was defeating it. Nothing in
+# this repo touches warnings.filters (grepped), which leaves a dependency
+# calling warnings.simplefilter()/resetwarnings() at import time as the leading
+# candidate. That has NOT been confirmed; it cannot be, without a Python that
+# can import this environment.
+#
+# Re-installing after the imports beats that whole class of cause without
+# needing to know which library did it. The print says what actually survived,
+# so the next boot settles it instead of another round of theory.
+_install_warning_filters()
+print(
+    f"[startup] warning filters installed; {len(warnings.filters)} active, "
+    f"head={[(f[0], getattr(f[2], '__name__', f[2])) for f in warnings.filters[:4]]}",
+    flush=True,
+)
 
 # Create a GatewayBot instance with intents and custom rate limit settings
 bot = hikari.GatewayBot(
