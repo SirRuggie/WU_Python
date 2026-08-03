@@ -369,11 +369,57 @@ dropped, so the stamp froze *old*. `cwlwar:` was neither, so the stamp
 **under-reported** staleness — it could read "updated just now" over CWL data a
 day old.
 
-> **UNCONFIRMED.** The fix in `40c97ef` has never been observed working. With no
-> CWL season active there are no `cwlwar:` keys in the cache, so a Refresh has
-> nothing to drop and `dropped=` cannot move. Only the prefix tuple in the
-> `[todo-diag] drop_render_caches` line is observable today. **Treat as
-> unverified until a CWL season runs**, not as working.
+> **UNCONFIRMED.** The fix in `40c97ef` has never been observed working.
+> **Treat as unverified until a log shows a non-zero `cwlwar:` drop with CWL
+> live** — not as working.
+
+### Why it was unobservable, and how that was nearly mistaken for a negative
+
+**`build_cwl_view` has never emitted a diagnostic line.** Only
+`drop_render_caches` and `build_raid_view` do — three `_d()` call sites in the
+whole module. The CWL and war diagnostics were **deliberately stripped** once
+those views were proven; the policy comment is still there at
+`utils/todo_data.py:38-42`:
+
+> *"TEMPORARY DIAGNOSTICS for the raid view — remove once verified on a live
+> raid weekend. […] The war/CWL diagnostics were removed after those views were
+> proven."*
+
+The `cwlwar:` defect was found **months later**, by auditing every `cache_put`
+key against `DATA_PREFIXES`, and **nothing was re-instrumented for it.**
+
+So the obvious test — look for a `build_cwl_view` line in the logs — was
+searching for output that has never existed at any point in this feature's life.
+Absence of that line said nothing about whether `cwlwar:` keys were being
+refetched. **Same shape as the zero-link probe**: an input that cannot produce a
+positive result proves nothing when it comes back empty. See
+[`clashking-discord-links.md`](clashking-discord-links.md).
+
+The two aggregates that *did* exist were both incapable of answering it:
+`dropped=106` summed every prefix, and `worst=…ms/leaguewar` surfaced a CWL call
+only if it happened to be the single slowest of ~104.
+
+### What now makes it observable
+
+Both fields use data that already existed and was being discarded — no new
+measurement, only stopping the discard:
+
+```
+[todo-diag] drop_render_caches dropped={'player:': 46, 'war:': 16, 'cwl:': 16,
+            'cwlwar:': 21, 'raid:': 16, ...} total=117
+[todo-perf] ... by_label={currentwar:16,leaguegroup:16,leaguewar:21,player:46}
+```
+
+`cache_drop_prefix` already returned a per-prefix count that `drop_render_caches`
+summed away; `note_call` already received a label it discarded unless it was the
+worst.
+
+**`cwlwar:` dropped ≈ `leaguewar` calls is a self-checking identity.** The drop
+count alone confirms the fix — those keys existing and being dropped is exactly
+what was broken. The pair confirms drop *and* repopulate.
+
+A non-zero `cwlwar:` with CWL live closes this. Zero would mean the fix is not
+working.
 
 **An uncovered prefix is silent by construction.** It produces no error, no
 stale-looking output, and no failed request; it just quietly stops participating
