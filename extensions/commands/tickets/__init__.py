@@ -46,6 +46,9 @@ from . import setup
 from . import config
 from . import manage
 from . import handlers
+# resolve holds the shared side effects and the ticket_override action; close
+# imports it too, but registering it explicitly keeps the action's origin obvious.
+from . import resolve
 from . import close
 from . import migrate
 from . import claim

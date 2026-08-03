@@ -44,6 +44,11 @@ STORE_TICKETS = "tickets"
 DEFAULT_STORE = STORE_BUTTON
 
 
+def utcnow() -> datetime:
+    """One source of truth for resolution timestamps."""
+    return datetime.now(timezone.utc)
+
+
 def as_int(value) -> int:
     """Channel/user ids have been stored as both int and str across schema versions.
 

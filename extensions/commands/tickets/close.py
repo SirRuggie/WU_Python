@@ -10,22 +10,15 @@ import asyncio
 
 from utils.mongo import MongoClient
 from extensions.commands.tickets import loader, ticket
-from extensions.commands.tickets import store
+from extensions.commands.tickets import resolve, store
 from extensions.components import register_action
 from utils.constants import RED_ACCENT
 import re
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
-    ContainerComponentBuilder as Container,
     InteractiveButtonBuilder as Button,
-    TextDisplayComponentBuilder as Text,
-    SeparatorComponentBuilder as Separator,
-    MediaGalleryComponentBuilder as Media,
-    MediaGalleryItemBuilder as MediaItem,
     ModalActionRowBuilder as ModalActionRow,
-    SectionComponentBuilder as Section,
-    ThumbnailComponentBuilder as Thumbnail,
 )
 
 
@@ -45,21 +38,6 @@ def _status_write_warning(result, doc_id) -> str:
         f"\n\n⚠️ **Status was not recorded** — no ticket document matched `{doc_id}`. "
         f"The channel was still renamed; please report this to an admin."
     )
-
-
-def get_channel_name_with_new_emoji(channel_name: str, new_emoji: str) -> str:
-    """Replace the emoji prefix in a channel name with a new emoji"""
-    # Known ticket emojis to look for
-    ticket_emojis = ["🆕", "❌", "✅"]
-
-    # Check if the channel name starts with any of the ticket emojis
-    for emoji in ticket_emojis:
-        if channel_name.startswith(emoji):
-            # Replace the old emoji with the new one
-            return new_emoji + channel_name[len(emoji):]
-
-    # If no emoji found, just prepend the new emoji (this shouldn't happen for tickets)
-    return new_emoji + channel_name
 
 
 @ticket.register()
@@ -227,72 +205,42 @@ class Approve(
             )
             return
 
-        # Approve the ticket
-        approve_result = await store.update_one(
+        # Conditional: only transitions a ticket that is still open. See
+        # store.transition - side effects run ONLY on a won outcome.
+        result = await store.transition(
             mongo,
-            {"_id": ticket["_id"]},
-            {
-                "$set": {
-                    "status": "approved",
-                    "approved_at": datetime.now(timezone.utc),
-                    "approved_by": ctx.user.id
-                }
-            }
+            ticket["_id"],
+            to_status="approved",
+            actor_id=ctx.user.id,
+            actor_name=ctx.user.username,
+            extra={"approved_at": store.utcnow(), "approved_by": ctx.user.id},
         )
-        status_warning = _status_write_warning(approve_result, ticket["_id"])
 
-        # Clear the leftover discord-skills monitor flag on the ticket state doc.
-        # The monitor code was removed with the ticket_automation tree, so nothing
-        # reads this flag anymore; the write is kept to avoid touching the
-        # ticket_automation_state collection.
-        try:
-            await mongo.ticket_automation_state.update_one(
-                {"_id": str(current_channel_id)},
-                {"$set": {"step_data.questionnaire.discord_skills_monitor_active": False}}
+        if result.outcome == store.LOST:
+            content, rows = await resolve.offer_override(
+                ctx, mongo,
+                kind=resolve.KIND_APPROVE,
+                current=result.doc,
+                ticket_id=ticket["_id"],
+                channel_id=ticket["channel_id"],
+                user_id=ticket.get("user_id"),
             )
-        except Exception as e:
-            print(f"[TicketApprove] Error clearing monitor flag: {e}")
+            await ctx.respond(content, components=rows)
+            return
 
-        # Rename the channel to have ✅ prefix
-        try:
-            channel = await bot.rest.fetch_channel(ticket["channel_id"])
-            new_name = get_channel_name_with_new_emoji(channel.name, "✅")
+        # A missing document is a data error, not a race, and is handled exactly
+        # as before: the channel is still marked, because the emoji is the signal
+        # recruiters actually read, and the mismatch is surfaced instead.
+        status_warning = "" if result.won else _status_write_warning(None, ticket["_id"])
 
-            await bot.rest.edit_channel(
-                ticket["channel_id"],
-                name=new_name,
-                reason=f"Ticket approved by {ctx.user.username}"
-            )
-
-            # Small delay to respect rate limits (matching the deny command)
-            await asyncio.sleep(1)
-
-            # Get user_id from ticket_automation_state to send congratulations
-            try:
-                automation_doc = await mongo.ticket_automation_state.find_one({"_id": str(current_channel_id)})
-                if automation_doc and automation_doc.get("user_id"):
-                    user_id = automation_doc["user_id"]
-                    
-                    # Send congratulations message in the channel
-                    await bot.rest.create_message(
-                        channel=current_channel_id,
-                        content=f"<@{user_id}> Congratulations on being accepted to Warriors United! Stand by for further instructions.",
-                        user_mentions=[user_id]
-                    )
-                    print(f"[Tickets] Sent congratulations message to user {user_id}")
-                else:
-                    print(f"[Tickets] No automation doc found for channel {current_channel_id}, skipping congratulations message")
-            except Exception as e:
-                print(f"[Tickets] Failed to send congratulations message: {e}")
-
-            await ctx.respond(
-                f"✅ Ticket approved for <@{ticket['user_id']}>!{status_warning}"
-            )
-        except Exception as e:
-            await ctx.respond(
-                f"✅ Ticket approved in database, but failed to rename channel: "
-                f"{str(e)}{status_warning}"
-            )
+        await resolve.apply_approval(
+            bot, mongo, channel_id=ticket["channel_id"], actor_name=ctx.user.username
+        )
+        await ctx.respond(
+            f"✅ Ticket approved for <@{ticket['user_id']}>!{status_warning}"
+            f"{resolve.claim_note(result.doc, ctx.user.id)}"
+        )
+        return
 
 
 # # DISABLED - Orphaned ticket cleanup causing rate limit issues with hundreds of channels
@@ -402,79 +350,49 @@ async def deny_fwa_default_handler(
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
     
-    # Build denial message
-    denial_components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Section(
-                    components=[
-                        Text(content=(
-                            f"<@{data['user_id']}>, we regret to inform you that currently your application has been denied.\n\n"
-                            f"## **Reason:**\n"
-                            f"I am sorry but unfortunately, you do not meet the criteria for Warriors United. Here's a resource link to other FWA Clans that may have a spot for you.\n\n"
-                            f"https://band.us/@reqfwa\n\n"
-                            f"Good luck!"
-                        ))
-                    ],
-                    accessory=Thumbnail(media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753271403/misc_images/Denied.png")
-                ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")])
-            ]
-        )
-    ]
-    
-    # Send denial message
-    await bot.rest.create_message(
-        channel=data['channel_id'],
-        components=denial_components,
-        user_mentions=[int(data['user_id'])]
-    )
-    
-    # Update ticket status
-    deny_result = await store.update_one(
+    # Status FIRST, applicant message second. The message used to be sent before
+    # this write, so two recruiters denying the same ticket in the same second
+    # both succeeded and the applicant received two denials.
+    result = await store.transition(
         mongo,
-        {"_id": data['ticket_id']},
-        {
-            "$set": {
-                "status": "denied",
-                "denied_at": datetime.now(timezone.utc),
-                "denied_by": data['denier_id'],
-                "denial_type": "fwa_default"
-            }
-        }
+        data['ticket_id'],
+        to_status="denied",
+        actor_id=data['denier_id'],
+        actor_name=data['denier_name'],
+        extra={
+            "denied_at": store.utcnow(),
+            "denied_by": data['denier_id'],
+            "denial_type": "fwa_default",
+        },
     )
-    status_warning = _status_write_warning(deny_result, data['ticket_id'])
 
-    # Clear the leftover discord-skills monitor flag on the ticket state doc.
-    # The monitor code was removed with the ticket_automation tree, so nothing
-    # reads this flag anymore; the write is kept to avoid touching the
-    # ticket_automation_state collection.
-    try:
-        await mongo.ticket_automation_state.update_one(
-            {"_id": str(data['channel_id'])},
-            {"$set": {"step_data.questionnaire.discord_skills_monitor_active": False}}
+    if result.outcome == store.LOST:
+        content, rows = await resolve.offer_override(
+            ctx, mongo,
+            kind=resolve.KIND_DENY_FWA,
+            current=result.doc,
+            ticket_id=data['ticket_id'],
+            channel_id=data['channel_id'],
+            user_id=data['user_id'],
         )
-    except Exception as e:
-        print(f"[TicketDeny] Error clearing monitor flag: {e}")
+        await mongo.button_store.delete_one({"_id": action_id})
+        await ctx.interaction.edit_initial_response(content=content, components=rows)
+        return
 
-    # Rename channel
-    try:
-        channel = await bot.rest.fetch_channel(data['channel_id'])
-        new_name = get_channel_name_with_new_emoji(channel.name, "❌")
-        await bot.rest.edit_channel(
-            data['channel_id'],
-            name=new_name,
-            reason=f"Ticket denied by {data['denier_name']}"
-        )
-    except Exception:
-        pass
-    
-    # Clean up action data
+    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
+
+    await resolve.apply_denial(
+        bot, mongo,
+        kind=resolve.KIND_DENY_FWA,
+        channel_id=data['channel_id'],
+        user_id=data['user_id'],
+        actor_name=data['denier_name'],
+    )
     await mongo.button_store.delete_one({"_id": action_id})
-    
+
     await ctx.interaction.edit_initial_response(
-        content=f"✅ FWA default denial sent!{status_warning}",
+        content=f"✅ FWA default denial sent!{status_warning}"
+                f"{resolve.claim_note(result.doc, ctx.user.id)}",
         component=None
     )
 
@@ -495,79 +413,47 @@ async def deny_main_default_handler(
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
     
-    # Build denial message
-    denial_components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Section(
-                    components=[
-                        Text(content=(
-                            f"<@{data['user_id']}>, we regret to inform you that currently your application has been denied.\n\n"
-                            f"## **Reason:**\n"
-                            f"I am sorry but unfortunately, you do not meet the criteria for Warriors United. Here's a resource link to other Clans that may have a spot for you.\n\n"
-                            f"https://discord.com/invite/clashofclans\n\n"
-                            f"Good luck!"
-                        ))
-                    ],
-                    accessory=Thumbnail(media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753271403/misc_images/Denied.png")
-                ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")])
-            ]
-        )
-    ]
-    
-    # Send denial message
-    await bot.rest.create_message(
-        channel=data['channel_id'],
-        components=denial_components,
-        user_mentions=[int(data['user_id'])]
-    )
-    
-    # Update ticket status
-    deny_result = await store.update_one(
+    # Status FIRST, applicant message second - see deny_fwa_default_handler.
+    result = await store.transition(
         mongo,
-        {"_id": data['ticket_id']},
-        {
-            "$set": {
-                "status": "denied",
-                "denied_at": datetime.now(timezone.utc),
-                "denied_by": data['denier_id'],
-                "denial_type": "main_default"
-            }
-        }
+        data['ticket_id'],
+        to_status="denied",
+        actor_id=data['denier_id'],
+        actor_name=data['denier_name'],
+        extra={
+            "denied_at": store.utcnow(),
+            "denied_by": data['denier_id'],
+            "denial_type": "main_default",
+        },
     )
-    status_warning = _status_write_warning(deny_result, data['ticket_id'])
 
-    # Clear the leftover discord-skills monitor flag on the ticket state doc.
-    # The monitor code was removed with the ticket_automation tree, so nothing
-    # reads this flag anymore; the write is kept to avoid touching the
-    # ticket_automation_state collection.
-    try:
-        await mongo.ticket_automation_state.update_one(
-            {"_id": str(data['channel_id'])},
-            {"$set": {"step_data.questionnaire.discord_skills_monitor_active": False}}
+    if result.outcome == store.LOST:
+        content, rows = await resolve.offer_override(
+            ctx, mongo,
+            kind=resolve.KIND_DENY_MAIN,
+            current=result.doc,
+            ticket_id=data['ticket_id'],
+            channel_id=data['channel_id'],
+            user_id=data['user_id'],
         )
-    except Exception as e:
-        print(f"[TicketDeny] Error clearing monitor flag: {e}")
+        await mongo.button_store.delete_one({"_id": action_id})
+        await ctx.interaction.edit_initial_response(content=content, components=rows)
+        return
 
-    # Rename channel
-    try:
-        channel = await bot.rest.fetch_channel(data['channel_id'])
-        new_name = get_channel_name_with_new_emoji(channel.name, "❌")
-        await bot.rest.edit_channel(
-            data['channel_id'],
-            name=new_name,
-            reason=f"Ticket denied by {data['denier_name']}"
-        )
-    except Exception:
-        pass
-    
-    # Clean up action data
+    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
+
+    await resolve.apply_denial(
+        bot, mongo,
+        kind=resolve.KIND_DENY_MAIN,
+        channel_id=data['channel_id'],
+        user_id=data['user_id'],
+        actor_name=data['denier_name'],
+    )
     await mongo.button_store.delete_one({"_id": action_id})
-    
+
     await ctx.interaction.edit_initial_response(
-        content=f"✅ Main default denial sent!{status_warning}",
+        content=f"✅ Main default denial sent!{status_warning}"
+                f"{resolve.claim_note(result.doc, ctx.user.id)}",
         component=None
     )
 
@@ -623,76 +509,49 @@ async def process_custom_denial_handler(
                 reason = comp.value.strip()
                 break
     
-    # Build denial message
-    denial_components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Section(
-                    components=[
-                        Text(content=(
-                            f"<@{data['user_id']}>, we regret to inform you that currently your application has been denied.\n\n"
-                            f"## **Reason:**\n{reason}"
-                        ))
-                    ],
-                    accessory=Thumbnail(media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753271403/misc_images/Denied.png")
-                ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")])
-            ]
-        )
-    ]
-    
-    # Send denial message
-    await bot.rest.create_message(
-        channel=data['channel_id'],
-        components=denial_components,
-        user_mentions=[int(data['user_id'])]
-    )
-    
-    # Update ticket status
-    deny_result = await store.update_one(
+    # Status FIRST, applicant message second - see deny_fwa_default_handler.
+    result = await store.transition(
         mongo,
-        {"_id": data['ticket_id']},
-        {
-            "$set": {
-                "status": "denied",
-                "denied_at": datetime.now(timezone.utc),
-                "denied_by": data['denier_id'],
-                "denial_type": "custom",
-                "denial_reason": reason
-            }
-        }
+        data['ticket_id'],
+        to_status="denied",
+        actor_id=data['denier_id'],
+        actor_name=data['denier_name'],
+        extra={
+            "denied_at": store.utcnow(),
+            "denied_by": data['denier_id'],
+            "denial_type": "custom",
+            "denial_reason": reason,
+        },
     )
-    status_warning = _status_write_warning(deny_result, data['ticket_id'])
 
-    # Clear the leftover discord-skills monitor flag on the ticket state doc.
-    # The monitor code was removed with the ticket_automation tree, so nothing
-    # reads this flag anymore; the write is kept to avoid touching the
-    # ticket_automation_state collection.
-    try:
-        await mongo.ticket_automation_state.update_one(
-            {"_id": str(data['channel_id'])},
-            {"$set": {"step_data.questionnaire.discord_skills_monitor_active": False}}
+    if result.outcome == store.LOST:
+        content, rows = await resolve.offer_override(
+            ctx, mongo,
+            kind=resolve.KIND_DENY_CUSTOM,
+            current=result.doc,
+            ticket_id=data['ticket_id'],
+            channel_id=data['channel_id'],
+            user_id=data['user_id'],
+            reason=reason,
         )
-    except Exception as e:
-        print(f"[TicketDeny] Error clearing monitor flag: {e}")
+        await mongo.button_store.delete_one({"_id": action_id})
+        await ctx.respond(content, components=rows, ephemeral=True)
+        return
 
-    # Rename channel
-    try:
-        channel = await bot.rest.fetch_channel(data['channel_id'])
-        new_name = get_channel_name_with_new_emoji(channel.name, "❌")
-        await bot.rest.edit_channel(
-            data['channel_id'],
-            name=new_name,
-            reason=f"Ticket denied by {data['denier_name']}"
-        )
-    except Exception:
-        pass
-    
-    # Clean up action data
+    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
+
+    await resolve.apply_denial(
+        bot, mongo,
+        kind=resolve.KIND_DENY_CUSTOM,
+        channel_id=data['channel_id'],
+        user_id=data['user_id'],
+        actor_name=data['denier_name'],
+        reason=reason,
+    )
     await mongo.button_store.delete_one({"_id": action_id})
-    
+
     await ctx.respond(
-        f"✅ Custom denial sent!{status_warning}",
+        f"✅ Custom denial sent!{status_warning}"
+        f"{resolve.claim_note(result.doc, ctx.user.id)}",
         ephemeral=True
     )

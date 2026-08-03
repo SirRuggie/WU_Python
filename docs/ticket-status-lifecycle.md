@@ -48,6 +48,71 @@ the only discriminator, and it is incidental.
 361 documents total: `approved` 64, `denied` 273, `open` 23, `closed` 1.
 All 23 open tickets have live channels; 0 ghost rows, 0 orphaned channels.
 
+## Phase 2 — transitions are conditional, and losing is not a dead end
+
+Status changes go through `store.transition`, which re-asserts the status it
+believes it is moving *from* inside the filter. Mongo arbitrates, not the
+network. The pattern is the one already proven in `manage.py`'s cleanup filter.
+
+Three outcomes, and **side effects run only on `won`**:
+
+| Outcome | Meaning | Applicant messaged / channel renamed |
+|---|---|---|
+| `won` | this caller caused the change | yes |
+| `lost` | someone resolved it first | **no** — see override below |
+| `missing` | no such ticket document | yes, with the existing warning |
+
+### Why the ordering changed in the deny handlers
+
+The three deny paths used to post the applicant-facing denial **before** writing
+the status. Two recruiters denying the same ticket in the same second therefore
+both succeeded, and **the applicant received two denial messages**. The message
+now happens after Mongo has arbitrated, and only for the winner.
+
+### `lost` offers an override, it does not block
+
+A mistaken deny, an appeal, or a leader overruling are all normal in recruiting,
+and none of them should require hand-editing Mongo. The loser gets an ephemeral
+naming who resolved it and when, plus a button to overturn it.
+
+- Gated on the **recruiter role** (`main_recruiter_role` / `fwa_recruiter_role`),
+  not on Administrator — recruiters are the people who need it.
+- **Re-checked at click time.** The dispatcher enforces nothing, so a button
+  cannot inherit trust from the interaction that rendered it.
+- Overriding calls `transition(expect=None)` — no precondition, deliberately.
+- The audit entry records `override: true` and what it replaced.
+
+Non-recruiters see the same explanation with no button.
+
+⚠️ The override panel is **plain content plus an ActionRow, not a Container**.
+`IS_COMPONENTS_V2` is a one-way latch: once set on a message, `content` is
+rejected forever after, and this panel is edited with text when the override
+completes. See [components-v2-in-hikari.md](components-v2-in-hikari.md).
+
+### The audit array
+
+Every transition pushes `{at, actor, actor_name, from, to, override}` onto
+`audit`, plus `overrode: {status, by, at}` when it overturned someone. This is
+what makes a disputed outcome reconstructible a week later, and it matters more
+now that overrides are possible.
+
+Small known TOCTOU: `overrode` records the prior resolution the actor was
+**shown**, not a re-read at confirm time. A third write landing in that window
+would not be reflected. Accepted deliberately — the audit records what the human
+was told and acted on, which is the more useful record of a decision.
+
+### Claiming is advisory
+
+`claimed_by` / `claimed_at`, set by `/ticket claim`, cleared by `/ticket release`
+(admins can `force` someone else's). The claim filter uses
+`{"claimed_by": None}`, which matches missing fields, so it works against every
+pre-existing ticket with no backfill.
+
+**It does not gate approve or deny.** Discord cannot enforce per-user ownership
+inside a thread — Tickets.bot disables claiming entirely in thread mode for this
+reason — so a hard block would be theatre. Resolving a ticket someone else
+claimed adds a note to your own confirmation and nothing more.
+
 ## Silent-write detection
 
 `close.py` wraps status updates in `_status_write_warning(result, _id)`, which
