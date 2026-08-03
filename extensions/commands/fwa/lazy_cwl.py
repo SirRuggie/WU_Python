@@ -611,12 +611,22 @@ class LazyCwlAutopingsStart(
                 )
             )
 
+        # ALL goes FIRST, matching lazycwl-snapshot / -ping / -reset. It is one
+        # option, so the 25-option ceiling drops to 24 clans. Nothing here
+        # truncates - see docs.
+        options.insert(0, SelectOption(
+            label="🌍 ALL FWA CLANS",
+            value="ALL",
+            description=f"Start auto-ping for all {len(snapshots)} snapshots",
+            emoji="🌍"
+        ))
+
         components = [
             Container(
                 accent_color=BLUE_ACCENT,
                 components=[
                     Text(content="## 🔔 Start Auto-Ping"),
-                    Text(content="Select a snapshot to enable automated pinging:"),
+                    Text(content="Select a snapshot to enable automated pinging, or ALL for every clan:"),
                     Separator(),
                     ActionRow(
                         components=[
@@ -676,8 +686,16 @@ class LazyCwlAutopingsStop(
         }
         await mongo.button_store.insert_one(data)
 
-        # Build dropdown options
-        options = []
+        # Build dropdown options with ALL option first, matching
+        # lazycwl-snapshot / -ping / -reset.
+        options = [
+            SelectOption(
+                label="🌍 ALL FWA CLANS",
+                value="ALL",
+                description=f"Stop auto-ping for all {len(snapshots)} snapshots",
+                emoji="🌍"
+            )
+        ]
         for snapshot in snapshots:
             interval = snapshot.get("auto_ping_interval_minutes", 60)
             started = snapshot.get("auto_ping_started_at")
@@ -697,7 +715,7 @@ class LazyCwlAutopingsStop(
                 accent_color=GOLD_ACCENT,
                 components=[
                     Text(content="## 🛑 Stop Auto-Ping"),
-                    Text(content="Select a snapshot to disable automated pinging:"),
+                    Text(content="Select a snapshot to disable automated pinging, or ALL for every clan:"),
                     Separator(),
                     ActionRow(
                         components=[
@@ -1021,6 +1039,118 @@ async def process_single_clan_snapshot(
             'clan_tag': clan_tag,
             'error': str(e)
         }
+
+
+async def process_single_autoping_start(
+    snapshot: dict,
+    interval_minutes: int,
+    jitter_index: int,
+    mongo: MongoClient,
+    scheduler_instance: Optional[AsyncIOScheduler]
+) -> dict:
+    """Start auto-ping for ONE snapshot. NEVER RAISES.
+
+    Returns the same {'success', 'clan_name', 'clan_tag', 'error'} shape
+    process_single_snapshot_reset returns, so the ALL summary renderer is
+    identical for both and there is no second reporting format to drift.
+
+    JITTER. Seven jobs created in the same second fire together forever after,
+    and EVERY LazyCWL ping goes to one hardcoded channel (the constant inside
+    perform_lazy_cwl_ping), so they land in the same
+    POST /channels/{id}/messages bucket rather than spreading across clans.
+    Staggering the first run 5s per clan keeps that bucket off the ropes.
+    """
+    snapshot_id = snapshot["_id"]
+    clan_name = snapshot.get("clan_name", "Unknown")
+    clan_tag = snapshot.get("clan_tag", "?")
+
+    try:
+        if not scheduler_instance:
+            raise Exception("Scheduler not initialized")
+
+        # Re-read rather than trusting the list the menu was built from: the
+        # per-clan path may have enabled this one between the menu render and
+        # the confirm press.
+        current = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+        if not current:
+            raise Exception("Snapshot not found")
+        if current.get("auto_ping_enabled"):
+            raise Exception("Auto-ping already enabled")
+
+        now = datetime.now(timezone.utc)
+
+        await mongo.lazy_cwl_snapshots.update_one(
+            {"_id": snapshot_id},
+            {
+                "$set": {
+                    "auto_ping_enabled": True,
+                    "auto_ping_started_at": now,
+                    "auto_ping_interval_minutes": interval_minutes,
+                    "auto_ping_job_id": f"autopings_{snapshot_id}",
+                    "last_auto_ping_at": None,
+                    "auto_ping_count": 0
+                }
+            }
+        )
+
+        scheduler_instance.add_job(
+            auto_ping_job,
+            trigger=IntervalTrigger(minutes=interval_minutes),
+            args=[snapshot_id],
+            id=f"autopings_{snapshot_id}",
+            replace_existing=True,
+            max_instances=1,
+            next_run_time=now + timedelta(seconds=jitter_index * 5)
+        )
+
+        print(f"[LazyCWL AutoPing] Started auto-ping for {clan_name} "
+              f"(interval: {interval_minutes}min, first run +{jitter_index * 5}s)")
+
+        return {'success': True, 'clan_name': clan_name, 'clan_tag': clan_tag}
+
+    except Exception as e:  # noqa: BLE001 - one clan must not abort the batch
+        print(f"[LazyCWL AutoPing] Failed to start auto-ping for {clan_name}: {e}")
+        return {'success': False, 'clan_name': clan_name, 'clan_tag': clan_tag,
+                'error': str(e)}
+
+
+async def process_single_autoping_stop(
+    snapshot: dict,
+    mongo: MongoClient,
+    scheduler_instance: Optional[AsyncIOScheduler]
+) -> dict:
+    """Stop auto-ping for ONE snapshot. NEVER RAISES.
+
+    A missing scheduler job is NOT a failure, matching the per-clan handler's
+    tolerance. The Mongo flag is the source of truth for whether auto-ping is
+    on; the job lives in an in-memory APScheduler with no jobstore and does not
+    survive a restart, so "job already gone" is an ordinary state.
+    """
+    snapshot_id = snapshot["_id"]
+    clan_name = snapshot.get("clan_name", "Unknown")
+    clan_tag = snapshot.get("clan_tag", "?")
+
+    try:
+        await mongo.lazy_cwl_snapshots.update_one(
+            {"_id": snapshot_id},
+            {"$set": {"auto_ping_enabled": False}}
+        )
+
+        if scheduler_instance:
+            try:
+                scheduler_instance.remove_job(f"autopings_{snapshot_id}")
+            except Exception as e:  # noqa: BLE001
+                print(f"[LazyCWL AutoPing] Job not found or already removed "
+                      f"for {clan_name}: {e}")
+
+        print(f"[LazyCWL AutoPing] Stopped auto-ping for {clan_name}")
+        return {'success': True, 'clan_name': clan_name, 'clan_tag': clan_tag,
+                'ping_count': snapshot.get("auto_ping_count", 0)}
+
+    except Exception as e:  # noqa: BLE001 - one clan must not abort the batch
+        print(f"[LazyCWL AutoPing] Failed to stop auto-ping for {clan_name}: {e}")
+        return {'success': False, 'clan_name': clan_name, 'clan_tag': clan_tag,
+                'error': str(e)}
 
 
 async def process_single_snapshot_reset(
@@ -2012,10 +2142,17 @@ async def handle_autopings_select_snapshot(
     snapshot_id = ctx.interaction.values[0]
 
     try:
-        # Fetch snapshot to get name
-        snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
-        if not snapshot:
-            raise Exception("Snapshot not found")
+        # ALL passes through to the interval step as the literal string "ALL".
+        # One interval is chosen once and applied to every clan - asking per
+        # clan would defeat the point of the bulk option.
+        if snapshot_id == "ALL":
+            snapshot_label = "🌍 **ALL FWA CLANS**"
+        else:
+            # Fetch snapshot to get name
+            snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
+            if not snapshot:
+                raise Exception("Snapshot not found")
+            snapshot_label = f"{snapshot['clan_name']} `{snapshot['clan_tag']}`"
 
         # Create new action for interval selection
         new_action_id = str(uuid.uuid4())
@@ -2054,7 +2191,7 @@ async def handle_autopings_select_snapshot(
                 accent_color=BLUE_ACCENT,
                 components=[
                     Text(content=f"## ⏱️ Select Ping Interval"),
-                    Text(content=f"**Snapshot:** {snapshot['clan_name']} `{snapshot['clan_tag']}`"),
+                    Text(content=f"**Snapshot:** {snapshot_label}"),
                     Separator(),
                     Text(content="Choose how often to check for missing players:"),
                     Text(content="*Auto-ping will run for up to 7 days or until snapshot is reset*"),
@@ -2106,6 +2243,75 @@ async def handle_autopings_select_interval(
     try:
         if not scheduler:
             raise Exception("Scheduler not initialized")
+
+        # ALL stops here and asks first. Start-all eventually posts to the
+        # LazyCWL ping channel on a repeating interval for every clan, so it is
+        # not something to fire off a single dropdown pick. The per-clan path
+        # below keeps its existing no-confirm behaviour untouched.
+        if snapshot_id == "ALL":
+            pending = await mongo.lazy_cwl_snapshots.find({
+                "active": True,
+                "$or": [
+                    {"auto_ping_enabled": {"$exists": False}},
+                    {"auto_ping_enabled": False}
+                ]
+            }).to_list(length=None)
+
+            confirm_action_id = str(uuid.uuid4())
+            await mongo.button_store.insert_one({
+                "_id": confirm_action_id,
+                "command": "autopings_start_all_confirm",
+                "user_id": user_id,
+                "interval_minutes": interval_minutes
+            })
+
+            names = "\n".join(
+                f"• **{s.get('clan_name', 'Unknown')}** `{s.get('clan_tag', '?')}`"
+                for s in pending
+            ) or "*none*"
+
+            components = [
+                Container(
+                    accent_color=GOLD_ACCENT,
+                    components=[
+                        Text(content="## ⚠️ Confirm Start Auto-Ping for ALL"),
+                        Separator(),
+                        Text(content=(
+                            f"**Clans:** {len(pending)}\n"
+                            f"**Interval:** Every {interval_minutes} minutes\n"
+                            f"**Duration:** 7 days, or until each snapshot is reset"
+                        )),
+                        Separator(),
+                        Text(content=names),
+                        Separator(),
+                        Text(content=(
+                            "Each clan will be checked every "
+                            f"{interval_minutes} minutes and missing players pinged "
+                            "in the LazyCWL ping channel. First runs are staggered "
+                            "5 seconds apart so they do not all fire at once."
+                        )),
+                        Text(content="Are you sure you want to start auto-ping for all of them?"),
+                        ActionRow(
+                            components=[
+                                Button(
+                                    style=hikari.ButtonStyle.DANGER,
+                                    custom_id=f"lazycwl_autopings_start_all_confirm:{confirm_action_id}",
+                                    label="Start All",
+                                    emoji="✅"
+                                ),
+                                Button(
+                                    style=hikari.ButtonStyle.SECONDARY,
+                                    custom_id=f"lazycwl_autopings_start_all_cancel:{confirm_action_id}",
+                                    label="Cancel",
+                                    emoji="❌"
+                                )
+                            ]
+                        )
+                    ]
+                )
+            ]
+            await ctx.interaction.edit_initial_response(components=components)
+            return
 
         # Fetch snapshot
         snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
@@ -2200,6 +2406,65 @@ async def handle_autopings_stop_select(
     snapshot_id = ctx.interaction.values[0]
 
     try:
+        # ALL asks first. Stop-all silently kills every job, and the resulting
+        # panel looks the same as one where nothing was running - so it gets a
+        # confirm. The per-clan path below is untouched.
+        if snapshot_id == "ALL":
+            running = await mongo.lazy_cwl_snapshots.find({
+                "auto_ping_enabled": True
+            }).to_list(length=None)
+
+            confirm_action_id = str(uuid.uuid4())
+            await mongo.button_store.insert_one({
+                "_id": confirm_action_id,
+                "command": "autopings_stop_all_confirm",
+                "user_id": user_id
+            })
+
+            names = "\n".join(
+                f"• **{s.get('clan_name', 'Unknown')}** `{s.get('clan_tag', '?')}` "
+                f"— {s.get('auto_ping_count', 0)} pings sent"
+                for s in running
+            ) or "*none*"
+
+            components = [
+                Container(
+                    accent_color=GOLD_ACCENT,
+                    components=[
+                        Text(content="## ⚠️ Confirm Stop Auto-Ping for ALL"),
+                        Separator(),
+                        Text(content=f"**Clans with auto-ping running:** {len(running)}"),
+                        Separator(),
+                        Text(content=names),
+                        Separator(),
+                        Text(content=(
+                            "All of these will stop being checked. Restarting means "
+                            "running `/fwa lazycwl-autopings-start` again and "
+                            "re-choosing an interval."
+                        )),
+                        Text(content="Are you sure you want to stop auto-ping for all of them?"),
+                        ActionRow(
+                            components=[
+                                Button(
+                                    style=hikari.ButtonStyle.DANGER,
+                                    custom_id=f"lazycwl_autopings_stop_all_confirm:{confirm_action_id}",
+                                    label="Stop All",
+                                    emoji="✅"
+                                ),
+                                Button(
+                                    style=hikari.ButtonStyle.SECONDARY,
+                                    custom_id=f"lazycwl_autopings_stop_all_cancel:{confirm_action_id}",
+                                    label="Cancel",
+                                    emoji="❌"
+                                )
+                            ]
+                        )
+                    ]
+                )
+            ]
+            await ctx.interaction.edit_initial_response(components=components)
+            return
+
         # Fetch snapshot
         snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
         if not snapshot:
@@ -2255,6 +2520,212 @@ async def handle_autopings_stop_select(
             )
         ]
         await ctx.interaction.edit_initial_response(components=components)
+
+
+def _bulk_autoping_summary(title: str, results: list, extra: list) -> list:
+    """Render an ALL-batch summary. Same shape as the reset ALL branch.
+
+    Deliberately ONE renderer for both start-all and stop-all, so the two
+    cannot drift into reporting failures differently.
+    """
+    successful = sum(1 for r in results if r['success'])
+    failed = sum(1 for r in results if not r['success'])
+
+    parts = [
+        Text(content=title),
+        Separator(),
+        Text(content=(
+            f"**Total Processed:** {len(results)}\n"
+            f"**Successful:** {successful}\n"
+            f"**Failed:** {failed}"
+        )),
+        Separator(),
+        Text(content="**Clan Details:**")
+    ]
+
+    for result in results:
+        if result['success']:
+            pings = result.get('ping_count')
+            suffix = f" • {pings} pings sent" if pings is not None else ""
+            parts.append(Text(content=(
+                f"✅ **{result['clan_name']}** `{result['clan_tag']}`{suffix}"
+            )))
+        else:
+            # NAMED failure, never a bare count - a silent partial is the whole
+            # thing this renderer exists to prevent.
+            parts.append(Text(content=(
+                f"❌ **{result['clan_name']}** `{result['clan_tag']}`: "
+                f"{result.get('error', 'Unknown error')}"
+            )))
+
+    parts.extend(extra)
+    accent = GREEN_ACCENT if failed == 0 else GOLD_ACCENT
+    return [Container(accent_color=accent, components=parts)]
+
+
+@register_action("lazycwl_autopings_start_all_confirm", no_return=True)
+@lightbulb.di.with_di
+async def handle_autopings_start_all_confirm(
+    ctx,
+    action_id: str,
+    interval_minutes: int,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Start auto-ping for every eligible snapshot.
+
+    NO ROLLBACK on partial failure, deliberately. The eligibility query only
+    returns snapshots WITHOUT auto-ping, so re-running naturally targets
+    whatever failed; undoing the successes to punish the failures would throw
+    away work for nothing.
+    """
+    global scheduler
+
+    try:
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True,
+            "$or": [
+                {"auto_ping_enabled": {"$exists": False}},
+                {"auto_ping_enabled": False}
+            ]
+        }).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Nothing To Start"),
+                        Text(content="No active snapshots without auto-ping remain."),
+                    ]
+                )
+            ]
+            await ctx.interaction.edit_initial_response(components=components)
+            return
+
+        results = []
+        for index, snapshot in enumerate(snapshots):
+            results.append(await process_single_autoping_start(
+                snapshot, interval_minutes, index, mongo, scheduler
+            ))
+
+        components = _bulk_autoping_summary(
+            "## ✅ Auto-Ping Started for All Clans",
+            results,
+            [
+                Separator(),
+                Text(content=(
+                    f"Interval: every {interval_minutes} minutes • runs up to 7 days\n"
+                    f"First runs staggered 5s apart."
+                )),
+                Text(content="Use `/fwa lazycwl-autopings-status` to view active auto-pings."),
+            ]
+        )
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:  # noqa: BLE001
+        print(f"[LazyCWL AutoPing] Bulk start failed: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Failed to Start Auto-Ping for All"),
+                    Text(content=f"Error: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_autopings_start_all_cancel", no_return=True)
+@lightbulb.di.with_di
+async def handle_autopings_start_all_cancel(ctx, action_id: str, **kwargs) -> None:
+    """Cancel the bulk start. Nothing has been written at this point."""
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content="## ❌ Cancelled"),
+                Text(content="No auto-pings were started."),
+            ]
+        )
+    ]
+    await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_autopings_stop_all_confirm", no_return=True)
+@lightbulb.di.with_di
+async def handle_autopings_stop_all_confirm(
+    ctx,
+    action_id: str,
+    user_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs
+) -> None:
+    """Stop auto-ping for every snapshot currently running one."""
+    global scheduler
+
+    try:
+        snapshots = await mongo.lazy_cwl_snapshots.find({
+            "auto_ping_enabled": True
+        }).to_list(length=None)
+
+        if not snapshots:
+            components = [
+                Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ❌ Nothing To Stop"),
+                        Text(content="No snapshots currently have auto-ping enabled."),
+                    ]
+                )
+            ]
+            await ctx.interaction.edit_initial_response(components=components)
+            return
+
+        results = []
+        for snapshot in snapshots:
+            results.append(await process_single_autoping_stop(snapshot, mongo, scheduler))
+
+        components = _bulk_autoping_summary(
+            "## ✅ Auto-Ping Stopped for All Clans",
+            results,
+            [
+                Separator(),
+                Text(content="Use `/fwa lazycwl-autopings-start` to restart if needed."),
+            ]
+        )
+        await ctx.interaction.edit_initial_response(components=components)
+
+    except Exception as e:  # noqa: BLE001
+        print(f"[LazyCWL AutoPing] Bulk stop failed: {e}")
+        components = [
+            Container(
+                accent_color=RED_ACCENT,
+                components=[
+                    Text(content="## ❌ Failed to Stop Auto-Ping for All"),
+                    Text(content=f"Error: {str(e)}"),
+                ]
+            )
+        ]
+        await ctx.interaction.edit_initial_response(components=components)
+
+
+@register_action("lazycwl_autopings_stop_all_cancel", no_return=True)
+@lightbulb.di.with_di
+async def handle_autopings_stop_all_cancel(ctx, action_id: str, **kwargs) -> None:
+    """Cancel the bulk stop. Every job is still running."""
+    components = [
+        Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content="## ❌ Cancelled"),
+                Text(content="All auto-pings are still running."),
+            ]
+        )
+    ]
+    await ctx.interaction.edit_initial_response(components=components)
 
 
 @register_action("lazycwl_remove_player_select_snapshot", no_return=True)
