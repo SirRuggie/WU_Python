@@ -404,10 +404,51 @@ async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semap
     ), None
 
 
+def new_semaphore(concurrency: int = FETCH_CONCURRENCY) -> asyncio.Semaphore:
+    """One semaphore for a whole /todo invocation, shared by every phase.
+
+    It used to be a local inside fetch_accounts, which meant the PLAYER phase
+    was bounded at 8 and the VIEW phase was bounded at 1 - four plain
+    `for clan_tag ... await` loops with no concurrency at all. 46 of 102 cold
+    calls were parallel and the other 56 were strictly serial, which was the
+    whole cold-path cost.
+
+    Created here rather than at module scope on purpose: an asyncio.Semaphore
+    binds to the running loop, and a module-level one would outlive a loop
+    restart holding stale waiters.
+    """
+    return asyncio.Semaphore(max(1, concurrency))
+
+
+async def gather_clans(sem: asyncio.Semaphore, clan_tags: list[str], fn):
+    """Run fn(clan_tag) for every tag, at most `sem` at once, ORDER PRESERVED.
+
+    NEVER RAISES. A builder that lost its whole view because one clan raised
+    would be strictly worse than the serial version it replaced, so a failure
+    is returned in place and the caller's existing per-clan error handling deals
+    with it - the same discipline as _fetch_one_player.
+
+    Returns results positionally aligned with `clan_tags`. asyncio.gather
+    guarantees that regardless of completion order, which is what keeps the row
+    order on the panel stable between identical runs.
+    """
+    async def one(clan_tag: str):
+        try:
+            async with sem:
+                return await fn(clan_tag)
+        except Exception as exc:  # noqa: BLE001 - one clan must not kill a view
+            print(f"[todo] clan fetch failed for {clan_tag}: "
+                  f"{type(exc).__name__}: {exc}", flush=True)
+            return ("error", None)
+
+    return await asyncio.gather(*(one(tag) for tag in clan_tags))
+
+
 async def fetch_accounts(
     coc_client: coc.Client,
     tags: list[str],
     concurrency: int = FETCH_CONCURRENCY,
+    sem: asyncio.Semaphore | None = None,
 ) -> tuple[list[Account], list[str]]:
     """Resolve tags to accounts, CONCURRENTLY. Returns (accounts, errors).
 
@@ -441,7 +482,9 @@ async def fetch_accounts(
             misses.append(tag)
 
     if misses:
-        sem = asyncio.Semaphore(max(1, concurrency))
+        # Shared with the view phase when the caller passes one in. Falls back
+        # to its own so fetch_accounts stays callable on its own.
+        sem = sem or new_semaphore(concurrency)
         results = await asyncio.gather(
             *(_fetch_one_player(coc_client, tag, sem) for tag in misses)
         )
@@ -703,7 +746,7 @@ def _starts_at(war) -> int | None:
         return None
 
 
-async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> ViewData:
+async def build_war_view(coc_client: coc.Client, accounts: list[Account], sem: asyncio.Semaphore | None = None) -> ViewData:
     """Regular-war hits still owed."""
     rows: list[Row] = []
     notes: list[str] = []
@@ -715,8 +758,11 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
         if acct.clan_tag:
             by_clan.setdefault(acct.clan_tag, []).append(acct)
 
-    for clan_tag, members in by_clan.items():
-        kind, war = await _get_war(coc_client, clan_tag)
+    sem = sem or new_semaphore()
+    order = list(by_clan)
+    fetched = await gather_clans(sem, order, lambda t: _get_war(coc_client, t))
+    for clan_tag, (kind, war) in zip(order, fetched):
+        members = by_clan[clan_tag]
 
         if kind == "private":
             private += len(members)
@@ -763,7 +809,7 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows))
 
 
-async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> ViewData:
+async def build_cwl_view(coc_client: coc.Client, accounts: list[Account], sem: asyncio.Semaphore | None = None) -> ViewData:
     """CWL hits still owed in the current round."""
     rows: list[Row] = []
     notes: list[str] = []
@@ -774,8 +820,11 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
         if acct.clan_tag:
             by_clan.setdefault(acct.clan_tag, []).append(acct)
 
-    for clan_tag, members in by_clan.items():
-        kind, war = await _get_cwl_round(coc_client, clan_tag)
+    sem = sem or new_semaphore()
+    order = list(by_clan)
+    fetched = await gather_clans(sem, order, lambda t: _get_cwl_round(coc_client, t))
+    for clan_tag, (kind, war) in zip(order, fetched):
+        members = by_clan[clan_tag]
 
         if kind == "error":
             unreadable += len(members)
@@ -817,7 +866,7 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows))
 
 
-async def build_blocked_view(coc_client: coc.Client, accounts: list[Account]) -> ViewData:
+async def build_blocked_view(coc_client: coc.Client, accounts: list[Account], sem: asyncio.Semaphore | None = None) -> ViewData:
     """Accounts sitting in clans whose war state we cannot read.
 
     This exists because "17 account(s) in clans with private war logs" told the
@@ -838,8 +887,11 @@ async def build_blocked_view(coc_client: coc.Client, accounts: list[Account]) ->
         if acct.clan_tag:
             by_clan.setdefault(acct.clan_tag, []).append(acct)
 
-    for clan_tag, members in by_clan.items():
-        kind, _war = await _get_war(coc_client, clan_tag)
+    sem = sem or new_semaphore()
+    order = list(by_clan)
+    fetched = await gather_clans(sem, order, lambda t: _get_war(coc_client, t))
+    for clan_tag, (kind, _war) in zip(order, fetched):
+        members = by_clan[clan_tag]
         if kind not in ("private", "error"):
             continue
         for acct in members:
@@ -929,7 +981,7 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
     return result
 
 
-async def build_raid_view(coc_client: coc.Client, accounts: list[Account]) -> ViewData:
+async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: asyncio.Semaphore | None = None) -> ViewData:
     """Capital raid attacks still owed.
 
     ⚠️ THE ONE THING THAT MAKES THIS VIEW WORK, AND THE EASIEST TO GET WRONG:
@@ -958,8 +1010,11 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account]) -> Vi
         if acct.clan_tag:
             by_clan.setdefault(acct.clan_tag, []).append(acct)
 
-    for clan_tag, members in by_clan.items():
-        kind, entry = await _get_raid(coc_client, clan_tag)
+    sem = sem or new_semaphore()
+    order = list(by_clan)
+    fetched = await gather_clans(sem, order, lambda t: _get_raid(coc_client, t))
+    for clan_tag, (kind, entry) in zip(order, fetched):
+        members = by_clan[clan_tag]
         _d(f"build_raid_view {clan_tag} -> kind={kind} "
            f"state={getattr(entry, 'state', None)!r}")
 
