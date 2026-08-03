@@ -4,6 +4,7 @@ import datetime
 import functools
 import inspect
 import logging
+import os
 import uuid
 from typing import Any, Callable, get_type_hints
 
@@ -51,6 +52,7 @@ class Action:
     ephemeral: bool
     opens_modal: bool
     group: str | None
+    declared_at: str  # "file:line" of the @register_action, for duplicate reporting
 
 
 registered_functions: dict[str, Action] = {}
@@ -74,6 +76,37 @@ group_keys: set[str] = set()
 # This is what makes an iterating dashboard project safe. Leave aliases in place
 # indefinitely; they cost one dict entry and removing one re-breaks old panels.
 action_aliases: dict[str, str] = {}
+
+
+def _declaration_site(depth: int = 2) -> str:
+    """`file:line` of the @register_action application.
+
+    Read from the call frame, NOT from the decorated function. register_action is
+    applied above @lightbulb.di.with_di, so the function it receives is already
+    linkd's wrapper and reports `linkd.solver` as its module regardless of which
+    file registered the action - which made the duplicate warning useless, since
+    both sides of a collision printed the same name.
+    """
+    frame = inspect.currentframe()
+    try:
+        for _ in range(depth):
+            if frame is None:
+                return "<unknown>"
+            frame = frame.f_back
+        if frame is None:
+            return "<unknown>"
+        filename = frame.f_code.co_filename
+        try:
+            filename = os.path.relpath(filename)
+        except (ValueError, OSError):
+            # ValueError: different drive on Windows. OSError: relpath calls
+            # getcwd(). Either way the absolute path is still useful, and this
+            # runs at import for every action - it must not be able to raise.
+            pass
+        return f"{filename}:{frame.f_lineno}"
+    finally:
+        # Frames hold references to locals; drop ours rather than leaving a cycle.
+        del frame
 
 
 def register_action(
@@ -114,14 +147,14 @@ def register_action(
         # which handler runs, which is a real bug - but raising here stops the bot
         # booting, and this dispatcher's whole premise is not disturbing the
         # running system. Resolve the duplicate first, then consider raising.
+        declared_at = _declaration_site()
+
         existing = registered_functions.get(name)
         if existing is not None:
             _log.warning(
-                "duplicate component action %r: %s.%s replaces %s.%s - "
+                "duplicate component action %r: %s replaces %s - "
                 "import order is deciding which one runs",
-                name,
-                func.__module__, func.__qualname__,
-                existing.fn.__module__, existing.fn.__qualname__,
+                name, declared_at, existing.declared_at,
             )
 
         registered_functions[name] = Action(
@@ -133,6 +166,7 @@ def register_action(
             ephemeral=ephemeral,
             opens_modal=opens_modal,
             group=group,
+            declared_at=declared_at,
         )
 
         for alias in aliases:

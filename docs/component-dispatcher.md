@@ -105,45 +105,85 @@ restart. This registry is keyed by the `command_name` half of the custom_id, so
 handlers are **stateless and survive restarts** — which is what makes persistent
 dashboard messages viable at all.
 
-## Known defects
+## Defects — fixed in commits `23266e3` / `2f1f121` (2026-08-02)
 
-Flagged by a prior security audit; a fuller assessment was commissioned
-2026-08-02. Treat these as confirmed-by-reading, severity as judgement.
+- **No error boundary.** A raising handler produced the worst failure a component
+  can have: `defer(edit=True)` sends `DEFERRED_MESSAGE_UPDATE`, which acks
+  silently with no loading state, so the button simply un-pressed and nothing
+  happened. Discord was already acked, so it never showed "This interaction
+  failed" either — indistinguishable from a slow bot, which invites re-clicking.
+  Now every failure produces an ephemeral message with a correlation ref that
+  matches a logged traceback.
+- **No unknown-action guard.** `.get()` returned `None` and was tuple-unpacked
+  immediately → `TypeError` before any response. Now refuses with a "panel out of
+  date" message. See *Renaming an action* above for the alias mechanism.
+- **`custom_id` with no colon.** `split(":", 1)` raised `ValueError`; now
+  `partition(":")`, which cannot raise.
+- **A modal hitting a group entry** accessed `ctx.interaction.values`, which
+  `ModalInteraction` does not have → `AttributeError`. Now `getattr`.
+- **`ModalContext` has no `edit=` parameter** — it inherits the plain
+  `MessageResponseMixin`, so `respond(..., edit=True)` raises `TypeError`. Dodged
+  only because all 12 `is_modal=True` registrations also set `no_return=True`.
+  Now branched explicitly.
+- **A group-registered action could not be reached by a button** — see below,
+  because the reproduction is easy to get wrong.
 
-1. **`user_only` is never enforced** (`components.py:75`). It is unpacked into a
-   local named `owner_only` and then not used. Any user who can see a message can
-   trigger its components, including ones registered as user-only.
-2. **No error boundary.** `components.py:83-91` defers, then calls the handler
-   with no `try`/`except`. A raising handler leaves Discord already told
-   "thinking", so the user sees a permanent spinner and no error.
-3. **No unknown-action guard.** `registered_functions.get(command_name)` returns
-   `None` for an unknown key and is immediately tuple-unpacked → `TypeError`.
-   **Renaming or removing an action breaks every existing message that
-   references it**, and component messages persist indefinitely.
-4. **A dead guard.** `components.py:86-90` does `kw = kw or {}`, then unions in
-   three always-present keys, and only then checks `if not kw: return`. That
-   check can never fire. The intended behaviour — detecting expired or missing
-   component state — does not happen; the handler is called with only the three
-   injected keys and typically fails on a missing kwarg.
+### The group-routing bug, and how to actually reproduce it
 
-5. **`ModalContext` has no `edit=` parameter.** `components.py:94` calls
-   `ctx.respond(..., edit=True, ...)`. `ModalContext` inherits the plain
-   `MessageResponseMixin`, not the `...WithEdit` variant, so that raises
-   `TypeError`. **It is dodged by convention only** — all 12 `is_modal=True`
-   registrations also pass `no_return=True`, which skips line 94. The first
-   modal handler written without `no_return=True` crashes.
-6. **`ephemeral` on an edit is a no-op.** `components.py:94` combines
-   `edit=True` with `ephemeral=ephemeral`. An existing message's ephemeral state
-   cannot be changed, so the flag does nothing on ~25 registered actions that
-   read as if it works.
-7. **A group-registered action cannot be reached by a button.** The dispatcher
-   branches on the *action's* `group` field (`components.py:77`) rather than on
-   whether the interaction arrived via the group key, then requires
-   `ctx.interaction.values`. A button has none, so it returns at line 79.
-   **Live example:** `fwa_data.py:773` renders a button with
-   `custom_id="manage_fwa_data:main"`, and `fwa_data.py:367` registers
-   `manage_fwa_data` with `group="clan_database"`. That "Back to Main Menu"
-   button has never worked.
+The dispatcher branched on the *action's* `group` field rather than on whether
+the interaction arrived via the group key, then required
+`ctx.interaction.values`. A button has none, so it returned silently.
+
+The only live instance is **`manage_fwa_data:main`** (`fwa_data.py:773`), because
+`manage_fwa_data` is registered with `group="clan_database"` (`fwa_data.py:367`).
+
+**⚠️ There is a lookalike that will fool you.** The per-Town-Hall edit view has a
+button also labelled "Back" (`fwa_data.py:351`) whose custom_id is
+`fwa_back_to_main:main`. That action is registered **without a group**
+(`fwa_data.py:419`), takes `**kwargs`, and requires nothing — so it always
+worked and is unaffected by the fix. Testing it proves nothing.
+
+The affected button is labelled **"Back to Main Menu"** and lives only on the
+image-upload success screen:
+
+```
+/clan dashboard → Manage FWA Data → select a Town Hall
+  → Update Images → submit the modal with image URLs
+  → "TH{n} Images Updated!" screen
+     → "Back to Main Menu"   (grey/secondary)   ← the affected button
+     → "Back to TH{n} Edit"  (blue/primary)     ← a different action
+```
+
+Reaching it requires a real image upload, so this is not a cheap test.
+
+`copy_war_message` (`message_templates.py:303`) is also registered with a group
+but no custom_id references it, so it is unreachable dead code rather than a
+second live instance.
+
+## Defects — still open
+
+1. **`user_only` is never enforced.** It is stored on the `Action` and not read.
+   In fact **no authorization of any kind happens in the dispatcher** — and
+   `user_only=True` is used zero times in the repo, so nothing declared an intent
+   that is being bypassed. Four files hand-roll their own role checks
+   (`update_clan_info.py:60`, `fwa_data.py:386`, `questions.py:366`, `:474`);
+   the other 36 have none. Currently masked by almost every dangerous surface
+   being ephemeral, which is exactly the property a shared dashboard gives up.
+2. **A dead guard.** `kw = kw or {}`, then a union with three always-present
+   keys, then `if not kw: return` — which can never fire. The intended behaviour
+   (detect expired or missing state) does not happen; the handler is called with
+   only the three injected keys and 26 handlers that declare a required `user_id`
+   then fail on the missing kwarg.
+3. **`ephemeral` on an edit is a no-op.** Combining `edit=True` with
+   `ephemeral=...` does nothing, because an existing message's ephemeral state
+   cannot be changed. Left in place deliberately so the error-boundary commit
+   changed nothing on the success path; remove it with the state work.
+4. **Duplicate registration warns rather than raises.** `back_to_clan_edit` is
+   registered twice with different `no_return` semantics
+   (`update_clan_info.py:964`, `update_clan_info_general.py:129`) and import
+   order decides which runs. Raising would stop the bot booting, which is not an
+   acceptable outcome for a fix whose premise is not disturbing the running
+   system. Resolve the duplicate first, then consider raising.
 
 Consequence for new work: **the expiry path is the one to design for.** State in
 `button_store` is never pruned but is also never guaranteed present.
