@@ -4,6 +4,7 @@ import datetime
 import functools
 import inspect
 import logging
+import uuid
 from typing import Any, Callable, get_type_hints
 
 import hikari.events
@@ -23,6 +24,13 @@ _log = logging.getLogger(__name__)
 MSG_STALE_PANEL = (
     "⚠️ This panel is out of date and can no longer be used.\n"
     "Please re-run the command to get a fresh one."
+)
+
+# The ref is the whole point: without it, "the button didn't work" cannot be
+# matched to a traceback across the ~120 handlers in 40 files.
+MSG_INTERNAL_ERROR = (
+    "❌ Something went wrong handling that.\n"
+    "It has been logged (ref `{ref}`). Please try again, or re-run the command."
 )
 
 
@@ -170,6 +178,30 @@ async def component_handler(
         ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
         mongo: MongoClient = lightbulb.di.INJECTED,
 ):
+    """Entry point. No exception may escape this function.
+
+    Before this boundary existed, a raising handler produced the worst failure a
+    component can have: `defer(edit=True)` sends DEFERRED_MESSAGE_UPDATE, which
+    acknowledges silently and shows no loading state, so the button simply
+    un-pressed and nothing happened - no error, no spinner, nothing. Discord had
+    already been acknowledged, so it never showed "This interaction failed"
+    either. Indistinguishable from a slow bot, which invites re-clicking.
+    """
+    try:
+        await _dispatch(ctx, mongo)
+    except Exception:
+        ref = uuid.uuid4().hex[:8]
+        _log.exception(
+            "component dispatch failed ref=%s custom_id=%r user=%s",
+            ref, getattr(ctx.interaction, "custom_id", "<unknown>"), ctx.user.id,
+        )
+        await _refuse(ctx, MSG_INTERNAL_ERROR.format(ref=ref))
+
+
+async def _dispatch(
+        ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
+        mongo: MongoClient,
+):
     raw = ctx.interaction.custom_id
     # partition never raises; split(":", 1) raised ValueError on a colon-less id
     command_name, _, action_id = raw.partition(":")
@@ -212,7 +244,17 @@ async def component_handler(
     components = await action.fn(**kw)
 
     if not action.no_return:
-        await ctx.respond(components=components, edit=True, ephemeral=action.ephemeral)
+        if action.is_modal:
+            # ModalContext inherits the plain response mixin, which has no edit=
+            # parameter at all - passing one raises TypeError. Unreached so far
+            # only because all 12 is_modal registrations also set no_return=True,
+            # so the first modal handler written without it would have crashed.
+            await ctx.respond(components=components)
+        else:
+            # `ephemeral` is a no-op alongside edit=True (an existing message's
+            # ephemeral state cannot be changed) and is kept only so this commit
+            # changes nothing on the success path. Remove it with the state work.
+            await ctx.respond(components=components, edit=True, ephemeral=action.ephemeral)
 
 
 
