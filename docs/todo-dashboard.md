@@ -99,6 +99,29 @@ nobody linked*. Collapsing those told users with a working link to go and link
 an account. The same distinction was fixed in `fwa/lazy_cwl.py`'s
 `get_discord_ids` for the same reason.
 
+### A ZERO-LINK ACCOUNT CANNOT TELL YOU THE ENDPOINT IS DEAD
+
+**Never probe this endpoint with a Discord ID that has no linked accounts.** It
+returns `null`, which is indistinguishable from "the reverse lookup is not
+supported" — and that is exactly the wrong conclusion someone drew from it,
+confidently, in writing. The same call with an ID that *has* links returns 46
+tags. The endpoint was bidirectional the whole time.
+
+Probe with an ID known to be non-empty, or the negative result proves nothing.
+This is the general rule in [`../CLAUDE.md`](../CLAUDE.md), and it recurred
+during the endpoint survey: `/capital/bulk` and `/war/{tag}/basic` both returned
+`{}` and `null` when probed with a **player** tag where a **clan** tag was
+required, which reads identically to "endpoint does not work". Both returned
+real data on re-probe.
+
+### There is no bulk war route
+
+Confirmed twice against both OpenAPI specs. The war fan-out **cannot** be
+collapsed into one request, so call reduction has to come from caching. Full
+inventory, including the 401-gated `/ck/bulk` and the 2.1 MB `/capital/bulk`
+firehose, in
+[`clashking-war-endpoints.md`](clashking-war-endpoints.md).
+
 ---
 
 ## The four views
@@ -270,6 +293,141 @@ those prefixes can predate it. If something does, it prints the surviving keys
 by name. The failure mode here is invisible from the panel — button works, data
 is fresh, only the clock lies — so it has to announce itself.
 
+### It happened a second time: `cwlwar:`
+
+Found by auditing every `cache_put` key against `DATA_PREFIXES`, not by anyone
+noticing stale rows.
+
+```
+"cwlwar:#ABC".startswith("cwl:")  ->  False    # "cwlw" != "cwl:"
+"cwlwar:#ABC".startswith("war:")  ->  False
+```
+
+Individual CWL round wars are cached under `cwlwar:{war_tag}` for up to **24
+hours** on ended rounds. The prefix matched nothing in `DATA_PREFIXES`, so
+Refresh never dropped them and `oldest_fill` never aged them.
+
+**The symptom was the inverse of the raid bug.** `raid:` was counted but not
+dropped, so the stamp froze *old*. `cwlwar:` was neither, so the stamp
+**under-reported** staleness — it could read "updated just now" over CWL data a
+day old.
+
+**An uncovered prefix is silent by construction.** It produces no error, no
+stale-looking output, and no failed request; it just quietly stops participating
+in Refresh. Twice was enough, so `cache_put` now warns at write time:
+
+```
+[todo] CACHE KEY NOT COVERED: 'foo:#ABC' matches no prefix in DATA_PREFIXES
+or AUX_PREFIXES. Refresh will NOT drop it and the freshness stamp will NOT
+age it. Add its prefix to DATA_PREFIXES.
+```
+
+### The full cache table
+
+| Prefix | Key | TTL | Dropped by Refresh |
+|---|---|---|---|
+| `player:` | `player:{tag}` | **10 min** | yes |
+| `war:` | `war:{clan_tag}` | 120 s active / 15 min idle | yes |
+| `cwl:` | `cwl:{clan_tag}` | 60 min absent / 10 min active | yes |
+| `cwlwar:` | `cwlwar:{war_tag}` | 10 min active / **24 h ended** | yes, **since `40c97ef`** |
+| `raid:` | `raid:{clan_tag}` | seconds until Friday — *days* | yes |
+| `links:` | `links:{discord_id}` | 6 h | yes, via `extra` |
+| `clanlogos` | literal | 60 min | yes, via `extra` |
+
+`DATA_PREFIXES` covers the first five. `links:` and `clanlogos` are
+per-invocation rather than per-render, so `drop_render_caches()` takes them as
+`extra` from the caller; `AUX_PREFIXES` exists only so the guard knows they are
+accounted for.
+
+**The clan-level entries are keyed by clan, not by user**, in a process-global
+dict. One fetch per clan serves every account in it and every *user* who touches
+it. The only per-user cost is `player:` and `links:`.
+
+---
+
+## Measured performance
+
+Two consecutive `/todo` runs, no restart between them (2026-08-03):
+
+```
+cold  up=44s   warm=0/46   calls=102  players=2469ms  views=7022ms  send=2018ms  total=12.35s
+warm  up=162s  warm=46/46  calls=4    players=0ms                   send=1997ms  total=3.39s
+```
+
+**The cache works.** 102 calls collapse to 4; the player phase goes to zero.
+
+`warm=0/46` was never a key bug. The cache is a module-level dict, so it dies
+with the process, and the bot had been redeployed between every earlier test.
+`cached=104` on the cold run had already ruled out "the cache is never written" —
+entries were present, they were just younger than the run. The fix was the
+10-minute `TTL_PLAYER` plus the `cwlwar:` coverage fix in `40c97ef`.
+
+**Mongo roster persistence was considered and rejected.** Warm runs are fast
+enough that surviving restarts is not worth a new collection and a new failure
+path.
+
+### Where the cold path actually goes
+
+`calls=102` at `mean=209ms` with concurrency 8 *looks* like it should take ~2.7 s.
+It does not, because **concurrency applies to 46 of those 102 calls and not the
+other 56**:
+
+- `extensions/commands/todo.py:790-791` — the player phase, awaited to
+  completion.
+- `extensions/commands/todo.py:802-809` — the view phase, which starts only
+  after it returns. **The two phases are strictly sequential**, separate awaits
+  in one coroutine.
+- `utils/todo_data.py:444` — the semaphore is a **local, created per call inside
+  `fetch_accounts`**. It never leaves that function and is never passed to a
+  view builder.
+- `utils/todo_data.py:718-719, 777-778, 841-842, 961-962` — the four view
+  builders are plain `for clan_tag ... await` loops. **No gather, no semaphore,
+  no concurrency of any kind.**
+
+So the cold path is 46 calls at concurrency 8, then 56 calls strictly one at a
+time. The view phase is the cold-path cost and always was.
+
+### What `send=` spans — ONE call, and not the one previously documented
+
+`send=` wraps exactly one statement, `await ctx.respond(components=...)`
+(`extensions/commands/todo.py:886-887`, and `870-871` on the notice path). It is
+**not** a create-then-edit sequence, and the `todo_sessions` write is outside it
+— `print(perf.line())` at `:893` runs before `_record_response` at `:895`, so
+neither that write nor its `fetch_initial_response()` is counted in `send=` or in
+`total=`.
+
+**Correction to an earlier claim in this repo:** `ctx.respond()` after a defer
+was documented as `PATCH /webhooks/{app}/{token}/messages/@original`. **It is
+not.** lightbulb 3.0.3's `Context.respond` takes the `else` branch when the
+initial response has already been sent, and that branch calls
+`self.interaction.execute(...)` — a **followup**, `POST /webhooks/{app}/{token}`.
+lightbulb's own source comments that this may be unintentional:
+
+> *"This will automatically cause a response if the initial response was deferred
+> previously. I am not sure if this is intentional by discord however…"*
+
+The bucket conclusion survives — both are webhook routes, so the panel is still
+off the contended `POST /channels/{id}/messages` bucket. The specific route was
+wrong.
+
+Two consequences:
+
+- `respond()` in the deferred case returns a **`hikari.Message`**, not the
+  `INITIAL_RESPONSE_IDENTIFIER` sentinel. `_record_response` discards it and
+  calls `fetch_initial_response()` instead, which returns the *deferred
+  placeholder*, a different message. **So `todo_sessions` rows are keyed to the
+  wrong message id.** Real defect, found by reading lightbulb's source for this
+  write-up, not yet fixed.
+- It serialises behind `Context._response_lock`, an `asyncio.Lock` held for the
+  duration of the call. Per-context and uncontended for a single invocation, so
+  it explains nothing about the ~2 s.
+
+**`send=` does not scale with account count.** `render_dashboard` windows rows to
+`PAGE_SIZE = 20` (`todo.py:582`), so payload size is bounded by rows on the page
+and clans within it, not by the 46 or 65 accounts behind them. `send≈2000ms` on
+both a 102-call cold run and a 4-call warm run is consistent with that: it is
+latency on one webhook POST, independent of everything else measured.
+
 ---
 
 ## Emoji slots
@@ -348,17 +506,70 @@ are still written and read correctly; they just never self-prune. Every entry
 point is non-fatal — this is bookkeeping for a feature that does not exist, and
 no failure in it is worth degrading the dashboard for.
 
-## Statelessness and the dispatcher
+## Statelessness, routing and pagination
 
-Nothing is written to Mongo. Page comes from the `custom_id`, user identity from
-`ctx.user.id` on the interaction. The dispatcher's state lookup therefore always
-misses, which is fine and intended — every handler defaults all state.
+**Nothing the render path reads comes from Mongo.** Page comes from the
+`custom_id`, user identity from `ctx.user.id` on the interaction. The
+dispatcher's state lookup therefore always misses, which is fine and intended —
+every handler defaults all its parameters. A `/todo` panel sitting in DM history
+for a year still works, because there is no state document that could have been
+evicted.
 
-**One colon per `custom_id`.** The dispatcher splits at the **first** colon and
-everything after it is the state key, so `action:{id}:{page}` makes the state key
-a composite that misses the lookup. `manage_roles.py:366` does exactly that and
-its pagination has never worked. Here the view lives in the action name and the
-page in the action_id. See [`component-dispatcher.md`](component-dispatcher.md).
+(Auto-refresh phase 1 does *write* a bookkeeping row per panel to
+`todo_sessions`. Nothing reads it, and the render path must never start
+depending on it — that property is the whole point.)
+
+### ONE COLON PER `custom_id`
+
+The dispatcher splits at the **first** colon and everything after it is the
+state key, so `action:{id}:{page}` makes the state key a composite that misses
+the lookup. `manage_roles.py:366` does exactly that and **its pagination has
+never worked.** See [`component-dispatcher.md`](component-dispatcher.md).
+
+So the view goes in the **action name** and the page in the **action_id**:
+
+| custom_id | Handler | Meaning |
+|---|---|---|
+| `todo_war:{page}` | `todo_war` | War view, page N |
+| `todo_cwl:{page}` | `todo_cwl` | CWL view, page N |
+| `todo_raid:{page}` | `todo_raid` | Raids view, page N |
+| `todo_nav:{current_view}` | `todo_nav` | select-menu routing |
+| `todo_refresh:{view}\|0` | `todo_refresh` | forced refetch of `view` |
+
+Note the `|` separator in `todo_refresh` — a second colon would break the split,
+so where a handler needs two values they are packed with a pipe and parsed with
+`action_id.split("|")[-1]`.
+
+### How the select menu routes the four views
+
+One `TextSelectMenu` in an ActionRow, built by `_nav_select()`, carrying an
+option per view with its emoji and live count. Its `custom_id` is
+`todo_nav:{current_view}` — the view you are leaving, not the one you picked.
+**The destination arrives in `ctx.interaction.values[0]`, not in the
+`custom_id`.**
+
+That is why `todo_nav` is registered **without** `group=`: the dispatcher would
+otherwise try to resolve the selected value as an action name. Reading
+`values[0]` in the handler is what lets an option carry `"refresh"` as well as a
+view name.
+
+`todo_nav` then dispatches to `_switch(ctx, choice, "0", ...)` — always resetting
+to page 0, because a page 3 that exists in Private War Logs may not exist in War.
+
+**A retired option must keep working.** Refresh moved out of the select and
+became a button, but panels already sitting in DM history still carry a select
+with a `"refresh"` option and will fire it forever. `todo_nav` still handles it.
+You cannot reach back and edit those messages, so old values are permanent API.
+Unknown values fall back to War rather than erroring.
+
+Pagination is a separate three-button ActionRow (`◀`, a disabled `Page N/M`
+label, `▶`) appended only when `pages > 1`. `PAGE_SIZE` is 20 rows.
+
+**That row has never rendered.** The largest view so far is Private War Logs at
+17 accounts, so `pages > 1` has never been true. It is also appended *after*
+`_nav_block()`, which would put page controls below the red footer and the
+Refresh button — almost certainly the wrong order. Left alone rather than fixed
+blind, since it cannot currently be looked at.
 
 ---
 
@@ -444,21 +655,25 @@ took 4.65 s waits. It is now the interaction response — see
 [discord-rate-limit-buckets.md](discord-rate-limit-buckets.md). **The header is
 back, deliberately.**
 
-**Not yet verified:** whether that actually removes the delay; the Raids view
-with a live raid weekend — `state == "ongoing"` has never returned True, because
-every test has been out of season
+It did not remove the delay. `send≈2000ms` on both a cold and a warm run,
+measured — moving off the channel bucket bought roughly 1–2 s of the original
+4.65 s, not all of it. The remaining ~2 s on one webhook POST is unexplained and
+nothing has been measured about it beyond establishing that it is a single call
+that does not scale with account count.
+
+**Open defect, not yet fixed:** `_record_response` keys `todo_sessions` rows to
+`fetch_initial_response()` — the deferred placeholder — while the panel is a
+followup message with a different id. Found by reading lightbulb's source, not
+by observation. Nothing reads those rows yet, so it is latent.
+
+**Not yet verified:** the Raids view with a live raid weekend — `state ==
+"ongoing"` has never returned True, because every test has been out of season
 where "not ongoing" is also the correct answer. That probe cannot fail
 differently from success. It needs a Friday.
 
 Also unverified: whether the H2/H3 type step is visibly distinct on mobile
 (nobody has said either way), and coc.py 3.10.0's `coc/raid.py` `max()` crash
 fix, which is in the raid path and therefore in the same untested window.
-
-**Never rendered, therefore never seen:** the pagination ActionRow. `PAGE_SIZE`
-is 20 and the largest view so far is Private War Logs at 17, so `pages > 1` has
-never been true. It is appended *after* `_nav_block()`, which puts page controls
-below the red footer and the refresh button — almost certainly the wrong order.
-Left alone rather than fixed blind, since it cannot currently be looked at.
 
 **Inferred, not measured:** the ~4000-character message-wide limit and the
 40-component budget (Discord does not document either; corroborated by two
