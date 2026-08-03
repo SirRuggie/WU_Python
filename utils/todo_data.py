@@ -91,7 +91,26 @@ def cache_put(key: str, value, ttl: int) -> None:
     _cache[key] = (time.monotonic() + ttl, time.time(), value)
 
 
-def oldest_fill(prefixes: tuple[str, ...]) -> float | None:
+# THE PREFIXES THAT MAKE UP ONE /todo RENDER. Deliberately ONE tuple, shared by
+# the Refresh drop and the freshness stamp.
+#
+# It is one tuple because it used to be two, and they diverged: the drop listed
+# player/war/cwl and the stamp read player/war/cwl/RAID. Raid entries therefore
+# survived every Refresh, and out of season their TTL is _seconds_until_raid_opens()
+# - DAYS. oldest_fill() takes the min, so the stamp was pinned to whenever the
+# process first rendered a raid view and never moved again, on any view. Refresh
+# refetched everything correctly; only the clock was frozen. See docs/todo-dashboard.md.
+#
+# Add a new cached data prefix HERE and both sides get it. Do not re-inline a
+# prefix list at a call site.
+DATA_PREFIXES: tuple[str, ...] = ("player:", "war:", "cwl:", "raid:")
+
+# Wall-clock of the last drop_render_caches(). Sole purpose is the consistency
+# check in oldest_fill: after a drop, no live entry can predate it.
+_last_drop_at: float = 0.0
+
+
+def oldest_fill(prefixes: tuple[str, ...] = DATA_PREFIXES) -> float | None:
     """When the OLDEST still-live cache entry under these prefixes was fetched.
 
     This is what "updated N minutes ago" must be built from. Using render time
@@ -100,23 +119,63 @@ def oldest_fill(prefixes: tuple[str, ...]) -> float | None:
     when the user needs to know how stale it is.
 
     Oldest rather than newest, because the panel is only as fresh as its
-    staleset component.
+    stalest component.
+
+    THE INVARIANT: after drop_render_caches(), everything live under these
+    prefixes was necessarily filled after the drop, so this moves. If it does
+    not, some prefix is being read but not dropped - which is the exact bug this
+    function once had, and it is invisible from the panel: the button works, the
+    data is fresh, the clock just lies. So it is checked, and the check NAMES
+    the surviving keys rather than reporting that something is wrong.
     """
     now = time.monotonic()
-    fills = [
-        filled_at
+    live = [
+        (filled_at, key)
         for key, (expires_at, filled_at, _value) in _cache.items()
         if expires_at > now and key.startswith(prefixes)
     ]
-    return min(fills) if fills else None
+    if not live:
+        return None
+
+    result = min(f for f, _k in live)
+    # 1s of slack: the drop and the refills inside one request are the same
+    # instant for this purpose, and float comparison should not manufacture a
+    # warning out of that.
+    if _last_drop_at and result < _last_drop_at - 1:
+        survivors = sorted(k for f, k in live if f < _last_drop_at - 1)
+        print(
+            f"[todo-diag] STALE STAMP: oldest_fill={result:.0f} predates last drop "
+            f"{_last_drop_at:.0f}. Read-but-not-dropped keys: {survivors[:8]}"
+        )
+    return result
 
 
 def cache_drop_prefix(prefix: str) -> int:
-    """Drop every key with this prefix. Used by Refresh. Returns count dropped."""
+    """Drop every key with this prefix. Returns count dropped.
+
+    Prefer drop_render_caches() for the Refresh path - it owns the full list.
+    This stays public for the one-off prefixes (a user's links, the logo map)
+    that are not part of DATA_PREFIXES.
+    """
     doomed = [k for k in _cache if k.startswith(prefix)]
     for k in doomed:
         _cache.pop(k, None)
     return len(doomed)
+
+
+def drop_render_caches(extra: tuple[str, ...] = ()) -> int:
+    """Everything behind one /todo render. THE Refresh entry point.
+
+    `extra` carries the per-invocation prefixes that cannot be constants - the
+    caller's own links key, the clan logo map.
+    """
+    global _last_drop_at
+    _last_drop_at = time.time()
+    dropped = 0
+    for prefix in DATA_PREFIXES + tuple(extra):
+        dropped += cache_drop_prefix(prefix)
+    _d(f"drop_render_caches dropped={dropped} prefixes={DATA_PREFIXES + tuple(extra)}")
+    return dropped
 
 
 # ---------------------------------------------------------------------------

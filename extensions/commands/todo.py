@@ -247,7 +247,9 @@ def _nav_block(view: str, counts: dict) -> list:
     Refresh is a button rather than a select option because the select lists
     places you can GO; refresh is something you DO to where you already are.
     """
-    fetched_at = todo_data.oldest_fill(("player:", "war:", "cwl:", "raid:"))
+    # NO PREFIX LIST HERE. It defaults to todo_data.DATA_PREFIXES, the same
+    # tuple Refresh drops. An inline list here is what let the two diverge.
+    fetched_at = todo_data.oldest_fill()
     # <t:N:R> updates itself forever, in the reader's own timezone, with no
     # further work from us. Built from the cache fill time, never from now.
     stamp = f"-# updated <t:{int(fetched_at)}:R>" if fetched_at else "-# updated just now"
@@ -653,11 +655,12 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     the marginal cost of the other sections is near zero.
     """
     if force:
-        todo_data.cache_drop_prefix("player:")
-        todo_data.cache_drop_prefix("war:")
-        todo_data.cache_drop_prefix("cwl:")
-        todo_data.cache_drop_prefix(f"links:{discord_id}")
-        todo_data.cache_drop_prefix(CACHE_LOGOS)
+        # ONE call, and it owns the prefix list. Enumerating prefixes here is
+        # what froze the freshness stamp: "raid:" was missing from this list
+        # while oldest_fill read it, so raid entries - TTL of DAYS out of
+        # season - survived every Refresh and pinned the clock. Only the two
+        # per-invocation keys are passed in.
+        todo_data.drop_render_caches((f"links:{discord_id}", CACHE_LOGOS))
 
     if mongo is not None:
         await _load_clan_logos(mongo)
