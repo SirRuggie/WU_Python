@@ -16,8 +16,11 @@ LAYOUT RULES, all of them from observed mobile rendering rather than theory:
   backticks: there a chip's x-position depended on the name before it, which
   destroyed vertical alignment.
 
-  TIMING IS STATED ONCE PER BLOCK, not once per clan. Grouping is by TIME
-  first (Battle Day / Prep Day) and clan second, because time is what varies.
+  GROUPING IS BY STATE, TIMING IS PER CLAN. A block heading says only what is
+  true of every row under it - Battle Day, Prep Day - because the deadline is
+  NOT: two clans in one Prep Day block were 9h29m and 3h51m from battle day,
+  and a min() heading claimed "starts in 4 hours" over both. Each clan states
+  its own deadline on a subtext line under its name.
 
   FOUR TYPE SIZES, one per level of the hierarchy: "##" panel title, "###"
   block heading, "**bold**" clan name, plain text row. Everything below the
@@ -31,12 +34,17 @@ Design rules enforced here, each of which cost real investigation to establish:
   and its pagination has never worked. View lives in the action name, page in
   the action_id, and nothing else.
 
-  STATELESS. Nothing is written to Mongo. Page comes from the custom_id, user
-  identity from ctx.user.id on the interaction. So the dispatcher's state
-  lookup always misses, which is fine and intended: every handler defaults all
-  its parameters and reads only action_id. A missing state document cannot
-  break a panel that never had one, and a /todo panel sitting in DM history for
-  a year keeps working.
+  STATELESS IN THE RENDER PATH. Nothing read from Mongo drives a panel. Page
+  comes from the custom_id, user identity from ctx.user.id on the interaction.
+  So the dispatcher's state lookup always misses, which is fine and intended:
+  every handler defaults all its parameters and reads only action_id. A missing
+  state document cannot break a panel that never had one, and a /todo panel
+  sitting in DM history for a year keeps working.
+
+  Auto-refresh phase 1 does WRITE a bookkeeping row per panel to
+  todo_sessions (see utils/todo_sessions.py). Nothing reads it yet, and the
+  render path must never start depending on it - that is what keeps the
+  year-old panel working.
 
   NO ctx.guild_id. It is None in a DM, and the house header pattern
   (clan/dashboard/dashboard.py:44 -> bot.cache.get_guild(ctx.guild_id)
@@ -69,7 +77,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils import todo_data
+from utils import todo_data, todo_sessions
 from utils.clash_links import resolve_tags
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
 from utils.emoji import emojis
@@ -769,7 +777,8 @@ class Todo(
 
         data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo)
         if problem:
-            await bot.rest.create_message(channel=ctx.channel_id, components=problem)
+            sent = await bot.rest.create_message(channel=ctx.channel_id, components=problem)
+            await _record_panel(ctx, mongo, sent, VIEW_WAR, kind="notice")
             await _drop_ack(ctx)
             return
         # Open on the first view that actually has work. Always opening on War
@@ -780,10 +789,11 @@ class Todo(
              if data.get(v) is not None and data[v].ok and data[v].count),
             VIEW_WAR,
         )
-        await bot.rest.create_message(
+        sent = await bot.rest.create_message(
             channel=ctx.channel_id,
             components=render_dashboard(opening, 0, data),
         )
+        await _record_panel(ctx, mongo, sent, opening)
         await _drop_ack(ctx)
 
 
@@ -795,12 +805,50 @@ class Todo(
 # the design - so a handler must be callable with only ctx and action_id.
 # ---------------------------------------------------------------------------
 
-async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool = False, mongo=None) -> list:
+async def _record_panel(ctx, mongo, message, view: str, page: int = 0,
+                        kind: str = "dashboard", trigger: str = "command") -> None:
+    """Write the panel's row. Bookkeeping only - see utils/todo_sessions.py.
+
+    Wrapped whole. This is a feature that does not exist yet writing rows for a
+    poller that has not been built; there is no failure here worth showing a
+    user an error for, and none worth taking the dashboard down for.
+    """
+    try:
+        message_id = getattr(message, "id", None)
+        if not message_id:
+            return
+        await todo_sessions.record(
+            mongo,
+            user_id=ctx.user.id,
+            channel_id=int(getattr(ctx, "channel_id", 0) or 0),
+            message_id=int(message_id),
+            guild_id=getattr(ctx, "guild_id", None),
+            view=view,
+            page=page,
+            kind=kind,
+            trigger=trigger,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo-sessions] record skipped: {type(exc).__name__}: {exc}")
+
+
+async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool = False,
+                  mongo=None, trigger: str = "nav") -> list:
     try:
         page = int(action_id.split("|")[-1])
     except (TypeError, ValueError):
         page = 0
     data, problem = await _load(bot, coc_client, ctx.user.id, force=force, mongo=mongo)
+
+    # The message being edited, not a new one: on a component interaction the
+    # panel already exists, and ComponentInteraction.message is it (verified in
+    # hikari 2.3.5, hikari/interactions/component_interactions.py - `message:
+    # messages.Message`). Same _id as the row written when it was sent, so this
+    # updates that row rather than creating a second one.
+    await _record_panel(
+        ctx, mongo, getattr(getattr(ctx, "interaction", None), "message", None),
+        view, page, kind="notice" if problem else "dashboard", trigger=trigger,
+    )
     return problem if problem else render_dashboard(view, page, data)
 
 
@@ -814,7 +862,7 @@ async def todo_war(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs,
 ) -> list:
-    return await _switch(ctx, VIEW_WAR, action_id, coc_client, bot, mongo=mongo)
+    return await _switch(ctx, VIEW_WAR, action_id, coc_client, bot, mongo=mongo, trigger="view:war")
 
 
 @register_action("todo_cwl")
@@ -827,7 +875,7 @@ async def todo_cwl(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs,
 ) -> list:
-    return await _switch(ctx, VIEW_CWL, action_id, coc_client, bot, mongo=mongo)
+    return await _switch(ctx, VIEW_CWL, action_id, coc_client, bot, mongo=mongo, trigger="view:cwl")
 
 
 @register_action("todo_raid")
@@ -840,7 +888,7 @@ async def todo_raid(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs,
 ) -> list:
-    return await _switch(ctx, VIEW_RAID, action_id, coc_client, bot, mongo=mongo)
+    return await _switch(ctx, VIEW_RAID, action_id, coc_client, bot, mongo=mongo, trigger="view:raid")
 
 
 @register_action("todo_nav")
@@ -867,10 +915,10 @@ async def todo_nav(
     # value must go on working, because you cannot reach back and edit those
     # messages.
     if choice == "refresh":
-        return await _switch(ctx, action_id or VIEW_WAR, "0", coc_client, bot, force=True, mongo=mongo)
+        return await _switch(ctx, action_id or VIEW_WAR, "0", coc_client, bot, force=True, mongo=mongo, trigger="nav:refresh")
     if choice not in VIEW_ORDER:
         choice = VIEW_WAR
-    return await _switch(ctx, choice, "0", coc_client, bot, mongo=mongo)
+    return await _switch(ctx, choice, "0", coc_client, bot, mongo=mongo, trigger="nav:select")
 
 
 @register_action("todo_refresh")
@@ -886,4 +934,4 @@ async def todo_refresh(
     view = action_id.split("|")[0] if action_id else VIEW_WAR
     if view not in (VIEW_WAR, VIEW_CWL, VIEW_RAID):
         view = VIEW_WAR
-    return await _switch(ctx, view, action_id, coc_client, bot, force=True, mongo=mongo)
+    return await _switch(ctx, view, action_id, coc_client, bot, force=True, mongo=mongo, trigger="refresh")
