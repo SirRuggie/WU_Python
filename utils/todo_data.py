@@ -219,7 +219,7 @@ def oldest_fill(prefixes: tuple[str, ...] = DATA_PREFIXES) -> float | None:
 # opposite fixes. One says back off the concurrency; the other says the upstream
 # was slow and concurrency is innocent. So count the calls and keep the worst.
 # ---------------------------------------------------------------------------
-_calls: dict[str, object] = {"n": 0, "total": 0.0, "worst": 0.0, "worst_label": ""}
+_calls: dict[str, object] = {"n": 0, "total": 0.0, "worst": 0.0, "worst_label": "", "by_label": {}}
 
 # Process start. The cache is a module-level dict, so it dies with the process -
 # and "warm=0/46 on a second run" has three possible causes that look identical
@@ -237,19 +237,34 @@ def cache_size() -> int:
 
 
 def reset_calls() -> None:
-    _calls.update({"n": 0, "total": 0.0, "worst": 0.0, "worst_label": ""})
+    # A FRESH by_label dict each reset, never .clear() on the old one - a
+    # caller still holding the previous run's stats would otherwise watch them
+    # empty out underneath it.
+    _calls.update({"n": 0, "total": 0.0, "worst": 0.0, "worst_label": "", "by_label": {}})
 
 
 def note_call(label: str, seconds: float) -> None:
+    """Count one API call. The LABEL was already here and was being discarded.
+
+    Only `worst_label` survived, so a CWL call was visible only if it happened
+    to be the single slowest of ~104 - luck, not a test. Counting per label
+    turns "did leaguewar run at all" from unanswerable into a field.
+    """
     _calls["n"] = int(_calls["n"]) + 1
     _calls["total"] = float(_calls["total"]) + seconds
+    by_label = _calls["by_label"]
+    by_label[label] = by_label.get(label, 0) + 1
     if seconds > float(_calls["worst"]):
         _calls["worst"] = seconds
         _calls["worst_label"] = label
 
 
 def call_stats() -> dict:
-    return dict(_calls)
+    # by_label copied too - dict(_calls) is shallow, and handing out the live
+    # counter would let a reader see it mutate mid-render.
+    stats = dict(_calls)
+    stats["by_label"] = dict(_calls["by_label"])
+    return stats
 
 
 @contextlib.contextmanager
@@ -295,13 +310,23 @@ def drop_render_caches(extra: tuple[str, ...] = ()) -> int:
 
     `extra` carries the per-invocation prefixes that cannot be constants - the
     caller's own links key, the clan logo map.
+
+    THE PER-PREFIX BREAKDOWN IS THE ONLY WAY TO SEE cwlwar: WORKING.
+    cache_drop_prefix already returns a count per prefix; this used to sum them
+    into one aggregate and throw the detail away, so `dropped=106` could have
+    been all players and zero cwlwar: and nobody could tell. That is the whole
+    reason the 40c97ef fix sat unverifiable - the number needed to confirm it
+    was being computed and discarded on the same line.
+
+    total= is kept so the old aggregate stays greppable.
     """
     global _last_drop_at
     _last_drop_at = time.time()
-    dropped = 0
+    per_prefix: dict[str, int] = {}
     for prefix in DATA_PREFIXES + tuple(extra):
-        dropped += cache_drop_prefix(prefix)
-    _d(f"drop_render_caches dropped={dropped} prefixes={DATA_PREFIXES + tuple(extra)}")
+        per_prefix[prefix] = cache_drop_prefix(prefix)
+    dropped = sum(per_prefix.values())
+    _d(f"drop_render_caches dropped={per_prefix} total={dropped}")
     return dropped
 
 

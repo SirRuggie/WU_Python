@@ -781,6 +781,13 @@ class _Perf:
         worst_ms = int(float(stats.get("worst", 0.0)) * 1000)
         mean_ms = int(float(stats.get("total", 0.0)) * 1000 / n) if n else 0
 
+        # by_label answers "did leaguewar run at all", which worst= could only
+        # answer by luck. Sorted so the field is stable between runs and diffable
+        # by eye. Always a real count, never "-": it is a counter, not a phase,
+        # so {} means zero calls rather than not-measured.
+        by_label = stats.get("by_label") or {}
+        by_label_str = "{" + ",".join(f"{k}:{v}" for k, v in sorted(by_label.items())) + "}"
+
         # WHAT total= SPANS DIFFERS BY PATH, so it says which.
         #
         # The command path prints after the send, so total covers everything the
@@ -806,6 +813,7 @@ class _Perf:
             f"render={self._field('render')} serialize={self._field('serialize')} "
             f"send={self._field('send')} "
             f"calls={n} mean={mean_ms}ms worst={worst_ms}ms/{stats.get('worst_label', '-')} "
+            f"by_label={by_label_str} "
             # up= is the process uptime. A warm=0 run with up= under a minute is
             # a restart, not a cache bug - the cache is in-process and dies with
             # it. Without this the two are indistinguishable from the panel.
