@@ -89,6 +89,49 @@ TH_EMOJI = {
 }
 
 
+def _emoji(name: str) -> str:
+    """Markup for a named custom emoji, or "" if it is not defined.
+
+    Same safety as TH_EMOJI: a renamed or removed attribute degrades to nothing
+    rather than raising inside a render path or printing raw markup in a row.
+    str() preserves the "<a:" prefix on animated emoji, which is required -
+    dropping it renders the emoji broken.
+    """
+    obj = getattr(emojis, name, None)
+    return str(obj) if obj is not None else ""
+
+
+def _partial(name: str):
+    """A CustomEmoji for a component's `emoji=` field, or UNDEFINED.
+
+    Components need a real emoji object, not markup. EmojiType.partial_emoji
+    RAISES ValueError on a malformed id, so a bad id must be caught here or it
+    takes the whole panel down.
+    """
+    obj = getattr(emojis, name, None)
+    if obj is None:
+        return hikari.UNDEFINED
+    try:
+        return obj.partial_emoji
+    except (ValueError, IndexError):
+        return hikari.UNDEFINED
+
+
+# One emoji per view, used in the header AND the nav option so they match.
+VIEW_EMOJI = {VIEW_WAR: "War", VIEW_CWL: "CWL", VIEW_RAID: "RaidMedals"}
+
+# Timing blocks. Live is animated on purpose - it is the single most important
+# distinction on the panel: can I attack right now, or am I waiting?
+EMOJI_LIVE = "sword_fighting"
+EMOJI_WAITING = "Waiting"
+
+# Unicode slots. Chosen for meaning, not decoration - see the report.
+U_REFRESH = "🔄"      # reload, reads as an action rather than a destination
+U_URGENT = "⏰"       # pairs with the red accent when something closes < 2h
+U_CAUGHT_UP = "✨"    # positive without being a checkmark ("done" != "nothing to do")
+# 🔒 (private war log) and ⚠️ (lookup failed) live in todo_data.py, inline in
+# the notes they belong to - that module builds them and cannot import from here.
+
 
 # ---------------------------------------------------------------------------
 # Rendering
@@ -158,24 +201,28 @@ def _nav_select(view: str, counts: dict) -> ActionRow:
             label=f"{VIEW_LABEL[VIEW_WAR]} Hits",
             description=describe(VIEW_WAR),
             value=VIEW_WAR,
+            emoji=_partial(VIEW_EMOJI[VIEW_WAR]),
             is_default=view == VIEW_WAR,
         ),
         SelectOption(
             label=VIEW_LABEL[VIEW_CWL],
             description=describe(VIEW_CWL),
             value=VIEW_CWL,
+            emoji=_partial(VIEW_EMOJI[VIEW_CWL]),
             is_default=view == VIEW_CWL,
         ),
         SelectOption(
             label=VIEW_LABEL[VIEW_RAID],
             description="not available yet",
             value=VIEW_RAID,
+            emoji=_partial(VIEW_EMOJI[VIEW_RAID]),
             is_default=view == VIEW_RAID,
         ),
         SelectOption(
             label="Refresh",
             description="re-check everything now",
             value="refresh",
+            emoji=U_REFRESH,
         ),
     ]
     return ActionRow(components=[
@@ -263,15 +310,16 @@ def _timing_blocks(rows: list) -> list:
     prep = [r for r in rows if r.state == "preparation"]
 
     out: list = []
-    for label, group, stamp_of in (
-        ("Live · closes", live, lambda r: r.ends_at),
-        ("Opens", prep, lambda r: r.starts_at),
+    for emoji_name, label, group, stamp_of in (
+        (EMOJI_LIVE, "Live · closes", live, lambda r: r.ends_at),
+        (EMOJI_WAITING, "Opens", prep, lambda r: r.starts_at),
     ):
         if not group:
             continue
         if out:
             out.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
-        out.append(Text(content=f"**{label}**"))
+        heading = f"{_emoji(emoji_name)} **{label}**".strip()
+        out.append(Text(content=heading))
         stamps = [s for s in (stamp_of(r) for r in group) if s]
         if stamps:
             out.append(Text(content=f"<t:{min(stamps)}:R>"))
@@ -292,9 +340,11 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
     # "##" - the house style uses H3 - and NO trailing blank line, which was
     # dead vertical space at the top of every panel.
     outstanding = counts.get(view)
-    title = f"### {VIEW_LABEL[view]}"
+    title = f"### {_emoji(VIEW_EMOJI.get(view, ''))} {VIEW_LABEL[view]}".replace("###  ", "### ")
     if outstanding:
         title += f" · {outstanding} to do"
+        if _urgency_accent(current) == RED_ACCENT:
+            title += f" {U_URGENT}"
     body: list = [Text(content=title)]
 
     if current is None or not current.ok:
@@ -329,7 +379,7 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
                     f"-# Still to do in: {', '.join(elsewhere)}"
                 )))
             else:
-                body.append(Text(content="**All caught up.**"))
+                body.append(Text(content=f"{U_CAUGHT_UP} **All caught up.**"))
         else:
             body.extend(_timing_blocks(window))
 

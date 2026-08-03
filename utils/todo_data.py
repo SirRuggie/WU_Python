@@ -504,7 +504,7 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
     # No "in war prep" note any more - preparation wars are ROWS now, not a
     # footnote. Counting them into a note is what hid them.
     if private:
-        notes.append(f"{private} account(s) in clans with private war logs — can't check")
+        notes.append(f"🔒 {private} account(s) in clans with private war logs — can't check")
     if unreadable:
         notes.append(f"⚠️ {unreadable} account(s) could not be checked — war lookup failed")
 

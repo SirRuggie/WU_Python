@@ -61,6 +61,14 @@ class Emojis:
         self.Alert = EmojiType("<a:Alert:1393549523774603294>")
         self.FWA = EmojiType("<a:FWA:1387882523358527608>")
 
+        # /todo dashboard. View emoji are used in BOTH the view header and the
+        # matching nav select option, so what you pick is what you land on.
+        self.Waiting = EmojiType("<:Waiting:1398229981003382815>")
+        self.sword_fighting = EmojiType("<a:sword_fighting:1533860863147114769>")
+        self.War = EmojiType("<:War:1533861604611981463>")
+        self.CWL = EmojiType("<:CWL:1399013745598009375>")
+        self.RaidMedals = EmojiType("<:RaidMedals:1533862190518505515>")
+
         # TH Emojis
         self.TH2 = EmojiType("<:TH_2:1395728426849275997>")
         self.TH3 = EmojiType("<:TH_3:1395728517299306537>")
