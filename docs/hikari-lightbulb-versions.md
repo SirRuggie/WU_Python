@@ -93,3 +93,50 @@ Either way the outcome is the same and the constraint above is what governs.
 - Any upgrade needs the rate-limit behaviour re-checked, because that is what
   2.4.x changed and rate limiting has bitten this bot before — see
   [incident-2026-07-29-channel-rate-limit.md](incident-2026-07-29-channel-rate-limit.md).
+
+## coc.py — pinned at 3.10.0
+
+Taken from 3.9.1 on 2026-08-03. **There is no 3.9.2** — an earlier version of
+this repo's `requirements.txt` cited one for the `utcnow` and non-JSON fixes.
+It never existed. PyPI has 3.9.0, 3.9.1, 3.10.0, 4.0.0.
+
+`v3.9.1...v3.10.0`, read from the diff rather than the release notes:
+
+- **Removes every `datetime.utcnow()` call** — 6 in `coc/utils.py`, plus
+  `coc/miscmodels.py` and `coc/http.py` — replacing them with
+  `datetime.now(tz=timezone.utc).replace(tzinfo=None)`. Identical naive-UTC
+  value, so no behaviour change. Ends the ~200 DeprecationWarnings per `/todo`
+  run under Python 3.12.
+- **`coc/raid.py` crash fix**: `max(*[...], self.stars)` → `max([self.stars] + [...])`.
+  The old form raises `TypeError` when a raid member has destruction but no
+  recorded attacks, because `max(int)` is not iterable. A live crash in the
+  `/todo` raid path.
+- **`coc/http.py`**: `(await resp.json())["keys"]` → `.get("keys", {})`.
+  Hardens login against a non-JSON response — relevant because every call goes
+  through the `proxy.clashk.ing` third party.
+- `coc/enums.py` adds new troop/spell/equipment names to the ordering lists
+  (additive only). `coc/abc.py` gains day/minute/second upgrade-time precision.
+- Everything else is static game-data JSON, **inert here**: `main.py` sets
+  `load_game_data=LoadGameData(default=False)`.
+
+Nothing was removed from the public API. All six client methods used in this
+repo — `get_clan`, `get_clan_war`, `get_league_group`, `get_league_war`,
+`get_player`, `get_raid_log` — still exist, as do `login_with_tokens`,
+`LoadGameData`, `base_url` and `key_count`. `requires-python` is `>=3.10.0`;
+the box is 3.12.3.
+
+### 4.0.0 exists and was NOT taken
+
+Released 2025-12-06. A major, per `docs/miscellaneous/migrating_to_v4.rst`:
+
+- static data is **always** loaded now, regardless of `LoadGameData`
+- lists that lived in `coc.enums` moved to `coc.constants`
+- `Troop`/`Hero`/`Spell` attributes changed type or were removed
+  (`Troop.training_time` gone), `Pet` split out of `Hero`
+- `Client.create_army_link` removed
+- minimum Python raised to 3.10
+
+Our surface is narrow enough that it might well be fine — `WarState` and
+`ExtendedEnum.__str__` are unchanged in v4, checked directly. But coc.py is
+used across `/todo`, the FWA tooling, `lazy_cwl` and clan info, so a major bump
+is its own project with its own testing, not a pin edit.

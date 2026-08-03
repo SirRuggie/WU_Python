@@ -308,15 +308,14 @@ page in the action_id. See [`component-dispatcher.md`](component-dispatcher.md).
 coc.py 3.9.1 calls stdlib `datetime.utcnow()` in `coc/utils.py`
 (`get_season_start`, `get_season_end`, `get_clan_games_start`,
 `get_clan_games_end`). Under Python 3.12 each call emits a `DeprecationWarning`,
-and one `/todo` run produced roughly a hundred of them — enough to bury every
-other log line. Fixed upstream in coc.py 3.9.2, which `requirements.txt`
-explains why we have not taken yet.
+and one `/todo` run produced ~200 of them — enough to bury every other log line.
 
-Suppressing it took three attempts, because `hikari.GatewayBot.__init__` calls
-`warnings.simplefilter("always", DeprecationWarning)` — which prepends, and so
-kills any filter installed before the bot is constructed. Full write-up in
-[hikari-logging-and-warnings.md](hikari-logging-and-warnings.md). **Install
-warning filters after the GatewayBot, not before.**
+**Four attempts to filter it all failed, and the mechanism was never
+established.** Fixed instead by taking coc.py 3.10.0, which deletes the
+`utcnow()` calls at source. Read
+[hikari-logging-and-warnings.md](hikari-logging-and-warnings.md) before
+attempting to suppress any warning in this process — there is no evidence a
+`warnings` filter here has ever worked.
 
 ---
 
