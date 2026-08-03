@@ -19,6 +19,9 @@ the hard way. The standing instruction that governs this folder is in
 
 ## Proposals
 
+- [todo-dashboard-proposal.md](todo-dashboard-proposal.md) — research and design
+  for the `/todo` player to-do dashboard (2026-08-02). **Not yet decided.**
+
 - [thread-ticketing-proposal.md](thread-ticketing-proposal.md) — research and
   design for thread-based ticketing + the console dashboard (2026-08-02).
   Findings, dashboard design, migration plan, risks. **Not yet decided.**
