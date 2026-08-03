@@ -76,8 +76,21 @@ VIEW_WAR = "war"
 VIEW_CWL = "cwl"
 VIEW_RAID = "raid"
 
-VIEW_LABEL = {VIEW_WAR: "War", VIEW_CWL: "CWL", VIEW_RAID: "Raids"}
-VIEW_ORDER = (VIEW_WAR, VIEW_CWL, VIEW_RAID)
+VIEW_PRIVATE = "private"
+
+VIEW_LABEL = {
+    VIEW_WAR: "War",
+    VIEW_CWL: "CWL",
+    VIEW_RAID: "Raids",
+    VIEW_PRIVATE: "Private War Logs",
+}
+VIEW_ORDER = (VIEW_WAR, VIEW_CWL, VIEW_RAID, VIEW_PRIVATE)
+
+# Views eligible to be the landing view. Private War Logs is DELIBERATELY not
+# here: its count is usually the largest number on the panel, and it is not
+# work - it is a list of conversations to have with clan leaders. Landing there
+# would bury the attacks the dashboard exists to surface.
+VIEW_OPENING_ORDER = (VIEW_WAR, VIEW_CWL, VIEW_RAID)
 
 CACHE_LOGOS = "clanlogos"
 TTL_LOGOS = 60 * 60   # family clan list changes rarely; a logo upload is rarer
@@ -123,6 +136,9 @@ def _partial(name: str):
 # One emoji per view, used in the header AND the nav option so they match.
 VIEW_EMOJI = {VIEW_WAR: "War", VIEW_CWL: "CWL", VIEW_RAID: "RaidMedals"}
 
+# Views with no custom emoji fall back to unicode here.
+VIEW_UNICODE = {VIEW_PRIVATE: "🔒"}
+
 # Timing blocks. Live is animated on purpose - it is the single most important
 # distinction on the panel: can I attack right now, or am I waiting?
 EMOJI_LIVE = "sword_fighting"
@@ -132,8 +148,10 @@ EMOJI_WAITING = "Waiting"
 U_REFRESH = "🔄"      # reload, reads as an action rather than a destination
 U_URGENT = "⏰"       # pairs with the red accent when something closes < 2h
 U_CAUGHT_UP = "✨"    # positive without being a checkmark ("done" != "nothing to do")
-# 🔒 (private war log) and ⚠️ (lookup failed) live in todo_data.py, inline in
-# the notes they belong to - that module builds them and cannot import from here.
+U_PRIVATE = "🔒"      # can't look, as distinct from nothing to see
+U_FAILED = "⚠️"       # couldn't read, deliberately unlike the padlock
+# The same two glyphs also appear inline in todo_data.py's note strings - that
+# module builds those notes and cannot import from here.
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +217,12 @@ def _nav_select(view: str, counts: dict) -> ActionRow:
             return "nothing outstanding"
         return f"{value} account(s) owe attacks"
 
+    def describe_blocked() -> str:
+        value = counts.get(VIEW_PRIVATE)
+        if not value:
+            return "every clan is readable"
+        return f"{value} account(s) in unreadable clans"
+
     options = [
         SelectOption(
             label=f"{VIEW_LABEL[VIEW_WAR]} Hits",
@@ -220,6 +244,13 @@ def _nav_select(view: str, counts: dict) -> ActionRow:
             value=VIEW_RAID,
             emoji=_partial(VIEW_EMOJI[VIEW_RAID]),
             is_default=view == VIEW_RAID,
+        ),
+        SelectOption(
+            label=VIEW_LABEL[VIEW_PRIVATE],
+            description=describe_blocked(),
+            value=VIEW_PRIVATE,
+            emoji=U_PRIVATE,
+            is_default=view == VIEW_PRIVATE,
         ),
         SelectOption(
             label="Refresh",
@@ -274,7 +305,9 @@ def _row_line(row) -> str:
     visual anchor, which is what this layout is for.
     """
     th = TH_EMOJI.get(row.town_hall, "")
-    lead = f"{row.used}/{row.limit}"
+    # limit == 0 means "there is nothing to count" - the Private War Logs view,
+    # where the row is the account itself rather than an outstanding attack.
+    lead = f"{row.used}/{row.limit}" if row.limit else ""
     return f"{lead} {th} {row.account}".replace("  ", " ").strip()
 
 
@@ -353,6 +386,33 @@ def _timing_blocks(rows: list) -> list:
     return out
 
 
+def _reason_blocks(rows: list) -> list:
+    """Blocked accounts split by WHY the clan is unreadable.
+
+    The two need different responses from the user - a private war log is a
+    conversation with that clan's leader, a lookup failure is "try again" - so
+    they must not be mixed into one list. Same block-heading and clan-grouping
+    treatment as _timing_blocks; only the split differs.
+    """
+    private = [r for r in rows if r.reason != "error"]
+    failed = [r for r in rows if r.reason == "error"]
+
+    out: list = []
+    for glyph, label, group, hint in (
+        (U_PRIVATE, "Private war logs", private,
+         "these clans have their war log set to private"),
+        (U_FAILED, "Lookup failed", failed,
+         "couldn't reach the API for these — try Refresh"),
+    ):
+        if not group:
+            continue
+        if out:
+            out.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
+        out.append(Text(content=f"{glyph} **{label}**\n-# {hint}"))
+        out.extend(_render_rows(group))
+    return out
+
+
 def render_dashboard(view: str, page: int, data: dict) -> list:
     """The dashboard itself.
 
@@ -366,10 +426,13 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
     # "##" - the house style uses H3 - and NO trailing blank line, which was
     # dead vertical space at the top of every panel.
     outstanding = counts.get(view)
-    title = f"### {_emoji(VIEW_EMOJI.get(view, ''))} {VIEW_LABEL[view]}".replace("###  ", "### ")
+    glyph = _emoji(VIEW_EMOJI.get(view, "")) or VIEW_UNICODE.get(view, "")
+    title = f"### {glyph} {VIEW_LABEL[view]}".replace("###  ", "### ")
     if outstanding:
-        title += f" · {outstanding} to do"
-        if _urgency_accent(current) == RED_ACCENT:
+        # "to do" is wrong for Private War Logs - those accounts are not work,
+        # they are clans to go and ask about.
+        title += f" · {outstanding}" if view == VIEW_PRIVATE else f" · {outstanding} to do"
+        if view != VIEW_PRIVATE and _urgency_accent(current) == RED_ACCENT:
             title += f" {U_URGENT}"
     body: list = [Text(content=title)]
 
@@ -390,14 +453,20 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
         window = rows[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
 
         body.append(Separator(divider=True))
-        if not rows:
+        if not rows and view == VIEW_PRIVATE:
+            # An empty Private War Logs view is good news, not "nothing to do".
+            body.append(Text(content=f"{U_CAUGHT_UP} **Every clan is readable.**"))
+        elif not rows:
             # "All caught up" is a verdict on the WHOLE dashboard, so it may
             # only be said when every section is empty. Saying it per-view told
             # a user with three pending CWL hits that there was nothing to do,
             # because the default view happened to be the empty one.
+            # VIEW_PRIVATE excluded for the same reason it cannot be the landing
+            # view: it is not outstanding work, so pointing at it here would be
+            # telling the user they still have things to do when they do not.
             elsewhere = [
                 VIEW_LABEL[k] for k, v in data.items()
-                if k != view and v is not None and v.ok and v.count
+                if k != view and k != VIEW_PRIVATE and v is not None and v.ok and v.count
             ]
             if elsewhere:
                 body.append(Text(content=(
@@ -407,7 +476,10 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             else:
                 body.append(Text(content=f"{U_CAUGHT_UP} **All caught up.**"))
         else:
-            body.extend(_timing_blocks(window))
+            if view == VIEW_PRIVATE:
+                body.extend(_reason_blocks(window))
+            else:
+                body.extend(_timing_blocks(window))
 
         if current.notes:
             body.append(Separator(divider=True))
@@ -541,7 +613,10 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     if errors:
         print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
 
-    return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: None}, None
+    blocked = await todo_data.build_blocked_view(coc_client, accounts)
+    todo_data._d(f"_load blocked view built rows={blocked.count}")
+
+    return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: None, VIEW_PRIVATE: blocked}, None
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +656,7 @@ class Todo(
         # meant a user whose only pending hits were CWL saw an empty War view
         # and read it as the whole dashboard's verdict.
         opening = next(
-            (v for v in VIEW_ORDER
+            (v for v in VIEW_OPENING_ORDER
              if data.get(v) is not None and data[v].ok and data[v].count),
             VIEW_WAR,
         )

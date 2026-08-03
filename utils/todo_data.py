@@ -119,6 +119,11 @@ class Row:
     starts_at: int | None = None
     town_hall: int = 0
     clan_badge: str | None = None
+    # Why this row exists, when it is not an outstanding attack. "private" =
+    # the clan's war log is closed; "error" = we could not reach the API. Those
+    # need different responses - one is a conversation with a clan leader, the
+    # other is "try again" - so they are grouped separately in the view.
+    reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -504,7 +509,7 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
     # No "in war prep" note any more - preparation wars are ROWS now, not a
     # footnote. Counting them into a note is what hid them.
     if private:
-        notes.append(f"🔒 {private} account(s) in clans with private war logs — can't check")
+        notes.append(f"🔒 {private} account(s) in clans with private war logs")
     if unreadable:
         notes.append(f"⚠️ {unreadable} account(s) could not be checked — war lookup failed")
 
@@ -569,3 +574,43 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
         notes.append(f"⚠️ {unreadable} account(s) could not be checked — CWL lookup failed")
 
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows))
+
+
+async def build_blocked_view(coc_client: coc.Client, accounts: list[Account]) -> ViewData:
+    """Accounts sitting in clans whose war state we cannot read.
+
+    This exists because "17 account(s) in clans with private war logs" told the
+    user a number and nothing else. The number is not the useful part - knowing
+    WHICH accounts, in WHICH clans, is, because the fix is a conversation with
+    those clan leaders.
+
+    Nearly free to compute: _get_war is cached, so every lookup here is a cache
+    hit from the war view that ran moments earlier.
+
+    Rows carry no attack count - there is nothing to count - so `limit` is 0,
+    which _row_line reads as "omit the count".
+    """
+    rows: list[Row] = []
+
+    by_clan: dict[str, list[Account]] = {}
+    for acct in accounts:
+        if acct.clan_tag:
+            by_clan.setdefault(acct.clan_tag, []).append(acct)
+
+    for clan_tag, members in by_clan.items():
+        kind, _war = await _get_war(coc_client, clan_tag)
+        if kind not in ("private", "error"):
+            continue
+        for acct in members:
+            rows.append(Row(
+                account=acct.name, tag=acct.tag,
+                clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
+                used=0, limit=0, ends_at=None,
+                town_hall=acct.town_hall, clan_badge=acct.clan_badge,
+                reason="private" if kind == "private" else "error",
+            ))
+
+    _d(f"build_blocked_view rows={len(rows)}")
+    # Always ok=True: an empty list here is a real answer meaning "every clan is
+    # readable", which is good news rather than a failure to report.
+    return ViewData(rows=rows, notes=[], ok=True)
