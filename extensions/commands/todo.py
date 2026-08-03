@@ -309,8 +309,13 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False):
             "of them. Try again shortly.",
         )
 
+    todo_data._d(f"_load resolved tags={len(tags)} accounts={len(accounts)} "
+                 f"errors={len(errors)} client={type(coc_client).__name__}")
     war = await todo_data.build_war_view(coc_client, accounts)
+    todo_data._d(f"_load war view built rows={war.count} ok={war.ok}")
+    todo_data._d("_load about to build CWL view")
     cwl = await todo_data.build_cwl_view(coc_client, accounts)
+    todo_data._d(f"_load cwl view built rows={cwl.count} ok={cwl.ok}")
     if errors:
         print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
 

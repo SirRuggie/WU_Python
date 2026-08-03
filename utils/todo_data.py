@@ -42,6 +42,18 @@ import coc
 # for days. Caching it is where the real saving is.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# TEMPORARY DIAGNOSTICS - remove once /todo is verified.
+# Every line is prefixed [todo-diag] so it greps cleanly and strips cleanly.
+# ---------------------------------------------------------------------------
+DIAG = True
+
+
+def _d(msg: str) -> None:
+    if DIAG:
+        print(f"[todo-diag] {msg}", flush=True)
+
+
 _cache: dict[str, tuple[float, object]] = {}
 
 TTL_LINKS = 6 * 60 * 60      # linking is a rare manual act
@@ -55,11 +67,17 @@ def cache_get(key: str):
     """Cached value, or None if absent or expired."""
     hit = _cache.get(key)
     if hit is None:
+        if key.startswith("cwl:"):
+            _d(f"cache MISS {key}")
         return None
     expires_at, value = hit
     if time.monotonic() >= expires_at:
         _cache.pop(key, None)
+        if key.startswith("cwl:"):
+            _d(f"cache EXPIRED {key}")
         return None
+    if key.startswith("cwl:"):
+        _d(f"cache HIT {key} -> {value!r}")
     return value
 
 
@@ -230,14 +248,20 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
     Gate on the API, never on the calendar. June 2026 ran a bonus CWL, so
     "days 1-9 of the month" is not a reliable window.
     """
+    _d(f"_get_cwl_round ENTER clan={clan_tag!r} client={type(coc_client).__name__}")
     key = f"cwl:{clan_tag}"
     cached = cache_get(key)
     if cached is not None:
+        _d(f"_get_cwl_round RETURN cached for {clan_tag}")
         return cached
 
     try:
+        _d(f"_get_cwl_round calling get_league_group({clan_tag!r}) NOW")
         group = await coc_client.get_league_group(clan_tag)
+        _d(f"_get_cwl_round get_league_group returned {type(group).__name__} "
+           f"state={getattr(group, 'state', '<no state>')!r}")
     except coc.NotFound:
+        _d(f"_get_cwl_round EARLY-RETURN none: NotFound for {clan_tag}")
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
@@ -252,12 +276,16 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
         return ("error", None)
 
     if group is None or str(getattr(group, "state", "")) in ("notInWar", "groupNotFound", "ended"):
+        _d(f"_get_cwl_round EARLY-RETURN none: group state "
+           f"{getattr(group, 'state', '<None group>')!r} for {clan_tag}")
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
 
     rounds = getattr(group, "rounds", None) or []
+    _d(f"_get_cwl_round {clan_tag} rounds={len(rounds)}")
     if not rounds:
+        _d(f"_get_cwl_round EARLY-RETURN none: no rounds for {clan_tag}")
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
@@ -277,7 +305,9 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
             if war_tag and war_tag != "#0" and war_tag not in candidates:
                 candidates.append(war_tag)
 
+    _d(f"_get_cwl_round {clan_tag} candidates={candidates}")
     if not candidates:
+        _d(f"_get_cwl_round EARLY-RETURN none: no non-#0 war tags for {clan_tag}")
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
@@ -449,13 +479,17 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
     notes: list[str] = []
     unreadable = 0
 
+    _d(f"build_cwl_view ENTER accounts={len(accounts)}")
     by_clan: dict[str, list[Account]] = {}
     for acct in accounts:
         if acct.clan_tag:
             by_clan.setdefault(acct.clan_tag, []).append(acct)
+    _d(f"build_cwl_view clans={list(by_clan.keys())}")
 
     for clan_tag, members in by_clan.items():
         kind, war = await _get_cwl_round(coc_client, clan_tag)
+        _d(f"build_cwl_view {clan_tag} -> kind={kind} "
+           f"state={getattr(war, 'state', None)!r}")
 
         if kind == "error":
             unreadable += len(members)
