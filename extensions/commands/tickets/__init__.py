@@ -48,6 +48,7 @@ from . import manage
 from . import handlers
 from . import close
 from . import migrate
+from . import claim
 
 # Register the ticket group with the loader
 loader.command(ticket)

@@ -23,9 +23,16 @@ back to. The pruning problem that motivated part of this move belongs to the
 ephemeral collection, not this one - see docs/ticket-data-model.md.
 """
 
+import dataclasses
+import logging
 from collections import Counter
+from datetime import datetime, timezone
+
+from pymongo import ReturnDocument
 
 from utils.mongo import MongoClient
+
+_log = logging.getLogger(__name__)
 
 # Ticket documents carry this discriminator. It is redundant inside `tickets`,
 # where every document is a ticket, but keeping it means a document copied in
@@ -118,6 +125,187 @@ async def update_many(mongo: MongoClient, filt: dict, update: dict):
     result = await primary.update_many(filt, update)
     await secondary.update_many(filt, update)
     return result
+
+
+# --- conditional writes ------------------------------------------------------
+#
+# Everything below exists because an unconditional $set loses updates. Two
+# recruiters resolving one ticket in the same second both used to succeed, both
+# ran their side effects, and the last write silently won. The pattern here is
+# the one already proven in manage.py's cleanup filter: re-assert the status you
+# believe you are transitioning FROM, inside the filter, so Mongo arbitrates
+# rather than the network.
+#
+# The rule that makes it worth anything: SIDE EFFECTS RUN ONLY ON "won".
+
+WON = "won"
+LOST = "lost"
+MISSING = "missing"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Transition:
+    """Result of a conditional ticket write.
+
+    outcome == WON     -> this caller caused the change. `doc` is the post-image.
+                          Side effects are permitted, and only here.
+    outcome == LOST    -> the precondition did not hold. `doc` is the CURRENT
+                          document, so the caller can say who got there first and
+                          when. Nothing was written.
+    outcome == MISSING -> no such ticket. `doc` is None. Nothing was written.
+    """
+
+    outcome: str
+    doc: dict | None
+
+    @property
+    def won(self) -> bool:
+        return self.outcome == WON
+
+
+async def _mirror(mongo: MongoClient, doc: dict) -> None:
+    """Copy a post-image onto the secondary collection, unconditionally.
+
+    Deliberately NOT conditional. The secondary is a copy kept so the
+    `ticket_store` flag stays reversible; it is not a second opinion. Re-applying
+    the precondition here would let a drifted secondary silently refuse and the
+    divergence would compound. Mirroring the post-image instead means a
+    conditional write HEALS drift rather than perpetuating it.
+
+    Safe because nothing else writes ticket documents to the secondary - every
+    path goes through this module - so there is no concurrent writer to clobber.
+    """
+    _, secondary = await _both(mongo)
+    try:
+        await secondary.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+    except Exception:
+        # The primary has already committed and the primary is what reads come
+        # from, so the outcome stands. Divergence shows up in /ticket diagnostics.
+        _log.exception("ticket mirror failed for %s - collections have diverged", doc.get("_id"))
+
+
+async def _conditional(
+        mongo: MongoClient,
+        filt: dict,
+        update: dict,
+        ticket_id,
+) -> Transition:
+    """find_one_and_update against the primary, then mirror on success."""
+    primary, _ = await _both(mongo)
+    doc = await primary.find_one_and_update(
+        filt, update, return_document=ReturnDocument.AFTER
+    )
+    if doc is not None:
+        await _mirror(mongo, doc)
+        return Transition(WON, doc)
+
+    # Nothing matched. Distinguish "someone beat me to it" from "no such ticket",
+    # because they need completely different things said to the user.
+    current = await primary.find_one({"_id": ticket_id})
+    return Transition(LOST, current) if current is not None else Transition(MISSING, None)
+
+
+async def transition(
+        mongo: MongoClient,
+        ticket_id,
+        *,
+        to_status: str,
+        actor_id: int,
+        actor_name: str,
+        expect: str | None = "open",
+        extra: dict | None = None,
+        overrides: dict | None = None,
+) -> Transition:
+    """Move a ticket to `to_status`, only if it is currently `expect`.
+
+    expect=None performs the write unconditionally. That is the override path -
+    a recruiter deliberately overturning a resolution someone else already made,
+    which is normal in recruiting (a mistaken deny, an appeal, a leader's call)
+    and should not require hand-editing Mongo.
+
+    `overrides` is the prior resolution the actor was SHOWN before confirming.
+    It is recorded verbatim in the audit entry. Note the small TOCTOU: a third
+    write landing between the actor reading the warning and confirming it would
+    not be reflected. That is accepted deliberately - the audit records what the
+    human was told and acted on, which is the more useful record of a decision.
+    """
+    now = datetime.now(timezone.utc)
+
+    audit = {
+        "at": now,
+        "actor": actor_id,
+        "actor_name": actor_name,
+        "to": to_status,
+        "from": expect if expect is not None else (overrides or {}).get("status"),
+        "override": overrides is not None,
+    }
+    if overrides:
+        audit["overrode"] = {
+            "status": overrides.get("status"),
+            "by": overrides.get("by"),
+            "by_name": overrides.get("by_name"),
+            "at": overrides.get("at"),
+        }
+
+    filt = {"_id": ticket_id}
+    if expect is not None:
+        filt["status"] = expect
+
+    return await _conditional(
+        mongo,
+        filt,
+        {"$set": {"status": to_status, **(extra or {})}, "$push": {"audit": audit}},
+        ticket_id,
+    )
+
+
+async def claim(mongo: MongoClient, ticket_id, actor_id: int, actor_name: str) -> Transition:
+    """Advisory claim. Discord cannot enforce ownership inside a thread, so this
+    records and signals intent - it does not prevent anyone acting.
+
+    `{"claimed_by": None}` matches documents where the field is null OR absent,
+    which is every ticket written before this existed. No backfill needed.
+    """
+    now = datetime.now(timezone.utc)
+    return await _conditional(
+        mongo,
+        {"_id": ticket_id, "status": "open", "claimed_by": None},
+        {
+            "$set": {"claimed_by": actor_id, "claimed_by_name": actor_name, "claimed_at": now},
+            "$push": {"audit": {
+                "at": now, "actor": actor_id, "actor_name": actor_name, "to": "claimed",
+            }},
+        },
+        ticket_id,
+    )
+
+
+async def release(
+        mongo: MongoClient,
+        ticket_id,
+        actor_id: int,
+        actor_name: str,
+        *,
+        force: bool = False,
+) -> Transition:
+    """Give up a claim. `force` lets an admin release someone else's."""
+    now = datetime.now(timezone.utc)
+    filt = {"_id": ticket_id, "claimed_by": {"$ne": None}}
+    if not force:
+        filt["claimed_by"] = actor_id
+
+    return await _conditional(
+        mongo,
+        filt,
+        {
+            "$set": {"claimed_by": None, "claimed_by_name": None, "claimed_at": None},
+            "$push": {"audit": {
+                "at": now, "actor": actor_id, "actor_name": actor_name,
+                "to": "released", "forced": force,
+            }},
+        },
+        ticket_id,
+    )
 
 
 # --- reconciliation helpers --------------------------------------------------
