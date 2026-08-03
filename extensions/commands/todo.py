@@ -271,9 +271,25 @@ def _nav_block(view: str, counts: dict) -> list:
     # NO PREFIX LIST HERE. It defaults to todo_data.DATA_PREFIXES, the same
     # tuple Refresh drops. An inline list here is what let the two diverge.
     fetched_at = todo_data.oldest_fill()
-    # <t:N:R> updates itself forever, in the reader's own timezone, with no
-    # further work from us. Built from the cache fill time, never from now.
-    stamp = f"-# updated <t:{int(fetched_at)}:R>" if fetched_at else "-# updated just now"
+
+    # "updated" was doing two jobs and admitting to neither. A warm /todo makes
+    # ZERO API calls, so the timestamp honestly reported the PREVIOUS run's
+    # fetch - correct, and indistinguishable from a stamp that had failed to
+    # move. Naming which one it is costs one word and removes the ambiguity.
+    #
+    # Driven off this run's call count, not off a flag threaded through the
+    # load path: reset_calls() runs in _Perf.__init__ once per invocation, and
+    # _nav_block is rendered after the fetch, so n is this run's total.
+    did_fetch = int(todo_data.call_stats().get("n", 0)) > 0
+
+    if fetched_at:
+        # <t:N:R> updates itself forever, in the reader's own timezone, with no
+        # further work from us. Built from the cache fill time, never from now.
+        stamp = f"-# {'fetched' if did_fetch else 'cached, fetched'} <t:{int(fetched_at)}:R>"
+    else:
+        # No live entry under any data prefix - a notice panel, or every fetch
+        # failed. There is no fill time to report either way.
+        stamp = "-# fetched just now" if did_fetch else "-# no data cached"
 
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
