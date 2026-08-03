@@ -48,6 +48,27 @@ the only discriminator, and it is incidental.
 361 documents total: `approved` 64, `denied` 273, `open` 23, `closed` 1.
 All 23 open tickets have live channels; 0 ghost rows, 0 orphaned channels.
 
+## Phase 2 status — LIVE and soaking as of 2026-08-02
+
+Verified on the running bot: approve, deny, the override path on both, and
+claiming. `/ticket diagnostics` after the run showed both collections at 363 —
+`approved` 64, `closed` 1, `denied` 275, `open` 23 — divergence none, reading
+from `tickets`.
+
+**That is the thing phase 1 could not prove**: a conditional write against the
+primary plus an unconditional mirror to the secondary keeps the two in sync.
+
+**Verified as flows, not as individual cases.** The distinction matters for
+anyone reading this later. Confirmed working end to end: approve, deny, override
+on both, claim. Not separately exercised, and therefore *not* proven:
+
+- a non-recruiter clicking an override button (should refuse)
+- the `missing` outcome — a resolution against a deleted ticket document
+- the custom-deny **modal** LOST branch specifically, which is the one path that
+  responds with `ctx.respond` rather than `edit_initial_response`, because modal
+  handlers are never deferred
+- the claim note appearing when resolving someone else's claimed ticket
+
 ## Phase 2 — transitions are conditional, and losing is not a dead end
 
 Status changes go through `store.transition`, which re-asserts the status it

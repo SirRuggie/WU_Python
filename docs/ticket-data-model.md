@@ -83,6 +83,11 @@ only thing making the flag reversible: flip `ticket_store` back to
 `"button_store"` and the legacy collection is still current. Remove dual-write
 and that stops being true, permanently, with no warning at the moment it matters.
 
+Phase 2 raised the stakes rather than lowering them. The mirror is now exercised
+by `store.transition`'s conditional writes — **new code on the write path** — so
+the soak is checking more than it was. Divergence held at none through the phase
+2 verification run, but that is one session, not a week.
+
 Verified end to end with the flag on — an update (denying an existing open
 ticket) and an insert (a ticket created from the panel, then denied). Both landed
 in both collections.

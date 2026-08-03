@@ -517,14 +517,18 @@ to `denied` is the one genuinely irreversible act available in this migration.
 
 ## 3.6 Phasing
 
-| Phase | Ships | Gate to next |
+| Phase | Ships | Status |
 |---|---|---|
-| **0** | Dispatcher fix (log-only expiry). Gate the three `manage.py` reconciliation commands on venue. | One week of clean logs |
-| **1** | `tickets` collection + backfill + indexes + dual-write | Counts verified |
-| **2** | Approve/deny converted to conditional writes; claiming added | Channel era proven on new write path |
-| **3** | Thread ticketing behind `ticket_mode`, off by default | Trial on FWA only |
-| **4** | Console dashboard (pragmatic + free flash) | Recruiter feedback |
-| **5** | Attachment re-hosting; chart rendering; hikari 2.5.0 + lightbulb 3.2.5 | — |
+| **0** | Dispatcher fix. Reconciliation commands gated on venue. | **Partly live** — routing guards + error boundary deployed and proven. Commits 3 & 4 (`component_state`, log-only expiry) **unwritten**. |
+| **1** | `tickets` collection + backfill + indexes + dual-write | **Live, soaking** since 2026-08-02 |
+| **2** | Approve/deny conditional writes; override path; claiming | **Live, soaking** since 2026-08-02 |
+| **3** | Thread ticketing behind `ticket_mode`, off by default | Not started |
+| **4** | Console dashboard (pragmatic + free flash) | Not started |
+| **5** | Attachment re-hosting; chart rendering; hikari 2.5.0 + lightbulb 3.2.5 | Not started |
+
+**Outstanding before phase 3:** dual-write removal (date-gated, 2026-08-09 at the
+earliest), the `back_to_clan_edit` duplicate (delete the *loser* — see
+[component-dispatcher.md](component-dispatcher.md)), and phase 0 commits 3 & 4.
 
 Phases 0–2 improve the **existing** system and are worth shipping even if thread
 ticketing is abandoned. That is deliberate: nothing before phase 3 is a bet on
