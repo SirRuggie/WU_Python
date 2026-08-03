@@ -268,6 +268,31 @@ def _as_int(value) -> int:
         return 0
 
 
+# Every reconciliation below compares a ticket's channel_id against the guild's
+# channel list. fetch_guild_channels does NOT return threads, so a thread-backed
+# ticket looks exactly like a ticket whose channel was deleted - and
+# /ticket cleanup-ghosts would mark every live thread ticket denied.
+#
+# Two independent guards, because one of these commands writes:
+#   1. This filter drops thread-era rows from the query entirely. Channel-era
+#      documents have no "venue" field at all, and $ne matches missing fields,
+#      so this is a no-op against the current 361 documents.
+#   2. _active_thread_ids() below is unioned into the live-id set, so a thread
+#      ticket that somehow lacks the venue field still cannot be read as a ghost.
+CHANNEL_ERA_ONLY = {"venue": {"$ne": "thread"}}
+
+
+async def _active_thread_ids(bot: hikari.GatewayBot, guild_id: int) -> set[int]:
+    """Ids of active threads - fetch_guild_channels never returns these.
+
+    Archived threads are absent from this set by design; CHANNEL_ERA_ONLY is what
+    protects those. Callers that write MUST fail closed if this raises, never
+    treat a failure as an empty set.
+    """
+    threads = await bot.rest.fetch_active_threads(guild_id)
+    return {_as_int(t.id) for t in threads}
+
+
 @ticket.register()
 class Diagnostics(
     lightbulb.SlashCommand,
@@ -291,13 +316,16 @@ class Diagnostics(
 
         await ctx.defer(ephemeral=True)
 
-        # Exactly two round trips regardless of ticket count. Deliberately NOT a
+        # Three round trips regardless of ticket count. Deliberately NOT a
         # per-ticket fetch_channel loop - that is what got the startup orphan sweep
         # disabled in close.py for causing rate limits.
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
-        docs = await mongo.button_store.find({"type": "ticket"}).to_list(length=None)
+        docs = await mongo.button_store.find(
+            {"type": "ticket", **CHANNEL_ERA_ONLY}
+        ).to_list(length=None)
 
         live_ids = {_as_int(ch.id) for ch in guild_channels}
+        live_ids |= await _active_thread_ids(bot, ctx.guild_id)
         live_names = {_as_int(ch.id): (ch.name or "") for ch in guild_channels}
 
         categories = {
@@ -404,13 +432,26 @@ class CleanupGhosts(
 
         await ctx.defer(ephemeral=True)
 
-        # Same two-round-trip reconciliation as /ticket diagnostics. Explicitly NOT a
-        # per-ticket fetch_channel loop - that is what got the startup orphan sweep
-        # disabled in close.py for causing rate limits.
+        # Same reconciliation as /ticket diagnostics. Explicitly NOT a per-ticket
+        # fetch_channel loop - that is what got the startup orphan sweep disabled
+        # in close.py for causing rate limits.
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
         live_ids = {_as_int(ch.id) for ch in guild_channels}
+
+        # Fail closed. This command WRITES, and an empty thread set here would make
+        # every live thread ticket look like a ghost row.
+        try:
+            live_ids |= await _active_thread_ids(bot, ctx.guild_id)
+        except Exception as exc:
+            print(f"[Tickets] cleanup-ghosts aborted, fetch_active_threads failed: {exc}")
+            await ctx.respond(
+                "❌ Could not list active threads, so ticket rows cannot be safely "
+                "reconciled. **Nothing was written.** Try again shortly."
+            )
+            return
+
         open_docs = await mongo.button_store.find(
-            {"type": "ticket", "status": "open"}
+            {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
         ).to_list(length=None)
 
         ghosts = [d for d in open_docs if _as_int(d.get("channel_id")) not in live_ids]
@@ -531,8 +572,10 @@ class FixMismatched(
 
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
         live_names = {_as_int(ch.id): (ch.name or "") for ch in guild_channels}
+        # Thread-era rows are excluded explicitly rather than relying on the
+        # `name is None` skip below to drop them by accident.
         open_docs = await mongo.button_store.find(
-            {"type": "ticket", "status": "open"}
+            {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
         ).to_list(length=None)
 
         mismatched, legacy_open = [], 0
