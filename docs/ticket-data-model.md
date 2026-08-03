@@ -73,6 +73,34 @@ other way round. The `ticket_` prefix is what prevents this.
 All 23 open have live channels; 0 ghost rows, 0 orphaned channels.
 Guild at 125/500 channels, 13 categories, the FWA category stranded at 50/50.
 
+## Phase 1 status — LIVE as of 2026-08-02
+
+`ticket_store` is flipped to **`"tickets"`**. Reads come from the new collection.
+Both indexes built, no `channel_id` collisions found.
+
+**Dual-write is still on, and must stay on until at least 2026-08-09.** It is the
+only thing making the flag reversible: flip `ticket_store` back to
+`"button_store"` and the legacy collection is still current. Remove dual-write
+and that stops being true, permanently, with no warning at the moment it matters.
+
+Verified end to end with the flag on — an update (denying an existing open
+ticket) and an insert (a ticket created from the panel, then denied). Both landed
+in both collections.
+
+| | Total | approved | closed | denied | open |
+|---|---|---|---|---|---|
+| Baseline at plan time | 361 | 64 | 1 | 273 | 23 |
+| Backfill (362 upserted) | 362 | 64 | 1 | 273 | 24 |
+| After live write tests | **363** | 64 | 1 | 275 | 23 |
+
+Identical in both collections, divergence none. The 361→362 gap is one real
+ticket opened between the baseline reconciliation and the backfill — the drift
+the command displays rather than blocks on, working as intended.
+
+**The `BASELINE_*` constants in `migrate.py` are deliberately NOT updated.** They
+record what was true when the migration was planned, and the drift line is what
+makes that useful. Editing them to match today would delete the record.
+
 ## Phase 1: the `tickets` collection
 
 Ticket documents now live in their own `tickets` collection. Every read and write
