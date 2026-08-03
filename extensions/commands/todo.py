@@ -448,6 +448,18 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
 # Data assembly
 # ---------------------------------------------------------------------------
 
+async def _drop_ack(ctx) -> None:
+    """Delete the ephemeral "thinking…" acknowledgement.
+
+    Cosmetic only - the panel has already been sent by the time this runs, so a
+    failure here must never surface as a failed command.
+    """
+    try:
+        await ctx.interaction.delete_initial_response()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo] could not delete the ack response: {type(exc).__name__}: {exc}")
+
+
 async def _load_clan_logos(mongo) -> None:
     """Populate the family-clan logo map, once per TTL.
 
@@ -553,11 +565,17 @@ class Todo(
     ) -> None:
         # Ephemeral in a guild, persistent in a DM. A DM dashboard is meant to
         # be scrolled back to; an in-channel one is a convenience read.
-        await ctx.defer(ephemeral=ctx.guild_id is not None)
+        # Acknowledge ephemerally, post the panel as a STANDALONE message, then
+        # delete the acknowledgement. Responding to the interaction directly
+        # makes the panel a REPLY, which Discord labels "X used /todo" - but the
+        # panel is a thing you keep and scroll back to, not a reply to a
+        # command. Same pattern as clan/dashboard/dashboard.py:108-121.
+        await ctx.defer(ephemeral=True)
 
         data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo)
         if problem:
-            await ctx.respond(components=problem)
+            await bot.rest.create_message(channel=ctx.channel_id, components=problem)
+            await _drop_ack(ctx)
             return
         # Open on the first view that actually has work. Always opening on War
         # meant a user whose only pending hits were CWL saw an empty War view
@@ -567,7 +585,11 @@ class Todo(
              if data.get(v) is not None and data[v].ok and data[v].count),
             VIEW_WAR,
         )
-        await ctx.respond(components=render_dashboard(opening, 0, data))
+        await bot.rest.create_message(
+            channel=ctx.channel_id,
+            components=render_dashboard(opening, 0, data),
+        )
+        await _drop_ack(ctx)
 
 
 # ---------------------------------------------------------------------------
