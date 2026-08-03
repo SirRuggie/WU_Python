@@ -689,6 +689,8 @@ class _Perf:
     def __init__(self) -> None:
         self._t0 = time.perf_counter()
         self._phase: dict[str, float] = {}
+        # Time spent purely on measurement, subtracted from total=.
+        self._excluded: float = 0.0
         self.meta: dict[str, object] = {}
         # Per-invocation, so calls= counts THIS run. The counters live in
         # todo_data because that is where the network calls are.
@@ -702,11 +704,33 @@ class _Perf:
         finally:
             self._phase[name] = self._phase.get(name, 0.0) + (time.perf_counter() - start)
 
+    @contextlib.contextmanager
+    def instrumentation_only(self, name: str):
+        """Time work that exists ONLY to be measured, and keep it out of total=.
+
+        `serialize=` re-runs component.build(), which hikari is going to run
+        again inside ctx.respond(). That duplicate pass is real wall clock the
+        user would not otherwise pay, so it is subtracted from total= - which
+        therefore keeps meaning "what the user waited for" and stays comparable
+        with every number measured before this field existed.
+
+        Safe to run twice: hikari's ContainerComponentBuilder.build() builds a
+        fresh JSONObjectBuilder, reads self._components.copy(), and mutates
+        nothing (hikari 2.3.5, impl/special_endpoints.py:2579-2597).
+        """
+        start = time.perf_counter()
+        try:
+            yield
+        finally:
+            elapsed = time.perf_counter() - start
+            self._phase[name] = self._phase.get(name, 0.0) + elapsed
+            self._excluded += elapsed
+
     def _ms(self, name: str) -> int:
         return int(self._phase.get(name, 0.0) * 1000)
 
     def line(self) -> str:
-        total = time.perf_counter() - self._t0
+        total = time.perf_counter() - self._t0 - self._excluded
         # fetch is the sum of the two halves rather than a third timer, so the
         # parts always add up to the whole and cannot drift apart.
         fetch = self._ms("players") + self._ms("views")
@@ -724,7 +748,13 @@ class _Perf:
             f"defer={self._ms('defer')}ms resolve={self._ms('resolve')}ms "
             f"logos={self._ms('logos')}ms fetch={fetch}ms "
             f"(players={self._ms('players')}ms views={self._ms('views')}ms) "
-            f"render={self._ms('render')}ms send={self._ms('send')}ms "
+            # render= builds BUILDER OBJECTS only. serialize= is the JSON pass
+            # hikari does inside send=, sampled here. send= is everything:
+            # serialisation + bucket acquire + HTTP + deserialize_message. So
+            # (send - serialize) is the round trip plus deserialisation, which
+            # cannot be separated further without reaching into hikari.
+            f"render={self._ms('render')}ms serialize={self._ms('serialize')}ms "
+            f"send={self._ms('send')}ms "
             f"calls={n} mean={mean_ms}ms worst={worst_ms}ms/{stats.get('worst_label', '-')} "
             # up= is the process uptime. A warm=0 run with up= under a minute is
             # a restart, not a cache bug - the cache is in-process and dies with
@@ -894,6 +924,14 @@ class Todo(
         )
         with perf.timing("render"):
             components = render_dashboard(opening, 0, data)
+        # Sampled BEFORE the send so a slow serialisation is visible even if the
+        # send then fails. Excluded from total= - see instrumentation_only.
+        # Public API, not a monkey-patch: this is the same build() hikari calls
+        # at impl/rest.py:1484/:1499 from _build_message_payload.
+        with perf.instrumentation_only("serialize"):
+            for _component in components:
+                _component.build()
+
         with perf.timing("send"):
             sent = await ctx.respond(components=components)
 
