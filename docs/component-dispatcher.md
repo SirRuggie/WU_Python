@@ -125,8 +125,10 @@ dashboard messages viable at all.
   `MessageResponseMixin`, so `respond(..., edit=True)` raises `TypeError`. Dodged
   only because all 12 `is_modal=True` registrations also set `no_return=True`.
   Now branched explicitly.
-- **A group-registered action could not be reached by a button** — see below,
-  because the reproduction is easy to get wrong.
+- **A group-registered action could not be reached by a button** — see below.
+  ⚠️ **Fixed by inspection, NOT demonstrated.** The reproduction requires a real
+  image upload and has not been run. Every other item in this list was exercised
+  by the 2026-08-02 smoke pass; this one was not.
 
 ### The group-routing bug, and how to actually reproduce it
 
@@ -154,7 +156,14 @@ image-upload success screen:
      → "Back to TH{n} Edit"  (blue/primary)     ← a different action
 ```
 
-Reaching it requires a real image upload, so this is not a cheap test.
+Reaching it requires a real image upload, so this is not a cheap test — and as
+of 2026-08-02 **it has not been done**. The fix is sound by inspection; treat it
+as unverified until someone clicks that specific button.
+
+A caution on how this was nearly mis-verified: the first smoke pass reported the
+per-Town-Hall "Back" as newly working. It was the lookalike, and it had always
+worked. **A button that works is not evidence for a fix unless it is the button
+the fix touched.**
 
 `copy_war_message` (`message_templates.py:303`) is also registered with a group
 but no custom_id references it, so it is unreachable dead code rather than a
@@ -178,12 +187,41 @@ second live instance.
    `ephemeral=...` does nothing, because an existing message's ephemeral state
    cannot be changed. Left in place deliberately so the error-boundary commit
    changed nothing on the success path; remove it with the state work.
-4. **Duplicate registration warns rather than raises.** `back_to_clan_edit` is
-   registered twice with different `no_return` semantics
-   (`update_clan_info.py:964`, `update_clan_info_general.py:129`) and import
-   order decides which runs. Raising would stop the bot booting, which is not an
-   acceptable outcome for a fix whose premise is not disturbing the running
-   system. Resolve the duplicate first, then consider raising.
+4. **Duplicate registration warns rather than raises.** Raising would stop the
+   bot booting, which is not an acceptable outcome for a fix whose premise is not
+   disturbing the running system. One duplicate exists — see below. Resolve it
+   first, then consider raising.
+
+### `back_to_clan_edit` — which one runs, and why it matters
+
+Settled from the boot log on 2026-08-02:
+
+| | File | Flags | Status |
+|---|---|---|---|
+| **Winner** | `update_clan_info.py:964` | `ephemeral=True` | **This is what production has always run** |
+| **Loser** | `update_clan_info_general.py:129` | `ephemeral=True, no_return=True` | **Has never executed** |
+
+They are not equivalent implementations of the same thing:
+
+- The **winner** calls `clan_edit_menu(ctx, mongo=mongo, tag=action_id)` and
+  returns the components, letting the dispatcher respond.
+- The **loser** calls `clan_edit_menu.__wrapped__(...)` — deliberately reaching
+  past the decorator, with a comment saying *"Call the undecorated function"* —
+  passes an extra `action_id=action_id`, and then does its own
+  `edit_initial_response`. That is why it needs `no_return=True`.
+
+**So the loser's `no_return` semantics have never taken effect, and its
+`__wrapped__` workaround has never been exercised.** Someone hit a problem and
+wrote a bypass that was never validated, because the registry silently discarded
+it at import. This is the same class as the `edit_last_response` bug — see
+[lightbulb-context-api.md](lightbulb-context-api.md) — code that looks like
+working code because nothing ever ran it.
+
+**⚠️ Resolve the duplicate by deleting the LOSER**
+(`update_clan_info_general.py:129`). Deleting the winner instead would *activate*
+roughly twenty lines of never-executed code, including a `__wrapped__` call whose
+premise nobody can now reconstruct. The safe move is to keep what production has
+been running and delete the shadow.
 
 Consequence for new work: **the expiry path is the one to design for.** State in
 `button_store` is never pruned but is also never guaranteed present.
