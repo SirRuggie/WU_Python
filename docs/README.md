@@ -53,6 +53,9 @@ the hard way. The standing instruction that governs this folder is in
 
 ## Incidents
 
+- [discord-rate-limit-buckets.md](discord-rate-limit-buckets.md) — which REST
+  routes share a bucket and which do not. FWA sync DMs and `/todo` competed for
+  one; a deferral competes with nothing.
 - [incident-2026-07-29-channel-rate-limit.md](incident-2026-07-29-channel-rate-limit.md)
   — 9 user-facing failures in 78 minutes. Capacity ruled out, root cause never
   established, mitigated. Recorded so nobody re-investigates from scratch.

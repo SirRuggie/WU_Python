@@ -309,8 +309,12 @@ shape a refresher wants — it iterates messages, not events — and dedupe ride
 the primary key, so no unique index is needed and a double write cannot produce
 two rows.
 
-Written at two points: after `create_message` in the command, and inside
-`_switch()` for every interaction. On an interaction the row is keyed to
+Written at two points: after `ctx.respond()` in the command, and inside
+`_switch()` for every interaction. The command path needs an extra
+`fetch_initial_response()` to get a message id at all — lightbulb 3.0.3's
+`Context.respond` returns `constants.INITIAL_RESPONSE_IDENTIFIER`, a sentinel
+rather than a Message. That GET is on the webhook route, not
+`/channels/{id}/messages`. On an interaction the row is keyed to
 `ctx.interaction.message.id` — the panel being edited, not a new message — so it
 updates the row written when the panel was sent. `ComponentInteraction.message`
 is verified present in hikari 2.3.5
@@ -425,16 +429,24 @@ either.
 
 **Verified on the live bot:** all four views render and switch; Raids shows
 "no raid weekend right now" with nav intact; Private War Logs lists 17 accounts
-split by cause; clan logos render where present; the message is standalone with
-no reply header; every custom emoji renders including the animated one;
+split by cause; clan logos render where present; every custom emoji renders
+including the animated one;
 preparation-phase rows appear for all three affected accounts after the
 `_state()` fix; per-clan deadlines match the game exactly (9h29m and 3h51m
 shown separately, where one `min()` had shown "4 hours" for both); the labelled
 refresh button reads correctly on mobile; **the freshness stamp moves to "a few
 seconds ago" on Refresh**; `grep -c utcnow` returns 0 on coc.py 3.10.0.
 
-**Not yet verified:** the Raids view with a live raid weekend — `state ==
-"ongoing"` has never returned True, because every test has been out of season
+**Superseded:** the panel used to be a standalone `create_message` with the
+ephemeral ack deleted, specifically to avoid the "X used /todo" header. That put
+it on `POST /channels/{id}/messages`, the bucket FWA sync DMs also use, where it
+took 4.65 s waits. It is now the interaction response — see
+[discord-rate-limit-buckets.md](discord-rate-limit-buckets.md). **The header is
+back, deliberately.**
+
+**Not yet verified:** whether that actually removes the delay; the Raids view
+with a live raid weekend — `state == "ongoing"` has never returned True, because
+every test has been out of season
 where "not ongoing" is also the correct answer. That probe cannot fail
 differently from success. It needs a Friday.
 
