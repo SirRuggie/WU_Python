@@ -77,7 +77,17 @@ TTL_WAR_ACTIVE = 120         # a hit can land any second; matches upstream max-a
 # "player:" is in DATA_PREFIXES, so Refresh already drops this - which is the
 # escape hatch for exactly the clan-change case, and the thing that was missing
 # for "raid:" when the freshness stamp froze.
-TTL_PLAYER = 120
+#
+# RAISED FROM 120s, deliberately relaxing "keep it short". At 120s the roster
+# was never warm in practice: /todo is opened occasionally, not twice a minute,
+# so every single invocation paid 46 player lookups and warm= read 0/46 every
+# time. A cache that never hits is just latency.
+#
+# 10 minutes is the trade. The failure it exposes is bounded and specific: a
+# member who changes clan is shown their old clan for up to 10 minutes, and
+# Refresh - which drops this prefix - fixes it immediately. Clan changes are
+# rare; opening the dashboard is not.
+TTL_PLAYER = 10 * 60
 TTL_WAR_IDLE = 15 * 60       # notInWar / warEnded - stable for hours
 TTL_CWL_ABSENT = 60 * 60     # not in CWL - stable for WEEKS outside the season
 TTL_CWL_ACTIVE = 600         # rounds advance once per day
@@ -181,6 +191,20 @@ def oldest_fill(prefixes: tuple[str, ...] = DATA_PREFIXES) -> float | None:
 # was slow and concurrency is innocent. So count the calls and keep the worst.
 # ---------------------------------------------------------------------------
 _calls: dict[str, object] = {"n": 0, "total": 0.0, "worst": 0.0, "worst_label": ""}
+
+# Process start. The cache is a module-level dict, so it dies with the process -
+# and "warm=0/46 on a second run" has three possible causes that look identical
+# from the panel: the bot restarted, more than TTL_PLAYER elapsed, or Refresh
+# dropped it. Uptime separates the first from the other two without guessing.
+_STARTED = time.monotonic()
+
+
+def uptime() -> float:
+    return time.monotonic() - _STARTED
+
+
+def cache_size() -> int:
+    return len(_cache)
 
 
 def reset_calls() -> None:

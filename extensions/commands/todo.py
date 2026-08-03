@@ -726,6 +726,10 @@ class _Perf:
             f"(players={self._ms('players')}ms views={self._ms('views')}ms) "
             f"render={self._ms('render')}ms send={self._ms('send')}ms "
             f"calls={n} mean={mean_ms}ms worst={worst_ms}ms/{stats.get('worst_label', '-')} "
+            # up= is the process uptime. A warm=0 run with up= under a minute is
+            # a restart, not a cache bug - the cache is in-process and dies with
+            # it. Without this the two are indistinguishable from the panel.
+            f"up={int(todo_data.uptime())}s cached={todo_data.cache_size()} "
             f"total={total:.2f}s"
         )
 
