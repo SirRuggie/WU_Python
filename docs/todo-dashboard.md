@@ -29,11 +29,14 @@ Six sites had it. The dashboard reported "All caught up" to a user with three
 pending CWL hits, because every preparation-phase war was classified as
 something else and dropped.
 
-Three fixes shipped on inference before this was found. None of them were the
+**It cost four fixes.** Three shipped on inference and none of them were the
 bug. What found it was instrumentation — printing what the code was actually
 doing — after the operator said, in as many words, *stop reasoning about the
 call path and make it print what it is doing.* That instruction was correct and
 the three preceding fixes were not.
+
+The general rule, which this session then broke a second time on the `utcnow`
+noise below: **after two failed fixes, stop fixing and start measuring.**
 
 The guard is `_state()` in `todo_data.py`, and **nothing in this feature may
 call `str()` on a state directly**:
@@ -51,10 +54,14 @@ It uses `getattr(raw, "value", raw)` rather than `raw.value` because not every
 
 ### Which states are enums and which are plain strings
 
-| Object | `.state` type in coc.py 3.9.1 | Verified how |
+| Object | `.state` type | Verified how |
 |---|---|---|
 | `ClanWar` (war, CWL round) | `WarState` enum | Read of `coc/enums.py` + live instrumentation |
-| `RaidLogEntry` | plain `str` | Read of `coc/raid.py` v3.9.1: `self.state: str = data_get("state")` |
+| `RaidLogEntry` | plain `str` | Read of `coc/raid.py`: `self.state: str = data_get("state")` |
+
+Both still hold in coc.py 4.0.0 — `ExtendedEnum.__str__` and `WarState` are
+unchanged there, checked directly at the v4.0.0 tag. **This trap does not go
+away with a version bump.**
 
 So `_get_raid`'s `str(getattr(entry, "state", "")) != "ongoing"` is correct
 **by luck of the type**, not by design. It was written before `_state()` existed.
@@ -289,6 +296,54 @@ Access is via `_emoji(name)` / `_partial(name)`, which return `""` /
 
 ---
 
+## Auto-refresh phase 1 — rows only
+
+`utils/todo_sessions.py`. **Phase 1 writes bookkeeping rows and does nothing
+else: no poller, no scheduler, no message edits.** The point is to get real
+documents into Mongo and look at their shape before anything is built on them.
+
+Collection `todo_sessions` in the `settings` database. `_id` is the **message
+id**, so one panel is one row, upserted: four `/todo` runs give four rows, forty
+Refresh clicks on one panel give one row with `interactions: 40`. That is the
+shape a refresher wants — it iterates messages, not events — and dedupe rides on
+the primary key, so no unique index is needed and a double write cannot produce
+two rows.
+
+Written at two points: after `create_message` in the command, and inside
+`_switch()` for every interaction. On an interaction the row is keyed to
+`ctx.interaction.message.id` — the panel being edited, not a new message — so it
+updates the row written when the panel was sent. `ComponentInteraction.message`
+is verified present in hikari 2.3.5
+(`hikari/interactions/component_interactions.py`).
+
+`kind` separates a real dashboard from a notice panel ("no linked accounts"),
+and `last_trigger` records which control fired. Both exist so phase 2 can decide
+things that cannot be decided retroactively if the rows never distinguished them
+— e.g. whether to retry a notice, since a link service down at 09:00 is probably
+up at 09:05.
+
+`AUTO_REFRESH_ENABLED = False` governs the **poller**, which does not exist.
+Rows are written unconditionally, because collecting them is the whole exercise.
+Do not read the presence of rows as evidence the feature is on.
+
+### Mongo TTL indexes only understand BSON dates
+
+`expires_at` is a `datetime`, while every other timestamp in the document is a
+float epoch. That inconsistency is deliberate and load-bearing: **a TTL index on
+a numeric field indexes fine, matches queries fine, and silently never
+expires.** The collection grows forever and nothing reports an error.
+
+The TTL is pushed forward on every interaction, so an active panel stays and an
+abandoned one ages out with no cleanup task. 24 hours is a starting value, not a
+considered one. If phase 2 builds a refresher, the right anchor is probably the
+soonest deadline in the panel's data — a panel whose war has ended has nothing
+left to refresh.
+
+The index is created lazily, once per process, on first write. Without it rows
+are still written and read correctly; they just never self-prune. Every entry
+point is non-fatal — this is bookkeeping for a feature that does not exist, and
+no failure in it is worth degrading the dashboard for.
+
 ## Statelessness and the dispatcher
 
 Nothing is written to Mongo. Page comes from the `custom_id`, user identity from
@@ -303,19 +358,66 @@ page in the action_id. See [`component-dispatcher.md`](component-dispatcher.md).
 
 ---
 
-## Log noise
+## The `utcnow` saga: five attempts, and the mechanism was never established
 
-coc.py 3.9.1 calls stdlib `datetime.utcnow()` in `coc/utils.py`
+coc.py 3.9.1 called stdlib `datetime.utcnow()` in `coc/utils.py`
 (`get_season_start`, `get_season_end`, `get_clan_games_start`,
 `get_clan_games_end`). Under Python 3.12 each call emits a `DeprecationWarning`,
-and one `/todo` run produced ~200 of them — enough to bury every other log line.
+and one `/todo` run produced ~200 of them — enough to bury every other log line,
+including the `[todo-diag]` output being used to debug the dashboard.
 
-**Four attempts to filter it all failed, and the mechanism was never
-established.** Fixed instead by taking coc.py 3.10.0, which deletes the
-`utcnow()` calls at source. Read
-[hikari-logging-and-warnings.md](hikari-logging-and-warnings.md) before
-attempting to suppress any warning in this process — there is no evidence a
-`warnings` filter here has ever worked.
+Five attempts. **Four were warning filters and all four failed.** Measured each
+time with `journalctl -u wu-bot | grep -c utcnow`:
+
+| # | Attempt | Result |
+|---|---|---|
+| 1 | blanket `filterwarnings("ignore", DeprecationWarning)`, present since the initial commit | never worked, for the life of the repo |
+| 2 | targeted filter on the message, installed at import | 204 |
+| 3 | same, re-installed after all imports | 204 |
+| 4 | installed after `GatewayBot(...)`, plus a `logging.Filter` on `py.warnings` | 251 |
+| 5 | **coc.py 3.10.0** — deletes the `utcnow()` calls | **0** |
+
+### THE FILTERS MAY STILL NOT WORK
+
+**The upgrade sidestepped the question; it did not answer it.** We never
+established where the record originated — `warnings` module to stderr,
+`warnings` via `logging.captureWarnings` to the `py.warnings` logger, or a
+direct `logger.warning()` call in which case `warnings.filters` was never
+relevant at all. Those three need completely different fixes and four were
+shipped without knowing which.
+
+The decisive one-line diagnostic — read the raw journal line and see whether it
+carries a logger name, and which — **was never run.** Do not assume a warning
+filter in this process works. There is no evidence any ever has. Full record in
+[hikari-logging-and-warnings.md](hikari-logging-and-warnings.md).
+
+Attempts 2–4 were each shipped on a fresh theory after the previous one failed,
+which is the same failure mode as the `str(enum)` bug above and was called out
+the same way. **After two failed fixes, stop fixing and start measuring.**
+
+### There is no coc.py 3.9.2
+
+Attempts 2–5 all cited "3.9.2" as the release that replaced `utcnow()` with
+`now()`. **It does not exist and never has.** PyPI has 3.9.0, 3.9.1, 3.10.0,
+4.0.0. The fabricated version number reached `requirements.txt` as a multi-line
+justification comment and two docs files before it was checked.
+
+The real fix is 3.10.0, PR
+[#273](https://github.com/mathsman5133/coc.py/pull/273) — one PR carrying both
+the `utcnow` removal and the non-JSON-response fix that had been split across
+the imaginary release.
+
+**Check PyPI before citing a version number.** One command, and it would have
+prevented three turns of work built on a version that was never published:
+
+```bash
+curl -s https://pypi.org/pypi/<package>/json | grep -o '"version":"[^"]*"' | head -1
+```
+
+The same rule already exists in
+[`../CLAUDE.md`](../CLAUDE.md) for API surfaces — *an in-repo call site is not
+proof an API exists.* A remembered version number is not proof a release exists
+either.
 
 ---
 
@@ -324,16 +426,21 @@ attempting to suppress any warning in this process — there is no evidence a
 **Verified on the live bot:** all four views render and switch; Raids shows
 "no raid weekend right now" with nav intact; Private War Logs lists 17 accounts
 split by cause; clan logos render where present; the message is standalone with
-no reply header; every custom emoji renders including the animated one; the
-refresh button renders beside the timestamp; preparation-phase rows appear for
-all three affected accounts after the `_state()` fix.
+no reply header; every custom emoji renders including the animated one;
+preparation-phase rows appear for all three affected accounts after the
+`_state()` fix; per-clan deadlines match the game exactly (9h29m and 3h51m
+shown separately, where one `min()` had shown "4 hours" for both); the labelled
+refresh button reads correctly on mobile; **the freshness stamp moves to "a few
+seconds ago" on Refresh**; `grep -c utcnow` returns 0 on coc.py 3.10.0.
 
-**Not yet verified:** the freshness stamp actually moving after the prefix fix;
-the labelled refresh button reading correctly on a phone; per-clan deadlines
-rendering the right number for each clan; the targeted warning filter actually
-suppressing the spam; the Raids view with a live raid weekend (`state ==
-"ongoing"` has never returned True); the H2/H3 type step being visibly distinct
-on mobile; auto-refresh, which is not built.
+**Not yet verified:** the Raids view with a live raid weekend — `state ==
+"ongoing"` has never returned True, because every test has been out of season
+where "not ongoing" is also the correct answer. That probe cannot fail
+differently from success. It needs a Friday.
+
+Also unverified: whether the H2/H3 type step is visibly distinct on mobile
+(nobody has said either way), and coc.py 3.10.0's `coc/raid.py` `max()` crash
+fix, which is in the raid path and therefore in the same untested window.
 
 **Never rendered, therefore never seen:** the pagination ActionRow. `PAGE_SIZE`
 is 20 and the largest view so far is Private War Logs at 17, so `pages > 1` has
