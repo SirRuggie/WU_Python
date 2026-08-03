@@ -1,5 +1,22 @@
 # ClashKing war/CWL data, and what their own bot does
 
+> ## THERE IS NO `/war/bulk`. DO NOT LOOK FOR IT AGAIN.
+>
+> Verified twice, 2026-08-03. `POST` returns **404** on both
+> `api.clashk.ing/war/bulk` and `api.clashk.ing/private/war/bulk`, and the path
+> appears in **neither** OpenAPI spec. It was asserted as real from a pasted
+> document and is not.
+>
+> The only two bulk paths on the entire API are:
+>
+> | Path | Spec | Status |
+> |---|---|---|
+> | `POST /capital/bulk` | public | works, unauthenticated, **but returns 2.1 MB of full raid history per clan** and has no `limit` param |
+> | `POST /ck/bulk` | private | **401 Invalid token**, and takes an array of **URLs**, not tags |
+>
+> **The war fan-out cannot be collapsed into one request.** Reducing calls has
+> to come from caching. See [todo-dashboard.md](todo-dashboard.md).
+
 Two things this file settles, both from primary sources rather than inference:
 the real populated CWL payload shape, and how the reference `player to-do`
 implementation actually works.
@@ -224,3 +241,36 @@ The first probe of `/capital/bulk` and `/war/{tag}/basic` returned `{}` and
 That reads identically to "endpoint does not work". Re-probed with a real clan
 tag pulled from a live player payload, both returned data. See the probe rule in
 [`../CLAUDE.md`](../CLAUDE.md) and [clashking-discord-links.md](clashking-discord-links.md).
+
+---
+
+# 403 `accessDenied` on `/currentwar` is a PRIVATE WAR LOG, not a failure
+
+Observed 2026-08-03 for `#2G29002UP`, `#2RJVQLUVQ` and `#8GG` through
+`proxy.clashk.ing`. **This is Supercell's documented response for a clan whose
+war log is set to private.** It is not a proxy fault, not an auth fault, and not
+something a token would fix.
+
+`coc.py` turns it into `coc.PrivateWarLog`, which `utils/todo_data.py::_get_war`
+catches and renders as a Private War Logs row rather than an error. Working as
+designed.
+
+## The `_response_retry` value is read, not chosen
+
+`coc.py` sets `data["_response_retry"]` from the **upstream `Cache-Control:
+max-age=` header** (`coc/http.py`, in the response-handling block), applied to
+every response including 403s:
+
+```python
+delta = int(response.headers["Cache-Control"].strip("max-age=")...)
+data["_response_retry"] = delta if 'realtime' not in url else 0
+```
+
+So a `_response_retry` of 600 on these means **Supercell sent
+`max-age=600`** — coc.py is not hardcoding a ten-minute retry, and the number
+carries no information about rate limiting. If the header is missing, coc.py
+falls back to `0`.
+
+**Do not read these 403s as a symptom of anything.** They are steady-state for
+any user whose roster includes a private-war-log clan, and there are three such
+clans in the current family.
