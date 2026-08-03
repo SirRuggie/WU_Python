@@ -118,7 +118,21 @@ def cache_put(key: str, value, ttl: int) -> None:
 
     `filled_at` is unix epoch, not monotonic, because it is rendered as
     <t:N:R>. Expiry stays monotonic so a clock change cannot break eviction.
+
+    THE GUARD: a key matching no known prefix is a key Refresh will never drop
+    and oldest_fill will never age. That has now happened twice - "raid:" froze
+    the freshness stamp, "cwlwar:" hid 24-hour-old CWL rounds from Refresh - and
+    both times it was invisible until someone went looking. It is a silent
+    defect by construction, so it has to announce itself at the moment of
+    writing rather than wait to be audited a third time.
     """
+    if not key.startswith(DATA_PREFIXES + AUX_PREFIXES):
+        print(
+            f"[todo] CACHE KEY NOT COVERED: {key!r} matches no prefix in "
+            f"DATA_PREFIXES or AUX_PREFIXES. Refresh will NOT drop it and the "
+            f"freshness stamp will NOT age it. Add its prefix to DATA_PREFIXES.",
+            flush=True,
+        )
     _cache[key] = (time.monotonic() + ttl, time.time(), value)
 
 
@@ -134,7 +148,22 @@ def cache_put(key: str, value, ttl: int) -> None:
 #
 # Add a new cached data prefix HERE and both sides get it. Do not re-inline a
 # prefix list at a call site.
-DATA_PREFIXES: tuple[str, ...] = ("player:", "war:", "cwl:", "raid:")
+#
+# "cwlwar:" WAS MISSING AND IT IS NOT COVERED BY "cwl:".
+#   "cwlwar:#ABC".startswith("cwl:")  ->  False   ("cwlw" != "cwl:")
+#   "cwlwar:#ABC".startswith("war:")  ->  False
+# Individual CWL round wars are cached for up to 24 HOURS (ended rounds), so
+# they survived every Refresh and were invisible to oldest_fill. Same defect as
+# "raid:", found by auditing every cache_put key against this tuple rather than
+# by anyone noticing stale CWL rows. The inverse symptom of the raid bug: the
+# stamp UNDER-reported staleness instead of over-reporting it, because a key it
+# never counted could not age it.
+DATA_PREFIXES: tuple[str, ...] = ("player:", "war:", "cwl:", "cwlwar:", "raid:")
+
+# Keys deliberately OUTSIDE DATA_PREFIXES. They are per-invocation rather than
+# per-render, so drop_render_caches takes them as `extra` from the caller.
+# Listed here only so the guard in cache_put knows they are accounted for.
+AUX_PREFIXES: tuple[str, ...] = ("links:", "clanlogos")
 
 # Wall-clock of the last drop_render_caches(). Sole purpose is the consistency
 # check in oldest_fill: after a drop, no live entry can predate it.
