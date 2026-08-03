@@ -86,7 +86,41 @@ from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
 
-PAGE_SIZE = 20
+# ---------------------------------------------------------------------------
+# THE COMPONENT BUDGET. This is what pages are measured in - NOT rows.
+#
+# PAGE_SIZE = 20 used to live here and it capped the wrong thing. Rows are
+# nearly free; CLANS are expensive. A user with 2 clans and 8 rows rendered 19
+# components and worked; a user with 34 clans rendered ~91 on his first screen
+# and Discord rejected the entire message with
+#   400 (50035) Invalid Form Body: components - Total number of components
+#   cannot exceed 40
+# That was the ORIGINAL /todo failure, and it presented as "spins and never
+# returns" because a 400 leaves no panel and no visible error.
+#
+# 40 is Discord's hard cap and it counts NESTED children - our payload has
+# exactly one top-level component, the Container, so a top-level-only count
+# could never exceed 1. The 400 is the oracle.
+COMPONENT_LIMIT = 40
+
+# Headroom below the cap. Not superstition: it is what absorbs one more Text
+# being added to the panel by someone who does not recompute PANEL_FIXED.
+COMPONENT_HEADROOM = 2
+COMPONENT_BUDGET = COMPONENT_LIMIT - COMPONENT_HEADROOM   # 38
+
+# Panel furniture that is on every page regardless of content:
+#   Container 1 + title Text 1 + Separator 1 + _nav_block 7
+# _nav_block is Separator + (ActionRow + select) + Media + Text + (ActionRow +
+# button) = 7, counting nested children.
+PANEL_FIXED = 10
+
+# RESERVED, NEVER CONDITIONAL. Notes render on every page when the view has
+# any, and the pagination row appears only when pages > 1 - so budgeting for it
+# only once paginated is circular: the act of paginating would push page 1 back
+# over the limit. Both are always assumed present.
+RESERVE_NOTES = 2          # Separator + Text
+RESERVE_PAGINATION = 4     # ActionRow + 3 Buttons
+
 VIEW_WAR = "war"
 VIEW_CWL = "cwl"
 VIEW_RAID = "raid"
@@ -238,11 +272,16 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
     ])
 
 
-def _nav_block(view: str, counts: dict) -> list:
-    """Separator, the view select, and the freshness line with its refresh button.
+def _nav_block(view: str, counts: dict, pager=None) -> list:
+    """Separator, the view select, optional pagination, then the freshness line.
 
     THE ONLY PLACE NAVIGATION IS BUILT. Every panel state calls this, so a new
     state cannot ship without a way out.
+
+    `pager` is the page ◀ / N of M / ▶ ActionRow, or None. It goes BETWEEN the
+    view select and the red footer, because it pages the content above it - not
+    below the footer beside Refresh, which is where it sat half-built and
+    unrendered while PAGE_SIZE made `pages > 1` unreachable.
 
     LAYOUT: freshness text, then the refresh button on its own ActionRow.
 
@@ -294,6 +333,9 @@ def _nav_block(view: str, counts: dict) -> list:
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
         _nav_select(view, counts),
+        # Pagination, when there is more than one page. Above the footer, below
+        # the view select - it belongs to the content, not to the caption row.
+        *([pager] if pager is not None else []),
         # The Media footer sits ABOVE the freshness row, not at the very bottom
         # as it does on every other panel in the repo. Deliberate: the red line
         # then reads as the rule that closes the dashboard, with the freshness
@@ -491,6 +533,96 @@ def _render_rows(rows: list, verb: str = "", stamp_of=None) -> list:
     return out
 
 
+def _split_blocks(view: str, rows: list) -> list:
+    """Rows split into render blocks, in render order. THE ONE SPLITTER.
+
+    Returns [(key, group), ...] with empty groups dropped, so len() is the
+    block count the renderer will actually emit.
+
+    It exists because the component-budget pager has to predict exactly what
+    the renderers will produce. Two copies of this predicate - one to render,
+    one to count - is the drift shape that produced the raid: and cwlwar: cache
+    bugs. There is one, and both callers use it.
+    """
+    if view == VIEW_PRIVATE:
+        groups = (
+            ("private", [r for r in rows if r.reason != "error"]),
+            ("failed", [r for r in rows if r.reason == "error"]),
+        )
+    else:
+        groups = (
+            ("live", [r for r in rows if r.state != "preparation"]),
+            ("prep", [r for r in rows if r.state == "preparation"]),
+        )
+    return [(key, group) for key, group in groups if group]
+
+
+def _clans_in(rows: list) -> list:
+    """Distinct clan tags in first-seen order, with one representative row each.
+
+    Same ordering _render_rows builds, for the same reason: clan order on the
+    panel must not reshuffle between identical runs.
+    """
+    seen: dict = {}
+    for row in rows:
+        if row.clan_tag not in seen:
+            seen[row.clan_tag] = row
+    return list(seen.values())
+
+
+def _page_cost(view: str, rows: list) -> int:
+    """Components a page of `rows` will emit, INCLUDING fixed panel furniture.
+
+    Mirrors the renderers exactly:
+      Container 1 + title 1 + separator 1 + _nav_block 7          = PANEL_FIXED
+      per block:  1 heading, +1 separator when it is not the first
+      per clan:   3 with a Thumbnail (Section + Text + Thumbnail),
+                  1 without (a bare Text), +1 separator between clans
+      notes and the pagination row are RESERVED, never conditional - see the
+      constants.
+    """
+    cost = PANEL_FIXED + RESERVE_NOTES + RESERVE_PAGINATION
+    for index, (_key, group) in enumerate(_split_blocks(view, rows)):
+        cost += 1                      # block heading Text
+        if index:
+            cost += 1                  # separator between blocks
+        clans = _clans_in(group)
+        for first in clans:
+            cost += 3 if _thumbnail_for(first) else 1
+        cost += max(0, len(clans) - 1)  # separators between clans
+    return cost
+
+
+def _paginate(view: str, rows: list) -> list:
+    """Rows split into pages that each fit COMPONENT_BUDGET. Greedy, in order.
+
+    PAGES ARE VARIABLE LENGTH. The old PAGE_SIZE=20 capped ROWS, which is not
+    the thing that costs components - CLANS are. 20 rows in 2 clans is 19
+    components; 20 rows in 20 clans is ~91, and Discord rejects the whole
+    message with a 400. See docs/todo-dashboard.md.
+
+    A page always takes at least one row even if that row alone would exceed
+    the budget, or the loop would not terminate. A single clan cannot realistically
+    do that - one clan with a thumbnail is PANEL_FIXED + reserves + 4 = 20 - but
+    the guard is there so a future costlier row cannot hang the render.
+    """
+    if not rows:
+        return [[]]
+
+    pages: list = []
+    current: list = []
+    for row in rows:
+        candidate = current + [row]
+        if current and _page_cost(view, candidate) > COMPONENT_BUDGET:
+            pages.append(current)
+            current = [row]
+        else:
+            current = candidate
+    if current:
+        pages.append(current)
+    return pages
+
+
 def _timing_blocks(view: str, rows: list) -> list:
     """Rows split by STATE. Each clan states its own deadline.
 
@@ -504,17 +636,17 @@ def _timing_blocks(view: str, rows: list) -> list:
     A heading may therefore state the state and nothing else. Anything a
     heading asserts has to be true of every row beneath it.
     """
-    live = [r for r in rows if r.state != "preparation"]
-    prep = [r for r in rows if r.state == "preparation"]
     live_label, prep_label = BLOCK_LABELS.get(view, BLOCK_LABELS_DEFAULT)
+    # Labels/verbs by key. The SPLIT itself comes from _split_blocks so the
+    # pager's cost model and this renderer cannot disagree about block count.
+    spec = {
+        "live": (EMOJI_LIVE, live_label, "ends", lambda r: r.ends_at),
+        "prep": (EMOJI_WAITING, prep_label, "starts", lambda r: r.starts_at),
+    }
 
     out: list = []
-    for emoji_name, label, verb, group, stamp_of in (
-        (EMOJI_LIVE, live_label, "ends", live, lambda r: r.ends_at),
-        (EMOJI_WAITING, prep_label, "starts", prep, lambda r: r.starts_at),
-    ):
-        if not group:
-            continue
+    for key, group in _split_blocks(view, rows):
+        emoji_name, label, verb, stamp_of = spec[key]
         if out:
             out.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
         # "###" - one step below the panel title, one step above the clan name.
@@ -534,18 +666,18 @@ def _reason_blocks(rows: list) -> list:
     they must not be mixed into one list. Same block-heading and clan-grouping
     treatment as _timing_blocks; only the split differs.
     """
-    private = [r for r in rows if r.reason != "error"]
-    failed = [r for r in rows if r.reason == "error"]
+    # Split via _split_blocks, same as _timing_blocks, so the pager's cost
+    # model predicts this renderer exactly.
+    spec = {
+        "private": (U_PRIVATE, "Private war logs",
+                    "these clans have their war log set to private"),
+        "failed": (U_FAILED, "Lookup failed",
+                   "couldn't reach the API for these — try Refresh"),
+    }
 
     out: list = []
-    for glyph, label, group, hint in (
-        (U_PRIVATE, "Private war logs", private,
-         "these clans have their war log set to private"),
-        (U_FAILED, "Lookup failed", failed,
-         "couldn't reach the API for these — try Refresh"),
-    ):
-        if not group:
-            continue
+    for key, group in _split_blocks(VIEW_PRIVATE, rows):
+        glyph, label, hint = spec[key]
         if out:
             out.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
         # Same "###" step as _timing_blocks - these are block headings too.
@@ -593,9 +725,13 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
         page = 0
     else:
         rows = current.rows
-        pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+        # PAGED ON COMPONENTS, NOT ROWS. Pages are variable length by design -
+        # a page of 2 clans may hold 20 rows, a page of 20 clans holds far
+        # fewer, because clans are what cost components.
+        row_pages = _paginate(view, rows)
+        pages = len(row_pages)
         page = max(0, min(page, pages - 1))
-        window = rows[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
+        window = row_pages[page]
 
         body.append(Separator(divider=True))
         if not rows and getattr(current, "unavailable", ""):
@@ -638,10 +774,12 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             body.append(Separator(divider=True))
             body.append(Text(content="\n".join(f"-# {n}" for n in current.notes)))
 
-    body.extend(_nav_block(view, counts))
-
+    # Pagination goes ABOVE the red footer, with the content it pages - not
+    # below it next to Refresh, where it was parked half-built. _nav_block
+    # places it between the view select and the footer.
+    pager = None
     if pages > 1:
-        body.append(ActionRow(components=[
+        pager = ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"todo_{view}:{max(0, page - 1)}",
@@ -660,7 +798,9 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
                 label="▶",
                 is_disabled=page >= pages - 1,
             ),
-        ]))
+        ])
+
+    body.extend(_nav_block(view, counts, pager))
 
     # The footer is emitted by _nav_block, above the freshness row.
     return _panel(body, _urgency_accent(current))
