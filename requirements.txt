@@ -1,11 +1,18 @@
 # Schedules jobs like timers or repeated tasks (e.g. cron jobs)
 APScheduler
 
-# Main Discord API wrapper for bots
-hikari
+# Main Discord API wrapper for bots.
+# PINNED DELIBERATELY. These two move together: hikari-lightbulb 3.0.3 declares
+# `hikari~=2.3.1` (>=2.3.1,<2.4.0), so 2.3.5 is the highest hikari it accepts -
+# which is why the bot logs "consider upgrading to 2.5.0" on every boot and why
+# the 2.4.1 upgrade in 397e3ba did not survive: leaving these unpinned let a
+# later `pip install -r requirements.txt` re-resolve straight back down to 2.3.5.
+# Upgrading is one coupled move (hikari 2.5.0 + hikari-lightbulb 3.2.5), never
+# one package alone. See docs/hikari-lightbulb-versions.md.
+hikari==2.3.5
 
 # Command framework for hikari (handles slash and prefix commands)
-hikari-lightbulb
+hikari-lightbulb==3.0.3
 
 # Loads .env file contents into environment variables
 python-dotenv
