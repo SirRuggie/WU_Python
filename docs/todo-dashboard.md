@@ -369,9 +369,22 @@ dropped, so the stamp froze *old*. `cwlwar:` was neither, so the stamp
 **under-reported** staleness — it could read "updated just now" over CWL data a
 day old.
 
-> **UNCONFIRMED.** The fix in `40c97ef` has never been observed working.
-> **Treat as unverified until a log shows a non-zero `cwlwar:` drop with CWL
-> live** — not as working.
+> **CONFIRMED WORKING**, 2026-08-03, on a 34-clan roster with CWL live:
+>
+> ```
+> dropped={'player:': 110, 'war:': 41, 'cwl:': 41, 'cwlwar:': 24,
+>          'raid:': 41, 'links:...': 1, 'clanlogos': 1}
+> by_label={currentwar:34,leaguegroup:34,leaguewar:24,player:65,raidlog:34}
+> ```
+>
+> **24 `cwlwar:` keys dropped, 24 `leaguewar` calls made.** The self-checking
+> identity holds: Refresh drops the round wars and refetches exactly as many.
+> Before `40c97ef` the drop count would have been 0 and they would have been
+> served from a cache up to 24 hours old.
+>
+> This is also the payoff for the two instrumentation fields — neither number
+> existed before them, and the fix sat unverifiable for days precisely because
+> both were being computed and discarded.
 
 ### Why it was unobservable, and how that was nearly mistaken for a negative
 
@@ -585,6 +598,28 @@ integers and cannot collide. Out-of-range was already handled twice over —
 lands on page 0. `_switch` parses it with a `ValueError` guard defaulting to 0.
 
 One colon per id is preserved throughout.
+
+### RESOLVED — closing evidence
+
+First successful render ever at the 34-clan scale, 2026-08-03:
+
+```
+cold   tags=65 clans=34  calls=183  fetch=7516ms  total=10.82s(to-send)
+warm   tags=65 clans=34  calls=0    fetch=3ms     total=2.51s(to-send)
+```
+
+No 400. `view:war`, `nav:select` and `refresh` all exercised. The operator's own
+2-clan run is unchanged — no pagination row, `total=6.24s(to-send)`, no
+regression.
+
+**The original `/todo` failure is resolved.** It was the 40-component limit,
+reached because paging capped rows instead of clans, plus a `custom_id`
+collision in the pagination row that only became reachable once the first half
+was fixed.
+
+Note the shape of the win: **the cold path is still 10.82 s for him** and that is
+almost entirely upstream fetch. The performance work reduced it but was never
+what was broken.
 
 ### "Written but never rendered" is its own risk category
 
@@ -811,7 +846,34 @@ serialisation, the bucket acquire, the HTTP round trip, and the
 deserialisation.** Reading `render=0ms` as "rendering is free" is wrong — the
 expensive half of rendering was never in that timer.
 
-### Reading the line: `-` means not measured, and `total=` says what it spans
+### KNOWN REPORTING DEFECT: `warm=` mixes a global numerator with a per-user denominator
+
+Observed in the wild: **`warm=65/45` — more warm entries than tags**, which is
+impossible for one user.
+
+**Mechanism, confirmed from source.** `live_keys('player:')`
+(`utils/todo_data.py`) sums over the **entire process-global `_cache`**:
+
+```python
+return sum(
+    1 for key, (expires_at, _f, _v) in _cache.items()
+    if expires_at > now and key.startswith(prefix)
+)
+```
+
+The cache is keyed `player:{tag}` — **by clan tag, not by user** — which is
+deliberate and is what lets one fetch serve every user. But the denominator is
+`len(tags)`, which *is* this user's. So a 65-tag user's entries resident in cache
+are counted against a 45-tag user's total.
+
+**Only visible when two users run close together**, which is why it took a second
+person on the bot to surface it. It affects the diagnostic line only — the panel,
+the cache and the fetch are all correct, and `calls=`/`by_label=` remain accurate.
+
+**Not fixed.** The honest numerator is "how many of *this user's* tags are live",
+which needs a `live_keys_for(tags)` that tests membership without going through
+`cache_get` — that function pops expired entries as a side effect and would
+mutate state from inside a reporting call.
 
 Two fields are **path-specific**. The refresh path has no defer, and `_switch`
 cannot time the send because the dispatcher in `extensions/components.py` owns
