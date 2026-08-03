@@ -1,7 +1,21 @@
 """/todo - what each of your linked Clash accounts still owes.
 
-DM-first. Three views (war hits, CWL hits, raids) switched by buttons; only
-ACTIONABLE accounts appear. See docs/todo-dashboard-proposal.md.
+DM-first. Three views (war hits, CWL hits, raids) switched by a select menu;
+only ACTIONABLE accounts appear. See docs/todo-dashboard-proposal.md.
+
+LAYOUT RULES, all of them from observed mobile rendering rather than theory:
+
+  NOTHING MAY WRAP AT PHONE WIDTH. Budget ~28 characters per line. The first
+  version's clan headers ("CLAN · prep · opens in 18 hours · closes in 2 days")
+  wrapped to two lines for every clan.
+
+  <t:N:R> AND `backticks` RENDER AS GREY CHIPS, not text. Mid-sentence they
+  shatter a line into disconnected fragments, and a chip whose x-position
+  depends on the name before it destroys vertical alignment. Timestamps get
+  their own line; counts lead the row and carry no backticks.
+
+  TIMING IS STATED ONCE PER BLOCK, not once per clan. Grouping is by TIME
+  first (Live / Opens) and clan second, because time is what varies.
 
 Design rules enforced here, each of which cost real investigation to establish:
 
@@ -23,10 +37,12 @@ Design rules enforced here, each of which cost real investigation to establish:
   .make_icon_url()) raises AttributeError there. ctx.member is None too, so no
   role checks anywhere in this file.
 
-  UNICODE EMOJI ONLY, deliberately. utils.emoji is the house style, but an
-  attribute typo there is an AttributeError inside a render path, and nothing
-  in this file has ever been executed. Swap to emojis.* once it has run.
+  TH EMOJI COME FROM utils.emoji. TH_EMOJI is built with getattr/hasattr so a
+  missing level degrades to no emoji rather than an AttributeError inside a
+  render path.
 """
+
+import time
 
 import coc
 import lightbulb
@@ -38,14 +54,19 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
     MessageActionRowBuilder as ActionRow,
+    SectionComponentBuilder as Section,
+    SelectOptionBuilder as SelectOption,
     SeparatorComponentBuilder as Separator,
     TextDisplayComponentBuilder as Text,
+    TextSelectMenuBuilder as TextSelectMenu,
+    ThumbnailComponentBuilder as Thumbnail,
 )
 
 from extensions.components import register_action
 from utils import todo_data
 from utils.clash_links import resolve_tags
-from utils.constants import RED_ACCENT
+from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
+from utils.emoji import emojis
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
@@ -58,18 +79,48 @@ VIEW_RAID = "raid"
 VIEW_LABEL = {VIEW_WAR: "War", VIEW_CWL: "CWL", VIEW_RAID: "Raids"}
 VIEW_ORDER = (VIEW_WAR, VIEW_CWL, VIEW_RAID)
 
-# ClashKing asks for exactly one thing in return for a free, unauthenticated
-# API: credit. Their terms read "Please credit if using these stats in your
-# project, Creator Code: ClashKing". This line is that credit.
-ATTRIBUTION = "-# Data via ClashKing · Creator Code: ClashKing"
+# Real TH emoji from utils.emoji rather than the text "TH17". Custom emoji are
+# ~28 chars of markup but render one character wide, so the LINE gets shorter
+# while the character budget barely moves (10 rows = ~280 of 4000).
+TH_EMOJI = {
+    level: str(getattr(emojis, f"TH{level}"))
+    for level in range(2, 19)
+    if hasattr(emojis, f"TH{level}")
+}
+
 
 
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
 
-def _panel(body_components: list) -> list:
-    return [Container(accent_color=RED_ACCENT, components=body_components)]
+def _panel(body_components: list, accent=RED_ACCENT) -> list:
+    return [Container(accent_color=accent, components=body_components)]
+
+
+def _urgency_accent(view_data):
+    """Colour the container by time pressure, so the accent bar MEANS something.
+
+    This is the answer to "what should the colours mean". Discord styles encode
+    consequence, not category - colouring by which tab you are on is arbitrary,
+    because the label already says that. Colouring by deadline is information
+    you cannot get any other way at a glance.
+
+        RED    something closes within 2 hours
+        GOLD   something closes within 12 hours
+        BLUE   everything else, including prep-only and empty views
+    """
+    if view_data is None or not getattr(view_data, "ok", False) or not view_data.rows:
+        return BLUE_ACCENT
+    soonest = [r.ends_at for r in view_data.rows if r.state != "preparation" and r.ends_at]
+    if not soonest:
+        return BLUE_ACCENT
+    remaining = min(soonest) - int(time.time())
+    if remaining <= 2 * 60 * 60:
+        return RED_ACCENT
+    if remaining <= 12 * 60 * 60:
+        return GOLD_ACCENT
+    return BLUE_ACCENT
 
 
 def _notice(title: str, body: str) -> list:
@@ -82,55 +133,77 @@ def _notice(title: str, body: str) -> list:
     ])
 
 
-def _nav_row(view: str, page: int, counts: dict) -> ActionRow:
-    """Four buttons in one ActionRow.
+def _nav_select(view: str, counts: dict) -> ActionRow:
+    """House-style navigation: a TextSelectMenu, not a row of coloured buttons.
 
-    Deliberately NOT four Sections with button accessories. A Section holds
-    exactly one accessory plus a mandatory Text Display, so four nav buttons as
-    Sections cost 12 components against 5 for a row - and that 7-component
-    difference is the entire row budget.
+    clan/dashboard/dashboard.py navigates with a select whose options carry an
+    emoji and a description. That is strictly more informative than buttons -
+    every section's status is visible without clicking - and it is why the old
+    button row read as a different product from the rest of the bot.
 
-    Badge counts live in the labels. `None` means the section could not be read
-    and renders as `?`, never as `0` - an unreadable section must never look
-    like an empty one.
+    Deliberately NOT registered with group=. The group mechanism requires each
+    option's `value` to BE a registered action name, so it cannot carry a page
+    number. This is a plain action that reads ctx.interaction.values[0] itself.
     """
-    def label(stem: str, key: str) -> str:
+    def describe(key: str) -> str:
         value = counts.get(key)
         if value is None:
-            return f"{stem} (?)"
+            return "couldn't be read — try Refresh"
         if value == 0:
-            return f"{stem} ✅"
-        return f"{stem} ({value})"
+            return "nothing outstanding"
+        return f"{value} account(s) owe attacks"
 
-    return ActionRow(components=[
-        Button(
-            style=hikari.ButtonStyle.PRIMARY,
-            custom_id=f"todo_war:{page if view == VIEW_WAR else 0}",
-            label=label("War", VIEW_WAR),
-            is_disabled=view == VIEW_WAR,
+    options = [
+        SelectOption(
+            label=f"{VIEW_LABEL[VIEW_WAR]} Hits",
+            description=describe(VIEW_WAR),
+            value=VIEW_WAR,
+            is_default=view == VIEW_WAR,
         ),
-        Button(
-            style=hikari.ButtonStyle.PRIMARY,
-            custom_id=f"todo_cwl:{page if view == VIEW_CWL else 0}",
-            label=label("CWL", VIEW_CWL),
-            is_disabled=view == VIEW_CWL,
+        SelectOption(
+            label=VIEW_LABEL[VIEW_CWL],
+            description=describe(VIEW_CWL),
+            value=VIEW_CWL,
+            is_default=view == VIEW_CWL,
         ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id="todo_raid:0",
-            label="Raids (soon)",
-            is_disabled=True,
+        SelectOption(
+            label=VIEW_LABEL[VIEW_RAID],
+            description="not available yet",
+            value=VIEW_RAID,
+            is_default=view == VIEW_RAID,
         ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"todo_refresh:{view}|{page}",
+        SelectOption(
             label="Refresh",
+            description="re-check everything now",
+            value="refresh",
         ),
+    ]
+    return ActionRow(components=[
+        TextSelectMenu(
+            max_values=1,
+            custom_id=f"todo_nav:{view}",
+            placeholder="Switch view…",
+            options=options,
+        )
     ])
 
 
 def _row_line(row) -> str:
-    return f"▸ {row.account} `{row.used}/{row.limit}`"
+    """One account, one line, never wrapping on a phone.
+
+    THE COUNT LEADS. It is fixed-width, so every row's left edge lines up.
+    Putting it after the name (as the first version did) meant the count landed
+    at a different x-position on every row and nothing aligned vertically.
+
+    NO BACKTICKS. Discord renders inline code as a grey chip, so `0/1` became a
+    second floating box per row - the other half of the alignment problem.
+
+    The TH emoji replaces the text "TH17": shorter on the line, and a per-row
+    visual anchor, which is what this layout is for.
+    """
+    th = TH_EMOJI.get(row.town_hall, "")
+    lead = f"{row.used}/{row.limit}"
+    return f"{lead} {th} {row.account}".replace("  ", " ").strip()
 
 
 def _render_rows(rows: list) -> list:
@@ -154,25 +227,55 @@ def _render_rows(rows: list) -> list:
     for index, clan_tag in enumerate(order):
         members = grouped[clan_tag]
         first = members[0]
-
-        # A preparation war is real work with a fixed deadline, but you cannot
-        # attack yet - so say BOTH when it opens and when it closes. Showing
-        # only "ends in 2 days" would read as if attacks were already possible.
-        if first.state == "preparation":
-            head = f"### 🕒 {first.clan_name} · prep"
-            if first.starts_at:
-                head += f" · opens <t:{first.starts_at}:R>"
-            if first.ends_at:
-                head += f" · closes <t:{first.ends_at}:R>"
-        else:
-            head = f"### ⚔️ {first.clan_name}"
-            if first.ends_at:
-                head += f" · ends <t:{first.ends_at}:R>"
-
         lines = "\n".join(_row_line(r) for r in members)
-        out.append(Text(content=f"{head}\n{lines}"))
+        body = f"**{first.clan_name}**\n{lines}"
+
+        # Section + Thumbnail(clan badge). The badge is the visual anchor that
+        # the old "🕒 CLAN · prep · opens in 18h · closes in 2 days" header was
+        # trying and failing to be - that header wrapped to two lines on a phone
+        # for every single clan. The clan name now sits alone on a short line
+        # and the timing has moved out to a block heading above, stated once.
+        if first.clan_badge:
+            out.append(Section(
+                accessory=Thumbnail(media=first.clan_badge),
+                components=[Text(content=body)],
+            ))
+        else:
+            out.append(Text(content=body))
+
         if index != len(order) - 1:
             out.append(Separator(divider=False, spacing=hikari.SpacingType.SMALL))
+    return out
+
+
+def _timing_blocks(rows: list) -> list:
+    """Rows split into timing blocks, each stating its deadline ONCE.
+
+    The old layout repeated "prep · opens · closes" on every clan header - three
+    clans meant the same three words three times. The thing that actually varies
+    and matters is TIME, not clan, so time is the outer grouping now.
+
+    Each block puts its timestamp ALONE on its own line. <t:N:R> renders as a
+    grey chip, so mid-sentence it chops a heading into disconnected fragments;
+    on its own line the chip reads as deliberate.
+    """
+    live = [r for r in rows if r.state != "preparation"]
+    prep = [r for r in rows if r.state == "preparation"]
+
+    out: list = []
+    for label, group, stamp_of in (
+        ("Live · closes", live, lambda r: r.ends_at),
+        ("Opens", prep, lambda r: r.starts_at),
+    ):
+        if not group:
+            continue
+        if out:
+            out.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
+        out.append(Text(content=f"**{label}**"))
+        stamps = [s for s in (stamp_of(r) for r in group) if s]
+        if stamps:
+            out.append(Text(content=f"<t:{min(stamps)}:R>"))
+        out.extend(_render_rows(group))
     return out
 
 
@@ -185,7 +288,14 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
     counts = {k: (v.count if v is not None and v.ok else None) for k, v in data.items()}
     current = data.get(view)
 
-    body: list = [Text(content="## 📋 Your To-Do")]
+    # Title carries the count so the header line does one more job. "###" not
+    # "##" - the house style uses H3 - and NO trailing blank line, which was
+    # dead vertical space at the top of every panel.
+    outstanding = counts.get(view)
+    title = f"### {VIEW_LABEL[view]}"
+    if outstanding:
+        title += f" · {outstanding} to do"
+    body: list = [Text(content=title)]
 
     if current is None or not current.ok:
         # RULE: could-not-read must never render as all-caught-up.
@@ -221,14 +331,14 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             else:
                 body.append(Text(content="**All caught up.**"))
         else:
-            body.extend(_render_rows(window))
+            body.extend(_timing_blocks(window))
 
         if current.notes:
             body.append(Separator(divider=True))
             body.append(Text(content="\n".join(f"-# {n}" for n in current.notes)))
 
-    body.append(Separator(divider=True))
-    body.append(_nav_row(view, page, counts))
+    body.append(Separator(divider=True, spacing=hikari.SpacingType.LARGE))
+    body.append(_nav_select(view, counts))
 
     if pages > 1:
         body.append(ActionRow(components=[
@@ -252,9 +362,10 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             ),
         ]))
 
-    body.append(Text(content=ATTRIBUTION))
+    # Media footer stays - it is house style on every panel in the repo. The
+    # "Data via ClashKing" TEXT line above it is gone.
     body.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
-    return _panel(body)
+    return _panel(body, _urgency_accent(current))
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +526,35 @@ async def todo_raid(
         "Raids aren't ready yet",
         "The raid weekend view is still being built. War and CWL work now.",
     )
+
+
+@register_action("todo_nav")
+@lightbulb.di.with_di
+async def todo_nav(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str = VIEW_WAR,
+        coc_client: coc.Client = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs,
+) -> list:
+    """The select-menu router.
+
+    Registered WITHOUT group=, so the dispatcher does not try to resolve the
+    selected value as an action name - it reads values[0] here instead. That is
+    what lets an option carry "refresh" as well as a view name.
+    """
+    values = getattr(ctx.interaction, "values", None) or []
+    choice = values[0] if values else action_id
+    if choice == "refresh":
+        return await _switch(ctx, action_id or VIEW_WAR, "0", coc_client, bot, force=True)
+    if choice not in VIEW_ORDER:
+        choice = VIEW_WAR
+    if choice == VIEW_RAID:
+        return _notice(
+            "Raids aren't ready yet",
+            "The raid weekend view is still being built. War and CWL work now.",
+        )
+    return await _switch(ctx, choice, "0", coc_client, bot)
 
 
 @register_action("todo_refresh")

@@ -117,6 +117,8 @@ class Row:
     # accounts had pending CWL hits.
     state: str = "inWar"
     starts_at: int | None = None
+    town_hall: int = 0
+    clan_badge: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +144,8 @@ class Account:
     name: str
     clan_tag: str | None
     clan_name: str | None
+    town_hall: int = 0
+    clan_badge: str | None = None   # badge URL, for the per-clan Thumbnail
 
 
 # ---------------------------------------------------------------------------
@@ -178,11 +182,15 @@ async def fetch_accounts(coc_client: coc.Client, tags: list[str]) -> tuple[list[
             errors.append(f"{tag}: {type(exc).__name__}")
             continue
 
+        clan = getattr(player, "clan", None)
+        badge = getattr(getattr(clan, "badge", None), "medium", None) if clan else None
         account = Account(
             tag=player.tag,
             name=player.name,
-            clan_tag=player.clan.tag if player.clan else None,
-            clan_name=player.clan.name if player.clan else None,
+            clan_tag=clan.tag if clan else None,
+            clan_name=clan.name if clan else None,
+            town_hall=getattr(player, "town_hall", 0) or 0,
+            clan_badge=badge,
         )
         cache_put(f"player:{tag}", account, TTL_WAR_ACTIVE)
         accounts.append(account)
@@ -490,6 +498,7 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
                 clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
                 used=used, limit=limit, ends_at=ends,
                 state=state, starts_at=starts,
+                town_hall=acct.town_hall, clan_badge=acct.clan_badge,
             ))
 
     # No "in war prep" note any more - preparation wars are ROWS now, not a
@@ -553,6 +562,7 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
                 clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
                 used=used, limit=limit, ends_at=ends,
                 state=state, starts_at=starts,
+                town_hall=acct.town_hall, clan_badge=acct.clan_badge,
             ))
 
     if unreadable:
