@@ -89,6 +89,12 @@ class Row:
     used: int
     limit: int
     ends_at: int | None   # unix seconds, for <t:N:R>. None if unknown.
+    # "inWar" or "preparation". A preparation row is REAL WORK - you cannot
+    # attack yet, but you owe the attack and the deadline is already fixed.
+    # Dropping these is what made the dashboard say "all caught up" while three
+    # accounts had pending CWL hits.
+    state: str = "inWar"
+    starts_at: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -382,7 +388,6 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
     """Regular-war hits still owed."""
     rows: list[Row] = []
     notes: list[str] = []
-    prep = 0
     private = 0
     unreadable = 0
 
@@ -404,14 +409,15 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
             continue
 
         state = str(getattr(war, "state", ""))
-        if state == "preparation":
-            prep += len(members)
-            continue
-        if state != "inWar":
+        # preparation counts. You cannot attack yet, but the attack is owed and
+        # the deadline is already set - "you have a war starting" is exactly the
+        # thing a to-do list should tell you.
+        if state not in ("inWar", "preparation"):
             continue
 
         limit = getattr(war, "attacks_per_member", None) or 2
         ends = _ends_at(war)
+        starts = _starts_at(war)
         for acct in members:
             if _side_for(war, clan_tag) is None:
                 continue
@@ -422,10 +428,11 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
                 account=acct.name, tag=acct.tag,
                 clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
                 used=used, limit=limit, ends_at=ends,
+                state=state, starts_at=starts,
             ))
 
-    if prep:
-        notes.append(f"{prep} account(s) in war prep — can't attack yet")
+    # No "in war prep" note any more - preparation wars are ROWS now, not a
+    # footnote. Counting them into a note is what hid them.
     if private:
         notes.append(f"{private} account(s) in clans with private war logs — can't check")
     if unreadable:
@@ -457,13 +464,21 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
             continue
 
         state = str(getattr(war, "state", ""))
-        if state != "inWar":
+        # THIS LINE USED TO READ `if state != "inWar": continue` AND IT WAS THE
+        # BUG. A CWL round sits in `preparation` for a full day before battle
+        # day, and the group state is `preparation` for the whole first round.
+        # Skipping it meant three accounts with pending CWL hits rendered as
+        # "All caught up" - the worst failure this feature can have. Verified
+        # live 2026-08-03 against war #8R82229L9.
+        if state not in ("inWar", "preparation"):
             continue
 
         # CWL war payloads omit attacksPerMember entirely (verified against a
-        # real season: zero occurrences in 358KB). coc.py hardcodes 1 for CWL.
+        # real season: zero occurrences in 358KB, and again on the live prep
+        # war). coc.py hardcodes 1 for CWL, which is why this renders (0/1).
         limit = getattr(war, "attacks_per_member", None) or 1
         ends = _ends_at(war)
+        starts = _starts_at(war)
         for acct in members:
             used = _used_attacks(war, acct.tag)
             if used >= limit:
@@ -472,6 +487,7 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
                 account=acct.name, tag=acct.tag,
                 clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
                 used=used, limit=limit, ends_at=ends,
+                state=state, starts_at=starts,
             ))
 
     if unreadable:

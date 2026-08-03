@@ -150,10 +150,22 @@ def _render_rows(rows: list) -> list:
     out: list = []
     for index, clan_tag in enumerate(order):
         members = grouped[clan_tag]
-        head = f"### ⚔️ {members[0].clan_name}"
-        ends = members[0].ends_at
-        if ends:
-            head += f" · ends <t:{ends}:R>"
+        first = members[0]
+
+        # A preparation war is real work with a fixed deadline, but you cannot
+        # attack yet - so say BOTH when it opens and when it closes. Showing
+        # only "ends in 2 days" would read as if attacks were already possible.
+        if first.state == "preparation":
+            head = f"### 🕒 {first.clan_name} · prep"
+            if first.starts_at:
+                head += f" · opens <t:{first.starts_at}:R>"
+            if first.ends_at:
+                head += f" · closes <t:{first.ends_at}:R>"
+        else:
+            head = f"### ⚔️ {first.clan_name}"
+            if first.ends_at:
+                head += f" · ends <t:{first.ends_at}:R>"
+
         lines = "\n".join(_row_line(r) for r in members)
         out.append(Text(content=f"{head}\n{lines}"))
         if index != len(order) - 1:
