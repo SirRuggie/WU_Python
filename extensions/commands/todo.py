@@ -779,10 +779,27 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
     # places it between the view select and the footer.
     pager = None
     if pages > 1:
+        # DO NOT CLAMP THE PAGE NUMBERS IN THE custom_id. Clamping is what made
+        # this row 400 the moment it first rendered:
+        #
+        #   page 0        : max(0, page-1) == 0 == page   -> back collides with the label
+        #   last page     : min(pages-1, page+1) == page   -> next collides with the label
+        #   middle pages  : page-1, page, page+1           -> fine
+        #
+        # so it failed on the FIRST page of every paginated payload and worked
+        # in between. Discord rejects the whole message with
+        #   components.0.components.16.components.1.custom_id
+        #    - Component custom id cannot be duplicated
+        #
+        # Unclamped, the three ids are consecutive integers and cannot collide.
+        # Out-of-range is already handled twice over: is_disabled stops the
+        # click, and render_dashboard clamps whatever arrives
+        # (page = max(0, min(page, pages - 1))), so even a hand-crafted
+        # todo_war:-1 lands on page 0.
         pager = ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"todo_{view}:{max(0, page - 1)}",
+                custom_id=f"todo_{view}:{page - 1}",
                 label="◀",
                 is_disabled=page == 0,
             ),
@@ -794,7 +811,7 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"todo_{view}:{min(pages - 1, page + 1)}",
+                custom_id=f"todo_{view}:{page + 1}",
                 label="▶",
                 is_disabled=page >= pages - 1,
             ),
