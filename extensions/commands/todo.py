@@ -9,13 +9,19 @@ LAYOUT RULES, all of them from observed mobile rendering rather than theory:
   version's clan headers ("CLAN · prep · opens in 18 hours · closes in 2 days")
   wrapped to two lines for every clan.
 
-  <t:N:R> AND `backticks` RENDER AS GREY CHIPS, not text. Mid-sentence they
-  shatter a line into disconnected fragments, and a chip whose x-position
-  depends on the name before it destroys vertical alignment. Timestamps get
-  their own line; counts lead the row and carry no backticks.
+  <t:N:R> AND `backticks` RENDER AS GREY CHIPS, not text. A chip is fine at the
+  END of a SHORT line - "Battle Day · ends in 5 hours" reads as one sentence.
+  It only shatters a line when the line is long enough to wrap, which is what
+  the first version's clan headers did. Row counts still lead and carry no
+  backticks: there a chip's x-position depended on the name before it, which
+  destroyed vertical alignment.
 
   TIMING IS STATED ONCE PER BLOCK, not once per clan. Grouping is by TIME
-  first (Live / Opens) and clan second, because time is what varies.
+  first (Battle Day / Prep Day) and clan second, because time is what varies.
+
+  FOUR TYPE SIZES, one per level of the hierarchy: "##" panel title, "###"
+  block heading, "**bold**" clan name, plain text row. Everything below the
+  title used to be bold, so the panel had no visible hierarchy at all.
 
 Design rules enforced here, each of which cost real investigation to establish:
 
@@ -144,6 +150,22 @@ VIEW_UNICODE = {VIEW_PRIVATE: "🔒"}
 EMOJI_LIVE = "sword_fighting"
 EMOJI_WAITING = "Waiting"
 
+# Block headings, per view. "Opens" alone was a bare verb that named no state -
+# it told you an event was happening without saying WHICH. These name the game
+# state, so the heading plus its timestamp chip reads as one plain sentence:
+# "Battle Day · ends in 5 hours".
+#
+# Each entry is (live label, prep label). The prep half never fires for raids -
+# raid Rows carry the default state "inWar" - but it is spelled out rather than
+# left to a fallback so a future prep-capable raid row cannot render "Prep Day"
+# for a raid weekend.
+BLOCK_LABELS = {
+    VIEW_WAR:  ("Battle Day · ends", "Prep Day · starts"),
+    VIEW_CWL:  ("Battle Day · ends", "Prep Day · starts"),
+    VIEW_RAID: ("Raid Weekend · ends", "Raid Weekend · starts"),
+}
+BLOCK_LABELS_DEFAULT = ("Live · ends", "Starts")
+
 # Unicode slots. Chosen for meaning, not decoration - see the report.
 U_REFRESH = "🔄"      # reload, reads as an action rather than a destination
 U_URGENT = "⏰"       # pairs with the red accent when something closes < 2h
@@ -196,7 +218,8 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
     on an error state Refresh is precisely the button they want.
     """
     return _panel([
-        Text(content=f"### {title}"),
+        # "##" to match the dashboard's panel title - a notice IS the panel.
+        Text(content=f"## {title}"),
         Separator(divider=True),
         Text(content=body),
         # _nav_block ends with the footer and the freshness row - do not append
@@ -407,34 +430,40 @@ def _render_rows(rows: list) -> list:
     return out
 
 
-def _timing_blocks(rows: list) -> list:
+def _timing_blocks(view: str, rows: list) -> list:
     """Rows split into timing blocks, each stating its deadline ONCE.
 
     The old layout repeated "prep · opens · closes" on every clan header - three
     clans meant the same three words three times. The thing that actually varies
     and matters is TIME, not clan, so time is the outer grouping now.
 
-    Each block puts its timestamp ALONE on its own line. <t:N:R> renders as a
-    grey chip, so mid-sentence it chops a heading into disconnected fragments;
-    on its own line the chip reads as deliberate.
+    THE TIMESTAMP SHARES THE HEADING'S LINE. It had its own line for a while,
+    on the theory that a <t:N:R> chip fragments any sentence it lands in. That
+    was the wrong lesson from the right observation: the chip only fragments a
+    line that WRAPS. "Battle Day · ends" + chip is ~28 characters, does not
+    wrap on a phone, and reads as one sentence. Two lines for one fact was the
+    worse trade. If a label ever grows long enough to wrap, shorten the LABEL -
+    do not split the line again.
     """
     live = [r for r in rows if r.state != "preparation"]
     prep = [r for r in rows if r.state == "preparation"]
+    live_label, prep_label = BLOCK_LABELS.get(view, BLOCK_LABELS_DEFAULT)
 
     out: list = []
     for emoji_name, label, group, stamp_of in (
-        (EMOJI_LIVE, "Live · closes", live, lambda r: r.ends_at),
-        (EMOJI_WAITING, "Opens", prep, lambda r: r.starts_at),
+        (EMOJI_LIVE, live_label, live, lambda r: r.ends_at),
+        (EMOJI_WAITING, prep_label, prep, lambda r: r.starts_at),
     ):
         if not group:
             continue
         if out:
             out.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
-        heading = f"{_emoji(emoji_name)} **{label}**".strip()
-        out.append(Text(content=heading))
         stamps = [s for s in (stamp_of(r) for r in group) if s]
+        # "###" - one step below the panel title, one step above the clan name.
+        heading = f"### {_emoji(emoji_name)} {label}".replace("###  ", "### ")
         if stamps:
-            out.append(Text(content=f"<t:{min(stamps)}:R>"))
+            heading += f" <t:{min(stamps)}:R>"
+        out.append(Text(content=heading.rstrip()))
         out.extend(_render_rows(group))
     return out
 
@@ -461,7 +490,8 @@ def _reason_blocks(rows: list) -> list:
             continue
         if out:
             out.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
-        out.append(Text(content=f"{glyph} **{label}**\n-# {hint}"))
+        # Same "###" step as _timing_blocks - these are block headings too.
+        out.append(Text(content=f"### {glyph} {label}\n-# {hint}"))
         out.extend(_render_rows(group))
     return out
 
@@ -475,12 +505,16 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
     counts = {k: (v.count if v is not None and v.ok else None) for k, v in data.items()}
     current = data.get(view)
 
-    # Title carries the count so the header line does one more job. "###" not
-    # "##" - the house style uses H3 - and NO trailing blank line, which was
-    # dead vertical space at the top of every panel.
+    # Title carries the count so the header line does one more job. NO trailing
+    # blank line, which was dead vertical space at the top of every panel.
+    #
+    # "##", a step ABOVE the repo's house H3. Deliberate departure: this panel
+    # has three nested levels under the title, and at H3 the title was the same
+    # size as the clan names, so nothing read as the title. H1 is far too large
+    # on a phone. Other panels in the repo are flat and stay at H3.
     outstanding = counts.get(view)
     glyph = _emoji(VIEW_EMOJI.get(view, "")) or VIEW_UNICODE.get(view, "")
-    title = f"### {glyph} {VIEW_LABEL[view]}".replace("###  ", "### ")
+    title = f"## {glyph} {VIEW_LABEL[view]}".replace("##  ", "## ")
     if outstanding:
         # "to do" is wrong for Private War Logs - those accounts are not work,
         # they are clans to go and ask about.
@@ -540,7 +574,7 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             if view == VIEW_PRIVATE:
                 body.extend(_reason_blocks(window))
             else:
-                body.extend(_timing_blocks(window))
+                body.extend(_timing_blocks(view, window))
 
         if current.notes:
             body.append(Separator(divider=True))
