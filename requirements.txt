@@ -23,8 +23,23 @@ pymongo
 # Handles timezones and datetime formatting (used by APScheduler)
 pendulum
 
-# Clash of Clans API wrapper (community-maintained)
-coc.py
+# Clash of Clans API wrapper (community-maintained).
+# PINNED AT THE DEPLOYED VERSION. 3.9.1 is what the box runs and what every
+# Clash code path here has been exercised against.
+#
+# 3.10.0 exists and is worth taking LATER, deliberately, on its own deploy:
+#   3.9.2  datetime.utcnow() -> datetime.now() (kills 3.12 DeprecationWarnings)
+#   3.9.2  handles the CoC API returning a TEXT response instead of JSON -
+#          directly relevant, since every Clash call goes through a third-party
+#          proxy that can return an HTML error page during an outage
+#   3.10.0 TH18 game data (Totem Spell, Meteor Golem)
+#
+# Not taken now because the TH18 half is inert here - main.py sets
+# load_game_data=LoadGameData(default=False), so troop/spell tables are never
+# loaded - and the useful half is a change to the ERROR path, which deserves a
+# deliberate deploy rather than riding along with a pin whose whole purpose is
+# to reproduce the known-good state. See docs/hikari-lightbulb-versions.md.
+coc.py==3.9.1
 
 # Image processing library (resize, convert, etc.)
 Pillow
