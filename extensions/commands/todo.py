@@ -653,18 +653,6 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
 # Data assembly
 # ---------------------------------------------------------------------------
 
-async def _drop_ack(ctx) -> None:
-    """Delete the ephemeral "thinking…" acknowledgement.
-
-    Cosmetic only - the panel has already been sent by the time this runs, so a
-    failure here must never surface as a failed command.
-    """
-    try:
-        await ctx.interaction.delete_initial_response()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[todo] could not delete the ack response: {type(exc).__name__}: {exc}")
-
-
 async def _load_clan_logos(mongo) -> None:
     """Populate the family-clan logo map, once per TTL.
 
@@ -766,20 +754,39 @@ class Todo(
             coc_client: coc.Client = lightbulb.di.INJECTED,
             mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
-        # Ephemeral in a guild, persistent in a DM. A DM dashboard is meant to
-        # be scrolled back to; an in-channel one is a convenience read.
-        # Acknowledge ephemerally, post the panel as a STANDALONE message, then
-        # delete the acknowledgement. Responding to the interaction directly
-        # makes the panel a REPLY, which Discord labels "X used /todo" - but the
-        # panel is a thing you keep and scroll back to, not a reply to a
-        # command. Same pattern as clan/dashboard/dashboard.py:108-121.
-        await ctx.defer(ephemeral=True)
+        # THE PANEL IS THE INTERACTION RESPONSE. It used to be a separate
+        # create_message with the ephemeral ack deleted afterwards, purely to
+        # avoid the "Sir Ruggie used /todo" header. That cost more than it
+        # bought:
+        #
+        #   POST /channels/{id}/messages  - what create_message uses. This is
+        #   the bucket that was throttling: 4.65s waits on a DM channel, plus a
+        #   slide period resyncing 1s -> 10s. band_sync_ical.py:268 posts FWA
+        #   alerts to the SAME route on the SAME user's DM channel, so a sync
+        #   burst and a /todo compete directly.
+        #
+        #   PATCH /webhooks/{app}/{token}/messages/@original - what ctx.respond
+        #   uses after a defer. A DIFFERENT bucket, which nothing else in this
+        #   bot touches, and one REST call instead of three.
+        #
+        # Both route templates verified in hikari 2.3.5 internal/routes.py.
+        # The reply header is the price, and it is worth paying: a dashboard
+        # that always appears beats a prettier one that sometimes does not.
+        #
+        # DEFER FIRST, ALWAYS. The 3-second window is on the FIRST response to
+        # an interaction, and the fetch behind this panel takes tens of seconds.
+        # Nothing may be awaited before this line. Sending the panel before
+        # acknowledging is not an option - the interaction is dead at 3s and
+        # Discord shows "The application did not respond".
+        #
+        # Not ephemeral: the deferred response becomes the panel, and a DM
+        # dashboard is meant to be scrolled back to.
+        await ctx.defer()
 
         data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo)
         if problem:
-            sent = await bot.rest.create_message(channel=ctx.channel_id, components=problem)
-            await _record_panel(ctx, mongo, sent, VIEW_WAR, kind="notice")
-            await _drop_ack(ctx)
+            await ctx.respond(components=problem)
+            await _record_response(ctx, mongo, VIEW_WAR, kind="notice")
             return
         # Open on the first view that actually has work. Always opening on War
         # meant a user whose only pending hits were CWL saw an empty War view
@@ -789,12 +796,8 @@ class Todo(
              if data.get(v) is not None and data[v].ok and data[v].count),
             VIEW_WAR,
         )
-        sent = await bot.rest.create_message(
-            channel=ctx.channel_id,
-            components=render_dashboard(opening, 0, data),
-        )
-        await _record_panel(ctx, mongo, sent, opening)
-        await _drop_ack(ctx)
+        await ctx.respond(components=render_dashboard(opening, 0, data))
+        await _record_response(ctx, mongo, opening)
 
 
 # ---------------------------------------------------------------------------
@@ -804,6 +807,29 @@ class Todo(
 # read. The dispatcher's button_store lookup always misses for /todo - that is
 # the design - so a handler must be callable with only ctx and action_id.
 # ---------------------------------------------------------------------------
+
+async def _record_response(ctx, mongo, view: str, page: int = 0,
+                           kind: str = "dashboard") -> None:
+    """Record the panel when it IS the interaction response.
+
+    Needs its own fetch. lightbulb 3.0.3's Context.respond returns
+    `constants.INITIAL_RESPONSE_IDENTIFIER` - a sentinel, not a Message and not
+    a real snowflake (verified in lightbulb/context.py at the 3.0.3 tag) - so
+    there is no message id to record without asking for it.
+
+    fetch_initial_response() is a GET on the webhook route, NOT on
+    /channels/{id}/messages, so it cannot re-enter the bucket this whole change
+    exists to get off. Wrapped: a bookkeeping row is never worth a failed
+    command, so a panel that rendered stays rendered even if this misses.
+    """
+    try:
+        message = await ctx.interaction.fetch_initial_response()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo-sessions] could not fetch the response to record it: "
+              f"{type(exc).__name__}: {exc}")
+        return
+    await _record_panel(ctx, mongo, message, view, page, kind=kind)
+
 
 async def _record_panel(ctx, mongo, message, view: str, page: int = 0,
                         kind: str = "dashboard", trigger: str = "command") -> None:
