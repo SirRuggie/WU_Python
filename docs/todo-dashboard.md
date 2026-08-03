@@ -263,7 +263,7 @@ Nav is centralised in `_nav_block()` so this cannot regress per-path.
 
 ## The freshness stamp, and the bug that froze it
 
-`-# updated <t:N:R>` is built from **when the data was fetched**, never from
+`-# fetched <t:N:R>` is built from **when the data was fetched**, never from
 render time. A panel served entirely from cache renders now but shows data from
 minutes ago, and the cached case is exactly when staleness matters.
 `oldest_fill()` takes the **oldest** live entry, because the panel is only as
@@ -293,6 +293,51 @@ those prefixes can predate it. If something does, it prints the surviving keys
 by name. The failure mode here is invisible from the panel — button works, data
 is fresh, only the clock lies — so it has to announce itself.
 
+### A warm `/todo` reports the previous run's fetch, and that is correct
+
+A warm invocation makes **zero** API calls, so `cache_put` is never reached, so
+no `filled_at` changes, so `min()` returns the previous run's time. The stamp is
+honest — it reports when the *data* was fetched, and nothing was.
+
+It was also indistinguishable from a stamp that had failed to move, which is why
+the wording now names which case it is:
+
+| Condition | Renders |
+|---|---|
+| this invocation made ≥1 API call | `fetched 2 minutes ago` |
+| this invocation made none | `cached, fetched 2 minutes ago` |
+
+Driven off `call_stats()["n"]`, not a flag threaded through the load path.
+`reset_calls()` runs in `_Perf.__init__` once per invocation and `_nav_block`
+renders after the fetch, so `n` is this run's total.
+
+**Refresh coverage was checked and is clean.** `drop_render_caches()` drops all
+five `DATA_PREFIXES` plus `links:` and `clanlogos` as `extra`, so Refresh drops
+strictly *more* than the stamp reads. This is not a third instance of the
+`raid:`/`cwlwar:` prefix-coverage shape.
+
+### KNOWN BEHAVIOUR, NOT FIXED: `min()` spans views you are not looking at
+
+`oldest_fill()` takes the minimum across **every** `DATA_PREFIXES` entry, not
+just the ones feeding the current view.
+
+Out of season, `raid:` entries are cached with `_seconds_until_raid_opens()` —
+**days**. So an hour after a restart, on the **War** view: `war:` has refilled
+repeatedly at its 120 s TTL, while the raid entry still carries its original fill
+time, and `min()` returns *the raid entry*. **The stamp reads "1 hour ago" over
+war data that is two minutes old.**
+
+This is probably what is seen on the panel more often than the warm-cache case.
+
+**Deliberately not fixed.** The obvious remedy — a per-view prefix map, e.g.
+`oldest_fill(("war:", "player:"))` on the War view — creates a *second list of
+prefixes that must stay in sync with the first*. That is precisely the shape
+that produced both the `raid:` and the `cwlwar:` bugs. A third one is not worth
+a cosmetically nicer timestamp.
+
+Open question: whether the `cached, fetched` wording above makes this tolerable,
+or whether the stamp needs to be scoped some other way.
+
 ### It happened a second time: `cwlwar:`
 
 Found by auditing every `cache_put` key against `DATA_PREFIXES`, not by anyone
@@ -311,6 +356,12 @@ Refresh never dropped them and `oldest_fill` never aged them.
 dropped, so the stamp froze *old*. `cwlwar:` was neither, so the stamp
 **under-reported** staleness — it could read "updated just now" over CWL data a
 day old.
+
+> **UNCONFIRMED.** The fix in `40c97ef` has never been observed working. With no
+> CWL season active there are no `cwlwar:` keys in the cache, so a Refresh has
+> nothing to drop and `dropped=` cannot move. Only the prefix tuple in the
+> `[todo-diag] drop_render_caches` line is observable today. **Treat as
+> unverified until a CWL season runs**, not as working.
 
 **An uncovered prefix is silent by construction.** It produces no error, no
 stale-looking output, and no failed request; it just quietly stops participating
@@ -408,7 +459,29 @@ filled. Running them concurrently would turn those cache hits back into
 duplicate in-flight requests. **The win is inside each builder, not between
 them.**
 
-After this, `send=` is the largest single remaining component.
+### The cold-path arc, and where it stopped
+
+```
+12.35s   starting point
+ 5.53s   view parallelisation (d502c5a)   fetch=3947ms
+ 6.16s   same run shape + serialize= instrumentation   fetch=4316ms
+```
+
+**5.53 → 6.16 is not a regression.** It is run-to-run variance in upstream
+fetch — 3947 ms then, 4316 ms now, on the same code path. Nothing between those
+two runs changed the number of calls or their concurrency.
+
+The remaining 6.16 s is **both halves external**:
+
+| Component | Cost | Owner |
+|---|---|---|
+| `fetch` | 4316 ms | CoC API via the ClashKing proxy |
+| `send` | 1055 ms | Discord |
+
+**There is nothing local left to optimise.** The only remaining lever on `fetch`
+is `POST /ck/bulk`, which would collapse ~104 calls into one — and it returns
+`401 Invalid token`. That needs a credential from the ClashKing operator; see
+[clashking-war-endpoints.md](clashking-war-endpoints.md).
 
 ### What `send=` spans — ONE call, and not the one previously documented
 
@@ -465,9 +538,26 @@ fresh `JSONObjectBuilder`, `self._components.copy()`, no mutation of `self`,
 it is a duplicate pass the user would not otherwise pay, and `total=` has to stay
 comparable with numbers measured before the field existed.
 
-`send - serialize` is the round trip plus deserialisation. **Those two cannot be
+`send - serialize` is the round trip plus deserialisation. Those two cannot be
 separated without reaching inside hikari's `rest.py`, and that is not worth a
-fork of the REST layer.**
+fork of the REST layer.
+
+### CLOSED: `send=` is network-bound. Stop investigating it.
+
+```
+render=0ms serialize=0ms send=1055ms
+```
+
+**`component.build()` is free.** Serialisation is eliminated as a cause, and
+deserialising one message is not going to be the other second. Rate limiting was
+already eliminated separately: the journal held 20 rate-limit lines total, all
+between 2026-07-30 and 2026-08-03 02:15, none on the webhook route and none
+during any measured run — so the bucket acquire at `rest.py:804` and the retry
+sleeps in the `_request` loop are both ruled out.
+
+That leaves **raw network latency to Discord**, which is not ours to fix. `send=`
+has now cost four turns of investigation and the answer is that there was never
+anything local in it.
 
 **`send=` does not scale with account count.** `render_dashboard` windows rows to
 `PAGE_SIZE = 20` (`todo.py:582`), so payload size is bounded by rows on the page
