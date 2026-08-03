@@ -454,6 +454,100 @@ it. The only per-user cost is `player:` and `links:`.
 
 ---
 
+## THE ORIGINAL FAILURE: the 40-component limit, and paging on the wrong unit
+
+**This is what was actually broken for the 34-clan user, and it had never
+worked.** The feature was new and he was the first person past the threshold.
+
+```
+BadRequestError: 400 (50035) 'Invalid Form Body'
+components: - Total number of components cannot exceed 40
+    at extensions/commands/todo.py, sent = await ctx.respond(...)
+```
+
+**It presented as "spins and never returns".** A 400 leaves no panel and no
+visible error — the ephemeral defer just never resolves. Every performance
+investigation in this document was chasing a real but *separate* problem. The
+fetch completed fine on his failing run; all 34 `build_raid_view` diag lines
+were present, and it threw before the perf line printed, which is why his runs
+produced no `[todo-perf]` at all.
+
+### The formula
+
+Counting every node, including nested children:
+
+| Part | Components |
+|---|---|
+| Container + title + separator + `_nav_block` (7) | **10** — `PANEL_FIXED` |
+| per block: heading Text | 1 |
+| separator between blocks | B − 1 |
+| **per clan with a thumbnail**: Section + Text + Thumbnail | **3** |
+| per clan without one: a bare Text | 1 |
+| separator between clans | C − B |
+| notes | +2 |
+| pagination row: ActionRow + 3 Buttons | +4 |
+
+**Total ≈ 4C + B + 9**, where **C = distinct clans on the page** and B = blocks.
+
+### The driver is CLANS, not rows
+
+| | C | B | Components | |
+|---|---|---|---|---|
+| operator | 2 | 2 | 19 | ✅ |
+| **threshold** | **7** | 2 | **39** | ✅ |
+| | 8 | 2 | 43 | ❌ |
+| 34-clan user | up to 20 | 2 | ~91 | ❌ |
+
+The operator's 8 pending hits sit in **2 clans** and were never near the limit.
+At 34 clans there is roughly one account per clan, so 20 rows means ~20 clans.
+
+**Rows are nearly free; clans are expensive.** `PAGE_SIZE = 20` capped rows —
+the wrong unit — so a page could hold an unbounded number of clans. That was the
+defect.
+
+### Worst view
+
+**War, which is the default** — hence failing on the first screen. Raids is one
+cheaper (raid rows are all `inWar`, so B=1). CWL is safer only because fewer
+clans are in CWL at once. **Private War Logs is safest despite often having the
+most rows**, because a private war log is a property of the *clan*, so its rows
+cluster into few clans.
+
+### The fix: page on components
+
+`_paginate()` walks rows greedily, closing a page when `_page_cost()` would
+exceed `COMPONENT_BUDGET`. **Pages are variable length by design.**
+
+`_split_blocks()` is **the one splitter**, used by the cost model *and* both
+renderers. Two copies of that predicate — one to render, one to count — is the
+drift shape that produced the `raid:` and `cwlwar:` bugs.
+
+**The budget is 38, not 40**, and it charges for things that are not always
+there:
+
+```
+COMPONENT_LIMIT       40   Discord's hard cap
+COMPONENT_HEADROOM     2   absorbs one more Text added without recomputing
+COMPONENT_BUDGET      38
+PANEL_FIXED           10   container, title, separator, nav block
+RESERVE_NOTES          2   always assumed
+RESERVE_PAGINATION     4   always assumed
+```
+
+**`RESERVE_PAGINATION` must be unconditional or the logic is circular**: the
+pagination row appears only when `pages > 1`, so budgeting for it only once
+paginated would push page 1 back over the limit the moment paging began.
+
+That leaves 22 components of content, or **about 5 clans per page** — 34 clans
+becomes roughly 5–7 pages. `RESERVE_NOTES` is charged even when a view has no
+notes, which costs about half a clan per page; it is a flat reserve for
+simplicity and is the obvious tunable if page counts feel high.
+
+`PAGE_SIZE` is **retired**, not renamed — two units in one system is what caused
+this.
+
+---
+
 ## THERE ARE TWO CACHE LAYERS, AND `warm=` ONLY REPORTS OURS
 
 This one invalidates a reading of the perf line that looks obvious and is wrong.
@@ -1002,10 +1096,32 @@ Also unverified: whether the H2/H3 type step is visibly distinct on mobile
 (nobody has said either way), and coc.py 3.10.0's `coc/raid.py` `max()` crash
 fix, which is in the raid path and therefore in the same untested window.
 
-**Inferred, not measured:** the ~4000-character message-wide limit and the
-40-component budget (Discord does not document either; corroborated by two
-third-party sources). The ~28-character mobile wrap budget is an eyeball from
-screenshots, not a measurement.
+**CONFIRMED, was inferred: the 40-component limit, and that it counts nested
+children.** Discord stated it verbatim:
+
+```
+hikari.errors.BadRequestError: Bad Request 400: (50035) 'Invalid Form Body'
+components:
+ - Total number of components cannot exceed 40
+```
+
+The payload has **exactly one top-level component** — `_panel()` returns
+`[Container(...)]` — so a top-level-only count could never exceed 1. The 400 is
+the oracle for both facts.
+
+**Still inferred, not measured:** the ~4000-character message-wide limit
+(components bound first, so it has never been reached). The ~28-character mobile
+wrap budget is an eyeball from screenshots, not a measurement.
+
+**The character limit may be the next wall — but component paging makes it
+LESS likely to bite, not more.** Text volume scales with the same thing
+components do: each clan contributes a name, a subtext deadline and its rows. A
+page bounded at ~5 clans carries roughly 20 rows of text, on the order of 1200
+characters — comfortably clear of ~4000. The variable-length pages are variable
+in the direction that helps, because the constraint that shortens them is
+correlated with the one that would have lengthened the text. **It has still
+never been measured**, and the way it would surface is another 400 naming
+`content` or a length rather than `components`.
 
 `[todo-diag]` instrumentation is still present on the raid path, by request,
 until a live weekend proves it. Remove it then — and note that stripping it
