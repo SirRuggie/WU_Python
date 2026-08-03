@@ -445,6 +445,30 @@ Two consequences:
   duration of the call. Per-context and uncontended for a single invocation, so
   it explains nothing about the ~2 s.
 
+### `render=0ms` IS MISLEADING — read this before trusting the perf line
+
+**`render_dashboard` constructs hikari *builder objects* and nothing else.** The
+JSON serialisation happens later, inside `ctx.respond()`, at
+`hikari/impl/rest.py:1484` and `:1499` (`component.build()`, called from
+`_build_message_payload` at `:2141`). `deserialize_message` at `:2166` is in
+there too.
+
+So `render=` measures object construction and **`send=` contains the
+serialisation, the bucket acquire, the HTTP round trip, and the
+deserialisation.** Reading `render=0ms` as "rendering is free" is wrong — the
+expensive half of rendering was never in that timer.
+
+`serialize=` was added to sample the `build()` cost from our side using hikari's
+public API (safe to call twice: `ContainerComponentBuilder.build()` is pure —
+fresh `JSONObjectBuilder`, `self._components.copy()`, no mutation of `self`,
+`impl/special_endpoints.py:2579-2597`). It is **excluded from `total=`**, because
+it is a duplicate pass the user would not otherwise pay, and `total=` has to stay
+comparable with numbers measured before the field existed.
+
+`send - serialize` is the round trip plus deserialisation. **Those two cannot be
+separated without reaching inside hikari's `rest.py`, and that is not worth a
+fork of the REST layer.**
+
 **`send=` does not scale with account count.** `render_dashboard` windows rows to
 `PAGE_SIZE = 20` (`todo.py:582`), so payload size is bounded by rows on the page
 and clans within it, not by the 46 or 65 accounts behind them. `send≈2000ms` on
@@ -684,10 +708,27 @@ measured — moving off the channel bucket bought roughly 1–2 s of the origina
 nothing has been measured about it beyond establishing that it is a single call
 that does not scale with account count.
 
-**Open defect, not yet fixed:** `_record_response` keys `todo_sessions` rows to
+**Fixed and verified** (`3c11233`): `_record_response` used to key rows to
 `fetch_initial_response()` — the deferred placeholder — while the panel is a
-followup message with a different id. Found by reading lightbulb's source, not
-by observation. Nothing reads those rows yet, so it is latent.
+followup message with a different id.
+
+Closing evidence, `/todo` then Refresh:
+
+```
+_id 1533937406334472413  interactions=3  last_trigger=refresh
+created_at 1785789582.46  updated_at 1785790183.62
+```
+
+**One row, not two.** The command path and the interaction path wrote the same
+document, so the id the command recorded is the panel's. The broken case would
+have produced a second row with `interactions=1`, because the interaction path
+keys off `ctx.interaction.message.id` and always did.
+
+That is the test that discriminates. A query returning only `last_trigger='command'`
+rows with `interactions=1` proves nothing — it cannot tell "fixed" from "the
+interaction path never ran".
+
+**Auto-refresh phase 1 can now safely read these rows.**
 
 **Not yet verified:** the Raids view with a live raid weekend — `state ==
 "ongoing"` has never returned True, because every test has been out of season
