@@ -546,6 +546,63 @@ simplicity and is the obvious tunable if page counts feel high.
 `PAGE_SIZE` is **retired**, not renamed — two units in one system is what caused
 this.
 
+### Then the pagination row 400'd on its very first render
+
+Fixing the component budget made pagination reachable for the first time, and it
+failed immediately:
+
+```
+400 (50035) components.0.components.16.components.1.custom_id
+ - Component custom id cannot be duplicated
+```
+
+**Decoding the path:** `components.0` is the Container, `.components.16` is its
+17th child, `.components.1` is that child's second child. Only an ActionRow has
+multiple children here — the view select and the Refresh row hold one each, so
+child 16 is **the pagination row** and child 1 is its middle "Page N/M" label.
+
+**The clamps were the bug.** The three buttons were:
+
+| Button | custom_id |
+|---|---|
+| ◀ | `todo_{view}:{max(0, page - 1)}` |
+| label | `todo_{view}:{page}` |
+| ▶ | `todo_{view}:{min(pages - 1, page + 1)}` |
+
+- **page 0** — `max(0, -1)` is `0`, which *is* `page`. ◀ collides with the label.
+- **last page** — `min(pages-1, page+1)` is `page`. ▶ collides with the label.
+- **middle pages** — `page-1, page, page+1`, all distinct. Fine.
+
+So it broke on the **first and last** page and worked in between. Since every
+paginated panel opens on page 0, it failed on arrival every time — but a
+3-or-more-page panel would have worked on page 2, which is exactly the kind of
+partial success that makes a bug look intermittent.
+
+**Fix: do not clamp inside the custom_id.** Unclamped they are consecutive
+integers and cannot collide. Out-of-range was already handled twice over —
+`is_disabled` prevents the click, and `render_dashboard` clamps whatever arrives
+(`page = max(0, min(page, pages - 1))`), so even a hand-crafted `todo_war:-1`
+lands on page 0. `_switch` parses it with a `ValueError` guard defaulting to 0.
+
+One colon per id is preserved throughout.
+
+### "Written but never rendered" is its own risk category
+
+**Two defects in a row were found in code that had never executed** — the
+pagination row shipped parked and half-built, unreachable because `PAGE_SIZE=20`
+meant `pages > 1` never fired at the operator's scale, and the component budget
+was never computed at all.
+
+That is distinct from *written but never tested*. Untested code has at least run
+somewhere; **unrendered code has never been near a Python interpreter or a
+Discord validator.** Both of these were latent from the day they were written and
+surfaced only when a scale change made the branch reachable.
+
+The lesson is the same one the raid view is still waiting on: a branch nobody has
+seen render is not evidence of anything. If a feature ships with a branch that
+cannot fire at current scale, say so in the report and keep it flagged until
+something makes it fire.
+
 ---
 
 ## THERE ARE TWO CACHE LAYERS, AND `warm=` ONLY REPORTS OURS
