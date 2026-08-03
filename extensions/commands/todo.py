@@ -745,11 +745,33 @@ class _Perf:
     def _ms(self, name: str) -> int:
         return int(self._phase.get(name, 0.0) * 1000)
 
+    def _field(self, name: str) -> str:
+        """A phase's value, or "-" if it was NEVER MEASURED ON THIS PATH.
+
+        `_ms` returns 0 for a missing key, which rendered a phase nobody
+        observed identically to one that genuinely took no time. The refresh
+        path has no defer and cannot time the send - the dispatcher owns the
+        response - so the line asserted `defer=0ms send=0ms` about work it had
+        not looked at, next to a real `send=1055ms` on the command path.
+
+        A key exists in _phase only if timing() or instrumentation_only() ran
+        for it, so presence is exactly "was this observed". Any future
+        path-specific phase gets this for free.
+        """
+        if name not in self._phase:
+            return "-"
+        return f"{self._ms(name)}ms"
+
     def line(self) -> str:
         total = time.perf_counter() - self._t0 - self._excluded
         # fetch is the sum of the two halves rather than a third timer, so the
-        # parts always add up to the whole and cannot drift apart.
-        fetch = self._ms("players") + self._ms("views")
+        # parts always add up to the whole and cannot drift apart. "-" only if
+        # NEITHER half was observed - a partial sum would be a lie of the same
+        # kind _field exists to prevent.
+        if "players" in self._phase or "views" in self._phase:
+            fetch = f"{self._ms('players') + self._ms('views')}ms"
+        else:
+            fetch = "-"
         meta = " ".join(f"{k}={v}" for k, v in self.meta.items())
 
         # calls= and worst= are what tell 50 throttled calls apart from 2 slow
@@ -759,24 +781,36 @@ class _Perf:
         worst_ms = int(float(stats.get("worst", 0.0)) * 1000)
         mean_ms = int(float(stats.get("total", 0.0)) * 1000 / n) if n else 0
 
+        # WHAT total= SPANS DIFFERS BY PATH, so it says which.
+        #
+        # The command path prints after the send, so total covers everything the
+        # user waited for. The refresh path prints after render, because the
+        # dispatcher owns the response and _switch cannot time it - so its total
+        # stops at render and is NOT comparable with the command path's.
+        #
+        # Derived from whether send was observed rather than set by the caller,
+        # so it cannot drift out of sync with reality. The NUMBER on the command
+        # path is unchanged - tonight's cold-path arc stays the baseline.
+        span = "to-send" if "send" in self._phase else "to-render"
+
         return (
             f"[todo-perf] {meta} "
-            f"defer={self._ms('defer')}ms resolve={self._ms('resolve')}ms "
-            f"logos={self._ms('logos')}ms fetch={fetch}ms "
-            f"(players={self._ms('players')}ms views={self._ms('views')}ms) "
+            f"defer={self._field('defer')} resolve={self._field('resolve')} "
+            f"logos={self._field('logos')} fetch={fetch} "
+            f"(players={self._field('players')} views={self._field('views')}) "
             # render= builds BUILDER OBJECTS only. serialize= is the JSON pass
             # hikari does inside send=, sampled here. send= is everything:
             # serialisation + bucket acquire + HTTP + deserialize_message. So
             # (send - serialize) is the round trip plus deserialisation, which
             # cannot be separated further without reaching into hikari.
-            f"render={self._ms('render')}ms serialize={self._ms('serialize')}ms "
-            f"send={self._ms('send')}ms "
+            f"render={self._field('render')} serialize={self._field('serialize')} "
+            f"send={self._field('send')} "
             f"calls={n} mean={mean_ms}ms worst={worst_ms}ms/{stats.get('worst_label', '-')} "
             # up= is the process uptime. A warm=0 run with up= under a minute is
             # a restart, not a cache bug - the cache is in-process and dies with
             # it. Without this the two are indistinguishable from the panel.
             f"up={int(todo_data.uptime())}s cached={todo_data.cache_size()} "
-            f"total={total:.2f}s"
+            f"total={total:.2f}s({span})"
         )
 
 
