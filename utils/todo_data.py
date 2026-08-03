@@ -13,9 +13,13 @@ THREE RULES THIS MODULE EXISTS TO ENFORCE:
    mean opposite things - the reference implementation became untrustworthy
    exactly here. Every ViewData carries `ok` for this reason.
 
-3. NON-ACTIONABLE BUT RELEVANT IS A NOTE, NOT A DELETION. War preparation and
-   private war logs are not rows, but silently omitting them hides accounts the
-   user would want to know about. They surface as notes.
+3. NON-ACTIONABLE BUT RELEVANT IS STILL SHOWN. Preparation-phase wars ARE rows
+   - you cannot attack yet, but you owe the attack and the deadline is set.
+   Private war logs cannot be read at all, so they surface as a note. Silently
+   omitting either hides accounts the user needs to know about.
+
+4. NEVER str() A coc.py STATE ENUM. See _state() below. This one mistake
+   emptied both views while every fetch underneath them succeeded.
 
 NEVER call coc.Client.get_current_war() here. It silently makes 2-10 calls -
 regular war, then league group, then it PROBES the last round, then fetches the
@@ -229,7 +233,7 @@ async def _get_war(coc_client: coc.Client, clan_tag: str):
     # WarState defines __eq__ without __hash__, so its members are unhashable -
     # `state in {…}` raises TypeError. Tuples compare fine, and ExtendedEnum
     # equality accepts plain strings.
-    active = str(war.state) in ("inWar", "preparation")
+    active = _state(war) in ("inWar", "preparation")
     cache_put(key, result, TTL_WAR_ACTIVE if active else TTL_WAR_IDLE)
     return result
 
@@ -275,7 +279,7 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
         print(f"[todo] CWL group lookup errored for {clan_tag}: {type(exc).__name__}: {exc}")
         return ("error", None)
 
-    if group is None or str(getattr(group, "state", "")) in ("notInWar", "groupNotFound", "ended"):
+    if group is None or _state(group) in ("notInWar", "groupNotFound", "ended"):
         _d(f"_get_cwl_round EARLY-RETURN none: group state "
            f"{getattr(group, 'state', '<None group>')!r} for {clan_tag}")
         result = ("none", None)
@@ -333,7 +337,7 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
                 continue
             # A finished CWL war is immutable - cache it hard. War tags are
             # globally unique, so two family clans in one group share this entry.
-            ended = str(getattr(war, "state", "")) == "warEnded"
+            ended = _state(war) == "warEnded"
             cache_put(war_key, war, 24 * 60 * 60 if ended else TTL_CWL_ACTIVE)
 
         ours = getattr(war, "clan", None)
@@ -342,7 +346,7 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
                 or (theirs is not None and theirs.tag == clan_tag)):
             continue
 
-        if str(getattr(war, "state", "")) == "inWar":
+        if _state(war) == "inWar":
             result = ("war", war)
             cache_put(key, result, TTL_CWL_ACTIVE)
             return result
@@ -360,6 +364,33 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
     # That is not "nothing to do" - it is a shape we did not expect. Say so.
     print(f"[todo] CWL group for {clan_tag} listed rounds but no war matched the clan")
     return ("error", None)
+
+
+def _state(obj) -> str:
+    """The API state string for a war or a league group.
+
+    NEVER CALL str() ON A coc.py STATE. `ExtendedEnum.__str__` returns
+    `in_game_name` - the human display name - not the API value:
+
+        str(WarState.preparation)  ->  "Preparation"     NOT "preparation"
+        str(WarState.in_war)       ->  "In War"          NOT "inWar"
+        str(WarState.war_ended)    ->  "War Ended"       NOT "warEnded"
+
+    So `str(war.state) == "preparation"` is ALWAYS FALSE. That single mistake
+    emptied both the war and CWL views: the wars were fetched correctly, the
+    state was correct, and every row was then skipped by a comparison that
+    could never be true. It cost three shipped "fixes" that each addressed a
+    real but secondary bug.
+
+    `__eq__` does accept strings (it compares against both `.name` and
+    `.value`), so `war.state == "preparation"` works. `.value` is used here
+    because it is unambiguous and works for the league group too, whose
+    `state` is a plain str rather than an enum.
+    """
+    raw = getattr(obj, "state", None)
+    if raw is None:
+        return ""
+    return str(getattr(raw, "value", raw))
 
 
 def _side_for(war, clan_tag: str):
@@ -438,7 +469,7 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
         if kind == "none" or war is None:
             continue
 
-        state = str(getattr(war, "state", ""))
+        state = _state(war)
         # preparation counts. You cannot attack yet, but the attack is owed and
         # the deadline is already set - "you have a war starting" is exactly the
         # thing a to-do list should tell you.
@@ -497,7 +528,7 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
         if kind == "none" or war is None:
             continue
 
-        state = str(getattr(war, "state", ""))
+        state = _state(war)
         # THIS LINE USED TO READ `if state != "inWar": continue` AND IT WAS THE
         # BUG. A CWL round sits in `preparation` for a full day before battle
         # day, and the group state is `preparation` for the whole first round.
