@@ -152,19 +152,20 @@ EMOJI_WAITING = "Waiting"
 
 # Block headings, per view. "Opens" alone was a bare verb that named no state -
 # it told you an event was happening without saying WHICH. These name the game
-# state, so the heading plus its timestamp chip reads as one plain sentence:
-# "Battle Day · ends in 5 hours".
+# state, and NOTHING ELSE: the heading once carried "· ends" plus a timestamp,
+# which made it assert a deadline over clans it was not true for. The verb and
+# the clock now live on each clan's own subtext line, as "ends in 5 hours".
 #
 # Each entry is (live label, prep label). The prep half never fires for raids -
 # raid Rows carry the default state "inWar" - but it is spelled out rather than
 # left to a fallback so a future prep-capable raid row cannot render "Prep Day"
 # for a raid weekend.
 BLOCK_LABELS = {
-    VIEW_WAR:  ("Battle Day · ends", "Prep Day · starts"),
-    VIEW_CWL:  ("Battle Day · ends", "Prep Day · starts"),
-    VIEW_RAID: ("Raid Weekend · ends", "Raid Weekend · starts"),
+    VIEW_WAR:  ("Battle Day", "Prep Day"),
+    VIEW_CWL:  ("Battle Day", "Prep Day"),
+    VIEW_RAID: ("Raid Weekend", "Raid Weekend"),
 }
-BLOCK_LABELS_DEFAULT = ("Live · ends", "Starts")
+BLOCK_LABELS_DEFAULT = ("Live", "Waiting")
 
 # Unicode slots. Chosen for meaning, not decoration - see the report.
 U_REFRESH = "🔄"      # reload, reads as an action rather than a destination
@@ -234,9 +235,20 @@ def _nav_block(view: str, counts: dict) -> list:
     THE ONLY PLACE NAVIGATION IS BUILT. Every panel state calls this, so a new
     state cannot ship without a way out.
 
-    LAYOUT: the refresh button is the ACCESSORY of the freshness line, so the
-    two sit on one row - "updated 5 minutes ago  [refresh]" - directly under the
-    select. A button alone on its own ActionRow read as leftover.
+    LAYOUT: freshness text, then the refresh button on its own ActionRow.
+
+    THE BUTTON WAS A SECTION ACCESSORY AND THAT DOES NOT WORK ON A PHONE. On
+    desktop it rendered as intended - "updated 7 minutes ago  [refresh]", one
+    row. On mobile the accessory dropped to its own line under the text and
+    read as stranded, which is the exact problem the accessory was chosen to
+    solve. Mobile is the primary venue, so the desktop-only win loses.
+
+    Since a narrow accessory wraps to its own line ANYWAY, it is put there
+    deliberately, in an ActionRow, and given a LABEL. That is the part that
+    stops it looking stranded: a bare icon sitting alone reads as leftover, a
+    labelled "Refresh" button reads as a control. Same two lines on mobile as
+    the accessory produced, but composed rather than collapsed - and now
+    identical on both platforms instead of good on one and broken on the other.
 
     The two obvious alternatives are both structurally impossible in Components
     V2, so do not try them again:
@@ -262,22 +274,22 @@ def _nav_block(view: str, counts: dict) -> list:
         # then reads as the rule that closes the dashboard, with the freshness
         # stamp and its refresh button sitting under it as a caption.
         #
-        # Done by reordering INSIDE the container rather than moving the Section
+        # Done by reordering INSIDE the container rather than moving anything
         # out to top level. A top-level component renders outside the accent bar
-        # and would lose the coloured stripe, detaching the row from the panel -
-        # the opposite of grouping the button with the stamp.
+        # and would lose the coloured stripe, detaching the row from the panel.
         Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-        Section(
-            # Emoji only, no label - `label` omitted rather than passed as "",
-            # since the field defaults to UNDEFINED and "" is not the same thing
-            # to Discord. Secondary keeps it quiet rather than a blurple slab.
-            accessory=Button(
+        Text(content=stamp),
+        ActionRow(components=[
+            Button(
+                # Labelled, not a bare icon - see the docstring. SECONDARY keeps
+                # it quiet rather than a blurple slab; this is a utility control
+                # sitting under a footer, not the point of the panel.
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"todo_refresh:{view}|0",
                 emoji=_partial("refresh") or U_REFRESH,
+                label="Refresh",
             ),
-            components=[Text(content=stamp)],
-        ),
+        ]),
     ]
 
 
@@ -389,11 +401,25 @@ def _row_line(row) -> str:
     return f"{lead} {th} {row.account}".replace("  ", " ").strip()
 
 
-def _render_rows(rows: list) -> list:
+def _render_rows(rows: list, verb: str = "", stamp_of=None) -> list:
     """Rows grouped by clan, one Text Display per clan.
 
-    Grouping states each war deadline once instead of repeating it on every
-    row, which is what the component budget freed up by the ActionRow nav buys.
+    THE DEADLINE IS PER CLAN, NOT PER BLOCK. It was a block heading for one
+    build, which was wrong in the worst way available: two clans in the same
+    Prep Day block were 9h29m and 3h51m from battle day, and the heading showed
+    min() - "starts in 4 hours" - over both of them. A member reading it for the
+    first clan would have turned up five and a half hours early. A single number
+    covering rows it is not true for is the same defect as the empty-state bug,
+    and it is worse than showing no number at all.
+
+    It goes on its OWN SUBTEXT LINE under the clan name rather than as a suffix
+    to it. A suffix has to survive the longest clan name in the family plus a
+    chip on one line - "Morning Woods!" alone puts that at 28 characters, i.e.
+    at the wrap limit before anything grows. A subtext line cannot collide with
+    the name at all, and being smaller it reads as a caption on the clan rather
+    than competing with it.
+
+    `verb` is "" for callers with no timing (the Private War Logs view).
     """
     if not rows:
         return []
@@ -411,13 +437,21 @@ def _render_rows(rows: list) -> list:
         members = grouped[clan_tag]
         first = members[0]
         lines = "\n".join(_row_line(r) for r in members)
-        body = f"**{first.clan_name}**\n{lines}"
+
+        head = f"**{first.clan_name}**"
+        if verb and stamp_of is not None:
+            # min() WITHIN one clan is safe - every row here belongs to the same
+            # war, so the stamps are equal. It is only a lie ACROSS clans.
+            stamps = [s for s in (stamp_of(r) for r in members) if s]
+            if stamps:
+                head += f"\n-# {verb} <t:{min(stamps)}:R>"
+        body = f"{head}\n{lines}"
 
         # Section + Thumbnail(clan badge). The badge is the visual anchor that
         # the old "🕒 CLAN · prep · opens in 18h · closes in 2 days" header was
         # trying and failing to be - that header wrapped to two lines on a phone
-        # for every single clan. The clan name now sits alone on a short line
-        # and the timing has moved out to a block heading above, stated once.
+        # for every single clan. The clan name still sits alone on a short line;
+        # only its own deadline follows, on the line below.
         thumb = _thumbnail_for(first)
         if thumb:
             out.append(Section(
@@ -433,40 +467,37 @@ def _render_rows(rows: list) -> list:
 
 
 def _timing_blocks(view: str, rows: list) -> list:
-    """Rows split into timing blocks, each stating its deadline ONCE.
+    """Rows split by STATE. Each clan states its own deadline.
 
-    The old layout repeated "prep · opens · closes" on every clan header - three
-    clans meant the same three words three times. The thing that actually varies
-    and matters is TIME, not clan, so time is the outer grouping now.
+    The grouping is still state-first, and that survived the per-clan-timing
+    fix deliberately. What defines a block is the one thing that IS uniform
+    across it - can I attack right now, or am I waiting - and that is the most
+    important distinction on the panel. Regrouping by clan would interleave
+    live and waiting clans and lose it. Only the CLOCK varied, so only the
+    clock moved down to the clan.
 
-    THE TIMESTAMP SHARES THE HEADING'S LINE. It had its own line for a while,
-    on the theory that a <t:N:R> chip fragments any sentence it lands in. That
-    was the wrong lesson from the right observation: the chip only fragments a
-    line that WRAPS. "Battle Day · ends" + chip is ~28 characters, does not
-    wrap on a phone, and reads as one sentence. Two lines for one fact was the
-    worse trade. If a label ever grows long enough to wrap, shorten the LABEL -
-    do not split the line again.
+    A heading may therefore state the state and nothing else. Anything a
+    heading asserts has to be true of every row beneath it.
     """
     live = [r for r in rows if r.state != "preparation"]
     prep = [r for r in rows if r.state == "preparation"]
     live_label, prep_label = BLOCK_LABELS.get(view, BLOCK_LABELS_DEFAULT)
 
     out: list = []
-    for emoji_name, label, group, stamp_of in (
-        (EMOJI_LIVE, live_label, live, lambda r: r.ends_at),
-        (EMOJI_WAITING, prep_label, prep, lambda r: r.starts_at),
+    for emoji_name, label, verb, group, stamp_of in (
+        (EMOJI_LIVE, live_label, "ends", live, lambda r: r.ends_at),
+        (EMOJI_WAITING, prep_label, "starts", prep, lambda r: r.starts_at),
     ):
         if not group:
             continue
         if out:
             out.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
-        stamps = [s for s in (stamp_of(r) for r in group) if s]
         # "###" - one step below the panel title, one step above the clan name.
+        # NO TIMESTAMP HERE. The heading carries only what is true of every row
+        # under it, which is the STATE. The clock is per clan.
         heading = f"### {_emoji(emoji_name)} {label}".replace("###  ", "### ")
-        if stamps:
-            heading += f" <t:{min(stamps)}:R>"
         out.append(Text(content=heading.rstrip()))
-        out.extend(_render_rows(group))
+        out.extend(_render_rows(group, verb, stamp_of))
     return out
 
 
