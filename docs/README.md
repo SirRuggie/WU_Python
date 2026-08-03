@@ -13,6 +13,9 @@ the hard way. The standing instruction that governs this folder is in
 - [hikari-lightbulb-versions.md](hikari-lightbulb-versions.md) — which versions
   actually run, the unpinned-requirements problem, and the unresolved
   2.3.5 / 2.4.1 discrepancy.
+- [hikari-logging-and-warnings.md](hikari-logging-and-warnings.md) —
+  `GatewayBot.__init__` silently takes over `logging` and `warnings.filters`.
+  Any warning filter installed before it is dead. Cost three attempts.
 - [lightbulb-context-api.md](lightbulb-context-api.md) — what exists on
   `Context` in 3.0.3, what does not, and the usage-count rule that came out of
   getting this wrong.

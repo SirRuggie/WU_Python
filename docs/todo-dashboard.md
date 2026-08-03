@@ -312,18 +312,11 @@ and one `/todo` run produced roughly a hundred of them — enough to bury every
 other log line. Fixed upstream in coc.py 3.9.2, which `requirements.txt`
 explains why we have not taken yet.
 
-`main.py` now installs a **targeted** filter on that specific message, twice:
-once before the imports and once after them.
-
-**Unresolved:** `main.py` carried a blanket
-`warnings.filterwarnings("ignore", category=DeprecationWarning)` from the initial
-commit. It was deployed and the spam reached the journal anyway, so something
-defeated it. Nothing in this repo touches `warnings.filters` (grepped repo-wide),
-which leaves a dependency calling `simplefilter()`/`resetwarnings()` at import
-time as the leading candidate — **not confirmed.** The post-import re-assert
-beats that whole class of cause without needing to know which library did it,
-and the `[startup] warning filters installed` line prints what survived so the
-next boot settles it.
+Suppressing it took three attempts, because `hikari.GatewayBot.__init__` calls
+`warnings.simplefilter("always", DeprecationWarning)` — which prepends, and so
+kills any filter installed before the bot is constructed. Full write-up in
+[hikari-logging-and-warnings.md](hikari-logging-and-warnings.md). **Install
+warning filters after the GatewayBot, not before.**
 
 ---
 
