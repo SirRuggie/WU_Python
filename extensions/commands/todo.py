@@ -55,6 +55,9 @@ VIEW_WAR = "war"
 VIEW_CWL = "cwl"
 VIEW_RAID = "raid"
 
+VIEW_LABEL = {VIEW_WAR: "War", VIEW_CWL: "CWL", VIEW_RAID: "Raids"}
+VIEW_ORDER = (VIEW_WAR, VIEW_CWL, VIEW_RAID)
+
 # ClashKing asks for exactly one thing in return for a free, unauthenticated
 # API: credit. Their terms read "Please credit if using these stats in your
 # project, Creator Code: ClashKing". This line is that credit.
@@ -202,7 +205,21 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
 
         body.append(Separator(divider=True))
         if not rows:
-            body.append(Text(content="**All caught up.**"))
+            # "All caught up" is a verdict on the WHOLE dashboard, so it may
+            # only be said when every section is empty. Saying it per-view told
+            # a user with three pending CWL hits that there was nothing to do,
+            # because the default view happened to be the empty one.
+            elsewhere = [
+                VIEW_LABEL[k] for k, v in data.items()
+                if k != view and v is not None and v.ok and v.count
+            ]
+            if elsewhere:
+                body.append(Text(content=(
+                    f"**Nothing due in {VIEW_LABEL[view]}.**\n"
+                    f"-# Still to do in: {', '.join(elsewhere)}"
+                )))
+            else:
+                body.append(Text(content="**All caught up.**"))
         else:
             body.extend(_render_rows(window))
 
@@ -324,7 +341,18 @@ class Todo(
         await ctx.defer(ephemeral=ctx.guild_id is not None)
 
         data, problem = await _load(bot, coc_client, ctx.user.id)
-        await ctx.respond(components=problem if problem else render_dashboard(VIEW_WAR, 0, data))
+        if problem:
+            await ctx.respond(components=problem)
+            return
+        # Open on the first view that actually has work. Always opening on War
+        # meant a user whose only pending hits were CWL saw an empty War view
+        # and read it as the whole dashboard's verdict.
+        opening = next(
+            (v for v in VIEW_ORDER
+             if data.get(v) is not None and data[v].ok and data[v].count),
+            VIEW_WAR,
+        )
+        await ctx.respond(components=render_dashboard(opening, 0, data))
 
 
 # ---------------------------------------------------------------------------
