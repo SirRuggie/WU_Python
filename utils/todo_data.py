@@ -27,6 +27,7 @@ chosen round - so calling it per clan triples the budget invisibly. This module
 calls get_clan_war and get_league_group explicitly so the fan-out is visible.
 """
 
+import asyncio
 import time
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
@@ -65,6 +66,25 @@ _cache: dict[str, tuple[float, float, object]] = {}
 
 TTL_LINKS = 6 * 60 * 60      # linking is a rare manual act
 TTL_WAR_ACTIVE = 120         # a hit can land any second; matches upstream max-age
+
+# The player cache is THE PLAYER->CLAN MAPPING, and that is why it gets its own
+# constant instead of borrowing TTL_WAR_ACTIVE as it used to. Staleness here has
+# a specific, user-visible failure: a member who moved clans is shown a war for
+# the clan they left. Keep it short. Anyone raising TTL_WAR_ACTIVE for war
+# reasons must not silently drag clan membership along with it.
+#
+# "player:" is in DATA_PREFIXES, so Refresh already drops this - which is the
+# escape hatch for exactly the clan-change case, and the thing that was missing
+# for "raid:" when the freshness stamp froze.
+TTL_PLAYER = 120
+
+# Simultaneous player lookups. coc.py's own BasicThrottler is the real ceiling -
+# it spaces request STARTS ~33ms apart across the whole client (throttle_limit
+# defaults to 30/s) and releases its lock before the request runs, so ~30/s is
+# the floor no matter what this is set to. This bounds open sockets rather than
+# request rate, and it is deliberately modest: proxy.clashk.ing is ClashKing's
+# infrastructure, offered free, and 46 simultaneous lookups is not neighbourly.
+FETCH_CONCURRENCY = 8
 TTL_WAR_IDLE = 15 * 60       # notInWar / warEnded - stable for hours
 TTL_CWL_ABSENT = 60 * 60     # not in CWL - stable for WEEKS outside the season
 TTL_CWL_ACTIVE = 600         # rounds advance once per day
@@ -258,48 +278,88 @@ class Account:
 # Fetching
 # ---------------------------------------------------------------------------
 
-async def fetch_accounts(coc_client: coc.Client, tags: list[str]) -> tuple[list[Account], list[str]]:
-    """Resolve tags to accounts. Returns (accounts, errors).
+async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semaphore):
+    """One player lookup. NEVER RAISES - returns (tag, Account|None, error|None).
 
-    One call per tag - Supercell has no bulk player endpoint, and coc.py's
-    get_players iterator only parallelises, it does not batch. Sequential here
-    is deliberate: coc.py's throttler enforces ~33ms spacing anyway (the
-    effective key count is 1, not the 10 main.py asks for - login_with_tokens
-    overwrites it), so fanning out buys little and costs clarity.
+    Swallowing here rather than at the gather is deliberate. asyncio.gather with
+    return_exceptions=True would hand back a mixed list of results and exception
+    objects, and one malformed tag would then need type-checking at every use.
+    A function that cannot raise keeps the caller a plain loop.
+
+    BaseException - CancelledError above all - is deliberately NOT caught. A
+    cancelled request must stay cancelled, or shutdown hangs.
     """
-    accounts: list[Account] = []
-    errors: list[str] = []
-
-    for tag in tags:
-        cached = cache_get(f"player:{tag}")
-        if cached is not None:
-            accounts.append(cached)
-            continue
+    async with sem:
         try:
             player = await coc_client.get_player(tag)
         except coc.NotFound:
             # A linked tag for an account that no longer exists. Common with
-            # abandoned alts; not worth surfacing to the user.
-            continue
-        except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
-            errors.append(f"{tag}: {type(exc).__name__}")
-            continue
+            # abandoned alts; not an error worth surfacing to the user.
+            return tag, None, None
         except Exception as exc:  # noqa: BLE001 - never let one tag kill the dashboard
-            errors.append(f"{tag}: {type(exc).__name__}")
-            continue
+            return tag, None, f"{tag}: {type(exc).__name__}"
 
-        clan = getattr(player, "clan", None)
-        badge = getattr(getattr(clan, "badge", None), "medium", None) if clan else None
-        account = Account(
-            tag=player.tag,
-            name=player.name,
-            clan_tag=clan.tag if clan else None,
-            clan_name=clan.name if clan else None,
-            town_hall=getattr(player, "town_hall", 0) or 0,
-            clan_badge=badge,
+    clan = getattr(player, "clan", None)
+    badge = getattr(getattr(clan, "badge", None), "medium", None) if clan else None
+    return tag, Account(
+        tag=player.tag,
+        name=player.name,
+        clan_tag=clan.tag if clan else None,
+        clan_name=clan.name if clan else None,
+        town_hall=getattr(player, "town_hall", 0) or 0,
+        clan_badge=badge,
+    ), None
+
+
+async def fetch_accounts(
+    coc_client: coc.Client,
+    tags: list[str],
+    concurrency: int = FETCH_CONCURRENCY,
+) -> tuple[list[Account], list[str]]:
+    """Resolve tags to accounts, CONCURRENTLY. Returns (accounts, errors).
+
+    One call per tag - Supercell has no bulk player endpoint. This was
+    sequential, on the reasoning that coc.py's throttler enforces ~33ms spacing
+    so fanning out would buy little. That reasoning was wrong, and measurement
+    is what showed it: BasicThrottler acquires its lock, computes the gap,
+    sleeps, and RELEASES THE LOCK BEFORE THE REQUEST RUNS
+    (coc/http.py, BasicThrottler.__aenter__). So it spaces request STARTS ~33ms
+    apart and never waits for completion.
+
+    Sequential therefore cost 46 x (33ms + round-trip). Concurrent costs
+    46 x 33ms, because the throttler becomes the floor instead of the round
+    trip stacking on top of it. The per-request latency stops accumulating.
+
+    ORDER IS PRESERVED. Results come back in completion order; the returned
+    list is rebuilt in `tags` order, because account order decides the order
+    clans appear on the panel and a dashboard that reshuffles itself between
+    identical runs is a bug report waiting to happen.
+    """
+    errors: list[str] = []
+    resolved: dict[str, Account] = {}
+
+    # Cache pass first, so the semaphore only ever gates real network calls.
+    misses: list[str] = []
+    for tag in tags:
+        cached = cache_get(f"player:{tag}")
+        if cached is not None:
+            resolved[tag] = cached
+        else:
+            misses.append(tag)
+
+    if misses:
+        sem = asyncio.Semaphore(max(1, concurrency))
+        results = await asyncio.gather(
+            *(_fetch_one_player(coc_client, tag, sem) for tag in misses)
         )
-        cache_put(f"player:{tag}", account, TTL_WAR_ACTIVE)
-        accounts.append(account)
+        for tag, account, error in results:
+            if error:
+                errors.append(error)
+            if account is not None:
+                resolved[tag] = account
+                cache_put(f"player:{tag}", account, TTL_PLAYER)
+
+    accounts: list[Account] = [resolved[tag] for tag in tags if tag in resolved]
 
     return accounts, errors
 
