@@ -933,11 +933,37 @@ refresh button reads correctly on mobile; **the freshness stamp moves to "a few
 seconds ago" on Refresh**; `grep -c utcnow` returns 0 on coc.py 3.10.0.
 
 **Superseded:** the panel used to be a standalone `create_message` with the
-ephemeral ack deleted, specifically to avoid the "X used /todo" header. That put
-it on `POST /channels/{id}/messages`, the bucket FWA sync DMs also use, where it
-took 4.65 s waits. It is now the interaction response — see
+ephemeral ack deleted, specifically to avoid the "X used /todo" header (`a8b5ab1`).
+That put it on `POST /channels/{id}/messages`, the bucket FWA sync DMs also use,
+where it took 4.65 s waits. `f1df425` moved it to the interaction response — see
 [discord-rate-limit-buckets.md](discord-rate-limit-buckets.md). **The header is
 back, deliberately.**
+
+### CLOSED: followup messages DO carry the interaction header
+
+This was left open — the hope was that a followup would give the standalone look
+on the quiet webhook route, and it was explicitly not asserted without evidence.
+
+**Evidence: direct observation of the live panel.** The current path already
+*is* a followup — `ctx.respond()` after a defer takes lightbulb's else-branch to
+`self.interaction.execute()`, which is `POST /webhooks/{app}/{token}` — and the
+"X used /todo" header is visible on it.
+
+**So there is no third option.** The choice is binary:
+
+| Option | Header | Route |
+|---|---|---|
+| interaction response / followup | **yes** | webhook — uncontended |
+| standalone `create_message` | no | `POST /channels/{id}/messages` — throttled at 4.65 s |
+
+**Do not go looking for a way to have both.** It does not exist at the Discord
+API level, and this is the second time that hope has cost investigation.
+
+**Reverting would also invalidate tonight's `send=` baseline.** `send≈1055ms`
+and the "network-bound, nothing local, closed" conclusion were both measured on
+the webhook route. On the channel bucket those numbers mean nothing and the
+whole `send=` investigation reopens. Reverting costs a measured reliability fix
+and a measurement baseline, to remove a header.
 
 It did not remove the delay. `send≈2000ms` on both a cold and a warm run,
 measured — moving off the channel bucket bought roughly 1–2 s of the original
