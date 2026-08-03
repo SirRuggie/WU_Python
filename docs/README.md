@@ -17,10 +17,19 @@ the hard way. The standing instruction that governs this folder is in
   `Context` in 3.0.3, what does not, and the usage-count rule that came out of
   getting this wrong.
 
+## Features
+
+- [todo-dashboard.md](todo-dashboard.md) — `/todo`, as built. Data sources, the
+  four views, layout rules and why, the freshness stamp, emoji slots, verified
+  vs inferred. **Contains the `str()`-on-a-coc.py-enum trap — read it before
+  touching any Clash state comparison anywhere in this repo.**
+
 ## Proposals
 
-- [todo-dashboard-proposal.md](todo-dashboard-proposal.md) — research and design
-  for the `/todo` player to-do dashboard (2026-08-02). **Not yet decided.**
+- [todo-dashboard-proposal.md](todo-dashboard-proposal.md) — the pre-build
+  research and the layout options for `/todo` (2026-08-02). Superseded as a
+  description of the feature by [todo-dashboard.md](todo-dashboard.md); kept
+  for the reasoning behind the options that were not taken.
 
 - [thread-ticketing-proposal.md](thread-ticketing-proposal.md) — research and
   design for thread-based ticketing + the console dashboard (2026-08-02).
