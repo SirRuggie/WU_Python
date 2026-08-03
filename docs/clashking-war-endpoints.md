@@ -151,3 +151,76 @@ if war is None:
    *opponent's* side using their own war cache, then rebuild the `ClanWar` with
    `clan_tag=war.opponent.tag`. We have no war cache and cannot do this, which
    is why our private-log accounts become a note rather than rows.
+
+---
+
+# Endpoint inventory (probed 2026-08-03)
+
+Two OpenAPI specs, and the second is not linked from the first:
+
+| Docs page | Spec JSON | Paths |
+|---|---|---|
+| `api.clashk.ing/docs` | `api.clashk.ing/openapi.json` | ~public set |
+| `api.clashk.ing/private/docs` | **`api.clashk.ing/openapi/private`** | 43 |
+
+The private spec's URL is **not** `/private/openapi.json` (that 404s). It is
+`/openapi/private`, discoverable only by reading the Swagger page's `url:` field.
+
+## THE BULK ROUTE EXISTS AND WE CANNOT USE IT
+
+```
+POST /ck/bulk        (private spec, tag: "Internal Endpoints")
+body: ["<full CoC API url>", ...]        # URLS, not tags
+summary: "Only for internal use, rotates tokens and implements caching
+          so that all other services dont need to"
+```
+
+This is exactly the primitive `/todo` wants — arbitrary CoC API URLs, any
+endpoint, one round trip, server-side caching. 46 player URLs plus 30
+`currentwar` URLs would be **one request instead of 76**.
+
+**It returns `401 {"detail":"Invalid token"}`.** The spec declares no
+`securitySchemes` and no global `security`, so the auth requirement is invisible
+from the spec and only shows up when called. `POST /ck/generate-api-keys` exists
+alongside it; obtaining a credential is a conversation with the ClashKing
+operator, not something to script.
+
+**Do not design around `/ck/bulk` until a token exists.**
+
+## The other bulk route is a firehose
+
+```
+POST /capital/bulk   (public spec)  "Fetch Raid Weekends in Bulk (max 100 tags)"
+body: ["#CLANTAG", ...]
+```
+
+Real, unauthenticated, works. **And unusable here:** it returns full raid
+*history* — one clan came back as **2.1 MB / 48 seasons**, and the spec defines
+no `limit` parameter. Thirty clans would be ~60 MB per `/todo` run to extract one
+current weekend. `coc.py`'s `get_raid_log(tag, limit=1)` is far cheaper.
+
+## War-related endpoints that actually exist
+
+Public spec:
+
+| Path | Notes |
+|---|---|
+| `GET /war/{clan_tag}/basic` | **"Bypasses Private War Log if Possible"**. Tiny payload: `war_id`, `clans`, `endTime` — no state, no members, no attacks. Cannot build rows from it. Worth investigating for the 17 private-log accounts. |
+| `GET /war/{clan_tag}/previous` | ended wars |
+| `GET /war/{clan_tag}/previous/{end_time}` | one specific ended war |
+| `GET /player/{player_tag}/warhits` | per-player attack history, `timestamp_start`/`timestamp_end`/`limit`. Historical, not current state. |
+| `GET /player/{player_tag}/wartimer` | |
+
+Private spec: `GET /war-stats` returned **500** on a bare call. `GET /c/{clan_tag}`
+and `GET /p/{player_tag}` are **307 redirects to in-game deep links**, not data.
+
+**There is no `/war/bulk`.** It was asserted once from a pasted document and
+404s on both GET and POST. Verify a path against the spec before building.
+
+## Probing rule, applied again
+
+The first probe of `/capital/bulk` and `/war/{tag}/basic` returned `{}` and
+`null` — because a **player** tag was passed where a **clan** tag was required.
+That reads identically to "endpoint does not work". Re-probed with a real clan
+tag pulled from a live player payload, both returned data. See the probe rule in
+[`../CLAUDE.md`](../CLAUDE.md) and [clashking-discord-links.md](clashking-discord-links.md).
