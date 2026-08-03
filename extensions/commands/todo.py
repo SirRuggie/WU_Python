@@ -187,14 +187,48 @@ def _urgency_accent(view_data):
     return BLUE_ACCENT
 
 
-def _notice(title: str, body: str) -> list:
-    """A single-message panel. Used for every state that is not a dashboard."""
+def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = None) -> list:
+    """A panel for every state that is not a dashboard.
+
+    IT STILL CARRIES THE NAV. A state that renders correctly and leaves the user
+    with no way out is a dead end - they have to re-run /todo to escape. Every
+    panel this module produces keeps the select menu and the refresh button, and
+    on an error state Refresh is precisely the button they want.
+    """
     return _panel([
-        Text(content=f"## {title}"),
+        Text(content=f"### {title}"),
         Separator(divider=True),
         Text(content=body),
+        *_nav_block(view, counts or {}),
         Media(items=[MediaItem(media="assets/Red_Footer.png")]),
     ])
+
+
+def _nav_block(view: str, counts: dict) -> list:
+    """Separator, the view select, and the refresh button.
+
+    THE ONLY PLACE NAVIGATION IS BUILT. Every panel state calls this, so a new
+    state cannot accidentally ship without a way out.
+
+    Refresh is a BUTTON, not a select option. The select lists places you can
+    go; refresh is a thing you do to where you already are. Putting an action in
+    a list of destinations made it read as a fifth view.
+    """
+    return [
+        Separator(divider=True, spacing=hikari.SpacingType.LARGE),
+        _nav_select(view, counts),
+        ActionRow(components=[
+            # Emoji only, no label. Secondary style keeps it quiet next to the
+            # select rather than a blurple slab. `label` is omitted entirely
+            # rather than passed as "" - the field defaults to UNDEFINED and an
+            # empty string is not the same thing to Discord.
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"todo_refresh:{view}|0",
+                emoji=U_REFRESH,
+            )
+        ]),
+    ]
 
 
 def _nav_select(view: str, counts: dict) -> ActionRow:
@@ -251,12 +285,6 @@ def _nav_select(view: str, counts: dict) -> ActionRow:
             value=VIEW_PRIVATE,
             emoji=U_PRIVATE,
             is_default=view == VIEW_PRIVATE,
-        ),
-        SelectOption(
-            label="Refresh",
-            description="re-check everything now",
-            value="refresh",
-            emoji=U_REFRESH,
         ),
     ]
     return ActionRow(components=[
@@ -493,8 +521,7 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             body.append(Separator(divider=True))
             body.append(Text(content="\n".join(f"-# {n}" for n in current.notes)))
 
-    body.append(Separator(divider=True, spacing=hikari.SpacingType.LARGE))
-    body.append(_nav_select(view, counts))
+    body.extend(_nav_block(view, counts))
 
     if pages > 1:
         body.append(ActionRow(components=[
@@ -743,6 +770,11 @@ async def todo_nav(
     """
     values = getattr(ctx.interaction, "values", None) or []
     choice = values[0] if values else action_id
+    # Refresh moved out of the select and became a button, but panels already
+    # sitting in DM history still carry a select with a "refresh" option and
+    # will keep firing this forever. Same reasoning as an action alias: the old
+    # value must go on working, because you cannot reach back and edit those
+    # messages.
     if choice == "refresh":
         return await _switch(ctx, action_id or VIEW_WAR, "0", coc_client, bot, force=True, mongo=mongo)
     if choice not in VIEW_ORDER:
