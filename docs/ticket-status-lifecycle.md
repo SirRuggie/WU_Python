@@ -55,6 +55,14 @@ claiming. `/ticket diagnostics` after the run showed both collections at 363 —
 `approved` 64, `closed` 1, `denied` 275, `open` 23 — divergence none, reading
 from `tickets`.
 
+That distribution is **unchanged from the phase 1 final, and that is expected**:
+the override tests were run against tickets already in their target state
+(overriding a denied ticket to denied), which is the natural way to exercise the
+path without disturbing live data. Transitions were confirmed to be moving status
+independently — a ticket denied during the run dropped out of `/ticket list`.
+Noted because identical before/after counts look like a no-op write at a glance,
+and they are not.
+
 **That is the thing phase 1 could not prove**: a conditional write against the
 primary plus an unconditional mirror to the secondary keeps the two in sync.
 
