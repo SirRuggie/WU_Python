@@ -787,8 +787,14 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     perf.meta["tags"] = len(tags)
     perf.meta["warm"] = f"{todo_data.live_keys('player:')}/{len(tags)}"
 
+    # ONE semaphore for the whole invocation, shared by both phases. It used to
+    # live inside fetch_accounts, which bounded the player phase at 8 and left
+    # the view phase at 1 - four plain for/await loops. 46 of 102 cold calls ran
+    # in parallel and the other 56 ran strictly one at a time.
+    sem = todo_data.new_semaphore()
+
     with perf.timing("players"):
-        accounts, errors = await todo_data.fetch_accounts(coc_client, tags)
+        accounts, errors = await todo_data.fetch_accounts(coc_client, tags, sem=sem)
     perf.meta["clans"] = len({a.clan_tag for a in accounts if a.clan_tag})
     if not accounts:
         return None, _notice(
@@ -799,14 +805,19 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
 
     # All four view builds together: they share the per-clan fetches, so timing
     # them separately would just show the first one paying for the rest.
+    # The four builders still run in SEQUENCE, deliberately. They share the
+    # per-clan caches - build_blocked_view re-reads the same war: keys
+    # build_war_view just filled - so running them concurrently would turn those
+    # cache hits back into duplicate in-flight requests. The win is inside each
+    # builder, where the clans now fan out.
     with perf.timing("views"):
-        war = await todo_data.build_war_view(coc_client, accounts)
-        cwl = await todo_data.build_cwl_view(coc_client, accounts)
+        war = await todo_data.build_war_view(coc_client, accounts, sem=sem)
+        cwl = await todo_data.build_cwl_view(coc_client, accounts, sem=sem)
         if errors:
             print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
 
-        raid = await todo_data.build_raid_view(coc_client, accounts)
-        blocked = await todo_data.build_blocked_view(coc_client, accounts)
+        raid = await todo_data.build_raid_view(coc_client, accounts, sem=sem)
+        blocked = await todo_data.build_blocked_view(coc_client, accounts, sem=sem)
 
     return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: raid, VIEW_PRIVATE: blocked}, None
 
@@ -868,10 +879,10 @@ class Todo(
         data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo, perf=perf)
         if problem:
             with perf.timing("send"):
-                await ctx.respond(components=problem)
+                sent = await ctx.respond(components=problem)
             perf.meta["result"] = "notice"
             print(perf.line(), flush=True)
-            await _record_response(ctx, mongo, VIEW_WAR, kind="notice")
+            await _record_response(ctx, mongo, sent, VIEW_WAR, kind="notice")
             return
         # Open on the first view that actually has work. Always opening on War
         # meant a user whose only pending hits were CWL saw an empty War view
@@ -884,7 +895,7 @@ class Todo(
         with perf.timing("render"):
             components = render_dashboard(opening, 0, data)
         with perf.timing("send"):
-            await ctx.respond(components=components)
+            sent = await ctx.respond(components=components)
 
         # Printed BEFORE the todo_sessions write. The line must describe what
         # the user actually waited for, and the row is bookkeeping that happens
@@ -892,7 +903,7 @@ class Todo(
         perf.meta["view"] = opening
         print(perf.line(), flush=True)
 
-        await _record_response(ctx, mongo, opening)
+        await _record_response(ctx, mongo, sent, opening)
 
 
 # ---------------------------------------------------------------------------
@@ -903,26 +914,37 @@ class Todo(
 # the design - so a handler must be callable with only ctx and action_id.
 # ---------------------------------------------------------------------------
 
-async def _record_response(ctx, mongo, view: str, page: int = 0,
+async def _record_response(ctx, mongo, response, view: str, page: int = 0,
                            kind: str = "dashboard") -> None:
-    """Record the panel when it IS the interaction response.
+    """Record the panel, keyed to the message the user is actually looking at.
 
-    Needs its own fetch. lightbulb 3.0.3's Context.respond returns
-    `constants.INITIAL_RESPONSE_IDENTIFIER` - a sentinel, not a Message and not
-    a real snowflake (verified in lightbulb/context.py at the 3.0.3 tag) - so
-    there is no message id to record without asking for it.
+    TAKES THE VALUE respond() RETURNED. It used to ignore it and call
+    fetch_initial_response() instead, which returns the DEFERRED PLACEHOLDER -
+    a different message with a different id from the panel. Every todo_sessions
+    row was keyed to the wrong message.
 
-    fetch_initial_response() is a GET on the webhook route, NOT on
-    /channels/{id}/messages, so it cannot re-enter the bucket this whole change
-    exists to get off. Wrapped: a bookkeeping row is never worth a failed
-    command, so a panel that rendered stays rendered even if this misses.
+    That came from a wrong reading of lightbulb 3.0.3. Context.respond returns
+    the INITIAL_RESPONSE_IDENTIFIER sentinel only on the branch where the
+    initial response has NOT been sent. We always defer first, so it takes the
+    other branch - `await self.interaction.execute(...)`, a followup - and
+    returns a real hikari.Message (lightbulb/context.py at the 3.0.3 tag).
+
+    Latent until now because nothing reads these rows. Auto-refresh phase 2
+    would have edited the placeholder instead of the dashboard.
+
+    The sentinel path is still handled: if what came back has no `.id`, fall
+    back to fetching the initial response, because in that case the initial
+    response IS the panel. Wrapped throughout - a bookkeeping row is never worth
+    a failed command.
     """
-    try:
-        message = await ctx.interaction.fetch_initial_response()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[todo-sessions] could not fetch the response to record it: "
-              f"{type(exc).__name__}: {exc}")
-        return
+    message = response
+    if getattr(message, "id", None) is None:
+        try:
+            message = await ctx.interaction.fetch_initial_response()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[todo-sessions] could not fetch the response to record it: "
+                  f"{type(exc).__name__}: {exc}")
+            return
     await _record_panel(ctx, mongo, message, view, page, kind=kind)
 
 
