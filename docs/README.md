@@ -47,5 +47,8 @@ the hard way. The standing instruction that governs this folder is in
 
 ## Integrations
 
+- [clashking-discord-links.md](clashking-discord-links.md) — the Discord↔Clash
+  link API. Bidirectional, unauthenticated, and how to read its response.
+
 - [band-ical-feeds.md](band-ical-feeds.md) — the per-calendar iCal feeds, why
   they are treated as credentials, and why the BAND Open API was not usable.

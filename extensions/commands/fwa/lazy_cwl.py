@@ -40,7 +40,7 @@ coc_client: Optional[coc.Client] = None
 mongo_client: Optional[MongoClient] = None
 
 
-async def get_discord_ids(player_tags: List[str]) -> Dict[str, Optional[str]]:
+async def get_discord_ids(player_tags: List[str]) -> Optional[Dict[str, Optional[str]]]:
     """
     Call ClashKing API to get Discord IDs for player tags.
 
@@ -48,7 +48,18 @@ async def get_discord_ids(player_tags: List[str]) -> Dict[str, Optional[str]]:
         player_tags: List of player tags WITH # prefix
 
     Returns:
-        Dict mapping player tags (with #) to Discord IDs or None
+        Dict mapping player tags (with #) to Discord IDs or None,
+        or **None if the lookup itself failed**.
+
+    A FAILED LOOKUP AND AN EMPTY RESULT ARE DIFFERENT THINGS AND CALLERS MUST
+    TELL THEM APART. This previously returned {} for both, and the caller could
+    not distinguish "ClashKing is down" from "nobody in this clan has linked".
+    The snapshot was written either way, with discord_id None on every player,
+    and every downstream auto-ping then silently pinged nobody. Nothing raised
+    and nothing warned; the bad snapshot persisted until deleted by hand.
+
+        None  -> the call failed. The answer is unknown. Do not persist.
+        {}    -> the call succeeded and nobody is linked. A real answer.
     """
     if not player_tags:
         return {}
@@ -69,10 +80,10 @@ async def get_discord_ids(player_tags: List[str]) -> Dict[str, Optional[str]]:
                     return result
                 else:
                     print(f"ClashKing API error {response.status}: {await response.text()}")
-                    return {}
+                    return None
     except Exception as e:
         print(f"ClashKing API request failed: {e}")
-        return {}
+        return None
 
 
 async def create_clan_selector_components(fwa_clans: List[Dict], action_prefix: str, action_id: str) -> List[Container]:
@@ -924,8 +935,23 @@ async def process_single_clan_snapshot(
         # Prepare player tags for ClashKing API
         player_tags = [member.tag for member in clan.members]
 
-        # Get Discord IDs from ClashKing
+        # Get Discord IDs from ClashKing.
+        # None means the lookup failed, NOT that nobody is linked. Persisting a
+        # snapshot in that state produces one with discord_id None on every
+        # player, which every downstream auto-ping then reads as "nobody to
+        # ping" - silently, forever, until someone deletes it by hand. Fail the
+        # snapshot instead; it is retried by re-running the command.
         discord_mapping = await get_discord_ids(player_tags)
+        if discord_mapping is None:
+            return {
+                'success': False,
+                'clan_name': clan.name,
+                'clan_tag': clan_tag,
+                'error': (
+                    "Could not reach the ClashKing link API, so Discord mentions "
+                    "could not be resolved. No snapshot was saved - try again shortly."
+                )
+            }
 
         # Check if snapshot already exists
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
