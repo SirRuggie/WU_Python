@@ -240,7 +240,7 @@ def _nav_select(view: str, counts: dict) -> ActionRow:
         ),
         SelectOption(
             label=VIEW_LABEL[VIEW_RAID],
-            description="not available yet",
+            description=describe(VIEW_RAID),
             value=VIEW_RAID,
             emoji=_partial(VIEW_EMOJI[VIEW_RAID]),
             is_default=view == VIEW_RAID,
@@ -453,7 +453,15 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
         window = rows[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
 
         body.append(Separator(divider=True))
-        if not rows and view == VIEW_PRIVATE:
+        if not rows and getattr(current, "unavailable", ""):
+            # The EVENT is not running. Completely different from "you have done
+            # everything" - saying "all caught up" between raid weekends would
+            # be claiming credit for work that was never available.
+            body.append(Text(content=(
+                f"**{current.unavailable}**\n"
+                "-# Raid weekend runs Friday 07:00 → Monday 07:00 UTC."
+            )))
+        elif not rows and view == VIEW_PRIVATE:
             # An empty Private War Logs view is good news, not "nothing to do".
             body.append(Text(content=f"{U_CAUGHT_UP} **Every clan is readable.**"))
         elif not rows:
@@ -547,7 +555,6 @@ async def _load_clan_logos(mongo) -> None:
         todo_data.cache_put(CACHE_LOGOS, {}, 60)
         return
     logos = {d.get("tag"): d.get("logo") for d in docs if d.get("tag") and d.get("logo")}
-    todo_data._d(f"_load_clan_logos loaded {len(logos)} logos of {len(docs)} clans")
     todo_data.cache_put(CACHE_LOGOS, logos, TTL_LOGOS)
 
 
@@ -603,20 +610,15 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             "of them. Try again shortly.",
         )
 
-    todo_data._d(f"_load resolved tags={len(tags)} accounts={len(accounts)} "
-                 f"errors={len(errors)} client={type(coc_client).__name__}")
     war = await todo_data.build_war_view(coc_client, accounts)
-    todo_data._d(f"_load war view built rows={war.count} ok={war.ok}")
-    todo_data._d("_load about to build CWL view")
     cwl = await todo_data.build_cwl_view(coc_client, accounts)
-    todo_data._d(f"_load cwl view built rows={cwl.count} ok={cwl.ok}")
     if errors:
         print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
 
+    raid = await todo_data.build_raid_view(coc_client, accounts)
     blocked = await todo_data.build_blocked_view(coc_client, accounts)
-    todo_data._d(f"_load blocked view built rows={blocked.count}")
 
-    return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: None, VIEW_PRIVATE: blocked}, None
+    return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: raid, VIEW_PRIVATE: blocked}, None
 
 
 # ---------------------------------------------------------------------------
@@ -715,15 +717,12 @@ async def todo_cwl(
 async def todo_raid(
         ctx: lightbulb.components.MenuContext,
         action_id: str = "0",
+        coc_client: coc.Client = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs,
 ) -> list:
-    # Registered so the button is never an unknown action, but phase 3 (the
-    # roster diff) is not built. The button ships disabled; this is the guard
-    # for an older panel whose button was not.
-    return _notice(
-        "Raids aren't ready yet",
-        "The raid weekend view is still being built. War and CWL work now.",
-    )
+    return await _switch(ctx, VIEW_RAID, action_id, coc_client, bot, mongo=mongo)
 
 
 @register_action("todo_nav")
@@ -748,11 +747,6 @@ async def todo_nav(
         return await _switch(ctx, action_id or VIEW_WAR, "0", coc_client, bot, force=True, mongo=mongo)
     if choice not in VIEW_ORDER:
         choice = VIEW_WAR
-    if choice == VIEW_RAID:
-        return _notice(
-            "Raids aren't ready yet",
-            "The raid weekend view is still being built. War and CWL work now.",
-        )
     return await _switch(ctx, choice, "0", coc_client, bot, mongo=mongo)
 
 

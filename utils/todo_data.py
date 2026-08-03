@@ -28,9 +28,22 @@ calls get_clan_war and get_league_group explicitly so the fan-out is visible.
 """
 
 import time
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 
 import coc
+
+# ---------------------------------------------------------------------------
+# TEMPORARY DIAGNOSTICS for the raid view - remove once verified on a live
+# raid weekend. Every line is prefixed [todo-diag] so it greps and strips
+# cleanly. The war/CWL diagnostics were removed after those views were proven.
+# ---------------------------------------------------------------------------
+DIAG = True
+
+
+def _d(msg: str) -> None:
+    if DIAG:
+        print(f"[todo-diag] {msg}", flush=True)
 
 # ---------------------------------------------------------------------------
 # Cache
@@ -46,18 +59,6 @@ import coc
 # for days. Caching it is where the real saving is.
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# TEMPORARY DIAGNOSTICS - remove once /todo is verified.
-# Every line is prefixed [todo-diag] so it greps cleanly and strips cleanly.
-# ---------------------------------------------------------------------------
-DIAG = True
-
-
-def _d(msg: str) -> None:
-    if DIAG:
-        print(f"[todo-diag] {msg}", flush=True)
-
-
 _cache: dict[str, tuple[float, object]] = {}
 
 TTL_LINKS = 6 * 60 * 60      # linking is a rare manual act
@@ -71,17 +72,11 @@ def cache_get(key: str):
     """Cached value, or None if absent or expired."""
     hit = _cache.get(key)
     if hit is None:
-        if key.startswith("cwl:"):
-            _d(f"cache MISS {key}")
         return None
     expires_at, value = hit
     if time.monotonic() >= expires_at:
         _cache.pop(key, None)
-        if key.startswith("cwl:"):
-            _d(f"cache EXPIRED {key}")
         return None
-    if key.startswith("cwl:"):
-        _d(f"cache HIT {key} -> {value!r}")
     return value
 
 
@@ -136,6 +131,11 @@ class ViewData:
     rows: list[Row] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     ok: bool = True
+    # Set when the view has nothing to show because the EVENT is not running,
+    # as opposed to the user having finished everything. "No raid weekend right
+    # now" and "you have used all your attacks" are opposite meanings and must
+    # never render the same way.
+    unavailable: str = ""
 
     @property
     def count(self) -> int:
@@ -265,20 +265,14 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
     Gate on the API, never on the calendar. June 2026 ran a bonus CWL, so
     "days 1-9 of the month" is not a reliable window.
     """
-    _d(f"_get_cwl_round ENTER clan={clan_tag!r} client={type(coc_client).__name__}")
     key = f"cwl:{clan_tag}"
     cached = cache_get(key)
     if cached is not None:
-        _d(f"_get_cwl_round RETURN cached for {clan_tag}")
         return cached
 
     try:
-        _d(f"_get_cwl_round calling get_league_group({clan_tag!r}) NOW")
         group = await coc_client.get_league_group(clan_tag)
-        _d(f"_get_cwl_round get_league_group returned {type(group).__name__} "
-           f"state={getattr(group, 'state', '<no state>')!r}")
     except coc.NotFound:
-        _d(f"_get_cwl_round EARLY-RETURN none: NotFound for {clan_tag}")
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
@@ -293,16 +287,12 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
         return ("error", None)
 
     if group is None or _state(group) in ("notInWar", "groupNotFound", "ended"):
-        _d(f"_get_cwl_round EARLY-RETURN none: group state "
-           f"{getattr(group, 'state', '<None group>')!r} for {clan_tag}")
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
 
     rounds = getattr(group, "rounds", None) or []
-    _d(f"_get_cwl_round {clan_tag} rounds={len(rounds)}")
     if not rounds:
-        _d(f"_get_cwl_round EARLY-RETURN none: no rounds for {clan_tag}")
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
@@ -322,9 +312,7 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
             if war_tag and war_tag != "#0" and war_tag not in candidates:
                 candidates.append(war_tag)
 
-    _d(f"_get_cwl_round {clan_tag} candidates={candidates}")
     if not candidates:
-        _d(f"_get_cwl_round EARLY-RETURN none: no non-#0 war tags for {clan_tag}")
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
         return result
@@ -524,17 +512,13 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account]) -> Vie
     notes: list[str] = []
     unreadable = 0
 
-    _d(f"build_cwl_view ENTER accounts={len(accounts)}")
     by_clan: dict[str, list[Account]] = {}
     for acct in accounts:
         if acct.clan_tag:
             by_clan.setdefault(acct.clan_tag, []).append(acct)
-    _d(f"build_cwl_view clans={list(by_clan.keys())}")
 
     for clan_tag, members in by_clan.items():
         kind, war = await _get_cwl_round(coc_client, clan_tag)
-        _d(f"build_cwl_view {clan_tag} -> kind={kind} "
-           f"state={getattr(war, 'state', None)!r}")
 
         if kind == "error":
             unreadable += len(members)
@@ -610,7 +594,174 @@ async def build_blocked_view(coc_client: coc.Client, accounts: list[Account]) ->
                 reason="private" if kind == "private" else "error",
             ))
 
-    _d(f"build_blocked_view rows={len(rows)}")
     # Always ok=True: an empty list here is a real answer meaning "every clan is
     # readable", which is good news rather than a failure to report.
     return ViewData(rows=rows, notes=[], ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Raid weekend
+# ---------------------------------------------------------------------------
+
+TTL_RAID_ACTIVE = 300        # attacks trickle in over ~3 days; 5 min lag is invisible
+
+
+def _seconds_until_raid_opens() -> int:
+    """Seconds until the next raid weekend opens (Friday 07:00 UTC).
+
+    Used as a negative-cache TTL: outside the weekend the answer is "no raid"
+    and stays that way until Friday, so there is no reason to ask again. Gated
+    on the clock ONLY for the cache duration - never for the answer itself,
+    which always comes from the API's own `state`.
+    """
+    now = datetime.now(timezone.utc)
+    days_ahead = (4 - now.weekday()) % 7          # Monday=0 ... Friday=4
+    opens = (now + timedelta(days=days_ahead)).replace(
+        hour=7, minute=0, second=0, microsecond=0)
+    if opens <= now:
+        opens += timedelta(days=7)
+    return max(60, int((opens - now).total_seconds()))
+
+
+async def _get_raid(coc_client: coc.Client, clan_tag: str):
+    """The clan's CURRENT raid weekend entry.
+
+    Returns (kind, entry):
+        ("raid", RaidLogEntry)  a raid weekend is running
+        ("none", None)          no raid weekend right now
+        ("error", None)         could not read - NOT the same as "none"
+
+    Private war logs do NOT block the raid log: clans returning 403 on
+    /currentwar returned 200 with full member data on /capitalraidseasons.
+    """
+    key = f"raid:{clan_tag}"
+    cached = cache_get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        log = await coc_client.get_raid_log(clan_tag, limit=1)
+    except (coc.NotFound, coc.PrivateWarLog):
+        result = ("none", None)
+        cache_put(key, result, _seconds_until_raid_opens())
+        return result
+    except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
+        print(f"[todo] raid log failed for {clan_tag}: {type(exc).__name__}")
+        return ("error", None)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo] raid log errored for {clan_tag}: {type(exc).__name__}: {exc}")
+        return ("error", None)
+
+    entry = None
+    try:
+        entry = log[0] if log and len(log) else None
+    except (TypeError, IndexError):
+        entry = None
+
+    # Gate on the API's own state, never on the calendar. Midweek this endpoint
+    # still returns 200 with the PREVIOUS weekend's entry, state "ended" - and
+    # rendering that would tell every member they owe six attacks.
+    if entry is None or str(getattr(entry, "state", "")) != "ongoing":
+        result = ("none", None)
+        cache_put(key, result, _seconds_until_raid_opens())
+        return result
+
+    result = ("raid", entry)
+    cache_put(key, result, TTL_RAID_ACTIVE)
+    return result
+
+
+async def build_raid_view(coc_client: coc.Client, accounts: list[Account]) -> ViewData:
+    """Capital raid attacks still owed.
+
+    ⚠️ THE ONE THING THAT MAKES THIS VIEW WORK, AND THE EASIEST TO GET WRONG:
+
+    The raid entry's `members` array contains ONLY players who have already
+    attacked. Verified live: a 42-member clan mid-weekend returned 14 member
+    entries and ZERO with attacks == 0. So the people this view exists to show
+    are STRUCTURALLY ABSENT from the response, and entry.get_member(tag)
+    returns None for exactly them.
+
+    The roster must therefore be diffed against the member list, and ABSENCE
+    read as zero attacks used. ClashKingBot does the same thing
+    (commands/player/utils.py get_raid_hits) - it is not a workaround, it is
+    the only correct reading of this endpoint.
+
+    This is also the only view that needs a get_clan call: war and CWL take the
+    clan tag from the player payload, but the roster is only on the clan.
+    """
+    rows: list[Row] = []
+    notes: list[str] = []
+    unreadable = 0
+    any_ongoing = False
+
+    by_clan: dict[str, list[Account]] = {}
+    for acct in accounts:
+        if acct.clan_tag:
+            by_clan.setdefault(acct.clan_tag, []).append(acct)
+
+    for clan_tag, members in by_clan.items():
+        kind, entry = await _get_raid(coc_client, clan_tag)
+        _d(f"build_raid_view {clan_tag} -> kind={kind} "
+           f"state={getattr(entry, 'state', None)!r}")
+
+        if kind == "error":
+            unreadable += len(members)
+            continue
+        if kind == "none" or entry is None:
+            continue
+
+        any_ongoing = True
+        ends = None
+        end_time = getattr(entry, "end_time", None)
+        inner = getattr(end_time, "time", None)
+        if inner is not None:
+            try:
+                ends = int(inner.timestamp())
+            except Exception:  # noqa: BLE001
+                ends = None
+
+        for acct in members:
+            member = None
+            try:
+                member = entry.get_member(acct.tag)
+            except Exception:  # noqa: BLE001
+                member = None
+
+            if member is None:
+                # ABSENT means zero attacks used, not "not participating".
+                # The default limit is 5; a bonus attack is EARNED during the
+                # weekend, so someone who has not started cannot have one yet.
+                used, limit = 0, 5
+            else:
+                used = getattr(member, "attack_count", 0) or 0
+                base = getattr(member, "attack_limit", 0) or 0
+                bonus = getattr(member, "bonus_attack_limit", 0) or 0
+                # Computed FRESH every render. bonus_attack_limit is earned
+                # mid-weekend, so a row can legitimately read 5/5 done, vanish,
+                # then return as 5/6. ClashKingBot hardcodes /5 and misses that.
+                limit = (base + bonus) or 5
+
+            if used >= limit:
+                continue
+
+            rows.append(Row(
+                account=acct.name, tag=acct.tag,
+                clan_name=acct.clan_name or clan_tag, clan_tag=clan_tag,
+                used=used, limit=limit, ends_at=ends,
+                town_hall=acct.town_hall, clan_badge=acct.clan_badge,
+            ))
+
+    if unreadable:
+        notes.append(f"⚠️ {unreadable} account(s) could not be checked — raid lookup failed")
+
+    _d(f"build_raid_view rows={len(rows)} any_ongoing={any_ongoing} unreadable={unreadable}")
+
+    # No clan has a running raid AND nothing failed => the weekend is simply not
+    # on. That is a different message from "you have used all your attacks".
+    unavailable = ""
+    if not any_ongoing and not unreadable:
+        unavailable = "No raid weekend right now."
+
+    return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows),
+                    unavailable=unavailable)
