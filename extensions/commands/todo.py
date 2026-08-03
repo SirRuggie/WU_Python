@@ -56,6 +56,7 @@ Design rules enforced here, each of which cost real investigation to establish:
   render path.
 """
 
+import contextlib
 import time
 
 import coc
@@ -671,7 +672,54 @@ async def _load_clan_logos(mongo) -> None:
     todo_data.cache_put(CACHE_LOGOS, logos, TTL_LOGOS)
 
 
-async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None):
+class _Perf:
+    """One [todo-perf] line per invocation. Measurement, not theory.
+
+    Exists because five rounds of the utcnow bug and four of the "all caught
+    up" bug were all fixes shipped on a theory of where the time or the fault
+    was, with nothing measuring it. The rule that came out of both: after two
+    failed fixes, stop fixing and start measuring.
+
+    WARM RUNS LIE. `warm=` reports how many player entries were already cached
+    when the run started. A run with warm=46/46 is measuring the cache, not the
+    API, and reading it as "the fetch is fast now" is the same mistake in a new
+    place. Compare like with like.
+    """
+
+    def __init__(self) -> None:
+        self._t0 = time.perf_counter()
+        self._phase: dict[str, float] = {}
+        self.meta: dict[str, object] = {}
+
+    @contextlib.contextmanager
+    def timing(self, name: str):
+        start = time.perf_counter()
+        try:
+            yield
+        finally:
+            self._phase[name] = self._phase.get(name, 0.0) + (time.perf_counter() - start)
+
+    def _ms(self, name: str) -> int:
+        return int(self._phase.get(name, 0.0) * 1000)
+
+    def line(self) -> str:
+        total = time.perf_counter() - self._t0
+        # fetch is the sum of the two halves rather than a third timer, so the
+        # parts always add up to the whole and cannot drift apart.
+        fetch = self._ms("players") + self._ms("views")
+        meta = " ".join(f"{k}={v}" for k, v in self.meta.items())
+        return (
+            f"[todo-perf] {meta} "
+            f"defer={self._ms('defer')}ms resolve={self._ms('resolve')}ms "
+            f"logos={self._ms('logos')}ms fetch={fetch}ms "
+            f"(players={self._ms('players')}ms views={self._ms('views')}ms) "
+            f"render={self._ms('render')}ms send={self._ms('send')}ms "
+            f"total={total:.2f}s"
+        )
+
+
+async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None,
+                perf: "_Perf | None" = None):
     """Resolve tags and compute every section.
 
     Returns (data, problem). `problem` is a ready-to-render component list when
@@ -681,6 +729,7 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     because they share the same per-clan fetches - once a clan's war is warm,
     the marginal cost of the other sections is near zero.
     """
+    perf = perf or _Perf()
     if force:
         # ONE call, and it owns the prefix list. Enumerating prefixes here is
         # what froze the freshness stamp: "raid:" was missing from this list
@@ -690,12 +739,14 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
         todo_data.drop_render_caches((f"links:{discord_id}", CACHE_LOGOS))
 
     if mongo is not None:
-        await _load_clan_logos(mongo)
+        with perf.timing("logos"):
+            await _load_clan_logos(mongo)
 
     cache_key = f"links:{discord_id}"
     tags = todo_data.cache_get(cache_key)
     if tags is None:
-        tags = await resolve_tags(discord_id)
+        with perf.timing("resolve"):
+            tags = await resolve_tags(discord_id)
         if tags is None:
             # Lookup FAILED. Not the same as having no accounts, and the user
             # must not be sent off to fix a problem they do not have.
@@ -716,7 +767,13 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             "`/todo` again.",
         )
 
-    accounts, errors = await todo_data.fetch_accounts(coc_client, tags)
+    # Counted BEFORE the fetch, or every entry reads as a hit afterwards.
+    perf.meta["tags"] = len(tags)
+    perf.meta["warm"] = f"{todo_data.live_keys('player:')}/{len(tags)}"
+
+    with perf.timing("players"):
+        accounts, errors = await todo_data.fetch_accounts(coc_client, tags)
+    perf.meta["clans"] = len({a.clan_tag for a in accounts if a.clan_tag})
     if not accounts:
         return None, _notice(
             "Couldn't load your accounts",
@@ -724,13 +781,16 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             "of them. Try again shortly.",
         )
 
-    war = await todo_data.build_war_view(coc_client, accounts)
-    cwl = await todo_data.build_cwl_view(coc_client, accounts)
-    if errors:
-        print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
+    # All four view builds together: they share the per-clan fetches, so timing
+    # them separately would just show the first one paying for the rest.
+    with perf.timing("views"):
+        war = await todo_data.build_war_view(coc_client, accounts)
+        cwl = await todo_data.build_cwl_view(coc_client, accounts)
+        if errors:
+            print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
 
-    raid = await todo_data.build_raid_view(coc_client, accounts)
-    blocked = await todo_data.build_blocked_view(coc_client, accounts)
+        raid = await todo_data.build_raid_view(coc_client, accounts)
+        blocked = await todo_data.build_blocked_view(coc_client, accounts)
 
     return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: raid, VIEW_PRIVATE: blocked}, None
 
@@ -781,11 +841,20 @@ class Todo(
         #
         # Not ephemeral: the deferred response becomes the panel, and a DM
         # dashboard is meant to be scrolled back to.
-        await ctx.defer()
+        #
+        # t0 is the first line of the handler, so `total` on the [todo-perf]
+        # line is command-received to panel-visible and the phases under it have
+        # to add up to it.
+        perf = _Perf()
+        with perf.timing("defer"):
+            await ctx.defer()
 
-        data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo)
+        data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo, perf=perf)
         if problem:
-            await ctx.respond(components=problem)
+            with perf.timing("send"):
+                await ctx.respond(components=problem)
+            perf.meta["result"] = "notice"
+            print(perf.line(), flush=True)
             await _record_response(ctx, mongo, VIEW_WAR, kind="notice")
             return
         # Open on the first view that actually has work. Always opening on War
@@ -796,7 +865,17 @@ class Todo(
              if data.get(v) is not None and data[v].ok and data[v].count),
             VIEW_WAR,
         )
-        await ctx.respond(components=render_dashboard(opening, 0, data))
+        with perf.timing("render"):
+            components = render_dashboard(opening, 0, data)
+        with perf.timing("send"):
+            await ctx.respond(components=components)
+
+        # Printed BEFORE the todo_sessions write. The line must describe what
+        # the user actually waited for, and the row is bookkeeping that happens
+        # once the panel is already on screen.
+        perf.meta["view"] = opening
+        print(perf.line(), flush=True)
+
         await _record_response(ctx, mongo, opening)
 
 
@@ -864,7 +943,19 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
         page = int(action_id.split("|")[-1])
     except (TypeError, ValueError):
         page = 0
-    data, problem = await _load(bot, coc_client, ctx.user.id, force=force, mongo=mongo)
+    # A forced refresh is the ONLY guaranteed-cold measurement available - it
+    # drops the caches first, so warm= reads 0 and the fetch numbers are real
+    # API time rather than dictionary lookups. It is the sample worth trusting.
+    #
+    # send= is absent here and that is not an oversight: this function returns
+    # components and the dispatcher in extensions/components.py owns the actual
+    # response, so the send is not inside anything this function can time.
+    perf = _Perf()
+    perf.meta["path"] = trigger
+    data, problem = await _load(bot, coc_client, ctx.user.id, force=force, mongo=mongo, perf=perf)
+    with perf.timing("render"):
+        rendered = problem if problem else render_dashboard(view, page, data)
+    print(perf.line(), flush=True)
 
     # The message being edited, not a new one: on a component interaction the
     # panel already exists, and ComponentInteraction.message is it (verified in
@@ -875,7 +966,10 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
         ctx, mongo, getattr(getattr(ctx, "interaction", None), "message", None),
         view, page, kind="notice" if problem else "dashboard", trigger=trigger,
     )
-    return problem if problem else render_dashboard(view, page, data)
+    # `rendered`, NOT a second render_dashboard call - rendering twice would
+    # double the real work and make render= on the perf line a measurement of
+    # half of what actually happened.
+    return rendered
 
 
 @register_action("todo_war")

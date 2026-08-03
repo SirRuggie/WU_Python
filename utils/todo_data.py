@@ -150,6 +150,21 @@ def oldest_fill(prefixes: tuple[str, ...] = DATA_PREFIXES) -> float | None:
     return result
 
 
+def live_keys(prefix: str) -> int:
+    """How many unexpired entries sit under this prefix.
+
+    For instrumentation: a run whose players were already cached is not
+    measuring the same thing as a cold one, and comparing the two without
+    knowing which is which is how you conclude the wrong thing about where the
+    time goes.
+    """
+    now = time.monotonic()
+    return sum(
+        1 for key, (expires_at, _f, _v) in _cache.items()
+        if expires_at > now and key.startswith(prefix)
+    )
+
+
 def cache_drop_prefix(prefix: str) -> int:
     """Drop every key with this prefix. Returns count dropped.
 
