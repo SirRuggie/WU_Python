@@ -133,6 +133,42 @@ on the action doc.
 | `lazycwl-roster` | read-only, but N rosters in one ephemeral would blow the 40-component / ~4000-char budget |
 | `lazycwl-status`, `lazycwl-autopings-status` | already family-wide, no selection to bulk |
 
+## Select-all: what is verified and what is not
+
+Smoke tested 2026-08-03, `/fwa lazycwl-autopings-start`, **cancelled at the
+confirm screen**.
+
+**VERIFIED — the path up to the write:**
+
+- the 🌍 ALL option renders on the start menu
+- selecting it advances to the interval step
+- the confirm screen renders
+- **no exceptions anywhere in the handler chain** — the journal was silent
+  throughout
+
+That last point clears the specific failure mode flagged at build time:
+`interval_minutes` does reach the confirm handler through the `button_store`
+doc, which was the one piece copied from `lazycwl_remove_player_confirm`
+without being executed.
+
+**NOT VERIFIED — everything from the write onward:**
+
+- the bulk write itself
+- the summary rendering all 7 clans
+- the jitter (`next_run_time` staggering)
+- restore-on-boot picking up 7 bulk-created jobs
+- **the entire stop-all path**, end to end
+
+**A CANCEL-AT-CONFIRM TEST CANNOT DISTINGUISH A CORRECT BULK WRITE FROM A
+BROKEN ONE.** It exercises only the path *up to* the write and proves nothing
+about what the write does. Do not read the green smoke test as covering the
+feature.
+
+Deferred because a real run starts repeating pings into the shared LazyCWL
+channel for every clan, which is not something to trigger for a test. The
+natural window is the next time auto-ping is genuinely wanted for the whole
+family.
+
 ## Never use byte-level tools on this file
 
 An in-place `perl` round-trip that read raw bytes and wrote with an encoding

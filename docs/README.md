@@ -2,6 +2,11 @@
 
 Durable project knowledge. One file per subject.
 
+> **[editing-this-repo.md](editing-this-repo.md) — read before any bulk edit.**
+> No `sed -i` / `awk` / `perl -pi` in this repo. Three incidents: twice an empty
+> block that would not import, once 97 lines of double-encoded UTF-8. The two
+> verification greps are there.
+
 Written because it is fundamental, non-obvious, by-design, or was discovered
 the hard way. The standing instruction that governs this folder is in
 [`../CLAUDE.md`](../CLAUDE.md).
