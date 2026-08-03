@@ -47,6 +47,8 @@ the hard way. The standing instruction that governs this folder is in
 
 ## Integrations
 
+- [clashking-war-endpoints.md](clashking-war-endpoints.md) — historical CWL, the
+  real payload shape, and how ClashKingBot's own to-do command works.
 - [clashking-discord-links.md](clashking-discord-links.md) — the Discord↔Clash
   link API. Bidirectional, unauthenticated, and how to read its response.
 
