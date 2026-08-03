@@ -64,6 +64,7 @@ class Emojis:
         # /todo dashboard. View emoji are used in BOTH the view header and the
         # matching nav select option, so what you pick is what you land on.
         self.Waiting = EmojiType("<:Waiting:1398229981003382815>")
+        self.refresh = EmojiType("<:refresh:1533869685509197834>")
         self.sword_fighting = EmojiType("<a:sword_fighting:1533860863147114769>")
         self.War = EmojiType("<:War:1533861604611981463>")
         self.CWL = EmojiType("<:CWL:1399013745598009375>")

@@ -205,29 +205,43 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
 
 
 def _nav_block(view: str, counts: dict) -> list:
-    """Separator, the view select, and the refresh button.
+    """Separator, the view select, and the freshness line with its refresh button.
 
     THE ONLY PLACE NAVIGATION IS BUILT. Every panel state calls this, so a new
-    state cannot accidentally ship without a way out.
+    state cannot ship without a way out.
 
-    Refresh is a BUTTON, not a select option. The select lists places you can
-    go; refresh is a thing you do to where you already are. Putting an action in
-    a list of destinations made it read as a fifth view.
+    LAYOUT: the refresh button is the ACCESSORY of the freshness line, so the
+    two sit on one row - "updated 5 minutes ago  [refresh]" - directly under the
+    select. A button alone on its own ActionRow read as leftover.
+
+    The two obvious alternatives are both structurally impossible in Components
+    V2, so do not try them again:
+      - select and button in one ActionRow: a row holds EITHER up to 5 buttons
+        OR exactly one select, never a mix.
+      - select inside a Section: SectionBuilderComponentsT is TextDisplay only.
+
+    Refresh is a button rather than a select option because the select lists
+    places you can GO; refresh is something you DO to where you already are.
     """
+    fetched_at = todo_data.oldest_fill(("player:", "war:", "cwl:", "raid:"))
+    # <t:N:R> updates itself forever, in the reader's own timezone, with no
+    # further work from us. Built from the cache fill time, never from now.
+    stamp = f"-# updated <t:{int(fetched_at)}:R>" if fetched_at else "-# updated just now"
+
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
         _nav_select(view, counts),
-        ActionRow(components=[
-            # Emoji only, no label. Secondary style keeps it quiet next to the
-            # select rather than a blurple slab. `label` is omitted entirely
-            # rather than passed as "" - the field defaults to UNDEFINED and an
-            # empty string is not the same thing to Discord.
-            Button(
+        Section(
+            # Emoji only, no label - `label` omitted rather than passed as "",
+            # since the field defaults to UNDEFINED and "" is not the same thing
+            # to Discord. Secondary keeps it quiet rather than a blurple slab.
+            accessory=Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"todo_refresh:{view}|0",
-                emoji=U_REFRESH,
-            )
-        ]),
+                emoji=_partial("refresh") or U_REFRESH,
+            ),
+            components=[Text(content=stamp)],
+        ),
     ]
 
 

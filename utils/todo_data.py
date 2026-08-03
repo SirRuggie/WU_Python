@@ -59,7 +59,9 @@ def _d(msg: str) -> None:
 # for days. Caching it is where the real saving is.
 # ---------------------------------------------------------------------------
 
-_cache: dict[str, tuple[float, object]] = {}
+# (monotonic expiry, unix fill time, value). The fill time exists so the panel
+# can say how old the DATA is rather than when it was rendered.
+_cache: dict[str, tuple[float, float, object]] = {}
 
 TTL_LINKS = 6 * 60 * 60      # linking is a rare manual act
 TTL_WAR_ACTIVE = 120         # a hit can land any second; matches upstream max-age
@@ -73,7 +75,7 @@ def cache_get(key: str):
     hit = _cache.get(key)
     if hit is None:
         return None
-    expires_at, value = hit
+    expires_at, _filled_at, value = hit
     if time.monotonic() >= expires_at:
         _cache.pop(key, None)
         return None
@@ -81,7 +83,32 @@ def cache_get(key: str):
 
 
 def cache_put(key: str, value, ttl: int) -> None:
-    _cache[key] = (time.monotonic() + ttl, value)
+    """Store a value with its expiry AND the wall-clock time it was fetched.
+
+    `filled_at` is unix epoch, not monotonic, because it is rendered as
+    <t:N:R>. Expiry stays monotonic so a clock change cannot break eviction.
+    """
+    _cache[key] = (time.monotonic() + ttl, time.time(), value)
+
+
+def oldest_fill(prefixes: tuple[str, ...]) -> float | None:
+    """When the OLDEST still-live cache entry under these prefixes was fetched.
+
+    This is what "updated N minutes ago" must be built from. Using render time
+    would be a lie precisely when it matters: a panel served entirely from cache
+    renders now but shows data from minutes ago, and the cached case is exactly
+    when the user needs to know how stale it is.
+
+    Oldest rather than newest, because the panel is only as fresh as its
+    staleset component.
+    """
+    now = time.monotonic()
+    fills = [
+        filled_at
+        for key, (expires_at, filled_at, _value) in _cache.items()
+        if expires_at > now and key.startswith(prefixes)
+    ]
+    return min(fills) if fills else None
 
 
 def cache_drop_prefix(prefix: str) -> int:
