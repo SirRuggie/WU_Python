@@ -1,30 +1,83 @@
+import logging
 import warnings
 
-# coc.py 3.9.1 calls the stdlib datetime.utcnow(), deprecated in Python 3.12,
-# from coc/utils.py (get_season_start, get_season_end, get_clan_games_start,
-# get_clan_games_end). One /todo run touches those paths ~100 times and buried
-# every other log line. It is coc.py's code, not ours - fixed upstream in 3.9.2,
-# which requirements.txt explains why we have not taken yet.
+# ---------------------------------------------------------------------------
+# coc.py's utcnow spam, and why suppressing it is not a one-liner
 #
-# TARGETED, not global. This file previously carried a blanket
-#   warnings.filterwarnings("ignore", category=DeprecationWarning)
-# which hid our own deprecations too - and was NOT actually working, since the
-# spam reached the journal anyway. See the re-assert after load_dotenv().
+# THE NOISE: coc.py 3.9.1 calls the stdlib datetime.utcnow(), deprecated in
+# Python 3.12, from coc/utils.py - get_season_start, get_season_end,
+# get_clan_games_start, get_clan_games_end. One /todo run emitted ~200 of these
+# and buried every other log line. It is coc.py's code, not ours; fixed upstream
+# in 3.9.2, which requirements.txt explains why we have not taken yet.
+#
+# WHY THE OBVIOUS FIX NEVER WORKED: this file carried a blanket
+#     warnings.filterwarnings("ignore", category=DeprecationWarning)
+# on line 2 from the initial commit. It was deployed. The spam came through
+# anyway, for the entire life of the repo.
+#
+# hikari's GatewayBot.__init__ calls hikari.internal.ux.init_logging(), which
+# does BOTH of these (verified in hikari 2.3.5, hikari/internal/ux.py):
+#     warnings.simplefilter("always", DeprecationWarning)
+#     logging.captureWarnings(True)
+#
+# simplefilter PREPENDS, so hikari's "always" lands in front of anything we
+# installed earlier and wins outright. It is in __init__, not run() - so
+# constructing the bot is what clobbers us, and every filter installed before
+# `bot = hikari.GatewayBot(...)` is dead on arrival no matter how early it runs.
+# That is the whole explanation, and it is why installing ours twice at import
+# time changed nothing.
+#
+# TWO INDEPENDENT DEFENCES, because this has now failed twice:
+#
+#   1. install_warning_filters() is called AGAIN after the GatewayBot is
+#      constructed. Ordering is the actual fix - ours then prepends over
+#      hikari's. It is the only one of the two that stops the warning being
+#      formatted at all.
+#
+#   2. a logging filter on the "py.warnings" logger, which is where
+#      captureWarnings(True) routes anything that survives the filters. This
+#      does not depend on filter ORDER, so it holds even if some future
+#      dependency prepends its own "always" after us.
+#
+# Defence 2 is also the answer to a reasonable theory that turned out to be only
+# half right: the warnings DO travel through logging, which is why they arrive in
+# journald wearing log formatting. But that is not why filters failed - warnings
+# filters are consulted BEFORE showwarning, so captureWarnings alone would never
+# have defeated them. Ordering did.
+#
+# TARGETED, never global: a blanket DeprecationWarning ignore hides our own
+# deprecations, and the next real one would be invisible.
+# ---------------------------------------------------------------------------
 _UTCNOW_RE = r"datetime\.datetime\.utcnow\(\) is deprecated"
+_UTCNOW_SUBSTR = "utcnow() is deprecated"
 
 
-def _install_warning_filters() -> None:
-    """Silence coc.py's utcnow noise. Idempotent - called more than once."""
+def install_warning_filters() -> None:
+    """Silence coc.py's utcnow noise. Idempotent - called more than once.
+
+    MUST be called after hikari.GatewayBot(...) is constructed. Calling it
+    before as well is harmless and covers the import-time window.
+    """
     warnings.filterwarnings(
         "ignore", message=_UTCNOW_RE, category=DeprecationWarning, module=r"coc.*"
     )
-    # Same warning, raised from OUR call frame rather than inside coc: the
-    # `module` filter matches the module where the warning is RAISED, and
-    # stacklevel can attribute it to the caller. Both spellings, or it leaks.
+    # Same warning, attributed to OUR call frame rather than to coc: the
+    # `module` filter matches the module the warning is RAISED in, and
+    # stacklevel can push that onto the caller. Both spellings, or it leaks.
     warnings.filterwarnings("ignore", message=_UTCNOW_RE, category=DeprecationWarning)
 
 
-_install_warning_filters()
+class _DropUtcnowWarnings(logging.Filter):
+    """Defence 2. Substring, not regex - it must not itself become a bug."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            return _UTCNOW_SUBSTR not in record.getMessage()
+        except Exception:  # noqa: BLE001 - a broken record must not kill logging
+            return True
+
+
+install_warning_filters()
 
 import sys
 # Force line-buffered stdout/stderr so logs reach journald immediately.
@@ -61,27 +114,12 @@ from utils import bot_data
 
 load_dotenv()
 
-# RE-ASSERTED AFTER EVERY IMPORT, deliberately.
-#
-# The blanket DeprecationWarning ignore that used to sit at line 2 was there
-# since the initial commit, was deployed, and the utcnow spam still reached the
-# journal - so something between line 2 and here was defeating it. Nothing in
-# this repo touches warnings.filters (grepped), which leaves a dependency
-# calling warnings.simplefilter()/resetwarnings() at import time as the leading
-# candidate. That has NOT been confirmed; it cannot be, without a Python that
-# can import this environment.
-#
-# Re-installing after the imports beats that whole class of cause without
-# needing to know which library did it. The print says what actually survived,
-# so the next boot settles it instead of another round of theory.
-_install_warning_filters()
-print(
-    f"[startup] warning filters installed; {len(warnings.filters)} active, "
-    f"head={[(f[0], getattr(f[2], '__name__', f[2])) for f in warnings.filters[:4]]}",
-    flush=True,
-)
-
 # Create a GatewayBot instance with intents and custom rate limit settings
+#
+# CONSTRUCTING THIS CLOBBERS OUR WARNING FILTERS. GatewayBot.__init__ calls
+# ux.init_logging(), which prepends warnings.simplefilter("always",
+# DeprecationWarning). Anything installed above this line loses. See the block
+# at the top of the file, and DO NOT move the re-install below it back up here.
 bot = hikari.GatewayBot(
     token=os.getenv("DISCORD_TOKEN"),
     intents=(
@@ -96,6 +134,28 @@ bot = hikari.GatewayBot(
     max_rate_limit=120.0,  # Guild channel-create bucket slides to a 60s window; 30s made those a user-facing error
     max_retries=1,  # Fail fast instead of waiting
 )
+
+# ---------------------------------------------------------------------------
+# THE LINE THAT ACTUALLY SILENCES THE SPAM. It has to be here, after the
+# GatewayBot above, because that constructor is what installs hikari's
+# simplefilter("always", DeprecationWarning). filterwarnings prepends, so ours
+# now sits in front of hikari's and wins.
+install_warning_filters()
+
+# Defence 2: order-independent. captureWarnings(True) - also set by
+# init_logging - routes surviving warnings to the "py.warnings" logger, so a
+# filter there catches anything that gets past the ordering above.
+logging.getLogger("py.warnings").addFilter(_DropUtcnowWarnings())
+
+# Prints what SURVIVED, not what was requested. The head of warnings.filters is
+# the whole question: if entry 0 is not our "ignore", the ordering lost again.
+print(
+    "[startup] warning filters: "
+    f"{len(warnings.filters)} active, head="
+    f"{[(f[0], getattr(f[2], '__name__', f[2]), f[1].pattern if f[1] else None) for f in warnings.filters[:3]]}",
+    flush=True,
+)
+# ---------------------------------------------------------------------------
 
 client = lightbulb.client_from_app(bot)
 
