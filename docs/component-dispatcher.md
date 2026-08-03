@@ -1,7 +1,7 @@
 # The component dispatcher
 
 Every button, select menu and modal in this bot routes through one file:
-`extensions/components.py` (112 lines). Understand it before building anything
+`extensions/components.py` (~310 lines). Understand it before building anything
 component-heavy — **and read the defects section, because they are real.**
 
 ## The contract
@@ -18,7 +18,7 @@ async def some_page(ctx, action_id, color, mongo=lightbulb.di.INJECTED, **kwargs
 ```
 
 `register_action(name, user_only=False, no_return=False, is_modal=False,
-ephemeral=False, opens_modal=False, group=None)` stores a 7-tuple in the module
+ephemeral=False, opens_modal=False, group=None)` stores an `Action` dataclass in the module
 global `registered_functions`:
 
 | Parameter | Effect |
@@ -35,11 +35,11 @@ The decorator also wraps the function to coerce stdlib `datetime` arguments to
 
 ## Routing
 
-custom_ids are `command_name:action_id`, split once at `components.py:74`.
+custom_ids are `command_name:action_id`, split once by `raw.partition(":")` in `_dispatch`.
 
 - `command_name` selects the handler from `registered_functions`.
 - `action_id` is the key into `button_store` holding that component's saved
-  kwargs, fetched at `components.py:86` and splatted into the handler as
+  kwargs, fetched by the `button_store.find_one` in `_dispatch` and splatted into the handler as
   `**kw`, unioned with `color`, `action_id` and `ctx`.
 
 **Select-menu groups**: a handler registered with `group="x"` also writes an
@@ -50,7 +50,7 @@ select option's `value` must equal a registered action name. This is why
 `view_clan_list`.
 
 **Deferral**: `ctx.defer(edit=True)` is called for everything that is not a
-modal and does not open one (`components.py:83-84`).
+modal and does not open one (the `ctx.defer(edit=True)` in `_dispatch`).
 
 Contexts are hand-built in `build_ctx` — `lightbulb.components.MenuContext(
 client, None, interaction, None, None, None, asyncio.Event())` — bypassing
@@ -169,6 +169,28 @@ the fix touched.**
 but no custom_id references it, so it is unreachable dead code rather than a
 second live instance.
 
+### ⚠️ Exactly ONE colon in a custom_id — the extra-colon trap
+
+`raw.partition(":")` splits at the **first** colon and everything after it is the
+state key. So `f"action:{action_id}:{page}"` makes `action_id` the composite
+string `"1234567890:2"`, which misses `button_store` — and the handler is called
+with only the three injected keys.
+
+**This is live and has a victim.** `manage_roles.py:366` and `:385` build
+`custom_id=f"remove_roles_page:{action_id}:{page}"`. The handler at `:587-593`
+parses the page correctly out of `parts[2]` — so the author knew the format —
+then does `find_one({"_id": action_id})` using the **dispatcher-injected
+composite** rather than `parts[1]`, misses, and returns
+`error_response("Session expired")`. **That pagination has never worked.**
+Confirmed by reading both ends; not executed.
+
+`server_walkthrough.py:239` uses the same shape but parses `original_action_id`
+itself and falls back to `ctx.user.id` on a miss, so it degrades instead of
+breaking.
+
+**Rule for new dashboards: one colon. Page, view and every other parameter live
+in the state document, never in the custom_id.**
+
 ## Defects — still open
 
 1. **`user_only` is never enforced.** It is stored on the `Action` and not read.
@@ -229,7 +251,7 @@ Consequence for new work: **the expiry path is the one to design for.** State in
 ## The landmine for any ticket dashboard
 
 The natural custom_id for a ticket action is `ticket_view:ticket_{channel_id}` —
-the ticket's own `_id` is the obvious handle. Write that, and `components.py:86`
+the ticket's own `_id` is the obvious handle. Write that, and the state lookup in `_dispatch`
 loads **the ticket document** as handler kwargs. Every handler takes `**kwargs`,
 so there is no error. And the house convention in `close.py` is to finish with
 `delete_one({"_id": action_id})` (`close.py:471`, `:563`, `:688`) — so one
