@@ -199,8 +199,9 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
         Text(content=f"### {title}"),
         Separator(divider=True),
         Text(content=body),
+        # _nav_block ends with the footer and the freshness row - do not append
+        # a second Media here.
         *_nav_block(view, counts or {}),
-        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
     ])
 
 
@@ -231,6 +232,16 @@ def _nav_block(view: str, counts: dict) -> list:
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
         _nav_select(view, counts),
+        # The Media footer sits ABOVE the freshness row, not at the very bottom
+        # as it does on every other panel in the repo. Deliberate: the red line
+        # then reads as the rule that closes the dashboard, with the freshness
+        # stamp and its refresh button sitting under it as a caption.
+        #
+        # Done by reordering INSIDE the container rather than moving the Section
+        # out to top level. A top-level component renders outside the accent bar
+        # and would lose the coloured stripe, detaching the row from the panel -
+        # the opposite of grouping the button with the stamp.
+        Media(items=[MediaItem(media="assets/Red_Footer.png")]),
         Section(
             # Emoji only, no label - `label` omitted rather than passed as "",
             # since the field defaults to UNDEFINED and "" is not the same thing
@@ -559,9 +570,7 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             ),
         ]))
 
-    # Media footer stays - it is house style on every panel in the repo. The
-    # "Data via ClashKing" TEXT line above it is gone.
-    body.append(Media(items=[MediaItem(media="assets/Red_Footer.png")]))
+    # The footer is emitted by _nav_block, above the freshness row.
     return _panel(body, _urgency_accent(current))
 
 
