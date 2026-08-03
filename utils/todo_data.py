@@ -28,6 +28,7 @@ calls get_clan_war and get_league_group explicitly so the fan-out is visible.
 """
 
 import asyncio
+import contextlib
 import time
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
@@ -77,6 +78,9 @@ TTL_WAR_ACTIVE = 120         # a hit can land any second; matches upstream max-a
 # escape hatch for exactly the clan-change case, and the thing that was missing
 # for "raid:" when the freshness stamp froze.
 TTL_PLAYER = 120
+TTL_WAR_IDLE = 15 * 60       # notInWar / warEnded - stable for hours
+TTL_CWL_ABSENT = 60 * 60     # not in CWL - stable for WEEKS outside the season
+TTL_CWL_ACTIVE = 600         # rounds advance once per day
 
 # Simultaneous player lookups. coc.py's own BasicThrottler is the real ceiling -
 # it spaces request STARTS ~33ms apart across the whole client (throttle_limit
@@ -85,9 +89,6 @@ TTL_PLAYER = 120
 # request rate, and it is deliberately modest: proxy.clashk.ing is ClashKing's
 # infrastructure, offered free, and 46 simultaneous lookups is not neighbourly.
 FETCH_CONCURRENCY = 8
-TTL_WAR_IDLE = 15 * 60       # notInWar / warEnded - stable for hours
-TTL_CWL_ABSENT = 60 * 60     # not in CWL - stable for WEEKS outside the season
-TTL_CWL_ACTIVE = 600         # rounds advance once per day
 
 
 def cache_get(key: str):
@@ -168,6 +169,44 @@ def oldest_fill(prefixes: tuple[str, ...] = DATA_PREFIXES) -> float | None:
             f"{_last_drop_at:.0f}. Read-but-not-dropped keys: {survivors[:8]}"
         )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Per-call timing.
+#
+# The views phase went from ~1100ms to 8592ms on a run that fetched FEWER clans
+# (16, down from 30). A phase total cannot tell you whether that was 50 calls
+# throttled to 170ms each or 2 calls that took 4 seconds - and those need
+# opposite fixes. One says back off the concurrency; the other says the upstream
+# was slow and concurrency is innocent. So count the calls and keep the worst.
+# ---------------------------------------------------------------------------
+_calls: dict[str, object] = {"n": 0, "total": 0.0, "worst": 0.0, "worst_label": ""}
+
+
+def reset_calls() -> None:
+    _calls.update({"n": 0, "total": 0.0, "worst": 0.0, "worst_label": ""})
+
+
+def note_call(label: str, seconds: float) -> None:
+    _calls["n"] = int(_calls["n"]) + 1
+    _calls["total"] = float(_calls["total"]) + seconds
+    if seconds > float(_calls["worst"]):
+        _calls["worst"] = seconds
+        _calls["worst_label"] = label
+
+
+def call_stats() -> dict:
+    return dict(_calls)
+
+
+@contextlib.contextmanager
+def timed_call(label: str):
+    """Wrap ONE network call. Records even when the call raises."""
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        note_call(label, time.perf_counter() - start)
 
 
 def live_keys(prefix: str) -> int:
@@ -291,7 +330,8 @@ async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semap
     """
     async with sem:
         try:
-            player = await coc_client.get_player(tag)
+            with timed_call("player"):
+                player = await coc_client.get_player(tag)
         except coc.NotFound:
             # A linked tag for an account that no longer exists. Common with
             # abandoned alts; not an error worth surfacing to the user.
@@ -382,7 +422,8 @@ async def _get_war(coc_client: coc.Client, clan_tag: str):
         return cached
 
     try:
-        war = await coc_client.get_clan_war(clan_tag)
+        with timed_call("currentwar"):
+            war = await coc_client.get_clan_war(clan_tag)
     except coc.PrivateWarLog:
         result = ("private", None)
         cache_put(key, result, TTL_WAR_IDLE)
@@ -432,7 +473,8 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
         return cached
 
     try:
-        group = await coc_client.get_league_group(clan_tag)
+        with timed_call("leaguegroup"):
+            group = await coc_client.get_league_group(clan_tag)
     except coc.NotFound:
         result = ("none", None)
         cache_put(key, result, TTL_CWL_ABSENT)
@@ -486,7 +528,8 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
         war = cache_get(war_key)
         if war is None:
             try:
-                war = await coc_client.get_league_war(war_tag)
+                with timed_call("leaguewar"):
+                    war = await coc_client.get_league_war(war_tag)
             except (coc.NotFound, coc.PrivateWarLog):
                 continue
             except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
@@ -801,7 +844,8 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
         return cached
 
     try:
-        log = await coc_client.get_raid_log(clan_tag, limit=1)
+        with timed_call("raidlog"):
+            log = await coc_client.get_raid_log(clan_tag, limit=1)
     except (coc.NotFound, coc.PrivateWarLog):
         result = ("none", None)
         cache_put(key, result, _seconds_until_raid_opens())

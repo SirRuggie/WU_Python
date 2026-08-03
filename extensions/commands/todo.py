@@ -690,6 +690,9 @@ class _Perf:
         self._t0 = time.perf_counter()
         self._phase: dict[str, float] = {}
         self.meta: dict[str, object] = {}
+        # Per-invocation, so calls= counts THIS run. The counters live in
+        # todo_data because that is where the network calls are.
+        todo_data.reset_calls()
 
     @contextlib.contextmanager
     def timing(self, name: str):
@@ -708,12 +711,21 @@ class _Perf:
         # parts always add up to the whole and cannot drift apart.
         fetch = self._ms("players") + self._ms("views")
         meta = " ".join(f"{k}={v}" for k, v in self.meta.items())
+
+        # calls= and worst= are what tell 50 throttled calls apart from 2 slow
+        # ones. A phase total alone cannot, and those two need opposite fixes.
+        stats = todo_data.call_stats()
+        n = int(stats.get("n", 0))
+        worst_ms = int(float(stats.get("worst", 0.0)) * 1000)
+        mean_ms = int(float(stats.get("total", 0.0)) * 1000 / n) if n else 0
+
         return (
             f"[todo-perf] {meta} "
             f"defer={self._ms('defer')}ms resolve={self._ms('resolve')}ms "
             f"logos={self._ms('logos')}ms fetch={fetch}ms "
             f"(players={self._ms('players')}ms views={self._ms('views')}ms) "
             f"render={self._ms('render')}ms send={self._ms('send')}ms "
+            f"calls={n} mean={mean_ms}ms worst={worst_ms}ms/{stats.get('worst_label', '-')} "
             f"total={total:.2f}s"
         )
 
