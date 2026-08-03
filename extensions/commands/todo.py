@@ -79,6 +79,9 @@ VIEW_RAID = "raid"
 VIEW_LABEL = {VIEW_WAR: "War", VIEW_CWL: "CWL", VIEW_RAID: "Raids"}
 VIEW_ORDER = (VIEW_WAR, VIEW_CWL, VIEW_RAID)
 
+CACHE_LOGOS = "clanlogos"
+TTL_LOGOS = 60 * 60   # family clan list changes rarely; a logo upload is rarer
+
 # Real TH emoji from utils.emoji rather than the text "TH17". Custom emoji are
 # ~28 chars of markup but render one character wide, so the LINE gets shorter
 # while the character budget barely moves (10 rows = ~280 of 4000).
@@ -235,6 +238,28 @@ def _nav_select(view: str, counts: dict) -> ActionRow:
     ])
 
 
+def _clan_logos() -> dict:
+    """{clan_tag: logo_url} for family clans, from the clan_data collection.
+
+    These are OUR Cloudinary logos, uploaded via /clan upload and rendered the
+    same way at update_clan_info.py:465. The Clash API badge is the generic
+    war-league shield - every clan in a league looks identical - so it is only
+    a fallback for clans outside the family.
+
+    Read from the shared cache rather than threaded through six signatures.
+    _load populates it; a miss just means every clan falls back to its badge.
+    """
+    return todo_data.cache_get(CACHE_LOGOS) or {}
+
+
+def _thumbnail_for(row):
+    """Our logo if the clan is one of ours, else the Clash badge, else nothing."""
+    logo = _clan_logos().get(row.clan_tag)
+    if logo and isinstance(logo, str) and logo.startswith("http"):
+        return logo
+    return row.clan_badge
+
+
 def _row_line(row) -> str:
     """One account, one line, never wrapping on a phone.
 
@@ -282,9 +307,10 @@ def _render_rows(rows: list) -> list:
         # trying and failing to be - that header wrapped to two lines on a phone
         # for every single clan. The clan name now sits alone on a short line
         # and the timing has moved out to a block heading above, stated once.
-        if first.clan_badge:
+        thumb = _thumbnail_for(first)
+        if thumb:
             out.append(Section(
-                accessory=Thumbnail(media=first.clan_badge),
+                accessory=Thumbnail(media=thumb),
                 components=[Text(content=body)],
             ))
         else:
@@ -422,7 +448,26 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
 # Data assembly
 # ---------------------------------------------------------------------------
 
-async def _load(bot, coc_client, discord_id: int, force: bool = False):
+async def _load_clan_logos(mongo) -> None:
+    """Populate the family-clan logo map, once per TTL.
+
+    Projection-only and read-only. A failure here is cosmetic - clans fall back
+    to their Clash badge - so it must never take the dashboard down.
+    """
+    if todo_data.cache_get(CACHE_LOGOS) is not None:
+        return
+    try:
+        docs = await mongo.clans.find({}, {"tag": 1, "logo": 1}).to_list(length=None)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo] clan logo lookup failed: {type(exc).__name__}: {exc}")
+        todo_data.cache_put(CACHE_LOGOS, {}, 60)
+        return
+    logos = {d.get("tag"): d.get("logo") for d in docs if d.get("tag") and d.get("logo")}
+    todo_data._d(f"_load_clan_logos loaded {len(logos)} logos of {len(docs)} clans")
+    todo_data.cache_put(CACHE_LOGOS, logos, TTL_LOGOS)
+
+
+async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None):
     """Resolve tags and compute every section.
 
     Returns (data, problem). `problem` is a ready-to-render component list when
@@ -437,6 +482,10 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False):
         todo_data.cache_drop_prefix("war:")
         todo_data.cache_drop_prefix("cwl:")
         todo_data.cache_drop_prefix(f"links:{discord_id}")
+        todo_data.cache_drop_prefix(CACHE_LOGOS)
+
+    if mongo is not None:
+        await _load_clan_logos(mongo)
 
     cache_key = f"links:{discord_id}"
     tags = todo_data.cache_get(cache_key)
@@ -506,7 +555,7 @@ class Todo(
         # be scrolled back to; an in-channel one is a convenience read.
         await ctx.defer(ephemeral=ctx.guild_id is not None)
 
-        data, problem = await _load(bot, coc_client, ctx.user.id)
+        data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo)
         if problem:
             await ctx.respond(components=problem)
             return
@@ -529,12 +578,12 @@ class Todo(
 # the design - so a handler must be callable with only ctx and action_id.
 # ---------------------------------------------------------------------------
 
-async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool = False) -> list:
+async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool = False, mongo=None) -> list:
     try:
         page = int(action_id.split("|")[-1])
     except (TypeError, ValueError):
         page = 0
-    data, problem = await _load(bot, coc_client, ctx.user.id, force=force)
+    data, problem = await _load(bot, coc_client, ctx.user.id, force=force, mongo=mongo)
     return problem if problem else render_dashboard(view, page, data)
 
 
@@ -545,9 +594,10 @@ async def todo_war(
         action_id: str = "0",
         coc_client: coc.Client = lightbulb.di.INJECTED,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs,
 ) -> list:
-    return await _switch(ctx, VIEW_WAR, action_id, coc_client, bot)
+    return await _switch(ctx, VIEW_WAR, action_id, coc_client, bot, mongo=mongo)
 
 
 @register_action("todo_cwl")
@@ -557,9 +607,10 @@ async def todo_cwl(
         action_id: str = "0",
         coc_client: coc.Client = lightbulb.di.INJECTED,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs,
 ) -> list:
-    return await _switch(ctx, VIEW_CWL, action_id, coc_client, bot)
+    return await _switch(ctx, VIEW_CWL, action_id, coc_client, bot, mongo=mongo)
 
 
 @register_action("todo_raid")
@@ -585,6 +636,7 @@ async def todo_nav(
         action_id: str = VIEW_WAR,
         coc_client: coc.Client = lightbulb.di.INJECTED,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs,
 ) -> list:
     """The select-menu router.
@@ -596,7 +648,7 @@ async def todo_nav(
     values = getattr(ctx.interaction, "values", None) or []
     choice = values[0] if values else action_id
     if choice == "refresh":
-        return await _switch(ctx, action_id or VIEW_WAR, "0", coc_client, bot, force=True)
+        return await _switch(ctx, action_id or VIEW_WAR, "0", coc_client, bot, force=True, mongo=mongo)
     if choice not in VIEW_ORDER:
         choice = VIEW_WAR
     if choice == VIEW_RAID:
@@ -604,7 +656,7 @@ async def todo_nav(
             "Raids aren't ready yet",
             "The raid weekend view is still being built. War and CWL work now.",
         )
-    return await _switch(ctx, choice, "0", coc_client, bot)
+    return await _switch(ctx, choice, "0", coc_client, bot, mongo=mongo)
 
 
 @register_action("todo_refresh")
@@ -614,9 +666,10 @@ async def todo_refresh(
         action_id: str = "war|0",
         coc_client: coc.Client = lightbulb.di.INJECTED,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs,
 ) -> list:
     view = action_id.split("|")[0] if action_id else VIEW_WAR
     if view not in (VIEW_WAR, VIEW_CWL, VIEW_RAID):
         view = VIEW_WAR
-    return await _switch(ctx, view, action_id, coc_client, bot, force=True)
+    return await _switch(ctx, view, action_id, coc_client, bot, force=True, mongo=mongo)
