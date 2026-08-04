@@ -1111,20 +1111,29 @@ class Todo(
         # acknowledging is not an option - the interaction is dead at 3s and
         # Discord shows "The application did not respond".
         #
-        # Not ephemeral: the deferred response becomes the panel, and a DM
-        # dashboard is meant to be scrolled back to.
+        # PRIVACY FOLLOWS THE INVOCATION CONTEXT:
+        #   DM     -> persistent, so the dashboard can be scrolled back to
+        #   guild  -> ephemeral, so linked-account activity is not exposed
+        #             to everyone in the channel
+        #
+        # The flag has to be applied twice. In lightbulb 3.0.3, respond() after
+        # defer() goes through interaction.execute() with its own flags
+        # argument. Passing the condition to both covers the deferred response
+        # and any separately-created followup without relying on Discord's
+        # response-identity compatibility behaviour.
         #
         # t0 is the first line of the handler, so `total` on the [todo-perf]
         # line is command-received to panel-visible and the phases under it have
         # to add up to it.
         perf = _Perf()
+        ephemeral = ctx.guild_id is not None
         with perf.timing("defer"):
-            await ctx.defer()
+            await ctx.defer(ephemeral=ephemeral)
 
         data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo, perf=perf)
         if problem:
             with perf.timing("send"):
-                sent = await ctx.respond(components=problem)
+                sent = await ctx.respond(components=problem, ephemeral=ephemeral)
             perf.meta["result"] = "notice"
             print(perf.line(), flush=True)
             await _record_response(ctx, mongo, sent, VIEW_WAR, kind="notice")
@@ -1148,7 +1157,7 @@ class Todo(
                 _component.build()
 
         with perf.timing("send"):
-            sent = await ctx.respond(components=components)
+            sent = await ctx.respond(components=components, ephemeral=ephemeral)
 
         # Printed BEFORE the todo_sessions write. The line must describe what
         # the user actually waited for, and the row is bookkeeping that happens

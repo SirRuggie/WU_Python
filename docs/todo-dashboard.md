@@ -12,6 +12,23 @@ The pre-build research and the layout options are in
 [`todo-dashboard-proposal.md`](todo-dashboard-proposal.md). This file is what
 the thing actually is.
 
+## Delivery and privacy
+
+`/todo` is persistent in a bot DM and ephemeral in a guild channel:
+
+| Invocation | Visibility | Why |
+|---|---|---|
+| Bot DM | Persistent DM message | The user can scroll back to the dashboard and use it again |
+| Guild channel | Ephemeral | Linked-account activity is visible only to the user who ran the command |
+
+Both `ctx.defer()` and the later `ctx.respond()` receive the context-derived
+`ephemeral` value. This is not duplication: lightbulb 3.0.3 routes
+`ctx.respond()` after a defer through `interaction.execute()` with a separate
+flags argument. Supplying both covers the deferred response and any separately
+created followup without relying on Discord's response-identity compatibility
+behaviour. Component clicks edit the existing message and therefore preserve
+whichever visibility the original panel already has.
+
 ---
 
 ## THE BUG THAT COST FOUR FIXES: `str()` on a coc.py enum
