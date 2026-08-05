@@ -1,10 +1,13 @@
 import lightbulb
 import asyncio
 import hikari
+import logging
 import re
-from datetime import datetime, timezone
+import unicodedata
+from datetime import datetime, timedelta, timezone
 from aiohttp.web_routedef import delete
 from hikari import GatewayBot
+from pymongo import ReturnDocument
 from hikari.api import LinkButtonBuilder
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -36,6 +39,110 @@ from utils.constants import (
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 from extensions.components import register_action
+
+_log = logging.getLogger(__name__)
+
+FAMILY_CODE_TTL = timedelta(hours=24)
+FAMILY_CODE_WARNING_COOLDOWN = timedelta(minutes=2)
+FAMILY_CODE_WARNING_LIFETIME_SECONDS = 30
+FAMILY_CODE_DELETE_RETRY_SECONDS = 5
+FAMILY_CODE_DELETE_ATTEMPTS = 3
+FAMILY_CODE_TTL_INDEX = "family_code_expiry"
+FAMILY_CODE_TYPE = "family_codes"
+
+VALID_EMOJI_CODES = (
+    "⚔️⚔️⚔️",
+    "⚔️🍻⚔️",
+    "⚔️☠️⚔️",
+)
+
+_IGNORABLE_CODEPOINTS = {"\ufe0e", "\ufe0f", "\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"}
+_IGNORABLE_MARKUP = {"*", "_", "~", "`", ">", "|"}
+_FAMILY_CODE_SYMBOLS = {"⚔", "🍻", "☠"}
+_warning_delete_tasks: set[asyncio.Task] = set()
+
+
+def normalize_family_code_text(content: str) -> str:
+    """Canonicalise harmless presentation differences in an emoji response."""
+    normalized = unicodedata.normalize("NFKC", content)
+    return "".join(
+        character
+        for character in normalized
+        if (
+            not character.isspace()
+            and character not in _IGNORABLE_CODEPOINTS
+            and character not in _IGNORABLE_MARKUP
+        )
+    )
+
+
+_NORMALIZED_FAMILY_CODES = {
+    normalize_family_code_text(code): code for code in VALID_EMOJI_CODES
+}
+
+
+def match_family_code(content: str) -> str | None:
+    """Return the display form of a valid code, accepting spacing/emoji variants."""
+    normalized = normalize_family_code_text(content)
+    return _NORMALIZED_FAMILY_CODES.get(normalized)
+
+
+def looks_like_family_code_attempt(content: str) -> bool:
+    """Avoid nagging ordinary conversation while catching malformed attempts."""
+    normalized = normalize_family_code_text(content)
+    return any(symbol in normalized for symbol in _FAMILY_CODE_SYMBOLS)
+
+
+def family_code_state_id(channel_id: int, user_id: int) -> str:
+    # Discord channel IDs are globally unique, so guild_id is not needed here.
+    return f"family_codes:{int(channel_id)}:{int(user_id)}"
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+async def open_family_code_challenge(
+        mongo: MongoClient,
+        *,
+        interaction_id: int | str,
+        guild_id: int,
+        channel_id: int,
+        user_id: int,
+        moderator_id: int,
+        now: datetime | None = None,
+) -> tuple[str, str]:
+    """Create or replace the one bounded challenge for a recruit/channel pair."""
+    now = now or utcnow()
+    session_id = str(interaction_id)
+    state_id = family_code_state_id(channel_id, user_id)
+    await mongo.recruit_challenges.update_one(
+        {"_id": state_id},
+        {
+            "$set": {
+                "session_id": session_id,
+                "interaction_id": session_id,
+                "guild_id": int(guild_id),
+                "channel_id": int(channel_id),
+                "user_id": int(user_id),
+                "moderator_id": int(moderator_id),
+                "created_at": now,
+                "expires_at": now + FAMILY_CODE_TTL,
+                "status": "active",
+                "type": FAMILY_CODE_TYPE,
+            },
+            "$unset": {
+                "warning_available_at": "",
+                "warning_message_id": "",
+                "warning_delete_at": "",
+                "processing_message_id": "",
+                "processing_until": "",
+                "code_used": "",
+            },
+        },
+        upsert=True,
+    )
+    return state_id, session_id
 
 @recruit.register()
 class RecruitQuestions(
@@ -85,6 +192,7 @@ async def primary_questions(
         # no role pings
         "roles": []
     }
+    family_code_session: tuple[str, str] | None = None
     if choice == "attack_strategies":
         components = [
             Container(
@@ -208,18 +316,16 @@ async def primary_questions(
 
         ]
     elif choice == "family_codes":
-        # Store listener info in MongoDB
-        listener_data = {
-            "_id": f"codes_{ctx.interaction.id}_{user_id}",
-            "interaction_id": str(ctx.interaction.id),
-            "channel_id": ctx.channel_id,
-            "user_id": user_id,
-            "moderator_id": ctx.member.id,
-            "created_at": datetime.now(timezone.utc),
-            "completed": False,
-            "type": "family_codes"
-        }
-        await mongo.recruit_onboarding.insert_one(listener_data)
+        # One deterministic row per recruit/channel means re-running the prompt
+        # replaces an abandoned attempt instead of leaking another listener.
+        family_code_session = await open_family_code_challenge(
+            mongo,
+            interaction_id=ctx.interaction.id,
+            guild_id=ctx.guild_id,
+            channel_id=ctx.channel_id,
+            user_id=user_id,
+            moderator_id=ctx.member.id,
+        )
         
         components = [
             Container(
@@ -325,12 +431,21 @@ async def primary_questions(
                 ]
             )
         ]
-    message = await bot.rest.create_message(
-        components=components,
-        channel=ctx.channel_id,
-        user_mentions = [user.id],
-        role_mentions = True,
-    )
+    try:
+        message = await bot.rest.create_message(
+            components=components,
+            channel=ctx.channel_id,
+            user_mentions=[user.id],
+            role_mentions=True,
+        )
+    except Exception:
+        if family_code_session is not None:
+            state_id, session_id = family_code_session
+            await mongo.recruit_challenges.delete_one({
+                "_id": state_id,
+                "session_id": session_id,
+            })
+        raise
     
     
     await asyncio.sleep(20)
@@ -1484,93 +1599,434 @@ async def recruit_questions_page(
     return components
 
 
-# Valid emoji codes for keeping it in the family
-VALID_EMOJI_CODES = [
-    "⚔️⚔️⚔️",
-    "⚔️🍻⚔️",
-    "⚔️☠️⚔️"
-]
+def _aware_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+async def migrate_legacy_family_codes(
+        mongo: MongoClient,
+        *,
+        now: datetime | None = None,
+) -> dict[str, int]:
+    """Move only recent open family-code rows out of durable onboarding data."""
+    now = now or utcnow()
+    documents = await mongo.recruit_onboarding.find({
+        "type": FAMILY_CODE_TYPE,
+    }).to_list(length=None)
+    groups: dict[tuple[int, int] | tuple[str, str], list[dict]] = {}
+
+    for document in documents:
+        channel_id = document.get("channel_id")
+        user_id = document.get("user_id")
+        if channel_id is None or user_id is None:
+            key = ("invalid", str(document.get("_id")))
+        else:
+            key = (int(channel_id), int(user_id))
+        groups.setdefault(key, []).append(document)
+
+    counts = {"migrated": 0, "removed": 0, "failed": 0}
+    for key, rows in groups.items():
+        candidates = []
+        if key[0] != "invalid":
+            for row in rows:
+                created_at = _aware_utc(row.get("created_at"))
+                if row.get("completed") is False and created_at is not None:
+                    if created_at + FAMILY_CODE_TTL > now:
+                        candidates.append((created_at, row))
+
+        if candidates:
+            created_at, latest = max(candidates, key=lambda item: item[0])
+            state_id = family_code_state_id(latest["channel_id"], latest["user_id"])
+            try:
+                current = await mongo.recruit_challenges.find_one({"_id": state_id})
+                current_created = _aware_utc(
+                    current.get("created_at") if current else None
+                )
+                if current_created is None or current_created < created_at:
+                    await mongo.recruit_challenges.update_one(
+                        {"_id": state_id},
+                        {"$set": {
+                            "session_id": str(latest.get("interaction_id", latest["_id"])),
+                            "interaction_id": str(latest.get("interaction_id", "")),
+                            "guild_id": latest.get("guild_id"),
+                            "channel_id": int(latest["channel_id"]),
+                            "user_id": int(latest["user_id"]),
+                            "moderator_id": latest.get("moderator_id"),
+                            "created_at": created_at,
+                            "expires_at": created_at + FAMILY_CODE_TTL,
+                            "status": "active",
+                            "type": FAMILY_CODE_TYPE,
+                            "legacy_migrated_at": now,
+                        }},
+                        upsert=True,
+                    )
+                    counts["migrated"] += 1
+            except Exception:
+                counts["failed"] += 1
+                _log.exception("failed to migrate legacy family-code group %r", key)
+                continue
+
+        result = await mongo.recruit_onboarding.delete_many({
+            "_id": {"$in": [row["_id"] for row in rows]},
+            "type": FAMILY_CODE_TYPE,
+        })
+        counts["removed"] += result.deleted_count
+
+    return counts
+
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def prepare_family_code_storage(
+        _: hikari.StartedEvent,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+) -> None:
+    """Install expiry before migrating exact legacy family-code documents."""
+    try:
+        await mongo.recruit_challenges.create_index(
+            "expires_at",
+            expireAfterSeconds=0,
+            name=FAMILY_CODE_TTL_INDEX,
+        )
+    except Exception:
+        _log.exception("family-code TTL index unavailable; legacy cleanup skipped")
+        return
+
+    # A clean or abrupt restart can interrupt the 30-second local deletion task.
+    # Remove any warning that was persisted before the prior process stopped.
+    async for challenge in mongo.recruit_challenges.find({
+        "type": FAMILY_CODE_TYPE,
+        "warning_message_id": {"$exists": True},
+    }):
+        try:
+            await bot.rest.delete_message(
+                challenge["channel_id"],
+                challenge["warning_message_id"],
+            )
+        except hikari.NotFoundError:
+            pass
+        except Exception:
+            _log.exception(
+                "failed to remove carried-over family-code warning %s",
+                challenge.get("warning_message_id"),
+            )
+            continue
+        await mongo.recruit_challenges.update_one(
+            {
+                "_id": challenge["_id"],
+                "warning_message_id": challenge["warning_message_id"],
+            },
+            {"$unset": {"warning_message_id": "", "warning_delete_at": ""}},
+        )
+
+    # A process can stop after atomically claiming a response but before sending
+    # its confirmation. Re-open only those unfinished claims on the next boot.
+    await mongo.recruit_challenges.update_many(
+        {"type": FAMILY_CODE_TYPE, "status": "processing"},
+        {
+            "$set": {"status": "active"},
+            "$unset": {"processing_message_id": "", "processing_until": ""},
+        },
+    )
+    counts = await migrate_legacy_family_codes(mongo)
+    _log.info("family-code storage ready: %s", counts)
+
+
+async def _delete_warning_after(
+        bot: hikari.GatewayBot,
+        mongo: MongoClient,
+        state_id: str,
+        channel_id: int,
+        message_id: int,
+) -> None:
+    removed = False
+    try:
+        await asyncio.sleep(FAMILY_CODE_WARNING_LIFETIME_SECONDS)
+        for attempt in range(FAMILY_CODE_DELETE_ATTEMPTS):
+            try:
+                await bot.rest.delete_message(channel_id, message_id)
+                removed = True
+                break
+            except hikari.NotFoundError:
+                removed = True
+                break
+            except Exception:
+                if attempt + 1 == FAMILY_CODE_DELETE_ATTEMPTS:
+                    _log.exception(
+                        "failed to delete family-code correction message %s",
+                        message_id,
+                    )
+                    break
+                await asyncio.sleep(FAMILY_CODE_DELETE_RETRY_SECONDS)
+    except asyncio.CancelledError:
+        raise
+    finally:
+        if removed:
+            try:
+                await mongo.recruit_challenges.update_one(
+                    {"_id": state_id, "warning_message_id": message_id},
+                    {"$unset": {"warning_message_id": "", "warning_delete_at": ""}},
+                )
+            except Exception:
+                _log.exception(
+                    "failed to clear deleted family-code warning %s",
+                    message_id,
+                )
+
+
+def _schedule_warning_deletion(
+        bot: hikari.GatewayBot,
+        mongo: MongoClient,
+        state_id: str,
+        channel_id: int,
+        message_id: int,
+) -> None:
+    task = asyncio.create_task(
+        _delete_warning_after(bot, mongo, state_id, channel_id, message_id)
+    )
+    _warning_delete_tasks.add(task)
+    task.add_done_callback(_warning_delete_tasks.discard)
+
+
+def _family_code_warning_components(user_mention: str) -> list:
+    return [
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                Text(content=f"{user_mention}"),
+                Text(content="## 🤠 Hold up there, partner…"),
+                Separator(divider=True),
+                Text(content=(
+                    "I don't think that clan code saddled up quite right. "
+                    "Try one of these again:\n\n"
+                    "**⚔️⚔️⚔️**  •  **⚔️🍻⚔️**  •  **⚔️☠️⚔️**\n\n"
+                    "No rush—I’ll holster the reminder for two minutes."
+                )),
+                Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+                Text(content="-# This message disappears in 30 seconds."),
+            ],
+        )
+    ]
+
+
+def _family_code_success_components(
+        user_mention: str,
+        code_found: str,
+        moderator_name: str,
+) -> list:
+    return [
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                Text(content="## ✅ Code Confirmed!"),
+                Separator(divider=True),
+                Text(content=(
+                    f"{user_mention} **Thank you for acknowledging!**\n\n"
+                    "We encourage and allow temporary movement within the family, "
+                    "but a permanent move to another clan needs to be discussed "
+                    "with Leadership. The clan you are assigned to is your "
+                    "**Home Clan**—always come back home. 👍🏼\n\n"
+                    f"The **{code_found}** code, or either of the other combinations, "
+                    "will get you into any clan within the Family. Remember it! 💪🏼"
+                )),
+                Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+                Text(content=f"-# Confirmation triggered by {moderator_name}"),
+            ],
+        )
+    ]
+
 
 @loader.listener(hikari.GuildMessageCreateEvent)
 @lightbulb.di.with_di
 async def on_family_code_response(
         event: hikari.GuildMessageCreateEvent,
         mongo: MongoClient = lightbulb.di.INJECTED,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED
-):
-    """Listen for emoji code responses from recruit questions"""
-    
-    # Ignore bot messages
-    if event.is_bot:
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+) -> None:
+    """Complete or gently correct an active family-code challenge."""
+    if event.is_bot or event.content is None:
         return
-    
-    # Check for None content first
-    if event.content is None:
+
+    now = utcnow()
+    state_id = family_code_state_id(event.channel_id, event.author_id)
+    active_query = {
+        "_id": state_id,
+        "type": FAMILY_CODE_TYPE,
+        "status": "active",
+        "expires_at": {"$gt": now},
+    }
+    challenge = await mongo.recruit_challenges.find_one(active_query)
+    if challenge is None:
         return
-    
-    # Check if this user has an active family_codes listener
-    listener = await mongo.recruit_onboarding.find_one({
-        "user_id": event.author_id,
-        "channel_id": event.channel_id,
-        "type": "family_codes",
-        "completed": False
-    })
-    
-    if listener:
-        # Check if message contains valid code
-        message_content = event.content.strip()
-        
-        # Check if any of the valid codes appear anywhere in the message
-        code_found = None
-        for code in VALID_EMOJI_CODES:
-            if code in message_content:
-                code_found = code
-                break
-        
-        if code_found:
-            # Valid code received!
-            # Update MongoDB
-            await mongo.recruit_onboarding.update_one(
-                {"_id": listener["_id"]},
-                {
-                    "$set": {
-                        "completed": True,
-                        "completed_at": datetime.now(timezone.utc),
-                        "code_used": code_found
-                    }
-                }
-            )
-            
-            # Get moderator info for footer
+
+    code_found = match_family_code(event.content)
+    if code_found is not None:
+        message_id = str(event.message.id)
+        claimed = await mongo.recruit_challenges.find_one_and_update(
+            active_query,
+            {"$set": {
+                "status": "processing",
+                "processing_message_id": message_id,
+                "processing_until": now + FAMILY_CODE_WARNING_COOLDOWN,
+                "code_used": code_found,
+            }},
+            return_document=ReturnDocument.BEFORE,
+        )
+        if claimed is None:
+            return
+
+        moderator_id = claimed.get("moderator_id")
+        moderator_name = "Unknown"
+        if moderator_id is not None:
             try:
-                moderator = await event.app.rest.fetch_member(event.guild_id, listener["moderator_id"])
+                moderator = await bot.rest.fetch_member(event.guild_id, moderator_id)
                 moderator_name = moderator.display_name
-            except:
-                moderator_name = "Unknown"
-            
-            # Send success message
-            success_components = [
-                Container(
-                    accent_color=GOLDENROD_ACCENT,
-                    components=[
-                        Text(content="## ✅ Code Confirmed!"),
-                        Separator(divider=True),
-                        Text(content=(
-                            f"{event.author.mention} **Thank you for acknowledging!**\n\n"
-                            f"We encourage and allow temporary movement within the family but if you desire a permanent move to another clan we need to discuss it further with Leadership. So from here forward, the Clan you are assigned to is your **\"Home Clan\"**. Always come back home...👍🏼\n\n"
-                            f"The **{code_found}**; or any of the code combinations; will get you in to any clan within the Family.... remember that...💪🏼.\n\n"
-                        )),
-                        Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
-                        Text(content=f"-# Confirmation triggered by {moderator_name}"),
-                    ]
+            except Exception:
+                _log.warning(
+                    "could not fetch family-code moderator %s",
+                    moderator_id,
+                    exc_info=True,
                 )
-            ]
-            
-            await event.app.rest.create_message(
+
+        try:
+            await bot.rest.create_message(
                 channel=event.channel_id,
-                components=success_components,
-                user_mentions=[event.author_id, listener["moderator_id"]]
+                components=_family_code_success_components(
+                    event.author.mention,
+                    code_found,
+                    moderator_name,
+                ),
+                user_mentions=[event.author_id],
             )
+        except Exception:
+            # Restore this exact claim so the recruit can retry after a transient
+            # Discord failure. A concurrent/new prompt cannot be overwritten.
+            await mongo.recruit_challenges.update_one(
+                {"_id": state_id, "processing_message_id": message_id},
+                {
+                    "$set": {"status": "active"},
+                    "$unset": {
+                        "processing_message_id": "",
+                        "processing_until": "",
+                        "code_used": "",
+                    },
+                },
+            )
+            raise
+
+        prior_warning_id = claimed.get("warning_message_id")
+        if prior_warning_id is not None:
+            try:
+                await bot.rest.delete_message(event.channel_id, prior_warning_id)
+            except hikari.NotFoundError:
+                pass
+            except Exception:
+                # Its original 30-second task remains as a second attempt.
+                _log.warning(
+                    "could not immediately remove family-code warning %s",
+                    prior_warning_id,
+                    exc_info=True,
+                )
+
+        await mongo.recruit_challenges.delete_one({
+            "_id": state_id,
+            "processing_message_id": message_id,
+        })
+        return
+
+    if not looks_like_family_code_attempt(event.content):
+        return
+
+    warning_available = challenge.get("warning_available_at")
+    if warning_available is not None:
+        warning_available = _aware_utc(warning_available)
+    if warning_available is not None and warning_available > now:
+        return
+
+    warning_until = now + FAMILY_CODE_WARNING_COOLDOWN
+    warning_claim = await mongo.recruit_challenges.find_one_and_update(
+        {
+            **active_query,
+            "$or": [
+                {"warning_available_at": {"$exists": False}},
+                {"warning_available_at": {"$lte": now}},
+            ],
+        },
+        {
+            "$set": {
+                "warning_available_at": warning_until,
+                "last_invalid_at": now,
+            },
+            "$inc": {"invalid_attempts": 1},
+        },
+        return_document=ReturnDocument.BEFORE,
+    )
+    if warning_claim is None:
+        return
+
+    try:
+        warning = await bot.rest.create_message(
+            channel=event.channel_id,
+            components=_family_code_warning_components(event.author.mention),
+            user_mentions=[event.author_id],
+        )
+    except Exception:
+        await mongo.recruit_challenges.update_one(
+            {"_id": state_id, "warning_available_at": warning_until},
+            {"$unset": {"warning_available_at": ""}},
+        )
+        raise
+
+    persisted = await mongo.recruit_challenges.update_one(
+        {
+            "_id": state_id,
+            "status": "active",
+            "warning_available_at": warning_until,
+        },
+        {"$set": {
+            "warning_message_id": warning.id,
+            "warning_delete_at": now + timedelta(
+                seconds=FAMILY_CODE_WARNING_LIFETIME_SECONDS
+            ),
+        }},
+    )
+    if not persisted.matched_count:
+        # A valid response may have completed while Discord was creating the
+        # warning. Never leave a correction behind after success.
+        try:
+            await bot.rest.delete_message(event.channel_id, warning.id)
+        except hikari.NotFoundError:
+            pass
+        except Exception:
+            _log.warning(
+                "could not remove superseded family-code warning %s",
+                warning.id,
+                exc_info=True,
+            )
+        return
+
+    _schedule_warning_deletion(
+        bot,
+        mongo,
+        state_id,
+        event.channel_id,
+        warning.id,
+    )
+
+
+@loader.listener(hikari.StoppingEvent)
+async def stop_family_code_warning_tasks(_: hikari.StoppingEvent) -> None:
+    tasks = list(_warning_delete_tasks)
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    _warning_delete_tasks.clear()
 
 
 loader.command(recruit)

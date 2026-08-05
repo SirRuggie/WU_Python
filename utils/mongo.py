@@ -26,6 +26,10 @@ class MongoClient(AsyncMongoClient):
         #self.new_recruits = self.__settings.get_collection("new_recruits")
         self.ticket_automation_state = self.__settings.get_collection("ticket_automation_state")
         self.recruit_onboarding = self.__settings.get_collection("recruit_onboarding")
+        # Short-lived message challenges used during recruitment. This stays
+        # separate from durable walkthrough records in recruit_onboarding so a
+        # TTL index cannot remove role-cleanup history.
+        self.recruit_challenges = self.__settings.get_collection("recruit_challenges")
         self.lazy_cwl_snapshots = self.__settings.get_collection("lazy_cwl_snapshots")
         self.cwl_pending_reminders = self.__settings.get_collection("cwl_pending_reminders")
         self.fwa_points = self.__settings.get_collection("fwa_points")
