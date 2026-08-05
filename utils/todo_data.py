@@ -64,6 +64,7 @@ def _d(msg: str) -> None:
 # (monotonic expiry, unix fill time, value). The fill time exists so the panel
 # can say how old the DATA is rather than when it was rendered.
 _cache: dict[str, tuple[float, float, object]] = {}
+CACHE_MAX_ENTRIES = 10_000
 
 TTL_LINKS = 6 * 60 * 60      # linking is a rare manual act
 TTL_WAR_ACTIVE = 120         # a hit can land any second; matches upstream max-age
@@ -133,6 +134,26 @@ def cache_put(key: str, value, ttl: int) -> None:
             f"freshness stamp will NOT age it. Add its prefix to DATA_PREFIXES.",
             flush=True,
         )
+    # Expired keys for players/clans that are never requested again used to stay
+    # forever. Keep the cache bounded without adding a background sweeper.
+    if len(_cache) >= CACHE_MAX_ENTRIES and key not in _cache:
+        now = time.monotonic()
+        for expired_key in [
+            cached_key
+            for cached_key, (expires_at, _filled_at, _value) in _cache.items()
+            if expires_at <= now
+        ]:
+            _cache.pop(expired_key, None)
+
+        overflow = len(_cache) - CACHE_MAX_ENTRIES + 1
+        if overflow > 0:
+            oldest = sorted(
+                _cache,
+                key=lambda cached_key: _cache[cached_key][1],
+            )[:overflow]
+            for oldest_key in oldest:
+                _cache.pop(oldest_key, None)
+
     _cache[key] = (time.monotonic() + ttl, time.time(), value)
 
 

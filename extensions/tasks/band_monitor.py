@@ -2,10 +2,12 @@ import aiohttp
 import asyncio
 import lightbulb
 import hikari
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import time
+
+from pymongo import ReturnDocument
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -26,8 +28,8 @@ from utils.emoji import emojis
 
 loader = lightbulb.Loader()
 
-# DEBUG CONFIGURATION - Change this to False for production
-DEBUG_MODE = os.getenv("BAND_DEBUG", "True").lower() == "true"  # Default to True for debugging
+# Debug logging is opt-in. API payloads may contain private BAND post content.
+DEBUG_MODE = os.getenv("BAND_DEBUG", "False").lower() == "true"
 
 
 def debug_print(*args, **kwargs):
@@ -53,6 +55,8 @@ ALLOWED_ROLE_ID = 769130325460254740
 
 # Check interval in seconds (10 minutes to reduce API load)
 CHECK_INTERVAL_SECONDS = 600  # 10 minutes
+RESPONSE_RETENTION_DAYS = 30
+WAR_SYNC_MARKER = "PLEASE stop searching when the window closes after 1.5 hours"
 
 # Global variables
 band_check_task = None
@@ -86,7 +90,7 @@ async def resolve_band_key():
     for band in bands:
         if band.get("name") == TARGET_BAND_NAME:
             BAND_KEY = band.get("band_key")
-            print(f"[BAND Monitor] Resolved band_key for band '{TARGET_BAND_NAME}': {BAND_KEY}")
+            print(f"[BAND Monitor] Resolved band key for '{TARGET_BAND_NAME}'")
             return True
 
     # If not found, print available bands to help debug
@@ -110,25 +114,15 @@ async def fetch_band_posts():
     async with aiohttp.ClientSession(timeout=timeout) as session:
         try:
             debug_print(f"[BAND API] Making request to: {BAND_API_BASE}")
-            debug_print(f"[BAND API] With params: band_key={BAND_KEY[:10]}..., locale=en_US")
+            debug_print(f"[BAND API] Band key resolved: {bool(BAND_KEY)}; locale=en_US")
 
             async with session.get(BAND_API_BASE, params=params) as response:
                 debug_print(f"[BAND API] Response Status: {response.status}")
-                debug_print(f"[BAND API] Response Headers: {dict(response.headers)}")
-
-                # Get response text first
                 text = await response.text()
-                debug_print(f"[BAND API] Raw Response (first 500 chars): {text[:500]}")
 
                 if response.status == 200:
                     try:
                         data = json.loads(text)
-
-                        # Log the entire response structure
-                        debug_print(f"[BAND API] Full Response Structure:")
-                        debug_print(json.dumps(data, indent=2)[:1000])  # First 1000 chars
-
-                        # Check for result_code
                         if "result_code" in data:
                             debug_print(f"[BAND API] result_code: {data['result_code']}")
                             if "result_msg" in data:
@@ -137,11 +131,9 @@ async def fetch_band_posts():
                         return data
                     except json.JSONDecodeError as e:
                         debug_print(f"[BAND API] JSON Decode Error: {e}")
-                        debug_print(f"[BAND API] Response was not valid JSON: {text[:200]}")
                         return None
                 else:
                     debug_print(f"[BAND API] Non-200 Status: {response.status}")
-                    debug_print(f"[BAND API] Error Response: {text}")
                     return None
 
         except asyncio.TimeoutError:
@@ -163,17 +155,10 @@ async def send_war_sync_to_discord(post):
 
     if not bot_instance:
         debug_print("[BAND Monitor] Bot instance not available!")
-        return
+        return False
 
-    # Extract post details
-    author = post.get('author', {})
-    author_name = author.get('name', 'FWA Clan Rep')
-    content = post.get('content', '')
-
-    # Create message ID for tracking responses
+    # Create message ID for tracking responses.
     message_id = str(datetime.now().timestamp())
-
-    # Create components using V2 style
     components = [
         Container(
             accent_color=RED_ACCENT,
@@ -186,7 +171,7 @@ async def send_war_sync_to_discord(post):
                         LinkButton(
                             url=f"https://www.band.us/band/{TARGET_BAND_NO}",
                             label="Check FWA Sync Time",
-                            emoji="🕐"
+                            emoji="🕐",
                         )
                     ]
                 ),
@@ -212,38 +197,101 @@ async def send_war_sync_to_discord(post):
                             style=hikari.ButtonStyle.SUCCESS,
                             label="Yes",
                             emoji=emojis.yes.partial_emoji,
-                            custom_id=f"war_response:yes_{message_id}"
+                            custom_id=f"war_response:yes_{message_id}",
                         ),
                         Button(
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Maybe",
                             emoji=emojis.maybe.partial_emoji,
-                            custom_id=f"war_response:maybe_{message_id}"
+                            custom_id=f"war_response:maybe_{message_id}",
                         ),
                         Button(
                             style=hikari.ButtonStyle.DANGER,
                             label="No",
                             emoji=emojis.no.partial_emoji,
-                            custom_id=f"war_response:no_{message_id}"
+                            custom_id=f"war_response:no_{message_id}",
                         ),
                     ]
                 ),
-            ]
+            ],
         )
     ]
 
     try:
-        # Send the message
-        message = await bot_instance.rest.create_message(
+        await bot_instance.rest.create_message(
             channel=NOTIFICATION_CHANNEL_ID,
             components=components,
             user_mentions=True,
-            role_mentions=[ALLOWED_ROLE_ID]
+            role_mentions=[ALLOWED_ROLE_ID],
         )
-
-        debug_print(f"[BAND Monitor] Sent War Sync reminder to Discord")
+        debug_print("[BAND Monitor] Sent War Sync reminder to Discord")
+        return True
     except Exception as e:
-        debug_print(f"[BAND Monitor] Failed to send Discord message: {e}")
+        print(f"[BAND Monitor] Failed to send Discord message: {e}")
+        return False
+
+
+def posts_after_checkpoint(posts: list[dict], last_processed_key: str | None) -> list[dict]:
+    """Return unseen BAND posts in oldest-first processing order."""
+    unseen = []
+    for post in posts:  # BAND returns newest first.
+        post_key = post.get("post_key")
+        if post_key == last_processed_key:
+            break
+        if post_key:
+            unseen.append(post)
+
+    # On the first run, establish a checkpoint without replaying feed history.
+    if last_processed_key is None:
+        unseen = unseen[:1]
+    return list(reversed(unseen))
+
+
+async def process_band_posts(mongo: MongoClient, posts: list[dict]) -> int:
+    """Process unseen posts and advance only through successfully handled work."""
+    checkpoint = await mongo.fwa_band_data.find_one({"_id": "last_processed_post"})
+    last_processed_key = checkpoint.get("post_key") if checkpoint else None
+    processed = 0
+
+    # A brand-new install has no safe boundary for replaying BAND history.
+    # Establish the newest post as the baseline without sending a stale alert.
+    available_keys = [post.get("post_key") for post in posts if post.get("post_key")]
+    if last_processed_key is None or last_processed_key not in available_keys:
+        latest = next((post for post in posts if post.get("post_key")), None)
+        if latest:
+            await mongo.fwa_band_data.update_one(
+                {"_id": "last_processed_post"},
+                {"$set": {
+                    "post_key": latest["post_key"],
+                    "processed_at": datetime.now(timezone.utc),
+                }},
+                upsert=True,
+            )
+            if last_processed_key is not None:
+                print(
+                    "[BAND Monitor] Stored checkpoint was outside the returned feed; "
+                    "established a new baseline without replaying unknown history"
+                )
+            return 1
+        return 0
+
+    for post in posts_after_checkpoint(posts, last_processed_key):
+        post_key = post["post_key"]
+        content = post.get("content", "")
+        if WAR_SYNC_MARKER in content and not await send_war_sync_to_discord(post):
+            print(f"[BAND Monitor] Delivery failed for {post_key}; checkpoint retained")
+            break
+
+        await mongo.fwa_band_data.update_one(
+            {"_id": "last_processed_post"},
+            {"$set": {
+                "post_key": post_key,
+                "processed_at": datetime.now(timezone.utc),
+            }},
+            upsert=True,
+        )
+        processed += 1
+    return processed
 
 
 @register_action("war_response", no_return=True)
@@ -267,29 +315,29 @@ async def on_war_response(
         )
         return
 
-    # Get stored data from fwa_band_data collection
-    stored_data = await mongo.fwa_band_data.find_one({"_id": message_id})
-    if not stored_data:
-        stored_data = {"_id": message_id, "responses": {}}
-        await mongo.fwa_band_data.insert_one(stored_data)
-
-    # Update user's response
+    # Update one user's field atomically. The old read/replace sequence could lose a
+    # simultaneous click and could race on the first insert.
     user_id = str(ctx.user.id)
-    old_response = stored_data["responses"].get(user_id)
-    stored_data["responses"][user_id] = response_type
-
-    # Save to mongo
-    await mongo.fwa_band_data.update_one(
+    stored_data = await mongo.fwa_band_data.find_one_and_update(
         {"_id": message_id},
-        {"$set": {"responses": stored_data["responses"]}}
+        {
+            "$set": {f"responses.{user_id}": response_type},
+            "$setOnInsert": {
+                "created_at": datetime.now(timezone.utc),
+                "expire_at": datetime.now(timezone.utc) + timedelta(days=RESPONSE_RETENTION_DAYS),
+            },
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
     )
+    responses = stored_data.get("responses", {}) if stored_data else {user_id: response_type}
 
     # Build response lists
     yes_users = []
     maybe_users = []
     no_users = []
 
-    for uid, resp in stored_data["responses"].items():
+    for uid, resp in responses.items():
         mention = f"<@{uid}>"
         if resp == "yes":
             yes_users.append(mention)
@@ -380,11 +428,10 @@ async def band_checker_loop(mongo: MongoClient):
     """Main loop that checks BAND API periodically"""
     debug_print("[BAND Monitor] Starting BAND API monitoring task...")
 
-    # Log initial configuration
+    # Log initial configuration without credentials or private API payloads.
     debug_print(f"[BAND Monitor] Configuration:")
     debug_print(f"  - API Base: {BAND_API_BASE}")
-    debug_print(f"  - Band Key: {BAND_KEY[:10]}... (truncated)")
-    debug_print(f"  - Access Token: {BAND_ACCESS_TOKEN[:20]}... (truncated)")
+    debug_print(f"  - Band Key resolved: {bool(BAND_KEY)}")
     debug_print(f"  - Notification Channel: {NOTIFICATION_CHANNEL_ID}")
     debug_print(f"  - Allowed Role: {ALLOWED_ROLE_ID}")
     debug_print(f"  - Check Interval: {CHECK_INTERVAL_SECONDS} seconds ({CHECK_INTERVAL_SECONDS//60} minutes)")
@@ -414,48 +461,9 @@ async def band_checker_loop(mongo: MongoClient):
                     debug_print(f"[BAND Monitor] Found {len(posts)} posts")
 
                     if posts:
-                        # Get the most recent post (assuming first post is newest)
-                        latest_post = posts[0]
-                        latest_post_key = latest_post.get('post_key')
-                        latest_content = latest_post.get('content', '')
-
-                        debug_print(f"[BAND Monitor] Latest post key: {latest_post_key}")
-                        debug_print(f"[BAND Monitor] Latest post content preview: {latest_content[:100]}...")
-
-                        if latest_post_key:
-                            # Get the last processed post from MongoDB
-                            last_processed_doc = await mongo.fwa_band_data.find_one({"_id": "last_processed_post"})
-                            last_processed_key = last_processed_doc.get("post_key") if last_processed_doc else None
-
-                            debug_print(f"[BAND Monitor] Last processed post key: {last_processed_key}")
-
-                            # Only process if this is a NEW most recent post
-                            if latest_post_key != last_processed_key:
-                                debug_print(f"[BAND Monitor] New latest post detected!")
-
-                                # Check if this new post contains war sync text
-                                if "PLEASE stop searching when the window closes after 1.5 hours" in latest_content:
-                                #if "🔔🚨This serves as a 30 min reminder, if you don't like it" in latest_content:
-                                    debug_print("[BAND Monitor] New post contains War Sync reminder!")
-                                    await send_war_sync_to_discord(latest_post)
-                                else:
-                                    debug_print("[BAND Monitor] New post doesn't contain War Sync text.")
-
-                                # Update the last processed post in MongoDB
-                                await mongo.fwa_band_data.update_one(
-                                    {"_id": "last_processed_post"},
-                                    {"$set": {
-                                        "post_key": latest_post_key,
-                                        "content": latest_content,
-                                        "processed_at": datetime.now().isoformat()
-                                    }},
-                                    upsert=True
-                                )
-                                debug_print(f"[BAND Monitor] Updated last processed post to: {latest_post_key}")
-                            else:
-                                debug_print("[BAND Monitor] No new posts since last check.")
-                        else:
-                            debug_print("[BAND Monitor] Latest post has no post_key")
+                        processed = await process_band_posts(mongo, posts)
+                        if processed == 0:
+                            debug_print("[BAND Monitor] No new posts since last check.")
                     else:
                         debug_print("[BAND Monitor] No posts found in API response")
                 else:
@@ -510,7 +518,17 @@ async def on_bot_started(
         print("[BAND Monitor] Failed to resolve band key! Monitor will NOT start.")
         return
 
+    try:
+        await mongo.fwa_band_data.create_index(
+            "expire_at", expireAfterSeconds=0, name="ttl_expire_at"
+        )
+    except Exception as e:
+        print(f"[BAND Monitor] WARNING: response TTL index unavailable: {e}")
+
     # Create the task with mongo passed in
+    if band_check_task and not band_check_task.done():
+        debug_print("[BAND Monitor] Background task already running; start skipped")
+        return
     band_check_task = asyncio.create_task(band_checker_loop(mongo))
     debug_print("[BAND Monitor] Background task started!")
 
@@ -607,11 +625,16 @@ class TestWarSync(
         
         try:
             # Call the send function directly
-            await send_war_sync_to_discord(test_post)
-            await ctx.edit_last_response(
-                f"✅ **Test war sync sent!**\n"
-                f"Check <#{NOTIFICATION_CHANNEL_ID}> to see the notification and test the buttons."
-            )
+            delivered = await send_war_sync_to_discord(test_post)
+            if delivered:
+                await ctx.edit_last_response(
+                    f"✅ **Test war sync sent!**\n"
+                    f"Check <#{NOTIFICATION_CHANNEL_ID}> to see the notification and test the buttons."
+                )
+            else:
+                await ctx.edit_last_response(
+                    "❌ **Failed to send test notification.** Check the bot logs for the Discord error."
+                )
         except Exception as e:
             await ctx.edit_last_response(
                 f"❌ **Failed to send test notification!**\n"

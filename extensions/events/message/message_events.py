@@ -40,10 +40,11 @@ def _initialize_from_bot_data():
         is_initialized = True  # Mark as initialized
 
 
-@loader.listener(hikari.StartingEvent)
-async def on_starting(event: hikari.StartingEvent):
+@loader.listener(hikari.StartedEvent)
+async def on_started(event: hikari.StartedEvent):
     """Initialize on bot startup."""
     _initialize_from_bot_data()
+    await goblin_challenge.prepare_storage()
     print("[Message Events] Goblin challenge and How to ping handlers initialized")
 
 

@@ -48,6 +48,7 @@ DEFAULT_SUMMARY_FILTER = "sync"
 DEFAULT_STALE_HOURS = 26         # no upcoming sync for this long -> shout about it
 STALE_LOG_THROTTLE_SECONDS = 3600
 DEDUPE_TTL_DAYS = 30
+DELIVERY_LEASE_SECONDS = 10 * 60
 
 # Order matters: the first feed carrying a UID decides which calendar name is shown.
 FEED_ENV_VARS = {
@@ -262,41 +263,210 @@ async def dm_all(user_ids, embed):
         return 0
 
     sent = 0
-    for user_id in user_ids:
-        try:
-            user = await bot_instance.rest.fetch_user(user_id)
-            channel = await bot_instance.rest.create_dm_channel(user.id)
-            await bot_instance.rest.create_message(channel=channel, embed=embed)
+    for user_id in ordered_user_ids(user_ids):
+        if await dm_one(user_id, embed):
             sent += 1
-        except Exception as e:
-            print(f"[FWA Sync ICS] DM to {user_id} failed ({type(e).__name__}: {e})")
     return sent
 
 
-# ---- Dedupe state ----
-def _claim_doc(event, offset, status):
-    start = event["start"]
+def ordered_user_ids(user_ids):
+    """Return valid recipient IDs once each, preserving configured order."""
+    seen = set()
+    result = []
+    for raw_id in user_ids or ():
+        try:
+            user_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id <= 0 or user_id in seen:
+            continue
+        seen.add(user_id)
+        result.append(user_id)
+    return result
+
+
+async def dm_one(user_id, embed):
+    """Deliver one DM and report success without raising into the poller."""
+    if not bot_instance:
+        print("[FWA Sync ICS] No bot instance; cannot DM")
+        return False
+    try:
+        user = await bot_instance.rest.fetch_user(user_id)
+        channel = await bot_instance.rest.create_dm_channel(user.id)
+        await bot_instance.rest.create_message(channel=channel, embed=embed)
+        return True
+    except Exception as e:
+        print(f"[FWA Sync ICS] DM to {user_id} failed ({type(e).__name__}: {e})")
+        return False
+
+
+# ---- Durable event and delivery state ----
+def _event_state_id(uid):
+    return f"event:{uid}"
+
+
+def _event_version(event):
+    return str(int(normalize_start(event["start"]).timestamp()))
+
+
+def _delivery_id(event, offset, user_id):
+    return f"delivery:{event['uid']}|{_event_version(event)}|{offset}|{user_id}"
+
+
+def _event_state_doc(event, closed_offsets=None):
     return {
-        "_id": f"{event['uid']}|{offset}",
+        "_id": _event_state_id(event["uid"]),
+        "kind": "event_state",
         "uid": event["uid"],
-        "offset": offset,
         "calendar": event["calendar"],
         "summary": event["summary"],
-        "start_at": start,
-        "status": status,
-        "announced_at": datetime.now(timezone.utc),
-        # TTL anchor: the doc dies 30 days after its own sync time.
-        "expire_at": start + timedelta(days=DEDUPE_TTL_DAYS),
+        "start_at": event["start"],
+        "event_version": _event_version(event),
+        "closed_offsets": list(closed_offsets or ()),
+        "scheduled_offsets": [],
+        "updated_at": datetime.now(timezone.utc),
+        "expire_at": event["start"] + timedelta(days=DEDUPE_TTL_DAYS),
     }
 
 
-async def claim(coll, event, offset, status):
-    """Reserve (uid, offset) before sending. False means someone already has it."""
+def _delivery_doc(event, offset, user_id, delivery_type="alert", old_start=None):
+    now = datetime.now(timezone.utc)
+    return {
+        "_id": _delivery_id(event, offset, user_id),
+        "kind": "delivery",
+        "uid": event["uid"],
+        "event_version": _event_version(event),
+        "offset": offset,
+        "recipient_id": user_id,
+        "delivery_type": delivery_type,
+        "calendar": event["calendar"],
+        "summary": event["summary"],
+        "start_at": event["start"],
+        "end_at": event.get("end"),
+        "old_start_at": old_start,
+        "status": "queued",
+        "queued_at": now,
+        "expire_at": event["start"] + timedelta(days=DEDUPE_TTL_DAYS),
+    }
+
+
+async def _legacy_state(coll, event):
+    """Translate the old global claim documents without replaying their alerts."""
+    legacy = []
+    async for doc in coll.find({"uid": event["uid"], "kind": {"$exists": False}}):
+        legacy.append(doc)
+    if not legacy:
+        return None
+
+    first = legacy[0]
+    state_event = dict(event)
+    state_event["start"] = normalize_start(first.get("start_at")) or event["start"]
+    closed = [doc.get("offset") for doc in legacy if doc.get("offset") is not None]
+    return _event_state_doc(state_event, closed)
+
+
+async def get_or_create_event_state(coll, event):
+    """Return (state, first_seen), preserving claims from the pre-lease schema."""
+    state_id = _event_state_id(event["uid"])
+    state = await coll.find_one({"_id": state_id})
+    if state:
+        return state, False
+
+    state = await _legacy_state(coll, event)
+    first_seen = state is None
+    state = state or _event_state_doc(event)
     try:
-        await coll.insert_one(_claim_doc(event, offset, status))
-        return True
+        await coll.insert_one(state)
+        return state, first_seen
     except DuplicateKeyError:
-        return False
+        return await coll.find_one({"_id": state_id}), False
+
+
+async def enqueue_deliveries(coll, event, offset, user_ids, delivery_type="alert",
+                             old_start=None):
+    """Create the durable recipient work items before closing an offset."""
+    for user_id in ordered_user_ids(user_ids):
+        try:
+            await coll.insert_one(
+                _delivery_doc(event, offset, user_id, delivery_type, old_start)
+            )
+        except DuplicateKeyError:
+            pass
+
+
+async def claim_delivery(coll, delivery, now=None):
+    """Lease queued/failed work or reclaim a pending item after a crashed worker."""
+    now = now or datetime.now(timezone.utc)
+    result = await coll.update_one(
+        {
+            "_id": delivery["_id"],
+            "$or": [
+                {"status": {"$in": ["queued", "failed"]}},
+                {"status": "pending", "lease_until": {"$lte": now}},
+            ],
+        },
+        {"$set": {
+            "status": "pending",
+            "claimed_at": now,
+            "lease_until": now + timedelta(seconds=DELIVERY_LEASE_SECONDS),
+        }},
+    )
+    return bool(result.modified_count)
+
+
+def _event_from_delivery(delivery):
+    return {
+        "uid": delivery["uid"],
+        "calendar": delivery["calendar"],
+        "summary": delivery.get("summary") or "",
+        "start": normalize_start(delivery.get("start_at")),
+        "end": normalize_start(delivery.get("end_at")),
+    }
+
+
+async def deliver_outstanding(coll, event):
+    """Attempt only unsent recipients for the current version of an event."""
+    query = {
+        "kind": "delivery",
+        "uid": event["uid"],
+        "event_version": _event_version(event),
+        "status": {"$ne": "sent"},
+    }
+    async for delivery in coll.find(query):
+        if not await claim_delivery(coll, delivery):
+            continue
+
+        delivery_event = _event_from_delivery(delivery)
+        if delivery.get("delivery_type") == "change":
+            embed = build_change_embed(
+                delivery_event, normalize_start(delivery.get("old_start_at"))
+            )
+        else:
+            embed = build_embed(delivery_event, delivery["offset"])
+
+        user_id = delivery["recipient_id"]
+        if await dm_one(user_id, embed):
+            await coll.update_one(
+                {"_id": delivery["_id"], "status": "pending"},
+                {"$set": {
+                    "status": "sent",
+                    "announced_at": datetime.now(timezone.utc),
+                    "lease_until": None,
+                }},
+            )
+            print(f"[FWA Sync ICS] Sent {delivery['offset']} alert for "
+                  f"{event['calendar']} {event['start'].isoformat()} to {user_id}")
+        else:
+            await coll.update_one(
+                {"_id": delivery["_id"], "status": "pending"},
+                {"$set": {
+                    "status": "failed",
+                    "last_failed_at": datetime.now(timezone.utc),
+                    "lease_until": None,
+                }},
+            )
+            print(f"[FWA Sync ICS] WARNING: alert {delivery['offset']} for "
+                  f"{event['uid']} did not reach {user_id}; will retry next poll")
 
 
 async def ensure_indexes(mongo):
@@ -315,62 +485,88 @@ async def ensure_indexes(mongo):
 
 # ---- The poll ----
 async def handle_reschedule(coll, event, existing, config):
-    """Announce a moved sync and re-anchor all state to the new time.
+    """Durably queue a moved-sync alert, then re-anchor timing to the new event.
 
-    Order is deliberate: state is rewritten BEFORE the DM goes out. If the DM fails we
-    lose one change notification but the T-60m/T-10m alerts still fire correctly against
-    the new time. The other order risks re-sending the change alert every poll forever.
+    Returns False when no recipients exist. In that case the old event state is left
+    intact so the reschedule is detected and retried on the next poll.
     """
     old_start = normalize_start(existing.get("start_at"))
-    await coll.delete_many({"uid": event["uid"]})
-    await claim(coll, event, DISCOVERY_OFFSET, "sent")
+    change_offset = f"change:{_event_version(event)}"
+    recipients = ordered_user_ids(config["dm_user_ids"])
+    if not recipients:
+        print(f"[FWA Sync ICS] WARNING: reschedule {event['uid']} has no recipients; "
+              "event state left unchanged so it can retry")
+        return False
 
-    sent = await dm_all(config["dm_user_ids"], build_change_embed(event, old_start))
-    print(f"[FWA Sync ICS] RESCHEDULE {event['calendar']} {event['uid']}: "
-          f"{old_start} -> {event['start']} (DMed {sent})")
-    if sent == 0:
-        print("[FWA Sync ICS] WARNING: reschedule alert reached nobody")
+    # Queue first. A crash before the state update repeats this insert harmlessly;
+    # updating first could lose the change alert permanently.
+    await enqueue_deliveries(
+        coll, event, change_offset, recipients, "change", old_start
+    )
+    await coll.update_one(
+        {"_id": _event_state_id(event["uid"])},
+        {"$set": {
+            "calendar": event["calendar"],
+            "summary": event["summary"],
+            "start_at": event["start"],
+            "event_version": _event_version(event),
+            # The change alert replaces a second discovery alert. Numeric offsets
+            # already elapsed against the new time are retired below.
+            "closed_offsets": [DISCOVERY_OFFSET],
+            "scheduled_offsets": [change_offset],
+            "updated_at": datetime.now(timezone.utc),
+            "expire_at": event["start"] + timedelta(days=DEDUPE_TTL_DAYS),
+        }},
+    )
+    print(f"[FWA Sync ICS] RESCHEDULE queued {event['calendar']} {event['uid']}: "
+          f"{old_start} -> {event['start']}")
+    return True
 
 
 async def process_event(coll, event, config, now):
-    existing = await coll.find_one({"uid": event["uid"]})
+    existing, first_seen = await get_or_create_event_state(coll, event)
     forced_first_seen = None
 
     if existing and detect_reschedule(existing.get("start_at"), event["start"]):
-        await handle_reschedule(coll, event, existing, config)
+        if not await handle_reschedule(coll, event, existing, config):
+            return
         # State was just rebuilt against the new time; treat elapsed offsets as missed
         # rather than firing them behind the change alert.
         forced_first_seen = True
+        existing = await coll.find_one({"_id": _event_state_id(event["uid"])})
 
-    claimed = set()
-    async for doc in coll.find({"uid": event["uid"]}, {"offset": 1}):
-        claimed.add(doc.get("offset"))
+    claimed = set(existing.get("closed_offsets") or ())
 
     to_send, to_retire = due_offsets(
         event["start"], now, claimed, config["offsets"],
         announce_on_discovery=config["announce_on_discovery"],
-        first_seen=forced_first_seen,
+        first_seen=forced_first_seen if forced_first_seen is not None else first_seen,
     )
+
+    # Work items must exist before the event-level offset closes. That ordering makes
+    # the operation crash-safe: duplicate inserts are harmless, absent work is not.
+    recipients = ordered_user_ids(config["dm_user_ids"])
+    deliverable = to_send if recipients else []
+    if to_send and not recipients:
+        print(f"[FWA Sync ICS] WARNING: alert(s) {to_send} for {event['uid']} have no "
+              "recipients; offsets left open so they can retry")
+    for offset in deliverable:
+        await enqueue_deliveries(coll, event, offset, recipients)
+
+    closed = list(dict.fromkeys([*deliverable, *to_retire]))
+    update = {"$set": {"updated_at": datetime.now(timezone.utc)}}
+    if closed:
+        update["$addToSet"] = {"closed_offsets": {"$each": closed}}
+    if deliverable:
+        update.setdefault("$addToSet", {})["scheduled_offsets"] = {"$each": deliverable}
+    await coll.update_one({"_id": _event_state_id(event["uid"])}, update)
 
     for offset in to_retire:
         status = "seen" if offset == DISCOVERY_OFFSET else "skipped_late"
-        if await claim(coll, event, offset, status):
-            print(f"[FWA Sync ICS] {event['calendar']} {event['uid']}: "
-                  f"offset {offset} recorded as {status} (window already passed)")
+        print(f"[FWA Sync ICS] {event['calendar']} {event['uid']}: "
+              f"offset {offset} recorded as {status} (window already passed)")
 
-    for offset in to_send:
-        if not await claim(coll, event, offset, "sent"):
-            continue
-        sent = await dm_all(config["dm_user_ids"], build_embed(event, offset))
-        if sent == 0:
-            # Nobody got it - drop the claim so the next poll retries rather than
-            # silently swallowing the alert.
-            await coll.delete_one({"_id": f"{event['uid']}|{offset}"})
-            print(f"[FWA Sync ICS] WARNING: alert {offset} for {event['uid']} reached "
-                  f"nobody; claim released, will retry next poll")
-        else:
-            print(f"[FWA Sync ICS] Sent {offset} alert for {event['calendar']} "
-                  f"{event['start'].isoformat()} to {sent} user(s)")
+    await deliver_outstanding(coll, event)
 
 
 def _check_staleness(events, stale_hours):
@@ -524,12 +720,26 @@ class Status(lightbulb.SlashCommand, name="status", description="Show config and
             f"**Summary filter:** `{config['summary_filter']}`",
             "**Recent alerts:**",
         ]
-        cursor = coll.find({"_id": {"$ne": CONFIG_ID}}).sort("announced_at", -1).limit(5)
+        cursor = coll.find({
+            "_id": {"$ne": CONFIG_ID},
+            "kind": {"$ne": "event_state"},
+        }).sort("announced_at", -1).limit(50)
         found = False
+        shown = set()
         async for doc in cursor:
+            # Delivery state is per recipient, but the command has always presented
+            # alert occurrences. Collapse recipient rows to preserve that UX.
+            alert_key = (
+                doc.get("uid"), doc.get("event_version"), doc.get("offset")
+            )
+            if alert_key in shown:
+                continue
+            shown.add(alert_key)
             found = True
             lines.append(f"• `{doc.get('offset')}` {doc.get('status')} — "
                          f"{doc.get('calendar')} {discord_timestamp(doc.get('start_at'), 'f')}")
+            if len(shown) >= 5:
+                break
         if not found:
             lines.append("_(none yet)_")
         await ctx.respond("\n".join(lines))
@@ -612,6 +822,7 @@ class SetRecipients(lightbulb.SlashCommand, name="set-recipients",
             chunk = chunk.strip()
             if chunk.isdigit():
                 parsed.append(int(chunk))
+        parsed = ordered_user_ids(parsed)
         if not parsed:
             await ctx.respond("❌ No valid user IDs found.", ephemeral=True)
             return

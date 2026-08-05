@@ -5,7 +5,9 @@ import asyncio
 import hikari
 import lightbulb
 import coc
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 from utils.mongo import MongoClient
 from extensions.commands.tickets import store
 from utils.constants import RED_ACCENT, GOLD_ACCENT, GOLDENROD_ACCENT
@@ -39,6 +41,131 @@ PATTERNS = {
 
 # Define which patterns are currently active
 ACTIVE_PATTERNS = ["MAIN", "FWA"]
+
+TICKET_LOOKUP_ATTEMPTS = 20
+TICKET_LOOKUP_DELAY_SECONDS = 0.5
+DELIVERY_ATTEMPTS = 3
+DELIVERY_RETRY_DELAY_SECONDS = 1
+DELIVERY_LEASE = timedelta(minutes=2)
+
+
+async def wait_for_ticket_data(
+        mongo: MongoClient,
+        channel_id: int,
+        *,
+        attempts: int = TICKET_LOOKUP_ATTEMPTS,
+        delay: float = TICKET_LOOKUP_DELAY_SECONDS,
+):
+    """Poll briefly for the ticket row created after the channel event fires."""
+    lookup_id = f"ticket_{channel_id}"
+    for attempt in range(max(1, attempts)):
+        ticket_data = await store.find_one(mongo, {"_id": lookup_id})
+        if ticket_data:
+            return ticket_data
+        if attempt + 1 < attempts:
+            await asyncio.sleep(delay)
+    return None
+
+
+async def claim_automation_delivery(
+        mongo: MongoClient,
+        automation_doc: dict,
+        *,
+        now: datetime | None = None,
+):
+    """Claim one channel's initial-message delivery across processes.
+
+    A non-matching upsert races with the existing ``_id`` and raises
+    ``DuplicateKeyError``. That is the expected "another worker owns it" result.
+    """
+    now = now or datetime.now(timezone.utc)
+    channel_key = automation_doc["_id"]
+    query = {
+        "_id": channel_key,
+        "$or": [
+            {"initial_delivery.status": {"$exists": False}},
+            {"initial_delivery.status": "retry"},
+            {
+                "initial_delivery.status": "processing",
+                "initial_delivery.lease_until": {"$lte": now},
+            },
+        ],
+    }
+    update = {
+        "$setOnInsert": automation_doc,
+        "$set": {
+            "initial_delivery.status": "processing",
+            "initial_delivery.lease_until": now + DELIVERY_LEASE,
+            "initial_delivery.updated_at": now,
+        },
+        "$unset": {"initial_delivery.last_error": ""},
+    }
+    try:
+        return await mongo.ticket_automation_state.find_one_and_update(
+            query,
+            update,
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+    except DuplicateKeyError:
+        return None
+
+
+async def mark_delivery_step(mongo: MongoClient, channel_id: int, step: str) -> None:
+    await mongo.ticket_automation_state.update_one(
+        {"_id": str(channel_id)},
+        {"$set": {
+            f"initial_delivery.{step}": True,
+            "initial_delivery.updated_at": datetime.now(timezone.utc),
+        }},
+    )
+
+
+async def finish_automation_delivery(mongo: MongoClient, channel_id: int) -> None:
+    now = datetime.now(timezone.utc)
+    await mongo.ticket_automation_state.update_one(
+        {"_id": str(channel_id)},
+        {
+            "$set": {
+                "initial_delivery.status": "complete",
+                "initial_delivery.completed_at": now,
+                "initial_delivery.updated_at": now,
+            },
+            "$unset": {"initial_delivery.lease_until": ""},
+        },
+    )
+
+
+async def release_automation_delivery(
+        mongo: MongoClient,
+        channel_id: int,
+        error: Exception | str,
+) -> None:
+    await mongo.ticket_automation_state.update_one(
+        {"_id": str(channel_id)},
+        {
+            "$set": {
+                "initial_delivery.status": "retry",
+                "initial_delivery.last_error": str(error)[:500],
+                "initial_delivery.updated_at": datetime.now(timezone.utc),
+            },
+            "$unset": {"initial_delivery.lease_until": ""},
+        },
+    )
+
+
+async def send_with_retries(rest, **kwargs) -> None:
+    """Send one message with a short bounded retry window."""
+    last_error = None
+    for attempt in range(DELIVERY_ATTEMPTS):
+        try:
+            await rest.create_message(**kwargs)
+            return
+        except Exception as exc:  # noqa: BLE001 - Discord errors are retried uniformly
+            last_error = exc
+            if attempt + 1 < DELIVERY_ATTEMPTS:
+                await asyncio.sleep(DELIVERY_RETRY_DELAY_SECONDS)
+    raise last_error or RuntimeError("message delivery failed")
 
 
 @loader.listener(hikari.StartedEvent)
@@ -83,9 +210,6 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         print(f"[DEBUG] Channel {channel_name} does not match any active patterns")
         return
 
-    # Wait a bit for thread creation to complete
-    await asyncio.sleep(3)
-
     # Get the channel ID
     channel_id = event.channel.id
 
@@ -96,17 +220,18 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
 
     if mongo_client:
         try:
-            # The ticket is stored with "_id": f"ticket_{channel_id}"
-            lookup_id = f"ticket_{channel_id}"
-            print(f"[DEBUG] Looking for ticket with _id: {lookup_id}")
-            ticket_data = await store.find_one(mongo_client, {"_id": lookup_id})
+            print(f"[DEBUG] Waiting for ticket with _id: ticket_{channel_id}")
+            ticket_data = await wait_for_ticket_data(mongo_client, channel_id)
             if ticket_data:
                 user_id = ticket_data.get("user_id")  # This is stored as int
                 thread_id = ticket_data.get("thread_id")  # This is stored as int
                 print(
                     f"[DEBUG] Found ticket data: user_id={user_id}, thread_id={thread_id}, ticket_type={ticket_data.get('ticket_type')}")
             else:
-                print(f"[ERROR] No ticket data found for channel {channel_id}")
+                print(
+                    f"[ERROR] No ticket data found for channel {channel_id} after "
+                    f"{TICKET_LOOKUP_ATTEMPTS} attempts"
+                )
                 return
         except Exception as e:
             print(f"[ERROR] Failed to fetch ticket data from MongoDB: {e}")
@@ -132,7 +257,8 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         except Exception as e:
             print(f"[DEBUG] Error fetching threads: {e}")
 
-    # Create automation state document
+    # Create and atomically claim the automation state document.
+    claimed_automation = None
     if mongo_client:
         try:
             now = datetime.now(timezone.utc)
@@ -199,12 +325,22 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                 ]
             }
 
-            # Insert the automation state
-            await mongo_client.ticket_automation_state.insert_one(automation_doc)
-            print(f"[DEBUG] Created ticket automation state for channel {channel_id}")
+            claimed_automation = await claim_automation_delivery(
+                mongo_client, automation_doc,
+            )
+            if not claimed_automation:
+                print(
+                    f"[DEBUG] Initial ticket delivery for channel {channel_id} "
+                    "is already complete or owned by another worker"
+                )
+                return
+            print(f"[DEBUG] Claimed ticket automation delivery for channel {channel_id}")
 
         except Exception as e:
-            print(f"[ERROR] Failed to create ticket automation state: {e}")
+            print(f"[ERROR] Failed to claim ticket automation state: {e}")
+            return
+
+    delivery_state = (claimed_automation or {}).get("initial_delivery", {})
 
     # Prepare the message components based on ticket type
     is_fwa = matched_pattern == "FWA"
@@ -212,7 +348,12 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
 
     if is_fwa:
         # Get FWA recruiter role from config
-        config = await mongo_client.ticket_setup.find_one({"_id": "config"}) or {} if mongo_client else {}
+        try:
+            config = await mongo_client.ticket_setup.find_one({"_id": "config"}) or {}
+        except Exception as e:
+            print(f"[ERROR] Failed to load FWA ticket configuration: {e}")
+            await release_automation_delivery(mongo_client, channel_id, e)
+            return
         fwa_recruiter_role = config.get("fwa_recruiter_role")
 
         # Send initial welcome message
@@ -224,18 +365,21 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         welcome_message += "will be with you shortly, in the meanwhile, please answer the following questions..."
 
         try:
-            await event.app.rest.create_message(
+            if not delivery_state.get("welcome_sent"):
+                await send_with_retries(
+                    event.app.rest,
                 channel=channel_id,
                 content=welcome_message,
                 user_mentions=True,
                 role_mentions=True if fwa_recruiter_role else False
-            )
-            print(f"[DEBUG] Sent FWA welcome message to channel {channel_id}")
+                )
+                await mark_delivery_step(mongo_client, channel_id, "welcome_sent")
+                print(f"[DEBUG] Sent FWA welcome message to channel {channel_id}")
+                await asyncio.sleep(1)
         except Exception as e:
             print(f"[ERROR] Failed to send FWA welcome message: {e}")
-
-        # Sleep 1 second
-        await asyncio.sleep(1)
+            await release_automation_delivery(mongo_client, channel_id, e)
+            return
 
         # Send FWA entry questionnaire embed
         components = [
@@ -272,18 +416,29 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
 
         # Send message in the new channel
         try:
-            await event.app.rest.create_message(
-                channel=channel_id,
-                components=components,
-                user_mentions=True  # Enable user mentions so the ping works
-            )
-            print(f"[DEBUG] Successfully sent FWA questionnaire to channel {channel_id}")
+            if not delivery_state.get("questionnaire_sent"):
+                await send_with_retries(
+                    event.app.rest,
+                    channel=channel_id,
+                    components=components,
+                    user_mentions=True,
+                )
+                await mark_delivery_step(mongo_client, channel_id, "questionnaire_sent")
+                print(f"[DEBUG] Successfully sent FWA questionnaire to channel {channel_id}")
+            await finish_automation_delivery(mongo_client, channel_id)
         except Exception as e:
             print(f"[ERROR] Failed to send FWA questionnaire to channel {channel_id}: {e}")
+            await release_automation_delivery(mongo_client, channel_id, e)
+            return
 
     elif is_main:
         # Get MAIN recruiter role from config (for now using same config structure)
-        config = await mongo_client.ticket_setup.find_one({"_id": "config"}) or {} if mongo_client else {}
+        try:
+            config = await mongo_client.ticket_setup.find_one({"_id": "config"}) or {}
+        except Exception as e:
+            print(f"[ERROR] Failed to load MAIN ticket configuration: {e}")
+            await release_automation_delivery(mongo_client, channel_id, e)
+            return
         main_recruiter_role = config.get("main_recruiter_role")  # You'll need to add this to config later
 
         # Send initial welcome message (identical structure for now)
@@ -295,18 +450,21 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
         welcome_message += "will be with you shortly, in the meanwhile, please answer the following questions..."
 
         try:
-            await event.app.rest.create_message(
+            if not delivery_state.get("welcome_sent"):
+                await send_with_retries(
+                    event.app.rest,
                 channel=channel_id,
                 content=welcome_message,
                 user_mentions=True,
                 role_mentions=True if main_recruiter_role else False
-            )
-            print(f"[DEBUG] Sent MAIN welcome message to channel {channel_id}")
+                )
+                await mark_delivery_step(mongo_client, channel_id, "welcome_sent")
+                print(f"[DEBUG] Sent MAIN welcome message to channel {channel_id}")
+                await asyncio.sleep(1)
         except Exception as e:
             print(f"[ERROR] Failed to send MAIN welcome message: {e}")
-
-        # Sleep 1 second
-        await asyncio.sleep(1)
+            await release_automation_delivery(mongo_client, channel_id, e)
+            return
 
         # Send MAIN entry questionnaire embed (identical structure for now, you can customize later)
         components = [
@@ -342,11 +500,17 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
 
         # Send message in the new channel
         try:
-            await event.app.rest.create_message(
-                channel=channel_id,
-                components=components,
-                user_mentions=True  # Enable user mentions so the ping works
-            )
-            print(f"[DEBUG] Successfully sent MAIN questionnaire to channel {channel_id}")
+            if not delivery_state.get("questionnaire_sent"):
+                await send_with_retries(
+                    event.app.rest,
+                    channel=channel_id,
+                    components=components,
+                    user_mentions=True,
+                )
+                await mark_delivery_step(mongo_client, channel_id, "questionnaire_sent")
+                print(f"[DEBUG] Successfully sent MAIN questionnaire to channel {channel_id}")
+            await finish_automation_delivery(mongo_client, channel_id)
         except Exception as e:
             print(f"[ERROR] Failed to send MAIN questionnaire to channel {channel_id}: {e}")
+            await release_automation_delivery(mongo_client, channel_id, e)
+            return

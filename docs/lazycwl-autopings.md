@@ -16,9 +16,9 @@ before touching either.
 
 ## The scheduler has NO jobstore
 
-`AsyncIOScheduler(timezone="UTC")` is a module global, created once behind a
-`scheduler is not None` guard that exists because duplicate schedulers once made
-every auto-ping fire N times per interval.
+`AsyncIOScheduler(timezone="UTC")` is created on `StartedEvent` and shut down on
+`StoppingEvent`. Jobs coalesce missed executions, allow one instance, and have a
+five-minute misfire window.
 
 **No `jobstores=` argument anywhere — it is the default in-memory store, so
 every job dies with the process.** Persistence is entirely Mongo fields on
@@ -26,12 +26,19 @@ every job dies with the process.** Persistence is entirely Mongo fields on
 `auto_ping_interval_minutes`, `auto_ping_job_id`, `last_auto_ping_at`,
 `auto_ping_count`.
 
-`restore_autopings()` rebuilds the jobs on boot from those fields, disabling
-anything past its 7-day window first. That is the `[LazyCWL AutoPing] Active
+`restore_autopings()` rebuilds only `active: true`, `auto_ping_enabled: true`
+jobs. Its next run is calculated from `last_auto_ping_at`, falling back to
+`auto_ping_started_at`. Missed intervals are skipped rather than replayed, so a
+reboot does not restart the cadence or produce a backlog burst. Anything past
+its seven-day window is disabled first. That is the `[LazyCWL AutoPing] Active
 auto-ping jobs restored` line.
 
 **Consequence:** "the scheduler job is missing" is an ordinary state after any
 restart, not an error. Both stop paths treat a missing job as success.
+
+Startup also repairs legacy inactive rows whose auto-ping flag remained enabled
+and resolves duplicate active snapshots deterministically. Mongo then enforces
+one active snapshot per normalized clan tag with a partial unique index.
 
 ## RECORDED, NOT FIXED: `auto_ping_job_id` is written and never read
 
@@ -101,12 +108,14 @@ render counts plus **a named line per failure**. Never a bare count.
 `_bulk_autoping_summary()` renders both start-all and stop-all from one
 function, so the two cannot drift into reporting failures differently.
 
-### No rollback, deliberately
+### Partial failures and scheduler rollback
 
 The start eligibility query returns only snapshots **without** auto-ping, so
-re-running naturally targets whatever failed. Undoing the successes to punish
-the failures would throw away work for nothing. Stop is idempotent — a missing
-job is not a failure.
+re-running naturally targets whatever failed. Successful clans are not rolled
+back because another clan failed. However, if one clan's APScheduler job cannot
+be registered after Mongo was updated, that clan's `auto_ping_enabled` flag is
+rolled back immediately; the database must not advertise a job that does not
+exist. Stop is idempotent — a missing job is not a failure.
 
 ### Jitter on bulk start
 
@@ -133,7 +142,24 @@ on the action doc.
 | `lazycwl-roster` | read-only, but N rosters in one ephemeral would blow the 40-component / ~4000-char budget |
 | `lazycwl-status`, `lazycwl-autopings-status` | already family-wide, no selection to bulk |
 
-## Select-all: what is verified and what is not
+## Verification status
+
+Automated on 2026-08-04:
+
+- cadence preservation and missed-interval skipping
+- start-time fallback before a first ping
+- restore of active/enabled rows only
+- inactive/duplicate snapshot repair and unique-index shape
+- scheduler registration options and clean shutdown
+- stale flag clearing on reset/inactive snapshots
+- ping counts increment only when a Discord message is actually sent
+- scheduler-registration failure rolls Mongo back to disabled
+
+The full repository suite passed 137 tests. These tests use fakes; creation of
+the partial unique index against the live remote Mongo and a real reboot with an
+active ping remain unverified from the local workspace.
+
+### Earlier smoke test (historical)
 
 Smoke tested 2026-08-03, `/fwa lazycwl-autopings-start`, **cancelled at the
 confirm screen**.

@@ -14,7 +14,7 @@
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 import coc
@@ -31,6 +31,7 @@ DETECTOR_INTERVAL_SECONDS = 10 * 60   # how often we ask CoC "is there a new war
 RETRY_INTERVAL_SECONDS = 2 * 60       # how often we re-check the points site while catching up
 GIVE_UP_SECONDS = 45 * 60             # bounded catch-up deadline
 MAX_CONSECUTIVE_FAILURES = 5          # stop early if the SITE is down (~10 min) vs merely stale
+FAILURE_COOLDOWN_SECONDS = GIVE_UP_SECONDS  # do not launch another retry burst for this same war immediately
 HTTP_TIMEOUT_SECONDS = 20
 LOG_CHANNEL_ID = 947166650321494067
 POINTS_URL = "https://points.fwafarm.com/clan?tag={tag}"
@@ -146,18 +147,89 @@ async def store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt
         "status": "caught_up",
         "last_attempt_at": now,
         "last_attempt_status": "caught_up",
+        "last_attempt_war_key": war_key,
     }
-    await mongo_client.fwa_points.update_one({"_id": our_tag}, {"$set": record}, upsert=True)
-
-
-async def mark_attempt(our_tag, status):
-    # Never touches the verdict block - only records that we tried.
     await mongo_client.fwa_points.update_one(
         {"_id": our_tag},
-        {"$set": {"last_attempt_at": datetime.now(timezone.utc).isoformat(),
-                  "last_attempt_status": status}},
+        {
+            "$set": record,
+            "$unset": {"retry_after": "", "last_attempt_error": ""},
+        },
         upsert=True,
     )
+
+
+async def mark_attempt(our_tag, status, war_key, error=None):
+    # Never touches the verdict block - only records that we tried.
+    now = datetime.now(timezone.utc)
+    fields = {
+        "status": status,
+        "last_attempt_at": now.isoformat(),
+        "last_attempt_status": status,
+        "last_attempt_war_key": war_key,
+        "retry_after": (now + timedelta(seconds=FAILURE_COOLDOWN_SECONDS)).isoformat(),
+    }
+    if error:
+        fields["last_attempt_error"] = str(error)[:500]
+    await mongo_client.fwa_points.update_one(
+        {"_id": our_tag},
+        {"$set": fields},
+        upsert=True,
+    )
+
+
+def retry_is_deferred(record, war_key, now=None):
+    """Whether a failed attempt for this exact war is still cooling down.
+
+    The war key is deliberately part of the decision: a newly detected war must
+    never inherit the previous war's failure cooldown.
+    """
+    if not record or record.get("last_attempt_war_key") != war_key:
+        return False
+    if record.get("last_attempt_status") not in {"failed", "gave_up", "error"}:
+        return False
+
+    retry_after = record.get("retry_after")
+    if isinstance(retry_after, str):
+        try:
+            retry_after = datetime.fromisoformat(retry_after.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+    if not isinstance(retry_after, datetime):
+        return False
+    if retry_after.tzinfo is None:
+        retry_after = retry_after.replace(tzinfo=timezone.utc)
+
+    return retry_after > (now or datetime.now(timezone.utc))
+
+
+def watch_list_replacement_pipeline(tag, name):
+    """Build one atomic update that replaces any existing entry for ``tag``."""
+    return [{
+        "$set": {
+            "watch_list": {
+                "$concatArrays": [
+                    {
+                        "$filter": {
+                            "input": {"$ifNull": ["$watch_list", []]},
+                            "as": "clan",
+                            "cond": {"$ne": ["$$clan.tag", tag]},
+                        }
+                    },
+                    [{"tag": tag, "name": name}],
+                ]
+            }
+        }
+    }]
+
+
+async def record_failed_catchup(our_tag, name, war_key, status, message):
+    """Persist and announce a terminal catch-up failure without masking it."""
+    try:
+        await mark_attempt(our_tag, status, war_key, message)
+    except Exception as e:
+        print(f"[FWA Points] {name}: failed to persist {status} state: {type(e).__name__}: {e}")
+    await log_outcome(f"{name}: {message}")
 
 
 async def log_outcome(line):
@@ -173,14 +245,14 @@ async def log_outcome(line):
 async def run_catchup(clan_entry, coc_opponent_tag, war_key):
     our_tag = sanitize_tag(clan_entry.get("tag", ""))
     name = clan_entry.get("name", our_tag)
-    prev_record = await mongo_client.fwa_points.find_one(
-        {"_id": our_tag}, {"war_number": 1, "raw_verdict": 1}
-    )
-    deadline = time.monotonic() + GIVE_UP_SECONDS
-    attempt = 0
-    consecutive_failures = 0
-    last_error = None
     try:
+        prev_record = await mongo_client.fwa_points.find_one(
+            {"_id": our_tag}, {"war_number": 1, "raw_verdict": 1}
+        )
+        deadline = time.monotonic() + GIVE_UP_SECONDS
+        attempt = 0
+        consecutive_failures = 0
+        last_error = None
         while True:
             if not await feature_enabled():
                 print(f"[FWA Points] {name}: disabled mid-catch-up, stopping")
@@ -225,17 +297,25 @@ async def run_catchup(clan_entry, coc_opponent_tag, war_key):
                         consecutive_failures = 0
 
             if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                await mark_attempt(our_tag, "failed")
-                await log_outcome(f"{name}: scrape failed ({last_error}), keeping last known")
+                await record_failed_catchup(
+                    our_tag, name, war_key, "failed",
+                    f"scrape failed ({last_error}), keeping last known",
+                )
                 return
             if time.monotonic() >= deadline:
-                await mark_attempt(our_tag, "gave_up")
-                await log_outcome(f"{name}: no new data after {GIVE_UP_SECONDS // 60} min, gave up")
+                await record_failed_catchup(
+                    our_tag, name, war_key, "gave_up",
+                    f"no new data after {GIVE_UP_SECONDS // 60} min, gave up",
+                )
                 return
             await asyncio.sleep(RETRY_INTERVAL_SECONDS)
     except asyncio.CancelledError:
         print(f"[FWA Points] {name}: catch-up cancelled")
         raise
+    except Exception as e:
+        detail = f"unexpected catch-up error ({type(e).__name__}: {e})"
+        print(f"[FWA Points] {name}: {detail}")
+        await record_failed_catchup(our_tag, name, war_key, "error", detail)
     finally:
         active_catchups.pop(our_tag, None)
 
@@ -261,6 +341,8 @@ async def detector_loop():
                     rec = await mongo_client.fwa_points.find_one({"_id": our_tag})
                     if rec and rec.get("status") == "caught_up" and rec.get("coc_war_key") == war_key:
                         continue   # already have this exact war's verdict
+                    if retry_is_deferred(rec, war_key):
+                        continue   # same failed war is cooling down; a new war key bypasses this
                     task = asyncio.create_task(run_catchup(clan, coc_opp, war_key))
                     active_catchups[our_tag] = task
         except Exception as e:
@@ -285,6 +367,9 @@ async def on_bot_started(event: hikari.StartedEvent,
             upsert=True,
         )
         print("[FWA Points] Seeded config")
+    if detector_task and not detector_task.done():
+        print("[FWA Points] Detector task already running; start skipped")
+        return
     detector_task = asyncio.create_task(detector_loop())
     print("[FWA Points] Task started")
 
@@ -292,11 +377,18 @@ async def on_bot_started(event: hikari.StartedEvent,
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     global detector_task
+    tasks = []
     if detector_task and not detector_task.done():
         detector_task.cancel()
+        tasks.append(detector_task)
     for t in list(active_catchups.values()):
         if not t.done():
             t.cancel()
+            tasks.append(t)
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    detector_task = None
+    active_catchups.clear()
     print("[FWA Points] Tasks cancelled")
 
 
@@ -343,9 +435,13 @@ class WatchAdd(lightbulb.SlashCommand, name="watch-add", description="Add a clan
         if not t:
             await ctx.respond("❌ Invalid tag.", ephemeral=True)
             return
-        await mongo.fwa_points.update_one({"_id": "config"}, {"$pull": {"watch_list": {"tag": t}}}, upsert=True)
-        await mongo.fwa_points.update_one({"_id": "config"},
-                                          {"$push": {"watch_list": {"tag": t, "name": self.name}}}, upsert=True)
+        # One aggregation-pipeline update avoids the brief missing/duplicate
+        # state produced by the old $pull followed by $push pair.
+        await mongo.fwa_points.update_one(
+            {"_id": "config"},
+            watch_list_replacement_pipeline(t, self.name),
+            upsert=True,
+        )
         await ctx.respond(f"✅ Added **{self.name}** (`{t}`) to the watch list.", ephemeral=True)
 
 

@@ -32,6 +32,17 @@ WALKTHROUGH_CHAT_DELAY = 20  # Wait before chat channel
 WALKTHROUGH_HELP_DELAY = 20  # Wait before help me attack channel
 WALKTHROUGH_LOUNGE_DELAY = 20  # Wait before lounge channel
 
+loader = lightbulb.Loader()
+active_walkthrough_tasks: dict[tuple[int, int], asyncio.Task] = {}
+_starting_walkthroughs: set[tuple[int, int]] = set()
+
+
+def walkthrough_is_running(task_key: tuple[int, int]) -> bool:
+    task = active_walkthrough_tasks.get(task_key)
+    return task_key in _starting_walkthroughs or (
+        task is not None and not task.done()
+    )
+
 
 @register_action("server_walkthrough")
 @lightbulb.di.with_di
@@ -499,12 +510,24 @@ async def begin_walkthrough_handler(
     if not member:
         await ctx.respond("Member not found", ephemeral=True)
         return
+
+    task_key = (int(guild_id), int(user_id))
+    if walkthrough_is_running(task_key):
+        await ctx.respond(
+            "This member's server walkthrough is already running.",
+            ephemeral=True,
+        )
+        return
+
+    # Claim before the next await so two recruiters cannot start the same member
+    # concurrently. The claim becomes the tracked task after setup succeeds.
+    _starting_walkthroughs.add(task_key)
     
     # Get clan info
-    clan_doc = await mongo.clans.find_one({"tag": clan_tag})
+    try:
+        clan_doc = await mongo.clans.find_one({"tag": clan_tag})
     
     # Send the initial walkthrough message
-    try:
         initial_message = [
             Container(
                 accent_color=RED_ACCENT,
@@ -528,31 +551,58 @@ async def begin_walkthrough_handler(
         channel = guild.get_channel(ctx.interaction.channel_id)
         if channel:
             await channel.send(components=initial_message, user_mentions=[user_id])
-    except Exception as e:
-        print(f"Failed to send initial walkthrough message: {e}")
     
-    # Store walkthrough start timestamp in recruit_onboarding collection
-    walkthrough_data = {
-        "_id": f"walkthrough_{user_id}_{guild_id}",
-        "user_id": user_id,
-        "guild_id": guild_id,
-        "walkthrough_started_at": datetime.now(timezone.utc),
-        "new_recruit_role_removed": False,
-        "clan_tag": clan_tag
-    }
+        # Store walkthrough start timestamp in recruit_onboarding collection.
+        walkthrough_data = {
+            "_id": f"walkthrough_{user_id}_{guild_id}",
+            "user_id": user_id,
+            "guild_id": guild_id,
+            "walkthrough_started_at": datetime.now(timezone.utc),
+            "new_recruit_role_removed": False,
+            "clan_tag": clan_tag,
+        }
     
     # Use upsert to handle multiple walkthroughs for the same user
-    await mongo.recruit_onboarding.update_one(
-        {"_id": f"walkthrough_{user_id}_{guild_id}"},
-        {"$set": walkthrough_data},
-        upsert=True
-    )
-    
-    # Start the walkthrough sequence in the background
-    asyncio.create_task(execute_walkthrough_sequence(member, guild, clan_doc, bot))
+        await mongo.recruit_onboarding.update_one(
+            {"_id": f"walkthrough_{user_id}_{guild_id}"},
+            {"$set": walkthrough_data},
+            upsert=True
+        )
+
+        task = asyncio.create_task(
+            execute_walkthrough_sequence(member, guild, clan_doc, bot),
+            name=f"server-walkthrough-{guild_id}-{user_id}",
+        )
+        active_walkthrough_tasks[task_key] = task
+
+        def _forget(completed_task: asyncio.Task, key=task_key) -> None:
+            if active_walkthrough_tasks.get(key) is completed_task:
+                active_walkthrough_tasks.pop(key, None)
+
+        task.add_done_callback(_forget)
+    except Exception as e:
+        print(f"Failed to start walkthrough for {user_id} in {guild_id}: {e}")
+        await ctx.respond(
+            "The walkthrough could not be started. Nothing was scheduled.",
+            ephemeral=True,
+        )
+    finally:
+        _starting_walkthroughs.discard(task_key)
     
     # Just acknowledge the interaction without editing
     #await ctx.respond("Walkthrough started!", ephemeral=True)
+
+
+@loader.listener(hikari.StoppingEvent)
+async def stop_walkthrough_tasks(_: hikari.StoppingEvent) -> None:
+    """Cancel finite walkthrough sequences cleanly during a reboot."""
+    tasks = [task for task in active_walkthrough_tasks.values() if not task.done()]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    active_walkthrough_tasks.clear()
+    _starting_walkthroughs.clear()
 
 
 

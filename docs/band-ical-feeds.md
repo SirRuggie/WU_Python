@@ -42,6 +42,17 @@ accident, because a URL does not look like a password.
   never polling faster than that.
 - Feed order matters: the first feed carrying a UID decides which calendar name
   is displayed.
+- Event timing and notification delivery are separate durable records. Each
+  `(event version, offset, recipient)` has its own queued/pending/sent state and
+  a ten-minute lease. A failed recipient retries without duplicating DMs to
+  recipients who already succeeded; a pending lease can be reclaimed after a
+  crash.
+- A reschedule queues per-recipient change notifications before advancing the
+  stored event time. If no recipients are configured, the old timing remains so
+  the reschedule is detected again instead of being silently consumed.
+- Recipient IDs are stored once each in configured order. Older global claim
+  documents are migrated as already-seen offsets so deployment does not replay
+  historical alerts.
 - **The task ships disabled.** The config document is seeded with
   `enabled=False` on first run regardless of the `SYNC_DM_ENABLED` seed value,
   and only if the document does not already exist. Turn it on from Discord with

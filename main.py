@@ -176,10 +176,15 @@ async def on_bot_start(event: hikari.StartedEvent):
         print(f"Failed to check reboot status: {e}")
 
 
-@bot.listen(hikari.StoppingEvent)
-async def on_stopping(_: hikari.StoppingEvent) -> None:
-    """Bot stopping event"""
-    # Properly close the coc.py client to avoid unclosed session warnings
-    await clash_client.close()
+@bot.listen(hikari.StoppedEvent)
+async def on_stopped(_: hikari.StoppedEvent) -> None:
+    """Close shared clients after extension stopping handlers have unwound."""
+    try:
+        # Properly close the coc.py client to avoid unclosed session warnings.
+        await clash_client.close()
+    finally:
+        # AsyncMongoClient owns connection-pool monitoring tasks and must still
+        # close even if the Clash client reports a shutdown error.
+        await mongo_client.close()
 
 bot.run()

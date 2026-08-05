@@ -32,6 +32,21 @@ def initialize(mongo: MongoClient, bot: hikari.GatewayBot):
     print("[GoblinChallenge] Handler initialized")
 
 
+async def prepare_storage() -> None:
+    """Index the per-message hot path and remove abandoned challenges."""
+    if not mongo_client:
+        return
+    try:
+        await mongo_client.button_store.create_index(
+            [("channel_id", 1), ("challenge_type", 1), ("status", 1)],
+            name="goblin_challenge_lookup",
+            partialFilterExpression={"challenge_type": "goblin_ping"},
+        )
+    except Exception as e:
+        print(f"[GoblinChallenge] WARNING: lookup index unavailable: {e}")
+    await cleanup_old_challenges()
+
+
 async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
     """
     Check if a message completes a goblin challenge.

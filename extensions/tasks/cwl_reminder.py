@@ -34,11 +34,22 @@ LAZY_DISCUSSION_CHANNEL = 872692009066958879
 
 # Global variables
 scheduler = AsyncIOScheduler(timezone=DEFAULT_TIMEZONE)
-scheduler.start()
 bot_instance = None
 mongo_client = None
 cwl_base_job_id = "cwl_monthly_reminder"
 cwl_followup_job_prefix = "cwl_followup_"
+cwl_initial_retry_job_id = "cwl_initial_retry"
+DELIVERY_RETRY_MINUTES = 5
+PENDING_EXPIRY_DAYS = 7
+JOB_OPTIONS = {
+    "misfire_grace_time": 24 * 60 * 60,
+    "coalesce": True,
+    "max_instances": 1,
+}
+PRODUCTION_CHANNELS = {
+    "main": {"id": CWL_CHANNEL_ID, "type": "main", "name": "Main"},
+    "lazy": {"id": LAZY_CWL_CHANNEL_ID, "type": "lazy", "name": "Lazy"},
+}
 
 
 def get_signup_close_timestamp(schedule_day: int) -> str:
@@ -215,78 +226,224 @@ def create_cwl_reminder_message(reminder_number: int = 0, channel_type: str = "m
     return components
 
 
-async def send_cwl_reminder(reminder_number: int = 0, test_mode: bool = False):
-    """Send CWL signup reminder messages to channels"""
+def _pending_job_id(reminder_number: int) -> str:
+    if reminder_number == 0:
+        return cwl_initial_retry_job_id
+    return f"{cwl_followup_job_prefix}{reminder_number}"
+
+
+def _month_run(year: int, month: int, day: int, hour: int, minute: int):
+    """Return a configured run in a month, or None when that day does not exist."""
+    try:
+        return pendulum.datetime(
+            year, month, day, hour, minute, tz=DEFAULT_TIMEZONE,
+        )
+    except ValueError:
+        return None
+
+
+def next_monthly_run(
+    day: int,
+    hour: int,
+    minute: int,
+    now: datetime | None = None,
+):
+    """Return the next Cron-compatible monthly occurrence for days 1 through 31."""
+    current = pendulum.instance(now, tz=DEFAULT_TIMEZONE) if now else pendulum.now(DEFAULT_TIMEZONE)
+    candidate_month = current.start_of("month")
+
+    for _ in range(24):
+        candidate = _month_run(
+            candidate_month.year,
+            candidate_month.month,
+            day,
+            hour,
+            minute,
+        )
+        if candidate is not None and candidate > current:
+            return candidate
+        candidate_month = candidate_month.add(months=1)
+
+    raise ValueError(f"Could not calculate the next monthly run for day {day}")
+
+
+def get_last_sent(schedule_data: dict):
+    """Read the initial reminder timestamp, with compatibility for legacy data."""
+    return schedule_data.get("last_sent_0") or schedule_data.get("last_sent")
+
+
+async def remove_followup_configuration(number: int, mongo: MongoClient) -> bool:
+    """Remove a configured follow-up and all of its runnable state."""
+    schedule_data = await mongo.database.cwl_reminder.find_one({"_id": "schedule"})
+    if not schedule_data:
+        return False
+
+    followups = schedule_data.get("followups", [])
+    remaining = [item for item in followups if item.get("number") != number]
+    if len(remaining) == len(followups):
+        return False
+
+    await mongo.database.cwl_reminder.update_one(
+        {"_id": "schedule"},
+        {"$set": {"followups": remaining}},
+    )
+
+    job_id = f"{cwl_followup_job_prefix}{number}"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+    await mongo.database.cwl_pending_reminders.delete_one({"_id": job_id})
+    return True
+
+
+def _add_reminder_job(
+    job_id: str,
+    run_time: datetime,
+    reminder_number: int,
+    channel_keys: list[str] | None = None,
+) -> None:
+    scheduler.add_job(
+        send_cwl_reminder,
+        trigger=DateTrigger(run_date=run_time, timezone=DEFAULT_TIMEZONE),
+        id=job_id,
+        args=[reminder_number, False, channel_keys],
+        replace_existing=True,
+        **JOB_OPTIONS,
+    )
+
+
+async def _persist_pending_reminder(
+    job_id: str,
+    run_time: datetime,
+    reminder_number: int,
+    channel_keys: list[str] | None = None,
+) -> None:
+    if not mongo_client:
+        return
+
+    reminder_data = {
+        "_id": job_id,
+        "reminder_number": reminder_number,
+        "run_time": run_time.isoformat(),
+        "job_id": job_id,
+        "created_at": pendulum.now(DEFAULT_TIMEZONE).isoformat(),
+    }
+    if channel_keys:
+        reminder_data["channel_keys"] = channel_keys
+
+    await mongo_client.database.cwl_pending_reminders.update_one(
+        {"_id": job_id},
+        {"$set": reminder_data},
+        upsert=True,
+    )
+
+
+async def _schedule_durable_reminder(
+    job_id: str,
+    run_time: datetime,
+    reminder_number: int,
+    channel_keys: list[str] | None = None,
+) -> None:
+    """Persist a date job before exposing it to the in-memory scheduler."""
+    await _persist_pending_reminder(job_id, run_time, reminder_number, channel_keys)
+    _add_reminder_job(job_id, run_time, reminder_number, channel_keys)
+
+
+async def _schedule_retry(reminder_number: int, channel_keys: list[str]) -> None:
+    run_time = pendulum.now(DEFAULT_TIMEZONE).add(minutes=DELIVERY_RETRY_MINUTES)
+    job_id = _pending_job_id(reminder_number)
+    await _schedule_durable_reminder(job_id, run_time, reminder_number, channel_keys)
+    print(
+        f"[CWL Reminder] Scheduled retry for reminder #{reminder_number} "
+        f"to {', '.join(channel_keys)} at {run_time}"
+    )
+
+
+async def send_cwl_reminder(
+    reminder_number: int = 0,
+    test_mode: bool = False,
+    channel_keys: list[str] | None = None,
+) -> bool:
+    """Send a reminder and mutate production state only after full delivery."""
     global bot_instance, mongo_client
 
     if not bot_instance:
         print("[CWL Reminder] Bot instance not available!")
-        return
+        return False
 
     reminder_type = "initial" if reminder_number == 0 else f"follow-up #{reminder_number}"
-
-    # Choose channels based on test mode
     if test_mode:
-        channels = [
-            {"id": TEST_CHANNEL_ID, "type": "main", "name": "Test"}
-        ]
+        channels = [{"id": TEST_CHANNEL_ID, "type": "main", "name": "Test", "key": "test"}]
     else:
+        selected_keys = channel_keys or list(PRODUCTION_CHANNELS)
         channels = [
-            {"id": CWL_CHANNEL_ID, "type": "main", "name": "Main"},
-            {"id": LAZY_CWL_CHANNEL_ID, "type": "lazy", "name": "Lazy"}
+            {**PRODUCTION_CHANNELS[key], "key": key}
+            for key in selected_keys
+            if key in PRODUCTION_CHANNELS
         ]
-    
+
+    failed_keys = []
     for channel_info in channels:
         try:
-            # Create the reminder message for this channel type
             components = create_cwl_reminder_message(reminder_number, channel_info["type"])
-            
-            # Send the message
             await bot_instance.rest.create_message(
                 channel=channel_info["id"],
                 components=components,
-                role_mentions=[ROLE_TO_PING]
+                role_mentions=[ROLE_TO_PING],
             )
-            
-            print(f"[CWL Reminder] Sent {reminder_type} reminder to {channel_info['name']} channel at {datetime.now()}")
-            
-        except Exception as e:
-            print(f"[CWL Reminder] Failed to send to {channel_info['name']} channel: {e}")
-    
-    # Update last sent time in MongoDB
+            print(
+                f"[CWL Reminder] Sent {reminder_type} reminder to "
+                f"{channel_info['name']} channel at {datetime.now()}"
+            )
+        except Exception as exc:
+            failed_keys.append(channel_info["key"])
+            print(f"[CWL Reminder] Failed to send to {channel_info['name']} channel: {exc}")
+
+    # Tests are deliberately delivery-only. They never update the schedule,
+    # pending reminders, or the production APScheduler.
+    if test_mode:
+        return not failed_keys
+
+    if failed_keys:
+        if mongo_client:
+            await _schedule_retry(reminder_number, failed_keys)
+        return False
+
+    if not channels:
+        return False
+
     if mongo_client:
+        sent_at = datetime.now(timezone.utc).isoformat()
         await mongo_client.database.cwl_reminder.update_one(
             {"_id": "schedule"},
-            {"$set": {
-                f"last_sent_{reminder_number}": datetime.now(timezone.utc).isoformat()
-            }},
-            upsert=True
+            {"$set": {f"last_sent_{reminder_number}": sent_at}},
+            upsert=True,
         )
 
-        # Clean up completed follow-up reminder from pending collection
-        if reminder_number > 0:
-            job_id = f"{cwl_followup_job_prefix}{reminder_number}"
-            result = await mongo_client.database.cwl_pending_reminders.delete_one({"_id": job_id})
-            if result.deleted_count > 0:
-                print(f"[CWL Reminder] Cleaned up completed follow-up #{reminder_number} from pending reminders")
+        job_id = _pending_job_id(reminder_number)
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+        result = await mongo_client.database.cwl_pending_reminders.delete_one({"_id": job_id})
+        if result.deleted_count > 0:
+            print(f"[CWL Reminder] Cleaned up completed {reminder_type} reminder")
 
-        # If this is the initial reminder, schedule all follow-ups
         if reminder_number == 0:
             schedule_data = await mongo_client.database.cwl_reminder.find_one({"_id": "schedule"})
             if schedule_data:
-                followups = schedule_data.get("followups", [])
-                base_time = pendulum.now(DEFAULT_TIMEZONE)
-                
-                # Calculate cumulative delays
                 cumulative_delay = 0
-                for followup in sorted(followups, key=lambda x: x.get("number", 0)):
+                base_time = pendulum.now(DEFAULT_TIMEZONE)
+                for followup in sorted(
+                    schedule_data.get("followups", []),
+                    key=lambda item: item.get("number", 0),
+                ):
                     if followup.get("enabled", True):
                         followup_num = followup.get("number")
-                        delay = followup.get("delay_minutes", 0)
-                        cumulative_delay += delay
-                        
+                        cumulative_delay += followup.get("delay_minutes", 0)
                         if followup_num and cumulative_delay > 0:
-                            await schedule_followup_reminder(base_time, followup_num, cumulative_delay)
+                            await schedule_followup_reminder(
+                                base_time, followup_num, cumulative_delay,
+                            )
+
+    return True
 
 
 async def schedule_followup_reminder(base_time: datetime, reminder_number: int, delay_minutes: int):
@@ -299,94 +456,9 @@ async def schedule_followup_reminder(base_time: datetime, reminder_number: int, 
     # Create job ID for this follow-up
     job_id = f"{cwl_followup_job_prefix}{reminder_number}"
 
-    # Remove existing job if any
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
-
-    # Schedule the follow-up
-    scheduler.add_job(
-        send_cwl_reminder,
-        trigger=DateTrigger(run_date=run_time, timezone=DEFAULT_TIMEZONE),
-        id=job_id,
-        args=[reminder_number],
-        replace_existing=True
-    )
-
-    # Save to MongoDB for persistence across restarts
-    if mongo_client:
-        reminder_data = {
-            "_id": job_id,
-            "reminder_number": reminder_number,
-            "run_time": run_time.isoformat(),
-            "job_id": job_id,
-            "created_at": pendulum.now(DEFAULT_TIMEZONE).isoformat()
-        }
-
-        await mongo_client.database.cwl_pending_reminders.update_one(
-            {"_id": job_id},
-            {"$set": reminder_data},
-            upsert=True
-        )
+    await _schedule_durable_reminder(job_id, run_time, reminder_number)
 
     print(f"[CWL Reminder] Scheduled follow-up #{reminder_number} for {run_time}")
-
-
-async def reschedule_all_reminders():
-    """Reschedule all reminders based on current configuration"""
-    global scheduler, mongo_client
-    
-    if not mongo_client:
-        return
-    
-    # Get schedule configuration
-    schedule_data = await mongo_client.database.cwl_reminder.find_one({"_id": "schedule"})
-    if not schedule_data or not schedule_data.get("enabled", False):
-        return
-    
-    # Get the next run time from the base job or calculate it
-    base_job = scheduler.get_job(cwl_base_job_id)
-    
-    if base_job and base_job.next_run_time:
-        # Use existing job's next run time
-        next_run = pendulum.instance(base_job.next_run_time, tz=DEFAULT_TIMEZONE)
-        print(f"[CWL Reminder] Using existing job next run time: {next_run}")
-    else:
-        # Calculate next run time from schedule data
-        day = schedule_data.get("day")
-        hour = schedule_data.get("hour")
-        minute = schedule_data.get("minute")
-        
-        if not all(x is not None for x in [day, hour, minute]):
-            print("[CWL Reminder] Missing schedule data for calculating next run")
-            return
-        
-        # Calculate when the base reminder should next run
-        now = pendulum.now(DEFAULT_TIMEZONE)
-        next_run = now.replace(day=day, hour=hour, minute=minute, second=0, microsecond=0)
-        
-        # If the time has passed this month, move to next month
-        if next_run <= now:
-            next_run = next_run.add(months=1)
-        
-        print(f"[CWL Reminder] Calculated next run time: {next_run}")
-    
-    # Get follow-up reminders configuration
-    followups = schedule_data.get("followups", [])
-    
-    if not followups:
-        print("[CWL Reminder] No follow-up reminders to schedule")
-        return
-    
-    # Calculate cumulative delays and schedule follow-ups
-    cumulative_delay = 0
-    for followup in sorted(followups, key=lambda x: x.get("number", 0)):
-        if followup.get("enabled", True):
-            reminder_number = followup.get("number")
-            delay_minutes = followup.get("delay_minutes", 0)
-            cumulative_delay += delay_minutes
-            
-            if reminder_number and cumulative_delay > 0:
-                await schedule_followup_reminder(next_run, reminder_number, cumulative_delay)
 
 
 async def restore_pending_reminders():
@@ -417,27 +489,45 @@ async def restore_pending_reminders():
         reminder_number = reminder.get("reminder_number")
         job_id = reminder.get("job_id")
 
-        if not all([reminder_id, run_time_str, reminder_number, job_id]):
+        if (
+            not reminder_id
+            or not run_time_str
+            or reminder_number is None
+            or not job_id
+        ):
             # Invalid reminder data, clean it up
             await mongo_client.database.cwl_pending_reminders.delete_one({"_id": reminder_id})
             continue
 
         try:
-            # Parse the run time
             run_time = pendulum.parse(run_time_str)
+        except Exception as e:
+            print(f"[CWL Reminder] Invalid pending reminder {reminder_id}: {e}")
+            await mongo_client.database.cwl_pending_reminders.delete_one({"_id": reminder_id})
+            continue
 
-            # Check if the reminder is still in the future
+        try:
             if run_time > now:
-                # Reschedule the reminder
-                scheduler.add_job(
-                    send_cwl_reminder,
-                    trigger=DateTrigger(run_date=run_time, timezone=DEFAULT_TIMEZONE),
-                    id=job_id,
-                    args=[reminder_number],
-                    replace_existing=True
-                )
+                channel_keys = reminder.get("channel_keys")
+                _add_reminder_job(job_id, run_time, reminder_number, channel_keys)
 
                 print(f"[CWL Reminder] Restored follow-up #{reminder_number} for {run_time}")
+                restored_count += 1
+            elif run_time >= now.subtract(days=PENDING_EXPIRY_DAYS):
+                # Date jobs disappear from the in-memory scheduler when they
+                # fire. If the process was down at that instant, retry shortly
+                # after startup instead of treating an undelivered reminder as
+                # complete.
+                retry_time = now.add(seconds=5)
+                channel_keys = reminder.get("channel_keys")
+                await _persist_pending_reminder(
+                    job_id, retry_time, reminder_number, channel_keys,
+                )
+                _add_reminder_job(job_id, retry_time, reminder_number, channel_keys)
+                print(
+                    f"[CWL Reminder] Restored overdue reminder #{reminder_number} "
+                    f"for retry at {retry_time}"
+                )
                 restored_count += 1
             else:
                 # Reminder has expired, clean it up
@@ -446,9 +536,9 @@ async def restore_pending_reminders():
                 expired_count += 1
 
         except Exception as e:
-            print(f"[CWL Reminder] Error restoring reminder {reminder_id}: {e}")
-            # Clean up invalid reminder
-            await mongo_client.database.cwl_pending_reminders.delete_one({"_id": reminder_id})
+            # Keep valid durable state so another restart can recover it if
+            # scheduler registration is temporarily unavailable.
+            print(f"[CWL Reminder] Error scheduling reminder {reminder_id}: {e}")
 
     if restored_count > 0:
         print(f"[CWL Reminder] Successfully restored {restored_count} pending reminder(s)")
@@ -456,7 +546,52 @@ async def restore_pending_reminders():
         print(f"[CWL Reminder] Cleaned up {expired_count} expired reminder(s)")
 
 
-async def schedule_cwl_reminder(day: int, hour: int, minute: int):
+async def restore_missed_base_reminder(
+    schedule_data: dict,
+    now: datetime | None = None,
+) -> bool:
+    """Create a durable near-term retry for a recently missed monthly base run."""
+    current = pendulum.instance(now, tz=DEFAULT_TIMEZONE) if now else pendulum.now(DEFAULT_TIMEZONE)
+    scheduled_time = _month_run(
+        current.year,
+        current.month,
+        int(schedule_data["day"]),
+        int(schedule_data["hour"]),
+        int(schedule_data["minute"]),
+    )
+    if scheduled_time is None or scheduled_time > current:
+        return False
+
+    last_sent = get_last_sent(schedule_data)
+    if last_sent:
+        try:
+            if pendulum.parse(last_sent).in_timezone(DEFAULT_TIMEZONE) >= scheduled_time:
+                return False
+        except (TypeError, ValueError):
+            print("[CWL Reminder] Ignoring invalid stored last-sent timestamp")
+
+    # Avoid stale signup reminders long after their useful window and do not
+    # duplicate a pending initial-delivery retry restored just above.
+    if scheduled_time < current.subtract(days=PENDING_EXPIRY_DAYS):
+        print(
+            f"[CWL Reminder] Missed base reminder from {scheduled_time} is too old; "
+            "no catch-up scheduled"
+        )
+        return False
+    if scheduler.get_job(cwl_initial_retry_job_id):
+        return False
+
+    retry_time = current.add(seconds=5)
+    await _schedule_durable_reminder(cwl_initial_retry_job_id, retry_time, 0)
+    print(f"[CWL Reminder] Restored missed base reminder for retry at {retry_time}")
+    return True
+
+
+async def schedule_cwl_reminder(
+    day: int,
+    hour: int,
+    minute: int,
+):
     """Schedule or reschedule the CWL reminder"""
     global scheduler, mongo_client
     
@@ -478,7 +613,8 @@ async def schedule_cwl_reminder(day: int, hour: int, minute: int):
         trigger=trigger,
         id=cwl_base_job_id,
         args=[0],  # reminder_number = 0 for base reminder
-        replace_existing=True
+        replace_existing=True,
+        **JOB_OPTIONS,
     )
     
     # Save to MongoDB
@@ -496,12 +632,6 @@ async def schedule_cwl_reminder(day: int, hour: int, minute: int):
             upsert=True
         )
     
-    # Small delay to ensure job is registered
-    await asyncio.sleep(0.1)
-    
-    # Reschedule all follow-ups based on new base time
-    await reschedule_all_reminders()
-    
     return True
 
 
@@ -516,6 +646,14 @@ async def on_bot_started(
     
     bot_instance = event.app
     mongo_client = mongo
+
+    if not getattr(scheduler, "running", True):
+        scheduler.start()
+
+    # Current-cycle date jobs are the authoritative pending state. Restore
+    # them before installing the next recurring base schedule so a restart
+    # cannot replace them with next month's calculated follow-ups.
+    await restore_pending_reminders()
     
     # Load saved schedule from MongoDB
     schedule_data = await mongo.database.cwl_reminder.find_one({"_id": "schedule"})
@@ -526,22 +664,7 @@ async def on_bot_started(
         minute = schedule_data.get("minute")
         
         if all(x is not None for x in [day, hour, minute]):
-            # Check if we missed the scheduled time today
-            now = pendulum.now(DEFAULT_TIMEZONE)
-            scheduled_time = now.replace(day=day, hour=hour, minute=minute, second=0, microsecond=0)
-            
-            # If we're past the scheduled day/time this month but haven't sent yet
-            last_sent_0 = schedule_data.get("last_sent_0")
-            if last_sent_0:
-                last_sent_dt = pendulum.parse(last_sent_0)
-                # Check if last sent was not this month
-                if last_sent_dt.month != now.month or last_sent_dt.year != now.year:
-                    # We missed this month's reminder
-                    if now.day > day or (now.day == day and now.hour > hour):
-                        print(f"[CWL Reminder] Detected missed reminder for this month!")
-                        # Ask user if they want to send catch-up reminders
-                        print(f"[CWL Reminder] Note: Scheduled time {scheduled_time} has passed.")
-                        print(f"[CWL Reminder] Use '/cwl-reminder test-all' if you want to send catch-up reminders.")
+            await restore_missed_base_reminder(schedule_data)
             
             # Schedule base reminder
             await schedule_cwl_reminder(day, hour, minute)
@@ -565,15 +688,12 @@ async def on_bot_started(
                                 delay_display = f"{minutes} minutes"
                         print(f"  - Reminder #{f.get('number')}: {delay_display or 'unknown delay'}")
 
-    # Restore any pending follow-up reminders that may have been scheduled before a restart
-    await restore_pending_reminders()
-
-
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
-    scheduler.shutdown()
-    print("[CWL Reminder] Scheduler shutdown")
+    if getattr(scheduler, "running", False):
+        scheduler.shutdown()
+        print("[CWL Reminder] Scheduler shutdown")
 
 
 # Create command group
@@ -660,7 +780,7 @@ class Status(
         day = schedule_data.get("day", "?")
         hour = schedule_data.get("hour", 0)
         minute = schedule_data.get("minute", 0)
-        last_sent = schedule_data.get("last_sent")
+        last_sent = get_last_sent(schedule_data)
         
         # Format time for display
         hour_12 = hour % 12 or 12
@@ -702,11 +822,14 @@ class Test(
         await ctx.defer(ephemeral=True)
         
         try:
-            await send_cwl_reminder(test_mode=True)
-            await ctx.respond(
-                f"✅ **Test reminder sent!**\n"
-                f"Check <#{TEST_CHANNEL_ID}> to see the message."
-            )
+            delivered = await send_cwl_reminder(test_mode=True)
+            if delivered:
+                await ctx.respond(
+                    f"✅ **Test reminder sent!**\n"
+                    f"Check <#{TEST_CHANNEL_ID}> to see the message."
+                )
+            else:
+                await ctx.respond("❌ **The test reminder could not be delivered.**")
         except Exception as e:
             await ctx.respond(
                 f"❌ **Failed to send test reminder!**\n"
@@ -732,6 +855,8 @@ class Cancel(
             followup_job_id = f"{cwl_followup_job_prefix}{i}"
             if scheduler.get_job(followup_job_id):
                 scheduler.remove_job(followup_job_id)
+        if scheduler.get_job(cwl_initial_retry_job_id):
+            scheduler.remove_job(cwl_initial_retry_job_id)
 
         # Clear all pending reminders from database
         result = await mongo.database.cwl_pending_reminders.delete_many({})
@@ -831,9 +956,6 @@ class AddFollowup(
             {"$set": {"followups": followups}}
         )
         
-        # Reschedule all reminders
-        await reschedule_all_reminders()
-        
         # Calculate total delay for this reminder
         total_delay = sum(f.get("delay_minutes", 0) for f in followups if f.get("number", 0) <= self.number)
         
@@ -881,38 +1003,10 @@ class RemoveFollowup(
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
         
-        # Get current schedule
-        schedule_data = await mongo.database.cwl_reminder.find_one({"_id": "schedule"})
-        
-        if not schedule_data:
-            await ctx.respond("❌ **No reminder configuration found!**")
-            return
-        
-        # Get followups
-        followups = schedule_data.get("followups", [])
-        
-        # Remove the specified follow-up
-        original_count = len(followups)
-        followups = [f for f in followups if f.get("number") != self.number]
-        
-        if len(followups) == original_count:
+        if not await remove_followup_configuration(self.number, mongo):
             await ctx.respond(f"❌ **No follow-up reminder #{self.number} found!**")
             return
-        
-        # Update MongoDB
-        await mongo.database.cwl_reminder.update_one(
-            {"_id": "schedule"},
-            {"$set": {"followups": followups}}
-        )
-        
-        # Remove the scheduled job
-        job_id = f"{cwl_followup_job_prefix}{self.number}"
-        if scheduler.get_job(job_id):
-            scheduler.remove_job(job_id)
-        
-        # Reschedule remaining reminders
-        await reschedule_all_reminders()
-        
+
         await ctx.respond(f"✅ **Removed follow-up reminder #{self.number}**")
 
 
@@ -942,13 +1036,7 @@ class List(
         hour = schedule_data.get("hour", 0)
         minute = schedule_data.get("minute", 0)
 
-        # Calculate the correct base datetime (next month if day has passed)
-        now = pendulum.now(DEFAULT_TIMEZONE)
-        base_datetime = now.replace(day=day, hour=hour, minute=minute, second=0, microsecond=0)
-
-        # If the scheduled day/time has passed this month, use next month
-        if base_datetime <= now:
-            base_datetime = base_datetime.add(months=1)
+        base_datetime = next_monthly_run(day, hour, minute)
 
         # Build reminder list
         lines = ["## 📅 CWL Reminder Schedule\n"]
@@ -1059,23 +1147,24 @@ class SendNow(
         
         followups = schedule_data.get("followups", [])
         
-        # Send initial reminder immediately
-        await send_cwl_reminder(0)
-        
-        # Schedule follow-ups with their actual delays
-        base_time = pendulum.now(DEFAULT_TIMEZONE)
-        cumulative_delay = 0
-        scheduled_count = 0
-        
-        for followup in sorted(followups, key=lambda x: x.get("number", 0)):
-            if followup.get("enabled", True):
-                reminder_number = followup.get("number")
-                delay_minutes = followup.get("delay_minutes", 0)
-                cumulative_delay += delay_minutes
-                
-                if reminder_number and cumulative_delay > 0:
-                    await schedule_followup_reminder(base_time, reminder_number, cumulative_delay)
-                    scheduled_count += 1
+        # A successful initial delivery is the single owner that schedules
+        # configured follow-ups. Do not schedule them a second time here.
+        delivered = await send_cwl_reminder(0)
+        scheduled_count = len([
+            followup
+            for followup in followups
+            if followup.get("enabled", True)
+            and followup.get("number")
+            and followup.get("delay_minutes", 0) > 0
+        ])
+
+        if not delivered:
+            await ctx.respond(
+                f"⚠️ **Initial reminder was not fully delivered.**\n"
+                f"A retry is scheduled in {DELIVERY_RETRY_MINUTES} minutes. "
+                "Follow-ups will be scheduled after delivery succeeds."
+            )
+            return
         
         await ctx.respond(
             f"✅ **Initial reminder sent!**\n"

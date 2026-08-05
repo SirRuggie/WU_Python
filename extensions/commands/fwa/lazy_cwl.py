@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from pymongo.errors import DuplicateKeyError
 
 from extensions.commands.fwa import loader, fwa
 from extensions.components import register_action
@@ -38,6 +39,114 @@ scheduler: Optional[AsyncIOScheduler] = None
 bot_instance: Optional[hikari.GatewayBot] = None
 coc_client: Optional[coc.Client] = None
 mongo_client: Optional[MongoClient] = None
+
+AUTOPING_JOB_DEFAULTS = {
+    "coalesce": True,
+    "max_instances": 1,
+    "misfire_grace_time": 300,
+}
+ACTIVE_SNAPSHOT_INDEX = "one_active_lazy_cwl_snapshot_per_clan"
+
+
+def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    """Return a timezone-aware UTC datetime without changing the instant."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def calculate_next_autoping_run(
+    snapshot: dict,
+    now: Optional[datetime] = None,
+) -> datetime:
+    """Find the next future run while preserving the persisted cadence.
+
+    Missed intervals are skipped rather than replayed after a reboot. The next
+    run remains aligned to the most recent successful check (or the original
+    start time for a job that has never run).
+    """
+    now = _as_utc(now) or datetime.now(timezone.utc)
+    interval_minutes = max(1, int(snapshot.get("auto_ping_interval_minutes", 60)))
+    interval = timedelta(minutes=interval_minutes)
+    anchor = (
+        _as_utc(snapshot.get("last_auto_ping_at"))
+        or _as_utc(snapshot.get("auto_ping_started_at"))
+        or now
+    )
+
+    next_run = anchor + interval
+    if next_run <= now:
+        missed_intervals = ((now - anchor) // interval) + 1
+        next_run = anchor + (interval * missed_intervals)
+
+    return next_run
+
+
+async def rollback_failed_autoping_start(mongo: MongoClient, snapshot_id) -> None:
+    """Keep Mongo from advertising an auto-ping whose job was never created."""
+    await mongo.lazy_cwl_snapshots.update_one(
+        {"_id": snapshot_id},
+        {
+            "$set": {"auto_ping_enabled": False},
+            "$unset": {"auto_ping_job_id": ""},
+        },
+    )
+
+
+async def ensure_snapshot_invariants(mongo: MongoClient) -> None:
+    """Repair legacy state and enforce one active snapshot per clan.
+
+    Older data can contain inactive snapshots with auto-ping still enabled and
+    more than one active snapshot for the same clan. Keep the newest active
+    snapshot deterministically, deactivate the rest, then let MongoDB enforce
+    the invariant for concurrent command invocations.
+    """
+    await mongo.lazy_cwl_snapshots.update_many(
+        {"active": {"$ne": True}, "auto_ping_enabled": True},
+        {"$set": {"auto_ping_enabled": False}},
+    )
+
+    active_snapshots = await mongo.lazy_cwl_snapshots.find(
+        {"active": True, "clan_tag": {"$type": "string"}}
+    ).to_list(length=None)
+
+    by_clan: Dict[str, List[dict]] = {}
+    for snapshot in active_snapshots:
+        by_clan.setdefault(snapshot["clan_tag"].upper(), []).append(snapshot)
+
+    for clan_snapshots in by_clan.values():
+        def snapshot_order(snapshot: dict) -> tuple[datetime, str]:
+            created = _as_utc(snapshot.get("snapshot_date")) or datetime.min.replace(
+                tzinfo=timezone.utc
+            )
+            return created, str(snapshot.get("_id", ""))
+
+        clan_snapshots.sort(key=snapshot_order, reverse=True)
+        for duplicate in clan_snapshots[1:]:
+            await mongo.lazy_cwl_snapshots.update_one(
+                {"_id": duplicate["_id"]},
+                {"$set": {"active": False, "auto_ping_enabled": False}},
+            )
+
+        winner = clan_snapshots[0]
+        normalized_tag = winner["clan_tag"].upper()
+        if winner["clan_tag"] != normalized_tag:
+            await mongo.lazy_cwl_snapshots.update_one(
+                {"_id": winner["_id"]},
+                {"$set": {"clan_tag": normalized_tag}},
+            )
+
+    await mongo.lazy_cwl_snapshots.create_index(
+        [("clan_tag", 1)],
+        name=ACTIVE_SNAPSHOT_INDEX,
+        unique=True,
+        partialFilterExpression={
+            "active": True,
+            "clan_tag": {"$type": "string"},
+        },
+    )
 
 
 async def get_discord_ids(player_tags: List[str]) -> Optional[Dict[str, Optional[str]]]:
@@ -662,6 +771,7 @@ class LazyCwlAutopingsStop(
 
         # Get snapshots with auto-ping enabled
         snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True,
             "auto_ping_enabled": True
         }).sort("snapshot_date", -1).to_list(length=None)
 
@@ -751,6 +861,7 @@ class LazyCwlAutopingsStatus(
 
         # Get all snapshots with auto-ping enabled
         snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True,
             "auto_ping_enabled": True
         }).sort("auto_ping_started_at", -1).to_list(length=None)
 
@@ -940,6 +1051,8 @@ async def process_single_clan_snapshot(
     }
     """
     try:
+        clan_tag = clan_tag.upper()
+
         # Fetch clan from CoC API
         clan = await coc_client.get_clan(clan_tag)
         if not clan:
@@ -1032,6 +1145,24 @@ async def process_single_clan_snapshot(
             'month': current_month
         }
 
+    except DuplicateKeyError:
+        # The partial unique index is the final guard against two recruiters
+        # creating an active snapshot for the same clan at the same time.
+        existing = await mongo.lazy_cwl_snapshots.find_one({
+            "clan_tag": clan_tag,
+            "active": True,
+        })
+        existing_date = existing.get("snapshot_date") if existing else None
+        return {
+            'success': False,
+            'clan_name': getattr(clan, "name", "Unknown"),
+            'clan_tag': clan_tag,
+            'already_exists': True,
+            'existing_date': (
+                existing_date.strftime('%B %d, %Y at %I:%M %p UTC')
+                if existing_date else 'Unknown'
+            ),
+        }
     except Exception as e:
         return {
             'success': False,
@@ -1074,6 +1205,8 @@ async def process_single_autoping_start(
         current = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
         if not current:
             raise Exception("Snapshot not found")
+        if not current.get("active"):
+            raise Exception("Snapshot is no longer active")
         if current.get("auto_ping_enabled"):
             raise Exception("Auto-ping already enabled")
 
@@ -1093,15 +1226,19 @@ async def process_single_autoping_start(
             }
         )
 
-        scheduler_instance.add_job(
-            auto_ping_job,
-            trigger=IntervalTrigger(minutes=interval_minutes),
-            args=[snapshot_id],
-            id=f"autopings_{snapshot_id}",
-            replace_existing=True,
-            max_instances=1,
-            next_run_time=now + timedelta(seconds=jitter_index * 5)
-        )
+        try:
+            scheduler_instance.add_job(
+                auto_ping_job,
+                trigger=IntervalTrigger(minutes=interval_minutes),
+                args=[snapshot_id],
+                id=f"autopings_{snapshot_id}",
+                replace_existing=True,
+                next_run_time=now + timedelta(seconds=jitter_index * 5),
+                **AUTOPING_JOB_DEFAULTS,
+            )
+        except Exception:
+            await rollback_failed_autoping_start(mongo, snapshot_id)
+            raise
 
         print(f"[LazyCWL AutoPing] Started auto-ping for {clan_name} "
               f"(interval: {interval_minutes}min, first run +{jitter_index * 5}s)")
@@ -1196,7 +1333,7 @@ async def process_single_snapshot_reset(
         # Deactivate snapshot
         result = await mongo.lazy_cwl_snapshots.update_one(
             {"_id": snapshot_id},
-            {"$set": {"active": False}}
+            {"$set": {"active": False, "auto_ping_enabled": False}}
         )
 
         if result.modified_count == 0:
@@ -1526,6 +1663,11 @@ async def auto_ping_job(snapshot_id: str):
         # Check if still active and enabled
         if not snapshot.get("active") or not snapshot.get("auto_ping_enabled"):
             print(f"[LazyCWL AutoPing] Snapshot {snapshot_id} no longer active/enabled, cancelling job")
+            if not snapshot.get("active") and snapshot.get("auto_ping_enabled"):
+                await mongo_client.lazy_cwl_snapshots.update_one(
+                    {"_id": snapshot_id},
+                    {"$set": {"auto_ping_enabled": False}},
+                )
             try:
                 scheduler.remove_job(f"autopings_{snapshot_id}")
             except:
@@ -1592,17 +1734,19 @@ async def auto_ping_job(snapshot_id: str):
         result = await process_single_snapshot_ping(snapshot, bot_instance, coc_client, mongo_client)
 
         if result['success']:
-            # Update last ping time and increment counter
+            # Persist every successful check for cadence restoration, but only
+            # count a ping when a Discord message was actually sent.
+            update = {
+                "$set": {
+                    "last_auto_ping_at": datetime.now(timezone.utc)
+                }
+            }
+            if not result.get('all_present'):
+                update["$inc"] = {"auto_ping_count": 1}
+
             await mongo_client.lazy_cwl_snapshots.update_one(
                 {"_id": snapshot_id},
-                {
-                    "$set": {
-                        "last_auto_ping_at": datetime.now(timezone.utc)
-                    },
-                    "$inc": {
-                        "auto_ping_count": 1
-                    }
-                }
+                update,
             )
 
             if result.get('all_present'):
@@ -1627,8 +1771,10 @@ async def restore_autopings():
         return
 
     try:
-        # Find all snapshots with auto-ping enabled
+        # Restore only active snapshots. Inactive/enabled legacy rows are
+        # repaired during startup and must never recreate scheduler jobs.
         snapshots = await mongo_client.lazy_cwl_snapshots.find({
+            "active": True,
             "auto_ping_enabled": True
         }).to_list(length=None)
 
@@ -1664,6 +1810,7 @@ async def restore_autopings():
 
             # Restore job
             interval_minutes = snapshot.get("auto_ping_interval_minutes", 60)
+            next_run_time = calculate_next_autoping_run(snapshot, now)
 
             try:
                 scheduler.add_job(
@@ -1672,10 +1819,15 @@ async def restore_autopings():
                     args=[snapshot_id],
                     id=f"autopings_{snapshot_id}",
                     replace_existing=True,
-                    max_instances=1
+                    next_run_time=next_run_time,
+                    **AUTOPING_JOB_DEFAULTS,
                 )
 
-                print(f"[LazyCWL AutoPing] Restored auto-ping for {snapshot['clan_name']} (interval: {interval_minutes}min)")
+                print(
+                    f"[LazyCWL AutoPing] Restored auto-ping for "
+                    f"{snapshot['clan_name']} (interval: {interval_minutes}min, "
+                    f"next: {next_run_time.isoformat()})"
+                )
                 restored += 1
             except Exception as e:
                 print(f"[LazyCWL AutoPing] Failed to restore job for {snapshot['clan_name']}: {e}")
@@ -2073,7 +2225,7 @@ async def handle_confirm_reset(
         # Deactivate all active snapshots
         result = await mongo.lazy_cwl_snapshots.update_many(
             {"active": True},
-            {"$set": {"active": False}}
+            {"$set": {"active": False, "auto_ping_enabled": False}}
         )
 
         components = [
@@ -2317,6 +2469,8 @@ async def handle_autopings_select_interval(
         snapshot = await mongo.lazy_cwl_snapshots.find_one({"_id": snapshot_id})
         if not snapshot:
             raise Exception("Snapshot not found")
+        if not snapshot.get("active"):
+            raise Exception("Snapshot is no longer active")
 
         # Check if auto-ping already enabled (race condition check)
         if snapshot.get("auto_ping_enabled"):
@@ -2342,14 +2496,18 @@ async def handle_autopings_select_interval(
         )
 
         # Create APScheduler job
-        scheduler.add_job(
-            auto_ping_job,
-            trigger=IntervalTrigger(minutes=interval_minutes),
-            args=[snapshot_id],
-            id=f"autopings_{snapshot_id}",
-            replace_existing=True,
-            max_instances=1
-        )
+        try:
+            scheduler.add_job(
+                auto_ping_job,
+                trigger=IntervalTrigger(minutes=interval_minutes),
+                args=[snapshot_id],
+                id=f"autopings_{snapshot_id}",
+                replace_existing=True,
+                **AUTOPING_JOB_DEFAULTS,
+            )
+        except Exception:
+            await rollback_failed_autoping_start(mongo, snapshot_id)
+            raise
 
         print(f"[LazyCWL AutoPing] Started auto-ping for {snapshot['clan_name']} (interval: {interval_minutes}min)")
 
@@ -2411,6 +2569,7 @@ async def handle_autopings_stop_select(
         # confirm. The per-clan path below is untouched.
         if snapshot_id == "ALL":
             running = await mongo.lazy_cwl_snapshots.find({
+                "active": True,
                 "auto_ping_enabled": True
             }).to_list(length=None)
 
@@ -2668,6 +2827,7 @@ async def handle_autopings_stop_all_confirm(
 
     try:
         snapshots = await mongo.lazy_cwl_snapshots.find({
+            "active": True,
             "auto_ping_enabled": True
         }).to_list(length=None)
 
@@ -3237,10 +3397,21 @@ async def on_bot_started(
         return
 
     # Initialize and start scheduler
-    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler = AsyncIOScheduler(
+        timezone="UTC",
+        job_defaults=AUTOPING_JOB_DEFAULTS,
+    )
     scheduler.start()
 
     print("[LazyCWL AutoPing] Scheduler initialized")
+
+    try:
+        await ensure_snapshot_invariants(mongo)
+        print("[LazyCWL] Snapshot invariants verified")
+    except Exception as e:
+        # Keep the bot available, but do not hide that the database-level
+        # duplicate guard could not be installed.
+        print(f"[LazyCWL] Failed to verify snapshot invariants: {e}")
 
     # Restore active auto-ping jobs from database
     try:
@@ -3248,6 +3419,23 @@ async def on_bot_started(
         print("[LazyCWL AutoPing] Active auto-ping jobs restored")
     except Exception as e:
         print(f"[LazyCWL AutoPing] Failed to restore auto-ping jobs: {e}")
+
+
+@loader.listener(hikari.StoppingEvent)
+async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
+    """Stop the in-memory scheduler cleanly during every bot shutdown."""
+    global scheduler
+
+    current_scheduler = scheduler
+    scheduler = None
+    if current_scheduler is None:
+        return
+
+    try:
+        current_scheduler.shutdown(wait=False)
+        print("[LazyCWL AutoPing] Scheduler shutdown")
+    except Exception as e:
+        print(f"[LazyCWL AutoPing] Scheduler shutdown failed: {e}")
 
 
 # Register the commands with the loader
