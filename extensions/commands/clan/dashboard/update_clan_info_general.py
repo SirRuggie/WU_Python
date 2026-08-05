@@ -125,25 +125,3 @@ async def on_edit_general(
         mongo=mongo
     )
     await ctx.interaction.edit_initial_response(components=new_components)
-
-@register_action("back_to_clan_edit", ephemeral=True, no_return=True)
-@lightbulb.di.with_di
-async def back_to_clan_edit(
-    ctx: MenuContext,
-    action_id: str,              # the tag
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **kwargs
-):
-    # Dynamically import the original menu
-    from extensions.commands.clan.dashboard.update_clan_info import clan_edit_menu
-
-    # Call the undecorated function to get fresh components
-    components = await clan_edit_menu.__wrapped__(
-        ctx,
-        action_id=action_id,
-        mongo=mongo,
-        tag=action_id,
-    )
-
-    # Replace the current view
-    await ctx.interaction.edit_initial_response(components=components)
