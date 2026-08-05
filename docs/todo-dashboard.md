@@ -117,8 +117,18 @@ triggered this work.
 index instead:
 
 - every 10 minutes it snapshots every registered family clan roster;
-- accounts used by `/todo` are profile-polled for the following 48 hours, so a
-  move to an arbitrary external clan is observable too;
+- it persists one current-roster snapshot per family clan. Comparing snapshots
+  detects who left even across a bot restart; removed clan rows expire after 30
+  days instead of accumulating. Stable rosters update that one snapshot and do
+  not emit one history write per member on every scan; history changes are
+  written only for the initial baseline, joins, and departures;
+- when someone leaves a family roster, their tag goes through the bidirectional
+  ClashKing link endpoint: departing tag → Discord owner → every linked account
+  belonging to that owner. Those accounts are watched for 48 hours and polled
+  every 10 minutes regardless of destination clan;
+- accounts used directly by `/todo` also receive a 48-hour watch. This covers a
+  linked user even when none of their accounts was present in a registered
+  family roster during the latest expansion;
 - active regular-war rosters for registered clans and active CWL rosters for
   clans whose database type is `CWL` are indexed as obligations. This is the
   bootstrap path for a war spun before the tracker existed, including a player
@@ -144,11 +154,21 @@ Historically `_used_attacks()` returned zero for both "not rostered" and
 "rostered with zero attacks"; using it as the membership test creates false
 0/2 rows for every recent clan.
 
+The tracker deliberately does **not** poll every linked alt of every current
+family member forever. At 1,000 accounts that would be 144,000 player requests
+per day at a 10-minute interval; Mongo space would be tiny, but continuous load
+on ClashKing's free proxy would not be neighbourly. Polling is activated by a
+real signal—a `/todo` use or a family-roster departure—and expires after 48
+hours.
+
 The unavoidable boundary: the API offers no global list of clans and no past
-membership lookup. An external-clan hop that occurs before a player has ever
-used `/todo`, never touches a registered clan, and is not represented by an
-active registered war cannot be reconstructed. All observable movement is
-covered prospectively; active registered wars are covered immediately.
+membership lookup. A player who has no Discord link is still watched by their
+departing tag, but their alts cannot be expanded. A random-clan hop that began
+and ended before this tracker ever observed the player cannot be reconstructed,
+and a complete join-and-leave between two 10-minute roster polls can be missed.
+Observable family departures are covered prospectively without knowing
+destination clans; active registered wars are also covered immediately as a
+startup bootstrap.
 
 There is **no `/link` command and no local link table.** The ClashKing endpoint
 is bidirectional and unauthenticated — post an array of Discord IDs, get back a

@@ -2,8 +2,10 @@
 
 The tracker keeps network discovery away from the interaction path:
 
-* registered clan rosters observe broad family movement;
-* player profiles observe arbitrary clans for 48 hours after a /todo use;
+* registered clan rosters identify current family members;
+* a family-roster departure enrolls that player and all linked accounts for
+  direct profile polling, regardless of destination clan;
+* a /todo use adds a direct 48-hour watch as a second enrollment path;
 * active regular-war and CWL rosters bootstrap obligations that were spun
   before the tracker started.
 
@@ -20,6 +22,7 @@ import hikari
 import lightbulb
 
 from utils import clan_history, todo_data
+from utils.clash_links import resolve_family_linked_tags
 from utils.mongo import MongoClient
 
 
@@ -122,6 +125,58 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
         _safe_fetch(sem, "clan", tag, lambda tag=tag: coc_client.get_clan(tag))
         for tag in clan_tags
     ]
+    clans = await asyncio.gather(*clan_tasks)
+
+    presences: list[clan_history.ClanPresence] = []
+    family_roster_tags: list[str] = []
+    current_rosters: dict[str, set[str]] = {}
+    clan_metadata: dict[str, tuple[str | None, str | None]] = {}
+    for clan in clans:
+        if clan is None:
+            continue
+        clan_presences = _clan_presences(clan)
+        family_roster_tags.extend(presence.player_tag for presence in clan_presences)
+        current_rosters[clan.tag.upper()] = {
+            presence.player_tag.upper() for presence in clan_presences
+        }
+        clan_metadata[clan.tag.upper()] = (getattr(clan, "name", None), _badge(clan))
+
+    previous_rosters = await clan_history.load_roster_snapshots(
+        mongo, current_rosters
+    )
+    changed_roster_tags: set[tuple[str, str]] = set()
+    for clan_tag, members in current_rosters.items():
+        previous = previous_rosters.get(clan_tag)
+        changed = members if previous is None else members.symmetric_difference(previous)
+        changed_roster_tags.update((player_tag, clan_tag) for player_tag in changed)
+    for player_tag, clan_tag in changed_roster_tags:
+        clan_name, clan_badge = clan_metadata.get(clan_tag, (None, None))
+        presences.append(clan_history.ClanPresence(
+            player_tag, clan_tag, clan_name, clan_badge
+        ))
+
+    departed_tags = set().union(*(
+        previous_rosters.get(clan_tag, set()) - members
+        for clan_tag, members in current_rosters.items()
+    )) if current_rosters else set()
+    snapshot_write = asyncio.create_task(clan_history.save_roster_snapshots(
+        mongo, current_rosters, observed_at=now
+    ))
+
+    movement_watches = set(departed_tags)
+    if departed_tags:
+        linked_tags = await resolve_family_linked_tags(sorted(departed_tags))
+        if linked_tags is None:
+            print("[clan-history] mover link expansion failed; watching departing tags only")
+        else:
+            movement_watches.update(linked_tags)
+        await clan_history.watch_players(mongo, movement_watches, observed_at=now)
+        print(
+            f"[clan-history] family departures detected "
+            f"players={len(departed_tags)} watches={len(movement_watches)}"
+        )
+    watched_tags = list(dict.fromkeys(watched_tags + sorted(movement_watches)))
+
     player_tasks = [
         _safe_fetch(sem, "player", tag, lambda tag=tag: coc_client.get_player(tag))
         for tag in watched_tags
@@ -135,20 +190,14 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
         for tag in cwl_tags
     ]
 
-    all_results = await asyncio.gather(*(clan_tasks + player_tasks + war_tasks + cwl_tasks))
+    all_results = await asyncio.gather(*(player_tasks + war_tasks + cwl_tasks))
     offset = 0
-    clans = all_results[offset:offset + len(clan_tasks)]
-    offset += len(clan_tasks)
     players = all_results[offset:offset + len(player_tasks)]
     offset += len(player_tasks)
     wars = all_results[offset:offset + len(war_tasks)]
     offset += len(war_tasks)
     cwls = all_results[offset:offset + len(cwl_tasks)]
 
-    presences: list[clan_history.ClanPresence] = []
-    for clan in clans:
-        if clan is not None:
-            presences.extend(_clan_presences(clan))
     for player in players:
         if player is not None:
             presence = _player_presence(player)
@@ -157,39 +206,51 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
     await clan_history.record_presence(mongo, presences, observed_at=now)
 
     war_roster: list[clan_history.ClanPresence] = []
-    war_until = now
     for clan_tag, result in zip(clan_tags, wars):
         if not result:
             continue
         kind, war = result
         if kind != "war" or war is None or todo_data._state(war) not in {"inWar", "preparation"}:
             continue
-        war_roster.extend(_war_roster(war, clan_tag))
-        war_until = max(war_until, _war_end(war, now + timedelta(days=2)))
+        clan_roster = _war_roster(war, clan_tag)
+        war_roster.extend(clan_roster)
+        if clan_roster:
+            # Each clan's roster expires with its own war. Using one maximum end
+            # across every clan kept earlier wars falsely active.
+            await clan_history.record_active_war_roster(
+                mongo,
+                clan_roster,
+                kind="war",
+                active_until=_war_end(war, now + timedelta(days=2)),
+                observed_at=now,
+            )
 
     cwl_roster: list[clan_history.ClanPresence] = []
-    cwl_until = now
     for clan_tag, result in zip(cwl_tags, cwls):
         if not result:
             continue
         kind, war = result
         if kind != "war" or war is None or todo_data._state(war) not in {"inWar", "preparation"}:
             continue
-        cwl_roster.extend(_war_roster(war, clan_tag))
-        cwl_until = max(cwl_until, _war_end(war, now + timedelta(days=2)))
-
-    if war_roster:
-        await clan_history.record_active_war_roster(
-            mongo, war_roster, kind="war", active_until=war_until, observed_at=now
-        )
-    if cwl_roster:
-        await clan_history.record_active_war_roster(
-            mongo, cwl_roster, kind="cwl", active_until=cwl_until, observed_at=now
-        )
+        clan_roster = _war_roster(war, clan_tag)
+        cwl_roster.extend(clan_roster)
+        if clan_roster:
+            await clan_history.record_active_war_roster(
+                mongo,
+                clan_roster,
+                kind="cwl",
+                active_until=_war_end(war, now + timedelta(days=2)),
+                observed_at=now,
+            )
+    await snapshot_write
 
     return {
         "clans": len(clan_tags),
         "cwl_clans": len(cwl_tags),
+        "family_players": len(set(family_roster_tags)),
+        "roster_changes": len(changed_roster_tags),
+        "departed_players": len(departed_tags),
+        "new_watches": len(movement_watches),
         "watched_players": len(watched_tags),
         "presences": len(presences),
         "war_roster": len(war_roster),

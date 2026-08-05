@@ -90,6 +90,9 @@ async def ensure_indexes(mongo) -> bool:
         await mongo.player_clan_watches.create_index(
             "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
         )
+        await mongo.clan_roster_snapshots.create_index(
+            "purge_at", expireAfterSeconds=0, name="ttl_purge_at"
+        )
         _indexes_ready = True
         _indexes_failed = False
         print("[clan-history] indexes ready")
@@ -290,6 +293,69 @@ async def load_candidates(
     for player_candidates in result.values():
         player_candidates.sort(key=lambda candidate: candidate.clan_tag)
     return result
+
+
+async def load_roster_snapshots(
+    mongo,
+    clan_tags: Iterable[str],
+) -> dict[str, set[str]]:
+    """Load the last successful family roster for restart-safe leave detection."""
+    if mongo is None:
+        return {}
+    tags = list(dict.fromkeys(_tag(tag) for tag in clan_tags if _tag(tag)))
+    if not tags:
+        return {}
+    try:
+        documents = await mongo.clan_roster_snapshots.find(
+            {"_id": {"$in": tags}}, {"members": 1}
+        ).to_list(length=None)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[clan-history] roster snapshot read failed: {type(exc).__name__}: {exc}")
+        return {}
+    return {
+        _tag(document.get("_id")): {
+            _tag(member) for member in document.get("members", ()) if _tag(member)
+        }
+        for document in documents
+        if _tag(document.get("_id"))
+    }
+
+
+async def save_roster_snapshots(
+    mongo,
+    rosters: dict[str, set[str]],
+    *,
+    observed_at: datetime | None = None,
+) -> bool:
+    """Persist one bounded current-roster row per successfully read clan."""
+    if mongo is None or not rosters:
+        return False
+    await ensure_indexes(mongo)
+    now = _now(observed_at)
+    operations = [
+        UpdateOne(
+            {"_id": _tag(clan_tag)},
+            {
+                "$set": {
+                    "members": sorted({_tag(tag) for tag in members if _tag(tag)}),
+                    "updated_at": now,
+                    "purge_at": now + RETENTION,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        for clan_tag, members in rosters.items()
+        if _tag(clan_tag)
+    ]
+    if not operations:
+        return True
+    try:
+        await mongo.clan_roster_snapshots.bulk_write(operations, ordered=False)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[clan-history] roster snapshot write failed: {type(exc).__name__}: {exc}")
+        return False
 
 
 def presences_from_accounts(accounts: Iterable[object]) -> list[ClanPresence]:

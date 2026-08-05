@@ -32,10 +32,17 @@ class _Cursor:
 
 
 class _Mongo:
-    def __init__(self, documents=None, clan_documents=None, watch_documents=None):
+    def __init__(
+        self,
+        documents=None,
+        clan_documents=None,
+        watch_documents=None,
+        roster_documents=None,
+    ):
         self.player_clan_candidates = _Collection(documents)
         self.player_clan_watches = _Collection(watch_documents)
         self.clans = _Collection(clan_documents)
+        self.clan_roster_snapshots = _Collection(roster_documents)
 
 
 class _Member:
@@ -87,11 +94,16 @@ def test_history_and_watch_rows_have_bounded_ttl(monkeypatch):
         observed_at=now,
     ))
     asyncio.run(clan_history.watch_players(mongo, ["#PLAYER"], observed_at=now))
+    asyncio.run(clan_history.save_roster_snapshots(
+        mongo, {"#CLAN": {"#PLAYER"}}, observed_at=now
+    ))
 
     history_update = mongo.player_clan_candidates.operations[0]._doc
     watch_update = mongo.player_clan_watches.operations[0]._doc
+    roster_update = mongo.clan_roster_snapshots.operations[0]._doc
     assert history_update["$set"]["purge_at"] == now + timedelta(days=30)
     assert watch_update["$set"]["expires_at"] == now + timedelta(hours=48)
+    assert roster_update["$set"]["purge_at"] == now + timedelta(days=30)
 
 
 def test_candidate_query_accepts_recent_presence_or_active_roster(monkeypatch):
@@ -218,3 +230,76 @@ def test_tracker_bootstraps_player_from_active_cwl_roster(monkeypatch):
     ]
     assert len(cwl_updates) == 1
     assert cwl_updates[0]["$set"]["player_tag"] == "#PLAYER"
+
+
+def test_tracker_follows_family_players_linked_alt_into_random_clan(monkeypatch):
+    monkeypatch.setattr(clan_history, "_indexes_ready", True)
+    monkeypatch.setattr(clan_history, "_indexes_failed", False)
+    mongo = _Mongo(
+        clan_documents=[{"tag": "#FAMILY", "type": "FWA"}],
+        roster_documents=[{"_id": "#FAMILY", "members": ["#HOME"]}],
+    )
+
+    family_clan = _Side("#FAMILY", "Family", [])
+    random_clan = SimpleNamespace(tag="#RANDOM", name="Random Clan", badge=None)
+
+    class _Client:
+        async def get_clan(self, clan_tag):
+            assert clan_tag == "#FAMILY"
+            return family_clan
+
+        async def get_player(self, player_tag):
+            clan = family_clan if player_tag == "#HOME" else random_clan
+            return SimpleNamespace(tag=player_tag, clan=clan)
+
+    async def linked_accounts(player_tags):
+        assert player_tags == ["#HOME"]
+        return ["#HOME", "#ALT"]
+
+    async def no_regular_war(_client, _clan_tag):
+        return "none", None
+
+    monkeypatch.setattr(
+        clan_history_tracker, "resolve_family_linked_tags", linked_accounts
+    )
+    monkeypatch.setattr(todo_data, "_get_war", no_regular_war)
+
+    counts = asyncio.run(clan_history_tracker.run_scan(mongo, _Client()))
+
+    assert counts["family_players"] == 0
+    assert counts["departed_players"] == 1
+    assert counts["new_watches"] == 2
+    assert counts["watched_players"] == 2
+    random_updates = [
+        operation
+        for operation in mongo.player_clan_candidates.operations
+        if operation._filter == {"_id": "#ALT:#RANDOM"}
+    ]
+    assert len(random_updates) == 1
+
+
+def test_stable_family_roster_does_not_rewrite_member_history(monkeypatch):
+    monkeypatch.setattr(clan_history, "_indexes_ready", True)
+    monkeypatch.setattr(clan_history, "_indexes_failed", False)
+    mongo = _Mongo(
+        clan_documents=[{"tag": "#FAMILY", "type": "FWA"}],
+        roster_documents=[{"_id": "#FAMILY", "members": ["#HOME"]}],
+    )
+    family_clan = _Side("#FAMILY", "Family", [_Member("#HOME")])
+
+    class _Client:
+        async def get_clan(self, _clan_tag):
+            return family_clan
+
+        async def get_player(self, player_tag):
+            raise AssertionError(f"unexpected watched player {player_tag}")
+
+    async def no_regular_war(_client, _clan_tag):
+        return "none", None
+
+    monkeypatch.setattr(todo_data, "_get_war", no_regular_war)
+    counts = asyncio.run(clan_history_tracker.run_scan(mongo, _Client()))
+
+    assert counts["roster_changes"] == 0
+    assert counts["departed_players"] == 0
+    assert mongo.player_clan_candidates.operations == []
