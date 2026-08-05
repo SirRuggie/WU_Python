@@ -50,7 +50,7 @@ class Action:
     user_only: bool  # stored, NOT enforced - see docs/component-dispatcher.md
     no_return: bool
     is_modal: bool
-    ephemeral: bool
+    ephemeral: bool  # legacy metadata; message edits cannot change visibility
     opens_modal: bool
     requires_state: bool
     group: str | None
@@ -146,10 +146,9 @@ def register_action(
         if group:
             group_keys.add(group)
 
-        # Warn, do not raise. A duplicate name means import order silently decides
-        # which handler runs, which is a real bug - but raising here stops the bot
-        # booting, and this dispatcher's whole premise is not disturbing the
-        # running system. Resolve the duplicate first, then consider raising.
+        # Warn, do not raise. Static registrations are enforced as unique by
+        # tests/test_component_action_names.py; retaining the warning here keeps
+        # a dynamic/plugin collision visible without turning it into a boot outage.
         declared_at = _declaration_site()
 
         existing = registered_functions.get(name)
@@ -281,8 +280,6 @@ async def _dispatch(
         return
     kw = kw or {}
     kw = kw | {"color" : RED_ACCENT, "action_id" : action_id, "ctx": ctx}
-    if not kw:
-        return
     components = await action.fn(**kw)
 
     if not action.no_return:
@@ -293,10 +290,10 @@ async def _dispatch(
             # so the first modal handler written without it would have crashed.
             await ctx.respond(components=components)
         else:
-            # `ephemeral` is a no-op alongside edit=True (an existing message's
-            # ephemeral state cannot be changed) and is kept only so this commit
-            # changes nothing on the success path. Remove it with the state work.
-            await ctx.respond(components=components, edit=True, ephemeral=action.ephemeral)
+            # An edit preserves the existing message's visibility. Passing
+            # ephemeral= here is ignored by Discord/lightbulb and suggests a
+            # guarantee the dispatcher cannot make.
+            await ctx.respond(components=components, edit=True)
 
 
 @loader.listener(hikari.StartedEvent)

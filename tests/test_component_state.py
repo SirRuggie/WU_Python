@@ -175,9 +175,11 @@ class _Ctx:
         self.user = SimpleNamespace(id=1)
         self.responses = []
         self.deferred = False
+        self.defer_kwargs = []
 
     async def defer(self, **kwargs):
         self.deferred = True
+        self.defer_kwargs.append(kwargs)
 
     async def respond(self, *args, **kwargs):
         self.responses.append((args, kwargs))
@@ -206,3 +208,82 @@ def test_dispatcher_refuses_missing_required_state_but_runs_stateless_action():
 
     assert called == ["stateless"]
     assert required_ctx.responses[0][0] == (components.MSG_STALE_PANEL,)
+
+
+def test_dispatcher_preserves_exact_stateful_and_stateless_edit_responses():
+    called = []
+
+    @components.register_action(
+        "test_stateful_edit",
+        ephemeral=True,
+        requires_state=True,
+    )
+    async def stateful(**kwargs):
+        called.append(("stateful", kwargs["user_id"], kwargs["action_id"]))
+        return ["stateful-components"]
+
+    @components.register_action("test_stateless_edit", ephemeral=True)
+    async def stateless(**kwargs):
+        called.append(("stateless", kwargs["action_id"]))
+        return ["stateless-components"]
+
+    mongo = _Mongo(component=[{
+        "_id": "saved",
+        "user_id": 42,
+        "expires_at": datetime(2099, 1, 1, tzinfo=timezone.utc),
+    }])
+    stateful_ctx = _Ctx("test_stateful_edit:saved")
+    stateless_ctx = _Ctx("test_stateless_edit:any")
+    try:
+        asyncio.run(components._dispatch(stateful_ctx, mongo))
+        asyncio.run(components._dispatch(stateless_ctx, mongo))
+    finally:
+        components.registered_functions.pop("test_stateful_edit", None)
+        components.registered_functions.pop("test_stateless_edit", None)
+
+    assert called == [
+        ("stateful", 42, "saved"),
+        ("stateless", "any"),
+    ]
+    assert stateful_ctx.defer_kwargs == [{"edit": True}]
+    assert stateless_ctx.defer_kwargs == [{"edit": True}]
+    assert stateful_ctx.responses == [
+        ((), {"components": ["stateful-components"], "edit": True})
+    ]
+    assert stateless_ctx.responses == [
+        ((), {"components": ["stateless-components"], "edit": True})
+    ]
+
+
+def test_dispatcher_modal_response_is_not_deferred_or_edited():
+    @components.register_action("test_modal_response", is_modal=True)
+    async def modal(**kwargs):
+        return ["modal-components"]
+
+    mongo = _Mongo()
+    ctx = _Ctx("test_modal_response:any")
+    try:
+        asyncio.run(components._dispatch(ctx, mongo))
+    finally:
+        components.registered_functions.pop("test_modal_response", None)
+
+    assert not ctx.deferred
+    assert ctx.responses == [((), {"components": ["modal-components"]})]
+
+
+def test_dispatcher_no_return_handler_remains_the_only_responder():
+    @components.register_action("test_self_response", no_return=True)
+    async def self_responding(ctx, **kwargs):
+        await ctx.respond("handled directly", ephemeral=True)
+
+    mongo = _Mongo()
+    ctx = _Ctx("test_self_response:any")
+    try:
+        asyncio.run(components._dispatch(ctx, mongo))
+    finally:
+        components.registered_functions.pop("test_self_response", None)
+
+    assert ctx.defer_kwargs == [{"edit": True}]
+    assert ctx.responses == [
+        (("handled directly",), {"ephemeral": True})
+    ]
