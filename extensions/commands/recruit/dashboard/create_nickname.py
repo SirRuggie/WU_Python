@@ -8,6 +8,7 @@ import hikari
 import re
 
 from extensions.components import register_action
+from utils.component_state import get_state
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, BLUE_ACCENT
 from utils.emoji import emojis
@@ -24,7 +25,7 @@ from hikari.impl import (
 )
 
 
-@register_action("create_nickname", opens_modal=True)
+@register_action("create_nickname", opens_modal=True, requires_state=True)
 async def create_nickname_handler(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
@@ -68,7 +69,7 @@ async def create_nickname_handler(
     )
 
 
-@register_action("nickname_modal", no_return=True, is_modal=True)
+@register_action("nickname_modal", no_return=True, is_modal=True, requires_state=True)
 @lightbulb.di.with_di
 async def nickname_modal_handler(
         ctx: lightbulb.components.ModalContext,
@@ -101,7 +102,7 @@ async def nickname_modal_handler(
         country_flag = country.strip()
 
     # Get the recruit data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         return await ctx.respond("❌ Session expired. Please run the dashboard command again.", ephemeral=True)
 

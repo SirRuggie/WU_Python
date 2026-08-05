@@ -18,6 +18,7 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions.commands.fwa import loader, fwa
 from extensions.components import register_action
+from utils.component_state import insert_state
 from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT
 from utils.emoji import emojis
@@ -284,7 +285,7 @@ class LazyCwlSnapshot(
             "command": "snapshot",
             "user_id": ctx.member.id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Build dropdown options with ALL option first
         options = [
@@ -377,7 +378,7 @@ class LazyCwlPing(
             "command": "ping",
             "user_id": ctx.member.id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         options = [
             SelectOption(
@@ -533,7 +534,7 @@ class LazyCwlRoster(
             "command": "roster",
             "user_id": ctx.member.id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Build dropdown options
         options = []
@@ -611,7 +612,7 @@ class LazyCwlReset(
             "command": "reset",
             "user_id": ctx.member.id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Build dropdown options with ALL option first
         options = [
@@ -705,7 +706,7 @@ class LazyCwlAutopingsStart(
             "command": "autopings_start",
             "user_id": ctx.member.id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Build dropdown options
         options = []
@@ -794,7 +795,7 @@ class LazyCwlAutopingsStop(
             "command": "autopings_stop",
             "user_id": ctx.member.id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Build dropdown options with ALL option first, matching
         # lazycwl-snapshot / -ping / -reset.
@@ -981,7 +982,7 @@ class LazyCwlRemovePlayer(
             "command": "remove_player",
             "user_id": ctx.member.id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Build snapshot options
         options = []
@@ -1362,7 +1363,7 @@ async def process_single_snapshot_reset(
 
 # ======================== COMPONENT HANDLERS ========================
 
-@register_action("lazycwl_snapshot_select", no_return=True)
+@register_action("lazycwl_snapshot_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_snapshot_select(
     ctx,
@@ -1843,7 +1844,7 @@ async def restore_autopings():
         traceback.print_exc()
 
 
-@register_action("lazycwl_ping_select", no_return=True)
+@register_action("lazycwl_ping_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_ping_select(
     ctx,
@@ -1981,7 +1982,7 @@ async def handle_ping_select(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_roster_select", no_return=True)
+@register_action("lazycwl_roster_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_roster_select(
     ctx,
@@ -2062,7 +2063,7 @@ async def handle_roster_select(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_reset_select", no_return=True)
+@register_action("lazycwl_reset_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_reset_select(
     ctx,
@@ -2193,7 +2194,7 @@ async def handle_reset_select(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_confirm_reset", no_return=True)
+@register_action("lazycwl_confirm_reset", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_confirm_reset(
     ctx,
@@ -2281,7 +2282,7 @@ async def handle_cancel_reset(ctx, action_id: str, **kwargs) -> None:
 # ======================== AUTO-PING COMPONENT HANDLERS ========================
 
 
-@register_action("lazycwl_autopings_select_snapshot", no_return=True)
+@register_action("lazycwl_autopings_select_snapshot", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_autopings_select_snapshot(
     ctx,
@@ -2314,7 +2315,7 @@ async def handle_autopings_select_snapshot(
             "user_id": user_id,
             "snapshot_id": snapshot_id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Interval options
         interval_options = [
@@ -2377,7 +2378,7 @@ async def handle_autopings_select_snapshot(
         await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_autopings_select_interval", no_return=True)
+@register_action("lazycwl_autopings_select_interval", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_autopings_select_interval(
     ctx,
@@ -2410,7 +2411,7 @@ async def handle_autopings_select_interval(
             }).to_list(length=None)
 
             confirm_action_id = str(uuid.uuid4())
-            await mongo.button_store.insert_one({
+            await insert_state(mongo, {
                 "_id": confirm_action_id,
                 "command": "autopings_start_all_confirm",
                 "user_id": user_id,
@@ -2549,7 +2550,7 @@ async def handle_autopings_select_interval(
         await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_autopings_stop_select", no_return=True)
+@register_action("lazycwl_autopings_stop_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_autopings_stop_select(
     ctx,
@@ -2574,7 +2575,7 @@ async def handle_autopings_stop_select(
             }).to_list(length=None)
 
             confirm_action_id = str(uuid.uuid4())
-            await mongo.button_store.insert_one({
+            await insert_state(mongo, {
                 "_id": confirm_action_id,
                 "command": "autopings_stop_all_confirm",
                 "user_id": user_id
@@ -2722,7 +2723,7 @@ def _bulk_autoping_summary(title: str, results: list, extra: list) -> list:
     return [Container(accent_color=accent, components=parts)]
 
 
-@register_action("lazycwl_autopings_start_all_confirm", no_return=True)
+@register_action("lazycwl_autopings_start_all_confirm", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_autopings_start_all_confirm(
     ctx,
@@ -2813,7 +2814,7 @@ async def handle_autopings_start_all_cancel(ctx, action_id: str, **kwargs) -> No
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_autopings_stop_all_confirm", no_return=True)
+@register_action("lazycwl_autopings_stop_all_confirm", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_autopings_stop_all_confirm(
     ctx,
@@ -2888,7 +2889,7 @@ async def handle_autopings_stop_all_cancel(ctx, action_id: str, **kwargs) -> Non
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_remove_player_select_snapshot", no_return=True)
+@register_action("lazycwl_remove_player_select_snapshot", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_remove_player_select_snapshot(
     ctx,
@@ -2953,7 +2954,7 @@ async def handle_remove_player_select_snapshot(
             "snapshot_id": snapshot_id,
             "page": current_page
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Build player options for current page
         options = []
@@ -3053,7 +3054,7 @@ async def handle_remove_player_select_snapshot(
         await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_remove_player_select_players", no_return=True)
+@register_action("lazycwl_remove_player_select_players", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_remove_player_select_players(
     ctx,
@@ -3088,7 +3089,7 @@ async def handle_remove_player_select_players(
             "snapshot_id": snapshot_id,
             "player_tags": selected_player_tags
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Build player list for confirmation
         player_list_components = []
@@ -3164,7 +3165,7 @@ async def handle_remove_player_select_players(
         await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_remove_player_confirm", no_return=True)
+@register_action("lazycwl_remove_player_confirm", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_remove_player_confirm(
     ctx,
@@ -3241,7 +3242,7 @@ async def handle_remove_player_confirm(
         await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_remove_player_page_next", no_return=True)
+@register_action("lazycwl_remove_player_page_next", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_remove_player_page_next(
     ctx,
@@ -3299,7 +3300,7 @@ async def handle_remove_player_page_next(
         await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("lazycwl_remove_player_page_prev", no_return=True)
+@register_action("lazycwl_remove_player_page_prev", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_remove_player_page_prev(
     ctx,

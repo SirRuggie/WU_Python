@@ -10,6 +10,7 @@ import logging
 
 from extensions.components import register_action
 from extensions.commands.recruit import perms
+from utils.component_state import get_state, update_state
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, BLUE_ACCENT, GOLD_ACCENT
 
@@ -189,7 +190,7 @@ def _target_permission_response() -> list:
     ]
 
 
-@register_action("manage_roles")
+@register_action("manage_roles", requires_state=True)
 @lightbulb.di.with_di
 async def manage_roles_handler(
         ctx: lightbulb.components.MenuContext,
@@ -347,7 +348,7 @@ async def manage_roles_handler(
     return components
 
 
-@register_action("add_roles")
+@register_action("add_roles", requires_state=True)
 @lightbulb.di.with_di
 async def add_roles_handler(
         ctx: lightbulb.components.MenuContext,
@@ -359,7 +360,7 @@ async def add_roles_handler(
     """Show role addition interface with native role select menu"""
 
     # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         return [error_response("Session expired", action_id)]
 
@@ -415,7 +416,7 @@ async def add_roles_handler(
     ]
 
 
-@register_action("remove_roles")
+@register_action("remove_roles", requires_state=True)
 @lightbulb.di.with_di
 async def remove_roles_handler(
         ctx: lightbulb.components.MenuContext,
@@ -426,7 +427,7 @@ async def remove_roles_handler(
 ) -> list:
     """Show role removal interface with paginated role list"""
 
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         return [error_response("Session expired", action_id)]
 
@@ -475,8 +476,9 @@ async def remove_roles_handler(
     roles_per_page = 25
     total_pages = (len(removable_roles) + roles_per_page - 1) // roles_per_page
     page = max(0, min(page, total_pages - 1))  # Ensure page is within bounds
-    await mongo.button_store.update_one(
-        {"_id": action_id},
+    await update_state(
+        mongo,
+        action_id,
         {"$set": {"remove_roles_page": page}},
     )
     
@@ -565,7 +567,7 @@ async def _change_remove_roles_page(
         mongo: MongoClient,
         bot: hikari.GatewayBot,
 ) -> list:
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         return [error_response("Session expired", action_id)]
 
@@ -580,7 +582,7 @@ async def _change_remove_roles_page(
     )
 
 
-@register_action("remove_roles_prev")
+@register_action("remove_roles_prev", requires_state=True)
 @lightbulb.di.with_di
 async def remove_roles_prev_handler(
         ctx: lightbulb.components.MenuContext,
@@ -593,7 +595,7 @@ async def remove_roles_prev_handler(
     return await _change_remove_roles_page(ctx, action_id, -1, mongo, bot)
 
 
-@register_action("remove_roles_next")
+@register_action("remove_roles_next", requires_state=True)
 @lightbulb.di.with_di
 async def remove_roles_next_handler(
         ctx: lightbulb.components.MenuContext,
@@ -606,7 +608,7 @@ async def remove_roles_next_handler(
     return await _change_remove_roles_page(ctx, action_id, 1, mongo, bot)
 
 
-@register_action("quick_setup")
+@register_action("quick_setup", requires_state=True)
 @lightbulb.di.with_di
 async def quick_setup_handler(
         ctx: lightbulb.components.MenuContext,
@@ -617,7 +619,7 @@ async def quick_setup_handler(
 ) -> list:
     """Quick setup - adds standard recruit roles and removes visitor role"""
 
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         return [error_response("Session expired", action_id)]
 
@@ -709,7 +711,7 @@ async def quick_setup_handler(
     )
 
 
-@register_action("execute_add_roles")
+@register_action("execute_add_roles", requires_state=True)
 @lightbulb.di.with_di
 async def execute_add_roles_handler(
         ctx: lightbulb.components.MenuContext,
@@ -720,7 +722,7 @@ async def execute_add_roles_handler(
 ) -> list:
     """Execute the role addition and refresh the manage roles view"""
     
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         return [error_response("Session expired", action_id)]
 
@@ -791,7 +793,7 @@ async def execute_add_roles_handler(
     )
 
 
-@register_action("execute_remove_roles")
+@register_action("execute_remove_roles", requires_state=True)
 @lightbulb.di.with_di
 async def execute_remove_roles_handler(
         ctx: lightbulb.components.MenuContext,
@@ -802,7 +804,7 @@ async def execute_remove_roles_handler(
 ) -> list:
     """Execute the role removal and refresh the manage roles view"""
     
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         return [error_response("Session expired", action_id)]
 
@@ -874,6 +876,9 @@ async def execute_remove_roles_handler(
     )
 
 
+# Legacy buttons encode ``original_action_id:page`` in the dispatcher's action-id
+# segment. Let the handler unpack that compound id before checking the original
+# state; a dispatcher-level lookup would search for the unsaved compound value.
 @register_action("remove_roles_page")
 @lightbulb.di.with_di
 async def remove_roles_page_handler(
@@ -894,7 +899,7 @@ async def remove_roles_page_handler(
     except ValueError:
         return [error_response("Invalid role page", original_action_id)]
 
-    data = await mongo.button_store.find_one({"_id": original_action_id})
+    data = await get_state(mongo, original_action_id)
     if not data:
         return [error_response("Session expired", original_action_id)]
 

@@ -172,18 +172,6 @@ class WarPlans(
                 role_mentions=[int(clan_role_id)]
             )
 
-            # Store copy text and message info_hub in button store for later retrieval
-            await mongo.button_store.insert_one({
-                "_id": f"war_message_{message.id}",
-                "copy_text": copy_text,
-                "war_result": self.war_result,
-                "opponent": opponent_name,
-                "message_id": message.id,
-                "channel_id": target_channel,
-                "author_id": ctx.user.id,
-                "clan_role_id": clan_role_id
-            })
-
             # Send ephemeral response with just the copy text as plain text
             await ctx.respond(
                 content=copy_text,

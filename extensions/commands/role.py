@@ -11,6 +11,7 @@ from extensions.commands.recruit.dashboard.manage_roles import (
     role_is_manageable,
 )
 from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
+from utils.component_state import insert_state
 from utils.mongo import MongoClient
 
 from hikari.impl import (
@@ -268,7 +269,7 @@ class ManageRoles(
             "origin": "role_command",
             "remove_roles_page": 0,
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         components = await manage_roles_handler(
             ctx=ctx,

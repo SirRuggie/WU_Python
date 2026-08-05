@@ -22,6 +22,7 @@ from hikari.impl import (
 )
 
 from utils.mongo import MongoClient
+from utils.component_state import insert_state
 from utils.constants import BLUE_ACCENT
 from extensions.components import register_action
 from extensions.commands.tickets import loader, ticket
@@ -186,7 +187,7 @@ class Dashboard(
 
         # Store action data
         action_id = str(ctx.interaction.id)
-        await mongo.button_store.insert_one({
+        await insert_state(mongo, {
             "_id": action_id,
             "user_id": ctx.user.id
         })
@@ -678,7 +679,7 @@ class FixMismatched(
         )
 
 
-@register_action("ticket_dashboard_action", opens_modal=False)
+@register_action("ticket_dashboard_action", opens_modal=False, requires_state=True)
 async def handle_dashboard_action(
         ctx: lightbulb.components.MenuContext,
         action_id: str,

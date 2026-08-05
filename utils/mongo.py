@@ -6,6 +6,9 @@ class MongoClient(AsyncMongoClient):
         super().__init__(host=uri, **kwargs)
         self.__settings = self.get_database("settings")
         self.button_store = self.__settings.get_collection("button_store")
+        # Fixed-lifetime kwargs for Components V2 interactions. The TTL index is
+        # owned by utils.component_state; durable tickets never enter here.
+        self.component_state = self.__settings.get_collection("component_state")
         self.clans = self.__settings.get_collection("clan_data")
         #self.clan_recruitment = self.__settings.get_collection("clan_recruitment")
         self.fwa_data = self.__settings.get_collection("fwa_data")

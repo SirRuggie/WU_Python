@@ -23,6 +23,7 @@ from hikari.impl import (
 
 from extensions.commands.recruit import loader, recruit
 from extensions.commands.fwa.helpers import get_fwa_base_object
+from utils.component_state import insert_state
 from utils.constants import (
     GOLDENROD_ACCENT,
     RED_ACCENT,
@@ -59,12 +60,12 @@ class RecruitQuestions(
             "_id": str(ctx.interaction.id),
             "user_id" : self.user.id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
         components = await recruit_questions_page(action_id=str(ctx.interaction.id), **data)
         await ctx.respond(components=components, ephemeral=True)
 
 
-@register_action("primary_questions", no_return=True)
+@register_action("primary_questions", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def primary_questions(
     user_id: int,
@@ -568,7 +569,7 @@ async def on_shield_basics_button(
     
 
 ### FWA Questions Section
-@register_action("fwa_questions" ,no_return=True)
+@register_action("fwa_questions", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def fwa_questions(
     user_id: int,
@@ -897,7 +898,7 @@ async def fwa_questions(
         ephemeral=True,
     )
 
-@register_action("th_select" ,no_return=True)
+@register_action("th_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def th_select(
     user_id: int,
@@ -1008,7 +1009,7 @@ async def th_select(
     )
 
 ### Explanation Section
-@register_action("explanations", no_return=True)
+@register_action("explanations", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def explanations(
     user_id: int,
@@ -1210,7 +1211,7 @@ async def explanations(
 
 
 ### HURRY TF UP Section
-@register_action("keep_it_moving", no_return=True)
+@register_action("keep_it_moving", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def keep_it_moving(
     user_id: int,

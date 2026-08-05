@@ -109,18 +109,6 @@ class FamilyLinks(
         # Generate unique action ID for this interaction
         action_id = str(ctx.interaction.id)
         
-        # Store interaction data
-        await mongo.button_store.update_one(
-            {"_id": action_id},
-            {"$set": {
-                "_id": action_id,
-                "user_id": ctx.user.id,
-                "guild_id": ctx.guild_id,
-                "channel_id": ctx.channel_id,
-            }},
-            upsert=True
-        )
-        
         # Get guild and member
         guild = bot.cache.get_guild(ctx.guild_id)
         member = guild.get_member(ctx.user.id) if guild else None
@@ -289,13 +277,7 @@ async def family_links_th_handler(
 ):
     """Handle Town Hall role selection"""
     
-    # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
-    if not data:
-        await ctx.respond("Session expired", ephemeral=True)
-        return
-    
-    guild_id = data.get("guild_id")
+    guild_id = ctx.interaction.guild_id
     guild = bot.cache.get_guild(guild_id)
     member = guild.get_member(ctx.user.id) if guild else None
     
@@ -375,13 +357,7 @@ async def family_links_server_roles_handler(
 ):
     """Handle server role selection"""
     
-    # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
-    if not data:
-        await ctx.respond("Session expired", ephemeral=True)
-        return
-    
-    guild_id = data.get("guild_id")
+    guild_id = ctx.interaction.guild_id
     guild = bot.cache.get_guild(guild_id)
     member = guild.get_member(ctx.user.id) if guild else None
     

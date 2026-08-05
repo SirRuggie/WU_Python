@@ -11,6 +11,7 @@ import hikari
 from typing import List, Optional
 
 from extensions.components import register_action
+from utils.component_state import get_state
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, BLUE_ACCENT, GOLD_ACCENT
 from utils.emoji import emojis
@@ -210,7 +211,7 @@ def build_clan_menu(
     return [Container(accent_color=accent_color, components=component_list)]
 
 
-@register_action("add_clan_roles", no_return=True)
+@register_action("add_clan_roles", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def add_clan_roles_handler(
         ctx: lightbulb.components.MenuContext,
@@ -231,7 +232,7 @@ async def add_clan_roles_handler(
         from .dashboard import create_dashboard_page
         
         # Get stored data for dashboard parameters
-        data = await mongo.button_store.find_one({"_id": action_id})
+        data = await get_state(mongo, action_id)
         if not data:
             # Can't refresh without data, just show error
             await ctx.interaction.edit_initial_response(
@@ -266,7 +267,7 @@ async def add_clan_roles_handler(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("execute_add_clans", no_return=True)
+@register_action("execute_add_clans", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def execute_add_clans_handler(
         ctx: lightbulb.components.MenuContext,
@@ -278,7 +279,7 @@ async def execute_add_clans_handler(
     """Execute clan role assignment"""
     
     # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("Session expired", ephemeral=True)
         return
@@ -366,7 +367,7 @@ async def execute_add_clans_handler(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("add_all_clans", no_return=True)
+@register_action("add_all_clans", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def add_all_clans_handler(
         ctx: lightbulb.components.MenuContext,
@@ -377,7 +378,7 @@ async def add_all_clans_handler(
 ):
     """Add all available clan roles at once"""
     
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("Session expired", ephemeral=True)
         return
@@ -463,7 +464,7 @@ async def add_all_clans_handler(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("remove_all_clans", no_return=True)
+@register_action("remove_all_clans", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def remove_all_clans_handler(
         ctx: lightbulb.components.MenuContext,
@@ -474,7 +475,7 @@ async def remove_all_clans_handler(
 ):
     """Remove all clan roles from member"""
     
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("Session expired", ephemeral=True)
         return

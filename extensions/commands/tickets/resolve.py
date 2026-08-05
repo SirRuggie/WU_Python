@@ -21,6 +21,7 @@ import asyncio
 
 import hikari
 import lightbulb
+from utils.component_state import delete_state, get_state, insert_state
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -300,7 +301,7 @@ async def offer_override(
 
     prior = _prior(current)
     action_id = str(ctx.interaction.id)
-    await mongo.button_store.insert_one({
+    await insert_state(mongo, {
         "_id": action_id,
         "type": "ticket_override",
         "kind": kind,
@@ -315,7 +316,7 @@ async def offer_override(
     return lost_message(kind, current, action_id)
 
 
-@register_action("ticket_override", no_return=True)
+@register_action("ticket_override", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def ticket_override_handler(
         ctx: lightbulb.components.MenuContext,
@@ -330,7 +331,7 @@ async def ticket_override_handler(
     `user_only` is stored and never read - so a button cannot inherit trust from
     the interaction that rendered it, even an ephemeral one.
     """
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.interaction.edit_initial_response(
             content="That override has expired. Run the command again.", components=[]
@@ -388,7 +389,7 @@ async def ticket_override_handler(
         actor_name=ctx.user.username,
         reason=data.get("reason"),
     )
-    await mongo.button_store.delete_one({"_id": action_id})
+    await delete_state(mongo, action_id)
 
     verb = "Approved" if kind == KIND_APPROVE else "Denied"
     prior_verb = "approved" if data.get("prior_status") == "approved" else "denied"

@@ -45,12 +45,6 @@ class Links(
         
         action_id = str(uuid.uuid4())
         
-        # Store action ID in button store for later use
-        await mongo.button_store.insert_one({
-            "_id": action_id,
-            "type": "fwa_links"
-        })
-        
         components = [
             Container(
                 accent_color=GOLD_ACCENT,

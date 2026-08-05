@@ -10,6 +10,7 @@ import hikari
 from typing import List, Optional, Tuple
 
 from extensions.components import register_action
+from utils.component_state import get_state
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, BLUE_ACCENT
 from utils.emoji import emojis
@@ -161,7 +162,7 @@ def build_th_menu(
     return [Container(accent_color=accent_color, components=component_list)]
 
 
-@register_action("set_townhall", no_return=True)
+@register_action("set_townhall", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def set_townhall_handler(
         ctx: lightbulb.components.MenuContext,
@@ -182,7 +183,7 @@ async def set_townhall_handler(
         from .dashboard import create_dashboard_page
 
         # Get stored data for dashboard parameters
-        data = await mongo.button_store.find_one({"_id": action_id})
+        data = await get_state(mongo, action_id)
         if not data:
             # Can't refresh without data, just show error
             await ctx.interaction.edit_initial_response(
@@ -213,7 +214,7 @@ async def set_townhall_handler(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("execute_set_th", no_return=True)
+@register_action("execute_set_th", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def execute_set_th_handler(
         ctx: lightbulb.components.MenuContext,
@@ -225,7 +226,7 @@ async def execute_set_th_handler(
     """Execute townhall role assignment"""
 
     # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("Session expired", ephemeral=True)
         return
@@ -304,7 +305,7 @@ async def execute_set_th_handler(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("remove_all_th", no_return=True)
+@register_action("remove_all_th", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def remove_all_th_handler(
         ctx: lightbulb.components.MenuContext,
@@ -315,7 +316,7 @@ async def remove_all_th_handler(
 ):
     """Remove all townhall roles from member"""
 
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("Session expired", ephemeral=True)
         return
@@ -356,7 +357,7 @@ async def remove_all_th_handler(
     await ctx.interaction.edit_initial_response(components=components)
 
 
-@register_action("back_to_dashboard", no_return=True)
+@register_action("back_to_dashboard", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def back_to_dashboard_handler(
         ctx: lightbulb.components.MenuContext,
@@ -368,7 +369,7 @@ async def back_to_dashboard_handler(
     """Return to the recruit dashboard"""
 
     # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("Session expired", ephemeral=True)
         return

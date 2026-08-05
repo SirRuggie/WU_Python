@@ -8,6 +8,7 @@ import hikari
 
 from extensions.commands.recruit import recruit
 from extensions.components import register_action
+from utils.component_state import get_state, insert_state
 from utils.mongo import MongoClient
 from utils.constants import BLUE_ACCENT, GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT
 from utils.emoji import emojis
@@ -55,7 +56,7 @@ class RecruitDashboard(
             "guild_id": ctx.guild_id,
             "channel_id": ctx.channel_id
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         # Get the recruit's display information
         guild = bot.cache.get_guild(ctx.guild_id)
@@ -258,7 +259,7 @@ async def create_dashboard_page(
 
 
 # Register the main dashboard refresh action
-@register_action("refresh_dashboard")
+@register_action("refresh_dashboard", requires_state=True)
 @lightbulb.di.with_di
 async def refresh_dashboard(
         action_id: str,
@@ -271,7 +272,7 @@ async def refresh_dashboard(
     """Refresh the dashboard display"""
 
     # Get the cached data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         print(f"[Dashboard] No data found for action_id: {action_id}")
         return []

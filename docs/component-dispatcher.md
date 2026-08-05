@@ -28,6 +28,7 @@ global `registered_functions`:
 | `is_modal` | This handler services a modal submission — do not defer. |
 | `ephemeral` | Passed to the automatic respond. |
 | `opens_modal` | Handler will open a modal — do not defer (you cannot defer then modal). |
+| `requires_state` | Refuse an expired/missing component session before invoking the handler. |
 | `group` | Register this name as a select-menu router (see below). |
 
 The decorator also wraps the function to coerce stdlib `datetime` arguments to
@@ -38,9 +39,16 @@ The decorator also wraps the function to coerce stdlib `datetime` arguments to
 custom_ids are `command_name:action_id`, split once by `raw.partition(":")` in `_dispatch`.
 
 - `command_name` selects the handler from `registered_functions`.
-- `action_id` is the key into `button_store` holding that component's saved
-  kwargs, fetched by the `button_store.find_one` in `_dispatch` and splatted into the handler as
+- `action_id` is the key into the TTL-backed `component_state` collection holding
+  that component's saved kwargs. `utils/component_state.py` also provides a
+  guarded fallback for pre-migration `button_store` rows, explicitly excluding
+  tickets and Goblin challenges. The state is splatted into the handler as
   `**kw`, unioned with `color`, `action_id` and `ctx`.
+
+New stateful sessions have a fixed 24-hour lifetime. A handler registered with
+`requires_state=True` receives the normal stale-panel response after expiry and
+is never called with missing kwargs. Stateless public panels omit the flag and
+remain usable indefinitely without any database row.
 
 **Select-menu groups**: a handler registered with `group="x"` also writes an
 entry under `"x"` marked as a group. When a custom_id names a group, the

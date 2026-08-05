@@ -15,6 +15,7 @@ import pendulum as pend
 from hikari.events.interaction_events import ComponentInteractionCreateEvent
 from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
+from utils.component_state import get_state, prepare_storage
 
 loader = lightbulb.Loader()
 
@@ -51,6 +52,7 @@ class Action:
     is_modal: bool
     ephemeral: bool
     opens_modal: bool
+    requires_state: bool
     group: str | None
     declared_at: str  # "file:line" of the @register_action, for duplicate reporting
 
@@ -118,6 +120,7 @@ def register_action(
         opens_modal: bool = False,
         group: str | None = None,
         aliases: tuple[str, ...] = (),
+        requires_state: bool = False,
 ):
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         sig = inspect.signature(func)
@@ -165,6 +168,7 @@ def register_action(
             is_modal=is_modal,
             ephemeral=ephemeral,
             opens_modal=opens_modal,
+            requires_state=requires_state,
             group=group,
             declared_at=declared_at,
         )
@@ -270,7 +274,11 @@ async def _dispatch(
     if not action.is_modal and not action.opens_modal:
         await ctx.defer(edit=True)
 
-    kw = await mongo.button_store.find_one({"_id": action_id}, {"_id" : 0})
+    kw = await get_state(mongo, action_id, {"_id": 0})
+    if kw is None and action.requires_state:
+        _log.info("expired component state action=%s id=%s", action.name, action_id)
+        await _refuse(ctx, MSG_STALE_PANEL)
+        return
     kw = kw or {}
     kw = kw | {"color" : RED_ACCENT, "action_id" : action_id, "ctx": ctx}
     if not kw:
@@ -289,6 +297,16 @@ async def _dispatch(
             # ephemeral state cannot be changed) and is kept only so this commit
             # changes nothing on the success path. Remove it with the state work.
             await ctx.respond(components=components, edit=True, ephemeral=action.ephemeral)
+
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def prepare_component_state(
+    _: hikari.StartedEvent,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+) -> None:
+    """Install expiry and migrate only audited legacy state after startup."""
+    await prepare_storage(mongo)
 
 
 

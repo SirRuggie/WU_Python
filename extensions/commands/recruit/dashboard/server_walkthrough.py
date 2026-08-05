@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from extensions.components import register_action
+from utils.component_state import get_state
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT
 
@@ -44,7 +45,7 @@ def walkthrough_is_running(task_key: tuple[int, int]) -> bool:
     )
 
 
-@register_action("server_walkthrough")
+@register_action("server_walkthrough", requires_state=True)
 @lightbulb.di.with_di
 async def server_walkthrough_handler(
         ctx: lightbulb.components.MenuContext,
@@ -161,7 +162,7 @@ async def server_walkthrough_handler(
     return components
 
 
-@register_action("execute_server_walkthrough")
+@register_action("execute_server_walkthrough", requires_state=True)
 @lightbulb.di.with_di
 async def execute_server_walkthrough_handler(
         ctx: lightbulb.components.MenuContext,
@@ -173,7 +174,7 @@ async def execute_server_walkthrough_handler(
     """Process clan selection and send welcome message to new-warrior-launchpad"""
     
     # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         return [error_response("Session expired", action_id)]
     
@@ -495,14 +496,16 @@ async def begin_walkthrough_handler(
         return
     
     # Get the original dashboard data
-    data = await mongo.button_store.find_one({"_id": original_action_id})
+    data = await get_state(mongo, original_action_id)
     if not data:
-        # If no data, just use the person who clicked
-        user_id = ctx.user.id
-        guild_id = ctx.interaction.guild_id
-    else:
-        user_id = data.get("user_id")
-        guild_id = data.get("guild_id")
+        await ctx.respond(
+            "This walkthrough button has expired. Please run the recruit dashboard again.",
+            ephemeral=True,
+        )
+        return
+
+    user_id = data.get("user_id")
+    guild_id = data.get("guild_id")
     
     guild = bot.cache.get_guild(guild_id)
     member = guild.get_member(user_id) if guild else None

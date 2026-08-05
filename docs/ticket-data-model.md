@@ -2,17 +2,23 @@
 
 ## The headline
 
-**Ticket documents live in the `button_store` collection**, interleaved with the
-ephemeral component state the interaction dispatcher reads. There is no
-`tickets` collection. This is an accident of history, not a design decision.
+Ticket documents historically lived in `button_store`, interleaved with
+ephemeral interaction state. They now also live in the dedicated `tickets`
+collection and production reads use that collection, but the legacy
+`button_store` mirror remains during the reversible migration soak.
+
+As of 2026-08-04, new interactive state no longer enters `button_store` at all.
+It lives in `component_state`, where `expires_at` has a TTL index. Ticket history
+never enters that TTL-backed collection.
 
 `utils/mongo.py` declares `button_store` alongside `ticket_setup` and
 `ticket_automation_state` — which makes it look as though tickets have their own
 home. They do not.
 
 Write site: `handlers.py:370`, `await mongo.button_store.insert_one(ticket_data)`.
-Read site for component state: `components.py:86`,
-`await mongo.button_store.find_one({"_id": action_id}, {"_id": 0})`.
+Component state reads go through `utils/component_state.py`. The dispatcher
+checks `component_state` first and uses a guarded, non-ticket `button_store`
+fallback only for panels rendered before the migration.
 
 ## The ticket document
 
@@ -55,10 +61,11 @@ other way round. The `ticket_` prefix is what prevents this.
 
 ## Consequences worth knowing
 
-- **The collection is unindexed and unbounded.** Component state is never
-  pruned, so `button_store` grows with every interaction, and the 361 ticket
-  documents sit inside a collection whose real size is "361 plus every button
-  ever pressed".
+- Historical `button_store` growth is bounded by a one-time guarded migration:
+  known component rows are copied with a seven-day grace period, then removed
+  from the legacy collection. Unknown shapes, tickets, and Goblin challenges are
+  preserved rather than guessed at. New component sessions expire after 24
+  hours in `component_state`.
 - **Any count of `button_store` is not a count of tickets.** Always filter on
   `type: "ticket"`.
 - Fields useful for reporting are unevenly present: `username` is snapshotted at
@@ -145,28 +152,21 @@ run, before writing anything**, and stops if it fires. **Do not drop the
 uniqueness to get past a collision** — two documents pointing at one channel
 means one of them is wrong, and burying it makes it permanent.
 
-### ⚠️ No TTL index on `tickets`. Ever.
+### ⚠️ No TTL index on `tickets` or `button_store`. Ever.
 
 Ticket history is permanent and referred back to. Do not add a TTL "for
 consistency" with whatever eventually prunes the ephemeral collection.
 
-It is also worth recording why **no TTL shipped in phase 1 on `button_store`
-either**, since separating the two collections was partly motivated by making one
-possible. It is possible now, but it would not do anything useful:
+The TTL index exists only on `component_state.expires_at`. Mongo ignores rows
+without that field, but keeping the expiry collection separate makes the safety
+boundary structural: ticket code cannot accidentally acquire an expiry merely
+because it still mirrors into `button_store`.
 
-- A TTL index only expires documents that *have* the indexed date field.
-- **The ~30 ephemeral write sites store no date at all** — checked at
-  `war_plans.py:176`, `links.py:49`, `dashboard.py:58`, `lazy_cwl.py:167`. The
-  only `button_store` documents carrying `created_at` are goblin challenges and
-  the ticket copies.
-- So a TTL on `button_store.created_at` would reap goblin challenges and nothing
-  else — and would become actively dangerous the day a long-lived document like
-  `war_message_*` gains a `created_at`.
-
-Making pruning effective requires writing an `expires_at` at the ephemeral sites,
-which belongs with the dispatcher's `component_state` work, not here. Roughly 16
-of those sites key on `uuid4` and only ~5 on `str(interaction.id)`, so deriving
-age from the `_id` covers a minority and is not a substitute.
+`utils/component_state.py` owns the 24-hour fixed lifetime, immediate rejection
+of expired rows (without waiting for Mongo's roughly minute-scale TTL sweep),
+the seven-day legacy grace, and the migration marker. Index creation happens
+before any legacy copy or deletion; if index creation fails, cleanup does not
+run.
 
 The extraction still stands on its own: the unique index, the hot-path scan on
 `close.py:107`/`:219`, and not interleaving durable records with throwaway UI

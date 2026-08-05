@@ -9,7 +9,6 @@ import uuid
 
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
-from utils.mongo import MongoClient
 from utils.constants import GOLDENROD_ACCENT
 
 from hikari.impl import (
@@ -38,21 +37,11 @@ class RecruitAboutUs(
     async def invoke(
         self,
         ctx: lightbulb.Context,
-        mongo: MongoClient = lightbulb.di.INJECTED,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer()
         
         action_id = str(uuid.uuid4())
-        
-        # Store action ID in button store for later use
-        await mongo.button_store.insert_one({
-            "_id": action_id,
-            "type": "recruit_aboutus",
-            "user_id": ctx.user.id,
-            "guild_id": ctx.guild_id,
-            "channel_id": ctx.channel_id
-        })
         
         # Create all embeds
         components = [
@@ -183,19 +172,12 @@ class RecruitAboutUs(
 async def on_aboutus_acknowledge(
     action_id: str,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs
 ):
     """Handle the acknowledge button click"""
     ctx = kwargs.get("ctx")
     
-    # Get the stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
-    if not data:
-        await ctx.respond("❌ This button has expired.", ephemeral=True)
-        return
-    
-    guild_id = data.get("guild_id")
+    guild_id = ctx.interaction.guild_id
     user_id = ctx.user.id
     
     # Get the guild and member

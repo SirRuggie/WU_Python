@@ -20,6 +20,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
+from utils.component_state import delete_state, get_state, insert_state
 from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GREEN_ACCENT
 
@@ -65,7 +66,7 @@ class Reboot(
         action_id = str(uuid.uuid4())
 
         # Store data for the action
-        await mongo.button_store.insert_one({
+        await insert_state(mongo, {
             "_id": action_id,
             "user_id": ctx.user.id
         })
@@ -110,7 +111,7 @@ class Reboot(
         await ctx.respond(components=components, flags=hikari.MessageFlag.EPHEMERAL)
 
 
-@register_action("reboot_confirm", no_return=True)
+@register_action("reboot_confirm", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_reboot_confirm(
     ctx: lightbulb.components.MenuContext,
@@ -121,7 +122,7 @@ async def handle_reboot_confirm(
 ):
     """Handle confirmation of bot reboot"""
     # Get stored data
-    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    stored_data = await get_state(mongo, action_id)
     if not stored_data:
         return await ctx.respond("❌ Session expired. Please run the command again.")
 
@@ -150,7 +151,7 @@ async def handle_reboot_confirm(
     await ctx.respond(components=reboot_components, edit=True)
 
     # Clean up stored data
-    await mongo.button_store.delete_one({"_id": action_id})
+    await delete_state(mongo, action_id)
 
     # Store reboot flag for startup notification
     await mongo.bot_config.update_one(
@@ -170,7 +171,7 @@ async def handle_reboot_confirm(
     os._exit(0)
 
 
-@register_action("reboot_cancel", no_return=True)
+@register_action("reboot_cancel", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def handle_reboot_cancel(
     ctx: lightbulb.components.MenuContext,
@@ -180,7 +181,7 @@ async def handle_reboot_cancel(
 ):
     """Handle cancellation of bot reboot"""
     # Get stored data
-    stored_data = await mongo.button_store.find_one({"_id": action_id})
+    stored_data = await get_state(mongo, action_id)
     if not stored_data:
         return await ctx.respond("❌ Session expired.")
 
@@ -204,4 +205,4 @@ async def handle_reboot_cancel(
     await ctx.respond(components=cancel_components, edit=True)
 
     # Clean up stored data
-    await mongo.button_store.delete_one({"_id": action_id})
+    await delete_state(mongo, action_id)

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import asyncio
 
 from utils.mongo import MongoClient
+from utils.component_state import delete_state, get_state, insert_state
 from extensions.commands.tickets import loader, ticket
 from extensions.commands.tickets import resolve, store
 from extensions.components import register_action
@@ -114,7 +115,7 @@ class Deny(
 
         # Store denial action data
         action_id = str(ctx.interaction.id)
-        await mongo.button_store.insert_one({
+        await insert_state(mongo, {
             "_id": action_id,
             "type": "deny_action",
             "ticket_id": ticket["_id"],
@@ -334,7 +335,7 @@ class Approve(
 
 
 # Denial action handlers
-@register_action("deny_fwa_default", no_return=True)
+@register_action("deny_fwa_default", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def deny_fwa_default_handler(
     ctx: lightbulb.components.MenuContext,
@@ -345,7 +346,7 @@ async def deny_fwa_default_handler(
 ):
     """Handle FWA default denial"""
     # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
@@ -375,7 +376,7 @@ async def deny_fwa_default_handler(
             channel_id=data['channel_id'],
             user_id=data['user_id'],
         )
-        await mongo.button_store.delete_one({"_id": action_id})
+        await delete_state(mongo, action_id)
         await ctx.interaction.edit_initial_response(content=content, components=rows)
         return
 
@@ -388,7 +389,7 @@ async def deny_fwa_default_handler(
         user_id=data['user_id'],
         actor_name=data['denier_name'],
     )
-    await mongo.button_store.delete_one({"_id": action_id})
+    await delete_state(mongo, action_id)
 
     await ctx.interaction.edit_initial_response(
         content=f"✅ FWA default denial sent!{status_warning}"
@@ -397,7 +398,7 @@ async def deny_fwa_default_handler(
     )
 
 
-@register_action("deny_main_default", no_return=True)
+@register_action("deny_main_default", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def deny_main_default_handler(
     ctx: lightbulb.components.MenuContext,
@@ -408,7 +409,7 @@ async def deny_main_default_handler(
 ):
     """Handle Main default denial"""
     # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
@@ -436,7 +437,7 @@ async def deny_main_default_handler(
             channel_id=data['channel_id'],
             user_id=data['user_id'],
         )
-        await mongo.button_store.delete_one({"_id": action_id})
+        await delete_state(mongo, action_id)
         await ctx.interaction.edit_initial_response(content=content, components=rows)
         return
 
@@ -449,7 +450,7 @@ async def deny_main_default_handler(
         user_id=data['user_id'],
         actor_name=data['denier_name'],
     )
-    await mongo.button_store.delete_one({"_id": action_id})
+    await delete_state(mongo, action_id)
 
     await ctx.interaction.edit_initial_response(
         content=f"✅ Main default denial sent!{status_warning}"
@@ -458,7 +459,7 @@ async def deny_main_default_handler(
     )
 
 
-@register_action("deny_custom", no_return=True, opens_modal=True)
+@register_action("deny_custom", no_return=True, opens_modal=True, requires_state=True)
 @lightbulb.di.with_di
 async def deny_custom_handler(
     ctx: lightbulb.components.MenuContext,
@@ -485,7 +486,7 @@ async def deny_custom_handler(
     )
 
 
-@register_action("process_custom_denial", no_return=True, is_modal=True)
+@register_action("process_custom_denial", no_return=True, is_modal=True, requires_state=True)
 @lightbulb.di.with_di
 async def process_custom_denial_handler(
     ctx: lightbulb.components.ModalContext,
@@ -496,7 +497,7 @@ async def process_custom_denial_handler(
 ):
     """Process custom denial modal"""
     # Get stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
@@ -534,7 +535,7 @@ async def process_custom_denial_handler(
             user_id=data['user_id'],
             reason=reason,
         )
-        await mongo.button_store.delete_one({"_id": action_id})
+        await delete_state(mongo, action_id)
         await ctx.respond(content, components=rows, ephemeral=True)
         return
 
@@ -548,7 +549,7 @@ async def process_custom_denial_handler(
         actor_name=data['denier_name'],
         reason=reason,
     )
-    await mongo.button_store.delete_one({"_id": action_id})
+    await delete_state(mongo, action_id)
 
     await ctx.respond(
         f"✅ Custom denial sent!{status_warning}"

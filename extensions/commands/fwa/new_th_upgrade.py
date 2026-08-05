@@ -3,6 +3,7 @@ import hikari
 import lightbulb
 
 from extensions.components import register_action
+from utils.component_state import insert_state
 from utils.mongo import MongoClient
 from extensions.commands.fwa import loader, fwa
 from .helpers import get_fwa_base_object
@@ -53,7 +54,7 @@ class NewThUpgrade(
             "_id": action_id,
             "user_id": self.user.id  # Store as integer
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         components = [
             Container(
@@ -150,7 +151,7 @@ class NewThUpgrade(
         await ctx.respond(components=components, ephemeral=True)
 
 
-@register_action("fwa_new_th_upgrade_th_select", no_return=True)
+@register_action("fwa_new_th_upgrade_th_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def fwa_new_th_upgrade_th_select(
         user_id: int,

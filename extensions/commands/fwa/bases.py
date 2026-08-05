@@ -3,6 +3,7 @@ import hikari
 import lightbulb
 
 from extensions.components import register_action
+from utils.component_state import insert_state
 from utils.mongo import MongoClient
 from extensions.commands.fwa import loader, fwa
 from .helpers import get_fwa_base_object
@@ -60,7 +61,7 @@ class Bases(
             "user_id": self.user.id,  # Store as integer
             "base_only": self.base_only
         }
-        await mongo.button_store.insert_one(data)
+        await insert_state(mongo, data)
 
         components = [
             Container(
@@ -157,7 +158,7 @@ class Bases(
         await ctx.respond(components=components, ephemeral=True)
 
 
-@register_action("fwa_bases_th_select", no_return=True)
+@register_action("fwa_bases_th_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def fwa_bases_th_select(
         user_id: int,
