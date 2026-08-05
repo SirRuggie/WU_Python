@@ -212,7 +212,7 @@ async def create_dashboard_page(
                         Button(
                             style=hikari.ButtonStyle.PRIMARY,
                             custom_id=f"manage_roles:{action_id}",
-                            label="2-Add/Remove Needed Roles",
+                            label="2 — Manage Member Roles",
                             emoji="👤"
                         ),
                     ]

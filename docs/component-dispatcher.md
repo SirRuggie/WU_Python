@@ -176,13 +176,17 @@ state key. So `f"action:{action_id}:{page}"` makes `action_id` the composite
 string `"1234567890:2"`, which misses `button_store` — and the handler is called
 with only the three injected keys.
 
-**This is live and has a victim.** `manage_roles.py:366` and `:385` build
-`custom_id=f"remove_roles_page:{action_id}:{page}"`. The handler at `:587-593`
-parses the page correctly out of `parts[2]` — so the author knew the format —
-then does `find_one({"_id": action_id})` using the **dispatcher-injected
-composite** rather than `parts[1]`, misses, and returns
-`error_response("Session expired")`. **That pagination has never worked.**
-Confirmed by reading both ends; not executed.
+The live victim was recruit-role removal pagination. It built
+`remove_roles_page:{action_id}:{page}`, so every page click missed state and
+returned "Session expired." The role-command change replaced new buttons with
+one-colon `remove_roles_prev:{action_id}` / `remove_roles_next:{action_id}` IDs
+and stores `remove_roles_page` in Mongo. The old `remove_roles_page` handler is
+retained as a compatibility path for already-rendered panels and now explicitly
+recovers the original ID from the legacy three-part custom ID.
+
+**Fixed by inspection, not yet clicked in Discord.** Static checks confirm the
+new role pagination IDs have one colon; the real interaction path still needs a
+member with at least 26 removable roles to exercise both directions.
 
 `server_walkthrough.py:239` uses the same shape but parses `original_action_id`
 itself and falls back to `ctx.user.id` on a miss, so it degrades instead of
@@ -196,10 +200,12 @@ in the state document, never in the custom_id.**
 1. **`user_only` is never enforced.** It is stored on the `Action` and not read.
    In fact **no authorization of any kind happens in the dispatcher** — and
    `user_only=True` is used zero times in the repo, so nothing declared an intent
-   that is being bypassed. Four files hand-roll their own role checks
-   (`update_clan_info.py:60`, `fwa_data.py:386`, `questions.py:366`, `:474`);
-   the other 36 have none. Currently masked by almost every dangerous surface
-   being ephemeral, which is exactly the property a shared dashboard gives up.
+   that is being bypassed. Individual files hand-roll their own checks. Recruit
+   role management now re-checks configured recruiter roles, the Recruitment
+   Team role, or Administrator on every mutation, but this is handler policy —
+   the dispatcher itself still guarantees nothing. Currently masked by almost
+   every dangerous surface being ephemeral, which is exactly the property a
+   shared dashboard gives up.
 2. **A dead guard.** `kw = kw or {}`, then a union with three always-present
    keys, then `if not kw: return` — which can never fire. The intended behaviour
    (detect expired or missing state) does not happen; the handler is called with

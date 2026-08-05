@@ -6,11 +6,12 @@ Handle the Add/Remove Needed Roles action from the recruit dashboard
 import lightbulb
 import hikari
 import asyncio
+import logging
 
 from extensions.components import register_action
+from extensions.commands.recruit import perms
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, BLUE_ACCENT, GOLD_ACCENT
-from utils.emoji import emojis
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -50,6 +51,143 @@ STANDARD_ROLES = {
 # Role to remove during quick setup
 VISITOR_ROLE_ID = 1003796476750745751
 
+_log = logging.getLogger(__name__)
+
+
+def bot_top_role_position(guild: hikari.Guild, bot: hikari.GatewayBot) -> int | None:
+    """Return the bot member's highest cached role position."""
+    me = bot.get_me()
+    bot_member = guild.get_member(me.id) if me else None
+    if bot_member is None:
+        return None
+
+    positions = [
+        role.position
+        for role_id in bot_member.role_ids
+        if (role := guild.get_role(role_id)) is not None
+    ]
+    return max(positions, default=0)
+
+
+def role_is_manageable(
+        guild: hikari.Guild,
+        bot: hikari.GatewayBot,
+        role: hikari.Role | None,
+) -> bool:
+    """Whether Discord will allow this bot to add or remove ``role``.
+
+    A native role select cannot be filtered by the application, so this must be
+    checked after every selection as well as when the removal menu is built.
+    """
+    if role is None or role.id == guild.id or role.is_managed:
+        return False
+
+    me = bot.get_me()
+    bot_member = guild.get_member(me.id) if me else None
+    if bot_member is None:
+        return False
+
+    has_permission = bool(
+        perms.guild_permissions(bot_member, guild)
+        & (hikari.Permissions.MANAGE_ROLES | hikari.Permissions.ADMINISTRATOR)
+    )
+    top_position = bot_top_role_position(guild, bot)
+    return (
+        has_permission
+        and top_position is not None
+        and role.position < top_position
+    )
+
+
+def manageable_member_roles(
+        guild: hikari.Guild,
+        bot: hikari.GatewayBot,
+        member: hikari.Member,
+        actor: hikari.Member | hikari.InteractionMember | None,
+) -> list[hikari.Role]:
+    """Return the member's removable roles, highest first."""
+    roles = [guild.get_role(role_id) for role_id in member.role_ids]
+    return sorted(
+        [
+            role
+            for role in roles
+            if role_is_manageable(guild, bot, role)
+            and perms.actor_can_manage_role(actor, guild, role)
+        ],
+        key=lambda role: role.position,
+        reverse=True,
+    )
+
+
+async def _authorized(
+        ctx: lightbulb.components.MenuContext,
+        guild: hikari.Guild | None,
+        mongo: MongoClient,
+) -> bool:
+    clicker = getattr(ctx.interaction, "member", None)
+    if clicker is None and guild is not None:
+        clicker = guild.get_member(ctx.user.id)
+    return await perms.is_recruiter(clicker, mongo, guild)
+
+
+def _clicking_member(
+        ctx: lightbulb.components.MenuContext,
+        guild: hikari.Guild | None,
+) -> hikari.Member | hikari.InteractionMember | None:
+    member = getattr(ctx.interaction, "member", None)
+    if member is None and guild is not None:
+        member = guild.get_member(ctx.user.id)
+    return member
+
+
+async def _resolve_member(
+        guild: hikari.Guild | None,
+        user_id: int,
+        bot: hikari.GatewayBot,
+) -> hikari.Member | None:
+    if guild is None:
+        return None
+
+    member = guild.get_member(user_id)
+    if member is not None:
+        return member
+    try:
+        return await bot.rest.fetch_member(guild.id, user_id)
+    except (hikari.NotFoundError, hikari.ForbiddenError):
+        return None
+
+
+def _permission_response() -> list:
+    return [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content="## ❌ Recruiter Access Required"),
+                Text(content=(
+                    "Only configured recruiters, the Recruitment Team, and "
+                    "administrators can manage another member's roles."
+                )),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ],
+        )
+    ]
+
+
+def _target_permission_response() -> list:
+    return [
+        Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content="## ❌ Member Cannot Be Managed"),
+                Text(content=(
+                    "You can only change roles for members below your highest role. "
+                    "Administrators can manage any eligible member."
+                )),
+                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            ],
+        )
+    ]
+
 
 @register_action("manage_roles")
 @lightbulb.di.with_di
@@ -65,11 +203,16 @@ async def manage_roles_handler(
 
     guild_id = kwargs.get("guild_id")
     guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
-    
+    member = await _resolve_member(guild, user_id, bot)
+
+    if not await _authorized(ctx, guild, mongo):
+        return _permission_response()
+
     # Get feedback messages from kwargs
     added_roles = kwargs.get("added_roles", [])
     removed_roles = kwargs.get("removed_roles", [])
+    skipped_roles = kwargs.get("skipped_roles", [])
+    failed_roles = kwargs.get("failed_roles", [])
 
     if not member:
         return [
@@ -78,20 +221,14 @@ async def manage_roles_handler(
                 components=[
                     Text(content="## ❌ **Member Not Found**"),
                     Text(content="Could not find the member in this server."),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SECONDARY,
-                                custom_id=f"refresh_dashboard:{action_id}",
-                                label="Back to Dashboard",
-                                emoji="↩️"
-                            )
-                        ]
-                    ),
                     Media(items=[MediaItem(media="assets/Red_Footer.png")])
                 ]
             )
         ]
+
+    actor = _clicking_member(ctx, guild)
+    if not perms.actor_can_manage_member(actor, member, guild):
+        return _target_permission_response()
 
     # Get member's current roles
     member_role_ids = set(member.role_ids)
@@ -111,18 +248,29 @@ async def manage_roles_handler(
                 available_roles.append(f"{role_info['emoji']} {role_info['name']}")
 
     # Build components list
+    removable_roles = manageable_member_roles(guild, bot, member, actor)
+    server_role_count = len(member_role_ids)
+
     container_components = [
-        Text(content=f"## 👤 **Manage Roles for {member.display_name}**"),
+        Text(content=f"## 👤 Member Roles — {member.display_name}"),
+        Text(content=(
+            f"{member.mention} currently has **{server_role_count}** server role(s). "
+            "Use the controls below for bulk changes."
+        )),
     ]
     
     # Add feedback messages if any
-    if added_roles or removed_roles:
+    if added_roles or removed_roles or skipped_roles or failed_roles:
         feedback_parts = []
         if added_roles:
             feedback_parts.append(f"**✅ Added:** {', '.join(added_roles)}")
         if removed_roles:
-            feedback_parts.append(f"**❌ Removed:** {', '.join(removed_roles)}")
-        
+            feedback_parts.append(f"**➖ Removed:** {', '.join(removed_roles)}")
+        if skipped_roles:
+            feedback_parts.append(f"**⏭️ No change needed:** {', '.join(skipped_roles)}")
+        if failed_roles:
+            feedback_parts.append(f"**⚠️ Could not change:** {', '.join(failed_roles)}")
+
         container_components.extend([
             Separator(divider=True),
             Text(content="\n".join(feedback_parts)),
@@ -132,13 +280,13 @@ async def manage_roles_handler(
         Separator(divider=True),
 
         # Current roles display
-        Text(content="### ✅ Current Roles:"),
+        Text(content="### ✅ Recruit Role Set Assigned"),
         Text(content="\n".join(current_roles) if current_roles else "_No standard roles assigned_"),
 
         Separator(divider=True),
 
         # Available roles display
-        Text(content="### 📋 Available Roles:"),
+        Text(content="### 📋 Recruit Role Set Not Assigned"),
         Text(content="\n".join(available_roles) if available_roles else "_All standard roles assigned_"),
 
         Separator(divider=True),
@@ -158,29 +306,35 @@ async def manage_roles_handler(
                     custom_id=f"remove_roles:{action_id}",
                     label="Remove Roles",
                     emoji="➖",
-                    is_disabled=len(member_role_ids) <= 1  # Only @everyone role
+                    is_disabled=not removable_roles
                 ),
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"quick_setup:{action_id}",
-                    label="Quick Setup",
+                    label="Apply Recruit Setup",
                     emoji="⚡"
                 ),
             ]
         ),
-        ActionRow(
-            components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"refresh_dashboard:{action_id}",
-                    label="Back to Dashboard",
-                    emoji="↩️"
-                )
-            ]
-        ),
-
-        Media(items=[MediaItem(media="assets/Blue_Footer.png")])
     ])
+
+    if kwargs.get("origin") != "role_command":
+        container_components.append(
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"refresh_dashboard:{action_id}",
+                        label="Back to Recruit Dashboard",
+                        emoji="↩️"
+                    )
+                ]
+            )
+        )
+
+    container_components.append(
+        Media(items=[MediaItem(media="assets/Blue_Footer.png")])
+    )
     
     # Build the interface
     components = [
@@ -213,18 +367,27 @@ async def add_roles_handler(
     guild_id = data.get("guild_id")
 
     guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
+    member = await _resolve_member(guild, user_id, bot)
+
+    if not await _authorized(ctx, guild, mongo):
+        return _permission_response()
 
     if not member:
         return [error_response("Member not found", action_id)]
+
+    if not perms.actor_can_manage_member(_clicking_member(ctx, guild), member, guild):
+        return _target_permission_response()
 
     return [
         Container(
             accent_color=GREEN_ACCENT,
             components=[
                 Text(content="## ➕ **Add Roles**"),
-                Text(content="Select roles to add to the member:"),
-                Text(content="-# You can search for roles by typing their name"),
+                Text(content=f"Select roles to add to **{member.display_name}**:"),
+                Text(content=(
+                    "-# Search by role name. Discord shows every server role; "
+                    "roles outside your or the bot's hierarchy will be safely refused."
+                )),
                 ActionRow(
                     components=[
                         SelectMenu(
@@ -272,24 +435,19 @@ async def remove_roles_handler(
     page = kwargs.get("page", 0)  # Get current page from kwargs
 
     guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
+    member = await _resolve_member(guild, user_id, bot)
+
+    if not await _authorized(ctx, guild, mongo):
+        return _permission_response()
 
     if not member:
         return [error_response("Member not found", action_id)]
 
-    # Build list of removable roles
-    removable_roles = []
-    member_roles = sorted(
-        [guild.get_role(role_id) for role_id in member.role_ids if guild.get_role(role_id)],
-        key=lambda r: r.position,
-        reverse=True
-    )
-    
-    for role in member_roles:
-        # Skip @everyone role and managed roles (bot roles)
-        if role.id == guild_id or role.is_managed:
-            continue
-        removable_roles.append(role)
+    actor = _clicking_member(ctx, guild)
+    if not perms.actor_can_manage_member(actor, member, guild):
+        return _target_permission_response()
+
+    removable_roles = manageable_member_roles(guild, bot, member, actor)
 
     if not removable_roles:
         return [
@@ -317,6 +475,10 @@ async def remove_roles_handler(
     roles_per_page = 25
     total_pages = (len(removable_roles) + roles_per_page - 1) // roles_per_page
     page = max(0, min(page, total_pages - 1))  # Ensure page is within bounds
+    await mongo.button_store.update_one(
+        {"_id": action_id},
+        {"$set": {"remove_roles_page": page}},
+    )
     
     start_idx = page * roles_per_page
     end_idx = start_idx + roles_per_page
@@ -339,7 +501,7 @@ async def remove_roles_handler(
             accent_color=RED_ACCENT,
             components=[
                 Text(content="## ➖ **Remove Roles**"),
-                Text(content="Select roles to remove from the member:"),
+                Text(content=f"Select roles to remove from **{member.display_name}**:"),
                 Text(content=f"-# Page {page + 1} of {total_pages} • Showing {len(page_roles)} of {len(removable_roles)} roles"),
                 ActionRow(
                     components=[
@@ -363,7 +525,7 @@ async def remove_roles_handler(
         nav_buttons.append(
             Button(
                 style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"remove_roles_page:{action_id}:{page-1}",
+                custom_id=f"remove_roles_prev:{action_id}",
                 label="Previous",
                 emoji="◀️"
             )
@@ -382,7 +544,7 @@ async def remove_roles_handler(
         nav_buttons.append(
             Button(
                 style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"remove_roles_page:{action_id}:{page+1}",
+                custom_id=f"remove_roles_next:{action_id}",
                 label="Next",
                 emoji="▶️"
             )
@@ -394,6 +556,54 @@ async def remove_roles_handler(
     ])
 
     return components
+
+
+async def _change_remove_roles_page(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        direction: int,
+        mongo: MongoClient,
+        bot: hikari.GatewayBot,
+) -> list:
+    data = await mongo.button_store.find_one({"_id": action_id})
+    if not data:
+        return [error_response("Session expired", action_id)]
+
+    current_page = int(data.get("remove_roles_page", 0))
+    return await remove_roles_handler(
+        ctx=ctx,
+        action_id=action_id,
+        mongo=mongo,
+        bot=bot,
+        page=max(0, current_page + direction),
+        **data,
+    )
+
+
+@register_action("remove_roles_prev")
+@lightbulb.di.with_di
+async def remove_roles_prev_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs,
+) -> list:
+    """Show the previous page of removable roles."""
+    return await _change_remove_roles_page(ctx, action_id, -1, mongo, bot)
+
+
+@register_action("remove_roles_next")
+@lightbulb.di.with_di
+async def remove_roles_next_handler(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        **kwargs,
+) -> list:
+    """Show the next page of removable roles."""
+    return await _change_remove_roles_page(ctx, action_id, 1, mongo, bot)
 
 
 @register_action("quick_setup")
@@ -415,10 +625,16 @@ async def quick_setup_handler(
     guild_id = data.get("guild_id")
 
     guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
+    member = await _resolve_member(guild, user_id, bot)
+
+    if not await _authorized(ctx, guild, mongo):
+        return _permission_response()
 
     if not member:
         return [error_response("Member not found", action_id)]
+
+    if not perms.actor_can_manage_member(_clicking_member(ctx, guild), member, guild):
+        return _target_permission_response()
 
     # Add all standard roles
     added_roles = []
@@ -426,25 +642,54 @@ async def quick_setup_handler(
     removed_roles = []
 
     # Add standard roles
+    actor = _clicking_member(ctx, guild)
     for role_key, role_info in STANDARD_ROLES.items():
         role_id = role_info["id"]
         role = guild.get_role(role_id)
 
         if role and role_id not in member.role_ids:
+            if (
+                    not role_is_manageable(guild, bot, role)
+                    or not perms.actor_can_manage_role(actor, guild, role)
+            ):
+                failed_roles.append(f"{role_info['name']} (not permitted)")
+                continue
             try:
-                await member.add_role(role, reason="Recruit dashboard quick setup")
+                await member.add_role(
+                    role,
+                    reason=f"Recruit setup applied by {ctx.user.username} ({ctx.user.id})",
+                )
                 added_roles.append(role_info['name'])
             except Exception:
+                _log.exception(
+                    "recruit setup could not add role=%s member=%s actor=%s",
+                    role_id, user_id, ctx.user.id,
+                )
                 failed_roles.append(role_info['name'])
     
     # Remove visitor role if they have it
     visitor_role = guild.get_role(VISITOR_ROLE_ID)
     if visitor_role and VISITOR_ROLE_ID in member.role_ids:
+        if (
+                not role_is_manageable(guild, bot, visitor_role)
+                or not perms.actor_can_manage_role(actor, guild, visitor_role)
+        ):
+            failed_roles.append(f"{visitor_role.name} (not permitted)")
+            visitor_role = None
+
+    if visitor_role and VISITOR_ROLE_ID in member.role_ids:
         try:
-            await member.remove_role(visitor_role, reason="Recruit dashboard quick setup - removing visitor role")
+            await member.remove_role(
+                visitor_role,
+                reason=f"Recruit setup applied by {ctx.user.username} ({ctx.user.id})",
+            )
             removed_roles.append(visitor_role.name)
         except Exception:
-            failed_roles.append(f"Failed to remove: {visitor_role.name}")
+            _log.exception(
+                "recruit setup could not remove role=%s member=%s actor=%s",
+                VISITOR_ROLE_ID, user_id, ctx.user.id,
+            )
+            failed_roles.append(visitor_role.name)
     
     # Wait a moment for Discord to update
     await asyncio.sleep(0.5)
@@ -458,7 +703,9 @@ async def quick_setup_handler(
         bot=bot,
         guild_id=guild_id,
         added_roles=added_roles,
-        removed_roles=removed_roles
+        removed_roles=removed_roles,
+        failed_roles=failed_roles,
+        origin=data.get("origin"),
     )
 
 
@@ -481,25 +728,50 @@ async def execute_add_roles_handler(
     guild_id = data.get("guild_id")
 
     guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
+    member = await _resolve_member(guild, user_id, bot)
+
+    if not await _authorized(ctx, guild, mongo):
+        return _permission_response()
 
     if not member:
         return [error_response("Member not found", action_id)]
 
+    if not perms.actor_can_manage_member(_clicking_member(ctx, guild), member, guild):
+        return _target_permission_response()
+
     # Get selected role IDs from the interaction
     selected_values = ctx.interaction.values
     added_roles = []
+    skipped_roles = []
+    failed_roles = []
+    actor = _clicking_member(ctx, guild)
 
-    for role_id in selected_values:
-        # Role select menu provides role IDs as integers already
+    for selected_role_id in selected_values:
+        role_id = int(selected_role_id)
         role = guild.get_role(role_id)
-        
-        if role and role_id not in member.role_ids:
+
+        if role is None:
+            failed_roles.append(f"Unknown role `{role_id}`")
+        elif role_id in member.role_ids:
+            skipped_roles.append(role.name)
+        elif (
+                not role_is_manageable(guild, bot, role)
+                or not perms.actor_can_manage_role(actor, guild, role)
+        ):
+            failed_roles.append(f"{role.name} (not permitted)")
+        else:
             try:
-                await member.add_role(role, reason=f"Added via recruit dashboard by {ctx.user.username}")
+                await member.add_role(
+                    role,
+                    reason=f"Added by {ctx.user.username} ({ctx.user.id}) via role manager",
+                )
                 added_roles.append(role.name)
             except Exception:
-                pass  # Silently handle errors
+                _log.exception(
+                    "bulk role add failed role=%s member=%s actor=%s",
+                    role_id, user_id, ctx.user.id,
+                )
+                failed_roles.append(role.name)
 
     # Wait a moment for Discord to update
     await asyncio.sleep(0.5)
@@ -512,7 +784,10 @@ async def execute_add_roles_handler(
         mongo=mongo,
         bot=bot,
         guild_id=guild_id,
-        added_roles=added_roles
+        added_roles=added_roles,
+        skipped_roles=skipped_roles,
+        failed_roles=failed_roles,
+        origin=data.get("origin"),
     )
 
 
@@ -535,26 +810,51 @@ async def execute_remove_roles_handler(
     guild_id = data.get("guild_id")
 
     guild = bot.cache.get_guild(guild_id)
-    member = guild.get_member(user_id) if guild else None
+    member = await _resolve_member(guild, user_id, bot)
+
+    if not await _authorized(ctx, guild, mongo):
+        return _permission_response()
 
     if not member:
         return [error_response("Member not found", action_id)]
 
+    if not perms.actor_can_manage_member(_clicking_member(ctx, guild), member, guild):
+        return _target_permission_response()
+
     # Get selected role IDs from the interaction
     selected_values = ctx.interaction.values
     removed_roles = []
+    skipped_roles = []
+    failed_roles = []
+    actor = _clicking_member(ctx, guild)
 
     for role_id_str in selected_values:
         # TextSelectMenu provides role IDs as strings
         role_id = int(role_id_str)
         role = guild.get_role(role_id)
-        
-        if role and role_id in member.role_ids:
+
+        if role is None:
+            failed_roles.append(f"Unknown role `{role_id}`")
+        elif role_id not in member.role_ids:
+            skipped_roles.append(role.name)
+        elif (
+                not role_is_manageable(guild, bot, role)
+                or not perms.actor_can_manage_role(actor, guild, role)
+        ):
+            failed_roles.append(f"{role.name} (not permitted)")
+        else:
             try:
-                await member.remove_role(role, reason=f"Removed via recruit dashboard by {ctx.user.username}")
+                await member.remove_role(
+                    role,
+                    reason=f"Removed by {ctx.user.username} ({ctx.user.id}) via role manager",
+                )
                 removed_roles.append(role.name)
             except Exception:
-                pass  # Silently handle errors
+                _log.exception(
+                    "bulk role remove failed role=%s member=%s actor=%s",
+                    role_id, user_id, ctx.user.id,
+                )
+                failed_roles.append(role.name)
 
     # Wait a moment for Discord to update
     await asyncio.sleep(0.5)
@@ -567,7 +867,10 @@ async def execute_remove_roles_handler(
         mongo=mongo,
         bot=bot,
         guild_id=guild_id,
-        removed_roles=removed_roles
+        removed_roles=removed_roles,
+        skipped_roles=skipped_roles,
+        failed_roles=failed_roles,
+        origin=data.get("origin"),
     )
 
 
@@ -580,26 +883,28 @@ async def remove_roles_page_handler(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ) -> list:
-    """Handle pagination for remove roles"""
-    
-    # Extract the page number from the custom_id
-    # Format: remove_roles_page:action_id:page_number
+    """Keep old, already-rendered pagination buttons usable."""
     parts = ctx.interaction.custom_id.split(":")
-    page = int(parts[2])
-    
-    # Get the stored data
-    data = await mongo.button_store.find_one({"_id": action_id})
+    if len(parts) != 3:
+        return [error_response("Invalid role page", action_id)]
+
+    original_action_id = parts[1]
+    try:
+        page = int(parts[2])
+    except ValueError:
+        return [error_response("Invalid role page", original_action_id)]
+
+    data = await mongo.button_store.find_one({"_id": original_action_id})
     if not data:
-        return [error_response("Session expired", action_id)]
-    
-    # Call remove_roles_handler with the page parameter
+        return [error_response("Session expired", original_action_id)]
+
     return await remove_roles_handler(
         ctx=ctx,
-        action_id=action_id,
+        action_id=original_action_id,
         mongo=mongo,
         bot=bot,
         page=page,
-        **data
+        **data,
     )
 
 
@@ -609,16 +914,6 @@ def error_response(message: str, action_id: str) -> Container:
         accent_color=RED_ACCENT,
         components=[
             Text(content=f"## ❌ **Error: {message}**"),
-            ActionRow(
-                components=[
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id=f"refresh_dashboard:{action_id}",
-                        label="Back to Dashboard",
-                        emoji="↩️"
-                    )
-                ]
-            ),
             Media(items=[MediaItem(media="assets/Red_Footer.png")])
         ]
     )
