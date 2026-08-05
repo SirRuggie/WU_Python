@@ -31,7 +31,7 @@ import asyncio
 import contextlib
 import time
 from datetime import datetime, timedelta, timezone
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import coc
 
@@ -739,14 +739,63 @@ def _used_attacks(war, player_tag: str) -> int:
     attacks array). coc.py normalises that to an empty list, so len() is safe -
     but never index the raw dict.
     """
-    member = None
+    member = _war_member(war, player_tag)
+    return len(getattr(member, "attacks", None) or []) if member is not None else 0
+
+
+def _war_member(war, player_tag: str):
+    """Return the exact roster member, or None when the player is not rostered."""
     try:
-        member = war.get_member(player_tag)
+        return war.get_member(player_tag)
     except Exception:  # noqa: BLE001 - defensive; get_member should not raise
-        return 0
-    if member is None:
-        return 0
-    return len(getattr(member, "attacks", None) or [])
+        return None
+
+
+def _accounts_by_war_clan(
+    accounts: list[Account],
+    candidates: dict[str, list[object]] | None = None,
+    *,
+    kind: str,
+) -> dict[str, list[Account]]:
+    """Map accounts to current plus recently discovered war clan candidates.
+
+    Candidate objects are intentionally duck-typed so todo_data does not own
+    Mongo's history shape. Current membership is always first and duplicate
+    player/clan pairs are removed before any API calls are scheduled.
+    """
+    by_clan: dict[str, list[Account]] = {}
+    seen: set[tuple[str, str]] = set()
+    candidates = candidates or {}
+
+    for account in accounts:
+        options: list[tuple[str, str | None, str | None]] = []
+        if account.clan_tag:
+            options.append((account.clan_tag, account.clan_name, account.clan_badge))
+        for candidate in candidates.get(account.tag.upper(), ()):
+            if not getattr(candidate, f"check_{kind}", True):
+                continue
+            options.append((
+                getattr(candidate, "clan_tag", ""),
+                getattr(candidate, "clan_name", None),
+                getattr(candidate, "clan_badge", None),
+            ))
+
+        for clan_tag, clan_name, clan_badge in options:
+            clan_tag = (clan_tag or "").strip().upper()
+            key = (account.tag.upper(), clan_tag)
+            if not clan_tag or key in seen:
+                continue
+            seen.add(key)
+            candidate_account = account
+            if clan_tag != (account.clan_tag or "").upper():
+                candidate_account = replace(
+                    account,
+                    clan_tag=clan_tag,
+                    clan_name=clan_name or clan_tag,
+                    clan_badge=clan_badge,
+                )
+            by_clan.setdefault(clan_tag, []).append(candidate_account)
+    return by_clan
 
 
 def _ends_at(war) -> int | None:
@@ -771,17 +820,19 @@ def _starts_at(war) -> int | None:
         return None
 
 
-async def build_war_view(coc_client: coc.Client, accounts: list[Account], sem: asyncio.Semaphore | None = None) -> ViewData:
+async def build_war_view(
+    coc_client: coc.Client,
+    accounts: list[Account],
+    sem: asyncio.Semaphore | None = None,
+    candidates: dict[str, list[object]] | None = None,
+) -> ViewData:
     """Regular-war hits still owed."""
     rows: list[Row] = []
     notes: list[str] = []
     private = 0
     unreadable = 0
 
-    by_clan: dict[str, list[Account]] = {}
-    for acct in accounts:
-        if acct.clan_tag:
-            by_clan.setdefault(acct.clan_tag, []).append(acct)
+    by_clan = _accounts_by_war_clan(accounts, candidates, kind="war")
 
     sem = sem or new_semaphore()
     order = list(by_clan)
@@ -808,10 +859,13 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account], sem: a
         limit = getattr(war, "attacks_per_member", None) or 2
         ends = _ends_at(war)
         starts = _starts_at(war)
+        if _side_for(war, clan_tag) is None:
+            continue
         for acct in members:
-            if _side_for(war, clan_tag) is None:
+            member = _war_member(war, acct.tag)
+            if member is None:
                 continue
-            used = _used_attacks(war, acct.tag)
+            used = len(getattr(member, "attacks", None) or [])
             if used >= limit:
                 continue
             rows.append(Row(
@@ -834,16 +888,18 @@ async def build_war_view(coc_client: coc.Client, accounts: list[Account], sem: a
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows))
 
 
-async def build_cwl_view(coc_client: coc.Client, accounts: list[Account], sem: asyncio.Semaphore | None = None) -> ViewData:
+async def build_cwl_view(
+    coc_client: coc.Client,
+    accounts: list[Account],
+    sem: asyncio.Semaphore | None = None,
+    candidates: dict[str, list[object]] | None = None,
+) -> ViewData:
     """CWL hits still owed in the current round."""
     rows: list[Row] = []
     notes: list[str] = []
     unreadable = 0
 
-    by_clan: dict[str, list[Account]] = {}
-    for acct in accounts:
-        if acct.clan_tag:
-            by_clan.setdefault(acct.clan_tag, []).append(acct)
+    by_clan = _accounts_by_war_clan(accounts, candidates, kind="cwl")
 
     sem = sem or new_semaphore()
     order = list(by_clan)
@@ -873,8 +929,13 @@ async def build_cwl_view(coc_client: coc.Client, accounts: list[Account], sem: a
         limit = getattr(war, "attacks_per_member", None) or 1
         ends = _ends_at(war)
         starts = _starts_at(war)
+        if _side_for(war, clan_tag) is None:
+            continue
         for acct in members:
-            used = _used_attacks(war, acct.tag)
+            member = _war_member(war, acct.tag)
+            if member is None:
+                continue
+            used = len(getattr(member, "attacks", None) or [])
             if used >= limit:
                 continue
             rows.append(Row(

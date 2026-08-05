@@ -100,7 +100,55 @@ same trap as the ClashKing link-API negative (see
 |---|---|---|
 | Discord ID → player tags | `POST https://api.clashk.ing/discord_links` | none |
 | Player, clan, war, CWL, raid log | coc.py via `proxy.clashk.ing` | proxy handles it |
+| Recent player → clan candidates | Mongo `player_clan_candidates` | bot-owned, 30-day TTL |
 | Clan logos | Mongo `clans` collection, field `logo` | existing client |
+
+### Cross-clan war discovery
+
+The official player endpoint returns one current clan and **no clan history**.
+coc.py's `PlayerEvents.joined_clan` / `left_clan` compare consecutive in-memory
+polls; they do not retrieve old movement and a restart loses their baseline.
+The latest coc.py release does not add a history endpoint. Do not build this
+feature around a method that does not exist, and do not rely on ClashKing's
+join/leave feed: it was missing the live August 2026 Ansh movements that
+triggered this work.
+
+`extensions/tasks/clan_history_tracker.py` builds a bounded local candidate
+index instead:
+
+- every 10 minutes it snapshots every registered family clan roster;
+- accounts used by `/todo` are profile-polled for the following 48 hours, so a
+  move to an arbitrary external clan is observable too;
+- active regular-war rosters for registered clans and active CWL rosters for
+  clans whose database type is `CWL` are indexed as obligations. This is the
+  bootstrap path for a war spun before the tracker existed, including a player
+  who has already returned to their home clan;
+- actual presence is stored as `last_seen_at`; active roster membership is
+  stored separately as `war_until` / `cwl_until`. A CWL roster proves an attack
+  obligation but does not pretend to prove the player was physically in that
+  clan during the last 48 hours;
+- candidate rows expire through the `purge_at` TTL index 30 days after their
+  last observation. Player watch rows expire after 48 hours. Current members
+  keep one coalesced player/clan row updated; departed combinations age out, so
+  movement cannot make either collection grow forever.
+
+At render time `/todo` starts three operations together: current player
+lookups, one bulk candidate query for all linked tags, and one bulk watch
+upsert. There is no per-account history call and no serial discovery phase.
+Current plus candidate clan tags are deduplicated before the existing bounded
+war/CWL fan-out.
+
+**A candidate is not proof that the player is in this war.** Both builders must
+call `war.get_member(player_tag)` and skip `None` before calculating attacks.
+Historically `_used_attacks()` returned zero for both "not rostered" and
+"rostered with zero attacks"; using it as the membership test creates false
+0/2 rows for every recent clan.
+
+The unavoidable boundary: the API offers no global list of clans and no past
+membership lookup. An external-clan hop that occurs before a player has ever
+used `/todo`, never touches a registered clan, and is not represented by an
+active registered war cannot be reconstructed. All observable movement is
+covered prospectively; active registered wars are covered immediately.
 
 There is **no `/link` command and no local link table.** The ClashKing endpoint
 is bidirectional and unauthenticated — post an array of Discord IDs, get back a

@@ -56,6 +56,7 @@ Design rules enforced here, each of which cost real investigation to establish:
   render path.
 """
 
+import asyncio
 import contextlib
 import time
 
@@ -78,7 +79,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils import todo_data, todo_sessions
+from utils import clan_history, todo_data, todo_sessions
 from utils.clash_links import resolve_tags
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
 from utils.emoji import emojis
@@ -1038,15 +1039,36 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     # in parallel and the other 56 ran strictly one at a time.
     sem = todo_data.new_semaphore()
 
+    # History discovery is one bulk Mongo read, and watch enrollment is one
+    # bulk write. Both run beside the already-required player API fan-out so
+    # cross-clan support adds no serial lookup phase to the interaction.
     with perf.timing("players"):
-        accounts, errors = await todo_data.fetch_accounts(coc_client, tags, sem=sem)
-    perf.meta["clans"] = len({a.clan_tag for a in accounts if a.clan_tag})
+        (accounts, errors), candidates, _watched = await asyncio.gather(
+            todo_data.fetch_accounts(coc_client, tags, sem=sem),
+            clan_history.load_candidates(mongo, tags),
+            clan_history.watch_players(mongo, tags),
+        )
+    candidate_clans = {a.clan_tag for a in accounts if a.clan_tag}
+    candidate_clans.update(
+        candidate.clan_tag
+        for player_candidates in candidates.values()
+        for candidate in player_candidates
+        if candidate.clan_tag
+    )
+    perf.meta["clans"] = len(candidate_clans)
     if not accounts:
         return None, _notice(
             "Couldn't load your accounts",
             "Your accounts are linked, but the Clash API didn't answer for any "
             "of them. Try again shortly.",
         )
+
+    # Persist the current player responses while war/CWL network work runs.
+    # This does not gate the first view; it is awaited before returning so a
+    # clean shutdown cannot silently discard the observation.
+    history_write = asyncio.create_task(clan_history.record_presence(
+        mongo, clan_history.presences_from_accounts(accounts)
+    ))
 
     # All four view builds together: they share the per-clan fetches, so timing
     # them separately would just show the first one paying for the rest.
@@ -1056,13 +1078,19 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     # cache hits back into duplicate in-flight requests. The win is inside each
     # builder, where the clans now fan out.
     with perf.timing("views"):
-        war = await todo_data.build_war_view(coc_client, accounts, sem=sem)
-        cwl = await todo_data.build_cwl_view(coc_client, accounts, sem=sem)
+        war = await todo_data.build_war_view(
+            coc_client, accounts, sem=sem, candidates=candidates
+        )
+        cwl = await todo_data.build_cwl_view(
+            coc_client, accounts, sem=sem, candidates=candidates
+        )
         if errors:
             print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
 
         raid = await todo_data.build_raid_view(coc_client, accounts, sem=sem)
         blocked = await todo_data.build_blocked_view(coc_client, accounts, sem=sem)
+
+    await history_write
 
     return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: raid, VIEW_PRIVATE: blocked}, None
 

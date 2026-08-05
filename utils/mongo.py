@@ -26,6 +26,10 @@ class MongoClient(AsyncMongoClient):
         self.lazy_cwl_snapshots = self.__settings.get_collection("lazy_cwl_snapshots")
         self.cwl_pending_reminders = self.__settings.get_collection("cwl_pending_reminders")
         self.fwa_points = self.__settings.get_collection("fwa_points")
+        # Bounded discovery data for /todo. History/candidate rows and watches
+        # both carry BSON-date TTL anchors; utils/clan_history.py owns indexes.
+        self.player_clan_candidates = self.__settings.get_collection("player_clan_candidates")
+        self.player_clan_watches = self.__settings.get_collection("player_clan_watches")
         # /todo panels, for the not-yet-built auto-refresh. TTL index on
         # expires_at is created lazily by utils/todo_sessions.py.
         self.todo_sessions = self.__settings.get_collection("todo_sessions")
