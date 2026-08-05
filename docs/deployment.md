@@ -5,7 +5,22 @@ the venv path is invisible from the code. Verified 2026-08-02.
 
 ## The box
 
-Hetzner VPS, `wubot@178.156.187.236`, working directory `/home/wubot/wu-bot`.
+Hetzner VPS:
+
+| | |
+|---|---|
+| SSH | `wubot@178.156.187.236` |
+| Hostname | `Arcane` |
+| OS | Ubuntu |
+| User | `wubot` (has sudo) |
+| Repo | `/home/wubot/wu-bot`, branch `main` |
+| Python | `/home/wubot/wu-bot/venv/bin/python` — 3.12.3 |
+| Entrypoint | `main.py` |
+| Service | `wu-bot.service`, enabled |
+
+On 2026-08-02 the host reported that a restart was pending for a kernel update.
+That is a dated observation, not proof that a restart is still pending. A host
+restart will bounce the bot and should be scheduled deliberately.
 
 ## venv
 
@@ -21,17 +36,61 @@ Python and silently do nothing useful.
 
 ## systemd
 
-`wu-bot.service`:
+Verified unit at `/etc/systemd/system/wu-bot.service`:
+
+```ini
+[Unit]
+Description=WU Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=wubot
+WorkingDirectory=/home/wubot/wu-bot
+Environment="PATH=/home/wubot/wu-bot/venv/bin"
+ExecStart=/home/wubot/wu-bot/venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Drop-in at `/etc/systemd/system/wu-bot.service.d/override.conf`:
+
+```ini
+[Service]
+Environment=PYTHONUNBUFFERED=1
+```
 
 - `Restart=always` is present. This is load-bearing: `reboot.py:170` calls
   `os._exit(0)` and depends entirely on that directive to come back up.
 - `PYTHONUNBUFFERED=1` is set in a drop-in override, which is why logs appear
   promptly in `journalctl`.
+- There is no `EnvironmentFile=` directive. Application configuration comes
+  from `python-dotenv`, not systemd.
 
 ## Configuration
 
 `.env` at `/home/wubot/wu-bot/.env`, loaded by `load_dotenv()` in `main.py`.
 Appending to that file is the correct way to add an environment variable.
+A service restart is required for the process to read a changed value.
+
+Names present when inspected on 2026-08-02 (values deliberately omitted):
+
+```text
+DISCORD_TOKEN
+MONGODB_URI
+BAND_DEBUG
+CLOUDINARY_API_KEY
+CLOUDINARY_API_SECRET
+```
+
+The BAND iCal feature also reads `BAND_ICAL_SYNC1`, `BAND_ICAL_SYNC2`,
+`BAND_ICAL_SYNC3`, `SYNC_DM_USER_IDS`, `SYNC_DM_OFFSETS`,
+`SYNC_DM_ANNOUNCE_ON_DISCOVERY`, and `SYNC_DM_SUMMARY_FILTER`. Whether each is
+currently populated is deployment state and must be checked on the host without
+printing its value into chat or logs.
 
 Some values in `.env` are credentials in a non-obvious way — the BAND iCal feed
 URLs grant unauthenticated read access to the calendars. See
@@ -56,6 +115,84 @@ losing data, but the declared handle in `utils/mongo.py` is dead code and there
 is a whole second database this file does not mention.
 
 Anyone adding a collection needs to know which database they are landing in.
+
+## Host baseline observed 2026-08-02
+
+These numbers are comparison points, not current monitoring data:
+
+- Service had been active for about three days, with 7 tasks.
+- Bot memory was about 99 MB, with a 104.4 MB peak.
+- Host had 1.9 GiB RAM, about 1.2 GiB available, and no swap.
+- Disk was 38 GB total, 3.9 GB used (11%).
+- The host timezone was UTC; clock synchronization and NTP were active.
+- An error grep over the preceding hour returned zero lines.
+
+Normal logs include the recruit-role cleanup every 30 minutes and hikari
+gateway reconnect/resume messages. Those lines by themselves are not incidents.
+
+Keep internal timestamps UTC-aware. Discord `<t:epoch:F>` timestamps perform
+viewer-local display conversion.
+
+## Operator command handoff
+
+Ruggie, not Codex, performs deployments. These are commands to hand to the
+operator when appropriate:
+
+```bash
+cd /home/wubot/wu-bot
+git pull origin main
+/home/wubot/wu-bot/venv/bin/pip install -r requirements.txt
+sudo systemctl restart wu-bot
+```
+
+Useful read-only checks:
+
+```bash
+sudo systemctl status wu-bot
+sudo systemctl cat wu-bot.service
+sudo journalctl -u wu-bot -f --lines=60
+sudo journalctl -u wu-bot --since "1 hour ago" | grep -i error
+/home/wubot/wu-bot/venv/bin/python --version
+```
+
+After a restart, the historical scheduler check was:
+
+```bash
+sudo journalctl -u wu-bot --since "5 min ago" | grep -c "Scheduler initialized"
+```
+
+Treat a count as evidence only that the matching log line appeared; it does not
+verify every scheduled job.
+
+## Credential hygiene
+
+- A sudo password for the public VPS was reportedly shared in a chat transcript
+  on 2026-08-02. Rotation status is unknown; confirm that it was rotated. Never
+  copy it into this repository or project knowledge.
+- `extensions/commands/slap.py` still contains a Kawaii API token in source.
+  Rotate it, move its replacement to `.env`, and remove it from source in a
+  dedicated security change. Do not fold that into unrelated feature work.
+- Prefer SSH key-only authentication and consider `fail2ban` for the public SSH
+  endpoint.
+
+## Corrections to the 2026-08-02 server reference
+
+The original reference captured point-in-time facts that later became stale:
+
+- The repository now pins `hikari==2.3.5` and
+  `hikari-lightbulb==3.0.3`, not 2.3.3/3.0.1.
+- `utils/mongo.py` uses pymongo's native async `AsyncMongoClient`; Mongo calls
+  through it are not the synchronous pymongo calls described in the original
+  note.
+- `icalendar` is now in `requirements.txt` and the BAND iCal task exists. An old
+  package inventory saying it was absent is not a current dependency verdict.
+- The component dispatcher now has an error boundary and unknown-action guard.
+  Its remaining defects, including missing authorization enforcement and the
+  recruit-role pagination key bug, are tracked in
+  [component-dispatcher.md](component-dispatcher.md).
+- Repo cleanliness, installed package versions, service uptime, resource use,
+  and pending-restart state were observations from 2026-08-02. Recheck them;
+  never treat them as invariants.
 
 ## Deploys
 
