@@ -219,7 +219,7 @@ nothing outstanding is not a row.
 | War | an unused attack in a live or preparing war | `War` |
 | CWL | an unused attack in the current CWL round | `CWL` |
 | Raids | unused Capital Raid attacks this weekend | `RaidMedals` |
-| Private War Logs | a clan whose war log we cannot read | `🔒` |
+| Private War Logs | a current or recent clan whose war log we cannot read | `🔒` |
 
 **Preparation-phase rows are real work.** You cannot attack yet, but you owe the
 attack and the deadline is fixed. Dropping them was half of the "all caught up"
@@ -230,6 +230,17 @@ and from the "still to do elsewhere" hint. Its count is usually the largest
 number on the panel and it is *not work* — it is a list of conversations to have
 with clan leaders. Landing there would bury the attacks the dashboard exists to
 surface.
+
+War, CWL, and Private War Logs use the same recent-clan candidates. If a player
+was observed in another clan during the 48-hour history window, that clan is
+also represented in the diagnostic view; otherwise War could warn about an
+unreadable historical clan while Private War Logs incorrectly said every clan
+was readable.
+
+If even one linked player profile fails to load, every view is marked
+incomplete. An empty partial result says that not every account could be checked
+and must never render as **All caught up**. Non-empty partial results keep the
+rows that were found and add a warning note.
 
 ### Raids: absent ≠ done
 
@@ -1004,9 +1015,9 @@ That leaves **raw network latency to Discord**, which is not ours to fix. `send=
 has now cost four turns of investigation and the answer is that there was never
 anything local in it.
 
-**`send=` does not scale with account count.** `render_dashboard` windows rows to
-`PAGE_SIZE = 20` (`todo.py:582`), so payload size is bounded by rows on the page
-and clans within it, not by the 46 or 65 accounts behind them. `send≈2000ms` on
+**`send=` does not scale with account count.** `render_dashboard` greedily
+windows rows by the nested Discord component budget, so payload size is bounded
+by components and clans on the page, not by the 46 or 65 accounts behind them. `send≈2000ms` on
 both a 102-call cold run and a 4-call warm run is consistent with that: it is
 latency on one webhook POST, independent of everything else measured.
 
@@ -1083,10 +1094,11 @@ considered one. If phase 2 builds a refresher, the right anchor is probably the
 soonest deadline in the panel's data — a panel whose war has ended has nothing
 left to refresh.
 
-The index is created lazily, once per process, on first write. Without it rows
-are still written and read correctly; they just never self-prune. Every entry
-point is non-fatal — this is bookkeeping for a feature that does not exist, and
-no failure in it is worth degrading the dashboard for.
+The index is created lazily on first write. A failed attempt is retried at most
+once per hour; before that retry succeeds, rows are still written and read
+correctly but do not self-prune. Every entry point is non-fatal — this is
+bookkeeping for a feature that does not exist, and no failure in it is worth
+degrading the dashboard for.
 
 ## Statelessness, routing and pagination
 
@@ -1115,6 +1127,7 @@ So the view goes in the **action name** and the page in the **action_id**:
 | `todo_war:{page}` | `todo_war` | War view, page N |
 | `todo_cwl:{page}` | `todo_cwl` | CWL view, page N |
 | `todo_raid:{page}` | `todo_raid` | Raids view, page N |
+| `todo_private:{page}` | `todo_private` | Private War Logs, page N |
 | `todo_nav:{current_view}` | `todo_nav` | select-menu routing |
 | `todo_refresh:{view}\|0` | `todo_refresh` | forced refetch of `view` |
 
@@ -1145,13 +1158,10 @@ You cannot reach back and edit those messages, so old values are permanent API.
 Unknown values fall back to War rather than erroring.
 
 Pagination is a separate three-button ActionRow (`◀`, a disabled `Page N/M`
-label, `▶`) appended only when `pages > 1`. `PAGE_SIZE` is 20 rows.
-
-**That row has never rendered.** The largest view so far is Private War Logs at
-17 accounts, so `pages > 1` has never been true. It is also appended *after*
-`_nav_block()`, which would put page controls below the red footer and the
-Refresh button — almost certainly the wrong order. Left alone rather than fixed
-blind, since it cannot currently be looked at.
+label, `▶`) emitted only when `pages > 1`. Pages are variable-length and are
+bounded by nested component cost rather than a row count. The row sits between
+the view selector and footer. Each view, including Private War Logs, has a
+registered page handler; Refresh preserves all four views.
 
 ---
 

@@ -50,10 +50,13 @@ AUTO_REFRESH_ENABLED = False
 
 TTL_SECONDS = 24 * 60 * 60
 
-# One log line per process, not one per failure. A remote Mongo that is down is
-# down for every interaction, and the dashboard is already usable without this.
+# Retry at most hourly rather than on every interaction. A transient startup
+# outage must not disable TTL cleanup until restart, but repeated failures also
+# must not flood the log.
 _index_ready = False
 _index_failed = False
+_index_retry_at = 0.0
+INDEX_RETRY_SECONDS = 60 * 60
 
 
 def _coll(mongo):
@@ -61,7 +64,7 @@ def _coll(mongo):
 
 
 async def ensure_indexes(mongo) -> None:
-    """Create the TTL index. Once per process, never fatal.
+    """Create the TTL index, retrying hourly after failure; never fatal.
 
     Lazy rather than called from main.py's startup: this module is only reached
     by /todo, so the index is only needed when /todo is first used, and keeping
@@ -70,21 +73,26 @@ async def ensure_indexes(mongo) -> None:
     Without the index nothing breaks - rows are still written and read
     correctly, they just never self-prune.
     """
-    global _index_ready, _index_failed
-    if _index_ready or _index_failed:
+    global _index_ready, _index_failed, _index_retry_at
+    if _index_ready:
+        return
+    if _index_failed and time.monotonic() < _index_retry_at:
         return
     try:
         await _coll(mongo).create_index(
             "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
         )
         _index_ready = True
+        _index_failed = False
+        _index_retry_at = 0.0
         print("[todo-sessions] TTL index ready on todo_sessions.expires_at")
     except Exception as exc:  # noqa: BLE001
         _index_failed = True
+        _index_retry_at = time.monotonic() + INDEX_RETRY_SECONDS
         print(
             f"[todo-sessions] WARNING: could not create TTL index "
             f"({type(exc).__name__}: {exc}). Rows are still written; "
-            f"todo_sessions will NOT self-prune."
+            f"todo_sessions will not self-prune until index setup retries."
         )
 
 

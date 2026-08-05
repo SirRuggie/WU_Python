@@ -59,6 +59,7 @@ Design rules enforced here, each of which cost real investigation to establish:
 import asyncio
 import contextlib
 import time
+from dataclasses import replace
 
 import coc
 import lightbulb
@@ -735,7 +736,12 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
         window = row_pages[page]
 
         body.append(Separator(divider=True))
-        if not rows and getattr(current, "unavailable", ""):
+        if not rows and getattr(current, "incomplete", ""):
+            body.append(Text(content=(
+                "⚠️ **Couldn't check every linked account.**\n"
+                f"-# {current.incomplete}"
+            )))
+        elif not rows and getattr(current, "unavailable", ""):
             # The EVENT is not running. Completely different from "you have done
             # everything" - saying "all caught up" between raid weekends would
             # be claiming credit for work that was never available.
@@ -980,6 +986,18 @@ class _Perf:
         )
 
 
+def _with_account_failures(view_data: todo_data.ViewData, error_count: int) -> todo_data.ViewData:
+    """Mark a partially computed view without hiding rows that did load."""
+    warning = (
+        f"{error_count} linked account(s) could not be loaded — "
+        "these results may be incomplete"
+    )
+    notes = list(view_data.notes)
+    if view_data.rows:
+        notes.append(f"⚠️ {warning}")
+    return replace(view_data, notes=notes, incomplete=warning)
+
+
 async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None,
                 perf: "_Perf | None" = None):
     """Resolve tags and compute every section.
@@ -1084,11 +1102,17 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
         cwl = await todo_data.build_cwl_view(
             coc_client, accounts, sem=sem, candidates=candidates
         )
-        if errors:
-            print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
-
         raid = await todo_data.build_raid_view(coc_client, accounts, sem=sem)
-        blocked = await todo_data.build_blocked_view(coc_client, accounts, sem=sem)
+        blocked = await todo_data.build_blocked_view(
+            coc_client, accounts, sem=sem, candidates=candidates
+        )
+
+    if errors:
+        print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")
+        war, cwl, raid, blocked = (
+            _with_account_failures(view_data, len(errors))
+            for view_data in (war, cwl, raid, blocked)
+        )
 
     await history_write
 
@@ -1339,6 +1363,22 @@ async def todo_raid(
     return await _switch(ctx, VIEW_RAID, action_id, coc_client, bot, mongo=mongo, trigger="view:raid")
 
 
+@register_action("todo_private")
+@lightbulb.di.with_di
+async def todo_private(
+        ctx: lightbulb.components.MenuContext,
+        action_id: str = "0",
+        coc_client: coc.Client = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        **kwargs,
+) -> list:
+    return await _switch(
+        ctx, VIEW_PRIVATE, action_id, coc_client, bot,
+        mongo=mongo, trigger="view:private",
+    )
+
+
 @register_action("todo_nav")
 @lightbulb.di.with_di
 async def todo_nav(
@@ -1380,6 +1420,6 @@ async def todo_refresh(
         **kwargs,
 ) -> list:
     view = action_id.split("|")[0] if action_id else VIEW_WAR
-    if view not in (VIEW_WAR, VIEW_CWL, VIEW_RAID):
+    if view not in VIEW_ORDER:
         view = VIEW_WAR
     return await _switch(ctx, view, action_id, coc_client, bot, force=True, mongo=mongo, trigger="refresh")

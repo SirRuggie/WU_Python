@@ -395,6 +395,10 @@ class ViewData:
     # now" and "you have used all your attacks" are opposite meanings and must
     # never render the same way.
     unavailable: str = ""
+    # A partial account lookup must not collapse into "All caught up". This is
+    # separate from ok=False because successfully loaded accounts should still
+    # render; it marks the result as incomplete rather than wholly unreadable.
+    incomplete: str = ""
 
     @property
     def count(self) -> int:
@@ -973,7 +977,12 @@ async def build_cwl_view(
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows))
 
 
-async def build_blocked_view(coc_client: coc.Client, accounts: list[Account], sem: asyncio.Semaphore | None = None) -> ViewData:
+async def build_blocked_view(
+    coc_client: coc.Client,
+    accounts: list[Account],
+    sem: asyncio.Semaphore | None = None,
+    candidates: dict[str, list[object]] | None = None,
+) -> ViewData:
     """Accounts sitting in clans whose war state we cannot read.
 
     This exists because "17 account(s) in clans with private war logs" told the
@@ -989,10 +998,10 @@ async def build_blocked_view(coc_client: coc.Client, accounts: list[Account], se
     """
     rows: list[Row] = []
 
-    by_clan: dict[str, list[Account]] = {}
-    for acct in accounts:
-        if acct.clan_tag:
-            by_clan.setdefault(acct.clan_tag, []).append(acct)
+    # The War view checks both current and recently observed clans. The
+    # diagnostic view must use the same clan set or it can report "every clan
+    # is readable" while War is warning about a private historical clan.
+    by_clan = _accounts_by_war_clan(accounts, candidates, kind="war")
 
     sem = sem or new_semaphore()
     order = list(by_clan)

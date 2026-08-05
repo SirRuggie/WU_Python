@@ -180,6 +180,42 @@ def test_historical_candidate_not_on_roster_is_not_a_zero_attack_row(monkeypatch
     assert view.rows == []
 
 
+def test_historical_private_clan_appears_in_private_view(monkeypatch):
+    async def fake_war(_client, clan_tag):
+        if clan_tag == "#OLD":
+            return "private", None
+        return "none", None
+
+    monkeypatch.setattr(todo_data, "_get_war", fake_war)
+    view = asyncio.run(todo_data.build_blocked_view(
+        object(),
+        [_account()],
+        candidates={"#PLAYER": [clan_history.ClanCandidate("#OLD", "Old Clan")]},
+    ))
+
+    assert [(row.tag, row.clan_tag, row.reason) for row in view.rows] == [
+        ("#PLAYER", "#OLD", "private")
+    ]
+
+
+def test_cwl_only_candidate_is_not_checked_in_private_war_view(monkeypatch):
+    requested = []
+
+    async def fake_war(_client, clan_tag):
+        requested.append(clan_tag)
+        return "none", None
+
+    monkeypatch.setattr(todo_data, "_get_war", fake_war)
+    candidate = clan_history.ClanCandidate(
+        "#CWL", "CWL Clan", check_war=False, check_cwl=True
+    )
+    asyncio.run(todo_data.build_blocked_view(
+        object(), [_account()], candidates={"#PLAYER": [candidate]}
+    ))
+
+    assert requested == ["#HOME"]
+
+
 def test_cwl_roster_candidate_does_not_trigger_regular_war_lookup(monkeypatch):
     requested = []
 
