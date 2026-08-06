@@ -661,7 +661,9 @@ async def _reconcile_ical_startup() -> None:
 
     if poller_task and not poller_task.done():
         return
-    poller_task = asyncio.create_task(poller_loop(mongo_client))
+    poller_task = asyncio.create_task(
+        poller_loop(mongo_client), name="fwa-sync-ical"
+    )
 
 
 @loader.listener(hikari.StartedEvent)

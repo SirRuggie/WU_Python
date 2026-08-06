@@ -93,6 +93,12 @@ def test_incomplete_empty_view_never_renders_all_caught_up():
 
     assert "Couldn't check every linked account" in text
     assert "All caught up" not in text
+    descriptions = [
+        str(node["description"])
+        for node in _walk(payload)
+        if "description" in node
+    ]
+    assert "couldn't be read — try Check now" in descriptions
 
 
 def test_account_failures_mark_empty_and_nonempty_views_incomplete():

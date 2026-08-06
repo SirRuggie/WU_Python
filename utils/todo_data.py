@@ -660,6 +660,10 @@ async def _get_war(
             with timed_call("currentwar"):
                 war = await coc_client.get_clan_war(clan_tag)
         except coc.PrivateWarLog:
+            print(
+                f"[todo] current-war unreadable clan={clan_tag} "
+                f"reason=private-war-log retry_seconds={TTL_WAR_IDLE}"
+            )
             result = ("private", None)
             cache_put(key, result, TTL_WAR_IDLE)
             return result
@@ -679,8 +683,11 @@ async def _get_war(
             return result
 
         if war is None:
-            result = ("none", None)
-            cache_put(key, result, TTL_WAR_IDLE)
+            # coc.Client.get_clan_war() returns a ClanWar or raises; None is an
+            # unexpected client/proxy shape, not proof that no war exists.
+            print(f"[todo] war lookup failed for {clan_tag}: empty response")
+            result = ("error", None)
+            cache_put(key, result, TTL_ERROR)
             return result
 
         result = ("war", war)
@@ -1029,14 +1036,20 @@ async def build_war_view(
 
     # No "in war prep" note any more - preparation wars are ROWS now, not a
     # footnote. Counting them into a note is what hid them.
+    gaps: list[str] = []
     if private:
-        notes.append(f"🔒 {private} account(s) in clans with private war logs")
+        gaps.append(f"🔒 {private} account(s) are in clans with private war logs")
     if unreadable:
-        notes.append(f"⚠️ {unreadable} account(s) could not be checked — war lookup failed")
+        gaps.append(f"⚠️ {unreadable} account(s) could not be checked — war lookup failed")
 
-    # ok=False only when we learned nothing at all. A partial read still shows
-    # what it found, with the note above explaining the gap.
-    return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows))
+    # An unreadable clan makes the result incomplete, even when every readable
+    # account is caught up. Keeping ok=True lets the renderer explain the exact
+    # private/error state instead of replacing it with a generic outage;
+    # ``incomplete`` prevents the contradictory "All caught up" verdict.
+    if rows:
+        notes.extend(gaps)
+    incomplete = "; ".join(gap.lstrip("🔒⚠️ ") for gap in gaps)
+    return ViewData(rows=rows, notes=notes, ok=True, incomplete=incomplete)
 
 
 async def build_cwl_view(

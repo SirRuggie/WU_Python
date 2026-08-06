@@ -971,6 +971,7 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
         startup_reconciler = None
     if getattr(scheduler, "running", False):
         scheduler.shutdown()
+        await asyncio.sleep(0)
         print("[CWL Reminder] Scheduler shutdown")
 
 

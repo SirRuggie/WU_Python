@@ -246,7 +246,9 @@ async def on_bot_started(
     if cleanup_task and not cleanup_task.done():
         print("[Recruit Role Cleanup] Task already running; start skipped")
         return
-    cleanup_task = asyncio.create_task(cleanup_loop())
+    cleanup_task = asyncio.create_task(
+        cleanup_loop(), name="recruit-role-cleanup"
+    )
     print("[Recruit Role Cleanup] Task started")
 
 

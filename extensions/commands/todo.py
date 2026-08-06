@@ -798,7 +798,10 @@ def render_dashboard(view: str, page: int, data: dict, *,
     `data` maps view name -> ViewData. A view whose ViewData is None could not
     be computed at all.
     """
-    counts = {k: (v.count if v is not None and v.ok else None) for k, v in data.items()}
+    counts = {
+        k: (v.count if v is not None and v.ok and not v.incomplete else None)
+        for k, v in data.items()
+    }
     current = data.get(view)
 
     # Title carries the count so the header line does one more job. NO trailing
@@ -1224,6 +1227,13 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             coc_client, accounts, sem=sem, candidates=candidates,
             recheck_negative_after=recheck_negative_after,
         )
+
+    perf.meta["war_private"] = sum(
+        row.reason == "private" for row in blocked.rows
+    )
+    perf.meta["war_error"] = sum(
+        row.reason == "error" for row in blocked.rows
+    )
 
     if errors:
         print(f"[todo] {len(errors)} account lookups failed for {discord_id}: {errors[:5]}")

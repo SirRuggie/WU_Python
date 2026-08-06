@@ -33,13 +33,15 @@ if sys.version_info < (3, 12, 3):
         "Upgrade the interpreter before running."
     )
 
+import asyncio
+import logging
 import os
 import hikari
 import lightbulb
 from dotenv import load_dotenv
 from utils.mongo import MongoClient
 import coc
-from utils.startup import load_cogs
+from utils.startup import create_clash_client, load_cogs, unique_extensions
 from utils.cloudinary_client import CloudinaryClient
 from extensions.autocomplete import preload_autocomplete_cache
 from utils import bot_data
@@ -69,34 +71,42 @@ bot = hikari.GatewayBot(
 
 client = lightbulb.client_from_app(bot)
 
+# coc.py logs the complete response object and every proxy header at INFO for
+# an expected private-war-log 403. The todo layer emits one concise line when
+# it classifies the response, while real HTTP warnings/errors remain visible.
+logging.getLogger("coc.http").setLevel(logging.WARNING)
+
 mongo_client = MongoClient(uri=os.getenv("MONGODB_URI"))
-clash_client = coc.Client(
-    base_url='https://proxy.clashk.ing/v1',
-    key_count=10,
-    load_game_data=coc.LoadGameData(default=False),
-    raw_attribute=True,
-)
+clash_client: coc.Client | None = None
 
 cloudinary_client = CloudinaryClient()
 
 bot_data.data["mongo"] = mongo_client
 bot_data.data["cloudinary_client"] = cloudinary_client
 bot_data.data["bot"] = bot
-bot_data.data["coc_client"] = clash_client
 
 registry = client.di.registry_for(lightbulb.di.Contexts.DEFAULT)
 registry.register_value(MongoClient, mongo_client)
-registry.register_value(coc.Client, clash_client)
 registry.register_value(CloudinaryClient, cloudinary_client)
 registry.register_value(hikari.GatewayBot, bot)
 
 @bot.listen(hikari.StartingEvent)
 async def on_starting(_: hikari.StartingEvent) -> None:
     """Bot starting event"""
-    all_extensions = [
+    global clash_client
+
+    # Build coc.py only after Hikari has installed and started its event loop.
+    clash_client = create_clash_client(loop=asyncio.get_running_loop())
+    bot_data.data["coc_client"] = clash_client
+    registry.register_value(coc.Client, clash_client)
+
+    explicit_extensions = [
         "extensions.components",
-        "extensions.commands.clan.list",
-        "extensions.commands.fwa.bases",
+        "extensions.commands.clan",
+        "extensions.commands.fwa",
+        "extensions.commands.recruit",
+        "extensions.commands.recruit.dashboard.server_walkthrough",
+        "extensions.commands.setup",
         "extensions.context_menus.get_message_id",
         "extensions.context_menus.get_user_id",
         "extensions.tasks.band_monitor",
@@ -105,16 +115,27 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.fwa_points_monitor",
         "extensions.tasks.clan_history_tracker",
         "extensions.tasks.band_sync_ical",
-        "extensions.commands.fwa.upload_images",
-        "extensions.commands.fwa.war_plans",
         "extensions.commands.tickets",
         "extensions.events.channel.ticket_channel_monitor",
         "extensions.events.message.message_events",  # Add message events handler
-    ] + load_cogs(disallowed={"example"}, disallowed_folders={"tickets"})
+    ]
+    all_extensions = unique_extensions(
+        explicit_extensions,
+        load_cogs(
+            disallowed={"example"},
+            disallowed_folders={"clan", "fwa", "recruit", "setup", "tickets"},
+        ),
+    )
 
     await client.load_extensions(*all_extensions)
     await client.start()
     await clash_client.login_with_tokens("")
+
+
+@bot.listen(hikari.StoppingEvent)
+async def on_stopping(_: hikari.StoppingEvent) -> None:
+    """Stop Lightbulb-owned tasks and close its DI scopes before REST closes."""
+    await client.stop()
 
 
 @bot.listen(hikari.StartedEvent)
@@ -181,10 +202,32 @@ async def on_stopped(_: hikari.StoppedEvent) -> None:
     """Close shared clients after extension stopping handlers have unwound."""
     try:
         # Properly close the coc.py client to avoid unclosed session warnings.
-        await clash_client.close()
+        if clash_client is not None and clash_client.http is not None:
+            await clash_client.close()
     finally:
         # AsyncMongoClient owns connection-pool monitoring tasks and must still
         # close even if the Clash client reports a shutdown error.
         await mongo_client.close()
+
+    # Let cancellation callbacks and APScheduler's call_soon shutdown hooks
+    # unwind before Hikari performs its final loop audit.
+    await asyncio.sleep(0)
+    current = asyncio.current_task()
+    remaining = [
+        task for task in asyncio.all_tasks()
+        if task is not current and not task.done()
+    ]
+    if remaining:
+        labels = set()
+        for task in remaining:
+            name = task.get_name()
+            if name.startswith("Task-"):
+                coro = task.get_coro()
+                name = getattr(coro, "__qualname__", type(coro).__name__)
+            labels.add(name)
+        names = ",".join(sorted(labels))
+        print(f"[shutdown] pending_tasks count={len(remaining)} names={names}")
+    else:
+        print("[shutdown] pending_tasks count=0")
 
 bot.run()

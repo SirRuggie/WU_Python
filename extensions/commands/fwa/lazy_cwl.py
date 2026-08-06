@@ -3483,6 +3483,7 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
 
     try:
         current_scheduler.shutdown(wait=False)
+        await asyncio.sleep(0)
         print("[LazyCWL AutoPing] Scheduler shutdown")
     except Exception as e:
         print(f"[LazyCWL AutoPing] Scheduler shutdown failed: {e}")

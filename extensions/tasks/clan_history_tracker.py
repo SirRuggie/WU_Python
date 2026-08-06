@@ -354,7 +354,9 @@ async def on_bot_started(
 ) -> None:
     del event
     global tracker_task
-    tracker_task = asyncio.create_task(tracker_loop(mongo, coc_client))
+    tracker_task = asyncio.create_task(
+        tracker_loop(mongo, coc_client), name="clan-history-tracker"
+    )
     print("[clan-history] tracker started")
 
 

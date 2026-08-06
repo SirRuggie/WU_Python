@@ -606,7 +606,9 @@ async def _reconcile_band_startup() -> None:
         )
 
     poll_health = BandPollHealth(state="starting")
-    band_check_task = asyncio.create_task(band_checker_loop(mongo_client))
+    band_check_task = asyncio.create_task(
+        band_checker_loop(mongo_client), name="band-post-monitor"
+    )
     print(
         f"[BAND Monitor] monitor_started "
         f"poll_interval_seconds={CHECK_INTERVAL_SECONDS}"

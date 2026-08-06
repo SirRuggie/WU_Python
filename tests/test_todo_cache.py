@@ -2,6 +2,8 @@ import asyncio
 import time
 from types import SimpleNamespace
 
+import coc
+
 from utils import todo_data
 
 
@@ -15,6 +17,28 @@ def test_process_cache_is_bounded(monkeypatch):
 
     assert len(todo_data._cache) == 2
     assert "player:#THREE" in todo_data._cache
+    todo_data._cache.clear()
+
+
+def test_private_war_log_is_explicit_cached_and_concisely_logged(capsys):
+    class Client:
+        calls = 0
+
+        async def get_clan_war(self, _clan_tag):
+            self.calls += 1
+            raise coc.PrivateWarLog(data={"reason": "accessDenied"})
+
+    todo_data._cache.clear()
+    client = Client()
+
+    first = asyncio.run(todo_data._get_war(client, "#PRIVATE"))
+    second = asyncio.run(todo_data._get_war(client, "#PRIVATE"))
+
+    assert first == second == ("private", None)
+    assert client.calls == 1
+    assert capsys.readouterr().out.count(
+        "current-war unreadable clan=#PRIVATE reason=private-war-log"
+    ) == 1
     todo_data._cache.clear()
 
 
@@ -144,7 +168,7 @@ def test_automatic_check_revalidates_old_absent_cwl_cache():
     todo_data._cache.clear()
 
 
-def test_concurrent_negative_rechecks_share_one_war_request():
+def test_concurrent_empty_war_responses_share_one_short_lived_error():
     class Client:
         calls = 0
 
@@ -171,7 +195,7 @@ def test_concurrent_negative_rechecks_share_one_war_request():
 
     results = asyncio.run(exercise())
 
-    assert results == [("none", None), ("none", None)]
+    assert results == [("error", None), ("error", None)]
     assert client.calls == 1
     todo_data._cache.clear()
 

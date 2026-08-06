@@ -198,6 +198,19 @@ def test_historical_private_clan_appears_in_private_view(monkeypatch):
     ]
 
 
+def test_private_only_war_result_is_marked_incomplete(monkeypatch):
+    async def fake_war(_client, _clan_tag):
+        return "private", None
+
+    monkeypatch.setattr(todo_data, "_get_war", fake_war)
+    view = asyncio.run(todo_data.build_war_view(object(), [_account()]))
+
+    assert view.rows == []
+    assert view.ok is True
+    assert "private war logs" in view.incomplete
+    assert view.notes == []
+
+
 def test_cwl_only_candidate_is_not_checked_in_private_war_view(monkeypatch):
     requested = []
 

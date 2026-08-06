@@ -345,7 +345,10 @@ async def detector_loop():
                         continue   # already have this exact war's verdict
                     if retry_is_deferred(rec, war_key):
                         continue   # same failed war is cooling down; a new war key bypasses this
-                    task = asyncio.create_task(run_catchup(clan, coc_opp, war_key))
+                    task = asyncio.create_task(
+                        run_catchup(clan, coc_opp, war_key),
+                        name=f"fwa-points-catchup:{our_tag}",
+                    )
                     active_catchups[our_tag] = task
         except Exception as e:
             print(f"[FWA Points] Detector loop error: {type(e).__name__}: {e}")
@@ -366,7 +369,9 @@ async def _reconcile_points_startup() -> None:
         print("[FWA Points] Seeded config")
     if detector_task and not detector_task.done():
         return
-    detector_task = asyncio.create_task(detector_loop())
+    detector_task = asyncio.create_task(
+        detector_loop(), name="fwa-points-detector"
+    )
     print("[FWA Points] Task started")
 
 

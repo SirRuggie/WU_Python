@@ -37,6 +37,7 @@ edit_sessions: Dict[int, Dict[str, Any]] = {}
 
 # Track auto-delete tasks
 delete_tasks: Dict[int, asyncio.Task] = {}
+session_cleanup_tasks: set[asyncio.Task] = set()
 
 # Initialize scheduler
 scheduler = AsyncIOScheduler(timezone=DEFAULT_TIMEZONE)
@@ -161,7 +162,8 @@ async def send_auto_delete_response(
     )
 
     delete_task = asyncio.create_task(
-        schedule_message_deletion(bot, message)
+        schedule_message_deletion(bot, message),
+        name=f"task-message-delete-{message.id}",
     )
     delete_tasks[message.id] = delete_task
 
@@ -685,7 +687,12 @@ async def on_task_command(
                         if edit_sessions[event.author_id]["task_id"] == task_id:
                             del edit_sessions[event.author_id]
 
-                asyncio.create_task(cleanup_session())
+                cleanup_task = asyncio.create_task(
+                    cleanup_session(),
+                    name=f"task-edit-cleanup-{event.author_id}-{task_id}",
+                )
+                session_cleanup_tasks.add(cleanup_task)
+                cleanup_task.add_done_callback(session_cleanup_tasks.discard)
             else:
                 components = create_task_embed(
                     "❌ Task Not Found",
@@ -791,9 +798,19 @@ async def on_task_command(
 @loader.listener(hikari.StoppingEvent)
 async def cleanup_tasks(event: hikari.StoppingEvent) -> None:
     """Cancel all pending delete tasks and shutdown scheduler on bot shutdown."""
-    for task in delete_tasks.values():
+    del event
+    tasks = [
+        task for task in (*delete_tasks.values(), *session_cleanup_tasks)
+        if not task.done()
+    ]
+    for task in tasks:
         task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
     delete_tasks.clear()
+    session_cleanup_tasks.clear()
     edit_sessions.clear()
 
-    scheduler.shutdown()
+    if scheduler.running:
+        scheduler.shutdown()
+        await asyncio.sleep(0)
