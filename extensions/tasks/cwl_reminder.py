@@ -39,7 +39,13 @@ mongo_client = None
 cwl_base_job_id = "cwl_monthly_reminder"
 cwl_followup_job_prefix = "cwl_followup_"
 cwl_initial_retry_job_id = "cwl_initial_retry"
-DELIVERY_RETRY_MINUTES = 5
+DELIVERY_RETRY_DELAYS_MINUTES = (5, 15, 30, 60, 180)
+# Kept for command text and backwards compatibility. The first retry remains
+# five minutes after a failed delivery.
+DELIVERY_RETRY_MINUTES = DELIVERY_RETRY_DELAYS_MINUTES[0]
+MAX_DELIVERY_FAILURES = len(DELIVERY_RETRY_DELAYS_MINUTES) + 1
+MAX_DELIVERY_RETRY_AGE_HOURS = 24
+DELIVERY_ERROR_TEXT_LIMIT = 180
 PENDING_EXPIRY_DAYS = 7
 JOB_OPTIONS = {
     "misfire_grace_time": 24 * 60 * 60,
@@ -316,6 +322,8 @@ async def _persist_pending_reminder(
     run_time: datetime,
     reminder_number: int,
     channel_keys: list[str] | None = None,
+    *,
+    reset_delivery_state: bool = True,
 ) -> None:
     if not mongo_client:
         return
@@ -325,14 +333,33 @@ async def _persist_pending_reminder(
         "reminder_number": reminder_number,
         "run_time": run_time.isoformat(),
         "job_id": job_id,
-        "created_at": pendulum.now(DEFAULT_TIMEZONE).isoformat(),
     }
     if channel_keys:
         reminder_data["channel_keys"] = channel_keys
 
+    update = {
+        "$set": reminder_data,
+        "$setOnInsert": {
+            "created_at": pendulum.now(DEFAULT_TIMEZONE).isoformat(),
+        },
+    }
+    if reset_delivery_state:
+        update["$unset"] = {
+            "failure_count": "",
+            "first_failed_at": "",
+            "last_failed_at": "",
+            "last_error": "",
+            "error_types": "",
+            "status": "",
+            "abandon_reason": "",
+            "updated_at": "",
+        }
+        if not channel_keys:
+            update["$unset"]["channel_keys"] = ""
+
     await mongo_client.database.cwl_pending_reminders.update_one(
         {"_id": job_id},
-        {"$set": reminder_data},
+        update,
         upsert=True,
     )
 
@@ -348,14 +375,192 @@ async def _schedule_durable_reminder(
     _add_reminder_job(job_id, run_time, reminder_number, channel_keys)
 
 
-async def _schedule_retry(reminder_number: int, channel_keys: list[str]) -> None:
-    run_time = pendulum.now(DEFAULT_TIMEZONE).add(minutes=DELIVERY_RETRY_MINUTES)
-    job_id = _pending_job_id(reminder_number)
-    await _schedule_durable_reminder(job_id, run_time, reminder_number, channel_keys)
-    print(
-        f"[CWL Reminder] Scheduled retry for reminder #{reminder_number} "
-        f"to {', '.join(channel_keys)} at {run_time}"
+def _delivery_error_detail(exc: Exception) -> str:
+    """Return a bounded one-line diagnostic safe for logs and MongoDB."""
+    detail = " ".join(str(exc).split()) or "no error detail"
+    return detail[:DELIVERY_ERROR_TEXT_LIMIT]
+
+
+def _is_permanent_delivery_error(exc: Exception) -> bool:
+    """Discord errors that require configuration/permission changes, not retries."""
+    return isinstance(
+        exc,
+        (
+            hikari.BadRequestError,
+            hikari.UnauthorizedError,
+            hikari.ForbiddenError,
+            hikari.NotFoundError,
+        ),
     )
+
+
+def _delivery_issue_field(reminder_number: int) -> str:
+    return f"delivery_issues.{reminder_number}"
+
+
+async def _record_delivery_issue(reminder_number: int, issue: dict) -> None:
+    await mongo_client.database.cwl_reminder.update_one(
+        {"_id": "schedule"},
+        {"$set": {_delivery_issue_field(reminder_number): issue}},
+        upsert=True,
+    )
+
+
+async def _abandon_delivery(
+    reminder_number: int,
+    channel_keys: list[str],
+    failure_count: int,
+    reason: str,
+    error_types: list[str],
+    last_error: str,
+) -> None:
+    """Stop a terminal retry and retain one bounded operator-facing diagnostic."""
+    job_id = _pending_job_id(reminder_number)
+    now = pendulum.now(DEFAULT_TIMEZONE).isoformat()
+    # Mark terminal before the cleanup writes. If MongoDB drops between calls,
+    # startup restoration will discard this row instead of reviving the retry.
+    await mongo_client.database.cwl_pending_reminders.update_one(
+        {"_id": job_id},
+        {
+            "$set": {
+                "status": "abandoned",
+                "reminder_number": reminder_number,
+                "job_id": job_id,
+                "channel_keys": channel_keys,
+                "failure_count": failure_count,
+                "abandon_reason": reason,
+                "updated_at": now,
+            },
+            "$setOnInsert": {"created_at": now},
+        },
+        upsert=True,
+    )
+    await _record_delivery_issue(
+        reminder_number,
+        {
+            "status": "abandoned",
+            "reason": reason,
+            "failure_count": failure_count,
+            "max_failures": MAX_DELIVERY_FAILURES,
+            "channel_keys": channel_keys,
+            "error_types": error_types,
+            "last_error": last_error,
+            "updated_at": now,
+        },
+    )
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+    await mongo_client.database.cwl_pending_reminders.delete_one({"_id": job_id})
+    print(
+        f"[CWL Reminder] ALERT delivery_abandoned reminder={reminder_number} "
+        f"reason={reason} failures={failure_count}/{MAX_DELIVERY_FAILURES} "
+        f"channels={','.join(channel_keys)} errors={','.join(error_types)} "
+        "action=check channel IDs, bot access, and Send Messages permission"
+    )
+
+
+async def _schedule_retry(
+    reminder_number: int,
+    channel_keys: list[str],
+    failures: list[tuple[str, Exception]],
+) -> bool:
+    """Persist a bounded retry, or abandon failures that require intervention."""
+    if not mongo_client:
+        print(
+            f"[CWL Reminder] ALERT delivery_retry_unavailable reminder={reminder_number} "
+            f"channels={','.join(channel_keys)} reason=mongo_unavailable"
+        )
+        return False
+
+    now = pendulum.now(DEFAULT_TIMEZONE)
+    job_id = _pending_job_id(reminder_number)
+    pending = await mongo_client.database.cwl_pending_reminders.find_one({"_id": job_id}) or {}
+    try:
+        previous_failures = max(0, int(pending.get("failure_count", 0)))
+    except (TypeError, ValueError):
+        previous_failures = 0
+        print(
+            f"[CWL Reminder] retry_state_repaired reminder={reminder_number} "
+            "field=failure_count"
+        )
+    failure_count = previous_failures + 1
+    first_failed_at = pending.get("first_failed_at")
+    try:
+        first_failed = pendulum.parse(first_failed_at) if first_failed_at else now
+    except (TypeError, ValueError):
+        first_failed = now
+
+    error_types = sorted({type(exc).__name__ for _, exc in failures})
+    last_error = "; ".join(
+        f"{key}:{type(exc).__name__}:{_delivery_error_detail(exc)}"
+        for key, exc in failures
+    )[:DELIVERY_ERROR_TEXT_LIMIT]
+    has_permanent_error = any(_is_permanent_delivery_error(exc) for _, exc in failures)
+    retry_age_hours = max(0.0, (now - first_failed).total_seconds() / 3600)
+
+    if has_permanent_error:
+        await _abandon_delivery(
+            reminder_number, channel_keys, failure_count, "permanent_discord_error",
+            error_types, last_error,
+        )
+        return False
+    if failure_count >= MAX_DELIVERY_FAILURES:
+        await _abandon_delivery(
+            reminder_number, channel_keys, failure_count, "max_failures_reached",
+            error_types, last_error,
+        )
+        return False
+    if retry_age_hours >= MAX_DELIVERY_RETRY_AGE_HOURS:
+        await _abandon_delivery(
+            reminder_number, channel_keys, failure_count, "retry_age_exceeded",
+            error_types, last_error,
+        )
+        return False
+
+    delay_minutes = DELIVERY_RETRY_DELAYS_MINUTES[failure_count - 1]
+    run_time = now.add(minutes=delay_minutes)
+    retry_state = {
+        "_id": job_id,
+        "reminder_number": reminder_number,
+        "run_time": run_time.isoformat(),
+        "job_id": job_id,
+        "channel_keys": channel_keys,
+        "failure_count": failure_count,
+        "first_failed_at": first_failed.isoformat(),
+        "last_failed_at": now.isoformat(),
+        "last_error": last_error,
+        "error_types": error_types,
+        "status": "retrying",
+    }
+    await mongo_client.database.cwl_pending_reminders.update_one(
+        {"_id": job_id},
+        {
+            "$set": retry_state,
+            "$setOnInsert": {"created_at": now.isoformat()},
+        },
+        upsert=True,
+    )
+    await _record_delivery_issue(
+        reminder_number,
+        {
+            "status": "retrying",
+            "failure_count": failure_count,
+            "max_failures": MAX_DELIVERY_FAILURES,
+            "channel_keys": channel_keys,
+            "error_types": error_types,
+            "last_error": last_error,
+            "next_retry_at": run_time.isoformat(),
+            "updated_at": now.isoformat(),
+        },
+    )
+    _add_reminder_job(job_id, run_time, reminder_number, channel_keys)
+    print(
+        f"[CWL Reminder] delivery_retry_scheduled reminder={reminder_number} "
+        f"failure={failure_count}/{MAX_DELIVERY_FAILURES} delay_minutes={delay_minutes} "
+        f"channels={','.join(channel_keys)} errors={','.join(error_types)} "
+        f"next_retry={run_time.isoformat()}"
+    )
+    return True
 
 
 async def send_cwl_reminder(
@@ -381,7 +586,7 @@ async def send_cwl_reminder(
             if key in PRODUCTION_CHANNELS
         ]
 
-    failed_keys = []
+    failures: list[tuple[str, Exception]] = []
     for channel_info in channels:
         try:
             components = create_cwl_reminder_message(reminder_number, channel_info["type"])
@@ -395,27 +600,64 @@ async def send_cwl_reminder(
                 f"{channel_info['name']} channel at {datetime.now()}"
             )
         except Exception as exc:
-            failed_keys.append(channel_info["key"])
-            print(f"[CWL Reminder] Failed to send to {channel_info['name']} channel: {exc}")
+            failures.append((channel_info["key"], exc))
+            print(
+                f"[CWL Reminder] delivery_failed reminder={reminder_number} "
+                f"channel={channel_info['key']} channel_id={channel_info['id']} "
+                f"error={type(exc).__name__} retryable={str(not _is_permanent_delivery_error(exc)).lower()} "
+                f"detail={_delivery_error_detail(exc)}"
+            )
 
     # Tests are deliberately delivery-only. They never update the schedule,
     # pending reminders, or the production APScheduler.
     if test_mode:
-        return not failed_keys
+        return not failures
 
-    if failed_keys:
-        if mongo_client:
-            await _schedule_retry(reminder_number, failed_keys)
+    if failures:
+        failed_keys = [key for key, _ in failures]
+        try:
+            await _schedule_retry(reminder_number, failed_keys, failures)
+        except Exception as exc:
+            print(
+                f"[CWL Reminder] ALERT delivery_retry_setup_failed reminder={reminder_number} "
+                f"channels={','.join(failed_keys)} error={type(exc).__name__} "
+                f"detail={_delivery_error_detail(exc)} action=check MongoDB and scheduler health"
+            )
         return False
 
     if not channels:
+        invalid_keys = channel_keys or []
+        if mongo_client:
+            try:
+                await _abandon_delivery(
+                    reminder_number,
+                    invalid_keys,
+                    1,
+                    "no_valid_channels",
+                    ["ConfigurationError"],
+                    "No configured production channel matched the stored channel keys",
+                )
+            except Exception as exc:
+                print(
+                    f"[CWL Reminder] ALERT delivery_retry_setup_failed reminder={reminder_number} "
+                    f"error={type(exc).__name__} detail={_delivery_error_detail(exc)} "
+                    "action=check MongoDB health"
+                )
+        else:
+            print(
+                f"[CWL Reminder] ALERT delivery_abandoned reminder={reminder_number} "
+                "reason=no_valid_channels action=check stored channel keys"
+            )
         return False
 
     if mongo_client:
         sent_at = datetime.now(timezone.utc).isoformat()
         await mongo_client.database.cwl_reminder.update_one(
             {"_id": "schedule"},
-            {"$set": {f"last_sent_{reminder_number}": sent_at}},
+            {
+                "$set": {f"last_sent_{reminder_number}": sent_at},
+                "$unset": {_delivery_issue_field(reminder_number): ""},
+            },
             upsert=True,
         )
 
@@ -442,6 +684,11 @@ async def send_cwl_reminder(
                             await schedule_followup_reminder(
                                 base_time, followup_num, cumulative_delay,
                             )
+    else:
+        print(
+            f"[CWL Reminder] ALERT delivery_state_unavailable reminder={reminder_number} "
+            "delivered=true action=check MongoDB; delivery accounting and follow-ups were not updated"
+        )
 
     return True
 
@@ -489,6 +736,11 @@ async def restore_pending_reminders():
         reminder_number = reminder.get("reminder_number")
         job_id = reminder.get("job_id")
 
+        if reminder.get("status") == "abandoned":
+            await mongo_client.database.cwl_pending_reminders.delete_one({"_id": reminder_id})
+            print(f"[CWL Reminder] Cleaned up terminal pending reminder {reminder_id}")
+            continue
+
         if (
             not reminder_id
             or not run_time_str
@@ -521,7 +773,11 @@ async def restore_pending_reminders():
                 retry_time = now.add(seconds=5)
                 channel_keys = reminder.get("channel_keys")
                 await _persist_pending_reminder(
-                    job_id, retry_time, reminder_number, channel_keys,
+                    job_id,
+                    retry_time,
+                    reminder_number,
+                    channel_keys,
+                    reset_delivery_state=False,
                 )
                 _add_reminder_job(job_id, retry_time, reminder_number, channel_keys)
                 print(
@@ -807,6 +1063,30 @@ class Status(
             if next_run:
                 next_run_pdt = pendulum.instance(next_run, tz=DEFAULT_TIMEZONE)
                 status_text += f"\n• **Next Run**: {next_run_pdt.format('MMM D, YYYY [at] h:mm A')}"
+
+        delivery_issues = schedule_data.get("delivery_issues", {})
+        reason_labels = {
+            "permanent_discord_error": "channel access or permission needs attention",
+            "max_failures_reached": "retry limit reached",
+            "retry_age_exceeded": "retry window expired",
+            "no_valid_channels": "channel configuration is invalid",
+        }
+        for number, issue in sorted(delivery_issues.items(), key=lambda item: str(item[0])):
+            reminder_label = "initial" if str(number) == "0" else f"follow-up {number}"
+            failure_count = issue.get("failure_count", "?")
+            max_failures = issue.get("max_failures", MAX_DELIVERY_FAILURES)
+            channels = ", ".join(issue.get("channel_keys", [])) or "unknown channel"
+            if issue.get("status") == "retrying":
+                status_text += (
+                    f"\n• **Delivery retry ({reminder_label})**: "
+                    f"failure {failure_count}/{max_failures} for {channels}"
+                )
+            else:
+                reason = issue.get("reason", "delivery failed")
+                status_text += (
+                    f"\n• **Delivery alert ({reminder_label})**: "
+                    f"{reason_labels.get(reason, reason)} for {channels}"
+                )
         
         await ctx.respond(status_text, ephemeral=True)
 

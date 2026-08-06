@@ -35,8 +35,30 @@ class FakeCollection:
     async def update_one(self, query, update, upsert=False):
         self.updates.append((deepcopy(query), deepcopy(update), upsert))
         document_id = query["_id"]
+        inserted = document_id not in self.documents
         document = self.documents.setdefault(document_id, {"_id": document_id})
-        document.update(deepcopy(update.get("$set", {})))
+
+        def set_path(path, value):
+            target = document
+            parts = path.split(".")
+            for part in parts[:-1]:
+                target = target.setdefault(part, {})
+            target[parts[-1]] = deepcopy(value)
+
+        def unset_path(path):
+            target = document
+            parts = path.split(".")
+            for part in parts[:-1]:
+                target = target.get(part, {})
+            target.pop(parts[-1], None)
+
+        for path, value in update.get("$set", {}).items():
+            set_path(path, value)
+        if inserted:
+            for path, value in update.get("$setOnInsert", {}).items():
+                set_path(path, value)
+        for path in update.get("$unset", {}):
+            unset_path(path)
         return SimpleNamespace(modified_count=1)
 
     async def delete_one(self, query):
@@ -84,20 +106,30 @@ class FakeScheduler:
 
 
 class FakeRest:
-    def __init__(self, failing_channels=None):
+    def __init__(self, failing_channels=None, channel_errors=None):
         self.failing_channels = set(failing_channels or [])
+        self.channel_errors = dict(channel_errors or {})
         self.messages = []
 
     async def create_message(self, **kwargs):
+        if kwargs["channel"] in self.channel_errors:
+            raise self.channel_errors[kwargs["channel"]]
         if kwargs["channel"] in self.failing_channels:
             raise RuntimeError("delivery failed")
         self.messages.append(kwargs)
 
 
-def configure(monkeypatch, *, schedule=None, pending=None, failing_channels=None):
+def configure(
+    monkeypatch,
+    *,
+    schedule=None,
+    pending=None,
+    failing_channels=None,
+    channel_errors=None,
+):
     mongo = FakeMongo(schedule=schedule, pending=pending)
     scheduler = FakeScheduler()
-    rest = FakeRest(failing_channels)
+    rest = FakeRest(failing_channels, channel_errors)
     monkeypatch.setattr(cwl, "mongo_client", mongo)
     monkeypatch.setattr(cwl, "scheduler", scheduler)
     monkeypatch.setattr(cwl, "bot_instance", SimpleNamespace(rest=rest))
@@ -155,6 +187,11 @@ def test_failed_channel_is_retried_without_false_success_accounting(monkeypatch)
     assert "last_sent_2" not in mongo.database.cwl_reminder.documents["schedule"]
     pending = mongo.database.cwl_pending_reminders.documents["cwl_followup_2"]
     assert pending["channel_keys"] == ["lazy"]
+    assert pending["failure_count"] == 1
+    assert pending["first_failed_at"] == pending["last_failed_at"]
+    issue = mongo.database.cwl_reminder.documents["schedule"]["delivery_issues"]["2"]
+    assert issue["status"] == "retrying"
+    assert issue["failure_count"] == 1
     retry = scheduler.jobs["cwl_followup_2"]
     assert retry.kwargs["args"] == [2, False, ["lazy"]]
 
@@ -167,7 +204,130 @@ def test_failed_channel_is_retried_without_false_success_accounting(monkeypatch)
         cwl.LAZY_CWL_CHANNEL_ID,
     ]
     assert mongo.database.cwl_reminder.documents["schedule"]["last_sent_2"]
+    assert "2" not in mongo.database.cwl_reminder.documents["schedule"]["delivery_issues"]
     assert "cwl_followup_2" not in mongo.database.cwl_pending_reminders.documents
+
+
+def test_transient_failures_back_off_then_stop_at_the_cap(monkeypatch, capsys):
+    mongo, scheduler, _ = configure(
+        monkeypatch,
+        schedule={"_id": "schedule"},
+        failing_channels={cwl.LAZY_CWL_CHANNEL_ID},
+    )
+
+    observed_delays = []
+    for expected_failure in range(1, cwl.MAX_DELIVERY_FAILURES + 1):
+        delivered = asyncio.run(cwl.send_cwl_reminder(3, channel_keys=["lazy"]))
+        assert delivered is False
+        if expected_failure < cwl.MAX_DELIVERY_FAILURES:
+            pending = mongo.database.cwl_pending_reminders.documents["cwl_followup_3"]
+            assert pending["failure_count"] == expected_failure
+            observed_delays.append(
+                round(
+                    (
+                        pendulum.parse(pending["run_time"])
+                        - pendulum.parse(pending["last_failed_at"])
+                    ).total_seconds() / 60
+                )
+            )
+
+    assert observed_delays == list(cwl.DELIVERY_RETRY_DELAYS_MINUTES)
+    assert "cwl_followup_3" not in scheduler.jobs
+    assert "cwl_followup_3" not in mongo.database.cwl_pending_reminders.documents
+    issue = mongo.database.cwl_reminder.documents["schedule"]["delivery_issues"]["3"]
+    assert issue["status"] == "abandoned"
+    assert issue["reason"] == "max_failures_reached"
+    assert issue["failure_count"] == cwl.MAX_DELIVERY_FAILURES
+    output = capsys.readouterr().out
+    assert "delivery_retry_scheduled" in output
+    assert "ALERT delivery_abandoned" in output
+
+
+def test_permanent_discord_error_is_not_retried(monkeypatch, capsys):
+    class PermanentDeliveryError(RuntimeError):
+        pass
+
+    error = PermanentDeliveryError("missing access")
+    mongo, scheduler, _ = configure(
+        monkeypatch,
+        schedule={"_id": "schedule"},
+        channel_errors={cwl.LAZY_CWL_CHANNEL_ID: error},
+    )
+    monkeypatch.setattr(
+        cwl,
+        "_is_permanent_delivery_error",
+        lambda exc: isinstance(exc, PermanentDeliveryError),
+    )
+
+    delivered = asyncio.run(cwl.send_cwl_reminder(4, channel_keys=["lazy"]))
+
+    assert delivered is False
+    assert "cwl_followup_4" not in scheduler.jobs
+    assert "cwl_followup_4" not in mongo.database.cwl_pending_reminders.documents
+    issue = mongo.database.cwl_reminder.documents["schedule"]["delivery_issues"]["4"]
+    assert issue["reason"] == "permanent_discord_error"
+    output = capsys.readouterr().out
+    assert "retryable=false" in output
+    assert "action=check channel IDs" in output
+
+
+def test_retry_error_detail_is_bounded_and_single_line(monkeypatch):
+    mongo, _, _ = configure(
+        monkeypatch,
+        schedule={"_id": "schedule"},
+        channel_errors={
+            cwl.LAZY_CWL_CHANNEL_ID: RuntimeError("x" * 300 + "\nsecret-looking-tail"),
+        },
+    )
+
+    asyncio.run(cwl.send_cwl_reminder(5, channel_keys=["lazy"]))
+
+    pending = mongo.database.cwl_pending_reminders.documents["cwl_followup_5"]
+    assert len(pending["last_error"]) <= cwl.DELIVERY_ERROR_TEXT_LIMIT
+    assert "\n" not in pending["last_error"]
+    assert "secret-looking-tail" not in pending["last_error"]
+
+
+def test_retry_scheduler_failure_keeps_durable_state_and_logs_alert(monkeypatch, capsys):
+    mongo, _, _ = configure(
+        monkeypatch,
+        schedule={"_id": "schedule"},
+        failing_channels={cwl.LAZY_CWL_CHANNEL_ID},
+    )
+    monkeypatch.setattr(cwl, "scheduler", FakeScheduler(fail_add=True))
+
+    delivered = asyncio.run(cwl.send_cwl_reminder(2, channel_keys=["lazy"]))
+
+    assert delivered is False
+    pending = mongo.database.cwl_pending_reminders.documents["cwl_followup_2"]
+    assert pending["failure_count"] == 1
+    assert pending["status"] == "retrying"
+    assert "ALERT delivery_retry_setup_failed" in capsys.readouterr().out
+
+
+def test_invalid_stored_channel_is_terminal_and_cannot_restore(monkeypatch):
+    mongo, scheduler, _ = configure(monkeypatch, schedule={"_id": "schedule"})
+
+    delivered = asyncio.run(cwl.send_cwl_reminder(2, channel_keys=["removed-channel"]))
+
+    assert delivered is False
+    assert "cwl_followup_2" not in scheduler.jobs
+    assert "cwl_followup_2" not in mongo.database.cwl_pending_reminders.documents
+    issue = mongo.database.cwl_reminder.documents["schedule"]["delivery_issues"]["2"]
+    assert issue["reason"] == "no_valid_channels"
+
+
+def test_success_without_mongo_logs_missing_accounting(monkeypatch, capsys):
+    rest = FakeRest()
+    monkeypatch.setattr(cwl, "mongo_client", None)
+    monkeypatch.setattr(cwl, "scheduler", FakeScheduler())
+    monkeypatch.setattr(cwl, "bot_instance", SimpleNamespace(rest=rest))
+
+    delivered = asyncio.run(cwl.send_cwl_reminder(0))
+
+    assert delivered is True
+    assert len(rest.messages) == 2
+    assert "ALERT delivery_state_unavailable" in capsys.readouterr().out
 
 
 def test_initial_failure_waits_to_schedule_followups_until_retry_succeeds(monkeypatch):
@@ -231,6 +391,57 @@ def test_startup_restores_current_pending_before_next_base_schedule(monkeypatch)
     assert mongo.database.cwl_pending_reminders.documents["cwl_followup_1"]["run_time"] == run_time.isoformat()
 
 
+def test_overdue_restore_preserves_retry_age_and_failure_count(monkeypatch):
+    first_failed_at = pendulum.now(cwl.DEFAULT_TIMEZONE).subtract(hours=3).isoformat()
+    created_at = pendulum.now(cwl.DEFAULT_TIMEZONE).subtract(hours=4).isoformat()
+    pending = {
+        "cwl_followup_1": {
+            "_id": "cwl_followup_1",
+            "job_id": "cwl_followup_1",
+            "reminder_number": 1,
+            "run_time": pendulum.now(cwl.DEFAULT_TIMEZONE).subtract(minutes=1).isoformat(),
+            "failure_count": 3,
+            "first_failed_at": first_failed_at,
+            "created_at": created_at,
+        },
+    }
+    mongo, scheduler, _ = configure(
+        monkeypatch,
+        schedule={"_id": "schedule"},
+        pending=pending,
+    )
+
+    asyncio.run(cwl.restore_pending_reminders())
+
+    restored = mongo.database.cwl_pending_reminders.documents["cwl_followup_1"]
+    assert restored["failure_count"] == 3
+    assert restored["first_failed_at"] == first_failed_at
+    assert restored["created_at"] == created_at
+    assert "cwl_followup_1" in scheduler.jobs
+
+
+def test_startup_discards_terminal_pending_row(monkeypatch):
+    pending = {
+        "cwl_followup_1": {
+            "_id": "cwl_followup_1",
+            "job_id": "cwl_followup_1",
+            "reminder_number": 1,
+            "run_time": pendulum.now(cwl.DEFAULT_TIMEZONE).add(hours=1).isoformat(),
+            "status": "abandoned",
+        },
+    }
+    mongo, scheduler, _ = configure(
+        monkeypatch,
+        schedule={"_id": "schedule"},
+        pending=pending,
+    )
+
+    asyncio.run(cwl.restore_pending_reminders())
+
+    assert scheduler.jobs == {}
+    assert mongo.database.cwl_pending_reminders.documents == {}
+
+
 def test_remove_followup_deletes_memory_and_durable_pending_state(monkeypatch):
     mongo, scheduler, _ = configure(
         monkeypatch,
@@ -248,6 +459,35 @@ def test_remove_followup_deletes_memory_and_durable_pending_state(monkeypatch):
     assert mongo.database.cwl_reminder.documents["schedule"]["followups"] == [{"number": 2}]
     assert "cwl_followup_1" not in scheduler.jobs
     assert "cwl_followup_1" not in mongo.database.cwl_pending_reminders.documents
+
+
+def test_new_full_delivery_job_clears_stale_retry_channel_filter(monkeypatch):
+    pending = {
+        "cwl_followup_1": {
+            "_id": "cwl_followup_1",
+            "job_id": "cwl_followup_1",
+            "reminder_number": 1,
+            "channel_keys": ["lazy"],
+            "failure_count": 2,
+        },
+    }
+    mongo, _, _ = configure(
+        monkeypatch,
+        schedule={"_id": "schedule"},
+        pending=pending,
+    )
+
+    asyncio.run(
+        cwl._persist_pending_reminder(
+            "cwl_followup_1",
+            pendulum.now(cwl.DEFAULT_TIMEZONE).add(hours=1),
+            1,
+        )
+    )
+
+    restored = mongo.database.cwl_pending_reminders.documents["cwl_followup_1"]
+    assert "channel_keys" not in restored
+    assert "failure_count" not in restored
 
 
 def test_days_through_31_skip_months_where_the_day_does_not_exist():
