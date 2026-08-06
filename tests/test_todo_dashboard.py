@@ -131,6 +131,19 @@ def test_footer_explains_automatic_checks_are_dm_only():
     assert "DM /todo for auto-checks" in _payload_text(payload)
 
 
+def test_automatic_footer_treats_naive_mongo_deadline_as_utc():
+    naive_utc = datetime(2026, 9, 4, 12, 30)
+    base = todo._notice("To-do", "Ready", checked_at=1_725_000_000)
+
+    promoted = todo._automatic_status_panel(
+        base, checked_at=1_725_000_000, refresh_until=naive_utc,
+    )
+
+    text = _payload_text([component.build() for component in promoted])
+    expected = int(naive_utc.replace(tzinfo=timezone.utc).timestamp())
+    assert f"Stops <t:{expected}:R>" in text
+
+
 class _Interaction:
     def __init__(self):
         self.edits = []
@@ -214,50 +227,23 @@ def test_guild_delivery_edits_ephemeral_interaction_response():
     assert interaction.edits == [{"components": ["panel"]}]
 
 
-def test_dm_webhook_fallback_is_not_registered_for_automatic_edits(monkeypatch):
-    recorded = []
-
-    async def fake_record(*args, **kwargs):
-        recorded.append((args, kwargs))
-
-    monkeypatch.setattr(todo.todo_sessions, "record", fake_record)
-    ctx = SimpleNamespace(
-        guild_id=None, channel_id=99, user=SimpleNamespace(id=7),
-    )
-    message = SimpleNamespace(id=22, webhook_id=123)
-
-    asyncio.run(todo._record_panel(ctx, object(), message, todo.VIEW_WAR))
-
-    assert recorded == []
-
-
-def test_guild_panel_is_not_registered_for_automatic_edits(monkeypatch):
-    recorded = []
-
-    async def fake_record(*args, **kwargs):
-        recorded.append((args, kwargs))
-
-    monkeypatch.setattr(todo.todo_sessions, "record", fake_record)
-    ctx = SimpleNamespace(
-        guild_id=123, channel_id=99, user=SimpleNamespace(id=7),
-    )
-
-    asyncio.run(todo._record_panel(
-        ctx, object(), SimpleNamespace(id=22), todo.VIEW_WAR
-    ))
-
-    assert recorded == []
+def test_todo_actions_own_their_response_through_the_lock():
+    for name in (
+        "todo_war", "todo_cwl", "todo_raid", "todo_private",
+        "todo_nav", "todo_refresh",
+    ):
+        assert components.registered_functions[name].no_return is True
 
 
 def test_panel_is_promoted_only_after_session_registration(monkeypatch):
     rest = _Rest()
-    ctx = SimpleNamespace(channel_id=99)
+    ctx = SimpleNamespace(channel_id=99, user=SimpleNamespace(id=7))
     message = SimpleNamespace(id=11)
 
     async def rejected(*args, **kwargs):
-        return False
+        return None
 
-    monkeypatch.setattr(todo, "_record_response", rejected)
+    monkeypatch.setattr(todo, "_takeover_locked", rejected)
     activated = asyncio.run(todo._activate_auto_panel(
         ctx, SimpleNamespace(rest=rest), object(), message, ["active"],
         todo.VIEW_WAR,
@@ -265,16 +251,286 @@ def test_panel_is_promoted_only_after_session_registration(monkeypatch):
     assert activated is False
     assert rest.edits == []
 
-    async def accepted(*args, **kwargs):
-        return True
+    until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
 
-    monkeypatch.setattr(todo, "_record_response", accepted)
+    async def accepted(*args, **kwargs):
+        return "generation", until
+
+    monkeypatch.setattr(todo, "_takeover_locked", accepted)
+    active = todo._notice(
+        "To-do", "Ready", auto_refresh=True, refresh_until=until,
+    )
     activated = asyncio.run(todo._activate_auto_panel(
-        ctx, SimpleNamespace(rest=rest), object(), message, ["active"],
+        ctx, SimpleNamespace(rest=rest), object(), message, active,
         todo.VIEW_WAR,
     ))
     assert activated is True
-    assert rest.edits == [(99, 11, {"components": ["active"]})]
+    assert [(channel, message) for channel, message, _ in rest.edits] == [(99, 11)]
+    payload = [
+        component.build()
+        for component in rest.edits[0][2]["components"]
+    ]
+    assert f"Stops <t:{int(until.timestamp())}:R>" in _payload_text(payload)
+
+
+def test_takeover_demotes_all_old_panels_before_claim(monkeypatch):
+    events = []
+    rest = _Rest()
+    old_documents = [
+        {"_id": "dm:7:99", "message_id": 10, "generation": "old"},
+        {"_id": 12},
+    ]
+
+    async def read_owner(*args, **kwargs):
+        return True, old_documents[0]
+
+    async def active_panels(*args, **kwargs):
+        return True, old_documents
+
+    async def claim(*args, **kwargs):
+        events.append(("claim", kwargs["expected_owner"]))
+        return "new", datetime(2026, 9, 4, tzinfo=timezone.utc)
+
+    async def cleanup(_mongo, documents):
+        events.append(("cleanup", documents))
+        return True
+
+    original_edit = rest.edit_message
+
+    async def edit(channel_id, message_id, **kwargs):
+        events.append(("edit", message_id))
+        return await original_edit(channel_id, message_id, **kwargs)
+
+    rest.edit_message = edit
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "active_panels", active_panels)
+    monkeypatch.setattr(todo.todo_sessions, "claim", claim)
+    monkeypatch.setattr(todo.todo_sessions, "remove_legacy_rows", cleanup)
+
+    claimed = asyncio.run(todo._takeover_locked(
+        SimpleNamespace(rest=rest), object(), user_id=7, channel_id=99,
+        message_id=11, view=todo.VIEW_WAR, page=0, kind="dashboard",
+        trigger="command",
+    ))
+
+    assert claimed is not None
+    assert events == [
+        ("edit", 10),
+        ("edit", 12),
+        ("cleanup", old_documents),
+        ("claim", old_documents[0]),
+    ]
+    for _channel, _message, kwargs in rest.edits:
+        payload = [component.build() for component in kwargs["components"]]
+        text = _payload_text(payload)
+        assert "make it automatic" in text
+        assert "Rechecks" not in text
+
+
+def test_takeover_aborts_before_claim_when_old_panel_cannot_be_demoted(monkeypatch):
+    claimed = []
+
+    class FailingRest:
+        async def edit_message(self, *args, **kwargs):
+            raise RuntimeError("Discord unavailable")
+
+    async def read_owner(*args, **kwargs):
+        return True, {"_id": "dm:7:99", "message_id": 10, "generation": "old"}
+
+    async def active_panels(*args, **kwargs):
+        return True, [{"_id": "dm:7:99", "message_id": 10}]
+
+    async def claim(*args, **kwargs):
+        claimed.append(kwargs)
+        return "new", datetime.now(timezone.utc)
+
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "active_panels", active_panels)
+    monkeypatch.setattr(todo.todo_sessions, "claim", claim)
+
+    result = asyncio.run(todo._takeover_locked(
+        SimpleNamespace(rest=FailingRest()), object(),
+        user_id=7, channel_id=99, message_id=11, view=todo.VIEW_WAR,
+        page=0, kind="dashboard", trigger="command",
+    ))
+
+    assert result is None
+    assert claimed == []
+
+
+def test_takeover_aborts_on_forbidden_old_panel(monkeypatch):
+    claimed = []
+
+    class Forbidden(Exception):
+        pass
+
+    class Rest:
+        async def edit_message(self, *args, **kwargs):
+            raise Forbidden
+
+    async def read_owner(*args, **kwargs):
+        return True, {"generation": "old", "message_id": 10}
+
+    async def active_panels(*args, **kwargs):
+        return True, [{"message_id": 10}]
+
+    async def claim(*args, **kwargs):
+        claimed.append(kwargs)
+
+    monkeypatch.setattr(todo.hikari, "ForbiddenError", Forbidden)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "active_panels", active_panels)
+    monkeypatch.setattr(todo.todo_sessions, "claim", claim)
+
+    result = asyncio.run(todo._takeover_locked(
+        SimpleNamespace(rest=Rest()), object(),
+        user_id=7, channel_id=99, message_id=11, view=todo.VIEW_WAR,
+        page=0, kind="dashboard", trigger="command",
+    ))
+
+    assert result is None
+    assert claimed == []
+
+
+def test_takeover_aborts_before_claim_when_legacy_cleanup_fails(monkeypatch):
+    events = []
+
+    class Rest:
+        async def edit_message(self, _channel, message_id, **kwargs):
+            events.append(("edit", message_id))
+
+    async def read_owner(*args, **kwargs):
+        return True, None
+
+    async def active_panels(*args, **kwargs):
+        return True, [{"_id": 10}]
+
+    async def cleanup(*args, **kwargs):
+        events.append(("cleanup", 10))
+        return False
+
+    async def claim(*args, **kwargs):
+        events.append(("claim", 11))
+
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "active_panels", active_panels)
+    monkeypatch.setattr(todo.todo_sessions, "remove_legacy_rows", cleanup)
+    monkeypatch.setattr(todo.todo_sessions, "claim", claim)
+
+    result = asyncio.run(todo._takeover_locked(
+        SimpleNamespace(rest=Rest()), object(),
+        user_id=7, channel_id=99, message_id=11, view=todo.VIEW_WAR,
+        page=0, kind="dashboard", trigger="command",
+    ))
+
+    assert result is None
+    assert events == [("edit", 10), ("cleanup", 10)]
+
+
+def test_takeover_continues_when_old_panel_is_already_gone(monkeypatch):
+    class Gone(Exception):
+        pass
+
+    class Rest:
+        async def edit_message(self, *args, **kwargs):
+            raise Gone
+
+    async def read_owner(*args, **kwargs):
+        return True, {"generation": "old", "message_id": 10}
+
+    async def active_panels(*args, **kwargs):
+        return True, [{"message_id": 10}]
+
+    async def claim(*args, **kwargs):
+        return "new", datetime(2026, 9, 4, tzinfo=timezone.utc)
+
+    async def cleanup(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(todo.hikari, "NotFoundError", Gone)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "active_panels", active_panels)
+    monkeypatch.setattr(todo.todo_sessions, "claim", claim)
+    monkeypatch.setattr(todo.todo_sessions, "remove_legacy_rows", cleanup)
+
+    result = asyncio.run(todo._takeover_locked(
+        SimpleNamespace(rest=Rest()), object(),
+        user_id=7, channel_id=99, message_id=11, view=todo.VIEW_WAR,
+        page=0, kind="dashboard", trigger="command",
+    ))
+
+    assert result is not None
+
+
+def test_concurrent_new_panels_finish_with_one_latest_owner(monkeypatch):
+    owner = None
+    edits = []
+    deadline = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+
+    class Rest:
+        async def edit_message(self, channel_id, message_id, **kwargs):
+            text = _payload_text([
+                component.build() for component in kwargs["components"]
+            ])
+            edits.append((message_id, text))
+
+    async def read_owner(*args, **kwargs):
+        return True, dict(owner) if owner else None
+
+    async def active_panels(*args, **kwargs):
+        return True, [dict(owner)] if owner else []
+
+    async def claim(*args, **kwargs):
+        nonlocal owner
+        expected = kwargs["expected_owner"]
+        if owner is None:
+            assert expected is None
+        else:
+            assert expected["generation"] == owner["generation"]
+        generation = f"gen-{kwargs['message_id']}"
+        owner = {
+            "_id": "dm:7:99",
+            "user_id": 7,
+            "channel_id": 99,
+            "message_id": kwargs["message_id"],
+            "generation": generation,
+            "refresh_until": deadline,
+        }
+        return generation, deadline
+
+    async def cleanup(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "active_panels", active_panels)
+    monkeypatch.setattr(todo.todo_sessions, "claim", claim)
+    monkeypatch.setattr(todo.todo_sessions, "remove_legacy_rows", cleanup)
+    todo._refresh_locks.clear()
+    bot = SimpleNamespace(rest=Rest())
+    panel = todo._notice(
+        "To-do", "Ready", auto_refresh=True, refresh_until=deadline,
+    )
+
+    async def activate(message_id):
+        ctx = SimpleNamespace(channel_id=99, user=SimpleNamespace(id=7))
+        return await todo._activate_auto_panel(
+            ctx, bot, object(), SimpleNamespace(id=message_id), panel,
+            todo.VIEW_WAR,
+        )
+
+    async def exercise():
+        return await asyncio.gather(activate(11), activate(12))
+
+    results = asyncio.run(exercise())
+
+    assert results == [True, True]
+    assert owner is not None
+    current = owner["message_id"]
+    previous = 12 if current == 11 else 11
+    current_edits = [text for message, text in edits if message == current]
+    previous_edits = [text for message, text in edits if message == previous]
+    assert "Rechecks about every 10 min" in current_edits[-1]
+    assert "make it automatic" in previous_edits[-1]
 
 
 def test_neutral_footer_preserves_dashboard_controls():
@@ -297,6 +553,395 @@ def test_neutral_footer_preserves_dashboard_controls():
     )
 
 
+def test_navigation_preserves_deadline_and_retired_panel_stays_manual(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+    updates = []
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(message=SimpleNamespace(id=55))
+
+        def __init__(self):
+            self.responses = []
+
+        async def respond(self, **kwargs):
+            self.responses.append(kwargs)
+
+    async def fake_load(*args, **kwargs):
+        return data, None
+
+    async def current_owner(*args, **kwargs):
+        return True, {
+            "_id": "dm:77:66", "message_id": 55, "generation": "gen",
+            "refresh_until": until,
+        }
+
+    async def update(*args, **kwargs):
+        updates.append(kwargs)
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", current_owner)
+    monkeypatch.setattr(todo.todo_sessions, "update_navigation", update)
+    todo._refresh_locks.clear()
+    active_ctx = Ctx()
+
+    asyncio.run(todo._switch(
+        active_ctx, todo.VIEW_CWL, "2", object(), object(), mongo=object(),
+        trigger="view:cwl",
+    ))
+
+    active_payload = [
+        component.build()
+        for component in active_ctx.responses[0]["components"]
+    ]
+    assert f"Stops <t:{int(until.timestamp())}:R>" in _payload_text(active_payload)
+    assert updates[0]["page"] == 2
+    assert "refresh_until" not in updates[0]
+
+    async def different_owner(*args, **kwargs):
+        return True, {
+            "_id": "dm:77:66", "message_id": 99, "generation": "new",
+            "refresh_until": until,
+        }
+
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", different_owner)
+    retired_ctx = Ctx()
+    asyncio.run(todo._switch(
+        retired_ctx, todo.VIEW_WAR, "0", object(), object(), mongo=object(),
+        trigger="view:war",
+    ))
+
+    retired_payload = [
+        component.build()
+        for component in retired_ctx.responses[0]["components"]
+    ]
+    retired_text = _payload_text(retired_payload)
+    assert "Use Check now to update" in retired_text
+    assert "Rechecks" not in retired_text
+    assert len(updates) == 1
+
+
+def test_check_now_reactivates_panel_for_exact_claimed_window(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(message=SimpleNamespace(id=55))
+
+        def __init__(self):
+            self.responses = []
+
+        async def respond(self, **kwargs):
+            self.responses.append(kwargs)
+
+    async def fake_load(*args, **kwargs):
+        assert kwargs["force"] is True
+        return data, None
+
+    async def takeover(*args, **kwargs):
+        assert kwargs["message_id"] == 55
+        assert kwargs["trigger"] == "refresh"
+        return "new-generation", until
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo, "_takeover_locked", takeover)
+    todo._refresh_locks.clear()
+    ctx = Ctx()
+
+    asyncio.run(todo._switch(
+        ctx, todo.VIEW_WAR, "war|0", object(), object(), force=True,
+        mongo=object(), trigger="refresh",
+    ))
+
+    payload = [component.build() for component in ctx.responses[0]["components"]]
+    text = _payload_text(payload)
+    assert f"Stops <t:{int(until.timestamp())}:R>" in text
+    assert "Rechecks about every 10 min" in text
+
+
+def test_check_now_on_webhook_fallback_stays_manual(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    takeovers = []
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(
+            message=SimpleNamespace(id=55, webhook_id=123)
+        )
+
+        def __init__(self):
+            self.responses = []
+
+        async def respond(self, **kwargs):
+            self.responses.append(kwargs)
+
+    async def fake_load(*args, **kwargs):
+        return data, None
+
+    async def takeover(*args, **kwargs):
+        takeovers.append(kwargs)
+        return "gen", datetime.now(timezone.utc)
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo, "_takeover_locked", takeover)
+    ctx = Ctx()
+
+    asyncio.run(todo._switch(
+        ctx, todo.VIEW_WAR, "war|0", object(), object(), force=True,
+        mongo=object(), trigger="refresh",
+    ))
+
+    payload = [component.build() for component in ctx.responses[0]["components"]]
+    text = _payload_text(payload)
+    assert takeovers == []
+    assert "Use Check now to update" in text
+    assert "Rechecks" not in text
+
+
+def test_rapid_dm_clicks_queue_before_loading_and_finish_in_order(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+    owner = {
+        "_id": "dm:77:66", "message_id": 55, "generation": "gen",
+        "channel_id": 66, "user_id": 77, "view": todo.VIEW_WAR,
+        "page": 0, "refresh_until": until,
+    }
+    first_load_entered = asyncio.Event()
+    release_first_load = asyncio.Event()
+    load_count = 0
+    responses = []
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(message=SimpleNamespace(id=55))
+
+        def __init__(self, label):
+            self.label = label
+
+        async def respond(self, **kwargs):
+            responses.append(self.label)
+
+    async def fake_load(*args, **kwargs):
+        nonlocal load_count
+        load_count += 1
+        if load_count == 1:
+            first_load_entered.set()
+            await release_first_load.wait()
+        return data, None
+
+    async def read_owner(*args, **kwargs):
+        return True, dict(owner)
+
+    async def update_navigation(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(
+        todo.todo_sessions, "update_navigation", update_navigation
+    )
+    todo._refresh_locks.clear()
+
+    async def exercise():
+        first = asyncio.create_task(todo._switch(
+            Ctx("first"), todo.VIEW_WAR, "0", object(), object(),
+            mongo=object(), trigger="view:war",
+        ))
+        await first_load_entered.wait()
+        second = asyncio.create_task(todo._switch(
+            Ctx("second"), todo.VIEW_PRIVATE, "0", object(), object(),
+            mongo=object(), trigger="view:private",
+        ))
+        await asyncio.sleep(0)
+        assert load_count == 1
+        release_first_load.set()
+        await asyncio.gather(first, second)
+
+    asyncio.run(exercise())
+
+    assert load_count == 2
+    assert responses == ["first", "second"]
+
+
+def test_manual_edit_holds_owner_lock_until_discord_then_auto_uses_new_view(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+    owner = {
+        "_id": "dm:77:66", "message_id": 55, "generation": "gen",
+        "channel_id": 66, "user_id": 77, "view": todo.VIEW_WAR,
+        "page": 0, "refresh_until": until,
+    }
+    manual_entered = asyncio.Event()
+    release_manual = asyncio.Event()
+    edit_order = []
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(message=SimpleNamespace(id=55))
+
+        async def respond(self, **kwargs):
+            manual_entered.set()
+            await release_manual.wait()
+            edit_order.append("manual")
+
+    class Rest:
+        async def edit_message(self, *args, **kwargs):
+            edit_order.append("automatic")
+
+    async def fake_load(*args, **kwargs):
+        return data, None
+
+    async def read_owner(*args, **kwargs):
+        return True, dict(owner)
+
+    async def update_navigation(*args, **kwargs):
+        owner["view"] = kwargs["view"]
+        owner["page"] = kwargs["page"]
+        return True
+
+    async def get_owner(*args, **kwargs):
+        return True, dict(owner)
+
+    async def mark(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "update_navigation", update_navigation)
+    monkeypatch.setattr(todo.todo_sessions, "get", get_owner)
+    monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", mark)
+    todo._refresh_locks.clear()
+
+    async def exercise():
+        manual = asyncio.create_task(todo._switch(
+            Ctx(), todo.VIEW_PRIVATE, "0", object(), object(), mongo=object(),
+            trigger="view:private",
+        ))
+        await manual_entered.wait()
+        automatic = asyncio.create_task(todo._refresh_session(
+            dict(owner), SimpleNamespace(rest=Rest()), object(), object(),
+        ))
+        await asyncio.sleep(0)
+        assert edit_order == []
+        release_manual.set()
+        await manual
+        assert await automatic == "updated"
+
+    asyncio.run(exercise())
+
+    assert edit_order == ["manual", "automatic"]
+    assert owner["view"] == todo.VIEW_PRIVATE
+
+
+def test_auto_edit_holds_owner_lock_until_discord_then_manual_wins(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+    owner = {
+        "_id": "dm:77:66", "message_id": 55, "generation": "gen",
+        "channel_id": 66, "user_id": 77, "view": todo.VIEW_WAR,
+        "page": 0, "refresh_until": until,
+    }
+    auto_entered = asyncio.Event()
+    release_auto = asyncio.Event()
+    edit_order = []
+
+    class Rest:
+        async def edit_message(self, *args, **kwargs):
+            auto_entered.set()
+            await release_auto.wait()
+            edit_order.append("automatic")
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(message=SimpleNamespace(id=55))
+
+        async def respond(self, **kwargs):
+            edit_order.append("manual")
+
+    async def fake_load(*args, **kwargs):
+        return data, None
+
+    async def read_owner(*args, **kwargs):
+        return True, dict(owner)
+
+    async def update_navigation(*args, **kwargs):
+        owner["view"] = kwargs["view"]
+        return True
+
+    async def get_owner(*args, **kwargs):
+        return True, dict(owner)
+
+    async def mark(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "update_navigation", update_navigation)
+    monkeypatch.setattr(todo.todo_sessions, "get", get_owner)
+    monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", mark)
+    todo._refresh_locks.clear()
+
+    async def exercise():
+        automatic = asyncio.create_task(todo._refresh_session(
+            dict(owner), SimpleNamespace(rest=Rest()), object(), object(),
+        ))
+        await auto_entered.wait()
+        manual = asyncio.create_task(todo._switch(
+            Ctx(), todo.VIEW_PRIVATE, "0", object(), object(), mongo=object(),
+            trigger="view:private",
+        ))
+        await asyncio.sleep(0)
+        assert edit_order == []
+        release_auto.set()
+        assert await automatic == "updated"
+        await manual
+
+    asyncio.run(exercise())
+
+    assert edit_order == ["automatic", "manual"]
+    assert owner["view"] == todo.VIEW_PRIVATE
+
+
+def test_three_owner_lock_contenders_never_split_the_lock():
+    todo._refresh_locks.clear()
+    lock_ids = []
+    inside = 0
+    maximum = 0
+
+    async def contender():
+        nonlocal inside, maximum
+        lock = todo._refresh_lock("dm:77:66")
+        lock_ids.append(id(lock))
+        async with lock:
+            inside += 1
+            maximum = max(maximum, inside)
+            await asyncio.sleep(0)
+            inside -= 1
+
+    async def exercise():
+        await asyncio.gather(*(contender() for _ in range(3)))
+
+    asyncio.run(exercise())
+
+    assert len(set(lock_ids)) == 1
+    assert maximum == 1
+
+
 def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     rest = _Rest()
@@ -305,12 +950,14 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     async def fake_load(*args, **kwargs):
         return data, None
 
-    async def fake_get(_mongo, message_id):
+    async def fake_get(_mongo, owner_id, message_id, generation):
+        assert owner_id == "dm:77:66"
         assert message_id == 55
-        return {"view": todo.VIEW_PRIVATE, "page": 0}
+        assert generation == "gen"
+        return True, {"view": todo.VIEW_PRIVATE, "page": 0}
 
-    async def fake_mark(_mongo, message_id, **kwargs):
-        marked.append((message_id, kwargs))
+    async def fake_mark(_mongo, owner_id, message_id, generation, **kwargs):
+        marked.append((owner_id, message_id, generation, kwargs))
         return True
 
     monkeypatch.setattr(todo, "_load", fake_load)
@@ -319,7 +966,8 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     todo._refresh_locks.clear()
 
     result = asyncio.run(todo._refresh_session(
-        {"_id": 55, "channel_id": 66, "user_id": 77, "view": todo.VIEW_WAR},
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77, "view": todo.VIEW_WAR},
         SimpleNamespace(rest=rest), object(), object(),
     ))
 
@@ -328,7 +976,7 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     payload = [component.build() for component in rest.edits[0][2]["components"]]
     assert "Private War Logs" in _payload_text(payload)
     assert "Rechecks about every 10 min" in _payload_text(payload)
-    assert marked[0][0] == 55
+    assert marked[0][:3] == ("dm:77:66", 55, "gen")
 
 
 def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
@@ -342,8 +990,10 @@ def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
             refresh_until=kwargs["refresh_until"], checked_at=1_725_000_000,
         )
 
-    async def fake_get(_mongo, _message_id):
-        return {"view": todo.VIEW_WAR, "page": 0, "refresh_until": until}
+    async def fake_get(_mongo, _owner_id, _message_id, _generation):
+        return True, {
+            "view": todo.VIEW_WAR, "page": 0, "refresh_until": until,
+        }
 
     async def fake_mark(*args, **kwargs):
         return True
@@ -354,7 +1004,8 @@ def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
     todo._refresh_locks.clear()
 
     result = asyncio.run(todo._refresh_session(
-        {"_id": 55, "channel_id": 66, "user_id": 77,
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77,
          "refresh_until": until},
         SimpleNamespace(rest=rest), object(), object(),
     ))
@@ -366,27 +1017,158 @@ def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
 
 def test_automatic_refresh_reports_failed_when_schedule_cannot_advance(monkeypatch):
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    postponed = []
 
     async def fake_load(*args, **kwargs):
         return data, None
 
-    async def fake_get(_mongo, _message_id):
-        return {"view": todo.VIEW_WAR, "page": 0}
+    async def fake_get(_mongo, _owner_id, _message_id, _generation):
+        return True, {"view": todo.VIEW_WAR, "page": 0}
 
     async def fake_mark(*args, **kwargs):
         return False
 
+    async def fake_postpone(*args, **kwargs):
+        postponed.append((args, kwargs))
+        return True
+
     monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
+    monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", fake_mark)
+    monkeypatch.setattr(todo.todo_sessions, "postpone", fake_postpone)
+    todo._refresh_locks.clear()
+
+    result = asyncio.run(todo._refresh_session(
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77},
+        SimpleNamespace(rest=_Rest()), object(), object(),
+    ))
+
+    assert result == "failed"
+    assert len(postponed) == 1
+
+
+def test_automatic_refresh_postpones_mongo_read_failure(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    postponed = []
+
+    async def fake_load(*args, **kwargs):
+        return data, None
+
+    async def failed_read(*args, **kwargs):
+        return False, None
+
+    async def fake_postpone(*args, **kwargs):
+        postponed.append(args[1:4])
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "get", failed_read)
+    monkeypatch.setattr(todo.todo_sessions, "postpone", fake_postpone)
+    todo._refresh_locks.clear()
+
+    result = asyncio.run(todo._refresh_session(
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77},
+        SimpleNamespace(rest=_Rest()), object(), object(),
+    ))
+
+    assert result == "failed"
+    assert postponed == [("dm:77:66", 55, "gen")]
+
+
+def test_deployed_legacy_panel_keeps_refreshing_until_its_old_deadline(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    until = datetime(2026, 8, 6, 15, tzinfo=timezone.utc)
+    marked = []
+
+    async def fake_load(*args, **kwargs):
+        return data, None
+
+    async def read_owner(*args, **kwargs):
+        return True, None
+
+    async def fake_get(_mongo, owner_id, message_id, generation):
+        assert (owner_id, message_id, generation) == ("dm:77:66", 55, None)
+        return True, {
+            "_id": 55, "view": todo.VIEW_WAR, "page": 0,
+            "refresh_until": until,
+        }
+
+    async def fake_mark(_mongo, owner_id, message_id, generation, **kwargs):
+        marked.append((owner_id, message_id, generation))
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
     monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
     monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", fake_mark)
     todo._refresh_locks.clear()
 
     result = asyncio.run(todo._refresh_session(
-        {"_id": 55, "channel_id": 66, "user_id": 77},
+        {"_id": 55, "channel_id": 66, "user_id": 77,
+         "refresh_until": until},
         SimpleNamespace(rest=_Rest()), object(), object(),
     ))
 
-    assert result == "failed"
+    assert result == "updated"
+    assert marked == [("dm:77:66", 55, None)]
+
+
+def test_legacy_scheduler_discards_row_when_current_owner_exists(monkeypatch):
+    discarded = []
+
+    class Rest:
+        async def edit_message(self, *args, **kwargs):
+            raise AssertionError("retired legacy panel must not be repainted")
+
+    async def fake_load(*args, **kwargs):
+        raise AssertionError("superseded legacy row must not load Clash data")
+
+    async def read_owner(*args, **kwargs):
+        return True, {
+            "_id": "dm:77:66", "message_id": 99, "generation": "current",
+        }
+
+    async def discard(_mongo, document_id):
+        discarded.append(document_id)
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", read_owner)
+    monkeypatch.setattr(todo.todo_sessions, "discard", discard)
+    todo._refresh_locks.clear()
+
+    result = asyncio.run(todo._refresh_session(
+        {"_id": 55, "channel_id": 66, "user_id": 77},
+        SimpleNamespace(rest=Rest()), object(), object(),
+    ))
+
+    assert result == "removed"
+    assert discarded == [55]
+
+
+def test_malformed_due_row_is_deleted_without_loading(monkeypatch):
+    discarded = []
+
+    async def should_not_load(*args, **kwargs):
+        raise AssertionError("malformed row must not load Clash data")
+
+    async def discard(_mongo, document_id):
+        discarded.append(document_id)
+        return True
+
+    monkeypatch.setattr(todo, "_load", should_not_load)
+    monkeypatch.setattr(todo.todo_sessions, "discard", discard)
+
+    result = asyncio.run(todo._refresh_session(
+        {"_id": "wrong-key", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77},
+        SimpleNamespace(rest=_Rest()), object(), object(),
+    ))
+
+    assert result == "removed"
+    assert discarded == ["wrong-key"]
 
 
 def test_automatic_refresh_removes_missing_message_session(monkeypatch):
@@ -403,11 +1185,11 @@ def test_automatic_refresh_removes_missing_message_session(monkeypatch):
     async def fake_load(*args, **kwargs):
         return data, None
 
-    async def fake_get(_mongo, _message_id):
-        return {"view": todo.VIEW_WAR, "page": 0}
+    async def fake_get(_mongo, _owner_id, _message_id, _generation):
+        return True, {"view": todo.VIEW_WAR, "page": 0}
 
-    async def fake_remove(_mongo, message_id):
-        removed.append(message_id)
+    async def fake_remove(_mongo, owner_id, message_id, generation):
+        removed.append((owner_id, message_id, generation))
         return True
 
     monkeypatch.setattr(todo.hikari, "NotFoundError", MissingMessage)
@@ -417,12 +1199,54 @@ def test_automatic_refresh_removes_missing_message_session(monkeypatch):
     todo._refresh_locks.clear()
 
     result = asyncio.run(todo._refresh_session(
-        {"_id": 55, "channel_id": 66, "user_id": 77},
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77},
         SimpleNamespace(rest=MissingRest()), object(), object(),
     ))
 
     assert result == "removed"
-    assert removed == [55]
+    assert removed == [("dm:77:66", 55, "gen")]
+
+
+def test_missing_message_is_postponed_when_mongo_removal_fails(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    postponed = []
+
+    class MissingMessage(Exception):
+        pass
+
+    class MissingRest:
+        async def edit_message(self, *args, **kwargs):
+            raise MissingMessage
+
+    async def fake_load(*args, **kwargs):
+        return data, None
+
+    async def fake_get(*args, **kwargs):
+        return True, {"view": todo.VIEW_WAR, "page": 0}
+
+    async def failed_remove(*args, **kwargs):
+        return False
+
+    async def fake_postpone(*args, **kwargs):
+        postponed.append(args[1:4])
+        return True
+
+    monkeypatch.setattr(todo.hikari, "NotFoundError", MissingMessage)
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
+    monkeypatch.setattr(todo.todo_sessions, "remove", failed_remove)
+    monkeypatch.setattr(todo.todo_sessions, "postpone", fake_postpone)
+    todo._refresh_locks.clear()
+
+    result = asyncio.run(todo._refresh_session(
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77},
+        SimpleNamespace(rest=MissingRest()), object(), object(),
+    ))
+
+    assert result == "failed"
+    assert postponed == [("dm:77:66", 55, "gen")]
 
 
 def test_automatic_refresh_postpones_transient_failure(monkeypatch):
@@ -431,8 +1255,8 @@ def test_automatic_refresh_postpones_transient_failure(monkeypatch):
     async def failed_load(*args, **kwargs):
         raise RuntimeError("temporary API failure")
 
-    async def fake_postpone(_mongo, message_id):
-        postponed.append(message_id)
+    async def fake_postpone(_mongo, owner_id, message_id, generation):
+        postponed.append((owner_id, message_id, generation))
         return True
 
     monkeypatch.setattr(todo, "_load", failed_load)
@@ -440,12 +1264,13 @@ def test_automatic_refresh_postpones_transient_failure(monkeypatch):
     todo._refresh_locks.clear()
 
     result = asyncio.run(todo._refresh_session(
-        {"_id": 55, "channel_id": 66, "user_id": 77},
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77},
         SimpleNamespace(rest=_Rest()), object(), object(),
     ))
 
     assert result == "failed"
-    assert postponed == [55]
+    assert postponed == [("dm:77:66", 55, "gen")]
 
 
 def test_auto_refresh_cycle_shares_one_negative_cache_cutoff(monkeypatch):

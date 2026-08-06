@@ -843,40 +843,19 @@ is `POST /ck/bulk`, which would collapse ~104 calls into one — and it returns
 `401 Invalid token`. That needs a credential from the ClashKing operator; see
 [clashking-war-endpoints.md](clashking-war-endpoints.md).
 
-### What `send=` spans — ONE call, and not the one previously documented
+### What `send=` spans
 
-`send=` wraps exactly one statement, `await ctx.respond(components=...)`
-(`extensions/commands/todo.py:886-887`, and `870-871` on the notice path). It is
-**not** a create-then-edit sequence, and the `todo_sessions` write is outside it
-— `print(perf.line())` at `:893` runs before `_record_response` at `:895`, so
-neither that write nor its `fetch_initial_response()` is counted in `send=` or in
-`total=`.
+On a new DM command, `send=` covers standalone `create_message` delivery (or
+the interaction-response fallback). The neutral-to-automatic promotion and
+ownership bookkeeping happen after the user-visible send. On component actions,
+`_switch` now owns `ctx.respond(edit=True)` and holds the owner lock through it,
+so `send=` includes serialisation, rate-bucket waiting, the HTTP request, and
+deserialisation. The generic dispatcher performs no second edit because every
+todo action is registered with `no_return=True`.
 
-**Correction to an earlier claim in this repo:** `ctx.respond()` after a defer
-was documented as `PATCH /webhooks/{app}/{token}/messages/@original`. **It is
-not.** lightbulb 3.0.3's `Context.respond` takes the `else` branch when the
-initial response has already been sent, and that branch calls
-`self.interaction.execute(...)` — a **followup**, `POST /webhooks/{app}/{token}`.
-lightbulb's own source comments that this may be unintentional:
-
-> *"This will automatically cause a response if the initial response was deferred
-> previously. I am not sure if this is intentional by discord however…"*
-
-The bucket conclusion survives — both are webhook routes, so the panel is still
-off the contended `POST /channels/{id}/messages` bucket. The specific route was
-wrong.
-
-Two consequences:
-
-- `respond()` in the deferred case returns a **`hikari.Message`**, not the
-  `INITIAL_RESPONSE_IDENTIFIER` sentinel. `_record_response` discards it and
-  calls `fetch_initial_response()` instead, which returns the *deferred
-  placeholder*, a different message. **So `todo_sessions` rows are keyed to the
-  wrong message id.** Real defect, found by reading lightbulb's source for this
-  write-up, not yet fixed.
-- It serialises behind `Context._response_lock`, an `asyncio.Lock` held for the
-  duration of the call. Per-context and uncontended for a single invocation, so
-  it explains nothing about the ~2 s.
+The standalone route is deliberate: a deferred followup still carries the
+"used /todo" treatment. Full route and fallback analysis lives in
+[`discord-rate-limit-buckets.md`](discord-rate-limit-buckets.md).
 
 ### `render=0ms` IS MISLEADING — read this before trusting the perf line
 
@@ -891,7 +870,7 @@ serialisation, the bucket acquire, the HTTP round trip, and the
 deserialisation.** Reading `render=0ms` as "rendering is free" is wrong — the
 expensive half of rendering was never in that timer.
 
-### KNOWN REPORTING DEFECT: `warm=` mixes a global numerator with a per-user denominator
+### Fixed: `warm=` is scoped to the current user's tags
 
 Observed in the wild: **`warm=65/45` — more warm entries than tags**, which is
 impossible for one user.
@@ -915,22 +894,20 @@ are counted against a 45-tag user's total.
 person on the bot to surface it. It affects the diagnostic line only — the panel,
 the cache and the fetch are all correct, and `calls=`/`by_label=` remain accurate.
 
-**Not fixed.** The honest numerator is "how many of *this user's* tags are live",
-which needs a `live_keys_for(tags)` that tests membership without going through
-`cache_get` — that function pops expired entries as a side effect and would
-mutate state from inside a reporting call.
+`live_keys_for("player:", tags)` now builds the current invocation's distinct
+cache keys and checks them without calling side-effecting `cache_get`. Unrelated
+users and expired entries cannot enter the numerator, duplicates cannot inflate
+the denominator, and `warm` cannot exceed the linked-account total.
 
-Two fields are **path-specific**. The refresh path has no defer, and `_switch`
-cannot time the send because the dispatcher in `extensions/components.py` owns
-the response. Those phases used to print `defer=0ms send=0ms` — a missing key
-returned 0 from `_ms()` and rendered identically to a real zero, next to a
-genuine `send=1055ms` on the command path.
+Two fields are **path-specific**. Component actions have no defer timing here,
+but `/todo` now owns their edit while holding the refresh lock and can measure
+that send. A missing phase prints `-` rather than looking like a measured zero.
 
 **A phase that was never observed now prints `-`.** Presence in `_phase` is
 exactly "was this measured", so any future path-specific phase gets it free.
 
-`total=` carries its span: **`total=6.16s(to-send)`** on the command path, which
-prints after the send, and **`total=0.26s(to-render)`** on the refresh path,
+`total=` carries its span. Command and component paths now print after their
+send; an unmeasured send is still reported as `to-render`,
 which prints after render. **The two are not comparable and the line now says
 so.** The span is derived from whether `send` was observed rather than set by a
 caller, so it cannot drift. The command path's *number* is unchanged — the
@@ -998,20 +975,29 @@ Access is via `_emoji(name)` / `_partial(name)`, which return `""` /
 
 ## DM automatic refresh
 
-`utils/todo_sessions.py` stores one row per tracked DM message in the `settings`
-database. `_id` is the Discord message id. Guild panels remain ephemeral and
-manual and are not stored.
+`utils/todo_sessions.py` stores one owner row per user and DM channel in the
+`settings` database. `_id` is `dm:{user_id}:{channel_id}`; `message_id` is the
+latest panel and `generation` rejects delayed work from a replaced panel. Guild
+panels remain ephemeral, manual, and unstored.
 
-Each DM panel stays scheduled through its own 24–72 hour deadline. Keeping its
-small TTL-bounded row makes every visible auto-check promise truthful and avoids
-overlapping command runs deleting each other's session.
+New `/todo` and **Check now** start an exact 30-day window. Ordinary navigation
+and automatic checks update the checked time and next run but never extend the
+deadline. A newer `/todo` replaces the previous automatic panel; the older
+message becomes a small manual panel whose Check now button can make it current
+again.
 
 The poll loop wakes every minute and selects at most 100 due rows. Each panel is
 scheduled ten minutes after its previous successful check, with four concurrent
-refreshes maximum. Immediately before editing, it re-reads the row so a view or
-page selected while Clash data was loading is not overwritten by stale stored
-navigation. A deleted or inaccessible Discord message removes its session;
-transient errors postpone the next attempt.
+refreshes maximum. The due query has an `active,next_refresh_at` index. One user
+can therefore contribute at most one regular automatic edit; a full 30-day
+window is 4,320 checks. A deleted or inaccessible Discord message removes its
+exact generation; transient errors postpone only that generation.
+
+Rows written by `7ca8a33` used the numeric message ID as `_id` and promised a
+24–72-hour window. The scheduler continues honoring those rows until their
+original deadline, so deploying this owner model cannot silently break a
+visible promise. A new `/todo` or Check now demotes and removes them; otherwise
+the existing TTL bounds their lifetime and storage.
 
 Automatic work does not force the process-wide cache clear used by **Check
 now**. It revalidates only an old cached `no war`, ended regular war, or `not in
@@ -1020,16 +1006,29 @@ private logs, player and raid data, and unrelated clans remain cached. A
 per-clan lock makes overlapping panels share the recheck instead of duplicating
 API calls.
 
-`refresh_until` is at least 24 hours, extends through the latest visible event
-deadline plus one hour, and is capped at 72 hours. User interactions can
-reactivate a panel; background checks never extend their own retention.
+Replacement is deliberately ordered: send the candidate with a neutral footer,
+change every promised predecessor to manual, compare-and-swap the owner row,
+then promote the candidate. A predecessor edit failure aborts replacement and
+leaves it scheduled. A Mongo failure leaves the candidate manual. A candidate
+promotion failure leaves a scheduled but conservatively manual owner that the
+next automatic cycle repairs. No failure ordering leaves an unscheduled message
+promising automatic updates.
 
-The command first sends a standalone bot-authored DM with a neutral manual
-footer. Only after Mongo confirms the session does it promote the footer to
-automatic. A failed write therefore cannot leave a false scheduling promise.
-If standalone delivery fails, the command uses the deferred response and keeps
-the panel manual; Discord interaction tokens expire after 15 minutes, so the
-scheduler cannot safely depend on them.
+Todo component handlers own their Discord response (`no_return=True`) and hold
+the same weak owner lock as the scheduler through the actual edit. This closes
+the interval where the generic dispatcher previously edited after `_switch`
+released control. Scheduler reads, marks, postpones, and removals also match
+`message_id + generation`, so work loaded before a takeover cannot touch its
+replacement.
+
+The production topology is one `GatewayBot` process under one systemd unit, so
+the weak locks cover every Discord edit. They are intentionally process-local;
+running overlapping bot replicas would require a distributed edit lease before
+that topology is supported.
+
+If standalone delivery fails, the command uses the deferred webhook response
+and keeps it manual. Check now still performs a manual update there but never
+enrolls that short-lived webhook message for bot-token scheduling.
 
 ### Mongo TTL indexes only understand BSON dates
 
@@ -1217,9 +1216,8 @@ inside hikari may still make the standalone send slower without raising; the
 interaction was acknowledged first, so that delay does not violate Discord's
 three-second response deadline.
 
-**Fixed and verified** (`3c11233`): `_record_response` used to key rows to
-`fetch_initial_response()` — the deferred placeholder — while the panel is a
-followup message with a different id.
+**Historical fix** (`3c11233`): `_record_response` once keyed rows to the
+deferred placeholder instead of the displayed message.
 
 Closing evidence, `/todo` then Refresh:
 
@@ -1228,19 +1226,11 @@ _id 1533937406334472413  interactions=3  last_trigger=refresh
 created_at 1785789582.46  updated_at 1785790183.62
 ```
 
-**One row, not two.** The command path and the interaction path wrote the same
-document, so the id the command recorded is the panel's. The broken case would
-have produced a second row with `interactions=1`, because the interaction path
-keys off `ctx.interaction.message.id` and always did.
-
-That is the test that discriminates. A query returning only `last_trigger='command'`
-rows with `interactions=1` proves nothing — it cannot tell "fixed" from "the
-interaction path never ran".
-
-The current standalone path returns the exact `Message` that is recorded, while
-component interactions continue keying the row from
-`ctx.interaction.message.id`. Live verification must confirm that `/todo`, a
-button click, and one automatic cycle all update the same Mongo `_id`.
+The current model no longer keys ownership by message. One deterministic row,
+`_id = dm:{user_id}:{channel_id}`, carries `message_id` and `generation`. Live
+verification must confirm that a second `/todo` changes that row's message and
+generation, turns the prior Discord panel manual, and that a delayed automatic
+cycle cannot edit or delete the replacement.
 
 **Not yet verified:** the Raids view with a live raid weekend — `state ==
 "ongoing"` has never returned True, because every test has been out of season

@@ -18,6 +18,20 @@ def test_process_cache_is_bounded(monkeypatch):
     todo_data._cache.clear()
 
 
+def test_warm_count_is_scoped_to_current_distinct_linked_tags():
+    todo_data._cache.clear()
+    todo_data.cache_put("player:#MINE", object(), 600)
+    todo_data.cache_put("player:#OTHER", object(), 600)
+    todo_data.cache_put("player:#EXPIRED", object(), -1)
+
+    warm, linked = todo_data.live_keys_for(
+        "player:", ["#mine", "#MINE", "#COLD", "#EXPIRED"]
+    )
+
+    assert (warm, linked) == (1, 3)
+    assert warm <= linked
+    todo_data._cache.clear()
+
 def test_call_counters_are_isolated_between_concurrent_invocations():
     async def invocation(label):
         todo_data.reset_calls()

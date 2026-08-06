@@ -365,6 +365,27 @@ def live_keys(prefix: str) -> int:
     )
 
 
+def live_keys_for(prefix: str, identifiers: list[str]) -> tuple[int, int]:
+    """Live cache count scoped to these identifiers, plus distinct total.
+
+    ``live_keys('player:')`` is process-global and can exceed one user's linked
+    account count. This side-effect-free lookup is the honest warm numerator
+    used by one invocation's diagnostic line.
+    """
+    keys = {
+        f"{prefix}{str(identifier).strip().upper()}"
+        for identifier in identifiers
+        if str(identifier).strip()
+    }
+    now = time.monotonic()
+    live = sum(
+        1
+        for key in keys
+        if (entry := _cache.get(key)) is not None and entry[0] > now
+    )
+    return live, len(keys)
+
+
 def cache_drop_prefix(prefix: str) -> int:
     """Drop every key with this prefix. Returns count dropped.
 

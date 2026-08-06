@@ -57,7 +57,7 @@ wait handled inside hikari may still make the standalone send slow without
 raising; the early defer keeps the interaction valid while that wait occurs.
 The fallback is marked manual-only and is not stored as an automatic session:
 Discord interaction tokens expire after 15 minutes, while these panels may run
-for up to 72 hours.
+for 30 days. Only the latest standalone DM panel per user/channel is scheduled.
 
 Guild `/todo` panels stay on the ephemeral interaction response and do not use
 the standalone route or automatic checks.
