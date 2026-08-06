@@ -104,12 +104,23 @@ async def find(mongo: MongoClient, filt: dict) -> list[dict]:
 # --- writes (always both) ----------------------------------------------------
 
 async def insert_one(mongo: MongoClient, doc: dict) -> None:
+    """Idempotently persist a new ticket to the primary and best-effort mirror.
+
+    A secondary write cannot roll back the primary. Treating that divergence as
+    total failure made callers retry an already-created Discord ticket. The
+    primary is the configured read source, so it is the commit point; diagnostics
+    already expose and repair mirror divergence.
+    """
     primary, secondary = await _both(mongo)
-    # dict() per call: insert_one mutates its argument to attach _id when absent.
-    # Ticket documents always carry an explicit _id, but sharing one dict between
-    # two drivers is the kind of thing that only breaks once.
-    await primary.insert_one(dict(doc))
-    await secondary.insert_one(dict(doc))
+    ticket_id = doc["_id"]
+    await primary.replace_one({"_id": ticket_id}, dict(doc), upsert=True)
+    try:
+        await secondary.replace_one({"_id": ticket_id}, dict(doc), upsert=True)
+    except Exception:
+        _log.exception(
+            "ticket insert mirror failed for %s - primary remains authoritative",
+            ticket_id,
+        )
 
 
 async def update_one(mongo: MongoClient, filt: dict, update: dict):

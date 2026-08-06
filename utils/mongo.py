@@ -18,6 +18,9 @@ class MongoClient(AsyncMongoClient):
         # ephemeral component state; see extensions/commands/tickets/store.py.
         # NO TTL INDEX ON THIS COLLECTION - ticket history is permanent.
         self.tickets = self.__settings.get_collection("tickets")
+        # Short-lived idempotency leases for cross-system ticket creation.
+        # Durable ticket history remains in tickets; handlers.py owns this TTL.
+        self.ticket_creation_state = self.__settings.get_collection("ticket_creation_state")
         #self.user_tasks = self.__settings.get_collection("user_tasks")
         self.bot_config = self.__settings.get_collection("bot_config")
         #self.reddit_monitor = self.__settings.get_collection("reddit_monitor")

@@ -11,11 +11,12 @@ As of 2026-08-04, new interactive state no longer enters `button_store` at all.
 It lives in `component_state`, where `expires_at` has a TTL index. Ticket history
 never enters that TTL-backed collection.
 
-`utils/mongo.py` declares `button_store` alongside `ticket_setup` and
-`ticket_automation_state` — which makes it look as though tickets have their own
-home. They do not.
+`utils/mongo.py` declares the durable `tickets` collection, the transitional
+`button_store` mirror, `ticket_automation_state`, and the short-lived
+`ticket_creation_state` idempotency leases.
 
-Write site: `handlers.py:370`, `await mongo.button_store.insert_one(ticket_data)`.
+The write site calls `tickets/store.py`, which commits to the configured primary
+collection and then best-effort mirrors the same document.
 Component state reads go through `utils/component_state.py`. The dispatcher
 checks `component_state` first and uses a guarded, non-ticket `button_store`
 fallback only for panels rendered before the migration.
@@ -30,6 +31,7 @@ Created at `handlers.py:357-369`:
     "type":          "ticket",                 # discriminator
     "ticket_type":   "main" | "fwa",
     "ticket_number": int,                      # per-type counter
+    "guild_id":      int,
     "channel_id":    int,
     "thread_id":     int,                      # the private recruiter thread
     "category_id":   int,
@@ -68,6 +70,18 @@ other way round. The `ticket_` prefix is what prevents this.
   hours in `component_state`.
 - **Any count of `button_store` is not a count of tickets.** Always filter on
   `type: "ticket"`.
+- Ticket creation is a cross-system compensating transaction, not a MongoDB
+  transaction: a short-lived Mongo lease precedes Discord work, and an
+  incomplete Discord channel is deleted before the lease is released.
+- An uncertain primary MongoDB write is read back before Discord compensation.
+  If confirmation is also unavailable, the channel and lease are retained for
+  operator reconciliation rather than risking a durable orphan or duplicate.
+- A lost Discord create response is reconciled by the atomically reserved ticket
+  number embedded in the channel name. The bot removes the unique match; if
+  Discord cannot be queried or the result is ambiguous, the creation lease stays
+  blocked instead of allowing another channel.
+- Ticket counters are allocated atomically before Discord creation. A failed
+  Discord operation may leave a number gap; numbers remain unique.
 - Fields useful for reporting are unevenly present: `username` is snapshotted at
   creation (so it goes stale if the user renames), and the handling recruiter is
   recorded as **either** `approved_by` **or** `denied_by` — there is no unified
@@ -126,10 +140,11 @@ takes effect immediately with no restart. This is deliberate: it means the
 backfill and the code repoint cannot land in the wrong order, and the moment of
 risk is a Mongo write that reverses in a second rather than a deploy.
 
-**Writes always go to both collections** while the transition is live, ordered so
-the collection currently being *read* from is written first. A partial failure
-therefore shows up as divergence in `/ticket diagnostics` rather than as a ticket
-that appears not to exist.
+**Writes always target both collections** while the transition is live, ordered
+so the collection currently being *read* from is written first. That primary
+write is the creation commit point. A mirror insert failure is logged and shows
+up as divergence in `/ticket diagnostics`; it does not make the caller retry a
+ticket that already exists.
 
 Migration is `/ticket migrate-store` — dry run by default, `confirm: true` to
 write. Idempotent (upsert on the unchanged `_id`), and **nothing is ever deleted
@@ -157,10 +172,11 @@ means one of them is wrong, and burying it makes it permanent.
 Ticket history is permanent and referred back to. Do not add a TTL "for
 consistency" with whatever eventually prunes the ephemeral collection.
 
-The TTL index exists only on `component_state.expires_at`. Mongo ignores rows
-without that field, but keeping the expiry collection separate makes the safety
-boundary structural: ticket code cannot accidentally acquire an expiry merely
-because it still mirrors into `button_store`.
+TTL indexes exist on ephemeral state only: `component_state.expires_at` and
+`ticket_creation_state.expires_at`. The latter holds at most one current
+creation lease per guild/user/ticket-type combination and retains it for no more
+than 30 days. Durable `tickets` and the `button_store` mirror never receive an
+expiry.
 
 `utils/component_state.py` owns the 24-hour fixed lifetime, immediate rejection
 of expired rows (without waiting for Mongo's roughly minute-scale TTL sweep),

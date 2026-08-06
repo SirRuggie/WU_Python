@@ -58,9 +58,7 @@ public.
 
 ### P1 — reliability and silent failure
 
-- **`BUG-002` — Make ticket creation transactional/idempotent.** The ticket's
-  primary record and Discord channel can be created before a mirror write
-  fails. The user then sees failure, and retrying can create a duplicate.
+No active items.
 
 ### P2 — bounded retries, interaction gaps, and deferred validation
 
@@ -84,6 +82,40 @@ public.
   live raid data needs event-time verification.
 
 ## Completed hardening
+
+### `BUG-002` — Idempotent, compensating ticket creation
+
+**Status:** Implemented and tested locally on 2026-08-05; deployment pending.
+
+Ticket creation now claims a MongoDB lease before creating Discord resources,
+allocates ticket numbers atomically, and returns an existing open ticket for the
+same user and type instead of creating a duplicate. Creation leases use a
+deterministic guild/user/type key and expire from `ticket_creation_state` after
+30 days, so the safety data is bounded.
+
+The configured primary ticket collection is the commit point. A mirror failure
+is logged for `/ticket diagnostics` instead of telling the user that a durable
+ticket failed. Failures before commit compensate by deleting the new Discord
+channel. If Discord cleanup also fails, the retained state blocks another
+channel and logs an alert; once Discord confirms that channel is gone, a later
+retry safely releases the stale blocker. If a primary MongoDB write times out,
+the handler reads it back before deciding whether rollback is safe; an
+unconfirmable write keeps the duplicate blocker and Discord channel for operator
+reconciliation. The same confirmation rule applies if Discord loses the channel
+creation response: the bot locates the uniquely numbered channel before cleanup,
+or keeps the blocker when Discord cannot confirm the outcome. Failures while
+posting optional setup messages occur after commit and no longer turn a
+successful ticket into an apparent failure.
+
+Atomic counter reservation can leave a harmless number gap when a later Discord
+operation fails. This is intentional: unique ticket numbers and no duplicate
+channels are more important than contiguous numbering.
+
+Search the bot journal with:
+
+```bash
+sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "creation_failed|creation_commit_confirmed_after_error|creation_commit_uncertain|creation_channel_confirmed_after_error|creation_channel_uncertain|uncertain_creation_channel_found|ambiguous_creation_channels|creation_rollback_failed|creation_cleanup_state_failed|creation_state_release_failed|creation_channel_check_failed|stale_creation_blocker_released|ticket_postcommit_setup_failed|ticket insert mirror failed"
+```
 
 ### `BUG-001` — Remove obsolete BAND diagnostic commands
 
