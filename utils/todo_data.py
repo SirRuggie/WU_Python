@@ -426,6 +426,33 @@ def drop_render_caches(extra: tuple[str, ...] = ()) -> int:
     return dropped
 
 
+def _http_detail(exc: Exception) -> str:
+    """Exception class plus the HTTP status the proxy actually returned.
+
+    THE OPEN QUESTION THIS EXISTS TO ANSWER. We talk to proxy.clashk.ing, not
+    Supercell (utils/startup.py:78), and it is UNVERIFIED whether a Supercell
+    503 reaches us as a 503. If the proxy rewrites it to 500 or 502, coc.py
+    raises HTTPException or GatewayError instead of Maintenance, the whole
+    maintenance path never fires, and it fails SILENTLY - the panel goes back
+    to blaming the user's accounts and nothing in the logs says why.
+
+    Logging the raw status here means the next maintenance window diagnoses
+    itself. Without it, confirming the proxy's behaviour costs two windows: one
+    to notice nothing happened, another to instrument and wait again.
+
+    Reads defensively because a non-HTTP exception can reach these clauses:
+    `status` and `reason` are HTTPException attributes, not universal ones.
+    """
+    detail = type(exc).__name__
+    status = getattr(exc, "status", None)
+    reason = getattr(exc, "reason", None)
+    if status:
+        detail += f" status={status}"
+    if reason:
+        detail += f" reason={reason}"
+    return detail
+
+
 def _gap_note(unreadable: int, what: str) -> str:
     """The warning line for accounts a section could not read.
 
@@ -710,7 +737,7 @@ async def _get_war(
             cache_put(key, result, TTL_ERROR)
             return result
         except (coc.GatewayError, coc.HTTPException) as exc:
-            print(f"[todo] war lookup failed for {clan_tag}: {type(exc).__name__}")
+            print(f"[todo] war lookup failed for {clan_tag}: {_http_detail(exc)}")
             result = ("error", None)
             cache_put(key, result, TTL_ERROR)
             return result
@@ -787,7 +814,7 @@ async def _get_cwl_round(
             # GatewayError is expected here: coc.py documents an upstream bug where
             # requesting the league group of a clan searching for a CWL match times
             # out. Still an unknown answer, so still an error.
-            print(f"[todo] CWL group lookup failed for {clan_tag}: {type(exc).__name__}")
+            print(f"[todo] CWL group lookup failed for {clan_tag}: {_http_detail(exc)}")
             result = ("error", None)
             cache_put(key, result, TTL_ERROR)
             return result
@@ -846,7 +873,7 @@ async def _get_cwl_round(
                     cache_put(key, result, TTL_ERROR)
                     return result
                 except (coc.GatewayError, coc.HTTPException) as exc:
-                    print(f"[todo] CWL war {war_tag} failed: {type(exc).__name__}")
+                    print(f"[todo] CWL war {war_tag} failed: {_http_detail(exc)}")
                     result = ("error", None)
                     cache_put(key, result, TTL_ERROR)
                     return result
@@ -1280,7 +1307,7 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
         coc_maintenance.note_maintenance()
         return ("error", None)
     except (coc.GatewayError, coc.HTTPException) as exc:
-        print(f"[todo] raid log failed for {clan_tag}: {type(exc).__name__}")
+        print(f"[todo] raid log failed for {clan_tag}: {_http_detail(exc)}")
         return ("error", None)
     except Exception as exc:  # noqa: BLE001
         print(f"[todo] raid log errored for {clan_tag}: {type(exc).__name__}: {exc}")

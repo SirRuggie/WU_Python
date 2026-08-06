@@ -294,6 +294,22 @@ Wired into `/todo` and the FWA points monitor:
 | `extensions/commands/todo.py` | 1226 | the all-dead notice gets a maintenance variant |
 | `extensions/tasks/fwa_points_monitor.py` | 91 | split; usually the first thing to notice a break, since it runs on a timer |
 
+**The proxy question is instrumented, not answered.** It is still unverified
+whether `proxy.clashk.ing` forwards a Supercell 503 *as* a 503 — and if it
+rewrites it to 500/502, coc.py raises `HTTPException`/`GatewayError`, the
+maintenance path never fires, and it fails silently. `_http_detail()`
+(`todo_data.py:429`) logs the raw `status=` and `reason=` on every non-
+maintenance HTTP failure, so the next window diagnoses itself rather than
+costing two. What to grep for after the next break:
+
+```bash
+sudo journalctl -u wu-bot --since "2 hours ago" --no-pager | grep -iE "maintenance|lookup failed"
+```
+
+A `[maintenance]` line means it worked. A `status=502`/`status=500` on the
+`lookup failed` lines instead means the proxy rewrites it and the `except`
+clauses need to widen.
+
 Recovery needs no special handling: `TTL_ERROR` is 60s
 (`todo_data.py:105`), so one **Check now** clears the cached errors once the API
 is back, and the first successful call past the grace clears the flag.

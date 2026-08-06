@@ -266,3 +266,30 @@ def test_healthy_path_keeps_the_original_counts():
 
     assert any("36 linked account(s) could not be loaded" in n for n in merged.notes)
     assert not any("maintenance" in n.lower() for n in merged.notes)
+
+
+# ---------------------------------------------------------------------------
+# Proxy diagnostics
+# ---------------------------------------------------------------------------
+
+def test_http_detail_records_the_status_the_proxy_returned():
+    """The instrumentation that answers "did the proxy rewrite the 503?".
+
+    If proxy.clashk.ing turns Supercell's 503 into a 500 or 502, coc.py raises
+    HTTPException/GatewayError instead of Maintenance and the maintenance path
+    never fires - silently. This log line is what makes the next window
+    self-diagnosing instead of costing a second one.
+    """
+    detail = todo_data._http_detail(coc.HTTPException(502, {"reason": "badGateway"}))
+
+    assert "HTTPException" in detail
+    assert "status=502" in detail
+    assert "reason=badGateway" in detail
+
+
+def test_http_detail_survives_a_non_http_exception():
+    """`status`/`reason` are HTTPException attributes, not universal ones, and
+    the clauses this feeds can be reached by other exception types."""
+    detail = todo_data._http_detail(ValueError("boom"))
+
+    assert detail == "ValueError"
