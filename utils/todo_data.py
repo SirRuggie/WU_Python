@@ -37,6 +37,8 @@ from dataclasses import dataclass, field, replace
 
 import coc
 
+from utils import coc_maintenance
+
 # ---------------------------------------------------------------------------
 # TEMPORARY DIAGNOSTICS for the raid view - remove once verified on a live
 # raid weekend. Every line is prefixed [todo-diag] so it greps and strips
@@ -424,6 +426,24 @@ def drop_render_caches(extra: tuple[str, ...] = ()) -> int:
     return dropped
 
 
+def _gap_note(unreadable: int, what: str) -> str:
+    """The warning line for accounts a section could not read.
+
+    During a maintenance break EVERY section fails at once, so the per-section
+    count is both useless and actively misleading - the screenshot that started
+    this said "4 account(s) could not be checked — war lookup failed" and "36
+    linked account(s) could not be loaded" when the truth was one sentence: the
+    game was down. One banner replaces the lot.
+
+    Deliberately NOT gated on `unreadable` being the full roster. A break can
+    start mid-fan-out and leave some sections partly readable from cache; the
+    cause is still maintenance and the honest line is still the same.
+    """
+    if coc_maintenance.in_maintenance():
+        return coc_maintenance.banner()
+    return f"⚠️ {unreadable} account(s) could not be checked — {what} lookup failed"
+
+
 # ---------------------------------------------------------------------------
 # Shapes
 # ---------------------------------------------------------------------------
@@ -512,8 +532,17 @@ async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semap
             # A linked tag for an account that no longer exists. Common with
             # abandoned alts; not an error worth surfacing to the user.
             return tag, None, None
+        except coc.Maintenance:
+            # MUST stay above the blanket clause below. This is the 503 that
+            # made /todo report "36 linked account(s) could not be loaded"
+            # during a maintenance break - true, but it reads as "your accounts
+            # are broken" when the game is simply down.
+            coc_maintenance.note_maintenance()
+            return tag, None, f"{tag}: Maintenance"
         except Exception as exc:  # noqa: BLE001 - never let one tag kill the dashboard
             return tag, None, f"{tag}: {type(exc).__name__}"
+        else:
+            coc_maintenance.note_success()
 
     clan = getattr(player, "clan", None)
     badge = getattr(getattr(clan, "badge", None), "medium", None) if clan else None
@@ -671,7 +700,16 @@ async def _get_war(
             result = ("none", None)
             cache_put(key, result, TTL_WAR_IDLE)
             return result
-        except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
+        except coc.Maintenance:
+            # ORDER IS THE MECHANISM. Maintenance subclasses HTTPException, so
+            # the clause below already caught this - which is why every /todo
+            # break rendered as "war lookup failed" and never as "the game is
+            # down". Splitting it out is the entire fix; do not merge it back.
+            coc_maintenance.note_maintenance()
+            result = ("error", None)
+            cache_put(key, result, TTL_ERROR)
+            return result
+        except (coc.GatewayError, coc.HTTPException) as exc:
             print(f"[todo] war lookup failed for {clan_tag}: {type(exc).__name__}")
             result = ("error", None)
             cache_put(key, result, TTL_ERROR)
@@ -690,6 +728,7 @@ async def _get_war(
             cache_put(key, result, TTL_ERROR)
             return result
 
+        coc_maintenance.note_success()
         result = ("war", war)
         # WarState defines __eq__ without __hash__, so its members are unhashable -
         # `state in {…}` raises TypeError. Tuples compare fine, and ExtendedEnum
@@ -739,7 +778,12 @@ async def _get_cwl_round(
             result = ("none", None)
             cache_put(key, result, TTL_CWL_ABSENT)
             return result
-        except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
+        except coc.Maintenance:
+            coc_maintenance.note_maintenance()
+            result = ("error", None)
+            cache_put(key, result, TTL_ERROR)
+            return result
+        except (coc.GatewayError, coc.HTTPException) as exc:
             # GatewayError is expected here: coc.py documents an upstream bug where
             # requesting the league group of a clan searching for a CWL match times
             # out. Still an unknown answer, so still an error.
@@ -796,7 +840,12 @@ async def _get_cwl_round(
                         war = await coc_client.get_league_war(war_tag)
                 except (coc.NotFound, coc.PrivateWarLog):
                     continue
-                except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
+                except coc.Maintenance:
+                    coc_maintenance.note_maintenance()
+                    result = ("error", None)
+                    cache_put(key, result, TTL_ERROR)
+                    return result
+                except (coc.GatewayError, coc.HTTPException) as exc:
                     print(f"[todo] CWL war {war_tag} failed: {type(exc).__name__}")
                     result = ("error", None)
                     cache_put(key, result, TTL_ERROR)
@@ -808,6 +857,7 @@ async def _get_cwl_round(
                     return result
                 if war is None:
                     continue
+                coc_maintenance.note_success()
                 # A finished CWL war is immutable - cache it hard. War tags are
                 # globally unique, so two family clans in one group share this entry.
                 ended = _state(war) == "warEnded"
@@ -1039,14 +1089,14 @@ async def build_war_view(
     # footnote. Counting them into a note is what hid them.
     gaps: list[str] = []
     if unreadable:
-        gaps.append(f"⚠️ {unreadable} account(s) could not be checked — war lookup failed")
+        gaps.append(_gap_note(unreadable, "war"))
 
     # A failed lookup makes the result incomplete, even when every readable
     # account is caught up. Private logs are intentionally absent here because
     # build_blocked_view owns that state and identifies the affected accounts.
     if rows:
         notes.extend(gaps)
-    incomplete = "; ".join(gap.lstrip("🔒⚠️ ") for gap in gaps)
+    incomplete = "; ".join(gap.lstrip("🔒⚠️🔧 ") for gap in gaps)
     return ViewData(rows=rows, notes=notes, ok=True, incomplete=incomplete)
 
 
@@ -1118,7 +1168,7 @@ async def build_cwl_view(
             ))
 
     if unreadable:
-        notes.append(f"⚠️ {unreadable} account(s) could not be checked — CWL lookup failed")
+        notes.append(_gap_note(unreadable, "CWL"))
 
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows))
 
@@ -1226,13 +1276,17 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
         result = ("none", None)
         cache_put(key, result, _seconds_until_raid_opens())
         return result
-    except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
+    except coc.Maintenance:
+        coc_maintenance.note_maintenance()
+        return ("error", None)
+    except (coc.GatewayError, coc.HTTPException) as exc:
         print(f"[todo] raid log failed for {clan_tag}: {type(exc).__name__}")
         return ("error", None)
     except Exception as exc:  # noqa: BLE001
         print(f"[todo] raid log errored for {clan_tag}: {type(exc).__name__}: {exc}")
         return ("error", None)
 
+    coc_maintenance.note_success()
     entry = None
     try:
         entry = log[0] if log and len(log) else None
@@ -1337,7 +1391,7 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
             ))
 
     if unreadable:
-        notes.append(f"⚠️ {unreadable} account(s) could not be checked — raid lookup failed")
+        notes.append(_gap_note(unreadable, "raid"))
 
     _d(f"build_raid_view rows={len(rows)} any_ongoing={any_ongoing} unreadable={unreadable}")
 

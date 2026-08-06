@@ -21,6 +21,7 @@ import coc
 import hikari
 import lightbulb
 
+from utils import coc_maintenance
 from utils.mongo import MongoClient
 from utils.fwa_points_parser import parse_clan_points, sanitize_tag, is_newer_war, FwaPointsParseError
 from utils.startup_reconciler import StartupReconciler
@@ -87,13 +88,22 @@ async def get_current_war_info(our_tag):
     except coc.NotFound:
         print(f"[FWA Points] {our_tag}: clan not found")
         return None
-    except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as e:
+    except coc.Maintenance:
+        # This task runs on a timer whether or not anyone opens /todo, so it is
+        # usually what NOTICES a break first - and what clears the flag first
+        # once the API comes back. Behaviour is unchanged; only the reporting
+        # is new. Must stay above the HTTPException clause, which it subclasses.
+        coc_maintenance.note_maintenance()
+        print(f"[FWA Points] {our_tag}: Clash in maintenance, retry next cycle")
+        return None
+    except (coc.GatewayError, coc.HTTPException) as e:
         print(f"[FWA Points] {our_tag}: CoC unavailable ({type(e).__name__}), retry next cycle")
         return None
     except Exception as e:
         print(f"[FWA Points] {our_tag}: unexpected CoC error: {e}")
         return None
 
+    coc_maintenance.note_success()
     state = getattr(war, "state", None)
     if state in (None, "notInWar"):
         return None

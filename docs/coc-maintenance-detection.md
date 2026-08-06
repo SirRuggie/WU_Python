@@ -44,9 +44,9 @@ ClashOfClansException
     └── GatewayError       502 / 504 / timeout
 ```
 
-`Maintenance` **is a** `HTTPException`. See [What we do with it
-today](#what-the-bot-does-with-it-today) — that inheritance is why the bot
-currently cannot tell maintenance apart from any other API failure.
+`Maintenance` **is a** `HTTPException`. See [The bug this started
+from](#the-bug-this-started-from) — that inheritance is the whole reason the bot
+spent months unable to tell maintenance apart from any other API failure.
 
 ### Attributes on the caught exception
 
@@ -153,9 +153,11 @@ return coc.Client(
 
 So a 503 means **either** "Supercell is in maintenance" **or** "proxy.clashk.ing
 is down / returning 503 of its own". `coc.Maintenance` cannot distinguish them,
-and neither can we without a second, independent probe. Whatever the bot says to
-users must be true under both readings — "Clash's API isn't answering right
-now", not "Supercell is performing maintenance". Getting a direct read on
+and neither can we without a second, independent probe. The user-facing copy
+says "Clash is in maintenance" anyway — a deliberate call, taken 2026-08-06, on
+the grounds that it is what members recognise and what it is the large majority
+of the time. The cost is accepted and known: during a ClashKing proxy outage the
+bot will say "maintenance" and be wrong. Getting a direct read on
 `api.clashofclans.com` would require our own API key and IP allow-listing, which
 we do not have on the bot box; the proxy is the whole point of the pin.
 
@@ -210,14 +212,14 @@ Option 2 is what I would do, and it composes with the next section: the *call
 sites* can also set the flag, for free, whenever they eat a `Maintenance` — so
 the flag is usually already true before the poller's next tick.
 
-## What the bot does with it today
+## The bug this started from
 
-Handled — four sites, all the same shape:
+`/todo`, run during the 2026-08-06 break, reported two warnings:
 
-| File | Line |
-|---|---|
-| `utils/todo_data.py` | 674 (current war), 742 (CWL group), 799 (CWL war), 1229 (raid log) |
-| `extensions/tasks/fwa_points_monitor.py` | 90 |
+> ⚠️ 4 account(s) could not be checked — war lookup failed
+> ⚠️ 36 linked account(s) could not be loaded — these results may be incomplete
+
+Both were maintenance, mislabeled. Every handler in the bot was this shape:
 
 ```python
 except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
@@ -227,15 +229,16 @@ except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
 
 **That tuple collapses.** `Maintenance` and `GatewayError` are both subclasses
 of `HTTPException`, so listing all three is identical to writing
-`except coc.HTTPException`. Maintenance is caught, logged by class name, and
-then flattened into the same generic `("error", None)` as a rate-limit or a
-stray 500. **Nothing downstream can tell maintenance apart.** To act on it, a
-dedicated `except coc.Maintenance:` branch has to sit **above** the
-`HTTPException` one — Python takes the first matching clause, so ordering is
-the whole mechanism.
+`except coc.HTTPException`. Maintenance was caught, logged by class name, and
+flattened into the same generic `("error", None)` as a rate-limit or a stray
+500 — so nothing downstream could tell it apart, and the panel blamed the
+user's accounts for the game being down. The dedicated `except coc.Maintenance:`
+has to sit **above** the `HTTPException` one; Python takes the first matching
+clause, so **ordering is the entire mechanism**. See [What was
+built](#what-was-built) for where those splits now are.
 
-Not handled at all — a maintenance 503 here surfaces as a bare failure, a blank
-field, or a swallowed exception:
+Still unsplit — a maintenance 503 at these sites surfaces as a bare failure, a
+blank field, or a swallowed exception:
 
 | File | Line | Current behaviour |
 |---|---|---|
@@ -243,35 +246,66 @@ field, or a swallowed exception:
 | `extensions/commands/clan/info_hub/handlers.py` | 67, 268 | bare `except:` → clan silently renders with no API data |
 | `extensions/commands/clan/dashboard/update_clan_info.py` | 223 | uncaught |
 | `extensions/commands/fwa/lazy_cwl.py` | 1098, 1585 | caught by the function's outer `except Exception as e` → user sees `str(e)`, i.e. the raw `"inMaintenance (status code: 503): …"` |
-| `utils/todo_data.py` | 510 | `except Exception` per tag → every account becomes an error line |
 | `extensions/tasks/clan_history_tracker.py` | 137, 253 (via `_safe_fetch`, line 60) | `except Exception` → returns `None`, tracker records an empty roster |
 
 That last one is the only entry here that is arguably a **correctness** issue
-rather than a cosmetic one, and it should be checked before any message work:
-if a maintenance window makes every clan fetch return `None`, confirm the
-tracker treats that as "no data" and not as "everyone left the clan".
+rather than a cosmetic one, and it is the next thing worth checking: if a
+maintenance window makes every clan fetch return `None`, confirm the tracker
+treats that as "no data" and not as "everyone left the clan".
 
-## Minimum viable detection, if we build it
+## What was built
+
+[`utils/coc_maintenance.py`](../utils/coc_maintenance.py) — an observation log,
+not a status check. Nothing polls; the commands are the probe.
 
 ```python
-# utils/coc_maintenance.py  (sketch, not committed)
-MAINTENANCE_SINCE: datetime | None = None   # None = API believed healthy
-
-def note_maintenance() -> None: ...          # call from every `except coc.Maintenance`
-def note_success() -> None: ...              # call after any successful coc call
-def maintenance_started_at() -> datetime | None: ...
+note_maintenance()        # from every `except coc.Maintenance:`
+note_success()            # after every successful coc call
+in_maintenance() -> bool
+started_at() -> datetime | None
+banner() -> str           # the one user-facing line
 ```
 
-- **Set** it from a real `except coc.Maintenance` at the call sites, so the flag
-  costs zero extra requests during normal operation.
-- **Clear** it only on a confirmed success, and only from a call that bypassed
-  the response cache (`lookup_cache=False`), or the cached 503 at
-  `http.py:317` will keep it stuck on after the API is back.
-- **Poll** `get_player("#JY9J2Y99")` every 15s *only while the flag is set* —
-  same interval the library uses. Do not poll when healthy; the call sites
-  already do that job.
-- **Never claim an end time.** We have none. "Started 12 minutes ago, still
-  down" is defensible; "back at 09:30 UTC" is not.
+Three decisions in it that are not obvious:
+
+- **Clearing is grace-gated** (`CLEAR_GRACE_SECONDS = 90`). A success only
+  counts as recovery once no 503 has been seen for 90s. Clearing on *any*
+  success is wrong: during a live break some calls still succeed from coc.py's
+  own FIFO cache (`http.py:299-320`), and which of ~50 calls in a `/todo` run
+  lands last is arbitrary — one stale hit would wipe a window fifty live 503s
+  had just established.
+- **`started_at()` is first-503-*observed*, not the true start.** A break that
+  begins while nobody runs a command is only noticed when someone does. The
+  copy says "stopped answering" rather than "started", which is true either way.
+- **No end time, anywhere.** There is no `ends_at()` because the API has none.
+  The banner renders `<t:N:R>` rather than a baked-in "12 minutes ago", because
+  `/todo` panels persist and auto-refresh — a literal number would be a lie an
+  hour later.
+
+Wired into `/todo` and the FWA points monitor:
+
+| File | Line | What changed |
+|---|---|---|
+| `utils/todo_data.py` | 535 | player fetch — new `except coc.Maintenance` above the blanket clause |
+| `utils/todo_data.py` | 703, 781, 843, 1279 | war / CWL group / CWL war / raid — **split** out of the collapsed tuple |
+| `utils/todo_data.py` | 429 | `_gap_note()` — one banner replaces the per-section counts |
+| `extensions/commands/todo.py` | 1123 | `_with_account_failures()` — same banner, deduped |
+| `extensions/commands/todo.py` | 847, 869 | the two "Couldn't read" render branches |
+| `extensions/commands/todo.py` | 1226 | the all-dead notice gets a maintenance variant |
+| `extensions/tasks/fwa_points_monitor.py` | 91 | split; usually the first thing to notice a break, since it runs on a timer |
+
+Recovery needs no special handling: `TTL_ERROR` is 60s
+(`todo_data.py:105`), so one **Check now** clears the cached errors once the API
+is back, and the first successful call past the grace clears the flag.
+
+Guarded by [`tests/test_coc_maintenance.py`](../tests/test_coc_maintenance.py).
+The one that matters is `test_maintenance_is_not_shadowed_by_httpexception` — if
+anyone merges the clauses back into one tuple, the feature is silently dead and
+that test is what says so.
+
+Scope was `/todo` only, deliberately. Everything in the *still unsplit* table
+above is untouched, and the flag module is shared, so wiring any of it up later
+is a per-site `except` split and nothing more.
 
 ## Sources
 

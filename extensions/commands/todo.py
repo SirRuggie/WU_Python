@@ -80,7 +80,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils import clan_history, todo_data, todo_sessions
+from utils import clan_history, coc_maintenance, todo_data, todo_sessions
 from utils.clash_links import resolve_tags
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
 from utils.emoji import emojis
@@ -232,6 +232,7 @@ U_URGENT = "⏰"       # pairs with the red accent when something closes < 2h
 U_CAUGHT_UP = "✨"    # positive without being a checkmark ("done" != "nothing to do")
 U_PRIVATE = "🔒"      # can't look, as distinct from nothing to see
 U_FAILED = "⚠️"       # couldn't read, deliberately unlike the padlock
+U_MAINTENANCE = "🔧"  # the game is down, as distinct from we couldn't read it
 # The same two glyphs also appear inline in todo_data.py's note strings - that
 # module builds those notes and cannot import from here.
 
@@ -845,9 +846,11 @@ def render_dashboard(view: str, page: int, data: dict, *,
         # RULE: could-not-read must never render as all-caught-up.
         body.append(Separator(divider=True))
         body.append(Text(content=(
-            "⚠️ **Couldn't read this section.**\n"
-            "The Clash API or the proxy didn't answer. This is not the same as "
-            "having nothing to do — press Check now in a minute."
+            coc_maintenance.banner() if coc_maintenance.in_maintenance() else (
+                "⚠️ **Couldn't read this section.**\n"
+                "The Clash API or the proxy didn't answer. This is not the same as "
+                "having nothing to do — press Check now in a minute."
+            )
         )))
         pages = 1
         page = 0
@@ -864,8 +867,10 @@ def render_dashboard(view: str, page: int, data: dict, *,
         body.append(Separator(divider=True))
         if not rows and getattr(current, "incomplete", ""):
             body.append(Text(content=(
-                "⚠️ **Couldn't check every linked account.**\n"
-                f"-# {current.incomplete}"
+                coc_maintenance.banner() if coc_maintenance.in_maintenance() else (
+                    "⚠️ **Couldn't check every linked account.**\n"
+                    f"-# {current.incomplete}"
+                )
             )))
         elif not rows and getattr(current, "unavailable", ""):
             # The EVENT is not running. Completely different from "you have done
@@ -1117,13 +1122,20 @@ class _Perf:
 
 def _with_account_failures(view_data: todo_data.ViewData, error_count: int) -> todo_data.ViewData:
     """Mark a partially computed view without hiding rows that did load."""
-    warning = (
-        f"{error_count} linked account(s) could not be loaded — "
-        "these results may be incomplete"
-    )
+    if coc_maintenance.in_maintenance():
+        # Same banner the section-level notes use, so the DEDUPE below is what
+        # keeps the panel from saying it twice. In the screenshot that started
+        # this, these two warnings stacked: the player fan-out failed AND the
+        # war lookups failed, one break, two lines.
+        warning = coc_maintenance.banner()
+    else:
+        warning = (
+            f"{error_count} linked account(s) could not be loaded — "
+            "these results may be incomplete"
+        )
     notes = list(view_data.notes)
-    if view_data.rows:
-        notes.append(f"⚠️ {warning}")
+    if view_data.rows and warning not in notes:
+        notes.append(warning if coc_maintenance.in_maintenance() else f"⚠️ {warning}")
     return replace(view_data, notes=notes, incomplete=warning)
 
 
@@ -1211,6 +1223,22 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     )
     perf.meta["clans"] = len(candidate_clans)
     if not accounts:
+        # The whole-panel version of the same story. Nothing loaded at all,
+        # which during a break is the NORMAL outcome rather than the rare one -
+        # "Couldn't load your accounts" points the user at their own setup for
+        # a problem that is entirely Supercell's.
+        if coc_maintenance.in_maintenance():
+            return None, _notice(
+                f"{U_MAINTENANCE} Clash is in maintenance",
+                "The game's API stopped answering "
+                f"<t:{int(coc_maintenance.started_at().timestamp())}:R>, so "
+                "there's nothing I can check right now.\n\n"
+                "Nothing is wrong with your accounts, and nothing is lost. "
+                "Supercell doesn't publish an end time — press Check now again "
+                "in a few minutes.",
+                checked_at=int(time.time()), auto_refresh=auto_refresh,
+                refresh_until=refresh_until,
+            )
         return None, _notice(
             "Couldn't load your accounts",
             "Your accounts are linked, but the Clash API didn't answer for any "
