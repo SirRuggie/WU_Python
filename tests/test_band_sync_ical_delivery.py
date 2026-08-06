@@ -82,6 +82,8 @@ class FakeCollection:
 
         for key, value in update.get("$set", {}).items():
             target[key] = deepcopy(value)
+        for key in update.get("$unset", {}):
+            target.pop(key, None)
         for key, instruction in update.get("$addToSet", {}).items():
             values = instruction.get("$each", [])
             target.setdefault(key, [])
@@ -105,6 +107,8 @@ class FakeRest:
     async def create_message(self, channel, embed):
         self.attempts.append(channel)
         remaining = self.failures.get(channel, 0)
+        if isinstance(remaining, BaseException):
+            raise remaining
         if remaining:
             self.failures[channel] = remaining - 1
             raise RuntimeError("temporary Discord failure")
@@ -134,6 +138,17 @@ def _deliveries(collection):
             if document.get("kind") == "delivery"]
 
 
+def test_delivery_retry_schedule_is_capped():
+    assert [sync._retry_delay(attempt) for attempt in range(1, 7)] == [
+        timedelta(minutes=5),
+        timedelta(minutes=15),
+        timedelta(minutes=30),
+        timedelta(hours=1),
+        timedelta(hours=3),
+        timedelta(hours=3),
+    ]
+
+
 def test_dm_all_deduplicates_recipients_in_configured_order(monkeypatch):
     rest = FakeRest()
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
@@ -160,6 +175,15 @@ def test_partial_delivery_retries_only_failed_recipient(monkeypatch):
 
     asyncio.run(sync.process_event(
         collection, event, _config([1, 2]), now + timedelta(minutes=1)
+    ))
+
+    statuses = {document["recipient_id"]: document["status"]
+                for document in _deliveries(collection)}
+    assert statuses == {1: "sent", 2: "failed"}
+    assert rest.attempts == [1, 2]
+
+    asyncio.run(sync.process_event(
+        collection, event, _config([1, 2]), now + timedelta(minutes=5)
     ))
 
     statuses = {document["recipient_id"]: document["status"]
@@ -204,11 +228,81 @@ def test_zero_delivery_reschedule_remains_retryable(monkeypatch):
     assert rest.attempts == [9]
 
     asyncio.run(sync.process_event(
-        collection, moved, _config([9]), now + timedelta(minutes=1)
+        collection, moved, _config([9]), now + timedelta(minutes=5)
     ))
 
     assert collection.documents[delivery["_id"]]["status"] == "sent"
     assert rest.attempts == [9, 9]
+
+
+def test_permanent_dm_failure_is_abandoned_immediately(monkeypatch):
+    forbidden = sync.hikari.ForbiddenError(
+        "https://discord.test", {}, {}, "Cannot send messages to this user"
+    )
+    rest = FakeRest({7: forbidden})
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    event = _event()
+    now = event["start"] - timedelta(hours=2)
+    collection = FakeCollection()
+
+    asyncio.run(sync.process_event(collection, event, _config([7]), now))
+
+    delivery = _deliveries(collection)[0]
+    assert delivery["status"] == "abandoned"
+    assert delivery["terminal_reason"] == "permanent_discord_error"
+    assert delivery["failure_count"] == 1
+    assert "next_attempt_at" not in delivery
+    assert rest.attempts == [7]
+
+    asyncio.run(sync.process_event(
+        collection, event, _config([7]), now + timedelta(minutes=1)
+    ))
+    assert rest.attempts == [7]
+
+
+def test_transient_dm_failure_stops_at_failure_limit(monkeypatch):
+    rest = FakeRest({7: 1})
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    event = _event()
+    now = event["start"] - timedelta(hours=2)
+    delivery = sync._delivery_doc(event, sync.DISCOVERY_OFFSET, 7)
+    delivery.update({
+        "status": "failed",
+        "failure_count": sync.DELIVERY_MAX_FAILURES - 1,
+        "first_failed_at": now - timedelta(hours=1),
+        "next_attempt_at": now,
+    })
+    collection = FakeCollection([delivery])
+
+    asyncio.run(sync.deliver_outstanding(collection, event, now))
+
+    stored = collection.documents[delivery["_id"]]
+    assert stored["status"] == "abandoned"
+    assert stored["terminal_reason"] == "failure_limit"
+    assert stored["failure_count"] == sync.DELIVERY_MAX_FAILURES
+    assert "next_attempt_at" not in stored
+    assert rest.attempts == [7]
+
+
+def test_transient_dm_failure_stops_after_maximum_age(monkeypatch):
+    rest = FakeRest({7: 1})
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    event = _event()
+    now = event["start"] - timedelta(hours=2)
+    delivery = sync._delivery_doc(event, sync.DISCOVERY_OFFSET, 7)
+    delivery.update({
+        "status": "failed",
+        "failure_count": 1,
+        "first_failed_at": now - sync.DELIVERY_MAX_AGE,
+        "next_attempt_at": now,
+    })
+    collection = FakeCollection([delivery])
+
+    asyncio.run(sync.deliver_outstanding(collection, event, now))
+
+    stored = collection.documents[delivery["_id"]]
+    assert stored["status"] == "abandoned"
+    assert stored["terminal_reason"] == "age_limit"
 
 
 def test_startup_recovers_from_mongo_failure_and_starts_one_poller(monkeypatch):

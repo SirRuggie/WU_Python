@@ -17,6 +17,7 @@
 import asyncio
 import os
 import traceback
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import aiohttp
@@ -50,6 +51,21 @@ DEFAULT_STALE_HOURS = 26         # no upcoming sync for this long -> shout about
 STALE_LOG_THROTTLE_SECONDS = 3600
 DEDUPE_TTL_DAYS = 30
 DELIVERY_LEASE_SECONDS = 10 * 60
+DELIVERY_RETRY_DELAYS = (
+    timedelta(minutes=5),
+    timedelta(minutes=15),
+    timedelta(minutes=30),
+    timedelta(hours=1),
+    timedelta(hours=3),
+)
+DELIVERY_MAX_FAILURES = 6
+DELIVERY_MAX_AGE = timedelta(hours=24)
+PERMANENT_DM_ERRORS = (
+    hikari.BadRequestError,
+    hikari.UnauthorizedError,
+    hikari.ForbiddenError,
+    hikari.NotFoundError,
+)
 
 # Order matters: the first feed carrying a UID decides which calendar name is shown.
 FEED_ENV_VARS = {
@@ -287,19 +303,44 @@ def ordered_user_ids(user_ids):
     return result
 
 
-async def dm_one(user_id, embed):
-    """Deliver one DM and report success without raising into the poller."""
+@dataclass(frozen=True)
+class _DmResult:
+    sent: bool
+    permanent: bool = False
+    error_type: str = ""
+    detail: str = ""
+
+
+def _error_detail(exc: Exception) -> str:
+    return " ".join(str(exc).split())[:300]
+
+
+async def _try_dm(user_id, embed) -> _DmResult:
+    """Deliver one DM while preserving whether a failure is retryable."""
     if not bot_instance:
-        print("[FWA Sync ICS] No bot instance; cannot DM")
-        return False
+        return _DmResult(False, error_type="BotUnavailable",
+                         detail="bot instance unavailable")
     try:
         user = await bot_instance.rest.fetch_user(user_id)
         channel = await bot_instance.rest.create_dm_channel(user.id)
         await bot_instance.rest.create_message(channel=channel, embed=embed)
-        return True
+        return _DmResult(True)
     except Exception as e:
-        print(f"[FWA Sync ICS] DM to {user_id} failed ({type(e).__name__}: {e})")
-        return False
+        return _DmResult(
+            False,
+            permanent=isinstance(e, PERMANENT_DM_ERRORS),
+            error_type=type(e).__name__,
+            detail=_error_detail(e),
+        )
+
+
+async def dm_one(user_id, embed):
+    """Deliver one DM and report success without raising into the poller."""
+    result = await _try_dm(user_id, embed)
+    if not result.sent:
+        print(f"[FWA Sync ICS] DM to {user_id} failed "
+              f"({result.error_type}: {result.detail})")
+    return result.sent
 
 
 # ---- Durable event and delivery state ----
@@ -347,7 +388,9 @@ def _delivery_doc(event, offset, user_id, delivery_type="alert", old_start=None)
         "end_at": event.get("end"),
         "old_start_at": old_start,
         "status": "queued",
+        "failure_count": 0,
         "queued_at": now,
+        "status_updated_at": now,
         "expire_at": event["start"] + timedelta(days=DEDUPE_TTL_DAYS),
     }
 
@@ -397,13 +440,15 @@ async def enqueue_deliveries(coll, event, offset, user_ids, delivery_type="alert
 
 
 async def claim_delivery(coll, delivery, now=None):
-    """Lease queued/failed work or reclaim a pending item after a crashed worker."""
+    """Lease due queued/failed work or reclaim a crashed pending worker."""
     now = now or datetime.now(timezone.utc)
     result = await coll.update_one(
         {
             "_id": delivery["_id"],
             "$or": [
-                {"status": {"$in": ["queued", "failed"]}},
+                {"status": "queued"},
+                {"status": "failed", "next_attempt_at": {"$exists": False}},
+                {"status": "failed", "next_attempt_at": {"$lte": now}},
                 {"status": "pending", "lease_until": {"$lte": now}},
             ],
         },
@@ -416,6 +461,11 @@ async def claim_delivery(coll, delivery, now=None):
     return bool(result.modified_count)
 
 
+def _retry_delay(failure_count: int) -> timedelta:
+    index = min(max(failure_count - 1, 0), len(DELIVERY_RETRY_DELAYS) - 1)
+    return DELIVERY_RETRY_DELAYS[index]
+
+
 def _event_from_delivery(delivery):
     return {
         "uid": delivery["uid"],
@@ -426,16 +476,17 @@ def _event_from_delivery(delivery):
     }
 
 
-async def deliver_outstanding(coll, event):
+async def deliver_outstanding(coll, event, now=None):
     """Attempt only unsent recipients for the current version of an event."""
+    now = normalize_start(now) or datetime.now(timezone.utc)
     query = {
         "kind": "delivery",
         "uid": event["uid"],
         "event_version": _event_version(event),
-        "status": {"$ne": "sent"},
+        "status": {"$in": ["queued", "failed", "pending"]},
     }
     async for delivery in coll.find(query):
-        if not await claim_delivery(coll, delivery):
+        if not await claim_delivery(coll, delivery, now):
             continue
 
         delivery_event = _event_from_delivery(delivery)
@@ -447,28 +498,81 @@ async def deliver_outstanding(coll, event):
             embed = build_embed(delivery_event, delivery["offset"])
 
         user_id = delivery["recipient_id"]
-        if await dm_one(user_id, embed):
+        result = await _try_dm(user_id, embed)
+        if result.sent:
             await coll.update_one(
                 {"_id": delivery["_id"], "status": "pending"},
-                {"$set": {
-                    "status": "sent",
-                    "announced_at": datetime.now(timezone.utc),
-                    "lease_until": None,
-                }},
+                {
+                    "$set": {
+                        "status": "sent",
+                        "announced_at": now,
+                        "status_updated_at": now,
+                    },
+                    "$unset": {
+                        "lease_until": "",
+                        "next_attempt_at": "",
+                        "last_error_type": "",
+                        "last_error_detail": "",
+                    },
+                },
             )
             print(f"[FWA Sync ICS] Sent {delivery['offset']} alert for "
                   f"{event['calendar']} {event['start'].isoformat()} to {user_id}")
         else:
+            failure_count = int(delivery.get("failure_count") or 0) + 1
+            first_failed_at = normalize_start(delivery.get("first_failed_at")) or now
+            age_exhausted = now - first_failed_at >= DELIVERY_MAX_AGE
+            terminal_reason = None
+            if result.permanent:
+                terminal_reason = "permanent_discord_error"
+            elif failure_count >= DELIVERY_MAX_FAILURES:
+                terminal_reason = "failure_limit"
+            elif age_exhausted:
+                terminal_reason = "age_limit"
+
+            failure_fields = {
+                "failure_count": failure_count,
+                "first_failed_at": first_failed_at,
+                "last_failed_at": now,
+                "status_updated_at": now,
+                "last_error_type": result.error_type,
+                "last_error_detail": result.detail,
+            }
+            if terminal_reason:
+                failure_fields.update({
+                    "status": "abandoned",
+                    "terminal_reason": terminal_reason,
+                    "abandoned_at": now,
+                })
+                update = {
+                    "$set": failure_fields,
+                    "$unset": {"lease_until": "", "next_attempt_at": ""},
+                }
+            else:
+                delay = _retry_delay(failure_count)
+                failure_fields.update({
+                    "status": "failed",
+                    "next_attempt_at": now + delay,
+                })
+                update = {
+                    "$set": failure_fields,
+                    "$unset": {"lease_until": ""},
+                }
             await coll.update_one(
                 {"_id": delivery["_id"], "status": "pending"},
-                {"$set": {
-                    "status": "failed",
-                    "last_failed_at": datetime.now(timezone.utc),
-                    "lease_until": None,
-                }},
+                update,
             )
-            print(f"[FWA Sync ICS] WARNING: alert {delivery['offset']} for "
-                  f"{event['uid']} did not reach {user_id}; will retry next poll")
+            if terminal_reason:
+                print(f"[FWA Sync ICS] ALERT delivery_abandoned uid={event['uid']} "
+                      f"offset={delivery['offset']} recipient={user_id} "
+                      f"failures={failure_count} reason={terminal_reason} "
+                      f"error={result.error_type} detail={result.detail}")
+            else:
+                print(f"[FWA Sync ICS] delivery_retry_scheduled uid={event['uid']} "
+                      f"offset={delivery['offset']} recipient={user_id} "
+                      f"failures={failure_count} retry_at="
+                      f"{failure_fields['next_attempt_at'].isoformat()} "
+                      f"error={result.error_type} detail={result.detail}")
 
 
 async def ensure_indexes(mongo):
@@ -568,7 +672,7 @@ async def process_event(coll, event, config, now):
         print(f"[FWA Sync ICS] {event['calendar']} {event['uid']}: "
               f"offset {offset} recorded as {status} (window already passed)")
 
-    await deliver_outstanding(coll, event)
+    await deliver_outstanding(coll, event, now)
 
 
 def _check_staleness(events, stale_hours):
@@ -764,12 +868,29 @@ class Status(lightbulb.SlashCommand, name="status", description="Show config and
             f"{' + on discovery' if config['announce_on_discovery'] else ''}",
             f"**Poll:** every {config['poll_seconds']}s",
             f"**Summary filter:** `{config['summary_filter']}`",
-            "**Recent alerts:**",
         ]
+        lines.append("**Terminal delivery failures:**")
+        terminal_cursor = coll.find({
+            "kind": "delivery", "status": "abandoned",
+        }).sort("abandoned_at", -1).limit(5)
+        terminal_found = False
+        async for doc in terminal_cursor:
+            terminal_found = True
+            failure_count = int(doc.get("failure_count") or 0)
+            failure_word = "failure" if failure_count == 1 else "failures"
+            lines.append(
+                f"• <@{doc.get('recipient_id')}> `{doc.get('offset')}` — "
+                f"{doc.get('terminal_reason') or 'terminal'}, "
+                f"{failure_count} {failure_word}"
+            )
+        if not terminal_found:
+            lines.append("_(none)_")
+
+        lines.append("**Recent alerts:**")
         cursor = coll.find({
             "_id": {"$ne": CONFIG_ID},
             "kind": {"$ne": "event_state"},
-        }).sort("announced_at", -1).limit(50)
+        }).sort("status_updated_at", -1).limit(50)
         found = False
         shown = set()
         async for doc in cursor:
@@ -782,7 +903,13 @@ class Status(lightbulb.SlashCommand, name="status", description="Show config and
                 continue
             shown.add(alert_key)
             found = True
-            lines.append(f"• `{doc.get('offset')}` {doc.get('status')} — "
+            status = str(doc.get("status") or "unknown")
+            if status == "abandoned":
+                status += (
+                    f" ({doc.get('terminal_reason') or 'terminal'}, "
+                    f"{int(doc.get('failure_count') or 0)} failures)"
+                )
+            lines.append(f"• `{doc.get('offset')}` {status} — "
                          f"{doc.get('calendar')} {discord_timestamp(doc.get('start_at'), 'f')}")
             if len(shown) >= 5:
                 break

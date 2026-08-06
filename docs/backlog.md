@@ -60,22 +60,58 @@ public.
 
 No active items.
 
-### P2 — bounded retries, interaction gaps, and deferred validation
+### P2 — deferred validation
 
-- **`REL-003` — Bound and back off BAND calendar DM retries.** Failed DMs remain
-  open and are attempted every poll for up to 30 days. Classify permanent Discord
-  errors and use capped backoff with an operator-visible terminal state.
-- **`REL-004` — Bound recruit role-cleanup retries.** Permanent member-fetch or
-  role-removal failures currently retry hourly forever.
-- **`DEAD-001` — Decide whether to restore or remove the message task manager.**
-  Its module is not loaded, its Mongo accessor is commented out, it has no
-  restart restoration, and two reminder component IDs have no registered
-  handlers. Treat it as unavailable until intentionally rebuilt.
 - **`TODO-001` — Validate `/todo` Raid Weekend data during a live weekend.** The
   non-raid paths and clan-history war discovery have automated coverage, but
   live raid data needs event-time verification.
 
 ## Completed hardening
+
+### `REL-003` — Bounded BAND calendar DM delivery
+
+**Status:** Implemented and tested locally on 2026-08-06; deployment pending.
+
+Each recipient delivery now persists its failure count, first/last failure,
+bounded error detail, and next attempt. Transient failures back off after 5,
+15, 30, 60, and 180 minutes, then stop after six failures or 24 hours.
+Bad-request, unauthorized, forbidden, and not-found Discord responses stop
+immediately. Terminal deliveries remain visible as `abandoned` in
+`/fwasync status`, are never reclaimed after restart, and still expire through
+the existing 30-day TTL.
+
+Search the bot journal with:
+
+```bash
+sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "delivery_retry_scheduled|delivery_abandoned"
+```
+
+### `REL-004` — Bounded recruit role cleanup
+
+**Status:** Implemented and tested locally on 2026-08-06; deployment pending.
+
+Transient member-fetch and role-removal failures now retry after 1, 3, 6, 12,
+and 24 hours, then stop after six failures. Permanent Discord failures stop
+immediately. Terminal rows retain their diagnostic state in
+`recruit_onboarding` but are excluded from future cleanup scans, so one bad row
+cannot retry forever or starve later recruits. Normal removals, already-absent
+roles, and members who left the guild keep their existing behavior.
+
+Search the bot journal with:
+
+```bash
+sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "cleanup_retry_scheduled|cleanup_abandoned"
+```
+
+### `DEAD-001` — Remove dormant message task manager
+
+**Status:** Removed locally on 2026-08-06; deployment pending.
+
+The unused `task_manager.py` and `task_event.py` modules, their commented Mongo
+accessor, and their shutdown-only test were removed. Neither extension was
+loaded or imported, and the reminder button IDs had no handlers, so this does
+not remove a working bot feature. No MongoDB collection or existing data is
+deleted by this code change.
 
 ### `UI-001` / `UI-002` — Component error responses
 

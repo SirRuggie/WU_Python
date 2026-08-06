@@ -46,7 +46,10 @@ accident, because a URL does not look like a password.
   `(event version, offset, recipient)` has its own queued/pending/sent state and
   a ten-minute lease. A failed recipient retries without duplicating DMs to
   recipients who already succeeded; a pending lease can be reclaimed after a
-  crash.
+  crash. Transient failures back off for 5, 15, 30, 60, then 180 minutes and
+  stop after six failures or 24 hours. Permanent Discord failures stop on the
+  first attempt. Terminal `abandoned` state is shown by `/fwasync status` and
+  expires with the existing 30-day delivery TTL.
 - A reschedule queues per-recipient change notifications before advancing the
   stored event time. If no recipients are configured, the old timing remains so
   the reschedule is detected again instead of being silently consumed.
