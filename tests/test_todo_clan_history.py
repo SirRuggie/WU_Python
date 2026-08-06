@@ -209,7 +209,7 @@ def test_historical_private_clan_appears_in_private_view(monkeypatch):
     ]
 
 
-def test_private_only_war_result_is_marked_incomplete(monkeypatch):
+def test_private_only_war_result_stays_out_of_war_status(monkeypatch):
     async def fake_war(_client, _clan_tag):
         return "private", None
 
@@ -218,7 +218,7 @@ def test_private_only_war_result_is_marked_incomplete(monkeypatch):
 
     assert view.rows == []
     assert view.ok is True
-    assert "private war logs" in view.incomplete
+    assert view.incomplete == ""
     assert view.notes == []
 
 

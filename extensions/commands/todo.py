@@ -380,7 +380,9 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
     ])
 
 
-def _nav_block(view: str, counts: dict, pager=None, *, checked_at: int | None = None,
+def _nav_block(view: str, counts: dict, pager=None, *,
+               unchecked: set[str] | None = None,
+               checked_at: int | None = None,
                auto_refresh: bool = False,
                refresh_until: datetime | None = None) -> list:
     """Separator, the view select, optional pagination, then the freshness line.
@@ -435,7 +437,7 @@ def _nav_block(view: str, counts: dict, pager=None, *, checked_at: int | None = 
 
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-        _nav_select(view, counts),
+        _nav_select(view, counts, unchecked=unchecked),
         # Pagination, when there is more than one page. Above the footer, below
         # the view select - it belongs to the content, not to the caption row.
         *([pager] if pager is not None else []),
@@ -463,7 +465,8 @@ def _nav_block(view: str, counts: dict, pager=None, *, checked_at: int | None = 
     ]
 
 
-def _nav_select(view: str, counts: dict) -> ActionRow:
+def _nav_select(view: str, counts: dict, *,
+                unchecked: set[str] | None = None) -> ActionRow:
     """House-style navigation: a TextSelectMenu, not a row of coloured buttons.
 
     clan/dashboard/dashboard.py navigates with a select whose options carry an
@@ -475,19 +478,31 @@ def _nav_select(view: str, counts: dict) -> ActionRow:
     option's `value` to BE a registered action name, so it cannot carry a page
     number. This is a plain action that reads ctx.interaction.values[0] itself.
     """
+    unchecked = unchecked or set()
+
     def describe(key: str) -> str:
         value = counts.get(key)
         if value is None:
-            return "couldn't be read — try Check now"
+            return "couldn't be checked — try Check now"
+        if key in unchecked:
+            if value:
+                noun = "account" if value == 1 else "accounts"
+                verb = "has" if value == 1 else "have"
+                return f"{value} {noun} {verb} hits left · some unchecked"
+            return "some accounts couldn't be checked"
         if value == 0:
-            return "nothing outstanding"
-        return f"{value} account(s) owe attacks"
+            return "no hits left"
+        noun = "account" if value == 1 else "accounts"
+        verb = "has" if value == 1 else "have"
+        return f"{value} {noun} {verb} hits left"
 
     def describe_blocked() -> str:
         value = counts.get(VIEW_PRIVATE)
         if not value:
-            return "every clan is readable"
-        return f"{value} account(s) in unreadable clans"
+            return "every war log is readable"
+        noun = "account" if value == 1 else "accounts"
+        log = "war log" if value == 1 else "war logs"
+        return f"{value} {noun} with unreadable {log}"
 
     options = [
         SelectOption(
@@ -799,8 +814,12 @@ def render_dashboard(view: str, page: int, data: dict, *,
     be computed at all.
     """
     counts = {
-        k: (v.count if v is not None and v.ok and not v.incomplete else None)
+        k: (v.count if v is not None and v.ok else None)
         for k, v in data.items()
+    }
+    unchecked = {
+        k for k, v in data.items()
+        if v is not None and v.ok and bool(v.incomplete)
     }
     current = data.get(view)
 
@@ -932,7 +951,8 @@ def render_dashboard(view: str, page: int, data: dict, *,
         ])
 
     body.extend(_nav_block(
-        view, counts, pager, checked_at=checked_at, auto_refresh=auto_refresh,
+        view, counts, pager, unchecked=unchecked, checked_at=checked_at,
+        auto_refresh=auto_refresh,
         refresh_until=refresh_until,
     ))
 

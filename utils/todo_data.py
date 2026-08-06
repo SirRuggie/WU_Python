@@ -979,7 +979,6 @@ async def build_war_view(
     """Regular-war hits still owed."""
     rows: list[Row] = []
     notes: list[str] = []
-    private = 0
     unreadable = 0
 
     by_clan = _accounts_by_war_clan(accounts, candidates, kind="war")
@@ -999,7 +998,9 @@ async def build_war_view(
         members = by_clan[clan_tag]
 
         if kind == "private":
-            private += len(members)
+            # Private logs have their own diagnostic view. They do not mean
+            # the readable War Hits result failed, and including them here
+            # makes that view claim it could not be read after a good refresh.
             continue
         if kind == "error":
             unreadable += len(members)
@@ -1037,15 +1038,12 @@ async def build_war_view(
     # No "in war prep" note any more - preparation wars are ROWS now, not a
     # footnote. Counting them into a note is what hid them.
     gaps: list[str] = []
-    if private:
-        gaps.append(f"🔒 {private} account(s) are in clans with private war logs")
     if unreadable:
         gaps.append(f"⚠️ {unreadable} account(s) could not be checked — war lookup failed")
 
-    # An unreadable clan makes the result incomplete, even when every readable
-    # account is caught up. Keeping ok=True lets the renderer explain the exact
-    # private/error state instead of replacing it with a generic outage;
-    # ``incomplete`` prevents the contradictory "All caught up" verdict.
+    # A failed lookup makes the result incomplete, even when every readable
+    # account is caught up. Private logs are intentionally absent here because
+    # build_blocked_view owns that state and identifies the affected accounts.
     if rows:
         notes.extend(gaps)
     incomplete = "; ".join(gap.lstrip("🔒⚠️ ") for gap in gaps)

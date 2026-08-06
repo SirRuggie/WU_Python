@@ -98,7 +98,26 @@ def test_incomplete_empty_view_never_renders_all_caught_up():
         for node in _walk(payload)
         if "description" in node
     ]
-    assert "couldn't be read — try Check now" in descriptions
+    assert "some accounts couldn't be checked" in descriptions
+
+
+def test_navigation_uses_hits_left_and_keeps_private_logs_separate():
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=_private_rows(1))
+    data[todo.VIEW_PRIVATE] = todo_data.ViewData(rows=_private_rows(1))
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data
+    )]
+    descriptions = {
+        str(node["description"])
+        for node in _walk(payload)
+        if "description" in node
+    }
+
+    assert "1 account has hits left" in descriptions
+    assert "1 account with unreadable war log" in descriptions
+    assert all("owe attacks" not in description for description in descriptions)
 
 
 def test_account_failures_mark_empty_and_nonempty_views_incomplete():

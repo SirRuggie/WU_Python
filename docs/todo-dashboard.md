@@ -244,10 +244,14 @@ also represented in the diagnostic view; otherwise War could warn about an
 unreadable historical clan while Private War Logs incorrectly said every clan
 was readable.
 
+A private war log appears only in **Private War Logs**. It does not mark the
+War Hits result as failed or unchecked. A real API/proxy lookup failure still
+marks War Hits as unchecked so the dashboard cannot claim **All caught up**.
+
 If even one linked player profile fails to load, every view is marked
-incomplete. An empty partial result says that not every account could be checked
-and must never render as **All caught up**. Non-empty partial results keep the
-rows that were found and add a warning note.
+incomplete. An empty result says that not every account could be checked and
+must never render as **All caught up**. Non-empty results keep the rows that
+were found and add a warning note.
 
 ### Raids: absent ≠ done
 
