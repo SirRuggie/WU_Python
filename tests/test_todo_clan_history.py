@@ -4,8 +4,19 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from extensions.tasks import clan_history_tracker
 from utils import clan_history, todo_data
+
+
+@pytest.fixture(autouse=True)
+def default_no_active_cwl(monkeypatch):
+    """Tracker tests opt into an active CWL response explicitly."""
+    async def no_cwl(_client, _clan_tag):
+        return "none", None
+
+    monkeypatch.setattr(todo_data, "_get_cwl_round", no_cwl)
 
 
 class _Collection:
@@ -247,10 +258,10 @@ def test_cwl_roster_candidate_does_not_trigger_regular_war_lookup(monkeypatch):
     assert requested == ["#HOME"]
 
 
-def test_tracker_bootstraps_player_from_active_cwl_roster(monkeypatch):
+def test_tracker_uses_api_not_mongo_type_for_active_cwl_roster(monkeypatch):
     monkeypatch.setattr(clan_history, "_indexes_ready", True)
     monkeypatch.setattr(clan_history, "_indexes_failed", False)
-    mongo = _Mongo(clan_documents=[{"tag": "#CWL", "type": "CWL"}])
+    mongo = _Mongo(clan_documents=[{"tag": "#CWL", "type": "FWA"}])
     cwl_war = _War("#CWL", "CWL Clan", [_Member("#PLAYER")], 1)
 
     class _Client:
@@ -271,6 +282,8 @@ def test_tracker_bootstraps_player_from_active_cwl_roster(monkeypatch):
 
     counts = asyncio.run(clan_history_tracker.run_scan(mongo, _Client()))
 
+    assert counts["cwl_checked"] == 1
+    assert counts["cwl_active"] == 1
     assert counts["cwl_roster"] == 1
     cwl_updates = [
         operation._doc

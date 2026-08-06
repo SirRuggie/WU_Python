@@ -107,19 +107,19 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
     await clan_history.ensure_indexes(mongo)
 
     clan_docs = await mongo.clans.find(
-        {"tag": {"$type": "string"}}, {"tag": 1, "type": 1}
+        {"tag": {"$type": "string"}}, {"tag": 1}
     ).to_list(length=None)
     clan_tags = list(dict.fromkeys(
         str(doc.get("tag", "")).strip().upper()
         for doc in clan_docs
         if str(doc.get("tag", "")).strip()
     ))
-    cwl_tags = list(dict.fromkeys(
-        str(doc.get("tag", "")).strip().upper()
-        for doc in clan_docs
-        if str(doc.get("tag", "")).strip()
-        and str(doc.get("type", "")).strip().upper() == "CWL"
-    ))
+    # Mongo's clan ``type`` is presentation metadata (FWA, CWL, Tactical,
+    # etc.), not evidence that a clan is currently participating in CWL.
+    # Ask the Clash API for every registered clan and let its league-group
+    # response determine participation. Absent groups are cached for an hour,
+    # so correctness does not turn into one request per clan every scan.
+    cwl_tags = clan_tags
 
     watch_docs = await mongo.player_clan_watches.find(
         {"expires_at": {"$gt": now}},
@@ -298,12 +298,14 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
             )
 
     cwl_roster: list[clan_history.ClanPresence] = []
+    active_cwl_clans = 0
     for clan_tag, result in zip(cwl_tags, cwls):
         if not result:
             continue
         kind, war = result
         if kind != "war" or war is None or todo_data._state(war) not in {"inWar", "preparation"}:
             continue
+        active_cwl_clans += 1
         clan_roster = _war_roster(war, clan_tag)
         cwl_roster.extend(clan_roster)
         if clan_roster:
@@ -319,7 +321,8 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
 
     return {
         "clans": len(clan_tags),
-        "cwl_clans": len(cwl_tags),
+        "cwl_checked": len(cwl_tags),
+        "cwl_active": active_cwl_clans,
         "family_players": len(set(family_roster_tags)),
         "roster_changes": len(changed_roster_tags),
         "departed_players": len(departed_tags),

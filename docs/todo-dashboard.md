@@ -135,10 +135,11 @@ index instead:
 - accounts used directly by `/todo` also receive a 48-hour watch. This covers a
   linked user even when none of their accounts was present in a registered
   family roster during the latest expansion;
-- active regular-war rosters for registered clans and active CWL rosters for
-  clans whose database type is `CWL` are indexed as obligations. This is the
-  bootstrap path for a war spun before the tracker existed, including a player
-  who has already returned to their home clan;
+- active regular-war and CWL rosters for registered clans are indexed as
+  obligations. The Clash API determines current CWL participation for every
+  registered clan; Mongo's clan `type` is display metadata and is never used as
+  participation evidence. This is the bootstrap path for a war spun before the
+  tracker existed, including a player who has already returned home;
 - actual presence is stored as `last_seen_at`; active roster membership is
   stored separately as `war_until` / `cwl_until`. A CWL roster proves an attack
   obligation but does not pretend to prove the player was physically in that
