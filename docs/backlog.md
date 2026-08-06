@@ -58,9 +58,6 @@ public.
 
 ### P1 — reliability and silent failure
 
-- **`BUG-001` — Repair `/test-band-api` and `/test-war-sync`.** Both admin
-  diagnostics call the nonexistent `ctx.edit_last_response`, so their response
-  handling fails on multiple branches.
 - **`BUG-002` — Make ticket creation transactional/idempotent.** The ticket's
   primary record and Discord channel can be created before a mirror write
   fails. The user then sees failure, and retrying can create a duplicate.
@@ -88,6 +85,16 @@ public.
 
 ## Completed hardening
 
+### `BUG-001` — Remove obsolete BAND diagnostic commands
+
+**Status:** Implemented and tested locally on 2026-08-05; deployment pending.
+
+Removed `/test-band-api` and `/test-war-sync` instead of repairing unused
+diagnostics. Their help entries and stale API documentation were removed too.
+The production BAND fetch, post processing, war-sync delivery, monitor status,
+and failure/recovery logs remain unchanged. A purpose-built diagnostic can be
+added later if an operational need is identified.
+
 ### `REL-002` / `OBS-001` — BAND post monitor recovery and visibility
 
 **Status:** Implemented and tested locally on 2026-08-05; deployment pending.
@@ -113,8 +120,7 @@ sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "band_post_mon
 
 `SECRET-001` remains open intentionally: moving the current token to an
 environment variable before the server is provisioned and the token is rotated
-would stop a working deployment. `BUG-001` also remains separate because it
-changes admin diagnostic response handling rather than monitor reliability.
+would stop a working deployment.
 
 ### `REL-001` — Self-healing monitor startup reconciliation
 

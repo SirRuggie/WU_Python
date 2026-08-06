@@ -114,8 +114,6 @@ HELP_CATEGORIES = {
             ("/steal", "Copy an emoji into the bot application."),
             ("/reboot", "Restart the bot process. Owner only."),
             ("/toggle-debug", "Toggle verbose BAND monitor logging. Admin only."),
-            ("/test-band-api", "Test the BAND API connection. Admin only."),
-            ("/test-war-sync", "Send a test war-sync notification. Admin only."),
             ("/fwasync enable", "Enable BAND iCal sync alerts. Admin only."),
             ("/fwasync disable", "Disable BAND iCal sync alerts. Admin only."),
             ("/fwasync status", "Show BAND sync configuration and state. Admin only."),

@@ -22,15 +22,13 @@ That shape is used in roughly 48 places across the repo and is safe to copy.
 
 ## Why this is written down
 
-`extensions/tasks/band_monitor.py` calls `ctx.edit_last_response` in five places
-(around lines 568, 575, 585, 611, 616). Those calls are **broken at runtime** —
-`/test-band-api` and `/test-war-sync` crash when they reach them. It is the only
-file in the repo that uses the method.
+The repo previously had five `ctx.edit_last_response` calls in two obsolete
+BAND diagnostic commands. Those commands were removed under `BUG-001`; there
+should now be no call sites for this nonexistent method.
 
 Because it was sitting there looking like working code, it got copied into
 `/fwasync check`, which then had the same latent bug. Fixed in `30601e2`
-(2026-08-02) by switching to `defer` + `respond`. The `band_monitor.py` call
-sites were still broken as of that date.
+(2026-08-02) by switching to `defer` + `respond`.
 
 **The general rule this produced, which is the actually valuable part:**
 
@@ -55,7 +53,7 @@ rather than trusting these numbers after any large change.
 | `respond_with_modal` | 8 | proven |
 | `options` | 7 | thin |
 | `focused` | 4 | thin |
-| `edit_last_response` | 5 | **does not exist** |
+| `edit_last_response` | 0 | **does not exist** |
 
 Anything in low single digits deserves suspicion. `edit_last_response` had 5,
 all in one never-run file — which is exactly what the tell looks like. A thin
