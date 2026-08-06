@@ -377,9 +377,15 @@ def test_startup_restores_current_pending_before_next_base_schedule(monkeypatch)
         },
         pending=pending,
     )
+    monkeypatch.setattr(cwl, "startup_reconciler", None)
 
     event = SimpleNamespace(app=SimpleNamespace(rest=rest))
-    asyncio.run(cwl.on_bot_started(event, mongo))
+
+    async def start_and_wait():
+        await cwl.on_bot_started(event, mongo)
+        await cwl.startup_reconciler.task
+
+    asyncio.run(start_and_wait())
 
     assert set(scheduler.jobs) == {cwl.cwl_base_job_id, "cwl_followup_1"}
     assert [call[1]["id"] for call in scheduler.add_calls] == [
@@ -440,6 +446,49 @@ def test_startup_discards_terminal_pending_row(monkeypatch):
 
     assert scheduler.jobs == {}
     assert mongo.database.cwl_pending_reminders.documents == {}
+
+
+def test_startup_reconciles_after_temporary_mongo_failure(monkeypatch):
+    class FlakyScheduleCollection(FakeCollection):
+        def __init__(self, documents):
+            super().__init__(documents)
+            self.failures = 1
+
+        async def find_one(self, query):
+            if self.failures:
+                self.failures -= 1
+                raise RuntimeError("Mongo starting")
+            return await super().find_one(query)
+
+    mongo, scheduler, _ = configure(monkeypatch, schedule={"_id": "schedule"})
+    mongo.database.cwl_reminder = FlakyScheduleCollection({
+        "schedule": {
+            "_id": "schedule",
+            "enabled": True,
+            "day": 31,
+            "hour": 18,
+            "minute": 0,
+        },
+    })
+
+    async def no_wait(_delay):
+        return None
+
+    reconciler = cwl.StartupReconciler(
+        "cwl_test",
+        cwl._reconcile_cwl_startup,
+        retry_delays=(0,),
+        sleep=no_wait,
+    )
+
+    async def reconcile():
+        await reconciler.start()
+
+    asyncio.run(reconcile())
+
+    assert reconciler.health.state == "healthy"
+    assert reconciler.health.attempts == 2
+    assert set(scheduler.jobs) == {cwl.cwl_base_job_id}
 
 
 def test_remove_followup_deletes_memory_and_durable_pending_state(monkeypatch):

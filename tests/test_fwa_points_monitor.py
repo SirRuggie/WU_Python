@@ -118,3 +118,55 @@ def test_watch_add_pipeline_replaces_in_one_atomic_update():
     expression = pipeline[0]["$set"]["watch_list"]["$concatArrays"]
     assert expression[0]["$filter"]["cond"] == {"$ne": ["$$clan.tag", "ABC123"]}
     assert expression[1] == [{"tag": "ABC123", "name": "Replacement"}]
+
+
+def test_startup_recovers_from_mongo_failure_and_starts_one_detector(monkeypatch):
+    class FlakyCollection(_PointsCollection):
+        def __init__(self):
+            super().__init__(find_result={"_id": "config", "enabled": False})
+            self.failures = 1
+
+        async def find_one(self, *args, **kwargs):
+            if self.failures:
+                self.failures -= 1
+                raise RuntimeError("Mongo starting")
+            return await super().find_one(*args, **kwargs)
+
+    collection = FlakyCollection()
+    loop_started = asyncio.Event()
+    loop_calls = 0
+
+    async def fake_detector():
+        nonlocal loop_calls
+        loop_calls += 1
+        loop_started.set()
+        await asyncio.Event().wait()
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(monitor, "mongo_client", _Mongo(collection))
+    monkeypatch.setattr(monitor, "detector_task", None)
+    monkeypatch.setattr(monitor, "detector_loop", fake_detector)
+
+    reconciler = monitor.StartupReconciler(
+        "points_test",
+        monitor._reconcile_points_startup,
+        retry_delays=(0,),
+        sleep=no_wait,
+    )
+
+    async def scenario():
+        await reconciler.start()
+        await loop_started.wait()
+        await monitor._reconcile_points_startup()
+        assert monitor.detector_task and not monitor.detector_task.done()
+        monitor.detector_task.cancel()
+        await asyncio.gather(monitor.detector_task, return_exceptions=True)
+        monitor.detector_task = None
+
+    asyncio.run(scenario())
+
+    assert reconciler.health.state == "healthy"
+    assert reconciler.health.attempts == 2
+    assert loop_calls == 1

@@ -58,10 +58,6 @@ public.
 
 ### P1 — reliability and silent failure
 
-- **`REL-001` — Retry startup reconciliation without requiring a restart.** CWL,
-  FWA points, BAND calendar, and LazyCWL restoration can each fail once during
-  startup and then remain inactive. Give each subsystem a bounded self-healing
-  startup retry and a visible health state.
 - **`REL-002` — Make BAND monitor startup self-healing.** A single BAND key/API
   resolution failure prevents the monitor from starting until the bot restarts.
 - **`OBS-001` — Log production BAND monitor failures by default.** Important
@@ -81,8 +77,6 @@ public.
   errors and use capped backoff with an operator-visible terminal state.
 - **`REL-004` — Bound recruit role-cleanup retries.** Permanent member-fetch or
   role-removal failures currently retry hourly forever.
-- **`REL-005` — Await BAND calendar shutdown.** Cancellation is requested but
-  the task is not awaited, leaving shutdown races and noisy cancellation.
 - **`UI-001` — Fix the clan-list missing-clan component response.** The
   `clan_select_menu` action is registered as `no_return=True` but returns error
   UI, so that error is discarded and the click appears silent.
@@ -98,6 +92,34 @@ public.
   live raid data needs event-time verification.
 
 ## Completed hardening
+
+### `REL-001` — Self-healing monitor startup reconciliation
+
+**Status:** Implemented and tested locally on 2026-08-05; deployment pending.
+
+CWL reminders, LazyCWL auto-pings, BAND calendar polling, and FWA points now
+start through an idempotent background reconciler. A brief MongoDB or scheduler
+failure no longer requires a process restart: setup retries after 5, 15, 30,
+and 60 seconds, then every five minutes until it succeeds. Duplicate startup
+events cannot create duplicate loops or schedulers, partial scheduler recovery
+does not replace already-healthy LazyCWL jobs, and shutdown cancels and awaits
+the reconciliation tasks. BAND calendar poller cancellation is now awaited as
+part of the same lifecycle fix, completing `REL-005` as well.
+
+Relevant status commands now show actual runtime state in addition to stored
+configuration:
+
+- `/cwl-reminder status`
+- `/fwa lazycwl-autopings-status`
+- `/fwasync status`
+- `/fwapoints status`
+
+Startup error details are single-line, length-bounded, and redact URL
+credentials and token-like query parameters. Search the bot journal with:
+
+```bash
+sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "startup_reconcile_retry|startup_reconcile_recovered|startup_reconcile_healthy"
+```
 
 ### `CWL-RETRY-001` — Monthly CWL reminder delivery
 

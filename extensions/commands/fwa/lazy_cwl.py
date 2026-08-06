@@ -20,6 +20,7 @@ from extensions.commands.fwa import loader, fwa
 from extensions.components import register_action
 from utils.component_state import insert_state
 from utils.mongo import MongoClient
+from utils.startup_reconciler import StartupReconciler
 from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT
 from utils.emoji import emojis
 from utils.classes import Clan
@@ -40,6 +41,7 @@ scheduler: Optional[AsyncIOScheduler] = None
 bot_instance: Optional[hikari.GatewayBot] = None
 coc_client: Optional[coc.Client] = None
 mongo_client: Optional[MongoClient] = None
+startup_reconciler: Optional[StartupReconciler] = None
 
 AUTOPING_JOB_DEFAULTS = {
     "coalesce": True,
@@ -861,18 +863,43 @@ class LazyCwlAutopingsStatus(
         await ctx.defer(ephemeral=True)
 
         # Get all snapshots with auto-ping enabled
-        snapshots = await mongo.lazy_cwl_snapshots.find({
-            "active": True,
-            "auto_ping_enabled": True
-        }).sort("auto_ping_started_at", -1).to_list(length=None)
+        try:
+            snapshots = await mongo.lazy_cwl_snapshots.find({
+                "active": True,
+                "auto_ping_enabled": True
+            }).sort("auto_ping_started_at", -1).to_list(length=None)
+        except Exception as exc:
+            recovery_status = (
+                startup_reconciler.status_text()
+                if startup_reconciler is not None
+                else "⏹️ Stopped"
+            )
+            await ctx.respond(
+                components=[Container(
+                    accent_color=RED_ACCENT,
+                    components=[
+                        Text(content="## ⚠️ Auto-Ping Status Unavailable"),
+                        Text(content=f"**Startup recovery:** {recovery_status}"),
+                        Text(content=f"**MongoDB:** Unavailable ({type(exc).__name__})"),
+                    ],
+                )],
+                ephemeral=True,
+            )
+            return
 
         if not snapshots:
+            recovery_status = (
+                startup_reconciler.status_text()
+                if startup_reconciler is not None
+                else "⏹️ Stopped"
+            )
             components = [
                 Container(
                     accent_color=RED_ACCENT,
                     components=[
                         Text(content="## 📊 No Active Auto-Pings"),
                         Text(content="No snapshots currently have auto-ping enabled."),
+                        Text(content=f"**Startup recovery:** {recovery_status}"),
                         Text(content="Use `/fwa lazycwl-autopings-start` to enable auto-ping for a snapshot."),
                     ]
                 )
@@ -887,6 +914,17 @@ class LazyCwlAutopingsStatus(
         ]
 
         now = datetime.now(timezone.utc)
+        scheduled_jobs = sum(
+            1
+            for snapshot in snapshots
+            if scheduler is not None
+            and scheduler.get_job(f"autopings_{snapshot['_id']}") is not None
+        )
+        recovery_status = (
+            startup_reconciler.status_text()
+            if startup_reconciler is not None
+            else "⏹️ Stopped"
+        )
 
         for i, snapshot in enumerate(snapshots, 1):
             interval = snapshot.get("auto_ping_interval_minutes", 60)
@@ -934,6 +972,8 @@ class LazyCwlAutopingsStatus(
         components_list.extend([
             Separator(),
             Text(content=f"**Total Active Auto-Pings:** {len(snapshots)}"),
+            Text(content=f"**Scheduled Jobs:** {scheduled_jobs}/{len(snapshots)}"),
+            Text(content=f"**Startup Recovery:** {recovery_status}"),
             Separator(),
             Text(content="Use `/fwa lazycwl-autopings-stop` to disable auto-ping for a snapshot."),
         ])
@@ -1768,80 +1808,104 @@ async def restore_autopings():
     global mongo_client, scheduler
 
     if not mongo_client or not scheduler:
-        print("[LazyCWL AutoPing] Cannot restore: missing clients")
+        raise RuntimeError("cannot restore auto-pings: missing clients")
+
+    # Restore only active snapshots. Inactive/enabled legacy rows are repaired
+    # during startup and must never recreate scheduler jobs.
+    snapshots = await mongo_client.lazy_cwl_snapshots.find({
+        "active": True,
+        "auto_ping_enabled": True
+    }).to_list(length=None)
+
+    if not snapshots:
+        print("[LazyCWL AutoPing] No active auto-pings to restore")
         return
 
+    now = datetime.now(timezone.utc)
+    restored = 0
+    expired = 0
+    failed = 0
+
+    for snapshot in snapshots:
+        snapshot_id = snapshot["_id"]
+        started_at = snapshot.get("auto_ping_started_at")
+
+        if not started_at:
+            continue
+
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        elapsed = now - started_at
+
+        # Check if expired during downtime
+        if elapsed > timedelta(days=7):
+            print(f"[LazyCWL AutoPing] Snapshot {snapshot['clan_name']} expired during downtime, disabling")
+            await mongo_client.lazy_cwl_snapshots.update_one(
+                {"_id": snapshot_id},
+                {"$set": {"auto_ping_enabled": False}}
+            )
+            expired += 1
+            continue
+
+        interval_minutes = snapshot.get("auto_ping_interval_minutes", 60)
+        next_run_time = calculate_next_autoping_run(snapshot, now)
+        job_id = f"autopings_{snapshot_id}"
+
+        # A previous retry may already have restored this job before another
+        # snapshot failed. Leave the healthy cadence untouched on later passes.
+        if scheduler.get_job(job_id) is not None:
+            restored += 1
+            continue
+
+        try:
+            scheduler.add_job(
+                auto_ping_job,
+                trigger=IntervalTrigger(minutes=interval_minutes),
+                args=[snapshot_id],
+                id=job_id,
+                replace_existing=True,
+                next_run_time=next_run_time,
+                **AUTOPING_JOB_DEFAULTS,
+            )
+
+            print(
+                f"[LazyCWL AutoPing] Restored auto-ping for "
+                f"{snapshot['clan_name']} (interval: {interval_minutes}min, "
+                f"next: {next_run_time.isoformat()})"
+            )
+            restored += 1
+        except Exception as e:
+            failed += 1
+            print(f"[LazyCWL AutoPing] Failed to restore job for {snapshot['clan_name']}: {e}")
+
+    if restored > 0:
+        print(f"[LazyCWL AutoPing] Restored {restored} auto-ping job(s)")
+    if expired > 0:
+        print(f"[LazyCWL AutoPing] Disabled {expired} expired auto-ping(s)")
+    if failed > 0:
+        raise RuntimeError(f"failed to restore {failed} auto-ping job(s)")
+
+
+async def _reconcile_lazy_cwl_startup() -> None:
+    """Repair durable state and restore enabled jobs without creating duplicates."""
+    if not getattr(scheduler, "running", True):
+        scheduler.start()
+        print("[LazyCWL AutoPing] Scheduler initialized")
+
     try:
-        # Restore only active snapshots. Inactive/enabled legacy rows are
-        # repaired during startup and must never recreate scheduler jobs.
-        snapshots = await mongo_client.lazy_cwl_snapshots.find({
-            "active": True,
-            "auto_ping_enabled": True
-        }).to_list(length=None)
+        await ensure_snapshot_invariants(mongo_client)
+        print("[LazyCWL] Snapshot invariants verified")
+    except Exception as exc:
+        # The unique index is a data-integrity guard, but an index permission
+        # failure must not prevent already-enabled notifications from running.
+        print(
+            f"[LazyCWL] WARNING snapshot invariants unavailable: "
+            f"{type(exc).__name__}: {exc}"
+        )
 
-        if not snapshots:
-            print("[LazyCWL AutoPing] No active auto-pings to restore")
-            return
-
-        now = datetime.now(timezone.utc)
-        restored = 0
-        expired = 0
-
-        for snapshot in snapshots:
-            snapshot_id = snapshot["_id"]
-            started_at = snapshot.get("auto_ping_started_at")
-
-            if not started_at:
-                continue
-
-            if started_at.tzinfo is None:
-                started_at = started_at.replace(tzinfo=timezone.utc)
-
-            elapsed = now - started_at
-
-            # Check if expired during downtime
-            if elapsed > timedelta(days=7):
-                print(f"[LazyCWL AutoPing] Snapshot {snapshot['clan_name']} expired during downtime, disabling")
-                await mongo_client.lazy_cwl_snapshots.update_one(
-                    {"_id": snapshot_id},
-                    {"$set": {"auto_ping_enabled": False}}
-                )
-                expired += 1
-                continue
-
-            # Restore job
-            interval_minutes = snapshot.get("auto_ping_interval_minutes", 60)
-            next_run_time = calculate_next_autoping_run(snapshot, now)
-
-            try:
-                scheduler.add_job(
-                    auto_ping_job,
-                    trigger=IntervalTrigger(minutes=interval_minutes),
-                    args=[snapshot_id],
-                    id=f"autopings_{snapshot_id}",
-                    replace_existing=True,
-                    next_run_time=next_run_time,
-                    **AUTOPING_JOB_DEFAULTS,
-                )
-
-                print(
-                    f"[LazyCWL AutoPing] Restored auto-ping for "
-                    f"{snapshot['clan_name']} (interval: {interval_minutes}min, "
-                    f"next: {next_run_time.isoformat()})"
-                )
-                restored += 1
-            except Exception as e:
-                print(f"[LazyCWL AutoPing] Failed to restore job for {snapshot['clan_name']}: {e}")
-
-        if restored > 0:
-            print(f"[LazyCWL AutoPing] Restored {restored} auto-ping job(s)")
-        if expired > 0:
-            print(f"[LazyCWL AutoPing] Disabled {expired} expired auto-ping(s)")
-
-    except Exception as e:
-        print(f"[LazyCWL AutoPing] Error restoring auto-pings: {e}")
-        import traceback
-        traceback.print_exc()
+    await restore_autopings()
+    print("[LazyCWL AutoPing] Active auto-ping jobs restored")
 
 
 @register_action("lazycwl_ping_select", no_return=True, requires_state=True)
@@ -3380,52 +3444,37 @@ async def on_bot_started(
     mongo: MongoClient = lightbulb.di.INJECTED,
 ):
     """Initialize scheduler and restore auto-ping jobs on bot startup."""
-    global bot_instance, coc_client, mongo_client, scheduler
+    global bot_instance, coc_client, mongo_client, scheduler, startup_reconciler
 
     # Store clients globally for auto_ping_job access
     bot_instance = bot
     coc_client = coc_api
     mongo_client = mongo
 
-    # This listener is attached to the shared `fwa` loader, which every /fwa command
-    # module re-adds when it loads, so hikari fires this once per fwa module (~9x).
-    # Guard so we build and start exactly ONE scheduler. Without it, each firing made a
-    # fresh scheduler and re-ran restore, so an enabled auto-ping ended up registered on
-    # every one of those live schedulers and fired that many times per interval. The
-    # check and the assignment below have no await between them, so this holds even if
-    # the duplicate firings are dispatched concurrently.
-    if scheduler is not None:
-        return
-
-    # Initialize and start scheduler
-    scheduler = AsyncIOScheduler(
-        timezone="UTC",
-        job_defaults=AUTOPING_JOB_DEFAULTS,
-    )
-    scheduler.start()
-
-    print("[LazyCWL AutoPing] Scheduler initialized")
-
-    try:
-        await ensure_snapshot_invariants(mongo)
-        print("[LazyCWL] Snapshot invariants verified")
-    except Exception as e:
-        # Keep the bot available, but do not hide that the database-level
-        # duplicate guard could not be installed.
-        print(f"[LazyCWL] Failed to verify snapshot invariants: {e}")
-
-    # Restore active auto-ping jobs from database
-    try:
-        await restore_autopings()
-        print("[LazyCWL AutoPing] Active auto-ping jobs restored")
-    except Exception as e:
-        print(f"[LazyCWL AutoPing] Failed to restore auto-ping jobs: {e}")
+    # This listener is attached to the shared `fwa` loader, which fires once per
+    # /fwa module. Construct both objects without an await so duplicate events
+    # cannot interleave and create parallel schedulers or reconcilers.
+    if scheduler is None:
+        scheduler = AsyncIOScheduler(
+            timezone="UTC",
+            job_defaults=AUTOPING_JOB_DEFAULTS,
+        )
+    if startup_reconciler is None:
+        startup_reconciler = StartupReconciler(
+            "lazy_cwl_autopings",
+            _reconcile_lazy_cwl_startup,
+        )
+    startup_reconciler.start()
 
 
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Stop the in-memory scheduler cleanly during every bot shutdown."""
-    global scheduler
+    global scheduler, startup_reconciler
+
+    if startup_reconciler is not None:
+        await startup_reconciler.stop()
+        startup_reconciler = None
 
     current_scheduler = scheduler
     scheduler = None

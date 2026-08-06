@@ -76,18 +76,30 @@ class FakeCollection:
 
 class FakeScheduler:
     def __init__(self, fail_add=False):
+        self.running = False
+        self.start_calls = 0
         self.add_calls = []
+        self.jobs = {}
         self.removed = []
         self.shutdown_calls = []
         self.fail_add = fail_add
+
+    def start(self):
+        self.start_calls += 1
+        self.running = True
 
     def add_job(self, function, **kwargs):
         if self.fail_add:
             raise RuntimeError("scheduler unavailable")
         self.add_calls.append((function, kwargs))
+        self.jobs[kwargs["id"]] = (function, kwargs)
+
+    def get_job(self, job_id):
+        return self.jobs.get(job_id)
 
     def remove_job(self, job_id):
         self.removed.append(job_id)
+        self.jobs.pop(job_id, None)
 
     def shutdown(self, wait=True):
         self.shutdown_calls.append(wait)
@@ -232,10 +244,10 @@ def test_restore_uses_only_active_enabled_rows_and_persisted_cadence(monkeypatch
 
     asyncio.run(lazy_cwl.restore_autopings())
 
-    assert collection.find_queries == [{
+    assert collection.find_queries.count({
         "active": True,
         "auto_ping_enabled": True,
-    }]
+    }) == 1
     assert len(scheduler.add_calls) == 1
     _, kwargs = scheduler.add_calls[0]
     assert kwargs["id"] == "autopings_active"
@@ -370,3 +382,95 @@ def test_failed_scheduler_registration_rolls_back_enabled_flag():
     assert result["success"] is False
     assert collection.documents["snapshot"]["auto_ping_enabled"] is False
     assert "auto_ping_job_id" not in collection.documents["snapshot"]
+
+
+def test_startup_retries_failed_job_registration_without_duplicates(monkeypatch):
+    now = datetime.now(timezone.utc)
+    collection = FakeCollection([{
+        "_id": "snapshot",
+        "clan_name": "Clan",
+        "clan_tag": "#TAG",
+        "snapshot_date": now,
+        "active": True,
+        "auto_ping_enabled": True,
+        "auto_ping_started_at": now - timedelta(hours=1),
+        "auto_ping_interval_minutes": 30,
+    }])
+
+    class FlakyScheduler(FakeScheduler):
+        def __init__(self):
+            super().__init__()
+            self.running = True
+            self.failures = 1
+
+        def add_job(self, function, **kwargs):
+            if self.failures:
+                self.failures -= 1
+                raise RuntimeError("scheduler starting")
+            super().add_job(function, **kwargs)
+
+    scheduler = FlakyScheduler()
+    monkeypatch.setattr(
+        lazy_cwl,
+        "mongo_client",
+        SimpleNamespace(lazy_cwl_snapshots=collection),
+    )
+    monkeypatch.setattr(lazy_cwl, "scheduler", scheduler)
+
+    async def no_wait(_delay):
+        return None
+
+    reconciler = lazy_cwl.StartupReconciler(
+        "lazy_test",
+        lazy_cwl._reconcile_lazy_cwl_startup,
+        retry_delays=(0,),
+        sleep=no_wait,
+    )
+
+    async def reconcile():
+        await reconciler.start()
+
+    asyncio.run(reconcile())
+
+    assert reconciler.health.state == "healthy"
+    assert reconciler.health.attempts == 2
+    assert [kwargs["id"] for _, kwargs in scheduler.add_calls] == [
+        "autopings_snapshot",
+    ]
+
+
+def test_duplicate_loader_start_events_create_one_scheduler(monkeypatch):
+    collection = FakeCollection([])
+    mongo = SimpleNamespace(lazy_cwl_snapshots=collection)
+    created = []
+
+    def scheduler_factory(**_kwargs):
+        instance = FakeScheduler()
+        created.append(instance)
+        return instance
+
+    monkeypatch.setattr(lazy_cwl, "scheduler", None)
+    monkeypatch.setattr(lazy_cwl, "startup_reconciler", None)
+    monkeypatch.setattr(lazy_cwl, "AsyncIOScheduler", scheduler_factory)
+
+    async def scenario():
+        event = SimpleNamespace()
+        bot = SimpleNamespace()
+        coc_api = SimpleNamespace()
+        await lazy_cwl.on_bot_started(event, bot, coc_api, mongo)
+        first_reconciler = lazy_cwl.startup_reconciler
+        await lazy_cwl.on_bot_started(event, bot, coc_api, mongo)
+        assert lazy_cwl.startup_reconciler is first_reconciler
+        await first_reconciler.task
+        scheduler = lazy_cwl.scheduler
+        await lazy_cwl.on_bot_stopping(event)
+        return scheduler
+
+    scheduler = asyncio.run(scenario())
+
+    assert len(created) == 1
+    assert scheduler.start_calls == 1
+    assert collection.find_queries.count({
+        "active": True,
+        "auto_ping_enabled": True,
+    }) == 1

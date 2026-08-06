@@ -210,3 +210,88 @@ def test_zero_delivery_reschedule_remains_retryable(monkeypatch):
     assert collection.documents[delivery["_id"]]["status"] == "sent"
     assert rest.attempts == [9, 9]
 
+
+def test_startup_recovers_from_mongo_failure_and_starts_one_poller(monkeypatch):
+    class StartupCollection:
+        def __init__(self):
+            self.find_failures = 1
+            self.index_calls = 0
+
+        async def create_index(self, *args, **kwargs):
+            self.index_calls += 1
+            return "ttl_expire_at"
+
+        async def find_one(self, query):
+            if self.find_failures:
+                self.find_failures -= 1
+                raise RuntimeError("Mongo starting")
+            return {"_id": sync.CONFIG_ID, "enabled": False}
+
+    collection = StartupCollection()
+
+    class Database:
+        def get_collection(self, _name):
+            return collection
+
+    class Mongo:
+        def get_database(self, _name):
+            return Database()
+
+    loop_started = asyncio.Event()
+    loop_calls = 0
+
+    async def fake_poller(_mongo):
+        nonlocal loop_calls
+        loop_calls += 1
+        loop_started.set()
+        await asyncio.Event().wait()
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(sync, "mongo_client", Mongo())
+    monkeypatch.setattr(sync, "poller_task", None)
+    monkeypatch.setattr(sync, "poller_loop", fake_poller)
+
+    reconciler = sync.StartupReconciler(
+        "ical_test",
+        sync._reconcile_ical_startup,
+        retry_delays=(0,),
+        sleep=no_wait,
+    )
+
+    async def scenario():
+        await reconciler.start()
+        await loop_started.wait()
+        await sync._reconcile_ical_startup()
+        assert sync.poller_task and not sync.poller_task.done()
+        sync.poller_task.cancel()
+        await asyncio.gather(sync.poller_task, return_exceptions=True)
+        sync.poller_task = None
+
+    asyncio.run(scenario())
+
+    assert reconciler.health.state == "healthy"
+    assert reconciler.health.attempts == 2
+    assert loop_calls == 1
+    assert collection.index_calls == 3
+
+
+def test_shutdown_awaits_poller_cancellation(monkeypatch):
+    cancelled = asyncio.Event()
+
+    async def poller():
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    async def scenario():
+        monkeypatch.setattr(sync, "startup_reconciler", None)
+        monkeypatch.setattr(sync, "poller_task", asyncio.create_task(poller()))
+        await asyncio.sleep(0)
+        await sync.on_bot_stopping(SimpleNamespace())
+        assert cancelled.is_set()
+        assert sync.poller_task is None
+
+    asyncio.run(scenario())

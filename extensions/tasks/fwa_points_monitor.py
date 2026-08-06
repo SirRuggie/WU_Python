@@ -23,6 +23,7 @@ import lightbulb
 
 from utils.mongo import MongoClient
 from utils.fwa_points_parser import parse_clan_points, sanitize_tag, is_newer_war, FwaPointsParseError
+from utils.startup_reconciler import StartupReconciler
 
 loader = lightbulb.Loader()
 
@@ -58,6 +59,7 @@ bot_instance = None
 mongo_client = None
 coc_client = None
 detector_task = None
+startup_reconciler = None
 active_catchups = {}   # our_tag -> asyncio.Task
 
 
@@ -351,33 +353,48 @@ async def detector_loop():
 
 
 # ---- Lifecycle ----
-@loader.listener(hikari.StartedEvent)
-@lightbulb.di.with_di
-async def on_bot_started(event: hikari.StartedEvent,
-                         mongo: MongoClient = lightbulb.di.INJECTED,
-                         coc_api: coc.Client = lightbulb.di.INJECTED) -> None:
-    global bot_instance, mongo_client, coc_client, detector_task
-    bot_instance = event.app
-    mongo_client = mongo
-    coc_client = coc_api
-    if not await mongo.fwa_points.find_one({"_id": "config"}):
-        await mongo.fwa_points.update_one(
+async def _reconcile_points_startup() -> None:
+    """Seed configuration and start exactly one protected detector loop."""
+    global detector_task
+
+    if not await mongo_client.fwa_points.find_one({"_id": "config"}):
+        await mongo_client.fwa_points.update_one(
             {"_id": "config"},
             {"$setOnInsert": {"enabled": DEFAULT_ENABLED, "watch_list": list(DEFAULT_WATCH_LIST)}},
             upsert=True,
         )
         print("[FWA Points] Seeded config")
     if detector_task and not detector_task.done():
-        print("[FWA Points] Detector task already running; start skipped")
         return
     detector_task = asyncio.create_task(detector_loop())
     print("[FWA Points] Task started")
 
 
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def on_bot_started(event: hikari.StartedEvent,
+                         mongo: MongoClient = lightbulb.di.INJECTED,
+                         coc_api: coc.Client = lightbulb.di.INJECTED) -> None:
+    global bot_instance, mongo_client, coc_client, startup_reconciler
+    bot_instance = event.app
+    mongo_client = mongo
+    coc_client = coc_api
+
+    if startup_reconciler is None:
+        startup_reconciler = StartupReconciler(
+            "fwa_points",
+            _reconcile_points_startup,
+        )
+    startup_reconciler.start()
+
+
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
-    global detector_task
+    global detector_task, startup_reconciler
     tasks = []
+    if startup_reconciler is not None:
+        await startup_reconciler.stop()
+        startup_reconciler = None
     if detector_task and not detector_task.done():
         detector_task.cancel()
         tasks.append(detector_task)
@@ -465,9 +482,34 @@ class Status(lightbulb.SlashCommand, name="status", description="Show monitor st
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        config = await load_config()
+        await ctx.defer(ephemeral=True)
+        try:
+            config = await load_config()
+        except Exception as exc:
+            detector_state = "running" if detector_task and not detector_task.done() else "not running"
+            recovery_state = (
+                startup_reconciler.status_text()
+                if startup_reconciler is not None
+                else "stopped"
+            )
+            await ctx.respond(
+                "**FWA Points Status**\n"
+                f"**Detector:** {detector_state}\n"
+                f"**Startup recovery:** {recovery_state}\n"
+                f"**MongoDB:** unavailable ({type(exc).__name__})",
+                ephemeral=True,
+            )
+            return
         active = sum(1 for t in active_catchups.values() if not t.done())
+        detector_running = bool(detector_task and not detector_task.done())
+        recovery_status = (
+            startup_reconciler.status_text()
+            if startup_reconciler is not None
+            else "⏹️ Stopped"
+        )
         lines = [f"**Enabled:** {'yes' if config['enabled'] else 'no'}",
+                 f"**Detector:** {'✅ Running' if detector_running else '❌ Not running'}",
+                 f"**Startup recovery:** {recovery_status}",
                  f"**Active retries:** {active}", "**Watch list:**"]
         if not config["watch_list"]:
             lines.append("_(empty)_")

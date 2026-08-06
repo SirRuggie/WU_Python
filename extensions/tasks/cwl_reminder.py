@@ -18,6 +18,7 @@ from hikari.impl import (
 )
 
 from utils.mongo import MongoClient
+from utils.startup_reconciler import StartupReconciler
 from utils.constants import GOLDENROD_ACCENT, GREEN_ACCENT, RED_ACCENT, BLUE_ACCENT
 
 loader = lightbulb.Loader()
@@ -36,6 +37,7 @@ LAZY_DISCUSSION_CHANNEL = 872692009066958879
 scheduler = AsyncIOScheduler(timezone=DEFAULT_TIMEZONE)
 bot_instance = None
 mongo_client = None
+startup_reconciler = None
 cwl_base_job_id = "cwl_monthly_reminder"
 cwl_followup_job_prefix = "cwl_followup_"
 cwl_initial_retry_job_id = "cwl_initial_retry"
@@ -729,6 +731,7 @@ async def restore_pending_reminders():
 
     restored_count = 0
     expired_count = 0
+    failed_count = 0
 
     for reminder in pending_reminders:
         reminder_id = reminder.get("_id")
@@ -795,11 +798,16 @@ async def restore_pending_reminders():
             # Keep valid durable state so another restart can recover it if
             # scheduler registration is temporarily unavailable.
             print(f"[CWL Reminder] Error scheduling reminder {reminder_id}: {e}")
+            failed_count += 1
 
     if restored_count > 0:
         print(f"[CWL Reminder] Successfully restored {restored_count} pending reminder(s)")
     if expired_count > 0:
         print(f"[CWL Reminder] Cleaned up {expired_count} expired reminder(s)")
+    if failed_count > 0:
+        raise RuntimeError(
+            f"failed to restore {failed_count} pending reminder(s); durable state retained"
+        )
 
 
 async def restore_missed_base_reminder(
@@ -891,18 +899,8 @@ async def schedule_cwl_reminder(
     return True
 
 
-@loader.listener(hikari.StartedEvent)
-@lightbulb.di.with_di
-async def on_bot_started(
-    event: hikari.StartedEvent,
-    mongo: MongoClient = lightbulb.di.INJECTED
-) -> None:
-    """Load saved schedule when bot starts"""
-    global bot_instance, mongo_client
-    
-    bot_instance = event.app
-    mongo_client = mongo
-
+async def _reconcile_cwl_startup() -> None:
+    """Idempotently restore durable CWL jobs after dependencies are ready."""
     if not getattr(scheduler, "running", True):
         scheduler.start()
 
@@ -912,7 +910,7 @@ async def on_bot_started(
     await restore_pending_reminders()
     
     # Load saved schedule from MongoDB
-    schedule_data = await mongo.database.cwl_reminder.find_one({"_id": "schedule"})
+    schedule_data = await mongo_client.database.cwl_reminder.find_one({"_id": "schedule"})
     
     if schedule_data and schedule_data.get("enabled", False):
         day = schedule_data.get("day")
@@ -944,9 +942,33 @@ async def on_bot_started(
                                 delay_display = f"{minutes} minutes"
                         print(f"  - Reminder #{f.get('number')}: {delay_display or 'unknown delay'}")
 
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def on_bot_started(
+    event: hikari.StartedEvent,
+    mongo: MongoClient = lightbulb.di.INJECTED
+) -> None:
+    """Start non-blocking, self-healing restoration of the saved schedule."""
+    global bot_instance, mongo_client, startup_reconciler
+
+    bot_instance = event.app
+    mongo_client = mongo
+
+    if startup_reconciler is None:
+        startup_reconciler = StartupReconciler(
+            "cwl_reminder",
+            _reconcile_cwl_startup,
+        )
+    startup_reconciler.start()
+
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
+    global startup_reconciler
+    if startup_reconciler is not None:
+        await startup_reconciler.stop()
+        startup_reconciler = None
     if getattr(scheduler, "running", False):
         scheduler.shutdown()
         print("[CWL Reminder] Scheduler shutdown")
@@ -1022,12 +1044,28 @@ class Status(
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        await ctx.defer(ephemeral=True)
+        startup_status = (
+            startup_reconciler.status_text()
+            if startup_reconciler is not None
+            else "⏹️ Stopped"
+        )
         # Get schedule from MongoDB
-        schedule_data = await mongo.database.cwl_reminder.find_one({"_id": "schedule"})
+        try:
+            schedule_data = await mongo.database.cwl_reminder.find_one({"_id": "schedule"})
+        except Exception as exc:
+            await ctx.respond(
+                "## CWL Reminder Status\n"
+                f"• **Startup recovery**: {startup_status}\n"
+                f"• **MongoDB**: ❌ Unavailable ({type(exc).__name__})",
+                ephemeral=True,
+            )
+            return
         
         if not schedule_data or not schedule_data.get("enabled", False):
             await ctx.respond(
                 "❌ **No CWL reminder scheduled**\n"
+                f"• **Startup recovery**: {startup_status}\n"
                 "Use `/cwl-reminder schedule` to set one up.",
                 ephemeral=True
             )
@@ -1045,13 +1083,13 @@ class Status(
         # Check if job is actually scheduled
         job = scheduler.get_job(cwl_base_job_id)
         job_status = "✅ Active" if job else "❌ Not running"
-        
         status_text = (
             f"## CWL Reminder Status\n"
-            f"• **Schedule**: Day {day} at {hour_12}:{minute:02d} {am_pm} ({DEFAULT_TIMEZONE})\n"
+            f"• **Monthly schedule**: Day {day} at {hour_12}:{minute:02d} {am_pm} ({DEFAULT_TIMEZONE})\n"
             f"• **Main CWL Channel**: <#{CWL_CHANNEL_ID}>\n"
             f"• **Lazy CWL Channel**: <#{LAZY_CWL_CHANNEL_ID}>\n"
-            f"• **Status**: {job_status}"
+            f"• **Scheduler job**: {job_status}\n"
+            f"• **Startup recovery**: {startup_status}"
         )
         
         if last_sent:

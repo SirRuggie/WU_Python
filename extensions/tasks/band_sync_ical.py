@@ -25,6 +25,7 @@ import lightbulb
 from pymongo.errors import DuplicateKeyError
 
 from utils.mongo import MongoClient
+from utils.startup_reconciler import StartupReconciler
 from utils.band_ical_parser import (
     DISCOVERY_OFFSET,
     BandIcalParseError,
@@ -73,6 +74,7 @@ CONFIG_ID = "config"
 bot_instance = None
 mongo_client = None
 poller_task = None
+startup_reconciler = None
 _last_enabled_state = None       # for logging the flag only when it actually changes
 _last_seen_upcoming_at = None
 _last_stale_log_at = None
@@ -642,20 +644,14 @@ async def poller_loop(mongo):
 
 
 # ---- Lifecycle ----
-@loader.listener(hikari.StartedEvent)
-@lightbulb.di.with_di
-async def on_bot_started(
-        event: hikari.StartedEvent,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-) -> None:
-    global bot_instance, mongo_client, poller_task
-    bot_instance = event.app
-    mongo_client = mongo
+async def _reconcile_ical_startup() -> None:
+    """Ensure durable setup exists, then start exactly one protected poller."""
+    global poller_task
 
-    await ensure_indexes(mongo)
+    await ensure_indexes(mongo_client)
 
-    if not await _alerts(mongo).find_one({"_id": CONFIG_ID}):
-        await _alerts(mongo).update_one(
+    if not await _alerts(mongo_client).find_one({"_id": CONFIG_ID}):
+        await _alerts(mongo_client).update_one(
             {"_id": CONFIG_ID}, {"$setOnInsert": _seed_from_env()}, upsert=True
         )
         print("[FWA Sync ICS] Seeded config (disabled; enable with /fwasync enable)")
@@ -663,14 +659,39 @@ async def on_bot_started(
     configured = ", ".join(feed_urls().keys()) or "NONE"
     print(f"[FWA Sync ICS] Feeds configured: {configured}")
 
-    poller_task = asyncio.create_task(poller_loop(mongo))
+    if poller_task and not poller_task.done():
+        return
+    poller_task = asyncio.create_task(poller_loop(mongo_client))
+
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def on_bot_started(
+        event: hikari.StartedEvent,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+) -> None:
+    global bot_instance, mongo_client, startup_reconciler
+    bot_instance = event.app
+    mongo_client = mongo
+
+    if startup_reconciler is None:
+        startup_reconciler = StartupReconciler(
+            "fwa_sync_ical",
+            _reconcile_ical_startup,
+        )
+    startup_reconciler.start()
 
 
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
-    global poller_task
+    global poller_task, startup_reconciler
+    if startup_reconciler is not None:
+        await startup_reconciler.stop()
+        startup_reconciler = None
     if poller_task and not poller_task.done():
         poller_task.cancel()
+        await asyncio.gather(poller_task, return_exceptions=True)
+    poller_task = None
     print("[FWA Sync ICS] Poller cancelled")
 
 
@@ -707,11 +728,34 @@ class Status(lightbulb.SlashCommand, name="status", description="Show config and
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         # Mongo is remote; two round trips can outrun the 3s deadline on a slow link.
         await ctx.defer(ephemeral=True)
-        config = await load_config(mongo)
+        try:
+            config = await load_config(mongo)
+        except Exception as exc:
+            poller_state = "running" if poller_task and not poller_task.done() else "not running"
+            recovery_state = (
+                startup_reconciler.status_text()
+                if startup_reconciler is not None
+                else "stopped"
+            )
+            await ctx.respond(
+                "**FWA Sync Calendar Status**\n"
+                f"**Poller:** {poller_state}\n"
+                f"**Startup recovery:** {recovery_state}\n"
+                f"**MongoDB:** unavailable ({type(exc).__name__})"
+            )
+            return
         coll = _alerts(mongo)
         recipients = ", ".join(f"<@{u}>" for u in config["dm_user_ids"]) or "_none configured_"
+        poller_running = bool(poller_task and not poller_task.done())
+        recovery_status = (
+            startup_reconciler.status_text()
+            if startup_reconciler is not None
+            else "⏹️ Stopped"
+        )
         lines = [
             f"**Enabled:** {'yes' if config['enabled'] else 'no'}",
+            f"**Poller:** {'✅ Running' if poller_running else '❌ Not running'}",
+            f"**Startup recovery:** {recovery_status}",
             f"**Feeds set:** {', '.join(feed_urls().keys()) or '_none_'}",
             f"**Recipients:** {recipients}",
             f"**Offsets:** {', '.join(str(o) for o in config['offsets'])} min"
