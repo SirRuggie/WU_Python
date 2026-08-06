@@ -76,5 +76,11 @@ the hard way. The standing instruction that governs this folder is in
 - [clashking-discord-links.md](clashking-discord-links.md) — the Discord↔Clash
   link API. Bidirectional, unauthenticated, and how to read its response.
 
+- [coc-maintenance-detection.md](coc-maintenance-detection.md) — how coc.py
+  signals Clash maintenance. **There is no flag and no end time — only a 503
+  raised as `coc.Maintenance`.** Where it is raised, why our four existing
+  handlers cannot tell it apart from any other HTTP error, and the sites that
+  do not handle it at all.
+
 - [band-ical-feeds.md](band-ical-feeds.md) — the per-calendar iCal feeds, why
   they are treated as credentials, and why the BAND Open API was not usable.
