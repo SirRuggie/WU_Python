@@ -58,11 +58,6 @@ public.
 
 ### P1 — reliability and silent failure
 
-- **`REL-002` — Make BAND monitor startup self-healing.** A single BAND key/API
-  resolution failure prevents the monitor from starting until the bot restarts.
-- **`OBS-001` — Log production BAND monitor failures by default.** Important
-  errors are currently hidden unless `BAND_DEBUG` is enabled. Routine success
-  can stay quiet; failures and recovery transitions should always log.
 - **`BUG-001` — Repair `/test-band-api` and `/test-war-sync`.** Both admin
   diagnostics call the nonexistent `ctx.edit_last_response`, so their response
   handling fails on multiple branches.
@@ -92,6 +87,34 @@ public.
   live raid data needs event-time verification.
 
 ## Completed hardening
+
+### `REL-002` / `OBS-001` — BAND post monitor recovery and visibility
+
+**Status:** Implemented and tested locally on 2026-08-05; deployment pending.
+
+The BAND post monitor now resolves its BAND key and starts through the shared
+startup reconciler. A temporary BAND API or network failure retries after 5,
+15, 30, and 60 seconds, then every five minutes without blocking the rest of
+the bot. Repeated startup events cannot create duplicate polling tasks.
+
+Once running, the existing ten-minute polling cadence and notification and
+checkpoint behavior are unchanged. A BAND `-102` invalid-key response clears
+the cached key and resolves it again on the next normal poll. Poll failures log
+on the first failure or a changed failure, repeat hourly during an unchanged
+outage, and emit a recovery marker after the next successful poll. Shutdown
+cancels and awaits both startup recovery and the poll task.
+
+Administrators can inspect actual task, startup, key, and poll state with
+`/band-monitor-status`. Search the bot journal with:
+
+```bash
+sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "band_post_monitor|monitor_started|monitor_poll_failed|monitor_poll_recovered|monitor_stopped"
+```
+
+`SECRET-001` remains open intentionally: moving the current token to an
+environment variable before the server is provisioned and the token is rotated
+would stop a working deployment. `BUG-001` also remains separate because it
+changes admin diagnostic response handling rather than monitor reliability.
 
 ### `REL-001` — Self-healing monitor startup reconciliation
 

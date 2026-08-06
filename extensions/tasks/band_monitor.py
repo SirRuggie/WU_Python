@@ -1,12 +1,13 @@
-import aiohttp
 import asyncio
-import lightbulb
-import hikari
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
 import os
 import time
 
+import aiohttp
+import hikari
+import lightbulb
 from pymongo import ReturnDocument
 
 from hikari.impl import (
@@ -23,6 +24,7 @@ from hikari.impl import (
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
+from utils.startup_reconciler import StartupReconciler
 from utils.constants import RED_ACCENT, GREEN_ACCENT
 from utils.emoji import emojis
 
@@ -62,6 +64,62 @@ WAR_SYNC_MARKER = "PLEASE stop searching when the window closes after 1.5 hours"
 band_check_task = None
 bot_instance = None  # Store bot reference for sending messages
 mongo_client = None  # Store mongo reference
+startup_reconciler = None
+POLL_FAILURE_LOG_INTERVAL_SECONDS = 60 * 60
+
+
+@dataclass
+class BandPollHealth:
+    state: str = "stopped"
+    last_error: str | None = None
+    last_failure_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_log_at: datetime | None = None
+
+
+poll_health = BandPollHealth()
+
+
+class BandKeyResolutionError(RuntimeError):
+    """The BAND list response could not provide the configured band's key."""
+
+
+def _record_poll_failure(reason: str, now: datetime | None = None) -> None:
+    """Always log a transition, then throttle an unchanged prolonged outage."""
+    global poll_health
+    current = now or datetime.now(timezone.utc)
+    safe_reason = "_".join(str(reason).split())[:100] or "unknown_failure"
+    should_log = (
+        poll_health.state != "unhealthy"
+        or poll_health.last_error != safe_reason
+        or poll_health.last_log_at is None
+        or (current - poll_health.last_log_at).total_seconds()
+        >= POLL_FAILURE_LOG_INTERVAL_SECONDS
+    )
+    poll_health.state = "unhealthy"
+    poll_health.last_error = safe_reason
+    poll_health.last_failure_at = current
+    if should_log:
+        poll_health.last_log_at = current
+        print(
+            f"[BAND Monitor] monitor_poll_failed reason={safe_reason} "
+            "action=check BAND API connectivity, credentials, and permissions"
+        )
+
+
+def _record_poll_success(now: datetime | None = None) -> None:
+    """Record health and log only when a failed monitor recovers."""
+    global poll_health
+    current = now or datetime.now(timezone.utc)
+    previous_error = poll_health.last_error
+    if poll_health.state == "unhealthy":
+        print(
+            f"[BAND Monitor] monitor_poll_recovered "
+            f"previous_error={previous_error or 'unknown_failure'}"
+        )
+    poll_health.state = "healthy"
+    poll_health.last_error = None
+    poll_health.last_success_at = current
 
 
 async def resolve_band_key():
@@ -76,29 +134,39 @@ async def resolve_band_key():
             data = await response.json(content_type=None)
 
     if data.get("result_code") != 1:
-        print(f"[BAND Monitor] ERROR: Failed to resolve band key - API error {data.get('result_code')}: {data.get('result_msg')}")
-        return False
+        result_code = data.get("result_code")
+        debug_print(
+            f"[BAND Monitor] Key resolution API error {result_code}: "
+            f"{data.get('result_msg')}"
+        )
+        raise BandKeyResolutionError(f"BAND API result code {result_code}")
 
     result_data = data.get("result_data", {})
     # The bands list may be under "items" or "bands" depending on API version
     bands = result_data.get("bands", result_data.get("items", []))
 
     if not bands:
-        print(f"[BAND Monitor] ERROR: No bands found in API response. result_data keys: {list(result_data.keys())}")
-        return False
+        debug_print(
+            f"[BAND Monitor] No bands in key response; "
+            f"result_data keys={list(result_data.keys())}"
+        )
+        raise BandKeyResolutionError("BAND API returned no bands")
 
     for band in bands:
         if band.get("name") == TARGET_BAND_NAME:
-            BAND_KEY = band.get("band_key")
+            resolved_key = band.get("band_key")
+            if not resolved_key:
+                raise BandKeyResolutionError("configured band has no band_key")
+            BAND_KEY = resolved_key
             print(f"[BAND Monitor] Resolved band key for '{TARGET_BAND_NAME}'")
             return True
 
     # If not found, print available bands to help debug
-    print(f"[BAND Monitor] ERROR: No band found matching name: '{TARGET_BAND_NAME}'")
-    print(f"[BAND Monitor] Available bands:")
+    debug_print(f"[BAND Monitor] No band found matching name: '{TARGET_BAND_NAME}'")
+    debug_print("[BAND Monitor] Available bands:")
     for b in bands:
-        print(f"  - {b.get('name')}")
-    return False
+        debug_print(f"  - {b.get('name')}")
+    raise BandKeyResolutionError(f"configured band '{TARGET_BAND_NAME}' not found")
 
 
 async def fetch_band_posts():
@@ -424,6 +492,56 @@ async def on_war_response(
     await ctx.interaction.edit_initial_response(components=components)
 
 
+async def check_band_once(mongo: MongoClient) -> bool:
+    """Run one existing BAND poll and update operator-visible runtime health."""
+    global BAND_KEY
+
+    if not BAND_KEY:
+        resolved = await resolve_band_key()
+        if not resolved or not BAND_KEY:
+            raise BandKeyResolutionError("BAND key resolver returned no key")
+    data = await fetch_band_posts()
+
+    if data is None:
+        debug_print("[BAND Monitor] fetch_band_posts returned None")
+        _record_poll_failure("band_request_failed")
+        return False
+    if not isinstance(data, dict) or "result_code" not in data:
+        debug_print("[BAND Monitor] Unexpected API response format")
+        _record_poll_failure("unexpected_band_response")
+        return False
+
+    result_code = data.get("result_code")
+    result_msg = data.get("result_msg", "No message provided")
+    debug_print(
+        f"[BAND Monitor] API Response - Code: {result_code}, "
+        f"Message: {result_msg}"
+    )
+
+    if result_code != 1:
+        debug_print(
+            f"[BAND Monitor] API returned error code {result_code}: {result_msg}"
+        )
+        _record_poll_failure(f"band_api_result_{result_code}")
+        if result_code == -102:
+            # BAND says the cached key is invalid. Resolve it again on the next
+            # normal poll; do not change the established polling cadence.
+            BAND_KEY = None
+        return False
+
+    posts = data.get("result_data", {}).get("items", [])
+    debug_print(f"[BAND Monitor] Found {len(posts)} posts")
+    if posts:
+        processed = await process_band_posts(mongo, posts)
+        if processed == 0:
+            debug_print("[BAND Monitor] No new posts since last check.")
+    else:
+        debug_print("[BAND Monitor] No posts found in API response")
+
+    _record_poll_success()
+    return True
+
+
 async def band_checker_loop(mongo: MongoClient):
     """Main loop that checks BAND API periodically"""
     debug_print("[BAND Monitor] Starting BAND API monitoring task...")
@@ -444,47 +562,14 @@ async def band_checker_loop(mongo: MongoClient):
             # Track execution time
             start_time = time.time()
 
-            # Fetch posts from BAND API
-            data = await fetch_band_posts()
-
-            if data is None:
-                debug_print("[BAND Monitor] fetch_band_posts returned None")
-            elif "result_code" in data:
-                result_code = data.get("result_code")
-                result_msg = data.get("result_msg", "No message provided")
-
-                debug_print(f"[BAND Monitor] API Response - Code: {result_code}, Message: {result_msg}")
-
-                if result_code == 1:
-                    posts = data.get("result_data", {}).get("items", [])
-
-                    debug_print(f"[BAND Monitor] Found {len(posts)} posts")
-
-                    if posts:
-                        processed = await process_band_posts(mongo, posts)
-                        if processed == 0:
-                            debug_print("[BAND Monitor] No new posts since last check.")
-                    else:
-                        debug_print("[BAND Monitor] No posts found in API response")
-                else:
-                    debug_print(f"[BAND Monitor] API returned error code {result_code}: {result_msg}")
-
-                    # Common BAND API error codes
-                    if result_code == -101:
-                        debug_print("[BAND Monitor] ERROR: Invalid access token! Token may be expired.")
-                    elif result_code == -102:
-                        debug_print("[BAND Monitor] ERROR: Invalid band key!")
-                    elif result_code == -103:
-                        debug_print("[BAND Monitor] ERROR: No permission to access this band!")
-            else:
-                debug_print("[BAND Monitor] Unexpected API response format - no result_code field")
-                debug_print(f"[BAND Monitor] Response keys: {list(data.keys())}")
+            await check_band_once(mongo)
             
             # Log execution time
             elapsed_time = time.time() - start_time
             debug_print(f"[BAND Monitor] Check completed in {elapsed_time:.2f} seconds")
 
         except Exception as e:
+            _record_poll_failure(f"monitor_exception_{type(e).__name__}")
             debug_print(f"[BAND Monitor] Error in loop: {type(e).__name__}: {e}")
             import traceback
             debug_print(f"[BAND Monitor] Traceback: {traceback.format_exc()}")
@@ -499,52 +584,102 @@ async def band_checker_loop(mongo: MongoClient):
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 
+async def _reconcile_band_startup() -> None:
+    """Resolve BAND configuration and start exactly one existing monitor loop."""
+    global band_check_task, poll_health
+
+    if band_check_task and not band_check_task.done():
+        return
+
+    resolved = await resolve_band_key()
+    if not resolved or not BAND_KEY:
+        raise BandKeyResolutionError("BAND key resolver returned no key")
+
+    try:
+        await mongo_client.fwa_band_data.create_index(
+            "expire_at", expireAfterSeconds=0, name="ttl_expire_at"
+        )
+    except Exception as e:
+        print(
+            f"[BAND Monitor] WARNING response_ttl_index_unavailable "
+            f"error={type(e).__name__}; monitor delivery is unaffected"
+        )
+
+    poll_health = BandPollHealth(state="starting")
+    band_check_task = asyncio.create_task(band_checker_loop(mongo_client))
+    print(
+        f"[BAND Monitor] monitor_started "
+        f"poll_interval_seconds={CHECK_INTERVAL_SECONDS}"
+    )
+
+
 @loader.listener(hikari.StartedEvent)
 @lightbulb.di.with_di
 async def on_bot_started(
         event: hikari.StartedEvent,
         mongo: MongoClient = lightbulb.di.INJECTED
 ) -> None:
-    """Start the BAND monitor task when bot starts"""
-    global band_check_task, bot_instance, mongo_client
+    """Start non-blocking, self-healing BAND monitor initialization."""
+    global bot_instance, mongo_client, startup_reconciler
 
-    # Store bot instance for sending messages
     bot_instance = event.app
     mongo_client = mongo
 
-    # Resolve the band_key from the band number before starting the monitor
-    resolved = await resolve_band_key()
-    if not resolved:
-        print("[BAND Monitor] Failed to resolve band key! Monitor will NOT start.")
-        return
-
-    try:
-        await mongo.fwa_band_data.create_index(
-            "expire_at", expireAfterSeconds=0, name="ttl_expire_at"
+    if startup_reconciler is None:
+        startup_reconciler = StartupReconciler(
+            "band_post_monitor",
+            _reconcile_band_startup,
         )
-    except Exception as e:
-        print(f"[BAND Monitor] WARNING: response TTL index unavailable: {e}")
-
-    # Create the task with mongo passed in
-    if band_check_task and not band_check_task.done():
-        debug_print("[BAND Monitor] Background task already running; start skipped")
-        return
-    band_check_task = asyncio.create_task(band_checker_loop(mongo))
-    debug_print("[BAND Monitor] Background task started!")
+    startup_reconciler.start()
 
 
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Cancel the task when bot is stopping"""
-    global band_check_task
+    global band_check_task, startup_reconciler, poll_health
+
+    if startup_reconciler is not None:
+        await startup_reconciler.stop()
+        startup_reconciler = None
 
     if band_check_task and not band_check_task.done():
         band_check_task.cancel()
-        try:
-            await band_check_task
-        except asyncio.CancelledError:
-            pass
-        debug_print("[BAND Monitor] Background task cancelled!")
+        await asyncio.gather(band_check_task, return_exceptions=True)
+    band_check_task = None
+    poll_health.state = "stopped"
+    print("[BAND Monitor] monitor_stopped")
+
+
+@loader.command
+class BandMonitorStatus(
+    lightbulb.SlashCommand,
+    name="band-monitor-status",
+    description="Show BAND post monitor runtime health",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        task_running = bool(band_check_task and not band_check_task.done())
+        startup_status = (
+            startup_reconciler.status_text()
+            if startup_reconciler is not None
+            else "⏹️ Stopped"
+        )
+        lines = [
+            "## BAND Post Monitor",
+            f"• **Task:** {'✅ Running' if task_running else '❌ Not running'}",
+            f"• **Startup recovery:** {startup_status}",
+            f"• **BAND key:** {'✅ Resolved' if BAND_KEY else '❌ Missing'}",
+            f"• **Poll health:** {poll_health.state}",
+        ]
+        if poll_health.last_success_at:
+            lines.append(
+                f"• **Last successful poll:** "
+                f"<t:{int(poll_health.last_success_at.timestamp())}:R>"
+            )
+        if poll_health.last_error:
+            lines.append(f"• **Last error:** `{poll_health.last_error}`")
+        await ctx.respond("\n".join(lines), ephemeral=True)
 
 
 @loader.command
