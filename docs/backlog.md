@@ -67,12 +67,6 @@ No active items.
   errors and use capped backoff with an operator-visible terminal state.
 - **`REL-004` — Bound recruit role-cleanup retries.** Permanent member-fetch or
   role-removal failures currently retry hourly forever.
-- **`UI-001` — Fix the clan-list missing-clan component response.** The
-  `clan_select_menu` action is registered as `no_return=True` but returns error
-  UI, so that error is discarded and the click appears silent.
-- **`UI-002` — Fix the Cloudinary emoji component response.** The
-  `emoji_from_cloudinary` action has the same `no_return=True`/returned-UI
-  mismatch and can fail silently.
 - **`DEAD-001` — Decide whether to restore or remove the message task manager.**
   Its module is not loaded, its Mongo accessor is commented out, it has no
   restart restoration, and two reminder component IDs have no registered
@@ -82,6 +76,17 @@ No active items.
   live raid data needs event-time verification.
 
 ## Completed hardening
+
+### `UI-001` / `UI-002` — Component error responses
+
+**Status:** Implemented and tested locally on 2026-08-06; deployment pending.
+
+The clan-list missing-clan path and the Cloudinary emoji missing-clan/no-logo
+paths now explicitly edit their deferred responses. Their handlers retain
+`no_return=True` because the successful paths already own their Discord
+responses; changing dispatcher ownership would cause a second response after a
+successful action. Regression tests cover all three silent error paths and
+preserve the existing success-path ownership contract.
 
 ### `BUG-002` — Idempotent, compensating ticket creation
 

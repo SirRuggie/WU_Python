@@ -99,12 +99,14 @@ async def on_clan_chosen(
     tag = ctx.interaction.values[0]
     raw = await mongo.clans.find_one({"tag": tag})
     if not raw:
-        return [
+        components = [
             Container(
                 accent_color=RED_ACCENT,
                 components=[Text(content="⚠️ I couldn’t find that clan in our database.")]
             )
         ]
+        await ctx.respond(components=components, edit=True)
+        return
     db_clan = Clan(data=raw)
 
     api_clan = None

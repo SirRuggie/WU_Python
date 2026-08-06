@@ -1266,7 +1266,7 @@ async def emoji_from_cloudinary(
     # Get clan data
     raw = await mongo.clans.find_one({"tag": tag})
     if not raw:
-        return [
+        components = [
             Container(
                 accent_color=RED_ACCENT,
                 components=[
@@ -1275,12 +1275,14 @@ async def emoji_from_cloudinary(
                 ]
             )
         ]
+        await ctx.respond(components=components, edit=True)
+        return
 
     db_clan = Clan(data=raw)
 
     # Check if clan has a logo URL
     if not db_clan.logo:
-        return [
+        components = [
             Container(
                 accent_color=RED_ACCENT,
                 components=[
@@ -1302,6 +1304,8 @@ async def emoji_from_cloudinary(
                 ]
             )
         ]
+        await ctx.respond(components=components, edit=True)
+        return
 
     # Process the emoji using the logo URL
     await process_emoji_upload(
