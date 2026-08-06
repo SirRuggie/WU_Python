@@ -304,7 +304,7 @@ def test_tracker_follows_family_players_linked_alt_into_random_clan(monkeypatch)
 
     assert counts["family_players"] == 0
     assert counts["departed_players"] == 1
-    assert counts["new_watches"] == 2
+    assert counts["movement_players"] == 2
     assert counts["watched_players"] == 2
     random_updates = [
         operation
@@ -339,3 +339,137 @@ def test_stable_family_roster_does_not_rewrite_member_history(monkeypatch):
     assert counts["roster_changes"] == 0
     assert counts["departed_players"] == 0
     assert mongo.player_clan_candidates.operations == []
+
+
+def test_link_expansion_backoff_does_not_extend_watch_retention(monkeypatch):
+    monkeypatch.setattr(clan_history, "_indexes_ready", True)
+    mongo = _Mongo()
+    now = datetime(2026, 8, 5, 12, tzinfo=timezone.utc)
+
+    result = asyncio.run(clan_history.postpone_link_expansions(
+        mongo, {"#PLAYER": 0}, observed_at=now
+    ))
+
+    assert result is True
+    update = mongo.player_clan_watches.operations[0]._doc
+    assert update["$set"]["link_retry_at"] == now + timedelta(minutes=10)
+    assert update["$inc"]["link_retry_count"] == 1
+    assert "expires_at" not in update["$set"]
+
+
+def test_link_expansion_backoff_clamps_large_retry_counts(monkeypatch):
+    monkeypatch.setattr(clan_history, "_indexes_ready", True)
+    mongo = _Mongo()
+    now = datetime(2026, 8, 5, 12, tzinfo=timezone.utc)
+
+    result = asyncio.run(clan_history.postpone_link_expansions(
+        mongo, {"#PLAYER": 10_000}, observed_at=now
+    ))
+
+    assert result is True
+    update = mongo.player_clan_watches.operations[0]._doc
+    assert update["$set"]["link_retry_at"] == now + timedelta(hours=6)
+
+
+def test_departure_link_failure_is_queued_for_later_retry(monkeypatch):
+    monkeypatch.setattr(clan_history, "_indexes_ready", True)
+    monkeypatch.setattr(clan_history, "_indexes_failed", False)
+    mongo = _Mongo(
+        clan_documents=[{"tag": "#FAMILY", "type": "FWA"}],
+        roster_documents=[{
+            "_id": "#FAMILY", "members": ["#HOME", "#DEPARTED"]
+        }],
+    )
+    family_clan = _Side("#FAMILY", "Family", [_Member("#HOME")])
+    random_clan = SimpleNamespace(tag="#RANDOM", name="Random Clan", badge=None)
+
+    class _Client:
+        async def get_clan(self, _clan_tag):
+            return family_clan
+
+        async def get_player(self, player_tag):
+            return SimpleNamespace(tag=player_tag, clan=random_clan)
+
+    async def link_service_down(player_tags):
+        assert player_tags == ["#DEPARTED"]
+        return None
+
+    async def no_regular_war(_client, _clan_tag):
+        return "none", None
+
+    monkeypatch.setattr(
+        clan_history_tracker, "resolve_family_linked_tags", link_service_down
+    )
+    monkeypatch.setattr(todo_data, "_get_war", no_regular_war)
+
+    counts = asyncio.run(clan_history_tracker.run_scan(mongo, _Client()))
+
+    assert counts["departed_players"] == 1
+    source_updates = [
+        operation._doc
+        for operation in mongo.player_clan_watches.operations
+        if operation._filter.get("_id") == "#DEPARTED"
+    ]
+    assert source_updates[0]["$set"]["link_expand_pending"] is True
+    assert source_updates[1]["$inc"]["link_retry_count"] == 1
+    assert mongo.clan_roster_snapshots.operations
+
+
+def test_tracker_retries_link_expansion_after_roster_is_already_stable(monkeypatch):
+    monkeypatch.setattr(clan_history, "_indexes_ready", True)
+    monkeypatch.setattr(clan_history, "_indexes_failed", False)
+    now = datetime.now(timezone.utc)
+    mongo = _Mongo(
+        clan_documents=[{"tag": "#FAMILY", "type": "FWA"}],
+        watch_documents=[{
+            "_id": "#DEPARTED",
+            "expires_at": now + timedelta(hours=12),
+            "link_expand_pending": True,
+            "link_retry_at": now - timedelta(minutes=1),
+            "link_retry_count": 1,
+        }],
+        roster_documents=[{"_id": "#FAMILY", "members": ["#HOME"]}],
+    )
+    family_clan = _Side("#FAMILY", "Family", [_Member("#HOME")])
+    random_clan = SimpleNamespace(tag="#RANDOM", name="Random Clan", badge=None)
+
+    class _Client:
+        async def get_clan(self, _clan_tag):
+            return family_clan
+
+        async def get_player(self, player_tag):
+            return SimpleNamespace(tag=player_tag, clan=random_clan)
+
+    async def linked_accounts(player_tags):
+        assert player_tags == ["#DEPARTED"]
+        return ["#DEPARTED", "#ALT"]
+
+    async def no_regular_war(_client, _clan_tag):
+        return "none", None
+
+    monkeypatch.setattr(
+        clan_history_tracker, "resolve_family_linked_tags", linked_accounts
+    )
+    monkeypatch.setattr(todo_data, "_get_war", no_regular_war)
+
+    counts = asyncio.run(clan_history_tracker.run_scan(mongo, _Client()))
+
+    assert counts["departed_players"] == 0
+    assert counts["watched_players"] == 2
+    expiring_watch_ids = {
+        operation._filter["_id"]
+        for operation in mongo.player_clan_watches.operations
+        if "expires_at" in operation._doc.get("$set", {})
+    }
+    assert expiring_watch_ids == {"#ALT"}
+    random_ids = {
+        operation._filter["_id"]
+        for operation in mongo.player_clan_candidates.operations
+    }
+    assert "#ALT:#RANDOM" in random_ids
+    completion_updates = [
+        operation._doc
+        for operation in mongo.player_clan_watches.operations
+        if "$unset" in operation._doc
+    ]
+    assert len(completion_updates) == 1

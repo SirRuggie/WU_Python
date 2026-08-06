@@ -1,21 +1,14 @@
-"""Auto-refresh phase 1: remember which /todo panels exist.
+"""Bounded session storage for automatically refreshed DM /todo panels.
 
-PHASE 1 WRITES ROWS AND NOTHING ELSE. No poller, no scheduler, no message
-edits. The point is to get real documents into Mongo and look at them before
-anything is built on top of their shape - a poller written against a guessed
-schema is a poller that has to be rewritten.
-
-The row is written on every panel send and every interaction, so a document
-here means "this message existed and was a /todo panel at this time". What a
-later phase does with that is a later phase's problem.
+The row is written on every successful DM panel registration and interaction.
+The background scheduler reads active rows and edits those messages in place.
 
 WHY _id IS THE MESSAGE ID
 -------------------------
-One panel, one row, upserted. A user who opens /todo four times has four
-panels and four rows; a user who clicks Refresh forty times on one panel has
-one row with interactions=40. That is the shape a refresher wants: it iterates
-messages, not events. It also means dedupe rides on the primary key, so no
-unique index is needed and a double-write cannot produce two rows.
+One panel, one row, upserted. Every panel that visibly promises auto-checks stays
+scheduled through its own short deadline. Silently retiring older rows would
+leave those messages making a false promise, while overlapping registrations
+could retire each other. The bounded TTL prevents long-term accumulation.
 
 TTL
 ---
@@ -24,31 +17,30 @@ stays alive and an abandoned one falls out on its own. Nothing has to clean up
 after a restart, and a panel the user scrolled past a week ago is not still
 being tracked.
 
-24 hours is a starting value, not a considered one - it is roughly "still on
-screen tomorrow morning". If phase 2 builds a refresher, the right anchor is
-probably the soonest deadline in the panel's data rather than a flat window,
-since a panel whose war ended has nothing left to refresh.
+The command supplies a refresh deadline based on the panel's event deadlines,
+bounded to 72 hours. A user interaction may reactivate an old panel. Background
+refreshes never extend retention by themselves.
 
 EVERYTHING HERE IS NON-FATAL
 ----------------------------
-A Mongo failure must never take the dashboard down. The dashboard works
-perfectly without this collection; it is bookkeeping for a feature that does
-not exist yet. Every entry point swallows and logs.
+A Mongo failure must never take the dashboard down. The dashboard remains
+manually usable without this collection; only automatic checks depend on it.
+Every entry point swallows and logs.
 """
 
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta, timezone
 
-# Rows are written unconditionally - collecting them IS phase 1, so a flag that
-# switched the writes off would defeat the exercise.
-#
-# This flag governs the POLLER, which does not exist. It lives here so phase 2
-# has an obvious place to gate itself, and so nobody reads the presence of rows
-# as evidence that auto-refresh is switched on. It is not.
-AUTO_REFRESH_ENABLED = False
+AUTO_REFRESH_ENABLED = True
 
 TTL_SECONDS = 24 * 60 * 60
+MAX_REFRESH_SECONDS = 72 * 60 * 60
+REFRESH_INTERVAL_SECONDS = 10 * 60
+REFRESH_POLL_SECONDS = 60
+REFRESH_BATCH_SIZE = 100
+REFRESH_CONCURRENCY = 4
 
 # Retry at most hourly rather than on every interaction. A transient startup
 # outage must not disable TTL cleanup until restart, but repeated failures also
@@ -107,6 +99,7 @@ async def record(
     guild_id: int | None = None,
     kind: str = "dashboard",
     trigger: str = "command",
+    refresh_until: datetime | None = None,
 ) -> bool:
     """Upsert one panel's row. Returns True if the write went through.
 
@@ -126,6 +119,9 @@ async def record(
     await ensure_indexes(mongo)
 
     now = time.time()
+    now_dt = datetime.fromtimestamp(now, tz=timezone.utc)
+    is_dm = guild_id is None
+    until = bounded_refresh_until(refresh_until, observed_at=now_dt)
     try:
         await _coll(mongo).update_one(
             {"_id": int(message_id)},
@@ -136,26 +132,147 @@ async def record(
                     "guild_id": int(guild_id) if guild_id else None,
                     # A DM panel is the one worth auto-refreshing; an in-channel
                     # one is a convenience read someone else may be looking at.
-                    "is_dm": guild_id is None,
+                    "is_dm": is_dm,
+                    "active": is_dm,
                     "view": view,
                     "page": int(page),
                     "kind": kind,
                     "last_trigger": trigger,
                     "updated_at": now,
+                    "last_checked_at": now_dt,
+                    "next_refresh_at": (
+                        now_dt + timedelta(seconds=REFRESH_INTERVAL_SECONDS)
+                        if is_dm else None
+                    ),
+                    "refresh_until": until if is_dm else None,
                     # Pushed forward on every interaction: an active panel stays,
                     # an abandoned one ages out without anyone cleaning up.
-                    "expires_at": _expiry(now),
+                    "expires_at": until if is_dm else _expiry(now),
                 },
                 "$setOnInsert": {"created_at": now},
                 "$inc": {"interactions": 1},
             },
             upsert=True,
         )
-        return True
     except Exception as exc:  # noqa: BLE001
         print(f"[todo-sessions] write failed for message {message_id}: "
               f"{type(exc).__name__}: {exc}")
         return False
+
+    # Keep every promised DM panel scheduled until its own short, bounded
+    # deadline. Removing an older row here leaves that visible message claiming
+    # it will refresh when it no longer can; overlapping registrations could
+    # also delete each other. The TTL index limits storage to at most 72 hours.
+    return True
+
+
+async def due(mongo, *, observed_at: datetime | None = None,
+              limit: int = REFRESH_BATCH_SIZE) -> list[dict]:
+    """Return active DM panels whose next automatic check is due."""
+    if mongo is None:
+        return []
+    now = _utc(observed_at)
+    try:
+        cursor = _coll(mongo).find({
+            "is_dm": True,
+            "active": True,
+            "next_refresh_at": {"$lte": now},
+            "refresh_until": {"$gt": now},
+        }).sort("next_refresh_at", 1).limit(int(limit))
+        return await cursor.to_list(length=int(limit))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo-refresh] session read failed: {type(exc).__name__}: {exc}")
+        return []
+
+
+async def get(mongo, message_id: int) -> dict | None:
+    """Read one active session immediately before editing its message."""
+    if mongo is None:
+        return None
+    try:
+        return await _coll(mongo).find_one({
+            "_id": int(message_id),
+            "active": True,
+            "refresh_until": {"$gt": datetime.now(timezone.utc)},
+        })
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo-refresh] session read failed for {message_id}: "
+              f"{type(exc).__name__}: {exc}")
+        return None
+
+
+async def mark_refreshed(mongo, message_id: int, *,
+                         checked_at: datetime | None = None,
+                         kind: str = "dashboard") -> bool:
+    """Schedule the next check without extending the panel's lifetime."""
+    if mongo is None:
+        return False
+    checked = _utc(checked_at)
+    try:
+        await _coll(mongo).update_one(
+            {"_id": int(message_id), "active": True},
+            {"$set": {
+                "kind": kind,
+                "last_checked_at": checked,
+                "next_refresh_at": checked + timedelta(seconds=REFRESH_INTERVAL_SECONDS),
+                "updated_at": checked.timestamp(),
+                "last_trigger": "automatic",
+            }},
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo-refresh] session update failed for {message_id}: "
+              f"{type(exc).__name__}: {exc}")
+        return False
+
+
+async def postpone(mongo, message_id: int, *, observed_at: datetime | None = None,
+                   seconds: int = REFRESH_INTERVAL_SECONDS) -> bool:
+    """Back off a failed panel without extending its retention."""
+    if mongo is None:
+        return False
+    retry_at = _utc(observed_at) + timedelta(seconds=max(60, int(seconds)))
+    try:
+        await _coll(mongo).update_one(
+            {"_id": int(message_id), "active": True},
+            {"$set": {"next_refresh_at": retry_at}},
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo-refresh] could not postpone {message_id}: "
+              f"{type(exc).__name__}: {exc}")
+        return False
+
+
+async def remove(mongo, message_id: int) -> bool:
+    """Stop tracking a message Discord says no longer exists or is inaccessible."""
+    if mongo is None:
+        return False
+    try:
+        await _coll(mongo).delete_one({"_id": int(message_id)})
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[todo-refresh] session removal failed for {message_id}: "
+              f"{type(exc).__name__}: {exc}")
+        return False
+
+
+def _utc(value: datetime | None = None) -> datetime:
+    value = value or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def bounded_refresh_until(requested: datetime | None,
+                          *, observed_at: datetime | None = None) -> datetime:
+    """Clamp an automatic-refresh window to 24–72 hours from observation."""
+    now = _utc(observed_at)
+    default = now + timedelta(seconds=TTL_SECONDS)
+    maximum = now + timedelta(seconds=MAX_REFRESH_SECONDS)
+    if requested is None:
+        return default
+    return min(max(_utc(requested), default), maximum)
 
 
 def _expiry(now: float):
@@ -167,5 +284,4 @@ def _expiry(now: float):
     timestamp in this document is a float epoch, which is why this one being a
     datetime looks inconsistent; it is not, it is the one field that has to be.
     """
-    from datetime import datetime, timezone
     return datetime.fromtimestamp(now + TTL_SECONDS, tz=timezone.utc)

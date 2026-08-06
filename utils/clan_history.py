@@ -24,6 +24,8 @@ RETENTION = timedelta(days=30)
 # /todo only needs the preceding 48 hours. Refreshing this on every use keeps
 # active users covered without polling every account ever seen for a month.
 WATCH_RETENTION = HISTORY_WINDOW
+LINK_RETRY_BASE = timedelta(minutes=10)
+LINK_RETRY_MAX = timedelta(hours=6)
 
 _indexes_ready = False
 _indexes_failed = False
@@ -138,6 +140,121 @@ async def watch_players(
         return True
     except Exception as exc:  # noqa: BLE001
         print(f"[clan-history] watch write failed: {type(exc).__name__}: {exc}")
+        return False
+
+
+async def queue_link_expansions(
+    mongo,
+    player_tags: Iterable[str],
+    *,
+    observed_at: datetime | None = None,
+) -> bool:
+    """Watch departing players and persist bounded linked-alt retry state."""
+    if mongo is None:
+        return False
+    tags = list(dict.fromkeys(_tag(tag) for tag in player_tags if _tag(tag)))
+    if not tags:
+        return True
+    await ensure_indexes(mongo)
+    now = _now(observed_at)
+    operations = [
+        UpdateOne(
+            {"_id": tag},
+            {
+                "$set": {
+                    "updated_at": now,
+                    "expires_at": now + WATCH_RETENTION,
+                    "link_expand_pending": True,
+                    "link_retry_at": now,
+                    "link_retry_count": 0,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        for tag in tags
+    ]
+    try:
+        await mongo.player_clan_watches.bulk_write(operations, ordered=False)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[clan-history] link retry queue failed: {type(exc).__name__}: {exc}")
+        return False
+
+
+async def postpone_link_expansions(
+    mongo,
+    retry_counts: dict[str, int],
+    *,
+    observed_at: datetime | None = None,
+) -> bool:
+    """Back off failed expansion without extending the watch's 48-hour TTL."""
+    if mongo is None:
+        return False
+    now = _now(observed_at)
+    operations = []
+    for player_tag, count in retry_counts.items():
+        tag = _tag(player_tag)
+        if not tag:
+            continue
+        retry_count = max(0, int(count))
+        # Six doublings already exceed the six-hour ceiling. Clamp before the
+        # exponent so corrupt or very old retry counts cannot overflow a
+        # timedelta during a prolonged link-service outage.
+        delay = (
+            LINK_RETRY_MAX
+            if retry_count >= 6
+            else LINK_RETRY_BASE * (2 ** retry_count)
+        )
+        operations.append(UpdateOne(
+            {"_id": tag, "link_expand_pending": True},
+            {
+                "$set": {"updated_at": now, "link_retry_at": now + delay},
+                "$inc": {"link_retry_count": 1},
+            },
+        ))
+    if not operations:
+        return True
+    try:
+        await mongo.player_clan_watches.bulk_write(operations, ordered=False)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[clan-history] link retry postpone failed: {type(exc).__name__}: {exc}")
+        return False
+
+
+async def complete_link_expansions(
+    mongo,
+    player_tags: Iterable[str],
+    *,
+    observed_at: datetime | None = None,
+) -> bool:
+    """Clear retry metadata after linked-account watches are durable."""
+    if mongo is None:
+        return False
+    tags = list(dict.fromkeys(_tag(tag) for tag in player_tags if _tag(tag)))
+    if not tags:
+        return True
+    now = _now(observed_at)
+    operations = [
+        UpdateOne(
+            {"_id": tag, "link_expand_pending": True},
+            {
+                "$set": {"updated_at": now},
+                "$unset": {
+                    "link_expand_pending": "",
+                    "link_retry_at": "",
+                    "link_retry_count": "",
+                },
+            },
+        )
+        for tag in tags
+    ]
+    try:
+        await mongo.player_clan_watches.bulk_write(operations, ordered=False)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[clan-history] link retry completion failed: {type(exc).__name__}: {exc}")
         return False
 
 

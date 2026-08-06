@@ -34,17 +34,15 @@ Design rules enforced here, each of which cost real investigation to establish:
   and its pagination has never worked. View lives in the action name, page in
   the action_id, and nothing else.
 
-  STATELESS IN THE RENDER PATH. Nothing read from Mongo drives a panel. Page
-  comes from the custom_id, user identity from ctx.user.id on the interaction.
-  So the dispatcher's state lookup always misses, which is fine and intended:
-  every handler defaults all its parameters and reads only action_id. A missing
-  state document cannot break a panel that never had one, and a /todo panel
-  sitting in DM history for a year keeps working.
+  STATELESS COMPONENT ROUTING. Page comes from the custom_id and user identity
+  from ctx.user.id on the interaction. Mongo-backed history may contribute
+  data, but no evictable component-state document controls the panel. The
+  dispatcher's state lookup can miss safely because every handler defaults its
+  parameters and reads action_id.
 
-  Auto-refresh phase 1 does WRITE a bookkeeping row per panel to
-  todo_sessions (see utils/todo_sessions.py). Nothing reads it yet, and the
-  render path must never start depending on it - that is what keeps the
-  year-old panel working.
+  DM auto-refresh reads todo_sessions in the background, but interaction
+  rendering remains stateless. Page comes from the custom_id and user identity
+  from the click, so an old panel still works after its scheduled window ends.
 
   NO ctx.guild_id. It is None in a DM, and the house header pattern
   (clan/dashboard/dashboard.py:44 -> bot.cache.get_guild(ctx.guild_id)
@@ -60,6 +58,7 @@ import asyncio
 import contextlib
 import time
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 import coc
 import lightbulb
@@ -87,6 +86,9 @@ from utils.emoji import emojis
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
+
+_auto_refresh_task: asyncio.Task | None = None
+_refresh_locks: dict[int, asyncio.Lock] = {}
 
 # ---------------------------------------------------------------------------
 # THE COMPONENT BUDGET. This is what pages are measured in - NOT rows.
@@ -230,6 +232,34 @@ def _panel(body_components: list, accent=RED_ACCENT) -> list:
     return [Container(accent_color=accent, components=body_components)]
 
 
+def _manual_fallback_panel(components: list, *, checked_at: int | None = None) -> list:
+    """Copy a panel with a concise footer that promises no scheduler."""
+    checked_at = int(checked_at if checked_at is not None else time.time())
+    manual_status = Text(content=(
+        f"-# Checked <t:{checked_at}:R> · Use Check now to update"
+    ))
+    rebuilt = []
+    for container in components:
+        children = []
+        replaced = False
+        for child in container.components:
+            content = getattr(child, "content", None)
+            if isinstance(content, str) and content.startswith("-# Checked "):
+                children.append(manual_status)
+                replaced = True
+            else:
+                children.append(child)
+        rebuilt.append(Container(
+            id=container.id,
+            accent_color=container.accent_color,
+            spoiler=container.is_spoiler,
+            components=children,
+        ))
+        if not replaced:
+            print("[todo] WARNING: fallback panel had no freshness footer")
+    return rebuilt
+
+
 def _urgency_accent(view_data):
     """Colour the container by time pressure, so the accent bar MEANS something.
 
@@ -255,13 +285,15 @@ def _urgency_accent(view_data):
     return BLUE_ACCENT
 
 
-def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = None) -> list:
+def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = None,
+            *, checked_at: int | None = None, auto_refresh: bool = False,
+            refresh_until: datetime | None = None) -> list:
     """A panel for every state that is not a dashboard.
 
     IT STILL CARRIES THE NAV. A state that renders correctly and leaves the user
     with no way out is a dead end - they have to re-run /todo to escape. Every
     panel this module produces keeps the select menu and the refresh button, and
-    on an error state Refresh is precisely the button they want.
+    on an error state Check now is precisely the button they want.
     """
     return _panel([
         # "##" to match the dashboard's panel title - a notice IS the panel.
@@ -270,11 +302,16 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
         Text(content=body),
         # _nav_block ends with the footer and the freshness row - do not append
         # a second Media here.
-        *_nav_block(view, counts or {}),
+        *_nav_block(
+            view, counts or {}, checked_at=checked_at, auto_refresh=auto_refresh,
+            refresh_until=refresh_until,
+        ),
     ])
 
 
-def _nav_block(view: str, counts: dict, pager=None) -> list:
+def _nav_block(view: str, counts: dict, pager=None, *, checked_at: int | None = None,
+               auto_refresh: bool = False,
+               refresh_until: datetime | None = None) -> list:
     """Separator, the view select, optional pagination, then the freshness line.
 
     THE ONLY PLACE NAVIGATION IS BUILT. Every panel state calls this, so a new
@@ -285,7 +322,7 @@ def _nav_block(view: str, counts: dict, pager=None) -> list:
     below the footer beside Refresh, which is where it sat half-built and
     unrendered while PAGE_SIZE made `pages > 1` unreachable.
 
-    LAYOUT: freshness text, then the refresh button on its own ActionRow.
+    LAYOUT: check status, then the Check now button on its own ActionRow.
 
     THE BUTTON WAS A SECTION ACCESSORY AND THAT DOES NOT WORK ON A PHONE. On
     desktop it rendered as intended - "updated 7 minutes ago  [refresh]", one
@@ -296,7 +333,7 @@ def _nav_block(view: str, counts: dict, pager=None) -> list:
     Since a narrow accessory wraps to its own line ANYWAY, it is put there
     deliberately, in an ActionRow, and given a LABEL. That is the part that
     stops it looking stranded: a bare icon sitting alone reads as leftover, a
-    labelled "Refresh" button reads as a control. Same two lines on mobile as
+    labelled "Check now" button reads as a control. Same two lines on mobile as
     the accessory produced, but composed rather than collapsed - and now
     identical on both platforms instead of good on one and broken on the other.
 
@@ -306,31 +343,24 @@ def _nav_block(view: str, counts: dict, pager=None) -> list:
         OR exactly one select, never a mix.
       - select inside a Section: SectionBuilderComponentsT is TextDisplay only.
 
-    Refresh is a button rather than a select option because the select lists
-    places you can GO; refresh is something you DO to where you already are.
+    Check now is a button rather than a select option because the select lists
+    places you can GO; checking is something you DO to where you already are.
     """
-    # NO PREFIX LIST HERE. It defaults to todo_data.DATA_PREFIXES, the same
-    # tuple Refresh drops. An inline list here is what let the two diverge.
-    fetched_at = todo_data.oldest_fill()
-
-    # "updated" was doing two jobs and admitting to neither. A warm /todo makes
-    # ZERO API calls, so the timestamp honestly reported the PREVIOUS run's
-    # fetch - correct, and indistinguishable from a stamp that had failed to
-    # move. Naming which one it is costs one word and removes the ambiguity.
-    #
-    # Driven off this run's call count, not off a flag threaded through the
-    # load path: reset_calls() runs in _Perf.__init__ once per invocation, and
-    # _nav_block is rendered after the fetch, so n is this run's total.
-    did_fetch = int(todo_data.call_stats().get("n", 0)) > 0
-
-    if fetched_at:
-        # <t:N:R> updates itself forever, in the reader's own timezone, with no
-        # further work from us. Built from the cache fill time, never from now.
-        stamp = f"-# {'fetched' if did_fetch else 'cached, fetched'} <t:{int(fetched_at)}:R>"
+    # This reports the successful dashboard check, not the oldest entry in the
+    # process-wide cache. The old global timestamp could belong to an unrelated
+    # user's clan and therefore was not a truthful timestamp for this panel.
+    checked_at = int(checked_at if checked_at is not None else time.time())
+    if auto_refresh:
+        until = refresh_until or todo_sessions.bounded_refresh_until(None)
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        stamp = (
+            f"-# Checked <t:{checked_at}:R> · Rechecks about every "
+            f"{todo_sessions.REFRESH_INTERVAL_SECONDS // 60} min · "
+            f"Stops <t:{int(until.timestamp())}:R>"
+        )
     else:
-        # No live entry under any data prefix - a notice panel, or every fetch
-        # failed. There is no fill time to report either way.
-        stamp = "-# fetched just now" if did_fetch else "-# no data cached"
+        stamp = f"-# Checked <t:{checked_at}:R> · DM /todo for auto-checks"
 
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
@@ -356,7 +386,7 @@ def _nav_block(view: str, counts: dict, pager=None) -> list:
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"todo_refresh:{view}|0",
                 emoji=_partial("refresh") or U_REFRESH,
-                label="Refresh",
+                label="Check now",
             ),
         ]),
     ]
@@ -377,7 +407,7 @@ def _nav_select(view: str, counts: dict) -> ActionRow:
     def describe(key: str) -> str:
         value = counts.get(key)
         if value is None:
-            return "couldn't be read — try Refresh"
+            return "couldn't be read — try Check now"
         if value == 0:
             return "nothing outstanding"
         return f"{value} account(s) owe attacks"
@@ -674,7 +704,7 @@ def _reason_blocks(rows: list) -> list:
         "private": (U_PRIVATE, "Private war logs",
                     "these clans have their war log set to private"),
         "failed": (U_FAILED, "Lookup failed",
-                   "couldn't reach the API for these — try Refresh"),
+                   "couldn't reach the API for these — try Check now"),
     }
 
     out: list = []
@@ -688,7 +718,10 @@ def _reason_blocks(rows: list) -> list:
     return out
 
 
-def render_dashboard(view: str, page: int, data: dict) -> list:
+def render_dashboard(view: str, page: int, data: dict, *,
+                     checked_at: int | None = None,
+                     auto_refresh: bool = False,
+                     refresh_until: datetime | None = None) -> list:
     """The dashboard itself.
 
     `data` maps view name -> ViewData. A view whose ViewData is None could not
@@ -721,7 +754,7 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
         body.append(Text(content=(
             "⚠️ **Couldn't read this section.**\n"
             "The Clash API or the proxy didn't answer. This is not the same as "
-            "having nothing to do — press Refresh in a minute."
+            "having nothing to do — press Check now in a minute."
         )))
         pages = 1
         page = 0
@@ -824,7 +857,10 @@ def render_dashboard(view: str, page: int, data: dict) -> list:
             ),
         ])
 
-    body.extend(_nav_block(view, counts, pager))
+    body.extend(_nav_block(
+        view, counts, pager, checked_at=checked_at, auto_refresh=auto_refresh,
+        refresh_until=refresh_until,
+    ))
 
     # The footer is emitted by _nav_block, above the freshness row.
     return _panel(body, _urgency_accent(current))
@@ -999,7 +1035,9 @@ def _with_account_failures(view_data: todo_data.ViewData, error_count: int) -> t
 
 
 async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None,
-                perf: "_Perf | None" = None):
+                perf: "_Perf | None" = None, auto_refresh: bool = False,
+                refresh_until: datetime | None = None,
+                recheck_negative_after: float | None = None):
     """Resolve tags and compute every section.
 
     Returns (data, problem). `problem` is a ready-to-render component list when
@@ -1035,6 +1073,8 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
                 "The Clash↔Discord link service didn't answer, so I can't tell "
                 "which accounts are yours.\n\n"
                 "This is a problem on their end, not yours — try again shortly.",
+                checked_at=int(time.time()), auto_refresh=auto_refresh,
+                refresh_until=refresh_until,
             )
         todo_data.cache_put(cache_key, tags, todo_data.TTL_LINKS)
 
@@ -1045,6 +1085,8 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             "Link one with ClashKing's `/link` command (you'll need your in-game "
             "API token from **Settings → More Settings → API Token**), then run "
             "`/todo` again.",
+            checked_at=int(time.time()), auto_refresh=auto_refresh,
+            refresh_until=refresh_until,
         )
 
     # Counted BEFORE the fetch, or every entry reads as a hit afterwards.
@@ -1079,6 +1121,8 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             "Couldn't load your accounts",
             "Your accounts are linked, but the Clash API didn't answer for any "
             "of them. Try again shortly.",
+            checked_at=int(time.time()), auto_refresh=auto_refresh,
+            refresh_until=refresh_until,
         )
 
     # Persist the current player responses while war/CWL network work runs.
@@ -1097,14 +1141,17 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
     # builder, where the clans now fan out.
     with perf.timing("views"):
         war = await todo_data.build_war_view(
-            coc_client, accounts, sem=sem, candidates=candidates
+            coc_client, accounts, sem=sem, candidates=candidates,
+            recheck_negative_after=recheck_negative_after,
         )
         cwl = await todo_data.build_cwl_view(
-            coc_client, accounts, sem=sem, candidates=candidates
+            coc_client, accounts, sem=sem, candidates=candidates,
+            recheck_negative_after=recheck_negative_after,
         )
         raid = await todo_data.build_raid_view(coc_client, accounts, sem=sem)
         blocked = await todo_data.build_blocked_view(
-            coc_client, accounts, sem=sem, candidates=candidates
+            coc_client, accounts, sem=sem, candidates=candidates,
+            recheck_negative_after=recheck_negative_after,
         )
 
     if errors:
@@ -1123,6 +1170,76 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
 # Command
 # ---------------------------------------------------------------------------
 
+async def _deliver_panel(ctx, bot, components: list):
+    """Return ``(message, schedulable)`` after delivering the panel."""
+    if ctx.guild_id is not None:
+        # The defer already fixed this response as ephemeral. Editing it is one
+        # webhook call and never exposes linked-account activity in the guild.
+        message = await ctx.interaction.edit_initial_response(components=components)
+        return message, False
+
+    try:
+        message = await bot.rest.create_message(ctx.channel_id, components=components)
+    except Exception as exc:  # noqa: BLE001 - a visible panel matters more than route choice
+        print(f"[todo] standalone DM delivery failed; using interaction response: "
+              f"{type(exc).__name__}: {exc}")
+        fallback = _manual_fallback_panel(components)
+        message = await ctx.interaction.edit_initial_response(components=fallback)
+        return message, False
+
+    # The standalone message has no "used /todo" response treatment. Remove the
+    # deferred loading placeholder only after delivery succeeds, so a failure
+    # can never leave the user with no response at all.
+    try:
+        await ctx.interaction.delete_initial_response()
+    except Exception as exc:  # noqa: BLE001 - the dashboard itself was delivered
+        print(f"[todo] could not remove deferred DM placeholder: "
+              f"{type(exc).__name__}: {exc}")
+    return message, True
+
+
+async def _activate_auto_panel(
+    ctx,
+    bot,
+    mongo,
+    message,
+    components: list,
+    view: str,
+    *,
+    kind: str = "dashboard",
+    refresh_until: datetime | None = None,
+) -> bool:
+    """Persist the scheduler first, then promote a neutral DM footer."""
+    recorded = await _record_response(
+        ctx, mongo, message, view, kind=kind, refresh_until=refresh_until
+    )
+    if not recorded:
+        return False
+    try:
+        await bot.rest.edit_message(
+            int(ctx.channel_id), int(message.id), components=components
+        )
+    except Exception as exc:  # noqa: BLE001 - session will repair it next cycle
+        print(f"[todo] automatic footer promotion failed for {message.id}: "
+              f"{type(exc).__name__}: {exc}")
+    return True
+
+
+def _refresh_deadline(data: dict | None) -> datetime | None:
+    """Latest visible event deadline plus one hour; storage applies hard bounds."""
+    if not data:
+        return None
+    deadlines = [
+        row.ends_at
+        for view_data in data.values()
+        if view_data is not None
+        for row in view_data.rows
+        if row.ends_at
+    ]
+    if not deadlines:
+        return None
+    return datetime.fromtimestamp(max(deadlines), tz=timezone.utc) + timedelta(hours=1)
+
 @loader.command
 class Todo(
     lightbulb.SlashCommand,
@@ -1138,57 +1255,32 @@ class Todo(
             coc_client: coc.Client = lightbulb.di.INJECTED,
             mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
-        # THE PANEL IS THE INTERACTION RESPONSE. It used to be a separate
-        # create_message with the ephemeral ack deleted afterwards, purely to
-        # avoid the "Sir Ruggie used /todo" header. That cost more than it
-        # bought:
-        #
-        #   POST /channels/{id}/messages  - what create_message uses. This is
-        #   the bucket that was throttling: 4.65s waits on a DM channel, plus a
-        #   slide period resyncing 1s -> 10s. band_sync_ical.py:268 posts FWA
-        #   alerts to the SAME route on the SAME user's DM channel, so a sync
-        #   burst and a /todo compete directly.
-        #
-        #   PATCH /webhooks/{app}/{token}/messages/@original - what ctx.respond
-        #   uses after a defer. A DIFFERENT bucket, which nothing else in this
-        #   bot touches, and one REST call instead of three.
-        #
-        # Both route templates verified in hikari 2.3.5 internal/routes.py.
-        # The reply header is the price, and it is worth paying: a dashboard
-        # that always appears beats a prettier one that sometimes does not.
-        #
         # DEFER FIRST, ALWAYS. The 3-second window is on the FIRST response to
         # an interaction, and the fetch behind this panel takes tens of seconds.
-        # Nothing may be awaited before this line. Sending the panel before
-        # acknowledging is not an option - the interaction is dead at 3s and
-        # Discord shows "The application did not respond".
-        #
-        # PRIVACY FOLLOWS THE INVOCATION CONTEXT:
-        #   DM     -> persistent, so the dashboard can be scrolled back to
-        #   guild  -> ephemeral, so linked-account activity is not exposed
-        #             to everyone in the channel
-        #
-        # The flag has to be applied twice. In lightbulb 3.0.3, respond() after
-        # defer() goes through interaction.execute() with its own flags
-        # argument. Passing the condition to both covers the deferred response
-        # and any separately-created followup without relying on Discord's
-        # response-identity compatibility behaviour.
-        #
-        # t0 is the first line of the handler, so `total` on the [todo-perf]
-        # line is command-received to panel-visible and the phases under it have
-        # to add up to it.
         perf = _Perf()
-        ephemeral = ctx.guild_id is not None
+        is_dm = ctx.guild_id is None
+        notice_refresh_until = (
+            todo_sessions.bounded_refresh_until(None) if is_dm else None
+        )
         with perf.timing("defer"):
-            await ctx.defer(ephemeral=ephemeral)
+            await ctx.defer(ephemeral=not is_dm)
 
-        data, problem = await _load(bot, coc_client, ctx.user.id, mongo=mongo, perf=perf)
+        data, problem = await _load(
+            bot, coc_client, ctx.user.id, mongo=mongo, perf=perf,
+            auto_refresh=is_dm,
+            refresh_until=notice_refresh_until,
+        )
         if problem:
+            delivered = _manual_fallback_panel(problem) if is_dm else problem
             with perf.timing("send"):
-                sent = await ctx.respond(components=problem, ephemeral=ephemeral)
+                sent, schedulable = await _deliver_panel(ctx, bot, delivered)
             perf.meta["result"] = "notice"
             print(perf.line(), flush=True)
-            await _record_response(ctx, mongo, sent, VIEW_WAR, kind="notice")
+            if schedulable:
+                await _activate_auto_panel(
+                    ctx, bot, mongo, sent, problem, VIEW_WAR, kind="notice",
+                    refresh_until=notice_refresh_until,
+                )
             return
         # Open on the first view that actually has work. Always opening on War
         # meant a user whose only pending hits were CWL saw an empty War view
@@ -1198,8 +1290,19 @@ class Todo(
              if data.get(v) is not None and data[v].ok and data[v].count),
             VIEW_WAR,
         )
+        refresh_until = todo_sessions.bounded_refresh_until(
+            _refresh_deadline(data)
+        ) if is_dm else None
         with perf.timing("render"):
-            components = render_dashboard(opening, 0, data)
+            checked_at = int(time.time())
+            components = render_dashboard(
+                opening, 0, data, checked_at=checked_at, auto_refresh=is_dm,
+                refresh_until=refresh_until,
+            )
+            delivered = (
+                _manual_fallback_panel(components, checked_at=checked_at)
+                if is_dm else components
+            )
         # Sampled BEFORE the send so a slow serialisation is visible even if the
         # send then fails. Excluded from total= - see instrumentation_only.
         # Public API, not a monkey-patch: this is the same build() hikari calls
@@ -1209,7 +1312,7 @@ class Todo(
                 _component.build()
 
         with perf.timing("send"):
-            sent = await ctx.respond(components=components, ephemeral=ephemeral)
+            sent, schedulable = await _deliver_panel(ctx, bot, delivered)
 
         # Printed BEFORE the todo_sessions write. The line must describe what
         # the user actually waited for, and the row is bookkeeping that happens
@@ -1217,7 +1320,11 @@ class Todo(
         perf.meta["view"] = opening
         print(perf.line(), flush=True)
 
-        await _record_response(ctx, mongo, sent, opening)
+        if schedulable:
+            await _activate_auto_panel(
+                ctx, bot, mongo, sent, components, opening,
+                refresh_until=refresh_until,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1229,52 +1336,38 @@ class Todo(
 # ---------------------------------------------------------------------------
 
 async def _record_response(ctx, mongo, response, view: str, page: int = 0,
-                           kind: str = "dashboard") -> None:
-    """Record the panel, keyed to the message the user is actually looking at.
-
-    TAKES THE VALUE respond() RETURNED. It used to ignore it and call
-    fetch_initial_response() instead, which returns the DEFERRED PLACEHOLDER -
-    a different message with a different id from the panel. Every todo_sessions
-    row was keyed to the wrong message.
-
-    That came from a wrong reading of lightbulb 3.0.3. Context.respond returns
-    the INITIAL_RESPONSE_IDENTIFIER sentinel only on the branch where the
-    initial response has NOT been sent. We always defer first, so it takes the
-    other branch - `await self.interaction.execute(...)`, a followup - and
-    returns a real hikari.Message (lightbulb/context.py at the 3.0.3 tag).
-
-    Latent until now because nothing reads these rows. Auto-refresh phase 2
-    would have edited the placeholder instead of the dashboard.
-
-    The sentinel path is still handled: if what came back has no `.id`, fall
-    back to fetching the initial response, because in that case the initial
-    response IS the panel. Wrapped throughout - a bookkeeping row is never worth
-    a failed command.
-    """
+                           kind: str = "dashboard",
+                           refresh_until: datetime | None = None) -> bool:
+    """Record the exact delivered message, resolving an id defensively."""
     message = response
     if getattr(message, "id", None) is None:
         try:
-            message = await ctx.interaction.fetch_initial_response()
+            message = await ctx.fetch_response(response)
         except Exception as exc:  # noqa: BLE001
             print(f"[todo-sessions] could not fetch the response to record it: "
                   f"{type(exc).__name__}: {exc}")
-            return
-    await _record_panel(ctx, mongo, message, view, page, kind=kind)
+            return False
+    return await _record_panel(
+        ctx, mongo, message, view, page, kind=kind,
+        refresh_until=refresh_until,
+    )
 
 
 async def _record_panel(ctx, mongo, message, view: str, page: int = 0,
-                        kind: str = "dashboard", trigger: str = "command") -> None:
-    """Write the panel's row. Bookkeeping only - see utils/todo_sessions.py.
-
-    Wrapped whole. This is a feature that does not exist yet writing rows for a
-    poller that has not been built; there is no failure here worth showing a
-    user an error for, and none worth taking the dashboard down for.
-    """
+                        kind: str = "dashboard", trigger: str = "command",
+                        refresh_until: datetime | None = None) -> bool:
+    """Write refresh state without allowing bookkeeping to break the panel."""
     try:
+        if getattr(ctx, "guild_id", None) is not None:
+            return False
         message_id = getattr(message, "id", None)
         if not message_id:
-            return
-        await todo_sessions.record(
+            return False
+        if getattr(message, "webhook_id", None):
+            # Interaction responses require their short-lived webhook token to
+            # edit. Never promise a long-lived scheduler for that fallback.
+            return False
+        return bool(await todo_sessions.record(
             mongo,
             user_id=ctx.user.id,
             channel_id=int(getattr(ctx, "channel_id", 0) or 0),
@@ -1284,9 +1377,11 @@ async def _record_panel(ctx, mongo, message, view: str, page: int = 0,
             page=page,
             kind=kind,
             trigger=trigger,
-        )
+            refresh_until=refresh_until,
+        ))
     except Exception as exc:  # noqa: BLE001
         print(f"[todo-sessions] record skipped: {type(exc).__name__}: {exc}")
+        return False
 
 
 async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool = False,
@@ -1304,9 +1399,24 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
     # response, so the send is not inside anything this function can time.
     perf = _Perf()
     perf.meta["path"] = trigger
-    data, problem = await _load(bot, coc_client, ctx.user.id, force=force, mongo=mongo, perf=perf)
+    is_dm = getattr(ctx, "guild_id", None) is None
+    refresh_until = (
+        todo_sessions.bounded_refresh_until(None) if is_dm else None
+    )
+    data, problem = await _load(
+        bot, coc_client, ctx.user.id, force=force, mongo=mongo, perf=perf,
+        auto_refresh=is_dm,
+        refresh_until=refresh_until,
+    )
+    if is_dm and data:
+        refresh_until = todo_sessions.bounded_refresh_until(
+            _refresh_deadline(data)
+        )
     with perf.timing("render"):
-        rendered = problem if problem else render_dashboard(view, page, data)
+        rendered = problem if problem else render_dashboard(
+            view, page, data, checked_at=int(time.time()), auto_refresh=is_dm,
+            refresh_until=refresh_until,
+        )
     print(perf.line(), flush=True)
 
     # The message being edited, not a new one: on a component interaction the
@@ -1314,10 +1424,13 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
     # hikari 2.3.5, hikari/interactions/component_interactions.py - `message:
     # messages.Message`). Same _id as the row written when it was sent, so this
     # updates that row rather than creating a second one.
-    await _record_panel(
+    recorded = await _record_panel(
         ctx, mongo, getattr(getattr(ctx, "interaction", None), "message", None),
         view, page, kind="notice" if problem else "dashboard", trigger=trigger,
+        refresh_until=refresh_until,
     )
+    if is_dm and not recorded:
+        rendered = _manual_fallback_panel(rendered)
     # `rendered`, NOT a second render_dashboard call - rendering twice would
     # double the real work and make render= on the perf line a measurement of
     # half of what actually happened.
@@ -1423,3 +1536,160 @@ async def todo_refresh(
     if view not in VIEW_ORDER:
         view = VIEW_WAR
     return await _switch(ctx, view, action_id, coc_client, bot, force=True, mongo=mongo, trigger="refresh")
+
+
+# ---------------------------------------------------------------------------
+# DM automatic refresh
+# ---------------------------------------------------------------------------
+
+async def _refresh_session(
+    session: dict,
+    bot,
+    coc_client,
+    mongo,
+    *,
+    recheck_negative_after: float | None = None,
+) -> str:
+    """Refresh one stored DM panel and return a cycle-accounting outcome."""
+    message_id = int(session.get("_id", 0) or 0)
+    channel_id = int(session.get("channel_id", 0) or 0)
+    user_id = int(session.get("user_id", 0) or 0)
+    if not message_id or not channel_id or not user_id:
+        if message_id:
+            await todo_sessions.remove(mongo, message_id)
+        return "removed"
+
+    lock = _refresh_locks.setdefault(message_id, asyncio.Lock())
+    async with lock:
+        try:
+            perf = _Perf()
+            perf.meta["path"] = "automatic"
+            data, problem = await _load(
+                bot, coc_client, user_id, mongo=mongo, perf=perf,
+                auto_refresh=True,
+                refresh_until=session.get("refresh_until"),
+                recheck_negative_after=recheck_negative_after,
+            )
+
+            # A component click may have changed the stored view/page while the
+            # network calls were running. Read it again immediately before the
+            # edit rather than overwriting the user's latest navigation choice.
+            latest = await todo_sessions.get(mongo, message_id)
+            if latest is None:
+                return "skipped"
+            view = latest.get("view", VIEW_WAR)
+            if view not in VIEW_ORDER:
+                view = VIEW_WAR
+            try:
+                page = int(latest.get("page", 0))
+            except (TypeError, ValueError):
+                page = 0
+
+            checked_at = datetime.now(timezone.utc)
+            rendered = problem if problem else render_dashboard(
+                view, page, data,
+                checked_at=int(checked_at.timestamp()), auto_refresh=True,
+                refresh_until=latest.get("refresh_until"),
+            )
+            await bot.rest.edit_message(
+                channel_id, message_id, components=rendered
+            )
+            recorded = await todo_sessions.mark_refreshed(
+                mongo, message_id, checked_at=checked_at,
+                kind="notice" if problem else "dashboard",
+            )
+            return "updated" if recorded else "failed"
+        except (hikari.NotFoundError, hikari.ForbiddenError):
+            await todo_sessions.remove(mongo, message_id)
+            return "removed"
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - retry on the next interval
+            await todo_sessions.postpone(mongo, message_id)
+            print(f"[todo-refresh] message {message_id} failed: "
+                  f"{type(exc).__name__}: {exc}")
+            return "failed"
+        finally:
+            def discard_lock() -> None:
+                if not lock.locked() and _refresh_locks.get(message_id) is lock:
+                    _refresh_locks.pop(message_id, None)
+
+            # This finally block runs inside `async with lock`; defer cleanup
+            # one loop turn so __aexit__ has released it first.
+            asyncio.get_running_loop().call_soon(discard_lock)
+
+
+async def run_auto_refresh_cycle(bot, coc_client, mongo) -> dict[str, int]:
+    """Refresh every due DM panel once, with a single shared concurrency cap."""
+    # A shared ten-minute freshness boundary prevents staggered panels from
+    # turning the one-minute scheduler poll into one negative API recheck per
+    # minute for popular clans.
+    negative_cutoff = time.time() - todo_sessions.REFRESH_INTERVAL_SECONDS
+    sessions = await todo_sessions.due(mongo)
+    counts = {"panels": len(sessions), "updated": 0, "removed": 0,
+              "failed": 0, "skipped": 0}
+    if not sessions:
+        return counts
+
+    sem = asyncio.Semaphore(todo_sessions.REFRESH_CONCURRENCY)
+
+    async def bounded(session):
+        async with sem:
+            return await _refresh_session(
+                session, bot, coc_client, mongo,
+                recheck_negative_after=negative_cutoff,
+            )
+
+    outcomes = await asyncio.gather(*(bounded(session) for session in sessions))
+    for outcome in outcomes:
+        counts[outcome] = counts.get(outcome, 0) + 1
+    print("[todo-refresh] cycle " + " ".join(
+        f"{name}={value}" for name, value in counts.items()
+    ), flush=True)
+    return counts
+
+
+async def _auto_refresh_loop(bot, coc_client, mongo) -> None:
+    while True:
+        try:
+            await run_auto_refresh_cycle(bot, coc_client, mongo)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - the next poll must still run
+            print(f"[todo-refresh] cycle failed: {type(exc).__name__}: {exc}")
+        await asyncio.sleep(todo_sessions.REFRESH_POLL_SECONDS)
+
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def start_auto_refresh(
+        _: hikari.StartedEvent,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        coc_client: coc.Client = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+) -> None:
+    global _auto_refresh_task
+    if not todo_sessions.AUTO_REFRESH_ENABLED:
+        print("[todo-refresh] disabled")
+        return
+    if _auto_refresh_task and not _auto_refresh_task.done():
+        print("[todo-refresh] task already running; start skipped")
+        return
+    _auto_refresh_task = asyncio.create_task(
+        _auto_refresh_loop(bot, coc_client, mongo), name="todo-auto-refresh"
+    )
+    print("[todo-refresh] started")
+
+
+@loader.listener(hikari.StoppingEvent)
+async def stop_auto_refresh(_: hikari.StoppingEvent) -> None:
+    global _auto_refresh_task
+    if _auto_refresh_task and not _auto_refresh_task.done():
+        _auto_refresh_task.cancel()
+        try:
+            await _auto_refresh_task
+        except asyncio.CancelledError:
+            pass
+    _auto_refresh_task = None
+    _refresh_locks.clear()
+    print("[todo-refresh] stopped")

@@ -38,6 +38,6 @@ class MongoClient(AsyncMongoClient):
         self.player_clan_candidates = self.__settings.get_collection("player_clan_candidates")
         self.player_clan_watches = self.__settings.get_collection("player_clan_watches")
         self.clan_roster_snapshots = self.__settings.get_collection("clan_roster_snapshots")
-        # /todo panels, for the not-yet-built auto-refresh. TTL index on
-        # expires_at is created lazily by utils/todo_sessions.py.
+        # Bounded DM /todo auto-refresh sessions. TTL index on expires_at is
+        # created lazily by utils/todo_sessions.py.
         self.todo_sessions = self.__settings.get_collection("todo_sessions")

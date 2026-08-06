@@ -30,6 +30,7 @@ loader = lightbulb.Loader()
 
 SCAN_INTERVAL_SECONDS = 10 * 60
 FETCH_CONCURRENCY = 8
+LINK_EXPANSION_BATCH_SIZE = 100
 
 tracker_task: asyncio.Task | None = None
 
@@ -45,6 +46,15 @@ def _war_end(war, fallback: datetime) -> datetime:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
     return fallback
+
+
+def _utc_datetime(value) -> datetime | None:
+    """Normalize PyMongo's default naive UTC datetimes for local comparisons."""
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 async def _safe_fetch(sem: asyncio.Semaphore, label: str, key: str, fn):
@@ -112,7 +122,9 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
     ))
 
     watch_docs = await mongo.player_clan_watches.find(
-        {"expires_at": {"$gt": now}}, {"_id": 1}
+        {"expires_at": {"$gt": now}},
+        {"_id": 1, "link_expand_pending": 1, "link_retry_at": 1,
+         "link_retry_count": 1},
     ).to_list(length=None)
     watched_tags = list(dict.fromkeys(
         str(doc.get("_id", "")).strip().upper()
@@ -159,18 +171,78 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
         previous_rosters.get(clan_tag, set()) - members
         for clan_tag, members in current_rosters.items()
     )) if current_rosters else set()
-    snapshot_write = asyncio.create_task(clan_history.save_roster_snapshots(
-        mongo, current_rosters, observed_at=now
-    ))
-
     movement_watches = set(departed_tags)
-    if departed_tags:
-        linked_tags = await resolve_family_linked_tags(sorted(departed_tags))
-        if linked_tags is None:
-            print("[clan-history] mover link expansion failed; watching departing tags only")
+    pending_by_tag = {
+        str(doc.get("_id", "")).strip().upper(): doc
+        for doc in watch_docs
+        if doc.get("link_expand_pending") and str(doc.get("_id", "")).strip()
+    }
+    newly_pending = departed_tags - set(pending_by_tag)
+    queue_ok = await clan_history.queue_link_expansions(
+        mongo, newly_pending, observed_at=now
+    )
+    for tag in newly_pending if queue_ok else ():
+        pending_by_tag[tag] = {
+            "_id": tag,
+            "link_expand_pending": True,
+            "link_retry_at": now,
+            "link_retry_count": 0,
+        }
+
+    # Do not advance roster snapshots past a departure we failed to queue;
+    # leaving the prior snapshot intact makes the next scan detect it again.
+    snapshot_write = (
+        asyncio.create_task(clan_history.save_roster_snapshots(
+            mongo, current_rosters, observed_at=now
+        ))
+        if queue_ok else None
+    )
+
+    due_expansions = sorted(
+        (
+            doc for doc in pending_by_tag.values()
+            if _utc_datetime(doc.get("link_retry_at")) is None
+            or _utc_datetime(doc.get("link_retry_at")) <= now
+        ),
+        key=lambda doc: _utc_datetime(doc.get("link_retry_at"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+    )[:LINK_EXPANSION_BATCH_SIZE]
+    if due_expansions:
+        source_tags = [str(doc["_id"]).strip().upper() for doc in due_expansions]
+        retry_counts = {
+            str(doc["_id"]).strip().upper(): int(doc.get("link_retry_count", 0) or 0)
+            for doc in due_expansions
+        }
+        linked_tags = await resolve_family_linked_tags(source_tags)
+        # Retrying link expansion must not reset the departed source account's
+        # 48-hour watch. Only newly discovered linked accounts get a fresh
+        # watch; the source keeps the expiry set when its departure was queued.
+        discovered_tags = (
+            set(linked_tags or ()) - set(source_tags)
+            if linked_tags is not None else set()
+        )
+        linked_watch_ok = (
+            linked_tags is not None
+            and await clan_history.watch_players(
+                mongo, discovered_tags, observed_at=now
+            )
+        )
+        if linked_watch_ok:
+            movement_watches.update(linked_tags or ())
+            completed = await clan_history.complete_link_expansions(
+                mongo, source_tags, observed_at=now
+            )
+            if not completed:
+                await clan_history.postpone_link_expansions(
+                    mongo, retry_counts, observed_at=now
+                )
         else:
-            movement_watches.update(linked_tags)
-        await clan_history.watch_players(mongo, movement_watches, observed_at=now)
+            await clan_history.postpone_link_expansions(
+                mongo, retry_counts, observed_at=now
+            )
+            print("[clan-history] mover link expansion deferred for retry")
+
+    if departed_tags:
         print(
             f"[clan-history] family departures detected "
             f"players={len(departed_tags)} watches={len(movement_watches)}"
@@ -242,7 +314,8 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
                 active_until=_war_end(war, now + timedelta(days=2)),
                 observed_at=now,
             )
-    await snapshot_write
+    if snapshot_write is not None:
+        await snapshot_write
 
     return {
         "clans": len(clan_tags),
@@ -250,7 +323,7 @@ async def run_scan(mongo: MongoClient, coc_client: coc.Client) -> dict[str, int]
         "family_players": len(set(family_roster_tags)),
         "roster_changes": len(changed_roster_tags),
         "departed_players": len(departed_tags),
-        "new_watches": len(movement_watches),
+        "movement_players": len(movement_watches),
         "watched_players": len(watched_tags),
         "presences": len(presences),
         "war_roster": len(war_roster),

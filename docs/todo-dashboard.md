@@ -21,13 +21,16 @@ the thing actually is.
 | Bot DM | Persistent DM message | The user can scroll back to the dashboard and use it again |
 | Guild channel | Ephemeral | Linked-account activity is visible only to the user who ran the command |
 
-Both `ctx.defer()` and the later `ctx.respond()` receive the context-derived
-`ephemeral` value. This is not duplication: lightbulb 3.0.3 routes
-`ctx.respond()` after a defer through `interaction.execute()` with a separate
-flags argument. Supplying both covers the deferred response and any separately
-created followup without relying on Discord's response-identity compatibility
-behaviour. Component clicks edit the existing message and therefore preserve
-whichever visibility the original panel already has.
+The command always defers first. In a DM it then sends a standalone bot-authored
+message and deletes the loading response; in a guild it edits the deferred
+ephemeral response. Component clicks edit the existing panel and therefore
+preserve its visibility.
+
+If standalone DM delivery raises, the command falls back to the interaction
+response so the user still gets a dashboard. That webhook-backed fallback is
+labelled manual-only and is not registered for automatic edits: interaction
+tokens expire after 15 minutes, so promising a long-lived scheduler there would
+be false.
 
 ---
 
@@ -126,6 +129,9 @@ index instead:
   ClashKing link endpoint: departing tag → Discord owner → every linked account
   belonging to that owner. Those accounts are watched for 48 hours and polled
   every 10 minutes regardless of destination clan;
+- if that link expansion fails, retry state stays on the same 48-hour watch row.
+  Retries back off from 10 minutes to at most 6 hours, process at most 100
+  source players per scan, and never extend retention;
 - accounts used directly by `/todo` also receive a 48-hour watch. This covers a
   linked user even when none of their accounts was present in a registered
   family roster during the latest expansion;
@@ -331,8 +337,8 @@ that closes the dashboard, with the timestamp and its refresh button beneath it
 as a caption. Done by reordering *inside* the Container: a top-level component
 renders outside the accent bar and would lose the coloured stripe.
 
-**Refresh is a button, not a select option.** The select lists places you can
-GO; refresh is something you DO to where you already are. It cannot share the
+**Check now is a button, not a select option.** The select lists places you can
+GO; checking is something you DO to where you already are. It cannot share the
 ActionRow with the select — a row holds **either** up to 5 buttons **or** exactly
 one select, never a mix — and it cannot go inside a Section as a select either,
 because `SectionBuilderComponentsT` is TextDisplay only.
@@ -346,7 +352,7 @@ solve. Mobile is the primary venue, so a desktop-only win loses.
 It is now a **labelled button in its own ActionRow** under the freshness text.
 Since it wraps to a second line on mobile regardless, it is put there
 deliberately, and the label is what stops it looking stranded: a bare icon alone
-on a row reads as leftover, `🔄 Refresh` reads as a control. Same two lines on
+on a row reads as leftover, `🔄 Check now` reads as a control. Same two lines on
 mobile as the accessory produced, identical on both platforms instead of good on
 one and broken on the other.
 
@@ -357,94 +363,37 @@ Nav is centralised in `_nav_block()` so this cannot regress per-path.
 
 ---
 
-## The freshness stamp, and the bug that froze it
+## Check status and freshness
 
-`-# fetched <t:N:R>` is built from **when the data was fetched**, never from
-render time. A panel served entirely from cache renders now but shows data from
-minutes ago, and the cached case is exactly when staleness matters.
-`oldest_fill()` takes the **oldest** live entry, because the panel is only as
-fresh as its stalest component.
+The footer reports **when this panel last completed a check**, not the oldest
+entry in the process-wide cache. The old cache-derived timestamp could be pinned
+by an unrelated user's raid entry and was therefore not a truthful timestamp for
+the panel being read.
 
-### The bug
+An active DM panel renders one compact line:
 
-The stamp never moved. Clicking Refresh refetched everything correctly — the
-logs showed fresh `currentwar` calls with cache-BYPASS responses — and the clock
-still read "3 minutes ago". A working button that looks broken is worse than no
-timestamp at all.
+```text
+Checked 2 minutes ago · Rechecks about every 10 min · Stops in 22 hours
+```
 
-**Cause: two prefix lists that had diverged.** The Refresh path dropped
-`player:`, `war:`, `cwl:`; `oldest_fill()` read `player:`, `war:`, `cwl:`,
-**`raid:`**. Raid entries were never dropped, and out of season their TTL is
-`_seconds_until_raid_opens()` — *days*. They survived every Refresh carrying
-their original fill time, and `min()` pinned the stamp to whenever the process
-first rendered a raid view. On every view, forever.
+Both times use Discord timestamps, so they remain localized and advance without
+another message edit. `Checked` changes only after the dashboard data was
+computed and the Discord message edit succeeded. The stop time is the stored
+session deadline, so a panel that has aged out never continues claiming it is
+live.
 
-**Fix:** one tuple, `todo_data.DATA_PREFIXES`, used by both sides.
-`drop_render_caches()` owns the Refresh drop; `oldest_fill()` defaults to the
-same tuple. Add a cached data prefix there and both sides get it. Do not
-re-inline a prefix list at a call site.
+Guild panels are ephemeral and never scheduled. Their footer says
+`DM /todo for auto-checks`. Both contexts keep the labelled **Check now**
+button.
 
-`oldest_fill()` also **checks the invariant**: after a drop, nothing live under
-those prefixes can predate it. If something does, it prints the surviving keys
-by name. The failure mode here is invisible from the panel — button works, data
-is fresh, only the clock lies — so it has to announce itself.
+"Checked" is deliberate wording. The bot may satisfy a lookup from its bounded
+cache; "fetched" would incorrectly promise that every source was bypassed. Check
+now still drops wu-bot's render caches, while coc.py and the upstream proxy may
+legitimately satisfy the resulting request from their own TTL caches.
 
-### A warm `/todo` reports the previous run's fetch, and that is correct
-
-A warm invocation makes **zero** API calls, so `cache_put` is never reached, so
-no `filled_at` changes, so `min()` returns the previous run's time. The stamp is
-honest — it reports when the *data* was fetched, and nothing was.
-
-It was also indistinguishable from a stamp that had failed to move, which is why
-the wording now names which case it is:
-
-| Condition | Renders |
-|---|---|
-| this invocation made ≥1 API call | `fetched 2 minutes ago` |
-| this invocation made none | `cached, fetched 2 minutes ago` |
-
-Driven off `call_stats()["n"]`, not a flag threaded through the load path.
-`reset_calls()` runs in `_Perf.__init__` once per invocation and `_nav_block`
-renders after the fetch, so `n` is this run's total.
-
-**Verified on three consecutive runs:**
-
-| Run | Condition | Panel read |
-|---|---|---|
-| cold | `calls=104 fetch=4761ms total=6.40s` | `fetched …` |
-| warm | `calls=0 fetch=1ms total=2.16s` | `cached, fetched …` |
-| refresh | forced drop, refetched | `fetched …` |
-
-Note what `fetched` means, though — see the two-cache-layer section below. It
-asserts that **this invocation made API calls**, not that any of them reached
-the network.
-
-**Refresh coverage was checked and is clean.** `drop_render_caches()` drops all
-five `DATA_PREFIXES` plus `links:` and `clanlogos` as `extra`, so Refresh drops
-strictly *more* than the stamp reads. This is not a third instance of the
-`raid:`/`cwlwar:` prefix-coverage shape.
-
-### KNOWN BEHAVIOUR, NOT FIXED: `min()` spans views you are not looking at
-
-`oldest_fill()` takes the minimum across **every** `DATA_PREFIXES` entry, not
-just the ones feeding the current view.
-
-Out of season, `raid:` entries are cached with `_seconds_until_raid_opens()` —
-**days**. So an hour after a restart, on the **War** view: `war:` has refilled
-repeatedly at its 120 s TTL, while the raid entry still carries its original fill
-time, and `min()` returns *the raid entry*. **The stamp reads "1 hour ago" over
-war data that is two minutes old.**
-
-This is probably what is seen on the panel more often than the warm-cache case.
-
-**Deliberately not fixed.** The obvious remedy — a per-view prefix map, e.g.
-`oldest_fill(("war:", "player:"))` on the War view — creates a *second list of
-prefixes that must stay in sync with the first*. That is precisely the shape
-that produced both the `raid:` and the `cwlwar:` bugs. A third one is not worth
-a cosmetically nicer timestamp.
-
-Open question: whether the `cached, fetched` wording above makes this tolerable,
-or whether the stamp needs to be scoped some other way.
+`oldest_fill()` remains a cache diagnostic, and `DATA_PREFIXES` remains the
+single source for manual cache-drop coverage, but neither drives user-facing
+freshness text now.
 
 ### It happened a second time: `cwlwar:`
 
@@ -1047,39 +996,40 @@ Access is via `_emoji(name)` / `_partial(name)`, which return `""` /
 
 ---
 
-## Auto-refresh phase 1 — rows only
+## DM automatic refresh
 
-`utils/todo_sessions.py`. **Phase 1 writes bookkeeping rows and does nothing
-else: no poller, no scheduler, no message edits.** The point is to get real
-documents into Mongo and look at their shape before anything is built on them.
+`utils/todo_sessions.py` stores one row per tracked DM message in the `settings`
+database. `_id` is the Discord message id. Guild panels remain ephemeral and
+manual and are not stored.
 
-Collection `todo_sessions` in the `settings` database. `_id` is the **message
-id**, so one panel is one row, upserted: four `/todo` runs give four rows, forty
-Refresh clicks on one panel give one row with `interactions: 40`. That is the
-shape a refresher wants — it iterates messages, not events — and dedupe rides on
-the primary key, so no unique index is needed and a double write cannot produce
-two rows.
+Each DM panel stays scheduled through its own 24–72 hour deadline. Keeping its
+small TTL-bounded row makes every visible auto-check promise truthful and avoids
+overlapping command runs deleting each other's session.
 
-Written at two points: after `ctx.respond()` in the command, and inside
-`_switch()` for every interaction. The command path needs an extra
-`fetch_initial_response()` to get a message id at all — lightbulb 3.0.3's
-`Context.respond` returns `constants.INITIAL_RESPONSE_IDENTIFIER`, a sentinel
-rather than a Message. That GET is on the webhook route, not
-`/channels/{id}/messages`. On an interaction the row is keyed to
-`ctx.interaction.message.id` — the panel being edited, not a new message — so it
-updates the row written when the panel was sent. `ComponentInteraction.message`
-is verified present in hikari 2.3.5
-(`hikari/interactions/component_interactions.py`).
+The poll loop wakes every minute and selects at most 100 due rows. Each panel is
+scheduled ten minutes after its previous successful check, with four concurrent
+refreshes maximum. Immediately before editing, it re-reads the row so a view or
+page selected while Clash data was loading is not overwritten by stale stored
+navigation. A deleted or inaccessible Discord message removes its session;
+transient errors postpone the next attempt.
 
-`kind` separates a real dashboard from a notice panel ("no linked accounts"),
-and `last_trigger` records which control fired. Both exist so phase 2 can decide
-things that cannot be decided retroactively if the rows never distinguished them
-— e.g. whether to retry a notice, since a link service down at 09:00 is probably
-up at 09:05.
+Automatic work does not force the process-wide cache clear used by **Check
+now**. It revalidates only an old cached `no war`, ended regular war, or `not in
+CWL` answer for the current and recent candidate clans. Positive active wars,
+private logs, player and raid data, and unrelated clans remain cached. A
+per-clan lock makes overlapping panels share the recheck instead of duplicating
+API calls.
 
-`AUTO_REFRESH_ENABLED = False` governs the **poller**, which does not exist.
-Rows are written unconditionally, because collecting them is the whole exercise.
-Do not read the presence of rows as evidence the feature is on.
+`refresh_until` is at least 24 hours, extends through the latest visible event
+deadline plus one hour, and is capped at 72 hours. User interactions can
+reactivate a panel; background checks never extend their own retention.
+
+The command first sends a standalone bot-authored DM with a neutral manual
+footer. Only after Mongo confirms the session does it promote the footer to
+automatic. A failed write therefore cannot leave a false scheduling promise.
+If standalone delivery fails, the command uses the deferred response and keeps
+the panel manual; Discord interaction tokens expire after 15 minutes, so the
+scheduler cannot safely depend on them.
 
 ### Mongo TTL indexes only understand BSON dates
 
@@ -1088,30 +1038,27 @@ float epoch. That inconsistency is deliberate and load-bearing: **a TTL index on
 a numeric field indexes fine, matches queries fine, and silently never
 expires.** The collection grows forever and nothing reports an error.
 
-The TTL is pushed forward on every interaction, so an active panel stays and an
-abandoned one ages out with no cleanup task. 24 hours is a starting value, not a
-considered one. If phase 2 builds a refresher, the right anchor is probably the
-soonest deadline in the panel's data — a panel whose war has ended has nothing
-left to refresh.
+The TTL date is the same bounded refresh deadline for DM sessions. Background
+checks update `next_refresh_at` and `last_checked_at` but deliberately do not
+push the TTL.
 
 The index is created lazily on first write. A failed attempt is retried at most
 once per hour; before that retry succeeds, rows are still written and read
 correctly but do not self-prune. Every entry point is non-fatal — this is
-bookkeeping for a feature that does not exist, and no failure in it is worth
+bookkeeping for a non-critical convenience, and no failure in it is worth
 degrading the dashboard for.
 
 ## Statelessness, routing and pagination
 
-**Nothing the render path reads comes from Mongo.** Page comes from the
+**Component routing state does not come from Mongo.** Page comes from the
 `custom_id`, user identity from `ctx.user.id` on the interaction. The
 dispatcher's state lookup therefore always misses, which is fine and intended —
-every handler defaults all its parameters. A `/todo` panel sitting in DM history
-for a year still works, because there is no state document that could have been
-evicted.
+every handler defaults all its parameters. Rendered data may use Mongo-backed
+clan history and logos, but an old panel's controls do not depend on an evictable
+component-state document.
 
-(Auto-refresh phase 1 does *write* a bookkeeping row per panel to
-`todo_sessions`. Nothing reads it, and the render path must never start
-depending on it — that property is the whole point.)
+(The background scheduler reads `todo_sessions`; component rendering does not.
+That separation is what keeps an expired or year-old panel's controls usable.)
 
 ### ONE COLON PER `custom_id`
 
@@ -1238,14 +1185,13 @@ preparation-phase rows appear for all three affected accounts after the
 `_state()` fix; per-clan deadlines match the game exactly (9h29m and 3h51m
 shown separately, where one `min()` had shown "4 hours" for both); the labelled
 refresh button reads correctly on mobile; **the freshness stamp moves to "a few
-seconds ago" on Refresh**; `grep -c utcnow` returns 0 on coc.py 3.10.0.
+seconds ago" on Check now**; `grep -c utcnow` returns 0 on coc.py 3.10.0.
 
-**Superseded:** the panel used to be a standalone `create_message` with the
-ephemeral ack deleted, specifically to avoid the "X used /todo" header (`a8b5ab1`).
-That put it on `POST /channels/{id}/messages`, the bucket FWA sync DMs also use,
-where it took 4.65 s waits. `f1df425` moved it to the interaction response — see
-[discord-rate-limit-buckets.md](discord-rate-limit-buckets.md). **The header is
-back, deliberately.**
+**Changed, not yet live-verified:** DM panels again use standalone
+`create_message` followed by deletion of the deferred interaction placeholder.
+This is now required by the product decision to remove the "X used /todo"
+response treatment and by the long-lived automatic editor. Guild panels still
+edit the deferred ephemeral response.
 
 ### CLOSED: followup messages DO carry the interaction header
 
@@ -1257,27 +1203,19 @@ on the quiet webhook route, and it was explicitly not asserted without evidence.
 `self.interaction.execute()`, which is `POST /webhooks/{app}/{token}` — and the
 "X used /todo" header is visible on it.
 
-**So there is no third option.** The choice is binary:
+The route choice remains binary:
 
 | Option | Header | Route |
 |---|---|---|
 | interaction response / followup | **yes** | webhook — uncontended |
 | standalone `create_message` | no | `POST /channels/{id}/messages` — throttled at 4.65 s |
 
-**Do not go looking for a way to have both.** It does not exist at the Discord
-API level, and this is the second time that hope has cost investigation.
-
-**Reverting would also invalidate tonight's `send=` baseline.** `send≈1055ms`
-and the "network-bound, nothing local, closed" conclusion were both measured on
-the webhook route. On the channel bucket those numbers mean nothing and the
-whole `send=` investigation reopens. Reverting costs a measured reliability fix
-and a measurement baseline, to remove a header.
-
-It did not remove the delay. `send≈2000ms` on both a cold and a warm run,
-measured — moving off the channel bucket bought roughly 1–2 s of the original
-4.65 s, not all of it. The remaining ~2 s on one webhook POST is unexplained and
-nothing has been measured about it beyond establishing that it is a single call
-that does not scale with account count.
+The standalone route previously experienced a measured 4.65-second bucket wait,
+so `_deliver_panel` keeps a correctness fallback: if channel-message delivery
+raises, it edits the already-deferred interaction response. Rate-limit waiting
+inside hikari may still make the standalone send slower without raising; the
+interaction was acknowledged first, so that delay does not violate Discord's
+three-second response deadline.
 
 **Fixed and verified** (`3c11233`): `_record_response` used to key rows to
 `fetch_initial_response()` — the deferred placeholder — while the panel is a
@@ -1299,7 +1237,10 @@ That is the test that discriminates. A query returning only `last_trigger='comma
 rows with `interactions=1` proves nothing — it cannot tell "fixed" from "the
 interaction path never ran".
 
-**Auto-refresh phase 1 can now safely read these rows.**
+The current standalone path returns the exact `Message` that is recorded, while
+component interactions continue keying the row from
+`ctx.interaction.message.id`. Live verification must confirm that `/todo`, a
+button click, and one automatic cycle all update the same Mongo `_id`.
 
 **Not yet verified:** the Raids view with a live raid weekend — `state ==
 "ongoing"` has never returned True, because every test has been out of season

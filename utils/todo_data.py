@@ -29,7 +29,9 @@ calls get_clan_war and get_league_group explicitly so the fan-out is visible.
 
 import asyncio
 import contextlib
+import contextvars
 import time
+import weakref
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field, replace
 
@@ -66,6 +68,12 @@ def _d(msg: str) -> None:
 _cache: dict[str, tuple[float, float, object]] = {}
 CACHE_MAX_ENTRIES = 10_000
 
+# Coalesce the same clan lookup across overlapping automatic panels. Weak
+# values mean a clan that stops being requested leaves no permanent lock row.
+_fetch_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+    weakref.WeakValueDictionary()
+)
+
 TTL_LINKS = 6 * 60 * 60      # linking is a rare manual act
 TTL_WAR_ACTIVE = 120         # a hit can land any second; matches upstream max-age
 
@@ -92,6 +100,7 @@ TTL_PLAYER = 10 * 60
 TTL_WAR_IDLE = 15 * 60       # notInWar / warEnded - stable for hours
 TTL_CWL_ABSENT = 60 * 60     # not in CWL - stable for WEEKS outside the season
 TTL_CWL_ACTIVE = 600         # rounds advance once per day
+TTL_ERROR = 60               # coalesce a brief outage without hiding it for long
 
 # Simultaneous player lookups. coc.py's own BasicThrottler is the real ceiling -
 # it spaces request STARTS ~33ms apart across the whole client (throttle_limit
@@ -112,6 +121,34 @@ def cache_get(key: str):
         _cache.pop(key, None)
         return None
     return value
+
+
+def _negative_needs_recheck(key: str, value, cutoff: float | None) -> bool:
+    """Whether an automatic cycle must revalidate this cached negative."""
+    if cutoff is None:
+        return False
+    negative = value == ("none", None)
+    if (
+        not negative
+        and key.startswith("war:")
+        and isinstance(value, tuple)
+        and len(value) == 2
+        and value[0] == "war"
+        and value[1] is not None
+    ):
+        negative = _state(value[1]) not in ("inWar", "preparation")
+    if not negative:
+        return False
+    hit = _cache.get(key)
+    return hit is not None and hit[1] < cutoff
+
+
+def _fetch_lock(key: str) -> asyncio.Lock:
+    lock = _fetch_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _fetch_locks[key] = lock
+    return lock
 
 
 def cache_put(key: str, value, ttl: int) -> None:
@@ -240,7 +277,23 @@ def oldest_fill(prefixes: tuple[str, ...] = DATA_PREFIXES) -> float | None:
 # opposite fixes. One says back off the concurrency; the other says the upstream
 # was slow and concurrency is innocent. So count the calls and keep the worst.
 # ---------------------------------------------------------------------------
-_calls: dict[str, object] = {"n": 0, "total": 0.0, "worst": 0.0, "worst_label": "", "by_label": {}}
+def _new_call_stats() -> dict[str, object]:
+    return {"n": 0, "total": 0.0, "worst": 0.0, "worst_label": "", "by_label": {}}
+
+
+# Per-async-invocation. Automatic refreshes run concurrently with commands; a
+# process-global counter lets one request reset or absorb another one's calls.
+_calls_var: contextvars.ContextVar[dict[str, object] | None] = contextvars.ContextVar(
+    "todo_calls", default=None
+)
+
+
+def _current_calls() -> dict[str, object]:
+    calls = _calls_var.get()
+    if calls is None:
+        calls = _new_call_stats()
+        _calls_var.set(calls)
+    return calls
 
 # Process start. The cache is a module-level dict, so it dies with the process -
 # and "warm=0/46 on a second run" has three possible causes that look identical
@@ -258,10 +311,7 @@ def cache_size() -> int:
 
 
 def reset_calls() -> None:
-    # A FRESH by_label dict each reset, never .clear() on the old one - a
-    # caller still holding the previous run's stats would otherwise watch them
-    # empty out underneath it.
-    _calls.update({"n": 0, "total": 0.0, "worst": 0.0, "worst_label": "", "by_label": {}})
+    _calls_var.set(_new_call_stats())
 
 
 def note_call(label: str, seconds: float) -> None:
@@ -271,20 +321,22 @@ def note_call(label: str, seconds: float) -> None:
     to be the single slowest of ~104 - luck, not a test. Counting per label
     turns "did leaguewar run at all" from unanswerable into a field.
     """
-    _calls["n"] = int(_calls["n"]) + 1
-    _calls["total"] = float(_calls["total"]) + seconds
-    by_label = _calls["by_label"]
+    calls = _current_calls()
+    calls["n"] = int(calls["n"]) + 1
+    calls["total"] = float(calls["total"]) + seconds
+    by_label = calls["by_label"]
     by_label[label] = by_label.get(label, 0) + 1
-    if seconds > float(_calls["worst"]):
-        _calls["worst"] = seconds
-        _calls["worst_label"] = label
+    if seconds > float(calls["worst"]):
+        calls["worst"] = seconds
+        calls["worst_label"] = label
 
 
 def call_stats() -> dict:
-    # by_label copied too - dict(_calls) is shallow, and handing out the live
+    calls = _current_calls()
+    # by_label copied too - dict(calls) is shallow, and handing out the live
     # counter would let a reader see it mutate mid-render.
-    stats = dict(_calls)
-    stats["by_label"] = dict(_calls["by_label"])
+    stats = dict(calls)
+    stats["by_label"] = dict(calls["by_label"])
     return stats
 
 
@@ -550,7 +602,12 @@ async def fetch_accounts(
     return accounts, errors
 
 
-async def _get_war(coc_client: coc.Client, clan_tag: str):
+async def _get_war(
+    coc_client: coc.Client,
+    clan_tag: str,
+    *,
+    recheck_negative_after: float | None = None,
+):
     """Regular war for a clan.
 
     Returns (kind, war):
@@ -564,42 +621,62 @@ async def _get_war(coc_client: coc.Client, clan_tag: str):
     """
     key = f"war:{clan_tag}"
     cached = cache_get(key)
-    if cached is not None:
+    if cached is not None and not _negative_needs_recheck(
+        key, cached, recheck_negative_after
+    ):
         return cached
 
-    try:
-        with timed_call("currentwar"):
-            war = await coc_client.get_clan_war(clan_tag)
-    except coc.PrivateWarLog:
-        result = ("private", None)
-        cache_put(key, result, TTL_WAR_IDLE)
+    # A second check under the per-clan lock makes concurrent panels reuse the
+    # first panel's refreshed negative/positive answer.
+    async with _fetch_lock(key):
+        cached = cache_get(key)
+        if cached is not None and not _negative_needs_recheck(
+            key, cached, recheck_negative_after
+        ):
+            return cached
+
+        try:
+            with timed_call("currentwar"):
+                war = await coc_client.get_clan_war(clan_tag)
+        except coc.PrivateWarLog:
+            result = ("private", None)
+            cache_put(key, result, TTL_WAR_IDLE)
+            return result
+        except coc.NotFound:
+            result = ("none", None)
+            cache_put(key, result, TTL_WAR_IDLE)
+            return result
+        except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
+            print(f"[todo] war lookup failed for {clan_tag}: {type(exc).__name__}")
+            result = ("error", None)
+            cache_put(key, result, TTL_ERROR)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            print(f"[todo] war lookup errored for {clan_tag}: {type(exc).__name__}: {exc}")
+            result = ("error", None)
+            cache_put(key, result, TTL_ERROR)
+            return result
+
+        if war is None:
+            result = ("none", None)
+            cache_put(key, result, TTL_WAR_IDLE)
+            return result
+
+        result = ("war", war)
+        # WarState defines __eq__ without __hash__, so its members are unhashable -
+        # `state in {…}` raises TypeError. Tuples compare fine, and ExtendedEnum
+        # equality accepts plain strings.
+        active = _state(war) in ("inWar", "preparation")
+        cache_put(key, result, TTL_WAR_ACTIVE if active else TTL_WAR_IDLE)
         return result
-    except coc.NotFound:
-        result = ("none", None)
-        cache_put(key, result, TTL_WAR_IDLE)
-        return result
-    except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
-        print(f"[todo] war lookup failed for {clan_tag}: {type(exc).__name__}")
-        return ("error", None)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[todo] war lookup errored for {clan_tag}: {type(exc).__name__}: {exc}")
-        return ("error", None)
-
-    if war is None:
-        result = ("none", None)
-        cache_put(key, result, TTL_WAR_IDLE)
-        return result
-
-    result = ("war", war)
-    # WarState defines __eq__ without __hash__, so its members are unhashable -
-    # `state in {…}` raises TypeError. Tuples compare fine, and ExtendedEnum
-    # equality accepts plain strings.
-    active = _state(war) in ("inWar", "preparation")
-    cache_put(key, result, TTL_WAR_ACTIVE if active else TTL_WAR_IDLE)
-    return result
 
 
-async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
+async def _get_cwl_round(
+    coc_client: coc.Client,
+    clan_tag: str,
+    *,
+    recheck_negative_after: float | None = None,
+):
     """The clan's war in the current CWL round.
 
     Returns (kind, war):
@@ -615,36 +692,49 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
     """
     key = f"cwl:{clan_tag}"
     cached = cache_get(key)
-    if cached is not None:
+    if cached is not None and not _negative_needs_recheck(
+        key, cached, recheck_negative_after
+    ):
         return cached
 
-    try:
-        with timed_call("leaguegroup"):
-            group = await coc_client.get_league_group(clan_tag)
-    except coc.NotFound:
-        result = ("none", None)
-        cache_put(key, result, TTL_CWL_ABSENT)
-        return result
-    except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
-        # GatewayError is expected here: coc.py documents an upstream bug where
-        # requesting the league group of a clan searching for a CWL match times
-        # out. Still an unknown answer, so still an error.
-        print(f"[todo] CWL group lookup failed for {clan_tag}: {type(exc).__name__}")
-        return ("error", None)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[todo] CWL group lookup errored for {clan_tag}: {type(exc).__name__}: {exc}")
-        return ("error", None)
+    async with _fetch_lock(key):
+        cached = cache_get(key)
+        if cached is not None and not _negative_needs_recheck(
+            key, cached, recheck_negative_after
+        ):
+            return cached
 
-    if group is None or _state(group) in ("notInWar", "groupNotFound", "ended"):
-        result = ("none", None)
-        cache_put(key, result, TTL_CWL_ABSENT)
-        return result
+        try:
+            with timed_call("leaguegroup"):
+                group = await coc_client.get_league_group(clan_tag)
+        except coc.NotFound:
+            result = ("none", None)
+            cache_put(key, result, TTL_CWL_ABSENT)
+            return result
+        except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
+            # GatewayError is expected here: coc.py documents an upstream bug where
+            # requesting the league group of a clan searching for a CWL match times
+            # out. Still an unknown answer, so still an error.
+            print(f"[todo] CWL group lookup failed for {clan_tag}: {type(exc).__name__}")
+            result = ("error", None)
+            cache_put(key, result, TTL_ERROR)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            print(f"[todo] CWL group lookup errored for {clan_tag}: {type(exc).__name__}: {exc}")
+            result = ("error", None)
+            cache_put(key, result, TTL_ERROR)
+            return result
 
-    rounds = getattr(group, "rounds", None) or []
-    if not rounds:
-        result = ("none", None)
-        cache_put(key, result, TTL_CWL_ABSENT)
-        return result
+        if group is None or _state(group) in ("notInWar", "groupNotFound", "ended"):
+            result = ("none", None)
+            cache_put(key, result, TTL_CWL_ABSENT)
+            return result
+
+        rounds = getattr(group, "rounds", None) or []
+        if not rounds:
+            result = ("none", None)
+            cache_put(key, result, TTL_CWL_ABSENT)
+            return result
 
     # coc.py filters "#0" placeholder war tags out of rounds when building the
     # model, so the last remaining round is the newest one that has been drawn.
@@ -655,66 +745,72 @@ async def _get_cwl_round(coc_client: coc.Client, clan_tag: str):
     # handles the same case via get_current_war(cwl_round=current_preparation)
     # (classes/bot.py:664); this is the cheaper equivalent, costing one extra
     # round scan only during the transition window.
-    candidates: list[str] = []
-    for round_tags in (rounds[-1], rounds[-2] if len(rounds) > 1 else []):
-        for war_tag in round_tags:
-            if war_tag and war_tag != "#0" and war_tag not in candidates:
-                candidates.append(war_tag)
+        candidates: list[str] = []
+        for round_tags in (rounds[-1], rounds[-2] if len(rounds) > 1 else []):
+            for war_tag in round_tags:
+                if war_tag and war_tag != "#0" and war_tag not in candidates:
+                    candidates.append(war_tag)
 
-    if not candidates:
-        result = ("none", None)
-        cache_put(key, result, TTL_CWL_ABSENT)
-        return result
+        if not candidates:
+            result = ("none", None)
+            cache_put(key, result, TTL_CWL_ABSENT)
+            return result
 
     # Prefer an inWar round over a preparation one; remember the fallback.
-    fallback = None
+        fallback = None
 
-    for war_tag in candidates:
-        war_key = f"cwlwar:{war_tag}"
-        war = cache_get(war_key)
-        if war is None:
-            try:
-                with timed_call("leaguewar"):
-                    war = await coc_client.get_league_war(war_tag)
-            except (coc.NotFound, coc.PrivateWarLog):
-                continue
-            except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
-                print(f"[todo] CWL war {war_tag} failed: {type(exc).__name__}")
-                return ("error", None)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[todo] CWL war {war_tag} errored: {type(exc).__name__}: {exc}")
-                return ("error", None)
+        for war_tag in candidates:
+            war_key = f"cwlwar:{war_tag}"
+            war = cache_get(war_key)
             if war is None:
+                try:
+                    with timed_call("leaguewar"):
+                        war = await coc_client.get_league_war(war_tag)
+                except (coc.NotFound, coc.PrivateWarLog):
+                    continue
+                except (coc.Maintenance, coc.GatewayError, coc.HTTPException) as exc:
+                    print(f"[todo] CWL war {war_tag} failed: {type(exc).__name__}")
+                    result = ("error", None)
+                    cache_put(key, result, TTL_ERROR)
+                    return result
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[todo] CWL war {war_tag} errored: {type(exc).__name__}: {exc}")
+                    result = ("error", None)
+                    cache_put(key, result, TTL_ERROR)
+                    return result
+                if war is None:
+                    continue
+                # A finished CWL war is immutable - cache it hard. War tags are
+                # globally unique, so two family clans in one group share this entry.
+                ended = _state(war) == "warEnded"
+                cache_put(war_key, war, 24 * 60 * 60 if ended else TTL_CWL_ACTIVE)
+
+            ours = getattr(war, "clan", None)
+            theirs = getattr(war, "opponent", None)
+            if not ((ours is not None and ours.tag == clan_tag)
+                    or (theirs is not None and theirs.tag == clan_tag)):
                 continue
-            # A finished CWL war is immutable - cache it hard. War tags are
-            # globally unique, so two family clans in one group share this entry.
-            ended = _state(war) == "warEnded"
-            cache_put(war_key, war, 24 * 60 * 60 if ended else TTL_CWL_ACTIVE)
 
-        ours = getattr(war, "clan", None)
-        theirs = getattr(war, "opponent", None)
-        if not ((ours is not None and ours.tag == clan_tag)
-                or (theirs is not None and theirs.tag == clan_tag)):
-            continue
+            if _state(war) == "inWar":
+                result = ("war", war)
+                cache_put(key, result, TTL_CWL_ACTIVE)
+                return result
+            if fallback is None:
+                fallback = war
 
-        if _state(war) == "inWar":
-            result = ("war", war)
+        if fallback is not None:
+            # Our war exists but is not inWar (preparation, or already ended).
+            # Hand it back and let the view decide - it filters on state.
+            result = ("war", fallback)
             cache_put(key, result, TTL_CWL_ACTIVE)
             return result
-        if fallback is None:
-            fallback = war
 
-    if fallback is not None:
-        # Our war exists but is not inWar (preparation, or already ended).
-        # Hand it back and let the view decide - it filters on state.
-        result = ("war", fallback)
-        cache_put(key, result, TTL_CWL_ACTIVE)
+        # The group said we are in CWL but no war in either round names this clan.
+        # That is not "nothing to do" - it is a shape we did not expect. Say so.
+        print(f"[todo] CWL group for {clan_tag} listed rounds but no war matched the clan")
+        result = ("error", None)
+        cache_put(key, result, TTL_ERROR)
         return result
-
-    # The group said we are in CWL but no war in either round names this clan.
-    # That is not "nothing to do" - it is a shape we did not expect. Say so.
-    print(f"[todo] CWL group for {clan_tag} listed rounds but no war matched the clan")
-    return ("error", None)
 
 
 def _state(obj) -> str:
@@ -850,6 +946,7 @@ async def build_war_view(
     accounts: list[Account],
     sem: asyncio.Semaphore | None = None,
     candidates: dict[str, list[object]] | None = None,
+    recheck_negative_after: float | None = None,
 ) -> ViewData:
     """Regular-war hits still owed."""
     rows: list[Row] = []
@@ -861,7 +958,15 @@ async def build_war_view(
 
     sem = sem or new_semaphore()
     order = list(by_clan)
-    fetched = await gather_clans(sem, order, lambda t: _get_war(coc_client, t))
+    async def fetch_war(clan_tag: str):
+        if recheck_negative_after is None:
+            return await _get_war(coc_client, clan_tag)
+        return await _get_war(
+            coc_client, clan_tag,
+            recheck_negative_after=recheck_negative_after,
+        )
+
+    fetched = await gather_clans(sem, order, fetch_war)
     for clan_tag, (kind, war) in zip(order, fetched):
         members = by_clan[clan_tag]
 
@@ -918,6 +1023,7 @@ async def build_cwl_view(
     accounts: list[Account],
     sem: asyncio.Semaphore | None = None,
     candidates: dict[str, list[object]] | None = None,
+    recheck_negative_after: float | None = None,
 ) -> ViewData:
     """CWL hits still owed in the current round."""
     rows: list[Row] = []
@@ -928,7 +1034,15 @@ async def build_cwl_view(
 
     sem = sem or new_semaphore()
     order = list(by_clan)
-    fetched = await gather_clans(sem, order, lambda t: _get_cwl_round(coc_client, t))
+    async def fetch_cwl(clan_tag: str):
+        if recheck_negative_after is None:
+            return await _get_cwl_round(coc_client, clan_tag)
+        return await _get_cwl_round(
+            coc_client, clan_tag,
+            recheck_negative_after=recheck_negative_after,
+        )
+
+    fetched = await gather_clans(sem, order, fetch_cwl)
     for clan_tag, (kind, war) in zip(order, fetched):
         members = by_clan[clan_tag]
 
@@ -982,6 +1096,7 @@ async def build_blocked_view(
     accounts: list[Account],
     sem: asyncio.Semaphore | None = None,
     candidates: dict[str, list[object]] | None = None,
+    recheck_negative_after: float | None = None,
 ) -> ViewData:
     """Accounts sitting in clans whose war state we cannot read.
 
@@ -1005,7 +1120,15 @@ async def build_blocked_view(
 
     sem = sem or new_semaphore()
     order = list(by_clan)
-    fetched = await gather_clans(sem, order, lambda t: _get_war(coc_client, t))
+    async def fetch_war(clan_tag: str):
+        if recheck_negative_after is None:
+            return await _get_war(coc_client, clan_tag)
+        return await _get_war(
+            coc_client, clan_tag,
+            recheck_negative_after=recheck_negative_after,
+        )
+
+    fetched = await gather_clans(sem, order, fetch_war)
     for clan_tag, (kind, _war) in zip(order, fetched):
         members = by_clan[clan_tag]
         if kind not in ("private", "error"):

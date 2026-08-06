@@ -18,7 +18,7 @@ Verified in hikari 2.3.5, `hikari/internal/routes.py`:
 |---|---|---|
 | `bot.rest.create_message(channel=...)` | `POST /channels/{channel}/messages` | **anything else posting to that same channel** |
 | `ctx.defer()` | `POST /interactions/{interaction}/{token}/callback` | nothing — see below |
-| `ctx.respond()` after a defer | `PATCH /webhooks/{webhook}/{token}/messages/@original` | nothing else in this bot |
+| `ctx.respond()` after a defer | `POST /webhooks/{webhook}/{token}` (Discord treats the first followup as the original response) | nothing else in this bot |
 | a followup | `POST /webhooks/{webhook}/{token}` | nothing else in this bot |
 | deleting the ack | `DELETE /webhooks/{webhook}/{token}/messages/@original` | nothing else in this bot |
 
@@ -32,8 +32,7 @@ command is slow to acknowledge, the deferral is not the reason.
 `POST /channels/{id}/messages` on a **user's DM channel** is one bucket shared
 by everything the bot sends that user. Two known writers:
 
-- `extensions/commands/todo.py` — the `/todo` panel (until it moved to the
-  interaction-response route, see below)
+- `extensions/commands/todo.py` — the standalone DM `/todo` panel
 - `extensions/tasks/band_sync_ical.py:268` — FWA sync alert DMs
 
 **A burst of sync alerts and a `/todo` compete directly**, and either can be
@@ -44,15 +43,24 @@ first thing to check — it is expected behaviour, not a fault.
 messages back to back to one channel, which puts two writes into one bucket per
 run by itself.
 
-### What `/todo` did about it
+### What `/todo` does about it
 
-Moved the panel from `create_message` to `ctx.respond()` after a defer. That is
-a different route, therefore a different bucket, therefore not contended by
-anything else this bot does — and one REST call rather than three.
+The DM command defers first, then sends the panel with `create_message`, and
+deletes the deferred placeholder only after the standalone message succeeds.
+That removes the "X used /todo" response treatment and produces a normal
+bot-authored message that the automatic checker can keep editing.
 
-The cost is the "X used /todo" header, which the standalone-message pattern had
-existed to avoid. Reliability beat cosmetics: a dashboard that always appears is
-worth more than a prettier one that sometimes does not.
+This deliberately accepts exposure to the shared DM-channel bucket. If the
+standalone send raises, `/todo` falls back to editing the deferred interaction
+response, so route choice cannot leave the user with no panel. A rate-limit
+wait handled inside hikari may still make the standalone send slow without
+raising; the early defer keeps the interaction valid while that wait occurs.
+The fallback is marked manual-only and is not stored as an automatic session:
+Discord interaction tokens expire after 15 minutes, while these panels may run
+for up to 72 hours.
+
+Guild `/todo` panels stay on the ephemeral interaction response and do not use
+the standalone route or automatic checks.
 
 `clan/dashboard/dashboard.py` still uses the defer → `create_message` → delete-ack
 pattern and still carries this exposure.
