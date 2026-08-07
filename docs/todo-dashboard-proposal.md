@@ -65,7 +65,19 @@ through to the current CWL round if `state == notInWar`. Split them in the UI on
 A member with zero attacks has no `attacks` key in the JSON at all; coc.py
 returns `[]`, so `len()` is safe but raw dict access is not.
 
-### ⚠️ The raid trap — verified live, 2026-08-02 mid-weekend
+### ⚠️ The raid traps — verified live during 2026-08-02 and 2026-08-07 weekends
+
+`state: "ongoing"` does **not** prove that the requested clan opted in. On
+2026-08-07, unstarted clans returned an ongoing entry with `attackLog: []`,
+`totalAttacks: 0`, and `members: []`; some already had a non-empty
+`defenseLog`. Conversely, opted-in clans were observed with `totalAttacks: 0`
+and `members: []` but a populated `attackLog` containing the assigned offensive
+opponent at `attackCount: 0`.
+
+Therefore clan participation is `state == "ongoing" and bool(attackLog)`.
+Do not use `defenseLog`, member count, or total attacks. An ongoing empty
+offensive log is a short-lived "not started yet" result: cache it for minutes,
+not until next Friday, because leadership may opt in later that weekend.
 
 `capitalraidseasons` `members` **only contains players who have already
 attacked.** Measured on `#2PPCL2GYP`: 42-member clan, raid `state: "ongoing"`,

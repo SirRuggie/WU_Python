@@ -83,17 +83,27 @@ Both still hold in coc.py 4.0.0 — `ExtendedEnum.__str__` and `WarState` are
 unchanged there, checked directly at the v4.0.0 tag. **This trap does not go
 away with a version bump.**
 
-So `_get_raid`'s `str(getattr(entry, "state", "")) != "ongoing"` is correct
-**by luck of the type**, not by design. It was written before `_state()` existed.
-It is safe today; if coc.py ever converts that field to an enum, the raid view
-silently reports "no raid weekend" forever. Route it through `_state()` if you
-touch it.
+`_get_raid` now routes this field through `_state()` too. The installed type is
+still a plain string, but keeping one state-normalisation rule prevents a future
+coc.py model change from silently emptying the raid view.
 
-**The raid `== "ongoing"` branch has never been observed returning True.** Every
-test so far has been out of season, where "not ongoing" is also the correct
-answer — the probe cannot fail differently from the expected result. This is the
-same trap as the ClashKing link-API negative (see
-[`clashking-discord-links.md`](clashking-discord-links.md)). It needs a Friday.
+### Raid `ongoing` is not clan participation
+
+Verified against the live API on 2026-08-07 through the bot's configured proxy:
+
+| Clan condition | `state` | `attackLog` | `totalAttacks` | `members` | `defenseLog` |
+|---|---|---:|---:|---:|---:|
+| Weekend open, clan not opted in | `ongoing` | empty | 0 | empty | may be non-empty |
+| Clan opted in, before its first attack | `ongoing` | **non-empty** | 0 | empty | may be empty |
+
+The offensive `attackLog` is populated when matchmaking assigns the clan its
+first target, before an attack is made. It is therefore the clan-specific start
+signal. `state` only gates the global window; `totalAttacks` and `members` are
+too late, while `defenseLog` can belong to a clan that never opted in.
+
+This is a separate trap from the member-roster rule below. First require an
+ongoing entry with a non-empty offensive log; only then does an absent member
+mean that player owes all five attacks.
 
 ---
 
@@ -502,7 +512,7 @@ age it. Add its prefix to DATA_PREFIXES.
 | `war:` | `war:{clan_tag}` | 120 s active / 15 min idle | yes |
 | `cwl:` | `cwl:{clan_tag}` | 60 min absent / 10 min active | yes |
 | `cwlwar:` | `cwlwar:{war_tag}` | 10 min active / **24 h ended** | yes, **since `40c97ef`** |
-| `raid:` | `raid:{clan_tag}` | seconds until Friday — *days* | yes |
+| `raid:` | `raid:{clan_tag}` | 5 min active/not-started; until Friday out of season | yes |
 | `links:` | `links:{discord_id}` | 6 h | yes, via `extra` |
 | `clanlogos` | literal | 60 min | yes, via `extra` |
 
@@ -1237,14 +1247,20 @@ verification must confirm that a second `/todo` changes that row's message and
 generation, turns the prior Discord panel manual, and that a delayed automatic
 cycle cannot edit or delete the replacement.
 
-**Not yet verified:** the Raids view with a live raid weekend — `state ==
-"ongoing"` has never returned True, because every test has been out of season
-where "not ongoing" is also the correct answer. That probe cannot fail
-differently from success. It needs a Friday.
+**Verified against live Raid Weekend data:** both an unstarted clan with a
+defensive match and an opted-in clan with zero attacks were observed on
+2026-08-07. That established `attackLog`, rather than `state`, as the clan-start
+signal. The user also observed the original state-only path rendering live raid
+rows, which exposed the false positives this fix addresses.
+
+**Not yet verified on the deployed bot:** the corrected filtering and
+"None of your clans have started" copy. Their local regression tests and live
+API-shape probes pass, but production confirmation must wait for deployment.
 
 Also unverified: whether the H2/H3 type step is visibly distinct on mobile
-(nobody has said either way), and coc.py 3.10.0's `coc/raid.py` `max()` crash
-fix, which is in the raid path and therefore in the same untested window.
+(nobody has said either way), and coc.py 3.10.0's `coc/raid.py` district
+`max()` fix. The live classifier check materialised `attackLog`, but not its
+lazy district objects where that fix runs.
 
 **CONFIRMED, was inferred: the 40-component limit, and that it counts nested
 children.** Discord stated it verbatim:

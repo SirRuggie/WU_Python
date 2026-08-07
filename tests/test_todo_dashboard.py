@@ -101,6 +101,29 @@ def test_incomplete_empty_view_never_renders_all_caught_up():
     assert "some accounts couldn't be checked" in descriptions
 
 
+def test_unstarted_raid_weekend_never_renders_all_caught_up():
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_RAID] = todo_data.ViewData(
+        unavailable="None of your clans have started Raid Weekend yet."
+    )
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_RAID, 0, data
+    )]
+    text = _payload_text(payload)
+
+    assert "None of your clans have started Raid Weekend yet." in text
+    assert "Raid weekend runs Friday 07:00 → Monday 07:00 UTC." in text
+    assert "All caught up" not in text
+    raid_options = [
+        node for node in _walk(payload)
+        if node.get("label") == todo.VIEW_LABEL[todo.VIEW_RAID]
+    ]
+    assert [option["description"] for option in raid_options] == [
+        "None of your clans have started Raid Weekend yet"
+    ]
+
+
 def test_navigation_uses_hits_left_and_keeps_private_logs_separate():
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     data[todo.VIEW_WAR] = todo_data.ViewData(rows=_private_rows(1))

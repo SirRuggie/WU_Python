@@ -1263,13 +1263,29 @@ async def build_blocked_view(
 TTL_RAID_ACTIVE = 300        # attacks trickle in over ~3 days; 5 min lag is invisible
 
 
+def _raid_weekend_is_open(now: datetime | None = None) -> bool:
+    """Whether the global Friday 07:00 -> Monday 07:00 UTC window is open.
+
+    The API can return an empty list or the previous ended entry before a clan
+    opts in. The clock is therefore needed for cache duration and for
+    distinguishing "not started yet" from "there is no weekend right now".
+    It is never used as proof that a specific clan has started; only a current
+    entry with a non-empty offensive attack log proves that.
+    """
+    now = now or datetime.now(timezone.utc)
+    days_since_friday = (now.weekday() - 4) % 7  # Monday=0 ... Friday=4
+    opens = (now - timedelta(days=days_since_friday)).replace(
+        hour=7, minute=0, second=0, microsecond=0)
+    return opens <= now < opens + timedelta(days=3)
+
+
 def _seconds_until_raid_opens() -> int:
     """Seconds until the next raid weekend opens (Friday 07:00 UTC).
 
     Used as a negative-cache TTL: outside the weekend the answer is "no raid"
-    and stays that way until Friday, so there is no reason to ask again. Gated
-    on the clock ONLY for the cache duration - never for the answer itself,
-    which always comes from the API's own `state`.
+    and stays that way until Friday, so there is no reason to ask again. During
+    the open window, `_raid_weekend_is_open()` instead keeps missing/unstarted
+    results short-lived so a clan that opts in later can appear.
     """
     now = datetime.now(timezone.utc)
     days_ahead = (4 - now.weekday()) % 7          # Monday=0 ... Friday=4
@@ -1285,6 +1301,7 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
 
     Returns (kind, entry):
         ("raid", RaidLogEntry)  a raid weekend is running
+        ("not_started", None)   weekend open, but this clan has not started
         ("none", None)          no raid weekend right now
         ("error", None)         could not read - NOT the same as "none"
 
@@ -1299,9 +1316,22 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
     try:
         with timed_call("raidlog"):
             log = await coc_client.get_raid_log(clan_tag, limit=1)
-    except (coc.NotFound, coc.PrivateWarLog):
-        result = ("none", None)
-        cache_put(key, result, _seconds_until_raid_opens())
+    except coc.NotFound:
+        weekend_open = _raid_weekend_is_open()
+        result = ("not_started", None) if weekend_open else ("none", None)
+        ttl = (
+            TTL_RAID_ACTIVE
+            if weekend_open
+            else _seconds_until_raid_opens()
+        )
+        cache_put(key, result, ttl)
+        return result
+    except coc.PrivateWarLog:
+        # Raid logs have no private-log setting. coc.py uses this exception for
+        # any 403, so treating it as "not started" would hide an auth/proxy
+        # failure as a definitive answer.
+        result = ("error", None)
+        cache_put(key, result, TTL_ERROR)
         return result
     except coc.Maintenance:
         coc_maintenance.note_maintenance()
@@ -1320,12 +1350,22 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
     except (TypeError, IndexError):
         entry = None
 
-    # Gate on the API's own state, never on the calendar. Midweek this endpoint
-    # still returns 200 with the PREVIOUS weekend's entry, state "ended" - and
-    # rendering that would tell every member they owe six attacks.
-    if entry is None or str(getattr(entry, "state", "")) != "ongoing":
-        result = ("none", None)
-        cache_put(key, result, _seconds_until_raid_opens())
+    # `state == "ongoing"` describes the global weekend window, not whether
+    # this clan opted in. An unstarted clan can have an ongoing placeholder and
+    # even a defense log. Opt-in assigns an offensive opponent immediately, so
+    # a non-empty attack_log is the clan-specific start signal -- including the
+    # valid pre-first-attack shape where totalAttacks == 0 and members == [].
+    state = _state(entry) if entry is not None else ""
+    if entry is None or state != "ongoing":
+        weekend_open = _raid_weekend_is_open()
+        result = ("not_started", None) if weekend_open else ("none", None)
+        ttl = TTL_RAID_ACTIVE if weekend_open else _seconds_until_raid_opens()
+        cache_put(key, result, ttl)
+        return result
+
+    if not getattr(entry, "attack_log", None):
+        result = ("not_started", None)
+        cache_put(key, result, TTL_RAID_ACTIVE)
         return result
 
     result = ("raid", entry)
@@ -1349,13 +1389,15 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
     (commands/player/utils.py get_raid_hits) - it is not a workaround, it is
     the only correct reading of this endpoint.
 
-    This is also the only view that needs a get_clan call: war and CWL take the
-    clan tag from the player payload, but the roster is only on the clan.
+    No extra get_clan call is needed. The resolved linked Account objects are
+    the only roster this personal dashboard must check; group those by their
+    current clan, then look up each linked tag in that clan's raid entry.
     """
     rows: list[Row] = []
     notes: list[str] = []
     unreadable = 0
-    any_ongoing = False
+    any_started = False
+    any_not_started = False
 
     by_clan: dict[str, list[Account]] = {}
     for acct in accounts:
@@ -1373,10 +1415,13 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
         if kind == "error":
             unreadable += len(members)
             continue
-        if kind == "none" or entry is None:
+        if kind == "not_started":
+            any_not_started = True
+            continue
+        if kind != "raid" or entry is None:
             continue
 
-        any_ongoing = True
+        any_started = True
         ends = None
         end_time = getattr(entry, "end_time", None)
         inner = getattr(end_time, "time", None)
@@ -1420,13 +1465,18 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
     if unreadable:
         notes.append(_gap_note(unreadable, "raid"))
 
-    _d(f"build_raid_view rows={len(rows)} any_ongoing={any_ongoing} unreadable={unreadable}")
+    _d(f"build_raid_view rows={len(rows)} any_started={any_started} "
+       f"any_not_started={any_not_started} unreadable={unreadable}")
 
-    # No clan has a running raid AND nothing failed => the weekend is simply not
-    # on. That is a different message from "you have used all your attacks".
+    # No clan has started AND nothing failed: distinguish an open global
+    # weekend from no weekend at all. Both differ from "you used all attacks".
     unavailable = ""
-    if not any_ongoing and not unreadable:
-        unavailable = "No raid weekend right now."
+    if not any_started and not unreadable:
+        unavailable = (
+            "None of your clans have started Raid Weekend yet."
+            if any_not_started
+            else "No raid weekend right now."
+        )
 
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows),
                     unavailable=unavailable)

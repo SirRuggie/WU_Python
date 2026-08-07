@@ -383,6 +383,7 @@ def _notice(title: str, body: str, view: str = VIEW_WAR, counts: dict | None = N
 
 def _nav_block(view: str, counts: dict, pager=None, *,
                unchecked: set[str] | None = None,
+               unavailable: dict[str, str] | None = None,
                checked_at: int | None = None,
                auto_refresh: bool = False,
                refresh_until: datetime | None = None) -> list:
@@ -438,7 +439,9 @@ def _nav_block(view: str, counts: dict, pager=None, *,
 
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
-        _nav_select(view, counts, unchecked=unchecked),
+        _nav_select(
+            view, counts, unchecked=unchecked, unavailable=unavailable
+        ),
         # Pagination, when there is more than one page. Above the footer, below
         # the view select - it belongs to the content, not to the caption row.
         *([pager] if pager is not None else []),
@@ -467,7 +470,8 @@ def _nav_block(view: str, counts: dict, pager=None, *,
 
 
 def _nav_select(view: str, counts: dict, *,
-                unchecked: set[str] | None = None) -> ActionRow:
+                unchecked: set[str] | None = None,
+                unavailable: dict[str, str] | None = None) -> ActionRow:
     """House-style navigation: a TextSelectMenu, not a row of coloured buttons.
 
     clan/dashboard/dashboard.py navigates with a select whose options carry an
@@ -480,6 +484,7 @@ def _nav_select(view: str, counts: dict, *,
     number. This is a plain action that reads ctx.interaction.values[0] itself.
     """
     unchecked = unchecked or set()
+    unavailable = unavailable or {}
 
     def describe(key: str) -> str:
         value = counts.get(key)
@@ -491,6 +496,8 @@ def _nav_select(view: str, counts: dict, *,
                 verb = "has" if value == 1 else "have"
                 return f"{value} {noun} {verb} hits left · some unchecked"
             return "some accounts couldn't be checked"
+        if value == 0 and unavailable.get(key):
+            return unavailable[key].rstrip(".")
         if value == 0:
             return "no hits left"
         noun = "account" if value == 1 else "accounts"
@@ -822,6 +829,11 @@ def render_dashboard(view: str, page: int, data: dict, *,
         k for k, v in data.items()
         if v is not None and v.ok and bool(v.incomplete)
     }
+    unavailable = {
+        k: v.unavailable
+        for k, v in data.items()
+        if v is not None and v.ok and v.unavailable
+    }
     current = data.get(view)
 
     # Title carries the count so the header line does one more job. NO trailing
@@ -956,7 +968,8 @@ def render_dashboard(view: str, page: int, data: dict, *,
         ])
 
     body.extend(_nav_block(
-        view, counts, pager, unchecked=unchecked, checked_at=checked_at,
+        view, counts, pager, unchecked=unchecked, unavailable=unavailable,
+        checked_at=checked_at,
         auto_refresh=auto_refresh,
         refresh_until=refresh_until,
     ))
