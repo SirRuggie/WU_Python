@@ -40,9 +40,11 @@ Design rules enforced here, each of which cost real investigation to establish:
   dispatcher's state lookup can miss safely because every handler defaults its
   parameters and reads action_id.
 
-  DM auto-refresh reads todo_sessions in the background, but interaction
-  rendering remains stateless. Page comes from the custom_id and user identity
-  from the click, so an old panel still works after its scheduled window ends.
+  DM auto-refresh reads todo_sessions in the background. Interaction ROUTING
+  remains stateless, while rendering normally reuses the bounded snapshot that
+  produced that exact message. Page still comes from the custom_id and user
+  identity from the click; a snapshot miss simply reloads, so an old panel
+  still works after eviction or a process restart.
 
   NO ctx.guild_id. It is None in a DM, and the house header pattern
   (clan/dashboard/dashboard.py:44 -> bot.cache.get_guild(ctx.guild_id)
@@ -58,7 +60,8 @@ import asyncio
 import contextlib
 import time
 import weakref
-from dataclasses import replace
+from collections import OrderedDict
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 
 import coc
@@ -92,6 +95,82 @@ _auto_refresh_task: asyncio.Task | None = None
 _refresh_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
+
+# Keep the complete four-view result that was used to render each live panel.
+# Component routing remains stateless: a cache miss still performs the normal
+# load, so old messages and process restarts keep working. Count and age bounds
+# keep abandoned Discord messages from retaining account data indefinitely.
+PANEL_SNAPSHOT_LIMIT = 512
+PANEL_SNAPSHOT_TTL_SECONDS = todo_sessions.TTL_SECONDS
+
+
+@dataclass(frozen=True)
+class _DashboardSnapshot:
+    data: dict[str, todo_data.ViewData] | None
+    problem: list | None
+    checked_at: int
+    stored_at: float
+
+
+_panel_snapshots: OrderedDict[
+    tuple[int, int, int], _DashboardSnapshot
+] = OrderedDict()
+
+
+def _snapshot_key(
+    user_id: int, channel_id: int, message_id: int
+) -> tuple[int, int, int] | None:
+    key = (int(user_id), int(channel_id), int(message_id))
+    return key if all(key) else None
+
+
+def _snapshot_get(
+    user_id: int, channel_id: int, message_id: int
+) -> _DashboardSnapshot | None:
+    key = _snapshot_key(user_id, channel_id, message_id)
+    if key is None:
+        return None
+    now = time.monotonic()
+    _snapshot_prune(now)
+    snapshot = _panel_snapshots.get(key)
+    if snapshot is None:
+        return None
+    _panel_snapshots.move_to_end(key)
+    return snapshot
+
+
+def _snapshot_prune(observed_at: float | None = None) -> None:
+    """Remove age-expired snapshots; the scheduler calls this every minute."""
+    now = time.monotonic() if observed_at is None else float(observed_at)
+    for key, snapshot in tuple(_panel_snapshots.items()):
+        if now - snapshot.stored_at >= PANEL_SNAPSHOT_TTL_SECONDS:
+            _panel_snapshots.pop(key, None)
+
+
+def _snapshot_put(
+    user_id: int,
+    channel_id: int,
+    message_id: int,
+    data: dict[str, todo_data.ViewData] | None,
+    problem: list | None,
+    checked_at: int,
+) -> None:
+    key = _snapshot_key(user_id, channel_id, message_id)
+    if key is None or (data is None and problem is None):
+        return
+    _snapshot_prune()
+    _panel_snapshots[key] = _DashboardSnapshot(
+        data, problem, int(checked_at), time.monotonic()
+    )
+    _panel_snapshots.move_to_end(key)
+    while len(_panel_snapshots) > PANEL_SNAPSHOT_LIMIT:
+        _panel_snapshots.popitem(last=False)
+
+
+def _snapshot_drop(user_id: int, channel_id: int, message_id: int) -> None:
+    key = _snapshot_key(user_id, channel_id, message_id)
+    if key is not None:
+        _panel_snapshots.pop(key, None)
 
 
 def _refresh_lock(owner_id: str) -> asyncio.Lock:
@@ -1349,6 +1428,7 @@ async def _activate_auto_panel(
     view: str,
     *,
     kind: str = "dashboard",
+    checked_at: int | None = None,
 ) -> bool:
     """Make this the sole automatic panel, then promote its neutral footer."""
     user_id = int(ctx.user.id)
@@ -1373,7 +1453,7 @@ async def _activate_auto_panel(
         _generation, until = claimed
         promoted = _automatic_status_panel(
             components,
-            checked_at=int(time.time()),
+            checked_at=int(checked_at if checked_at is not None else time.time()),
             refresh_until=until,
         )
         try:
@@ -1433,6 +1513,7 @@ async def _takeover_locked(
                   f"old={old_message_id} new={message_id}; old remains active: "
                   f"{type(exc).__name__}: {exc}")
             return None
+        _snapshot_drop(user_id, channel_id, old_message_id)
 
     # Numeric pre-owner rows are still scheduler-visible for upgrade safety.
     # Remove them before claim and require success, otherwise a demoted legacy
@@ -1487,14 +1568,24 @@ class Todo(
             refresh_until=notice_refresh_until,
         )
         if problem:
-            delivered = _manual_fallback_panel(problem) if is_dm else problem
+            checked_at = int(time.time())
+            delivered = (
+                _manual_fallback_panel(problem, checked_at=checked_at)
+                if is_dm else problem
+            )
             with perf.timing("send"):
                 sent, schedulable = await _deliver_panel(ctx, bot, delivered)
+            message_id = int(getattr(sent, "id", 0) or 0)
+            _snapshot_put(
+                int(ctx.user.id), int(ctx.channel_id), message_id,
+                data, problem, checked_at,
+            )
             perf.meta["result"] = "notice"
             print(perf.line(), flush=True)
             if schedulable:
                 await _activate_auto_panel(
                     ctx, bot, mongo, sent, problem, VIEW_WAR, kind="notice",
+                    checked_at=checked_at,
                 )
             return
         # Open on the first view that actually has work. Always opening on War
@@ -1527,6 +1618,12 @@ class Todo(
         with perf.timing("send"):
             sent, schedulable = await _deliver_panel(ctx, bot, delivered)
 
+        message_id = int(getattr(sent, "id", 0) or 0)
+        _snapshot_put(
+            int(ctx.user.id), int(ctx.channel_id), message_id,
+            data, None, checked_at,
+        )
+
         # Printed BEFORE the todo_sessions write. The line must describe what
         # the user actually waited for, and the row is bookkeeping that happens
         # once the panel is already on screen.
@@ -1536,6 +1633,7 @@ class Todo(
         if schedulable:
             await _activate_auto_panel(
                 ctx, bot, mongo, sent, components, opening,
+                checked_at=checked_at,
             )
 
 
@@ -1581,16 +1679,34 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
                 mongo=mongo, trigger=trigger, _lock_held=True,
             )
 
-    refresh_until = (
-        todo_sessions.new_refresh_until() if is_dm else None
+    snapshot = None if force else _snapshot_get(
+        user_id, channel_id, message_id
     )
-    data, problem = await _load(
-        bot, coc_client, ctx.user.id, force=force, mongo=mongo, perf=perf,
-        auto_refresh=is_dm,
-        refresh_until=refresh_until,
-    )
-    checked_at = int(time.time())
+    loaded = snapshot is None
+    if snapshot is not None:
+        data, problem = snapshot.data, snapshot.problem
+        checked_at = snapshot.checked_at
+        perf.meta["snapshot"] = "hit"
+    else:
+        refresh_until = (
+            todo_sessions.new_refresh_until() if is_dm else None
+        )
+        data, problem = await _load(
+            bot, coc_client, ctx.user.id, force=force, mongo=mongo, perf=perf,
+            auto_refresh=is_dm,
+            refresh_until=refresh_until,
+        )
+        checked_at = int(time.time())
+        perf.meta["snapshot"] = "bypass" if force else "miss"
     kind = "notice" if problem else "dashboard"
+
+    def publish_snapshot() -> None:
+        if not loaded or not message_id or not channel_id:
+            return
+        _snapshot_put(
+            user_id, channel_id, message_id,
+            data, problem, checked_at,
+        )
 
     def render(*, automatic: bool, until: datetime | None) -> list:
         with perf.timing("render"):
@@ -1616,6 +1732,7 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
         rendered = problem if problem else render(automatic=False, until=None)
         with perf.timing("send"):
             await ctx.respond(components=rendered, edit=True)
+        publish_snapshot()
         print(perf.line(), flush=True)
         return
 
@@ -1623,6 +1740,7 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
         rendered = render(automatic=False, until=None)
         with perf.timing("send"):
             await ctx.respond(components=rendered, edit=True)
+        publish_snapshot()
         print(perf.line(), flush=True)
         return
 
@@ -1671,7 +1789,10 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
                     page=page,
                     kind=kind,
                     trigger=trigger,
-                    checked_at=datetime.fromtimestamp(checked_at, tz=timezone.utc),
+                    checked_at=(
+                        datetime.fromtimestamp(checked_at, tz=timezone.utc)
+                        if loaded else None
+                    ),
                 )
                 if updated:
                     exact_until = owner.get("refresh_until")
@@ -1682,6 +1803,7 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
         # time after this owner lock is released.
         with perf.timing("send"):
             await ctx.respond(components=rendered, edit=True)
+        publish_snapshot()
     print(perf.line(), flush=True)
 
 
@@ -1820,6 +1942,7 @@ async def _refresh_session(
         or (legacy and not valid_legacy)
         or (not legacy and not valid_current)
     ):
+        _snapshot_drop(user_id, channel_id, message_id)
         await todo_sessions.discard(mongo, document_id)
         return "removed"
 
@@ -1903,6 +2026,14 @@ async def _refresh_session(
             await bot.rest.edit_message(
                 channel_id, message_id, components=rendered
             )
+            _snapshot_put(
+                user_id,
+                channel_id,
+                message_id,
+                data,
+                problem,
+                int(checked_at.timestamp()),
+            )
             recorded = await todo_sessions.mark_refreshed(
                 mongo, owner_id, message_id, generation,
                 checked_at=checked_at,
@@ -1916,6 +2047,7 @@ async def _refresh_session(
             )
             return "failed"
     except (hikari.NotFoundError, hikari.ForbiddenError):
+        _snapshot_drop(user_id, channel_id, message_id)
         removed = await todo_sessions.remove(
             mongo, owner_id, message_id, generation
         )
@@ -1936,6 +2068,7 @@ async def _refresh_session(
 
 async def run_auto_refresh_cycle(bot, coc_client, mongo) -> dict[str, int]:
     """Refresh every due DM panel once, with a single shared concurrency cap."""
+    _snapshot_prune()
     # A shared ten-minute freshness boundary prevents staggered panels from
     # turning the one-minute scheduler poll into one negative API recheck per
     # minute for popular clans.

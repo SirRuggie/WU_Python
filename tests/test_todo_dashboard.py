@@ -4,9 +4,18 @@ import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from extensions import components
 from extensions.commands import todo
 from utils import todo_data
+
+
+@pytest.fixture(autouse=True)
+def _clear_panel_snapshots():
+    todo._panel_snapshots.clear()
+    yield
+    todo._panel_snapshots.clear()
 
 
 def _walk(value):
@@ -275,6 +284,48 @@ def test_guild_delivery_edits_ephemeral_interaction_response():
     assert interaction.edits == [{"components": ["panel"]}]
 
 
+@pytest.mark.parametrize("notice", [False, True])
+def test_initial_delivery_seeds_exact_panel_snapshot(monkeypatch, notice):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    problem = (
+        todo._notice("Temporary problem", "Try again shortly.")
+        if notice else None
+    )
+    activations = []
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+
+        async def defer(self, **kwargs):
+            assert kwargs == {"ephemeral": False}
+
+    async def fake_load(*args, **kwargs):
+        return (None, problem) if notice else (data, None)
+
+    async def fake_deliver(*args, **kwargs):
+        return SimpleNamespace(id=55), True
+
+    async def fake_activate(*args, **kwargs):
+        activations.append((args, kwargs))
+        assert todo._snapshot_get(77, 66, 55) is not None
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo, "_deliver_panel", fake_deliver)
+    monkeypatch.setattr(todo, "_activate_auto_panel", fake_activate)
+
+    asyncio.run(todo.Todo.invoke(
+        todo.Todo(), Ctx(), object(), object(), object()
+    ))
+
+    snapshot = todo._snapshot_get(77, 66, 55)
+    assert snapshot.data is (None if notice else data)
+    assert snapshot.problem is (problem if notice else None)
+    assert len(activations) == 1
+
+
 def test_todo_actions_own_their_response_through_the_lock():
     for name in (
         "todo_war", "todo_cwl", "todo_raid", "todo_private",
@@ -324,6 +375,7 @@ def test_panel_is_promoted_only_after_session_registration(monkeypatch):
 def test_takeover_demotes_all_old_panels_before_claim(monkeypatch):
     events = []
     rest = _Rest()
+    old_data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     old_documents = [
         {"_id": "dm:7:99", "message_id": 10, "generation": "old"},
         {"_id": 12},
@@ -354,6 +406,8 @@ def test_takeover_demotes_all_old_panels_before_claim(monkeypatch):
     monkeypatch.setattr(todo.todo_sessions, "active_panels", active_panels)
     monkeypatch.setattr(todo.todo_sessions, "claim", claim)
     monkeypatch.setattr(todo.todo_sessions, "remove_legacy_rows", cleanup)
+    todo._snapshot_put(7, 99, 10, old_data, None, 1_725_000_000)
+    todo._snapshot_put(7, 99, 12, old_data, None, 1_725_000_000)
 
     claimed = asyncio.run(todo._takeover_locked(
         SimpleNamespace(rest=rest), object(), user_id=7, channel_id=99,
@@ -373,6 +427,8 @@ def test_takeover_demotes_all_old_panels_before_claim(monkeypatch):
         text = _payload_text(payload)
         assert "make it automatic" in text
         assert "Rechecks" not in text
+    assert todo._snapshot_get(7, 99, 10) is None
+    assert todo._snapshot_get(7, 99, 12) is None
 
 
 def test_takeover_aborts_before_claim_when_old_panel_cannot_be_demoted(monkeypatch):
@@ -604,6 +660,7 @@ def test_neutral_footer_preserves_dashboard_controls():
 def test_navigation_preserves_deadline_and_retired_panel_stays_manual(monkeypatch):
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+    checked_at = 1_725_000_000
     updates = []
 
     class Ctx:
@@ -619,7 +676,7 @@ def test_navigation_preserves_deadline_and_retired_panel_stays_manual(monkeypatc
             self.responses.append(kwargs)
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        raise AssertionError("navigation must reuse the rendered snapshot")
 
     async def current_owner(*args, **kwargs):
         return True, {
@@ -635,6 +692,7 @@ def test_navigation_preserves_deadline_and_retired_panel_stays_manual(monkeypatc
     monkeypatch.setattr(todo.todo_sessions, "read_owner", current_owner)
     monkeypatch.setattr(todo.todo_sessions, "update_navigation", update)
     todo._refresh_locks.clear()
+    todo._snapshot_put(77, 66, 55, data, None, checked_at)
     active_ctx = Ctx()
 
     asyncio.run(todo._switch(
@@ -647,7 +705,9 @@ def test_navigation_preserves_deadline_and_retired_panel_stays_manual(monkeypatc
         for component in active_ctx.responses[0]["components"]
     ]
     assert f"Stops <t:{int(until.timestamp())}:R>" in _payload_text(active_payload)
+    assert f"Checked <t:{checked_at}:R>" in _payload_text(active_payload)
     assert updates[0]["page"] == 2
+    assert updates[0]["checked_at"] is None
     assert "refresh_until" not in updates[0]
 
     async def different_owner(*args, **kwargs):
@@ -671,6 +731,61 @@ def test_navigation_preserves_deadline_and_retired_panel_stays_manual(monkeypatc
     assert "Use Check now to update" in retired_text
     assert "Rechecks" not in retired_text
     assert len(updates) == 1
+
+
+def test_notice_navigation_reuses_snapshot_without_rechecking(monkeypatch):
+    checked_at = 1_725_000_000
+    until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
+    problem = todo._notice(
+        "Temporary problem", "Try again shortly.", checked_at=checked_at,
+    )
+    updates = []
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(message=SimpleNamespace(id=55))
+
+        def __init__(self):
+            self.responses = []
+
+        async def respond(self, **kwargs):
+            self.responses.append(kwargs)
+
+    async def should_not_load(*args, **kwargs):
+        raise AssertionError("notice navigation must reuse its snapshot")
+
+    async def current_owner(*args, **kwargs):
+        return True, {
+            "message_id": 55, "generation": "gen",
+            "refresh_until": until,
+        }
+
+    async def update(*args, **kwargs):
+        updates.append(kwargs)
+        return True
+
+    monkeypatch.setattr(todo, "_load", should_not_load)
+    monkeypatch.setattr(todo.todo_sessions, "read_owner", current_owner)
+    monkeypatch.setattr(todo.todo_sessions, "update_navigation", update)
+    todo._snapshot_put(77, 66, 55, None, problem, checked_at)
+    todo._refresh_locks.clear()
+    ctx = Ctx()
+
+    asyncio.run(todo._switch(
+        ctx, todo.VIEW_CWL, "0", object(), object(), mongo=object(),
+        trigger="nav:select",
+    ))
+
+    payload = [
+        component.build()
+        for component in ctx.responses[0]["components"]
+    ]
+    text = _payload_text(payload)
+    assert "Temporary problem" in text
+    assert f"Checked <t:{checked_at}:R>" in text
+    assert updates[0]["checked_at"] is None
 
 
 def test_check_now_reactivates_panel_for_exact_claimed_window(monkeypatch):
@@ -712,6 +827,7 @@ def test_check_now_reactivates_panel_for_exact_claimed_window(monkeypatch):
     text = _payload_text(payload)
     assert f"Stops <t:{int(until.timestamp())}:R>" in text
     assert "Rechecks about every 10 min" in text
+    assert todo._snapshot_get(77, 66, 55).data is data
 
 
 def test_check_now_on_webhook_fallback_stays_manual(monkeypatch):
@@ -755,7 +871,50 @@ def test_check_now_on_webhook_fallback_stays_manual(monkeypatch):
     assert "Rechecks" not in text
 
 
-def test_rapid_dm_clicks_queue_before_loading_and_finish_in_order(monkeypatch):
+@pytest.mark.parametrize(
+    ("guild_id", "webhook_id"),
+    [(123, None), (None, 456)],
+)
+def test_manual_panel_navigation_reuses_snapshot(
+    monkeypatch, guild_id, webhook_id
+):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+
+    class Ctx:
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+
+        def __init__(self):
+            self.guild_id = guild_id
+            self.interaction = SimpleNamespace(message=SimpleNamespace(
+                id=55, webhook_id=webhook_id,
+            ))
+            self.responses = []
+
+        async def respond(self, **kwargs):
+            self.responses.append(kwargs)
+
+    async def should_not_load(*args, **kwargs):
+        raise AssertionError("manual navigation must reuse its snapshot")
+
+    monkeypatch.setattr(todo, "_load", should_not_load)
+    todo._snapshot_put(77, 66, 55, data, None, 1_725_000_000)
+    todo._refresh_locks.clear()
+    ctx = Ctx()
+
+    asyncio.run(todo._switch(
+        ctx, todo.VIEW_RAID, "0", object(), object(), mongo=object(),
+        trigger="nav:select",
+    ))
+
+    payload = [
+        component.build()
+        for component in ctx.responses[0]["components"]
+    ]
+    assert "Raids" in _payload_text(payload)
+
+
+def test_rapid_dm_clicks_share_one_snapshot_miss_and_finish_in_order(monkeypatch):
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     until = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
     owner = {
@@ -767,6 +926,7 @@ def test_rapid_dm_clicks_queue_before_loading_and_finish_in_order(monkeypatch):
     release_first_load = asyncio.Event()
     load_count = 0
     responses = []
+    updates = []
 
     class Ctx:
         guild_id = None
@@ -792,6 +952,7 @@ def test_rapid_dm_clicks_queue_before_loading_and_finish_in_order(monkeypatch):
         return True, dict(owner)
 
     async def update_navigation(*args, **kwargs):
+        updates.append(kwargs)
         return True
 
     monkeypatch.setattr(todo, "_load", fake_load)
@@ -818,8 +979,10 @@ def test_rapid_dm_clicks_queue_before_loading_and_finish_in_order(monkeypatch):
 
     asyncio.run(exercise())
 
-    assert load_count == 2
+    assert load_count == 1
     assert responses == ["first", "second"]
+    assert updates[0]["checked_at"] is not None
+    assert updates[1]["checked_at"] is None
 
 
 def test_manual_edit_holds_owner_lock_until_discord_then_auto_uses_new_view(monkeypatch):
@@ -990,8 +1153,38 @@ def test_three_owner_lock_contenders_never_split_the_lock():
     assert maximum == 1
 
 
+def test_panel_snapshots_are_message_scoped_and_lru_bounded(monkeypatch):
+    data_one = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data_two = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data_three = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    monkeypatch.setattr(todo, "PANEL_SNAPSHOT_LIMIT", 2)
+
+    todo._snapshot_put(7, 9, 11, data_one, None, 101)
+    todo._snapshot_put(7, 9, 12, data_two, None, 102)
+    assert todo._snapshot_get(7, 9, 11).data is data_one
+    todo._snapshot_put(7, 9, 13, data_three, None, 103)
+
+    assert todo._snapshot_get(7, 9, 11).data is data_one
+    assert todo._snapshot_get(7, 9, 12) is None
+    assert todo._snapshot_get(7, 9, 13).data is data_three
+    assert todo._snapshot_get(8, 9, 11) is None
+
+
+def test_panel_snapshot_age_is_bounded(monkeypatch):
+    now = [100.0]
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    monkeypatch.setattr(todo.time, "monotonic", lambda: now[0])
+
+    todo._snapshot_put(7, 9, 11, data, None, 101)
+    now[0] += todo.PANEL_SNAPSHOT_TTL_SECONDS - 1
+    assert todo._snapshot_get(7, 9, 11).data is data
+    now[0] += 1
+    assert todo._snapshot_get(7, 9, 11) is None
+
+
 def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    old_data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     rest = _Rest()
     marked = []
 
@@ -1012,6 +1205,7 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
     monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", fake_mark)
     todo._refresh_locks.clear()
+    todo._snapshot_put(77, 66, 55, old_data, None, 100)
 
     result = asyncio.run(todo._refresh_session(
         {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
@@ -1025,6 +1219,9 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     assert "Private War Logs" in _payload_text(payload)
     assert "Rechecks about every 10 min" in _payload_text(payload)
     assert marked[0][:3] == ("dm:77:66", 55, "gen")
+    snapshot = todo._snapshot_get(77, 66, 55)
+    assert snapshot.data is data
+    assert snapshot.checked_at != 100
 
 
 def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
@@ -1050,6 +1247,8 @@ def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
     monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
     monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", fake_mark)
     todo._refresh_locks.clear()
+    old_data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    todo._snapshot_put(77, 66, 55, old_data, None, 1_725_000_000)
 
     result = asyncio.run(todo._refresh_session(
         {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
@@ -1061,6 +1260,9 @@ def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
     payload = [component.build() for component in rest.edits[0][2]["components"]]
     assert result == "updated"
     assert f"Stops <t:{int(until.timestamp())}:R>" in _payload_text(payload)
+    snapshot = todo._snapshot_get(77, 66, 55)
+    assert snapshot.data is None
+    assert snapshot.problem is not None
 
 
 def test_automatic_refresh_reports_failed_when_schedule_cannot_advance(monkeypatch):
@@ -1198,6 +1400,7 @@ def test_legacy_scheduler_discards_row_when_current_owner_exists(monkeypatch):
 
 def test_malformed_due_row_is_deleted_without_loading(monkeypatch):
     discarded = []
+    old_data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
 
     async def should_not_load(*args, **kwargs):
         raise AssertionError("malformed row must not load Clash data")
@@ -1208,6 +1411,7 @@ def test_malformed_due_row_is_deleted_without_loading(monkeypatch):
 
     monkeypatch.setattr(todo, "_load", should_not_load)
     monkeypatch.setattr(todo.todo_sessions, "discard", discard)
+    todo._snapshot_put(77, 66, 55, old_data, None, 100)
 
     result = asyncio.run(todo._refresh_session(
         {"_id": "wrong-key", "message_id": 55, "generation": "gen",
@@ -1217,10 +1421,12 @@ def test_malformed_due_row_is_deleted_without_loading(monkeypatch):
 
     assert result == "removed"
     assert discarded == ["wrong-key"]
+    assert todo._snapshot_get(77, 66, 55) is None
 
 
 def test_automatic_refresh_removes_missing_message_session(monkeypatch):
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    old_data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     removed = []
 
     class MissingMessage(Exception):
@@ -1245,6 +1451,7 @@ def test_automatic_refresh_removes_missing_message_session(monkeypatch):
     monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
     monkeypatch.setattr(todo.todo_sessions, "remove", fake_remove)
     todo._refresh_locks.clear()
+    todo._snapshot_put(77, 66, 55, old_data, None, 100)
 
     result = asyncio.run(todo._refresh_session(
         {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
@@ -1254,6 +1461,7 @@ def test_automatic_refresh_removes_missing_message_session(monkeypatch):
 
     assert result == "removed"
     assert removed == [("dm:77:66", 55, "gen")]
+    assert todo._snapshot_get(77, 66, 55) is None
 
 
 def test_missing_message_is_postponed_when_mongo_removal_fails(monkeypatch):
@@ -1299,6 +1507,7 @@ def test_missing_message_is_postponed_when_mongo_removal_fails(monkeypatch):
 
 def test_automatic_refresh_postpones_transient_failure(monkeypatch):
     postponed = []
+    old_data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
 
     async def failed_load(*args, **kwargs):
         raise RuntimeError("temporary API failure")
@@ -1310,6 +1519,7 @@ def test_automatic_refresh_postpones_transient_failure(monkeypatch):
     monkeypatch.setattr(todo, "_load", failed_load)
     monkeypatch.setattr(todo.todo_sessions, "postpone", fake_postpone)
     todo._refresh_locks.clear()
+    todo._snapshot_put(77, 66, 55, old_data, None, 100)
 
     result = asyncio.run(todo._refresh_session(
         {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
@@ -1319,10 +1529,12 @@ def test_automatic_refresh_postpones_transient_failure(monkeypatch):
 
     assert result == "failed"
     assert postponed == [("dm:77:66", 55, "gen")]
+    assert todo._snapshot_get(77, 66, 55).data is old_data
 
 
 def test_auto_refresh_cycle_shares_one_negative_cache_cutoff(monkeypatch):
     cutoffs = []
+    pruned = []
 
     async def fake_due(_mongo):
         return [
@@ -1336,12 +1548,14 @@ def test_auto_refresh_cycle_shares_one_negative_cache_cutoff(monkeypatch):
 
     monkeypatch.setattr(todo.todo_sessions, "due", fake_due)
     monkeypatch.setattr(todo, "_refresh_session", fake_refresh)
+    monkeypatch.setattr(todo, "_snapshot_prune", lambda: pruned.append(True))
 
     before = datetime.now(timezone.utc).timestamp()
     counts = asyncio.run(todo.run_auto_refresh_cycle(object(), object(), object()))
     after = datetime.now(timezone.utc).timestamp()
 
     assert counts["updated"] == 2
+    assert pruned == [True]
     assert len(cutoffs) == 2
     assert cutoffs[0] == cutoffs[1]
     expected_min = before - todo.todo_sessions.REFRESH_INTERVAL_SECONDS

@@ -311,8 +311,28 @@ async def update_navigation(
     trigger: str,
     checked_at: datetime | None = None,
 ) -> bool:
-    """Save a current panel's view without extending its 30-day lifetime."""
-    checked = _utc(checked_at)
+    """Save navigation, and advance freshness only after an actual load.
+
+    A snapshot-only tab or page change passes no ``checked_at``.  It did not
+    check Clash, so it must not change the displayed freshness or postpone the
+    next automatic refresh.
+    """
+    observed = datetime.now(timezone.utc)
+    checked = _utc(checked_at) if checked_at is not None else None
+    fields = {
+        "view": view,
+        "page": int(page),
+        "kind": kind,
+        "last_trigger": trigger,
+        "updated_at": observed.timestamp(),
+    }
+    if checked is not None:
+        fields |= {
+            "last_checked_at": checked,
+            "next_refresh_at": checked + timedelta(
+                seconds=REFRESH_INTERVAL_SECONDS
+            ),
+        }
     try:
         result = await _coll(mongo).update_one(
             {
@@ -320,17 +340,9 @@ async def update_navigation(
                 "message_id": int(message_id),
                 "generation": generation,
                 "active": True,
-                "refresh_until": {"$gt": checked},
+                "refresh_until": {"$gt": observed},
             },
-            {"$set": {
-                "view": view,
-                "page": int(page),
-                "kind": kind,
-                "last_trigger": trigger,
-                "last_checked_at": checked,
-                "next_refresh_at": checked + timedelta(seconds=REFRESH_INTERVAL_SECONDS),
-                "updated_at": checked.timestamp(),
-            }, "$inc": {"interactions": 1}},
+            {"$set": fields, "$inc": {"interactions": 1}},
         )
         return int(getattr(result, "matched_count", 0) or 0) == 1
     except Exception as exc:  # noqa: BLE001

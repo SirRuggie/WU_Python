@@ -239,7 +239,25 @@ def test_only_explicit_renewal_creates_an_exact_30_day_window():
     )
 
 
-def test_navigation_updates_schedule_but_never_retention():
+def test_snapshot_navigation_does_not_change_schedule_or_retention():
+    mongo = _Mongo()
+
+    result = asyncio.run(todo_sessions.update_navigation(
+        mongo, owner_id="dm:1:2", message_id=3, generation="gen",
+        view="cwl", page=2, kind="dashboard", trigger="view:cwl",
+    ))
+
+    assert result is True
+    fields = mongo.todo_sessions.updates[0][1]["$set"]
+    assert fields["view"] == "cwl"
+    assert fields["page"] == 2
+    assert "last_checked_at" not in fields
+    assert "next_refresh_at" not in fields
+    assert "refresh_until" not in fields
+    assert "expires_at" not in fields
+
+
+def test_navigation_snapshot_miss_records_the_actual_check():
     mongo = _Mongo()
     checked = datetime(2026, 8, 5, 12, tzinfo=timezone.utc)
 
@@ -251,11 +269,8 @@ def test_navigation_updates_schedule_but_never_retention():
 
     assert result is True
     fields = mongo.todo_sessions.updates[0][1]["$set"]
-    assert fields["view"] == "cwl"
-    assert fields["page"] == 2
+    assert fields["last_checked_at"] == checked
     assert fields["next_refresh_at"] == checked + timedelta(minutes=10)
-    assert "refresh_until" not in fields
-    assert "expires_at" not in fields
 
 
 def test_stale_generation_cannot_postpone_or_remove_replacement():

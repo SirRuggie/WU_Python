@@ -1,7 +1,7 @@
 # `/todo` — the player to-do dashboard
 
 What each of a user's linked Clash accounts still owes. DM-first, Components V2,
-stateless. Built 2026-08-02/03.
+stateless routing with bounded per-panel render snapshots. Built 2026-08-02/03.
 
 Files: [`extensions/commands/todo.py`](../extensions/commands/todo.py) (command,
 rendering, handlers), [`utils/todo_data.py`](../utils/todo_data.py) (fetching,
@@ -996,10 +996,13 @@ latest panel and `generation` rejects delayed work from a replaced panel. Guild
 panels remain ephemeral, manual, and unstored.
 
 New `/todo` and **Check now** start an exact 30-day window. Ordinary navigation
-and automatic checks update the checked time and next run but never extend the
-deadline. A newer `/todo` replaces the previous automatic panel; the older
-message becomes a small manual panel whose Check now button can make it current
-again.
+updates only the stored view and page: it reuses the panel's coherent four-view
+snapshot, preserves the displayed `Checked` time, and does not postpone the next
+automatic check. Initial loads, snapshot-miss recovery, Check now, and automatic
+checks are actual data checks; those update the checked time and next run but
+never extend the deadline. A newer `/todo` replaces the previous automatic
+panel; the older message becomes a small manual panel whose Check now button can
+make it current again.
 
 The poll loop wakes every minute and selects at most 100 due rows. Each panel is
 scheduled ten minutes after its previous successful check, with four concurrent
@@ -1041,6 +1044,19 @@ the weak locks cover every Discord edit. They are intentionally process-local;
 running overlapping bot replicas would require a distributed edit lease before
 that topology is supported.
 
+The same one-process topology permits a bounded in-memory snapshot cache keyed
+by exact user, channel, and Discord message. Each successful load stores all
+four `ViewData` results — or the resulting notice — plus the real check time;
+tab and page changes render from that snapshot without link resolution, Clash
+calls, or clan-history Mongo work. Check now bypasses and replaces it, and each
+successful automatic refresh replaces it atomically after the generation check
+and Discord edit. The cache is LRU-bounded to 512 panels, expires entries after
+the same 30-day maximum as an automatic session, and removes predecessors when
+they are retired. Expired entries are pruned on cache activity and on the
+one-minute scheduler poll. Eviction, expiry, or restart is only a performance
+miss: the next interaction follows the normal load path and seeds the snapshot
+again.
+
 If standalone delivery fails, the command uses the deferred webhook response
 and keeps it manual. Check now still performs a manual update there but never
 enrolls that short-lived webhook message for bot-token scheduling.
@@ -1062,7 +1078,7 @@ correctly but do not self-prune. Every entry point is non-fatal — this is
 bookkeeping for a non-critical convenience, and no failure in it is worth
 degrading the dashboard for.
 
-## Statelessness, routing and pagination
+## Stateless routing, snapshot rendering and pagination
 
 **Component routing state does not come from Mongo.** Page comes from the
 `custom_id`, user identity from `ctx.user.id` on the interaction. The
@@ -1071,8 +1087,13 @@ every handler defaults all its parameters. Rendered data may use Mongo-backed
 clan history and logos, but an old panel's controls do not depend on an evictable
 component-state document.
 
-(The background scheduler reads `todo_sessions`; component rendering does not.
-That separation is what keeps an expired or year-old panel's controls usable.)
+The process-local panel snapshot is an optional rendering optimization, not
+routing state or durable storage. A hit makes a dropdown or pager click reuse
+the original result and `Checked` timestamp; only the small session-metadata
+read/write and Discord edit remain. A miss — including after restart, expiry,
+LRU eviction, or on a year-old panel — performs `_load()` and re-seeds it.
+`todo_sessions` remains ownership and scheduling metadata only; `ViewData` and
+notice components are never serialized into Mongo.
 
 ### ONE COLON PER `custom_id`
 
