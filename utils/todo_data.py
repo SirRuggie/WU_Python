@@ -534,6 +534,7 @@ class Account:
     clan_name: str | None
     town_hall: int = 0
     clan_badge: str | None = None   # badge URL, for the per-clan Thumbnail
+    share_link: str | None = None   # official in-game player-profile link
 
 
 # ---------------------------------------------------------------------------
@@ -580,6 +581,7 @@ async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semap
         clan_name=clan.name if clan else None,
         town_hall=getattr(player, "town_hall", 0) or 0,
         clan_badge=badge,
+        share_link=getattr(player, "share_link", None),
     ), None
 
 

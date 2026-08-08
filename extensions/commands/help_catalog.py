@@ -13,6 +13,7 @@ HELP_CATEGORIES = {
         "description": "Everyday commands and self-service tools",
         "commands": [
             ("/help", "Open this command guide."),
+            ("/accounts", "Show every Clash account linked to your Discord."),
             ("/todo", "Show what your linked Clash accounts still need to do."),
             ("/family-links", "Manage your own family roles and open clan links."),
             ("/slap", "Send a playful slap GIF to another member."),

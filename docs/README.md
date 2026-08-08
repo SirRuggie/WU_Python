@@ -27,6 +27,9 @@ the hard way. The standing instruction that governs this folder is in
 
 ## Features
 
+- [accounts.md](accounts.md) — `/accounts`, the private linked-player inventory:
+  row fields, ordering, pagination, stale-link policy, and failure accounting.
+
 - [todo-dashboard.md](todo-dashboard.md) — `/todo`, as built. Data sources, the
   four views, layout rules and why, the freshness stamp, emoji slots, verified
   vs inferred. **Contains the `str()`-on-a-coc.py-enum trap — read it before
@@ -74,7 +77,8 @@ the hard way. The standing instruction that governs this folder is in
 - [clashking-war-endpoints.md](clashking-war-endpoints.md) — historical CWL, the
   real payload shape, and how ClashKingBot's own to-do command works.
 - [clashking-discord-links.md](clashking-discord-links.md) — the Discord↔Clash
-  link API. Bidirectional, unauthenticated, and how to read its response.
+  link API. Bidirectional, unauthenticated, how to read its response, and the
+  `/accounts` completeness policy.
 
 - [coc-maintenance-detection.md](coc-maintenance-detection.md) — how coc.py
   signals Clash maintenance. **There is no flag and no end time — only a 503

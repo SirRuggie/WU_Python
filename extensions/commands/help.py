@@ -72,7 +72,8 @@ async def create_help_view() -> list:
                 _category_select(),
                 Text(content=(
                     "-# Fast starts: `/role` for member roles • `/recruit` for onboarding "
-                    "• `/ticket` for tickets • `/fwa` for FWA tools • `/todo` for your accounts"
+                    "• `/ticket` for tickets • `/fwa` for FWA tools "
+                    "• `/accounts` for your players • `/todo` for outstanding work"
                 )),
                 Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
             ],

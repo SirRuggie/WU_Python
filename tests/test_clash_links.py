@@ -5,6 +5,42 @@ import asyncio
 from utils import clash_links
 
 
+def test_discord_id_resolves_every_owned_tag_and_filters_echo(monkeypatch):
+    calls = []
+
+    async def fake_resolve(identifiers):
+        calls.append(identifiers)
+        return {
+            "#123": None,
+            "#MAIN": "123",
+            "#ALT": 123,
+            "#SOMEONE_ELSE": "999",
+        }
+
+    monkeypatch.setattr(clash_links, "_resolve_identifiers", fake_resolve)
+
+    result = asyncio.run(clash_links.resolve_tags(123))
+
+    assert calls == [["123"]]
+    assert result == ["#MAIN", "#ALT"]
+
+
+def test_discord_id_resolution_preserves_failure(monkeypatch):
+    async def failed(_identifiers):
+        return None
+
+    monkeypatch.setattr(clash_links, "_resolve_identifiers", failed)
+    assert asyncio.run(clash_links.resolve_tags(123)) is None
+
+
+def test_discord_id_resolution_can_succeed_with_no_links(monkeypatch):
+    async def empty(_identifiers):
+        return {"#123": None}
+
+    monkeypatch.setattr(clash_links, "_resolve_identifiers", empty)
+    assert asyncio.run(clash_links.resolve_tags(123)) == []
+
+
 def test_family_players_expand_to_all_accounts_for_their_discord_owners(monkeypatch):
     calls = []
 

@@ -81,6 +81,13 @@ unless the code above is written correctly.
 abandoned accounts that were linked once and never unlinked. Anything rendering a
 per-account list needs a position on whether to show all of them.
 
+`/accounts` takes the completeness-first position: every returned tag gets a
+row. A profile that loads shows name, Town Hall, tag, and current clan; a 404 or
+temporary player-API failure keeps the raw tag visible with its status. Valid but
+abandoned alts cannot be distinguished from wanted accounts, so they remain in
+the list. The command never invents a "main" account because this API supplies
+no such field. See [`accounts.md`](accounts.md).
+
 ## How this was nearly missed
 
 The reverse direction was initially reported as *not existing*, from a probe with
