@@ -251,6 +251,32 @@ def test_loaded_accounts_sort_by_town_hall_then_name_and_show_required_fields():
     )
 
 
+def test_each_account_is_one_compact_mobile_row():
+    loaded = _loaded_entry(1)
+    missing = accounts.AccountEntry("#MISSING", accounts.STATUS_NOT_FOUND)
+    failed = accounts.AccountEntry("#FAILED", accounts.STATUS_ERROR)
+
+    rows = [
+        accounts._entry_line(loaded, 1),
+        accounts._entry_line(missing, 2),
+        accounts._entry_line(failed, 3),
+    ]
+
+    assert all("\n" not in row for row in rows)
+    assert rows[0].startswith("**1.**")
+    assert "TH17" in rows[0]
+    assert "Player 01" in rows[0]
+    assert "`#TAG01`" in rows[0]
+    assert "Clan 01" in rows[0]
+    assert rows[0].index("TH17") < rows[0].index("Player 01")
+    assert rows[0].index("Player 01") < rows[0].index("`#TAG01`")
+    assert rows[0].index("`#TAG01`") < rows[0].index("Clan 01")
+    assert "https://link.clashofclans.com/" in rows[0]
+    assert rows[1].startswith("**2.** ⚠️ `#MISSING`")
+    assert rows[2].startswith("**3.** ⏳ `#FAILED`")
+    assert accounts._text_blocks(rows) == ["\n".join(rows)]
+
+
 def test_maintenance_replaces_generic_partial_failure_copy():
     data = accounts.AccountsData(entries=(
         _loaded_entry(1),

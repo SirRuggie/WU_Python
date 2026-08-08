@@ -233,17 +233,17 @@ def _entry_line(entry: AccountEntry, ordinal: int) -> str:
         name = _escape_markdown(account.name)
         clan = _escape_markdown(account.clan_name or "No clan")
         return (
-            f"{_th_display(account.town_hall)} · **[{name}]({_player_link(entry)})**\n"
-            f"-# {ordinal}. `{entry.tag}` · {clan}"
+            f"**{ordinal}.** {_th_display(account.town_hall)} · "
+            f"**[{name}]({_player_link(entry)})** · `{entry.tag}` · {clan}"
         )
     if entry.status == STATUS_ERROR:
         return (
-            f"⏳ **Account couldn't be loaded**\n"
-            f"-# {ordinal}. `{entry.tag}` · The link is still included; try again shortly."
+            f"**{ordinal}.** ⏳ `{entry.tag}` · **Account couldn't be loaded** · "
+            "The link is still included; try again shortly."
         )
     return (
-        f"⚠️ **Player profile not found**\n"
-        f"-# {ordinal}. `{entry.tag}` · This may be an old or mistyped link."
+        f"**{ordinal}.** ⚠️ `{entry.tag}` · **Player profile not found** · "
+        "This may be an old or mistyped link."
     )
 
 
@@ -259,7 +259,7 @@ def _text_blocks(lines: list[str]) -> list[str]:
             if len(original) <= TEXT_BLOCK_LIMIT
             else f"{original[:TEXT_BLOCK_LIMIT - 1]}…"
         )
-        candidate = f"{current}\n\n{line}" if current else line
+        candidate = f"{current}\n{line}" if current else line
         if current and len(candidate) > TEXT_BLOCK_LIMIT:
             blocks.append(current)
             current = line
