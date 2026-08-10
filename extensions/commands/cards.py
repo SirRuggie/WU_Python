@@ -1,10 +1,11 @@
 """One-command Clash of Cards collection and family matching hub.
 
-Members run ``/cards``.  Account selection, initial setup, later updates,
-review, and duplicate discovery all stay inside one private Components V2
-panel.  The event collection is not in Supercell's public API, so the fast
-entry model defaults every card in a category to one copy and asks the member
-to select only the exceptions: missing cards and cards with a spare.
+Members run ``/cards``. They can attach five ordered collection screenshots to
+build a private, short-lived review draft, or use the category editors as a
+manual fallback. No scan writes automatically: account ownership, full card
+coverage, uncertainty, reservations, and inventory revision are rechecked at
+explicit confirmation. Later updates, review, and trade discovery stay inside
+the same private Components V2 panel.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from utils.cards import (
     normalize_cards,
     reciprocal_trade_error,
 )
+from utils.component_state import delete_state, get_state, insert_state, update_state
 from utils.constants import GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
@@ -83,6 +85,11 @@ TRADE_COMPLETION_FOR = timedelta(minutes=10)
 PROPOSAL_SLOT_HOLD_FOR = timedelta(minutes=10)
 TRADE_REVIEW_FOR = timedelta(days=7)
 TRADE_LEASE_COUNT = 4
+CARD_SCAN_CAPTURE_COUNT = 5
+CARD_SCAN_DRAFT_FOR = timedelta(minutes=20)
+CARD_SCAN_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+CARD_SCAN_MIN_CONFIDENCE = 0.75
+CARD_SCAN_CONCURRENCY = 2
 COLLECTION_LINK = "https://link.clashofclans.com/en/?action=OpenCollection"
 FOOTER = "assets/Red_Footer.png"
 
@@ -103,6 +110,7 @@ CARDS_CHANNEL_ID = _parse_snowflake_env("CARDS_CHANNEL_ID")
 # once. Serialize writes per player tag so the missing-list update cannot race
 # the duplicate-list update and replace it from a stale snapshot.
 _inventory_locks: dict[str, asyncio.Lock] = {}
+_card_scan_slots = asyncio.Semaphore(CARD_SCAN_CONCURRENCY)
 
 
 class ActiveCardTradeError(RuntimeError):
@@ -111,6 +119,10 @@ class ActiveCardTradeError(RuntimeError):
 
 class InventoryWriteConflict(RuntimeError):
     """Raised after repeated cross-process collection revision conflicts."""
+
+
+class ScanDraftStaleError(RuntimeError):
+    """Raised when a collection changed after its screenshot review opened."""
 
 
 def _inventory_lock(tag: str) -> asyncio.Lock:
@@ -417,13 +429,759 @@ def _account_picker(data: AccountsData, page: int = 0) -> list[Container]:
     return [Container(accent_color=RED_ACCENT, components=body)]
 
 
+def _scan_field(value: object, *names: str, default=None):
+    """Read one scanner field without coupling Card Hub to its dataclasses."""
+    for name in names:
+        if isinstance(value, dict) and name in value:
+            return value[name]
+        if hasattr(value, name):
+            return getattr(value, name)
+    return default
+
+
+def _scan_strings(value: object, *, limit: int = 30) -> list[str]:
+    if value is None:
+        return []
+    values = [value] if isinstance(value, str) else value
+    try:
+        iterator = iter(values)
+    except TypeError:
+        iterator = iter((value,))
+    result: list[str] = []
+    for item in iterator:
+        text = str(item or "").replace("\n", " ").strip()
+        if text and text not in result:
+            result.append(text[:160])
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _scan_card_id(value: object) -> str:
+    card_id = str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
+    return card_id if card_id in CARD_BY_ID else ""
+
+
+def _scan_card_state(value: object) -> int | None:
+    raw = getattr(value, "value", value)
+    if isinstance(raw, str):
+        state = {
+            "missing": MISSING,
+            "owned": OWNED,
+            "owned_once": OWNED,
+            "duplicate": DUPLICATE,
+            "spare": DUPLICATE,
+        }.get(raw.strip().casefold().replace(" ", "_"))
+        return state
+    if isinstance(raw, bool):
+        return None
+    try:
+        state = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return state if state in {MISSING, OWNED, DUPLICATE} else None
+
+
+def _scan_confidence(value: object) -> float | None:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(confidence):
+        return None
+    return max(0.0, min(1.0, confidence))
+
+
+def _ordered_card_ids(values) -> list[str]:
+    wanted = set(values or ())
+    return [card_id for card_id in CARD_BY_ID if card_id in wanted]
+
+
+def _scan_id_set(value: object) -> tuple[set[str], bool]:
+    if value is None:
+        return set(), False
+    values = (value,) if isinstance(value, str) else value
+    try:
+        items = list(values)
+    except TypeError:
+        items = [value]
+    parsed = {_scan_card_id(item) for item in items}
+    invalid = "" in parsed
+    parsed.discard("")
+    return parsed, invalid
+
+
+def _normalize_collection_scan(result: object, *, capture_count: int) -> dict:
+    """Convert the evolving batch-scanner result into a BSON-safe review draft.
+
+    Expected scanner contract: ``scan_collection_screenshots(items)`` accepts
+    five ordered image byte payloads and returns identity-bound card records.
+    Every record supplies ``card_id``, ``state``, ``confidence``, and optional
+    warnings. The result also exposes unknown/unseen ids and coverage. This
+    adapter deliberately accepts a few equivalent field names while that API
+    settles; it never infers a card identity from list position.
+    """
+    raw_cards = _scan_field(
+        result,
+        "cards",
+        "card_results",
+        "card_scans",
+        "slots",
+        "card_states",
+        default=(),
+    )
+    confidence_map = _scan_field(result, "confidences", "card_confidences", default={})
+    warning_map = _scan_field(result, "card_warnings", "warnings_by_card", default={})
+    states: dict[str, int] = {}
+    confidences: dict[str, float] = {}
+    card_warnings: dict[str, list[str]] = {}
+    unknown: set[str] = set()
+    duplicate_ids: set[str] = set()
+    identity_bound = True
+    capture_issues: list[dict] = []
+
+    raw_captures = _scan_field(result, "captures", "capture_results", default=())
+    try:
+        capture_records = list(raw_captures or ())
+    except TypeError:
+        capture_records = []
+    harmless_capture_codes = {
+        "catalog_position_and_artwork_validated",
+        "catalog_position_bound_by_batch_order",
+    }
+    for fallback_index, capture in enumerate(capture_records, start=1):
+        try:
+            page = int(_scan_field(capture, "input_index", "page", default=fallback_index))
+        except (TypeError, ValueError):
+            page = fallback_index
+        page = min(max(1, page), max(1, int(capture_count)))
+        codes = [
+            code
+            for code in _scan_strings(
+                _scan_field(capture, "warnings", "issues", default=()), limit=12
+            )
+            if code not in harmless_capture_codes
+        ]
+        mismatch_ids, bad_mismatch_id = _scan_id_set(
+            _scan_field(capture, "mismatched_card_ids", default=())
+        )
+        if bad_mismatch_id:
+            identity_bound = False
+        if codes or mismatch_ids or not bool(_scan_field(capture, "accepted", default=False)):
+            capture_issues.append({
+                "page": page,
+                "warnings": codes,
+                "mismatched_card_ids": _ordered_card_ids(mismatch_ids),
+            })
+
+    if isinstance(raw_cards, dict):
+        records = list(raw_cards.items())
+    else:
+        try:
+            records = [(None, record) for record in raw_cards]
+        except TypeError:
+            records = []
+
+    for mapping_id, record in records:
+        record_id = _scan_field(record, "card_id", "id", "card", default=mapping_id)
+        card_id = _scan_card_id(record_id)
+        if not card_id:
+            identity_bound = False
+            continue
+        if card_id in states or card_id in unknown:
+            duplicate_ids.add(card_id)
+            states.pop(card_id, None)
+            confidences.pop(card_id, None)
+            unknown.add(card_id)
+            continue
+
+        raw_state = _scan_field(record, "state", "status", "value", default=record)
+        state = _scan_card_state(raw_state)
+        raw_confidence = _scan_field(record, "confidence", "score", default=None)
+        if raw_confidence is None and isinstance(confidence_map, dict):
+            raw_confidence = confidence_map.get(card_id)
+        confidence = _scan_confidence(raw_confidence)
+        warnings = _scan_strings(
+            _scan_field(record, "warnings", "warning", default=(
+                warning_map.get(card_id, ()) if isinstance(warning_map, dict) else ()
+            )),
+            limit=8,
+        )
+        if warnings:
+            card_warnings[card_id] = warnings
+        if state is None or confidence is None or confidence < CARD_SCAN_MIN_CONFIDENCE:
+            unknown.add(card_id)
+            continue
+        states[card_id] = state
+        confidences[card_id] = round(confidence, 4)
+
+    explicit_unknown = _scan_field(
+        result, "unknown_card_ids", "unknown_ids", "ambiguous_card_ids", default=()
+    )
+    explicit_unseen = _scan_field(
+        result, "unseen_card_ids", "uncovered_card_ids", default=()
+    )
+    duplicate_unverified = _scan_field(
+        result,
+        "duplicate_unverified_card_ids",
+        "duplicate_badge_unverified_card_ids",
+        default=(),
+    )
+    explicit_unknown_ids, bad_unknown_id = _scan_id_set(explicit_unknown)
+    unseen, bad_unseen_id = _scan_id_set(explicit_unseen)
+    unverified_duplicates, bad_unverified_id = _scan_id_set(duplicate_unverified)
+    identity_bound = identity_bound and not (
+        bad_unknown_id or bad_unseen_id or bad_unverified_id
+    )
+    unknown.update(explicit_unknown_ids)
+    unknown.update(duplicate_ids)
+
+    # Explicit identities are mandatory. Anything outside the returned set is
+    # unseen even if a scanner accidentally labels global coverage complete.
+    identified = set(states) | unknown
+    unseen.update(set(CARD_BY_ID) - identified)
+    for card_id in unknown | unseen:
+        states.pop(card_id, None)
+        confidences.pop(card_id, None)
+    if any(states.get(card_id) != OWNED for card_id in unverified_duplicates):
+        identity_bound = False
+
+    global_warnings = _scan_strings(
+        _scan_field(result, "warnings", "global_warnings", default=()),
+        limit=20,
+    )
+    errors = _scan_strings(
+        _scan_field(result, "errors", "error", "failure", default=()),
+        limit=10,
+    )
+    coverage_value = _scan_field(
+        result, "coverage_complete", "complete_coverage", "complete", default=None
+    )
+    computed_complete = (
+        identity_bound
+        and identified == set(CARD_BY_ID)
+        and not unseen
+    )
+    coverage_complete = (
+        computed_complete
+        if coverage_value is None
+        else bool(coverage_value) and computed_complete
+    )
+
+    return {
+        "version": 2,
+        "capture_count": int(capture_count),
+        "card_states": states,
+        "card_confidences": confidences,
+        "card_warnings": card_warnings,
+        "unknown_card_ids": _ordered_card_ids(unknown),
+        "unseen_card_ids": _ordered_card_ids(unseen),
+        "duplicate_unverified_card_ids": _ordered_card_ids(unverified_duplicates),
+        "capture_issues": capture_issues,
+        "warnings": global_warnings,
+        "errors": errors,
+        "identity_bound": bool(identity_bound),
+        "coverage_complete": bool(coverage_complete),
+        # Scanner output is always a review draft. This records the scanner's
+        # own claim for diagnostics but never bypasses explicit confirmation.
+        "scanner_persistence_safe": bool(_scan_field(result, "persistence_safe", default=False)),
+    }
+
+
+def _scan_collection_payloads(payloads: tuple[bytes, ...]) -> dict:
+    """CPU-bound lazy adapter; callers must invoke this with asyncio.to_thread."""
+    try:
+        from utils import card_scan
+    except Exception as exc:
+        _log.exception("card screenshot scanner import failed")
+        return _normalize_collection_scan(
+            {"errors": [f"scanner_import_failed:{type(exc).__name__}"]},
+            capture_count=len(payloads),
+        )
+
+    scanner = getattr(card_scan, "scan_collection_screenshots", None)
+    if not callable(scanner):
+        return _normalize_collection_scan(
+            {"errors": ["batch_scanner_unavailable"]},
+            capture_count=len(payloads),
+        )
+    try:
+        result = scanner(payloads)
+        return _normalize_collection_scan(result, capture_count=len(payloads))
+    except Exception as exc:
+        _log.exception("card screenshot batch scan failed")
+        return _normalize_collection_scan(
+            {"errors": [f"scan_failed:{type(exc).__name__}"]},
+            capture_count=len(payloads),
+        )
+
+
+def _scan_draft_confirmable(draft: object) -> bool:
+    if not isinstance(draft, dict):
+        return False
+    states = draft.get("card_states")
+    return (
+        isinstance(states, dict)
+        and set(states) == set(CARD_BY_ID)
+        and all(_scan_card_state(state) is not None for state in states.values())
+        and bool(draft.get("identity_bound"))
+        and bool(draft.get("coverage_complete"))
+        and not draft.get("unknown_card_ids")
+        and not draft.get("unseen_card_ids")
+        and not draft.get("errors")
+    )
+
+
+def _scan_draft_correctable(draft: object) -> bool:
+    """Whether identities/coverage are safe and only card states need input."""
+    if not isinstance(draft, dict):
+        return False
+    states = draft.get("card_states")
+    unknown, invalid_unknown = _scan_id_set(draft.get("unknown_card_ids") or ())
+    return (
+        isinstance(states, dict)
+        and not invalid_unknown
+        and not (set(states) & unknown)
+        and (set(states) | unknown) == set(CARD_BY_ID)
+        and all(_scan_card_state(state) is not None for state in states.values())
+        and bool(draft.get("identity_bound"))
+        and bool(draft.get("coverage_complete"))
+        and bool(draft.get("unknown_card_ids"))
+        and not draft.get("unseen_card_ids")
+        and not draft.get("errors")
+    )
+
+
+def _scan_accounts_ready(data: AccountsData) -> bool:
+    """Fail closed unless every linked tag has a loaded player profile."""
+    return (
+        data.problem is None
+        and data.linked_count > 0
+        and data.loaded_count == data.linked_count
+        and all(
+            entry.status == STATUS_LOADED and entry.account is not None
+            for entry in data.entries
+        )
+    )
+
+
+def _scan_expiry_text(usable_until: object = None) -> str:
+    stamp = as_utc(usable_until)
+    if stamp is None:
+        return "for 20 minutes after upload"
+    unix = int(stamp.timestamp())
+    return f"until <t:{unix}:t> (<t:{unix}:R>)"
+
+
+def _scan_privacy_text() -> str:
+    return (
+        "Discord receives the attachments. The bot scans them in a response only "
+        "you can see and does not retain the raw image files."
+    )
+
+
+def _scan_capture_issue_lines(draft: object) -> list[str]:
+    if not isinstance(draft, dict):
+        return []
+    raw_issues = draft.get("capture_issues") or ()
+    try:
+        issues = list(raw_issues)
+    except TypeError:
+        return []
+    translations = {
+        "capture_requires_two_rows": "could not find exactly two complete card rows",
+        "duplicate_capture_ignored": "repeats another page",
+        "overlapping_capture_rows": "overlaps rows already shown on another page",
+        "unexpected_extra_capture": "is an unexpected extra capture",
+        "capture_sequence_mismatch": "shows the wrong rows or is out of order",
+        "artwork_identity_mismatch": "has card artwork that does not match the expected positions",
+        "invalid_image_bytes": "could not be decoded as an image",
+        "empty_image": "was empty",
+        "encoded_image_too_large": "was too large to scan safely",
+        "unsupported_image_format": "uses an unsupported image format",
+        "animated_image_not_supported": "must be a still image",
+        "image_dimensions_too_small": "is too small to read",
+        "image_dimensions_too_large": "is too large to scan safely",
+        "image_decode_failed": "could not be decoded",
+        "invalid_or_corrupt_image": "was invalid or corrupt",
+        "no_card_rows_detected": "did not contain readable card rows",
+        "no_valid_rows": "did not contain two readable card rows",
+        "no_valid_six_column_rows": "did not contain two complete six-card rows",
+        "no_card_sized_components": "did not contain readable card portraits",
+        "insufficient_card_slots": "did not show all six cards in both rows",
+    }
+    lines: list[str] = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        try:
+            page = max(1, int(issue.get("page", 1)))
+        except (TypeError, ValueError):
+            page = 1
+        codes = _scan_strings(issue.get("warnings"), limit=12)
+        reasons: list[str] = []
+        for code in codes:
+            reason = translations.get(code)
+            if reason and reason not in reasons:
+                reasons.append(reason)
+        mismatches = _ordered_card_ids(issue.get("mismatched_card_ids") or ())
+        if mismatches:
+            names = _scan_card_names(mismatches)
+            detail = f"expected card check failed for {names}"
+            if detail not in reasons:
+                reasons.append(detail)
+        if not reasons:
+            reasons.append("could not be validated as the expected two rows")
+        lines.append(f"**Page {page}:** {'; '.join(reasons)}. Retake this page.")
+    return lines
+
+
+def _scan_session_problem(ctx, user_id: object, guild_id: object) -> list[Container] | None:
+    try:
+        owns_session = int(user_id) == int(ctx.user.id)
+        correct_guild = int(guild_id) == int(_guild_id(ctx) or 0)
+    except (TypeError, ValueError):
+        owns_session = correct_guild = False
+    if owns_session and correct_guild and _guild_scope_error(ctx) is None:
+        return None
+    return _notice(
+        "This screenshot draft is private",
+        "Only the member who uploaded it can use it, inside the configured family server. "
+        "Run `/cards` with your own screenshots to start a new review.",
+    )
+
+
+async def _discard_scan_state(mongo: MongoClient, draft_id: str) -> None:
+    try:
+        await delete_state(mongo, draft_id)
+    except Exception:
+        # A TTL still removes the draft. Most importantly, a successful
+        # inventory write must never look failed only because cleanup hiccupped.
+        _log.exception("card screenshot draft cleanup failed draft=%s", draft_id)
+
+
+def _scan_account_picker(
+    data: AccountsData,
+    draft_id: str,
+    *,
+    page: int = 0,
+    usable_until: object = None,
+    account_tag: object = None,
+) -> list[Container]:
+    if not _scan_accounts_ready(data):
+        return _scan_accounts_problem(
+            data,
+            draft_id,
+            has_draft=True,
+            usable_until=usable_until,
+        )
+    entries = _loaded_entries(data)
+    pages = max(1, math.ceil(len(entries) / ACCOUNT_PAGE_SIZE))
+    page = min(_parse_page(page), pages - 1)
+    start = page * ACCOUNT_PAGE_SIZE
+    options = [
+        SelectOption(
+            label=_plain(f"{entry.account.name} · TH{entry.account.town_hall}"),
+            value=entry.tag,
+            description=_plain(
+                f"{entry.account.clan_name or 'No clan'} · {entry.tag}", limit=100
+            ),
+        )
+        for entry in entries[start:start + ACCOUNT_PAGE_SIZE]
+    ]
+    body: list = [
+        Text(content="# 📸 Choose the Collection to Review"),
+        Text(content=(
+            "The five screenshots were scanned into a temporary draft in this "
+            "only-you response. Choose the linked account they belong to. "
+            f"It is usable {_scan_expiry_text(usable_until)}. "
+            "**Nothing has been saved.**\n\n"
+            f"{_scan_privacy_text()}"
+        )),
+        Separator(divider=True),
+        ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_scan_account:{draft_id}",
+            placeholder="Choose the account shown in the screenshots...",
+            max_values=1,
+            options=options,
+        )]),
+    ]
+    if pages > 1:
+        body.append(ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_scan_account_prev:{draft_id}",
+                label="Previous",
+                is_disabled=page == 0,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_scan_account_page:{draft_id}",
+                label=f"Page {page + 1}/{pages}",
+                is_disabled=True,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_scan_account_next:{draft_id}",
+                label="Next",
+                is_disabled=page >= pages - 1,
+            ),
+        ]))
+    body.extend([
+        ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=(
+                f"cards_scan_back_review:{draft_id}"
+                if account_tag
+                else f"cards_scan_cancel:{draft_id}"
+            ),
+            label="Back to review" if account_tag else "Cancel import",
+            emoji="⬅️" if account_tag else "✖️",
+        )]),
+        Media(items=[MediaItem(media=FOOTER)]),
+    ])
+    return [Container(accent_color=RED_ACCENT, components=body)]
+
+
+def _scan_accounts_problem(
+    data: AccountsData,
+    draft_id: str,
+    *,
+    has_draft: bool,
+    usable_until: object = None,
+) -> list[Container]:
+    if data.problem == LINK_FAILURE:
+        reason = "The account link service could not be reached."
+    elif not data.entries:
+        reason = "No Clash accounts are linked to this Discord member."
+    else:
+        failed = data.error_count + data.not_found_count
+        reason = (
+            f"{failed} of {data.linked_count} linked player profile"
+            f"{'s did' if failed != 1 else ' did'} not load."
+        )
+    preserved = (
+        f"Your scan draft is still usable {_scan_expiry_text(usable_until)}."
+        if has_draft
+        else "Discord received the attachments; the bot did not read or retain them."
+    )
+    privacy = _scan_privacy_text() if has_draft else "No raw image files were retained."
+    return [Container(
+        accent_color=RED_ACCENT,
+        components=[
+            Text(content="# 📸 Account Check Needed"),
+            Text(content=(
+                f"{reason} All linked profiles must load before a screenshot can "
+                f"be assigned or saved. {preserved}\n\n{privacy}"
+            )),
+            Separator(divider=True),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.PRIMARY,
+                    custom_id=f"cards_scan_accounts_retry:{draft_id}",
+                    label="Retry account check",
+                    emoji="🔄",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_scan_retry_cancel:{draft_id}",
+                    label="Cancel",
+                    emoji="✖️",
+                ),
+            ]),
+            Media(items=[MediaItem(media=FOOTER)]),
+        ],
+    )]
+
+
+def _scan_card_names(card_ids: object) -> str:
+    ordered = _ordered_card_ids(card_ids)
+    names = [CARD_BY_ID[card_id].name for card_id in ordered]
+    if not names:
+        return "None"
+    return ", ".join(names)
+
+
+def _scan_review(
+    account,
+    inventory: dict,
+    draft_id: str,
+    draft: dict,
+    *,
+    usable_until: object = None,
+) -> list[Container]:
+    states = draft.get("card_states") if isinstance(draft, dict) else {}
+    states = states if isinstance(states, dict) else {}
+    missing = [card_id for card_id, state in states.items() if state == MISSING]
+    duplicates = [card_id for card_id, state in states.items() if state == DUPLICATE]
+    unknown = _ordered_card_ids(draft.get("unknown_card_ids") or ())
+    unseen = _ordered_card_ids(draft.get("unseen_card_ids") or ())
+    errors = _scan_strings(draft.get("errors"), limit=5)
+    unverified_duplicates = _ordered_card_ids(
+        draft.get("duplicate_unverified_card_ids") or ()
+    )
+    reserved = bool(_card_reservations(inventory))
+    confirmable = _scan_draft_confirmable(draft) and not reserved
+    correctable = _scan_draft_correctable(draft)
+    capture_issue_lines = _scan_capture_issue_lines(draft)
+
+    details = [
+        f"**Missing ({len(missing)}):** {_scan_card_names(missing)}",
+        f"**Duplicates ({len(duplicates)}):** {_scan_card_names(duplicates)}",
+    ]
+    if unknown:
+        details.append(f"**Needs review ({len(unknown)}):** {_scan_card_names(unknown)}")
+    if unseen:
+        details.append(f"**Not visible ({len(unseen)}):** {_scan_card_names(unseen)}")
+    if unverified_duplicates:
+        details.append(
+            f"Duplicate badge hidden ({len(unverified_duplicates)}): "
+            f"{_scan_card_names(unverified_duplicates)}"
+        )
+    details.append(
+        "Cards not listed as missing, duplicate, needing review, or not visible "
+        "are treated as **owned once**."
+    )
+    if capture_issue_lines:
+        details.append("**Pages to retake:**\n" + "\n".join(capture_issue_lines))
+
+    if errors:
+        status = (
+            "⛔ **This draft cannot be saved.** The batch scanner is unavailable or "
+            "could not read the capture set. Nothing changed."
+        )
+    elif reserved:
+        status = (
+            "⛔ **This draft cannot be saved while a card is reserved by an accepted "
+            "trade.** Finish or cancel that trade first."
+        )
+    elif correctable and not reserved:
+        status = (
+            "⚠️ **The card positions are fully identified, but some states need "
+            "your input.** Correct the next card below as Missing, Owned once, or "
+            "Duplicate. Saving stays disabled until every uncertain card is fixed."
+        )
+    elif not confirmable:
+        status = (
+            "⚠️ **This draft cannot be saved yet.** One or more cards were unseen or "
+            "ambiguous because a portrait was unreadable, a page was missing, or pages "
+            "were out of order. Retake the five clean captures or use the manual editor."
+        )
+    else:
+        status = (
+            "✅ **All 60 card identities and states are present.** Check the two lists "
+            "below, then explicitly save them. The scanner never updates a collection "
+            "automatically."
+        )
+        if unverified_duplicates:
+            status += (
+                " Hidden badge cards will be saved conservatively as owned once; "
+                "after saving, check only those possible spares."
+            )
+
+    body: list = [
+        Text(content="# 📸 Screenshot Review"),
+        Text(content=(
+            f"## {_escape_markdown(account.name)} · `{_normalize_tag(account.tag)}`\n"
+            f"Five captures · {len(states)}/60 resolved\n\n"
+            f"**Nothing has been saved yet.** This draft is usable "
+            f"{_scan_expiry_text(usable_until)}.\n\n{_scan_privacy_text()}"
+        )),
+        Separator(divider=True),
+        Text(content=status),
+        Text(content="\n".join(details)),
+    ]
+    if correctable:
+        next_card_id = unknown[0]
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                f"## Correct next: {CARD_BY_ID[next_card_id].name}\n"
+                f"{len(unknown)} uncertain card{'s' if len(unknown) != 1 else ''} remaining"
+            )),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.DANGER,
+                    custom_id=f"cards_scan_fix_missing:{draft_id}",
+                    label="Missing",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_scan_fix_owned:{draft_id}",
+                    label="Owned once",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"cards_scan_fix_duplicate:{draft_id}",
+                    label="Duplicate",
+                ),
+            ]),
+        ])
+    save_buttons = [
+        Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            custom_id=f"cards_scan_confirm:{draft_id}",
+            label=(
+                "Save & check hidden dupes"
+                if unverified_duplicates and confirmable
+                else "Save scanned collection"
+            ),
+            emoji="✅",
+            is_disabled=not confirmable,
+        ),
+    ]
+    if confirmable:
+        save_buttons.append(Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_scan_confirm_edit:{draft_id}",
+            label="Save & edit",
+            emoji="✏️",
+        ))
+    else:
+        save_buttons.append(Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_update:{_normalize_tag(account.tag)}",
+            label="Manual edit · scan won't save",
+            emoji="✏️",
+        ))
+        body.append(Text(content=(
+            "Manual editing starts from the currently saved collection; this "
+            "unsavable scan result will not be saved."
+        )))
+    body.extend([
+        Separator(divider=True),
+        ActionRow(components=save_buttons),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_scan_change_account:{draft_id}",
+                label="Change account",
+                emoji="👤",
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_scan_cancel:{draft_id}",
+                label="Cancel",
+                emoji="✖️",
+            ),
+        ]),
+        Media(items=[MediaItem(media=FOOTER)]),
+    ])
+    return [Container(
+        accent_color=GREEN_ACCENT if confirmable else RED_ACCENT,
+        components=body,
+    )]
+
+
 async def _owned_account(
     coc_client: coc.Client,
     discord_id: int,
     tag: str,
+    *,
+    force: bool = False,
 ):
     wanted = _normalize_tag(tag)
-    data = await load_accounts(coc_client, int(discord_id))
+    data = await load_accounts(coc_client, int(discord_id), force=force)
     for entry in _loaded_entries(data):
         if _normalize_tag(entry.tag) == wanted:
             return entry.account, data
@@ -530,6 +1288,12 @@ def _category_line(inventory: dict, category_id: str) -> str:
     )
 
 
+def _scan_unverified_ids(inventory: dict) -> list[str]:
+    values = inventory.get("scan_duplicate_unverified_card_ids") or ()
+    parsed, _invalid = _scan_id_set(values)
+    return _ordered_card_ids(parsed)
+
+
 def _dashboard(
     account,
     inventory: dict,
@@ -540,6 +1304,7 @@ def _dashboard(
     summary = inventory_summary(inventory.get("cards"), complete)
     all_complete = len(complete) == len(CATEGORIES)
     reserved_count = len(_card_reservations(inventory))
+    unverified_duplicates = _scan_unverified_ids(inventory)
     stamp = inventory.get("confirmed_at") or inventory.get("updated_at")
     age = freshness_label(stamp)
     freshness_emoji = {"fresh": "🟢", "aging": "🟡", "stale": "🔴"}[age]
@@ -570,9 +1335,13 @@ def _dashboard(
         body.extend([
             Separator(divider=True),
             Text(content=(
-                "**Fast setup:** open each category, select only cards you are "
-                "missing and cards with a spare. Every other card becomes "
-                "**owned once**—no screenshots and no 60-card form."
+                "**Fast setup:** run `/cards` with `page-1` through `page-5`, using "
+                "five top-to-bottom screenshots with two full portrait rows in each. "
+                "Badges hidden by the reward bar are flagged for a quick follow-up. "
+                "Discord receives the attachments; the bot "
+                "reviews them in an only-you response, keeps the draft usable for "
+                "20 minutes, and does not retain the raw image files. Nothing saves "
+                "without confirmation. **Manual edit** remains available."
             )),
         ])
     if reserved_count:
@@ -585,6 +1354,16 @@ def _dashboard(
                 "unreserved cards remain searchable and proposal-ready."
             )),
         ])
+    if unverified_duplicates:
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                f"📸 **Check {len(unverified_duplicates)} hidden duplicate badge"
+                f"{'s' if len(unverified_duplicates) != 1 else ''}.** The scan saved "
+                "these conservatively as owned once. Review only the affected "
+                "duplicate lists to add any hidden spares."
+            )),
+        ])
 
     body.extend([
         Separator(divider=True),
@@ -592,7 +1371,11 @@ def _dashboard(
             Button(
                 style=hikari.ButtonStyle.PRIMARY,
                 custom_id=f"cards_update:{_normalize_tag(account.tag)}",
-                label="Update cards",
+                label=(
+                    "Check hidden dupes"
+                    if unverified_duplicates
+                    else "Manual edit"
+                ),
                 emoji="✏️",
             ),
             Button(
@@ -655,10 +1438,17 @@ def _dashboard(
 def _update_overview(account, inventory: dict) -> list[Container]:
     complete = set(inventory.get("complete_categories") or ())
     reviewed = set(inventory.get("reviewed_lists") or ())
+    unverified = set(_scan_unverified_ids(inventory))
     buttons = []
     for category in CATEGORIES:
         reserved = _category_has_reservations(inventory, category.id)
-        if category.id in complete:
+        hidden_count = sum(
+            card.id in unverified for card in CATEGORY_CARDS[category.id]
+        )
+        if hidden_count:
+            label = f"Check {category.short_name} badges ({hidden_count})"
+            style = hikari.ButtonStyle.PRIMARY
+        elif category.id in complete:
             summary = category_summary(inventory.get("cards"), category.id)
             label = (
                 f"{category.short_name} reserved"
@@ -680,15 +1470,22 @@ def _update_overview(account, inventory: dict) -> list[Container]:
             is_disabled=reserved,
         ))
 
+    intro = (
+        f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n\n"
+        "Choose a category. Inside it, select the complete **missing** "
+        "list and complete **duplicate** list. Changes save immediately."
+    )
+    if unverified:
+        intro += (
+            f"\n\n📸 **{len(unverified)} hidden duplicate badge"
+            f"{'s' if len(unverified) != 1 else ''} left to check.** "
+            "Only categories marked **Check** need attention."
+        )
     return [Container(
         accent_color=RED_ACCENT,
         components=[
             Text(content="# ✏️ Update Cards"),
-            Text(content=(
-                f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n\n"
-                "Choose a category. Inside it, select the complete **missing** "
-                "list and complete **duplicate** list. Changes save immediately."
-            )),
+            Text(content=intro),
             Separator(divider=True),
             ActionRow(components=buttons),
             ActionRow(components=[
@@ -712,6 +1509,11 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
     missing_reviewed = f"{category_id}:missing" in reviewed
     duplicates_reviewed = f"{category_id}:duplicates" in reviewed
     definitions = CATEGORY_CARDS[category_id]
+    unverified_duplicates = [
+        card.id
+        for card in definitions
+        if card.id in set(_scan_unverified_ids(inventory))
+    ]
 
     missing_empty = not any(cards.get(card.id, OWNED) == MISSING for card in definitions)
     duplicates_empty = not any(cards.get(card.id, OWNED) >= DUPLICATE for card in definitions)
@@ -767,7 +1569,16 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
                 options=missing_options,
             )
         ]),
-        Text(content="## Cards with a duplicate"),
+        Text(content=(
+            "## Cards with a duplicate"
+            + (
+                f"\n📸 Check the duplicate badges for: "
+                f"**{_scan_card_names(unverified_duplicates)}**. They are currently "
+                "saved as owned once; submit this duplicate list after checking."
+                if unverified_duplicates
+                else ""
+            )
+        )),
         ActionRow(components=[
             TextSelectMenu(
                 custom_id=f"cards_set_duplicates:{_normalize_tag(account.tag)}|{category_id}",
@@ -3118,6 +3929,17 @@ async def _write_category(
                 ]}
             else:
                 revision_guard = {"inventory_revision": revision}
+            update_document: dict = {
+                "$set": card_updates | identity_updates,
+                "$addToSet": add_to_set,
+                "$inc": {"inventory_revision": 1},
+            }
+            if mode in {"duplicates", "baseline"}:
+                update_document["$pull"] = {
+                    "scan_duplicate_unverified_card_ids": {
+                        "$in": [card.id for card in CATEGORY_CARDS[category_id]],
+                    },
+                }
             result = await mongo.card_inventories.update_one(
                 {
                     "_id": tag,
@@ -3140,11 +3962,7 @@ async def _write_category(
                         revision_guard,
                     ],
                 },
-                {
-                    "$set": card_updates | identity_updates,
-                    "$addToSet": add_to_set,
-                    "$inc": {"inventory_revision": 1},
-                },
+                update_document,
             )
             if getattr(result, "matched_count", 1):
                 return await mongo.card_inventories.find_one({"_id": tag}) or {}
@@ -3152,6 +3970,218 @@ async def _write_category(
             if _category_has_reservations(current, category_id):
                 raise ActiveCardTradeError
         raise InventoryWriteConflict
+
+
+def _inventory_revision_value(inventory: dict) -> int:
+    try:
+        return max(0, int(inventory.get("inventory_revision", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+async def _write_scan_draft(
+    mongo: MongoClient,
+    account,
+    draft: dict,
+    *,
+    expected_revision: int,
+    discord_id: int,
+    guild_id: int | None,
+) -> dict:
+    """Atomically replace one unreserved inventory after explicit review."""
+    if not _scan_draft_confirmable(draft):
+        raise ValueError("screenshot draft is incomplete")
+    raw_states = draft.get("card_states") or {}
+    card_states = {
+        card_id: _scan_card_state(raw_states.get(card_id))
+        for card_id in CARD_BY_ID
+    }
+    if any(state is None for state in card_states.values()):
+        raise ValueError("screenshot draft contains an invalid card state")
+
+    tag = _normalize_tag(account.tag)
+    async with _inventory_lock(tag):
+        latest = await mongo.card_inventories.find_one({"_id": tag}) or {}
+        if _inventory_revision_value(latest) != int(expected_revision):
+            raise ScanDraftStaleError
+        if _inventory_has_active_trade(latest):
+            raise ActiveCardTradeError
+
+        now = datetime.now(timezone.utc)
+        revision_guard: dict
+        if expected_revision == 0:
+            revision_guard = {"$or": [
+                {"inventory_revision": {"$exists": False}},
+                {"inventory_revision": 0},
+            ]}
+        else:
+            revision_guard = {"inventory_revision": int(expected_revision)}
+        no_live_reservation = [
+            {"$or": [
+                {f"card_trade_reservations.{card_id}": {"$exists": False}},
+                {f"card_trade_reservations.{card_id}.until": {"$lte": now}},
+            ]}
+            for card_id in CARD_BY_ID
+        ]
+        reviewed_lists = sorted(
+            f"{category.id}:{mode}"
+            for category in CATEGORIES
+            for mode in ("missing", "duplicates")
+        )
+        duplicate_unverified = _ordered_card_ids(
+            draft.get("duplicate_unverified_card_ids") or ()
+        )
+        identity = {
+            "discord_id": int(discord_id),
+            "player_name": account.name,
+            "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
+            "clan_name": account.clan_name,
+            "cards": card_states,
+            "complete_categories": [category.id for category in CATEGORIES],
+            "reviewed_lists": reviewed_lists,
+            "scan_duplicate_unverified_card_ids": duplicate_unverified,
+            "updated_at": now,
+            "confirmed_at": now,
+            "update_source": "confirmed_screenshot_review",
+        }
+        if guild_id is not None:
+            identity["guild_id"] = guild_id
+        result = await mongo.card_inventories.update_one(
+            {
+                "_id": tag,
+                "$and": [revision_guard, *no_live_reservation],
+            },
+            {"$set": identity, "$inc": {"inventory_revision": 1}},
+        )
+        if getattr(result, "matched_count", 1):
+            return await mongo.card_inventories.find_one({"_id": tag}) or {}
+
+        current = await mongo.card_inventories.find_one({"_id": tag}) or {}
+        if _inventory_has_active_trade(current):
+            raise ActiveCardTradeError
+        raise ScanDraftStaleError
+
+
+async def _start_scan_upload(
+    ctx: lightbulb.Context,
+    attachments: tuple[hikari.Attachment, ...],
+    *,
+    data: AccountsData,
+    mongo: MongoClient,
+) -> list[Container]:
+    if not _scan_accounts_ready(data):
+        retry_id = f"cards_scan_{secrets.token_urlsafe(12)}"
+        usable_until = datetime.now(timezone.utc) + CARD_SCAN_DRAFT_FOR
+        try:
+            await insert_state(mongo, {
+                "_id": retry_id,
+                "type": "cards_scan_draft",
+                "user_id": int(ctx.user.id),
+                "guild_id": int(_guild_id(ctx) or 0),
+                "scan_needs_reupload": True,
+                "usable_until": usable_until,
+            }, ttl=CARD_SCAN_DRAFT_FOR)
+        except Exception:
+            _log.exception("card screenshot account retry state failed user=%s", ctx.user.id)
+            return _notice(
+                "Every linked profile must load first",
+                "The bot did not read or retain the attachments. Try `/cards` again "
+                "after the account service recovers.",
+            )
+        return _scan_accounts_problem(
+            data,
+            retry_id,
+            has_draft=False,
+            usable_until=usable_until,
+        )
+    entries = _loaded_entries(data)
+    oversized = [
+        attachment
+        for attachment in attachments
+        if int(getattr(attachment, "size", 0) or 0) > CARD_SCAN_MAX_IMAGE_BYTES
+    ]
+    if oversized:
+        return _notice(
+            "One screenshot is too large",
+            "Each page must be 10 MB or smaller. Discord received the attachment, "
+            "but the bot did not read or retain it. Nothing was saved.",
+        )
+
+    payloads: list[bytes] = []
+    async with _card_scan_slots:
+        try:
+            payloads = list(await asyncio.gather(
+                *(attachment.read() for attachment in attachments)
+            ))
+        except Exception:
+            _log.exception("card screenshot attachment download failed user=%s", ctx.user.id)
+            return _notice(
+                "Couldn't read those screenshots",
+                "The bot did not retain the raw files and nothing was saved. "
+                "Reattach all five pages and try once more.",
+            )
+
+        try:
+            if len(set(payloads)) != CARD_SCAN_CAPTURE_COUNT:
+                return _notice(
+                    "A screenshot was repeated",
+                    "Attach five different pages in order, from the top of the "
+                    "collection to the bottom. The raw files were not retained and "
+                    "nothing was saved.",
+                )
+            draft = await asyncio.to_thread(_scan_collection_payloads, tuple(payloads))
+        finally:
+            # Scanner drafts contain only states, ids, confidence, and warnings.
+            # Drop every reference to the private attachment bytes after scanning.
+            for index in range(len(payloads)):
+                payloads[index] = b""
+            payloads.clear()
+
+    draft_id = f"cards_scan_{secrets.token_urlsafe(12)}"
+    usable_until = datetime.now(timezone.utc) + CARD_SCAN_DRAFT_FOR
+    document = {
+        "_id": draft_id,
+        "type": "cards_scan_draft",
+        "user_id": int(ctx.user.id),
+        "guild_id": int(_guild_id(ctx) or 0),
+        "scan_draft": draft,
+        "account_page": 0,
+        "usable_until": usable_until,
+    }
+    if len(entries) == 1:
+        account = entries[0].account
+        inventory = await _ensure_inventory(
+            mongo,
+            account,
+            discord_id=int(ctx.user.id),
+            guild_id=_guild_id(ctx),
+        )
+        document.update({
+            "account_tag": _normalize_tag(account.tag),
+            "base_revision": _inventory_revision_value(inventory),
+        })
+    try:
+        await insert_state(mongo, document, ttl=CARD_SCAN_DRAFT_FOR)
+    except Exception:
+        _log.exception("card screenshot draft storage failed user=%s", ctx.user.id)
+        return _notice(
+            "Couldn't open a private review",
+            "The screenshots were not retained and nothing was saved. Try again shortly.",
+        )
+
+    if len(entries) != 1:
+        return _scan_account_picker(
+            data,
+            draft_id,
+            usable_until=usable_until,
+        )
+    return _scan_review(
+        account,
+        inventory,
+        draft_id,
+        draft,
+        usable_until=usable_until,
+    )
 
 
 @loader.listener(hikari.StartedEvent)
@@ -3244,6 +4274,32 @@ class Cards(
     name="cards",
     description="Update your Clash card collection and find family trades",
 ):
+    page_1 = lightbulb.attachment(
+        "page-1",
+        "Collection rows 1-2 (top page)",
+        default=None,
+    )
+    page_2 = lightbulb.attachment(
+        "page-2",
+        "Collection rows 3-4",
+        default=None,
+    )
+    page_3 = lightbulb.attachment(
+        "page-3",
+        "Collection rows 5-6",
+        default=None,
+    )
+    page_4 = lightbulb.attachment(
+        "page-4",
+        "Collection rows 7-8",
+        default=None,
+    )
+    page_5 = lightbulb.attachment(
+        "page-5",
+        "Collection rows 9-10 (bottom page)",
+        default=None,
+    )
+
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(
@@ -3259,9 +4315,24 @@ class Cards(
         await ctx.defer(ephemeral=True)
         data = await load_accounts(coc_client, int(ctx.user.id), force=True)
         entries = _loaded_entries(data)
+        pages = (self.page_1, self.page_2, self.page_3, self.page_4, self.page_5)
+        attached = tuple(page for page in pages if page is not None)
+        if attached and len(attached) != CARD_SCAN_CAPTURE_COUNT:
+            components = _notice(
+                "Attach all five pages",
+                "Use `page-1` through `page-5` in top-to-bottom order. Nothing was saved.",
+            )
+        elif attached:
+            components = await _start_scan_upload(
+                ctx,
+                attached,
+                data=data,
+                mongo=mongo,
+            )
         if len(entries) != 1:
-            components = _account_picker(data)
-        else:
+            if not attached:
+                components = _account_picker(data)
+        elif not attached:
             account = entries[0].account
             inventory = await _ensure_inventory(
                 mongo,
@@ -3312,6 +4383,781 @@ async def cards_account_select(
         guild_id=_guild_id(ctx),
     )
     return _dashboard(account, inventory, account_count=len(_loaded_entries(data)))
+
+
+async def _load_scan_bound_account(
+    ctx,
+    action_id: str,
+    account_tag: object,
+    *,
+    usable_until: object,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+):
+    """Reload every linked profile before a draft is shown or persisted."""
+    data = await load_accounts(coc_client, int(ctx.user.id), force=True)
+    if not _scan_accounts_ready(data):
+        return None, None, data, _scan_accounts_problem(
+            data,
+            action_id,
+            has_draft=True,
+            usable_until=usable_until,
+        )
+    account, inventory, problem = await _load_target(
+        ctx,
+        _normalize_tag(account_tag),
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+    return account, inventory, data, problem
+
+
+async def _scan_account_page_change(
+    ctx,
+    action_id: str,
+    *,
+    delta: int,
+    user_id: object,
+    guild_id: object,
+    account_page: object,
+    usable_until: object,
+    account_tag: object,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    data = await load_accounts(coc_client, int(ctx.user.id), force=True)
+    if not _scan_accounts_ready(data):
+        return _scan_accounts_problem(
+            data,
+            action_id,
+            has_draft=True,
+            usable_until=usable_until,
+        )
+    entries = _loaded_entries(data)
+    pages = max(1, math.ceil(len(entries) / ACCOUNT_PAGE_SIZE))
+    page = min(max(0, _parse_page(account_page) + delta), pages - 1)
+    await update_state(
+        mongo,
+        {
+            "_id": action_id,
+            "type": "cards_scan_draft",
+            "user_id": int(ctx.user.id),
+            "guild_id": int(_guild_id(ctx) or 0),
+        },
+        {"$set": {"account_page": page}},
+    )
+    return _scan_account_picker(
+        data,
+        action_id,
+        page=page,
+        usable_until=usable_until,
+        account_tag=account_tag,
+    )
+
+
+@register_action("cards_scan_account_prev", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_account_prev(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_page: object = 0,
+    usable_until: object = None,
+    account_tag: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_account_page_change(
+        ctx,
+        action_id,
+        delta=-1,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_page=account_page,
+        usable_until=usable_until,
+        account_tag=account_tag,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_account_page", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_account_page(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_page: object = 0,
+    usable_until: object = None,
+    account_tag: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_account_page_change(
+        ctx,
+        action_id,
+        delta=0,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_page=account_page,
+        usable_until=usable_until,
+        account_tag=account_tag,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_account_next", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_account_next(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_page: object = 0,
+    usable_until: object = None,
+    account_tag: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_account_page_change(
+        ctx,
+        action_id,
+        delta=1,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_page=account_page,
+        usable_until=usable_until,
+        account_tag=account_tag,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_account", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_account(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_page: object = 0,
+    usable_until: object = None,
+    account_tag: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    values = list(getattr(ctx.interaction, "values", ()) or ())
+    tag = _normalize_tag(values[0]) if values else ""
+    account, data = await _owned_account(
+        coc_client,
+        int(ctx.user.id),
+        tag,
+        force=True,
+    )
+    if not _scan_accounts_ready(data):
+        return _scan_accounts_problem(
+            data,
+            action_id,
+            has_draft=True,
+            usable_until=usable_until,
+        )
+    if account is None:
+        return _scan_account_picker(
+            data,
+            action_id,
+            page=_parse_page(account_page),
+            usable_until=usable_until,
+            account_tag=account_tag,
+        )
+    inventory = await _ensure_inventory(
+        mongo,
+        account,
+        discord_id=int(ctx.user.id),
+        guild_id=_guild_id(ctx),
+    )
+    # Bind a new immutable draft id to this account. Two nearly simultaneous
+    # selections can then produce two correctly labelled reviews, never one
+    # review whose mutable state points at the other account.
+    bound_id = f"cards_scan_{secrets.token_urlsafe(12)}"
+    now = datetime.now(timezone.utc)
+    deadline = as_utc(usable_until)
+    if deadline is None:
+        deadline = now + CARD_SCAN_DRAFT_FOR
+        remaining = CARD_SCAN_DRAFT_FOR
+    else:
+        remaining = deadline - now
+    if remaining <= timedelta(0):
+        await _discard_scan_state(mongo, action_id)
+        return _notice(
+            "Screenshot draft expired",
+            "Nothing was saved. Re-run `/cards` with the five current pages.",
+        )
+    try:
+        await insert_state(mongo, {
+            "_id": bound_id,
+            "type": "cards_scan_draft",
+            "user_id": int(ctx.user.id),
+            "guild_id": int(_guild_id(ctx) or 0),
+            "scan_draft": scan_draft,
+            "account_tag": _normalize_tag(account.tag),
+            "base_revision": _inventory_revision_value(inventory),
+            "usable_until": deadline,
+        }, ttl=remaining)
+    except Exception:
+        _log.exception("card screenshot account binding failed user=%s", ctx.user.id)
+        return _notice(
+            "Couldn't open that review",
+            "The screenshots were not retained and nothing was saved. Try again shortly.",
+        )
+    await _discard_scan_state(mongo, action_id)
+    return _scan_review(
+        account,
+        inventory,
+        bound_id,
+        scan_draft,
+        usable_until=deadline,
+    )
+
+
+@register_action("cards_scan_accounts_retry", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_accounts_retry(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    scan_draft: object = None,
+    scan_needs_reupload: object = False,
+    account_tag: object = None,
+    account_page: object = 0,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    data = await load_accounts(coc_client, int(ctx.user.id), force=True)
+    has_draft = isinstance(scan_draft, dict)
+    if not _scan_accounts_ready(data):
+        return _scan_accounts_problem(
+            data,
+            action_id,
+            has_draft=has_draft,
+            usable_until=usable_until,
+        )
+    if bool(scan_needs_reupload) or not has_draft:
+        await _discard_scan_state(mongo, action_id)
+        return _notice(
+            "Accounts are ready",
+            "Run `/cards` again and attach all five pages. The earlier attachments "
+            "were not read or retained by the bot.",
+        )
+    if account_tag:
+        account = next(
+            (
+                entry.account
+                for entry in data.entries
+                if _normalize_tag(entry.tag) == _normalize_tag(account_tag)
+                and entry.account is not None
+            ),
+            None,
+        )
+        if account is not None:
+            inventory = await _ensure_inventory(
+                mongo,
+                account,
+                discord_id=int(ctx.user.id),
+                guild_id=_guild_id(ctx),
+            )
+            return _scan_review(
+                account,
+                inventory,
+                action_id,
+                scan_draft,
+                usable_until=usable_until,
+            )
+    return _scan_account_picker(
+        data,
+        action_id,
+        page=_parse_page(account_page),
+        usable_until=usable_until,
+        account_tag=account_tag,
+    )
+
+
+@register_action("cards_scan_retry_cancel", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_retry_cancel(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    await _discard_scan_state(mongo, action_id)
+    return _notice(
+        "Screenshot import canceled",
+        "The bot did not retain the raw image files and no scan result was saved.",
+    )
+
+
+@register_action("cards_scan_change_account", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_change_account(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    account_page: object = 0,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    data = await load_accounts(coc_client, int(ctx.user.id), force=True)
+    return _scan_account_picker(
+        data,
+        action_id,
+        page=_parse_page(account_page),
+        usable_until=usable_until,
+        account_tag=account_tag,
+    )
+
+
+@register_action("cards_scan_back_review", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_back_review(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    account, inventory, _data, target_problem = await _load_scan_bound_account(
+        ctx,
+        action_id,
+        account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+    if target_problem:
+        return target_problem
+    return _scan_review(
+        account,
+        inventory,
+        action_id,
+        scan_draft,
+        usable_until=usable_until,
+    )
+
+
+@register_action("cards_scan_manual", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_manual(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    account, inventory, _data, target_problem = await _load_scan_bound_account(
+        ctx,
+        action_id,
+        account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+    if target_problem:
+        return target_problem
+    await _discard_scan_state(mongo, action_id)
+    return _update_overview(account, inventory)
+
+
+async def _scan_fix_unknown(
+    ctx,
+    action_id: str,
+    *,
+    chosen_state: int,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object,
+    usable_until: object,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    if not _scan_draft_correctable(scan_draft):
+        return _notice(
+            "This scan needs new screenshots",
+            "Only fully identified cards can be corrected here. Nothing was saved.",
+        )
+    unknown = _ordered_card_ids(scan_draft.get("unknown_card_ids") or ())
+    if not unknown:
+        return _notice("No uncertain card remains", "Return to the review and save when ready.")
+    card_id = unknown[0]
+    revised = dict(scan_draft)
+    states = dict(revised.get("card_states") or {})
+    confidences = dict(revised.get("card_confidences") or {})
+    warnings = dict(revised.get("card_warnings") or {})
+    states[card_id] = chosen_state
+    confidences[card_id] = 1.0
+    warnings[card_id] = ["member_corrected"]
+    revised["card_states"] = states
+    revised["card_confidences"] = confidences
+    revised["card_warnings"] = warnings
+    revised["unknown_card_ids"] = [item for item in unknown if item != card_id]
+    revised["duplicate_unverified_card_ids"] = [
+        item
+        for item in _ordered_card_ids(
+            revised.get("duplicate_unverified_card_ids") or ()
+        )
+        if item != card_id
+    ]
+    result = await update_state(
+        mongo,
+        {
+            "_id": action_id,
+            "type": "cards_scan_draft",
+            "user_id": int(ctx.user.id),
+            "guild_id": int(_guild_id(ctx) or 0),
+            "scan_draft.unknown_card_ids": unknown,
+        },
+        {"$set": {"scan_draft": revised}},
+    )
+    latest = await get_state(mongo, action_id)
+    if latest is None:
+        return _notice(
+            "Screenshot draft expired",
+            "Nothing was saved. Re-run `/cards` with all five current pages.",
+        )
+    latest_draft = latest.get("scan_draft")
+    if not isinstance(latest_draft, dict):
+        return _notice("Screenshot draft unavailable", "Nothing was saved.")
+    # A concurrent click may win the compare-and-set. Always show the database
+    # winner instead of overwriting it with this interaction's stale draft.
+    del result
+    account, inventory, _data, target_problem = await _load_scan_bound_account(
+        ctx,
+        action_id,
+        account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+    if target_problem:
+        return target_problem
+    return _scan_review(
+        account,
+        inventory,
+        action_id,
+        latest_draft,
+        usable_until=usable_until,
+    )
+
+
+@register_action("cards_scan_fix_missing", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_fix_missing(
+    ctx,
+    action_id: str,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_fix_unknown(
+        ctx,
+        action_id,
+        chosen_state=MISSING,
+        scan_draft=scan_draft,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_fix_owned", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_fix_owned(
+    ctx,
+    action_id: str,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_fix_unknown(
+        ctx,
+        action_id,
+        chosen_state=OWNED,
+        scan_draft=scan_draft,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_fix_duplicate", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_fix_duplicate(
+    ctx,
+    action_id: str,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_fix_unknown(
+        ctx,
+        action_id,
+        chosen_state=DUPLICATE,
+        scan_draft=scan_draft,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_cancel", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_cancel(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    await _discard_scan_state(mongo, action_id)
+    if account_tag:
+        account, inventory, target_problem = await _load_target(
+            ctx,
+            _normalize_tag(account_tag),
+            coc_client=coc_client,
+            mongo=mongo,
+        )
+        if target_problem:
+            return target_problem
+        data = await load_accounts(coc_client, int(ctx.user.id))
+        return _dashboard(account, inventory, account_count=len(_loaded_entries(data)))
+    data = await load_accounts(coc_client, int(ctx.user.id))
+    return _account_picker(data)
+
+
+async def _confirm_scan_draft(
+    ctx,
+    action_id: str,
+    *,
+    edit_after: bool,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object,
+    base_revision: object,
+    usable_until: object,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+):
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    if not account_tag:
+        return _notice(
+            "Choose an account first",
+            "This draft is not attached to a collection. Re-run `/cards` with all five pages.",
+        )
+    account, inventory, data, target_problem = await _load_scan_bound_account(
+        ctx,
+        action_id,
+        _normalize_tag(account_tag),
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+    if target_problem:
+        return target_problem
+    if not _scan_draft_confirmable(scan_draft) or base_revision is None:
+        return _scan_review(
+            account,
+            inventory,
+            action_id,
+            scan_draft,
+            usable_until=usable_until,
+        )
+    if _inventory_has_active_trade(inventory):
+        return _scan_review(
+            account,
+            inventory,
+            action_id,
+            scan_draft,
+            usable_until=usable_until,
+        )
+    try:
+        updated = await _write_scan_draft(
+            mongo,
+            account,
+            scan_draft,
+            expected_revision=int(base_revision),
+            discord_id=int(ctx.user.id),
+            guild_id=_guild_id(ctx),
+        )
+    except (TypeError, ValueError):
+        return _scan_review(
+            account,
+            inventory,
+            action_id,
+            scan_draft,
+            usable_until=usable_until,
+        )
+    except ActiveCardTradeError:
+        latest = await mongo.card_inventories.find_one({
+            "_id": _normalize_tag(account.tag)
+        }) or inventory
+        return _scan_review(
+            account,
+            latest,
+            action_id,
+            scan_draft,
+            usable_until=usable_until,
+        )
+    except ScanDraftStaleError:
+        return _notice(
+            "Collection changed after this scan",
+            "Nothing was overwritten. Re-run `/cards` with the five current pages, or use the manual editor.",
+        )
+    await _discard_scan_state(mongo, action_id)
+    if edit_after or _scan_unverified_ids(updated):
+        return _update_overview(account, updated)
+    return _dashboard(account, updated, account_count=len(_loaded_entries(data)))
+
+
+@register_action("cards_scan_confirm", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_confirm(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    base_revision: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _confirm_scan_draft(
+        ctx,
+        action_id,
+        edit_after=False,
+        scan_draft=scan_draft,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        base_revision=base_revision,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_confirm_edit", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_confirm_edit(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    base_revision: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _confirm_scan_draft(
+        ctx,
+        action_id,
+        edit_after=True,
+        scan_draft=scan_draft,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        base_revision=base_revision,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
 
 
 @register_action("cards_dashboard")

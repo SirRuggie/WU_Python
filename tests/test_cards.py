@@ -2420,3 +2420,631 @@ def test_all_member_views_build_with_discord_component_limits():
     )
     for view in views:
         _assert_discord_payload(view)
+
+
+def _complete_scan_draft(*, duplicate_unverified=()):
+    return {
+        "version": 1,
+        "capture_count": cards_command.CARD_SCAN_CAPTURE_COUNT,
+        "card_states": {card.id: cards.OWNED for card in cards.CARDS},
+        "card_confidences": {card.id: 0.99 for card in cards.CARDS},
+        "card_warnings": {},
+        "unknown_card_ids": [],
+        "unseen_card_ids": [],
+        "duplicate_unverified_card_ids": list(duplicate_unverified),
+        "warnings": [],
+        "errors": [],
+        "identity_bound": True,
+        "coverage_complete": True,
+        "scanner_persistence_safe": False,
+    }
+
+
+def _view_nodes(view):
+    return list(_walk_payload([component.build() for component in view]))
+
+
+def _view_text(view):
+    return "\n".join(
+        str(node["content"])
+        for node in _view_nodes(view)
+        if "content" in node
+    )
+
+
+def _contains_raw_bytes(value):
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return True
+    if isinstance(value, dict):
+        return any(_contains_raw_bytes(child) for child in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(_contains_raw_bytes(child) for child in value)
+    return False
+
+
+def _scan_account(tag="#ME", name="Member"):
+    return Account(
+        tag=tag,
+        name=name,
+        clan_tag="#HOME",
+        clan_name="Home Clan",
+        town_hall=18,
+    )
+
+
+def _scan_accounts_data(*accounts):
+    return cards_command.AccountsData(entries=tuple(
+        cards_command.AccountEntry(
+            tag=account.tag,
+            status=cards_command.STATUS_LOADED,
+            account=account,
+        )
+        for account in accounts
+    ))
+
+
+def _slash_context(*, user_id=123, guild_id=1):
+    class Interaction:
+        def __init__(self):
+            self.edits = []
+
+        async def edit_initial_response(self, **kwargs):
+            self.edits.append(kwargs)
+
+    interaction = Interaction()
+    deferred = []
+
+    async def defer(*, ephemeral=False):
+        deferred.append(ephemeral)
+
+    async def respond(*args, **kwargs):
+        raise AssertionError((args, kwargs))
+
+    return SimpleNamespace(
+        user=SimpleNamespace(id=user_id),
+        guild_id=guild_id,
+        interaction=interaction,
+        defer=defer,
+        respond=respond,
+        deferred=deferred,
+    )
+
+
+def test_cards_without_attachments_keeps_the_existing_private_dashboard(monkeypatch):
+    account = _scan_account()
+    data = _scan_accounts_data(account)
+    inventory = _complete_inventory()
+    started_scan = False
+
+    async def load_accounts(*_args, **_kwargs):
+        return data
+
+    async def ensure_inventory(*_args, **_kwargs):
+        return inventory
+
+    async def start_scan(*_args, **_kwargs):
+        nonlocal started_scan
+        started_scan = True
+        raise AssertionError("zero attachments must not enter screenshot scanning")
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
+    monkeypatch.setattr(cards_command, "_start_scan_upload", start_scan)
+    command = SimpleNamespace(
+        page_1=None,
+        page_2=None,
+        page_3=None,
+        page_4=None,
+        page_5=None,
+    )
+    ctx = _slash_context()
+
+    asyncio.run(cards_command.Cards.invoke._func(
+        command,
+        ctx,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert started_scan is False
+    assert ctx.deferred == [True]
+    assert len(ctx.interaction.edits) == 1
+    nodes = _view_nodes(ctx.interaction.edits[0]["components"])
+    assert any(
+        node.get("custom_id") == "cards_update:#ME"
+        for node in nodes
+    )
+
+
+def test_cards_partial_upload_fails_before_reading_and_all_five_route_privately(
+    monkeypatch,
+):
+    account = _scan_account()
+    data = _scan_accounts_data(account)
+    attachment = SimpleNamespace(size=1)
+    routed = []
+
+    async def load_accounts(*_args, **_kwargs):
+        return data
+
+    async def start_scan(_ctx, attachments, **_kwargs):
+        routed.append(attachments)
+        return cards_command._notice("Private review", "Nothing saved yet")
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "_start_scan_upload", start_scan)
+
+    partial = SimpleNamespace(
+        page_1=attachment,
+        page_2=None,
+        page_3=None,
+        page_4=None,
+        page_5=None,
+    )
+    partial_ctx = _slash_context()
+    asyncio.run(cards_command.Cards.invoke._func(
+        partial,
+        partial_ctx,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert routed == []
+    assert partial_ctx.deferred == [True]
+    assert "Attach all five pages" in _view_text(
+        partial_ctx.interaction.edits[0]["components"]
+    )
+
+    attachments = tuple(SimpleNamespace(size=index + 1) for index in range(5))
+    complete = SimpleNamespace(**{
+        f"page_{index + 1}": item
+        for index, item in enumerate(attachments)
+    })
+    complete_ctx = _slash_context()
+    asyncio.run(cards_command.Cards.invoke._func(
+        complete,
+        complete_ctx,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert routed == [attachments]
+    assert complete_ctx.deferred == [True]
+    assert "Private review" in _view_text(
+        complete_ctx.interaction.edits[0]["components"]
+    )
+
+
+def test_scan_adapter_never_defaults_unknown_or_unseen_cards_to_owned():
+    first = cards.CARDS[0]
+    draft = cards_command._normalize_collection_scan(
+        {
+            "cards": {
+                first.id: {"state": cards.OWNED, "confidence": 0.99},
+            },
+            # A scanner cannot override the identity-based coverage check.
+            "coverage_complete": True,
+        },
+        capture_count=5,
+    )
+
+    assert draft["card_states"] == {first.id: cards.OWNED}
+    assert first.id not in draft["unseen_card_ids"]
+    assert len(draft["unseen_card_ids"]) == 59
+    assert draft["coverage_complete"] is False
+    assert cards_command._scan_draft_confirmable(draft) is False
+
+    view = cards_command._scan_review(
+        _scan_account(),
+        {"_id": "#ME"},
+        "draft-unknown",
+        draft,
+    )
+    nodes = _view_nodes(view)
+    confirm = next(
+        node for node in nodes
+        if node.get("custom_id") == "cards_scan_confirm:draft-unknown"
+    )
+    assert confirm["disabled"] is True
+    assert any(
+        node.get("custom_id") == "cards_update:#ME"
+        and node.get("disabled", False) is False
+        for node in nodes
+    )
+    assert "Not visible (59)" in _view_text(view)
+
+
+def test_ambiguous_card_blocks_scan_confirm_and_leaves_manual_fallback():
+    raw_cards = {
+        card.id: {"state": cards.OWNED, "confidence": 0.99}
+        for card in cards.CARDS
+    }
+    raw_cards["wizard"] = {"state": "unknown", "confidence": 0.99}
+    draft = cards_command._normalize_collection_scan(
+        {
+            "cards": raw_cards,
+            "unknown_card_ids": ["wizard"],
+            "coverage_complete": True,
+        },
+        capture_count=5,
+    )
+
+    assert "wizard" not in draft["card_states"]
+    assert draft["unknown_card_ids"] == ["wizard"]
+    assert draft["unseen_card_ids"] == []
+    assert cards_command._scan_draft_confirmable(draft) is False
+    view = cards_command._scan_review(
+        _scan_account(), {"_id": "#ME"}, "draft-ambiguous", draft
+    )
+    nodes = _view_nodes(view)
+    assert next(
+        node["disabled"]
+        for node in nodes
+        if node.get("custom_id") == "cards_scan_confirm:draft-ambiguous"
+    ) is True
+    assert any(node.get("custom_id") == "cards_update:#ME" for node in nodes)
+
+
+def test_hidden_duplicate_badge_is_disclosed_but_safe_owned_minimum_can_confirm():
+    hidden_card = cards.CARD_BY_ID["wizard"]
+    draft = cards_command._normalize_collection_scan(
+        {
+            "cards": {
+                card.id: {
+                    "state": cards.OWNED,
+                    "confidence": 0.99,
+                    "warnings": (
+                        ["duplicate_badge_unverified"]
+                        if card.id == hidden_card.id
+                        else []
+                    ),
+                }
+                for card in cards.CARDS
+            },
+            "duplicate_unverified_card_ids": [hidden_card.id],
+            "coverage_complete": True,
+        },
+        capture_count=5,
+    )
+
+    assert draft["card_states"][hidden_card.id] == cards.OWNED
+    assert draft["duplicate_unverified_card_ids"] == [hidden_card.id]
+    assert cards_command._scan_draft_confirmable(draft) is True
+    view = cards_command._scan_review(
+        _scan_account(), {"_id": "#ME"}, "draft-hidden", draft
+    )
+    nodes = _view_nodes(view)
+    confirm = next(
+        node for node in nodes
+        if node.get("custom_id") == "cards_scan_confirm:draft-hidden"
+    )
+    assert confirm["disabled"] is False
+    assert confirm["label"] == "Save & check hidden dupes"
+    review_text = _view_text(view)
+    assert "Duplicate badge hidden (1):" in review_text
+    assert "Wizard" in review_text
+
+
+def test_scan_upload_draft_is_private_and_retains_no_attachment_bytes(monkeypatch):
+    accounts = (_scan_account("#ONE", "One"), _scan_account("#TWO", "Two"))
+    data = _scan_accounts_data(*accounts)
+    raw_payloads = tuple(
+        f"private-image-{index}".encode()
+        for index in range(cards_command.CARD_SCAN_CAPTURE_COUNT)
+    )
+
+    class Attachment:
+        def __init__(self, payload):
+            self.payload = payload
+            self.size = len(payload)
+
+        async def read(self):
+            return self.payload
+
+    scanned = []
+    inserted = []
+
+    def scan(payloads):
+        scanned.append(payloads)
+        return _complete_scan_draft()
+
+    async def insert_state(_mongo, document, *, ttl):
+        inserted.append((document, ttl))
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_scan_collection_payloads", scan)
+    monkeypatch.setattr(cards_command, "insert_state", insert_state)
+    ctx = _slash_context()
+    view = asyncio.run(cards_command._start_scan_upload(
+        ctx,
+        tuple(Attachment(payload) for payload in raw_payloads),
+        data=data,
+        mongo=SimpleNamespace(),
+    ))
+
+    assert scanned == [raw_payloads]
+    assert len(inserted) == 1
+    document, ttl = inserted[0]
+    assert ttl == cards_command.CARD_SCAN_DRAFT_FOR
+    assert document["type"] == "cards_scan_draft"
+    assert document["user_id"] == 123
+    assert document["guild_id"] == 1
+    assert document["scan_draft"] == _complete_scan_draft()
+    assert "account_tag" not in document
+    assert _contains_raw_bytes(document) is False
+    assert "Choose the Collection to Review" in _view_text(view)
+
+
+def test_scan_account_selection_keeps_draft_without_bytes_in_immutable_account_fence(
+    monkeypatch,
+):
+    accounts = (_scan_account("#ONE", "One"), _scan_account("#TWO", "Two"))
+    data = _scan_accounts_data(*accounts)
+    draft = _complete_scan_draft()
+    state = {
+        "_id": "draft-select",
+        "type": "cards_scan_draft",
+        "user_id": 123,
+        "guild_id": 1,
+        "scan_draft": draft,
+        "account_page": 0,
+    }
+    inserted = []
+    discarded = []
+
+    async def owned_account(*_args, **_kwargs):
+        return accounts[1], data
+
+    async def ensure_inventory(*_args, **_kwargs):
+        return {"_id": "#TWO", "inventory_revision": 7}
+
+    async def insert_state(_mongo, document, *, ttl):
+        inserted.append((document, ttl))
+
+    async def discard(_mongo, draft_id):
+        discarded.append(draft_id)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_owned_account", owned_account)
+    monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
+    monkeypatch.setattr(cards_command, "insert_state", insert_state)
+    monkeypatch.setattr(cards_command, "_discard_scan_state", discard)
+    ctx = SimpleNamespace(
+        user=SimpleNamespace(id=123),
+        guild_id=1,
+        interaction=SimpleNamespace(values=("#TWO",)),
+    )
+
+    view = asyncio.run(cards_command.cards_scan_account(
+        ctx,
+        "draft-select",
+        scan_draft=draft,
+        user_id=123,
+        guild_id=1,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert len(inserted) == 1
+    bound, ttl = inserted[0]
+    assert ttl == cards_command.CARD_SCAN_DRAFT_FOR
+    assert bound["_id"] != state["_id"]
+    assert bound["type"] == "cards_scan_draft"
+    assert bound["scan_draft"] is draft
+    assert bound["account_tag"] == "#TWO"
+    assert bound["base_revision"] == 7
+    assert _contains_raw_bytes(bound) is False
+    assert discarded == ["draft-select"]
+    assert "Two · `#TWO`" in _view_text(view)
+
+
+def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypatch):
+    account = _scan_account()
+    draft = _complete_scan_draft()
+    inventory = _complete_inventory()
+    inventory["inventory_revision"] = 4
+    writes = []
+    discarded = []
+
+    async def load_target(*_args, **_kwargs):
+        return account, inventory, None
+
+    async def write_scan(*args, **kwargs):
+        writes.append((args, kwargs))
+        return dict(inventory, update_source="confirmed_screenshot_review")
+
+    async def discard(_mongo, draft_id):
+        discarded.append(draft_id)
+
+    async def load_accounts(*_args, **_kwargs):
+        return _scan_accounts_data(account)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    monkeypatch.setattr(cards_command, "_write_scan_draft", write_scan)
+    monkeypatch.setattr(cards_command, "_discard_scan_state", discard)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+
+    # Rendering review is side-effect free; only its explicit button writes.
+    cards_command._scan_review(account, inventory, "draft-confirm", draft)
+    assert writes == []
+    assert discarded == []
+
+    asyncio.run(cards_command.cards_scan_confirm(
+        ctx,
+        "draft-confirm",
+        scan_draft=draft,
+        user_id=123,
+        guild_id=1,
+        account_tag="#ME",
+        base_revision=4,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+    assert len(writes) == 1
+    assert writes[0][1]["expected_revision"] == 4
+    assert discarded == ["draft-confirm"]
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("unauthorized draft reached inventory access")
+
+    monkeypatch.setattr(cards_command, "_load_target", forbidden)
+    monkeypatch.setattr(cards_command, "_write_scan_draft", forbidden)
+    wrong_user = SimpleNamespace(user=SimpleNamespace(id=999), guild_id=1)
+    user_notice = asyncio.run(cards_command.cards_scan_confirm(
+        wrong_user,
+        "draft-private-user",
+        scan_draft=draft,
+        user_id=123,
+        guild_id=1,
+        account_tag="#ME",
+        base_revision=4,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+    assert "screenshot draft is private" in _view_text(user_notice).casefold()
+
+    wrong_guild = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=2)
+    guild_notice = asyncio.run(cards_command.cards_scan_confirm(
+        wrong_guild,
+        "draft-private-guild",
+        scan_draft=draft,
+        user_id=123,
+        guild_id=2,
+        account_tag="#ME",
+        base_revision=4,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+    assert "screenshot draft is private" in _view_text(guild_notice).casefold()
+    assert len(writes) == 1
+    assert discarded == ["draft-confirm"]
+
+
+def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed():
+    account = _scan_account()
+    elixir_hidden = cards.CATEGORY_CARDS["elixir"][0].id
+    dark_hidden = cards.CATEGORY_CARDS["dark_elixir"][0].id
+    draft = _complete_scan_draft(
+        duplicate_unverified=(elixir_hidden, dark_hidden)
+    )
+    original = {
+        "_id": "#ME",
+        "inventory_revision": 0,
+        "cards": {"wizard": cards.DUPLICATE},
+        "complete_categories": [],
+        "reviewed_lists": [],
+    }
+    collection = _FakeInventoryCollection([original])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    saved = asyncio.run(cards_command._write_scan_draft(
+        mongo,
+        account,
+        draft,
+        expected_revision=0,
+        discord_id=123,
+        guild_id=1,
+    ))
+
+    assert saved["cards"][elixir_hidden] == cards.OWNED
+    assert saved["cards"][dark_hidden] == cards.OWNED
+    assert saved["scan_duplicate_unverified_card_ids"] == [
+        elixir_hidden,
+        dark_hidden,
+    ]
+    assert saved["update_source"] == "confirmed_screenshot_review"
+    assert saved["inventory_revision"] == 1
+    overview = cards_command._update_overview(account, saved)
+    assert "hidden duplicate badges left to check" in _view_text(overview)
+    assert any(
+        node.get("custom_id") == "cards_category:#ME|elixir"
+        and node.get("label", "").startswith("Check ")
+        for node in _view_nodes(overview)
+    )
+
+    category_collection = _FakeCategoryCollection(saved)
+    category_mongo = SimpleNamespace(card_inventories=category_collection)
+    after_missing = asyncio.run(cards_command._write_category(
+        category_mongo,
+        account,
+        saved,
+        "elixir",
+        [],
+        mode="missing",
+        discord_id=123,
+        guild_id=1,
+    ))
+    assert after_missing["scan_duplicate_unverified_card_ids"] == [
+        elixir_hidden,
+        dark_hidden,
+    ]
+
+    after_duplicates = asyncio.run(cards_command._write_category(
+        category_mongo,
+        account,
+        after_missing,
+        "elixir",
+        [],
+        mode="duplicates",
+        discord_id=123,
+        guild_id=1,
+    ))
+    assert after_duplicates["scan_duplicate_unverified_card_ids"] == [dark_hidden]
+
+
+def test_scan_save_stale_revision_and_active_reservation_cannot_overwrite():
+    account = _scan_account()
+    draft = _complete_scan_draft()
+
+    stale_document = {
+        "_id": "#ME",
+        "inventory_revision": 3,
+        "cards": {"wizard": cards.DUPLICATE},
+    }
+    stale_mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([stale_document])
+    )
+    cards_command._inventory_locks.clear()
+    with pytest.raises(cards_command.ScanDraftStaleError):
+        asyncio.run(cards_command._write_scan_draft(
+            stale_mongo,
+            account,
+            draft,
+            expected_revision=2,
+            discord_id=123,
+            guild_id=1,
+        ))
+    assert stale_document["cards"] == {"wizard": cards.DUPLICATE}
+    assert stale_document["inventory_revision"] == 3
+
+    reserved_document = {
+        "_id": "#ME",
+        "inventory_revision": 2,
+        "cards": {"wizard": cards.DUPLICATE},
+        "card_trade_reservations": {
+            "wizard": {
+                "owner": "trade-a:token-a",
+                "until": datetime.now(timezone.utc) + timedelta(hours=1),
+            },
+        },
+    }
+    reserved_mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([reserved_document])
+    )
+    cards_command._inventory_locks.clear()
+    with pytest.raises(cards_command.ActiveCardTradeError):
+        asyncio.run(cards_command._write_scan_draft(
+            reserved_mongo,
+            account,
+            draft,
+            expected_revision=2,
+            discord_id=123,
+            guild_id=1,
+        ))
+    assert reserved_document["cards"] == {"wizard": cards.DUPLICATE}
+    assert reserved_document["inventory_revision"] == 2

@@ -68,9 +68,42 @@ that configured server id. DMs, other servers, and a missing or invalid
 `CARDS_GUILD_ID` fail closed before collection or trade data is created or
 changed. Accepted responses remain ephemeral.
 
-Initial setup and later updates use the same category editor. Every unselected
-card in a category defaults to one copy, so the member records only exceptions.
-For a new category, the member must explicitly review both of these lists:
+Screenshot import is the primary setup path. The same bare `/cards` command has
+five optional attachment fields named `page-1` through `page-5`. With no
+attachments it opens the normal dashboard. With attachments it requires all
+five ordered captures: two card rows per image, moving from the top of the
+collection to the bottom. The response and review stay ephemeral. Image bytes
+are discarded immediately after the CPU-bound scan; only a 20-minute private
+draft of card ids, states, confidence, and warnings is stored.
+
+The scanner validates the fixed category-frame pattern, six-column geometry,
+page order, distinct captures, repeated-row overlap, and a compact artwork
+fingerprint for every expected card before binding the ten visible rows to the
+canonical 60-card catalog. A catalog change or unexpected artwork therefore
+fails closed instead of shifting card identities. Missing portraits are
+detected from the grayscale artwork. Badge recognition has not yet been
+validated broadly enough across devices and `xN` variants to authorize trade
+supply. Neither a possible yellow badge nor a badge covered by the reward track
+is therefore promoted automatically. The safe minimum is **owned once**, and
+those card ids are highlighted for quick duplicate correction. An unreadable
+portrait, missing page, wrong order, or incomplete coverage blocks confirmation
+instead of defaulting an unknown card to owned.
+
+Nothing is written automatically. The member chooses the linked player tag
+when necessary, reviews the complete missing and duplicate summaries, and can
+correct an identity-bound uncertain card with one tap before explicitly saving
+the draft. The review also supports changing the selected account and saving
+straight into the manual editor. Confirmation rechecks every linked profile,
+Discord ownership, guild scope, inventory revision, and exact-card trade
+reservations, then replaces all 60 states in one conditional inventory update.
+Discord necessarily receives the command attachments; the bot drops the raw
+image bytes after scanning and stores only the private derived draft for up to
+20 minutes.
+
+The category editor remains the manual fallback and the lightweight update
+path after packs or out-of-band trades. Every unselected card in a category
+defaults to one copy, so the member records only exceptions. For a new category,
+the member must explicitly review both of these lists:
 
 1. every card that is missing;
 2. every card with at least one spare.
@@ -219,29 +252,20 @@ and review-required agreements remain in **My trades**; terminal rows leave
 that compact panel while their audit records and the resulting collection state
 remain stored.
 
-## Image scanning decision
+## Image scanning boundaries
 
-The live UI is a six-column grid. Missing portraits are grayscale inside a
-still-colored category frame; duplicates add a small yellow `xN` badge. A fixed
-reward overlay can cover lower rows. That makes a scanner feasible, but not
-safe to ship from layout assumptions alone: it needs screenshots from several
-device aspect ratios and languages, overlap detection, confidence reporting,
-and a correction screen.
+`utils/card_scan.py` accepts bounded PNG, JPEG, or single-frame WebP stills and
+contains no Discord or database access. Its guided batch result deliberately
+keeps `PERSISTENCE_SAFE = False`: recognition alone never authorizes a write.
+The `/cards` workflow runs it outside the Discord event loop with a bounded
+scan semaphore, normalizes its output to a BSON-safe draft, requires all 60
+explicit identities and states, and adds the human confirmation plus database
+concurrency checks described above.
 
-Image scanning is explicitly **not enabled** in the current release. There is
-no screenshot-upload button and no image result is treated as collection data.
-The dependable input path is the exception selector described above, which
-reduces entry from 60 quantities to only missing cards and cards with a spare.
-
-`utils/card_scan.py` is a deliberately isolated feasibility utility, not an
-import path. It accepts bounded PNG, JPEG, or single-frame WebP bytes, looks
-only for complete regular six-card rows, returns unknown for ambiguous or
-obstructed states, and declares `PERSISTENCE_SAFE = False`. It has no Discord,
-MongoDB, or card-catalog imports. The scan is CPU-bound and any future async
-caller must move it off the Discord event loop.
-
-Scanning must remain disabled until it is calibrated with representative
-screenshots from multiple device aspect ratios and languages, detects obstructed
-or missing rows, reports per-card confidence, and provides a correction screen.
-Once those checks are reliable, image-assisted import can populate the same
-stored inventory without changing the matching model.
+This is a guided still-image importer, not arbitrary computer vision. Members
+must provide the five ordered two-row captures. Photos, arbitrary crops, video,
+missing rows, and layouts whose category colors or geometry do not match fail
+closed. The checked-in tests use synthetic fixtures; the supplied live 1280×591
+capture set is a separate manual calibration oracle and is not retained in the
+repository. Additional device and recompression samples should expand that
+oracle over time without weakening the unknown-state checks.
