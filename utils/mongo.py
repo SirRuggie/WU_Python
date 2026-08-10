@@ -43,3 +43,9 @@ class MongoClient(AsyncMongoClient):
         # Bounded DM /todo auto-refresh sessions. TTL index on expires_at is
         # created lazily by utils/todo_sessions.py.
         self.todo_sessions = self.__settings.get_collection("todo_sessions")
+        # Durable, member-owned Clash of Cards inventories.  One document per
+        # player tag; event cards are not exposed by Supercell's public API.
+        self.card_inventories = self.__settings.get_collection("card_inventories")
+        # Two-party card proposals and their expiring reservations. Completed
+        # rows remain as a compact audit trail; no screenshots or tokens live here.
+        self.card_trades = self.__settings.get_collection("card_trades")

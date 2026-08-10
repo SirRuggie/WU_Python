@@ -10,6 +10,7 @@ def test_extension_discovery_only_returns_loader_entry_points():
     )
 
     assert "extensions.commands.accounts" in discovered
+    assert "extensions.commands.cards" in discovered
     assert "extensions.commands.todo" in discovered
     assert "extensions.commands.fwa.lazy_cwl" in discovered
     assert "extensions.commands.clan.dashboard.dashboard" in discovered
@@ -48,6 +49,7 @@ def test_shared_loader_command_families_use_one_package_entry_point():
     assert "extensions.commands.recruit.questions" not in extensions
     assert "extensions.commands.setup.recruit_aboutus" not in extensions
     assert "extensions.commands.accounts" in extensions
+    assert "extensions.commands.cards" in extensions
     assert "extensions.commands.todo" in extensions
 
 

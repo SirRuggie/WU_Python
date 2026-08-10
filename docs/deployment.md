@@ -86,6 +86,24 @@ CLOUDINARY_API_KEY
 CLOUDINARY_API_SECRET
 ```
 
+The Clash of Cards hub uses `CARDS_GUILD_ID`, set to the decimal Discord server
+ID for Warriors United, and `CARDS_CHANNEL_ID`, set to the decimal Discord
+channel ID for its family trade board. The feature fails closed when the guild
+value is missing, invalid, or does not match the interaction guild; the rest of
+the bot continues running. The channel is where proposal and status alerts are
+published in addition to best-effort participant DMs. A channel-delivery
+failure must not widen guild scope or discard the saved proposal.
+
+Add both values to `.env` before deploying the card hub, then restart the
+service so `python-dotenv` loads them. The configured channel should be inside
+the configured guild, and the bot needs **View Channel**, **Send Messages**, and
+**Read Message History** there so it can publish and update trade-board posts.
+
+```text
+CARDS_GUILD_ID=1078723854303756298
+CARDS_CHANNEL_ID=<decimal Discord channel id>
+```
+
 The BAND iCal feature also reads `BAND_ICAL_SYNC1`, `BAND_ICAL_SYNC2`,
 `BAND_ICAL_SYNC3`, `SYNC_DM_USER_IDS`, `SYNC_DM_OFFSETS`,
 `SYNC_DM_ANNOUNCE_ON_DISCOVERY`, and `SYNC_DM_SUMMARY_FILTER`. Whether each is

@@ -30,6 +30,10 @@ the hard way. The standing instruction that governs this folder is in
 - [accounts.md](accounts.md) — `/accounts`, the private linked-player inventory:
   row fields, ordering, pagination, stale-link policy, and failure accounting.
 
+- [clash-of-cards.md](clash-of-cards.md) — `/cards`, the 60-card catalog,
+  exception-only update flow, durable inventory shape, freshness rules,
+  family matching, managed trade reservations, and the guarded scanner preview.
+
 - [todo-dashboard.md](todo-dashboard.md) — `/todo`, as built. Data sources, the
   four views, layout rules and why, the freshness stamp, emoji slots, verified
   vs inferred. **Contains the `str()`-on-a-coc.py-enum trap — read it before
