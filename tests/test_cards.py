@@ -896,8 +896,11 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     assert "Wizard" in content
     assert "Dragon" in content
     assert "**Shaun** needs your spare" in content
-    # The alternatives must survive: they are what the holder chooses from.
-    assert "They also hold" in content
+    # Every card they could take, as a list - not one named card plus an
+    # aside about others, which read as a contradiction.
+    assert "You receive one of:" in content
+    assert "You pick which one when you accept" in content
+    assert "You receive:" not in content
     assert "different family clans" in content
     assert "token" not in content.casefold()
     assert "password" not in content.casefold()

@@ -4577,20 +4577,24 @@ async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
     requester = _escape_markdown(trade.get("requester_name"), limit=60)
     holder = _escape_markdown(trade.get("holder_name"), limit=60)
     attachment = await asyncio.to_thread(_trade_strip_attachment, trade)
-    # Every other duplicate of theirs that this holder needs. Without it the DM
-    # reads as a single take-it-or-leave-it offer when there is a real choice.
-    alternatives = [
+    # Everything of theirs this holder could take, the proposed card first.
+    # Naming one card and then mentioning the others as an aside read as a
+    # contradiction: it stated what you receive, then said to pick.
+    choices = [given] + [
         CARD_BY_ID[card_id]
         for card_id in (trade.get("compatible_card_ids") or ())
         if card_id in CARD_BY_ID and card_id != given.id
     ]
-    also = (
-        "\n\n-# They also hold "
-        + ", ".join(card.name for card in alternatives[:6])
-        + " that you need. Pick one when you accept."
-        if alternatives
-        else ""
-    )
+    if len(choices) > 1:
+        receive = "**You receive one of:**\n" + "\n".join(
+            f"- {_card_label(card)}" for card in choices[:8]
+        )
+        if len(choices) > 8:
+            receive += f"\n-# and {len(choices) - 8} more"
+        chooser = " You pick which one when you accept."
+    else:
+        receive = f"**You receive:** {_card_label(given)}"
+        chooser = ""
     return await _send_trade_dm(
         bot,
         int(trade["holder_discord_id"]),
@@ -4599,17 +4603,16 @@ async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
             (
                 f"**{requester}** needs your spare {_card_label(wanted)}.\n\n"
                 f"**You give:** {_card_label(wanted)}\n"
-                f"**You receive:** {_card_label(given)}\n"
+                f"{receive}\n\n"
                 f"**Your account:** {holder} {emojis.BulletPoint} "
                 f"`{trade['holder_tag']}`\n"
                 f"**Clans:** {_trade_location_line(trade)}"
-                f"{also}"
             ),
             accent=GREEN_ACCENT,
             attachment=attachment,
             footer=(
                 "Run /cards in Warriors United and open My trades to accept or "
-                "decline. Nothing is reserved until you accept."
+                f"decline.{chooser} Nothing is reserved until you accept."
             ),
         ),
         trade_id=str(trade["_id"]),
