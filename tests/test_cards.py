@@ -5552,6 +5552,51 @@ def test_match_lists_page_rather_than_truncate():
     assert seen == set(missing), f"never reachable: {set(missing) - seen}"
 
 
+def test_find_trades_explains_a_swap_hidden_by_a_reservation():
+    """A perfect swap vanishing with no reason reads as a broken bot."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["balloon"] = cards.DUPLICATE
+    inventory["cards"]["electro_dragon"] = cards.MISSING
+    holders = [{
+        "_id": "#H", "player_name": "Holder", "discord_id": 7,
+        "cards": dict(
+            {card.id: cards.OWNED for card in cards.CARDS},
+            electro_dragon=cards.DUPLICATE, balloon=cards.MISSING,
+        ),
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+
+    # Free, the swap is obvious and shows up.
+    free = cards.find_matches(inventory, holders)
+    assert free, "the fixture itself must produce an even swap"
+    open_text = _view_text(
+        cards_command._matches_view(account, inventory, free)
+    )
+    assert "promised to an accepted trade" not in open_text
+
+    # Reserved by an accepted trade, both legs are masked out and the swap
+    # disappears - so the screen has to say why.
+    inventory["card_trade_reservations"] = {
+        "balloon": "trade-1", "electro_dragon": "trade-1",
+    }
+    masked = cards_command._without_reserved_cards(inventory)
+    assert not cards.find_matches(masked, holders), "reservation should mask it"
+
+    view = cards_command._matches_view(
+        account, masked, [],
+        reserved=len(cards_command._card_reservations(inventory)),
+    )
+    text = _view_text(view)
+    assert "2 of your cards are promised to an accepted trade" in text
+    assert "My trades" in text
+    _assert_discord_payload(view)
+
+
 def test_who_has_what_destination_is_gone():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",

@@ -3149,6 +3149,7 @@ def _matches_view(
     *,
     supply: dict | None = None,
     achievable: tuple[int, int] | None = None,
+    reserved: int = 0,
 ) -> list[Container]:
     tag = _normalize_tag(account.tag)
     per_card = _offers_by_card(matches)
@@ -3161,12 +3162,22 @@ def _matches_view(
     ]
     holders_total = len({match.holder_tag for match in matches})
 
+    summary_line = (
+        f"-# {holders_total} collection"
+        f"{'s' if holders_total != 1 else ''} can supply something you need"
+    )
+    if reserved:
+        # Cards held by an accepted trade are masked out of matching, which
+        # makes an obvious swap silently disappear. Saying so is the whole
+        # difference between "the bot is broken" and "that one is spoken for".
+        summary_line += (
+            f"\n-# {reserved} of your card{'s are' if reserved != 1 else ' is'} "
+            "promised to an accepted trade, so they are hidden here until it "
+            "finishes. See **My trades**."
+        )
     body: list = [
         Text(content=f"# {emojis.magnifier} Find trades"),
-        Text(content=(
-            f"-# {holders_total} collection"
-            f"{'s' if holders_total != 1 else ''} can supply something you need"
-        )),
+        Text(content=summary_line),
     ]
     if mutual_ids:
         body.extend([
@@ -4758,7 +4769,7 @@ async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
                 f"**{requester}** needs your spare {_card_label(wanted)}.\n\n"
                 f"**You give:** {_card_label(wanted)}\n"
                 f"{receive}\n\n"
-                f"**Your account:** {holder} {emojis.BulletPoint} "
+                f"**Your account:** {holder} • "
                 f"`{trade['holder_tag']}`\n"
                 f"**Clans:** {_trade_location_line(trade)}"
             ),
@@ -4790,12 +4801,12 @@ async def _notify_trade_accepted(bot: hikari.GatewayBot, trade: dict) -> bool:
             f"{emojis.yes} Your swap was accepted",
             (
                 f"**{_escape_markdown(trade['holder_name'], limit=60)}** "
-                f"{emojis.BulletPoint} `{trade['holder_tag']}` accepted.\n\n"
+                f"• `{trade['holder_tag']}` accepted.\n\n"
                 f"**You give:** {given}\n"
                 f"**You receive:** {wanted}\n"
                 f"**Your account:** "
                 f"{_escape_markdown(trade['requester_name'], limit=60)} "
-                f"{emojis.BulletPoint} `{trade['requester_tag']}`\n\n"
+                f"• `{trade['requester_tag']}`\n\n"
                 f"{next_step}"
             ),
             accent=GREEN_ACCENT,
@@ -4822,9 +4833,9 @@ async def _notify_trade_status(
     )
     accounts = (
         f"**{_escape_markdown(trade.get('requester_name'), limit=60)}** "
-        f"{emojis.BulletPoint} `{trade.get('requester_tag')}`\n"
+        f"• `{trade.get('requester_tag')}`\n"
         f"**{_escape_markdown(trade.get('holder_name'), limit=60)}** "
-        f"{emojis.BulletPoint} `{trade.get('holder_tag')}`"
+        f"• `{trade.get('holder_tag')}`"
     )
     return await _send_trade_dm(
         bot,
@@ -4984,7 +4995,7 @@ def _clan_label(name: object, tag: object) -> str:
     clan_tag = _normalize_tag(tag)
     clan_name = _escape_markdown(str(name or "").strip(), limit=50)
     if clan_name and clan_tag:
-        return f"{clan_name} {emojis.BulletPoint} `{clan_tag}`"
+        return f"{clan_name} • `{clan_tag}`"
     return f"`{clan_tag}`" if clan_tag else "no clan"
 
 
@@ -7986,6 +7997,9 @@ async def cards_matches(
         available,
         matches,
         supply=family_supply(candidates),
+        # Counted off the unmasked inventory: `available` has already had the
+        # reserved cards rewritten, so it cannot report on them.
+        reserved=len(_card_reservations(inventory)),
         achievable=_achievable_from_matches(
             matches, _normalize_tag(account.tag)
         ),
