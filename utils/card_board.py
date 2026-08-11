@@ -409,7 +409,7 @@ def _thumbnail_alt_text(card, state: int | str) -> str:
     elif state == OWNED_SPARE_UNVERIFIED:
         detail = "owned; possible spare needs checking (question-mark badge)."
     else:
-        detail = "owned (one copy)."
+        detail = "1 copy, none to spare."
     return f"{card.name}, {category_name}: {detail}"
 
 
@@ -690,11 +690,11 @@ def _draw_card_tile(
         desaturate=state in {MISSING, UNKNOWN},
     )
 
-    # Bottom right, tucked into the corner, rather than centred on the bottom
-    # edge.  Centred read as a caption belonging under the art; the corner
-    # reads as a badge stuck on it.
+    # Centred on the bottom edge, matching where the game draws its own xN
+    # badge. The corner was tried and reads wrong beside a real screenshot.
+    center_x = (left + right) // 2
     if _is_spare(state):
-        badge = (right - 54, bottom - 26, right - 4, bottom - 2)
+        badge = (center_x - 28, bottom - 22, center_x + 28, bottom + 4)
         draw.rounded_rectangle(
             badge,
             radius=9,
@@ -710,7 +710,7 @@ def _draw_card_tile(
             fill=DUPLICATE_TEXT,
         )
     elif state == OWNED_SPARE_UNVERIFIED:
-        badge = (right - 32, bottom - 32, right - 4, bottom - 4)
+        badge = (center_x - 15, bottom - 24, center_x + 15, bottom + 6)
         draw.ellipse(
             badge,
             fill=DUPLICATE_BADGE,

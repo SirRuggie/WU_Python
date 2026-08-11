@@ -174,7 +174,7 @@ QUICK_CARD_ACTIONS = {
         "emoji": "✅",
         "from": MISSING,
         "to": OWNED,
-        "result": "owned once",
+        "result": "1 copy",
     },
     "spare": {
         "label": "Got a spare",
@@ -190,7 +190,7 @@ QUICK_CARD_ACTIONS = {
         "emoji": "↘️",
         "from": DUPLICATE,
         "to": OWNED,
-        "result": "owned once",
+        "result": "1 copy",
     },
     "missing": {
         "label": "Mark a card missing",
@@ -1608,7 +1608,7 @@ def _scan_review(
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_scan_fix_owned:{draft_id}",
-                    label="Owned once",
+                    label="Have 1",
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -1917,8 +1917,9 @@ def _dashboard(
     # Four menus, one per category, every card one interaction away.  This
     # replaces the chip-then-page browser that needed fifteen pages for sixty
     # cards.
+    sort = _inventory_sort(inventory)
     body.extend(
-        _category_select_row(account, inventory, category.id)
+        _category_select_row(account, inventory, category.id, sort)
         for category in CATEGORIES
     )
 
@@ -1928,7 +1929,7 @@ def _dashboard(
     # together; without it the panel reads as an undifferentiated wall.
     body.extend([
         Separator(divider=True),
-        Text(content="### Trading"),
+        Text(content="**Trading**"),
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.PRIMARY,
@@ -1948,7 +1949,7 @@ def _dashboard(
             ),
         ]),
         Separator(divider=True),
-        Text(content="### Your collection"),
+        Text(content="**Your collection**"),
     ])
 
     # The collection group. Scan is always here because it is how a collection
@@ -1978,6 +1979,11 @@ def _dashboard(
             custom_id=f"cards_confirm:{tag}",
             label="Still accurate",
         ))
+    occasional.append(Button(
+        style=hikari.ButtonStyle.SECONDARY,
+        custom_id=f"cards_sort:{tag}",
+        label=f"Sort: {CARD_SORT_LABELS[sort]}",
+    ))
     if account_count > 1:
         occasional.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -2033,7 +2039,52 @@ def _card_state_words(
     return "Have 1"
 
 
-def _category_select_row(account, inventory: dict, category_id: str) -> ActionRow:
+CARD_SORTS = ("game", "need", "have")
+CARD_SORT_LABELS = {
+    "game": "Game order",
+    "need": "Missing first",
+    "have": "Most copies first",
+}
+
+
+def _inventory_sort(inventory: dict) -> str:
+    """Which order the member last chose for the card menus."""
+    value = str(inventory.get("card_sort") or "game")
+    return value if value in CARD_SORTS else "game"
+
+
+def _next_sort(current: str) -> str:
+    return CARD_SORTS[(CARD_SORTS.index(current) + 1) % len(CARD_SORTS)]
+
+
+def _sorted_category_cards(inventory: dict, category_id: str, sort: str):
+    """Category cards in the member's chosen order.
+
+    Game order matches the rendered board, so a member reading the picture can
+    find the same card in the menu. The other two put whatever they are about
+    to act on at the top: missing cards to chase, or the biggest piles to trade
+    away. Ties keep game order so the list never reshuffles between renders.
+    """
+    cards_in_category = CATEGORY_CARDS[category_id]
+    if sort == "game":
+        return cards_in_category
+    saved = normalize_cards(inventory.get("cards"))
+    reverse = sort == "have"
+    return sorted(
+        cards_in_category,
+        key=lambda card: (
+            -saved.get(card.id, OWNED) if reverse else saved.get(card.id, OWNED),
+            card.position,
+        ),
+    )
+
+
+def _category_select_row(
+    account,
+    inventory: dict,
+    category_id: str,
+    sort: str = "game",
+) -> ActionRow:
     """One menu per category, so every card is one interaction from the board.
 
     Each category fits inside Discord's 25-option limit, which is what lets all
@@ -2046,7 +2097,7 @@ def _category_select_row(account, inventory: dict, category_id: str) -> ActionRo
     possible = set(_scan_unverified_ids(inventory))
     confirmed = _confirmed_count_ids(inventory)
     options = []
-    for card in CATEGORY_CARDS[category_id]:
+    for card in _sorted_category_cards(inventory, category_id, sort):
         state = saved.get(card.id, OWNED)
         options.append(SelectOption(
             label=card.name,
@@ -2261,7 +2312,9 @@ def _card_focus(
         ]),
         # The menu stays mounted, so fixing several cards in one category is
         # pick, tap, pick, tap without returning to the board between them.
-        _category_select_row(account, inventory, card.category),
+        _category_select_row(
+            account, inventory, card.category, _inventory_sort(inventory)
+        ),
     ])
     return [Container(
         accent_color=CATEGORY_ACCENTS[card.category],
@@ -2273,7 +2326,7 @@ def _state_name(value: int) -> str:
     if value == MISSING:
         return "missing"
     if value == OWNED:
-        return "owned once"
+        return "1 copy"
     if isinstance(value, int) and value >= DUPLICATE:
         return f"{value} copies"
     return "unknown"
@@ -2311,11 +2364,11 @@ def _editor_state_text(
     if state == MISSING:
         return "Missing · 0 copies"
     if state == OWNED:
-        return "Owned · 1 copy"
+        return "Have 1"
     if isinstance(state, int) and state >= DUPLICATE:
         # Counts are stored exactly now, so a member holding four is told four
         # rather than the old flat "2+ copies".
-        return f"Owned · {state} copies · {state - 1} to trade"
+        return f"Have {state} · {state - 1} to trade"
     return "State unknown"
 
 
@@ -2967,7 +3020,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
             f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
             f"{status}\n{setup_status}\n\n"
             "Select every card that applies in each list. Unselected cards are "
-            "treated as **owned once**. You can return here after a pack or trade "
+            "treated as **1 copy**. You can return here after a pack or trade "
             "and change only the affected list."
         )),
         Separator(divider=True),
@@ -2986,7 +3039,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
             + (
                 f"\n📸 Check the duplicate badges for: "
                 f"**{_scan_card_names(unverified_duplicates)}**. They are currently "
-                "saved as owned once; submit this duplicate list after checking."
+                "saved as 1 copy; submit this duplicate list after checking."
                 if unverified_duplicates
                 else ""
             )
@@ -7329,6 +7382,33 @@ async def _apply_card_count(
     )
 
 
+@register_action("cards_sort")
+@lightbulb.di.with_di
+async def cards_sort(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Cycle the card menus between game order, missing first and most copies."""
+    tag = _normalize_tag(action_id)
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    chosen = _next_sort(_inventory_sort(inventory))
+    await mongo.card_inventories.update_one(
+        {"_id": tag}, {"$set": {"card_sort": chosen}}, upsert=True
+    )
+    inventory = dict(inventory, card_sort=chosen)
+    data = await load_accounts(coc_client, int(ctx.user.id))
+    return await _dashboard_view(
+        account, inventory, account_count=len(_loaded_entries(data))
+    )
+
+
 @register_action("cards_step")
 @lightbulb.di.with_di
 async def cards_step(
@@ -8119,9 +8199,13 @@ def _card_bullets(entries, detail) -> str:
             # missing emoji costs a space rather than the whole panel.
             icon = troop_emoji.markup(card.id)
             lead = f"{icon} " if icon else ""
+            # No "-#" here. Discord only treats it as subtext at the START of a
+            # line, so mid-line it rendered as a literal "-#" after every card
+            # name.
+            note = detail(entry)
+            tail = f" — {note}" if note else ""
             lines.append(
-                f"- {lead}**{_escape_markdown(card.name)}** "
-                f"-# {detail(entry)}"
+                f"- {lead}**{_escape_markdown(card.name)}**{tail}"
             )
         if len(rows) > FAMILY_BULLET_LIMIT:
             lines.append(f"-# and {len(rows) - FAMILY_BULLET_LIMIT} more")
@@ -8168,11 +8252,15 @@ def _family_board(
     if gettable:
         body.extend([
             Separator(divider=True),
-            Text(content="### You can get\n" + _card_bullets(
+            Text(content="## You can get\n" + _card_bullets(
                 gettable,
                 lambda entry: (
-                    f"{entry.spare_count} can spare · "
-                    f"{entry.demand} still need it"
+                    f"{entry.spare_count} can spare"
+                    + (
+                        f", {entry.demand} other{'s' if entry.demand != 1 else ''} "
+                        f"want{'' if entry.demand != 1 else 's'} it"
+                        if entry.demand else ""
+                    )
                 ),
             )),
         ])
@@ -8180,9 +8268,13 @@ def _family_board(
     if offering:
         body.extend([
             Separator(divider=True),
-            Text(content="### Others want from you\n" + _card_bullets(
+            Text(content="## Others want from you\n" + _card_bullets(
                 offering,
-                lambda entry: f"{entry.demand} need your spare",
+                lambda entry: (
+                    f"{entry.demand} need it"
+                    if entry.demand != 1
+                    else "1 needs it"
+                ),
             )),
         ])
 
@@ -8190,8 +8282,10 @@ def _family_board(
         body.extend([
             Separator(divider=True),
             Text(content=(
-                f"### Nobody has a spare yet\n"
-                + _card_bullets(unavailable, lambda _entry: "no holder yet")
+                "## Nobody has a spare yet\n"
+                # The heading already says it; repeating "no holder yet" on
+                # every line was pure noise.
+                + _card_bullets(unavailable, lambda _entry: "")
             )),
         ])
 
@@ -9186,7 +9280,7 @@ async def cards_trade_complete(
     return _trade_feedback(
         "Trade completed",
         "Both inventories were updated conservatively: each missing card is now owned "
-        "and each offered duplicate is now owned once. Mark a spare again if copies remain."
+        "and each offered duplicate dropped by one copy. Mark another spare if you still have one."
         + _dm_fallback_note(dm_sent, other_id),
         account.tag,
     )

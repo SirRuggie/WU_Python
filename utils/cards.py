@@ -3,7 +3,7 @@
 The public Clash API does not expose the August 2026 event collection.  The
 Discord command therefore stores a deliberately small state per card:
 
-    0 = missing, 1 = owned once, 2 = at least one tradable duplicate
+    0 = missing, 1 = one copy, 2+ = that many copies, all but one tradable
 
 Exact duplicate counts are unnecessary for discovery and would make members do
 more work.  A completed trade can turn ``2`` into ``1``; the member can mark it

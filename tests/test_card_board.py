@@ -98,7 +98,7 @@ def test_category_rgb_frames_and_discord_accents_share_one_exact_palette():
 @pytest.mark.parametrize(
     ("card_id", "state", "state_slug", "alt_fragment"),
     (
-        ("barbarian", "owned", "owned", "owned (one copy)"),
+        ("barbarian", "owned", "owned", "1 copy, none to spare"),
         ("minion", "missing", "missing", "Grayscale card art with an X"),
         ("raged_barbarian", "duplicate", "duplicate", "2 copies, 1 spare copy"),
         (
@@ -291,13 +291,14 @@ def test_spare_unverified_is_owned_colored_and_not_unknown():
         assert rendered.getpixel((GRID_LEFT + 4, GRID_TOP + 45)) == (
             CATEGORY_COLORS["elixir"]
         )
-        # The possible-spare badge is tucked into the tile's bottom right.
-        right = GRID_LEFT + card_board.TILE_WIDTH
+        # The possible-spare badge sits centred on the tile's bottom edge,
+        # matching where the game draws its own xN badge.
+        centre = GRID_LEFT + card_board.TILE_WIDTH // 2
         bottom = GRID_TOP + TILE_HEIGHT
         assert any(
             rendered.getpixel((x, y)) == (250, 201, 38)
-            for x in range(right - 30, right - 6)
-            for y in range(bottom - 30, bottom - 6)
+            for x in range(centre - 12, centre + 12)
+            for y in range(bottom - 20, bottom)
         )
 
 

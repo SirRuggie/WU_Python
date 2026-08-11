@@ -2394,6 +2394,7 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
         "cards_matches:#ME",
         "cards_trades:#ME",
         "cards_family:#ME",
+        "cards_sort:#ME",
         "cards_pick:#ME|elixir",
         "cards_pick:#ME|dark_elixir",
         "cards_pick:#ME|builder_base",
@@ -2607,8 +2608,8 @@ def test_possible_spare_category_page_has_three_choices_within_component_limit()
     ("state", "state_text", "dec_disabled", "inc_disabled"),
     [
         (cards.MISSING, "Missing · 0 copies", True, False),
-        (cards.OWNED, "Owned · 1 copy", False, False),
-        (cards.DUPLICATE, "Owned · 2 copies · 1 to trade", False, True),
+        (cards.OWNED, "Have 1", False, False),
+        (cards.DUPLICATE, "Have 2 · 1 to trade", False, True),
     ],
 )
 def test_card_editor_shows_accessible_card_tiles_and_valid_copy_controls(
@@ -4961,8 +4962,8 @@ def test_dashboard_groups_actions_under_headings():
     )
     text = _view_text(view)
 
-    assert "### Trading" in text
-    assert "### Your collection" in text
+    assert "**Trading**" in text
+    assert "**Your collection**" in text
     # The two links used to share a line and read as one phrase.
     assert "[Clash of Cards](" in text
     assert "[Global Card Chat](" in text
@@ -4995,3 +4996,59 @@ def test_collection_group_hides_controls_that_would_do_nothing():
     assert "cards_account_page:0" in partial_ids
     # Scanning is always available.
     assert "cards_scan_start:#ME" in done_ids and "cards_scan_start:#ME" in partial_ids
+
+
+def test_card_menus_can_be_sorted_by_quantity():
+    """Game order matches the board; the other two put actionable cards on top."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["giant"] = cards.MISSING
+    inventory["cards"]["barbarian"] = 4
+    inventory["cards"]["archer"] = 2
+
+    def order(sort):
+        inv = dict(inventory, card_sort=sort)
+        row = cards_command._category_select_row(account, inv, "elixir", sort)
+        return [o.value for o in row.components[0].options]
+
+    game = order("game")
+    need = order("need")
+    have = order("have")
+
+    assert game[:3] == ["barbarian", "archer", "giant"]     # catalog order
+    assert need[0] == "giant"                               # missing first
+    assert have[0] == "barbarian"                           # 4 copies first
+    assert have[1] == "archer"                              # then 2
+    assert set(game) == set(need) == set(have)              # nothing lost
+
+
+def test_sort_cycles_and_persists():
+    assert cards_command._next_sort("game") == "need"
+    assert cards_command._next_sort("need") == "have"
+    assert cards_command._next_sort("have") == "game"
+    # An unknown stored value falls back rather than raising.
+    assert cards_command._inventory_sort({"card_sort": "nonsense"}) == "game"
+    assert cards_command._inventory_sort({"card_sort": "have"}) == "have"
+    assert cards_command._inventory_sort({}) == "game"
+
+
+def test_family_bullets_have_no_literal_hash_markers():
+    """`-#` is only subtext at the start of a line; mid-line it renders raw."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.MISSING
+    holder = _complete_inventory(tag="#H")
+    holder["cards"]["wizard"] = cards.DUPLICATE
+
+    supply = cards.family_supply([inventory, holder])
+    text = _view_text(cards_command._family_board(account, inventory, supply, 1, 1))
+
+    for line in text.split("\n"):
+        if line.startswith("- "):
+            assert "-#" not in line, f"literal marker in: {line}"
