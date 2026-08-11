@@ -36,6 +36,11 @@ CONFIG_ID = "cards_sticky_message"
 
 COLLECTION_LINK = "https://link.clashofclans.com/en/?action=OpenCollection"
 
+# Who to ask about the command. Rendered as a mention so it is tappable, but
+# posted with user_mentions=False: this message reposts all day, and a real
+# mention would notify them every single time.
+SUPPORT_USER_ID = 505227988229554179
+
 # Discord raises these for reasons a retry will never fix, so they are logged
 # once and skipped rather than retried into a rate limit. NotFoundError is in
 # here to match the other task modules; the one place it is survivable - a
@@ -93,6 +98,13 @@ def _sticky_components() -> list[Container]:
             ActionRow(components=[
                 LinkButton(url=COLLECTION_LINK, label="Open collection"),
             ]),
+            Separator(divider=True),
+            # `-#` only renders small at the very start of a line, so this note
+            # has to be its own text node rather than tacked onto the one above.
+            Text(content=(
+                f"-# Any problems or requests for this command? "
+                f"Message <@{SUPPORT_USER_ID}>"
+            )),
         ],
     )]
 
@@ -175,6 +187,11 @@ async def refresh_sticky() -> None:
             channel=channel_id,
             components=_sticky_components(),
             flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+            # The support mention stays tappable but must not notify. This
+            # message reposts all day; a live mention would ping them each time.
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
         )
     except PERMANENT_DISCORD_ERRORS as exc:
         print(f"[Cards Sticky] cannot post in #{channel_id}: "

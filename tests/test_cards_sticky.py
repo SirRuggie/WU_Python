@@ -23,8 +23,9 @@ class _Rest:
             raise self.fetch_error
         return SimpleNamespace(id=channel_id, last_message_id=self.newest_id)
 
-    async def create_message(self, channel, components, flags=None):
+    async def create_message(self, channel, components, flags=None, **kwargs):
         self.created.append((channel, components, flags))
+        self.create_kwargs = kwargs
         return SimpleNamespace(id=self.post_id)
 
     async def delete_message(self, channel_id, message_id):
@@ -270,11 +271,43 @@ def test_notice_avoids_shortenings_that_travel_badly():
 
 
 def test_notice_stays_short_enough_to_actually_be_read():
-    text = " ".join(
+    # The trailing support note is small print, not part of what a member has
+    # to read to use the command, so it is not charged to the budget.
+    body = [
+        node.content
+        for container in sticky._sticky_components()
+        for node in container.components
+        if hasattr(node, "content") and not node.content.startswith("-#")
+    ]
+
+    assert len(" ".join(body).split()) <= 70, "the whole point is that people read it"
+
+
+def test_support_contact_is_the_last_thing_and_rendered_small():
+    nodes = [
         node.content
         for container in sticky._sticky_components()
         for node in container.components
         if hasattr(node, "content")
-    )
+    ]
 
-    assert len(text.split()) <= 70, "the whole point is that people read it"
+    assert f"<@{sticky.SUPPORT_USER_ID}>" in nodes[-1]
+    # `-#` only renders small at the start of a line.
+    assert nodes[-1].startswith("-#")
+
+
+def test_the_support_mention_never_pings(monkeypatch):
+    """This message reposts all day; a live mention would notify every time."""
+    rest = _Rest(newest_id=777, post_id=888)
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert rest.create_kwargs["user_mentions"] is False
+    assert rest.create_kwargs["role_mentions"] is False
+    assert rest.create_kwargs["mentions_everyone"] is False
