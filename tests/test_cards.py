@@ -5244,3 +5244,81 @@ def test_progress_bar_width_is_constant_so_the_column_never_jitters():
         line = cards_command._category_progress({"cards": values}).split("\n")[0]
         bar = line.split("`")[1].split(" ")[0]
         assert len(bar) == cards_command.PROGRESS_WIDTH
+
+
+def _many_holders(inventory, count, missing_ids):
+    """`count` family collections, each able to supply some missing card."""
+    base = {card.id: cards.OWNED for card in cards.CARDS}
+    out = []
+    for index in range(count):
+        values = dict(base)
+        for offset, card_id in enumerate(missing_ids):
+            values[card_id] = cards.DUPLICATE if index % (offset + 2) == 0 else cards.OWNED
+        # Only some of them need the requester's spare, so both sections fill.
+        values["wizard"] = cards.MISSING if index % 3 == 0 else cards.OWNED
+        out.append({
+            "_id": f"#H{index}",
+            "player_name": f"Player {index}",
+            "cards": values,
+            "complete_categories": [c.id for c in cards.CATEGORIES],
+            "confirmed_at": datetime.now(timezone.utc),
+        })
+    return out
+
+
+def test_find_trades_is_card_shaped_so_it_does_not_grow_with_the_family():
+    """One block per holder did not survive a hundred-member family."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    missing_ids = ["root_rider", "druid", "cannon_cart"]
+    inventory = _complete_inventory()
+    for card_id in missing_ids:
+        inventory["cards"][card_id] = cards.MISSING
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+
+    small = cards.find_matches(inventory, _many_holders(inventory, 3, missing_ids))
+    large = cards.find_matches(inventory, _many_holders(inventory, 120, missing_ids))
+    assert len(large) > len(small)
+
+    small_text = _view_text(cards_command._matches_view(account, inventory, small))
+    large_text = _view_text(cards_command._matches_view(account, inventory, large))
+
+    # The panel is bounded by missing cards, not by how many people matched.
+    assert len(large_text.split("\n")) == len(small_text.split("\n"))
+    _assert_discord_payload(
+        cards_command._matches_view(account, inventory, large)
+    )
+
+
+def test_find_trades_separates_even_swaps_from_one_way_favours():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+    inventory["cards"]["druid"] = cards.MISSING
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+
+    base = {card.id: cards.OWNED for card in cards.CARDS}
+    holders = [
+        # Wants the requester's spare Wizard: an even swap.
+        {"_id": "#EVEN", "player_name": "Even",
+         "cards": dict(base, root_rider=cards.DUPLICATE, wizard=cards.MISSING),
+         "complete_categories": [c.id for c in cards.CATEGORIES],
+         "confirmed_at": datetime.now(timezone.utc)},
+        # Needs nothing back: a favour.
+        {"_id": "#GIFT", "player_name": "Gift",
+         "cards": dict(base, druid=cards.DUPLICATE),
+         "complete_categories": [c.id for c in cards.CATEGORIES],
+         "confirmed_at": datetime.now(timezone.utc)},
+    ]
+    matches = cards.find_matches(inventory, holders)
+    text = _view_text(cards_command._matches_view(account, inventory, matches))
+
+    even, favour = text.index("Even swaps"), text.index("doing you a favour")
+    assert even < favour, "even swaps must rank above one-way help"
+    assert text.index("Root Rider") < favour
+    assert text.index("Druid") > favour

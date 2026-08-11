@@ -3460,70 +3460,141 @@ def _match_line(match, ordinal: int) -> str:
     )
 
 
-def _matches_view(account, inventory: dict, matches: list) -> list[Container]:
-    complete = set(inventory.get("complete_categories") or ())
-    cards = normalize_cards(inventory.get("cards"))
-    missing_by_category = {
-        category.id: [card for card in CATEGORY_CARDS[category.id] if cards.get(card.id) == MISSING]
-        for category in CATEGORIES
-        if category.id in complete
-    }
-    if matches:
-        result_components: list = [
-            Text(content=_match_line(match, index))
-            for index, match in enumerate(matches[:MATCH_RESULT_LIMIT], start=1)
-        ]
-        if len(matches) > MATCH_RESULT_LIMIT:
-            result_components.append(Text(content=(
-                f"-# Showing the best {MATCH_RESULT_LIMIT} of "
-                f"{len(matches)} current holders."
-            )))
-    else:
-        result_components = [Text(content=(
-            "No current duplicate holder matches your missing cards yet. "
-            "Collections older than 72 hours are deliberately ignored."
-        ))]
+def _offers_by_card(matches: list) -> dict[str, dict]:
+    """Invert holder-shaped matches into card-shaped ones.
 
-    category_buttons = [
+    The old view printed one block per holder, so a hundred-member family
+    produced a hundred blocks. A member is not choosing between people, they
+    are choosing which missing card to chase, and there are at most sixty of
+    those no matter how large the family grows.
+    """
+    per_card: dict[str, dict] = {}
+    for match in matches:
+        for exchange in match.exchanges:
+            mutual = bool(exchange.returns)
+            for card_id in exchange.offers:
+                entry = per_card.setdefault(
+                    card_id, {"givers": set(), "mutual": set()}
+                )
+                entry["givers"].add(match.holder_tag)
+                if mutual:
+                    entry["mutual"].add(match.holder_tag)
+    return per_card
+
+
+def _offer_rows(card_ids: list[str], per_card: dict) -> str:
+    """Grouped bullets, one line per card, with who can supply it."""
+    by_category: dict[str, list[str]] = {}
+    for card_id in card_ids:
+        by_category.setdefault(CARD_BY_ID[card_id].category, []).append(card_id)
+    blocks = []
+    for category in CATEGORIES:
+        rows = by_category.get(category.id)
+        if not rows:
+            continue
+        lines = [f"{category.emoji} **{category.short_name}**"]
+        for card_id in rows:
+            card = CARD_BY_ID[card_id]
+            entry = per_card[card_id]
+            icon = troop_emoji.markup(card.id)
+            lead = f"{icon} " if icon else ""
+            givers = len(entry["givers"])
+            mutual = len(entry["mutual"])
+            detail = f"{givers} can give it"
+            if mutual:
+                detail += f", {mutual} want yours"
+            lines.append(f"- {lead}**{_escape_markdown(card.name)}** — {detail}")
+        blocks.append("\n".join(lines))
+    return "\n".join(blocks)
+
+
+def _matches_view(account, inventory: dict, matches: list) -> list[Container]:
+    tag = _normalize_tag(account.tag)
+    per_card = _offers_by_card(matches)
+    # A swap where both sides get something is the one worth doing first. The
+    # rest are still real - somebody may hand a card over for a duplicate they
+    # do not need - so they stay, one rank down rather than mixed in.
+    mutual_ids = [c for c in CARDS if c.id in per_card and per_card[c.id]["mutual"]]
+    oneway_ids = [
+        c for c in CARDS if c.id in per_card and not per_card[c.id]["mutual"]
+    ]
+    holders_total = len({match.holder_tag for match in matches})
+
+    body: list = [
+        Text(content="# Find trades"),
+        Text(content=(
+            f"-# {holders_total} collection"
+            f"{'s' if holders_total != 1 else ''} can supply something you need"
+        )),
+    ]
+    if mutual_ids:
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                "## 🤝 Even swaps\n"
+                "-# They have what you need and want one of your spares.\n"
+                + _offer_rows([c.id for c in mutual_ids], per_card)
+            )),
+        ])
+    if oneway_ids:
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                "## 🎁 They would be doing you a favour\n"
+                "-# Nothing of yours matches, so they get nothing back.\n"
+                + _offer_rows([c.id for c in oneway_ids], per_card)
+            )),
+        ])
+    if not per_card:
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                "Nobody with a current collection has a spare of anything you "
+                "are missing yet. Collections older than 72 hours are ignored "
+                "on purpose, so this fills in as the family updates."
+            )),
+        ])
+
+    pickable = [c for c in CARDS if c.id in per_card][:25]
+    if pickable:
+        body.extend([
+            Separator(divider=True),
+            ActionRow(components=[TextSelectMenu(
+                custom_id=f"cards_open_card:{tag}",
+                placeholder="Pick a card to see who has it...",
+                max_values=1,
+                options=[
+                    SelectOption(
+                        label=card.name,
+                        value=card.id,
+                        description=(
+                            f"{len(per_card[card.id]['givers'])} can give it"
+                            + (
+                                " · even swap"
+                                if per_card[card.id]["mutual"] else ""
+                            )
+                        )[:100],
+                        emoji=troop_emoji.partial(card.id),
+                    )
+                    for card in pickable
+                ],
+            )]),
+        ])
+    body.append(ActionRow(components=[
         Button(
             style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_find_category:{_normalize_tag(account.tag)}|{category.id}",
-            label=f"{category.short_name} ({len(missing_by_category.get(category.id, []))})",
-            emoji=category.emoji,
-            is_disabled=not missing_by_category.get(category.id),
-        )
-        for category in CATEGORIES
-    ]
+            custom_id=f"cards_dashboard:{tag}",
+            label="Back to board",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_matches:{tag}",
+            label="Refresh",
+        ),
+    ]))
     return [Container(
-        accent_color=GREEN_ACCENT if matches else RED_ACCENT,
-        components=[
-            Text(content="# 🔎 Card Matches"),
-            Text(content=(
-                f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
-                "Same-clan and reciprocal swaps appear first. A gift match is "
-                "still shown when someone has your missing card but needs none of your duplicates."
-            )),
-            Separator(divider=True),
-            *result_components,
-            Separator(divider=True),
-            Text(content="## Find one specific missing card"),
-            ActionRow(components=category_buttons),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                    label="Dashboard",
-                    emoji="⬅️",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
-                    label="Refresh",
-                    emoji="🔄",
-                ),
-            ]),
-            Media(items=[MediaItem(media=FOOTER)]),
-        ],
+        accent_color=GREEN_ACCENT if per_card else RED_ACCENT,
+        components=body,
     )]
 
 
@@ -8646,6 +8717,37 @@ async def cards_find_card(
         mongo, inventory, guild_id=_guild_id(ctx)
     )
     holders = holders_for_card(_without_reserved_cards(inventory), candidates, card_id)
+    return _holders_view(account, card_id, holders)
+
+
+@register_action("cards_open_card")
+@lightbulb.di.with_di
+async def cards_open_card(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Show who holds one card, from the card-shaped Find trades list."""
+    tag = _normalize_tag(action_id)
+    values = list(getattr(ctx.interaction, "values", ()) or ())
+    card_id = str(values[0]) if values else ""
+    if card_id not in CARD_BY_ID:
+        return _notice("Unknown card", "Open `/cards` again for a fresh list.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not inventory_is_matchable(inventory):
+        return _stale_collection_notice()
+    candidates = await _candidate_inventories(
+        mongo, inventory, guild_id=_guild_id(ctx)
+    )
+    holders = holders_for_card(
+        _without_reserved_cards(inventory), candidates, card_id
+    )
     return _holders_view(account, card_id, holders)
 
 
