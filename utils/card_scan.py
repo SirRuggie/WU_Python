@@ -126,6 +126,14 @@ ROW_OVERLAP_MAX_MEAN_DELTA = 1.0
 # pins that relationship.
 ARTWORK_HASH_MAX_DISTANCE = 41
 ARTWORK_HASH_MIN_RUNNER_UP_GAP = 8
+
+# Page-level identity. A capture's twelve cards are compared as a group against
+# each of the five catalog positions. Live captures score a mean of about 28
+# against their own position and 62 to 65 against every other one, so a ceiling
+# of 45 with a required 15-bit lead over the nearest rival accepts a correct
+# page comfortably while a wrong page, which lands near zero lead, fails.
+ARTWORK_PAGE_MAX_MEAN_DISTANCE = 45.0
+ARTWORK_PAGE_MIN_RIVAL_GAP = 15.0
 ARTWORK_HASH_SIZE = 32
 ARTWORK_HASH_MAX_FREQUENCY = 10
 ARTWORK_CROP_LEFT = -0.38
@@ -515,26 +523,49 @@ def _artwork_identity_mismatches(
         return tuple(card.id for card in expected)
 
     observed = _artwork_hashes_for_rows(image, result.rows)
-    category_by_card_id = {card.id: card.category for card in CARDS}
-    mismatched: list[str] = []
-    for card, fingerprint in zip(expected, observed):
-        expected_distance = (
-            fingerprint ^ CARD_ARTWORK_HASHES[card.id]
-        ).bit_count()
-        competitor_distances = [
-            (fingerprint ^ anchor).bit_count()
-            for other_id, anchor in CARD_ARTWORK_HASHES.items()
-            if other_id != card.id
-            and category_by_card_id[other_id] == card.category
-        ]
-        nearest_competitor = min(competitor_distances, default=math.inf)
-        if (
-            expected_distance > ARTWORK_HASH_MAX_DISTANCE
-            or nearest_competitor - expected_distance
-            < ARTWORK_HASH_MIN_RUNNER_UP_GAP
-        ):
-            mismatched.append(card.id)
-    return tuple(mismatched)
+    if not observed:
+        return tuple(card.id for card in expected)
+
+    # Identity is decided for the PAGE, not card by card.
+    #
+    # A single card's perceptual hash is noisy between sessions: a few pixels
+    # of drift in where the tile is detected moves a 32x32 crop enough to add
+    # tens of bits. Judging each card alone therefore stranded cards that are
+    # obviously correct, and it did so differently on every capture set.
+    #
+    # Twelve cards together are not noisy. Measured on live captures, a page
+    # scores a mean distance around 28 against its own position and 62 to 65
+    # against every other position, so the correct page is unmistakable even
+    # when individual cards inside it are not. Once the page is confirmed, each
+    # card's identity follows from its grid position, which the six-column
+    # geometry and category frame colours already validated.
+    def _mean_for(position: int) -> float | None:
+        candidates = CARDS[position * COLLECTION_COLUMNS * 2:]
+        candidates = candidates[:len(observed)]
+        if len(candidates) < len(observed):
+            return None
+        return sum(
+            (fingerprint ^ CARD_ARTWORK_HASHES[card.id]).bit_count()
+            for card, fingerprint in zip(candidates, observed)
+        ) / len(observed)
+
+    assigned_mean = _mean_for(capture_position)
+    if assigned_mean is None:
+        return tuple(card.id for card in expected)
+    rivals = [
+        mean
+        for position in range(len(CARDS) // (COLLECTION_COLUMNS * 2))
+        if position != capture_position
+        for mean in (_mean_for(position),)
+        if mean is not None
+    ]
+    nearest_rival = min(rivals, default=math.inf)
+    if (
+        assigned_mean > ARTWORK_PAGE_MAX_MEAN_DISTANCE
+        or nearest_rival - assigned_mean < ARTWORK_PAGE_MIN_RIVAL_GAP
+    ):
+        return tuple(card.id for card in expected)
+    return ()
 
 
 def _bounds_area(bounds: Bounds) -> int:
@@ -910,7 +941,22 @@ def _classify_slot(image: Image.Image, box: Bounds, column: int) -> SlotScan:
         image, box, badge_bounds
     )
     if provisional == MISSING:
-        if has_badge or unresolved_yellow:
+        if has_badge:
+            # The badge wins. A duplicate badge is only ever drawn on a card
+            # the player owns, so its presence is stronger evidence than a low
+            # saturation reading. Intrinsically grey artwork reads as low
+            # saturation even when owned: Cannon Cart, a grey mechanical
+            # cannon, measured 19.5 while carrying a visible x2, and calling
+            # that a conflict made an obviously owned spare unknown.
+            return SlotScan(
+                column=column,
+                state=DUPLICATE,
+                confidence=min(confidence, 0.85),
+                bounds=box,
+                portrait_saturation=portrait_saturation,
+                warnings=("duplicate_badge_read", "grey_portrait_with_badge"),
+            )
+        if unresolved_yellow:
             return SlotScan(
                 column=column,
                 state=UNKNOWN,
@@ -945,13 +991,18 @@ def _classify_slot(image: Image.Image, box: Bounds, column: int) -> SlotScan:
             warnings=("duplicate_badge_read",),
         )
     elif unresolved_yellow:
+        # A clearly coloured portrait already proves ownership. An unreadable
+        # yellow blob in the badge area can only leave the SPARE question open,
+        # so the card is owned with its badge unverified rather than unknown.
+        # Discarding the confident half of the reading is what made Rocket
+        # Balloon, at saturation 84, come back as "no idea".
         return SlotScan(
             column=column,
-            state=UNKNOWN,
-            confidence=0.0,
+            state=OWNED,
+            confidence=min(confidence, 0.85),
             bounds=box,
             portrait_saturation=portrait_saturation,
-            warnings=("ambiguous_badge_signal",),
+            warnings=("ambiguous_badge_signal", "duplicate_badge_unverified"),
         )
     else:
         state = OWNED

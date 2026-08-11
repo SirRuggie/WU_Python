@@ -469,10 +469,16 @@ def test_yellow_frame_is_not_mistaken_for_a_duplicate_badge():
         _fixture([[card_scan.OWNED] * 6], frame=(230, 178, 20))
     )
 
+    # The guarantee that matters: a yellow frame must never invent trade
+    # supply. It still cannot.
     assert card_scan.DUPLICATE not in _states(result)[0]
-    assert all(slot.state == card_scan.UNKNOWN for slot in result.rows[0].slots)
+    # The portrait is clearly coloured, so ownership is not in doubt; only the
+    # spare question is. Throwing the whole card away for an unreadable blob
+    # made obviously-owned cards come back as "no idea".
+    assert all(slot.state == card_scan.OWNED for slot in result.rows[0].slots)
     assert all(
         "ambiguous_badge_signal" in slot.warnings
+        and "duplicate_badge_unverified" in slot.warnings
         for slot in result.rows[0].slots
     )
 
@@ -614,7 +620,13 @@ def test_artwork_anchor_catalog_is_complete_private_and_separated():
     assert min(same_category_distances) > card_scan.ARTWORK_HASH_MAX_DISTANCE
 
 
-def test_artwork_identity_mismatch_names_the_page_and_cards(monkeypatch):
+def test_a_small_artwork_difference_does_not_strand_the_page(monkeypatch):
+    """Identity is decided for the page, not card by card.
+
+    A single card's perceptual hash drifts between sessions, so judging each
+    card alone stranded obviously-correct cards. Twelve together do not drift:
+    a page scores about 28 against its own position and 62+ against any other.
+    """
     canonical = [_collection_capture(index) for index in range(5)]
     _install_synthetic_artwork_anchors(monkeypatch, canonical)
     swapped_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
@@ -632,20 +644,8 @@ def test_artwork_identity_mismatch_names_the_page_and_cards(monkeypatch):
 
     first_page = draft.captures[0]
     assert first_page.input_index == 1
-    # A partial mismatch keeps the ten proven cards and marks only the two
-    # unproven ones unknown. Discarding the whole page cost a member every
-    # card on it, which is what made a real five-capture import come back
-    # mostly unseen.
     assert first_page.accepted is True
-    assert first_page.warnings == ("partial_artwork_identity_mismatch",)
-    assert set(first_page.mismatched_card_ids) >= {"barbarian", "archer"}
-    assert "artwork_identity_mismatch" in draft.warnings
-    assert "artwork_identity_mismatch" in draft.cards[0].warnings
-    # Fail-closed is preserved per card, not per page.
-    assert draft.cards[0].state == card_scan.UNKNOWN
-    assert "artwork_identity_unproven" in draft.cards[0].warnings
     assert set(draft.unseen_card_ids) == set()
-    assert draft.complete is False
 
 
 def test_a_page_that_proves_nothing_is_still_rejected_whole(monkeypatch):
