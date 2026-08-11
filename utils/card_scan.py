@@ -68,7 +68,11 @@ YELLOW_HUE_MAX = 50
 YELLOW_MIN_SATURATION = 120
 YELLOW_MIN_VALUE = 150
 BADGE_MIN_WIDTH_RATIO = 0.38
-BADGE_MIN_FILL = 0.50
+# Measured across five unobstructed badges (four x2 and one x4) from two
+# accounts at 3120x1440: fill ran 0.484 to 0.529.  The former 0.50 floor sat
+# inside that range and rejected a real badge at 0.484.  Width stays the
+# discriminator that excludes the known fiery-art false signal at 0.321.
+BADGE_MIN_FILL = 0.44
 
 # Median frame hues in Pillow's 0..255 HSV representation, measured from the
 # supplied live collection captures.  The tolerance intentionally leaves broad
@@ -868,19 +872,28 @@ def _classify_slot(image: Image.Image, box: Bounds, column: int) -> SlotScan:
             )
         state = MISSING
     elif has_badge:
-        # The supplied live calibration set contains no unobstructed positive
-        # xN badge.  Until one exists, a yellow badge-shaped signal proves only
-        # the colored portrait (one copy); it must never create trade supply.
+        # A live calibration set now exists: five unobstructed badges (four x2
+        # and one x4) across two accounts, with no false positive in twenty
+        # four slots.  Their geometry clusters tightly - width 0.442..0.473,
+        # height 0.138..0.152, centre offset under 0.015, vertical centre
+        # 0.959..0.987 - and the width floor keeps the known fiery-art signal
+        # at 0.321 out.  A badge that clears all five tests is therefore read
+        # as a spare rather than demoted to one copy.
+        #
+        # The exact count is deliberately not read.  The catalog stores only
+        # missing/owned/spare, so x2 and x4 are the same fact, and reading the
+        # glyph would be a harder problem for no gain.
+        #
+        # This still authorizes nothing on its own: the scan produces a draft
+        # that the member confirms before anything is written.  What changed is
+        # the default, so a correct read no longer costs a question per card.
         return SlotScan(
             column=column,
-            state=OWNED,
-            confidence=min(confidence, 0.85),
+            state=DUPLICATE,
+            confidence=min(confidence, 0.9),
             bounds=box,
             portrait_saturation=portrait_saturation,
-            warnings=(
-                "visible_duplicate_badge_unverified",
-                "duplicate_badge_unverified",
-            ),
+            warnings=("duplicate_badge_read",),
         )
     elif unresolved_yellow:
         return SlotScan(

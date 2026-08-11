@@ -96,10 +96,15 @@ def _states(result: card_scan.ScanResult) -> list[list[str]]:
 
 
 def _safe_minimum_states(rows: Sequence[Sequence[str]]) -> list[list[str]]:
-    return [
-        [card_scan.OWNED if state == card_scan.DUPLICATE else state for state in row]
-        for row in rows
-    ]
+    """Expected states for a capture whose badges are drawn unobstructed.
+
+    This used to downgrade every duplicate to owned, because the scanner
+    refused to read a badge at all. The detector is now calibrated against
+    real captures, so a badge that clears the geometry tests is read as a
+    spare and the expectation is the source row unchanged. Obstructed badges
+    are still demoted, and that is asserted separately.
+    """
+    return [list(row) for row in rows]
 
 
 REAL_CAPTURE_STATES = (
@@ -263,7 +268,8 @@ def test_preview_flags_make_persistence_and_identity_limits_explicit():
     assert "card_identity_not_inferred" in result.warnings
 
 
-def test_visible_badge_never_creates_unverified_duplicate_supply():
+def test_an_unobstructed_badge_is_read_as_a_spare():
+    """Calibrated against real captures; see BADGE_MIN_FILL for the numbers."""
     source = [
         card_scan.MISSING,
         card_scan.OWNED,
@@ -277,14 +283,22 @@ def test_visible_badge_never_creates_unverified_duplicate_supply():
     assert len(result.rows) == 1
     assert _states(result) == _safe_minimum_states([source])
     assert len(result.rows[0].slots) == 6
-    assert result.rows[0].slots[2].warnings == (
-        "visible_duplicate_badge_unverified",
-        "duplicate_badge_unverified",
-    )
+    assert result.rows[0].slots[2].state == card_scan.DUPLICATE
+    assert result.rows[0].slots[2].warnings == ("duplicate_badge_read",)
     assert result.rows[0].slots[3].warnings == (
         "ambiguous_portrait_saturation",
     )
     assert result.rows[0].layout_confidence >= 0.9
+
+
+def test_a_badge_narrower_than_the_width_floor_is_not_a_spare():
+    """The width floor is what keeps fiery artwork from inventing supply."""
+    assert card_scan.BADGE_MIN_WIDTH_RATIO > 0.321
+    # Real badges measured 0.442 to 0.473 of the card width, so the floor sits
+    # between the known false signal and the observed minimum.
+    assert card_scan.BADGE_MIN_WIDTH_RATIO < 0.442
+    # Real fills ran 0.484 to 0.529; the floor must sit below that range.
+    assert card_scan.BADGE_MIN_FILL < 0.484
 
 
 def test_finds_two_rows_in_top_to_bottom_and_left_to_right_order():
@@ -760,7 +774,7 @@ def test_batch_maps_any_order_captures_and_ignores_toolbar_copy(monkeypatch):
     assert all(category.complete for category in draft.categories)
 
 
-def test_batch_downgrades_visible_and_hidden_duplicate_badges_to_owned(monkeypatch):
+def test_batch_reads_visible_badges_and_still_defers_obstructed_ones(monkeypatch):
     first_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
     first_rows[0][0] = card_scan.DUPLICATE
     first_rows[1][0] = card_scan.DUPLICATE
@@ -772,12 +786,18 @@ def test_batch_downgrades_visible_and_hidden_duplicate_badges_to_owned(monkeypat
 
     draft = card_scan.scan_collection_screenshots(payloads)
 
-    assert draft.cards[0].state == card_scan.OWNED
-    assert "visible_duplicate_badge_unverified" in draft.cards[0].warnings
+    # A badge the scanner could actually read is a spare, so the member is no
+    # longer asked a question per card about something already on screen.
+    assert draft.cards[0].state == card_scan.DUPLICATE
+    assert "duplicate_badge_read" in draft.cards[0].warnings
+    # The second one sits under the reward track, so its badge cannot be read
+    # and it is still demoted to one copy and queued for review.
     assert draft.cards[6].state == card_scan.OWNED
     assert "duplicate_badge_unverified" in draft.cards[6].warnings
-    assert draft.duplicate_count == 0
-    assert draft.owned_count == 29
+    assert draft.duplicate_count == 1
+    assert draft.owned_count == 28
+    # Nothing about this authorizes a write on its own.
+    assert card_scan.PERSISTENCE_SAFE is False
 
 
 def test_batch_accepts_out_of_order_capture_without_shifting_catalog_ids(monkeypatch):
