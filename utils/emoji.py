@@ -116,6 +116,10 @@ class Emojis:
         self.switch = EmojiType("<:switch_horizontal_arrows:1536798904056815806>")
         self.sort = EmojiType("<:sort_updown_arrows:1536804681555247144>")
         self.scan = EmojiType("<:scan_viewfinder:1536807847042613398>")
+        # Clash of Cards trade categories.
+        self.card_give = EmojiType("<:card_give:1536827997808758866>")
+        self.card_swap = EmojiType("<:card_swap:1536828047330648074>")
+        self.card_hot = EmojiType("<:card_hot:1536829240224251994>")
         # Clash of Cards categories. Names match what was uploaded to the bot.
         self.card_elixir = EmojiType("<:Elixer:1536777630278357164>")
         self.card_dark_elixir = EmojiType("<:Dark_Elixer:1536777729511391322>")

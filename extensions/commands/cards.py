@@ -181,6 +181,9 @@ TRADES_EMOJI = _safe_partial(emojis.inbox)
 SWITCH_EMOJI = _safe_partial(emojis.switch)
 SORT_EMOJI = _safe_partial(emojis.sort)
 SCAN_EMOJI = _safe_partial(emojis.scan)
+GIVE_EMOJI = _safe_partial(emojis.card_give)
+SWAP_EMOJI = _safe_partial(emojis.card_swap)
+HOT_EMOJI = _safe_partial(emojis.card_hot)
 NEXT_EMOJI = _safe_partial(emojis.next_page)
 PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
@@ -3069,10 +3072,10 @@ def _favours_view(account, matches: list, *, page: int = 0) -> list[Container]:
     window = oneway[page * MATCH_LIST_PAGE:(page + 1) * MATCH_LIST_PAGE]
     return _match_list_view(
         account,
-        title="# 🎁 Ask a favour",
+        title=f"# {emojis.card_give} Ask for help",
         blurb=(
-            "Nothing of yours matches what these players need, so they would "
-            "get nothing back. Open a card to see who holds it and ask."
+            "You have nothing these players need, so they would get nothing "
+            "back. Open a card to see who holds it and ask."
         ),
         rows=_offer_rows([c.id for c in window], per_card),
         action="cards_favours",
@@ -3114,8 +3117,8 @@ def _demand_view(
 
     return _match_list_view(
         account,
-        title="# 🎯 Your spares in demand",
-        blurb="Worth holding on to when you bargain.",
+        title=f"# {emojis.card_hot} Your spares others want",
+        blurb="Worth keeping when you bargain.",
         rows="\n\n".join(blocks),
         action="cards_demand",
         page=page,
@@ -3154,7 +3157,7 @@ def _matches_view(
         body.extend([
             Separator(divider=True),
             Text(content=(
-                "## 🤝 Even swaps\n"
+                f"## {emojis.card_swap} Even swaps\n"
                 "-# They have what you need and want one of your spares."
             )),
             Separator(divider=False),
@@ -3241,15 +3244,15 @@ def _matches_view(
         secondary.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_favours:{tag}",
-            label=f"Ask a favour ({len(oneway_ids)})",
-            emoji="🎁",
+            label=f"Ask for help ({len(oneway_ids)})",
+            emoji=GIVE_EMOJI,
         ))
     if wanted_from_me:
         secondary.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_demand:{tag}",
-            label=f"Your spares in demand ({len(wanted_from_me)})",
-            emoji="🎯",
+            label=f"Spares others want ({len(wanted_from_me)})",
+            emoji=HOT_EMOJI,
         ))
     if secondary:
         body.extend([Separator(divider=True), ActionRow(components=secondary)])

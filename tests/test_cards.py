@@ -4989,7 +4989,7 @@ def test_find_trades_absorbs_what_who_has_what_uniquely_showed():
     demand = cards_command._demand_view(
         account, inventory, cards.family_supply([inventory, *holders])
     )
-    assert "Your spares in demand" in _view_text(demand)
+    assert "Your spares others want" in _view_text(demand)
     assert "Wizard" in _view_text(demand)
     _assert_discord_payload(demand)
 
@@ -5141,6 +5141,9 @@ def test_refresh_and_pagination_use_the_uploaded_control_emoji():
         (cards_command.SWITCH_EMOJI, 1536798904056815806),
         (cards_command.SORT_EMOJI, 1536804681555247144),
         (cards_command.SCAN_EMOJI, 1536807847042613398),
+        (cards_command.GIVE_EMOJI, 1536827997808758866),
+        (cards_command.SWAP_EMOJI, 1536828047330648074),
+        (cards_command.HOT_EMOJI, 1536829240224251994),
     ):
         assert resolved is not hikari.UNDEFINED
         assert resolved.id == expected
