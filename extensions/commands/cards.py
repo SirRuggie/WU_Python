@@ -3290,20 +3290,61 @@ def _trade_offer_view(account, card_id: str, holder) -> list[Container]:
         None,
     )
     return_ids = exchange.returns if exchange is not None else ()
-    options = [
-        SelectOption(
-            label=CARD_BY_ID[return_id].name,
-            value=f"{holder.holder_tag}|{return_id}",
-            description=_plain(f"Give to {holder.holder_name}", limit=100),
-        )
-        for return_id in return_ids
-        if return_id in CARD_BY_ID
-    ]
-    if not options:
+    givable = [return_id for return_id in return_ids if return_id in CARD_BY_ID]
+    if not givable:
         return _notice(
             "That reciprocal match changed",
             "Refresh the holder list; this player no longer needs a compatible spare.",
         )
+
+    tag = _normalize_tag(account.tag)
+    holder_tag = _normalize_tag(holder.holder_tag)
+    if len(givable) == 1:
+        # Nothing to choose. A one-option menu still made the member open it,
+        # read the only entry and pick it, to reach a conclusion the bot had
+        # already worked out, so the offer sends straight from the button.
+        only = CARD_BY_ID[givable[0]]
+        icon = troop_emoji.markup(only.id)
+        instruction = (
+            f"You have one card they need: "
+            f"{icon + ' ' if icon else ''}**{only.name}**.\n"
+            "The bot rechecks both collections when they accept. This proposal "
+            "does not reserve cards."
+        )
+        chooser = ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            custom_id=(
+                f"cards_trade_request:{tag}|{wanted.id}"
+                f"|{holder_tag}|{only.id}"
+            ),
+            label=f"Send offer · give {only.name}"[:80],
+            emoji=troop_emoji.partial(only.id),
+        )])
+    else:
+        instruction = (
+            "Choose one duplicate to give. The bot rechecks both collections "
+            "when the other player accepts. This proposal does not reserve cards."
+        )
+        chooser = ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_trade_request:{tag}|{wanted.id}",
+            placeholder="Choose the duplicate you will give...",
+            min_values=1,
+            max_values=1,
+            options=[
+                SelectOption(
+                    label=CARD_BY_ID[return_id].name,
+                    value=f"{holder.holder_tag}|{return_id}",
+                    description=_plain(
+                        f"Give to {holder.holder_name}", limit=100
+                    ),
+                    # The troop's own art, so the menu reads as cards rather
+                    # than a list of words, like every other card menu.
+                    emoji=troop_emoji.partial(return_id),
+                )
+                for return_id in givable
+            ],
+        )])
+
     return [Container(
         accent_color=GREEN_ACCENT,
         components=[
@@ -3311,22 +3352,11 @@ def _trade_offer_view(account, card_id: str, holder) -> list[Container]:
             Text(content=(
                 f"**You receive:** {wanted.name}\n"
                 f"**From:** {_escape_markdown(holder.holder_name, limit=60)} "
-                f"· `{_normalize_tag(holder.holder_tag)}`\n\n"
-                "Choose one duplicate to give. The bot rechecks both collections "
-                "when the other player accepts. This proposal does not reserve cards."
+                f"· `{holder_tag}`\n\n"
+                f"{instruction}"
             )),
             Separator(divider=True),
-            ActionRow(components=[
-                TextSelectMenu(
-                    custom_id=(
-                        f"cards_trade_request:{_normalize_tag(account.tag)}|{wanted.id}"
-                    ),
-                    placeholder="Choose the duplicate you will give...",
-                    min_values=1,
-                    max_values=1,
-                    options=options,
-                )
-            ]),
+            chooser,
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -7828,9 +7858,19 @@ async def cards_trade_request(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    requester_tag, wanted_card_id = _parse_trade_request_target(action_id)
+    parts = str(action_id or "").split("|")
+    requester_tag, wanted_card_id = _parse_trade_request_target(
+        "|".join(parts[:2])
+    )
     values = list(getattr(ctx.interaction, "values", ()) or ())
-    holder_tag, given_card_id = _parse_trade_option(values[0] if values else "")
+    if values:
+        holder_tag, given_card_id = _parse_trade_option(values[0])
+    else:
+        # When only one card qualifies there is nothing to choose, so the offer
+        # sends straight from a button and the pair a select would have carried
+        # rides in the custom_id instead. Same shape as the Ask button above.
+        holder_tag = _normalize_tag(parts[2]) if len(parts) > 2 else ""
+        given_card_id = parts[3] if len(parts) > 3 else ""
     wanted = CARD_BY_ID.get(wanted_card_id)
     given = CARD_BY_ID.get(given_card_id)
     if wanted is None or given is None or wanted.category != given.category:

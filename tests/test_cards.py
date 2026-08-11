@@ -8,7 +8,7 @@ import pytest
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import cards as cards_command
-from utils import card_board, cards
+from utils import card_board, cards, troop_emoji
 from utils.todo_data import Account
 
 
@@ -5069,6 +5069,92 @@ def test_refresh_and_pagination_use_the_uploaded_control_emoji():
     ):
         assert resolved is not hikari.UNDEFINED
         assert resolved.id == expected
+
+
+def _offer_holder(returns):
+    """A match whose reciprocal leg offers exactly `returns`."""
+    return SimpleNamespace(
+        holder_tag="#H", holder_name="Holder", holder_discord_id=7,
+        holder_clan_tag="#C", holder_clan_name="Clan", same_clan=True,
+        confirmed_at=datetime.now(timezone.utc),
+        exchanges=(cards.CategoryExchange(
+            category="elixir", offers=("balloon",), returns=tuple(returns),
+        ),),
+    )
+
+
+def test_a_single_giveable_card_sends_without_a_menu():
+    """A one-entry menu asks the member to decide something already decided."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._trade_offer_view(
+        account, "balloon", _offer_holder(["electro_dragon"])
+    )
+    nodes = _view_nodes(view)
+
+    assert [n for n in nodes if n.get("type") == 3] == [], "still a menu"
+    send = next(
+        n for n in nodes
+        if str(n.get("custom_id", "")).startswith("cards_trade_request:")
+    )
+    # Everything the select would have carried now rides in the custom_id.
+    assert send["custom_id"] == "cards_trade_request:#ME|balloon|#H|electro_dragon"
+    assert "Electro Dragon" in send["label"]
+    assert "Electro Dragon" in _view_text(view)
+    _assert_discord_payload(view)
+
+
+def test_several_giveable_cards_still_offer_a_choice_with_art():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    returns = ["electro_dragon", "dragon", "wizard"]
+    # The troop cache is primed from Mongo at startup, so it is empty here.
+    # Without priming, this test would pass whether or not the menu asks for
+    # the art, because partial() returns UNDEFINED either way.
+    troop_emoji.prime([
+        {"slug": slug, "emoji_id": 1000 + index, "name": f"troop_{slug}"}
+        for index, slug in enumerate(returns)
+    ])
+    try:
+        view = cards_command._trade_offer_view(
+            account, "balloon", _offer_holder(returns)
+        )
+        menu = next(n for n in _view_nodes(view) if n.get("type") == 3)
+
+        assert [o["value"] for o in menu["options"]] == [
+            f"#H|{r}" for r in returns
+        ]
+        # Every other card menu shows the troop art; this one was words only.
+        for option in menu["options"]:
+            assert option.get("emoji"), f"{option['label']} has no art"
+        _assert_discord_payload(view)
+    finally:
+        troop_emoji.clear()
+
+
+def test_the_direct_send_custom_id_fits_discords_limit():
+    """Four segments in one id; the longest card names must still fit."""
+    account = Account(
+        tag="#ME000000000", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    longest = max((c.id for c in cards.CARDS), key=len)
+    elixir = [c.id for c in cards.CATEGORY_CARDS["elixir"]]
+    target = longest if longest in elixir else elixir[0]
+    view = cards_command._trade_offer_view(
+        account, "balloon", _offer_holder([target])
+    )
+    send = next(
+        n for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith("cards_trade_request:")
+    )
+
+    assert len(send["custom_id"]) <= 100
+    assert send["custom_id"].count(":") == 1
 
 
 def test_my_trades_and_switch_account_use_the_uploaded_emoji():
