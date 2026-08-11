@@ -872,9 +872,9 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
             assert discord_id == 222
             return "dm-channel"
 
-        async def create_message(self, *, channel, content, attachment=None):
+        async def create_message(self, *, channel, components, flags=None):
             assert channel == "dm-channel"
-            self.messages.append((content, attachment))
+            self.messages.append((_view_text(components), _view_media(components)))
 
     rest = Rest()
     bot = SimpleNamespace(rest=rest)
@@ -895,13 +895,15 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     assert "Root Rider" in content
     assert "Wizard" in content
     assert "Dragon" in content
-    assert "Shaun needs your duplicate Root Rider" in content
-    assert "Shaun has **Wizard, Dragon** duplicates that you need" in content
+    assert "**Shaun** needs your spare" in content
+    # The alternatives must survive: they are what the holder chooses from.
+    assert "They also hold" in content
     assert "different family clans" in content
     assert "token" not in content.casefold()
     assert "password" not in content.casefold()
-    assert attachment.filename == "card-trade-root_rider-wizard.png"
-    assert attachment.mimetype == "image/png"
+    # Mounted in the container's gallery, which is the only way a V2
+    # message shows an image at all.
+    assert "card-trade-root_rider-wizard.png" in str(attachment)
 
     channel_copy = cards_command._trade_channel_content(trade)
     assert "Shaun needs your duplicate Root Rider" in channel_copy
@@ -949,8 +951,11 @@ def test_trade_visual_failure_still_delivers_accessible_text(monkeypatch):
         SimpleNamespace(rest=rest), trade
     )) is True
     assert len(rest.messages) == 1
-    assert "attachment" not in rest.messages[0]
-    assert "Shaun needs your duplicate Root Rider" in rest.messages[0]["content"]
+    sent = rest.messages[0]["components"]
+    # No gallery at all when the render failed, but the words still arrive.
+    assert _view_media(sent) is None
+    assert "needs your spare" in _view_text(sent)
+    assert "Root Rider" in _view_text(sent)
 
 
 def test_follow_up_status_dm_identifies_both_account_tags():
@@ -962,9 +967,9 @@ def test_follow_up_status_dm_identifies_both_account_tags():
             assert discord_id == 222
             return "dm-channel"
 
-        async def create_message(self, *, channel, content):
+        async def create_message(self, *, channel, components, flags=None):
             assert channel == "dm-channel"
-            self.messages.append(content)
+            self.messages.append(_view_text(components))
 
     trade = _trade_document()
     trade.update({
@@ -1522,8 +1527,8 @@ class _TradeHandlerRest:
     async def create_dm_channel(self, discord_id):
         return f"dm-{discord_id}"
 
-    async def create_message(self, *, channel, content):
-        self.messages.append((channel, content))
+    async def create_message(self, *, channel, components, flags=None):
+        self.messages.append((channel, _view_text(components)))
 
 
 def _patch_trade_handler_dependencies(monkeypatch, account):
@@ -2872,6 +2877,16 @@ def _complete_scan_draft(*, duplicate_unverified=()):
 
 def _view_nodes(view):
     return list(_walk_payload([component.build() for component in view]))
+
+
+def _view_media(view):
+    """The first media item mounted in a container, or None."""
+    for node in _view_nodes(view):
+        for item in node.get("items") or ():
+            media = item.get("media") if isinstance(item, dict) else None
+            if media is not None:
+                return media
+    return None
 
 
 def _view_text(view):

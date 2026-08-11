@@ -4381,20 +4381,46 @@ async def _live_family_clans(
     return left_clan, right_clan
 
 
+def _trade_dm_container(
+    title: str,
+    body: str,
+    *,
+    accent: int,
+    attachment=None,
+    footer: str | None = None,
+) -> list[Container]:
+    """One shape for every trade DM, so they read like the panels do.
+
+    These used to be raw content strings, which Discord renders as an
+    undifferentiated wall next to the Components V2 panels the same bot sends
+    everywhere else.
+    """
+    components: list = [Text(content=f"## {title}"), Text(content=body)]
+    if attachment is not None:
+        # In a V2 message an attachment is not displayed on its own; it has to
+        # be mounted in a gallery or it silently does not appear.
+        components.extend([Separator(divider=True), Media(items=[
+            MediaItem(media=attachment),
+        ])])
+    if footer:
+        components.extend([Separator(divider=True), Text(content=f"-# {footer}")])
+    return [Container(accent_color=accent, components=components)]
+
+
 async def _send_trade_dm(
     bot: hikari.GatewayBot,
     discord_id: int,
-    content: str,
+    components: list,
     *,
     trade_id: str,
-    attachment=None,
 ) -> bool:
     try:
         channel = await bot.rest.create_dm_channel(int(discord_id))
-        message = {"channel": channel, "content": content}
-        if attachment is not None:
-            message["attachment"] = attachment
-        await bot.rest.create_message(**message)
+        await bot.rest.create_message(
+            channel=channel,
+            components=components,
+            flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+        )
         return True
     except Exception as exc:
         _log.info(
@@ -4436,8 +4462,11 @@ def _trade_location_line(trade: dict) -> str:
     requester_clan = _normalize_tag(trade.get("requester_clan_tag"))
     holder_clan = _normalize_tag(trade.get("holder_clan_tag"))
     if requester_clan and requester_clan == holder_clan:
-        return f"You are currently together in `{requester_clan}`."
-    return "You are currently in different family clans."
+        # The name first: a bare tag tells a member nothing about where that is.
+        return "You are both in " + _clan_label(
+            trade.get("requester_clan_name"), requester_clan
+        )
+    return "You are in different family clans."
 
 
 def _trade_channel_content(trade: dict) -> str:
@@ -4543,32 +4572,53 @@ async def _update_trade_channel(bot: hikari.GatewayBot, trade: dict) -> bool:
 
 
 async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
-    wanted = CARD_BY_ID[trade["wanted_card_id"]].name
-    given = CARD_BY_ID[trade["given_card_id"]].name
+    wanted = CARD_BY_ID[trade["wanted_card_id"]]
+    given = CARD_BY_ID[trade["given_card_id"]]
     requester = _escape_markdown(trade.get("requester_name"), limit=60)
     holder = _escape_markdown(trade.get("holder_name"), limit=60)
     attachment = await asyncio.to_thread(_trade_strip_attachment, trade)
+    # Every other duplicate of theirs that this holder needs. Without it the DM
+    # reads as a single take-it-or-leave-it offer when there is a real choice.
+    alternatives = [
+        CARD_BY_ID[card_id]
+        for card_id in (trade.get("compatible_card_ids") or ())
+        if card_id in CARD_BY_ID and card_id != given.id
+    ]
+    also = (
+        "\n\n-# They also hold "
+        + ", ".join(card.name for card in alternatives[:6])
+        + " that you need. Pick one when you accept."
+        if alternatives
+        else ""
+    )
     return await _send_trade_dm(
         bot,
         int(trade["holder_discord_id"]),
-        (
-            "🃏 **New Clash of Cards proposal**\n"
-            f"**{requester} needs your duplicate {wanted}.**\n"
-            f"For **{holder}** (`{trade['holder_tag']}`): you give **{wanted}** "
-            f"and receive **{given}**.\n"
-            f"{requester} has **{_trade_offer_names(trade)}** duplicates that you need.\n"
-            f"{_trade_location_line(trade)}\n"
-            "Run `/cards` in the Warriors United server and open **My trades** "
-            "to accept or decline. Nothing is reserved until you accept."
+        _trade_dm_container(
+            f"{emojis.inbox} New card proposal",
+            (
+                f"**{requester}** needs your spare {_card_label(wanted)}.\n\n"
+                f"**You give:** {_card_label(wanted)}\n"
+                f"**You receive:** {_card_label(given)}\n"
+                f"**Your account:** {holder} {emojis.BulletPoint} "
+                f"`{trade['holder_tag']}`\n"
+                f"**Clans:** {_trade_location_line(trade)}"
+                f"{also}"
+            ),
+            accent=GREEN_ACCENT,
+            attachment=attachment,
+            footer=(
+                "Run /cards in Warriors United and open My trades to accept or "
+                "decline. Nothing is reserved until you accept."
+            ),
         ),
         trade_id=str(trade["_id"]),
-        attachment=attachment,
     )
 
 
 async def _notify_trade_accepted(bot: hikari.GatewayBot, trade: dict) -> bool:
-    wanted = CARD_BY_ID[trade["wanted_card_id"]].name
-    given = CARD_BY_ID[trade["given_card_id"]].name
+    wanted = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
+    given = _card_label(CARD_BY_ID[trade["given_card_id"]])
     status = str(trade.get("status") or "move_needed")
     next_step = (
         "You are in different family clans. Move one account manually within "
@@ -4579,13 +4629,20 @@ async def _notify_trade_accepted(bot: hikari.GatewayBot, trade: dict) -> bool:
     return await _send_trade_dm(
         bot,
         int(trade["requester_discord_id"]),
-        (
-            "✅ **Your Clash of Cards swap was accepted**\n"
-            f"For **{_plain(trade['requester_name'])}** "
-            f"(`{trade['requester_tag']}`): "
-            f"**{_plain(trade['holder_name'])}** (`{trade['holder_tag']}`) accepted "
-            f"your **{given}** for **{wanted}** swap.\n"
-            f"The exact cards are reserved; there is no short completion timer. {next_step}"
+        _trade_dm_container(
+            f"{emojis.yes} Your swap was accepted",
+            (
+                f"**{_escape_markdown(trade['holder_name'], limit=60)}** "
+                f"{emojis.BulletPoint} `{trade['holder_tag']}` accepted.\n\n"
+                f"**You give:** {given}\n"
+                f"**You receive:** {wanted}\n"
+                f"**Your account:** "
+                f"{_escape_markdown(trade['requester_name'], limit=60)} "
+                f"{emojis.BulletPoint} `{trade['requester_tag']}`\n\n"
+                f"{next_step}"
+            ),
+            accent=GREEN_ACCENT,
+            footer="The exact cards are reserved. There is no completion timer.",
         ),
         trade_id=str(trade["_id"]),
     )
@@ -4602,25 +4659,27 @@ async def _notify_trade_status(
     wanted = CARD_BY_ID.get(str(trade.get("wanted_card_id")))
     given = CARD_BY_ID.get(str(trade.get("given_card_id")))
     swap = (
-        f"**{given.name}** for **{wanted.name}**"
+        f"{_card_label(given)} for {_card_label(wanted)}"
         if wanted is not None and given is not None
         else "the card swap"
     )
     accounts = (
-        f"**{_plain(trade.get('requester_name'))}** "
-        f"(`{trade.get('requester_tag')}`) ↔ "
-        f"**{_plain(trade.get('holder_name'))}** "
-        f"(`{trade.get('holder_tag')}`)"
+        f"**{_escape_markdown(trade.get('requester_name'), limit=60)}** "
+        f"{emojis.BulletPoint} `{trade.get('requester_tag')}`\n"
+        f"**{_escape_markdown(trade.get('holder_name'), limit=60)}** "
+        f"{emojis.BulletPoint} `{trade.get('holder_tag')}`"
     )
     return await _send_trade_dm(
         bot,
         int(recipient_id),
-        (
-            f"🃏 **{title}**\n"
-            f"{accounts}\n"
-            f"Status changed for {swap}. {detail}\n"
-            "Run `/cards` in the Warriors United server for the current "
-            "collection and trade status."
+        _trade_dm_container(
+            f"{emojis.inbox} {title}",
+            f"{swap}\n\n{detail}\n\n{accounts}",
+            accent=GOLD_ACCENT,
+            footer=(
+                "Run /cards in Warriors United for the current collection and "
+                "trade status."
+            ),
         ),
         trade_id=str(trade["_id"]),
     )
@@ -4757,6 +4816,21 @@ async def _active_trades(
     return [*committed, *proposals, *reviews]
 
 
+def _card_label(card) -> str:
+    """A card's name with its troop art, matching every other card list."""
+    icon = troop_emoji.markup(card.id)
+    return f"{icon} **{card.name}**" if icon else f"**{card.name}**"
+
+
+def _clan_label(name: object, tag: object) -> str:
+    """`Name • #TAG`. A bare tag tells a member nothing about where that is."""
+    clan_tag = _normalize_tag(tag)
+    clan_name = _escape_markdown(str(name or "").strip(), limit=50)
+    if clan_name and clan_tag:
+        return f"{clan_name} {emojis.BulletPoint} `{clan_tag}`"
+    return f"`{clan_tag}`" if clan_tag else "no clan"
+
+
 def _trade_summary(trade: dict, *, role: str) -> str:
     wanted = CARD_BY_ID.get(str(trade.get("wanted_card_id")))
     given = CARD_BY_ID.get(str(trade.get("given_card_id")))
@@ -4765,11 +4839,11 @@ def _trade_summary(trade: dict, *, role: str) -> str:
     if role == "requester":
         counterpart = trade.get("holder_name") or "Unknown player"
         counterpart_tag = trade.get("holder_tag") or "?"
-        receive, offer = wanted.name, given.name
+        receive, offer = _card_label(wanted), _card_label(given)
     else:
         counterpart = trade.get("requester_name") or "Unknown player"
         counterpart_tag = trade.get("requester_tag") or "?"
-        receive, offer = given.name, wanted.name
+        receive, offer = _card_label(given), _card_label(wanted)
     raw_status = str(trade.get("status") or "unknown")
     status = {
         "pending": "Proposal",
@@ -4789,8 +4863,15 @@ def _trade_summary(trade: dict, *, role: str) -> str:
         )
     elif raw_status == "move_needed":
         detail = (
-            f"\n-# Different family clans: `{_normalize_tag(trade.get('requester_clan_tag'))}` "
-            f"and `{_normalize_tag(trade.get('holder_clan_tag'))}`. Exact cards are reserved."
+            "\n-# Different family clans: "
+            + _clan_label(
+                trade.get("requester_clan_name"), trade.get("requester_clan_tag")
+            )
+            + " and "
+            + _clan_label(
+                trade.get("holder_clan_name"), trade.get("holder_clan_tag")
+            )
+            + ". Exact cards are reserved."
         )
     elif raw_status in {"ready", "accepted"}:
         detail = "\n-# Same family clan. Finish both in-game requests, then mark complete."
@@ -4804,7 +4885,8 @@ def _trade_summary(trade: dict, *, role: str) -> str:
     return (
         f"**{status} with {_escape_markdown(counterpart, limit=50)}** "
         f"· `{_normalize_tag(counterpart_tag)}`\n"
-        f"**You give:** {offer} · **You receive:** {receive}\n"
+        f"**You give:** {offer}\n"
+        f"**You receive:** {receive}\n"
         + detail
     )
 
