@@ -127,16 +127,31 @@ The board renders unknown states, so a member who has entered nothing sees the
 collection greyed out and can read the goal before doing anything. First run is
 the same screen rather than a separate branch; only the primary button changes.
 
-**Edit cards** opens a game-inspired category browser. It is reachable from the
-first screen with no setup wall in front of it. An earlier build required all
-four categories to be complete before any single card could be changed, which
+Beneath the board are **four menus, one per category**. Each category fits
+inside Discord's 25-option limit, which is what makes all sixty cards reachable
+in one interaction with no pagination and no hidden category mode. Every option
+carries the card's saved state, so the menus double as a text listing of the
+collection. Picking one opens the focused card screen.
+
+There is no setup wall in front of any of this. An earlier build required all
+four categories to be complete before a single card could be changed, which
 locked out precisely the new members who most needed to correct something; that
 gate is gone. Completeness still governs matching, and it is still earned only
 by a confirmed scan or a full category review, never by editing one card.
 
-Four compact category chips show collected/total and a check when complete.
-Selecting Elixir, Dark Elixir, Builder Base, or Super Troop shows only that
-category, four individual cards per mobile-friendly page. Every card has framed artwork, its saved state,
+**The focused card screen** shows one card's artwork, its category, its saved
+state, and three **absolute** controls: **None**, **Have 1**, and **Spare, 2+**.
+The control matching the saved state is green, so the state is readable without
+parsing a sentence. Absolute set replaced increment/decrement/keep for three
+reasons: it is idempotent, so a stale control cannot double-apply; it has no
+unreachable transitions, where the old table had no edge from missing straight
+to spare; and it is one write primitive with one revision guard rather than
+several. The category menu stays mounted below, so correcting several cards in
+one category is pick, tap, pick, tap without returning to the board.
+
+The older four-per-page category browser and the **Advanced manual editor**
+remain for a deliberate full-category rebuild, which is still how a category
+earns its completeness. Every card has framed artwork, its saved state,
 and direct **-1**/**+1** controls. Missing art is gray with an X, spares carry
 `x2+`, and possible spares carry `?`. Previous, Find card, and Next avoid the
 old category-list workflow. Each write changes only that card, checks its exact
@@ -194,6 +209,31 @@ has a short grace period in which it can still appear, with its confirmation
 timestamp shown in the result; after 72 hours it is excluded. Incomplete
 categories never participate even if another category update made the overall
 confirmation time recent.
+
+## Who has what
+
+**Who has what** is a family-wide view reached from the board in one click. For
+every card the member is missing it reports how many family collections hold a
+spare and how many others still need it, then the reverse for the member's own
+spares, then the cards nobody can currently supply.
+
+`family_supply` in `utils/cards.py` is a pure projection of the same documents
+the matcher already loads, so the view costs no extra query. Only reviewed
+categories count on either side. An untouched category means the member has
+told us nothing, and counting it as demand would invent a want out of missing
+data.
+
+The panel reports **how many swaps could actually complete at once**, not how
+many are listed. A raw count overstates what the family can do, because
+completing a swap spends a spare: one member offering a single extra Barbarian
+to three partners is one trade, not three. `max_achievable_trades` solves that
+resource-constrained matching with a most-constrained-first greedy. The exact
+algorithm is a blossom-style search, which is disproportionate machinery for a
+hint line, so the greedy is checked against brute force on small inputs
+including its known worst case of half the true maximum. The gap is measured
+rather than assumed away.
+
+## Family board, matching, and freshness
 
 The broad matcher searches every configured family clan and returns anyone with
 a fresh-enough duplicate of a card the requester is missing. It ranks:

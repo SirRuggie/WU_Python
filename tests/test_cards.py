@@ -2392,11 +2392,36 @@ def test_dashboard_leads_with_the_board_and_one_primary_action_at_most():
     }
     assert custom_ids == {
         "cards_scan_start:#ME",
-        "cards_editor:#ME|barbarian",
         "cards_matches:#ME",
         "cards_trades:#ME",
+        "cards_family:#ME",
         "cards_more:#ME",
+        "cards_pick:#ME|elixir",
+        "cards_pick:#ME|dark_elixir",
+        "cards_pick:#ME|builder_base",
+        "cards_pick:#ME|super_troop",
     }
+
+
+def test_landing_reaches_every_card_in_one_interaction():
+    """All sixty cards are menu options on the first screen, no pagination."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._dashboard(
+        account, _complete_inventory(), account_count=1
+    )
+    payload = [component.build() for component in view]
+    offered = {
+        str(option["value"])
+        for node in _walk_payload(payload)
+        for option in (node.get("options") or ())
+    }
+
+    assert offered == {card.id for card in cards.CARDS}
+    assert len(offered) == 60
+    _assert_discord_payload(view)
 
 
 def test_dashboard_without_any_recorded_cards_still_shows_the_board():
@@ -2415,7 +2440,7 @@ def test_dashboard_without_any_recorded_cards_still_shows_the_board():
         node.get("custom_id") for node in nodes if node.get("custom_id")
     }
     # Editing is reachable immediately; there is no setup wall in front of it.
-    assert "cards_editor:#NEW|barbarian" in custom_ids
+    assert "cards_pick:#NEW|elixir" in custom_ids
     assert "cards_scan_start:#NEW" in custom_ids
     _assert_discord_payload(view)
 
@@ -2725,8 +2750,9 @@ def test_card_editor_plus_minus_handlers_apply_one_step_only(
 
     assert collection.documents["#ME"]["cards"]["wizard"] == expected
     assert collection.documents["#ME"]["inventory_revision"] == 5
-    assert cards_command._editor_state_text(
-        expected, possible_spare=False, reserved=False
+    # The step handlers now return the focused card screen.
+    assert cards_command._card_state_words(
+        expected, possible_spare=False
     ) in _view_text(view)
 
 
@@ -2772,10 +2798,11 @@ def test_possible_spare_editor_yes_no_saves_and_advances(
         for node in _view_nodes(view)
         if node.get("custom_id")
     }
+    # Absolute state controls replace the increment/decrement/keep trio.
     assert {
-        "cards_editor_dec:#ME|dragon",
-        "cards_editor_keep:#ME|dragon",
-        "cards_editor_inc:#ME|dragon",
+        "cards_set:#ME|dragon|0",
+        "cards_set:#ME|dragon|1",
+        "cards_set:#ME|dragon|2",
     } <= custom_ids
 
 
@@ -2812,8 +2839,8 @@ def test_possible_spare_editor_missing_saves_only_that_card_and_advances(
     assert updated["inventory_revision"] == 9
     assert "## Dragon" in _view_text(view)
     assert any(
-        node.get("custom_id") == "cards_editor_dec:#ME|dragon"
-        and node.get("label") == "Missing — have 0"
+        node.get("custom_id") == "cards_set:#ME|dragon|0"
+        and node.get("label") == "None"
         for node in _view_nodes(view)
     )
     assert len([node for node in _view_nodes(view) if "type" in node]) <= 40
@@ -3348,7 +3375,7 @@ def test_cards_opens_the_existing_private_dashboard(monkeypatch):
     assert len(ctx.interaction.edits) == 1
     nodes = _view_nodes(ctx.interaction.edits[0]["components"])
     assert any(
-        node.get("custom_id") == "cards_editor:#ME|barbarian"
+        node.get("custom_id") == "cards_pick:#ME|elixir"
         for node in nodes
     )
 
@@ -4333,3 +4360,286 @@ def test_scan_save_stale_revision_and_active_reservation_cannot_overwrite():
         ))
     assert reserved_document["cards"] == {"wizard": cards.DUPLICATE}
     assert reserved_document["inventory_revision"] == 2
+
+
+def _supply_document(tag, *, cards_map, complete=None, confirmed_at=None):
+    return {
+        "_id": tag,
+        "player_name": tag,
+        "cards": cards_map,
+        "complete_categories": (
+            list(complete)
+            if complete is not None
+            else [category.id for category in cards.CATEGORIES]
+        ),
+        "confirmed_at": confirmed_at or datetime.now(timezone.utc),
+    }
+
+
+def test_family_supply_counts_holders_and_seekers_per_card():
+    values = {card.id: cards.OWNED for card in cards.CARDS}
+    holder = dict(values, barbarian=cards.DUPLICATE)
+    seeker = dict(values, barbarian=cards.MISSING)
+    other_seeker = dict(values, barbarian=cards.MISSING)
+
+    supply = cards.family_supply([
+        _supply_document("#H", cards_map=holder),
+        _supply_document("#S", cards_map=seeker),
+        _supply_document("#T", cards_map=other_seeker),
+    ])
+
+    barbarian = supply["barbarian"]
+    assert barbarian.holders == ("#H",)
+    assert barbarian.seekers == ("#S", "#T")
+    assert barbarian.reporting == 3
+    assert barbarian.spare_count == 1
+    assert barbarian.demand == 2
+    # A card everybody owns once has neither a spare nor a seeker.
+    assert supply["archer"].holders == ()
+    assert supply["archer"].seekers == ()
+
+
+def test_family_supply_ignores_stale_and_unreviewed_collections():
+    values = {card.id: cards.DUPLICATE for card in cards.CARDS}
+    stale = _supply_document(
+        "#OLD",
+        cards_map=values,
+        confirmed_at=datetime.now(timezone.utc) - timedelta(days=9),
+    )
+    unreviewed = _supply_document("#NEW", cards_map=values, complete=[])
+
+    supply = cards.family_supply([stale, unreviewed])
+
+    assert supply["barbarian"].holders == ()
+    assert supply["barbarian"].reporting == 0
+
+
+def test_family_supply_only_counts_reviewed_categories_of_a_partial_member():
+    values = {card.id: cards.MISSING for card in cards.CARDS}
+    partial = _supply_document("#P", cards_map=values, complete=["elixir"])
+
+    supply = cards.family_supply([partial])
+
+    assert supply["barbarian"].seekers == ("#P",)   # elixir, reviewed
+    assert supply["minion"].seekers == ()           # dark elixir, not reviewed
+
+
+def _brute_force_max_trades(pairs):
+    best = 0
+    for mask in range(1 << len(pairs)):
+        used = set()
+        count = 0
+        ok = True
+        for index, (left, right) in enumerate(pairs):
+            if not mask & (1 << index):
+                continue
+            if left in used or right in used:
+                ok = False
+                break
+            used.add(left)
+            used.add(right)
+            count += 1
+        if ok:
+            best = max(best, count)
+    return best
+
+
+def test_one_spare_offered_to_many_partners_is_still_one_trade():
+    spare = ("#ME", "wizard")
+    pairs = [
+        (spare, ("#A", "dragon")),
+        (spare, ("#B", "golem")),
+        (spare, ("#C", "witch")),
+    ]
+
+    assert cards.max_achievable_trades(pairs) == 1
+    assert len(pairs) == 3  # the raw count that used to be reported
+
+
+def test_independent_trades_all_complete_together():
+    pairs = [
+        (("#A", "wizard"), ("#B", "dragon")),
+        (("#C", "golem"), ("#D", "witch")),
+    ]
+
+    assert cards.max_achievable_trades(pairs) == 2
+
+
+def test_greedy_matches_brute_force_on_small_inputs():
+    resources = [(f"#{owner}", card) for owner in "ABCD" for card in ("x", "y")]
+    cases = [
+        [(resources[0], resources[1])],
+        [(resources[0], resources[1]), (resources[1], resources[2])],
+        [
+            (resources[0], resources[1]),
+            (resources[2], resources[3]),
+            (resources[0], resources[3]),
+        ],
+        [
+            (resources[0], resources[1]),
+            (resources[1], resources[2]),
+            (resources[2], resources[3]),
+            (resources[3], resources[4]),
+        ],
+        [
+            (resources[0], resources[1]),
+            (resources[0], resources[2]),
+            (resources[3], resources[4]),
+            (resources[5], resources[6]),
+            (resources[1], resources[6]),
+        ],
+    ]
+
+    for pairs in cases:
+        greedy = cards.max_achievable_trades(pairs)
+        exact = _brute_force_max_trades(pairs)
+        assert greedy <= exact
+        # The documented worst case for this greedy is half the true maximum.
+        assert greedy * 2 >= exact
+
+
+def test_achievable_trade_count_is_independent_of_input_order():
+    pairs = [
+        (("#A", "wizard"), ("#B", "dragon")),
+        (("#B", "dragon"), ("#C", "golem")),
+        (("#C", "golem"), ("#D", "witch")),
+    ]
+
+    assert cards.max_achievable_trades(pairs) == cards.max_achievable_trades(
+        list(reversed(pairs))
+    )
+
+
+@pytest.mark.parametrize(
+    ("initial", "target"),
+    [
+        (cards.MISSING, cards.DUPLICATE),   # no edge existed for this before
+        (cards.DUPLICATE, cards.MISSING),
+        (cards.OWNED, cards.MISSING),
+        (cards.MISSING, cards.OWNED),
+        (cards.OWNED, cards.OWNED),         # idempotent
+    ],
+)
+def test_cards_set_writes_the_absolute_state(monkeypatch, initial, target):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 4
+    document["cards"]["wizard"] = initial
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    async def load_target(*_args, **_kwargs):
+        return account, collection.documents["#ME"], None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    view = asyncio.run(cards_command.cards_set(
+        ctx,
+        f"#ME|wizard|{target}",
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+    ))
+
+    assert collection.documents["#ME"]["cards"]["wizard"] == target
+    assert collection.documents["#ME"]["inventory_revision"] == 5
+    assert "## Wizard" in _view_text(view)
+    _assert_discord_payload(view)
+
+
+def test_cards_set_refuses_a_reserved_card(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 4
+    document["cards"]["wizard"] = cards.DUPLICATE
+    document["card_trade_reservations"] = {
+        "wizard": {
+            "owner": "trade-1",
+            "until": datetime.now(timezone.utc) + timedelta(hours=1),
+        }
+    }
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    async def load_target(*_args, **_kwargs):
+        return account, collection.documents["#ME"], None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    view = asyncio.run(cards_command.cards_set(
+        ctx,
+        "#ME|wizard|0",
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+    ))
+
+    assert collection.documents["#ME"]["cards"]["wizard"] == cards.DUPLICATE
+    assert "reserved" in _view_text(view).lower()
+
+
+def test_cards_set_rejects_an_unknown_state():
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    view = asyncio.run(cards_command.cards_set(
+        ctx,
+        "#ME|wizard|7",
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert "Card unavailable" in _view_text(view)
+
+
+def test_card_focus_marks_the_current_state_and_keeps_the_menu():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+
+    view = cards_command._card_focus(account, inventory, "wizard")
+    buttons = {
+        node["custom_id"]: node
+        for node in _view_nodes(view)
+        if node.get("custom_id", "").startswith("cards_set:")
+    }
+
+    # Style 3 is SUCCESS: the button matching the saved state is the green one.
+    assert buttons["cards_set:#ME|wizard|2"]["style"] == 3
+    assert buttons["cards_set:#ME|wizard|1"]["style"] == 2
+    assert buttons["cards_set:#ME|wizard|0"]["style"] == 2
+    custom_ids = {
+        node.get("custom_id") for node in _view_nodes(view) if node.get("custom_id")
+    }
+    # The category menu stays mounted so several cards can be fixed in a row.
+    assert "cards_pick:#ME|elixir" in custom_ids
+    _assert_discord_payload(view)
+
+
+def test_family_board_reports_achievable_rather_than_raw_options():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.MISSING
+    inventory["cards"]["dragon"] = cards.DUPLICATE
+    holder = _complete_inventory(tag="#H")
+    holder["cards"]["wizard"] = cards.DUPLICATE
+    holder["cards"]["dragon"] = cards.MISSING
+
+    supply = cards.family_supply([inventory, holder])
+    view = cards_command._family_board(account, inventory, supply, 1, 3)
+    text = _view_text(view)
+
+    assert "Who has what" in text
+    assert "Wizard" in text
+    assert "up to" in text and "1" in text
+    _assert_discord_payload(view)

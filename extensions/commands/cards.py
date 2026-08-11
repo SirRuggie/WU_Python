@@ -55,11 +55,13 @@ from utils.cards import (
     apply_category_selection,
     as_utc,
     category_summary,
+    family_supply,
     find_matches,
     freshness_label,
     holders_for_card,
     inventory_summary,
     inventory_is_matchable,
+    max_achievable_trades,
     normalize_cards,
     reciprocal_trade_error,
 )
@@ -414,6 +416,21 @@ def _parse_editor_target(value: object) -> tuple[str, str | None]:
 
 def _parse_editor_search_target(value: object) -> str:
     return _normalize_tag(value)
+
+
+def _parse_card_set_target(value: object) -> tuple[str, str | None, int | None]:
+    parts = str(value or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    card_id = parts[1] if len(parts) > 1 and parts[1] in CARD_BY_ID else None
+    target: int | None = None
+    if len(parts) > 2:
+        try:
+            candidate = int(parts[2])
+        except (TypeError, ValueError):
+            candidate = -1
+        if candidate in {MISSING, OWNED, DUPLICATE}:
+            target = candidate
+    return tag, card_id, target
 
 
 def _parse_editor_category_target(value: object) -> tuple[str, str | None, int]:
@@ -1815,42 +1832,35 @@ def _dashboard(
         )),
     ]
 
+    notes = []
     if unverified_duplicates:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                f"**{len(unverified_duplicates)} card"
-                f"{'s need' if len(unverified_duplicates) != 1 else ' needs'} "
-                "a duplicate check."
-            )),
-            ActionRow(components=[Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"cards_editor:{tag}|{unverified_duplicates[0]}",
-                label="Check now",
-            )]),
-        ])
-
+        notes.append(
+            f"**{len(unverified_duplicates)} card"
+            f"{'s need' if len(unverified_duplicates) != 1 else ' needs'} "
+            "a duplicate check.** They read *Might be a spare* in the menus."
+        )
     if reserved_count:
+        notes.append(
+            f"{reserved_count} card{'s are' if reserved_count != 1 else ' is'} "
+            "reserved by accepted trades."
+        )
+    if notes:
         body.extend([
             Separator(divider=True),
-            Text(content=(
-                f"{reserved_count} card{'s are' if reserved_count != 1 else ' is'} "
-                "reserved by accepted trades."
-            )),
+            Text(content="\n".join(notes)),
         ])
 
-    saved_cards = normalize_cards(inventory.get("cards"))
-    first_card = next(
-        (
-            card.id
-            for card in CARDS
-            if saved_cards.get(card.id, OWNED) == MISSING
-        ),
-        CARDS[0].id,
+    body.append(Separator(divider=True))
+    # Four menus, one per category, every card one interaction away.  This
+    # replaces the chip-then-page browser that needed fifteen pages for sixty
+    # cards.
+    body.extend(
+        _category_select_row(account, inventory, category.id)
+        for category in CATEGORIES
     )
-    scan_is_primary = not all_complete and not unverified_duplicates
+
+    scan_is_primary = not all_complete
     body.extend([
-        Separator(divider=True),
         ActionRow(components=[
             Button(
                 style=(
@@ -1860,15 +1870,6 @@ def _dashboard(
                 ),
                 custom_id=f"cards_scan_start:{tag}",
                 label="Scan screenshots",
-            ),
-            Button(
-                style=(
-                    hikari.ButtonStyle.SECONDARY
-                    if unverified_duplicates or scan_is_primary
-                    else hikari.ButtonStyle.PRIMARY
-                ),
-                custom_id=f"cards_editor:{tag}|{first_card}",
-                label="Edit cards",
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
@@ -1883,21 +1884,152 @@ def _dashboard(
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_family:{tag}",
+                label="Who has what",
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_more:{tag}",
                 label="More",
             ),
         ]),
         Text(content=(
-            f"-# {age.title()} · A spare means 2+ copies."
+            f"-# {age.title()} · A spare means 2+ copies. "
+            "Pick any card from a menu to change it."
         )),
     ])
-    if account_count > 1:
-        body.append(ActionRow(components=[Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id="cards_account_page:0",
-            label="Switch account",
-        )]))
     return [Container(components=body)]
+
+
+def _card_state_words(state: int | str, *, possible_spare: bool) -> str:
+    if possible_spare:
+        return "Might be a spare"
+    if state == MISSING:
+        return "Missing"
+    if state == DUPLICATE:
+        return "Spare to trade"
+    return "Have 1"
+
+
+def _category_select_row(account, inventory: dict, category_id: str) -> ActionRow:
+    """One menu per category, so every card is one interaction from the board.
+
+    Each category fits inside Discord's 25-option limit, which is what lets all
+    sixty cards be reachable without pagination or a hidden category mode.
+    """
+    tag = _normalize_tag(account.tag)
+    category = CATEGORY_BY_ID[category_id]
+    summary = category_summary(inventory.get("cards"), category_id)
+    saved = normalize_cards(inventory.get("cards"))
+    possible = set(_scan_unverified_ids(inventory))
+    options = [
+        SelectOption(
+            label=card.name,
+            value=card.id,
+            description=_card_state_words(
+                saved.get(card.id, OWNED),
+                possible_spare=card.id in possible,
+            ),
+        )
+        for card in CATEGORY_CARDS[category_id]
+    ]
+    placeholder = f"{category.name} · {summary.collected}/{summary.known}"
+    if summary.collected == summary.known:
+        placeholder += " complete"
+    elif summary.missing:
+        placeholder += f" · {summary.missing} missing"
+    return ActionRow(components=[TextSelectMenu(
+        custom_id=f"cards_pick:{tag}|{category_id}",
+        placeholder=placeholder[:150],
+        max_values=1,
+        options=options,
+    )])
+
+
+def _card_focus(
+    account,
+    inventory: dict,
+    card_id: str,
+    *,
+    saved: str | None = None,
+    rendered_tile: object = None,
+) -> list[Container]:
+    """One card, its artwork, and three absolute state buttons."""
+    card = CARD_BY_ID.get(card_id) or CARDS[0]
+    tag = _normalize_tag(account.tag)
+    category = CATEGORY_BY_ID[card.category]
+    state = normalize_cards(inventory.get("cards")).get(card.id, OWNED)
+    possible_spare = card.id in set(_scan_unverified_ids(inventory))
+    reserved = card.id in _card_reservations(inventory)
+    tile = rendered_tile or render_card_thumbnail(
+        card.id,
+        OWNED_SPARE_UNVERIFIED if possible_spare else state,
+    )
+
+    detail = _card_state_words(state, possible_spare=possible_spare)
+    if reserved:
+        detail = "Reserved by an accepted trade"
+
+    body: list = [
+        Text(content=f"## {_escape_markdown(card.name)}"),
+        Section(
+            components=[
+                Text(content=(
+                    f"**{category.name}**\n"
+                    f"{detail}"
+                    + (f"\n-# {_escape_markdown(saved, limit=180)}" if saved else "")
+                )),
+            ],
+            accessory=Thumbnail(
+                media=hikari.Bytes(tile.png_bytes, tile.filename, "image/png"),
+                description=tile.alt_text,
+            ),
+        ),
+        ActionRow(components=[
+            Button(
+                style=(
+                    hikari.ButtonStyle.SUCCESS
+                    if state == MISSING and not possible_spare
+                    else hikari.ButtonStyle.SECONDARY
+                ),
+                custom_id=f"cards_set:{tag}|{card.id}|0",
+                label="None",
+                is_disabled=reserved,
+            ),
+            Button(
+                style=(
+                    hikari.ButtonStyle.SUCCESS
+                    if state == OWNED and not possible_spare
+                    else hikari.ButtonStyle.SECONDARY
+                ),
+                custom_id=f"cards_set:{tag}|{card.id}|1",
+                label="Have 1",
+                is_disabled=reserved,
+            ),
+            Button(
+                style=(
+                    hikari.ButtonStyle.SUCCESS
+                    if state == DUPLICATE and not possible_spare
+                    else hikari.ButtonStyle.SECONDARY
+                ),
+                custom_id=f"cards_set:{tag}|{card.id}|2",
+                label="Spare, 2+",
+                is_disabled=reserved,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_dashboard:{tag}",
+                label="Back to board",
+            ),
+        ]),
+        # The menu stays mounted, so fixing several cards in one category is
+        # pick, tap, pick, tap without returning to the board between them.
+        _category_select_row(account, inventory, card.category),
+    ]
+    return [Container(
+        accent_color=CATEGORY_ACCENTS[card.category],
+        components=body,
+    )]
 
 
 def _state_name(value: int) -> str:
@@ -2767,6 +2899,25 @@ async def _category_browser_view(
     )
 
 
+async def _card_focus_view(
+    account,
+    inventory: dict,
+    card_id: str,
+    *,
+    saved: str | None = None,
+):
+    possible_spare = card_id in set(_scan_unverified_ids(inventory))
+    state = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
+    tile = await asyncio.to_thread(
+        render_card_thumbnail,
+        card_id,
+        OWNED_SPARE_UNVERIFIED if possible_spare else state,
+    )
+    return _card_focus(
+        account, inventory, card_id, saved=saved, rendered_tile=tile
+    )
+
+
 async def _card_editor_view(
     account,
     inventory: dict,
@@ -2774,14 +2925,14 @@ async def _card_editor_view(
     *,
     saved: str | None = None,
 ):
-    category_id, page = _editor_location(card_id)
-    return await _category_browser_view(
-        account,
-        inventory,
-        category_id,
-        page,
-        saved=saved,
-    )
+    """Every path that lands on one card lands on the focused card screen.
+
+    This used to open the four-per-page category browser, which meant a scan
+    correction or a duplicate check arrived inside a paginated grid with three
+    controls per card. The focused screen shows the one card that is actually
+    in question with three absolute state buttons.
+    """
+    return await _card_focus_view(account, inventory, card_id, saved=saved)
 
 
 async def _scan_review_view(
@@ -5090,6 +5241,87 @@ async def _write_one_card(
         raise InventoryWriteConflict
 
 
+async def _write_card_state(
+    mongo: MongoClient,
+    account,
+    inventory: dict,
+    card_id: str,
+    target: int,
+    *,
+    expected_revision: int,
+    discord_id: int,
+    guild_id: int | None,
+) -> dict:
+    """Set one card to an absolute state, with the same guards as a step.
+
+    Absolute set replaces the increment/decrement/keep family. Setting a card
+    to a state it already holds is a no-op rather than an error, so a stale
+    control cannot double-apply and there are no unreachable transitions: the
+    old table had no edge from missing straight to spare.
+    """
+    card = CARD_BY_ID.get(card_id)
+    if card is None or target not in {MISSING, OWNED, DUPLICATE}:
+        raise ValueError("unknown card state update")
+    tag = _normalize_tag(account.tag)
+    async with _inventory_lock(tag):
+        latest = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        if _inventory_revision_value(latest) != int(expected_revision):
+            raise InventoryWriteConflict
+        if card_id in _card_reservations(latest):
+            raise ActiveCardTradeError
+
+        now = datetime.now(timezone.utc)
+        identity = {
+            "discord_id": int(discord_id),
+            "player_name": account.name,
+            "clan_tag": (
+                _normalize_tag(account.clan_tag) if account.clan_tag else None
+            ),
+            "clan_name": account.clan_name,
+            "updated_at": now,
+            "confirmed_at": now,
+            "update_source": "card_set",
+            f"cards.{card_id}": int(target),
+        }
+        if guild_id is not None:
+            identity["guild_id"] = guild_id
+        revision_guard = (
+            {"$or": [
+                {"inventory_revision": {"$exists": False}},
+                {"inventory_revision": 0},
+            ]}
+            if expected_revision == 0
+            else {"inventory_revision": int(expected_revision)}
+        )
+        result = await mongo.card_inventories.update_one(
+            {
+                "_id": tag,
+                "$and": [
+                    revision_guard,
+                    {"$or": [
+                        {f"card_trade_reservations.{card_id}": {"$exists": False}},
+                        {
+                            f"card_trade_reservations.{card_id}.until": {
+                                "$lte": now,
+                            },
+                        },
+                    ]},
+                ],
+            },
+            {
+                "$set": identity,
+                "$pull": {"scan_duplicate_unverified_card_ids": card_id},
+                "$inc": {"inventory_revision": 1},
+            },
+        )
+        if getattr(result, "matched_count", 1):
+            return await mongo.card_inventories.find_one({"_id": tag}) or {}
+        current = await mongo.card_inventories.find_one({"_id": tag}) or {}
+        if card_id in _card_reservations(current):
+            raise ActiveCardTradeError
+        raise InventoryWriteConflict
+
+
 async def _write_hidden_badge_batch(
     mongo: MongoClient,
     account,
@@ -6802,6 +7034,81 @@ async def cards_editor(
     return await _card_editor_view(account, inventory, card_id)
 
 
+@register_action("cards_pick")
+@lightbulb.di.with_di
+async def cards_pick(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Open one card from a category menu."""
+    tag, _category_id, _page = _parse_editor_category_target(action_id)
+    values = list(getattr(ctx.interaction, "values", ()) or ())
+    card_id = values[0] if values and values[0] in CARD_BY_ID else None
+    if card_id is None:
+        return _notice("Card unavailable", "Open `/cards` again.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    return await _card_focus_view(account, inventory, card_id)
+
+
+@register_action("cards_set")
+@lightbulb.di.with_di
+async def cards_set(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Set one card to an absolute state."""
+    tag, card_id, target = _parse_card_set_target(action_id)
+    if card_id is None or target is None:
+        return _notice("Card unavailable", "Open `/cards` again.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    try:
+        updated = await _write_card_state(
+            mongo,
+            account,
+            inventory,
+            card_id,
+            target,
+            expected_revision=_inventory_revision_value(inventory),
+            discord_id=int(ctx.user.id),
+            guild_id=_guild_id(ctx),
+        )
+    except ActiveCardTradeError:
+        return await _card_focus_view(
+            account,
+            inventory,
+            card_id,
+            saved="This card is reserved and was not changed.",
+        )
+    except (InventoryWriteConflict, ValueError):
+        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        return await _card_focus_view(
+            account,
+            current,
+            card_id,
+            saved="The collection changed, so this view was refreshed.",
+        )
+    return await _card_focus_view(
+        account,
+        updated,
+        card_id,
+        saved=f"{CARD_BY_ID[card_id].name} is now {_state_name(target)}.",
+    )
+
+
 @register_action("cards_editor_category")
 @lightbulb.di.with_di
 async def cards_editor_category(
@@ -7513,6 +7820,161 @@ async def cards_matches(
     )
     available = _without_reserved_cards(inventory)
     return _matches_view(account, available, find_matches(available, candidates))
+
+
+def _family_board(
+    account,
+    inventory: dict,
+    supply: dict,
+    achievable: int,
+    raw_options: int,
+) -> list[Container]:
+    """A running list of what the family holds and what it still needs."""
+    tag = _normalize_tag(account.tag)
+    complete = set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
+    mine = normalize_cards(inventory.get("cards"))
+    reporting = next(iter(supply.values())).reporting if supply else 0
+
+    wanted = [
+        (card, supply[card.id])
+        for card in CARDS
+        if card.category in complete and mine.get(card.id, OWNED) == MISSING
+    ]
+    gettable = [pair for pair in wanted if pair[1].spare_count]
+    unavailable = [pair for pair in wanted if not pair[1].spare_count]
+    offering = [
+        (card, supply[card.id])
+        for card in CARDS
+        if card.category in complete
+        and mine.get(card.id, OWNED) >= DUPLICATE
+        and supply[card.id].demand
+    ]
+
+    body: list = [
+        Text(content="# Who has what"),
+        Text(content=(
+            f"**{reporting}** collection{'s' if reporting != 1 else ''} "
+            "in the family are current enough to trade with."
+        )),
+    ]
+
+    if gettable:
+        lines = [
+            f"**{_escape_markdown(card.name)}** · "
+            f"{entry.spare_count} can spare · "
+            f"{entry.demand} still need it"
+            for card, entry in gettable[:12]
+        ]
+        if len(gettable) > 12:
+            lines.append(f"-# and {len(gettable) - 12} more")
+        body.extend([
+            Separator(divider=True),
+            Text(content="### You can get\n" + "\n".join(lines)),
+        ])
+
+    if offering:
+        lines = [
+            f"**{_escape_markdown(card.name)}** · "
+            f"{entry.demand} need your spare"
+            for card, entry in offering[:12]
+        ]
+        if len(offering) > 12:
+            lines.append(f"-# and {len(offering) - 12} more")
+        body.extend([
+            Separator(divider=True),
+            Text(content="### Others want from you\n" + "\n".join(lines)),
+        ])
+
+    if unavailable:
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                f"### Nobody has a spare yet ({len(unavailable)})\n"
+                + ", ".join(
+                    _escape_markdown(card.name) for card, _ in unavailable[:15]
+                )
+            )),
+        ])
+
+    if not wanted and not offering:
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                "Nothing to match yet. Finish a category so your collection "
+                "can be compared with the rest of the family."
+            )),
+        ])
+
+    if raw_options:
+        # A menu is not a plan.  Completing a swap spends a spare, so two
+        # options reaching for the same one cannot both go through.
+        body.append(Text(content=(
+            f"-# {raw_options} swap option"
+            f"{'s' if raw_options != 1 else ''} listed · up to "
+            f"**{achievable}** could actually complete at once"
+        )))
+
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_matches:{tag}",
+            label="Find trades",
+            is_disabled=not inventory_is_matchable(inventory),
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_trades:{tag}",
+            label="My trades",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{tag}",
+            label="Back to board",
+        ),
+    ]))
+    return [Container(components=body)]
+
+
+def _achievable_from_matches(matches, requester_tag: str) -> tuple[int, int]:
+    """Count listed swap options and how many could complete together."""
+    pairs = []
+    for match in matches:
+        for exchange in match.exchanges:
+            for offered in exchange.offers:
+                for returned in exchange.returns:
+                    pairs.append((
+                        (match.holder_tag, offered),
+                        (requester_tag, returned),
+                    ))
+    return len(pairs), max_achievable_trades(pairs)
+
+
+@register_action("cards_family")
+@lightbulb.di.with_di
+async def cards_family(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    account, inventory, problem = await _load_target(
+        ctx, action_id, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    candidates = await _candidate_inventories(
+        mongo, inventory, guild_id=_guild_id(ctx)
+    )
+    supply = family_supply(candidates)
+    available = _without_reserved_cards(inventory)
+    raw_options, achievable = (0, 0)
+    if inventory_is_matchable(inventory):
+        raw_options, achievable = _achievable_from_matches(
+            find_matches(available, candidates),
+            _normalize_tag(account.tag),
+        )
+    return _family_board(account, inventory, supply, achievable, raw_options)
 
 
 @register_action("cards_find_category")
