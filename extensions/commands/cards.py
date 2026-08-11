@@ -95,9 +95,9 @@ from hikari.impl import (
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
 
-ACCOUNT_PAGE_SIZE = 6
+ACCOUNT_PAGE_SIZE = 25
 MATCH_RESULT_LIMIT = 10
-HOLDER_RESULT_LIMIT = 20
+HOLDER_RESULT_LIMIT = 6
 TRADE_VIEW_LIMIT = 5
 MAX_OPEN_PROPOSALS_PER_ACCOUNT = 25
 COMMITTED_TRADE_FETCH_LIMIT = 100
@@ -628,45 +628,47 @@ def _account_picker(data: AccountsData, page: int = 0) -> list[Container]:
     start = page * ACCOUNT_PAGE_SIZE
     window = entries[start:start + ACCOUNT_PAGE_SIZE]
 
-    # One Section per account with its own Open button, rather than a collapsed
-    # select. A select hid every account behind a tap and showed nothing about
-    # them; a Section can carry the town hall, the clan and the tag on screen,
-    # which is what a member actually chooses between.
+    # A select, not a Section per account. Sections were tried and are worse
+    # here: on mobile the accessory button wraps BELOW its text, so every
+    # account costs about 200px, and this bot's owner has 37 linked accounts.
+    # A select holds 25 in one tap and stays one line tall. Sections are right
+    # for a handful of rows, which this is not.
+    options = []
+    for entry in window:
+        town_hall = getattr(entry.account, "town_hall", None)
+        emoji = _town_hall_emoji(town_hall)
+        label = (
+            entry.account.name
+            if emoji is not hikari.UNDEFINED
+            else f"{entry.account.name} · TH{town_hall}"
+        )
+        options.append(SelectOption(
+            label=_plain(label),
+            value=entry.tag,
+            description=_plain(
+                f"TH{town_hall} · {entry.account.clan_name or 'No clan'} · {entry.tag}",
+                limit=100,
+            ),
+            emoji=emoji,
+        ))
+
     body: list = [
         Text(content="# Your card collections"),
         Text(content=(
-            f"-# {len(entries)} linked account"
-            f"{'s' if len(entries) != 1 else ''} · "
-            "each keeps its own collection"
+            f"-# {len(entries)} linked accounts · each keeps its own collection"
         )),
         Separator(divider=True),
+        ActionRow(components=[
+            TextSelectMenu(
+                custom_id=f"cards_account_select:{page}",
+                placeholder="Choose a Clash account...",
+                max_values=1,
+                options=options,
+            )
+        ]),
     ]
-    for position, entry in enumerate(window):
-        account = entry.account
-        town_hall = getattr(account, "town_hall", None)
-        emoji = _town_hall_emoji(town_hall)
-        badge = "" if emoji is hikari.UNDEFINED else f"{emoji.mention} "
-        level = "" if emoji is not hikari.UNDEFINED else f"TH{town_hall} · "
-        body.append(Section(
-            components=[Text(content=(
-                f"{badge}**{_escape_markdown(str(account.name))}** · "
-                f"`{_normalize_tag(entry.tag)}`\n"
-                f"-# {level}{_escape_markdown(str(account.clan_name or 'No clan'))}"
-            ))],
-            accessory=Button(
-                style=(
-                    hikari.ButtonStyle.PRIMARY
-                    if position == 0 and page == 0
-                    else hikari.ButtonStyle.SECONDARY
-                ),
-                custom_id=f"cards_account_open:{_normalize_tag(entry.tag)}",
-                label="Open",
-            ),
-        ))
-
     if pages > 1:
         body.extend([
-            Separator(divider=False),
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -1954,43 +1956,46 @@ def _dashboard(
                 label="Who has what",
             ),
         ]),
-        ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_review:{tag}",
-                label="Full board",
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_advanced:{tag}",
-                label="Bulk edit",
-            ),
-            Button(
-                style=(
-                    hikari.ButtonStyle.SUCCESS
-                    if all_complete
-                    else hikari.ButtonStyle.SECONDARY
-                ),
-                custom_id=f"cards_confirm:{tag}",
-                label="Still accurate",
-                is_disabled=not complete,
-            ),
-            *(
-                [Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id="cards_account_page:0",
-                    label="Switch account",
-                )]
-                if account_count > 1
-                else []
-            ),
-        ]),
-        Text(content=(
-            f"-# {age.title()} · a spare means 2 or more copies · "
-            f"[Open in game]({COLLECTION_LINK}) · "
-            f"[Global Card Chat]({GLOBAL_CHAT_LINK})"
-        )),
     ])
+
+    # A second row only when it has something to say. Every button here used to
+    # render always, which is what made the panel feel like a wall of controls
+    # whose purpose you had to guess.
+    occasional: list = []
+    if not all_complete:
+        # Bulk entry is for first-time setup and full category rebuilds. Once
+        # every category is reviewed the four menus do everything it does.
+        occasional.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_advanced:{tag}",
+            label="Bulk edit",
+        ))
+    if complete and age != "fresh":
+        # Only meaningful once matching is about to drop the collection. When
+        # it is Fresh this button does nothing a member can perceive.
+        occasional.append(Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            custom_id=f"cards_confirm:{tag}",
+            label="Still accurate",
+        ))
+    if account_count > 1:
+        occasional.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id="cards_account_page:0",
+            label="Switch account",
+        ))
+    if occasional:
+        body.append(ActionRow(components=occasional))
+
+    freshness = (
+        "" if age == "fresh"
+        else f"{age.title()} · confirm it below to keep trading · "
+    )
+    body.append(Text(content=(
+        f"-# {freshness}a spare means 2 or more copies · "
+        f"[Open in game]({COLLECTION_LINK}) · "
+        f"[Global Card Chat]({GLOBAL_CHAT_LINK})"
+    )))
     return [Container(components=body)]
 
 
@@ -2296,11 +2301,15 @@ def _editor_state_text(
         return "Reserved by an accepted trade"
     if possible_spare:
         return "1 copy confirmed · duplicate badge needs checking"
-    return {
-        MISSING: "Missing · 0 copies",
-        OWNED: "Owned · 1 copy",
-        DUPLICATE: "Spare available · 2+ copies",
-    }.get(state, "State unknown")
+    if state == MISSING:
+        return "Missing · 0 copies"
+    if state == OWNED:
+        return "Owned · 1 copy"
+    if isinstance(state, int) and state >= DUPLICATE:
+        # Counts are stored exactly now, so a member holding four is told four
+        # rather than the old flat "2+ copies".
+        return f"Owned · {state} copies · {state - 1} to trade"
+    return "State unknown"
 
 
 def _category_accent(category_id: str) -> int:
@@ -3037,25 +3046,6 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
     return [Container(accent_color=RED_ACCENT, components=body)]
 
 
-def _review(account, inventory: dict, *, rendered_board=None) -> list[Container]:
-    return [Container(
-        components=[
-            Text(content="# Full collection board"),
-            Text(content=f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`"),
-            _inventory_board_media(
-                account, inventory, rendered_board=rendered_board
-            ),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                    label="Back",
-                ),
-            ]),
-        ],
-    )]
-
-
 async def _dashboard_view(account, inventory: dict, *, account_count: int):
     board = await _render_inventory_board_async(account, inventory)
     return _dashboard(
@@ -3064,11 +3054,6 @@ async def _dashboard_view(account, inventory: dict, *, account_count: int):
         account_count=account_count,
         rendered_board=board,
     )
-
-
-async def _review_view(account, inventory: dict):
-    board = await _render_inventory_board_async(account, inventory)
-    return _review(account, inventory, rendered_board=board)
 
 
 async def _category_browser_view(
@@ -3452,11 +3437,29 @@ def _holders_view(
                 limit=100,
             ),
         ))
+    askable = {option.value for option in holder_options}
     if holders:
-        holder_components: list = [
-            Text(content=_match_line(holder, index))
-            for index, holder in enumerate(shown_holders, start=start + 1)
-        ]
+        # Each holder carries its own Ask button rather than being a line of
+        # text above a select that repeats the same names. This removes a whole
+        # step: read the row, press Ask, choose what to give.
+        holder_components: list = []
+        for index, holder in enumerate(shown_holders, start=start + 1):
+            tag = _normalize_tag(holder.holder_tag)
+            line = Text(content=_match_line(holder, index))
+            if tag in askable:
+                holder_components.append(Section(
+                    components=[line],
+                    accessory=Button(
+                        style=hikari.ButtonStyle.PRIMARY,
+                        custom_id=(
+                            f"cards_trade_holder:"
+                            f"{_normalize_tag(account.tag)}|{card.id}|{tag}"
+                        ),
+                        label="Ask",
+                    ),
+                ))
+            else:
+                holder_components.append(line)
     else:
         holder_components = [Text(content=(
             f"Nobody with a fresh collection currently lists a duplicate **{card.name}**. "
@@ -3472,23 +3475,12 @@ def _holders_view(
         *holder_components,
     ]
     if holder_options:
-        components.extend([
-            Separator(divider=True),
-            Text(content=(
-                "## Request a reciprocal swap\n"
-                "Choose any fresh family match. Nothing is reserved until they "
-                "accept; if you are in different clans, move only after acceptance."
-            )),
-            ActionRow(components=[
-                TextSelectMenu(
-                    custom_id=f"cards_trade_holder:{_normalize_tag(account.tag)}|{card.id}",
-                    placeholder="Choose a family holder...",
-                    min_values=1,
-                    max_values=1,
-                    options=holder_options,
-                )
-            ]),
-        ])
+        # The select that used to sit here repeated the names already listed
+        # above it. Each holder now carries its own Ask button instead.
+        components.append(Text(content=(
+            "-# Nothing is reserved until they accept. If you are in different "
+            "clans, move only after acceptance."
+        )))
     if pages > 1:
         components.extend([
             Separator(divider=True),
@@ -6370,21 +6362,22 @@ async def cards_account_page(
     return _account_picker(data, _parse_page(action_id))
 
 
-@register_action("cards_account_open")
+@register_action("cards_account_select")
 @lightbulb.di.with_di
-async def cards_account_open(
+async def cards_account_select(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
     coc_client: coc.Client = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    """Open one account's collection from its row on the picker."""
+    """Open the collection for the account chosen from the picker."""
     scope_error = _guild_scope_error(ctx)
     if scope_error:
         return _notice("Open Card Hub in its family server", scope_error)
+    values = list(getattr(ctx.interaction, "values", ()) or ())
     account, data = await _owned_account(
-        coc_client, int(ctx.user.id), _normalize_tag(action_id)
+        coc_client, int(ctx.user.id), _normalize_tag(values[0] if values else "")
     )
     if account is None:
         return _account_picker(data)
@@ -8055,8 +8048,6 @@ async def cards_baseline(
     return _category_editor(account, inventory, category_id)
 
 
-@register_action("cards_review")
-@lightbulb.di.with_di
 async def cards_review(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
@@ -8394,10 +8385,17 @@ async def cards_trade_holder(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    requester_tag, wanted_card_id = _parse_trade_request_target(action_id)
+    parts = str(action_id or "").split("|")
+    requester_tag, wanted_card_id = _parse_trade_request_target(
+        "|".join(parts[:2])
+    )
     wanted = CARD_BY_ID.get(wanted_card_id)
+    # The Ask button carries the holder in its custom_id. Interaction values
+    # remain a fallback for any panel still open from the old select.
     values = list(getattr(ctx.interaction, "values", ()) or ())
-    holder_tag = _normalize_tag(values[0]) if values else ""
+    holder_tag = _normalize_tag(
+        parts[2] if len(parts) > 2 else (values[0] if values else "")
+    )
     if wanted is None or not holder_tag:
         return _notice("Unknown swap", "Open a fresh specific-card result and try again.")
     account, requester, problem = await _load_target(

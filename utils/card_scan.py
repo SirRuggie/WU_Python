@@ -106,11 +106,12 @@ ROW_OVERLAP_MAX_MEAN_DELTA = 1.0
 # baby_dragon/wall_breaker at 53 against 52. Those become "unknown" and the
 # member is asked, which is the correct outcome.
 #
-# The ceiling is additionally bounded by the anchors themselves: the two
-# closest same-category anchors sit 47 bits apart, so anything at or above 47
-# could fall inside the wrong card's radius. 46 is the largest value that keeps
-# `test_artwork_anchor_catalog_is_complete_private_and_separated` true.
-ARTWORK_HASH_MAX_DISTANCE = 46
+# The ceiling is additionally bounded by the anchors themselves: with the
+# re-derived set the two closest same-category anchors sit 42 bits apart, so
+# 41 is the largest value that cannot put a portrait inside the wrong card's
+# radius. `test_artwork_anchor_catalog_is_complete_private_and_separated`
+# pins that relationship.
+ARTWORK_HASH_MAX_DISTANCE = 41
 ARTWORK_HASH_MIN_RUNNER_UP_GAP = 8
 ARTWORK_HASH_SIZE = 32
 ARTWORK_HASH_MAX_FREQUENCY = 10
@@ -119,66 +120,66 @@ ARTWORK_CROP_TOP = 0.08
 ARTWORK_CROP_RIGHT = 0.38
 ARTWORK_CROP_BOTTOM = 0.66
 CARD_ARTWORK_HASHES = {
-    "barbarian": 0xBC5387F24345685BBDBFAD71338C8E33,
-    "archer": 0xDD83B808ABE021FF6A130B2A6B6A6C64,
-    "giant": 0x9EDCC50CCD3C8F0CE7C86373B3BF393C,
-    "goblin": 0x8E5577627241A68F30B7E362BE3E1792,
-    "wall_breaker": 0xB425EBACE03B6C926479DBC6CBCD4FBA,
-    "balloon": 0x447D81C658CFCA5B9AD1337353B3B7A3,
-    "wizard": 0x1E447526F7855356F8E3253571CC9652,
-    "healer": 0x88C31503FF889BEE6C45D69B39321259,
-    "dragon": 0xD7AC4E914D9C2E5118293C1ACBF1A8A1,
-    "pekka": 0xF2B8AFBE8A7C0C20393048DCDC4DAB09,
-    "baby_dragon": 0xC0385EE772075C4F7A60C8C440734FCE,
-    "miner": 0x1F8D49F579247113D0D9CAE134DC1C3C,
-    "electro_dragon": 0xF8A2037F02D8F85EA28199942D233B8A,
-    "yeti": 0xB933B87D4A21391ED32B2E846125AE8E,
-    "dragon_rider": 0xC33CCA12CC1CD5B79848C8ECA9D1B261,
-    "electro_titan": 0xF428AFD06E10F22F6948D8C48C8C83C3,
-    "root_rider": 0x3E3F698A483E253C2D1F37FE4DDD4F0F,
-    "thrower": 0x8CE1D1AC7325E2C7FCBCB83F367C37F1,
-    "meteor_golem": 0x425ED3B355C53AC29961E6B4C91A3132,
-    "minion": 0x1397EED8254DCE06D15C7CE6DEC8F968,
-    "hog_rider": 0xB38582740B9399FE6386BCA9AC8E367B,
-    "valkyrie": 0x99D72C1AE1C5463BA4A333715198EECC,
-    "golem": 0x92A8549EA1CCF54FFEFE7E3F7B4B1D3E,
-    "witch": 0x398E7C7ABD0C46543E1F1F3D1ECCCCEC,
-    "lava_hound": 0xF6AFC07107D95C449C9C9D96360F0F0F,
-    "bowler": 0x9DE17276271114F578B891A3B8F66278,
-    "ice_golem": 0xE84C454D23ED6C7AC49283C5731A8B8B,
-    "headhunter": 0xE9FC72247ABA0C2A3D1D1F0E44B6AEF3,
-    "apprentice_warden": 0x318FF0136E670CF8323B7FF80232EE9C,
-    "druid": 0xB84FCCF1742584F4CF7978E38B377FDC,
-    "furnace": 0x412AF4D1F1C5761DE2EACCC4C3C3C0D6,
-    "rubble_witch": 0x6E317AE2275C8C6C1E5E23436666EB09,
-    "raged_barbarian": 0x9A43C73061AE5C7BFFDFEFFDD7DBDE73,
-    "sneaky_archer": 0x8F802FC019FB7B4CE6F43C4CD4DCE8A9,
-    "boxer_giant": 0xAC35005B165EF976DD9E8EE47447EBC8,
-    "beta_minion": 0xA22CCE55B57E0B13327CEED6D78F4F5B,
-    "bomber": 0x118C5B7E9F0C151F3C48DCCDAC5C5D79,
+    "barbarian": 0xB6F007CA4379AE549FED71333FCEB333,
+    "archer": 0x5FC3B8E02BE902F203032A6A6B6E6474,
+    "giant": 0x16CFA534CC997F04486373B3B63938FC,
+    "goblin": 0xAA54B47372AB6781A7E362F63E3F9392,
+    "wall_breaker": 0xB0054B27E165BCB7FBDBC6CBC9CF9BAE,
+    "balloon": 0x5066B47EDC31AEB07133735373B5A7E2,
+    "wizard": 0x864EBA12B4D3D374F2A33571CCD67258,
+    "healer": 0xACC01D63BF871BE064569B39321A591D,
+    "dragon": 0x9ABE44C5CC1FA3A4393C3ECBF9A0938E,
+    "pekka": 0xB2B9AE1F8AD62D023060DCDCCD2B49AF,
+    "baby_dragon": 0xD007D60FF9D06CD472E8CC60634F9CB6,
+    "miner": 0x1F8F0B5CBD589071D9D8EE35DC3C3878,
+    "electro_dragon": 0xF8A2035F02F8F95CA08999842D233B8A,
+    "yeti": 0xB933B87D4A3D3118532B2C846125AE8E,
+    "dragon_rider": 0xC33CCA13D488D5E7DC6CE8A4A1C2B361,
+    "electro_titan": 0xF428AFDA4E10F22B69C8D08C8C8D83C3,
+    "root_rider": 0x3A3B3BAE482E253A091F37FECDFD4F8F,
+    "thrower": 0x8CE191BC7335E2D4FCBCB837767C37F1,
+    "meteor_golem": 0xC05BD3BB45D5AA0599E7E6D10E113213,
+    "minion": 0x0397EED83412CE9DD97C6CF6DED9E878,
+    "hog_rider": 0xB28386590EC9DCF6438EBDAC8C8E3B99,
+    "valkyrie": 0x1DD3382AE1F3063DA423717199EAECDC,
+    "golem": 0x92A8558CA1D2F75DFEF63E3F5B4D3EB6,
+    "witch": 0x3D8AEC3C1F88075D3F1F1F3F5CCCECFD,
+    "lava_hound": 0xA0A9C059077EFC5B9C9D9E16070F0F0F,
+    "bowler": 0x97E4D25A277813E2B89983AAF6EE7278,
+    "ice_golem": 0xE84E8572294F6C76D29347711B0A8B9B,
+    "headhunter": 0xE9BC52717ACD4C0A1D1D1E4CD6A68373,
+    "apprentice_warden": 0x198FF0636F960CCC3B7FFE001266ACB8,
+    "druid": 0xB843E5D5741E20ED7939E3C39B3758BC,
+    "furnace": 0x412A74D1F1D5761DE2EACCC7D3C3D0D6,
+    "rubble_witch": 0x6E3172E2275C8D6C2E5E23426646EB09,
+    "raged_barbarian": 0x9A43C7B061AE1C7BFFDFEF7D53DBDE3B,
+    "sneaky_archer": 0x8F802FC019FB7B4CE6F43C4CD4DCE829,
+    "boxer_giant": 0xAC35105B165E7976DD9E8EE47643EBC8,
+    "beta_minion": 0xA22CCE55B57A0B1B327CEED6D78F4F5B,
+    "bomber": 0x118C5B7E9F0D151E3C48DCCDAC5C5D79,
     "bb_baby_dragon": 0xC007FE0979F26CD472E8CC60634E94B4,
     "cannon_cart": 0x99D95899A1C5E6CC808C39797B697934,
-    "night_witch": 0x278C1F85281BAF9D3D7E36DE48683D98,
-    "drop_ship": 0x10EF709D51C7AF14B0F8BC751355369E,
-    "power_pekka": 0xFE458B0A83227F69F0D9838D492E0F63,
-    "hog_glider": 0x9487825107D9DEF663CE9CAC8C8E3A59,
-    "super_barbarian": 0xB5443876272DBC366F4F0223726E6268,
-    "super_archer": 0xC7890BDC9A05963FEC6CB889C9B07060,
-    "super_giant": 0x909BAC99CD7C78916B79FCFABBA9ACCE,
-    "sneaky_goblin": 0x1340ECBD4BE2C3E673F9E1636FE7B0F0,
-    "super_wall_breaker": 0x3DA5D25B4846A976983D24040C6EA634,
-    "rocket_balloon": 0x2ACFEC7C7882851E0F4F3F771B3B1D9C,
-    "super_wizard": 0x73DAB0DA04128FFA999431321E3C383D,
-    "super_dragon": 0x59A84419DC9B3CDDCCCE9494C0F1FCB2,
-    "inferno_dragon": 0x1D0707DB76E84E4AC2D3459C5E7AB2FA,
-    "super_miner": 0x9EC1FB5CA8C812E37232352DE82E3C68,
-    "super_yeti": 0xAD293023D13E79F474369F2615C7C676,
-    "super_minion": 0x52638C360E27ED5EC0C17322816BE3A1,
-    "super_hog_rider": 0xFA82C9F949A6C296988DCD4F2D3D3087,
+    "night_witch": 0x278E1F05281BAF9D3D7E36DE48683D98,
+    "drop_ship": 0x10EF709DD1C3AF14B0FCBC751355369E,
+    "power_pekka": 0xFE458B0A83227F69F099838D492E0F63,
+    "hog_glider": 0x908592750759DEF662CE9CAC8C8E3239,
+    "super_barbarian": 0xB5443876273BBC326F4F0223726E6668,
+    "super_archer": 0xC7890BDC9805B63FEC6C3889C9F03060,
+    "super_giant": 0x909BAC99CD7C78916B79FCFAB3B9ACCE,
+    "sneaky_goblin": 0x9340ECBD4BE2C3C6F3D9E1636FE7B0F0,
+    "super_wall_breaker": 0x3DA5D25F0047A976983D24440C6EA6B4,
+    "rocket_balloon": 0x2BC3ED0DF8BC2D015F7B77173B3F199C,
+    "super_wizard": 0xF6DB368C04AE0F85B431321E2C3A2819,
+    "super_dragon": 0x5DB34515C37C64F00E9494C0F178B6F8,
+    "inferno_dragon": 0x1792029367D56EE5D3C59CDE7AB2B8AE,
+    "super_miner": 0x97E6BB0922F7920532656DE8AE3C78EA,
+    "super_yeti": 0x2D2570BBC1CCD1B3368F2614C3C676E6,
+    "super_minion": 0x52638C362C0FED5EC08173A6817BE3A1,
+    "super_hog_rider": 0xFAC2C9F949A6C21698CDCD6F2D3D30A5,
     "super_valkyrie": 0xCCD8ABB48AA7266AE673F19969742DED,
-    "super_witch": 0x95C77AB41ECA232A696933384D7C7C79,
-    "ice_hound": 0xF655B564E3350C8C1267F3F3323E87C3,
-    "super_bowler": 0xA87551D2AF1165D5FEBFFF733BEB6737,
+    "super_witch": 0x95C76AB434DA232B69793338C9747C79,
+    "ice_hound": 0xF655B564E2B50D845667F373323E8787,
+    "super_bowler": 0xA87559D6AD116595BEFFFF733BEB6737,
 }
 
 _ARTWORK_PHASH_FREQUENCIES = (
@@ -854,7 +855,13 @@ def _classify_slot(image: Image.Image, box: Bounds, column: int) -> SlotScan:
     external_saturation = _mean_hsv_channel(
         image, external_bounds, channel=1
     )
-    reward_track_covers_badge = (
+    # The reward track only ever sits along the bottom of the screen. Without
+    # this guard the colour test also matched the grid's own pale tan gutter,
+    # which looks identical (low saturation, high value), so cards in rows one
+    # and two were reported as having an unreadable badge and the member was
+    # asked "do you have more?" about cards with visibly no badge at all.
+    badge_near_screen_bottom = badge_bounds[3] >= image.height * 0.82
+    reward_track_covers_badge = badge_near_screen_bottom and (
         (external_saturation < 55.0 and external_value > 165.0)
         # One calibrated capture catches the reward track at its darker upper
         # bevel; it is less bright but still distinctly less saturated than the

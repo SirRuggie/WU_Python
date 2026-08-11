@@ -100,7 +100,7 @@ def test_category_rgb_frames_and_discord_accents_share_one_exact_palette():
     (
         ("barbarian", "owned", "owned", "owned (one copy)"),
         ("minion", "missing", "missing", "Grayscale card art with an X"),
-        ("raged_barbarian", "duplicate", "duplicate", "x2 or more"),
+        ("raged_barbarian", "duplicate", "duplicate", "2 copies, 1 spare copy"),
         (
             "super_barbarian",
             "possible-spare",

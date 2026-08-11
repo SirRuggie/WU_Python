@@ -2290,16 +2290,14 @@ def test_holder_page_action_rebuilds_second_page_with_trade_selector(monkeypatch
         for node in nodes
         if "custom_id" in node
     }
-    options = [
-        option
-        for node in nodes
-        if node.get("custom_id") == "cards_trade_holder:#ME|root_rider"
-        for option in node.get("options", [])
-    ]
-    assert [option["value"] for option in options] == ["#HOLDER20"]
+    # The select that repeated the holder names is gone. Each holder now
+    # carries its own Ask button, so the holder tag rides in the custom_id.
+    assert not [n for n in nodes if n.get("type") == 3]
+    page_size = cards_command.HOLDER_RESULT_LIMIT
+    last = f"#HOLDER{page_size}"
+    assert f"cards_trade_holder:#ME|root_rider|{last}" in custom_ids
     assert "cards_holder_page:#ME|root_rider|0" in custom_ids
     assert "cards_holder_page:#ME|root_rider|1" in custom_ids
-    assert "cards_holder_page:#ME|root_rider|2" in custom_ids
     _assert_discord_payload(view)
 
 
@@ -2396,9 +2394,6 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
         "cards_matches:#ME",
         "cards_trades:#ME",
         "cards_family:#ME",
-        "cards_review:#ME",
-        "cards_advanced:#ME",
-        "cards_confirm:#ME",
         "cards_pick:#ME|elixir",
         "cards_pick:#ME|dark_elixir",
         "cards_pick:#ME|builder_base",
@@ -2469,23 +2464,6 @@ def test_runtime_dashboard_renders_the_board_off_the_event_loop(monkeypatch):
 
     assert calls == [cards_command.render_inventory_card_board]
     assert any(node.get("type") == 12 for node in _view_nodes(view))
-    _assert_discord_payload(view)
-
-
-def test_optional_full_board_page_has_only_the_board_and_back_action():
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    view = cards_command._review(account, _complete_inventory())
-    nodes = _view_nodes(view)
-    buttons = [node for node in nodes if node.get("type") == 2]
-
-    assert len([node for node in nodes if node.get("type") == 12]) == 1
-    assert len(buttons) == 1
-    assert buttons[0]["custom_id"] == "cards_dashboard:#ME"
-    assert buttons[0]["label"] == "Back"
-    assert buttons[0]["style"] == 2
     _assert_discord_payload(view)
 
 
@@ -2630,7 +2608,7 @@ def test_possible_spare_category_page_has_three_choices_within_component_limit()
     [
         (cards.MISSING, "Missing · 0 copies", True, False),
         (cards.OWNED, "Owned · 1 copy", False, False),
-        (cards.DUPLICATE, "Spare available · 2+ copies", False, True),
+        (cards.DUPLICATE, "Owned · 2 copies · 1 to trade", False, True),
     ],
 )
 def test_card_editor_shows_accessible_card_tiles_and_valid_copy_controls(
@@ -3230,8 +3208,6 @@ def test_all_member_views_build_with_discord_component_limits():
         cards_command._dashboard(account, complete, account_count=2),
         cards_command._dashboard(account, active, account_count=2),
         cards_command._update_overview(account, empty),
-        cards_command._review(account, complete),
-        cards_command._review(account, active),
         cards_command._active_trade_notice(account.tag),
         cards_command._matches_view(account, complete, []),
         cards_command._matches_view(account, complete, broad_matches),
@@ -3399,7 +3375,7 @@ def test_cards_command_has_no_page_fields_and_opens_compact_dashboard(monkeypatc
 
     assert ctx.deferred == [True]
     assert any(
-        node.get("custom_id") == "cards_review:#ME"
+        node.get("custom_id") == "cards_pick:#ME|elixir"
         for node in _view_nodes(ctx.interaction.edits[0]["components"])
     )
 
@@ -4932,8 +4908,10 @@ def test_family_bullets_survive_a_troop_with_no_synced_emoji():
     assert "None" not in rendered
 
 
-def test_account_picker_gives_every_account_its_own_row_and_button():
-    """A collapsed select hid the accounts; a Section shows them."""
+def test_account_picker_lists_accounts_in_one_select_with_town_hall_emoji():
+    """Sections were tried here and are worse: on mobile the accessory button
+    wraps below its text, so 37 linked accounts became seven pages of scrolling.
+    """
     accounts = [
         Account(tag=f"#A{i}", name=f"Member {i}", clan_tag="#HOME",
                 clan_name="Home Clan", town_hall=17 - i)
@@ -4942,25 +4920,12 @@ def test_account_picker_gives_every_account_its_own_row_and_button():
     data = _scan_accounts_data(*accounts)
 
     view = cards_command._account_picker(data)
-    payload = [component.build() for component in view]
-    nodes = list(_walk_payload(payload))
-    text = _view_text(view)
+    nodes = list(_walk_payload([c.build() for c in view]))
 
-    # Section (type 9) per account, each carrying a Button accessory.
-    sections = [n for n in nodes if n.get("type") == 9]
-    assert len(sections) == 3
-    for section in sections:
-        assert section["accessory"]["type"] == 2          # a Button, not a Thumbnail
-        assert section["accessory"]["custom_id"].startswith("cards_account_open:")
-
-    for account in accounts:
-        assert account.name in text
-        assert f"cards_account_open:{account.tag}" in {
-            n.get("custom_id") for n in nodes if n.get("custom_id")
-        }
-    # No select menu and no disabled page-counter button remain.
-    assert not [n for n in nodes if n.get("type") == 3]
-    assert not [n for n in nodes if n.get("disabled") and n.get("type") == 2]
+    selects = [n for n in nodes if n.get("type") == 3]
+    assert len(selects) == 1
+    assert {str(o["value"]) for o in selects[0]["options"]} == {a.tag for a in accounts}
+    assert not [n for n in nodes if n.get("type") == 9]
     _assert_discord_payload(view)
 
 
@@ -4968,14 +4933,18 @@ def test_account_picker_paginates_without_a_dead_counter_button():
     accounts = [
         Account(tag=f"#A{i}", name=f"Member {i}", clan_tag="#HOME",
                 clan_name="Home Clan", town_hall=16)
-        for i in range(9)
+        for i in range(30)
     ]
     data = _scan_accounts_data(*accounts)
 
     first = cards_command._account_picker(data, 0)
     second = cards_command._account_picker(data, 1)
 
-    assert "Accounts 1-6 of 9" in _view_text(first)
-    assert "Accounts 7-9 of 9" in _view_text(second)
+    assert "Accounts 1-25 of 30" in _view_text(first)
+    assert "Accounts 26-30 of 30" in _view_text(second)
+    assert not [
+        n for n in _view_nodes(first)
+        if n.get("type") == 2 and n.get("disabled") and "Page" in str(n.get("label"))
+    ]
     _assert_discord_payload(first)
     _assert_discord_payload(second)

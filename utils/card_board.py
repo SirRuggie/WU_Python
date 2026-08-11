@@ -397,8 +397,15 @@ def _thumbnail_alt_text(card, state: int | str) -> str:
     category_name = CATEGORY_BY_ID[card.category].name
     if state == MISSING:
         detail = "missing. Grayscale card art with an X marker."
+    elif state == SPARE_FLOOR:
+        detail = "spare available, two or more copies."
     elif _is_spare(state):
-        detail = "duplicate available (x2 or more)."
+        # Screen readers get the same number the badge draws.
+        spare = state - 1
+        detail = (
+            f"{state} copies, {spare} spare "
+            f"{'copies' if spare != 1 else 'copy'} to trade."
+        )
     elif state == OWNED_SPARE_UNVERIFIED:
         detail = "owned; possible spare needs checking (question-mark badge)."
     else:
