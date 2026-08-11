@@ -17,7 +17,7 @@ FRAME = (188, 45, 201)
 INTERIOR = (58, 53, 65)
 OWNED_PORTRAIT = (30, 160, 210)
 MISSING_PORTRAIT = (112, 112, 112)
-AMBIGUOUS_PORTRAIT = (120, 111, 120)
+AMBIGUOUS_PORTRAIT = (120, 109, 120)
 BADGE = (246, 202, 22)
 CARD_WIDTH = 90
 CARD_HEIGHT = 130
@@ -186,7 +186,7 @@ def _collection_capture(
                 card_scan.MISSING: ((45, 45, 45), (205, 205, 205)),
                 card_scan.OWNED: ((5, 65, 110), (115, 220, 250)),
                 card_scan.DUPLICATE: ((5, 65, 110), (115, 220, 250)),
-                card_scan.UNKNOWN: ((46, 43, 45), (212, 203, 209)),
+                card_scan.UNKNOWN: ((46, 40, 44), (212, 194, 206)),
             }[state]
             seed = ((marker + 1) * 0x9E3779B1) & 0xFFFFFFFF
             for tile_row in range(8):

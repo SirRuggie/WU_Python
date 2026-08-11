@@ -61,8 +61,21 @@ SCAN_CHECKPOINT_VERSION = 1
 # sequence.  Values between the missing and owned bands remain unknown.
 FRAME_MIN_SATURATION = 110
 FRAME_MIN_VALUE = 120
-MISSING_MAX_SATURATION = 12.0
-OWNED_MIN_SATURATION = 25.0
+# A missing portrait is rendered fully desaturated and measures 0.00 on a clean
+# capture, but JPEG residue on an already-grey subject lifts it: Cannon Cart, a
+# grey mechanical cannon, measured 19.39 and fell into the old 12..25 gap, so a
+# card that is obviously absent on screen came back "unknown".
+#
+# The floor moves to 25 and the owned threshold to 30. Widening the owned
+# side as well was tried and is wrong: several genuinely owned cards have
+# naturally muted art (Yeti, Golem, Headhunter, Thrower, Meteor Golem all
+# measure 48..74), so raising it to 75 pushed five correct readings into the
+# ambiguous band. The lowest owned reading observed is 48, which leaves ample
+# room above 30: the sorted distribution across sixty live portraits is
+# thirty-four zeros, then 19.4 (Cannon Cart, missing), then 33.6 upward,
+# all owned. Nothing real falls in 25..30.
+MISSING_MAX_SATURATION = 25.0
+OWNED_MIN_SATURATION = 30.0
 YELLOW_HUE_MIN = 24
 YELLOW_HUE_MAX = 50
 YELLOW_MIN_SATURATION = 120
@@ -855,12 +868,22 @@ def _classify_slot(image: Image.Image, box: Bounds, column: int) -> SlotScan:
     external_saturation = _mean_hsv_channel(
         image, external_bounds, channel=1
     )
-    # The reward track only ever sits along the bottom of the screen. Without
-    # this guard the colour test also matched the grid's own pale tan gutter,
-    # which looks identical (low saturation, high value), so cards in rows one
-    # and two were reported as having an unreadable badge and the member was
-    # asked "do you have more?" about cards with visibly no badge at all.
-    badge_near_screen_bottom = badge_bounds[3] >= image.height * 0.82
+    # The reward track only ever sits along the bottom of the screen, below the
+    # grid. Without this guard the colour test also matched the grid's own pale
+    # tan gutter, which is identically low-saturation and bright, so cards in
+    # the upper row were reported as having an unreadable badge and the member
+    # was asked "do you have more?" about cards with visibly no badge at all.
+    #
+    # Measured on live captures: the upper row's badge region ends around 0.56
+    # of frame height and the lower row's around 0.81, so 0.70 sits in the gap.
+    # This is a fraction rather than a fixed row index on purpose, because a
+    # member may crop the track away entirely. A crop that removes the track
+    # also removes the obstruction, so declining to flag it is correct; the
+    # residual risk is a capture cropped so tightly that the track lands above
+    # 0.70, which would read a hidden badge as no badge. That direction only
+    # under-reports a spare, which a member can add back, rather than inventing
+    # trade supply that does not exist.
+    badge_near_screen_bottom = badge_bounds[3] >= image.height * 0.70
     reward_track_covers_badge = badge_near_screen_bottom and (
         (external_saturation < 55.0 and external_value > 165.0)
         # One calibrated capture catches the reward track at its darker upper
