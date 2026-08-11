@@ -2927,29 +2927,45 @@ async def _candidate_inventories(
 
 
 def _match_line(match, ordinal: int) -> str:
-    mention = f"<@{match.holder_discord_id}>" if match.holder_discord_id else "Discord member"
+    """One holder, in three labelled parts with a blank line between each.
+
+    Everything used to run together: name, tag, category, both card lists and
+    the clan footer, at one type size with no gaps. The lists are what a member
+    reads, so they get headings and breathing room; the identifiers drop to
+    subtext.
+    """
+    mention = (
+        f"<@{match.holder_discord_id}>"
+        if match.holder_discord_id
+        else "Discord member"
+    )
     location = _escape_markdown(match.holder_clan_name or "No clan", limit=50)
-    same_clan = " · **same clan**" if match.same_clan else ""
-    exchange_lines: list[str] = []
+    same_clan = " • **same clan**" if match.same_clan else " • different clan"
+
+    blocks = [
+        f"**{ordinal}. {_escape_markdown(match.holder_name, limit=50)}**  "
+        f"{mention}"
+    ]
     for exchange in match.exchanges:
         category = CATEGORY_BY_ID[exchange.category]
-        block = [f"{category_markup(category.id)} **{category.short_name}**"]
-        block.append("**They can give you**")
-        block.append(_card_rows(exchange.offers))
+        blocks.append(
+            f"### {category_markup(category.id)} {category.short_name}\n"
+            "**You get**\n"
+            f"{_card_rows(exchange.offers)}"
+        )
         if exchange.returns:
-            block.append("**You can give back**")
-            block.append(_card_rows(exchange.returns))
+            blocks.append(
+                "**You give back**\n" + _card_rows(exchange.returns)
+            )
         else:
-            block.append("-# Nothing of yours matches. Ask if they will help anyway.")
-        exchange_lines.append("\n".join(block))
-    exchange = "\n".join(exchange_lines)
-    icon = "🔁" if match.reciprocal else "🎁"
-    return (
-        f"{icon} **{ordinal}. {_escape_markdown(match.holder_name, limit=50)}** · "
-        f"{mention} · `{match.holder_tag}`\n"
-        f"{exchange}\n"
-        f"{location}{same_clan} · confirmed {_relative_timestamp(match.confirmed_at)}"
+            blocks.append(
+                "-# Nothing of yours matches. Ask if they will help anyway."
+            )
+    blocks.append(
+        f"-# `{match.holder_tag}` • {location}{same_clan} • "
+        f"confirmed {_relative_timestamp(match.confirmed_at)}"
     )
+    return "\n\n".join(blocks)
 
 
 def _offers_by_card(matches: list) -> dict[str, dict]:
@@ -3352,6 +3368,10 @@ def _holders_view(
         holder_components: list = []
         for index, holder in enumerate(shown_holders, start=start + 1):
             tag = _normalize_tag(holder.holder_tag)
+            if holder_components:
+                # A rule between people, so six holders read as six entries
+                # rather than one continuous block of names and cards.
+                holder_components.append(Separator(divider=True))
             line = Text(content=_match_line(holder, index))
             if tag in askable:
                 holder_components.append(Section(
@@ -3362,7 +3382,7 @@ def _holders_view(
                             f"cards_trade_holder:"
                             f"{_normalize_tag(account.tag)}|{card.id}|{tag}"
                         ),
-                        label="Ask",
+                        label="Ask to swap",
                     ),
                 ))
             else:
@@ -7987,8 +8007,22 @@ async def cards_matches(
         return problem
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
+    guild_id = _guild_id(ctx)
+    if guild_id is not None:
+        # A cancel whose cleanup failed leaves the cards fenced, and a fenced
+        # card is masked out of matching - so the swap silently vanishes on
+        # exactly this screen. Draining the queue here means the screen where
+        # the damage shows is also the screen that repairs it; before, only
+        # My trades and a restart did.
+        await _reconcile_trade_cleanups(mongo, guild_id=int(guild_id))
+        await _recover_stalled_reservations(
+            mongo, now=datetime.now(timezone.utc), guild_id=int(guild_id)
+        )
+        inventory = await mongo.card_inventories.find_one({
+            "_id": _normalize_tag(account.tag), "guild_id": int(guild_id),
+        }) or inventory
     candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_guild_id(ctx)
+        mongo, inventory, guild_id=guild_id
     )
     available = _without_reserved_cards(inventory)
     matches = find_matches(available, candidates)
@@ -8594,7 +8628,10 @@ async def cards_trade_cancel(
     if not getattr(result, "modified_count", 0):
         return _notice("Trade can no longer be cancelled", "Reopen **My trades**.")
     await _release_proposal_slots(mongo, trade)
-    await _finish_trade_cleanup(
+    # This returns False and leaves the work queued when the release fails.
+    # Claiming the cards are free when they are still fenced is what turns a
+    # transient error into "I cancelled it and the swap never came back".
+    released = await _finish_trade_cleanup(
         mongo, trade, owner=_reservation_owner(trade)
     )
     trade["status"] = "cancelled"
@@ -8609,7 +8646,13 @@ async def cards_trade_cancel(
             trade,
             recipient_id=other_id,
             title="Card swap cancelled",
-            detail="The other player cancelled it and exact-card reservations were released.",
+            detail=(
+                "The other player cancelled it and exact-card reservations "
+                "were released."
+                if released
+                else "The other player cancelled it. Releasing the reserved "
+                "cards is still finishing; open Find trades in a moment."
+            ),
         ),
         _update_trade_channel(bot, trade),
     )
@@ -8620,7 +8663,14 @@ async def cards_trade_cancel(
     )
     return _trade_feedback(
         "Trade cancelled",
-        f"No tracked inventory changed; exact-card reservations were released. {delivery}",
+        (
+            f"No tracked inventory changed; exact-card reservations were "
+            f"released. {delivery}"
+            if released
+            else f"No tracked inventory changed. Releasing the reserved cards "
+            f"is still finishing — open **Find trades** in a moment and it "
+            f"will complete. {delivery}"
+        ),
         account.tag,
     )
 
