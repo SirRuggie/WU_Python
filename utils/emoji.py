@@ -111,6 +111,7 @@ class Emojis:
         self.next_page = EmojiType("<:nextPage:1536793616004022403>")
         self.previous_page = EmojiType("<:previousPage:1536793616863862784>")
         self.return_arrow = EmojiType("<:return_arrow_gray:1536796427198668911>")
+        self.magnifier = EmojiType("<:magnifier_glass:1536797595089899540>")
         # Clash of Cards categories. Names match what was uploaded to the bot.
         self.card_elixir = EmojiType("<:Elixer:1536777630278357164>")
         self.card_dark_elixir = EmojiType("<:Dark_Elixer:1536777729511391322>")

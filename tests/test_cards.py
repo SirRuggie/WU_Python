@@ -5062,9 +5062,42 @@ def test_refresh_and_pagination_use_the_uploaded_control_emoji():
         (cards_command.NEXT_EMOJI, 1536793616004022403),
         (cards_command.PREVIOUS_EMOJI, 1536793616863862784),
         (cards_command.RETURN_EMOJI, 1536796427198668911),
+        (cards_command.SEARCH_EMOJI, 1536797595089899540),
+        (cards_command.CANCEL_EMOJI, 1397096986506825778),
     ):
         assert resolved is not hikari.UNDEFINED
         assert resolved.id == expected
+
+
+def test_search_and_cancel_buttons_use_the_uploaded_emoji():
+    """Find and cancel are their own kinds of control; each gets one mark."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+
+    board = cards_command._dashboard(account, inventory, account_count=1)
+    find = next(
+        n for n in _view_nodes(board)
+        if n.get("custom_id") == "cards_matches:#ME"
+    )
+    assert (find.get("emoji") or {}).get("id") == "1536797595089899540"
+
+    # Cancel keeps its own mark: aborting a scan is not going back a screen.
+    cancels = 0
+    for view in (
+        cards_command._scan_upload_prompt(account, "draft", usable_until=None),
+        cards_command._trades_view(account, []),
+    ):
+        for node in _view_nodes(view):
+            if "cancel" in str(node.get("label", "")).lower():
+                emoji = node.get("emoji") or {}
+                assert emoji.get("id") == "1397096986506825778", node.get("label")
+                assert emoji.get("id") != str(cards_command.RETURN_EMOJI.id)
+                cancels += 1
+    assert cancels, "no cancel button was actually checked"
 
 
 def test_no_back_button_is_left_on_a_unicode_arrow():

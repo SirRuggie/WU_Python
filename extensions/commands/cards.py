@@ -175,6 +175,8 @@ def category_partial(category_id: str):
 # table above rather than anything that can change between renders.
 REFRESH_EMOJI = _safe_partial(emojis.refresh)
 RETURN_EMOJI = _safe_partial(emojis.return_arrow)
+SEARCH_EMOJI = _safe_partial(emojis.magnifier)
+CANCEL_EMOJI = _safe_partial(emojis.no)
 NEXT_EMOJI = _safe_partial(emojis.next_page)
 PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
@@ -1190,7 +1192,7 @@ def _scan_upload_prompt(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_upload_cancel:{session_id}",
                     label="Cancel upload",
-                    emoji="✖️",
+                    emoji=CANCEL_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
@@ -1360,7 +1362,7 @@ def _scan_upload_progress(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_upload_cancel:{session_id}",
                     label="Cancel upload",
-                    emoji="✖️",
+                    emoji=CANCEL_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
@@ -1391,7 +1393,7 @@ def _scan_upload_problem(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_upload_cancel:{session_id}",
                     label="Cancel upload",
-                    emoji="✖️",
+                    emoji=CANCEL_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
@@ -1546,7 +1548,7 @@ def _scan_accounts_problem(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_scan_retry_cancel:{draft_id}",
                     label="Cancel",
-                    emoji="✖️",
+                    emoji=CANCEL_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
@@ -1687,6 +1689,7 @@ def _scan_review(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_scan_cancel:{draft_id}",
                 label="Cancel",
+                emoji=CANCEL_EMOJI,
             ),
         ]),
     ])
@@ -1970,7 +1973,7 @@ def _dashboard(
                 if matchable
                 else "Find trades · collection is stale"
             ),
-            emoji="🔁",
+            emoji=SEARCH_EMOJI,
             is_disabled=not matchable,
         ),
         Button(
@@ -2992,7 +2995,7 @@ def _matches_view(
     holders_total = len({match.holder_tag for match in matches})
 
     body: list = [
-        Text(content="# Find trades"),
+        Text(content=f"# {emojis.magnifier} Find trades"),
         Text(content=(
             f"-# {holders_total} collection"
             f"{'s' if holders_total != 1 else ''} can supply something you need"
@@ -3334,7 +3337,7 @@ def _trade_offer_view(account, card_id: str, holder) -> list[Container]:
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
                     label="All matches",
-                    emoji="🔎",
+                    emoji=SEARCH_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
@@ -4805,7 +4808,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                     style=hikari.ButtonStyle.DANGER,
                     custom_id=f"cards_trade_decline:{trade['_id']}",
                     label="Decline",
-                    emoji="✖️",
+                    emoji=CANCEL_EMOJI,
                 ),
             ])
         elif status == "pending":
@@ -4813,7 +4816,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 style=hikari.ButtonStyle.DANGER,
                 custom_id=f"cards_trade_cancel:{trade['_id']}",
                 label="Cancel request",
-                emoji="✖️",
+                emoji=CANCEL_EMOJI,
             ))
         elif status == "move_needed":
             buttons.append(Button(
@@ -4826,7 +4829,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 style=hikari.ButtonStyle.DANGER,
                 custom_id=f"cards_trade_cancel:{trade['_id']}",
                 label="Cancel swap",
-                emoji="✖️",
+                emoji=CANCEL_EMOJI,
             ))
         elif status in {"ready", "accepted"}:
             buttons.append(Button(
@@ -4839,7 +4842,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 style=hikari.ButtonStyle.DANGER,
                 custom_id=f"cards_trade_cancel:{trade['_id']}",
                 label="Cancel",
-                emoji="✖️",
+                emoji=CANCEL_EMOJI,
             ))
         elif status in {"reserving", "completing"}:
             buttons.append(Button(
