@@ -2537,6 +2537,41 @@ def test_category_browser_paginates_every_card_within_discord_component_limit(
     assert seen_card_ids == [card.id for card in definitions]
 
 
+def test_possible_spare_category_page_has_three_choices_within_component_limit():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    visible = list(cards.CATEGORY_CARDS["elixir"][:4])
+    inventory["scan_duplicate_unverified_card_ids"] = [
+        card.id for card in visible
+    ]
+
+    view = cards_command._category_browser(
+        account, inventory, "elixir", page=0
+    )
+    nodes = _view_nodes(view)
+    buttons = {
+        node.get("custom_id"): node
+        for node in nodes
+        if node.get("custom_id")
+    }
+
+    for card in visible:
+        assert buttons[f"cards_editor_dec:#ME|{card.id}"]["label"] == (
+            "Missing — have 0"
+        )
+        assert buttons[f"cards_editor_keep:#ME|{card.id}"]["label"] == (
+            "No — have 1"
+        )
+        assert buttons[f"cards_editor_inc:#ME|{card.id}"]["label"] == (
+            "Yes — spare"
+        )
+    assert len([node for node in nodes if "type" in node]) <= 40
+    _assert_discord_payload(view)
+
+
 @pytest.mark.parametrize(
     ("state", "state_text", "dec_disabled", "inc_disabled"),
     [
@@ -2715,9 +2750,51 @@ def test_possible_spare_editor_yes_no_saves_and_advances(
         if node.get("custom_id")
     }
     assert {
+        "cards_editor_dec:#ME|dragon",
         "cards_editor_keep:#ME|dragon",
         "cards_editor_inc:#ME|dragon",
     } <= custom_ids
+
+
+def test_possible_spare_editor_missing_saves_only_that_card_and_advances(
+    monkeypatch,
+):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 8
+    document["scan_duplicate_unverified_card_ids"] = ["wizard", "dragon"]
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    async def load_target(*_args, **_kwargs):
+        return account, collection.documents["#ME"], None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    view = asyncio.run(cards_command.cards_editor_dec(
+        ctx,
+        "#ME|wizard",
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+    ))
+
+    updated = collection.documents["#ME"]
+    assert updated["cards"]["wizard"] == cards.MISSING
+    assert updated["cards"]["dragon"] == cards.OWNED
+    assert updated["scan_duplicate_unverified_card_ids"] == ["dragon"]
+    assert updated["inventory_revision"] == 9
+    assert "## Dragon" in _view_text(view)
+    assert any(
+        node.get("custom_id") == "cards_editor_dec:#ME|dragon"
+        and node.get("label") == "Missing — have 0"
+        for node in _view_nodes(view)
+    )
+    assert len([node for node in _view_nodes(view) if "type" in node]) <= 40
+    _assert_discord_payload(view)
 
 
 def test_card_editor_and_more_handlers_route_to_the_requested_account(monkeypatch):
@@ -4004,6 +4081,13 @@ def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
         node.get("custom_id") == "cards_scan_hidden_yes:draft-hidden-review"
         for node in nodes
     )
+    assert any(
+        node.get("custom_id") == "cards_scan_hidden_missing:draft-hidden-review"
+        and node.get("label") == "Missing — have 0"
+        for node in nodes
+    )
+    assert len([node for node in nodes if "type" in node]) <= 40
+    _assert_discord_payload(view)
     assert discarded == []
     assert state_updates[0][1]["$set"]["type"] == "cards_hidden_badge_review"
     assert state_updates[0][1]["$set"]["base_revision"] == 5
@@ -4054,9 +4138,53 @@ def test_scan_possible_spare_yes_no_saves_one_card_and_advances(
         if node.get("custom_id")
     }
     assert {
+        "cards_scan_hidden_missing:draft-hidden",
         "cards_scan_hidden_no:draft-hidden",
         "cards_scan_hidden_yes:draft-hidden",
     } <= custom_ids
+
+
+def test_state_bound_scan_possible_spare_missing_saves_and_advances(
+    monkeypatch,
+):
+    account = _scan_account()
+    document = _complete_inventory()
+    document["inventory_revision"] = 5
+    document["scan_duplicate_unverified_card_ids"] = ["wizard", "dragon"]
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    async def load_bound(*_args, **_kwargs):
+        return account, collection.documents["#ME"], None, None
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_scan_bound_account", load_bound)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=None)
+    view = asyncio.run(cards_command.cards_scan_hidden_missing(
+        ctx,
+        "draft-hidden",
+        user_id=123,
+        guild_id=1,
+        account_tag="#ME",
+        usable_until=datetime.now(timezone.utc) + timedelta(minutes=10),
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+    ))
+
+    updated = collection.documents["#ME"]
+    assert updated["cards"]["wizard"] == cards.MISSING
+    assert updated["cards"]["dragon"] == cards.OWNED
+    assert updated["scan_duplicate_unverified_card_ids"] == ["dragon"]
+    assert updated["inventory_revision"] == 6
+    assert "## Dragon" in _view_text(view)
+    assert any(
+        node.get("custom_id") == "cards_scan_hidden_missing:draft-hidden"
+        and node.get("label") == "Missing — have 0"
+        for node in _view_nodes(view)
+    )
+    assert len([node for node in _view_nodes(view) if "type" in node]) <= 40
+    _assert_discord_payload(view)
 
 
 def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed():

@@ -133,10 +133,12 @@ newer collection data.
 
 When a screenshot proves ownership but the reward bar hides the duplicate
 badge, duplicate review also uses the individual card screen. The member sees
-the actual artwork and answers **No - have 1** or **Yes - spare**; the next
-possible spare opens automatically. It can be finished later without losing
-the saved scan. Both paths recheck ownership, guild/session scope, revision,
-and the affected card's reservation.
+the actual artwork and answers **Missing - have 0**, **No - have 1**, or
+**Yes - spare**; the next possible spare opens automatically. The Missing
+choice also corrects a scanner ownership mistake instead of forcing a separate
+manual edit. Review can be finished later without losing the saved scan. All
+three paths recheck ownership, guild/session scope, revision, and the affected
+card's reservation.
 
 **More** contains the supplied in-game **Global Card Chat** deep link beside
 Open in game. It opens chat id `P592bad3209a4408a9ba356469caaaa81`; no login,

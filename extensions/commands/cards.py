@@ -121,6 +121,12 @@ CATEGORY_CHIP_EMOJIS = {
     "builder_base": "🟦",
     "super_troop": "🟧",
 }
+CATEGORY_CHIP_LABELS = {
+    "elixir": "Elixir",
+    "dark_elixir": "Dark",
+    "builder_base": "Builder",
+    "super_troop": "Super",
+}
 
 
 def _parse_snowflake_env(name: str) -> int | None:
@@ -1973,11 +1979,13 @@ def _render_browser_tiles(inventory: dict, card_ids: list[str]) -> dict[str, obj
 
 
 def _category_chip_label(inventory: dict, category_id: str, *, selected: bool) -> str:
-    category = CATEGORY_BY_ID[category_id]
     summary = category_summary(inventory.get("cards"), category_id)
     check = " ✓" if summary.collected == summary.known else ""
     marker = "• " if selected else ""
-    return f"{marker}{category.short_name} {summary.collected}/{summary.known}{check}"
+    return (
+        f"{marker}{CATEGORY_CHIP_LABELS[category_id]} "
+        f"{summary.collected}/{summary.known}{check}"
+    )
 
 
 def _category_browser(
@@ -2039,9 +2047,7 @@ def _category_browser(
     ]
     body: list = [
         Text(content=heading),
-        ActionRow(components=category_buttons[:2]),
-        ActionRow(components=category_buttons[2:]),
-        Separator(divider=True),
+        ActionRow(components=category_buttons),
     ]
 
     for card in visible:
@@ -2056,6 +2062,11 @@ def _category_browser(
         tile = tiles[card.id]
         if possible_spare and not reserved:
             controls = [
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_editor_dec:{tag}|{card.id}",
+                    label="Missing — have 0",
+                ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_editor_keep:{tag}|{card.id}",
@@ -2465,6 +2476,11 @@ def _hidden_badge_review(
         if state_bound
         else f"cards_editor_inc:{tag}|{card.id}"
     )
+    missing_id = (
+        f"cards_scan_hidden_missing:{session_id}"
+        if state_bound
+        else f"cards_editor_dec:{tag}|{card.id}"
+    )
     return [Container(components=[
         Text(content=(
             f"# Check possible spare\n"
@@ -2481,6 +2497,11 @@ def _hidden_badge_review(
             ),
         ),
         ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=missing_id,
+                label="Missing — have 0",
+            ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=no_id,
@@ -6512,6 +6533,7 @@ async def _scan_hidden_badge_update(
     *,
     selected: list[str],
     single_result: bool | None = None,
+    single_missing: bool = False,
     user_id: object,
     guild_id: object,
     account_tag: object,
@@ -6537,29 +6559,41 @@ async def _scan_hidden_badge_update(
     pending = _scan_unverified_ids(inventory)
     batch = (
         pending[:1]
-        if single_result is not None
+        if single_result is not None or single_missing
         else pending[:HIDDEN_BADGE_BATCH_SIZE]
     )
     if not batch:
         await _discard_scan_state(mongo, action_id)
         return _scan_saved_notice(account)
     try:
-        updated = await _write_hidden_badge_batch(
-            mongo,
-            account,
-            inventory,
-            batch,
-            batch if single_result is True else selected,
-            expected_revision=_inventory_revision_value(inventory),
-            discord_id=int(ctx.user.id),
-            guild_id=int(guild_id),
-        )
+        if single_missing:
+            updated = await _write_one_card(
+                mongo,
+                account,
+                inventory,
+                batch[0],
+                "missing",
+                expected_revision=_inventory_revision_value(inventory),
+                discord_id=int(ctx.user.id),
+                guild_id=int(guild_id),
+            )
+        else:
+            updated = await _write_hidden_badge_batch(
+                mongo,
+                account,
+                inventory,
+                batch,
+                batch if single_result is True else selected,
+                expected_revision=_inventory_revision_value(inventory),
+                discord_id=int(ctx.user.id),
+                guild_id=int(guild_id),
+            )
     except ActiveCardTradeError:
         return _notice(
             "A card is reserved",
             "Finish or cancel its accepted swap, then check possible spares from `/cards`.",
         )
-    except (InventoryWriteConflict, ValueError):
+    except (InventoryWriteConflict, InvalidCardTransitionError, ValueError):
         return _notice(
             "Collection changed",
             "Nothing was overwritten. Open `/cards` to see the current collection.",
@@ -6617,6 +6651,33 @@ async def cards_scan_hidden_yes(
         action_id,
         selected=[],
         single_result=True,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_hidden_missing", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_hidden_missing(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_hidden_badge_update(
+        ctx,
+        action_id,
+        selected=[],
+        single_missing=True,
         user_id=user_id,
         guild_id=guild_id,
         account_tag=account_tag,

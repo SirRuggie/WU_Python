@@ -93,9 +93,10 @@ Discord media and thumbnail components are static; card artwork itself cannot
 be the interaction target. Discord also limits a Components V2 message to 40
 component nodes, so 60 interactive card tiles cannot fit in one native message.
 The production browser therefore shows four cards per page, each as a Section
-thumbnail followed by direct **-1**/**+1** buttons. Two rows of category chips,
-four cards, and page navigation total 38 component nodes. The large board
-remains a read-only overview under More.
+thumbnail followed by direct state controls. One row of four category chips,
+four cards, and page navigation use 36 nodes normally and at most 40 when all
+four cards need the three-way **Missing / Have 1 / Spare** review. The large
+board remains a read-only overview under More.
 
 Discord button backgrounds use fixed platform styles and cannot accept custom
 hex colors. Category chips therefore use colored markers, while the selected
