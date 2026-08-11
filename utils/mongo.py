@@ -49,3 +49,7 @@ class MongoClient(AsyncMongoClient):
         # Two-party card proposals and their expiring reservations. Completed
         # rows remain as a compact audit trail; no screenshots or tokens live here.
         self.card_trades = self.__settings.get_collection("card_trades")
+        # Application emojis this bot uploaded and therefore owns. One row per
+        # emoji, keyed "troop:<slug>". A row here is what authorizes replacing
+        # an emoji, so emojis added by hand are never touched by the sync.
+        self.emoji_registry = self.__settings.get_collection("emoji_registry")
