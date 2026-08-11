@@ -1965,12 +1965,15 @@ def _dashboard(
     body: list = [
         Text(content="# Clash of Cards"),
         _inventory_board_media(account, inventory, rendered_board=rendered_board),
+        # One summary line, not four. The board image already draws a counted
+        # pill per category, so the progress bars that used to sit here said
+        # the same thing a second time, the headline a third, and the menu
+        # labels a fourth. Repeating one fact in four visual languages is what
+        # made the panel read as assembled rather than designed.
         Text(content=(
-            f"**{_escape_markdown(account.name)}** · `{tag}`\n"
-            f"{headline}\n"
-            f"-# Updated {_relative_timestamp(stamp)}"
+            f"**{_escape_markdown(account.name)}** · `{tag}` · "
+            f"{headline} · updated {_relative_timestamp(stamp)}"
         )),
-        Text(content=_category_progress(inventory)),
     ]
 
     notes = []
@@ -1991,11 +1994,15 @@ def _dashboard(
             Text(content="\n".join(notes)),
         ])
 
-    body.append(Separator(divider=True))
-    # Four menus, one per category, every card one interaction away.  This
-    # replaces the chip-then-page browser that needed fifteen pages for sixty
-    # cards.
+    # Four menus, one per category, every card one interaction away. The label
+    # and the controls that act on them sit either side of the menus, so Sort
+    # is visibly attached to the thing it sorts rather than stranded under an
+    # unrelated heading.
     sort = _inventory_sort(inventory)
+    body.extend([
+        Separator(divider=True),
+        Text(content="**Your cards** · tap one to change how many you have"),
+    ])
     body.extend(
         _category_select_row(account, inventory, category.id, sort)
         for category in CATEGORIES
@@ -2035,6 +2042,43 @@ def _dashboard(
             True,
         ),
     ]
+    # The controls that act on the menus above, immediately below them.
+    collection_row: list = [
+        Button(
+            style=(
+                hikari.ButtonStyle.PRIMARY
+                if scan_is_primary
+                else hikari.ButtonStyle.SECONDARY
+            ),
+            custom_id=f"cards_scan_start:{tag}",
+            label="Scan screenshots",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_sort:{tag}",
+            label=CARD_SORT_LABELS[sort],
+        ),
+    ]
+    if not all_complete:
+        collection_row.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_advanced:{tag}",
+            label="Bulk edit",
+        ))
+    if complete and age != "fresh":
+        collection_row.append(Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            custom_id=f"cards_confirm:{tag}",
+            label="Still accurate",
+        ))
+    if account_count > 1:
+        collection_row.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id="cards_account_page:0",
+            label="Switch account",
+        ))
+    body.append(ActionRow(components=collection_row[:5]))
+
     body.append(Separator(divider=True))
     for icon, title, blurb, custom_id, style, enabled in destinations:
         # One short line, not a heading plus a subtext line plus a divider.
@@ -2053,66 +2097,19 @@ def _dashboard(
         ))
     body.extend([
         Separator(divider=True),
-        Text(content="**Your collection**"),
     ])
 
-    # The collection group. Scan is always here because it is how a collection
-    # is kept current; the rest appear only when they would do something.
-    occasional: list = [Button(
-        style=(
-            hikari.ButtonStyle.PRIMARY
-            if scan_is_primary
-            else hikari.ButtonStyle.SECONDARY
-        ),
-        custom_id=f"cards_scan_start:{tag}",
-        label="Scan screenshots",
-    )]
-    if not all_complete:
-        # Bulk entry is for first-time setup and full category rebuilds. Once
-        # every category is reviewed the four menus do everything it does.
-        occasional.append(Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_advanced:{tag}",
-            label="Bulk edit",
-        ))
-    if complete and age != "fresh":
-        # Only meaningful once matching is about to drop the collection. When
-        # it is Fresh this button does nothing a member can perceive.
-        occasional.append(Button(
-            style=hikari.ButtonStyle.SUCCESS,
-            custom_id=f"cards_confirm:{tag}",
-            label="Still accurate",
-        ))
-    occasional.append(Button(
-        style=hikari.ButtonStyle.SECONDARY,
-        custom_id=f"cards_sort:{tag}",
-        label=f"Sort: {CARD_SORT_LABELS[sort]}",
-    ))
-    if account_count > 1:
-        occasional.append(Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id="cards_account_page:0",
-            label="Switch account",
-        ))
-    if occasional:
-        body.append(ActionRow(components=occasional))
-
-    # The two links used to sit on the same line as the spare note, separated
-    # only by a middle dot, so they wrapped together and read as one phrase:
-    # "Open in game Global Card Chat". They get their own line and a wider
-    # separator, and the note keeps its own.
-    note = (
-        "" if age == "fresh"
-        else f"{age.title()} · confirm it above to keep trading. "
-    )
-    body.extend([
-        Separator(divider=True),
-        Text(content=(
-            f"-# {note}A spare means 2 or more copies.\n"
-            f"-# Open the event in game: [Clash of Cards]({COLLECTION_LINK})\n"
-            f"-# Trade with everyone: [Global Card Chat]({GLOBAL_CHAT_LINK})"
-        )),
-    ])
+    # Link buttons rather than three lines of trailing subtext. As buttons they
+    # read as somewhere to go; as small print under everything else they read
+    # as leftovers nobody placed on purpose.
+    body.append(ActionRow(components=[
+        LinkButton(url=COLLECTION_LINK, label="Open in game"),
+        LinkButton(url=GLOBAL_CHAT_LINK, label="Global Card Chat"),
+    ]))
+    if age != "fresh":
+        body.append(Text(content=(
+            f"-# {age.title()} · confirm above to keep matching."
+        )))
     return [Container(components=body)]
 
 

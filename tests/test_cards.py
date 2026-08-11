@@ -2655,8 +2655,8 @@ def test_card_editor_shows_accessible_card_tiles_and_valid_copy_controls(
     _assert_discord_payload(view)
 
 
-def test_global_card_chat_is_reachable_as_a_masked_link():
-    """The link buttons became masked links, which cost zero component nodes."""
+def test_event_links_are_buttons_not_trailing_small_print():
+    """Three lines of footer subtext read as leftovers; buttons read as places."""
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -2664,16 +2664,17 @@ def test_global_card_chat_is_reachable_as_a_masked_link():
     view = cards_command._dashboard(
         account, _complete_inventory(), account_count=1
     )
-    text = _view_text(view)
-
-    assert f"[Global Card Chat]({cards_command.GLOBAL_CHAT_LINK})" in text
-    assert f"[Clash of Cards]({cards_command.COLLECTION_LINK})" in text
-    assert "OpenGlobalChat" in cards_command.GLOBAL_CHAT_LINK
-    # No LINK-style buttons remain on the dashboard.
-    assert not [
-        node for node in _view_nodes(view)
-        if node.get("style") == cards_command.hikari.ButtonStyle.LINK
+    links = [
+        n for n in _view_nodes(view)
+        if n.get("style") == cards_command.hikari.ButtonStyle.LINK
     ]
+
+    urls = {n["url"] for n in links}
+    assert cards_command.COLLECTION_LINK in urls
+    assert cards_command.GLOBAL_CHAT_LINK in urls
+    assert "OpenGlobalChat" in cards_command.GLOBAL_CHAT_LINK
+    # No leftover markdown link lines.
+    assert "](" not in _view_text(view)
     _assert_discord_payload(view)
 
 
@@ -4974,18 +4975,15 @@ def test_dashboard_groups_actions_under_headings():
     assert "**🔁 Find trades**" in text
     assert "**📬 My trades**" in text
     assert "**👥 Who has what**" in text
-    assert "**Your collection**" in text
+    assert "**Your cards**" in text
     sections = [n for n in _view_nodes(view) if n.get("type") == 9]
     assert len(sections) == 3
     for section in sections:
         assert section["accessory"]["type"] == 2
         assert section["accessory"]["label"] == "Open"
-    # The two links used to share a line and read as one phrase.
-    assert "[Clash of Cards](" in text
-    assert "[Global Card Chat](" in text
-    assert "in game: [Clash of Cards]" in text
-    lines = [ln for ln in text.split("\n") if "](" in ln]
-    assert len(lines) == 2, "each link needs its own line"
+    # Sort sits with the menus it sorts, not under an unrelated heading.
+    order = text.index("**Your cards**")
+    assert order < text.index("**\U0001f501 Find trades**")
     _assert_discord_payload(view)
 
 
@@ -5322,3 +5320,60 @@ def test_find_trades_separates_even_swaps_from_one_way_favours():
     assert even < favour, "even swaps must rank above one-way help"
     assert text.index("Root Rider") < favour
     assert text.index("Druid") > favour
+
+
+def test_dashboard_states_each_fact_once():
+    """Four representations of the same counts read as thrown together."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["barbarian"] = cards.MISSING
+
+    view = cards_command._dashboard(account, inventory, account_count=1)
+    text = _view_text(view)
+
+    # The board image already draws a counted pill per category, so the panel
+    # must not also print progress bars for them.
+    assert cards_command.PROGRESS_FULL not in text
+    assert cards_command.PROGRESS_EMPTY not in text
+    # One summary line, not a stack of them.
+    assert text.count("collected") == 1
+    _assert_discord_payload(view)
+
+
+def test_sort_control_sits_with_the_menus_it_sorts():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._dashboard(
+        account, _complete_inventory(), account_count=1
+    )
+    payload = [component.build() for component in view]
+
+    def flatten(node, out):
+        if isinstance(node, (list, tuple)):
+            for item in node:
+                flatten(item, out)
+        elif isinstance(node, dict):
+            if node.get("type") in (1, 9, 10, 14):
+                out.append(node)
+            for value in node.values():
+                if isinstance(value, (list, tuple, dict)) and node.get("type") == 17:
+                    flatten(value, out)
+        return out
+
+    ordered = flatten(payload, [])
+    kinds = [n["type"] for n in ordered]
+    # Four select rows, then the row carrying Sort, before any Section.
+    first_section = kinds.index(9)
+    sort_row = next(
+        i for i, n in enumerate(ordered)
+        if n["type"] == 1 and any(
+            str(c.get("custom_id", "")).startswith("cards_sort:")
+            for c in n.get("components", [])
+        )
+    )
+    assert sort_row < first_section
