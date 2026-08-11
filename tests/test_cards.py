@@ -5055,6 +5055,57 @@ def test_find_trades_dividers_only_separate_the_picker_block(monkeypatch):
     assert kinds[first - 1] == "separator", "the block is not set off from the text"
 
 
+def test_refresh_and_pagination_use_the_uploaded_control_emoji():
+    """Every refresh, next and previous button carries the same mark."""
+    assert cards_command.REFRESH_EMOJI is not hikari.UNDEFINED
+    assert cards_command.NEXT_EMOJI is not hikari.UNDEFINED
+    assert cards_command.PREVIOUS_EMOJI is not hikari.UNDEFINED
+    assert cards_command.REFRESH_EMOJI.id == 1533869685509197834
+    assert cards_command.NEXT_EMOJI.id == 1536793616004022403
+    assert cards_command.PREVIOUS_EMOJI.id == 1536793616863862784
+
+
+def test_no_control_button_is_left_on_a_stand_in_emoji():
+    """A mix of uploaded and unicode marks on the same kind of button reads sloppy."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+    # More holders than fit one page, so the pagination row actually renders -
+    # otherwise this test passes without ever seeing a next/previous button.
+    holders = [{
+        "_id": f"#H{index}", "player_name": f"Holder{index}",
+        "discord_id": index,
+        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    } for index in range(cards_command.HOLDER_RESULT_LIMIT + 2)]
+    matches = cards.find_matches(inventory, holders)
+    views = [
+        cards_command._dashboard(account, inventory, account_count=1),
+        cards_command._matches_view(account, inventory, matches),
+        cards_command._holders_view(
+            account, "root_rider", cards.holders_for_card(
+                inventory, holders, "root_rider"
+            )
+        ),
+    ]
+    wanted = {"refresh", "next", "previous"}
+    seen = set()
+    for view in views:
+        for node in _view_nodes(view):
+            label = str(node.get("label", "")).lower()
+            word = next((w for w in wanted if w in label), None)
+            if word is None:
+                continue
+            emoji = node.get("emoji") or {}
+            assert emoji.get("id"), f"{label!r} still uses a stand-in emoji"
+            seen.add(word)
+    assert seen == wanted, f"never rendered: {wanted - seen}"
+
+
 def test_every_category_has_its_uploaded_emoji():
     """All four categories resolve, in both the text and the component form."""
     expected = {

@@ -152,20 +152,30 @@ def category_markup(category_id: str) -> str:
     return str(entry) if entry is not None else fallback
 
 
-def category_partial(category_id: str):
+def _safe_partial(entry):
     """A CustomEmoji for a component's `emoji=` field, or UNDEFINED.
 
     `EmojiType.partial_emoji` raises on a malformed string, and one bad id here
-    would take down every panel that names a category, so this degrades to no
-    emoji the same way troop_emoji does.
+    would take down every panel that uses it, so this degrades to no emoji the
+    same way troop_emoji does.
     """
-    entry = CATEGORY_EMOJI.get(str(category_id))
     if entry is None:
         return hikari.UNDEFINED
     try:
         return entry.partial_emoji
-    except (ValueError, IndexError, TypeError):
+    except (ValueError, IndexError, TypeError, AttributeError):
         return hikari.UNDEFINED
+
+
+def category_partial(category_id: str):
+    return _safe_partial(CATEGORY_EMOJI.get(str(category_id)))
+
+
+# Resolved once: these are fixed strings, so a failure here is a typo in the
+# table above rather than anything that can change between renders.
+REFRESH_EMOJI = _safe_partial(emojis.refresh)
+NEXT_EMOJI = _safe_partial(emojis.next_page)
+PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
 # A member can keep two ephemeral panels open and submit both selects almost at
 # once. Serialize writes per player tag so the missing-list update cannot race
@@ -694,12 +704,14 @@ def _account_picker(data: AccountsData, page: int = 0) -> list[Container]:
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_account_page:{page - 1}",
                     label="Previous",
+                    emoji=PREVIOUS_EMOJI,
                     is_disabled=page == 0,
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_account_page:{page + 1}",
                     label="Next",
+                    emoji=NEXT_EMOJI,
                     is_disabled=page >= pages - 1,
                 ),
             ]),
@@ -1527,7 +1539,7 @@ def _scan_accounts_problem(
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"cards_scan_accounts_retry:{draft_id}",
                     label="Retry account check",
-                    emoji="🔄",
+                    emoji=REFRESH_EMOJI,
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -3111,6 +3123,7 @@ def _matches_view(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_matches:{tag}",
             label="Refresh",
+            emoji=REFRESH_EMOJI,
         ),
     ]))
     return [Container(
@@ -3210,6 +3223,7 @@ def _holders_view(
                         f"{card.id}|{page - 1}"
                     ),
                     label="Previous holders",
+                    emoji=PREVIOUS_EMOJI,
                     is_disabled=page == 0,
                 ),
                 Button(
@@ -3228,6 +3242,7 @@ def _holders_view(
                         f"{card.id}|{page + 1}"
                     ),
                     label="Next holders",
+                    emoji=NEXT_EMOJI,
                     is_disabled=page >= pages - 1,
                 ),
             ]),
@@ -4842,6 +4857,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_trades:{tag}|{page - 1}",
                 label="Previous",
+                emoji=PREVIOUS_EMOJI,
                 is_disabled=page == 0,
             ),
             Button(
@@ -4854,6 +4870,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_trades:{tag}|{page + 1}",
                 label="Next",
+                emoji=NEXT_EMOJI,
                 is_disabled=page >= pages - 1,
             ),
         ]))
@@ -4869,7 +4886,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_trades:{tag}",
                 label="Refresh",
-                emoji="🔄",
+                emoji=REFRESH_EMOJI,
             ),
         ]),
         Media(items=[MediaItem(media=FOOTER)]),
