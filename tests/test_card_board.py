@@ -291,12 +291,13 @@ def test_spare_unverified_is_owned_colored_and_not_unknown():
         assert rendered.getpixel((GRID_LEFT + 4, GRID_TOP + 45)) == (
             CATEGORY_COLORS["elixir"]
         )
-        # The possible-spare badge sits on the tile's bottom edge, where the
-        # game puts its own xN badge.
-        badge_row = GRID_TOP + TILE_HEIGHT - 8
+        # The possible-spare badge is tucked into the tile's bottom right.
+        right = GRID_LEFT + card_board.TILE_WIDTH
+        bottom = GRID_TOP + TILE_HEIGHT
         assert any(
-            rendered.getpixel((x, badge_row)) == (250, 201, 38)
-            for x in range(GRID_LEFT + 55, GRID_LEFT + 95)
+            rendered.getpixel((x, y)) == (250, 201, 38)
+            for x in range(right - 30, right - 6)
+            for y in range(bottom - 30, bottom - 6)
         )
 
 

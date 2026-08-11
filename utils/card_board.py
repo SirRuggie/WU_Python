@@ -48,19 +48,23 @@ BoardState = int | str
 # whose width binds first, which is worth about a fifth more tile size on the
 # same screen.  The game's own six-column grid is a scrolling view and does not
 # have this constraint.
+# 1726 x 1092 is deliberately 1.58:1, the same ratio as the 490 x 310 box, so
+# the board fills it exactly and neither dimension is wasted.  With the header
+# text removed the freed height went into taller tiles rather than a shorter
+# image, because width is what binds here and extra height was free.
 BOARD_WIDTH = 1726
-BOARD_HEIGHT = 1116
+BOARD_HEIGHT = 1092
 TRADE_STRIP_WIDTH = 1120
 TRADE_STRIP_HEIGHT = 360
 CARD_THUMBNAIL_SIZE = 256
 BOARD_COLUMNS = 10
 BOARD_ROWS = 6
 TILE_WIDTH = 150
-TILE_HEIGHT = 132
+TILE_HEIGHT = 141
 TILE_GAP_X = 14
 TILE_GAP_Y = 13
 GRID_LEFT = 50
-GRID_TOP = 178
+GRID_TOP = 100
 
 # One category at a time, for the focused card screen.  Five across keeps the
 # shape close to the media box's own ratio, so it is not scaled down as hard as
@@ -498,6 +502,20 @@ def render_card_thumbnail(
     )
 
 
+def _spare_badge_text(state: int | str) -> str:
+    """The label on a spare tile.
+
+    The catalog stores three states - missing, owned, and "two or more" - so
+    the exact number of copies is genuinely not known here. The badge reads
+    `x2+` because `x2` would be a claim we cannot support for a member holding
+    four. Showing the real `x2`/`x3`/`x4` the game shows needs two changes:
+    the scanner reading the digit inside the badge rather than only detecting
+    the badge's shape, and the inventory storing a count instead of clamping
+    at two (`normalize_status` in utils/cards.py).
+    """
+    return "x2+"
+
+
 def _draw_check(
     draw: ImageDraw.ImageDraw,
     center_x: int,
@@ -529,7 +547,7 @@ def _draw_category_tabs(
     states: Mapping[str, int | str],
 ) -> None:
     tab_left = 50
-    tab_top = 108
+    tab_top = 26
     tab_gap = 14
     tab_width = (BOARD_WIDTH - tab_left * 2 - tab_gap * 3) // 4
     for index, category in enumerate(CATEGORIES):
@@ -625,12 +643,14 @@ def _draw_card_tile(
         desaturate=state in {MISSING, UNKNOWN},
     )
 
-    center_x = (left + right) // 2
+    # Bottom right, tucked into the corner, rather than centred on the bottom
+    # edge.  Centred read as a caption belonging under the art; the corner
+    # reads as a badge stuck on it.
     if state == DUPLICATE:
-        badge = (center_x - 27, bottom - 21, center_x + 27, bottom + 5)
+        badge = (right - 54, bottom - 26, right - 4, bottom - 2)
         draw.rounded_rectangle(
             badge,
-            radius=10,
+            radius=9,
             fill=DUPLICATE_BADGE,
             outline=(112, 77, 15),
             width=2,
@@ -638,12 +658,12 @@ def _draw_card_tile(
         _centered_text(
             draw,
             badge,
-            "x2+",
+            _spare_badge_text(state),
             font=_font(15),
             fill=DUPLICATE_TEXT,
         )
     elif state == OWNED_SPARE_UNVERIFIED:
-        badge = (center_x - 15, bottom - 23, center_x + 15, bottom + 7)
+        badge = (right - 32, bottom - 32, right - 4, bottom - 4)
         draw.ellipse(
             badge,
             fill=DUPLICATE_BADGE,
@@ -654,7 +674,7 @@ def _draw_card_tile(
             draw,
             badge,
             "?",
-            font=_font(18),
+            font=_font(17),
             fill=DUPLICATE_TEXT,
         )
     elif state == MISSING:
@@ -941,48 +961,12 @@ def render_card_board(
         outline=(93, 66, 46),
         width=6,
     )
-    draw.rounded_rectangle(
-        (42, 35, BOARD_WIDTH - 42, 102),
-        radius=14,
-        fill=(60, 53, 49),
-    )
-    title = "Clash of Cards"
-    if player_name:
-        display_name = str(player_name).encode("ascii", "replace").decode("ascii")
-        title = f"{display_name} - {title}"
-    title, title_font = _fit_text(
-        draw,
-        title,
-        BOARD_WIDTH - 120,
-        max_size=32,
-        min_size=18,
-    )
-    _centered_text(
-        draw,
-        (58, 39, BOARD_WIDTH - 58, 73),
-        title,
-        font=title_font,
-        fill=TEXT_LIGHT,
-    )
-    # Only the clauses that apply.  The old line always printed all five, so a
-    # finished collection still read "0 possible spares | 0 unknown".
-    subtitle = [f"{collected}/{len(CARDS)} collected"]
-    if missing:
-        subtitle.append(f"{len(missing)} missing")
-    if duplicates:
-        subtitle.append(f"x2+ {len(duplicates)} spares")
-    if spare_unverified:
-        subtitle.append(f"? {len(spare_unverified)} to check")
-    if unknown:
-        subtitle.append(f"! {len(unknown)} unknown")
-    _centered_text(
-        draw,
-        (58, 72, BOARD_WIDTH - 58, 98),
-        "  |  ".join(subtitle),
-        font=_font(16),
-        fill=(226, 211, 188),
-    )
-
+    # No title and no summary line inside the image.  The Discord message
+    # already carries the player name, tag and counts as real text directly
+    # underneath, where they are selectable and always legible.  Repeating them
+    # here cost about a hundred pixels of height and rendered as an unreadable
+    # smear once Discord scaled the board down.  `player_name` is kept in the
+    # signature because it still identifies the board in the alt text.
     _draw_category_tabs(draw, states)
     for index, card in enumerate(CARDS):
         _draw_card_tile(
