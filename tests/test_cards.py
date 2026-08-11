@@ -2666,7 +2666,7 @@ def test_global_card_chat_is_reachable_as_a_masked_link():
     text = _view_text(view)
 
     assert f"[Global Card Chat]({cards_command.GLOBAL_CHAT_LINK})" in text
-    assert f"[Open in game]({cards_command.COLLECTION_LINK})" in text
+    assert f"[Clash of Cards]({cards_command.COLLECTION_LINK})" in text
     assert "OpenGlobalChat" in cards_command.GLOBAL_CHAT_LINK
     # No LINK-style buttons remain on the dashboard.
     assert not [
@@ -4948,3 +4948,50 @@ def test_account_picker_paginates_without_a_dead_counter_button():
     ]
     _assert_discord_payload(first)
     _assert_discord_payload(second)
+
+
+def test_dashboard_groups_actions_under_headings():
+    """Buttons wrapped with no logic to the grouping; headings give it one."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._dashboard(
+        account, _complete_inventory(), account_count=1
+    )
+    text = _view_text(view)
+
+    assert "### Trading" in text
+    assert "### Your collection" in text
+    # The two links used to share a line and read as one phrase.
+    assert "[Clash of Cards](" in text
+    assert "[Global Card Chat](" in text
+    assert "in game: [Clash of Cards]" in text
+    lines = [ln for ln in text.split("\n") if "](" in ln]
+    assert len(lines) == 2, "each link needs its own line"
+    _assert_discord_payload(view)
+
+
+def test_collection_group_hides_controls_that_would_do_nothing():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    done = cards_command._dashboard(
+        account, _complete_inventory(), account_count=1
+    )
+    partial = cards_command._dashboard(
+        account,
+        dict(_complete_inventory(), complete_categories=["elixir"]),
+        account_count=2,
+    )
+    done_ids = {n.get("custom_id") for n in _view_nodes(done)}
+    partial_ids = {n.get("custom_id") for n in _view_nodes(partial)}
+
+    # Bulk edit is for setup; Switch account needs a second account.
+    assert "cards_advanced:#ME" not in done_ids
+    assert "cards_account_page:0" not in done_ids
+    assert "cards_advanced:#ME" in partial_ids
+    assert "cards_account_page:0" in partial_ids
+    # Scanning is always available.
+    assert "cards_scan_start:#ME" in done_ids and "cards_scan_start:#ME" in partial_ids

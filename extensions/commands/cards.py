@@ -1923,22 +1923,13 @@ def _dashboard(
     )
 
     scan_is_primary = not all_complete
-    # The "More" panel is gone. It was eight ungrouped grey buttons that mixed
-    # navigation with mutation and carried no information of its own, so every
-    # action lives here and the two link buttons became masked links in the
-    # footer, which cost zero component nodes.
+    # Two labelled groups rather than one run of buttons that wraps wherever it
+    # happens to fit. The heading is what tells a member which of these belong
+    # together; without it the panel reads as an undifferentiated wall.
     body.extend([
-        Separator(divider=False),
+        Separator(divider=True),
+        Text(content="### Trading"),
         ActionRow(components=[
-            Button(
-                style=(
-                    hikari.ButtonStyle.PRIMARY
-                    if scan_is_primary
-                    else hikari.ButtonStyle.SECONDARY
-                ),
-                custom_id=f"cards_scan_start:{tag}",
-                label="Scan screenshots",
-            ),
             Button(
                 style=hikari.ButtonStyle.PRIMARY,
                 custom_id=f"cards_matches:{tag}",
@@ -1956,12 +1947,21 @@ def _dashboard(
                 label="Who has what",
             ),
         ]),
+        Separator(divider=True),
+        Text(content="### Your collection"),
     ])
 
-    # A second row only when it has something to say. Every button here used to
-    # render always, which is what made the panel feel like a wall of controls
-    # whose purpose you had to guess.
-    occasional: list = []
+    # The collection group. Scan is always here because it is how a collection
+    # is kept current; the rest appear only when they would do something.
+    occasional: list = [Button(
+        style=(
+            hikari.ButtonStyle.PRIMARY
+            if scan_is_primary
+            else hikari.ButtonStyle.SECONDARY
+        ),
+        custom_id=f"cards_scan_start:{tag}",
+        label="Scan screenshots",
+    )]
     if not all_complete:
         # Bulk entry is for first-time setup and full category rebuilds. Once
         # every category is reviewed the four menus do everything it does.
@@ -1987,15 +1987,22 @@ def _dashboard(
     if occasional:
         body.append(ActionRow(components=occasional))
 
-    freshness = (
+    # The two links used to sit on the same line as the spare note, separated
+    # only by a middle dot, so they wrapped together and read as one phrase:
+    # "Open in game Global Card Chat". They get their own line and a wider
+    # separator, and the note keeps its own.
+    note = (
         "" if age == "fresh"
-        else f"{age.title()} · confirm it below to keep trading · "
+        else f"{age.title()} · confirm it above to keep trading. "
     )
-    body.append(Text(content=(
-        f"-# {freshness}a spare means 2 or more copies · "
-        f"[Open in game]({COLLECTION_LINK}) · "
-        f"[Global Card Chat]({GLOBAL_CHAT_LINK})"
-    )))
+    body.extend([
+        Separator(divider=True),
+        Text(content=(
+            f"-# {note}A spare means 2 or more copies.\n"
+            f"-# Open the event in game: [Clash of Cards]({COLLECTION_LINK})\n"
+            f"-# Trade with everyone: [Global Card Chat]({GLOBAL_CHAT_LINK})"
+        )),
+    ])
     return [Container(components=body)]
 
 
