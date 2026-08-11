@@ -179,6 +179,7 @@ SEARCH_EMOJI = _safe_partial(emojis.magnifier)
 CANCEL_EMOJI = _safe_partial(emojis.no)
 TRADES_EMOJI = _safe_partial(emojis.inbox)
 SWITCH_EMOJI = _safe_partial(emojis.switch)
+SORT_EMOJI = _safe_partial(emojis.sort)
 NEXT_EMOJI = _safe_partial(emojis.next_page)
 PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
@@ -2000,6 +2001,7 @@ def _dashboard(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_sort:{tag}",
             label=CARD_SORT_LABELS[sort],
+            emoji=SORT_EMOJI,
         ),
     ]
     if unverified_duplicates:

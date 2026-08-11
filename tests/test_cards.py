@@ -4588,6 +4588,24 @@ def test_board_destinations_are_buttons_not_two_line_rows():
     _assert_discord_payload(view)
 
 
+def test_the_sort_button_is_marked_in_every_order():
+    """The label changes as it cycles; the mark identifying it must not."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    for order in cards_command.CARD_SORTS:
+        inventory = _complete_inventory()
+        inventory["card_sort"] = order
+        view = cards_command._dashboard(account, inventory, account_count=1)
+        button = next(
+            n for n in _view_nodes(view)
+            if n.get("custom_id") == "cards_sort:#ME"
+        )
+        assert (button.get("emoji") or {}).get("id") == "1536804681555247144"
+        assert button["label"] == cards_command.CARD_SORT_LABELS[order]
+
+
 def test_sort_control_sits_with_the_menus_it_sorts():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
@@ -5084,6 +5102,7 @@ def test_refresh_and_pagination_use_the_uploaded_control_emoji():
         (cards_command.CANCEL_EMOJI, 1397096986506825778),
         (cards_command.TRADES_EMOJI, 1536798617736847431),
         (cards_command.SWITCH_EMOJI, 1536798904056815806),
+        (cards_command.SORT_EMOJI, 1536804681555247144),
     ):
         assert resolved is not hikari.UNDEFINED
         assert resolved.id == expected
