@@ -4584,16 +4584,71 @@ def test_cards_set_refuses_a_reserved_card(monkeypatch):
     assert "reserved" in _view_text(view).lower()
 
 
-def test_cards_set_rejects_an_unknown_state():
+@pytest.mark.parametrize("payload", ["#ME|wizard|abc", "#ME|wizard|100", "#ME|nope|2"])
+def test_cards_set_rejects_an_unparseable_target(payload):
+    """Counts above MAX_COPIES, non-numbers, and unknown cards all fail closed."""
     ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
     view = asyncio.run(cards_command.cards_set(
         ctx,
-        "#ME|wizard|7",
+        payload,
         coc_client=SimpleNamespace(),
         mongo=SimpleNamespace(),
     ))
 
     assert "Card unavailable" in _view_text(view)
+
+
+@pytest.mark.parametrize(
+    ("initial", "delta", "expected"),
+    [
+        (cards.DUPLICATE, 1, 3),
+        (3, 1, 4),
+        (4, -1, 3),
+        (cards.DUPLICATE, -1, cards.OWNED),
+        (cards.MISSING, -1, cards.MISSING),   # floors, never negative
+    ],
+)
+def test_cards_step_adjusts_the_copy_count(monkeypatch, initial, delta, expected):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 4
+    document["cards"]["wizard"] = initial
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    async def load_target(*_args, **_kwargs):
+        return account, collection.documents["#ME"], None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    view = asyncio.run(cards_command.cards_step(
+        ctx,
+        f"#ME|wizard|{delta}",
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+    ))
+
+    assert collection.documents["#ME"]["cards"]["wizard"] == expected
+    _assert_discord_payload(view)
+
+
+def test_a_count_above_two_survives_normalisation_and_still_trades():
+    """Storing four must not read as "no spare" anywhere in the rules."""
+    values = {card.id: cards.OWNED for card in cards.CARDS}
+    values["wizard"] = 4
+
+    normalized = cards.normalize_cards(values)
+    assert normalized["wizard"] == 4
+
+    summary = cards.inventory_summary(
+        values, [category.id for category in cards.CATEGORIES]
+    )
+    assert summary.duplicates == 1
+    assert summary.collected == 60
 
 
 def test_card_focus_marks_the_current_state_and_keeps_the_menu():
@@ -4643,3 +4698,50 @@ def test_family_board_reports_achievable_rather_than_raw_options():
     assert "Wizard" in text
     assert "up to" in text and "1" in text
     _assert_discord_payload(view)
+
+
+def test_scan_saving_asks_how_many_spares_before_the_dashboard():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+    inventory["cards"]["dragon"] = cards.DUPLICATE
+
+    view = cards_command._spare_counts_panel(account, inventory)
+    text = _view_text(view)
+
+    assert "How many spares?" in text
+    assert "2 cards" in text
+    offered = {
+        str(option["value"])
+        for node in _walk_payload([c.build() for c in view])
+        for option in (node.get("options") or ())
+    }
+    assert offered == {"wizard", "dragon"}
+    custom_ids = {
+        node.get("custom_id") for node in _view_nodes(view) if node.get("custom_id")
+    }
+    assert "cards_dashboard:#ME" in custom_ids
+    _assert_discord_payload(view)
+
+
+def test_no_spare_prompt_when_nothing_came_back_as_a_spare():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    assert cards_command._spare_counts_panel(account, _complete_inventory()) is None
+
+
+def test_a_refined_count_is_not_asked_about_again():
+    """Only the unrefined 2+ entries are worth a question."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = 5
+
+    assert cards_command._spare_counts_panel(account, inventory) is None

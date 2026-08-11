@@ -36,16 +36,28 @@ The live event has 60 cards in four fixed sections:
 the live six-column collection grid and the current Clash Ninja tracker. Card
 ids are stable local slugs; player tag remains the inventory identity.
 
-The bot stores only three states:
+The bot stores a copy count per card:
 
 - `0`: missing;
 - `1`: owned once;
-- `2`: two or more copies (at least one tradable duplicate).
+- `2` or more: that many copies, of which all but one are tradable.
 
-This loss of exact duplicate count is deliberate. Discovery needs to know only
-whether one spare exists, while asking for every quantity makes 500-player
-onboarding much slower. After a trade, a member can revisit the category and
-leave the card selected as a duplicate when another spare remains.
+`DUPLICATE` is the threshold at which a card becomes tradable, not a ceiling.
+Every rule tests `>= DUPLICATE` rather than `== DUPLICATE`, so holding four is
+never mistaken for holding none. Documents written before counts existed store
+at most `2` and remain valid with no migration: they mean "at least one spare",
+which is exactly what they always meant.
+
+The scanner still records the floor. A badge proves a spare exists but the
+scanner reads the badge's shape, not the digit inside it, so every spare it
+finds is saved as `2` and displayed as `2+`. Only a number a member entered is
+shown exactly. Immediately after a scan saves, the bot lists the cards that
+came back as spares and offers to set their real counts; skipping is a first
+class option, because trading works identically on `2+`.
+
+Exact counts change nothing about matching. The rule is that a card never gives
+away its last copy, so two and five are both simply "can spare one". Counts buy
+honest display and better family totals, not different trades.
 
 Each inventory is one durable `card_inventories` document keyed by player tag.
 `complete_categories` prevents an untouched category from being mistaken for a

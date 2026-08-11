@@ -32,6 +32,7 @@ from utils.cards import (
     CATEGORY_BY_ID,
     CATEGORY_CARDS,
     DUPLICATE,
+    MAX_COPIES,
     MISSING,
     OWNED,
 )
@@ -214,8 +215,35 @@ def _state(value: object) -> int | str:
     if numeric <= MISSING:
         return MISSING
     if numeric >= DUPLICATE:
-        return DUPLICATE
+        # Keep the count. Collapsing to DUPLICATE here is what forced the badge
+        # to read "x2+" for every spare regardless of how many were held.
+        return min(numeric, MAX_COPIES)
     return OWNED
+
+
+def _is_spare(state: object) -> bool:
+    """Whether a normalized board state is a tradeable spare.
+
+    A state is either an int copy count or one of the string markers such as
+    ``owned_spare_unverified``. Comparing a str with an int raises TypeError
+    rather than returning False, so every "is this a spare" test goes through
+    here instead of writing ``state >= DUPLICATE`` inline.
+    """
+    return (
+        isinstance(state, int)
+        and not isinstance(state, bool)
+        and state >= DUPLICATE
+    )
+
+
+def _is_collected(state: object) -> bool:
+    """Whether a state counts toward the collected total.
+
+    Owned, a possible spare, and any spare count all count. This replaced a set
+    membership test, which silently stopped matching once a spare could be any
+    number rather than exactly two.
+    """
+    return state == OWNED or state == OWNED_SPARE_UNVERIFIED or _is_spare(state)
 
 
 def _bound_alt_text(text: str) -> str:
@@ -338,19 +366,19 @@ def _paste_artwork(
 
 
 def _thumbnail_state(value: object) -> int | str:
-    """Normalize one of the four states supported by a focused card tile."""
+    """Normalize one of the states supported by a focused card tile."""
     state = _state(value)
-    if state not in {MISSING, OWNED, DUPLICATE, OWNED_SPARE_UNVERIFIED}:
-        raise ValueError(
-            "card state must be missing, owned, duplicate, or possible-spare"
-        )
-    return state
+    if state in {MISSING, OWNED, OWNED_SPARE_UNVERIFIED} or _is_spare(state):
+        return state
+    raise ValueError(
+        "card state must be missing, owned, a spare count, or possible-spare"
+    )
 
 
 def _thumbnail_state_slug(state: int | str) -> str:
     if state == MISSING:
         return "missing"
-    if state == DUPLICATE:
+    if _is_spare(state):
         return "duplicate"
     if state == OWNED_SPARE_UNVERIFIED:
         return "possible-spare"
@@ -361,7 +389,7 @@ def _thumbnail_alt_text(card, state: int | str) -> str:
     category_name = CATEGORY_BY_ID[card.category].name
     if state == MISSING:
         detail = "missing. Grayscale card art with an X marker."
-    elif state == DUPLICATE:
+    elif _is_spare(state):
         detail = "duplicate available (x2 or more)."
     elif state == OWNED_SPARE_UNVERIFIED:
         detail = "owned; possible spare needs checking (question-mark badge)."
@@ -431,7 +459,7 @@ def _render_card_thumbnail_cached(
         y = art_box[1] + (art_box[3] - art_box[1] - artwork.height) // 2
         canvas.paste(artwork, (x, y), artwork)
 
-    if state == DUPLICATE:
+    if _is_spare(state):
         badge = (163, 14, 244, 60)
         draw.rounded_rectangle(
             badge,
@@ -503,17 +531,16 @@ def render_card_thumbnail(
 
 
 def _spare_badge_text(state: int | str) -> str:
-    """The label on a spare tile.
+    """The label on a spare tile: the real count the member recorded.
 
-    The catalog stores three states - missing, owned, and "two or more" - so
-    the exact number of copies is genuinely not known here. The badge reads
-    `x2+` because `x2` would be a claim we cannot support for a member holding
-    four. Showing the real `x2`/`x3`/`x4` the game shows needs two changes:
-    the scanner reading the digit inside the badge rather than only detecting
-    the badge's shape, and the inventory storing a count instead of clamping
-    at two (`normalize_status` in utils/cards.py).
+    A stored ``2`` still reads ``x2+`` rather than ``x2``. Two is both the
+    scanner's safe floor and what every pre-existing document holds, so it
+    genuinely means "at least two". Any higher number was typed by a member and
+    is exact, so it is shown as-is.
     """
-    return "x2+"
+    if not _is_spare(state):
+        return ""
+    return "x2+" if state == DUPLICATE else f"x{state}"
 
 
 def _draw_check(
@@ -563,7 +590,7 @@ def _draw_category_tabs(
         )
         category_states = [states[card.id] for card in CATEGORY_CARDS[category.id]]
         collected = sum(
-            state in {OWNED, DUPLICATE, OWNED_SPARE_UNVERIFIED}
+            _is_collected(state)
             for state in category_states
         )
         complete = collected == len(category_states)
@@ -646,7 +673,7 @@ def _draw_card_tile(
     # Bottom right, tucked into the corner, rather than centred on the bottom
     # edge.  Centred read as a caption belonging under the art; the corner
     # reads as a badge stuck on it.
-    if state == DUPLICATE:
+    if _is_spare(state):
         badge = (right - 54, bottom - 26, right - 4, bottom - 2)
         draw.rounded_rectangle(
             badge,
@@ -940,7 +967,7 @@ def render_card_board(
     states = {card.id: _state(supplied.get(card.id)) for card in CARDS}
 
     missing = [card for card in CARDS if states[card.id] == MISSING]
-    duplicates = [card for card in CARDS if states[card.id] == DUPLICATE]
+    duplicates = [card for card in CARDS if _is_spare(states[card.id])]
     spare_unverified = [
         card
         for card in CARDS
@@ -948,7 +975,7 @@ def render_card_board(
     ]
     unknown = [card for card in CARDS if states[card.id] == UNKNOWN]
     collected = sum(
-        states[card.id] in {OWNED, DUPLICATE, OWNED_SPARE_UNVERIFIED}
+        _is_collected(states[card.id])
         for card in CARDS
     )
 
@@ -1057,7 +1084,7 @@ def render_category_strip(
         width=5,
     )
     collected = sum(
-        states[card.id] in {OWNED, DUPLICATE, OWNED_SPARE_UNVERIFIED}
+        _is_collected(states[card.id])
         for card in definitions
     )
     draw.rounded_rectangle(
@@ -1117,7 +1144,7 @@ def render_category_strip(
     output = io.BytesIO()
     canvas.save(output, format="PNG", optimize=True)
     missing = [card for card in definitions if states[card.id] == MISSING]
-    duplicates = [card for card in definitions if states[card.id] == DUPLICATE]
+    duplicates = [card for card in definitions if _is_spare(states[card.id])]
     spare_unverified = [
         card for card in definitions
         if states[card.id] == OWNED_SPARE_UNVERIFIED

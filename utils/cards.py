@@ -20,7 +20,11 @@ from typing import Iterable, Mapping
 
 MISSING = 0
 OWNED = 1
+# DUPLICATE is the threshold at which a card becomes tradeable, not a ceiling.
+# A card never gives away its last copy, so two is the floor for a spare and
+# the stored value may be any count at or above it.
 DUPLICATE = 2
+MAX_COPIES = 99
 
 FRESH_FOR = timedelta(hours=24)
 AGING_FOR = timedelta(hours=48)
@@ -191,16 +195,25 @@ CATEGORY_CARDS = {
 
 
 def normalize_status(value: object) -> int:
-    """Return one of the three supported inventory states."""
+    """Return a stored copy count.
+
+    ``0`` is missing and ``1`` is a single copy, exactly as before. Anything at
+    or above ``DUPLICATE`` is a spare, and the exact number is now kept rather
+    than clamped to two, so a member holding four can say so.
+
+    Every rule in this module tests ``>= DUPLICATE`` rather than ``== DUPLICATE``
+    so that holding more than two is never mistaken for holding none. Documents
+    written before this change store at most ``2`` and stay valid without a
+    migration; they simply mean "at least one spare", which is what they always
+    meant.
+    """
     try:
         numeric = int(value)
     except (TypeError, ValueError):
         return OWNED
     if numeric <= MISSING:
         return MISSING
-    if numeric >= DUPLICATE:
-        return DUPLICATE
-    return OWNED
+    return min(numeric, MAX_COPIES)
 
 
 def normalize_cards(values: Mapping[str, object] | None) -> dict[str, int]:
@@ -249,7 +262,7 @@ def apply_category_selection(
         else:
             if card.id in chosen:
                 result[card.id] = DUPLICATE
-            elif current == DUPLICATE or card.id not in result:
+            elif current >= DUPLICATE or card.id not in result:
                 result[card.id] = OWNED
     return result
 

@@ -51,6 +51,7 @@ from utils.cards import (
     CATEGORY_CARDS,
     DUPLICATE,
     MATCHABLE_FOR,
+    MAX_COPIES,
     MISSING,
     OWNED,
     apply_category_selection,
@@ -420,6 +421,19 @@ def _parse_editor_search_target(value: object) -> str:
     return _normalize_tag(value)
 
 
+def _parse_card_step_target(value: object) -> tuple[str, str | None, int]:
+    parts = str(value or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    card_id = parts[1] if len(parts) > 1 and parts[1] in CARD_BY_ID else None
+    delta = 0
+    if len(parts) > 2:
+        try:
+            delta = max(-1, min(1, int(parts[2])))
+        except (TypeError, ValueError):
+            delta = 0
+    return tag, card_id, delta
+
+
 def _parse_card_set_target(value: object) -> tuple[str, str | None, int | None]:
     parts = str(value or "").split("|")
     tag = _normalize_tag(parts[0] if parts else "")
@@ -430,7 +444,7 @@ def _parse_card_set_target(value: object) -> tuple[str, str | None, int | None]:
             candidate = int(parts[2])
         except (TypeError, ValueError):
             candidate = -1
-        if candidate in {MISSING, OWNED, DUPLICATE}:
+        if MISSING <= candidate <= MAX_COPIES:
             target = candidate
     return tag, card_id, target
 
@@ -1932,13 +1946,26 @@ def _dashboard(
     return [Container(components=body)]
 
 
+def _is_spare_state(state: object) -> bool:
+    """Whether a state is a tradeable spare, safely across ints and markers."""
+    return (
+        isinstance(state, int)
+        and not isinstance(state, bool)
+        and state >= DUPLICATE
+    )
+
+
 def _card_state_words(state: int | str, *, possible_spare: bool) -> str:
     if possible_spare:
         return "Might be a spare"
     if state == MISSING:
         return "Missing"
     if state == DUPLICATE:
-        return "Spare to trade"
+        # Two is the scanner's safe floor and what older documents hold, so it
+        # means "at least two" rather than exactly two.
+        return "2+ · spare to trade"
+    if isinstance(state, int) and state > DUPLICATE:
+        return f"{state} copies · {state - 1} to trade"
     return "Have 1"
 
 
@@ -1975,6 +2002,61 @@ def _category_select_row(account, inventory: dict, category_id: str) -> ActionRo
         max_values=1,
         options=options,
     )])
+
+
+def _spare_counts_panel(account, inventory: dict) -> list[Container] | None:
+    """After a scan, ask how many of each spare the member actually holds.
+
+    The scanner can prove a spare exists but not how many, so every spare it
+    finds is stored as the floor of two. This is the one moment a member has
+    the game open next to Discord, which makes it the cheapest possible time to
+    ask. Returns None when there is nothing to ask about, so the caller falls
+    straight through to the dashboard.
+    """
+    tag = _normalize_tag(account.tag)
+    saved = normalize_cards(inventory.get("cards"))
+    spares = [card for card in CARDS if saved.get(card.id, OWNED) == DUPLICATE]
+    if not spares:
+        return None
+
+    shown = spares[:25]
+    body: list = [
+        Text(content="# How many spares?"),
+        Text(content=(
+            f"Your collection is saved. **{len(spares)} card"
+            f"{'s' if len(spares) != 1 else ''}** came back as a spare, "
+            "recorded as **2+** because a badge proves you have one to trade "
+            "but not how many.\n"
+            "Pick any card to set its real count, or skip this entirely - "
+            "trading works fine on 2+."
+        )),
+        ActionRow(components=[TextSelectMenu(
+            # cards_pick reads the chosen card id from the menu values and only
+            # needs the tag from its custom_id.
+            custom_id=f"cards_pick:{tag}|spares",
+            placeholder="Set an exact count..."[:150],
+            max_values=1,
+            options=[
+                SelectOption(
+                    label=card.name,
+                    value=card.id,
+                    description=f"{CATEGORY_BY_ID[card.category].short_name} · 2+",
+                )
+                for card in shown
+            ],
+        )]),
+        ActionRow(components=[Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_dashboard:{tag}",
+            label="Skip, 2+ is fine",
+        )]),
+    ]
+    if len(spares) > len(shown):
+        body.append(Text(content=(
+            f"-# {len(spares) - len(shown)} more are in the category menus "
+            "on the board."
+        )))
+    return [Container(components=body)]
 
 
 def _card_focus(
@@ -2052,7 +2134,7 @@ def _card_focus(
             Button(
                 style=(
                     hikari.ButtonStyle.SUCCESS
-                    if state == DUPLICATE and not possible_spare
+                    if _is_spare_state(state) and not possible_spare
                     else hikari.ButtonStyle.SECONDARY
                 ),
                 custom_id=f"cards_set:{tag}|{card.id}|2",
@@ -2063,6 +2145,30 @@ def _card_focus(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{tag}",
                 label="Back to board",
+            ),
+        ]),
+        # Exact counts, for members who want them. The three buttons above set
+        # a state; these adjust the number of copies from wherever it is.
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_step:{tag}|{card.id}|-1",
+                label="-1 copy",
+                is_disabled=reserved or not isinstance(state, int) or state <= MISSING,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_step:{tag}|{card.id}|1",
+                label="+1 copy",
+                is_disabled=reserved or (
+                    isinstance(state, int) and state >= MAX_COPIES
+                ),
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_count:{tag}|{card.id}",
+                label="Set exact count",
+                is_disabled=reserved,
             ),
         ]),
         # The menu stays mounted, so fixing several cards in one category is
@@ -2076,11 +2182,15 @@ def _card_focus(
 
 
 def _state_name(value: int) -> str:
-    return {
-        MISSING: "missing",
-        OWNED: "owned once",
-        DUPLICATE: "duplicate",
-    }.get(value, "unknown")
+    if value == MISSING:
+        return "missing"
+    if value == OWNED:
+        return "owned once"
+    if value == DUPLICATE:
+        return "a spare (2+)"
+    if isinstance(value, int) and value > DUPLICATE:
+        return f"{value} copies"
+    return "unknown"
 
 
 def _editor_state_text(
@@ -5315,7 +5425,7 @@ async def _write_card_state(
     old table had no edge from missing straight to spare.
     """
     card = CARD_BY_ID.get(card_id)
-    if card is None or target not in {MISSING, OWNED, DUPLICATE}:
+    if card is None or not (MISSING <= int(target) <= MAX_COPIES):
         raise ValueError("unknown card state update")
     tag = _normalize_tag(account.tag)
     async with _inventory_lock(tag):
@@ -6720,6 +6830,9 @@ async def _confirm_scan_draft(
         return _scan_saved_notice(account)
     if edit_after:
         return _quick_update_panel(account, updated)
+    spare_prompt = _spare_counts_panel(account, updated)
+    if spare_prompt is not None:
+        return spare_prompt
     return await _dashboard_view(
         account, updated, account_count=len(_loaded_entries(data))
     )
@@ -7161,6 +7274,139 @@ async def cards_set(
         updated,
         card_id,
         saved=f"{CARD_BY_ID[card_id].name} is now {_state_name(target)}.",
+    )
+
+
+async def _apply_card_count(
+    ctx,
+    tag: str,
+    card_id: str,
+    target: int,
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+    note: str | None = None,
+):
+    """Shared tail for every absolute or relative count write."""
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    target = max(MISSING, min(int(target), MAX_COPIES))
+    try:
+        updated = await _write_card_state(
+            mongo,
+            account,
+            inventory,
+            card_id,
+            target,
+            expected_revision=_inventory_revision_value(inventory),
+            discord_id=int(ctx.user.id),
+            guild_id=_guild_id(ctx),
+        )
+    except ActiveCardTradeError:
+        return await _card_focus_view(
+            account, inventory, card_id,
+            saved="This card is reserved and was not changed.",
+        )
+    except (InventoryWriteConflict, ValueError):
+        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        return await _card_focus_view(
+            account, current, card_id,
+            saved="The collection changed, so this view was refreshed.",
+        )
+    return await _card_focus_view(
+        account,
+        updated,
+        card_id,
+        saved=note or f"{CARD_BY_ID[card_id].name} is now {_state_name(target)}.",
+    )
+
+
+@register_action("cards_step")
+@lightbulb.di.with_di
+async def cards_step(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Nudge one card's copy count up or down by one."""
+    tag, card_id, delta = _parse_card_step_target(action_id)
+    if card_id is None or delta == 0:
+        return _notice("Card unavailable", "Open `/cards` again.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    current = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
+    return await _apply_card_count(
+        ctx,
+        tag,
+        card_id,
+        current + delta,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_count", opens_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def cards_count(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    **_kwargs,
+):
+    tag, card_id, _target = _parse_card_set_target(f"{action_id}|0")
+    if card_id is None:
+        await ctx.respond(
+            "Card unavailable. Open `/cards` again.",
+            flags=hikari.MessageFlag.EPHEMERAL,
+        )
+        return
+    await ctx.respond_with_modal(
+        f"How many {CARD_BY_ID[card_id].name}?"[:45],
+        f"cards_count_submit:{tag}|{card_id}",
+        components=[ModalActionRow().add_text_input(
+            "copies",
+            "Copies you hold",
+            placeholder="0 to 99",
+            required=True,
+            max_length=2,
+        )],
+    )
+
+
+@register_action("cards_count_submit")
+@lightbulb.di.with_di
+async def cards_count_submit(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    tag, card_id, _target = _parse_card_set_target(f"{action_id}|0")
+    if card_id is None:
+        return _notice("Card unavailable", "Open `/cards` again.")
+    raw = _modal_text_value(ctx, "copies")
+    try:
+        target = int(str(raw).strip())
+    except (TypeError, ValueError):
+        account, inventory, problem = await _load_target(
+            ctx, tag, coc_client=coc_client, mongo=mongo
+        )
+        if problem:
+            return problem
+        return await _card_focus_view(
+            account, inventory, card_id,
+            saved="That was not a number, so nothing changed.",
+        )
+    return await _apply_card_count(
+        ctx, tag, card_id, target, coc_client=coc_client, mongo=mongo
     )
 
 
