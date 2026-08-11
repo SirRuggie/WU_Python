@@ -475,6 +475,122 @@ def find_matches(
     return results
 
 
+@dataclass(frozen=True, slots=True)
+class CardSupply:
+    """How one card sits across the family."""
+
+    card_id: str
+    holders: tuple[str, ...]
+    seekers: tuple[str, ...]
+    reporting: int
+
+    @property
+    def spare_count(self) -> int:
+        return len(self.holders)
+
+    @property
+    def demand(self) -> int:
+        return len(self.seekers)
+
+
+def family_supply(
+    candidates: Iterable[Mapping[str, object]],
+    *,
+    now: datetime | None = None,
+    max_age: timedelta = MATCHABLE_FOR,
+) -> dict[str, CardSupply]:
+    """Who holds a spare of each card, and who still needs it.
+
+    This is a projection of the same documents matching already loads, so a
+    family view costs no extra query.  Only categories a collection has
+    actually reviewed count, for either side: an untouched category means the
+    member has not told us anything, and counting it as demand would invent a
+    want out of missing data.
+    """
+    now = as_utc(now) or datetime.now(timezone.utc)
+    holders: dict[str, list[str]] = {card.id: [] for card in CARDS}
+    seekers: dict[str, list[str]] = {card.id: [] for card in CARDS}
+    reporting = 0
+
+    for candidate in candidates:
+        tag = str(candidate.get("_id") or candidate.get("tag") or "")
+        if not tag or _matchable(candidate, now=now, max_age=max_age) is None:
+            continue
+        complete = set(candidate.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
+        if not complete:
+            continue
+        reporting += 1
+        values = normalize_cards(candidate.get("cards"))
+        for category_id in complete:
+            for card in CATEGORY_CARDS[category_id]:
+                state = values.get(card.id, OWNED)
+                if state >= DUPLICATE:
+                    holders[card.id].append(tag)
+                elif state == MISSING:
+                    seekers[card.id].append(tag)
+
+    return {
+        card.id: CardSupply(
+            card_id=card.id,
+            holders=tuple(sorted(holders[card.id])),
+            seekers=tuple(sorted(seekers[card.id])),
+            reporting=reporting,
+        )
+        for card in CARDS
+    }
+
+
+def max_achievable_trades(
+    trades: Iterable[tuple[tuple[str, str], tuple[str, str]]],
+) -> int:
+    """How many of these swaps could all complete together.
+
+    A raw count of legal swaps overstates what the family can actually do,
+    because completing one spends a spare: a member offering their single
+    extra Barbarian to three partners is one trade, not three.
+
+    Each swap is given as the two ``(tag, card_id)`` spares it would consume.
+    This is a resource-constrained matching whose exact solution is a
+    blossom-style search; that is disproportionate machinery for a hint line,
+    so this is a most-constrained-first greedy.  ``tests/test_cards.py`` checks
+    it against brute force on small inputs, including a case built to hit the
+    known worst case, so the gap is measured rather than assumed away.
+    """
+    pending = [
+        (left, right)
+        for left, right in trades
+        if left != right
+    ]
+    used: set[tuple[str, str]] = set()
+    taken = 0
+
+    while pending:
+        contention: dict[tuple[str, str], int] = {}
+        for left, right in pending:
+            contention[left] = contention.get(left, 0) + 1
+            contention[right] = contention.get(right, 0) + 1
+        # Fewest competing claims first, then a stable key so the answer does
+        # not depend on input order.
+        left, right = min(
+            pending,
+            key=lambda pair: (
+                contention[pair[0]] + contention[pair[1]],
+                pair[0],
+                pair[1],
+            ),
+        )
+        used.add(left)
+        used.add(right)
+        taken += 1
+        pending = [
+            pair
+            for pair in pending
+            if pair[0] not in used and pair[1] not in used
+        ]
+
+    return taken
+
+
 def holders_for_card(
     requester: Mapping[str, object],
     candidates: Iterable[Mapping[str, object]],
