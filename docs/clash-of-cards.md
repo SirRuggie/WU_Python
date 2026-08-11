@@ -103,7 +103,26 @@ The scanner validates the fixed category-frame pattern, six-column geometry,
 logical page assignment, distinct captures, repeated-row overlap, and a compact
 artwork fingerprint for every expected card before binding the ten visible rows to the
 canonical 60-card catalog. A catalog change or unexpected artwork therefore
-fails closed instead of shifting card identities. Missing portraits are
+fails closed instead of shifting card identities.
+
+**Fail-closed is per card, not per page.** An earlier build discarded an entire
+capture when any portrait failed its fingerprint check, so four unproven cards
+out of twelve cost the member all twelve. On a real five-capture import that
+left 48 of 60 cards unseen and the collection unusable. A page now keeps every
+card that proved its identity and marks only the unproven ones unknown, which
+the member is then asked about. A capture is still rejected whole when *no*
+portrait on it proves its identity, because that means the page assignment
+itself cannot be trusted.
+
+The fingerprint thresholds are a runner-up gap of 8 bits with a distance
+ceiling of 46. The gap is the load-bearing test: absolute distance shifts with
+device scaling and JPEG recompression, while the ranking does not. On a live
+capture set, correct identifications ran 0 to 53 bits from their anchor while
+the nearest wrong card in the same category sat a median 34 bits further out.
+The ceiling cannot be raised past 46, because the two closest same-category
+anchors are 47 bits apart and anything at or above that could fall inside the
+wrong card's radius; `test_artwork_anchor_catalog_is_complete_private_and_separated`
+pins this. Missing portraits are
 detected from the grayscale artwork. Badge recognition has not yet been
 validated broadly enough across devices and `xN` variants to authorize trade
 supply. Neither a possible yellow badge nor a badge covered by the reward track

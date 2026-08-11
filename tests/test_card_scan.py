@@ -632,11 +632,37 @@ def test_artwork_identity_mismatch_names_the_page_and_cards(monkeypatch):
 
     first_page = draft.captures[0]
     assert first_page.input_index == 1
-    assert first_page.accepted is False
-    assert first_page.warnings == ("artwork_identity_mismatch",)
+    # A partial mismatch keeps the ten proven cards and marks only the two
+    # unproven ones unknown. Discarding the whole page cost a member every
+    # card on it, which is what made a real five-capture import come back
+    # mostly unseen.
+    assert first_page.accepted is True
+    assert first_page.warnings == ("partial_artwork_identity_mismatch",)
     assert set(first_page.mismatched_card_ids) >= {"barbarian", "archer"}
     assert "artwork_identity_mismatch" in draft.warnings
     assert "artwork_identity_mismatch" in draft.cards[0].warnings
+    # Fail-closed is preserved per card, not per page.
+    assert draft.cards[0].state == card_scan.UNKNOWN
+    assert "artwork_identity_unproven" in draft.cards[0].warnings
+    assert set(draft.unseen_card_ids) == set()
+    assert draft.complete is False
+
+
+def test_a_page_that_proves_nothing_is_still_rejected_whole(monkeypatch):
+    """If no portrait proves its identity, the page assignment is untrusted."""
+    canonical = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_artwork_anchors(monkeypatch, canonical)
+    payloads = [
+        # Page 5's artwork submitted where page 1 belongs.
+        _collection_capture(0, art_indices=tuple(range(48, 60))),
+        *canonical[1:],
+    ]
+
+    draft = card_scan.scan_collection_screenshots(payloads)
+
+    first_page = draft.captures[0]
+    assert first_page.accepted is False
+    assert first_page.warnings == ("artwork_identity_mismatch",)
     assert draft.complete is False
 
 

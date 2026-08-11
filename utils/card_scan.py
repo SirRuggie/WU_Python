@@ -25,7 +25,7 @@ import statistics
 import warnings
 from collections.abc import Mapping
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import islice
 from typing import Literal
 
@@ -91,8 +91,27 @@ ROW_OVERLAP_MAX_MEAN_DELTA = 1.0
 # reconstruct the screenshots, player state, badges, or account identity.  The
 # inner-art crop deliberately excludes the xN badge; grid medians keep detector
 # edge noise from moving a crop under ordinary resize or JPEG recompression.
-ARTWORK_HASH_MAX_DISTANCE = 22
-ARTWORK_HASH_MIN_RUNNER_UP_GAP = 12
+# Calibrated against a live five-capture set at 3120x1440 whose correct
+# identifications ran 0..53 bits away from their anchor, median 20, while the
+# nearest wrong card in the same category sat a median 34 bits further out.
+#
+# The old ceiling of 22 was fitted to one device and rejected 29 of those 60
+# correct cards, which is what made half a real collection import as unknown.
+# Absolute distance shifts with device scaling and JPEG recompression; the
+# RANKING does not, so the runner-up gap is the load-bearing test and the
+# ceiling is only a sanity bound.
+#
+# A gap of 8 also keeps the two genuinely ambiguous pairs in that set failing
+# closed rather than guessing: dragon/root_rider tied at 52, and
+# baby_dragon/wall_breaker at 53 against 52. Those become "unknown" and the
+# member is asked, which is the correct outcome.
+#
+# The ceiling is additionally bounded by the anchors themselves: the two
+# closest same-category anchors sit 47 bits apart, so anything at or above 47
+# could fall inside the wrong card's radius. 46 is the largest value that keeps
+# `test_artwork_anchor_catalog_is_complete_private_and_separated` true.
+ARTWORK_HASH_MAX_DISTANCE = 46
+ARTWORK_HASH_MIN_RUNNER_UP_GAP = 8
 ARTWORK_HASH_SIZE = 32
 ARTWORK_HASH_MAX_FREQUENCY = 10
 ARTWORK_CROP_LEFT = -0.38
@@ -1564,8 +1583,12 @@ def scan_collection_screenshots(
         mismatched_card_ids = _artwork_identity_mismatches(
             image, result, capture_position
         )
+        page_slots = COLLECTION_COLUMNS * len(result.rows)
         if mismatched_card_ids:
             artwork_mismatch_ids.update(mismatched_card_ids)
+        if len(mismatched_card_ids) >= page_slots:
+            # Nothing on the page proved its identity, so the page assignment
+            # itself is not trustworthy. Reject the whole capture.
             captures.append(CollectionCaptureScan(
                 input_index=input_index,
                 accepted=False,
@@ -1578,7 +1601,33 @@ def scan_collection_screenshots(
             ))
             continue
 
+        # A partial mismatch used to discard the whole capture, so four
+        # unproven portraits cost the member all twelve cards on the page and
+        # the collection came back mostly unseen. The proven cards are kept and
+        # only the unproven ones become unknown, which is the same fail-closed
+        # outcome per card without throwing away good data.
         incoming = _page_cards(capture_position, input_index, result)
+        if mismatched_card_ids:
+            unproven = set(mismatched_card_ids)
+            incoming = {
+                index: (
+                    replace(
+                        card,
+                        state=UNKNOWN,
+                        confidence=0.0,
+                        warnings=tuple(dict.fromkeys((
+                            *card.warnings,
+                            # Keep the established name so anything keyed on it
+                            # downstream still sees the card as unproven.
+                            "artwork_identity_mismatch",
+                            "artwork_identity_unproven",
+                        ))),
+                    )
+                    if card.card_id in unproven
+                    else card
+                )
+                for index, card in incoming.items()
+            }
         if capture_position in present_positions():
             resolved_ids, conflicting_ids = _merge_duplicate_page(
                 mapped,
@@ -1615,8 +1664,13 @@ def scan_collection_screenshots(
             global_rows=global_rows,
             source_size=result.source_size,
             scan_size=result.scan_size,
-            warnings=("catalog_position_and_artwork_validated",),
+            warnings=(
+                ("catalog_position_and_artwork_validated",)
+                if not mismatched_card_ids
+                else ("partial_artwork_identity_mismatch",)
+            ),
             assigned_page_number=capture_position + 1,
+            mismatched_card_ids=mismatched_card_ids,
         ))
         row_fingerprints.extend(candidate_row_fingerprints)
 
