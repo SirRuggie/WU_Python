@@ -2380,7 +2380,11 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
         # Two rows now, because the More router was dissolved into the board.
         assert len(buttons) <= 9
         rows = [node for node in nodes if node.get("type") == 1]
-        assert len(rows) <= 6
+        # Seven: four category menus, the collection controls, the two
+        # destinations, and the links. The destinations became one row of
+        # buttons instead of two Sections, which is three fewer components
+        # overall - the real ceiling is the 40 checked below, not the row count.
+        assert len(rows) <= 7
         # The collection board is the landing surface, not an optional extra.
         assert any(node.get("type") == 12 for node in nodes)
         _assert_discord_payload(view)
@@ -4505,8 +4509,51 @@ def test_account_picker_paginates_without_a_dead_counter_button():
     _assert_discord_payload(second)
 
 
-def test_dashboard_groups_actions_under_headings():
-    """Buttons wrapped with no logic to the grouping; headings give it one."""
+def test_destination_buttons_say_what_is_waiting_there():
+    """The count rides in the label, so the row that carried it is not needed."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.MISSING
+    inventory["cards"]["dragon"] = cards.MISSING
+    inventory["cards"]["golem"] = 3
+
+    view = cards_command._dashboard(account, inventory, account_count=1)
+    labels = [n.get("label", "") for n in _view_nodes(view) if n.get("type") == 2]
+
+    assert any("Find trades" in label and "2 needed" in label for label in labels)
+    assert any("My trades" in label for label in labels)
+    # A label Discord will truncate is worse than no count at all.
+    for label in labels:
+        assert len(label) <= 80, f"too long for a button: {label}"
+    _assert_discord_payload(view)
+
+
+def test_find_trades_button_is_disabled_and_explains_why_when_stale():
+    """Matching cuts off at 72 hours, so the label says so instead of dead-ending."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    stale = _complete_inventory(
+        confirmed_at=datetime.now(timezone.utc) - timedelta(days=5)
+    )
+
+    view = cards_command._dashboard(account, stale, account_count=1)
+    find = next(
+        n for n in _view_nodes(view)
+        if n.get("custom_id") == "cards_matches:#ME"
+    )
+
+    assert find["disabled"] is True
+    assert "collection is stale" in find["label"]
+    _assert_discord_payload(view)
+
+
+def test_board_destinations_are_buttons_not_two_line_rows():
+    """Two Sections cost two lines each and wrapped on mobile; buttons do not."""
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -4514,23 +4561,37 @@ def test_dashboard_groups_actions_under_headings():
     view = cards_command._dashboard(
         account, _complete_inventory(), account_count=1
     )
-    text = _view_text(view)
+    nodes = _view_nodes(view)
 
-    # Destinations are labelled Section rows with their own button, not a bar
-    # of buttons. Pattern taken from Hoyo Buddy's guide menu.
-    assert "**🔁 Find trades**" in text
-    assert "**📬 My trades**" in text
-    assert "**Your cards**" in text
-    sections = [n for n in _view_nodes(view) if n.get("type") == 9]
-    assert len(sections) == 2
-    for section in sections:
-        assert section["accessory"]["type"] == 2
-        assert section["accessory"]["label"] == "Open"
-    # Sort sits with the menus it sorts, not under an unrelated heading.
-    order = text.index("**Your cards**")
-    assert order < text.index("**\U0001f501 Find trades**")
+    assert [n for n in nodes if n.get("type") == 9] == []
+    assert "**Your cards**" in _view_text(view)
+    ids = {n.get("custom_id") for n in nodes}
+    assert {"cards_matches:#ME", "cards_trades:#ME"} <= ids
     _assert_discord_payload(view)
 
+
+def test_sort_control_sits_with_the_menus_it_sorts():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._dashboard(
+        account, _complete_inventory(), account_count=1
+    )
+    rows = [n for n in _view_nodes(view) if n.get("type") == 1]
+
+    def row_with(prefix):
+        return next(
+            i for i, row in enumerate(rows)
+            if any(
+                str(c.get("custom_id", "")).startswith(prefix)
+                for c in row.get("components", [])
+            )
+        )
+
+    # Sort sits with the menus it acts on, above the places you can go next.
+    assert row_with("cards_sort:") < row_with("cards_matches:")
+    assert row_with("cards_pick:") < row_with("cards_sort:")
 
 def test_collection_group_hides_controls_that_would_do_nothing():
     account = Account(
@@ -4700,45 +4761,6 @@ def test_several_hidden_badges_are_one_question_not_one_each():
     _assert_discord_payload(view)
 
 
-def test_destination_rows_say_what_is_waiting_there():
-    """A row can carry state a button label cannot."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    inventory["cards"]["wizard"] = cards.MISSING
-    inventory["cards"]["dragon"] = cards.MISSING
-    inventory["cards"]["golem"] = 3
-
-    text = _view_text(cards_command._dashboard(account, inventory, account_count=1))
-
-    # One short line so mobile keeps the button beside it rather than below.
-    assert "2 needed" in text
-    for line in text.split("\n"):
-        if line.startswith("**\U0001f501") or line.startswith("**\U0001f465"):
-            assert len(line) < 60, f"too long, mobile will wrap: {line}"
-
-
-def test_find_trades_row_is_disabled_and_explains_why_when_stale():
-    """Matching cuts off at 72 hours, so the row says so instead of dead-ending."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    stale = _complete_inventory(
-        confirmed_at=datetime.now(timezone.utc) - timedelta(days=5)
-    )
-
-    view = cards_command._dashboard(account, stale, account_count=1)
-    text = _view_text(view)
-    find = [n for n in _view_nodes(view) if n.get("type") == 9][0]
-
-    assert "collection is stale" in text
-    assert find["accessory"]["disabled"] is True
-    _assert_discord_payload(view)
-
-
 def test_category_progress_bars_align_in_a_code_span():
     """Proportional text will not align padded plain text; a code span will."""
     inventory = {"cards": {card.id: cards.OWNED for card in cards.CARDS}}
@@ -4868,42 +4890,6 @@ def test_dashboard_states_each_fact_once():
     _assert_discord_payload(view)
 
 
-def test_sort_control_sits_with_the_menus_it_sorts():
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    view = cards_command._dashboard(
-        account, _complete_inventory(), account_count=1
-    )
-    payload = [component.build() for component in view]
-
-    def flatten(node, out):
-        if isinstance(node, (list, tuple)):
-            for item in node:
-                flatten(item, out)
-        elif isinstance(node, dict):
-            if node.get("type") in (1, 9, 10, 14):
-                out.append(node)
-            for value in node.values():
-                if isinstance(value, (list, tuple, dict)) and node.get("type") == 17:
-                    flatten(value, out)
-        return out
-
-    ordered = flatten(payload, [])
-    kinds = [n["type"] for n in ordered]
-    # Four select rows, then the row carrying Sort, before any Section.
-    first_section = kinds.index(9)
-    sort_row = next(
-        i for i, n in enumerate(ordered)
-        if n["type"] == 1 and any(
-            str(c.get("custom_id", "")).startswith("cards_sort:")
-            for c in n.get("components", [])
-        )
-    )
-    assert sort_row < first_section
-
-
 def test_find_trades_absorbs_what_who_has_what_uniquely_showed():
     """Who has what mostly repeated this screen; its one distinct part moved."""
     account = Account(
@@ -5012,6 +4998,61 @@ def test_board_controls_wrap_instead_of_dropping_the_sixth():
         if node.get("type") == 1:
             assert len(node.get("components", [])) <= 5
     _assert_discord_payload(view)
+
+
+def test_each_board_dropdown_is_visually_distinct(monkeypatch):
+    """Four identically-styled menus are hard to tell apart at a glance."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._dashboard(
+        account, _complete_inventory(), account_count=1
+    )
+    placeholders = [
+        n["placeholder"] for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith("cards_pick:")
+    ]
+
+    assert len(placeholders) == len(cards.CATEGORIES)
+    for category in cards.CATEGORIES:
+        assert any(
+            text.startswith(category.emoji) and category.name in text
+            for text in placeholders
+        ), f"{category.name} menu is unmarked"
+
+
+def test_find_trades_dividers_only_separate_the_picker_block(monkeypatch):
+    """Dividing four sibling menus from each other read as unrelated sections."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    for card in cards.CARDS[:30]:
+        inventory["cards"][card.id] = cards.MISSING
+    holders = [{
+        "_id": "#H", "player_name": "Holder",
+        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    view = cards_command._matches_view(
+        account, inventory, cards.find_matches(inventory, holders)
+    )
+
+    # Walk the container in order; once the menus start, nothing divides them.
+    children = view[0].components
+    kinds = [
+        "select" if getattr(c, "components", None)
+        and any(hasattr(x, "options") for x in c.components)
+        else "separator" if hasattr(c, "divider") else "other"
+        for c in children
+    ]
+    first = kinds.index("select")
+    tail = kinds[first:]
+    assert "separator" not in tail, "a divider sits between the menus"
+    assert kinds[first - 1] == "separator", "the block is not set off from the text"
 
 
 def test_every_category_has_its_uploaded_emoji():

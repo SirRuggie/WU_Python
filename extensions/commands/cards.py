@@ -1939,25 +1939,32 @@ def _dashboard(
         1 for value in normalize_cards(inventory.get("cards")).values()
         if value >= DUPLICATE
     )
-    # Each destination is its own labelled row with its own button, rather than
-    # a bar of buttons whose labels have to carry all the meaning. A row can
-    # say what it is and what is waiting there, which a button cannot.
+    # A button label can carry the count, which is all the row above it was
+    # ever saying. Two Section rows cost two lines each and wrap on mobile;
+    # two buttons cost one line and say the same thing.
     destinations = [
-        (
-            "🔁", "Find trades",
-            # Short blurbs on purpose. Matching cuts off at 72 hours, so the
-            # unavailable case is staleness, not an unfinished collection.
-            f"{summary.missing} needed" if matchable else "collection is stale",
-            f"cards_matches:{tag}",
-            hikari.ButtonStyle.PRIMARY if matchable else hikari.ButtonStyle.SECONDARY,
-            matchable,
+        Button(
+            style=(
+                hikari.ButtonStyle.PRIMARY
+                if matchable
+                else hikari.ButtonStyle.SECONDARY
+            ),
+            custom_id=f"cards_matches:{tag}",
+            # Matching cuts off at 72 hours, so the unavailable case is
+            # staleness rather than an unfinished collection.
+            label=(
+                f"Find trades · {summary.missing} needed"
+                if matchable
+                else "Find trades · collection is stale"
+            ),
+            emoji="🔁",
+            is_disabled=not matchable,
         ),
-        (
-            "📬", "My trades",
-            "sent and received",
-            f"cards_trades:{tag}",
-            hikari.ButtonStyle.SECONDARY,
-            True,
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_trades:{tag}",
+            label="My trades",
+            emoji="📬",
         ),
     ]
     # The controls that act on the menus above, immediately below them.
@@ -2012,21 +2019,7 @@ def _dashboard(
         body.append(ActionRow(components=collection_row[index:index + 5]))
 
     body.append(Separator(divider=True))
-    for icon, title, blurb, custom_id, style, enabled in destinations:
-        # One short line, not a heading plus a subtext line plus a divider.
-        # Discord's mobile client drops a Section accessory BELOW its text when
-        # the text block is tall, so every extra line here is what made the
-        # panel scroll. A single line keeps the button beside it far more often,
-        # and costs a third of the height when it still wraps.
-        body.append(Section(
-            components=[Text(content=f"**{icon} {title}** · {blurb}")],
-            accessory=Button(
-                style=style,
-                custom_id=custom_id,
-                label="Open",
-                is_disabled=not enabled,
-            ),
-        ))
+    body.append(ActionRow(components=destinations))
     body.extend([
         Separator(divider=True),
     ])
@@ -2147,7 +2140,14 @@ def _category_select_row(
             # synced; partial() returns UNDEFINED rather than raising.
             emoji=troop_emoji.partial(card.id),
         ))
-    placeholder = f"{category.name} · {summary.collected}/{summary.known}"
+    # Unicode, not the uploaded category emoji. A select menu carries no emoji
+    # field of its own and its placeholder is plain text, so `<:Elixer:123>`
+    # would print verbatim here. Unicode is the only mark Discord will draw on
+    # a closed menu, and four identical-looking menus is worse than none.
+    placeholder = (
+        f"{category.emoji} {category.name} · "
+        f"{summary.collected}/{summary.known}"
+    )
     if summary.collected == summary.known:
         placeholder += " complete"
     elif summary.missing:
@@ -3050,12 +3050,12 @@ def _matches_view(
     # category holds more than nineteen cards, so a per-category menu always
     # fits. This is also what retired the separate browse-by-category screen,
     # which listed cards nobody held and so mostly led to "nobody has this".
+    pickers: list = []
     for category in CATEGORIES:
         offered = [c for c in CATEGORY_CARDS[category.id] if c.id in per_card]
         if not offered:
             continue
-        body.extend([
-            Separator(divider=True),
+        pickers.append(
             ActionRow(components=[TextSelectMenu(
                 custom_id=f"cards_open_card:{tag}|{category.id}",
                 # Unicode, not the uploaded category emoji: a select
@@ -3081,8 +3081,14 @@ def _matches_view(
                     )
                     for card in offered
                 ],
-            )]),
-        ])
+            )])
+        )
+    if pickers:
+        # One divider above the whole block, not one between every menu. The
+        # menus are four of the same thing; dividing them from each other read
+        # as four unrelated sections.
+        body.append(Separator(divider=True))
+        body.extend(pickers)
     if achievable and achievable[0]:
         listed, doable = achievable
         # A menu is not a plan: one spare offered to five people is one trade.
