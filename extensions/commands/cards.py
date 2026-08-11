@@ -72,7 +72,7 @@ from utils.cards import (
 from utils.component_state import delete_state, get_state, insert_state, update_state
 from utils import troop_emoji
 from utils.emoji import emojis
-from utils.constants import GREEN_ACCENT, RED_ACCENT
+from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
 from hikari.impl import (
@@ -95,7 +95,7 @@ from hikari.impl import (
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
 
-ACCOUNT_PAGE_SIZE = 25
+ACCOUNT_PAGE_SIZE = 6
 MATCH_RESULT_LIMIT = 10
 HOLDER_RESULT_LIMIT = 20
 TRADE_VIEW_LIMIT = 5
@@ -627,66 +627,66 @@ def _account_picker(data: AccountsData, page: int = 0) -> list[Container]:
     page = min(_parse_page(page), pages - 1)
     start = page * ACCOUNT_PAGE_SIZE
     window = entries[start:start + ACCOUNT_PAGE_SIZE]
-    options = []
-    for entry in window:
-        town_hall = entry.account.town_hall
-        emoji = _town_hall_emoji(town_hall)
-        # The emoji replaces the "TH17" text when it resolves; when it does
-        # not, the level stays in the label rather than vanishing.
-        label = (
-            entry.account.name
-            if emoji is not hikari.UNDEFINED
-            else f"{entry.account.name} · TH{town_hall}"
-        )
-        options.append(SelectOption(
-            label=_plain(label),
-            value=entry.tag,
-            description=_plain(
-                f"TH{town_hall} · {entry.account.clan_name or 'No clan'} · {entry.tag}",
-                limit=100,
-            ),
-            emoji=emoji,
-        ))
 
+    # One Section per account with its own Open button, rather than a collapsed
+    # select. A select hid every account behind a tap and showed nothing about
+    # them; a Section can carry the town hall, the clan and the tag on screen,
+    # which is what a member actually chooses between.
     body: list = [
-        Text(content="# 🃏 Choose a Card Collection"),
+        Text(content="# Your card collections"),
         Text(content=(
-            "Pick the account you want to update or search with. Collections "
-            "stay separate for every player tag."
+            f"-# {len(entries)} linked account"
+            f"{'s' if len(entries) != 1 else ''} · "
+            "each keeps its own collection"
         )),
         Separator(divider=True),
-        ActionRow(components=[
-            TextSelectMenu(
-                custom_id=f"cards_account_select:{page}",
-                placeholder="Choose one of your Clash accounts...",
-                max_values=1,
-                options=options,
-            )
-        ]),
     ]
+    for position, entry in enumerate(window):
+        account = entry.account
+        town_hall = getattr(account, "town_hall", None)
+        emoji = _town_hall_emoji(town_hall)
+        badge = "" if emoji is hikari.UNDEFINED else f"{emoji.mention} "
+        level = "" if emoji is not hikari.UNDEFINED else f"TH{town_hall} · "
+        body.append(Section(
+            components=[Text(content=(
+                f"{badge}**{_escape_markdown(str(account.name))}** · "
+                f"`{_normalize_tag(entry.tag)}`\n"
+                f"-# {level}{_escape_markdown(str(account.clan_name or 'No clan'))}"
+            ))],
+            accessory=Button(
+                style=(
+                    hikari.ButtonStyle.PRIMARY
+                    if position == 0 and page == 0
+                    else hikari.ButtonStyle.SECONDARY
+                ),
+                custom_id=f"cards_account_open:{_normalize_tag(entry.tag)}",
+                label="Open",
+            ),
+        ))
+
     if pages > 1:
-        body.append(ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_account_page:{page - 1}",
-                label="Previous",
-                is_disabled=page == 0,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_account_page:{page}",
-                label=f"Page {page + 1}/{pages}",
-                is_disabled=True,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_account_page:{page + 1}",
-                label="Next",
-                is_disabled=page >= pages - 1,
-            ),
-        ]))
-    body.append(Media(items=[MediaItem(media=FOOTER)]))
-    return [Container(accent_color=RED_ACCENT, components=body)]
+        body.extend([
+            Separator(divider=False),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_account_page:{page - 1}",
+                    label="Previous",
+                    is_disabled=page == 0,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_account_page:{page + 1}",
+                    label="Next",
+                    is_disabled=page >= pages - 1,
+                ),
+            ]),
+            Text(content=(
+                f"-# Accounts {start + 1}-{start + len(window)} "
+                f"of {len(entries)}"
+            )),
+        ])
+    return [Container(accent_color=GOLD_ACCENT, components=body)]
 
 
 def _scan_field(value: object, *names: str, default=None):
@@ -2032,17 +2032,25 @@ def _category_select_row(account, inventory: dict, category_id: str) -> ActionRo
     summary = category_summary(inventory.get("cards"), category_id)
     saved = normalize_cards(inventory.get("cards"))
     possible = set(_scan_unverified_ids(inventory))
-    options = [
-        SelectOption(
+    confirmed = _confirmed_count_ids(inventory)
+    options = []
+    for card in CATEGORY_CARDS[category_id]:
+        state = saved.get(card.id, OWNED)
+        options.append(SelectOption(
             label=card.name,
             value=card.id,
             description=_card_state_words(
-                saved.get(card.id, OWNED),
+                state,
                 possible_spare=card.id in possible,
+                unconfirmed=(
+                    state == DUPLICATE and card.id not in confirmed
+                ),
             ),
-        )
-        for card in CATEGORY_CARDS[category_id]
-    ]
+            # The troop's own art, so the menu reads as cards rather than a
+            # list of words. Falls back to no emoji when a troop has not been
+            # synced; partial() returns UNDEFINED rather than raising.
+            emoji=troop_emoji.partial(card.id),
+        ))
     placeholder = f"{category.name} · {summary.collected}/{summary.known}"
     if summary.collected == summary.known:
         placeholder += " complete"
@@ -6356,6 +6364,35 @@ async def cards_account_select(
     account, data = await _owned_account(coc_client, int(ctx.user.id), tag)
     if account is None:
         return _account_picker(data, _parse_page(action_id))
+    inventory = await _ensure_inventory(
+        mongo,
+        account,
+        discord_id=int(ctx.user.id),
+        guild_id=_guild_id(ctx),
+    )
+    return await _dashboard_view(
+        account, inventory, account_count=len(_loaded_entries(data))
+    )
+
+
+@register_action("cards_account_open")
+@lightbulb.di.with_di
+async def cards_account_open(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Open one account's collection from its row on the picker."""
+    scope_error = _guild_scope_error(ctx)
+    if scope_error:
+        return _notice("Open Card Hub in its family server", scope_error)
+    account, data = await _owned_account(
+        coc_client, int(ctx.user.id), _normalize_tag(action_id)
+    )
+    if account is None:
+        return _account_picker(data)
     inventory = await _ensure_inventory(
         mongo,
         account,

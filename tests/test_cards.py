@@ -4930,3 +4930,52 @@ def test_family_bullets_survive_a_troop_with_no_synced_emoji():
 
     assert "**Wizard**" in rendered
     assert "None" not in rendered
+
+
+def test_account_picker_gives_every_account_its_own_row_and_button():
+    """A collapsed select hid the accounts; a Section shows them."""
+    accounts = [
+        Account(tag=f"#A{i}", name=f"Member {i}", clan_tag="#HOME",
+                clan_name="Home Clan", town_hall=17 - i)
+        for i in range(3)
+    ]
+    data = _scan_accounts_data(*accounts)
+
+    view = cards_command._account_picker(data)
+    payload = [component.build() for component in view]
+    nodes = list(_walk_payload(payload))
+    text = _view_text(view)
+
+    # Section (type 9) per account, each carrying a Button accessory.
+    sections = [n for n in nodes if n.get("type") == 9]
+    assert len(sections) == 3
+    for section in sections:
+        assert section["accessory"]["type"] == 2          # a Button, not a Thumbnail
+        assert section["accessory"]["custom_id"].startswith("cards_account_open:")
+
+    for account in accounts:
+        assert account.name in text
+        assert f"cards_account_open:{account.tag}" in {
+            n.get("custom_id") for n in nodes if n.get("custom_id")
+        }
+    # No select menu and no disabled page-counter button remain.
+    assert not [n for n in nodes if n.get("type") == 3]
+    assert not [n for n in nodes if n.get("disabled") and n.get("type") == 2]
+    _assert_discord_payload(view)
+
+
+def test_account_picker_paginates_without_a_dead_counter_button():
+    accounts = [
+        Account(tag=f"#A{i}", name=f"Member {i}", clan_tag="#HOME",
+                clan_name="Home Clan", town_hall=16)
+        for i in range(9)
+    ]
+    data = _scan_accounts_data(*accounts)
+
+    first = cards_command._account_picker(data, 0)
+    second = cards_command._account_picker(data, 1)
+
+    assert "Accounts 1-6 of 9" in _view_text(first)
+    assert "Accounts 7-9 of 9" in _view_text(second)
+    _assert_discord_payload(first)
+    _assert_discord_payload(second)
