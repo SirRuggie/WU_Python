@@ -2922,7 +2922,6 @@ def test_all_member_views_build_with_discord_component_limits():
         cards_command._active_trade_notice(account.tag),
         cards_command._matches_view(account, complete, []),
         cards_command._matches_view(account, complete, broad_matches),
-        cards_command._find_category_view(account, complete, "elixir"),
         cards_command._holders_view(account, "root_rider", []),
         cards_command._holders_view(account, "root_rider", specific_matches),
         cards_command._trade_offer_view(
@@ -5023,6 +5022,50 @@ def test_find_trades_absorbs_what_who_has_what_uniquely_showed():
     assert "Wizard" in text
     # And the part that was pure noise is gone: cards nobody can supply.
     assert "Nobody has a spare yet" not in text
+    _assert_discord_payload(view)
+
+
+def test_find_trades_picker_reaches_every_match_and_hides_the_rest():
+    """The single 25-option menu dropped matches; per-category menus cannot."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    # Miss far more than one menu could ever list.
+    missing = [card.id for card in cards.CARDS][:40]
+    for card_id in missing:
+        inventory["cards"][card_id] = cards.MISSING
+
+    base = {card.id: cards.DUPLICATE for card in cards.CARDS}
+    holders = [{
+        "_id": "#H", "player_name": "Holder", "cards": base,
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    matches = cards.find_matches(inventory, holders)
+    view = cards_command._matches_view(account, inventory, matches)
+
+    selects = [
+        n for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith("cards_open_card:")
+    ]
+    offered = {
+        card_id
+        for match in matches
+        for exchange in match.exchanges
+        for card_id in exchange.offers
+    }
+    reachable = {
+        option["value"] for select in selects for option in select["options"]
+    }
+    assert reachable == offered, "every match must be pickable, none invented"
+    assert len(offered) > 25, "the case the old single menu silently truncated"
+    # Four menus in one message need four distinct ids or Discord drops it.
+    ids = [select["custom_id"] for select in selects]
+    assert len(ids) == len(set(ids))
+    for select in selects:
+        assert len(select["options"]) <= 25
     _assert_discord_payload(view)
 
 

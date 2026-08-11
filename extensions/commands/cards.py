@@ -3236,13 +3236,23 @@ def _matches_view(
             )),
         ])
 
-    pickable = [c for c in CARDS if c.id in per_card][:25]
-    if pickable:
+    # One menu per category rather than a single menu capped at 25. The old
+    # single menu silently dropped every match past the twenty-fifth; no
+    # category holds more than nineteen cards, so a per-category menu always
+    # fits. This is also what retired the separate browse-by-category screen,
+    # which listed cards nobody held and so mostly led to "nobody has this".
+    for category in CATEGORIES:
+        offered = [c for c in CATEGORY_CARDS[category.id] if c.id in per_card]
+        if not offered:
+            continue
         body.extend([
             Separator(divider=True),
             ActionRow(components=[TextSelectMenu(
-                custom_id=f"cards_open_card:{tag}",
-                placeholder="Pick a card to see who has it...",
+                custom_id=f"cards_open_card:{tag}|{category.id}",
+                placeholder=(
+                    f"{category.emoji} {category.short_name} "
+                    f"— see who has one ({len(offered)})"
+                )[:150],
                 max_values=1,
                 options=[
                     SelectOption(
@@ -3257,7 +3267,7 @@ def _matches_view(
                         )[:100],
                         emoji=troop_emoji.partial(card.id),
                     )
-                    for card in pickable
+                    for card in offered
                 ],
             )]),
         ])
@@ -3288,87 +3298,6 @@ def _matches_view(
     return [Container(
         accent_color=GREEN_ACCENT if per_card else RED_ACCENT,
         components=body,
-    )]
-
-
-def _find_category_view(account, inventory: dict, category_id: str) -> list[Container]:
-    category = CATEGORY_BY_ID[category_id]
-    cards = normalize_cards(inventory.get("cards"))
-    complete = category_id in set(inventory.get("complete_categories") or ())
-    missing = [card for card in CATEGORY_CARDS[category_id] if cards.get(card.id) == MISSING]
-    if not complete:
-        return _notice(
-            f"Set up {category.short_name} first",
-            "Return to **Update cards**, finish this category, then search for holders.",
-        )
-    if not missing:
-        return [Container(
-            accent_color=GREEN_ACCENT,
-            components=[
-                Text(content=f"# {category.emoji} {category.short_name}"),
-                Text(content="You are not missing any cards in this category."),
-                ActionRow(components=[
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
-                        label="Back to matches",
-                        emoji="⬅️",
-                    )
-                ]),
-                Media(items=[MediaItem(media=FOOTER)]),
-            ],
-        )]
-
-    tag = _normalize_tag(account.tag)
-    # The screen used to be a heading, one line of prose and a collapsed
-    # select, which showed nothing about the cards it was asking about. The
-    # missing cards are now listed with their art so the menu confirms rather
-    # than reveals.
-    listed = "\n".join(
-        f"- {troop_emoji.markup(card.id) + ' ' if troop_emoji.markup(card.id) else ''}"
-        f"**{_escape_markdown(card.name)}**"
-        for card in missing[:12]
-    )
-    if len(missing) > 12:
-        listed += f"\n-# and {len(missing) - 12} more"
-    return [Container(
-        accent_color=CATEGORY_ACCENTS[category_id],
-        components=[
-            Text(content=f"# {category.emoji} {category.name}"),
-            Text(content=(
-                f"You are missing **{len(missing)}** of these. "
-                "Pick one to see who in the family holds a spare.\n"
-                f"{listed}"
-            )),
-            Separator(divider=True),
-            ActionRow(components=[
-                TextSelectMenu(
-                    custom_id=f"cards_find_card:{tag}|{category_id}",
-                    placeholder="Choose a missing card...",
-                    max_values=1,
-                    options=[
-                        SelectOption(
-                            label=card.name,
-                            value=card.id,
-                            emoji=troop_emoji.partial(card.id),
-                        )
-                        for card in missing
-                    ],
-                )
-            ]),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_matches:{tag}",
-                    label="Back to matches",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_dashboard:{tag}",
-                    label="Back to board",
-                ),
-            ]),
-        ],
     )]
 
 
@@ -3490,15 +3419,14 @@ def _holders_view(
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_find_category:{_normalize_tag(account.tag)}|{card.category}",
-                label=f"Other {category.short_name} cards",
+                custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
+                label="Back to Find trades",
                 emoji="⬅️",
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
-                label="All matches",
-                emoji="🔎",
+                custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
+                label="Back to board",
             ),
         ]),
         Media(items=[MediaItem(media=FOOTER)]),
@@ -3558,9 +3486,10 @@ def _trade_offer_view(account, card_id: str, holder) -> list[Container]:
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=(
-                        f"cards_find_category:{_normalize_tag(account.tag)}|{category.id}"
+                        f"cards_holder_page:{_normalize_tag(account.tag)}"
+                        f"|{wanted.id}|0"
                     ),
-                    label=f"Back to {category.short_name}",
+                    label="Back to holders",
                     emoji="⬅️",
                 ),
                 Button(
@@ -8020,59 +7949,6 @@ def _achievable_from_matches(matches, requester_tag: str) -> tuple[int, int]:
     return len(pairs), max_achievable_trades(pairs)
 
 
-@register_action("cards_find_category")
-@lightbulb.di.with_di
-async def cards_find_category(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    tag, category_id = _parse_target(action_id)
-    if category_id is None:
-        return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    if not inventory_is_matchable(inventory):
-        return _stale_collection_notice()
-    return _find_category_view(
-        account, _without_reserved_cards(inventory), category_id
-    )
-
-
-@register_action("cards_find_card")
-@lightbulb.di.with_di
-async def cards_find_card(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    tag, category_id = _parse_target(action_id)
-    values = list(getattr(ctx.interaction, "values", ()) or ())
-    card_id = str(values[0]) if values else ""
-    card = CARD_BY_ID.get(card_id)
-    if category_id is None or card is None or card.category != category_id:
-        return _notice("Unknown card", "Re-run `/cards` to open a fresh card picker.")
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    if not inventory_is_matchable(inventory):
-        return _stale_collection_notice()
-    candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_guild_id(ctx)
-    )
-    holders = holders_for_card(_without_reserved_cards(inventory), candidates, card_id)
-    return _holders_view(account, card_id, holders)
-
-
 @register_action("cards_open_card")
 @lightbulb.di.with_di
 async def cards_open_card(
@@ -8083,10 +7959,14 @@ async def cards_open_card(
     **_kwargs,
 ):
     """Show who holds one card, from the card-shaped Find trades list."""
-    tag = _normalize_tag(action_id)
+    # Find trades draws one menu per category, so the category rides along in
+    # the custom_id: four menus in one message need four distinct ids, and it
+    # doubles as a check that the pick belongs to the menu it came from.
+    tag, category_id = _parse_target(action_id)
     values = list(getattr(ctx.interaction, "values", ()) or ())
     card_id = str(values[0]) if values else ""
-    if card_id not in CARD_BY_ID:
+    card = CARD_BY_ID.get(card_id)
+    if card is None or (category_id is not None and card.category != category_id):
         return _notice("Unknown card", "Open `/cards` again for a fresh list.")
     account, inventory, problem = await _load_target(
         ctx, tag, coc_client=coc_client, mongo=mongo
