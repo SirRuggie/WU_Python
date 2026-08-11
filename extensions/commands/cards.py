@@ -115,21 +115,12 @@ CARD_SCAN_MAX_UPLOAD_ATTACHMENTS = 10
 CARD_SCAN_MIN_CONFIDENCE = 0.75
 CARD_SCAN_CONCURRENCY = 2
 HIDDEN_BADGE_BATCH_SIZE = 25
-CARD_BROWSER_PAGE_SIZE = 4
 COLLECTION_LINK = "https://link.clashofclans.com/en/?action=OpenCollection"
 GLOBAL_CHAT_LINK = (
     "https://link.clashofclans.com/?action=OpenGlobalChat&"
     "chatId=P592bad3209a4408a9ba356469caaaa81"
 )
 FOOTER = "assets/Red_Footer.png"
-
-CATEGORY_CHIP_LABELS = {
-    "elixir": "Elixir",
-    "dark_elixir": "Dark",
-    "builder_base": "Builder",
-    "super_troop": "Super",
-}
-
 
 def _parse_snowflake_env(name: str) -> int | None:
     raw = os.getenv(name, "").strip()
@@ -420,10 +411,6 @@ def _parse_editor_target(value: object) -> tuple[str, str | None]:
     )
 
 
-def _parse_editor_search_target(value: object) -> str:
-    return _normalize_tag(value)
-
-
 def _parse_card_step_target(value: object) -> tuple[str, str | None, int]:
     parts = str(value or "").split("|")
     tag = _normalize_tag(parts[0] if parts else "")
@@ -461,15 +448,6 @@ def _parse_editor_category_target(value: object) -> tuple[str, str | None, int]:
     except (TypeError, ValueError):
         page = 0
     return tag, category_id, page
-
-
-def _parse_hidden_target(value: object) -> tuple[str, int | None]:
-    tag, separator, revision = str(value or "").partition("|")
-    try:
-        parsed_revision = max(0, int(revision)) if separator else None
-    except (TypeError, ValueError):
-        parsed_revision = None
-    return _normalize_tag(tag), parsed_revision
 
 
 def _card_search_key(value: object) -> str:
@@ -1828,19 +1806,6 @@ async def _load_target(
     return account, inventory, None
 
 
-def _category_line(inventory: dict, category_id: str) -> str:
-    category = CATEGORY_BY_ID[category_id]
-    complete = category_id in set(inventory.get("complete_categories") or ())
-    if not complete:
-        return f"{category.emoji} **{category.short_name}:** not set up"
-    summary = category_summary(inventory.get("cards"), category_id)
-    return (
-        f"{category.emoji} **{category.short_name}:** "
-        f"{summary.collected}/{summary.known} owned · "
-        f"{summary.duplicates} duplicate{'s' if summary.duplicates != 1 else ''}"
-    )
-
-
 def _scan_unverified_ids(inventory: dict) -> list[str]:
     values = inventory.get("scan_duplicate_unverified_card_ids") or ()
     parsed, _invalid = _scan_id_set(values)
@@ -1907,26 +1872,10 @@ def _scan_board_values(draft: dict) -> dict:
     return values
 
 
-def _scan_board_media(account, draft: dict, *, rendered_board=None) -> Media:
-    return _card_board_media(
-        _scan_board_values(draft),
-        player_name=account.name,
-        rendered_board=rendered_board,
-    )
-
-
 async def _render_inventory_board_async(account, inventory: dict):
     return await asyncio.to_thread(
         render_inventory_card_board,
         _inventory_board_values(inventory),
-        player_name=str(account.name or "Player"),
-    )
-
-
-async def _render_scan_board_async(account, draft: dict):
-    return await asyncio.to_thread(
-        render_inventory_card_board,
-        _scan_board_values(draft),
         player_name=str(account.name or "Player"),
     )
 
@@ -2443,270 +2392,6 @@ def _saved_count_line(card_name: str, count: int) -> str:
         f"You have {count} {card_name} · "
         f"{spare} spare {'copies' if spare != 1 else 'copy'} to trade."
     )
-
-
-def _editor_state_text(
-    state: int,
-    *,
-    possible_spare: bool,
-    reserved: bool,
-) -> str:
-    if reserved:
-        return "Reserved by an accepted trade"
-    if possible_spare:
-        return "1 copy confirmed · duplicate badge needs checking"
-    if state == MISSING:
-        return "Missing · 0 copies"
-    if state == OWNED:
-        return "Have 1"
-    if isinstance(state, int) and state >= DUPLICATE:
-        # Counts are stored exactly now, so a member holding four is told four
-        # rather than the old flat "2+ copies".
-        return f"Have {state} · {state - 1} to trade"
-    return "State unknown"
-
-
-def _category_accent(category_id: str) -> int:
-    return CATEGORY_ACCENTS[category_id]
-
-
-def _editor_location(card_id: str) -> tuple[str, int]:
-    card = CARD_BY_ID.get(card_id) or CARDS[0]
-    definitions = CATEGORY_CARDS[card.category]
-    index = next(
-        index for index, definition in enumerate(definitions)
-        if definition.id == card.id
-    )
-    return card.category, index // CARD_BROWSER_PAGE_SIZE
-
-
-def _browser_card_state(inventory: dict, card_id: str) -> int | str:
-    if card_id in set(_scan_unverified_ids(inventory)):
-        return OWNED_SPARE_UNVERIFIED
-    return normalize_cards(inventory.get("cards")).get(card_id, OWNED)
-
-
-def _render_browser_tiles(inventory: dict, card_ids: list[str]) -> dict[str, object]:
-    return {
-        card_id: render_card_thumbnail(
-            card_id,
-            _browser_card_state(inventory, card_id),
-        )
-        for card_id in card_ids
-    }
-
-
-def _category_chip_label(inventory: dict, category_id: str, *, selected: bool) -> str:
-    summary = category_summary(inventory.get("cards"), category_id)
-    check = " ✓" if summary.collected == summary.known else ""
-    marker = "• " if selected else ""
-    return (
-        f"{marker}{CATEGORY_CHIP_LABELS[category_id]} "
-        f"{summary.collected}/{summary.known}{check}"
-    )
-
-
-def _category_browser(
-    account,
-    inventory: dict,
-    category_id: str,
-    page: int = 0,
-    *,
-    saved: str | None = None,
-    rendered_tiles: dict[str, object] | None = None,
-) -> list[Container]:
-    if category_id not in CATEGORY_BY_ID:
-        category_id = CATEGORIES[0].id
-    category = CATEGORY_BY_ID[category_id]
-    definitions = CATEGORY_CARDS[category_id]
-    page_count = max(1, math.ceil(len(definitions) / CARD_BROWSER_PAGE_SIZE))
-    page = min(max(0, int(page)), page_count - 1)
-    start = page * CARD_BROWSER_PAGE_SIZE
-    visible = list(definitions[start:start + CARD_BROWSER_PAGE_SIZE])
-    tiles = rendered_tiles or _render_browser_tiles(
-        inventory, [card.id for card in visible]
-    )
-    tag = _normalize_tag(account.tag)
-    saved_cards = normalize_cards(inventory.get("cards"))
-    possible_spares = set(_scan_unverified_ids(inventory))
-    reservations = _card_reservations(inventory)
-    summary = category_summary(inventory.get("cards"), category_id)
-
-    heading = (
-        f"# Clash of Cards\n"
-        f"**{_escape_markdown(account.name)}** · `{tag}`\n"
-        f"**{category.name}** · {summary.collected}/{summary.known} collected · "
-        f"{summary.duplicates} spare{'s' if summary.duplicates != 1 else ''} · "
-        f"page {page + 1}/{page_count}"
-    )
-    if summary.collected == summary.known:
-        heading += " · **✓ Complete**"
-    if saved:
-        heading += f"\n**Saved:** {_escape_markdown(saved, limit=120)}"
-
-    category_buttons = [
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_editor_category:{tag}|{item.id}|0|chip",
-            label=_category_chip_label(
-                inventory,
-                item.id,
-                selected=item.id == category_id,
-            ),
-        )
-        for item in CATEGORIES
-    ]
-    body: list = [
-        Text(content=heading),
-        ActionRow(components=category_buttons),
-    ]
-
-    for card in visible:
-        state = saved_cards.get(card.id, OWNED)
-        possible_spare = card.id in possible_spares
-        reserved = card.id in reservations
-        state_text = _editor_state_text(
-            state,
-            possible_spare=possible_spare,
-            reserved=reserved,
-        )
-        tile = tiles[card.id]
-        if possible_spare and not reserved:
-            controls = [
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_editor_dec:{tag}|{card.id}",
-                    label="Missing — have 0",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_editor_keep:{tag}|{card.id}",
-                    label="No — have 1",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_editor_inc:{tag}|{card.id}",
-                    label="Yes — spare",
-                ),
-            ]
-        else:
-            controls = [
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_editor_dec:{tag}|{card.id}",
-                    label="−1",
-                    is_disabled=reserved or state <= MISSING,
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_editor_inc:{tag}|{card.id}",
-                    label="+1",
-                    is_disabled=reserved or state >= DUPLICATE,
-                ),
-            ]
-        body.extend([
-            Section(
-                components=[Text(content=(
-                    f"## {card.name}\n**{state_text}**"
-                ))],
-                accessory=Thumbnail(
-                    media=hikari.Bytes(
-                        tile.png_bytes,
-                        tile.filename,
-                        "image/png",
-                    ),
-                    description=tile.alt_text,
-                ),
-            ),
-            ActionRow(components=controls),
-        ])
-
-    body.append(ActionRow(components=[
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_editor_category:{tag}|{category_id}|{page - 1}",
-            label="Previous",
-            is_disabled=page == 0,
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_editor_find:{tag}",
-            label="Find card",
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_editor_category:{tag}|{category_id}|{page + 1}",
-            label="Next",
-            is_disabled=page == page_count - 1,
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_dashboard:{tag}",
-            label="Done",
-        ),
-    ]))
-    return [Container(
-        accent_color=_category_accent(category_id),
-        components=body,
-    )]
-
-
-def _card_editor(
-    account,
-    inventory: dict,
-    card_id: str,
-    *,
-    saved: str | None = None,
-    rendered_tiles: dict[str, object] | None = None,
-) -> list[Container]:
-    category_id, page = _editor_location(card_id)
-    return _category_browser(
-        account,
-        inventory,
-        category_id,
-        page,
-        saved=saved,
-        rendered_tiles=rendered_tiles,
-    )
-
-
-def _editor_search_choices(
-    account,
-    inventory: dict,
-    query: object,
-) -> list[Container]:
-    matches = _card_name_matches(query)
-    tag = _normalize_tag(account.tag)
-    body: list = [
-        Text(content="# Choose a card"),
-        Text(content=(
-            "Tap the card you meant."
-            if matches
-            else "I could not match that name. Try the full card name."
-        )),
-    ]
-    if matches:
-        body.append(ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_editor:{tag}|{card.id}",
-                label=card.name,
-            )
-            for card in matches
-        ]))
-    body.append(ActionRow(components=[
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_editor_find:{tag}",
-            label="Try another name",
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_dashboard:{tag}",
-            label="Done",
-        ),
-    ]))
-    return [Container(components=body)]
 
 
 def _quick_transition_problem(inventory: dict, card_id: str, mode: str) -> str | None:
@@ -3253,41 +2938,6 @@ async def _dashboard_view(account, inventory: dict, *, account_count: int):
         inventory,
         account_count=account_count,
         rendered_board=board,
-    )
-
-
-async def _category_browser_view(
-    account,
-    inventory: dict,
-    category_id: str,
-    page: int = 0,
-    *,
-    saved: str | None = None,
-):
-    if category_id not in CATEGORY_BY_ID:
-        return _category_browser(
-            account,
-            inventory,
-            category_id,
-            page,
-            saved=saved,
-        )
-    definitions = CATEGORY_CARDS[category_id]
-    page_count = max(1, math.ceil(len(definitions) / CARD_BROWSER_PAGE_SIZE))
-    page = min(max(0, int(page)), page_count - 1)
-    start = page * CARD_BROWSER_PAGE_SIZE
-    card_ids = [
-        card.id
-        for card in definitions[start:start + CARD_BROWSER_PAGE_SIZE]
-    ]
-    tiles = await asyncio.to_thread(_render_browser_tiles, inventory, card_ids)
-    return _category_browser(
-        account,
-        inventory,
-        category_id,
-        page,
-        saved=saved,
-        rendered_tiles=tiles,
     )
 
 
@@ -4898,18 +4548,6 @@ async def _live_clan_tag(coc_client: coc.Client, tag: str) -> str | None:
         return None
     clan = getattr(player, "clan", None)
     return _normalize_tag(getattr(clan, "tag", None)) if clan else None
-
-
-async def _live_same_family_clan(
-    mongo: MongoClient,
-    coc_client: coc.Client,
-    left_tag: str,
-    right_tag: str,
-) -> str | None:
-    clans = await _live_family_clans(mongo, coc_client, left_tag, right_tag)
-    if clans is None or clans[0] != clans[1]:
-        return None
-    return clans[0]
 
 
 async def _live_family_clans(
@@ -7501,26 +7139,6 @@ async def cards_dashboard(
     )
 
 
-@register_action("cards_editor")
-@lightbulb.di.with_di
-async def cards_editor(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    tag, card_id = _parse_editor_target(action_id)
-    if card_id is None:
-        return _notice("Card unavailable", "Open `/cards` again.")
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    return await _card_editor_view(account, inventory, card_id)
-
-
 @register_action("cards_pick")
 @lightbulb.di.with_di
 async def cards_pick(
@@ -7838,26 +7456,6 @@ async def cards_count_submit(
     await ctx.interaction.edit_initial_response(components=view)
 
 
-@register_action("cards_editor_category")
-@lightbulb.di.with_di
-async def cards_editor_category(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    tag, category_id, page = _parse_editor_category_target(action_id)
-    if category_id is None:
-        return _notice("Category unavailable", "Open `/cards` again.")
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    return await _category_browser_view(account, inventory, category_id, page)
-
-
 async def _card_editor_step(
     ctx,
     action_id: str,
@@ -8001,60 +7599,6 @@ async def cards_editor_keep(
         pending[0] if pending else card_id,
         saved=f"{CARD_BY_ID[card_id].name} stays at 1 copy.",
     )
-
-
-@register_action("cards_editor_find", opens_modal=True, no_return=True)
-@lightbulb.di.with_di
-async def cards_editor_find(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    **_kwargs,
-):
-    tag = _parse_editor_search_target(action_id)
-    if not tag:
-        await ctx.respond(
-            components=_notice("Card search expired", "Open `/cards` again."),
-            ephemeral=True,
-        )
-        return
-    card_input = ModalActionRow().add_text_input(
-        "card_name",
-        "Card name",
-        placeholder="Example: Root Rider",
-        min_length=2,
-        max_length=50,
-        required=True,
-    )
-    await ctx.respond_with_modal(
-        title="Find a card",
-        custom_id=f"cards_editor_find_submit:{tag}",
-        components=[card_input],
-    )
-
-
-@register_action("cards_editor_find_submit", is_modal=True, no_return=True)
-@lightbulb.di.with_di
-async def cards_editor_find_submit(
-    ctx: lightbulb.components.ModalContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    await ctx.defer(ephemeral=True)
-    tag = _parse_editor_search_target(action_id)
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        view = problem
-    else:
-        view = _editor_search_choices(
-            account,
-            inventory,
-            _modal_text_value(ctx, "card_name"),
-        )
-    await ctx.interaction.edit_initial_response(components=view)
 
 
 @register_action("cards_update")
@@ -8215,51 +7759,6 @@ async def cards_hidden(
     if not _scan_unverified_ids(inventory):
         return _quick_update_panel(account, inventory)
     return await _hidden_badge_review_view(account, inventory)
-
-
-async def _hidden_badge_update(
-    ctx,
-    action_id: str,
-    *,
-    selected: list[str],
-    coc_client: coc.Client,
-    mongo: MongoClient,
-):
-    tag, revision = _parse_hidden_target(action_id)
-    if revision is None:
-        return _notice("Review expired", "Open Quick update again.")
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    batch = _scan_unverified_ids(inventory)[:HIDDEN_BADGE_BATCH_SIZE]
-    if not batch or _inventory_revision_value(inventory) != revision:
-        return _notice(
-            "Collection changed",
-            "Nothing was overwritten. Open Quick update to see the current list.",
-        )
-    try:
-        updated = await _write_hidden_badge_batch(
-            mongo,
-            account,
-            inventory,
-            batch,
-            selected,
-            expected_revision=revision,
-            discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
-        )
-    except ActiveCardTradeError:
-        return _reserved_card_notice(account.tag)
-    except (InventoryWriteConflict, ValueError):
-        return _notice(
-            "Collection changed",
-            "Nothing was overwritten. Open Quick update to see the current list.",
-        )
-    if _scan_unverified_ids(updated):
-        return await _hidden_badge_review_view(account, updated)
-    return _quick_update_panel(account, updated, saved="Possible spares checked.")
 
 
 @register_action("cards_category")
@@ -8473,21 +7972,6 @@ async def cards_baseline(
     except InventoryWriteConflict:
         return _inventory_retry_notice()
     return _category_editor(account, inventory, category_id)
-
-
-async def cards_review(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    account, inventory, problem = await _load_target(
-        ctx, action_id, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    return await _review_view(account, inventory)
 
 
 @register_action("cards_matches")
