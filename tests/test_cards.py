@@ -4588,6 +4588,25 @@ def test_board_destinations_are_buttons_not_two_line_rows():
     _assert_discord_payload(view)
 
 
+def test_every_scan_button_carries_the_scan_mark():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    views = [
+        cards_command._dashboard(account, _complete_inventory(), account_count=1),
+        cards_command._scan_dm_unavailable(account),
+    ]
+    seen = 0
+    for view in views:
+        for node in _view_nodes(view):
+            if str(node.get("custom_id", "")).startswith("cards_scan_start:"):
+                emoji = node.get("emoji") or {}
+                assert emoji.get("id") == "1536807847042613398", node.get("label")
+                seen += 1
+    assert seen == 2, f"only checked {seen} scan buttons"
+
+
 def test_the_sort_button_is_marked_in_every_order():
     """The label changes as it cycles; the mark identifying it must not."""
     account = Account(
@@ -5103,6 +5122,7 @@ def test_refresh_and_pagination_use_the_uploaded_control_emoji():
         (cards_command.TRADES_EMOJI, 1536798617736847431),
         (cards_command.SWITCH_EMOJI, 1536798904056815806),
         (cards_command.SORT_EMOJI, 1536804681555247144),
+        (cards_command.SCAN_EMOJI, 1536807847042613398),
     ):
         assert resolved is not hikari.UNDEFINED
         assert resolved.id == expected

@@ -115,6 +115,7 @@ class Emojis:
         self.inbox = EmojiType("<:inbox:1536798617736847431>")
         self.switch = EmojiType("<:switch_horizontal_arrows:1536798904056815806>")
         self.sort = EmojiType("<:sort_updown_arrows:1536804681555247144>")
+        self.scan = EmojiType("<:scan_viewfinder:1536807847042613398>")
         # Clash of Cards categories. Names match what was uploaded to the bot.
         self.card_elixir = EmojiType("<:Elixer:1536777630278357164>")
         self.card_dark_elixir = EmojiType("<:Dark_Elixer:1536777729511391322>")

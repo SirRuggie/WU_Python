@@ -180,6 +180,7 @@ CANCEL_EMOJI = _safe_partial(emojis.no)
 TRADES_EMOJI = _safe_partial(emojis.inbox)
 SWITCH_EMOJI = _safe_partial(emojis.switch)
 SORT_EMOJI = _safe_partial(emojis.sort)
+SCAN_EMOJI = _safe_partial(emojis.scan)
 NEXT_EMOJI = _safe_partial(emojis.next_page)
 PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
@@ -1168,7 +1169,7 @@ def _scan_upload_prompt(
     return [Container(
         accent_color=RED_ACCENT,
         components=[
-            Text(content="# 📸 Send Your Card Screenshots"),
+            Text(content=f"# {emojis.scan} Send Your Card Screenshots"),
             Text(content=(
                 f"## {_escape_markdown(account.name)} · `{_normalize_tag(account.tag)}`\n"
                 "Open the full **Clash of Cards** collection, then send all of its "
@@ -1207,7 +1208,7 @@ def _scan_upload_started(account, *, usable_until: object) -> list[Container]:
     return [Container(
         accent_color=GREEN_ACCENT,
         components=[
-            Text(content="# 📸 Private Upload Ready"),
+            Text(content=f"# {emojis.scan} Private Upload Ready"),
             Text(content=(
                 f"I sent **{_escape_markdown(account.name)}** a private upload DM. "
                 "Open it, select every collection screenshot at once, and send. "
@@ -1243,7 +1244,7 @@ def _scan_dm_unavailable(account) -> list[Container]:
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"cards_scan_start:{_normalize_tag(account.tag)}",
                     label="Try scan again",
-                    emoji="📸",
+                    emoji=SCAN_EMOJI,
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -1341,7 +1342,7 @@ def _scan_upload_progress(
     return [Container(
         accent_color=RED_ACCENT,
         components=[
-            Text(content="# 📸 I Still Need More of the Collection"),
+            Text(content=f"# {emojis.scan} I Still Need More of the Collection"),
             Text(content=(
                 f"## {_escape_markdown(account.name)} · `{_normalize_tag(account.tag)}`\n"
                 f"{result}\n\n"
@@ -1534,7 +1535,7 @@ def _scan_accounts_problem(
     return [Container(
         accent_color=RED_ACCENT,
         components=[
-            Text(content="# 📸 Account Check Needed"),
+            Text(content=f"# {emojis.scan} Account Check Needed"),
             Text(content=(
                 f"{reason} The selected profile must load before its screenshot "
                 f"draft can be shown or saved. {preserved}\n\n{privacy}"
@@ -1996,6 +1997,7 @@ def _dashboard(
             ),
             custom_id=f"cards_scan_start:{tag}",
             label="Scan screenshots",
+            emoji=SCAN_EMOJI,
         ),
         Button(
             style=hikari.ButtonStyle.SECONDARY,
