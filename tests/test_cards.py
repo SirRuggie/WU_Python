@@ -2646,97 +2646,6 @@ def test_possible_spare_board_state_keeps_proven_ownership():
     )
 
 
-def test_card_name_modal_lookup_is_exact_or_typo_tolerant_then_confirms():
-    assert [card.id for card in cards_command._card_name_matches("Root Rider")] == [
-        "root_rider"
-    ]
-    assert cards_command._card_name_matches("root ridr")[0].id == "root_rider"
-    assert cards_command._card_name_matches("not a real card") == ()
-
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    inventory["inventory_revision"] = 9
-    inventory["cards"]["root_rider"] = cards.MISSING
-    nodes = _view_nodes(cards_command._quick_confirmation(
-        account, inventory, "found", "root ridr"
-    ))
-    assert any(
-        node.get("custom_id") == "cards_quick_apply:#ME|found|root_rider|9"
-        for node in nodes
-    )
-    assert "Did you mean" in _view_text(cards_command._quick_confirmation(
-        account, inventory, "found", "root ridr"
-    ))
-
-
-def test_quick_card_modal_opens_without_waiting_for_account_io():
-    class Ctx:
-        def __init__(self):
-            self.modals = []
-
-        async def respond_with_modal(self, **kwargs):
-            self.modals.append(kwargs)
-
-    ctx = Ctx()
-    asyncio.run(cards_command.cards_quick_modal(ctx, "#ME|spare"))
-
-    assert len(ctx.modals) == 1
-    assert ctx.modals[0]["title"] == "Got a spare"
-    assert ctx.modals[0]["custom_id"] == "cards_quick_submit:#ME|spare"
-
-
-def test_quick_modal_submit_defers_before_loading_account(monkeypatch):
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    inventory["inventory_revision"] = 4
-
-    class Interaction:
-        components = [[SimpleNamespace(custom_id="card_name", value="Wizard")]]
-
-        def __init__(self):
-            self.edits = []
-
-        async def edit_initial_response(self, **kwargs):
-            self.edits.append(kwargs)
-
-    class Ctx:
-        def __init__(self):
-            self.deferred = False
-            self.interaction = Interaction()
-            self.user = SimpleNamespace(id=123)
-            self.guild_id = 1
-
-        async def defer(self, *, ephemeral=False):
-            assert ephemeral is True
-            self.deferred = True
-
-    ctx = Ctx()
-
-    async def load_target(*_args, **_kwargs):
-        assert ctx.deferred is True
-        return account, inventory, None
-
-    monkeypatch.setattr(cards_command, "_load_target", load_target)
-    asyncio.run(cards_command.cards_quick_submit(
-        ctx,
-        "#ME|spare",
-        coc_client=SimpleNamespace(),
-        mongo=SimpleNamespace(),
-    ))
-
-    assert len(ctx.interaction.edits) == 1
-    assert any(
-        node.get("custom_id") == "cards_quick_apply:#ME|spare|wizard|4"
-        for node in _view_nodes(ctx.interaction.edits[0]["components"])
-    )
-
-
 def test_one_card_quick_update_uses_exact_card_reservation_and_revision_guards():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
@@ -3950,11 +3859,12 @@ def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed(
     ]
     assert saved["update_source"] == "confirmed_screenshot_review"
     assert saved["inventory_revision"] == 1
-    quick_update = cards_command._quick_update_panel(account, saved)
-    assert "2 possible spares need one check" in _view_text(quick_update)
+    # The board both reports the pending check and carries the button for it.
+    board = cards_command._dashboard(account, saved, account_count=1)
+    assert "2 cards need a duplicate check" in _view_text(board)
     assert any(
         node.get("custom_id") == "cards_hidden:#ME"
-        for node in _view_nodes(quick_update)
+        for node in _view_nodes(board)
     )
 
     category_collection = _FakeCategoryCollection(saved)
@@ -5066,6 +4976,40 @@ def test_find_trades_picker_reaches_every_match_and_hides_the_rest():
     assert len(ids) == len(set(ids))
     for select in selects:
         assert len(select["options"]) <= 25
+    _assert_discord_payload(view)
+
+
+def test_board_controls_wrap_instead_of_dropping_the_sixth():
+    """Every control the board decides to show must actually be rendered."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    # The state that produces the most controls at once: some categories set
+    # up but not all, a stale confirmation, a pending spare check, and more
+    # than one linked account.
+    inventory = _complete_inventory()
+    inventory["complete_categories"] = ["elixir"]
+    inventory["confirmed_at"] = datetime.now(timezone.utc) - timedelta(days=5)
+    inventory["scan_duplicate_unverified_card_ids"] = ["wizard"]
+
+    view = cards_command._dashboard(account, inventory, account_count=3)
+    ids = {n.get("custom_id") for n in _view_nodes(view)}
+
+    # Six controls: one more than a row holds, so the last one is exactly what
+    # the old slice discarded.
+    for expected in (
+        "cards_scan_start:#ME",
+        "cards_sort:#ME",
+        "cards_hidden:#ME",
+        "cards_advanced:#ME",
+        "cards_confirm:#ME",
+        "cards_account_page:0",
+    ):
+        assert expected in ids, f"{expected} was dropped from the board"
+    for node in _view_nodes(view):
+        if node.get("type") == 1:
+            assert len(node.get("components", [])) <= 5
     _assert_discord_payload(view)
 
 

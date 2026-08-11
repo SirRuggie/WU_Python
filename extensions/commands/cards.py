@@ -325,36 +325,6 @@ def _inventory_retry_notice() -> list[Container]:
     )
 
 
-def _reserved_card_notice(tag: str) -> list[Container]:
-    tag = _normalize_tag(tag)
-    return [Container(
-        accent_color=RED_ACCENT,
-        components=[
-            Text(content="# That card is reserved"),
-            Text(content=(
-                "An accepted swap is protecting this card. Finish or cancel "
-                "the swap before changing it."
-            )),
-            Separator(divider=True),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"cards_trades:{tag}",
-                    label="My trades",
-                    emoji="🤝",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_update:{tag}",
-                    label="Quick update",
-                    emoji="⬅️",
-                ),
-            ]),
-            Media(items=[MediaItem(media=FOOTER)]),
-        ],
-    )]
-
-
 def _loaded_entries(data: AccountsData) -> list[AccountEntry]:
     return [
         entry
@@ -374,33 +344,6 @@ def _parse_target(value: str) -> tuple[str, str | None]:
     tag, separator, category_id = str(value or "").partition("|")
     category = category_id if separator and category_id in CATEGORY_BY_ID else None
     return _normalize_tag(tag), category
-
-
-def _parse_quick_target(value: object) -> tuple[str, str | None]:
-    tag, separator, mode = str(value or "").partition("|")
-    return (
-        _normalize_tag(tag),
-        mode if separator and mode in QUICK_CARD_ACTIONS else None,
-    )
-
-
-def _parse_quick_apply_target(
-    value: object,
-) -> tuple[str, str | None, str | None, int | None]:
-    parts = str(value or "").split("|", 3)
-    if len(parts) != 4:
-        return "", None, None, None
-    tag, mode, card_id, revision = parts
-    try:
-        parsed_revision = max(0, int(revision))
-    except (TypeError, ValueError):
-        parsed_revision = None
-    return (
-        _normalize_tag(tag),
-        mode if mode in QUICK_CARD_ACTIONS else None,
-        card_id if card_id in CARD_BY_ID else None,
-        parsed_revision,
-    )
 
 
 def _parse_editor_target(value: object) -> tuple[str, str | None]:
@@ -2001,6 +1944,15 @@ def _dashboard(
             label=CARD_SORT_LABELS[sort],
         ),
     ]
+    if unverified_duplicates:
+        # The note above already says these need checking. Until now the only
+        # button that acted on it lived on a screen the board could not reach,
+        # so the note was advice with nowhere to go.
+        collection_row.append(Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_hidden:{tag}",
+            label=f"Check spares ({len(unverified_duplicates)})",
+        ))
     if not all_complete:
         collection_row.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -2019,7 +1971,12 @@ def _dashboard(
             custom_id="cards_account_page:0",
             label="Switch account",
         ))
-    body.append(ActionRow(components=collection_row[:5]))
+    # Wrap rather than slice. Discord takes five buttons to a row, and the
+    # previous [:5] quietly dropped the sixth: a member with an unfinished
+    # collection, a stale confirmation and several accounts lost a control
+    # without anything saying so.
+    for index in range(0, len(collection_row), 5):
+        body.append(ActionRow(components=collection_row[index:index + 5]))
 
     body.append(Separator(divider=True))
     for icon, title, blurb, custom_id, style, enabled in destinations:
@@ -2424,188 +2381,6 @@ def _quick_transition_problem(inventory: dict, card_id: str, mode: str) -> str |
     return None
 
 
-def _quick_update_panel(
-    account,
-    inventory: dict,
-    *,
-    saved: str | None = None,
-) -> list[Container]:
-    complete = set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
-    ready = len(complete) == len(CATEGORIES)
-    unverified = _scan_unverified_ids(inventory)
-    body: list = [
-        Text(content="# ⚡ Quick Update"),
-        Text(content=(
-            f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
-            "Choose what changed, then type one card name. You will confirm it "
-            "before anything saves."
-        )),
-    ]
-    if saved:
-        body.extend([
-            Separator(divider=True),
-            Text(content=f"✅ {saved}"),
-        ])
-    if not ready:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                "**First setup is not finished.** Scan the screenshots, or use "
-                "the Advanced full editor."
-            )),
-        ])
-    if unverified:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                f"📸 **{len(unverified)} possible spare"
-                f"{'s' if len(unverified) != 1 else ''} need one check.**"
-            )),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"cards_hidden:{_normalize_tag(account.tag)}",
-                    label=f"Check possible spares ({len(unverified)})",
-                    emoji="👀",
-                ),
-            ]),
-        ])
-    body.extend([
-        Separator(divider=True),
-        ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"cards_quick_modal:{_normalize_tag(account.tag)}|found",
-                label="Found missing card",
-                emoji="✅",
-                is_disabled=not ready,
-            ),
-            Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"cards_quick_modal:{_normalize_tag(account.tag)}|spare",
-                label="Got a spare",
-                emoji="➕",
-                is_disabled=not ready,
-            ),
-        ]),
-        ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_quick_modal:{_normalize_tag(account.tag)}|used",
-                label="Used/traded spare",
-                emoji="↘️",
-                is_disabled=not ready,
-            ),
-            Button(
-                style=hikari.ButtonStyle.DANGER,
-                custom_id=f"cards_quick_modal:{_normalize_tag(account.tag)}|missing",
-                label="Mark missing",
-                emoji="❌",
-                is_disabled=not ready,
-            ),
-        ]),
-        Separator(divider=True),
-        ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"cards_scan_start:{_normalize_tag(account.tag)}",
-                label="Scan screenshots",
-                emoji="📸",
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-                label="Advanced full editor",
-                emoji="⚙️",
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                label="Dashboard",
-                emoji="⬅️",
-            ),
-        ]),
-        Media(items=[MediaItem(media=FOOTER)]),
-    ])
-    return [Container(
-        accent_color=GREEN_ACCENT if ready else RED_ACCENT,
-        components=body,
-    )]
-
-
-def _quick_confirmation(
-    account,
-    inventory: dict,
-    mode: str,
-    query: object,
-) -> list[Container]:
-    action = QUICK_CARD_ACTIONS[mode]
-    matches = _card_name_matches(query)
-    tag = _normalize_tag(account.tag)
-    revision = _inventory_revision_value(inventory)
-    query_key = _card_search_key(query)
-    exact = bool(matches) and query_key == _card_search_key(matches[0].name)
-    body: list = [
-        Text(content=f"# {action['emoji']} {action['label']}"),
-        Text(content=(
-            "Confirm the card below. Nothing changes until you tap a card."
-            if matches
-            else "I could not match that name. Try the full card name."
-        )),
-    ]
-    valid = []
-    problems = []
-    for card in matches:
-        problem = _quick_transition_problem(inventory, card.id, mode)
-        if problem:
-            problems.append(problem)
-        else:
-            valid.append(card)
-    if valid:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                f"**{'Exact match' if exact else 'Did you mean'}:** "
-                + ", ".join(card.name for card in valid)
-            )),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.SUCCESS,
-                    custom_id=(
-                        f"cards_quick_apply:{tag}|{mode}|{card.id}|{revision}"
-                    ),
-                    label=card.name,
-                    emoji=action["emoji"],
-                )
-                for card in valid
-            ]),
-        ])
-    elif problems:
-        body.extend([
-            Separator(divider=True),
-            Text(content=problems[0]),
-        ])
-    body.extend([
-        Separator(divider=True),
-        ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"cards_quick_modal:{tag}|{mode}",
-                label="Try another name",
-                emoji="⌨️",
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_update:{tag}",
-                label="Quick update",
-                emoji="⬅️",
-            ),
-        ]),
-        Media(items=[MediaItem(media=FOOTER)]),
-    ])
-    return [Container(accent_color=RED_ACCENT, components=body)]
-
-
 def _hidden_badge_review(
     account,
     inventory: dict,
@@ -2721,7 +2496,7 @@ def _hidden_badge_review(
                 custom_id=(
                     f"cards_scan_hidden_later:{session_id}"
                     if state_bound
-                    else f"cards_update:{tag}"
+                    else f"cards_dashboard:{tag}"
                 ),
                 label="Finish later",
             ),
@@ -6715,7 +6490,6 @@ async def _confirm_scan_draft(
     ctx,
     action_id: str,
     *,
-    edit_after: bool,
     scan_draft: dict,
     user_id: object,
     guild_id: object,
@@ -6818,8 +6592,6 @@ async def _confirm_scan_draft(
     await _discard_scan_state(mongo, action_id)
     if _guild_id(ctx) is None:
         return _scan_saved_notice(account)
-    if edit_after:
-        return _quick_update_panel(account, updated)
     spare_prompt = _spare_counts_panel(account, updated)
     if spare_prompt is not None:
         return spare_prompt
@@ -6846,7 +6618,6 @@ async def cards_scan_confirm(
     return await _confirm_scan_draft(
         ctx,
         action_id,
-        edit_after=False,
         scan_draft=scan_draft,
         user_id=user_id,
         guild_id=guild_id,
@@ -7530,23 +7301,6 @@ async def cards_editor_keep(
     )
 
 
-@register_action("cards_update")
-@lightbulb.di.with_di
-async def cards_update(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    account, inventory, problem = await _load_target(
-        ctx, action_id, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    return _quick_update_panel(account, inventory)
-
-
 @register_action("cards_advanced")
 @lightbulb.di.with_di
 async def cards_advanced(
@@ -7562,113 +7316,12 @@ async def cards_advanced(
     return problem or _update_overview(account, inventory)
 
 
-@register_action("cards_quick_modal", opens_modal=True, no_return=True)
-@lightbulb.di.with_di
-async def cards_quick_modal(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    **_kwargs,
-):
-    tag, mode = _parse_quick_target(action_id)
-    if mode is None:
-        await ctx.respond(
-            components=_notice("Quick update expired", "Open `/cards` again."),
-            ephemeral=True,
-        )
-        return
-    action = QUICK_CARD_ACTIONS[mode]
-    card_input = ModalActionRow().add_text_input(
-        "card_name",
-        "Card name",
-        placeholder="Example: Root Rider",
-        min_length=2,
-        max_length=50,
-        required=True,
-    )
-    await ctx.respond_with_modal(
-        title=str(action["label"]),
-        custom_id=f"cards_quick_submit:{tag}|{mode}",
-        components=[card_input],
-    )
-
-
 def _modal_text_value(ctx, custom_id: str) -> str:
     for row in getattr(ctx.interaction, "components", ()) or ():
         for component in row:
             if getattr(component, "custom_id", None) == custom_id:
                 return str(getattr(component, "value", "") or "").strip()
     return ""
-
-
-@register_action("cards_quick_submit", is_modal=True, no_return=True)
-@lightbulb.di.with_di
-async def cards_quick_submit(
-    ctx: lightbulb.components.ModalContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    await ctx.defer(ephemeral=True)
-    tag, mode = _parse_quick_target(action_id)
-    if mode is None:
-        view = _notice("Quick update expired", "Open `/cards` again.")
-    else:
-        account, inventory, problem = await _load_target(
-            ctx, tag, coc_client=coc_client, mongo=mongo
-        )
-        view = problem or _quick_confirmation(
-            account,
-            inventory,
-            mode,
-            _modal_text_value(ctx, "card_name"),
-        )
-    await ctx.interaction.edit_initial_response(components=view)
-
-
-@register_action("cards_quick_apply")
-@lightbulb.di.with_di
-async def cards_quick_apply(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    tag, mode, card_id, revision = _parse_quick_apply_target(action_id)
-    if mode is None or card_id is None or revision is None:
-        return _notice("Quick update expired", "Open `/cards` again.")
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    try:
-        updated = await _write_one_card(
-            mongo,
-            account,
-            inventory,
-            card_id,
-            mode,
-            expected_revision=revision,
-            discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
-        )
-    except ActiveCardTradeError:
-        return _reserved_card_notice(account.tag)
-    except InventoryWriteConflict:
-        return _notice(
-            "Collection changed",
-            "Nothing was overwritten. Return to Quick update and try once more.",
-        )
-    except InvalidCardTransitionError as exc:
-        return _notice("That change no longer fits", str(exc))
-    card = CARD_BY_ID[card_id]
-    return _quick_update_panel(
-        account,
-        updated,
-        saved=f"{card.name} is now {QUICK_CARD_ACTIONS[mode]['result']}.",
-    )
 
 
 @register_action("cards_hidden")
@@ -7686,7 +7339,11 @@ async def cards_hidden(
     if problem:
         return problem
     if not _scan_unverified_ids(inventory):
-        return _quick_update_panel(account, inventory)
+        # Nothing left to check, so show the result rather than a menu about it.
+        data = await load_accounts(coc_client, int(ctx.user.id))
+        return await _dashboard_view(
+            account, inventory, account_count=len(_loaded_entries(data))
+        )
     return await _hidden_badge_review_view(account, inventory)
 
 
