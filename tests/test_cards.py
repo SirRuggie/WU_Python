@@ -5064,9 +5064,49 @@ def test_refresh_and_pagination_use_the_uploaded_control_emoji():
         (cards_command.RETURN_EMOJI, 1536796427198668911),
         (cards_command.SEARCH_EMOJI, 1536797595089899540),
         (cards_command.CANCEL_EMOJI, 1397096986506825778),
+        (cards_command.TRADES_EMOJI, 1536798617736847431),
+        (cards_command.SWITCH_EMOJI, 1536798904056815806),
     ):
         assert resolved is not hikari.UNDEFINED
         assert resolved.id == expected
+
+
+def test_my_trades_and_switch_account_use_the_uploaded_emoji():
+    """The same destination must not be marked differently on different screens."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+    holders = [{
+        "_id": "#H", "player_name": "Holder", "discord_id": 7,
+        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    views = [
+        cards_command._dashboard(account, inventory, account_count=3),
+        cards_command._matches_view(
+            account, inventory, cards.find_matches(inventory, holders)
+        ),
+        cards_command._active_trade_notice(account.tag),
+        cards_command._trade_feedback("Saved", "Ready", "#ME"),
+    ]
+    seen = 0
+    for view in views:
+        for node in _view_nodes(view):
+            if str(node.get("label", "")) == "My trades":
+                emoji = node.get("emoji") or {}
+                assert emoji.get("id") == "1536798617736847431", node
+                seen += 1
+    assert seen >= 4, f"only checked {seen} My trades buttons"
+
+    switch = next(
+        n for n in _view_nodes(views[0])
+        if n.get("custom_id") == "cards_account_page:0"
+    )
+    assert (switch.get("emoji") or {}).get("id") == "1536798904056815806"
 
 
 def test_search_and_cancel_buttons_use_the_uploaded_emoji():

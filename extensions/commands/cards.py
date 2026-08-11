@@ -177,6 +177,8 @@ REFRESH_EMOJI = _safe_partial(emojis.refresh)
 RETURN_EMOJI = _safe_partial(emojis.return_arrow)
 SEARCH_EMOJI = _safe_partial(emojis.magnifier)
 CANCEL_EMOJI = _safe_partial(emojis.no)
+TRADES_EMOJI = _safe_partial(emojis.inbox)
+SWITCH_EMOJI = _safe_partial(emojis.switch)
 NEXT_EMOJI = _safe_partial(emojis.next_page)
 PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
@@ -349,7 +351,7 @@ def _active_trade_notice(tag: str) -> list[Container]:
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"cards_trades:{tag}",
                     label="My trades",
-                    emoji="🤝",
+                    emoji=TRADES_EMOJI,
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -1980,7 +1982,7 @@ def _dashboard(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_trades:{tag}",
             label="My trades",
-            emoji="📬",
+            emoji=TRADES_EMOJI,
         ),
     ]
     # The controls that act on the menus above, immediately below them.
@@ -2026,6 +2028,7 @@ def _dashboard(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id="cards_account_page:0",
             label="Switch account",
+            emoji=SWITCH_EMOJI,
         ))
     # Wrap rather than slice. Discord takes five buttons to a row, and the
     # previous [:5] quietly dropped the sixth: a member with an unfinished
@@ -3125,6 +3128,7 @@ def _matches_view(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_trades:{tag}",
             label="My trades",
+            emoji=TRADES_EMOJI,
         ),
         Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -4781,7 +4785,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
     page = min(max(0, page), pages - 1)
     start = page * TRADE_VIEW_LIMIT
     body: list = [
-        Text(content="# 🤝 My Card Trades"),
+        Text(content=f"# {emojis.inbox} My Card Trades"),
         Text(content=f"**{_escape_markdown(account.name)}** · `{tag}`"),
         Separator(divider=True),
     ]
@@ -4915,7 +4919,7 @@ def _trade_feedback(title: str, description: str, tag: str) -> list[Container]:
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"cards_trades:{tag}",
                     label="My trades",
-                    emoji="🤝",
+                    emoji=TRADES_EMOJI,
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
