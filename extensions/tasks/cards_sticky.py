@@ -8,6 +8,7 @@ for no visible change. It posts silently, so no repost ever notifies anyone.
 """
 
 import asyncio
+import hashlib
 from datetime import datetime, timezone
 
 import hikari
@@ -109,6 +110,43 @@ def _sticky_components() -> list[Container]:
     )]
 
 
+def _content_key() -> str:
+    """Fingerprint of the wording, so a reworded notice can be spotted.
+
+    Burial is not the only reason to act. Without this, editing the text and
+    restarting changed nothing in a quiet channel: the notice was still the
+    newest message, so the burial check returned early and the old wording sat
+    there until somebody happened to talk.
+    """
+    text = "\x00".join(
+        node.content
+        for container in _sticky_components()
+        for node in container.components
+        if hasattr(node, "content")
+    )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+async def _rewrite_in_place(
+    bot: hikari.GatewayBot, channel_id: int, message_id: int
+) -> bool:
+    """Edit the standing notice. Cheaper than a repost and does not move it."""
+    try:
+        await bot.rest.edit_message(
+            channel=channel_id,
+            message=message_id,
+            components=_sticky_components(),
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
+        )
+    except Exception as exc:
+        print(f"[Cards Sticky] edit failed {message_id}: "
+              f"{type(exc).__name__}: {exc}")
+        return False
+    return True
+
+
 async def _stored_sticky(mongo: MongoClient) -> dict:
     try:
         return await mongo.bot_config.find_one({"_id": CONFIG_ID}) or {}
@@ -177,8 +215,14 @@ async def refresh_sticky() -> None:
             # into it is unlikely to work either, and a wrong guess repeats
             # every cycle for as long as the failure lasts.
             return
-        # The notice already sits at the bottom, so a repost achieves nothing.
+        # The notice already sits at the bottom, so a repost achieves nothing -
+        # unless the wording changed, in which case edit it where it stands.
         if newest is not None and newest == int(previous_id):
+            if stored.get("content_key") != _content_key():
+                if await _rewrite_in_place(
+                    bot_instance, channel_id, int(previous_id)
+                ):
+                    await _remember_content_key(_content_key())
             await _drain_pending(owed, channel_id)
             return
 
@@ -221,6 +265,7 @@ async def refresh_sticky() -> None:
                 "message_id": int(message.id),
                 "posted_at": datetime.now(timezone.utc),
                 "pending_deletes": owed,
+                "content_key": _content_key(),
             }},
             upsert=True,
         )
@@ -228,6 +273,15 @@ async def refresh_sticky() -> None:
         print(f"[Cards Sticky] config write failed: {type(exc).__name__}: {exc}")
 
     await _drain_pending(owed, int(previous_channel or channel_id))
+
+
+async def _remember_content_key(key: str) -> None:
+    try:
+        await mongo_client.bot_config.update_one(
+            {"_id": CONFIG_ID}, {"$set": {"content_key": key}}
+        )
+    except Exception as exc:
+        print(f"[Cards Sticky] key write failed: {type(exc).__name__}: {exc}")
 
 
 async def _drain_pending(owed: list[int], channel_id: int) -> None:

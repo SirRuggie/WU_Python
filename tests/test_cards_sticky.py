@@ -14,7 +14,9 @@ class _Rest:
         self.fetch_error = fetch_error
         self.created = []
         self.deleted = []
+        self.edited = []
         self.delete_error = None
+        self.edit_error = None
         self.channel_fetches = 0
 
     async def fetch_channel(self, channel_id):
@@ -32,6 +34,11 @@ class _Rest:
         if self.delete_error:
             raise self.delete_error
         self.deleted.append((channel_id, message_id))
+
+    async def edit_message(self, channel, message, components, **kwargs):
+        if self.edit_error:
+            raise self.edit_error
+        self.edited.append((channel, message))
 
 
 class _Config:
@@ -65,6 +72,7 @@ def test_no_repost_when_the_notice_is_already_the_newest_message(monkeypatch):
         "_id": sticky.CONFIG_ID,
         "channel_id": sticky.STICKY_CHANNEL_ID,
         "message_id": 555,
+        "content_key": sticky._content_key(),
     })
     _install(monkeypatch, rest, config)
 
@@ -72,7 +80,49 @@ def test_no_repost_when_the_notice_is_already_the_newest_message(monkeypatch):
 
     assert rest.created == []
     assert rest.deleted == []
+    assert rest.edited == []
     assert config.writes == []
+
+
+def test_reworded_notice_is_edited_in_place_in_a_silent_channel(monkeypatch):
+    """A quiet channel must not strand old wording until somebody talks."""
+    rest = _Rest(newest_id=555)
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+        "content_key": "whatever-it-used-to-say",
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    # Edited where it stands: no delete, no repost, nothing moves.
+    assert rest.edited == [(sticky.STICKY_CHANNEL_ID, 555)]
+    assert rest.created == []
+    assert rest.deleted == []
+    assert config.document["content_key"] == sticky._content_key()
+
+    # And it settles: the next cycle has nothing left to do.
+    rest.edited.clear()
+    asyncio.run(sticky.refresh_sticky())
+    assert rest.edited == []
+
+
+def test_a_failed_edit_does_not_record_the_new_wording(monkeypatch):
+    rest = _Rest(newest_id=555)
+    rest.edit_error = RuntimeError("transient")
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+        "content_key": "stale",
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert config.document["content_key"] == "stale"
 
 
 def test_buried_notice_is_reposted_and_the_old_one_removed(monkeypatch):
