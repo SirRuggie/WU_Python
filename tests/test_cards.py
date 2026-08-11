@@ -5597,6 +5597,52 @@ def test_find_trades_explains_a_swap_hidden_by_a_reservation():
     _assert_discord_payload(view)
 
 
+def test_no_match_can_fall_between_the_two_lists():
+    """A card reachable in a menu but absent from both lists reads as broken."""
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#H",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["electro_dragon"] = cards.MISSING   # even swap
+    inventory["cards"]["balloon"] = cards.DUPLICATE
+    inventory["cards"]["bomber"] = cards.MISSING           # one-way
+    inventory["cards"]["super_minion"] = cards.MISSING
+
+    holders = [{
+        "_id": "#UWU", "player_name": "Sir UwU", "discord_id": 5,
+        "clan_tag": "#H", "clan_name": "Morning Woods",
+        "cards": dict(
+            {card.id: cards.OWNED for card in cards.CARDS},
+            electro_dragon=cards.DUPLICATE, balloon=cards.MISSING,
+            bomber=cards.DUPLICATE, super_minion=cards.DUPLICATE,
+        ),
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    matches = cards.find_matches(inventory, holders)
+    view = cards_command._matches_view(account, inventory, matches)
+
+    per_card = cards_command._offers_by_card(matches)
+    mutual = {c.id for c in cards.CARDS if per_card.get(c.id, {}).get("mutual")}
+    oneway = {
+        c.id for c in cards.CARDS
+        if c.id in per_card and not per_card[c.id]["mutual"]
+    }
+    pickable = {
+        option["value"]
+        for node in _view_nodes(view)
+        if str(node.get("custom_id", "")).startswith("cards_open_card:")
+        for option in node["options"]
+        if option["value"] != cards_command.CATEGORY_HEADER_VALUE
+    }
+
+    assert "electro_dragon" in mutual, "a two-way trade is an even swap"
+    assert pickable == mutual | oneway, "a match is reachable but listed nowhere"
+    # And the even swap is actually printed, not just classified.
+    assert "Electro Dragon" in _view_text(view)
+
+
 def test_who_has_what_destination_is_gone():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
