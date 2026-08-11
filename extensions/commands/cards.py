@@ -2355,7 +2355,7 @@ def _quick_transition_problem(inventory: dict, card_id: str, mode: str) -> str |
     action = QUICK_CARD_ACTIONS.get(mode)
     card = CARD_BY_ID.get(card_id)
     if action is None or card is None:
-        return "That quick update is no longer available."
+        return "That change is no longer available."
     current = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
     desired = int(action["to"])
     required = action["from"]
@@ -2541,13 +2541,13 @@ def _update_overview(account, inventory: dict) -> list[Container]:
     intro = (
         f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n\n"
         "Use this only for first-time manual setup or a full category rebuild. "
-        "For normal changes, use **Edit cards**."
+        "For normal changes, pick the card from a category menu on the board."
     )
     if unverified:
         intro += (
             f"\n\n📸 **{len(unverified)} possible spare"
             f"{'s' if len(unverified) != 1 else ''} still need review.** "
-            "Edit cards handles them one at a time."
+            "**Check spares** on the board handles them one at a time."
         )
     return [Container(
         components=[
@@ -6564,7 +6564,8 @@ async def _confirm_scan_draft(
     except ScanDraftStaleError:
         return _notice(
             "Collection changed after this scan",
-            "Nothing was overwritten. Start a new scan or use Edit cards.",
+            "Nothing was overwritten. Start a new scan, or edit the card from the "
+            "board.",
         )
     pending = _scan_unverified_ids(updated)
     if pending:
