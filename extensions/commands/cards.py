@@ -3363,19 +3363,39 @@ def _find_category_view(account, inventory: dict, category_id: str) -> list[Cont
             ],
         )]
 
+    tag = _normalize_tag(account.tag)
+    # The screen used to be a heading, one line of prose and a collapsed
+    # select, which showed nothing about the cards it was asking about. The
+    # missing cards are now listed with their art so the menu confirms rather
+    # than reveals.
+    listed = "\n".join(
+        f"- {troop_emoji.markup(card.id) + ' ' if troop_emoji.markup(card.id) else ''}"
+        f"**{_escape_markdown(card.name)}**"
+        for card in missing[:12]
+    )
+    if len(missing) > 12:
+        listed += f"\n-# and {len(missing) - 12} more"
     return [Container(
-        accent_color=RED_ACCENT,
+        accent_color=CATEGORY_ACCENTS[category_id],
         components=[
-            Text(content=f"# {category.emoji} Find a {category.short_name} Card"),
-            Text(content="Choose one missing card to see every current duplicate holder."),
+            Text(content=f"# {category.emoji} {category.name}"),
+            Text(content=(
+                f"You are missing **{len(missing)}** of these. "
+                "Pick one to see who in the family holds a spare.\n"
+                f"{listed}"
+            )),
             Separator(divider=True),
             ActionRow(components=[
                 TextSelectMenu(
-                    custom_id=f"cards_find_card:{_normalize_tag(account.tag)}|{category_id}",
+                    custom_id=f"cards_find_card:{tag}|{category_id}",
                     placeholder="Choose a missing card...",
                     max_values=1,
                     options=[
-                        SelectOption(label=card.name, value=card.id)
+                        SelectOption(
+                            label=card.name,
+                            value=card.id,
+                            emoji=troop_emoji.partial(card.id),
+                        )
                         for card in missing
                     ],
                 )
@@ -3383,12 +3403,15 @@ def _find_category_view(account, inventory: dict, category_id: str) -> list[Cont
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
+                    custom_id=f"cards_matches:{tag}",
                     label="Back to matches",
-                    emoji="⬅️",
-                )
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_dashboard:{tag}",
+                    label="Back to board",
+                ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
         ],
     )]
 
@@ -6347,34 +6370,6 @@ async def cards_account_page(
     return _account_picker(data, _parse_page(action_id))
 
 
-@register_action("cards_account_select")
-@lightbulb.di.with_di
-async def cards_account_select(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    scope_error = _guild_scope_error(ctx)
-    if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
-    values = list(getattr(ctx.interaction, "values", ()) or ())
-    tag = _normalize_tag(values[0]) if values else ""
-    account, data = await _owned_account(coc_client, int(ctx.user.id), tag)
-    if account is None:
-        return _account_picker(data, _parse_page(action_id))
-    inventory = await _ensure_inventory(
-        mongo,
-        account,
-        discord_id=int(ctx.user.id),
-        guild_id=_guild_id(ctx),
-    )
-    return await _dashboard_view(
-        account, inventory, account_count=len(_loaded_entries(data))
-    )
-
-
 @register_action("cards_account_open")
 @lightbulb.di.with_di
 async def cards_account_open(
@@ -6982,36 +6977,6 @@ async def cards_scan_confirm(
     )
 
 
-@register_action("cards_scan_confirm_edit", requires_state=True)
-@lightbulb.di.with_di
-async def cards_scan_confirm_edit(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    scan_draft: dict,
-    user_id: object,
-    guild_id: object,
-    account_tag: object = None,
-    base_revision: object = None,
-    usable_until: object = None,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _confirm_scan_draft(
-        ctx,
-        action_id,
-        edit_after=True,
-        scan_draft=scan_draft,
-        user_id=user_id,
-        guild_id=guild_id,
-        account_tag=account_tag,
-        base_revision=base_revision,
-        usable_until=usable_until,
-        coc_client=coc_client,
-        mongo=mongo,
-    )
-
-
 async def _scan_hidden_badge_update(
     ctx,
     action_id: str,
@@ -7163,58 +7128,6 @@ async def cards_scan_hidden_missing(
         action_id,
         selected=[],
         single_missing=True,
-        user_id=user_id,
-        guild_id=guild_id,
-        account_tag=account_tag,
-        usable_until=usable_until,
-        coc_client=coc_client,
-        mongo=mongo,
-    )
-
-
-@register_action("cards_scan_hidden_set", requires_state=True)
-@lightbulb.di.with_di
-async def cards_scan_hidden_set(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    user_id: object,
-    guild_id: object,
-    account_tag: object = None,
-    usable_until: object = None,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _scan_hidden_badge_update(
-        ctx,
-        action_id,
-        selected=list(getattr(ctx.interaction, "values", ()) or ()),
-        user_id=user_id,
-        guild_id=guild_id,
-        account_tag=account_tag,
-        usable_until=usable_until,
-        coc_client=coc_client,
-        mongo=mongo,
-    )
-
-
-@register_action("cards_scan_hidden_none", requires_state=True)
-@lightbulb.di.with_di
-async def cards_scan_hidden_none(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    user_id: object,
-    guild_id: object,
-    account_tag: object = None,
-    usable_until: object = None,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _scan_hidden_badge_update(
-        ctx,
-        action_id,
-        selected=[],
         user_id=user_id,
         guild_id=guild_id,
         account_tag=account_tag,
@@ -7927,42 +7840,6 @@ async def _hidden_badge_update(
     if _scan_unverified_ids(updated):
         return await _hidden_badge_review_view(account, updated)
     return _quick_update_panel(account, updated, saved="Possible spares checked.")
-
-
-@register_action("cards_hidden_set")
-@lightbulb.di.with_di
-async def cards_hidden_set(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _hidden_badge_update(
-        ctx,
-        action_id,
-        selected=list(getattr(ctx.interaction, "values", ()) or ()),
-        coc_client=coc_client,
-        mongo=mongo,
-    )
-
-
-@register_action("cards_hidden_none")
-@lightbulb.di.with_di
-async def cards_hidden_none(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _hidden_badge_update(
-        ctx,
-        action_id,
-        selected=[],
-        coc_client=coc_client,
-        mongo=mongo,
-    )
 
 
 @register_action("cards_category")
