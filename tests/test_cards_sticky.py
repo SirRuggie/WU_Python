@@ -7,26 +7,6 @@ import pytest
 from extensions.tasks import cards_sticky as sticky
 
 
-class _Messages:
-    """Stands in for the LazyIterator returned by fetch_messages."""
-
-    def __init__(self, messages):
-        self.messages = messages
-
-    def limit(self, count):
-        return _Awaitable(self.messages[:count])
-
-
-class _Awaitable:
-    def __init__(self, value):
-        self.value = value
-
-    def __await__(self):
-        async def _resolve():
-            return self.value
-        return _resolve().__await__()
-
-
 class _Rest:
     def __init__(self, *, newest_id=None, post_id=999, fetch_error=None):
         self.newest_id = newest_id
@@ -35,16 +15,13 @@ class _Rest:
         self.created = []
         self.deleted = []
         self.delete_error = None
+        self.channel_fetches = 0
 
-    def fetch_messages(self, channel_id):
+    async def fetch_channel(self, channel_id):
+        self.channel_fetches += 1
         if self.fetch_error:
             raise self.fetch_error
-        latest = (
-            [SimpleNamespace(id=self.newest_id)]
-            if self.newest_id is not None
-            else []
-        )
-        return _Messages(latest)
+        return SimpleNamespace(id=channel_id, last_message_id=self.newest_id)
 
     async def create_message(self, channel, components, flags=None):
         self.created.append((channel, components, flags))
@@ -170,8 +147,8 @@ def test_missing_send_permission_does_not_write_state(monkeypatch):
     assert rest.deleted == []
 
 
-def test_unreadable_channel_still_reposts(monkeypatch):
-    """If the newest message cannot be read, fall back to reposting."""
+def test_unreadable_channel_skips_instead_of_guessing(monkeypatch):
+    """A blind repost would repeat every cycle for as long as the read fails."""
     rest = _Rest(newest_id=555, post_id=888)
     rest.fetch_error = _http_error(hikari.ForbiddenError)
     config = _Config({
@@ -183,7 +160,63 @@ def test_unreadable_channel_still_reposts(monkeypatch):
 
     asyncio.run(sticky.refresh_sticky())
 
-    assert len(rest.created) == 1
+    assert rest.created == []
+    assert config.writes == []
+
+
+def test_burial_check_reads_the_channel_not_a_page_of_messages(monkeypatch):
+    """fetch_messages pulls 100 messages per call regardless of any limit."""
+    rest = _Rest(newest_id=555)
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert rest.channel_fetches == 1
+    assert not hasattr(rest, "fetch_messages")
+
+
+def test_a_delete_that_fails_is_retried_next_cycle(monkeypatch):
+    rest = _Rest(newest_id=777, post_id=888)
+    rest.delete_error = RuntimeError("transient")
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    # Still owed, so the next cycle picks it up rather than losing track of it.
+    assert config.document["pending_deletes"] == [555]
+
+    rest.delete_error = None
+    rest.newest_id = 888
+    asyncio.run(sticky.refresh_sticky())
+
+    assert rest.deleted == [(sticky.STICKY_CHANNEL_ID, 555)]
+    assert config.document["pending_deletes"] == []
+
+
+def test_pending_deletes_cannot_grow_without_limit(monkeypatch):
+    rest = _Rest(newest_id=777, post_id=888)
+    rest.delete_error = RuntimeError("transient")
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+        "pending_deletes": list(range(100, 100 + sticky.MAX_PENDING_DELETES)),
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert len(config.document["pending_deletes"]) <= sticky.MAX_PENDING_DELETES
 
 
 def test_moving_channels_deletes_the_notice_left_behind(monkeypatch):
@@ -216,6 +249,24 @@ def test_notice_names_the_command_the_dm_and_the_manual_route():
     assert "Find trades" in text
     # Manual entry has to be visible or the screenshot-averse just bounce.
     assert "hand" in text.lower() or "manual" in text.lower()
+    # Why anyone would bother: family members, their clan, and the fact that
+    # asking for a trade reaches the other player.
+    assert "family" in text.lower()
+    assert "clan" in text.lower()
+    assert "offer" in text.lower() or "message" in text.lower()
+
+
+def test_notice_avoids_shortenings_that_travel_badly():
+    """Half the family reads this as a second language."""
+    text = " ".join(
+        node.content
+        for container in sticky._sticky_components()
+        for node in container.components
+        if hasattr(node, "content")
+    ).lower()
+
+    for slang in ("pics", "gonna", "wanna", "y'all", "chief", "dump"):
+        assert slang not in text, f"{slang!r} does not travel"
 
 
 def test_notice_stays_short_enough_to_actually_be_read():
