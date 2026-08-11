@@ -105,10 +105,12 @@ class Emojis:
         self.Silver1 = EmojiType("<:SL_1:1387845667145126009>")
         self.Silver2 = EmojiType("<:SL_2:1387845644487491594>")
         self.Silver3 = EmojiType("<:SL_3:1387845621095989318>")
-        # Shared control emoji, for refresh and pagination buttons.
-        self.refresh = EmojiType("<:refresh:1533869685509197834>")
+        # Shared control emoji. `refresh` is already defined further up with
+        # this same id, for the /todo dashboard; redefining it here would only
+        # shadow it with an identical value.
         self.next_page = EmojiType("<:nextPage:1536793616004022403>")
         self.previous_page = EmojiType("<:previousPage:1536793616863862784>")
+        self.return_arrow = EmojiType("<:return_arrow_gray:1536796427198668911>")
         # Clash of Cards categories. Names match what was uploaded to the bot.
         self.card_elixir = EmojiType("<:Elixer:1536777630278357164>")
         self.card_dark_elixir = EmojiType("<:Dark_Elixer:1536777729511391322>")

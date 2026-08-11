@@ -5056,13 +5056,60 @@ def test_find_trades_dividers_only_separate_the_picker_block(monkeypatch):
 
 
 def test_refresh_and_pagination_use_the_uploaded_control_emoji():
-    """Every refresh, next and previous button carries the same mark."""
-    assert cards_command.REFRESH_EMOJI is not hikari.UNDEFINED
-    assert cards_command.NEXT_EMOJI is not hikari.UNDEFINED
-    assert cards_command.PREVIOUS_EMOJI is not hikari.UNDEFINED
-    assert cards_command.REFRESH_EMOJI.id == 1533869685509197834
-    assert cards_command.NEXT_EMOJI.id == 1536793616004022403
-    assert cards_command.PREVIOUS_EMOJI.id == 1536793616863862784
+    """Every refresh, next, previous and return button carries the same mark."""
+    for resolved, expected in (
+        (cards_command.REFRESH_EMOJI, 1533869685509197834),
+        (cards_command.NEXT_EMOJI, 1536793616004022403),
+        (cards_command.PREVIOUS_EMOJI, 1536793616863862784),
+        (cards_command.RETURN_EMOJI, 1536796427198668911),
+    ):
+        assert resolved is not hikari.UNDEFINED
+        assert resolved.id == expected
+
+
+def test_no_back_button_is_left_on_a_unicode_arrow():
+    """A mix of uploaded and unicode arrows on the same kind of button reads sloppy."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+    holders = [{
+        "_id": "#H", "player_name": "Holder", "discord_id": 7,
+        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    views = [
+        cards_command._matches_view(
+            account, inventory, cards.find_matches(inventory, holders)
+        ),
+        cards_command._holders_view(
+            account, "root_rider",
+            cards.holders_for_card(inventory, holders, "root_rider"),
+        ),
+        cards_command._update_overview(account, inventory),
+        cards_command._category_editor(account, inventory, "elixir"),
+        cards_command._trades_view(account, []),
+        cards_command._active_trade_notice(account.tag),
+    ]
+    seen = 0
+    for view in views:
+        for node in _view_nodes(view):
+            label = str(node.get("label", "")).lower()
+            if not any(
+                word in label
+                for word in ("back", "dashboard", "return", "all categories")
+            ):
+                continue
+            emoji = node.get("emoji") or {}
+            assert "⬅" not in str(emoji.get("name") or ""), (
+                f"{label!r} still uses the unicode arrow"
+            )
+            assert emoji.get("id"), f"{label!r} carries no return emoji"
+            seen += 1
+    assert seen >= 6, f"only checked {seen} back buttons"
 
 
 def test_no_control_button_is_left_on_a_stand_in_emoji():

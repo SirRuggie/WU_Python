@@ -174,6 +174,7 @@ def category_partial(category_id: str):
 # Resolved once: these are fixed strings, so a failure here is a typo in the
 # table above rather than anything that can change between renders.
 REFRESH_EMOJI = _safe_partial(emojis.refresh)
+RETURN_EMOJI = _safe_partial(emojis.return_arrow)
 NEXT_EMOJI = _safe_partial(emojis.next_page)
 PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
@@ -352,7 +353,7 @@ def _active_trade_notice(tag: str) -> list[Container]:
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{tag}",
                     label="Dashboard",
-                    emoji="⬅️",
+                    emoji=RETURN_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
@@ -1213,7 +1214,7 @@ def _scan_upload_started(account, *, usable_until: object) -> list[Container]:
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
                     label="Back to dashboard",
-                    emoji="⬅️",
+                    emoji=RETURN_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
@@ -1249,7 +1250,7 @@ def _scan_dm_unavailable(account) -> list[Container]:
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
                     label="Dashboard",
-                    emoji="⬅️",
+                    emoji=RETURN_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
@@ -2314,6 +2315,7 @@ def _card_focus(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{tag}",
                 label="Back to board",
+                emoji=RETURN_EMOJI,
             ),
         ]),
         # "Spare, 2+" used to sit above. It was redundant with +1 and could not
@@ -2606,6 +2608,7 @@ def _update_overview(account, inventory: dict) -> list[Container]:
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
                     label="Back",
+                    emoji=RETURN_EMOJI,
                 ),
             ]),
         ],
@@ -2728,7 +2731,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
             label="All categories",
-            emoji="⬅️",
+            emoji=RETURN_EMOJI,
         ),
         Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -3113,6 +3116,7 @@ def _matches_view(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_dashboard:{tag}",
             label="Back to board",
+            emoji=RETURN_EMOJI,
         ),
         Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -3254,12 +3258,13 @@ def _holders_view(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
                 label="Back to Find trades",
-                emoji="⬅️",
+                emoji=RETURN_EMOJI,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
                 label="Back to board",
+                emoji=RETURN_EMOJI,
             ),
         ]),
         Media(items=[MediaItem(media=FOOTER)]),
@@ -3323,7 +3328,7 @@ def _trade_offer_view(account, card_id: str, holder) -> list[Container]:
                         f"|{wanted.id}|0"
                     ),
                     label="Back to holders",
-                    emoji="⬅️",
+                    emoji=RETURN_EMOJI,
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -4880,7 +4885,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{tag}",
                 label="Dashboard",
-                emoji="⬅️",
+                emoji=RETURN_EMOJI,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
@@ -4913,7 +4918,7 @@ def _trade_feedback(title: str, description: str, tag: str) -> list[Container]:
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{tag}",
                     label="Dashboard",
-                    emoji="⬅️",
+                    emoji=RETURN_EMOJI,
                 ),
             ]),
             Media(items=[MediaItem(media=FOOTER)]),
