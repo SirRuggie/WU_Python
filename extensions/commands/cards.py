@@ -1560,8 +1560,14 @@ def _scan_review(
         )
     if unseen:
         details.append(f"**Not visible:** {len(unseen)} card positions")
-    if capture_issue_lines:
-        details.append("**Pages to retake:**\n" + "\n".join(capture_issue_lines))
+    if capture_issue_lines and unseen:
+        # Only ask for another image when card positions were never seen. A
+        # capture that merely produced an uncertain card is resolvable in place,
+        # and telling a member to retake it right after they answered every card
+        # by hand contradicted the Save button sitting next to it.
+        details.append(
+            "**Send these pages again:**\n" + "\n".join(capture_issue_lines)
+        )
 
     if errors:
         status = "**This scan cannot be saved.** The scanner could not read it."

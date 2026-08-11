@@ -5052,3 +5052,53 @@ def test_family_bullets_have_no_literal_hash_markers():
     for line in text.split("\n"):
         if line.startswith("- "):
             assert "-#" not in line, f"literal marker in: {line}"
+
+
+def test_scan_review_does_not_ask_for_a_retake_once_cards_are_resolved():
+    """Answering every uncertain card by hand must clear the retake notice.
+
+    It previously sat next to an enabled Save button, telling the member to
+    retake a page they had just finished correcting.
+    """
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    draft = {
+        "card_states": {card.id: cards.OWNED for card in cards.CARDS},
+        "unknown_card_ids": [],
+        "unseen_card_ids": [],
+        "errors": [],
+        "capture_issues": [{"image": 1, "reasons": ["blurry"]}],
+    }
+
+    view = cards_command._scan_review(
+        account, _complete_inventory(), "draft-1", draft
+    )
+    text = _view_text(view)
+
+    assert "retake" not in text.lower()
+    assert "Send these pages again" not in text
+
+
+def test_scan_review_still_asks_when_positions_were_never_seen():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    states = {card.id: cards.OWNED for card in cards.CARDS}
+    for card in cards.CARDS[:6]:
+        states.pop(card.id)
+    draft = {
+        "card_states": states,
+        "unknown_card_ids": [],
+        "unseen_card_ids": [card.id for card in cards.CARDS[:6]],
+        "errors": [],
+        "capture_issues": [{"image": 1, "reasons": ["page 1 missing"]}],
+    }
+
+    text = _view_text(cards_command._scan_review(
+        account, _complete_inventory(), "draft-2", draft
+    ))
+
+    assert "Send these pages again" in text
