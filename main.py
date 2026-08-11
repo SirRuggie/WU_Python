@@ -116,6 +116,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.fwa_points_monitor",
         "extensions.tasks.clan_history_tracker",
         "extensions.tasks.band_sync_ical",
+        "extensions.tasks.cards_sticky",
         "extensions.commands.tickets",
         "extensions.events.channel.ticket_channel_monitor",
         "extensions.events.message.message_events",  # Add message events handler
