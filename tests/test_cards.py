@@ -4916,12 +4916,21 @@ def test_find_trades_separates_even_swaps_from_one_way_favours():
          "confirmed_at": datetime.now(timezone.utc)},
     ]
     matches = cards.find_matches(inventory, holders)
-    text = _view_text(cards_command._matches_view(account, inventory, matches))
+    view = cards_command._matches_view(account, inventory, matches)
+    text = _view_text(view)
 
-    even, favour = text.index("Even swaps"), text.index("doing you a favour")
-    assert even < favour, "even swaps must rank above one-way help"
-    assert text.index("Root Rider") < favour
-    assert text.index("Druid") > favour
+    # The screen leads with the swaps that actually complete; favours live one
+    # button away rather than tripling the height of this one.
+    assert "Even swaps" in text
+    assert "Root Rider" in text
+    assert "Druid" not in text
+    assert any(
+        n.get("custom_id") == "cards_favours:#ME" for n in _view_nodes(view)
+    ), "no way through to the favours"
+
+    favours = _view_text(cards_command._favours_view(account, matches))
+    assert "Druid" in favours
+    assert "Root Rider" not in favours, "an even swap is not a favour"
 
 
 def test_dashboard_states_each_fact_once():
@@ -4970,11 +4979,19 @@ def test_find_trades_absorbs_what_who_has_what_uniquely_showed():
     )
     text = _view_text(view)
 
-    assert "Your spares in demand" in text
-    assert "Wizard" in text
     # And the part that was pure noise is gone: cards nobody can supply.
     assert "Nobody has a spare yet" not in text
+    assert any(
+        n.get("custom_id") == "cards_demand:#ME" for n in _view_nodes(view)
+    ), "no way through to the demand list"
     _assert_discord_payload(view)
+
+    demand = cards_command._demand_view(
+        account, inventory, cards.family_supply([inventory, *holders])
+    )
+    assert "Your spares in demand" in _view_text(demand)
+    assert "Wizard" in _view_text(demand)
+    _assert_discord_payload(demand)
 
 
 def test_find_trades_picker_reaches_every_match_and_hides_the_rest():
@@ -5105,8 +5122,9 @@ def test_find_trades_dividers_only_separate_the_picker_block(monkeypatch):
         for c in children
     ]
     first = kinds.index("select")
-    tail = kinds[first:]
-    assert "separator" not in tail, "a divider sits between the menus"
+    last = len(kinds) - 1 - kinds[::-1].index("select")
+    between = kinds[first:last + 1]
+    assert "separator" not in between, "a divider sits between the menus"
     assert kinds[first - 1] == "separator", "the block is not set off from the text"
 
 
@@ -5428,6 +5446,84 @@ def test_select_placeholders_never_carry_custom_emoji_markup():
             placeholder = node.get("placeholder")
             if placeholder:
                 assert "<:" not in placeholder, placeholder
+
+
+def test_find_trades_survives_a_hundred_family_accounts():
+    """The screen must be bounded by the 60 cards, not by the family size."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    for card in cards.CARDS[:40]:
+        inventory["cards"][card.id] = cards.MISSING
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+
+    holders = [{
+        "_id": f"#H{index}", "player_name": f"Holder{index}",
+        "discord_id": index,
+        "cards": dict(
+            {card.id: cards.DUPLICATE for card in cards.CARDS},
+            wizard=cards.MISSING,
+        ),
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    } for index in range(100)]
+    matches = cards.find_matches(inventory, holders)
+    supply = cards.family_supply([inventory, *holders])
+
+    # 100 holders, and every screen still has to fit inside one message.
+    assert len({m.holder_tag for m in matches}) == 100
+    _assert_discord_payload(cards_command._matches_view(
+        account, inventory, matches, supply=supply,
+        achievable=cards_command._achievable_from_matches(matches, "#ME"),
+    ))
+    for page in range(3):
+        _assert_discord_payload(
+            cards_command._favours_view(account, matches, page=page)
+        )
+        _assert_discord_payload(
+            cards_command._demand_view(account, inventory, supply, page=page)
+        )
+
+
+def test_match_lists_page_rather_than_truncate():
+    """Silently dropping the tail is what the 25-option menu used to do."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    missing = [c.id for c in cards.CARDS[:40]]
+    for card_id in missing:
+        inventory["cards"][card_id] = cards.MISSING
+    holders = [{
+        "_id": "#H", "player_name": "Holder", "discord_id": 1,
+        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    matches = cards.find_matches(inventory, holders)
+
+    seen: set[str] = set()
+    page, pages = 0, 99
+    while page < pages:
+        view = cards_command._favours_view(account, matches, page=page)
+        text = _view_text(view)
+        for card_id in missing:
+            if cards.CARD_BY_ID[card_id].name in text:
+                seen.add(card_id)
+        label = next(
+            (
+                n["label"] for n in _view_nodes(view)
+                if str(n.get("label", "")).startswith("Page ")
+            ),
+            "Page 1/1",
+        )
+        pages = int(label.split("/")[1])
+        page += 1
+
+    assert seen == set(missing), f"never reachable: {set(missing) - seen}"
 
 
 def test_who_has_what_destination_is_gone():

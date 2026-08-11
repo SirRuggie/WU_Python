@@ -2957,7 +2957,12 @@ def _offers_by_card(matches: list) -> dict[str, dict]:
 
 
 def _offer_rows(card_ids: list[str], per_card: dict) -> str:
-    """Grouped bullets, one line per card, with who can supply it."""
+    """Grouped bullets, one line per card, with who can supply it.
+
+    The category name is a heading rather than a bold line, and the groups are
+    separated by a blank line. Without both, four categories of bullets render
+    as one undifferentiated wall at a single type size.
+    """
     by_category: dict[str, list[str]] = {}
     for card_id in card_ids:
         by_category.setdefault(CARD_BY_ID[card_id].category, []).append(card_id)
@@ -2966,7 +2971,7 @@ def _offer_rows(card_ids: list[str], per_card: dict) -> str:
         rows = by_category.get(category.id)
         if not rows:
             continue
-        lines = [f"{category_markup(category.id)} **{category.short_name}**"]
+        lines = [f"### {category_markup(category.id)} {category.short_name}"]
         for card_id in rows:
             card = CARD_BY_ID[card_id]
             entry = per_card[card_id]
@@ -2979,7 +2984,144 @@ def _offer_rows(card_ids: list[str], per_card: dict) -> str:
                 detail += f", {mutual} want yours"
             lines.append(f"- {lead}**{_escape_markdown(card.name)}** — {detail}")
         blocks.append("\n".join(lines))
-    return "\n".join(blocks)
+    # A blank line between groups; the bullets already sit tight within one.
+    return "\n\n".join(blocks)
+
+
+MATCH_LIST_PAGE = 12
+
+
+def _match_list_view(
+    account,
+    *,
+    title: str,
+    blurb: str,
+    rows: str,
+    action: str,
+    page: int,
+    pages: int,
+    accent: int,
+) -> list[Container]:
+    """One paginated list, shared by the favour and demand screens.
+
+    Both are the same shape - a heading, grouped bullets and page controls -
+    so they are one function. Sixty cards would not fit a single message and
+    a family of any size can push either list past that.
+    """
+    tag = _normalize_tag(account.tag)
+    body: list = [
+        Text(content=title),
+        Text(content=f"-# {blurb}"),
+        Separator(divider=False),
+        Text(content=rows or "-# Nothing here right now."),
+    ]
+    if pages > 1:
+        body.extend([
+            Separator(divider=True),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"{action}:{tag}|{page - 1}",
+                    label="Previous",
+                    emoji=PREVIOUS_EMOJI,
+                    is_disabled=page <= 0,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"{action}:{tag}|{page}",
+                    label=f"Page {page + 1}/{pages}",
+                    is_disabled=True,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"{action}:{tag}|{page + 1}",
+                    label="Next",
+                    emoji=NEXT_EMOJI,
+                    is_disabled=page >= pages - 1,
+                ),
+            ]),
+        ])
+    body.extend([
+        Separator(divider=True),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_matches:{tag}",
+                label="Back to Find trades",
+                emoji=RETURN_EMOJI,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_dashboard:{tag}",
+                label="Back to board",
+            ),
+        ]),
+    ])
+    return [Container(accent_color=accent, components=body)]
+
+
+def _favours_view(account, matches: list, *, page: int = 0) -> list[Container]:
+    """Cards somebody could hand over with nothing of yours to give back."""
+    per_card = _offers_by_card(matches)
+    oneway = [c for c in CARDS if c.id in per_card and not per_card[c.id]["mutual"]]
+    pages = max(1, math.ceil(len(oneway) / MATCH_LIST_PAGE))
+    page = min(max(0, page), pages - 1)
+    window = oneway[page * MATCH_LIST_PAGE:(page + 1) * MATCH_LIST_PAGE]
+    return _match_list_view(
+        account,
+        title="# 🎁 Ask a favour",
+        blurb=(
+            "Nothing of yours matches what these players need, so they would "
+            "get nothing back. Open a card to see who holds it and ask."
+        ),
+        rows=_offer_rows([c.id for c in window], per_card),
+        action="cards_favours",
+        page=page,
+        pages=pages,
+        accent=GOLD_ACCENT,
+    )
+
+
+def _demand_view(
+    account, inventory: dict, supply: dict | None, *, page: int = 0
+) -> list[Container]:
+    """Your spares that other people are missing."""
+    mine = normalize_cards(inventory.get("cards"))
+    wanted = [
+        card for card in CARDS
+        if mine.get(card.id, OWNED) >= DUPLICATE
+        and supply and supply.get(card.id) and supply[card.id].demand
+    ]
+    pages = max(1, math.ceil(len(wanted) / MATCH_LIST_PAGE))
+    page = min(max(0, page), pages - 1)
+    window = wanted[page * MATCH_LIST_PAGE:(page + 1) * MATCH_LIST_PAGE]
+
+    blocks = []
+    for category in CATEGORIES:
+        rows = [c for c in window if c.category == category.id]
+        if not rows:
+            continue
+        lines = [f"### {category_markup(category.id)} {category.short_name}"]
+        for card in rows:
+            icon = troop_emoji.markup(card.id)
+            lead = f"{icon} " if icon else ""
+            demand = supply[card.id].demand
+            lines.append(
+                f"- {lead}**{_escape_markdown(card.name)}** — "
+                f"{demand} need{'s' if demand == 1 else ''} it"
+            )
+        blocks.append("\n".join(lines))
+
+    return _match_list_view(
+        account,
+        title="# 🎯 Your spares in demand",
+        blurb="Worth holding on to when you bargain.",
+        rows="\n\n".join(blocks),
+        action="cards_demand",
+        page=page,
+        pages=pages,
+        accent=GOLD_ACCENT,
+    )
 
 
 def _matches_view(
@@ -3013,18 +3155,10 @@ def _matches_view(
             Separator(divider=True),
             Text(content=(
                 "## 🤝 Even swaps\n"
-                "-# They have what you need and want one of your spares.\n"
-                + _offer_rows([c.id for c in mutual_ids], per_card)
+                "-# They have what you need and want one of your spares."
             )),
-        ])
-    if oneway_ids:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                "## 🎁 They would be doing you a favour\n"
-                "-# Nothing of yours matches, so they get nothing back.\n"
-                + _offer_rows([c.id for c in oneway_ids], per_card)
-            )),
+            Separator(divider=False),
+            Text(content=_offer_rows([c.id for c in mutual_ids], per_card)),
         ])
     # What your own spares are worth. This is the one thing the old "Who has
     # what" panel said that this screen did not, so it moved here rather than
@@ -3037,29 +3171,6 @@ def _matches_view(
         and supply.get(card.id)
         and supply[card.id].demand
     ]
-    if wanted_from_me:
-        lines = []
-        for category in CATEGORIES:
-            rows = [c for c in wanted_from_me if c.category == category.id]
-            if not rows:
-                continue
-            lines.append(f"{category_markup(category.id)} **{category.short_name}**")
-            for card in rows[:6]:
-                icon = troop_emoji.markup(card.id)
-                lead = f"{icon} " if icon else ""
-                demand = supply[card.id].demand
-                lines.append(
-                    f"- {lead}**{_escape_markdown(card.name)}** — "
-                    f"{demand} need{'s' if demand == 1 else ''} it"
-                )
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                "## 🎯 Your spares in demand\n"
-                "-# Worth holding on to when you bargain.\n" + "\n".join(lines)
-            )),
-        ])
-
     if not per_card:
         body.extend([
             Separator(divider=True),
@@ -3121,6 +3232,28 @@ def _matches_view(
             f"-# {listed} swap option{'s' if listed != 1 else ''} listed · "
             f"up to **{doable}** could complete at once"
         )))
+
+    # The two secondary lists moved behind their own buttons. Printed inline
+    # they tripled the height of the screen, and neither is what a member came
+    # here to do: even swaps are the trades that actually complete.
+    secondary: list = []
+    if oneway_ids:
+        secondary.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_favours:{tag}",
+            label=f"Ask a favour ({len(oneway_ids)})",
+            emoji="🎁",
+        ))
+    if wanted_from_me:
+        secondary.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_demand:{tag}",
+            label=f"Your spares in demand ({len(wanted_from_me)})",
+            emoji="🎯",
+        ))
+    if secondary:
+        body.extend([Separator(divider=True), ActionRow(components=secondary)])
+
     body.append(ActionRow(components=[
         Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -7750,6 +7883,60 @@ async def cards_baseline(
     except InventoryWriteConflict:
         return _inventory_retry_notice()
     return _category_editor(account, inventory, category_id)
+
+
+@register_action("cards_favours")
+@lightbulb.di.with_di
+async def cards_favours(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    tag, page = _parse_trade_page(action_id)
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not inventory_is_matchable(inventory):
+        return _stale_collection_notice()
+    candidates = await _candidate_inventories(
+        mongo, inventory, guild_id=_guild_id(ctx)
+    )
+    available = _without_reserved_cards(inventory)
+    return _favours_view(
+        account, find_matches(available, candidates), page=page
+    )
+
+
+@register_action("cards_demand")
+@lightbulb.di.with_di
+async def cards_demand(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    tag, page = _parse_trade_page(action_id)
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not inventory_is_matchable(inventory):
+        return _stale_collection_notice()
+    candidates = await _candidate_inventories(
+        mongo, inventory, guild_id=_guild_id(ctx)
+    )
+    return _demand_view(
+        account,
+        _without_reserved_cards(inventory),
+        family_supply(candidates),
+        page=page,
+    )
 
 
 @register_action("cards_matches")
