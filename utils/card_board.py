@@ -1,16 +1,16 @@
-"""Render a Discord-friendly visual Clash of Cards collection board.
+"""Render Discord-friendly visual Clash of Cards collection artwork.
 
-The renderer is intentionally asset-source agnostic.  Callers pass validated,
-in-memory card artwork (normally exact tile crops from the member's scan), and
-the renderer returns one composite PNG plus an accessibility description.  It
-does not fetch, hotlink, persist, or learn artwork and it never treats an absent
-inventory state as owned.
+The full-board renderer is intentionally asset-source agnostic.  Callers can
+pass validated, in-memory artwork, and it returns one composite PNG plus an
+accessibility description.  The focused-thumbnail renderer uses the
+checksum-pinned local artwork.  Neither path fetches, hotlinks, persists, or
+learns artwork, and neither treats an absent inventory state as owned.
 
 Supercell's fan-content policy permits non-commercial fan guide tools but
-requires an unofficiality notice and says Supercell assets may not be modified
-without permission.  For that reason this module only resizes supplied artwork
-to fit; collection state is communicated by frames and badges drawn *around*
-the artwork rather than by recoloring it.
+requires an unofficiality notice.  Collection state is primarily communicated
+with frames and badges around the art; focused missing-card thumbnails also
+apply a transient in-memory grayscale treatment and never overwrite the
+checked-in source files.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from utils.cards import (
     CARDS,
     CARD_BY_ID,
     CATEGORIES,
+    CATEGORY_BY_ID,
     CATEGORY_CARDS,
     DUPLICATE,
     MISSING,
@@ -43,6 +44,7 @@ BOARD_WIDTH = 1120
 BOARD_HEIGHT = 1580
 TRADE_STRIP_WIDTH = 1120
 TRADE_STRIP_HEIGHT = 360
+CARD_THUMBNAIL_SIZE = 256
 BOARD_COLUMNS = 6
 TILE_WIDTH = 150
 TILE_HEIGHT = 112
@@ -65,12 +67,24 @@ UNKNOWN_FRAME = (89, 82, 78)
 DUPLICATE_BADGE = (250, 201, 38)
 DUPLICATE_TEXT = (65, 48, 12)
 
-CATEGORY_COLORS = {
-    "elixir": (211, 65, 218),
-    "dark_elixir": (139, 49, 170),
-    "builder_base": (54, 151, 224),
-    "super_troop": (239, 101, 40),
-}
+# Single-source category accents for both Discord containers and rendered art.
+# The integer form can be passed directly to Hikari; the RGB form is used by
+# Pillow.  Keeping both derived from the same values prevents the UI pills and
+# the card frames from drifting apart.
+CATEGORY_ACCENTS: Mapping[str, int] = MappingProxyType({
+    "elixir": 0xDB4EE1,
+    "dark_elixir": 0x9424B5,
+    "builder_base": 0x4D91E5,
+    "super_troop": 0xF16F2F,
+})
+CATEGORY_COLORS: Mapping[str, tuple[int, int, int]] = MappingProxyType({
+    category_id: (
+        (accent >> 16) & 0xFF,
+        (accent >> 8) & 0xFF,
+        accent & 0xFF,
+    )
+    for category_id, accent in CATEGORY_ACCENTS.items()
+})
 
 DISCLAIMER = (
     "This material is unofficial and is not endorsed by Supercell. "
@@ -104,6 +118,15 @@ class RenderedTradeStrip:
     wanted_card_id: str
     offered_card_id: str
     other_offer_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RenderedCardThumbnail:
+    """One immutable, accessible card tile for a Discord Thumbnail."""
+
+    png_bytes: bytes
+    filename: str
+    alt_text: str
 
 
 @lru_cache(maxsize=1)
@@ -158,6 +181,9 @@ def _state(value: object) -> int | str:
             OWNED_SPARE_UNVERIFIED,
             "owned_unverified",
             "spare_unknown",
+            "possible-spare",
+            "possible_spare",
+            "possible spare",
         }:
             return OWNED_SPARE_UNVERIFIED
         return UNKNOWN
@@ -280,6 +306,171 @@ def _paste_artwork(
     x = left + (right - left - thumbnail.width) // 2
     y = top + (bottom - top - thumbnail.height) // 2
     canvas.paste(thumbnail, (x, y), thumbnail)
+
+
+def _thumbnail_state(value: object) -> int | str:
+    """Normalize one of the four states supported by a focused card tile."""
+    state = _state(value)
+    if state not in {MISSING, OWNED, DUPLICATE, OWNED_SPARE_UNVERIFIED}:
+        raise ValueError(
+            "card state must be missing, owned, duplicate, or possible-spare"
+        )
+    return state
+
+
+def _thumbnail_state_slug(state: int | str) -> str:
+    if state == MISSING:
+        return "missing"
+    if state == DUPLICATE:
+        return "duplicate"
+    if state == OWNED_SPARE_UNVERIFIED:
+        return "possible-spare"
+    return "owned"
+
+
+def _thumbnail_alt_text(card, state: int | str) -> str:
+    category_name = CATEGORY_BY_ID[card.category].name
+    if state == MISSING:
+        detail = "missing. Grayscale card art with an X marker."
+    elif state == DUPLICATE:
+        detail = "duplicate available (x2 or more)."
+    elif state == OWNED_SPARE_UNVERIFIED:
+        detail = "owned; possible spare needs checking (question-mark badge)."
+    else:
+        detail = "owned (one copy)."
+    return f"{card.name}, {category_name}: {detail}"
+
+
+@lru_cache(maxsize=len(CARDS) * 4)
+def _render_card_thumbnail_cached(
+    card_id: str,
+    state: int | str,
+) -> RenderedCardThumbnail:
+    """Render one canonical card/state pair from the checked-in artwork."""
+    card = CARD_BY_ID[card_id]
+    accent = CATEGORY_COLORS[card.category]
+    missing = state == MISSING
+
+    canvas = Image.new(
+        "RGB",
+        (CARD_THUMBNAIL_SIZE, CARD_THUMBNAIL_SIZE),
+        (30, 27, 26),
+    )
+    draw = ImageDraw.Draw(canvas)
+    # A compact version of the in-game tile: category frame, dark inset, art.
+    draw.rounded_rectangle(
+        (8, 10, CARD_THUMBNAIL_SIZE - 8, CARD_THUMBNAIL_SIZE - 6),
+        radius=23,
+        fill=(24, 22, 21),
+    )
+    draw.rounded_rectangle(
+        (7, 7, CARD_THUMBNAIL_SIZE - 9, CARD_THUMBNAIL_SIZE - 11),
+        radius=22,
+        fill=accent,
+        outline=(38, 32, 30),
+        width=4,
+    )
+    interior = (67, 67, 67) if missing else TILE_INTERIOR
+    art_box = (19, 19, CARD_THUMBNAIL_SIZE - 21, CARD_THUMBNAIL_SIZE - 23)
+    draw.rounded_rectangle(
+        art_box,
+        radius=15,
+        fill=interior,
+        outline=(210, 210, 210) if missing else (235, 219, 198),
+        width=2,
+    )
+
+    artwork = _artwork_thumbnail(
+        _bundled_artwork().get(card.id),
+        (art_box[2] - art_box[0] - 8, art_box[3] - art_box[1] - 8),
+    )
+    if artwork is None:
+        initials = "".join(part[0] for part in card.name.split()[:2]).upper()
+        _centered_text(
+            draw,
+            art_box,
+            initials or "?",
+            font=_font(48),
+            fill=(215, 215, 215) if missing else TEXT_LIGHT,
+        )
+    else:
+        if missing:
+            alpha = artwork.getchannel("A")
+            artwork = artwork.convert("L").convert("RGBA")
+            artwork.putalpha(alpha)
+        x = art_box[0] + (art_box[2] - art_box[0] - artwork.width) // 2
+        y = art_box[1] + (art_box[3] - art_box[1] - artwork.height) // 2
+        canvas.paste(artwork, (x, y), artwork)
+
+    if state == DUPLICATE:
+        badge = (163, 14, 244, 60)
+        draw.rounded_rectangle(
+            badge,
+            radius=13,
+            fill=DUPLICATE_BADGE,
+            outline=(112, 77, 15),
+            width=3,
+        )
+        _centered_text(
+            draw,
+            badge,
+            "x2+",
+            font=_font(24),
+            fill=DUPLICATE_TEXT,
+        )
+    elif state == OWNED_SPARE_UNVERIFIED:
+        badge = (188, 13, 244, 69)
+        draw.ellipse(
+            badge,
+            fill=DUPLICATE_BADGE,
+            outline=(112, 77, 15),
+            width=3,
+        )
+        _centered_text(
+            draw,
+            badge,
+            "?",
+            font=_font(30),
+            fill=DUPLICATE_TEXT,
+        )
+    elif missing:
+        # The two-layer X remains legible after Discord scales the tile down.
+        diagonals = (
+            (43, 43, CARD_THUMBNAIL_SIZE - 43, CARD_THUMBNAIL_SIZE - 47),
+            (CARD_THUMBNAIL_SIZE - 43, 43, 43, CARD_THUMBNAIL_SIZE - 47),
+        )
+        for diagonal in diagonals:
+            draw.line(diagonal, fill=(45, 45, 45), width=22)
+        for diagonal in diagonals:
+            draw.line(diagonal, fill=(235, 235, 235), width=9)
+
+    output = io.BytesIO()
+    canvas.save(output, format="PNG", optimize=True)
+    slug = _thumbnail_state_slug(state)
+    return RenderedCardThumbnail(
+        png_bytes=output.getvalue(),
+        filename=f"clash-card-{card.id}-{slug}.png",
+        alt_text=_thumbnail_alt_text(card, state),
+    )
+
+
+def render_card_thumbnail(
+    card_id: str,
+    state: BoardState,
+) -> RenderedCardThumbnail:
+    """Return a cached focused card tile for a Discord section thumbnail.
+
+    Only catalog ids and the four user-facing collection states are accepted.
+    The returned frozen dataclass contains immutable bytes and no mutable
+    Pillow object, so callers can safely share cached results across views.
+    """
+    normalized_id = str(card_id).casefold().strip()
+    if normalized_id not in CARD_BY_ID:
+        raise ValueError("card id must be in the catalog")
+    return _render_card_thumbnail_cached(
+        normalized_id,
+        _thumbnail_state(state),
+    )
 
 
 def _draw_category_tabs(

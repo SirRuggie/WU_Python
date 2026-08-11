@@ -33,7 +33,14 @@ from extensions.commands.accounts import (
     load_accounts,
 )
 from extensions.components import register_action
-from utils.card_board import render_inventory_card_board, render_trade_strip
+from utils.card_board import (
+    CARD_ARTWORK_DIR,
+    CATEGORY_ACCENTS,
+    OWNED_SPARE_UNVERIFIED,
+    render_card_thumbnail,
+    render_inventory_card_board,
+    render_trade_strip,
+)
 from utils.cards import (
     CARD_BY_ID,
     CARD_BY_NAME,
@@ -68,10 +75,12 @@ from hikari.impl import (
     MediaGalleryItemBuilder as MediaItem,
     MessageActionRowBuilder as ActionRow,
     ModalActionRowBuilder as ModalActionRow,
+    SectionComponentBuilder as Section,
     SelectOptionBuilder as SelectOption,
     SeparatorComponentBuilder as Separator,
     TextDisplayComponentBuilder as Text,
     TextSelectMenuBuilder as TextSelectMenu,
+    ThumbnailComponentBuilder as Thumbnail,
 )
 
 
@@ -98,8 +107,20 @@ CARD_SCAN_MAX_UPLOAD_ATTACHMENTS = 10
 CARD_SCAN_MIN_CONFIDENCE = 0.75
 CARD_SCAN_CONCURRENCY = 2
 HIDDEN_BADGE_BATCH_SIZE = 25
+CARD_BROWSER_PAGE_SIZE = 4
 COLLECTION_LINK = "https://link.clashofclans.com/en/?action=OpenCollection"
+GLOBAL_CHAT_LINK = (
+    "https://link.clashofclans.com/?action=OpenGlobalChat&"
+    "chatId=P592bad3209a4408a9ba356469caaaa81"
+)
 FOOTER = "assets/Red_Footer.png"
+
+CATEGORY_CHIP_EMOJIS = {
+    "elixir": "🩷",
+    "dark_elixir": "🟪",
+    "builder_base": "🟦",
+    "super_troop": "🟧",
+}
 
 
 def _parse_snowflake_env(name: str) -> int | None:
@@ -381,6 +402,29 @@ def _parse_quick_apply_target(
         card_id if card_id in CARD_BY_ID else None,
         parsed_revision,
     )
+
+
+def _parse_editor_target(value: object) -> tuple[str, str | None]:
+    tag, separator, card_id = str(value or "").partition("|")
+    return (
+        _normalize_tag(tag),
+        card_id if separator and card_id in CARD_BY_ID else None,
+    )
+
+
+def _parse_editor_search_target(value: object) -> str:
+    return _normalize_tag(value)
+
+
+def _parse_editor_category_target(value: object) -> tuple[str, str | None, int]:
+    parts = str(value or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    category_id = parts[1] if len(parts) > 1 and parts[1] in CATEGORY_BY_ID else None
+    try:
+        page = max(0, int(parts[2])) if len(parts) > 2 else 0
+    except (TypeError, ValueError):
+        page = 0
+    return tag, category_id, page
 
 
 def _parse_hidden_target(value: object) -> tuple[str, int | None]:
@@ -1430,7 +1474,6 @@ def _scan_review(
     states = draft.get("card_states") if isinstance(draft, dict) else {}
     states = states if isinstance(states, dict) else {}
     missing = [card_id for card_id, state in states.items() if state == MISSING]
-    duplicates = [card_id for card_id, state in states.items() if state == DUPLICATE]
     unknown = _ordered_card_ids(draft.get("unknown_card_ids") or ())
     unseen = _ordered_card_ids(draft.get("unseen_card_ids") or ())
     errors = _scan_strings(draft.get("errors"), limit=5)
@@ -1442,67 +1485,45 @@ def _scan_review(
     correctable = _scan_draft_correctable(draft)
     capture_issue_lines = _scan_capture_issue_lines(draft)
 
-    details = [
-        f"**Board:** {len(missing)} missing · {len(duplicates)} duplicates",
-        "**Legend:** gray = missing · gold ×2 = spare · ? = needs your check",
-    ]
+    collected = len(states) - len(missing)
+    details = []
     if unknown:
         details.append(
             f"**Needs review ({len(unknown)}):** {_card_names(unknown)}"
         )
     if unseen:
         details.append(f"**Not visible:** {len(unseen)} card positions")
-    if unverified_duplicates:
-        details.append(
-            f"**Possible spares to check after save:** {len(unverified_duplicates)}"
-        )
     if capture_issue_lines:
         details.append("**Pages to retake:**\n" + "\n".join(capture_issue_lines))
 
     if errors:
-        status = (
-            "⛔ **This draft cannot be saved.** The batch scanner is unavailable or "
-            "could not read the capture set. Nothing changed."
-        )
+        status = "**This scan cannot be saved.** The scanner could not read it."
     elif reserved:
-        status = (
-            "⛔ **This draft cannot be saved while a card is reserved by an accepted "
-            "trade.** Finish or cancel that trade first."
-        )
+        status = "**Finish or cancel the accepted card trade before saving this scan.**"
     elif correctable and not reserved:
-        status = (
-            "⚠️ **The card positions are fully identified, but some states need "
-            "your input.** Correct the next card below as Missing, Owned once, or "
-            "Duplicate. Saving stays disabled until every uncertain card is fixed."
-        )
+        status = "**Fix the uncertain card below before saving.**"
     elif not confirmable:
-        status = (
-            "⚠️ **This draft cannot be saved yet.** Retake the pages listed below, "
-            "or use the Advanced editor."
-        )
+        status = "**This scan needs another screenshot before it can be saved.**"
     else:
-        status = (
-            "✅ **All 60 cards were read.** Check the board, then save."
-        )
-        if unverified_duplicates:
-            status += (
-                " Possible spares are checked together next."
-            )
+        status = "**All 60 cards were read.**"
 
     body: list = [
-        Text(content="# 📸 Screenshot Review"),
+        Text(content="# Scan complete"),
         Text(content=(
-            f"## {_escape_markdown(account.name)} · `{_normalize_tag(account.tag)}`\n"
-            f"{len(states)}/60 resolved · **nothing saved yet** · "
-            f"usable {_scan_expiry_text(usable_until)}\n"
-            f"-# {_scan_privacy_text()}"
+            f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
+            f"**{collected} collected** · {len(missing)} missing\n"
+            + (
+                f"{len(unverified_duplicates)} cards still need a duplicate check.\n"
+                if unverified_duplicates else ""
+            )
+            + "-# Nothing has been saved. The bot does not retain the image files. "
+            f"This review is usable {_scan_expiry_text(usable_until)}."
         )),
         Separator(divider=True),
-        _scan_board_media(account, draft, rendered_board=rendered_board),
-        Separator(divider=True),
         Text(content=status),
-        Text(content="\n".join(details)),
     ]
+    if details:
+        body.append(Text(content="\n".join(details)))
     if correctable:
         next_card_id = unknown[0]
         body.extend([
@@ -1513,7 +1534,7 @@ def _scan_review(
             )),
             ActionRow(components=[
                 Button(
-                    style=hikari.ButtonStyle.DANGER,
+                    style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_scan_fix_missing:{draft_id}",
                     label="Missing",
                 ),
@@ -1523,7 +1544,7 @@ def _scan_review(
                     label="Owned once",
                 ),
                 Button(
-                    style=hikari.ButtonStyle.SUCCESS,
+                    style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_scan_fix_duplicate:{draft_id}",
                     label="Duplicate",
                 ),
@@ -1531,30 +1552,17 @@ def _scan_review(
         ])
     save_buttons = [
         Button(
-            style=hikari.ButtonStyle.SUCCESS,
+            style=hikari.ButtonStyle.PRIMARY,
             custom_id=f"cards_scan_confirm:{draft_id}",
-            label=(
-                "Save & check possible spares"
-                if unverified_duplicates and confirmable
-                else "Save scanned collection"
-            ),
-            emoji="✅",
+            label="Save collection",
             is_disabled=not confirmable,
         ),
     ]
-    if confirmable:
+    if not confirmable:
         save_buttons.append(Button(
-            style=hikari.ButtonStyle.PRIMARY,
-            custom_id=f"cards_scan_confirm_edit:{draft_id}",
-            label="Save & quick update",
-            emoji="⚡",
-        ))
-    else:
-        save_buttons.append(Button(
-            style=hikari.ButtonStyle.PRIMARY,
+            style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-            label="Advanced editor · scan won't save",
-            emoji="✏️",
+            label="Advanced manual editor",
         ))
         body.append(Text(content=(
             "The Advanced editor starts from your saved collection; this scan "
@@ -1562,21 +1570,16 @@ def _scan_review(
         )))
     body.extend([
         Separator(divider=True),
-        ActionRow(components=save_buttons),
         ActionRow(components=[
+            *save_buttons,
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_scan_cancel:{draft_id}",
                 label="Cancel",
-                emoji="✖️",
             ),
         ]),
-        Media(items=[MediaItem(media=FOOTER)]),
     ])
-    return [Container(
-        accent_color=GREEN_ACCENT if confirmable else RED_ACCENT,
-        components=body,
-    )]
+    return [Container(components=body)]
 
 
 async def _owned_account(
@@ -1785,132 +1788,127 @@ def _dashboard(
     unverified_duplicates = _scan_unverified_ids(inventory)
     stamp = inventory.get("confirmed_at") or inventory.get("updated_at")
     age = freshness_label(stamp)
-    freshness_emoji = {"fresh": "🟢", "aging": "🟡", "stale": "🔴"}[age]
     if summary.known:
         headline = (
-            f"**{summary.collected}/{summary.known} owned** · "
-            f"**{summary.missing} missing** · "
-            f"**{summary.duplicates} duplicate{'s' if summary.duplicates != 1 else ''}**"
+            f"**{summary.collected} of {summary.known} collected** · "
+            f"{summary.missing} missing · "
+            f"{summary.duplicates} spare{'s' if summary.duplicates != 1 else ''}"
         )
     else:
         headline = "No categories set up yet"
 
     body: list = [
-        Text(content="# 🃏 Clash of Cards"),
+        Text(content="# Clash of Cards"),
         Text(content=(
-            f"## {_escape_markdown(account.name)} · `{_normalize_tag(account.tag)}`\n"
-            f"{_escape_markdown(account.clan_name or 'No clan')}\n\n"
+            f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
             f"{headline}\n"
-            f"{freshness_emoji} **{age.title()}** · confirmed {_relative_timestamp(stamp)}"
+            f"Updated {_relative_timestamp(stamp)}"
         )),
-        Separator(divider=True),
-        _inventory_board_media(
-            account, inventory, rendered_board=rendered_board
-        ),
     ]
 
     if not all_complete:
         body.extend([
             Separator(divider=True),
             Text(content=(
-                "Tap **Scan screenshots** and send them together in DM—any order. "
-                "Nothing saves until you confirm."
+                "Send the collection screenshots together in DM. Their order "
+                "does not matter."
             )),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.PRIMARY,
+                    custom_id=f"cards_scan_start:{_normalize_tag(account.tag)}",
+                    label="Scan screenshots",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
+                    label="Enter manually",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_trades:{_normalize_tag(account.tag)}",
+                    label="My trades",
+                ),
+            ]),
         ])
-    if reserved_count:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                f"🤝 **{reserved_count} exact card"
-                f"{'s are' if reserved_count != 1 else ' is'} reserved by "
-                "accepted swaps.** Other categories can still be updated, and "
-                "unreserved cards remain searchable and proposal-ready."
-            )),
-        ])
+        if account_count > 1:
+            body.append(ActionRow(components=[Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id="cards_account_page:0",
+                label="Switch account",
+            )]))
+        return [Container(components=body)]
+
     if unverified_duplicates:
         body.extend([
             Separator(divider=True),
             Text(content=(
-                f"📸 **Check {len(unverified_duplicates)} possible spare"
-                f"{'s' if len(unverified_duplicates) != 1 else ''}.** The screenshots "
-                "could not show those duplicate badges."
+                f"**{len(unverified_duplicates)} card"
+                f"{'s need' if len(unverified_duplicates) != 1 else ' needs'} "
+                "a duplicate check."
+            )),
+            ActionRow(components=[Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=(
+                    f"cards_editor:{_normalize_tag(account.tag)}|"
+                    f"{unverified_duplicates[0]}"
+                ),
+                label="Check now",
+            )]),
+        ])
+
+    if reserved_count:
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                f"{reserved_count} card{'s are' if reserved_count != 1 else ' is'} "
+                "reserved by accepted trades."
             )),
         ])
 
+    saved_cards = normalize_cards(inventory.get("cards"))
+    first_card = next(
+        (
+            card.id
+            for card in CARDS
+            if saved_cards.get(card.id, OWNED) == MISSING
+        ),
+        CARDS[0].id,
+    )
     body.extend([
         Separator(divider=True),
         ActionRow(components=[
             Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"cards_scan_start:{_normalize_tag(account.tag)}",
-                label="Scan screenshots",
-                emoji="📸",
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_update:{_normalize_tag(account.tag)}",
-                label=(
-                    "Check possible spares"
+                style=(
+                    hikari.ButtonStyle.SECONDARY
                     if unverified_duplicates
-                    else "Quick update"
+                    else hikari.ButtonStyle.PRIMARY
                 ),
-                emoji="⚡",
+                custom_id=f"cards_editor:{_normalize_tag(account.tag)}|{first_card}",
+                label="Edit cards",
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_review:{_normalize_tag(account.tag)}",
-                label="Review",
-                emoji="📋",
-                is_disabled=not complete,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SUCCESS,
                 custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
-                label="Find matches",
-                emoji="🔎",
-                is_disabled=(
-                    not complete
-                    or not inventory_is_matchable(inventory)
-                ),
+                label="Find trades",
+                is_disabled=not inventory_is_matchable(inventory),
             ),
-        ]),
-        ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_confirm:{_normalize_tag(account.tag)}",
-                label="Everything still accurate",
-                emoji="✅",
-                is_disabled=not complete,
-            ),
-            Button(
-                style=hikari.ButtonStyle.PRIMARY,
                 custom_id=f"cards_trades:{_normalize_tag(account.tag)}",
                 label="My trades",
-                emoji="🤝",
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id="cards_account_page:0",
-                label="Switch account",
-                emoji="👤",
-                is_disabled=account_count <= 1,
-            ),
-            LinkButton(
-                url=COLLECTION_LINK,
-                label="Open in game",
-                emoji="🎮",
+                custom_id=f"cards_more:{_normalize_tag(account.tag)}",
+                label="More",
             ),
         ]),
         Text(content=(
-            "-# Duplicate means 2 or more copies. Matching ignores collections "
-            "that have not been confirmed for 72 hours."
+            f"-# {age.title()} · A spare means 2+ copies."
         )),
-        Media(items=[MediaItem(media=FOOTER)]),
     ])
-    return [Container(
-        accent_color=GREEN_ACCENT if all_complete else RED_ACCENT,
-        components=body,
-    )]
+    return [Container(components=body)]
 
 
 def _state_name(value: int) -> str:
@@ -1919,6 +1917,326 @@ def _state_name(value: int) -> str:
         OWNED: "owned once",
         DUPLICATE: "duplicate",
     }.get(value, "unknown")
+
+
+def _editor_state_text(
+    state: int,
+    *,
+    possible_spare: bool,
+    reserved: bool,
+) -> str:
+    if reserved:
+        return "Reserved by an accepted trade"
+    if possible_spare:
+        return "1 copy confirmed · duplicate badge needs checking"
+    return {
+        MISSING: "Missing · 0 copies",
+        OWNED: "Owned · 1 copy",
+        DUPLICATE: "Spare available · 2+ copies",
+    }.get(state, "State unknown")
+
+
+def _editor_ready(inventory: dict) -> bool:
+    return len(
+        set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
+    ) == len(CATEGORIES)
+
+
+def _category_accent(category_id: str) -> int:
+    return CATEGORY_ACCENTS[category_id]
+
+
+def _editor_location(card_id: str) -> tuple[str, int]:
+    card = CARD_BY_ID.get(card_id) or CARDS[0]
+    definitions = CATEGORY_CARDS[card.category]
+    index = next(
+        index for index, definition in enumerate(definitions)
+        if definition.id == card.id
+    )
+    return card.category, index // CARD_BROWSER_PAGE_SIZE
+
+
+def _browser_card_state(inventory: dict, card_id: str) -> int | str:
+    if card_id in set(_scan_unverified_ids(inventory)):
+        return OWNED_SPARE_UNVERIFIED
+    return normalize_cards(inventory.get("cards")).get(card_id, OWNED)
+
+
+def _render_browser_tiles(inventory: dict, card_ids: list[str]) -> dict[str, object]:
+    return {
+        card_id: render_card_thumbnail(
+            card_id,
+            _browser_card_state(inventory, card_id),
+        )
+        for card_id in card_ids
+    }
+
+
+def _category_chip_label(inventory: dict, category_id: str, *, selected: bool) -> str:
+    category = CATEGORY_BY_ID[category_id]
+    summary = category_summary(inventory.get("cards"), category_id)
+    check = " ✓" if summary.collected == summary.known else ""
+    marker = "• " if selected else ""
+    return f"{marker}{category.short_name} {summary.collected}/{summary.known}{check}"
+
+
+def _category_browser(
+    account,
+    inventory: dict,
+    category_id: str,
+    page: int = 0,
+    *,
+    saved: str | None = None,
+    rendered_tiles: dict[str, object] | None = None,
+) -> list[Container]:
+    if not _editor_ready(inventory):
+        return _notice(
+            "Finish collection setup first",
+            "Scan the screenshots or use the Advanced manual editor before "
+            "changing individual cards.",
+        )
+    if category_id not in CATEGORY_BY_ID:
+        category_id = CATEGORIES[0].id
+    category = CATEGORY_BY_ID[category_id]
+    definitions = CATEGORY_CARDS[category_id]
+    page_count = max(1, math.ceil(len(definitions) / CARD_BROWSER_PAGE_SIZE))
+    page = min(max(0, int(page)), page_count - 1)
+    start = page * CARD_BROWSER_PAGE_SIZE
+    visible = list(definitions[start:start + CARD_BROWSER_PAGE_SIZE])
+    tiles = rendered_tiles or _render_browser_tiles(
+        inventory, [card.id for card in visible]
+    )
+    tag = _normalize_tag(account.tag)
+    saved_cards = normalize_cards(inventory.get("cards"))
+    possible_spares = set(_scan_unverified_ids(inventory))
+    reservations = _card_reservations(inventory)
+    summary = category_summary(inventory.get("cards"), category_id)
+
+    heading = (
+        f"# Clash of Cards\n"
+        f"**{_escape_markdown(account.name)}** · `{tag}`\n"
+        f"**{category.name}** · {summary.collected}/{summary.known} collected · "
+        f"{summary.duplicates} spare{'s' if summary.duplicates != 1 else ''} · "
+        f"page {page + 1}/{page_count}"
+    )
+    if summary.collected == summary.known:
+        heading += " · **✓ Complete**"
+    if saved:
+        heading += f"\n**Saved:** {_escape_markdown(saved, limit=120)}"
+
+    category_buttons = [
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_editor_category:{tag}|{item.id}|0|chip",
+            label=_category_chip_label(
+                inventory,
+                item.id,
+                selected=item.id == category_id,
+            ),
+            emoji=CATEGORY_CHIP_EMOJIS[item.id],
+        )
+        for item in CATEGORIES
+    ]
+    body: list = [
+        Text(content=heading),
+        ActionRow(components=category_buttons[:2]),
+        ActionRow(components=category_buttons[2:]),
+        Separator(divider=True),
+    ]
+
+    for card in visible:
+        state = saved_cards.get(card.id, OWNED)
+        possible_spare = card.id in possible_spares
+        reserved = card.id in reservations
+        state_text = _editor_state_text(
+            state,
+            possible_spare=possible_spare,
+            reserved=reserved,
+        )
+        tile = tiles[card.id]
+        if possible_spare and not reserved:
+            controls = [
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_editor_keep:{tag}|{card.id}",
+                    label="No — have 1",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_editor_inc:{tag}|{card.id}",
+                    label="Yes — spare",
+                ),
+            ]
+        else:
+            controls = [
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_editor_dec:{tag}|{card.id}",
+                    label="−1",
+                    is_disabled=reserved or state <= MISSING,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_editor_inc:{tag}|{card.id}",
+                    label="+1",
+                    is_disabled=reserved or state >= DUPLICATE,
+                ),
+            ]
+        body.extend([
+            Section(
+                components=[Text(content=(
+                    f"## {card.name}\n**{state_text}**"
+                ))],
+                accessory=Thumbnail(
+                    media=hikari.Bytes(
+                        tile.png_bytes,
+                        tile.filename,
+                        "image/png",
+                    ),
+                    description=tile.alt_text,
+                ),
+            ),
+            ActionRow(components=controls),
+        ])
+
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_editor_category:{tag}|{category_id}|{page - 1}",
+            label="Previous",
+            is_disabled=page == 0,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_editor_find:{tag}",
+            label="Find card",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_editor_category:{tag}|{category_id}|{page + 1}",
+            label="Next",
+            is_disabled=page == page_count - 1,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{tag}",
+            label="Done",
+        ),
+    ]))
+    return [Container(
+        accent_color=_category_accent(category_id),
+        components=body,
+    )]
+
+
+def _card_editor(
+    account,
+    inventory: dict,
+    card_id: str,
+    *,
+    saved: str | None = None,
+    rendered_tiles: dict[str, object] | None = None,
+) -> list[Container]:
+    category_id, page = _editor_location(card_id)
+    return _category_browser(
+        account,
+        inventory,
+        category_id,
+        page,
+        saved=saved,
+        rendered_tiles=rendered_tiles,
+    )
+
+
+def _editor_search_choices(
+    account,
+    inventory: dict,
+    query: object,
+) -> list[Container]:
+    matches = _card_name_matches(query)
+    tag = _normalize_tag(account.tag)
+    body: list = [
+        Text(content="# Choose a card"),
+        Text(content=(
+            "Tap the card you meant."
+            if matches
+            else "I could not match that name. Try the full card name."
+        )),
+    ]
+    if matches:
+        body.append(ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_editor:{tag}|{card.id}",
+                label=card.name,
+            )
+            for card in matches
+        ]))
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_editor_find:{tag}",
+            label="Try another name",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{tag}",
+            label="Done",
+        ),
+    ]))
+    return [Container(components=body)]
+
+
+def _more_panel(account, inventory: dict, *, account_count: int) -> list[Container]:
+    tag = _normalize_tag(account.tag)
+    complete = bool(inventory.get("complete_categories"))
+    actions = [
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_scan_start:{tag}",
+            label="Scan screenshots",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_review:{tag}",
+            label="Full board",
+            is_disabled=not complete,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_advanced:{tag}",
+            label="Advanced manual editor",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_confirm:{tag}",
+            label="Everything accurate",
+            is_disabled=not complete,
+        ),
+    ]
+    navigation = []
+    if account_count > 1:
+        navigation.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id="cards_account_page:0",
+            label="Switch account",
+        ))
+    navigation.extend([
+        LinkButton(url=COLLECTION_LINK, label="Open in game"),
+        LinkButton(url=GLOBAL_CHAT_LINK, label="Global Card Chat"),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{tag}",
+            label="Back",
+        ),
+    ])
+    return [Container(components=[
+        Text(content=(
+            f"# More\n**{_escape_markdown(account.name)}** · `{tag}`"
+        )),
+        ActionRow(components=actions),
+        ActionRow(components=navigation),
+    ])]
 
 
 def _quick_transition_problem(inventory: dict, card_id: str, mode: str) -> str | None:
@@ -2134,62 +2452,46 @@ def _hidden_badge_review(
             "Possible spares checked",
             "The hidden duplicate-badge review is complete.",
         )
-    batch = pending[:HIDDEN_BADGE_BATCH_SIZE]
+    card = CARD_BY_ID[pending[0]]
     tag = _normalize_tag(account.tag)
-    revision = _inventory_revision_value(inventory)
     state_bound = session_id is not None
-    select_id = (
-        f"cards_scan_hidden_set:{session_id}"
+    no_id = (
+        f"cards_scan_hidden_no:{session_id}"
         if state_bound
-        else f"cards_hidden_set:{tag}|{revision}"
+        else f"cards_editor_keep:{tag}|{card.id}"
     )
-    none_id = (
-        f"cards_scan_hidden_none:{session_id}"
+    yes_id = (
+        f"cards_scan_hidden_yes:{session_id}"
         if state_bound
-        else f"cards_hidden_none:{tag}|{revision}"
+        else f"cards_editor_inc:{tag}|{card.id}"
     )
-    options = [
-        SelectOption(
-            label=CARD_BY_ID[card_id].name,
-            value=card_id,
-            description=f"{CATEGORY_BY_ID[CARD_BY_ID[card_id].category].short_name} card",
-        )
-        for card_id in batch
-    ]
-    body: list = [
-        Text(content="# 👀 Check Possible Spares"),
+    return [Container(components=[
         Text(content=(
-            f"The screenshots hid the ×2 badge on **{len(pending)} card"
-            f"{'s' if len(pending) != 1 else ''}**. Select every card below that "
-            "has a spare. Unselected cards stay owned once."
+            f"# Check possible spare\n"
+            f"**{len(pending)} remaining**"
         )),
-        Separator(divider=True),
-        _inventory_board_media(
-            account, inventory, rendered_board=rendered_board
-        ),
-        Separator(divider=True),
-        ActionRow(components=[
-            TextSelectMenu(
-                custom_id=select_id,
-                placeholder="Select every card with a spare...",
-                min_values=1,
-                max_values=len(options),
-                options=options,
+        Section(
+            components=[Text(content=(
+                f"## {card.name}\n"
+                "Does Clash show **×2 or more** for this card?"
+            ))],
+            accessory=Thumbnail(
+                media=str(CARD_ARTWORK_DIR / f"{card.id}.webp"),
+                description=f"{card.name} — possible spare check",
             ),
-        ]),
+        ),
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=none_id,
-                label="None have a spare",
-                emoji="1️⃣",
+                custom_id=no_id,
+                label="No — have 1",
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=yes_id,
+                label="Yes — spare",
             ),
         ]),
-    ]
-    if len(pending) > len(batch):
-        body.append(Text(content=f"-# {len(pending) - len(batch)} more follow next."))
-    body.extend([
-        Separator(divider=True),
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
@@ -2198,13 +2500,10 @@ def _hidden_badge_review(
                     if state_bound
                     else f"cards_update:{tag}"
                 ),
-                label="Finish later" if state_bound else "Quick update",
-                emoji="⬅️",
+                label="Finish later",
             ),
         ]),
-        Media(items=[MediaItem(media=FOOTER)]),
-    ])
-    return [Container(accent_color=RED_ACCENT, components=body)]
+    ])]
 
 
 def _scan_saved_notice(account, *, pending: int = 0) -> list[Container]:
@@ -2230,48 +2529,41 @@ def _update_overview(account, inventory: dict) -> list[Container]:
                 if reserved
                 else f"{category.short_name} {summary.collected}/{summary.known}"
             )
-            style = hikari.ButtonStyle.SUCCESS
         elif any(step.startswith(f"{category.id}:") for step in reviewed):
             label = f"Continue {category.short_name}"
-            style = hikari.ButtonStyle.PRIMARY
         else:
             label = f"Set up {category.short_name}"
-            style = hikari.ButtonStyle.PRIMARY
         buttons.append(Button(
-            style=style,
+            style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_category:{_normalize_tag(account.tag)}|{category.id}",
             label=label,
-            emoji=category.emoji,
             is_disabled=reserved,
         ))
 
     intro = (
         f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n\n"
-        "Use this only for a full category rebuild. For normal changes, go "
-        "back to **Quick update**."
+        "Use this only for first-time manual setup or a full category rebuild. "
+        "For normal changes, use **Edit cards**."
     )
     if unverified:
         intro += (
             f"\n\n📸 **{len(unverified)} possible spare"
             f"{'s' if len(unverified) != 1 else ''} still need review.** "
-            "Quick update handles them together."
+            "Edit cards handles them one at a time."
         )
     return [Container(
-        accent_color=RED_ACCENT,
         components=[
-            Text(content="# ⚙️ Advanced Full Editor"),
+            Text(content="# Advanced manual editor"),
             Text(content=intro),
             Separator(divider=True),
             ActionRow(components=buttons),
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_update:{_normalize_tag(account.tag)}",
-                    label="Quick update",
-                    emoji="⬅️",
+                    custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
+                    label="Back",
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
         ],
     )]
 
@@ -2417,80 +2709,87 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
 
 
 def _review(account, inventory: dict, *, rendered_board=None) -> list[Container]:
-    cards = normalize_cards(inventory.get("cards"))
-    complete = set(inventory.get("complete_categories") or ())
-    reserved = _card_reservations(inventory)
-    sections: list[str] = []
-    for category in CATEGORIES:
-        if category.id not in complete:
-            sections.append(f"## {category.emoji} {category.short_name}\n*Not set up* ")
-            continue
-        missing = [card.name for card in CATEGORY_CARDS[category.id] if cards.get(card.id) == MISSING]
-        duplicates = [card.name for card in CATEGORY_CARDS[category.id] if cards.get(card.id) == DUPLICATE]
-        committed = [card.name for card in CATEGORY_CARDS[category.id] if card.id in reserved]
-        sections.append(
-            f"## {category.emoji} {category.short_name}\n"
-            f"**Missing:** {', '.join(missing) if missing else 'None'}\n"
-            f"**Duplicates:** {', '.join(duplicates) if duplicates else 'None'}"
-            + (f"\n**Reserved:** {', '.join(committed)}" if committed else "")
-        )
     return [Container(
-        accent_color=RED_ACCENT,
         components=[
-            Text(content="# 📋 Collection Review"),
+            Text(content="# Full collection board"),
             Text(content=f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`"),
-            Separator(divider=True),
             _inventory_board_media(
                 account, inventory, rendered_board=rendered_board
             ),
-            Separator(divider=True),
-            Text(content="\n\n".join(sections)),
-            Separator(divider=True),
             ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"cards_update:{_normalize_tag(account.tag)}",
-                    label="Quick update",
-                    emoji="⚡",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SUCCESS,
-                    custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
-                    label="Find matches",
-                    emoji="🔎",
-                    is_disabled=not inventory_is_matchable(inventory),
-                ),
-                Button(
-                    style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"cards_trades:{_normalize_tag(account.tag)}",
-                    label="My trades",
-                    emoji="🤝",
-                ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                    label="Dashboard",
-                    emoji="⬅️",
+                    label="Back",
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
         ],
     )]
 
 
 async def _dashboard_view(account, inventory: dict, *, account_count: int):
-    board = await _render_inventory_board_async(account, inventory)
     return _dashboard(
         account,
         inventory,
         account_count=account_count,
-        rendered_board=board,
     )
 
 
 async def _review_view(account, inventory: dict):
     board = await _render_inventory_board_async(account, inventory)
     return _review(account, inventory, rendered_board=board)
+
+
+async def _category_browser_view(
+    account,
+    inventory: dict,
+    category_id: str,
+    page: int = 0,
+    *,
+    saved: str | None = None,
+):
+    if category_id not in CATEGORY_BY_ID or not _editor_ready(inventory):
+        return _category_browser(
+            account,
+            inventory,
+            category_id,
+            page,
+            saved=saved,
+        )
+    definitions = CATEGORY_CARDS[category_id]
+    page_count = max(1, math.ceil(len(definitions) / CARD_BROWSER_PAGE_SIZE))
+    page = min(max(0, int(page)), page_count - 1)
+    start = page * CARD_BROWSER_PAGE_SIZE
+    card_ids = [
+        card.id
+        for card in definitions[start:start + CARD_BROWSER_PAGE_SIZE]
+    ]
+    tiles = await asyncio.to_thread(_render_browser_tiles, inventory, card_ids)
+    return _category_browser(
+        account,
+        inventory,
+        category_id,
+        page,
+        saved=saved,
+        rendered_tiles=tiles,
+    )
+
+
+async def _card_editor_view(
+    account,
+    inventory: dict,
+    card_id: str,
+    *,
+    saved: str | None = None,
+):
+    category_id, page = _editor_location(card_id)
+    return await _category_browser_view(
+        account,
+        inventory,
+        category_id,
+        page,
+        saved=saved,
+    )
 
 
 async def _scan_review_view(
@@ -2501,14 +2800,12 @@ async def _scan_review_view(
     *,
     usable_until: object = None,
 ):
-    board = await _render_scan_board_async(account, draft)
     return _scan_review(
         account,
         inventory,
         draft_id,
         draft,
         usable_until=usable_until,
-        rendered_board=board,
     )
 
 
@@ -2518,12 +2815,17 @@ async def _hidden_badge_review_view(
     *,
     session_id: str | None = None,
 ):
-    board = await _render_inventory_board_async(account, inventory)
+    if session_id is None:
+        pending = _scan_unverified_ids(inventory)
+        return (
+            await _card_editor_view(account, inventory, pending[0])
+            if pending
+            else _notice("Duplicate checks complete", "No cards still need review.")
+        )
     return _hidden_badge_review(
         account,
         inventory,
         session_id=session_id,
-        rendered_board=board,
     )
 
 
@@ -6109,7 +6411,7 @@ async def _confirm_scan_draft(
     except ScanDraftStaleError:
         return _notice(
             "Collection changed after this scan",
-            "Nothing was overwritten. Start a new scan or use Quick update.",
+            "Nothing was overwritten. Start a new scan or use Edit cards.",
         )
     pending = _scan_unverified_ids(updated)
     if pending:
@@ -6209,6 +6511,7 @@ async def _scan_hidden_badge_update(
     action_id: str,
     *,
     selected: list[str],
+    single_result: bool | None = None,
     user_id: object,
     guild_id: object,
     account_tag: object,
@@ -6231,7 +6534,12 @@ async def _scan_hidden_badge_update(
     )
     if target_problem:
         return target_problem
-    batch = _scan_unverified_ids(inventory)[:HIDDEN_BADGE_BATCH_SIZE]
+    pending = _scan_unverified_ids(inventory)
+    batch = (
+        pending[:1]
+        if single_result is not None
+        else pending[:HIDDEN_BADGE_BATCH_SIZE]
+    )
     if not batch:
         await _discard_scan_state(mongo, action_id)
         return _scan_saved_notice(account)
@@ -6241,7 +6549,7 @@ async def _scan_hidden_badge_update(
             account,
             inventory,
             batch,
-            selected,
+            batch if single_result is True else selected,
             expected_revision=_inventory_revision_value(inventory),
             discord_id=int(ctx.user.id),
             guild_id=int(guild_id),
@@ -6262,6 +6570,60 @@ async def _scan_hidden_badge_update(
         )
     await _discard_scan_state(mongo, action_id)
     return _scan_saved_notice(account)
+
+
+@register_action("cards_scan_hidden_no", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_hidden_no(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_hidden_badge_update(
+        ctx,
+        action_id,
+        selected=[],
+        single_result=False,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_scan_hidden_yes", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_hidden_yes(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _scan_hidden_badge_update(
+        ctx,
+        action_id,
+        selected=[],
+        single_result=True,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
 
 
 @register_action("cards_scan_hidden_set", requires_state=True)
@@ -6364,6 +6726,273 @@ async def cards_dashboard(
     return await _dashboard_view(
         account, inventory, account_count=len(_loaded_entries(data))
     )
+
+
+@register_action("cards_more")
+@lightbulb.di.with_di
+async def cards_more(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    account, inventory, problem = await _load_target(
+        ctx, action_id, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    data = await load_accounts(coc_client, int(ctx.user.id))
+    return _more_panel(
+        account,
+        inventory,
+        account_count=len(_loaded_entries(data)),
+    )
+
+
+@register_action("cards_editor")
+@lightbulb.di.with_di
+async def cards_editor(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    tag, card_id = _parse_editor_target(action_id)
+    if card_id is None:
+        return _notice("Card unavailable", "Open `/cards` again.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    return await _card_editor_view(account, inventory, card_id)
+
+
+@register_action("cards_editor_category")
+@lightbulb.di.with_di
+async def cards_editor_category(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    tag, category_id, page = _parse_editor_category_target(action_id)
+    if category_id is None:
+        return _notice("Category unavailable", "Open `/cards` again.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    return await _category_browser_view(account, inventory, category_id, page)
+
+
+async def _card_editor_step(
+    ctx,
+    action_id: str,
+    *,
+    direction: int,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+):
+    tag, card_id = _parse_editor_target(action_id)
+    if card_id is None or direction not in {-1, 1}:
+        return _notice("Card unavailable", "Open `/cards` again.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not _editor_ready(inventory):
+        return await _card_editor_view(account, inventory, card_id)
+    state = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
+    was_possible_spare = card_id in set(_scan_unverified_ids(inventory))
+    mode = (
+        ("used" if state >= DUPLICATE else "missing" if state == OWNED else None)
+        if direction < 0
+        else ("found" if state == MISSING else "spare" if state == OWNED else None)
+    )
+    if mode is None:
+        return await _card_editor_view(account, inventory, card_id)
+    try:
+        updated = await _write_one_card(
+            mongo,
+            account,
+            inventory,
+            card_id,
+            mode,
+            expected_revision=_inventory_revision_value(inventory),
+            discord_id=int(ctx.user.id),
+            guild_id=_guild_id(ctx),
+        )
+    except ActiveCardTradeError:
+        return await _card_editor_view(
+            account,
+            inventory,
+            card_id,
+            saved="This card is reserved and was not changed.",
+        )
+    except (InventoryWriteConflict, InvalidCardTransitionError):
+        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        return await _card_editor_view(
+            account,
+            current,
+            card_id,
+            saved="The collection changed, so this view was refreshed.",
+        )
+    pending = _scan_unverified_ids(updated)
+    next_card_id = pending[0] if was_possible_spare and pending else card_id
+    return await _card_editor_view(
+        account,
+        updated,
+        next_card_id,
+        saved=f"{CARD_BY_ID[card_id].name} is {_state_name(int(QUICK_CARD_ACTIONS[mode]['to']))}.",
+    )
+
+
+@register_action("cards_editor_dec")
+@lightbulb.di.with_di
+async def cards_editor_dec(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _card_editor_step(
+        ctx,
+        action_id,
+        direction=-1,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_editor_inc")
+@lightbulb.di.with_di
+async def cards_editor_inc(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _card_editor_step(
+        ctx,
+        action_id,
+        direction=1,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_editor_keep")
+@lightbulb.di.with_di
+async def cards_editor_keep(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    tag, card_id = _parse_editor_target(action_id)
+    if card_id is None:
+        return _notice("Card unavailable", "Open `/cards` again.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not _editor_ready(inventory):
+        return await _card_editor_view(account, inventory, card_id)
+    try:
+        updated = await _write_hidden_badge_batch(
+            mongo,
+            account,
+            inventory,
+            [card_id],
+            [],
+            expected_revision=_inventory_revision_value(inventory),
+            discord_id=int(ctx.user.id),
+            guild_id=_guild_id(ctx),
+        )
+    except ActiveCardTradeError:
+        return await _card_editor_view(
+            account, inventory, card_id,
+            saved="This card is reserved and was not changed.",
+        )
+    except (InventoryWriteConflict, ValueError):
+        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        return await _card_editor_view(
+            account, current, card_id,
+            saved="The collection changed, so this view was refreshed.",
+        )
+    pending = _scan_unverified_ids(updated)
+    return await _card_editor_view(
+        account,
+        updated,
+        pending[0] if pending else card_id,
+        saved=f"{CARD_BY_ID[card_id].name} stays at 1 copy.",
+    )
+
+
+@register_action("cards_editor_find", opens_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def cards_editor_find(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    **_kwargs,
+):
+    tag = _parse_editor_search_target(action_id)
+    if not tag:
+        await ctx.respond(
+            components=_notice("Card search expired", "Open `/cards` again."),
+            ephemeral=True,
+        )
+        return
+    card_input = ModalActionRow().add_text_input(
+        "card_name",
+        "Card name",
+        placeholder="Example: Root Rider",
+        min_length=2,
+        max_length=50,
+        required=True,
+    )
+    await ctx.respond_with_modal(
+        title="Find a card",
+        custom_id=f"cards_editor_find_submit:{tag}",
+        components=[card_input],
+    )
+
+
+@register_action("cards_editor_find_submit", is_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def cards_editor_find_submit(
+    ctx: lightbulb.components.ModalContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    await ctx.defer(ephemeral=True)
+    tag = _parse_editor_search_target(action_id)
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        view = problem
+    elif _editor_ready(inventory):
+        view = _editor_search_choices(
+            account,
+            inventory,
+            _modal_text_value(ctx, "card_name"),
+        )
+    else:
+        view = await _card_editor_view(account, inventory, CARDS[0].id)
+    await ctx.interaction.edit_initial_response(components=view)
 
 
 @register_action("cards_update")

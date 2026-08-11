@@ -1,4 +1,5 @@
 import asyncio
+import math
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -2358,43 +2359,45 @@ def test_dashboard_keeps_my_trades_enabled_before_category_setup():
     assert button.get("disabled", False) is False
 
 
-def test_dashboard_and_quick_update_make_scan_and_one_card_changes_primary():
+def test_dashboard_is_compact_with_one_primary_action_at_most():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
     inventory = _complete_inventory()
     inventory["inventory_revision"] = 7
-    dashboard_nodes = _view_nodes(
-        cards_command._dashboard(account, inventory, account_count=1)
-    )
-    assert any(
-        node.get("custom_id") == "cards_scan_start:#ME"
-        and node.get("label") == "Scan screenshots"
-        for node in dashboard_nodes
-    )
-    assert any(
-        node.get("custom_id") == "cards_update:#ME"
-        and node.get("label") == "Quick update"
-        for node in dashboard_nodes
-    )
-    assert any(node.get("type") == 12 for node in dashboard_nodes)
+    views = [
+        cards_command._dashboard(account, inventory, account_count=1),
+    ]
+    possible_spare = dict(inventory)
+    possible_spare["scan_duplicate_unverified_card_ids"] = ["wizard"]
+    views.append(cards_command._dashboard(
+        account, possible_spare, account_count=1
+    ))
 
-    quick_nodes = _view_nodes(cards_command._quick_update_panel(account, inventory))
-    assert {
+    for view in views:
+        nodes = _view_nodes(view)
+        buttons = [node for node in nodes if node.get("type") == 2]
+        primary = [node for node in buttons if node.get("style") == 1]
+        assert len(buttons) <= 5
+        assert len(primary) <= 1
+        assert not any(node.get("type") == 12 for node in nodes)
+        _assert_discord_payload(view)
+
+    custom_ids = {
         node.get("custom_id")
-        for node in quick_nodes
+        for node in _view_nodes(views[0])
         if node.get("custom_id")
-    } >= {
-        "cards_quick_modal:#ME|found",
-        "cards_quick_modal:#ME|spare",
-        "cards_quick_modal:#ME|used",
-        "cards_quick_modal:#ME|missing",
-        "cards_advanced:#ME",
+    }
+    assert custom_ids == {
+        "cards_editor:#ME|barbarian",
+        "cards_matches:#ME",
+        "cards_trades:#ME",
+        "cards_more:#ME",
     }
 
 
-def test_runtime_dashboard_renders_board_off_the_event_loop(monkeypatch):
+def test_runtime_dashboard_does_not_render_the_optional_full_board(monkeypatch):
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -2411,8 +2414,419 @@ def test_runtime_dashboard_renders_board_off_the_event_loop(monkeypatch):
         account, inventory, account_count=1
     ))
 
-    assert calls == [cards_command.render_inventory_card_board]
+    assert calls == []
+    assert not any(node.get("type") == 12 for node in _view_nodes(view))
     _assert_discord_payload(view)
+
+
+def test_optional_full_board_page_has_only_the_board_and_back_action():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._review(account, _complete_inventory())
+    nodes = _view_nodes(view)
+    buttons = [node for node in nodes if node.get("type") == 2]
+
+    assert len([node for node in nodes if node.get("type") == 12]) == 1
+    assert len(buttons) == 1
+    assert buttons[0]["custom_id"] == "cards_dashboard:#ME"
+    assert buttons[0]["label"] == "Back"
+    assert buttons[0]["style"] == 2
+    _assert_discord_payload(view)
+
+
+@pytest.mark.parametrize("selected_category", [category.id for category in cards.CATEGORIES])
+def test_category_browser_has_four_counted_chips_and_selected_category_accent(
+    selected_category,
+):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["barbarian"] = cards.MISSING
+
+    view = cards_command._category_browser(
+        account, inventory, selected_category, page=0
+    )
+    nodes = _view_nodes(view)
+    chip_ids = {
+        f"cards_editor_category:#ME|{category.id}|0|chip"
+        for category in cards.CATEGORIES
+    }
+    chips = {
+        node["custom_id"]: node
+        for node in nodes
+        if node.get("custom_id") in chip_ids
+    }
+
+    assert len(chips) == 4
+    for category in cards.CATEGORIES:
+        expected_count = (
+            f"18/{len(cards.CATEGORY_CARDS[category.id])}"
+            if category.id == "elixir"
+            else (
+                f"{len(cards.CATEGORY_CARDS[category.id])}/"
+                f"{len(cards.CATEGORY_CARDS[category.id])}"
+            )
+        )
+        label = chips[
+            f"cards_editor_category:#ME|{category.id}|0|chip"
+        ]["label"]
+        assert expected_count in label
+        assert label.startswith("• ") is (category.id == selected_category)
+        assert label.endswith(" ✓") is (category.id != "elixir")
+        assert chips[
+            f"cards_editor_category:#ME|{category.id}|0|chip"
+        ]["style"] == cards_command.hikari.ButtonStyle.SECONDARY
+
+    container = next(node for node in nodes if node.get("type") == 17)
+    assert container["accent_color"] == cards_command.CATEGORY_ACCENTS[
+        selected_category
+    ]
+    _assert_discord_payload(view)
+
+
+@pytest.mark.parametrize("category_id", [category.id for category in cards.CATEGORIES])
+def test_category_browser_paginates_every_card_within_discord_component_limit(
+    category_id,
+):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    definitions = list(cards.CATEGORY_CARDS[category_id])
+    page_count = math.ceil(len(definitions) / cards_command.CARD_BROWSER_PAGE_SIZE)
+    seen_card_ids = []
+
+    for page in range(page_count):
+        view = cards_command._category_browser(
+            account, inventory, category_id, page=page
+        )
+        nodes = _view_nodes(view)
+        component_count = len([node for node in nodes if "type" in node])
+        visible_ids = [
+            str(node["custom_id"]).split("|", 1)[1]
+            for node in nodes
+            if str(node.get("custom_id", "")).startswith(
+                "cards_editor_inc:#ME|"
+            )
+        ]
+        expected_visible = definitions[
+            page * cards_command.CARD_BROWSER_PAGE_SIZE:
+            (page + 1) * cards_command.CARD_BROWSER_PAGE_SIZE
+        ]
+        previous = next(node for node in nodes if node.get("label") == "Previous")
+        following = next(node for node in nodes if node.get("label") == "Next")
+
+        assert component_count <= 40
+        assert visible_ids == [card.id for card in expected_visible]
+        assert len([node for node in nodes if node.get("type") == 9]) == len(
+            expected_visible
+        )
+        assert len([node for node in nodes if node.get("type") == 11]) == len(
+            expected_visible
+        )
+        assert previous["disabled"] is (page == 0)
+        assert following["disabled"] is (page == page_count - 1)
+        seen_card_ids.extend(visible_ids)
+        _assert_discord_payload(view)
+
+    assert seen_card_ids == [card.id for card in definitions]
+
+
+@pytest.mark.parametrize(
+    ("state", "state_text", "dec_disabled", "inc_disabled"),
+    [
+        (cards.MISSING, "Missing · 0 copies", True, False),
+        (cards.OWNED, "Owned · 1 copy", False, False),
+        (cards.DUPLICATE, "Spare available · 2+ copies", False, True),
+    ],
+)
+def test_card_editor_shows_accessible_card_tiles_and_valid_copy_controls(
+    state, state_text, dec_disabled, inc_disabled,
+):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = state
+
+    view = cards_command._card_editor(account, inventory, "wizard")
+    nodes = _view_nodes(view)
+    buttons = {
+        node["custom_id"]: node
+        for node in nodes
+        if "custom_id" in node
+    }
+    thumbnails = [node for node in nodes if node.get("type") == 11]
+    thumbnail = next(
+        node for node in thumbnails
+        if str(node.get("description", "")).startswith("Wizard")
+    )
+    expected_thumbnail = cards_command.render_card_thumbnail("wizard", state)
+
+    assert f"## Wizard\n**{state_text}**" in _view_text(view)
+    assert thumbnail["media"]["url"] == (
+        f"attachment://{expected_thumbnail.filename}"
+    )
+    assert thumbnail["description"] == expected_thumbnail.alt_text
+    assert buttons["cards_editor_dec:#ME|wizard"]["disabled"] is dec_disabled
+    assert buttons["cards_editor_inc:#ME|wizard"]["disabled"] is inc_disabled
+    assert len(thumbnails) == cards_command.CARD_BROWSER_PAGE_SIZE
+    visible_ids = ["wall_breaker", "balloon", "wizard", "healer"]
+    for card_id in visible_ids:
+        assert f"cards_editor_dec:#ME|{card_id}" in buttons
+        assert f"cards_editor_inc:#ME|{card_id}" in buttons
+    assert not any(
+        node.get("type") == 2 and node.get("style") == 1
+        for node in nodes
+    )
+    _assert_discord_payload(view)
+
+
+def test_more_panel_links_directly_to_global_card_chat():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._more_panel(
+        account, _complete_inventory(), account_count=1
+    )
+    links = [
+        node
+        for node in _view_nodes(view)
+        if node.get("label") == "Global Card Chat"
+    ]
+
+    assert len(links) == 1
+    assert links[0]["style"] == cards_command.hikari.ButtonStyle.LINK
+    assert links[0]["url"] == cards_command.GLOBAL_CHAT_LINK
+    assert "OpenGlobalChat" in links[0]["url"]
+    assert "chatId=" in links[0]["url"]
+    _assert_discord_payload(view)
+
+
+def test_card_editor_disables_copy_changes_while_the_card_is_reserved():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["card_trade_reservations"] = {"wizard": "trade:token"}
+
+    view = cards_command._card_editor(account, inventory, "wizard")
+    buttons = {
+        node["custom_id"]: node
+        for node in _view_nodes(view)
+        if "custom_id" in node
+    }
+
+    assert "Reserved by an accepted trade" in _view_text(view)
+    assert buttons["cards_editor_dec:#ME|wizard"]["disabled"] is True
+    assert buttons["cards_editor_inc:#ME|wizard"]["disabled"] is True
+
+
+@pytest.mark.parametrize(
+    ("handler_name", "initial", "expected"),
+    [
+        ("cards_editor_inc", cards.MISSING, cards.OWNED),
+        ("cards_editor_inc", cards.OWNED, cards.DUPLICATE),
+        ("cards_editor_dec", cards.DUPLICATE, cards.OWNED),
+        ("cards_editor_dec", cards.OWNED, cards.MISSING),
+    ],
+)
+def test_card_editor_plus_minus_handlers_apply_one_step_only(
+    monkeypatch, handler_name, initial, expected,
+):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 4
+    document["cards"]["wizard"] = initial
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    async def load_target(*_args, **_kwargs):
+        return account, collection.documents["#ME"], None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    view = asyncio.run(getattr(cards_command, handler_name)(
+        ctx,
+        "#ME|wizard",
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+    ))
+
+    assert collection.documents["#ME"]["cards"]["wizard"] == expected
+    assert collection.documents["#ME"]["inventory_revision"] == 5
+    assert cards_command._editor_state_text(
+        expected, possible_spare=False, reserved=False
+    ) in _view_text(view)
+
+
+@pytest.mark.parametrize(
+    ("handler_name", "expected"),
+    [
+        ("cards_editor_keep", cards.OWNED),
+        ("cards_editor_inc", cards.DUPLICATE),
+    ],
+)
+def test_possible_spare_editor_yes_no_saves_and_advances(
+    monkeypatch, handler_name, expected,
+):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 8
+    document["scan_duplicate_unverified_card_ids"] = ["wizard", "dragon"]
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    async def load_target(*_args, **_kwargs):
+        return account, collection.documents["#ME"], None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    view = asyncio.run(getattr(cards_command, handler_name)(
+        ctx,
+        "#ME|wizard",
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+    ))
+
+    updated = collection.documents["#ME"]
+    assert updated["cards"]["wizard"] == expected
+    assert updated["scan_duplicate_unverified_card_ids"] == ["dragon"]
+    assert "## Dragon" in _view_text(view)
+    custom_ids = {
+        node.get("custom_id")
+        for node in _view_nodes(view)
+        if node.get("custom_id")
+    }
+    assert {
+        "cards_editor_keep:#ME|dragon",
+        "cards_editor_inc:#ME|dragon",
+    } <= custom_ids
+
+
+def test_card_editor_and_more_handlers_route_to_the_requested_account(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    loaded_tags = []
+
+    async def load_target(_ctx, tag, **_kwargs):
+        loaded_tags.append(tag)
+        return account, inventory, None
+
+    async def load_accounts(*_args, **_kwargs):
+        return _scan_accounts_data(account)
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+
+    editor = asyncio.run(cards_command.cards_editor(
+        ctx, "#ME|wizard", coc_client=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+    more = asyncio.run(cards_command.cards_more(
+        ctx, "#ME", coc_client=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+
+    assert loaded_tags == ["#ME", "#ME"]
+    assert "## Wizard" in _view_text(editor)
+    more_nodes = _view_nodes(more)
+    assert {
+        node.get("custom_id")
+        for node in more_nodes
+        if node.get("custom_id")
+    } == {
+        "cards_scan_start:#ME",
+        "cards_review:#ME",
+        "cards_advanced:#ME",
+        "cards_confirm:#ME",
+        "cards_dashboard:#ME",
+    }
+    assert not any(
+        node.get("type") == 2 and node.get("style") == 1
+        for node in more_nodes
+    )
+
+
+def test_card_editor_search_modal_and_submit_route_to_card_choices(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+
+    class MenuCtx:
+        def __init__(self):
+            self.modals = []
+
+        async def respond_with_modal(self, **kwargs):
+            self.modals.append(kwargs)
+
+    menu_ctx = MenuCtx()
+    asyncio.run(cards_command.cards_editor_find(menu_ctx, "#ME"))
+    assert menu_ctx.modals[0]["custom_id"] == "cards_editor_find_submit:#ME"
+    assert menu_ctx.modals[0]["title"] == "Find a card"
+
+    class Interaction:
+        components = [[SimpleNamespace(
+            custom_id="card_name", value="root ridr"
+        )]]
+
+        def __init__(self):
+            self.edits = []
+
+        async def edit_initial_response(self, **kwargs):
+            self.edits.append(kwargs)
+
+    modal_ctx = SimpleNamespace(
+        user=SimpleNamespace(id=123),
+        guild_id=1,
+        interaction=Interaction(),
+        deferred=[],
+    )
+
+    async def defer(*, ephemeral=False):
+        modal_ctx.deferred.append(ephemeral)
+
+    async def load_target(*_args, **_kwargs):
+        assert modal_ctx.deferred == [True]
+        return account, inventory, None
+
+    modal_ctx.defer = defer
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    asyncio.run(cards_command.cards_editor_find_submit(
+        modal_ctx,
+        "#ME",
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    choice_nodes = _view_nodes(
+        modal_ctx.interaction.edits[0]["components"]
+    )
+    assert any(
+        node.get("custom_id") == "cards_editor:#ME|root_rider"
+        and node.get("label") == "Root Rider"
+        for node in choice_nodes
+    )
 
 
 def test_possible_spare_board_state_keeps_proven_ownership():
@@ -2611,7 +3025,7 @@ def test_global_hidden_badge_review_saves_one_batch_and_clears_only_that_batch()
     assert updated["scan_duplicate_unverified_card_ids"] == hidden[25:]
     assert updated["inventory_revision"] == 6
     next_view = cards_command._hidden_badge_review(account, updated)
-    assert "2 cards" in _view_text(next_view)
+    assert "2 remaining" in _view_text(next_view)
     _assert_discord_payload(next_view)
 
 
@@ -2834,12 +3248,12 @@ def test_cards_opens_the_existing_private_dashboard(monkeypatch):
     assert len(ctx.interaction.edits) == 1
     nodes = _view_nodes(ctx.interaction.edits[0]["components"])
     assert any(
-        node.get("custom_id") == "cards_update:#ME"
+        node.get("custom_id") == "cards_editor:#ME|barbarian"
         for node in nodes
     )
 
 
-def test_cards_command_has_no_page_fields_and_opens_scan_dashboard(monkeypatch):
+def test_cards_command_has_no_page_fields_and_opens_compact_dashboard(monkeypatch):
     account = _scan_account()
     data = _scan_accounts_data(account)
     inventory = _complete_inventory()
@@ -2866,7 +3280,7 @@ def test_cards_command_has_no_page_fields_and_opens_scan_dashboard(monkeypatch):
 
     assert ctx.deferred == [True]
     assert any(
-        node.get("custom_id") == "cards_scan_start:#ME"
+        node.get("custom_id") == "cards_more:#ME"
         for node in _view_nodes(ctx.interaction.edits[0]["components"])
     )
 
@@ -3252,8 +3666,8 @@ def test_dm_followup_merges_checkpoint_and_opens_account_bound_review(monkeypatc
     assert updates[0][1]["$set"]["scan_draft"]["coverage_complete"] is True
     assert updates[1][1] == {"$set": {"type": "cards_scan_draft"}}
     review = _view_text(sent[0][1])
-    assert "Screenshot Review" in review
-    assert "Member · `#ME`" in review
+    assert "Scan complete" in review
+    assert "**Member** · `#ME`" in review
     assert prompt_edits == [(state, account)]
 
 
@@ -3435,9 +3849,17 @@ def test_hidden_duplicate_badge_is_disclosed_but_safe_owned_minimum_can_confirm(
         if node.get("custom_id") == "cards_scan_confirm:draft-hidden"
     )
     assert confirm["disabled"] is False
-    assert confirm["label"] == "Save & check possible spares"
+    assert confirm["label"] == "Save collection"
     review_text = _view_text(view)
-    assert "Possible spares to check after save:** 1" in review_text
+    assert "1 cards still need a duplicate check" in review_text
+    buttons = [node for node in nodes if node.get("type") == 2]
+    assert [button.get("label") for button in buttons] == [
+        "Save collection",
+        "Cancel",
+    ]
+    assert len([button for button in buttons if button.get("style") == 1]) == 1
+    assert len([node for node in nodes if node.get("type") == 1]) == 1
+    assert not any(node.get("type") == 12 for node in nodes)
 
 
 def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypatch):
@@ -3575,16 +3997,66 @@ def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
 
     nodes = _view_nodes(view)
     assert any(
-        node.get("custom_id") == "cards_scan_hidden_set:draft-hidden-review"
+        node.get("custom_id") == "cards_scan_hidden_no:draft-hidden-review"
         for node in nodes
     )
     assert any(
-        node.get("custom_id") == "cards_scan_hidden_none:draft-hidden-review"
+        node.get("custom_id") == "cards_scan_hidden_yes:draft-hidden-review"
         for node in nodes
     )
     assert discarded == []
     assert state_updates[0][1]["$set"]["type"] == "cards_hidden_badge_review"
     assert state_updates[0][1]["$set"]["base_revision"] == 5
+
+
+@pytest.mark.parametrize(
+    ("handler_name", "expected"),
+    [
+        ("cards_scan_hidden_no", cards.OWNED),
+        ("cards_scan_hidden_yes", cards.DUPLICATE),
+    ],
+)
+def test_scan_possible_spare_yes_no_saves_one_card_and_advances(
+    monkeypatch, handler_name, expected,
+):
+    account = _scan_account()
+    document = _complete_inventory()
+    document["inventory_revision"] = 5
+    document["scan_duplicate_unverified_card_ids"] = ["wizard", "dragon"]
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    async def load_bound(*_args, **_kwargs):
+        return account, collection.documents["#ME"], None, None
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_scan_bound_account", load_bound)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=None)
+    view = asyncio.run(getattr(cards_command, handler_name)(
+        ctx,
+        "draft-hidden",
+        user_id=123,
+        guild_id=1,
+        account_tag="#ME",
+        usable_until=datetime.now(timezone.utc) + timedelta(minutes=10),
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+    ))
+
+    updated = collection.documents["#ME"]
+    assert updated["cards"]["wizard"] == expected
+    assert updated["scan_duplicate_unverified_card_ids"] == ["dragon"]
+    assert "## Dragon" in _view_text(view)
+    custom_ids = {
+        node.get("custom_id")
+        for node in _view_nodes(view)
+        if node.get("custom_id")
+    }
+    assert {
+        "cards_scan_hidden_no:draft-hidden",
+        "cards_scan_hidden_yes:draft-hidden",
+    } <= custom_ids
 
 
 def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed():

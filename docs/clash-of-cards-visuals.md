@@ -2,9 +2,9 @@
 
 ## Asset decision
 
-The visual board must be reproducible without runtime hotlinks: Discord panels,
-saved inventory dashboards, public proposals, and DMs can be rendered long
-after the member's screenshots have been discarded.
+Card artwork and optional visual boards must be reproducible without runtime
+hotlinks. Individual card editors, optional collection overviews, public
+proposals, and DMs must still work after member screenshots are discarded.
 
 Three sources were checked on 2026-08-10:
 
@@ -46,16 +46,20 @@ Sources:
 `utils/card_board.py` is pure Pillow code with no Discord, network, or database
 dependency.
 
-- `render_inventory_card_board(values, player_name=...)` is the normal saved
-  inventory path. It uses bundled artwork and a bounded 32-board LRU cache.
+- `render_inventory_card_board(values, player_name=...)` renders the optional
+  full collection overview. It uses bundled artwork and a bounded 32-board LRU
+  cache; the compact dashboard and individual editor do not need this render.
 - `render_card_board(values, artwork_by_card_id=..., player_name=...)` is the
   uncached/custom-art path.
+- `render_card_thumbnail(card_id, state)` is the cached 256px card used by the
+  interactive category browser. It supplies a category frame, gray/X missing
+  treatment, `x2+` spare badge, or `?` possible-spare badge.
 - `render_trade_strip(wanted_id, offered_id, other_offer_ids, ...)` makes a
   compact same-category proposal image with at most three alternatives.
 
 All return immutable result records containing PNG bytes, a filename, and
 accessible alt text. Missing or invalid state is always **unknown**, never
-owned. The full board is one 1120 x 1580 PNG: six columns in canonical game
+owned. The optional full board is one 1120 x 1580 PNG: six columns in canonical game
 order, four colored category totals, a state legend in its header, gray/X
 missing frames, yellow `x2+` confirmed-spare badges, yellow `?` possible-spare
 badges, and gray `!` unknown-ownership markers. The proposal strip is
@@ -82,3 +86,19 @@ seconds on its first render and 0.000030 seconds on an identical cached call;
 the rendered PNG was 692,274 bytes. These are measurements, not deployment
 guarantees. Rendering is CPU-bound and command code should keep first renders
 off the event loop.
+
+## Discord interaction model
+
+Discord media and thumbnail components are static; card artwork itself cannot
+be the interaction target. Discord also limits a Components V2 message to 40
+component nodes, so 60 interactive card tiles cannot fit in one native message.
+The production browser therefore shows four cards per page, each as a Section
+thumbnail followed by direct **-1**/**+1** buttons. Two rows of category chips,
+four cards, and page navigation total 38 component nodes. The large board
+remains a read-only overview under More.
+
+Discord button backgrounds use fixed platform styles and cannot accept custom
+hex colors. Category chips therefore use colored markers, while the selected
+Container accent and every rendered card frame use the sampled in-game colors:
+Elixir `#DB4EE1`, Dark Elixir `#9424B5`, Builder Base `#4D91E5`, and Super
+Troop `#F16F2F`.

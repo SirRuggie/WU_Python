@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import re
+from dataclasses import FrozenInstanceError
 from hashlib import sha256
 
 import pytest
@@ -14,6 +15,9 @@ from utils.card_board import (
     BOARD_HEIGHT,
     BOARD_WIDTH,
     CARD_ARTWORK_DIR,
+    CARD_THUMBNAIL_SIZE,
+    CATEGORY_ACCENTS,
+    CATEGORY_COLORS,
     GRID_LEFT,
     GRID_TOP,
     MAX_ARTWORK_EDGE,
@@ -24,6 +28,7 @@ from utils.card_board import (
     TRADE_STRIP_WIDTH,
     load_bundled_card_artwork,
     render_card_board,
+    render_card_thumbnail,
     render_inventory_card_board,
     render_trade_strip,
 )
@@ -70,6 +75,109 @@ def test_bundled_artwork_covers_the_catalog_without_mutating_files():
     assert len(list(CARD_ARTWORK_DIR.glob("*.webp"))) == len(CARDS)
     assert all(image.mode == "RGBA" for image in artwork.values())
     assert all(image.width <= 306 and image.height <= 306 for image in artwork.values())
+
+
+def test_category_rgb_frames_and_discord_accents_share_one_exact_palette():
+    assert dict(CATEGORY_ACCENTS) == {
+        "elixir": 0xDB4EE1,
+        "dark_elixir": 0x9424B5,
+        "builder_base": 0x4D91E5,
+        "super_troop": 0xF16F2F,
+    }
+    assert dict(CATEGORY_COLORS) == {
+        category_id: (
+            (accent >> 16) & 0xFF,
+            (accent >> 8) & 0xFF,
+            accent & 0xFF,
+        )
+        for category_id, accent in CATEGORY_ACCENTS.items()
+    }
+
+
+@pytest.mark.parametrize(
+    ("card_id", "state", "state_slug", "alt_fragment"),
+    (
+        ("barbarian", "owned", "owned", "owned (one copy)"),
+        ("minion", "missing", "missing", "Grayscale card art with an X"),
+        ("raged_barbarian", "duplicate", "duplicate", "x2 or more"),
+        (
+            "super_barbarian",
+            "possible-spare",
+            "possible-spare",
+            "possible spare needs checking",
+        ),
+    ),
+)
+def test_card_thumbnail_renders_each_state_as_an_accessible_bounded_png(
+    card_id,
+    state,
+    state_slug,
+    alt_fragment,
+):
+    result = render_card_thumbnail(card_id, state)
+
+    assert result.filename == f"clash-card-{card_id}-{state_slug}.png"
+    assert result.png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    assert len(result.png_bytes) < 512 * 1024
+    assert alt_fragment in result.alt_text
+    assert len(result.alt_text) <= 1_000
+    with Image.open(io.BytesIO(result.png_bytes)) as rendered:
+        assert rendered.size == (CARD_THUMBNAIL_SIZE, CARD_THUMBNAIL_SIZE)
+        assert rendered.mode == "RGB"
+        # The focused tile and Discord category container use the same accent.
+        assert rendered.getpixel((13, CARD_THUMBNAIL_SIZE // 2)) == (
+            CATEGORY_COLORS[CARDS_BY_TEST_ID[card_id]]
+        )
+
+
+CARDS_BY_TEST_ID = {
+    "barbarian": "elixir",
+    "minion": "dark_elixir",
+    "raged_barbarian": "builder_base",
+    "super_barbarian": "super_troop",
+}
+
+
+def test_missing_thumbnail_is_grayscale_inside_its_category_frame():
+    owned = render_card_thumbnail("barbarian", OWNED)
+    missing = render_card_thumbnail("barbarian", MISSING)
+
+    with Image.open(io.BytesIO(owned.png_bytes)) as rendered:
+        owned_pixels = rendered.crop((26, 26, 230, 226)).get_flattened_data()
+        assert any(red != green or green != blue for red, green, blue in owned_pixels)
+    with Image.open(io.BytesIO(missing.png_bytes)) as rendered:
+        missing_pixels = rendered.crop((26, 26, 230, 226)).get_flattened_data()
+        assert all(red == green == blue for red, green, blue in missing_pixels)
+        assert rendered.getpixel((13, CARD_THUMBNAIL_SIZE // 2)) == (
+            CATEGORY_COLORS["elixir"]
+        )
+
+
+def test_card_thumbnail_badges_are_distinct_and_cache_is_canonical():
+    card_id = "barbarian"
+    duplicate = render_card_thumbnail(card_id, DUPLICATE)
+    duplicate_alias = render_card_thumbnail(card_id.upper(), "duplicate")
+    possible = render_card_thumbnail(card_id, OWNED_SPARE_UNVERIFIED)
+    possible_alias = render_card_thumbnail(card_id, "possible spare")
+
+    assert duplicate is duplicate_alias
+    assert possible is possible_alias
+    assert duplicate.png_bytes != possible.png_bytes
+    with Image.open(io.BytesIO(duplicate.png_bytes)) as rendered:
+        assert rendered.getpixel((172, 23)) == card_board.DUPLICATE_BADGE
+    with Image.open(io.BytesIO(possible.png_bytes)) as rendered:
+        assert rendered.getpixel((216, 20)) == card_board.DUPLICATE_BADGE
+
+
+def test_card_thumbnail_result_is_immutable_and_rejects_unknown_inputs():
+    result = render_card_thumbnail("barbarian", OWNED)
+
+    with pytest.raises(FrozenInstanceError):
+        result.filename = "changed.png"
+    with pytest.raises(ValueError, match="card id must be in the catalog"):
+        render_card_thumbnail("not-a-card", OWNED)
+    with pytest.raises(ValueError, match="card state must be"):
+        render_card_thumbnail("barbarian", "unknown")
 
 
 def test_bundled_artwork_matches_the_pinned_notice_checksums():
@@ -162,7 +270,9 @@ def test_spare_unverified_is_owned_colored_and_not_unknown():
     assert "Possible spares needing a check: Barbarian." in result.alt_text
     with Image.open(io.BytesIO(result.png_bytes)) as rendered:
         # The tile keeps its Elixir category frame instead of unknown gray.
-        assert rendered.getpixel((GRID_LEFT + 4, GRID_TOP + 45)) == (211, 65, 218)
+        assert rendered.getpixel((GRID_LEFT + 4, GRID_TOP + 45)) == (
+            CATEGORY_COLORS["elixir"]
+        )
         # The top-right possible-spare badge is yellow.
         assert rendered.getpixel((GRID_LEFT + 122, GRID_TOP + 18)) == (250, 201, 38)
 

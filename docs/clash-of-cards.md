@@ -101,9 +101,10 @@ portrait, unmatched capture, missing page, or incomplete coverage blocks
 confirmation instead of defaulting an unknown card to owned.
 
 Nothing is written automatically. The upload is already bound to the linked
-player tag selected before the DM opens. The member reviews the visual board
-and its missing/duplicate counts, and can correct an identity-bound uncertain
-card with one tap before explicitly saving the draft. Confirmation rechecks
+player tag selected before the DM opens. The member sees a compact collected,
+missing, and possible-spare summary, then explicitly saves or cancels. If the
+scanner cannot resolve a card state, the review asks for that card directly
+before enabling Save. Confirmation rechecks
 the selected linked profile, Discord ownership, the session's configured-guild
 fence, inventory revision, and exact-card trade reservations, then replaces all
 60 states in one conditional inventory update. A temporary failure loading a
@@ -112,31 +113,36 @@ Discord necessarily receives the DM attachments; the bot drops the raw image
 bytes after scanning and stores only the private derived draft for up to 20
 minutes.
 
-The dashboard and full Review page render one six-column visual board in the
-game's canonical order. Missing, owned, duplicate, possible-spare, and unknown
-states are visible on the card art rather than requiring members to interpret
-four text-only category lists. First renders run off the gateway event loop;
-identical boards use the renderer's bounded cache.
+The normal dashboard is deliberately compact: collection counts, freshness,
+one primary action, and only the actions that matter now. The 60-card composite
+is available under **More > Full board**, but it is not the main interface.
+This avoids presenting phone users with a poster that is too small to inspect.
+First board renders still run off the gateway event loop and identical boards
+use the renderer's bounded cache.
 
-After setup, **Quick update** is the normal pack/trade path. Its four actions
-are **Found missing card**, **Got a spare**, **Used/traded spare**, and **Mark
-missing**. Each opens one card-name field immediately, then performs exact or
-typo-tolerant lookup and shows the resolved card before saving. The confirmed
-write changes only that card, checks its exact reservation, and uses the
-inventory revision as a compare-and-swap guard. An accepted swap on another
-card does not block the update; a stale confirmation never overwrites newer
-collection data.
+**Edit cards** opens a game-inspired category browser. Four compact category
+chips show collected/total and a check when complete. Selecting Elixir, Dark
+Elixir, Builder Base, or Super Troop shows only that category, four individual
+cards per mobile-friendly page. Every card has framed artwork, its saved state,
+and direct **-1**/**+1** controls. Missing art is gray with an X, spares carry
+`x2+`, and possible spares carry `?`. Previous, Find card, and Next avoid the
+old category-list workflow. Each write changes only that card, checks its exact
+reservation, and uses the inventory revision as a compare-and-swap guard.
+Accepted swaps on other cards do not block it; stale controls never overwrite
+newer collection data.
 
-When a screenshot proves ownership but hides the duplicate badge, the member
-gets one global **Check possible spares** list instead of being sent through
-Elixir/Dark Elixir/Builder Base/Super Troop menus. Up to 25 uncertain badges
-are reviewed together: selected cards become duplicates and the rest remain
-owned once. Larger sets continue with the next batch. The review begins
-directly in the account-bound DM after scan confirmation and can also be
-resumed from Quick update. Both paths recheck ownership, guild/session scope,
-revision, and each affected card reservation.
+When a screenshot proves ownership but the reward bar hides the duplicate
+badge, duplicate review also uses the individual card screen. The member sees
+the actual artwork and answers **No - have 1** or **Yes - spare**; the next
+possible spare opens automatically. It can be finished later without losing
+the saved scan. Both paths recheck ownership, guild/session scope, revision,
+and the affected card's reservation.
 
-The category editor remains under **Advanced full editor** for first-time
+**More** contains the supplied in-game **Global Card Chat** deep link beside
+Open in game. It opens chat id `P592bad3209a4408a9ba356469caaaa81`; no login,
+chat data, or account credential passes through the bot.
+
+The category editor remains under **Advanced manual editor** for first-time
 manual setup or a deliberate full-category rebuild. Every unselected card in a
 category defaults to one copy, so the member records only missing/duplicate
 exceptions. A category becomes matchable only after both lists have been
