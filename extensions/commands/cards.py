@@ -2172,13 +2172,13 @@ def _card_focus(
         # badge reading 2+ forever.
         ActionRow(components=[
             Button(
-                style=hikari.ButtonStyle.SECONDARY,
+                style=hikari.ButtonStyle.DANGER,
                 custom_id=f"cards_step:{tag}|{card.id}|-1",
                 label="-1",
                 is_disabled=reserved or not isinstance(state, int) or state <= MISSING,
             ),
             Button(
-                style=hikari.ButtonStyle.SECONDARY,
+                style=hikari.ButtonStyle.SUCCESS,
                 custom_id=f"cards_step:{tag}|{card.id}|1",
                 label="+1",
                 is_disabled=reserved or (
@@ -2221,11 +2221,28 @@ def _state_name(value: int) -> str:
         return "missing"
     if value == OWNED:
         return "owned once"
-    if value == DUPLICATE:
-        return "a spare (2+)"
-    if isinstance(value, int) and value > DUPLICATE:
+    if isinstance(value, int) and value >= DUPLICATE:
         return f"{value} copies"
     return "unknown"
+
+
+def _saved_count_line(card_name: str, count: int) -> str:
+    """What the member is told after changing a card.
+
+    Says what they hold and what that means for trading, in that order. The
+    earlier phrasing, "Balloon is now a spare (2+)", named an internal state
+    rather than answering the only question a member has: how many do I have,
+    and can I give one away.
+    """
+    if count <= MISSING:
+        return f"You have no {card_name}."
+    if count == OWNED:
+        return f"You have 1 {card_name}, none to spare."
+    spare = count - 1
+    return (
+        f"You have {count} {card_name} · "
+        f"{spare} spare {'copies' if spare != 1 else 'copy'} to trade."
+    )
 
 
 def _editor_state_text(
@@ -3109,10 +3126,18 @@ async def _card_focus_view(
     possible_spare = card_id in set(_scan_unverified_ids(inventory))
     state = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
     card = CARD_BY_ID.get(card_id) or CARDS[0]
+    if possible_spare:
+        tile_state: object = OWNED_SPARE_UNVERIFIED
+    elif state == DUPLICATE and card_id not in _confirmed_count_ids(inventory):
+        # Same "at least two" the board shows, so the tile and the strip beside
+        # it never disagree.
+        tile_state = SPARE_FLOOR
+    else:
+        tile_state = state
     tile = await asyncio.to_thread(
         render_card_thumbnail,
         card_id,
-        OWNED_SPARE_UNVERIFIED if possible_spare else state,
+        tile_state,
     )
     strip = await asyncio.to_thread(
         render_category_strip,
@@ -7343,7 +7368,7 @@ async def cards_set(
         account,
         updated,
         card_id,
-        saved=f"{CARD_BY_ID[card_id].name} is now {_state_name(target)}.",
+        saved=_saved_count_line(CARD_BY_ID[card_id].name, target),
     )
 
 
@@ -7390,7 +7415,7 @@ async def _apply_card_count(
         account,
         updated,
         card_id,
-        saved=note or f"{CARD_BY_ID[card_id].name} is now {_state_name(target)}.",
+        saved=note or _saved_count_line(CARD_BY_ID[card_id].name, target),
     )
 
 

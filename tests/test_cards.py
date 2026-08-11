@@ -4856,3 +4856,47 @@ def test_focus_screen_never_repeats_a_custom_id_at_any_count():
             inventory["count_confirmed_card_ids"] = confirmed
             view = cards_command._card_focus(account, inventory, "wizard")
             _assert_discord_payload(view)
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (0, "You have no Balloon."),
+        (1, "You have 1 Balloon, none to spare."),
+        (2, "You have 2 Balloon · 1 spare copy to trade."),
+        (4, "You have 4 Balloon · 3 spare copies to trade."),
+    ],
+)
+def test_saved_line_says_what_you_hold_not_an_internal_state(count, expected):
+    assert cards_command._saved_count_line("Balloon", count) == expected
+
+
+def test_the_tile_and_the_board_never_disagree_about_a_spare():
+    """A confirmed 2 reads x2 on both; an unconfirmed 2 reads x2+ on both."""
+    assert card_board._spare_badge_text(cards.DUPLICATE) == "x2"
+    assert card_board._spare_badge_text(card_board.SPARE_FLOOR) == "x2+"
+    assert card_board._spare_badge_text(5) == "x5"
+
+    confirmed = card_board.render_card_thumbnail("balloon", cards.DUPLICATE)
+    floored = card_board.render_card_thumbnail("balloon", card_board.SPARE_FLOOR)
+    assert confirmed.png_bytes != floored.png_bytes
+
+
+def test_copy_steppers_are_colour_coded():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = 3
+    inventory["count_confirmed_card_ids"] = ["wizard"]
+
+    view = cards_command._card_focus(account, inventory, "wizard")
+    buttons = {
+        node["custom_id"]: node
+        for node in _view_nodes(view)
+        if node.get("custom_id", "").startswith("cards_step:")
+    }
+
+    assert buttons["cards_step:#ME|wizard|-1"]["style"] == 4   # DANGER
+    assert buttons["cards_step:#ME|wizard|1"]["style"] == 3    # SUCCESS

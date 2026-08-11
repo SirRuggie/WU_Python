@@ -479,7 +479,10 @@ def _render_card_thumbnail_cached(
         _centered_text(
             draw,
             badge,
-            "x2+",
+            # The board and this thumbnail must agree. A hardcoded "x2+" here
+            # made a confirmed count read x2 on the strip and x2+ on the tile
+            # beside it, in the same message.
+            _spare_badge_text(state),
             font=_font(24),
             fill=DUPLICATE_TEXT,
         )
