@@ -5123,9 +5123,29 @@ def test_find_trades_dividers_only_separate_the_picker_block(monkeypatch):
     ]
     first = kinds.index("select")
     last = len(kinds) - 1 - kinds[::-1].index("select")
-    between = kinds[first:last + 1]
-    assert "separator" not in between, "a divider sits between the menus"
-    assert kinds[first - 1] == "separator", "the block is not set off from the text"
+    # Each menu is labelled, so the block now runs heading, menu, heading,
+    # menu. What must not appear anywhere inside it is a divider.
+    assert "separator" not in kinds[first:last + 1], "a divider splits the menus"
+    # The block as a whole is still set off from the text above it. The label
+    # of the first menu sits between that divider and the menu itself.
+    assert "separator" in kinds[:first], "the block is not set off from the text"
+    assert kinds[first - 1] == "other", "the first menu lost its label"
+
+    # A category only gets a menu when somebody holds one of its cards, so
+    # pair the labels with the menus that actually rendered.
+    menus = [
+        node for node in _view_nodes(view)
+        if str(node.get("custom_id", "")).startswith("cards_open_card:")
+    ]
+    labels = [
+        node["content"] for node in _view_nodes(view)
+        if str(node.get("content", "")).startswith("### ")
+    ]
+    assert len(labels) == len(menus), "every menu needs exactly one label"
+    for menu, label in zip(menus, labels):
+        category_id = menu["custom_id"].split("|")[1]
+        assert cards_command.category_markup(category_id) in label, label
+        assert cards.CATEGORY_BY_ID[category_id].short_name in label, label
 
 
 def test_refresh_and_pagination_use_the_uploaded_control_emoji():

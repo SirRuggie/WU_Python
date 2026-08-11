@@ -3194,15 +3194,18 @@ def _matches_view(
         offered = [c for c in CATEGORY_CARDS[category.id] if c.id in per_card]
         if not offered:
             continue
+        # The uploaded category emoji cannot go in the menu itself: a select
+        # carries no emoji field and its placeholder is sent as a bare string,
+        # so `<:Elixer:123>` would print verbatim. Labelling the menu from
+        # outside is the only way to mark it with the real art.
+        pickers.append(Text(content=(
+            f"### {category_markup(category.id)} {category.short_name}"
+        )))
         pickers.append(
             ActionRow(components=[TextSelectMenu(
                 custom_id=f"cards_open_card:{tag}|{category.id}",
-                # Unicode, not the uploaded category emoji: a select
-                # placeholder is plain text and would print `<:Elixer:123>`
-                # verbatim.
                 placeholder=(
-                    f"{category.emoji} {category.short_name} "
-                    f"— see who has one ({len(offered)})"
+                    f"See who has one ({len(offered)})"
                 )[:150],
                 max_values=1,
                 options=[
