@@ -2359,7 +2359,7 @@ def test_dashboard_keeps_my_trades_enabled_before_category_setup():
     assert button.get("disabled", False) is False
 
 
-def test_dashboard_is_compact_with_one_primary_action_at_most():
+def test_dashboard_leads_with_the_board_and_one_primary_action_at_most():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -2379,9 +2379,10 @@ def test_dashboard_is_compact_with_one_primary_action_at_most():
         nodes = _view_nodes(view)
         buttons = [node for node in nodes if node.get("type") == 2]
         primary = [node for node in buttons if node.get("style") == 1]
-        assert len(buttons) <= 5
+        assert len(buttons) <= 6
         assert len(primary) <= 1
-        assert not any(node.get("type") == 12 for node in nodes)
+        # The collection board is the landing surface, not an optional extra.
+        assert any(node.get("type") == 12 for node in nodes)
         _assert_discord_payload(view)
 
     custom_ids = {
@@ -2390,6 +2391,7 @@ def test_dashboard_is_compact_with_one_primary_action_at_most():
         if node.get("custom_id")
     }
     assert custom_ids == {
+        "cards_scan_start:#ME",
         "cards_editor:#ME|barbarian",
         "cards_matches:#ME",
         "cards_trades:#ME",
@@ -2397,7 +2399,28 @@ def test_dashboard_is_compact_with_one_primary_action_at_most():
     }
 
 
-def test_runtime_dashboard_does_not_render_the_optional_full_board(monkeypatch):
+def test_dashboard_without_any_recorded_cards_still_shows_the_board():
+    """A brand new member sees the collection greyed out, not a text stub."""
+    account = Account(
+        tag="#NEW", name="Newcomer", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._dashboard(
+        account, {"_id": "#NEW"}, account_count=1
+    )
+    nodes = _view_nodes(view)
+
+    assert any(node.get("type") == 12 for node in nodes)
+    custom_ids = {
+        node.get("custom_id") for node in nodes if node.get("custom_id")
+    }
+    # Editing is reachable immediately; there is no setup wall in front of it.
+    assert "cards_editor:#NEW|barbarian" in custom_ids
+    assert "cards_scan_start:#NEW" in custom_ids
+    _assert_discord_payload(view)
+
+
+def test_runtime_dashboard_renders_the_board_off_the_event_loop(monkeypatch):
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -2414,8 +2437,8 @@ def test_runtime_dashboard_does_not_render_the_optional_full_board(monkeypatch):
         account, inventory, account_count=1
     ))
 
-    assert calls == []
-    assert not any(node.get("type") == 12 for node in _view_nodes(view))
+    assert calls == [cards_command.render_inventory_card_board]
+    assert any(node.get("type") == 12 for node in _view_nodes(view))
     _assert_discord_payload(view)
 
 

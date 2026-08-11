@@ -286,6 +286,8 @@ def _paste_artwork(
     card_name: str,
     artwork_by_card_id: Mapping[str, object],
     box: tuple[int, int, int, int],
+    *,
+    desaturate: bool = False,
 ) -> None:
     left, top, right, bottom = box
     thumbnail = _artwork_thumbnail(
@@ -302,6 +304,15 @@ def _paste_artwork(
             fill=(205, 193, 178),
         )
         return
+
+    if desaturate:
+        # Transient, in memory only.  The bundled asset is never written to.
+        if thumbnail.mode == "RGBA":
+            alpha = thumbnail.getchannel("A")
+            thumbnail = thumbnail.convert("L").convert("RGBA")
+            thumbnail.putalpha(alpha)
+        else:
+            thumbnail = thumbnail.convert("L").convert("RGBA")
 
     x = left + (right - left - thumbnail.width) // 2
     y = top + (bottom - top - thumbnail.height) // 2
@@ -473,6 +484,32 @@ def render_card_thumbnail(
     )
 
 
+def _draw_check(
+    draw: ImageDraw.ImageDraw,
+    center_x: int,
+    center_y: int,
+    *,
+    fill: tuple[int, int, int] = (74, 222, 96),
+    width: int = 4,
+) -> None:
+    """Draw a completion check as a stroke.
+
+    Pillow's bundled font renders no check glyph, and the ASCII-only rule in
+    docs/clash-of-cards-visuals.md forbids substituting one. A short polyline
+    needs no font and no licence.
+    """
+    draw.line(
+        (
+            center_x - 9, center_y,
+            center_x - 3, center_y + 7,
+            center_x + 10, center_y - 8,
+        ),
+        fill=fill,
+        width=width,
+        joint="curve",
+    )
+
+
 def _draw_category_tabs(
     draw: ImageDraw.ImageDraw,
     states: Mapping[str, int | str],
@@ -497,20 +534,32 @@ def _draw_category_tabs(
             state in {OWNED, DUPLICATE, OWNED_SPARE_UNVERIFIED}
             for state in category_states
         )
-        _centered_text(
+        complete = collected == len(category_states)
+        label, label_font = _fit_text(
             draw,
-            (left + 6, tab_top + 7, right - 6, tab_top + 37),
-            category.short_name,
-            font=_font(18),
-            fill=TEXT_LIGHT,
+            category.name,
+            tab_width - 16,
+            max_size=18,
+            min_size=12,
         )
         _centered_text(
             draw,
-            (left + 6, tab_top + 36, right - 6, tab_top + 67),
+            (left + 6, tab_top + 7, right - 6, tab_top + 37),
+            label,
+            font=label_font,
+            fill=TEXT_LIGHT,
+        )
+        count_right = right - 6 - (30 if complete else 0)
+        _centered_text(
+            draw,
+            (left + 6, tab_top + 36, count_right, tab_top + 67),
             f"{collected}/{len(category_states)}",
             font=_font(22),
             fill=TEXT_LIGHT,
         )
+        if complete:
+            # Pillow's bundled font has no check glyph, so draw the stroke.
+            _draw_check(draw, count_right + 6, tab_top + 51)
 
 
 def _draw_card_tile(
@@ -542,7 +591,10 @@ def _draw_card_tile(
         outline=(58, 44, 37),
         width=3,
     )
-    art_box = (left + 7, top + 7, right - 7, top + 79)
+    # No per-tile caption.  At the size Discord renders this on a phone the
+    # name is an illegible smudge, and the artwork is what identifies a card.
+    # The freed height goes to the art box, which the game also fills entirely.
+    art_box = (left + 6, top + 6, right - 6, bottom - 6)
     draw.rounded_rectangle(art_box, radius=8, fill=TILE_INTERIOR)
     _paste_artwork(
         canvas,
@@ -551,25 +603,12 @@ def _draw_card_tile(
         card.name,
         artwork_by_card_id,
         art_box,
+        desaturate=state in {MISSING, UNKNOWN},
     )
 
-    name, name_font = _fit_text(
-        draw,
-        card.name,
-        TILE_WIDTH - 14,
-        max_size=15,
-        min_size=10,
-    )
-    _centered_text(
-        draw,
-        (left + 5, top + 82, right - 5, bottom - 4),
-        name,
-        font=name_font,
-        fill=TEXT_LIGHT,
-    )
-
+    center_x = (left + right) // 2
     if state == DUPLICATE:
-        badge = (right - 48, top + 4, right - 4, top + 31)
+        badge = (center_x - 27, bottom - 21, center_x + 27, bottom + 5)
         draw.rounded_rectangle(
             badge,
             radius=10,
@@ -585,7 +624,7 @@ def _draw_card_tile(
             fill=DUPLICATE_TEXT,
         )
     elif state == OWNED_SPARE_UNVERIFIED:
-        badge = (right - 35, top + 4, right - 4, top + 35)
+        badge = (center_x - 15, bottom - 23, center_x + 15, bottom + 7)
         draw.ellipse(
             badge,
             fill=DUPLICATE_BADGE,
@@ -906,13 +945,21 @@ def render_card_board(
         font=title_font,
         fill=TEXT_LIGHT,
     )
+    # Only the clauses that apply.  The old line always printed all five, so a
+    # finished collection still read "0 possible spares | 0 unknown".
+    subtitle = [f"{collected}/{len(CARDS)} collected"]
+    if missing:
+        subtitle.append(f"{len(missing)} missing")
+    if duplicates:
+        subtitle.append(f"x2+ {len(duplicates)} spares")
+    if spare_unverified:
+        subtitle.append(f"? {len(spare_unverified)} to check")
+    if unknown:
+        subtitle.append(f"! {len(unknown)} unknown")
     _centered_text(
         draw,
         (58, 72, BOARD_WIDTH - 58, 98),
-        f"{collected}/{len(CARDS)} collected  |  X {len(missing)} missing  |  "
-        f"x2+ {len(duplicates)} spares  |  "
-        f"? {len(spare_unverified)} possible spares  |  "
-        f"! {len(unknown)} unknown",
+        "  |  ".join(subtitle),
         font=_font(16),
         fill=(226, 211, 188),
     )

@@ -59,11 +59,26 @@ dependency.
 
 All return immutable result records containing PNG bytes, a filename, and
 accessible alt text. Missing or invalid state is always **unknown**, never
-owned. The optional full board is one 1120 x 1580 PNG: six columns in canonical game
-order, four colored category totals, a state legend in its header, gray/X
-missing frames, yellow `x2+` confirmed-spare badges, yellow `?` possible-spare
-badges, and gray `!` unknown-ownership markers. The proposal strip is
+owned. The board is one 1120 x 1580 PNG: six columns in canonical game order,
+four colored category pills carrying the full category name, its collected
+total, and a drawn check when complete, then the grid. The proposal strip is
 1120 x 360. No source asset is changed on disk.
+
+Three tile rules exist to survive Discord's mobile scaling, where a tile is
+about 64px wide:
+
+- **No per-tile name caption.** The name is unreadable at that size and the
+  artwork is what identifies a card, so the caption's height goes to the art
+  box instead. The name belongs on a focused card screen, which has room.
+- **The `x2+` and `?` badges sit on the tile's bottom edge**, matching where
+  the game draws its own xN badge.
+- **Missing and unknown artwork is desaturated** in memory before pasting, so
+  absence reads from the tile itself rather than only from its frame and X
+  marker. The bundled asset on disk is never modified.
+
+The header legend prints only the clauses that apply. It previously always
+printed all five, so a finished collection still read `0 possible spares` and
+`0 unknown`.
 
 The scanner's `duplicate_badge_unverified` warning does **not** mean ownership
 is unknown: the colored portrait proves the card is owned, while only a hidden

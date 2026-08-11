@@ -64,10 +64,45 @@ f=path/to/file.py
 echo "parens $(grep -o '(' $f|wc -l)/$(grep -o ')' $f|wc -l) brackets $(grep -o '\[' $f|wc -l)/$(grep -o '\]' $f|wc -l)"
 ```
 
-None of these prove the file parses. **There is no Python on the development
-machine**, so a real syntax check happens on the box at deploy. These greps
-catch the two failure modes that have actually occurred; they are a floor, not
-a guarantee.
+None of these prove the file parses. They catch the two failure modes that have
+actually occurred; they are a floor, not a guarantee.
+
+## Whether a real syntax check is available
+
+**Check the machine first. Only `LAPTOP-NFGO6M7M` has Python. Assume every other
+machine does not.**
+
+```bash
+echo "$COMPUTERNAME"      # PowerShell: $env:COMPUTERNAME
+```
+
+**On `LAPTOP-NFGO6M7M`** Python is installed and on `PATH` as `py`. Prefer real
+verification over the greps above, because it actually proves the file parses:
+
+```bash
+py -m compileall -q extensions utils main.py
+```
+
+```bash
+py -m pytest -q
+```
+
+The suite is 503 tests and finishes in about 35 seconds. Dependencies are
+installed globally; there is no venv. Two cautions specific to this box:
+
+- Do **not** run a blanket `pip install -r requirements.txt`. It would downgrade
+  the installed hikari and lightbulb to the pinned `2.3.5` / `3.0.3`. See
+  [hikari-lightbulb-versions.md](hikari-lightbulb-versions.md).
+- `Pillow` must be **12 or newer**. `utils/card_scan.py` handles older Pillow
+  correctly, but `tests/test_card_board.py` and `tests/test_card_scan.py` use
+  `Image.get_flattened_data` directly, so Pillow 11 fails those two files for
+  environment reasons rather than product ones. Pillow is unpinned, so a fresh
+  install can land on 11.
+- Never run `main.py` here while production is up. It opens a second gateway
+  session on the same `DISCORD_TOKEN` and every command answers twice.
+
+**On any other machine**, assume there is no Python. The greps above are then
+the only pre-commit check, and a real syntax check happens on the box at deploy.
 
 ## Recovery
 

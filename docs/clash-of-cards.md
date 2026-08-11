@@ -113,17 +113,30 @@ Discord necessarily receives the DM attachments; the bot drops the raw image
 bytes after scanning and stores only the private derived draft for up to 20
 minutes.
 
-The normal dashboard is deliberately compact: collection counts, freshness,
-one primary action, and only the actions that matter now. The 60-card composite
-is available under **More > Full board**, but it is not the main interface.
-This avoids presenting phone users with a poster that is too small to inspect.
-First board renders still run off the gateway event loop and identical boards
-use the renderer's bounded cache.
+The dashboard leads with the rendered 60-card board. It is the first thing
+`/cards` shows, before anything is clicked, because the collection is what a
+member came to see. The board was previously buried under **More > Full board**
+on the reasoning that a poster is too small to inspect on a phone; measured at
+Discord's mobile width the artwork is legible at roughly 64px per tile and only
+the per-tile name captions were not, so the captions were removed rather than
+the board. Counts, freshness and the action row sit beneath it. First renders
+run off the gateway event loop and identical boards use the renderer's bounded
+cache.
 
-**Edit cards** opens a game-inspired category browser. Four compact category
-chips show collected/total and a check when complete. Selecting Elixir, Dark
-Elixir, Builder Base, or Super Troop shows only that category, four individual
-cards per mobile-friendly page. Every card has framed artwork, its saved state,
+The board renders unknown states, so a member who has entered nothing sees the
+collection greyed out and can read the goal before doing anything. First run is
+the same screen rather than a separate branch; only the primary button changes.
+
+**Edit cards** opens a game-inspired category browser. It is reachable from the
+first screen with no setup wall in front of it. An earlier build required all
+four categories to be complete before any single card could be changed, which
+locked out precisely the new members who most needed to correct something; that
+gate is gone. Completeness still governs matching, and it is still earned only
+by a confirmed scan or a full category review, never by editing one card.
+
+Four compact category chips show collected/total and a check when complete.
+Selecting Elixir, Dark Elixir, Builder Base, or Super Troop shows only that
+category, four individual cards per mobile-friendly page. Every card has framed artwork, its saved state,
 and direct **-1**/**+1** controls. Missing art is gray with an X, spares carry
 `x2+`, and possible spares carry `?`. Previous, Find card, and Next avoid the
 old category-list workflow. Each write changes only that card, checks its exact

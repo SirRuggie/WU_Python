@@ -115,12 +115,6 @@ GLOBAL_CHAT_LINK = (
 )
 FOOTER = "assets/Red_Footer.png"
 
-CATEGORY_CHIP_EMOJIS = {
-    "elixir": "🩷",
-    "dark_elixir": "🟪",
-    "builder_base": "🟦",
-    "super_troop": "🟧",
-}
 CATEGORY_CHIP_LABELS = {
     "elixir": "Elixir",
     "dark_elixir": "Dark",
@@ -1787,6 +1781,7 @@ def _dashboard(
     account_count: int,
     rendered_board=None,
 ) -> list[Container]:
+    tag = _normalize_tag(account.tag)
     complete = set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
     summary = inventory_summary(inventory.get("cards"), complete)
     all_complete = len(complete) == len(CATEGORIES)
@@ -1794,56 +1789,31 @@ def _dashboard(
     unverified_duplicates = _scan_unverified_ids(inventory)
     stamp = inventory.get("confirmed_at") or inventory.get("updated_at")
     age = freshness_label(stamp)
+    recorded = bool(normalize_cards(inventory.get("cards")))
+
     if summary.known:
         headline = (
             f"**{summary.collected} of {summary.known} collected** · "
             f"{summary.missing} missing · "
             f"{summary.duplicates} spare{'s' if summary.duplicates != 1 else ''}"
         )
+    elif recorded:
+        headline = "Review a category to make these cards tradeable"
     else:
-        headline = "No categories set up yet"
+        headline = "Nothing recorded yet"
 
+    # The board is the landing screen. It renders unknown states too, so a
+    # member who has entered nothing still sees the collection greyed out and
+    # can read the goal before doing anything.
     body: list = [
         Text(content="# Clash of Cards"),
+        _inventory_board_media(account, inventory, rendered_board=rendered_board),
         Text(content=(
-            f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
+            f"**{_escape_markdown(account.name)}** · `{tag}`\n"
             f"{headline}\n"
             f"Updated {_relative_timestamp(stamp)}"
         )),
     ]
-
-    if not all_complete:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                "Send the collection screenshots together in DM. Their order "
-                "does not matter."
-            )),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"cards_scan_start:{_normalize_tag(account.tag)}",
-                    label="Scan screenshots",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-                    label="Enter manually",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_trades:{_normalize_tag(account.tag)}",
-                    label="My trades",
-                ),
-            ]),
-        ])
-        if account_count > 1:
-            body.append(ActionRow(components=[Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id="cards_account_page:0",
-                label="Switch account",
-            )]))
-        return [Container(components=body)]
 
     if unverified_duplicates:
         body.extend([
@@ -1855,10 +1825,7 @@ def _dashboard(
             )),
             ActionRow(components=[Button(
                 style=hikari.ButtonStyle.PRIMARY,
-                custom_id=(
-                    f"cards_editor:{_normalize_tag(account.tag)}|"
-                    f"{unverified_duplicates[0]}"
-                ),
+                custom_id=f"cards_editor:{tag}|{unverified_duplicates[0]}",
                 label="Check now",
             )]),
         ])
@@ -1881,32 +1848,42 @@ def _dashboard(
         ),
         CARDS[0].id,
     )
+    scan_is_primary = not all_complete and not unverified_duplicates
     body.extend([
         Separator(divider=True),
         ActionRow(components=[
             Button(
                 style=(
+                    hikari.ButtonStyle.PRIMARY
+                    if scan_is_primary
+                    else hikari.ButtonStyle.SECONDARY
+                ),
+                custom_id=f"cards_scan_start:{tag}",
+                label="Scan screenshots",
+            ),
+            Button(
+                style=(
                     hikari.ButtonStyle.SECONDARY
-                    if unverified_duplicates
+                    if unverified_duplicates or scan_is_primary
                     else hikari.ButtonStyle.PRIMARY
                 ),
-                custom_id=f"cards_editor:{_normalize_tag(account.tag)}|{first_card}",
+                custom_id=f"cards_editor:{tag}|{first_card}",
                 label="Edit cards",
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
+                custom_id=f"cards_matches:{tag}",
                 label="Find trades",
                 is_disabled=not inventory_is_matchable(inventory),
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_trades:{_normalize_tag(account.tag)}",
+                custom_id=f"cards_trades:{tag}",
                 label="My trades",
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_more:{_normalize_tag(account.tag)}",
+                custom_id=f"cards_more:{tag}",
                 label="More",
             ),
         ]),
@@ -1914,6 +1891,12 @@ def _dashboard(
             f"-# {age.title()} · A spare means 2+ copies."
         )),
     ])
+    if account_count > 1:
+        body.append(ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id="cards_account_page:0",
+            label="Switch account",
+        )]))
     return [Container(components=body)]
 
 
@@ -1940,12 +1923,6 @@ def _editor_state_text(
         OWNED: "Owned · 1 copy",
         DUPLICATE: "Spare available · 2+ copies",
     }.get(state, "State unknown")
-
-
-def _editor_ready(inventory: dict) -> bool:
-    return len(
-        set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
-    ) == len(CATEGORIES)
 
 
 def _category_accent(category_id: str) -> int:
@@ -1997,12 +1974,6 @@ def _category_browser(
     saved: str | None = None,
     rendered_tiles: dict[str, object] | None = None,
 ) -> list[Container]:
-    if not _editor_ready(inventory):
-        return _notice(
-            "Finish collection setup first",
-            "Scan the screenshots or use the Advanced manual editor before "
-            "changing individual cards.",
-        )
     if category_id not in CATEGORY_BY_ID:
         category_id = CATEGORIES[0].id
     category = CATEGORY_BY_ID[category_id]
@@ -2041,7 +2012,6 @@ def _category_browser(
                 item.id,
                 selected=item.id == category_id,
             ),
-            emoji=CATEGORY_CHIP_EMOJIS[item.id],
         )
         for item in CATEGORIES
     ]
@@ -2211,7 +2181,6 @@ def _more_panel(account, inventory: dict, *, account_count: int) -> list[Contain
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_review:{tag}",
             label="Full board",
-            is_disabled=not complete,
         ),
         Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -2749,10 +2718,12 @@ def _review(account, inventory: dict, *, rendered_board=None) -> list[Container]
 
 
 async def _dashboard_view(account, inventory: dict, *, account_count: int):
+    board = await _render_inventory_board_async(account, inventory)
     return _dashboard(
         account,
         inventory,
         account_count=account_count,
+        rendered_board=board,
     )
 
 
@@ -2769,7 +2740,7 @@ async def _category_browser_view(
     *,
     saved: str | None = None,
 ):
-    if category_id not in CATEGORY_BY_ID or not _editor_ready(inventory):
+    if category_id not in CATEGORY_BY_ID:
         return _category_browser(
             account,
             inventory,
@@ -6867,8 +6838,6 @@ async def _card_editor_step(
     )
     if problem:
         return problem
-    if not _editor_ready(inventory):
-        return await _card_editor_view(account, inventory, card_id)
     state = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
     was_possible_spare = card_id in set(_scan_unverified_ids(inventory))
     mode = (
@@ -6967,8 +6936,6 @@ async def cards_editor_keep(
     )
     if problem:
         return problem
-    if not _editor_ready(inventory):
-        return await _card_editor_view(account, inventory, card_id)
     try:
         updated = await _write_hidden_badge_batch(
             mongo,
@@ -7045,14 +7012,12 @@ async def cards_editor_find_submit(
     )
     if problem:
         view = problem
-    elif _editor_ready(inventory):
+    else:
         view = _editor_search_choices(
             account,
             inventory,
             _modal_text_value(ctx, "card_name"),
         )
-    else:
-        view = await _card_editor_view(account, inventory, CARDS[0].id)
     await ctx.interaction.edit_initial_response(components=view)
 
 
