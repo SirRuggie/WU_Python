@@ -577,6 +577,33 @@ def _without_reserved_cards(inventory: dict) -> dict:
     return snapshot
 
 
+def _card_rows(
+    card_ids: tuple[str, ...] | list[str],
+    *,
+    limit: int = 6,
+) -> str:
+    """Cards as bullet rows, one per line, each led by its troop art.
+
+    A comma-joined run mixing emoji and names is genuinely hard to read: the
+    eye has no consistent left edge and the emoji break the rhythm of the
+    commas. One card per bullet gives a column to scan down instead.
+
+    Use this wherever a list stands on its own. `_card_names` still exists for
+    the places a list has to sit inside a sentence.
+    """
+    known = [CARD_BY_ID[card_id] for card_id in card_ids if card_id in CARD_BY_ID]
+    if not known:
+        return "-# none"
+    rows = []
+    for card in known[:limit]:
+        icon = troop_emoji.markup(card.id)
+        lead = f"{icon} " if icon else ""
+        rows.append(f"- {lead}{_escape_markdown(card.name)}")
+    if len(known) > limit:
+        rows.append(f"-# and {len(known) - limit} more")
+    return "\n".join(rows)
+
+
 def _card_names(card_ids: tuple[str, ...] | list[str], *, limit: int = 5) -> str:
     """A readable run of card names, each led by its troop art.
 
@@ -1572,7 +1599,7 @@ def _scan_review(
     details = []
     if unknown:
         details.append(
-            f"**Needs review ({len(unknown)}):** {_card_names(unknown)}"
+            f"**Needs review ({len(unknown)})**\n{_card_rows(unknown)}"
         )
     if unseen:
         details.append(f"**Not visible:** {len(unseen)} card positions")
@@ -3359,18 +3386,15 @@ def _match_line(match, ordinal: int) -> str:
     exchange_lines: list[str] = []
     for exchange in match.exchanges:
         category = CATEGORY_BY_ID[exchange.category]
+        block = [f"{category.emoji} **{category.short_name}**"]
+        block.append("**They can give you**")
+        block.append(_card_rows(exchange.offers))
         if exchange.returns:
-            exchange_lines.append(
-                f"{category.emoji} **{category.short_name} — has:** "
-                f"{_card_names(exchange.offers)}\n"
-                f"**You can offer:** {_card_names(exchange.returns)}"
-            )
+            block.append("**You can give back**")
+            block.append(_card_rows(exchange.returns))
         else:
-            exchange_lines.append(
-                f"{category.emoji} **{category.short_name} — has:** "
-                f"{_card_names(exchange.offers)}\n"
-                "**No reciprocal need found** — ask whether they can help directly"
-            )
+            block.append("-# Nothing of yours matches. Ask if they will help anyway.")
+        exchange_lines.append("\n".join(block))
     exchange = "\n".join(exchange_lines)
     icon = "🔁" if match.reciprocal else "🎁"
     return (
