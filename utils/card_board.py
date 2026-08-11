@@ -16,6 +16,7 @@ checked-in source files.
 from __future__ import annotations
 
 import io
+import math
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -40,18 +41,31 @@ UNKNOWN = "unknown"
 OWNED_SPARE_UNVERIFIED = "owned_spare_unverified"
 BoardState = int | str
 
-BOARD_WIDTH = 1120
-BOARD_HEIGHT = 1580
+# The board is landscape on purpose.  Discord caps an embedded image at about
+# 310 device pixels tall while giving it roughly 490 across, so a portrait
+# board is height-capped and renders about 219 wide, wasting most of the room
+# it is given.  Ten columns by six rows holds the same sixty cards in a shape
+# whose width binds first, which is worth about a fifth more tile size on the
+# same screen.  The game's own six-column grid is a scrolling view and does not
+# have this constraint.
+BOARD_WIDTH = 1726
+BOARD_HEIGHT = 1116
 TRADE_STRIP_WIDTH = 1120
 TRADE_STRIP_HEIGHT = 360
 CARD_THUMBNAIL_SIZE = 256
-BOARD_COLUMNS = 6
+BOARD_COLUMNS = 10
+BOARD_ROWS = 6
 TILE_WIDTH = 150
-TILE_HEIGHT = 112
-TILE_GAP_X = 16
-TILE_GAP_Y = 15
-GRID_LEFT = 70
-GRID_TOP = 218
+TILE_HEIGHT = 132
+TILE_GAP_X = 14
+TILE_GAP_Y = 13
+GRID_LEFT = 50
+GRID_TOP = 178
+
+# One category at a time, for the focused card screen.  Five across keeps the
+# shape close to the media box's own ratio, so it is not scaled down as hard as
+# the full board and lands at roughly twice the tile size.
+STRIP_COLUMNS = 5
 
 MAX_ARTWORK_EDGE = 4096
 MAX_ARTWORK_PIXELS = 4_000_000
@@ -514,16 +528,16 @@ def _draw_category_tabs(
     draw: ImageDraw.ImageDraw,
     states: Mapping[str, int | str],
 ) -> None:
-    tab_left = 54
-    tab_top = 118
-    tab_gap = 12
+    tab_left = 50
+    tab_top = 108
+    tab_gap = 14
     tab_width = (BOARD_WIDTH - tab_left * 2 - tab_gap * 3) // 4
     for index, category in enumerate(CATEGORIES):
         left = tab_left + index * (tab_width + tab_gap)
         right = left + tab_width
         color = CATEGORY_COLORS[category.id]
         draw.rounded_rectangle(
-            (left, tab_top, right, tab_top + 72),
+            (left, tab_top, right, tab_top + 58),
             radius=14,
             fill=color,
             outline=(255, 221, 160),
@@ -544,7 +558,7 @@ def _draw_category_tabs(
         )
         _centered_text(
             draw,
-            (left + 6, tab_top + 7, right - 6, tab_top + 37),
+            (left + 6, tab_top + 4, right - 6, tab_top + 30),
             label,
             font=label_font,
             fill=TEXT_LIGHT,
@@ -552,14 +566,14 @@ def _draw_category_tabs(
         count_right = right - 6 - (30 if complete else 0)
         _centered_text(
             draw,
-            (left + 6, tab_top + 36, count_right, tab_top + 67),
+            (left + 6, tab_top + 28, count_right, tab_top + 54),
             f"{collected}/{len(category_states)}",
             font=_font(22),
             fill=TEXT_LIGHT,
         )
         if complete:
             # Pillow's bundled font has no check glyph, so draw the stroke.
-            _draw_check(draw, count_right + 6, tab_top + 51)
+            _draw_check(draw, count_right + 6, tab_top + 41)
 
 
 def _draw_card_tile(
@@ -570,10 +584,15 @@ def _draw_card_tile(
     card,
     state: int | str,
     artwork_by_card_id: Mapping[str, object],
+    origin: tuple[int, int] | None = None,
+    columns: int = BOARD_COLUMNS,
 ) -> None:
-    row, column = divmod(index, BOARD_COLUMNS)
-    left = GRID_LEFT + column * (TILE_WIDTH + TILE_GAP_X)
-    top = GRID_TOP + row * (TILE_HEIGHT + TILE_GAP_Y)
+    if origin is None:
+        row, column = divmod(index, columns)
+        left = GRID_LEFT + column * (TILE_WIDTH + TILE_GAP_X)
+        top = GRID_TOP + row * (TILE_HEIGHT + TILE_GAP_Y)
+    else:
+        left, top = origin
     right = left + TILE_WIDTH
     bottom = top + TILE_HEIGHT
 
@@ -996,6 +1015,135 @@ def render_card_board(
         filename="clash-cards-board.png",
         alt_text=_alt_text(
             player_name=player_name,
+            collected=collected,
+            missing_names=[card.name for card in missing],
+            duplicate_names=[card.name for card in duplicates],
+            spare_unverified_names=[card.name for card in spare_unverified],
+            unknown_names=[card.name for card in unknown],
+        ),
+        collected_count=collected,
+        missing_card_ids=tuple(card.id for card in missing),
+        duplicate_card_ids=tuple(card.id for card in duplicates),
+        spare_unverified_card_ids=tuple(card.id for card in spare_unverified),
+        unknown_card_ids=tuple(card.id for card in unknown),
+    )
+
+
+def render_category_strip(
+    category_id: str,
+    values: Mapping[str, BoardState] | None,
+    *,
+    highlight_card_id: str | None = None,
+) -> RenderedCardBoard:
+    """Render one category, five across, for the focused card screen.
+
+    The full board has to fit sixty tiles into a box Discord will not draw
+    taller than about 310 device pixels, which lands each tile near 42px. One
+    category is a fifth of the cards in a shape closer to that box's own ratio,
+    so it is scaled down far less and reads at roughly twice the size. The
+    focused screen is where a member is actually looking at a card, so that is
+    where the legible view belongs.
+    """
+    category = CATEGORY_BY_ID.get(category_id)
+    if category is None:
+        raise ValueError(f"unknown card category: {category_id}")
+    supplied = values or {}
+    definitions = CATEGORY_CARDS[category_id]
+    states = {card.id: _state(supplied.get(card.id)) for card in definitions}
+
+    columns = STRIP_COLUMNS
+    rows = math.ceil(len(definitions) / columns)
+    left_margin = 24
+    top_margin = 70
+    width = left_margin * 2 + columns * TILE_WIDTH + (columns - 1) * TILE_GAP_X
+    height = (
+        top_margin
+        + rows * TILE_HEIGHT
+        + (rows - 1) * TILE_GAP_Y
+        + 52
+    )
+
+    canvas = Image.new("RGB", (width, height), BACKGROUND)
+    draw = ImageDraw.Draw(canvas)
+    draw.rounded_rectangle(
+        (10, 8, width - 10, height - 10),
+        radius=18,
+        fill=PARCHMENT,
+        outline=(93, 66, 46),
+        width=5,
+    )
+    collected = sum(
+        states[card.id] in {OWNED, DUPLICATE, OWNED_SPARE_UNVERIFIED}
+        for card in definitions
+    )
+    draw.rounded_rectangle(
+        (22, 20, width - 22, 60),
+        radius=12,
+        fill=CATEGORY_COLORS[category_id],
+        outline=(255, 221, 160),
+        width=3,
+    )
+    heading, heading_font = _fit_text(
+        draw,
+        f"{category.name}   {collected}/{len(definitions)}",
+        width - 80,
+        max_size=26,
+        min_size=15,
+    )
+    _centered_text(
+        draw,
+        (30, 24, width - 30, 57),
+        heading,
+        font=heading_font,
+        fill=TEXT_LIGHT,
+    )
+
+    artwork = _bundled_artwork()
+    for index, card in enumerate(definitions):
+        row, column = divmod(index, columns)
+        left = left_margin + column * (TILE_WIDTH + TILE_GAP_X)
+        top = top_margin + row * (TILE_HEIGHT + TILE_GAP_Y)
+        _draw_card_tile(
+            canvas,
+            draw,
+            index=index,
+            card=card,
+            state=states[card.id],
+            artwork_by_card_id=artwork,
+            origin=(left, top),
+            columns=columns,
+        )
+        if highlight_card_id == card.id:
+            # A ring rather than a fill, so it cannot be read as a state.
+            draw.rounded_rectangle(
+                (left - 5, top - 5, left + TILE_WIDTH + 5, top + TILE_HEIGHT + 5),
+                radius=16,
+                outline=(255, 221, 96),
+                width=5,
+            )
+
+    _centered_text(
+        draw,
+        (24, height - 44, width - 24, height - 18),
+        DISCLAIMER,
+        font=_font(12),
+        fill=TEXT_DARK,
+    )
+
+    output = io.BytesIO()
+    canvas.save(output, format="PNG", optimize=True)
+    missing = [card for card in definitions if states[card.id] == MISSING]
+    duplicates = [card for card in definitions if states[card.id] == DUPLICATE]
+    spare_unverified = [
+        card for card in definitions
+        if states[card.id] == OWNED_SPARE_UNVERIFIED
+    ]
+    unknown = [card for card in definitions if states[card.id] == UNKNOWN]
+    return RenderedCardBoard(
+        png_bytes=output.getvalue(),
+        filename=f"clash-cards-{category_id}.png",
+        alt_text=_alt_text(
+            player_name=None,
             collected=collected,
             missing_names=[card.name for card in missing],
             duplicate_names=[card.name for card in duplicates],

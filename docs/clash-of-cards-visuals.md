@@ -59,10 +59,31 @@ dependency.
 
 All return immutable result records containing PNG bytes, a filename, and
 accessible alt text. Missing or invalid state is always **unknown**, never
-owned. The board is one 1120 x 1580 PNG: six columns in canonical game order,
-four colored category pills carrying the full category name, its collected
-total, and a drawn check when complete, then the grid. The proposal strip is
-1120 x 360. No source asset is changed on disk.
+owned. The proposal strip is 1120 x 360. No source asset is changed on disk.
+
+## The board is landscape because Discord caps height, not width
+
+Measured on a live client: Discord will not draw an embedded image taller than
+about **310 device pixels**, while giving it roughly **490 across**. A portrait
+board is therefore scaled by its height and renders about 219 wide, wasting
+more than half the room it is given. The first build shipped a 1120 x 1580
+six-column board and landed at about 36px per tile.
+
+The board is now **1726 x 1116, ten columns by six rows**, a shape whose width
+binds first. Same sixty cards, about **47px** per tile on the same screen. The
+game's own grid is six columns, but it is a scrolling view and does not have
+this constraint, so copying its column count here costs legibility for nothing.
+
+`render_category_strip` renders one category five across, roughly 854 x 689.
+Being closer to the media box's own ratio, it is scaled down far less and lands
+near **76px** per tile, about twice the board. It backs the focused card
+screen, which is where a member is actually looking at a single card. An
+optional `highlight_card_id` draws a ring, deliberately an outline rather than
+a fill so it cannot be misread as a state.
+
+These three numbers - 310, 490 and the resulting tile sizes - are the reason
+for the layout. If Discord changes them the shape should be re-measured rather
+than reasoned about.
 
 Three tile rules exist to survive Discord's mobile scaling, where a tile is
 about 64px wide:

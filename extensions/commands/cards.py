@@ -38,6 +38,7 @@ from utils.card_board import (
     CATEGORY_ACCENTS,
     OWNED_SPARE_UNVERIFIED,
     render_card_thumbnail,
+    render_category_strip,
     render_inventory_card_board,
     render_trade_strip,
 )
@@ -66,6 +67,7 @@ from utils.cards import (
     reciprocal_trade_error,
 )
 from utils.component_state import delete_state, get_state, insert_state, update_state
+from utils.emoji import emojis
 from utils.constants import GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
@@ -567,6 +569,26 @@ def _card_names(card_ids: tuple[str, ...] | list[str], *, limit: int = 5) -> str
     return ", ".join(shown) + suffix
 
 
+def _town_hall_emoji(level: object):
+    """A town hall CustomEmoji for a component's `emoji=` field, or UNDEFINED.
+
+    `EmojiType.partial_emoji` raises on a malformed id, and one bad id in the
+    shared table would otherwise take the whole account picker down. An
+    unknown or unconfigured town hall level falls back to no emoji, and the
+    caller keeps the level in the label so nothing is lost.
+    """
+    try:
+        obj = getattr(emojis, f"TH{int(level)}", None)
+    except (TypeError, ValueError):
+        return hikari.UNDEFINED
+    if obj is None:
+        return hikari.UNDEFINED
+    try:
+        return obj.partial_emoji
+    except (ValueError, IndexError):
+        return hikari.UNDEFINED
+
+
 def _account_picker(data: AccountsData, page: int = 0) -> list[Container]:
     if data.problem == LINK_FAILURE:
         return _notice(
@@ -588,17 +610,26 @@ def _account_picker(data: AccountsData, page: int = 0) -> list[Container]:
     page = min(_parse_page(page), pages - 1)
     start = page * ACCOUNT_PAGE_SIZE
     window = entries[start:start + ACCOUNT_PAGE_SIZE]
-    options = [
-        SelectOption(
-            label=_plain(f"{entry.account.name} · TH{entry.account.town_hall}"),
+    options = []
+    for entry in window:
+        town_hall = entry.account.town_hall
+        emoji = _town_hall_emoji(town_hall)
+        # The emoji replaces the "TH17" text when it resolves; when it does
+        # not, the level stays in the label rather than vanishing.
+        label = (
+            entry.account.name
+            if emoji is not hikari.UNDEFINED
+            else f"{entry.account.name} · TH{town_hall}"
+        )
+        options.append(SelectOption(
+            label=_plain(label),
             value=entry.tag,
             description=_plain(
-                f"{entry.account.clan_name or 'No clan'} · {entry.tag}",
+                f"TH{town_hall} · {entry.account.clan_name or 'No clan'} · {entry.tag}",
                 limit=100,
             ),
-        )
-        for entry in window
-    ]
+            emoji=emoji,
+        ))
 
     body: list = [
         Text(content="# 🃏 Choose a Card Collection"),
@@ -1953,8 +1984,9 @@ def _card_focus(
     *,
     saved: str | None = None,
     rendered_tile: object = None,
+    rendered_strip: object = None,
 ) -> list[Container]:
-    """One card, its artwork, and three absolute state buttons."""
+    """One card, its category at a legible size, and three state buttons."""
     card = CARD_BY_ID.get(card_id) or CARDS[0]
     tag = _normalize_tag(account.tag)
     category = CATEGORY_BY_ID[card.category]
@@ -1972,6 +2004,17 @@ def _card_focus(
 
     body: list = [
         Text(content=f"## {_escape_markdown(card.name)}"),
+    ]
+    if rendered_strip is not None:
+        # One category is scaled down far less than the sixty-card board, so
+        # this is where the artwork is actually legible.
+        body.append(Media(items=[MediaItem(
+            media=hikari.Bytes(
+                rendered_strip.png_bytes, rendered_strip.filename, "image/png"
+            ),
+            description=rendered_strip.alt_text,
+        )]))
+    body.extend([
         Section(
             components=[
                 Text(content=(
@@ -2025,7 +2068,7 @@ def _card_focus(
         # The menu stays mounted, so fixing several cards in one category is
         # pick, tap, pick, tap without returning to the board between them.
         _category_select_row(account, inventory, card.category),
-    ]
+    ])
     return [Container(
         accent_color=CATEGORY_ACCENTS[card.category],
         components=body,
@@ -2908,13 +2951,25 @@ async def _card_focus_view(
 ):
     possible_spare = card_id in set(_scan_unverified_ids(inventory))
     state = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
+    card = CARD_BY_ID.get(card_id) or CARDS[0]
     tile = await asyncio.to_thread(
         render_card_thumbnail,
         card_id,
         OWNED_SPARE_UNVERIFIED if possible_spare else state,
     )
+    strip = await asyncio.to_thread(
+        render_category_strip,
+        card.category,
+        _inventory_board_values(inventory),
+        highlight_card_id=card.id,
+    )
     return _card_focus(
-        account, inventory, card_id, saved=saved, rendered_tile=tile
+        account,
+        inventory,
+        card_id,
+        saved=saved,
+        rendered_tile=tile,
+        rendered_strip=strip,
     )
 
 

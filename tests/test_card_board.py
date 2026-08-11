@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import math
 import re
 from dataclasses import FrozenInstanceError
 from hashlib import sha256
@@ -32,7 +33,7 @@ from utils.card_board import (
     render_inventory_card_board,
     render_trade_strip,
 )
-from utils.cards import CARDS, DUPLICATE, MISSING, OWNED
+from utils.cards import CARDS, CATEGORY_CARDS, DUPLICATE, MISSING, OWNED
 
 
 def _artwork(color=(30, 150, 210)):
@@ -196,10 +197,27 @@ def test_bundled_artwork_matches_the_pinned_notice_checksums():
 
 
 def test_footer_starts_below_the_last_card_row():
-    last_row_bottom = GRID_TOP + 9 * (TILE_HEIGHT + TILE_GAP_Y) + TILE_HEIGHT
+    rows = math.ceil(len(CARDS) / card_board.BOARD_COLUMNS)
+    last_row_bottom = (
+        GRID_TOP + (rows - 1) * (TILE_HEIGHT + TILE_GAP_Y) + TILE_HEIGHT
+    )
     footer_top = BOARD_HEIGHT - 71
 
     assert last_row_bottom < footer_top
+
+
+def test_the_board_is_landscape_so_discord_does_not_height_cap_it():
+    """Discord caps an embedded image near 310px tall and gives it ~490 wide.
+
+    A portrait board is scaled by height and renders about 219 wide, wasting
+    the width. This pins the shape rather than the exact pixel numbers.
+    """
+    assert BOARD_WIDTH > BOARD_HEIGHT
+    assert card_board.BOARD_COLUMNS * card_board.BOARD_ROWS == len(CARDS)
+    displayed = min(490 / BOARD_WIDTH, 310 / BOARD_HEIGHT)
+    tile_on_screen = card_board.TILE_WIDTH * displayed
+    # The previous 6x10 portrait board landed at about 36px per tile.
+    assert tile_on_screen > 40
 
 
 def test_inventory_board_cache_normalizes_mapping_order_and_unknown_keys():
@@ -275,8 +293,9 @@ def test_spare_unverified_is_owned_colored_and_not_unknown():
         )
         # The possible-spare badge sits on the tile's bottom edge, where the
         # game puts its own xN badge.
+        badge_row = GRID_TOP + TILE_HEIGHT - 8
         assert any(
-            rendered.getpixel((x, GRID_TOP + 104)) == (250, 201, 38)
+            rendered.getpixel((x, badge_row)) == (250, 201, 38)
             for x in range(GRID_LEFT + 55, GRID_LEFT + 95)
         )
 
@@ -367,3 +386,52 @@ def test_trade_strip_alt_text_is_bounded():
 
     assert len(result.alt_text) <= 1_000
     assert result.alt_text.endswith("...")
+
+
+def test_category_strip_renders_one_category_larger_than_the_board():
+    values = {card.id: OWNED for card in CARDS}
+    strip = card_board.render_category_strip("elixir", values)
+
+    with Image.open(io.BytesIO(strip.png_bytes)) as rendered:
+        strip_size = rendered.size
+    board = render_card_board(values, player_name="Wolverine")
+    with Image.open(io.BytesIO(board.png_bytes)) as rendered:
+        board_size = rendered.size
+
+    # Both are scaled into the same media box, so the strip's larger tiles come
+    # from it being scaled down less, not from a bigger source tile.
+    strip_scale = min(490 / strip_size[0], 310 / strip_size[1])
+    board_scale = min(490 / board_size[0], 310 / board_size[1])
+    assert strip_scale > board_scale * 1.5
+
+    assert strip.filename == "clash-cards-elixir.png"
+    assert strip.collected_count == len(CATEGORY_CARDS["elixir"])
+    assert not strip.missing_card_ids
+
+
+def test_category_strip_states_cover_only_that_category():
+    values = {card.id: OWNED for card in CARDS}
+    values[CATEGORY_CARDS["elixir"][0].id] = MISSING
+    values[CATEGORY_CARDS["dark_elixir"][0].id] = MISSING
+
+    strip = card_board.render_category_strip("elixir", values)
+
+    assert strip.missing_card_ids == (CATEGORY_CARDS["elixir"][0].id,)
+    assert strip.collected_count == len(CATEGORY_CARDS["elixir"]) - 1
+
+
+def test_category_strip_rejects_an_unknown_category():
+    with pytest.raises(ValueError):
+        card_board.render_category_strip("nope", {})
+
+
+def test_category_strip_highlight_does_not_change_the_accounting():
+    values = {card.id: DUPLICATE for card in CARDS}
+    plain = card_board.render_category_strip("super_troop", values)
+    ringed = card_board.render_category_strip(
+        "super_troop", values, highlight_card_id=CATEGORY_CARDS["super_troop"][0].id
+    )
+
+    assert plain.duplicate_card_ids == ringed.duplicate_card_ids
+    assert plain.collected_count == ringed.collected_count
+    assert plain.png_bytes != ringed.png_bytes
