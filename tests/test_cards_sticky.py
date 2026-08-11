@@ -89,7 +89,7 @@ def test_buried_notice_is_reposted_and_the_old_one_removed(monkeypatch):
     assert len(rest.created) == 1
     channel, components, flags = rest.created[0]
     assert channel == sticky.STICKY_CHANNEL_ID
-    assert flags == hikari.MessageFlag.IS_COMPONENTS_V2
+    assert flags & hikari.MessageFlag.IS_COMPONENTS_V2
     assert components
     # The new message is recorded before the old one is deleted, so a crash
     # cannot strand an untracked notice that every later cycle would duplicate.
@@ -296,8 +296,8 @@ def test_support_contact_is_the_last_thing_and_rendered_small():
     assert nodes[-1].startswith("-#")
 
 
-def test_the_support_mention_never_pings(monkeypatch):
-    """This message reposts all day; a live mention would notify every time."""
+def test_the_notice_neither_pings_nor_notifies(monkeypatch):
+    """Two independent controls, and a message reposting all day needs both."""
     rest = _Rest(newest_id=777, post_id=888)
     config = _Config({
         "_id": sticky.CONFIG_ID,
@@ -308,6 +308,13 @@ def test_the_support_mention_never_pings(monkeypatch):
 
     asyncio.run(sticky.refresh_sticky())
 
+    # allowed_mentions: the support mention does not ping that one person.
     assert rest.create_kwargs["user_mentions"] is False
     assert rest.create_kwargs["role_mentions"] is False
     assert rest.create_kwargs["mentions_everyone"] is False
+
+    # The silent flag: the post itself does not notify the channel. Suppressing
+    # mentions alone would not have stopped this.
+    flags = rest.created[0][2]
+    assert flags & hikari.MessageFlag.SUPPRESS_NOTIFICATIONS
+    assert flags & hikari.MessageFlag.IS_COMPONENTS_V2

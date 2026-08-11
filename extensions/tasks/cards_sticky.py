@@ -4,7 +4,7 @@ Discord has no real sticky message, so the only way to keep a notice visible is
 to delete it and post it again below whatever was said since. This does that on
 a timer, but only when the notice has actually been buried: reposting a message
 that is already last marks the channel unread and bumps it up everyone's sidebar
-for no visible change, and push-notifies anyone set to All Messages.
+for no visible change. It posts silently, so no repost ever notifies anyone.
 """
 
 import asyncio
@@ -186,9 +186,15 @@ async def refresh_sticky() -> None:
         message = await bot_instance.rest.create_message(
             channel=channel_id,
             components=_sticky_components(),
-            flags=hikari.MessageFlag.IS_COMPONENTS_V2,
-            # The support mention stays tappable but must not notify. This
-            # message reposts all day; a live mention would ping them each time.
+            # Two separate controls, both needed. allowed_mentions below stops
+            # the support mention pinging that one person; SUPPRESS_NOTIFICATIONS
+            # is the "silent message" flag, which stops the post itself
+            # notifying everyone watching the channel. A notice that reposts all
+            # day should do neither.
+            flags=(
+                hikari.MessageFlag.IS_COMPONENTS_V2
+                | hikari.MessageFlag.SUPPRESS_NOTIFICATIONS
+            ),
             user_mentions=False,
             role_mentions=False,
             mentions_everyone=False,
