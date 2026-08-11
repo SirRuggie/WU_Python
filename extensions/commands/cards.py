@@ -578,11 +578,22 @@ def _without_reserved_cards(inventory: dict) -> dict:
 
 
 def _card_names(card_ids: tuple[str, ...] | list[str], *, limit: int = 5) -> str:
-    names = [CARD_BY_ID[card_id].name for card_id in card_ids if card_id in CARD_BY_ID]
-    if not names:
+    """A readable run of card names, each led by its troop art.
+
+    This is the shared formatter behind the scan review, the trade offers and
+    the holder lists, so the emoji arrive everywhere a card is named rather
+    than only on the family board. `troop_emoji.markup` returns "" for a troop
+    that has not been synced and never raises, so an un-synced set degrades to
+    plain names.
+    """
+    known = [CARD_BY_ID[card_id] for card_id in card_ids if card_id in CARD_BY_ID]
+    if not known:
         return "none"
-    shown = names[:limit]
-    suffix = f" +{len(names) - limit} more" if len(names) > limit else ""
+    shown = []
+    for card in known[:limit]:
+        icon = troop_emoji.markup(card.id)
+        shown.append(f"{icon} {card.name}" if icon else card.name)
+    suffix = f" +{len(known) - limit} more" if len(known) > limit else ""
     return ", ".join(shown) + suffix
 
 
@@ -1522,11 +1533,16 @@ def _scan_accounts_problem(
 
 
 def _scan_card_names(card_ids: object) -> str:
+    """Scan-review card names, each led by its troop art."""
     ordered = _ordered_card_ids(card_ids)
-    names = [CARD_BY_ID[card_id].name for card_id in ordered]
-    if not names:
+    if not ordered:
         return "None"
-    return ", ".join(names)
+    parts = []
+    for card_id in ordered:
+        card = CARD_BY_ID[card_id]
+        icon = troop_emoji.markup(card.id)
+        parts.append(f"{icon} {card.name}" if icon else card.name)
+    return ", ".join(parts)
 
 
 def _scan_review(
@@ -2846,8 +2862,54 @@ def _hidden_badge_review(
             "Possible spares checked",
             "The hidden duplicate-badge review is complete.",
         )
-    card = CARD_BY_ID[pending[0]]
     tag = _normalize_tag(account.tag)
+    batch = pending[:HIDDEN_BADGE_BATCH_SIZE]
+    if len(batch) > 1:
+        # Ask once for the whole batch instead of once per card. These are
+        # cards whose badge sat under the reward track, which happens to a
+        # whole row at a time, so a member was answering the same question six
+        # or seven times in a row.
+        return [Container(components=[
+            Text(content="# Which of these do you have spares of?"),
+            Text(content=(
+                f"The reward bar covered the corner of **{len(batch)} cards**, "
+                "so the scan could not read their spare badges.\n"
+                "Tick every one you hold **2 or more** of. Anything you leave "
+                "unticked is saved as a single copy."
+            )),
+            Separator(divider=True),
+            ActionRow(components=[TextSelectMenu(
+                custom_id=f"cards_hidden_pick:{tag}",
+                placeholder="Choose every card you have a spare of...",
+                min_values=0,
+                max_values=len(batch),
+                options=[
+                    SelectOption(
+                        label=CARD_BY_ID[card_id].name,
+                        value=card_id,
+                        description=CATEGORY_BY_ID[
+                            CARD_BY_ID[card_id].category
+                        ].short_name,
+                        emoji=troop_emoji.partial(card_id),
+                    )
+                    for card_id in batch
+                ],
+            )]),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_hidden_none_of_these:{tag}",
+                    label="None of them",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_dashboard:{tag}",
+                    label="Later",
+                ),
+            ]),
+        ])]
+
+    card = CARD_BY_ID[pending[0]]
     state_bound = session_id is not None
     no_id = (
         f"cards_scan_hidden_no:{session_id}"
@@ -7385,6 +7447,85 @@ async def _apply_card_count(
         updated,
         card_id,
         saved=note or _saved_count_line(CARD_BY_ID[card_id].name, target),
+    )
+
+
+async def _resolve_hidden_batch(
+    ctx,
+    tag: str,
+    spares: list[str],
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+):
+    """Write one whole hidden-badge batch: ticked are spares, rest are singles."""
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    batch = _scan_unverified_ids(inventory)[:HIDDEN_BADGE_BATCH_SIZE]
+    if not batch:
+        return await _dashboard_view(account, inventory, account_count=1)
+    chosen = [card_id for card_id in batch if card_id in set(spares)]
+    try:
+        updated = await _write_hidden_badge_batch(
+            mongo,
+            account,
+            inventory,
+            batch,
+            chosen,
+            expected_revision=_inventory_revision_value(inventory),
+            discord_id=int(ctx.user.id),
+            guild_id=_guild_id(ctx),
+        )
+    except ActiveCardTradeError:
+        return _notice(
+            "Cards reserved",
+            "Finish or cancel the accepted trade before changing these cards.",
+        )
+    except (InventoryWriteConflict, ValueError):
+        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        return await _dashboard_view(account, current, account_count=1)
+    if _scan_unverified_ids(updated):
+        return _hidden_badge_review(account, updated)
+    data = await load_accounts(coc_client, int(ctx.user.id))
+    return await _dashboard_view(
+        account, updated, account_count=len(_loaded_entries(data))
+    )
+
+
+@register_action("cards_hidden_pick")
+@lightbulb.di.with_di
+async def cards_hidden_pick(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    values = [
+        str(value) for value in (getattr(ctx.interaction, "values", ()) or ())
+        if str(value) in CARD_BY_ID
+    ]
+    return await _resolve_hidden_batch(
+        ctx, _normalize_tag(action_id), values,
+        coc_client=coc_client, mongo=mongo,
+    )
+
+
+@register_action("cards_hidden_none_of_these")
+@lightbulb.di.with_di
+async def cards_hidden_none_of_these(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _resolve_hidden_batch(
+        ctx, _normalize_tag(action_id), [],
+        coc_client=coc_client, mongo=mongo,
     )
 
 

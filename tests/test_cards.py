@@ -3122,8 +3122,15 @@ def test_global_hidden_badge_review_saves_one_batch_and_clears_only_that_batch()
     )
     assert updated["scan_duplicate_unverified_card_ids"] == hidden[25:]
     assert updated["inventory_revision"] == 6
+    # The leftovers are offered together in one more batch question, not two
+    # more single-card screens.
     next_view = cards_command._hidden_badge_review(account, updated)
-    assert "2 remaining" in _view_text(next_view)
+    nodes = _view_nodes(next_view)
+    picker = next(
+        node for node in nodes
+        if node.get("custom_id") == "cards_hidden_pick:#ME"
+    )
+    assert {str(o["value"]) for o in picker["options"]} == set(hidden[25:])
     _assert_discord_payload(next_view)
 
 
@@ -4092,19 +4099,19 @@ def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
     ))
 
     nodes = _view_nodes(view)
+    # Several hidden badges are asked about together, not one screen each.
     assert any(
-        node.get("custom_id") == "cards_scan_hidden_no:draft-hidden-review"
+        node.get("custom_id") == "cards_hidden_pick:#ME"
         for node in nodes
     )
     assert any(
-        node.get("custom_id") == "cards_scan_hidden_yes:draft-hidden-review"
+        node.get("custom_id") == "cards_hidden_none_of_these:#ME"
         for node in nodes
     )
-    assert any(
-        node.get("custom_id") == "cards_scan_hidden_missing:draft-hidden-review"
-        and node.get("label") == "Missing — have 0"
-        for node in nodes
-    )
+    # Every unread badge is offered in one multi-select.
+    picker = next(n for n in nodes if n.get("custom_id") == "cards_hidden_pick:#ME")
+    assert {str(o["value"]) for o in picker["options"]} == set(hidden[:25])
+    assert picker["max_values"] == len(hidden[:25])
     assert len([node for node in nodes if "type" in node]) <= 40
     _assert_discord_payload(view)
     assert discarded == []
@@ -5102,3 +5109,59 @@ def test_scan_review_still_asks_when_positions_were_never_seen():
     ))
 
     assert "Send these pages again" in text
+
+
+def test_card_name_lists_carry_troop_art_everywhere():
+    """One formatter feeds scan review, trade offers and holder lists."""
+    from utils import troop_emoji
+
+    troop_emoji.clear()
+    troop_emoji.prime([
+        {"slug": "wizard", "emoji_id": 111111111111111111, "name": "troop_wizard"},
+    ])
+    try:
+        named = cards_command._card_names(["wizard", "dragon"])
+        assert "<:troop_wizard:111111111111111111> Wizard" in named
+        # A troop with no synced emoji still reads cleanly.
+        assert "Dragon" in named
+        assert "None Dragon" not in named
+
+        scanned = cards_command._scan_card_names(["wizard"])
+        assert "<:troop_wizard:111111111111111111> Wizard" in scanned
+    finally:
+        troop_emoji.clear()
+
+    # With nothing synced at all, both degrade to plain names.
+    assert cards_command._card_names(["wizard"]) == "Wizard"
+    assert cards_command._scan_card_names(["wizard"]) == "Wizard"
+    assert cards_command._card_names([]) == "none"
+    assert cards_command._scan_card_names([]) == "None"
+
+
+def test_several_hidden_badges_are_one_question_not_one_each():
+    """The reward bar hides a whole row at a time, so ask once."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    pending = ["wizard", "dragon", "golem", "witch", "bowler"]
+    inventory["scan_duplicate_unverified_card_ids"] = pending
+
+    view = cards_command._hidden_badge_review(account, inventory)
+    nodes = _view_nodes(view)
+    picker = next(
+        n for n in nodes if n.get("custom_id") == "cards_hidden_pick:#ME"
+    )
+
+    assert {str(o["value"]) for o in picker["options"]} == set(pending)
+    assert picker["max_values"] == len(pending)
+    assert picker["min_values"] == 0          # ticking nothing is a real answer
+    assert any(
+        n.get("custom_id") == "cards_hidden_none_of_these:#ME" for n in nodes
+    )
+    # A single leftover still gets the simple three-button screen.
+    inventory["scan_duplicate_unverified_card_ids"] = ["wizard"]
+    single = _view_nodes(cards_command._hidden_badge_review(account, inventory))
+    assert not [n for n in single if n.get("custom_id") == "cards_hidden_pick:#ME"]
+    _assert_discord_payload(view)
