@@ -37,6 +37,7 @@ from utils.card_board import (
     CARD_ARTWORK_DIR,
     CATEGORY_ACCENTS,
     OWNED_SPARE_UNVERIFIED,
+    SPARE_FLOOR,
     render_card_thumbnail,
     render_category_strip,
     render_inventory_card_board,
@@ -65,6 +66,7 @@ from utils.cards import (
     inventory_is_matchable,
     max_achievable_trades,
     normalize_cards,
+    normalize_status,
     reciprocal_trade_error,
 )
 from utils.component_state import delete_state, get_state, insert_state, update_state
@@ -1780,8 +1782,21 @@ def _card_board_media(
     )])
 
 
+def _confirmed_count_ids(inventory: dict) -> set[str]:
+    raw = inventory.get("count_confirmed_card_ids") or ()
+    if not isinstance(raw, (list, tuple, set)):
+        return set()
+    return {str(value) for value in raw if str(value) in CARD_BY_ID}
+
+
 def _inventory_board_values(inventory: dict) -> dict:
     values: dict = normalize_cards(inventory.get("cards"))
+    confirmed = _confirmed_count_ids(inventory)
+    for card_id, state in list(values.items()):
+        # Exactly two, and the member never said so: the scanner proved a spare
+        # exists but not how many, so this reads "x2+" rather than "x2".
+        if state == DUPLICATE and card_id not in confirmed:
+            values[card_id] = SPARE_FLOOR
     for card_id in _scan_unverified_ids(inventory):
         values[card_id] = "owned_spare_unverified"
     return values
@@ -1955,16 +1970,20 @@ def _is_spare_state(state: object) -> bool:
     )
 
 
-def _card_state_words(state: int | str, *, possible_spare: bool) -> str:
+def _card_state_words(
+    state: int | str,
+    *,
+    possible_spare: bool,
+    unconfirmed: bool = False,
+) -> str:
     if possible_spare:
         return "Might be a spare"
     if state == MISSING:
         return "Missing"
-    if state == DUPLICATE:
-        # Two is the scanner's safe floor and what older documents hold, so it
-        # means "at least two" rather than exactly two.
-        return "2+ · spare to trade"
-    if isinstance(state, int) and state > DUPLICATE:
+    if unconfirmed:
+        # The scanner proved a spare exists but not how many.
+        return "2 or more · tell me the exact number"
+    if isinstance(state, int) and state >= DUPLICATE:
         return f"{state} copies · {state - 1} to trade"
     return "Have 1"
 
@@ -2015,7 +2034,11 @@ def _spare_counts_panel(account, inventory: dict) -> list[Container] | None:
     """
     tag = _normalize_tag(account.tag)
     saved = normalize_cards(inventory.get("cards"))
-    spares = [card for card in CARDS if saved.get(card.id, OWNED) == DUPLICATE]
+    confirmed = _confirmed_count_ids(inventory)
+    spares = [
+        card for card in CARDS
+        if saved.get(card.id, OWNED) == DUPLICATE and card.id not in confirmed
+    ]
     if not spares:
         return None
 
@@ -2080,7 +2103,14 @@ def _card_focus(
         OWNED_SPARE_UNVERIFIED if possible_spare else state,
     )
 
-    detail = _card_state_words(state, possible_spare=possible_spare)
+    unconfirmed = (
+        _is_spare_state(state)
+        and state == DUPLICATE
+        and card.id not in _confirmed_count_ids(inventory)
+    )
+    detail = _card_state_words(
+        state, possible_spare=possible_spare, unconfirmed=unconfirmed
+    )
     if reserved:
         detail = "Reserved by an accepted trade"
 
@@ -2132,34 +2162,25 @@ def _card_focus(
                 is_disabled=reserved,
             ),
             Button(
-                style=(
-                    hikari.ButtonStyle.SUCCESS
-                    if _is_spare_state(state) and not possible_spare
-                    else hikari.ButtonStyle.SECONDARY
-                ),
-                custom_id=f"cards_set:{tag}|{card.id}|2",
-                label="Spare, 2+",
-                is_disabled=reserved,
-            ),
-            Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{tag}",
                 label="Back to board",
             ),
         ]),
-        # Exact counts, for members who want them. The three buttons above set
-        # a state; these adjust the number of copies from wherever it is.
+        # "Spare, 2+" used to sit above. It was redundant with +1 and could not
+        # express "exactly two", which is the common case: pressing it left the
+        # badge reading 2+ forever.
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_step:{tag}|{card.id}|-1",
-                label="-1 copy",
+                label="-1",
                 is_disabled=reserved or not isinstance(state, int) or state <= MISSING,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_step:{tag}|{card.id}|1",
-                label="+1 copy",
+                label="+1",
                 is_disabled=reserved or (
                     isinstance(state, int) and state >= MAX_COPIES
                 ),
@@ -2167,8 +2188,22 @@ def _card_focus(
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_count:{tag}|{card.id}",
-                label="Set exact count",
+                label="Type a number",
                 is_disabled=reserved,
+            ),
+            # Only rendered for an unconfirmed scanned spare, where the count is
+            # necessarily 2. Rendering it otherwise would repeat the custom_id
+            # of the None or Have 1 button, and Discord rejects a message that
+            # carries the same custom_id twice.
+            *(
+                [Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"cards_set:{tag}|{card.id}|{DUPLICATE}",
+                    label="Exactly 2",
+                    is_disabled=reserved,
+                )]
+                if unconfirmed
+                else []
             ),
         ]),
         # The menu stays mounted, so fixing several cards in one category is
@@ -2512,6 +2547,18 @@ def _quick_transition_problem(inventory: dict, card_id: str, mode: str) -> str |
     current = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
     desired = int(action["to"])
     required = action["from"]
+    # A spare is any count at or above DUPLICATE, so both the "already there"
+    # test and the precondition treat it as a threshold. Comparing for equality
+    # rejected every member holding more than two.
+    if required == DUPLICATE:
+        if current < DUPLICATE:
+            return (
+                f"{card.name} is currently marked {_state_name(current)}, so "
+                f"**{action['short_label']}** does not fit."
+            )
+        return None
+    if desired == DUPLICATE and current >= DUPLICATE:
+        return f"{card.name} is already marked {_state_name(current)}."
     if current == desired:
         return f"{card.name} is already marked {_state_name(desired)}."
     if required is not None and current != required:
@@ -5244,14 +5291,18 @@ async def _apply_trade_inventory_updates(
             and holder_reservations.get(trade["wanted_card_id"]) == owner
             and holder_reservations.get(trade["given_card_id"]) == owner
         )
+        # `>=`, not `==`. Copy counts are stored exactly, so a member holding
+        # four of the card they are giving away is still a valid giver. An
+        # equality test here silently failed completion for precisely the
+        # members with the most to trade.
         requester_expected = (
             requester_fenced
             and requester_cards.get(trade["wanted_card_id"], OWNED) == MISSING
-            and requester_cards.get(trade["given_card_id"], OWNED) == DUPLICATE
+            and requester_cards.get(trade["given_card_id"], OWNED) >= DUPLICATE
         )
         holder_expected = (
             holder_fenced
-            and holder_cards.get(trade["wanted_card_id"], OWNED) == DUPLICATE
+            and holder_cards.get(trade["wanted_card_id"], OWNED) >= DUPLICATE
             and holder_cards.get(trade["given_card_id"], OWNED) == MISSING
         )
 
@@ -5279,14 +5330,18 @@ async def _apply_trade_inventory_updates(
                         ]},
                     ],
                     f"cards.{trade['wanted_card_id']}": MISSING,
-                    f"cards.{trade['given_card_id']}": DUPLICATE,
+                    f"cards.{trade['given_card_id']}": {"$gte": DUPLICATE},
                 },
                 {"$set": {
                     f"cards.{trade['wanted_card_id']}": OWNED,
-                    f"cards.{trade['given_card_id']}": OWNED,
                     "updated_at": now,
                     "update_source": "confirmed_trade",
-                }, "$inc": {"inventory_revision": 1}},
+                }, "$inc": {
+                    # Give away one copy, not every spare copy. Setting this to
+                    # OWNED would drop a member holding five down to one.
+                    f"cards.{trade['given_card_id']}": -1,
+                    "inventory_revision": 1,
+                }},
         )
         requester_updated = bool(getattr(requester_result, "modified_count", 0))
 
@@ -5305,15 +5360,17 @@ async def _apply_trade_inventory_updates(
                             {f"card_trade_reservations.{trade['given_card_id']}.owner": owner},
                         ]},
                     ],
-                    f"cards.{trade['wanted_card_id']}": DUPLICATE,
+                    f"cards.{trade['wanted_card_id']}": {"$gte": DUPLICATE},
                     f"cards.{trade['given_card_id']}": MISSING,
                 },
                 {"$set": {
-                    f"cards.{trade['wanted_card_id']}": OWNED,
                     f"cards.{trade['given_card_id']}": OWNED,
                     "updated_at": now,
                     "update_source": "confirmed_trade",
-                }, "$inc": {"inventory_revision": 1}},
+                }, "$inc": {
+                    f"cards.{trade['wanted_card_id']}": -1,
+                    "inventory_revision": 1,
+                }},
         )
         holder_updated = bool(getattr(holder_result, "modified_count", 0))
         return {
@@ -5365,7 +5422,16 @@ async def _write_one_card(
             "updated_at": now,
             "confirmed_at": now,
             "update_source": "quick_card_update",
-            f"cards.{card_id}": int(action["to"]),
+            # "Used a spare" means one copy left, not all of them. The action
+            # table's flat target of OWNED was written when two was the ceiling;
+            # with real counts it would drop a member holding five down to one.
+            f"cards.{card_id}": (
+                max(OWNED, normalize_status(
+                    normalize_cards(latest.get("cards")).get(card_id, OWNED)
+                ) - 1)
+                if mode == "used"
+                else int(action["to"])
+            ),
         }
         if guild_id is not None:
             identity["guild_id"] = guild_id
@@ -5476,6 +5542,10 @@ async def _write_card_state(
             {
                 "$set": identity,
                 "$pull": {"scan_duplicate_unverified_card_ids": card_id},
+                # A number the member entered is exact. The scanner's spares are
+                # a floor, so only member writes land here, and only cards in
+                # this list drop the "+" from their badge.
+                "$addToSet": {"count_confirmed_card_ids": card_id},
                 "$inc": {"inventory_revision": 1},
             },
         )
@@ -7363,13 +7433,13 @@ async def cards_count(
     tag, card_id, _target = _parse_card_set_target(f"{action_id}|0")
     if card_id is None:
         await ctx.respond(
-            "Card unavailable. Open `/cards` again.",
-            flags=hikari.MessageFlag.EPHEMERAL,
+            components=_notice("Card unavailable", "Open `/cards` again."),
+            ephemeral=True,
         )
         return
     await ctx.respond_with_modal(
-        f"How many {CARD_BY_ID[card_id].name}?"[:45],
-        f"cards_count_submit:{tag}|{card_id}",
+        title=f"How many {CARD_BY_ID[card_id].name}?"[:45],
+        custom_id=f"cards_count_submit:{tag}|{card_id}",
         components=[ModalActionRow().add_text_input(
             "copies",
             "Copies you hold",
@@ -7380,18 +7450,21 @@ async def cards_count(
     )
 
 
-@register_action("cards_count_submit")
+@register_action("cards_count_submit", is_modal=True, no_return=True)
 @lightbulb.di.with_di
 async def cards_count_submit(
-    ctx: lightbulb.components.MenuContext,
+    ctx: lightbulb.components.ModalContext,
     action_id: str,
     coc_client: coc.Client = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
+    await ctx.defer(ephemeral=True)
     tag, card_id, _target = _parse_card_set_target(f"{action_id}|0")
     if card_id is None:
-        return _notice("Card unavailable", "Open `/cards` again.")
+        view = _notice("Card unavailable", "Open `/cards` again.")
+        await ctx.interaction.edit_initial_response(components=view)
+        return
     raw = _modal_text_value(ctx, "copies")
     try:
         target = int(str(raw).strip())
@@ -7399,15 +7472,15 @@ async def cards_count_submit(
         account, inventory, problem = await _load_target(
             ctx, tag, coc_client=coc_client, mongo=mongo
         )
-        if problem:
-            return problem
-        return await _card_focus_view(
+        view = problem or await _card_focus_view(
             account, inventory, card_id,
             saved="That was not a number, so nothing changed.",
         )
-    return await _apply_card_count(
-        ctx, tag, card_id, target, coc_client=coc_client, mongo=mongo
-    )
+    else:
+        view = await _apply_card_count(
+            ctx, tag, card_id, target, coc_client=coc_client, mongo=mongo
+        )
+    await ctx.interaction.edit_initial_response(components=view)
 
 
 @register_action("cards_editor_category")

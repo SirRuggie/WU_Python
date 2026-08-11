@@ -40,6 +40,10 @@ from utils.cards import (
 
 UNKNOWN = "unknown"
 OWNED_SPARE_UNVERIFIED = "owned_spare_unverified"
+# A spare whose count came from the scanner rather than the member. The
+# scanner can prove a spare exists but not how many, so this renders "x2+"
+# while a member-confirmed two renders a plain "x2".
+SPARE_FLOOR = "spare_floor"
 BoardState = int | str
 
 # The board is landscape on purpose.  Discord caps an embedded image at about
@@ -196,6 +200,8 @@ def _state(value: object) -> int | str:
             return OWNED
         if normalized == "duplicate":
             return DUPLICATE
+        if normalized == SPARE_FLOOR:
+            return SPARE_FLOOR
         if normalized in {
             OWNED_SPARE_UNVERIFIED,
             "owned_unverified",
@@ -229,6 +235,8 @@ def _is_spare(state: object) -> bool:
     rather than returning False, so every "is this a spare" test goes through
     here instead of writing ``state >= DUPLICATE`` inline.
     """
+    if state == SPARE_FLOOR:
+        return True
     return (
         isinstance(state, int)
         and not isinstance(state, bool)
@@ -540,7 +548,9 @@ def _spare_badge_text(state: int | str) -> str:
     """
     if not _is_spare(state):
         return ""
-    return "x2+" if state == DUPLICATE else f"x{state}"
+    if state == SPARE_FLOOR:
+        return "x2+"
+    return f"x{state}"
 
 
 def _draw_check(

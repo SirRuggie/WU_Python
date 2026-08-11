@@ -7,7 +7,7 @@ import pytest
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import cards as cards_command
-from utils import cards
+from utils import card_board, cards
 from utils.todo_data import Account
 
 
@@ -2750,9 +2750,12 @@ def test_card_editor_plus_minus_handlers_apply_one_step_only(
 
     assert collection.documents["#ME"]["cards"]["wizard"] == expected
     assert collection.documents["#ME"]["inventory_revision"] == 5
-    # The step handlers now return the focused card screen.
+    # The step handlers now return the focused card screen. A spare written by
+    # this path is the scanner-style floor, so it reads as unconfirmed until a
+    # member states the number.
+    unconfirmed = expected == cards.DUPLICATE
     assert cards_command._card_state_words(
-        expected, possible_spare=False
+        expected, possible_spare=False, unconfirmed=unconfirmed
     ) in _view_text(view)
 
 
@@ -2798,11 +2801,14 @@ def test_possible_spare_editor_yes_no_saves_and_advances(
         for node in _view_nodes(view)
         if node.get("custom_id")
     }
-    # Absolute state controls replace the increment/decrement/keep trio.
+    # Absolute state controls plus the copy-count steppers replace the
+    # increment/decrement/keep trio.
     assert {
         "cards_set:#ME|dragon|0",
         "cards_set:#ME|dragon|1",
-        "cards_set:#ME|dragon|2",
+        "cards_step:#ME|dragon|1",
+        "cards_step:#ME|dragon|-1",
+        "cards_count:#ME|dragon",
     } <= custom_ids
 
 
@@ -4745,3 +4751,108 @@ def test_a_refined_count_is_not_asked_about_again():
     inventory["cards"]["wizard"] = 5
 
     assert cards_command._spare_counts_panel(account, inventory) is None
+
+
+def test_giving_away_one_of_several_copies_keeps_the_rest():
+    """A member holding four who trades one must end on three, not one."""
+    values = {card.id: cards.OWNED for card in cards.CARDS}
+    values["wizard"] = 4
+    values["dragon"] = cards.MISSING
+
+    # The matcher must see four copies as a spare, exactly like two.
+    holder = {
+        "_id": "#H",
+        "cards": values,
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }
+    requester_values = {card.id: cards.OWNED for card in cards.CARDS}
+    requester_values["wizard"] = cards.MISSING
+    requester_values["dragon"] = cards.DUPLICATE
+    requester = {
+        "_id": "#R",
+        "cards": requester_values,
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }
+
+    assert cards.reciprocal_trade_error(
+        requester, holder, "wizard", "dragon"
+    ) is None
+
+    matches = cards.holders_for_card(requester, [holder], "wizard")
+    assert [m.holder_tag for m in matches] == ["#H"]
+
+
+def test_used_spare_decrements_instead_of_collapsing_to_one(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 4
+    document["cards"]["wizard"] = 4
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    updated = asyncio.run(cards_command._write_one_card(
+        mongo,
+        account,
+        collection.documents["#ME"],
+        "wizard",
+        "used",
+        expected_revision=4,
+        discord_id=123,
+        guild_id=1,
+    ))
+
+    assert updated["cards"]["wizard"] == 3
+
+
+def test_a_member_confirmed_two_loses_the_plus():
+    """The scanner's 2 reads 2+; a member's 2 reads 2."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    scanned = _complete_inventory()
+    scanned["cards"]["wizard"] = cards.DUPLICATE
+
+    values = cards_command._inventory_board_values(scanned)
+    assert values["wizard"] == card_board.SPARE_FLOOR
+    assert card_board._spare_badge_text(card_board.SPARE_FLOOR) == "x2+"
+
+    confirmed = dict(scanned, count_confirmed_card_ids=["wizard"])
+    values = cards_command._inventory_board_values(confirmed)
+    assert values["wizard"] == cards.DUPLICATE
+    assert card_board._spare_badge_text(cards.DUPLICATE) == "x2"
+
+    # The confirm button only exists while there is something to confirm.
+    unconfirmed_view = cards_command._card_focus(account, scanned, "wizard")
+    confirmed_view = cards_command._card_focus(account, confirmed, "wizard")
+    unconfirmed_ids = {
+        n.get("custom_id") for n in _view_nodes(unconfirmed_view) if n.get("custom_id")
+    }
+    confirmed_ids = {
+        n.get("custom_id") for n in _view_nodes(confirmed_view) if n.get("custom_id")
+    }
+    assert "cards_set:#ME|wizard|2" in unconfirmed_ids
+    assert "cards_set:#ME|wizard|2" not in confirmed_ids
+    _assert_discord_payload(unconfirmed_view)
+    _assert_discord_payload(confirmed_view)
+
+
+def test_focus_screen_never_repeats_a_custom_id_at_any_count():
+    """Discord rejects a message carrying the same custom_id twice."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    for value in (0, 1, 2, 3, 12):
+        inventory = _complete_inventory()
+        inventory["cards"]["wizard"] = value
+        for confirmed in ([], ["wizard"]):
+            inventory["count_confirmed_card_ids"] = confirmed
+            view = cards_command._card_focus(account, inventory, "wizard")
+            _assert_discord_payload(view)
