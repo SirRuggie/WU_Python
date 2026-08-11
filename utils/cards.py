@@ -95,6 +95,10 @@ class CardMatch:
         )
 
 
+# The emoji here is the plain-unicode stand-in, used where Discord will not
+# render `<:name:id>` markup - select placeholders print it verbatim. Anything
+# that renders as message text uses the uploaded category emoji instead, via
+# `category_markup` / `category_partial` in the cards command.
 CATEGORIES: tuple[CardCategory, ...] = (
     CardCategory("elixir", "Elixir Cards", "Elixir", "💧"),
     CardCategory("dark_elixir", "Dark Elixir Cards", "Dark Elixir", "🌑"),

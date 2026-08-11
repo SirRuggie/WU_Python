@@ -105,6 +105,11 @@ class Emojis:
         self.Silver1 = EmojiType("<:SL_1:1387845667145126009>")
         self.Silver2 = EmojiType("<:SL_2:1387845644487491594>")
         self.Silver3 = EmojiType("<:SL_3:1387845621095989318>")
+        # Clash of Cards categories. Names match what was uploaded to the bot.
+        self.card_elixir = EmojiType("<:Elixer:1536777630278357164>")
+        self.card_dark_elixir = EmojiType("<:Dark_Elixer:1536777729511391322>")
+        self.card_super_troop = EmojiType("<:SuperTroops:1536777871111225374>")
+        self.card_builder_base = EmojiType("<:buildervillage:1536777943710310421>")
 
 emojis = Emojis()
 

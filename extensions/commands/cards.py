@@ -134,6 +134,39 @@ def _parse_snowflake_env(name: str) -> int | None:
 CARDS_GUILD_ID = _parse_snowflake_env("CARDS_GUILD_ID")
 CARDS_CHANNEL_ID = _parse_snowflake_env("CARDS_CHANNEL_ID")
 
+# The four category emoji uploaded to the bot. `CardCategory.emoji` keeps its
+# plain unicode, which is still what select placeholders and the rendered board
+# have to use: neither renders `<:name:id>` markup, they print it literally.
+CATEGORY_EMOJI = {
+    "elixir": emojis.card_elixir,
+    "dark_elixir": emojis.card_dark_elixir,
+    "builder_base": emojis.card_builder_base,
+    "super_troop": emojis.card_super_troop,
+}
+
+
+def category_markup(category_id: str) -> str:
+    """Inline emoji for a category, falling back to its unicode stand-in."""
+    entry = CATEGORY_EMOJI.get(str(category_id))
+    fallback = CATEGORY_BY_ID[category_id].emoji if category_id in CATEGORY_BY_ID else ""
+    return str(entry) if entry is not None else fallback
+
+
+def category_partial(category_id: str):
+    """A CustomEmoji for a component's `emoji=` field, or UNDEFINED.
+
+    `EmojiType.partial_emoji` raises on a malformed string, and one bad id here
+    would take down every panel that names a category, so this degrades to no
+    emoji the same way troop_emoji does.
+    """
+    entry = CATEGORY_EMOJI.get(str(category_id))
+    if entry is None:
+        return hikari.UNDEFINED
+    try:
+        return entry.partial_emoji
+    except (ValueError, IndexError, TypeError):
+        return hikari.UNDEFINED
+
 # A member can keep two ephemeral panels open and submit both selects almost at
 # once. Serialize writes per player tag so the missing-list update cannot race
 # the duplicate-list update and replace it from a stale snapshot.
@@ -522,7 +555,7 @@ def _category_progress(inventory: dict) -> str:
         bar = PROGRESS_FULL * filled + PROGRESS_EMPTY * (PROGRESS_WIDTH - filled)
         tally = f"{held:>2}/{total:<2}"
         done = " ✓" if held == total else ""
-        lines.append(f"{category.emoji} `{bar} {tally}`{done}")
+        lines.append(f"{category_markup(category.id)} `{bar} {tally}`{done}")
     return "\n".join(lines)
 
 
@@ -2535,6 +2568,7 @@ def _update_overview(account, inventory: dict) -> list[Container]:
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_category:{_normalize_tag(account.tag)}|{category.id}",
             label=label,
+            emoji=category_partial(category.id),
             is_disabled=reserved,
         ))
 
@@ -2615,7 +2649,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
     )
 
     body: list = [
-        Text(content=f"# {category.emoji} {category.name}"),
+        Text(content=f"# {category_markup(category.id)} {category.name}"),
         Text(content=(
             f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
             f"{status}\n{setup_status}\n\n"
@@ -2856,7 +2890,7 @@ def _match_line(match, ordinal: int) -> str:
     exchange_lines: list[str] = []
     for exchange in match.exchanges:
         category = CATEGORY_BY_ID[exchange.category]
-        block = [f"{category.emoji} **{category.short_name}**"]
+        block = [f"{category_markup(category.id)} **{category.short_name}**"]
         block.append("**They can give you**")
         block.append(_card_rows(exchange.offers))
         if exchange.returns:
@@ -2907,7 +2941,7 @@ def _offer_rows(card_ids: list[str], per_card: dict) -> str:
         rows = by_category.get(category.id)
         if not rows:
             continue
-        lines = [f"{category.emoji} **{category.short_name}**"]
+        lines = [f"{category_markup(category.id)} **{category.short_name}**"]
         for card_id in rows:
             card = CARD_BY_ID[card_id]
             entry = per_card[card_id]
@@ -2984,7 +3018,7 @@ def _matches_view(
             rows = [c for c in wanted_from_me if c.category == category.id]
             if not rows:
                 continue
-            lines.append(f"{category.emoji} **{category.short_name}**")
+            lines.append(f"{category_markup(category.id)} **{category.short_name}**")
             for card in rows[:6]:
                 icon = troop_emoji.markup(card.id)
                 lead = f"{icon} " if icon else ""
@@ -3024,6 +3058,9 @@ def _matches_view(
             Separator(divider=True),
             ActionRow(components=[TextSelectMenu(
                 custom_id=f"cards_open_card:{tag}|{category.id}",
+                # Unicode, not the uploaded category emoji: a select
+                # placeholder is plain text and would print `<:Elixer:123>`
+                # verbatim.
                 placeholder=(
                     f"{category.emoji} {category.short_name} "
                     f"— see who has one ({len(offered)})"
@@ -3141,7 +3178,7 @@ def _holders_view(
             "Try Refresh later as more family members finish setup."
         ))]
     components: list = [
-        Text(content=f"# {category.emoji} Who Has {card.name}?"),
+        Text(content=f"# {category_markup(card.category)} Who Has {card.name}?"),
         Text(content=(
             f"Searching for **{_escape_markdown(account.name)}** · "
             f"`{_normalize_tag(account.tag)}`"

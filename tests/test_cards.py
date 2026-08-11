@@ -3,6 +3,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import hikari
 import pytest
 from pymongo.errors import DuplicateKeyError
 
@@ -5011,6 +5012,67 @@ def test_board_controls_wrap_instead_of_dropping_the_sixth():
         if node.get("type") == 1:
             assert len(node.get("components", [])) <= 5
     _assert_discord_payload(view)
+
+
+def test_every_category_has_its_uploaded_emoji():
+    """All four categories resolve, in both the text and the component form."""
+    expected = {
+        "elixir": "<:Elixer:1536777630278357164>",
+        "dark_elixir": "<:Dark_Elixer:1536777729511391322>",
+        "builder_base": "<:buildervillage:1536777943710310421>",
+        "super_troop": "<:SuperTroops:1536777871111225374>",
+    }
+    assert {c.id for c in cards.CATEGORIES} == set(expected)
+    for category_id, markup in expected.items():
+        assert cards_command.category_markup(category_id) == markup
+        partial = cards_command.category_partial(category_id)
+        assert partial is not hikari.UNDEFINED
+        assert f"<:{partial.name}:{partial.id}>" == markup
+
+
+def test_unknown_category_emoji_degrades_instead_of_raising():
+    """A bad id must not take down every panel that names a category."""
+    assert cards_command.category_markup("not_a_category") == ""
+    assert cards_command.category_partial("not_a_category") is hikari.UNDEFINED
+
+
+def test_category_headings_carry_the_uploaded_emoji():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    text = _view_text(
+        cards_command._category_editor(account, _complete_inventory(), "dark_elixir")
+    )
+    assert "<:Dark_Elixer:1536777729511391322>" in text
+
+
+def test_select_placeholders_never_carry_custom_emoji_markup():
+    """A placeholder is plain text; markup would print as `<:Elixer:123>`."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+    base = {card.id: cards.DUPLICATE for card in cards.CARDS}
+    holders = [{
+        "_id": "#H", "player_name": "Holder", "cards": base,
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    views = [
+        cards_command._dashboard(account, inventory, account_count=1),
+        cards_command._matches_view(
+            account, inventory, cards.find_matches(inventory, holders)
+        ),
+        cards_command._category_editor(account, inventory, "elixir"),
+    ]
+    for view in views:
+        for node in _view_nodes(view):
+            placeholder = node.get("placeholder")
+            if placeholder:
+                assert "<:" not in placeholder, placeholder
 
 
 def test_who_has_what_destination_is_gone():
