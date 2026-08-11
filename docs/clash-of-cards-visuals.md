@@ -85,6 +85,28 @@ These three numbers - 310, 490 and the resulting tile sizes - are the reason
 for the layout. If Discord changes them the shape should be re-measured rather
 than reasoned about.
 
+The board carries no title or summary line of its own. It used to repeat the
+player name and the collected counts, which the Discord message already shows
+as real selectable text directly beneath it, and which rendered as an
+unreadable smear once the board was scaled down. Removing it freed about a
+hundred pixels of height that went into taller tiles.
+
+## The board PNG is deliberately not compressed further
+
+A 60-card board is about 1.5 MB and is re-uploaded on every dashboard open.
+Two reductions were measured and both were rejected:
+
+- **256-colour quantisation** cuts it to 29% but posterises the smooth shading
+  on the 3D artwork, visibly, with or without dithering. The board exists to
+  look good; trading that for bandwidth is the wrong direction.
+- **Caching the Discord CDN URL** by collection-state hash would remove the
+  upload entirely, but Discord attachment URLs are signed and expire, so the
+  cache needs a refresh path and a short TTL rather than being a simple map.
+
+The renderer's 32-entry LRU already removes the *render* cost for an unchanged
+collection; only the upload remains. Revisit if upload latency becomes a real
+complaint rather than a theoretical one.
+
 Three tile rules exist to survive Discord's mobile scaling, where a tile is
 about 64px wide:
 

@@ -199,9 +199,40 @@ manual edit. Review can be finished later without losing the saved scan. All
 three paths recheck ownership, guild/session scope, revision, and the affected
 card's reservation.
 
-**More** contains the supplied in-game **Global Card Chat** deep link beside
-Open in game. It opens chat id `P592bad3209a4408a9ba356469caaaa81`; no login,
-chat data, or account credential passes through the bot.
+There is no **More** panel. It was eight ungrouped grey buttons mixing
+navigation with mutation and carrying no information of its own, so it was
+dissolved rather than reorganised: every action moved onto the board's two
+control rows, and its two link buttons became masked links in the footer text,
+which cost zero component nodes. The **Global Card Chat** deep link opens chat
+id `P592bad3209a4408a9ba356469caaaa81`; no login, chat data, or account
+credential passes through the bot.
+
+## Screen construction rules
+
+These exist because the first build put every control in a button bar at the
+bottom of a wall of prose, which read as bland and made every screen look the
+same.
+
+- **A row of things is Sections, not a select.** A collapsed select hides its
+  contents behind a tap and shows nothing about them. A `Section` takes a
+  `Button` accessory, so each row can carry its own action beside its own text.
+  The account picker is the reference implementation. Verified building on the
+  pinned stack by `test_account_picker_gives_every_account_its_own_row_and_button`.
+- **A select is for choosing among many known things**, where 25 options is the
+  cap and the label is enough to choose by. The four category menus qualify;
+  a list of five accounts does not.
+- **Never ship a screen that is a heading, a line of prose and one control.**
+  List what the control is about, so the control confirms rather than reveals.
+- **Colour carries meaning.** `DANGER` removes, `SUCCESS` confirms or marks the
+  current value, `PRIMARY` is the one thing to do next, and there is at most
+  one `PRIMARY` per screen. Grey is for everything else.
+- **Container accents come from the data**, not from a house colour: a category
+  screen uses `CATEGORY_ACCENTS[category]`.
+- **Prefer a masked link to a link button.** It reads the same and costs no
+  component node.
+- **Lists are bullets grouped by category with the troop's own emoji**, never
+  comma-joined runs of names, which wrap into a paragraph on a phone.
+  `troop_emoji.markup()` returns `""` for an unsynced troop and never raises.
 
 The category editor remains under **Advanced manual editor** for first-time
 manual setup or a deliberate full-category rebuild. Every unselected card in a
