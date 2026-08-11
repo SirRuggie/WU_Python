@@ -31,7 +31,7 @@ loader = lightbulb.Loader()
 # The channel the notice lives in. Swapping this to the cards channel is a
 # one-line change; the stored message id is keyed by channel, so the old notice
 # in the previous channel is cleaned up on the next cycle.
-STICKY_CHANNEL_ID = 947166650321494067
+STICKY_CHANNEL_ID = 1533915865441894430
 REPOST_INTERVAL_MINUTES = 10
 CONFIG_ID = "cards_sticky_message"
 
