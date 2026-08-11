@@ -5210,3 +5210,33 @@ def test_find_trades_row_is_disabled_and_explains_why_when_stale():
     assert "Confirm your collection to start matching again" in text
     assert find["accessory"]["disabled"] is True
     _assert_discord_payload(view)
+
+
+def test_category_progress_bars_align_in_a_code_span():
+    """Proportional text will not align padded plain text; a code span will."""
+    inventory = {"cards": {card.id: cards.OWNED for card in cards.CARDS}}
+    complete = cards_command._category_progress(inventory)
+
+    for line in complete.split("\n"):
+        # Emoji outside the backticks so it renders as art; bar and tally
+        # inside so the column lines up.
+        assert line.count("`") == 2
+        bar = line.split("`")[1]
+        assert bar.startswith(cards_command.PROGRESS_FULL * cards_command.PROGRESS_WIDTH)
+        assert line.endswith("\u2713")
+
+    empty = cards_command._category_progress({"cards": {}})
+    assert cards_command.PROGRESS_EMPTY not in complete.split("`")[1]
+    # An untouched collection defaults to owned, so nothing is claimed empty
+    # that the member never said was empty.
+    assert len(empty.split("\n")) == len(cards.CATEGORIES)
+
+
+def test_progress_bar_width_is_constant_so_the_column_never_jitters():
+    for held in (0, 1, 7, 19):
+        values = {card.id: cards.MISSING for card in cards.CARDS}
+        for card in cards.CATEGORY_CARDS["elixir"][:held]:
+            values[card.id] = cards.OWNED
+        line = cards_command._category_progress({"cards": values}).split("\n")[0]
+        bar = line.split("`")[1].split(" ")[0]
+        assert len(bar) == cards_command.PROGRESS_WIDTH

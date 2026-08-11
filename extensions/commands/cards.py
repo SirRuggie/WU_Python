@@ -577,6 +577,34 @@ def _without_reserved_cards(inventory: dict) -> dict:
     return snapshot
 
 
+PROGRESS_WIDTH = 12
+PROGRESS_FULL = "█"
+PROGRESS_EMPTY = "░"
+
+
+def _category_progress(inventory: dict) -> str:
+    """A per-category completion bar, one line each.
+
+    Discord renders normal text in a proportional font, so padded plain text
+    does not line up. An inline code span is monospaced and preserves runs of
+    spaces, so putting the bar and the counts inside backticks gives a real
+    column while the category emoji stays outside where it renders as art.
+    This is ClashPerk's cell grammar, applied to progress instead of levels.
+    """
+    saved = normalize_cards(inventory.get("cards"))
+    lines = []
+    for category in CATEGORIES:
+        cards_in = CATEGORY_CARDS[category.id]
+        held = sum(1 for card in cards_in if saved.get(card.id, OWNED) >= OWNED)
+        total = len(cards_in)
+        filled = round(PROGRESS_WIDTH * held / total) if total else 0
+        bar = PROGRESS_FULL * filled + PROGRESS_EMPTY * (PROGRESS_WIDTH - filled)
+        tally = f"{held:>2}/{total:<2}"
+        done = " ✓" if held == total else ""
+        lines.append(f"{category.emoji} `{bar} {tally}`{done}")
+    return "\n".join(lines)
+
+
 def _card_rows(
     card_ids: tuple[str, ...] | list[str],
     *,
@@ -1940,8 +1968,9 @@ def _dashboard(
         Text(content=(
             f"**{_escape_markdown(account.name)}** · `{tag}`\n"
             f"{headline}\n"
-            f"Updated {_relative_timestamp(stamp)}"
+            f"-# Updated {_relative_timestamp(stamp)}"
         )),
+        Text(content=_category_progress(inventory)),
     ]
 
     notes = []
