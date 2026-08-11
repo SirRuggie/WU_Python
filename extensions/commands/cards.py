@@ -2034,13 +2034,6 @@ def _dashboard(
             hikari.ButtonStyle.SECONDARY,
             True,
         ),
-        (
-            "👥", "Who has what",
-            f"{spare_total} spare{'s' if spare_total != 1 else ''} to offer",
-            f"cards_family:{tag}",
-            hikari.ButtonStyle.SECONDARY,
-            True,
-        ),
     ]
     # The controls that act on the menus above, immediately below them.
     collection_row: list = [
@@ -3505,7 +3498,14 @@ def _offer_rows(card_ids: list[str], per_card: dict) -> str:
     return "\n".join(blocks)
 
 
-def _matches_view(account, inventory: dict, matches: list) -> list[Container]:
+def _matches_view(
+    account,
+    inventory: dict,
+    matches: list,
+    *,
+    supply: dict | None = None,
+    achievable: tuple[int, int] | None = None,
+) -> list[Container]:
     tag = _normalize_tag(account.tag)
     per_card = _offers_by_card(matches)
     # A swap where both sides get something is the one worth doing first. The
@@ -3542,6 +3542,40 @@ def _matches_view(account, inventory: dict, matches: list) -> list[Container]:
                 + _offer_rows([c.id for c in oneway_ids], per_card)
             )),
         ])
+    # What your own spares are worth. This is the one thing the old "Who has
+    # what" panel said that this screen did not, so it moved here rather than
+    # justifying a second destination that otherwise repeated this one.
+    mine = normalize_cards(inventory.get("cards"))
+    wanted_from_me = [
+        card for card in CARDS
+        if mine.get(card.id, OWNED) >= DUPLICATE
+        and supply
+        and supply.get(card.id)
+        and supply[card.id].demand
+    ]
+    if wanted_from_me:
+        lines = []
+        for category in CATEGORIES:
+            rows = [c for c in wanted_from_me if c.category == category.id]
+            if not rows:
+                continue
+            lines.append(f"{category.emoji} **{category.short_name}**")
+            for card in rows[:6]:
+                icon = troop_emoji.markup(card.id)
+                lead = f"{icon} " if icon else ""
+                demand = supply[card.id].demand
+                lines.append(
+                    f"- {lead}**{_escape_markdown(card.name)}** — "
+                    f"{demand} need{'s' if demand == 1 else ''} it"
+                )
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                "## 🎯 Your spares in demand\n"
+                "-# Worth holding on to when you bargain.\n" + "\n".join(lines)
+            )),
+        ])
+
     if not per_card:
         body.extend([
             Separator(divider=True),
@@ -3577,11 +3611,23 @@ def _matches_view(account, inventory: dict, matches: list) -> list[Container]:
                 ],
             )]),
         ])
+    if achievable and achievable[0]:
+        listed, doable = achievable
+        # A menu is not a plan: one spare offered to five people is one trade.
+        body.append(Text(content=(
+            f"-# {listed} swap option{'s' if listed != 1 else ''} listed · "
+            f"up to **{doable}** could complete at once"
+        )))
     body.append(ActionRow(components=[
         Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_dashboard:{tag}",
             label="Back to board",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_trades:{tag}",
+            label="My trades",
         ),
         Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -8464,162 +8510,16 @@ async def cards_matches(
         mongo, inventory, guild_id=_guild_id(ctx)
     )
     available = _without_reserved_cards(inventory)
-    return _matches_view(account, available, find_matches(available, candidates))
-
-
-FAMILY_BULLET_LIMIT = 8
-
-
-def _card_bullets(entries, detail) -> str:
-    """Bullets grouped by category, each led by its troop emoji.
-
-    Replaces comma-joined runs of card names, which on a phone wrapped into an
-    unreadable paragraph. Grouping matters because a trade can never cross a
-    category, so the heading is what tells a member whether a card is even
-    reachable for them.
-    """
-    by_category: dict[str, list] = {}
-    for card, entry in entries:
-        by_category.setdefault(card.category, []).append((card, entry))
-
-    blocks: list[str] = []
-    for category in CATEGORIES:
-        rows = by_category.get(category.id)
-        if not rows:
-            continue
-        lines = [f"{category.emoji} **{category.short_name}**"]
-        for card, entry in rows[:FAMILY_BULLET_LIMIT]:
-            # markup() returns "" for an un-synced troop and never raises, so a
-            # missing emoji costs a space rather than the whole panel.
-            icon = troop_emoji.markup(card.id)
-            lead = f"{icon} " if icon else ""
-            # No "-#" here. Discord only treats it as subtext at the START of a
-            # line, so mid-line it rendered as a literal "-#" after every card
-            # name.
-            note = detail(entry)
-            tail = f" — {note}" if note else ""
-            lines.append(
-                f"- {lead}**{_escape_markdown(card.name)}**{tail}"
-            )
-        if len(rows) > FAMILY_BULLET_LIMIT:
-            lines.append(f"-# and {len(rows) - FAMILY_BULLET_LIMIT} more")
-        blocks.append("\n".join(lines))
-    return "\n".join(blocks)
-
-
-def _family_board(
-    account,
-    inventory: dict,
-    supply: dict,
-    achievable: int,
-    raw_options: int,
-) -> list[Container]:
-    """A running list of what the family holds and what it still needs."""
-    tag = _normalize_tag(account.tag)
-    complete = set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
-    mine = normalize_cards(inventory.get("cards"))
-    reporting = next(iter(supply.values())).reporting if supply else 0
-
-    wanted = [
-        (card, supply[card.id])
-        for card in CARDS
-        if card.category in complete and mine.get(card.id, OWNED) == MISSING
-    ]
-    gettable = [pair for pair in wanted if pair[1].spare_count]
-    unavailable = [pair for pair in wanted if not pair[1].spare_count]
-    offering = [
-        (card, supply[card.id])
-        for card in CARDS
-        if card.category in complete
-        and mine.get(card.id, OWNED) >= DUPLICATE
-        and supply[card.id].demand
-    ]
-
-    body: list = [
-        Text(content="# Who has what"),
-        Text(content=(
-            f"**{reporting}** collection{'s' if reporting != 1 else ''} "
-            "in the family are current enough to trade with."
-        )),
-    ]
-
-    if gettable:
-        body.extend([
-            Separator(divider=True),
-            Text(content="## You can get\n" + _card_bullets(
-                gettable,
-                lambda entry: (
-                    f"{entry.spare_count} can spare"
-                    + (
-                        f", {entry.demand} other{'s' if entry.demand != 1 else ''} "
-                        f"want{'' if entry.demand != 1 else 's'} it"
-                        if entry.demand else ""
-                    )
-                ),
-            )),
-        ])
-
-    if offering:
-        body.extend([
-            Separator(divider=True),
-            Text(content="## Others want from you\n" + _card_bullets(
-                offering,
-                lambda entry: (
-                    f"{entry.demand} need it"
-                    if entry.demand != 1
-                    else "1 needs it"
-                ),
-            )),
-        ])
-
-    if unavailable:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                "## Nobody has a spare yet\n"
-                # The heading already says it; repeating "no holder yet" on
-                # every line was pure noise.
-                + _card_bullets(unavailable, lambda _entry: "")
-            )),
-        ])
-
-    if not wanted and not offering:
-        body.extend([
-            Separator(divider=True),
-            Text(content=(
-                "Nothing to match yet. Finish a category so your collection "
-                "can be compared with the rest of the family."
-            )),
-        ])
-
-    if raw_options:
-        # A menu is not a plan.  Completing a swap spends a spare, so two
-        # options reaching for the same one cannot both go through.
-        body.append(Text(content=(
-            f"-# {raw_options} swap option"
-            f"{'s' if raw_options != 1 else ''} listed · up to "
-            f"**{achievable}** could actually complete at once"
-        )))
-
-    body.append(ActionRow(components=[
-        Button(
-            style=hikari.ButtonStyle.PRIMARY,
-            custom_id=f"cards_matches:{tag}",
-            label="Find trades",
-            is_disabled=not inventory_is_matchable(inventory),
+    matches = find_matches(available, candidates)
+    return _matches_view(
+        account,
+        available,
+        matches,
+        supply=family_supply(candidates),
+        achievable=_achievable_from_matches(
+            matches, _normalize_tag(account.tag)
         ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_trades:{tag}",
-            label="My trades",
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_dashboard:{tag}",
-            label="Back to board",
-        ),
-    ]))
-    return [Container(components=body)]
+    )
 
 
 def _achievable_from_matches(matches, requester_tag: str) -> tuple[int, int]:
@@ -8634,34 +8534,6 @@ def _achievable_from_matches(matches, requester_tag: str) -> tuple[int, int]:
                         (requester_tag, returned),
                     ))
     return len(pairs), max_achievable_trades(pairs)
-
-
-@register_action("cards_family")
-@lightbulb.di.with_di
-async def cards_family(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    account, inventory, problem = await _load_target(
-        ctx, action_id, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_guild_id(ctx)
-    )
-    supply = family_supply(candidates)
-    available = _without_reserved_cards(inventory)
-    raw_options, achievable = (0, 0)
-    if inventory_is_matchable(inventory):
-        raw_options, achievable = _achievable_from_matches(
-            find_matches(available, candidates),
-            _normalize_tag(account.tag),
-        )
-    return _family_board(account, inventory, supply, achievable, raw_options)
 
 
 @register_action("cards_find_category")

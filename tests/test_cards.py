@@ -2393,7 +2393,6 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
         "cards_scan_start:#ME",
         "cards_matches:#ME",
         "cards_trades:#ME",
-        "cards_family:#ME",
         "cards_sort:#ME",
         "cards_pick:#ME|elixir",
         "cards_pick:#ME|dark_elixir",
@@ -4655,28 +4654,6 @@ def test_card_focus_marks_the_current_state_and_keeps_the_menu():
     _assert_discord_payload(view)
 
 
-def test_family_board_reports_achievable_rather_than_raw_options():
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    inventory["cards"]["wizard"] = cards.MISSING
-    inventory["cards"]["dragon"] = cards.DUPLICATE
-    holder = _complete_inventory(tag="#H")
-    holder["cards"]["wizard"] = cards.DUPLICATE
-    holder["cards"]["dragon"] = cards.MISSING
-
-    supply = cards.family_supply([inventory, holder])
-    view = cards_command._family_board(account, inventory, supply, 1, 3)
-    text = _view_text(view)
-
-    assert "Who has what" in text
-    assert "Wizard" in text
-    assert "up to" in text and "1" in text
-    _assert_discord_payload(view)
-
-
 def test_scan_saving_asks_how_many_spares_before_the_dashboard():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
@@ -4873,50 +4850,6 @@ def test_copy_steppers_are_colour_coded():
     assert buttons["cards_step:#ME|wizard|1"]["style"] == 3    # SUCCESS
 
 
-def test_family_board_uses_grouped_bullets_not_comma_blobs():
-    from utils import troop_emoji
-
-    troop_emoji.clear()
-    troop_emoji.prime([
-        {"slug": "wizard", "emoji_id": 111111111111111111, "name": "troop_wizard"},
-    ])
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    inventory["cards"]["wizard"] = cards.MISSING
-    inventory["cards"]["minion"] = cards.MISSING
-    holder = _complete_inventory(tag="#H")
-    holder["cards"]["wizard"] = cards.DUPLICATE
-
-    supply = cards.family_supply([inventory, holder])
-    view = cards_command._family_board(account, inventory, supply, 1, 1)
-    text = _view_text(view)
-
-    assert "- " in text                       # bullets, not commas
-    assert "**Elixir**" in text               # grouped by category
-    assert "<:troop_wizard:111111111111111111>" in text
-    assert ", Minion," not in text
-    _assert_discord_payload(view)
-    troop_emoji.clear()
-
-
-def test_family_bullets_survive_a_troop_with_no_synced_emoji():
-    from utils import troop_emoji
-
-    troop_emoji.clear()
-    card = cards.CARD_BY_ID["wizard"]
-    entry = cards.CardSupply(
-        card_id="wizard", holders=("#H",), seekers=(), reporting=1
-    )
-
-    rendered = cards_command._card_bullets([(card, entry)], lambda e: "detail")
-
-    assert "**Wizard**" in rendered
-    assert "None" not in rendered
-
-
 def test_account_picker_lists_accounts_in_one_select_with_town_hall_emoji():
     """Sections were tried here and are worse: on mobile the accessory button
     wraps below its text, so 37 linked accounts became seven pages of scrolling.
@@ -4974,10 +4907,9 @@ def test_dashboard_groups_actions_under_headings():
     # of buttons. Pattern taken from Hoyo Buddy's guide menu.
     assert "**🔁 Find trades**" in text
     assert "**📬 My trades**" in text
-    assert "**👥 Who has what**" in text
     assert "**Your cards**" in text
     sections = [n for n in _view_nodes(view) if n.get("type") == 9]
-    assert len(sections) == 3
+    assert len(sections) == 2
     for section in sections:
         assert section["accessory"]["type"] == 2
         assert section["accessory"]["label"] == "Open"
@@ -5047,25 +4979,6 @@ def test_sort_cycles_and_persists():
     assert cards_command._inventory_sort({"card_sort": "nonsense"}) == "game"
     assert cards_command._inventory_sort({"card_sort": "have"}) == "have"
     assert cards_command._inventory_sort({}) == "game"
-
-
-def test_family_bullets_have_no_literal_hash_markers():
-    """`-#` is only subtext at the start of a line; mid-line it renders raw."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    inventory["cards"]["wizard"] = cards.MISSING
-    holder = _complete_inventory(tag="#H")
-    holder["cards"]["wizard"] = cards.DUPLICATE
-
-    supply = cards.family_supply([inventory, holder])
-    text = _view_text(cards_command._family_board(account, inventory, supply, 1, 1))
-
-    for line in text.split("\n"):
-        if line.startswith("- "):
-            assert "-#" not in line, f"literal marker in: {line}"
 
 
 def test_scan_review_does_not_ask_for_a_retake_once_cards_are_resolved():
@@ -5189,7 +5102,6 @@ def test_destination_rows_say_what_is_waiting_there():
 
     # One short line so mobile keeps the button beside it rather than below.
     assert "2 needed" in text
-    assert "1 spare to offer" in text
     for line in text.split("\n"):
         if line.startswith("**\U0001f501") or line.startswith("**\U0001f465"):
             assert len(line) < 60, f"too long, mobile will wrap: {line}"
@@ -5377,3 +5289,50 @@ def test_sort_control_sits_with_the_menus_it_sorts():
         )
     )
     assert sort_row < first_section
+
+
+def test_find_trades_absorbs_what_who_has_what_uniquely_showed():
+    """Who has what mostly repeated this screen; its one distinct part moved."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+
+    base = {card.id: cards.OWNED for card in cards.CARDS}
+    holders = [{
+        "_id": "#H", "player_name": "Holder",
+        "cards": dict(base, root_rider=cards.DUPLICATE, wizard=cards.MISSING),
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    matches = cards.find_matches(inventory, holders)
+    view = cards_command._matches_view(
+        account, inventory, matches,
+        supply=cards.family_supply([inventory, *holders]),
+        achievable=cards_command._achievable_from_matches(matches, "#ME"),
+    )
+    text = _view_text(view)
+
+    assert "Your spares in demand" in text
+    assert "Wizard" in text
+    # And the part that was pure noise is gone: cards nobody can supply.
+    assert "Nobody has a spare yet" not in text
+    _assert_discord_payload(view)
+
+
+def test_who_has_what_destination_is_gone():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._dashboard(
+        account, _complete_inventory(), account_count=1
+    )
+    ids = {n.get("custom_id") for n in _view_nodes(view)}
+
+    assert "cards_family:#ME" not in ids
+    assert not hasattr(cards_command, "cards_family")
+    assert not hasattr(cards_command, "_family_board")
