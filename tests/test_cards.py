@@ -4971,9 +4971,9 @@ def test_dashboard_groups_actions_under_headings():
 
     # Destinations are labelled Section rows with their own button, not a bar
     # of buttons. Pattern taken from Hoyo Buddy's guide menu.
-    assert "## 🔁 Find trades" in text
-    assert "## 📬 My trades" in text
-    assert "## 👥 Who has what" in text
+    assert "**🔁 Find trades**" in text
+    assert "**📬 My trades**" in text
+    assert "**👥 Who has what**" in text
     assert "**Your collection**" in text
     sections = [n for n in _view_nodes(view) if n.get("type") == 9]
     assert len(sections) == 3
@@ -5189,8 +5189,12 @@ def test_destination_rows_say_what_is_waiting_there():
 
     text = _view_text(cards_command._dashboard(account, inventory, account_count=1))
 
-    assert "2 cards you still need" in text
-    assert "Your 1 spare" in text
+    # One short line so mobile keeps the button beside it rather than below.
+    assert "2 needed" in text
+    assert "1 spare to offer" in text
+    for line in text.split("\n"):
+        if line.startswith("**\U0001f501") or line.startswith("**\U0001f465"):
+            assert len(line) < 60, f"too long, mobile will wrap: {line}"
 
 
 def test_find_trades_row_is_disabled_and_explains_why_when_stale():
@@ -5207,7 +5211,7 @@ def test_find_trades_row_is_disabled_and_explains_why_when_stale():
     text = _view_text(view)
     find = [n for n in _view_nodes(view) if n.get("type") == 9][0]
 
-    assert "Confirm your collection to start matching again" in text
+    assert "collection is stale" in text
     assert find["accessory"]["disabled"] is True
     _assert_discord_payload(view)
 

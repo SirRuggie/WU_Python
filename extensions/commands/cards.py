@@ -2013,51 +2013,44 @@ def _dashboard(
     destinations = [
         (
             "🔁", "Find trades",
-            (
-                f"{summary.missing} card{'s' if summary.missing != 1 else ''} "
-                "you still need"
-                if matchable
-                # Matching cuts off at 72 hours, so this is staleness rather
-                # than an unfinished collection.
-                else "Confirm your collection to start matching again"
-            ),
+            # Short blurbs on purpose. Matching cuts off at 72 hours, so the
+            # unavailable case is staleness, not an unfinished collection.
+            f"{summary.missing} needed" if matchable else "collection is stale",
             f"cards_matches:{tag}",
             hikari.ButtonStyle.PRIMARY if matchable else hikari.ButtonStyle.SECONDARY,
             matchable,
         ),
         (
             "📬", "My trades",
-            "Offers you have sent or received",
+            "sent and received",
             f"cards_trades:{tag}",
             hikari.ButtonStyle.SECONDARY,
             True,
         ),
         (
             "👥", "Who has what",
-            (
-                f"Your {spare_total} spare{'s' if spare_total != 1 else ''} "
-                "and what the family needs"
-                if spare_total
-                else "What the family holds and still needs"
-            ),
+            f"{spare_total} spare{'s' if spare_total != 1 else ''} to offer",
             f"cards_family:{tag}",
             hikari.ButtonStyle.SECONDARY,
             True,
         ),
     ]
+    body.append(Separator(divider=True))
     for icon, title, blurb, custom_id, style, enabled in destinations:
-        body.extend([
-            Separator(divider=True),
-            Section(
-                components=[Text(content=f"## {icon} {title}\n-# {blurb}")],
-                accessory=Button(
-                    style=style,
-                    custom_id=custom_id,
-                    label="Open",
-                    is_disabled=not enabled,
-                ),
+        # One short line, not a heading plus a subtext line plus a divider.
+        # Discord's mobile client drops a Section accessory BELOW its text when
+        # the text block is tall, so every extra line here is what made the
+        # panel scroll. A single line keeps the button beside it far more often,
+        # and costs a third of the height when it still wraps.
+        body.append(Section(
+            components=[Text(content=f"**{icon} {title}** · {blurb}")],
+            accessory=Button(
+                style=style,
+                custom_id=custom_id,
+                label="Open",
+                is_disabled=not enabled,
             ),
-        ])
+        ))
     body.extend([
         Separator(divider=True),
         Text(content="**Your collection**"),
