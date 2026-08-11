@@ -4969,8 +4969,17 @@ def test_dashboard_groups_actions_under_headings():
     )
     text = _view_text(view)
 
-    assert "**Trading**" in text
+    # Destinations are labelled Section rows with their own button, not a bar
+    # of buttons. Pattern taken from Hoyo Buddy's guide menu.
+    assert "## 🔁 Find trades" in text
+    assert "## 📬 My trades" in text
+    assert "## 👥 Who has what" in text
     assert "**Your collection**" in text
+    sections = [n for n in _view_nodes(view) if n.get("type") == 9]
+    assert len(sections) == 3
+    for section in sections:
+        assert section["accessory"]["type"] == 2
+        assert section["accessory"]["label"] == "Open"
     # The two links used to share a line and read as one phrase.
     assert "[Clash of Cards](" in text
     assert "[Global Card Chat](" in text
@@ -5164,4 +5173,40 @@ def test_several_hidden_badges_are_one_question_not_one_each():
     inventory["scan_duplicate_unverified_card_ids"] = ["wizard"]
     single = _view_nodes(cards_command._hidden_badge_review(account, inventory))
     assert not [n for n in single if n.get("custom_id") == "cards_hidden_pick:#ME"]
+    _assert_discord_payload(view)
+
+
+def test_destination_rows_say_what_is_waiting_there():
+    """A row can carry state a button label cannot."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.MISSING
+    inventory["cards"]["dragon"] = cards.MISSING
+    inventory["cards"]["golem"] = 3
+
+    text = _view_text(cards_command._dashboard(account, inventory, account_count=1))
+
+    assert "2 cards you still need" in text
+    assert "Your 1 spare" in text
+
+
+def test_find_trades_row_is_disabled_and_explains_why_when_stale():
+    """Matching cuts off at 72 hours, so the row says so instead of dead-ending."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    stale = _complete_inventory(
+        confirmed_at=datetime.now(timezone.utc) - timedelta(days=5)
+    )
+
+    view = cards_command._dashboard(account, stale, account_count=1)
+    text = _view_text(view)
+    find = [n for n in _view_nodes(view) if n.get("type") == 9][0]
+
+    assert "Confirm your collection to start matching again" in text
+    assert find["accessory"]["disabled"] is True
     _assert_discord_payload(view)

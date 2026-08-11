@@ -1973,30 +1973,63 @@ def _dashboard(
     )
 
     scan_is_primary = not all_complete
-    # Two labelled groups rather than one run of buttons that wraps wherever it
-    # happens to fit. The heading is what tells a member which of these belong
-    # together; without it the panel reads as an undifferentiated wall.
+    matchable = inventory_is_matchable(inventory)
+    spare_total = sum(
+        1 for value in normalize_cards(inventory.get("cards")).values()
+        if value >= DUPLICATE
+    )
+    # Each destination is its own labelled row with its own button, rather than
+    # a bar of buttons whose labels have to carry all the meaning. A row can
+    # say what it is and what is waiting there, which a button cannot.
+    destinations = [
+        (
+            "🔁", "Find trades",
+            (
+                f"{summary.missing} card{'s' if summary.missing != 1 else ''} "
+                "you still need"
+                if matchable
+                # Matching cuts off at 72 hours, so this is staleness rather
+                # than an unfinished collection.
+                else "Confirm your collection to start matching again"
+            ),
+            f"cards_matches:{tag}",
+            hikari.ButtonStyle.PRIMARY if matchable else hikari.ButtonStyle.SECONDARY,
+            matchable,
+        ),
+        (
+            "📬", "My trades",
+            "Offers you have sent or received",
+            f"cards_trades:{tag}",
+            hikari.ButtonStyle.SECONDARY,
+            True,
+        ),
+        (
+            "👥", "Who has what",
+            (
+                f"Your {spare_total} spare{'s' if spare_total != 1 else ''} "
+                "and what the family needs"
+                if spare_total
+                else "What the family holds and still needs"
+            ),
+            f"cards_family:{tag}",
+            hikari.ButtonStyle.SECONDARY,
+            True,
+        ),
+    ]
+    for icon, title, blurb, custom_id, style, enabled in destinations:
+        body.extend([
+            Separator(divider=True),
+            Section(
+                components=[Text(content=f"## {icon} {title}\n-# {blurb}")],
+                accessory=Button(
+                    style=style,
+                    custom_id=custom_id,
+                    label="Open",
+                    is_disabled=not enabled,
+                ),
+            ),
+        ])
     body.extend([
-        Separator(divider=True),
-        Text(content="**Trading**"),
-        ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"cards_matches:{tag}",
-                label="Find trades",
-                is_disabled=not inventory_is_matchable(inventory),
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_trades:{tag}",
-                label="My trades",
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_family:{tag}",
-                label="Who has what",
-            ),
-        ]),
         Separator(divider=True),
         Text(content="**Your collection**"),
     ])
