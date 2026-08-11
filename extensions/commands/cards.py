@@ -3000,12 +3000,22 @@ def _offer_rows(card_ids: list[str], per_card: dict) -> str:
     by_category: dict[str, list[str]] = {}
     for card_id in card_ids:
         by_category.setdefault(CARD_BY_ID[card_id].category, []).append(card_id)
+    # A second heading level under the section heading read as a new section:
+    # "## Even swaps" then "### Elixir" made the cards look like they belonged
+    # to Elixir rather than to the swaps. A bold line is unmistakably inside
+    # the section. With only one category there is nothing to separate, so the
+    # label is dropped entirely.
+    labelled = len(by_category) > 1
     blocks = []
     for category in CATEGORIES:
         rows = by_category.get(category.id)
         if not rows:
             continue
-        lines = [f"### {category_markup(category.id)} {category.short_name}"]
+        lines = (
+            [f"{category_markup(category.id)} **{category.short_name}**"]
+            if labelled
+            else []
+        )
         for card_id in rows:
             card = CARD_BY_ID[card_id]
             entry = per_card[card_id]
