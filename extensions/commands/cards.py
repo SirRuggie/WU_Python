@@ -2131,6 +2131,26 @@ def _sorted_category_cards(inventory: dict, category_id: str, sort: str):
     )
 
 
+CATEGORY_HEADER_VALUE = "__category__"
+
+
+def _category_header_option(category, detail: str) -> SelectOption:
+    """A default-marked option, which is what a closed menu actually displays.
+
+    A select's `placeholder` is sent as a bare string with no emoji field, so
+    the uploaded category art cannot go there - it would print `<:Elixer:123>`
+    verbatim. An option *does* carry an emoji, and Discord shows the default
+    option in place of the placeholder, so marking one default is what puts the
+    real art on the closed menu. Picking it is a no-op.
+    """
+    return SelectOption(
+        label=f"{category.short_name} — {detail}"[:100],
+        value=CATEGORY_HEADER_VALUE,
+        emoji=category_partial(category.id),
+        is_default=True,
+    )
+
+
 def _category_select_row(
     account,
     inventory: dict,
@@ -2166,23 +2186,18 @@ def _category_select_row(
             # synced; partial() returns UNDEFINED rather than raising.
             emoji=troop_emoji.partial(card.id),
         ))
-    # Unicode, not the uploaded category emoji. A select menu carries no emoji
-    # field of its own and its placeholder is plain text, so `<:Elixer:123>`
-    # would print verbatim here. Unicode is the only mark Discord will draw on
-    # a closed menu, and four identical-looking menus is worse than none.
-    placeholder = (
-        f"{category.emoji} {category.name} · "
-        f"{summary.collected}/{summary.known}"
-    )
+    detail = f"{summary.collected}/{summary.known}"
     if summary.collected == summary.known:
-        placeholder += " complete"
+        detail += " complete"
     elif summary.missing:
-        placeholder += f" · {summary.missing} missing"
+        detail += f" · {summary.missing} missing"
     return ActionRow(components=[TextSelectMenu(
         custom_id=f"cards_pick:{tag}|{category_id}",
-        placeholder=placeholder[:150],
+        # Only shown if the header option is ever cleared; the default option
+        # below is what a closed menu actually draws.
+        placeholder=f"{category.name} · {detail}"[:150],
         max_values=1,
-        options=options,
+        options=[_category_header_option(category, detail), *options],
     )])
 
 
@@ -3194,34 +3209,30 @@ def _matches_view(
         offered = [c for c in CATEGORY_CARDS[category.id] if c.id in per_card]
         if not offered:
             continue
-        # The uploaded category emoji cannot go in the menu itself: a select
-        # carries no emoji field and its placeholder is sent as a bare string,
-        # so `<:Elixer:123>` would print verbatim. Labelling the menu from
-        # outside is the only way to mark it with the real art.
-        pickers.append(Text(content=(
-            f"### {category_markup(category.id)} {category.short_name}"
-        )))
         pickers.append(
             ActionRow(components=[TextSelectMenu(
                 custom_id=f"cards_open_card:{tag}|{category.id}",
-                placeholder=(
-                    f"See who has one ({len(offered)})"
-                )[:150],
+                placeholder=f"{category.short_name} — see who has one",
                 max_values=1,
                 options=[
-                    SelectOption(
-                        label=card.name,
-                        value=card.id,
-                        description=(
-                            f"{len(per_card[card.id]['givers'])} can give it"
-                            + (
-                                " · even swap"
-                                if per_card[card.id]["mutual"] else ""
-                            )
-                        )[:100],
-                        emoji=troop_emoji.partial(card.id),
-                    )
-                    for card in offered
+                    _category_header_option(
+                        category, f"see who has one ({len(offered)})"
+                    ),
+                    *(
+                        SelectOption(
+                            label=card.name,
+                            value=card.id,
+                            description=(
+                                f"{len(per_card[card.id]['givers'])} can give it"
+                                + (
+                                    " · even swap"
+                                    if per_card[card.id]["mutual"] else ""
+                                )
+                            )[:100],
+                            emoji=troop_emoji.partial(card.id),
+                        )
+                        for card in offered
+                    ),
                 ],
             )])
         )
@@ -7182,6 +7193,10 @@ async def cards_pick(
     """Open one card from a category menu."""
     tag, _category_id, _page = _parse_editor_category_target(action_id)
     values = list(getattr(ctx.interaction, "values", ()) or ())
+    if values and values[0] == CATEGORY_HEADER_VALUE:
+        # The header is only there to put the category art on the closed menu.
+        # Tapping it is not an error, it just means nothing was chosen.
+        return None
     card_id = values[0] if values and values[0] in CARD_BY_ID else None
     if card_id is None:
         return _notice("Card unavailable", "Open `/cards` again.")
@@ -8006,6 +8021,10 @@ async def cards_open_card(
     # doubles as a check that the pick belongs to the menu it came from.
     tag, category_id = _parse_target(action_id)
     values = list(getattr(ctx.interaction, "values", ()) or ())
+    if values and values[0] == CATEGORY_HEADER_VALUE:
+        # Same header option that carries the category art; picking it is a
+        # no-op rather than an error.
+        return None
     card_id = str(values[0]) if values else ""
     card = CARD_BY_ID.get(card_id)
     if card is None or (category_id is not None and card.category != category_id):

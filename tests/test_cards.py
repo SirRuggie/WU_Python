@@ -2430,6 +2430,7 @@ def test_landing_reaches_every_card_in_one_interaction():
         str(option["value"])
         for node in _walk_payload(payload)
         for option in (node.get("options") or ())
+        if option["value"] != cards_command.CATEGORY_HEADER_VALUE
     }
 
     assert offered == {card.id for card in cards.CARDS}
@@ -4687,7 +4688,10 @@ def test_card_menus_can_be_sorted_by_quantity():
     def order(sort):
         inv = dict(inventory, card_sort=sort)
         row = cards_command._category_select_row(account, inv, "elixir", sort)
-        return [o.value for o in row.components[0].options]
+        return [
+            o.value for o in row.components[0].options
+            if o.value != cards_command.CATEGORY_HEADER_VALUE
+        ]
 
     game = order("game")
     need = order("need")
@@ -5027,6 +5031,7 @@ def test_find_trades_picker_reaches_every_match_and_hides_the_rest():
     }
     reachable = {
         option["value"] for select in selects for option in select["options"]
+        if option["value"] != cards_command.CATEGORY_HEADER_VALUE
     }
     assert reachable == offered, "every match must be pickable, none invented"
     assert len(offered) > 25, "the case the old single menu silently truncated"
@@ -5081,17 +5086,23 @@ def test_each_board_dropdown_is_visually_distinct(monkeypatch):
     view = cards_command._dashboard(
         account, _complete_inventory(), account_count=1
     )
-    placeholders = [
-        n["placeholder"] for n in _view_nodes(view)
+    menus = [
+        n for n in _view_nodes(view)
         if str(n.get("custom_id", "")).startswith("cards_pick:")
     ]
 
-    assert len(placeholders) == len(cards.CATEGORIES)
-    for category in cards.CATEGORIES:
-        assert any(
-            text.startswith(category.emoji) and category.name in text
-            for text in placeholders
-        ), f"{category.name} menu is unmarked"
+    assert len(menus) == len(cards.CATEGORIES)
+    for menu in menus:
+        category_id = menu["custom_id"].split("|")[1]
+        header = menu["options"][0]
+        # The default option is what Discord draws on a closed menu, so this
+        # is the only place the uploaded category art can appear there.
+        assert header["value"] == cards_command.CATEGORY_HEADER_VALUE
+        assert header["default"] is True
+        assert header["emoji"]["id"] == str(
+            cards_command.category_partial(category_id).id
+        ), f"{category_id} menu is unmarked"
+        assert cards.CATEGORY_BY_ID[category_id].short_name in header["label"]
 
 
 def test_find_trades_dividers_only_separate_the_picker_block(monkeypatch):
@@ -5123,29 +5134,21 @@ def test_find_trades_dividers_only_separate_the_picker_block(monkeypatch):
     ]
     first = kinds.index("select")
     last = len(kinds) - 1 - kinds[::-1].index("select")
-    # Each menu is labelled, so the block now runs heading, menu, heading,
-    # menu. What must not appear anywhere inside it is a divider.
     assert "separator" not in kinds[first:last + 1], "a divider splits the menus"
-    # The block as a whole is still set off from the text above it. The label
-    # of the first menu sits between that divider and the menu itself.
-    assert "separator" in kinds[:first], "the block is not set off from the text"
-    assert kinds[first - 1] == "other", "the first menu lost its label"
+    assert kinds[first - 1] == "separator", "the block is not set off from the text"
 
-    # A category only gets a menu when somebody holds one of its cards, so
-    # pair the labels with the menus that actually rendered.
-    menus = [
-        node for node in _view_nodes(view)
-        if str(node.get("custom_id", "")).startswith("cards_open_card:")
-    ]
-    labels = [
-        node["content"] for node in _view_nodes(view)
-        if str(node.get("content", "")).startswith("### ")
-    ]
-    assert len(labels) == len(menus), "every menu needs exactly one label"
-    for menu, label in zip(menus, labels):
+    # Each menu carries its own category art on its default option rather than
+    # a label above it, so the block stays four rows tall.
+    for menu in _view_nodes(view):
+        if not str(menu.get("custom_id", "")).startswith("cards_open_card:"):
+            continue
         category_id = menu["custom_id"].split("|")[1]
-        assert cards_command.category_markup(category_id) in label, label
-        assert cards.CATEGORY_BY_ID[category_id].short_name in label, label
+        header = menu["options"][0]
+        assert header["value"] == cards_command.CATEGORY_HEADER_VALUE
+        assert header["default"] is True
+        assert header["emoji"]["id"] == str(
+            cards_command.category_partial(category_id).id
+        ), f"{category_id} menu is unmarked"
 
 
 def test_refresh_and_pagination_use_the_uploaded_control_emoji():
