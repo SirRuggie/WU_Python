@@ -870,9 +870,9 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
             assert discord_id == 222
             return "dm-channel"
 
-        async def create_message(self, *, channel, content):
+        async def create_message(self, *, channel, content, attachment=None):
             assert channel == "dm-channel"
-            self.messages.append(content)
+            self.messages.append((content, attachment))
 
     rest = Rest()
     bot = SimpleNamespace(rest=rest)
@@ -889,14 +889,17 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
 
     assert asyncio.run(cards_command._notify_trade_holder(bot, trade)) is True
     assert len(rest.messages) == 1
-    assert "Root Rider" in rest.messages[0]
-    assert "Wizard" in rest.messages[0]
-    assert "Dragon" in rest.messages[0]
-    assert "Shaun needs your duplicate Root Rider" in rest.messages[0]
-    assert "Shaun has **Wizard, Dragon** duplicates that you need" in rest.messages[0]
-    assert "different family clans" in rest.messages[0]
-    assert "token" not in rest.messages[0].casefold()
-    assert "password" not in rest.messages[0].casefold()
+    content, attachment = rest.messages[0]
+    assert "Root Rider" in content
+    assert "Wizard" in content
+    assert "Dragon" in content
+    assert "Shaun needs your duplicate Root Rider" in content
+    assert "Shaun has **Wizard, Dragon** duplicates that you need" in content
+    assert "different family clans" in content
+    assert "token" not in content.casefold()
+    assert "password" not in content.casefold()
+    assert attachment.filename == "card-trade-root_rider-wizard.png"
+    assert attachment.mimetype == "image/png"
 
     channel_copy = cards_command._trade_channel_content(trade)
     assert "Shaun needs your duplicate Root Rider" in channel_copy
@@ -911,6 +914,41 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     assert asyncio.run(cards_command._notify_trade_holder(
         closed_bot, trade
     )) is False
+
+
+def test_trade_visual_failure_still_delivers_accessible_text(monkeypatch):
+    class Rest:
+        def __init__(self):
+            self.messages = []
+
+        async def create_dm_channel(self, _discord_id):
+            return "dm-channel"
+
+        async def create_message(self, **kwargs):
+            self.messages.append(kwargs)
+
+    def broken_renderer(*_args, **_kwargs):
+        raise RuntimeError("renderer unavailable")
+
+    monkeypatch.setattr(cards_command, "render_trade_strip", broken_renderer)
+    rest = Rest()
+    trade = _trade_document()
+    trade.update({
+        "requester_name": "Shaun",
+        "requester_discord_id": 111,
+        "holder_name": "Holder",
+        "holder_discord_id": 222,
+        "requester_clan_tag": "#HOME",
+        "holder_clan_tag": "#AWAY",
+        "compatible_card_ids": ["wizard", "dragon"],
+    })
+
+    assert asyncio.run(cards_command._notify_trade_holder(
+        SimpleNamespace(rest=rest), trade
+    )) is True
+    assert len(rest.messages) == 1
+    assert "attachment" not in rest.messages[0]
+    assert "Shaun needs your duplicate Root Rider" in rest.messages[0]["content"]
 
 
 def test_follow_up_status_dm_identifies_both_account_tags():
@@ -991,6 +1029,8 @@ def test_trade_channel_posts_in_configured_guild_and_mentions_holder_only(monkey
     assert sent["user_mentions"] == [222]
     assert sent["mentions_everyone"] is False
     assert sent["role_mentions"] is False
+    assert sent["attachment"].filename == "card-trade-root_rider-wizard.png"
+    assert sent["attachment"].mimetype == "image/png"
     assert trades.docs[trade["_id"]]["channel_id"] == 999
     assert trades.docs[trade["_id"]]["channel_message_id"] == 777
 
@@ -2318,6 +2358,263 @@ def test_dashboard_keeps_my_trades_enabled_before_category_setup():
     assert button.get("disabled", False) is False
 
 
+def test_dashboard_and_quick_update_make_scan_and_one_card_changes_primary():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["inventory_revision"] = 7
+    dashboard_nodes = _view_nodes(
+        cards_command._dashboard(account, inventory, account_count=1)
+    )
+    assert any(
+        node.get("custom_id") == "cards_scan_start:#ME"
+        and node.get("label") == "Scan screenshots"
+        for node in dashboard_nodes
+    )
+    assert any(
+        node.get("custom_id") == "cards_update:#ME"
+        and node.get("label") == "Quick update"
+        for node in dashboard_nodes
+    )
+    assert any(node.get("type") == 12 for node in dashboard_nodes)
+
+    quick_nodes = _view_nodes(cards_command._quick_update_panel(account, inventory))
+    assert {
+        node.get("custom_id")
+        for node in quick_nodes
+        if node.get("custom_id")
+    } >= {
+        "cards_quick_modal:#ME|found",
+        "cards_quick_modal:#ME|spare",
+        "cards_quick_modal:#ME|used",
+        "cards_quick_modal:#ME|missing",
+        "cards_advanced:#ME",
+    }
+
+
+def test_runtime_dashboard_renders_board_off_the_event_loop(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    calls = []
+
+    async def to_thread(func, *args, **kwargs):
+        calls.append(func)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(cards_command.asyncio, "to_thread", to_thread)
+    view = asyncio.run(cards_command._dashboard_view(
+        account, inventory, account_count=1
+    ))
+
+    assert calls == [cards_command.render_inventory_card_board]
+    _assert_discord_payload(view)
+
+
+def test_possible_spare_board_state_keeps_proven_ownership():
+    inventory = _complete_inventory()
+    inventory["scan_duplicate_unverified_card_ids"] = ["wizard"]
+    values = cards_command._inventory_board_values(inventory)
+
+    assert values["wizard"] == "owned_spare_unverified"
+    board = cards_command.render_inventory_card_board(values, player_name="Member")
+    assert board.collected_count == 60
+    assert board.spare_unverified_card_ids == ("wizard",)
+
+    draft = _complete_scan_draft(duplicate_unverified=["wizard"])
+    assert cards_command._scan_board_values(draft)["wizard"] == (
+        "owned_spare_unverified"
+    )
+
+
+def test_card_name_modal_lookup_is_exact_or_typo_tolerant_then_confirms():
+    assert [card.id for card in cards_command._card_name_matches("Root Rider")] == [
+        "root_rider"
+    ]
+    assert cards_command._card_name_matches("root ridr")[0].id == "root_rider"
+    assert cards_command._card_name_matches("not a real card") == ()
+
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["inventory_revision"] = 9
+    inventory["cards"]["root_rider"] = cards.MISSING
+    nodes = _view_nodes(cards_command._quick_confirmation(
+        account, inventory, "found", "root ridr"
+    ))
+    assert any(
+        node.get("custom_id") == "cards_quick_apply:#ME|found|root_rider|9"
+        for node in nodes
+    )
+    assert "Did you mean" in _view_text(cards_command._quick_confirmation(
+        account, inventory, "found", "root ridr"
+    ))
+
+
+def test_quick_card_modal_opens_without_waiting_for_account_io():
+    class Ctx:
+        def __init__(self):
+            self.modals = []
+
+        async def respond_with_modal(self, **kwargs):
+            self.modals.append(kwargs)
+
+    ctx = Ctx()
+    asyncio.run(cards_command.cards_quick_modal(ctx, "#ME|spare"))
+
+    assert len(ctx.modals) == 1
+    assert ctx.modals[0]["title"] == "Got a spare"
+    assert ctx.modals[0]["custom_id"] == "cards_quick_submit:#ME|spare"
+
+
+def test_quick_modal_submit_defers_before_loading_account(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["inventory_revision"] = 4
+
+    class Interaction:
+        components = [[SimpleNamespace(custom_id="card_name", value="Wizard")]]
+
+        def __init__(self):
+            self.edits = []
+
+        async def edit_initial_response(self, **kwargs):
+            self.edits.append(kwargs)
+
+    class Ctx:
+        def __init__(self):
+            self.deferred = False
+            self.interaction = Interaction()
+            self.user = SimpleNamespace(id=123)
+            self.guild_id = 1
+
+        async def defer(self, *, ephemeral=False):
+            assert ephemeral is True
+            self.deferred = True
+
+    ctx = Ctx()
+
+    async def load_target(*_args, **_kwargs):
+        assert ctx.deferred is True
+        return account, inventory, None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    asyncio.run(cards_command.cards_quick_submit(
+        ctx,
+        "#ME|spare",
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert len(ctx.interaction.edits) == 1
+    assert any(
+        node.get("custom_id") == "cards_quick_apply:#ME|spare|wizard|4"
+        for node in _view_nodes(ctx.interaction.edits[0]["components"])
+    )
+
+
+def test_one_card_quick_update_uses_exact_card_reservation_and_revision_guards():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 3
+    document["cards"]["root_rider"] = cards.MISSING
+    document["card_trade_reservations"] = {
+        "wizard": "trade-other:token",
+    }
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    updated = asyncio.run(cards_command._write_one_card(
+        mongo,
+        account,
+        document,
+        "root_rider",
+        "found",
+        expected_revision=3,
+        discord_id=123,
+        guild_id=1,
+    ))
+    assert updated["cards"]["root_rider"] == cards.OWNED
+    assert updated["cards"]["wizard"] == cards.OWNED
+    assert updated["inventory_revision"] == 4
+    assert updated["update_source"] == "quick_card_update"
+
+    with pytest.raises(cards_command.InventoryWriteConflict):
+        asyncio.run(cards_command._write_one_card(
+            mongo,
+            account,
+            updated,
+            "root_rider",
+            "missing",
+            expected_revision=3,
+            discord_id=123,
+            guild_id=1,
+        ))
+
+    updated["card_trade_reservations"]["root_rider"] = "trade-this:token"
+    with pytest.raises(cards_command.ActiveCardTradeError):
+        asyncio.run(cards_command._write_one_card(
+            mongo,
+            account,
+            updated,
+            "root_rider",
+            "missing",
+            expected_revision=4,
+            discord_id=123,
+            guild_id=1,
+        ))
+
+
+def test_global_hidden_badge_review_saves_one_batch_and_clears_only_that_batch():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document["inventory_revision"] = 5
+    hidden = [card.id for card in cards.CARDS[:27]]
+    document["scan_duplicate_unverified_card_ids"] = hidden
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    first_batch = hidden[:cards_command.HIDDEN_BADGE_BATCH_SIZE]
+    updated = asyncio.run(cards_command._write_hidden_badge_batch(
+        mongo,
+        account,
+        document,
+        first_batch,
+        [first_batch[0], first_batch[-1]],
+        expected_revision=5,
+        discord_id=123,
+        guild_id=1,
+    ))
+    assert updated["cards"][first_batch[0]] == cards.DUPLICATE
+    assert updated["cards"][first_batch[-1]] == cards.DUPLICATE
+    assert all(
+        updated["cards"][card_id] == cards.OWNED
+        for card_id in first_batch[1:-1]
+    )
+    assert updated["scan_duplicate_unverified_card_ids"] == hidden[25:]
+    assert updated["inventory_revision"] == 6
+    next_view = cards_command._hidden_badge_review(account, updated)
+    assert "2 cards" in _view_text(next_view)
+    _assert_discord_payload(next_view)
+
+
 def test_all_member_views_build_with_discord_component_limits():
     account = Account(
         tag="#ME",
@@ -2510,34 +2807,20 @@ def _slash_context(*, user_id=123, guild_id=1):
     )
 
 
-def test_cards_without_attachments_keeps_the_existing_private_dashboard(monkeypatch):
+def test_cards_opens_the_existing_private_dashboard(monkeypatch):
     account = _scan_account()
     data = _scan_accounts_data(account)
     inventory = _complete_inventory()
-    started_scan = False
-
     async def load_accounts(*_args, **_kwargs):
         return data
 
     async def ensure_inventory(*_args, **_kwargs):
         return inventory
 
-    async def start_scan(*_args, **_kwargs):
-        nonlocal started_scan
-        started_scan = True
-        raise AssertionError("zero attachments must not enter screenshot scanning")
-
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
     monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
     monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
-    monkeypatch.setattr(cards_command, "_start_scan_upload", start_scan)
-    command = SimpleNamespace(
-        page_1=None,
-        page_2=None,
-        page_3=None,
-        page_4=None,
-        page_5=None,
-    )
+    command = SimpleNamespace()
     ctx = _slash_context()
 
     asyncio.run(cards_command.Cards.invoke._func(
@@ -2547,7 +2830,6 @@ def test_cards_without_attachments_keeps_the_existing_private_dashboard(monkeypa
         mongo=SimpleNamespace(),
     ))
 
-    assert started_scan is False
     assert ctx.deferred == [True]
     assert len(ctx.interaction.edits) == 1
     nodes = _view_nodes(ctx.interaction.edits[0]["components"])
@@ -2557,64 +2839,496 @@ def test_cards_without_attachments_keeps_the_existing_private_dashboard(monkeypa
     )
 
 
-def test_cards_partial_upload_fails_before_reading_and_all_five_route_privately(
-    monkeypatch,
-):
+def test_cards_command_has_no_page_fields_and_opens_scan_dashboard(monkeypatch):
     account = _scan_account()
     data = _scan_accounts_data(account)
-    attachment = SimpleNamespace(size=1)
-    routed = []
+    inventory = _complete_inventory()
 
     async def load_accounts(*_args, **_kwargs):
         return data
 
-    async def start_scan(_ctx, attachments, **_kwargs):
-        routed.append(attachments)
-        return cards_command._notice("Private review", "Nothing saved yet")
+    async def ensure_inventory(*_args, **_kwargs):
+        return inventory
 
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
     monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
-    monkeypatch.setattr(cards_command, "_start_scan_upload", start_scan)
+    monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
 
-    partial = SimpleNamespace(
-        page_1=attachment,
-        page_2=None,
-        page_3=None,
-        page_4=None,
-        page_5=None,
-    )
-    partial_ctx = _slash_context()
+    assert not hasattr(cards_command.Cards, "page_1")
+    assert not hasattr(cards_command.Cards, "page_5")
+    ctx = _slash_context()
     asyncio.run(cards_command.Cards.invoke._func(
-        partial,
-        partial_ctx,
+        SimpleNamespace(),
+        ctx,
         coc_client=SimpleNamespace(),
         mongo=SimpleNamespace(),
     ))
 
-    assert routed == []
-    assert partial_ctx.deferred == [True]
-    assert "Attach all five pages" in _view_text(
-        partial_ctx.interaction.edits[0]["components"]
+    assert ctx.deferred == [True]
+    assert any(
+        node.get("custom_id") == "cards_scan_start:#ME"
+        for node in _view_nodes(ctx.interaction.edits[0]["components"])
     )
 
-    attachments = tuple(SimpleNamespace(size=index + 1) for index in range(5))
-    complete = SimpleNamespace(**{
-        f"page_{index + 1}": item
-        for index, item in enumerate(attachments)
-    })
-    complete_ctx = _slash_context()
-    asyncio.run(cards_command.Cards.invoke._func(
-        complete,
-        complete_ctx,
+
+def test_scan_button_opens_one_account_bound_private_dm_session(monkeypatch):
+    account = _scan_account()
+    inventory = _complete_inventory()
+    inventory["inventory_revision"] = 9
+    inserted = []
+    updated = []
+    sent = []
+
+    class ComponentState:
+        async def delete_many(self, query):
+            assert query == {"type": "cards_scan_upload", "user_id": 123}
+
+    class Rest:
+        async def create_dm_channel(self, user_id):
+            assert user_id == 123
+            return SimpleNamespace(id=777)
+
+    async def load_target(*_args, **_kwargs):
+        return account, inventory, None
+
+    async def insert_state(_mongo, document, *, ttl):
+        inserted.append((document, ttl))
+
+    async def update_state(_mongo, query, update, **_kwargs):
+        updated.append((query, update))
+        return SimpleNamespace(matched_count=1)
+
+    async def send(_bot, channel_id, components):
+        sent.append((channel_id, components))
+        return SimpleNamespace(id=888)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    monkeypatch.setattr(cards_command, "insert_state", insert_state)
+    monkeypatch.setattr(cards_command, "update_state", update_state)
+    monkeypatch.setattr(cards_command, "_send_scan_dm_components", send)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    mongo = SimpleNamespace(component_state=ComponentState())
+    bot = SimpleNamespace(rest=Rest())
+
+    view = asyncio.run(cards_command.cards_scan_start(
+        ctx,
+        "#ME",
         coc_client=SimpleNamespace(),
-        mongo=SimpleNamespace(),
+        mongo=mongo,
+        bot=bot,
     ))
 
-    assert routed == [attachments]
-    assert complete_ctx.deferred == [True]
-    assert "Private review" in _view_text(
-        complete_ctx.interaction.edits[0]["components"]
+    assert len(inserted) == 1
+    document, ttl = inserted[0]
+    assert ttl == cards_command.CARD_SCAN_DRAFT_FOR
+    assert document["type"] == "cards_scan_upload"
+    assert document["user_id"] == 123
+    assert document["guild_id"] == 1
+    assert document["account_tag"] == "#ME"
+    assert document["base_revision"] == 9
+    assert _contains_raw_bytes(document) is False
+    assert sent[0][0] == 777
+    prompt_text = _view_text(sent[0][1])
+    assert "send all of its screenshots" in prompt_text.lower()
+    assert "any order is fine" in prompt_text.lower()
+    assert updated[0][1]["$set"] == {
+        "upload_prompt_channel_id": 777,
+        "upload_prompt_message_id": 888,
+    }
+    assert "Private Upload Ready" in _view_text(view)
+
+
+def test_rapid_scan_starts_are_serialized_to_one_current_session(monkeypatch):
+    account = _scan_account()
+    inventory = _complete_inventory()
+    active_ids = set()
+    concurrent_deletes = 0
+    max_concurrent_deletes = 0
+
+    class ComponentState:
+        async def delete_many(self, _query):
+            nonlocal concurrent_deletes, max_concurrent_deletes
+            concurrent_deletes += 1
+            max_concurrent_deletes = max(max_concurrent_deletes, concurrent_deletes)
+            active_ids.clear()
+            await asyncio.sleep(0)
+            concurrent_deletes -= 1
+
+    class Rest:
+        async def create_dm_channel(self, _user_id):
+            return SimpleNamespace(id=777)
+
+    async def load_target(*_args, **_kwargs):
+        return account, inventory, None
+
+    async def insert_state(_mongo, document, *, ttl):
+        assert ttl == cards_command.CARD_SCAN_DRAFT_FOR
+        active_ids.add(document["_id"])
+
+    async def update_state(*_args, **_kwargs):
+        return SimpleNamespace(matched_count=1)
+
+    async def send(*_args, **_kwargs):
+        return SimpleNamespace(id=888)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    monkeypatch.setattr(cards_command, "insert_state", insert_state)
+    monkeypatch.setattr(cards_command, "update_state", update_state)
+    monkeypatch.setattr(cards_command, "_send_scan_dm_components", send)
+    cards_command._card_upload_locks.clear()
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    mongo = SimpleNamespace(component_state=ComponentState())
+    bot = SimpleNamespace(rest=Rest())
+
+    async def start_twice():
+        return await asyncio.gather(*(
+            cards_command.cards_scan_start(
+                ctx,
+                "#ME",
+                coc_client=SimpleNamespace(),
+                mongo=mongo,
+                bot=bot,
+            )
+            for _ in range(2)
+        ))
+
+    asyncio.run(start_twice())
+
+    assert max_concurrent_deletes == 1
+    assert len(active_ids) == 1
+    cards_command._card_upload_locks.clear()
+
+
+def test_bound_scan_ignores_failure_on_a_different_linked_account(monkeypatch):
+    selected = _scan_account()
+    data = cards_command.AccountsData(entries=(
+        cards_command.AccountEntry(
+            tag=selected.tag,
+            status=cards_command.STATUS_LOADED,
+            account=selected,
+        ),
+        cards_command.AccountEntry(
+            tag="#OTHER",
+            status=cards_command.STATUS_ERROR,
+            account=None,
+        ),
+    ))
+    inventory = _complete_inventory()
+
+    async def load_accounts(*_args, **_kwargs):
+        return data
+
+    async def ensure_inventory(*_args, **_kwargs):
+        return inventory
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=None)
+
+    account, loaded_inventory, returned_data, problem = asyncio.run(
+        cards_command._load_scan_bound_account(
+            ctx,
+            "draft-selected",
+            "#ME",
+            usable_until=datetime.now(timezone.utc) + timedelta(minutes=10),
+            coc_client=SimpleNamespace(),
+            mongo=SimpleNamespace(),
+        )
     )
+
+    assert account is selected
+    assert loaded_inventory is inventory
+    assert returned_data is data
+    assert problem is None
+
+
+def test_dm_upload_accepts_partial_any_order_and_keeps_only_checkpoint(monkeypatch):
+    account = _scan_account()
+    data = cards_command.AccountsData(entries=(
+        cards_command.AccountEntry(
+            tag=account.tag,
+            status=cards_command.STATUS_LOADED,
+            account=account,
+        ),
+        cards_command.AccountEntry(
+            tag="#OTHER",
+            status=cards_command.STATUS_ERROR,
+            account=None,
+        ),
+    ))
+    deadline = datetime.now(timezone.utc) + timedelta(minutes=15)
+    state = {
+        "_id": "cards_upload_test",
+        "type": "cards_scan_upload",
+        "user_id": 123,
+        "guild_id": 1,
+        "account_tag": "#ME",
+        "base_revision": 4,
+        "usable_until": deadline,
+    }
+    raw_payloads = (b"rows-5-6", b"rows-1-2", b"rows-3-4")
+    reads = []
+    scanned = []
+    updates = []
+    sent = []
+
+    class Attachment:
+        def __init__(self, payload, index):
+            self.payload = payload
+            self.size = len(payload)
+            self.media_type = "image/png"
+            self.filename = f"capture-{index}.png"
+
+        async def read(self):
+            reads.append(self.payload)
+            return self.payload
+
+    async def find_state(*_args, **_kwargs):
+        return state
+
+    async def get_state(*_args, **_kwargs):
+        return state
+
+    async def load_accounts(*_args, **_kwargs):
+        return data
+
+    def scan(payloads, *, prior_draft=None):
+        scanned.append((payloads, prior_draft))
+        return {
+            "card_states": {},
+            "card_confidences": {},
+            "unknown_card_ids": [],
+            "unseen_card_ids": [card.id for card in cards.CARDS[36:]],
+            "missing_page_numbers": [4, 5],
+            "missing_global_rows": [7, 8, 9, 10],
+            "scan_checkpoint": {"accepted_pages": [1, 2, 3]},
+            "coverage_complete": False,
+            "identity_bound": True,
+            "errors": [],
+        }
+
+    async def update_state(_mongo, query, update, **_kwargs):
+        updates.append((query, update))
+        return SimpleNamespace(matched_count=1)
+
+    async def send(_bot, channel_id, components):
+        sent.append((channel_id, components))
+        return SimpleNamespace(id=999)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_find_card_upload_state", find_state)
+    monkeypatch.setattr(cards_command, "get_state", get_state)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "_scan_collection_payloads", scan)
+    monkeypatch.setattr(cards_command, "update_state", update_state)
+    monkeypatch.setattr(cards_command, "_send_scan_dm_components", send)
+    event = SimpleNamespace(
+        is_human=True,
+        author_id=123,
+        channel_id=777,
+        message=SimpleNamespace(attachments=tuple(
+            Attachment(payload, index)
+            for index, payload in enumerate(raw_payloads)
+        )),
+    )
+
+    asyncio.run(cards_command._handle_card_scan_dm_upload(
+        event,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+        bot=SimpleNamespace(),
+    ))
+
+    assert reads == list(raw_payloads)
+    assert scanned == [(raw_payloads, None)]
+    saved_draft = updates[0][1]["$set"]["scan_draft"]
+    assert saved_draft["scan_checkpoint"] == {"accepted_pages": [1, 2, 3]}
+    assert _contains_raw_bytes(saved_draft) is False
+    assert len(updates) == 1
+    progress = _view_text(sent[0][1])
+    assert "matched **3 of 5**" in progress
+    assert "**Rows 7–10:**" in progress
+    assert "→" in progress
+    assert "do **not** need to resend" in progress
+
+
+def test_dm_followup_merges_checkpoint_and_opens_account_bound_review(monkeypatch):
+    account = _scan_account()
+    data = _scan_accounts_data(account)
+    deadline = datetime.now(timezone.utc) + timedelta(minutes=10)
+    prior = {
+        "missing_page_numbers": [4, 5],
+        "missing_global_rows": [7, 8, 9, 10],
+        "scan_checkpoint": {"accepted_pages": [1, 2, 3]},
+        "coverage_complete": False,
+    }
+    state = {
+        "_id": "cards_upload_followup",
+        "type": "cards_scan_upload",
+        "user_id": 123,
+        "guild_id": 1,
+        "account_tag": "#ME",
+        "base_revision": 4,
+        "usable_until": deadline,
+        "scan_draft": prior,
+        "upload_prompt_channel_id": 777,
+        "upload_prompt_message_id": 888,
+    }
+    updates = []
+    sent = []
+    prompt_edits = []
+
+    class Attachment:
+        size = 12
+        media_type = "image/jpeg"
+        filename = "missing.jpg"
+
+        async def read(self):
+            return b"missing-rows"
+
+    async def find_state(*_args, **_kwargs):
+        return state
+
+    async def get_state(*_args, **_kwargs):
+        return state
+
+    async def load_accounts(*_args, **_kwargs):
+        return data
+
+    def scan(payloads, *, prior_draft=None):
+        assert payloads == (b"missing-rows",)
+        assert prior_draft is prior
+        draft = _complete_scan_draft()
+        draft.update({
+            "missing_page_numbers": [],
+            "missing_global_rows": [],
+            "scan_checkpoint": {"accepted_pages": [1, 2, 3, 4, 5]},
+        })
+        return draft
+
+    async def update_state(_mongo, query, update, **_kwargs):
+        updates.append((query, update))
+        return SimpleNamespace(matched_count=1)
+
+    async def send(_bot, channel_id, components):
+        sent.append((channel_id, components))
+        return SimpleNamespace(id=999)
+
+    async def ensure_inventory(*_args, **_kwargs):
+        inventory = _complete_inventory()
+        inventory["inventory_revision"] = 4
+        return inventory
+
+    async def mark_prompt(_bot, current_state, current_account):
+        prompt_edits.append((current_state, current_account))
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_find_card_upload_state", find_state)
+    monkeypatch.setattr(cards_command, "get_state", get_state)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "_scan_collection_payloads", scan)
+    monkeypatch.setattr(cards_command, "update_state", update_state)
+    monkeypatch.setattr(cards_command, "_send_scan_dm_components", send)
+    monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
+    monkeypatch.setattr(cards_command, "_mark_scan_prompt_received", mark_prompt)
+    event = SimpleNamespace(
+        is_human=True,
+        author_id=123,
+        channel_id=777,
+        message=SimpleNamespace(attachments=(Attachment(),)),
+    )
+
+    asyncio.run(cards_command._handle_card_scan_dm_upload(
+        event,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+        bot=SimpleNamespace(),
+    ))
+
+    assert len(updates) == 2
+    assert updates[0][1]["$set"]["scan_draft"]["coverage_complete"] is True
+    assert updates[1][1] == {"$set": {"type": "cards_scan_draft"}}
+    review = _view_text(sent[0][1])
+    assert "Screenshot Review" in review
+    assert "Member · `#ME`" in review
+    assert prompt_edits == [(state, account)]
+
+
+def test_dm_followup_scanner_failure_preserves_existing_checkpoint(monkeypatch):
+    account = _scan_account()
+    prior = {
+        "missing_page_numbers": [4, 5],
+        "missing_global_rows": [7, 8, 9, 10],
+        "scan_checkpoint": {"accepted_pages": [1, 2, 3]},
+        "coverage_complete": False,
+    }
+    state = {
+        "_id": "cards_upload_preserve",
+        "type": "cards_scan_upload",
+        "user_id": 123,
+        "guild_id": 1,
+        "account_tag": "#ME",
+        "usable_until": datetime.now(timezone.utc) + timedelta(minutes=10),
+        "scan_draft": prior,
+    }
+    sent = []
+
+    class Attachment:
+        size = 12
+        media_type = "image/png"
+        filename = "retry.png"
+
+        async def read(self):
+            return b"retry"
+
+    async def find_state(*_args, **_kwargs):
+        return state
+
+    async def get_state(*_args, **_kwargs):
+        return state
+
+    async def load_accounts(*_args, **_kwargs):
+        return _scan_accounts_data(account)
+
+    def scan(_payloads, *, prior_draft=None):
+        assert prior_draft is prior
+        return {"errors": ["scan_failed:RuntimeError"]}
+
+    async def forbidden_update(*_args, **_kwargs):
+        raise AssertionError("failed follow-up must not replace its checkpoint")
+
+    async def send(_bot, channel_id, components):
+        sent.append((channel_id, components))
+        return SimpleNamespace(id=999)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_find_card_upload_state", find_state)
+    monkeypatch.setattr(cards_command, "get_state", get_state)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "_scan_collection_payloads", scan)
+    monkeypatch.setattr(cards_command, "update_state", forbidden_update)
+    monkeypatch.setattr(cards_command, "_send_scan_dm_components", send)
+    event = SimpleNamespace(
+        is_human=True,
+        author_id=123,
+        channel_id=777,
+        message=SimpleNamespace(attachments=(Attachment(),)),
+    )
+
+    asyncio.run(cards_command._handle_card_scan_dm_upload(
+        event,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+        bot=SimpleNamespace(),
+    ))
+
+    assert len(sent) == 1
+    text = _view_text(sent[0][1])
+    assert "previously matched pages are still saved" in text
+    assert "no collection was changed" in text
 
 
 def test_scan_adapter_never_defaults_unknown_or_unseen_cards_to_owned():
@@ -2649,11 +3363,11 @@ def test_scan_adapter_never_defaults_unknown_or_unseen_cards_to_owned():
     )
     assert confirm["disabled"] is True
     assert any(
-        node.get("custom_id") == "cards_update:#ME"
+        node.get("custom_id") == "cards_advanced:#ME"
         and node.get("disabled", False) is False
         for node in nodes
     )
-    assert "Not visible (59)" in _view_text(view)
+    assert "Not visible:** 59 card positions" in _view_text(view)
 
 
 def test_ambiguous_card_blocks_scan_confirm_and_leaves_manual_fallback():
@@ -2684,7 +3398,7 @@ def test_ambiguous_card_blocks_scan_confirm_and_leaves_manual_fallback():
         for node in nodes
         if node.get("custom_id") == "cards_scan_confirm:draft-ambiguous"
     ) is True
-    assert any(node.get("custom_id") == "cards_update:#ME" for node in nodes)
+    assert any(node.get("custom_id") == "cards_advanced:#ME" for node in nodes)
 
 
 def test_hidden_duplicate_badge_is_disclosed_but_safe_owned_minimum_can_confirm():
@@ -2721,123 +3435,9 @@ def test_hidden_duplicate_badge_is_disclosed_but_safe_owned_minimum_can_confirm(
         if node.get("custom_id") == "cards_scan_confirm:draft-hidden"
     )
     assert confirm["disabled"] is False
-    assert confirm["label"] == "Save & check hidden dupes"
+    assert confirm["label"] == "Save & check possible spares"
     review_text = _view_text(view)
-    assert "Duplicate badge hidden (1):" in review_text
-    assert "Wizard" in review_text
-
-
-def test_scan_upload_draft_is_private_and_retains_no_attachment_bytes(monkeypatch):
-    accounts = (_scan_account("#ONE", "One"), _scan_account("#TWO", "Two"))
-    data = _scan_accounts_data(*accounts)
-    raw_payloads = tuple(
-        f"private-image-{index}".encode()
-        for index in range(cards_command.CARD_SCAN_CAPTURE_COUNT)
-    )
-
-    class Attachment:
-        def __init__(self, payload):
-            self.payload = payload
-            self.size = len(payload)
-
-        async def read(self):
-            return self.payload
-
-    scanned = []
-    inserted = []
-
-    def scan(payloads):
-        scanned.append(payloads)
-        return _complete_scan_draft()
-
-    async def insert_state(_mongo, document, *, ttl):
-        inserted.append((document, ttl))
-
-    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
-    monkeypatch.setattr(cards_command, "_scan_collection_payloads", scan)
-    monkeypatch.setattr(cards_command, "insert_state", insert_state)
-    ctx = _slash_context()
-    view = asyncio.run(cards_command._start_scan_upload(
-        ctx,
-        tuple(Attachment(payload) for payload in raw_payloads),
-        data=data,
-        mongo=SimpleNamespace(),
-    ))
-
-    assert scanned == [raw_payloads]
-    assert len(inserted) == 1
-    document, ttl = inserted[0]
-    assert ttl == cards_command.CARD_SCAN_DRAFT_FOR
-    assert document["type"] == "cards_scan_draft"
-    assert document["user_id"] == 123
-    assert document["guild_id"] == 1
-    assert document["scan_draft"] == _complete_scan_draft()
-    assert "account_tag" not in document
-    assert _contains_raw_bytes(document) is False
-    assert "Choose the Collection to Review" in _view_text(view)
-
-
-def test_scan_account_selection_keeps_draft_without_bytes_in_immutable_account_fence(
-    monkeypatch,
-):
-    accounts = (_scan_account("#ONE", "One"), _scan_account("#TWO", "Two"))
-    data = _scan_accounts_data(*accounts)
-    draft = _complete_scan_draft()
-    state = {
-        "_id": "draft-select",
-        "type": "cards_scan_draft",
-        "user_id": 123,
-        "guild_id": 1,
-        "scan_draft": draft,
-        "account_page": 0,
-    }
-    inserted = []
-    discarded = []
-
-    async def owned_account(*_args, **_kwargs):
-        return accounts[1], data
-
-    async def ensure_inventory(*_args, **_kwargs):
-        return {"_id": "#TWO", "inventory_revision": 7}
-
-    async def insert_state(_mongo, document, *, ttl):
-        inserted.append((document, ttl))
-
-    async def discard(_mongo, draft_id):
-        discarded.append(draft_id)
-
-    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
-    monkeypatch.setattr(cards_command, "_owned_account", owned_account)
-    monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
-    monkeypatch.setattr(cards_command, "insert_state", insert_state)
-    monkeypatch.setattr(cards_command, "_discard_scan_state", discard)
-    ctx = SimpleNamespace(
-        user=SimpleNamespace(id=123),
-        guild_id=1,
-        interaction=SimpleNamespace(values=("#TWO",)),
-    )
-
-    view = asyncio.run(cards_command.cards_scan_account(
-        ctx,
-        "draft-select",
-        scan_draft=draft,
-        user_id=123,
-        guild_id=1,
-        coc_client=SimpleNamespace(),
-        mongo=SimpleNamespace(),
-    ))
-
-    assert len(inserted) == 1
-    bound, ttl = inserted[0]
-    assert ttl == cards_command.CARD_SCAN_DRAFT_FOR
-    assert bound["_id"] != state["_id"]
-    assert bound["type"] == "cards_scan_draft"
-    assert bound["scan_draft"] is draft
-    assert bound["account_tag"] == "#TWO"
-    assert bound["base_revision"] == 7
-    assert _contains_raw_bytes(bound) is False
-    assert discarded == ["draft-select"]
-    assert "Two · `#TWO`" in _view_text(view)
+    assert "Possible spares to check after save:** 1" in review_text
 
 
 def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypatch):
@@ -2924,6 +3524,69 @@ def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypa
     assert discarded == ["draft-confirm"]
 
 
+def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
+    monkeypatch,
+):
+    account = _scan_account()
+    hidden = ["wizard", "dragon"]
+    draft = _complete_scan_draft(duplicate_unverified=hidden)
+    inventory = _complete_inventory()
+    inventory["inventory_revision"] = 4
+    saved = dict(inventory)
+    saved["inventory_revision"] = 5
+    saved["scan_duplicate_unverified_card_ids"] = hidden
+    state_updates = []
+    discarded = []
+
+    async def load_target(*_args, **_kwargs):
+        return account, inventory, None
+
+    async def write_scan(*_args, **_kwargs):
+        return saved
+
+    async def load_accounts(*_args, **_kwargs):
+        return _scan_accounts_data(account)
+
+    async def update_state(_mongo, query, update):
+        state_updates.append((query, update))
+
+    async def discard(_mongo, draft_id):
+        discarded.append(draft_id)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    monkeypatch.setattr(cards_command, "_write_scan_draft", write_scan)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "update_state", update_state)
+    monkeypatch.setattr(cards_command, "_discard_scan_state", discard)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+
+    view = asyncio.run(cards_command.cards_scan_confirm(
+        ctx,
+        "draft-hidden-review",
+        scan_draft=draft,
+        user_id=123,
+        guild_id=1,
+        account_tag="#ME",
+        base_revision=4,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    nodes = _view_nodes(view)
+    assert any(
+        node.get("custom_id") == "cards_scan_hidden_set:draft-hidden-review"
+        for node in nodes
+    )
+    assert any(
+        node.get("custom_id") == "cards_scan_hidden_none:draft-hidden-review"
+        for node in nodes
+    )
+    assert discarded == []
+    assert state_updates[0][1]["$set"]["type"] == "cards_hidden_badge_review"
+    assert state_updates[0][1]["$set"]["base_revision"] == 5
+
+
 def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed():
     account = _scan_account()
     elixir_hidden = cards.CATEGORY_CARDS["elixir"][0].id
@@ -2959,12 +3622,11 @@ def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed(
     ]
     assert saved["update_source"] == "confirmed_screenshot_review"
     assert saved["inventory_revision"] == 1
-    overview = cards_command._update_overview(account, saved)
-    assert "hidden duplicate badges left to check" in _view_text(overview)
+    quick_update = cards_command._quick_update_panel(account, saved)
+    assert "2 possible spares need one check" in _view_text(quick_update)
     assert any(
-        node.get("custom_id") == "cards_category:#ME|elixir"
-        and node.get("label", "").startswith("Check ")
-        for node in _view_nodes(overview)
+        node.get("custom_id") == "cards_hidden:#ME"
+        for node in _view_nodes(quick_update)
     )
 
     category_collection = _FakeCategoryCollection(saved)

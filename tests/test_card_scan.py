@@ -709,25 +709,35 @@ def test_ordered_batch_maps_all_cards_and_discloses_toolbar_hidden_duplicates(
     )
 
 
-def test_batch_maps_five_live_order_captures_and_ignores_toolbar_copy(monkeypatch):
+def test_batch_maps_any_order_captures_and_ignores_toolbar_copy(monkeypatch):
     clean = [_collection_capture(index) for index in range(5)]
-    payloads = [clean[0], _collection_capture(0, toolbar=True), *clean[1:]]
+    payloads = [
+        clean[3],
+        clean[0],
+        _collection_capture(0, toolbar=True),
+        clean[4],
+        clean[1],
+        clean[2],
+    ]
     _install_synthetic_artwork_anchors(monkeypatch, clean)
 
     draft = card_scan.scan_collection_screenshots(payloads)
 
     assert [capture.accepted for capture in draft.captures] == [
-        True, False, True, True, True, True
+        True, True, False, True, True, True
     ]
-    assert draft.captures[1].warnings == ("duplicate_capture_ignored",)
+    assert [capture.assigned_page_number for capture in draft.captures] == [
+        4, 1, 1, 5, 2, 3
+    ]
+    assert draft.captures[2].warnings == ("duplicate_page_ignored",)
     assert [capture.global_rows for capture in draft.captures if capture.accepted] == [
-        (1, 2), (3, 4), (5, 6), (7, 8), (9, 10)
+        (7, 8), (1, 2), (9, 10), (3, 4), (5, 6)
     ]
     assert len(draft.cards) == 60
     assert [card.card_id for card in draft.cards] == [card.id for card in CARDS]
     assert draft.cards[0].card_name == "Barbarian"
     assert draft.cards[-1].card_name == "Super Bowler"
-    assert draft.cards[12].source_index == 3
+    assert draft.cards[12].source_index == 5
 
     assert draft.recognized_count == 60
     assert draft.missing_count == 31
@@ -740,7 +750,11 @@ def test_batch_maps_five_live_order_captures_and_ignores_toolbar_copy(monkeypatc
     assert draft.coverage_complete is True
     assert draft.complete is True
     assert draft.persistence_safe is False
-    assert "capture_sequence_validated" in draft.warnings
+    assert draft.accepted_page_numbers == (1, 2, 3, 4, 5)
+    assert draft.missing_page_numbers == ()
+    assert draft.missing_global_rows == ()
+    assert "collection_pages_validated" in draft.warnings
+    assert "duplicate_page_ignored" in draft.warnings
     assert "human_confirmation_required" in draft.warnings
     assert "hidden_duplicates_require_review" in draft.warnings
     assert all(category.complete for category in draft.categories)
@@ -766,7 +780,7 @@ def test_batch_downgrades_visible_and_hidden_duplicate_badges_to_owned(monkeypat
     assert draft.owned_count == 29
 
 
-def test_batch_rejects_out_of_order_capture_without_shifting_catalog_ids(monkeypatch):
+def test_batch_accepts_out_of_order_capture_without_shifting_catalog_ids(monkeypatch):
     canonical = [_collection_capture(index) for index in range(5)]
     _install_synthetic_artwork_anchors(monkeypatch, canonical)
     payloads = [
@@ -779,13 +793,17 @@ def test_batch_rejects_out_of_order_capture_without_shifting_catalog_ids(monkeyp
 
     draft = card_scan.scan_collection_screenshots(payloads)
 
-    assert draft.captures[1].accepted is False
-    assert draft.captures[1].warnings == ("capture_sequence_mismatch",)
-    assert draft.coverage_complete is False
-    assert draft.complete is False
-    assert draft.recognized_count == 36
-    assert len(draft.unseen_card_ids) == 24
-    assert "incomplete_capture_set" in draft.warnings
+    assert all(capture.accepted for capture in draft.captures)
+    assert [capture.assigned_page_number for capture in draft.captures] == [
+        1, 3, 2, 4, 5
+    ]
+    assert [card.card_id for card in draft.cards] == [card.id for card in CARDS]
+    assert draft.cards[12].source_index == 3
+    assert draft.cards[24].source_index == 2
+    assert draft.coverage_complete is True
+    assert draft.complete is True
+    assert draft.recognized_count == 60
+    assert draft.unseen_card_ids == ()
 
 
 def test_batch_rejects_one_row_scroll_overlap_without_shifting_later_pages(
@@ -823,21 +841,30 @@ def test_batch_rejects_one_row_scroll_overlap_without_shifting_later_pages(
 def test_unreadable_page_does_not_shift_later_catalog_positions(monkeypatch):
     canonical = [_collection_capture(index) for index in range(5)]
     _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    payloads = [canonical[0], b"not-an-image", *canonical[2:]]
+    payloads = [
+        b"not-an-image",
+        canonical[4],
+        canonical[0],
+        canonical[2],
+        canonical[3],
+    ]
 
     draft = card_scan.scan_collection_screenshots(payloads)
 
     assert [capture.accepted for capture in draft.captures] == [
-        True, False, True, True, True
+        False, True, True, True, True
     ]
-    assert "capture_requires_two_rows" in draft.captures[1].warnings
+    assert "capture_requires_two_rows" in draft.captures[0].warnings
     assert draft.recognized_count == 48
     assert tuple(draft.unseen_card_ids) == tuple(
         card.id for card in CARDS[12:24]
     )
+    assert draft.accepted_page_numbers == (1, 3, 4, 5)
+    assert draft.missing_page_numbers == (2,)
+    assert draft.missing_global_rows == (3, 4)
     assert [
         capture.global_rows for capture in draft.captures if capture.accepted
-    ] == [(1, 2), (5, 6), (7, 8), (9, 10)]
+    ] == [(9, 10), (1, 2), (5, 6), (7, 8)]
 
 
 def test_batch_keeps_ambiguous_portrait_unknown_for_explicit_review(monkeypatch):
@@ -859,3 +886,150 @@ def test_batch_keeps_ambiguous_portrait_unknown_for_explicit_review(monkeypatch)
     assert draft.unseen_card_ids == ()
     assert draft.categories[0].complete is False
     assert "unknown_states_require_review" in draft.warnings
+
+
+def test_partial_batches_resume_from_bson_checkpoint_without_raw_images(monkeypatch):
+    canonical = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_artwork_anchors(monkeypatch, canonical)
+
+    first = card_scan.scan_collection_screenshots((canonical[4], canonical[1]))
+    checkpoint = card_scan.collection_scan_checkpoint(first)
+
+    assert first.accepted_page_numbers == (2, 5)
+    assert first.missing_page_numbers == (1, 3, 4)
+    assert first.missing_global_rows == (1, 2, 5, 6, 7, 8)
+    assert checkpoint["version"] == card_scan.SCAN_CHECKPOINT_VERSION
+    assert checkpoint["missing_page_numbers"] == [1, 3, 4]
+
+    def assert_bson_safe(value):
+        if isinstance(value, dict):
+            assert all(isinstance(key, str) for key in value)
+            for nested in value.values():
+                assert_bson_safe(nested)
+            return
+        if isinstance(value, list):
+            for nested in value:
+                assert_bson_safe(nested)
+            return
+        assert value is None or type(value) in (bool, int, float, str)
+
+    assert_bson_safe(checkpoint)
+
+    resumed = card_scan.scan_collection_screenshots(
+        (canonical[3], canonical[0], canonical[2]),
+        prior_draft=checkpoint,
+    )
+
+    assert resumed.coverage_complete is True
+    assert resumed.complete is True
+    assert resumed.accepted_page_numbers == (1, 2, 3, 4, 5)
+    assert resumed.missing_page_numbers == ()
+    assert resumed.missing_global_rows == ()
+    assert [capture.assigned_page_number for capture in resumed.captures] == [
+        4, 1, 3
+    ]
+    assert resumed.cards[12].source_index == 0
+    assert resumed.cards[48].source_index == 0
+    assert resumed.cards[0].source_index == 2
+    assert "prior_scan_checkpoint_merged" in resumed.warnings
+
+
+def test_normalized_v2_checkpoint_is_accepted_for_partial_resume(monkeypatch):
+    canonical = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_artwork_anchors(monkeypatch, canonical)
+    first = card_scan.scan_collection_screenshots((canonical[0], canonical[2]))
+    checkpoint = card_scan.collection_scan_checkpoint(first)
+    checkpoint["version"] = 2
+    checkpoint["card_states"] = {
+        card_id: {
+            card_scan.MISSING: 0,
+            card_scan.OWNED: 1,
+            card_scan.DUPLICATE: 2,
+        }[state]
+        for card_id, state in checkpoint["card_states"].items()
+    }
+    checkpoint["unknown_card_ids"] = [
+        *checkpoint["unknown_card_ids"],
+        *checkpoint["unseen_card_ids"],
+    ]
+
+    resumed = card_scan.scan_collection_screenshots(
+        (canonical[4], canonical[1], canonical[3]),
+        prior_draft=checkpoint,
+    )
+
+    assert resumed.complete is True
+    assert resumed.accepted_page_numbers == (1, 2, 3, 4, 5)
+    assert resumed.unseen_card_ids == ()
+
+
+def test_invalid_prior_checkpoint_is_ignored_atomically(monkeypatch):
+    canonical = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_artwork_anchors(monkeypatch, canonical)
+    first = card_scan.scan_collection_screenshots((canonical[0], canonical[1]))
+    checkpoint = card_scan.collection_scan_checkpoint(first)
+    checkpoint["identity_bound"] = False
+
+    resumed = card_scan.scan_collection_screenshots(
+        (canonical[3],),
+        prior_draft=checkpoint,
+    )
+
+    assert resumed.accepted_page_numbers == (4,)
+    assert resumed.missing_page_numbers == (1, 2, 3, 5)
+    assert resumed.recognized_count == 12
+    assert "invalid_prior_scan_checkpoint" in resumed.warnings
+
+
+def test_duplicate_page_resolves_unknown_but_conflicting_known_states_fail_closed(
+    monkeypatch,
+):
+    canonical = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_artwork_anchors(monkeypatch, canonical)
+
+    unknown_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
+    unknown_rows[0][0] = card_scan.UNKNOWN
+    unknown_capture = _collection_capture(0, rows=unknown_rows)
+    resolved = card_scan.scan_collection_screenshots(
+        (unknown_capture, canonical[0])
+    )
+
+    assert resolved.cards[0].state == card_scan.OWNED
+    assert resolved.captures[1].warnings == ("duplicate_page_merged",)
+    assert resolved.captures[1].assigned_page_number == 1
+    assert "duplicate_page_merged" in resolved.warnings
+
+    conflicting_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
+    conflicting_rows[0][0] = card_scan.MISSING
+    conflict_capture = _collection_capture(0, rows=conflicting_rows)
+    conflicted = card_scan.scan_collection_screenshots(
+        (canonical[0], conflict_capture)
+    )
+
+    assert conflicted.cards[0].state == card_scan.UNKNOWN
+    assert conflicted.cards[0].source_index == 1
+    assert "conflicting_duplicate_capture_state" in conflicted.cards[0].warnings
+    assert conflicted.captures[1].warnings == ("conflicting_duplicate_page",)
+    assert conflicted.captures[1].conflicting_card_ids == ("barbarian",)
+    assert conflicted.complete is False
+    assert "conflicting_duplicate_page" in conflicted.warnings
+
+
+def test_ambiguous_page_assignment_fails_closed(monkeypatch):
+    canonical = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_artwork_anchors(monkeypatch, canonical)
+    monkeypatch.setattr(
+        card_scan,
+        "_matching_catalog_positions",
+        lambda _image, _result: (0, 1),
+    )
+
+    draft = card_scan.scan_collection_screenshots((canonical[0],))
+
+    assert draft.captures[0].accepted is False
+    assert draft.captures[0].assigned_page_number is None
+    assert draft.captures[0].warnings == ("capture_page_ambiguous",)
+    assert draft.accepted_page_numbers == ()
+    assert draft.missing_page_numbers == (1, 2, 3, 4, 5)
+    assert draft.missing_global_rows == tuple(range(1, 11))
+    assert draft.recognized_count == 0

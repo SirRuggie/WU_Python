@@ -1,9 +1,10 @@
 """Experimental, review-only Clash of Cards still-image classifier.
 
 This module deliberately has no Discord or database imports.  Its batch entry
-point binds five ordered, two-row collection captures to the canonical 60-card
-catalog.  The positional binding is intentionally narrow: arbitrary crops and
-out-of-order screenshots fail closed instead of being guessed.
+point identifies five two-row collection captures and binds them to the
+canonical 60-card catalog regardless of upload order.  The positional binding
+is intentionally narrow: category-frame patterns and privacy-safe artwork
+anchors must agree, while arbitrary crops fail closed instead of being guessed.
 
 The output is never safe to persist without human review.  Missing portraits
 can be recognized even when the fixed reward track covers the badge area.  A
@@ -22,6 +23,7 @@ import io
 import math
 import statistics
 import warnings
+from collections.abc import Mapping
 from collections import deque
 from dataclasses import dataclass
 from itertools import islice
@@ -52,7 +54,8 @@ MAX_SCAN_HEIGHT = 2400
 COLLECTION_CAPTURE_COUNT = 5
 COLLECTION_ROWS = 10
 COLLECTION_COLUMNS = 6
-MAX_COLLECTION_INPUTS = 6
+MAX_COLLECTION_INPUTS = 10
+SCAN_CHECKPOINT_VERSION = 1
 
 # Conservative thresholds checked against the supplied five-page live capture
 # sequence.  Values between the missing and owned bands remain unknown.
@@ -77,7 +80,6 @@ CATEGORY_FRAME_HUES = {
     "super_troop": 12.0,
 }
 CATEGORY_FRAME_HUE_TOLERANCE = 8.0
-CAPTURE_DUPLICATE_MAX_MEAN_DELTA = 0.5
 ROW_OVERLAP_MAX_MEAN_DELTA = 1.0
 
 # The only retained information derived from the supplied live screenshots is
@@ -245,7 +247,9 @@ class CollectionCaptureScan:
     source_size: tuple[int, int] | None
     scan_size: tuple[int, int] | None
     warnings: tuple[str, ...]
+    assigned_page_number: int | None = None
     mismatched_card_ids: tuple[str, ...] = ()
+    conflicting_card_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +294,9 @@ class CollectionScanDraft:
     cards: tuple[DraftCardScan, ...]
     categories: tuple[CategoryScanDraft, ...]
     captures: tuple[CollectionCaptureScan, ...]
+    accepted_page_numbers: tuple[int, ...]
+    missing_page_numbers: tuple[int, ...]
+    missing_global_rows: tuple[int, ...]
     recognized_count: int
     missing_count: int
     owned_count: int
@@ -1021,20 +1028,6 @@ def _capture_matches_catalog_position(
     return True
 
 
-def _capture_fingerprint(image: Image.Image, result: ScanResult) -> bytes:
-    """Return a small visual signature of card art, excluding phone toolbars."""
-    bounds = Bounds(
-        min(row.bounds.left for row in result.rows),
-        min(row.bounds.top for row in result.rows),
-        max(row.bounds.right for row in result.rows),
-        max(row.bounds.bottom for row in result.rows),
-    )
-    crop = image.crop(
-        (bounds.left, bounds.top, bounds.right, bounds.bottom)
-    ).convert("L")
-    return crop.resize((192, 96), Image.Resampling.BILINEAR).tobytes()
-
-
 def _row_fingerprint(image: Image.Image, row: RowScan) -> bytes:
     bounds = row.bounds
     crop = image.crop(
@@ -1047,10 +1040,6 @@ def _fingerprint_delta(left: bytes, right: bytes) -> float:
     if len(left) != len(right) or not left:
         return math.inf
     return sum(abs(a - b) for a, b in zip(left, right)) / len(left)
-
-
-def _fingerprints_match(left: bytes, right: bytes) -> bool:
-    return _fingerprint_delta(left, right) <= CAPTURE_DUPLICATE_MAX_MEAN_DELTA
 
 
 def _empty_draft_card(
@@ -1076,15 +1065,379 @@ def _empty_draft_card(
     )
 
 
-def scan_collection_screenshots(image_items: object) -> CollectionScanDraft:
-    """Build a conservative 60-card review draft from ordered screenshots.
+def _matching_catalog_positions(
+    image: Image.Image,
+    result: ScanResult,
+) -> tuple[int, ...]:
+    """Return zero-based catalog pages proved by the capture's frame colors."""
+    return tuple(
+        position
+        for position in range(COLLECTION_CAPTURE_COUNT)
+        if _capture_matches_catalog_position(image, result, position)
+    )
 
-    The supported capture contract is deliberately small: five distinct still
-    images, in top-to-bottom order, each containing exactly two complete rows.
-    One additional near-duplicate image may be supplied and is ignored (this
-    covers the observed phone-toolbar copy).  Category-frame colors and a
-    privacy-safe expected portrait hash validate every accepted position before
-    identities are assigned.
+
+def _checkpoint_card_state(value: object) -> CardState | None:
+    if value in (MISSING, OWNED, DUPLICATE, UNKNOWN):
+        return value  # type: ignore[return-value]
+    if type(value) is int:
+        return {
+            0: MISSING,
+            1: OWNED,
+            2: DUPLICATE,
+        }.get(value)
+    return None
+
+
+def _checkpoint_id_set(value: object) -> set[str] | None:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        values = (value,)
+    else:
+        try:
+            values = tuple(value)  # type: ignore[arg-type]
+        except TypeError:
+            return None
+    if not all(isinstance(item, str) for item in values):
+        return None
+    ids = set(values)
+    if not ids <= {card.id for card in CARDS}:
+        return None
+    return ids
+
+
+def _checkpoint_warnings(value: object) -> tuple[str, ...] | None:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        values = (value,)
+    else:
+        try:
+            values = tuple(value)  # type: ignore[arg-type]
+        except TypeError:
+            return None
+    if not all(isinstance(item, str) for item in values):
+        return None
+    return tuple(dict.fromkeys(values))
+
+
+def _pages_are_atomic(mapped: Mapping[int, DraftCardScan]) -> bool:
+    """A checkpoint may retain complete pages, never identity fragments."""
+    for position in range(COLLECTION_CAPTURE_COUNT):
+        start = position * COLLECTION_COLUMNS * 2 + 1
+        count = sum(index in mapped for index in range(start, start + 12))
+        if count not in (0, 12):
+            return False
+    return True
+
+
+def _validated_prior_cards(
+    prior_draft: object,
+) -> tuple[dict[int, DraftCardScan], bool]:
+    """Return identity-bound prior cards or reject the checkpoint atomically."""
+    if prior_draft is None:
+        return {}, True
+
+    if isinstance(prior_draft, CollectionScanDraft):
+        if len(prior_draft.cards) != len(CARDS):
+            return {}, False
+        mapped: dict[int, DraftCardScan] = {}
+        for catalog_index, (card, record) in enumerate(
+            zip(CARDS, prior_draft.cards),
+            start=1,
+        ):
+            if (
+                record.card_id != card.id
+                or record.card_name != card.name
+                or record.category_id != card.category
+                or record.catalog_index != catalog_index
+                or record.global_row != (catalog_index - 1) // COLLECTION_COLUMNS + 1
+                or record.column != (catalog_index - 1) % COLLECTION_COLUMNS + 1
+                or record.state not in (MISSING, OWNED, DUPLICATE, UNKNOWN)
+                or isinstance(record.confidence, bool)
+                or not isinstance(record.confidence, (int, float))
+                or not math.isfinite(record.confidence)
+                or not 0.0 <= record.confidence <= 1.0
+                or not all(isinstance(item, str) for item in record.warnings)
+                or (
+                    record.source_index is not None
+                    and (
+                        type(record.source_index) is not int
+                        or record.source_index < 0
+                    )
+                )
+                or (
+                    record.source_index is None
+                    and (record.state != UNKNOWN or record.confidence != 0.0)
+                )
+            ):
+                return {}, False
+            if record.source_index is not None:
+                mapped[catalog_index] = DraftCardScan(
+                    card_id=record.card_id,
+                    card_name=record.card_name,
+                    category_id=record.category_id,
+                    catalog_index=record.catalog_index,
+                    global_row=record.global_row,
+                    column=record.column,
+                    state=record.state,
+                    confidence=float(record.confidence),
+                    source_index=0,
+                    warnings=tuple(record.warnings),
+                )
+        return (mapped, True) if _pages_are_atomic(mapped) else ({}, False)
+
+    if not isinstance(prior_draft, Mapping):
+        return {}, False
+    if prior_draft.get("identity_bound") is not True:
+        return {}, False
+    if prior_draft.get("errors"):
+        return {}, False
+    if prior_draft.get("version") not in (SCAN_CHECKPOINT_VERSION, 2):
+        return {}, False
+
+    raw_states = prior_draft.get("card_states")
+    raw_confidences = prior_draft.get("card_confidences")
+    raw_warnings = prior_draft.get("card_warnings", {})
+    if not isinstance(raw_states, Mapping):
+        return {}, False
+    if not isinstance(raw_confidences, Mapping):
+        return {}, False
+    if not isinstance(raw_warnings, Mapping):
+        return {}, False
+
+    unknown_ids = _checkpoint_id_set(prior_draft.get("unknown_card_ids"))
+    unseen_ids = _checkpoint_id_set(prior_draft.get("unseen_card_ids"))
+    unverified_ids = _checkpoint_id_set(
+        prior_draft.get("duplicate_unverified_card_ids")
+    )
+    if unknown_ids is None or unseen_ids is None or unverified_ids is None:
+        return {}, False
+
+    catalog_ids = {card.id for card in CARDS}
+    state_ids = set(raw_states)
+    confidence_ids = set(raw_confidences)
+    warning_ids = set(raw_warnings)
+    if (
+        not all(isinstance(card_id, str) for card_id in state_ids)
+        or not all(isinstance(card_id, str) for card_id in confidence_ids)
+        or not all(isinstance(card_id, str) for card_id in warning_ids)
+        or not state_ids <= catalog_ids
+        or confidence_ids != state_ids
+        or not warning_ids <= catalog_ids
+        or state_ids & unknown_ids
+        or state_ids & unseen_ids
+        or not unverified_ids <= state_ids
+        or state_ids | unknown_ids | unseen_ids != catalog_ids
+    ):
+        return {}, False
+
+    seen_unknown_ids = unknown_ids - unseen_ids
+    cards_by_id = {card.id: (index, card) for index, card in enumerate(CARDS, 1)}
+    mapped = {}
+    for card_id in state_ids | seen_unknown_ids:
+        catalog_index, card = cards_by_id[card_id]
+        if card_id in seen_unknown_ids:
+            state: CardState = UNKNOWN
+            confidence = 0.0
+        else:
+            parsed_state = _checkpoint_card_state(raw_states[card_id])
+            raw_confidence = raw_confidences.get(card_id)
+            if (
+                parsed_state is None
+                or parsed_state == UNKNOWN
+                or isinstance(raw_confidence, bool)
+                or not isinstance(raw_confidence, (int, float))
+                or not math.isfinite(raw_confidence)
+                or not 0.0 <= raw_confidence <= 1.0
+            ):
+                return {}, False
+            state = parsed_state
+            confidence = float(raw_confidence)
+
+        warnings_found = _checkpoint_warnings(raw_warnings.get(card_id))
+        if warnings_found is None:
+            return {}, False
+        if card_id in unverified_ids:
+            if state != OWNED:
+                return {}, False
+            warnings_found = tuple(dict.fromkeys((
+                *warnings_found,
+                "duplicate_badge_unverified",
+            )))
+        mapped[catalog_index] = DraftCardScan(
+            card_id=card.id,
+            card_name=card.name,
+            category_id=card.category,
+            catalog_index=catalog_index,
+            global_row=(catalog_index - 1) // COLLECTION_COLUMNS + 1,
+            column=(catalog_index - 1) % COLLECTION_COLUMNS + 1,
+            state=state,
+            confidence=confidence,
+            source_index=0,
+            warnings=warnings_found,
+        )
+
+    return (mapped, True) if _pages_are_atomic(mapped) else ({}, False)
+
+
+def collection_scan_checkpoint(draft: CollectionScanDraft) -> dict[str, object]:
+    """Return a BSON-safe parsed-state checkpoint for a later upload batch."""
+    if not isinstance(draft, CollectionScanDraft):
+        raise TypeError("draft must be a CollectionScanDraft")
+
+    mapped, valid = _validated_prior_cards(draft)
+    if not valid:
+        raise ValueError("draft is not an identity-bound collection scan")
+    seen = tuple(mapped[index] for index in sorted(mapped))
+    accepted_positions = {
+        position
+        for position in range(COLLECTION_CAPTURE_COUNT)
+        if all(
+            index in mapped
+            for index in range(position * 12 + 1, position * 12 + 13)
+        )
+    }
+    accepted_page_numbers = [
+        position + 1 for position in sorted(accepted_positions)
+    ]
+    missing_page_numbers = [
+        position + 1
+        for position in range(COLLECTION_CAPTURE_COUNT)
+        if position not in accepted_positions
+    ]
+    unseen_card_ids = [
+        card.id
+        for catalog_index, card in enumerate(CARDS, start=1)
+        if catalog_index not in mapped
+    ]
+    return {
+        "version": SCAN_CHECKPOINT_VERSION,
+        "card_states": {
+            card.card_id: card.state
+            for card in seen
+            if card.state != UNKNOWN
+        },
+        "card_confidences": {
+            card.card_id: float(card.confidence)
+            for card in seen
+            if card.state != UNKNOWN
+        },
+        "card_warnings": {
+            card.card_id: list(card.warnings)
+            for card in seen
+            if card.warnings
+        },
+        "unknown_card_ids": [
+            card.card_id for card in seen if card.state == UNKNOWN
+        ],
+        "unseen_card_ids": unseen_card_ids,
+        "duplicate_unverified_card_ids": [
+            card.card_id
+            for card in seen
+            if "duplicate_badge_unverified" in card.warnings
+        ],
+        "accepted_page_numbers": accepted_page_numbers,
+        "missing_page_numbers": missing_page_numbers,
+        "missing_global_rows": [
+            row
+            for page_number in missing_page_numbers
+            for row in (page_number * 2 - 1, page_number * 2)
+        ],
+        "identity_bound": True,
+        "coverage_complete": not unseen_card_ids,
+        "errors": [],
+    }
+
+
+def _page_cards(
+    capture_position: int,
+    source_index: int,
+    result: ScanResult,
+) -> dict[int, DraftCardScan]:
+    mapped: dict[int, DraftCardScan] = {}
+    for local_row, row in enumerate(result.rows):
+        global_row = capture_position * 2 + local_row + 1
+        for slot in row.slots:
+            catalog_index = (
+                (global_row - 1) * COLLECTION_COLUMNS + slot.column
+            )
+            card = CARDS[catalog_index - 1]
+            mapped[catalog_index] = DraftCardScan(
+                card_id=card.id,
+                card_name=card.name,
+                category_id=card.category,
+                catalog_index=catalog_index,
+                global_row=global_row,
+                column=slot.column,
+                state=slot.state,
+                confidence=slot.confidence,
+                source_index=source_index,
+                warnings=slot.warnings,
+            )
+    return mapped
+
+
+def _merge_duplicate_page(
+    mapped: dict[int, DraftCardScan],
+    incoming: Mapping[int, DraftCardScan],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Improve unknowns, but downgrade contradictory known states to unknown."""
+    resolved: list[str] = []
+    conflicts: list[str] = []
+    for catalog_index, candidate in incoming.items():
+        previous = mapped[catalog_index]
+        if previous.state == candidate.state:
+            continue
+        if (
+            previous.state == UNKNOWN
+            and "conflicting_duplicate_capture_state" not in previous.warnings
+            and candidate.state != UNKNOWN
+        ):
+            mapped[catalog_index] = candidate
+            resolved.append(candidate.card_id)
+            continue
+        if candidate.state == UNKNOWN:
+            continue
+
+        conflicts.append(candidate.card_id)
+        mapped[catalog_index] = DraftCardScan(
+            card_id=previous.card_id,
+            card_name=previous.card_name,
+            category_id=previous.category_id,
+            catalog_index=previous.catalog_index,
+            global_row=previous.global_row,
+            column=previous.column,
+            state=UNKNOWN,
+            confidence=0.0,
+            source_index=previous.source_index,
+            warnings=tuple(dict.fromkeys((
+                *previous.warnings,
+                *candidate.warnings,
+                "conflicting_duplicate_capture_state",
+            ))),
+        )
+    return tuple(resolved), tuple(conflicts)
+
+
+def scan_collection_screenshots(
+    image_items: object,
+    *,
+    prior_draft: object = None,
+) -> CollectionScanDraft:
+    """Build a conservative 60-card review draft from any-order screenshots.
+
+    Up to ten still images may be supplied in any order.  Each accepted image
+    contains exactly two complete rows and must match exactly one of the five
+    catalog pages by both category-frame colors and privacy-safe artwork hashes.
+    Duplicate pages, including the observed phone-toolbar copy, are ignored.
+
+    ``prior_draft`` may be an earlier :class:`CollectionScanDraft`, the BSON-safe
+    mapping returned by :func:`collection_scan_checkpoint`, or the normalized
+    version-2 mapping used by the Discord adapter.  Only complete identity-bound
+    pages are accumulated; invalid checkpoints are rejected atomically.  This
+    lets a caller discard raw image bytes between follow-up upload messages.
 
     Clearly colored cards with an obstructed badge are recorded as ``owned`` --
     the minimum quantity proven by the portrait -- and listed in
@@ -1103,58 +1456,81 @@ def scan_collection_screenshots(image_items: object) -> CollectionScanDraft:
         except TypeError:
             payloads = ()
 
+    mapped, prior_valid = _validated_prior_cards(prior_draft)
+    had_prior = prior_draft is not None
     captures: list[CollectionCaptureScan] = []
-    accepted: list[tuple[int, int, Image.Image, ScanResult]] = []
-    fingerprints: list[bytes] = []
     row_fingerprints: list[bytes] = []
     duplicate_ignored = False
+    duplicate_merged = False
+    duplicate_conflict = False
     overlap_ignored = False
+    unrecognized_capture = False
+    ambiguous_capture = False
     artwork_mismatch_ids: set[str] = set()
     too_many = len(payloads) > MAX_COLLECTION_INPUTS
-    next_capture_position = 0
+    new_page_positions: set[int] = set()
+
+    def present_positions() -> set[int]:
+        return {
+            position
+            for position in range(COLLECTION_CAPTURE_COUNT)
+            if all(
+                index in mapped
+                for index in range(position * 12 + 1, position * 12 + 13)
+            )
+        }
 
     for input_index, payload in enumerate(payloads[:MAX_COLLECTION_INPUTS], start=1):
         result = scan_visible_rows(payload)
         loaded = _load_still(payload)
         if isinstance(loaded, str) or len(result.rows) != 2:
-            # An unreadable intended page still owns its position.  Otherwise
-            # every later valid page would shift backward and produce a cascade
-            # of misleading sequence errors (or, worse, wrong identities).
-            next_capture_position += 1
             captures.append(CollectionCaptureScan(
                 input_index=input_index,
                 accepted=False,
                 global_rows=(),
                 source_size=result.source_size,
                 scan_size=result.scan_size,
-                warnings=tuple(dict.fromkeys((*result.warnings, "capture_requires_two_rows"))),
+                warnings=tuple(dict.fromkeys((
+                    *result.warnings,
+                    "capture_requires_two_rows",
+                ))),
             ))
             continue
 
         image, _source_size = loaded
-        fingerprint = _capture_fingerprint(image, result)
-        if any(
-            _fingerprints_match(fingerprint, prior)
-            for prior in fingerprints
-        ):
-            duplicate_ignored = True
+        matching_positions = _matching_catalog_positions(image, result)
+        if not matching_positions:
+            unrecognized_capture = True
             captures.append(CollectionCaptureScan(
                 input_index=input_index,
                 accepted=False,
                 global_rows=(),
                 source_size=result.source_size,
                 scan_size=result.scan_size,
-                warnings=("duplicate_capture_ignored",),
+                warnings=("capture_page_unrecognized",),
             ))
             continue
-
-        capture_position = next_capture_position
-        next_capture_position += 1
+        if len(matching_positions) != 1:
+            ambiguous_capture = True
+            captures.append(CollectionCaptureScan(
+                input_index=input_index,
+                accepted=False,
+                global_rows=(),
+                source_size=result.source_size,
+                scan_size=result.scan_size,
+                warnings=("capture_page_ambiguous",),
+            ))
+            continue
+        capture_position = matching_positions[0]
+        global_rows = (
+            capture_position * 2 + 1,
+            capture_position * 2 + 2,
+        )
 
         candidate_row_fingerprints = [
             _row_fingerprint(image, row) for row in result.rows
         ]
-        if any(
+        if capture_position not in present_positions() and any(
             _fingerprint_delta(candidate, prior)
             <= ROW_OVERLAP_MAX_MEAN_DELTA
             for candidate in candidate_row_fingerprints
@@ -1164,33 +1540,11 @@ def scan_collection_screenshots(image_items: object) -> CollectionScanDraft:
             captures.append(CollectionCaptureScan(
                 input_index=input_index,
                 accepted=False,
-                global_rows=(),
+                global_rows=global_rows,
                 source_size=result.source_size,
                 scan_size=result.scan_size,
                 warnings=("overlapping_capture_rows",),
-            ))
-            continue
-
-        if capture_position >= COLLECTION_CAPTURE_COUNT:
-            captures.append(CollectionCaptureScan(
-                input_index=input_index,
-                accepted=False,
-                global_rows=(),
-                source_size=result.source_size,
-                scan_size=result.scan_size,
-                warnings=("unexpected_extra_capture",),
-            ))
-            continue
-        if not _capture_matches_catalog_position(
-            image, result, capture_position
-        ):
-            captures.append(CollectionCaptureScan(
-                input_index=input_index,
-                accepted=False,
-                global_rows=(),
-                source_size=result.source_size,
-                scan_size=result.scan_size,
-                warnings=("capture_sequence_mismatch",),
+                assigned_page_number=capture_position + 1,
             ))
             continue
 
@@ -1202,18 +1556,46 @@ def scan_collection_screenshots(image_items: object) -> CollectionScanDraft:
             captures.append(CollectionCaptureScan(
                 input_index=input_index,
                 accepted=False,
-                global_rows=(),
+                global_rows=global_rows,
                 source_size=result.source_size,
                 scan_size=result.scan_size,
                 warnings=("artwork_identity_mismatch",),
+                assigned_page_number=capture_position + 1,
                 mismatched_card_ids=mismatched_card_ids,
             ))
             continue
 
-        global_rows = (
-            capture_position * 2 + 1,
-            capture_position * 2 + 2,
-        )
+        incoming = _page_cards(capture_position, input_index, result)
+        if capture_position in present_positions():
+            resolved_ids, conflicting_ids = _merge_duplicate_page(
+                mapped,
+                incoming,
+            )
+            duplicate_ignored = duplicate_ignored or (
+                not resolved_ids and not conflicting_ids
+            )
+            duplicate_merged = duplicate_merged or bool(resolved_ids)
+            duplicate_conflict = duplicate_conflict or bool(conflicting_ids)
+            if conflicting_ids:
+                disposition = "conflicting_duplicate_page"
+            elif resolved_ids:
+                disposition = "duplicate_page_merged"
+            else:
+                disposition = "duplicate_page_ignored"
+            captures.append(CollectionCaptureScan(
+                input_index=input_index,
+                accepted=False,
+                global_rows=global_rows,
+                source_size=result.source_size,
+                scan_size=result.scan_size,
+                warnings=(disposition,),
+                assigned_page_number=capture_position + 1,
+                conflicting_card_ids=conflicting_ids,
+            ))
+            continue
+
+        mapped.update(incoming)
+        new_page_positions.add(capture_position)
         captures.append(CollectionCaptureScan(
             input_index=input_index,
             accepted=True,
@@ -1221,32 +1603,9 @@ def scan_collection_screenshots(image_items: object) -> CollectionScanDraft:
             source_size=result.source_size,
             scan_size=result.scan_size,
             warnings=("catalog_position_and_artwork_validated",),
+            assigned_page_number=capture_position + 1,
         ))
-        accepted.append((capture_position, input_index, image, result))
-        fingerprints.append(fingerprint)
         row_fingerprints.extend(candidate_row_fingerprints)
-
-    mapped: dict[int, DraftCardScan] = {}
-    for capture_position, source_index, _image, result in accepted:
-        for local_row, row in enumerate(result.rows):
-            global_row = capture_position * 2 + local_row + 1
-            for slot in row.slots:
-                catalog_index = (
-                    (global_row - 1) * COLLECTION_COLUMNS + slot.column
-                )
-                card = CARDS[catalog_index - 1]
-                mapped[catalog_index] = DraftCardScan(
-                    card_id=card.id,
-                    card_name=card.name,
-                    category_id=card.category,
-                    catalog_index=catalog_index,
-                    global_row=global_row,
-                    column=slot.column,
-                    state=slot.state,
-                    confidence=slot.confidence,
-                    source_index=source_index,
-                    warnings=slot.warnings,
-                )
 
     cards = tuple(
         mapped.get(index) or _empty_draft_card(
@@ -1299,19 +1658,46 @@ def scan_collection_screenshots(image_items: object) -> CollectionScanDraft:
         "experimental_review_draft",
         "human_confirmation_required",
     ]
+    if had_prior and prior_valid:
+        warnings_found.append("prior_scan_checkpoint_merged")
+    if had_prior and not prior_valid:
+        warnings_found.append("invalid_prior_scan_checkpoint")
     if too_many:
         warnings_found.append("too_many_collection_inputs")
     if duplicate_ignored:
-        warnings_found.append("duplicate_capture_ignored")
+        warnings_found.append("duplicate_page_ignored")
+    if duplicate_merged:
+        warnings_found.append("duplicate_page_merged")
+    if duplicate_conflict:
+        warnings_found.append("conflicting_duplicate_page")
     if overlap_ignored:
         warnings_found.append("overlapping_capture_rows")
+    if unrecognized_capture:
+        warnings_found.append("capture_page_unrecognized")
+    if ambiguous_capture:
+        warnings_found.append("capture_page_ambiguous")
     if artwork_mismatch_ids:
         warnings_found.append("artwork_identity_mismatch")
-    accepted_positions = {position for position, *_rest in accepted}
+    accepted_positions = present_positions()
+    accepted_page_numbers = tuple(
+        position + 1 for position in sorted(accepted_positions)
+    )
+    missing_page_numbers = tuple(
+        position + 1
+        for position in range(COLLECTION_CAPTURE_COUNT)
+        if position not in accepted_positions
+    )
+    missing_global_rows = tuple(
+        row
+        for page_number in missing_page_numbers
+        for row in (page_number * 2 - 1, page_number * 2)
+    )
     if accepted_positions != set(range(COLLECTION_CAPTURE_COUNT)):
         warnings_found.append("incomplete_capture_set")
     else:
-        warnings_found.append("capture_sequence_validated")
+        warnings_found.append("collection_pages_validated")
+    if payloads and not new_page_positions:
+        warnings_found.append("no_new_collection_pages")
     if unknown_card_ids:
         warnings_found.append("unknown_states_require_review")
     if duplicate_unverified_card_ids:
@@ -1322,6 +1708,9 @@ def scan_collection_screenshots(image_items: object) -> CollectionScanDraft:
         cards=cards,
         categories=tuple(categories),
         captures=tuple(captures),
+        accepted_page_numbers=accepted_page_numbers,
+        missing_page_numbers=missing_page_numbers,
+        missing_global_rows=missing_global_rows,
         recognized_count=len(cards) - len(unknown_card_ids),
         missing_count=sum(card.state == MISSING for card in cards),
         owned_count=sum(card.state == OWNED for card in cards),

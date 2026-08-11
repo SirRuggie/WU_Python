@@ -64,21 +64,32 @@ This is necessary because the shared component dispatcher does not enforce its
 
 `CARDS_GUILD_ID` is the Card Hub's authority boundary. The command and every
 component interaction are accepted only when their Discord guild id matches
-that configured server id. DMs, other servers, and a missing or invalid
+that configured server id. A narrow exception allows buttons in a private DM
+only when they carry a live, account-bound scan session that was created from
+the configured server. Other servers, unrelated DMs, and a missing or invalid
 `CARDS_GUILD_ID` fail closed before collection or trade data is created or
-changed. Accepted responses remain ephemeral.
+changed. Server responses remain ephemeral.
 
-Screenshot import is the primary setup path. The same bare `/cards` command has
-five optional attachment fields named `page-1` through `page-5`. With no
-attachments it opens the normal dashboard. With attachments it requires all
-five ordered captures: two card rows per image, moving from the top of the
-collection to the bottom. The response and review stay ephemeral. Image bytes
-are discarded immediately after the CPU-bound scan; only a 20-minute private
-draft of card ids, states, confidence, and warnings is stored.
+Screenshot import is the primary setup path. The bare `/cards` command has no
+attachment fields. A member first chooses the Clash account, then taps **Scan
+screenshots**. The bot opens a 20-minute account-bound DM session where the
+member selects every screenshot once in Discord's normal composer and sends
+them together. One to ten PNG, JPEG, or still WebP images are accepted per
+message, in any order. Five clean captures with two complete card rows each
+normally cover the collection.
+
+The scanner assigns every valid image to its logical section. If coverage is
+incomplete, the DM reports the exact missing row range and its first/last card
+names. The member sends only those missing images; already accepted sections
+are restored from a BSON-safe checkpoint, so no raw screenshot has to be kept
+between messages. Duplicate images are ignored without asking for a needless
+retake. Image bytes are cleared immediately after each CPU-bound scan. Only the
+derived checkpoint, card ids, states, confidence, and warnings live in the
+short-lived session.
 
 The scanner validates the fixed category-frame pattern, six-column geometry,
-page order, distinct captures, repeated-row overlap, and a compact artwork
-fingerprint for every expected card before binding the ten visible rows to the
+logical page assignment, distinct captures, repeated-row overlap, and a compact
+artwork fingerprint for every expected card before binding the ten visible rows to the
 canonical 60-card catalog. A catalog change or unexpected artwork therefore
 fails closed instead of shifting card identities. Missing portraits are
 detected from the grayscale artwork. Badge recognition has not yet been
@@ -86,44 +97,51 @@ validated broadly enough across devices and `xN` variants to authorize trade
 supply. Neither a possible yellow badge nor a badge covered by the reward track
 is therefore promoted automatically. The safe minimum is **owned once**, and
 those card ids are highlighted for quick duplicate correction. An unreadable
-portrait, missing page, wrong order, or incomplete coverage blocks confirmation
-instead of defaulting an unknown card to owned.
+portrait, unmatched capture, missing page, or incomplete coverage blocks
+confirmation instead of defaulting an unknown card to owned.
 
-Nothing is written automatically. The member chooses the linked player tag
-when necessary, reviews the complete missing and duplicate summaries, and can
-correct an identity-bound uncertain card with one tap before explicitly saving
-the draft. The review also supports changing the selected account and saving
-straight into the manual editor. Confirmation rechecks every linked profile,
-Discord ownership, guild scope, inventory revision, and exact-card trade
-reservations, then replaces all 60 states in one conditional inventory update.
-Discord necessarily receives the command attachments; the bot drops the raw
-image bytes after scanning and stores only the private derived draft for up to
-20 minutes.
+Nothing is written automatically. The upload is already bound to the linked
+player tag selected before the DM opens. The member reviews the visual board
+and its missing/duplicate counts, and can correct an identity-bound uncertain
+card with one tap before explicitly saving the draft. Confirmation rechecks
+the selected linked profile, Discord ownership, the session's configured-guild
+fence, inventory revision, and exact-card trade reservations, then replaces all
+60 states in one conditional inventory update. A temporary failure loading a
+different linked account does not block the already selected account's draft.
+Discord necessarily receives the DM attachments; the bot drops the raw image
+bytes after scanning and stores only the private derived draft for up to 20
+minutes.
 
-The category editor remains the manual fallback and the lightweight update
-path after packs or out-of-band trades. Every unselected card in a category
-defaults to one copy, so the member records only exceptions. For a new category,
-the member must explicitly review both of these lists:
+The dashboard and full Review page render one six-column visual board in the
+game's canonical order. Missing, owned, duplicate, possible-spare, and unknown
+states are visible on the card art rather than requiring members to interpret
+four text-only category lists. First renders run off the gateway event loop;
+identical boards use the renderer's bounded cache.
 
-1. every card that is missing;
-2. every card with at least one spare.
+After setup, **Quick update** is the normal pack/trade path. Its four actions
+are **Found missing card**, **Got a spare**, **Used/traded spare**, and **Mark
+missing**. Each opens one card-name field immediately, then performs exact or
+typo-tolerant lookup and shows the resolved card before saving. The confirmed
+write changes only that card, checks its exact reservation, and uses the
+inventory revision as a compare-and-swap guard. An accepted swap on another
+card does not block the update; a stale confirmation never overwrites newer
+collection data.
 
-Submitting one list saves it immediately and records that step, but does not
-complete the category. The update overview shows **Continue** until the second
-list has also been reviewed. Separate **No missing cards** and **No duplicate
-cards** buttons safely clear an empty list; “None” is not mixed into either
-multi-select. A **No missing or spares** shortcut handles a completely empty new
-category in one tap; after either list has exceptions, the two explicit clear
-buttons finish only the remaining list without erasing what was already saved.
-Only after both review steps are recorded is the category added to
-`complete_categories` and allowed to contribute needs or spares to matching.
-Category writes use an inventory revision compare-and-swap with bounded retry,
-so simultaneous missing/duplicate submissions from separate bot processes are
-merged from the latest state instead of one silently replacing the other.
+When a screenshot proves ownership but hides the duplicate badge, the member
+gets one global **Check possible spares** list instead of being sent through
+Elixir/Dark Elixir/Builder Base/Super Troop menus. Up to 25 uncertain badges
+are reviewed together: selected cards become duplicates and the rest remain
+owned once. Larger sets continue with the next batch. The review begins
+directly in the account-bound DM after scan confirmation and can also be
+resumed from Quick update. Both paths recheck ownership, guild/session scope,
+revision, and each affected card reservation.
 
-After setup, a member can revisit only the affected category after opening a
-pack or making an out-of-band trade. **Everything still accurate** refreshes
-the collection confirmation time without re-entering its lists.
+The category editor remains under **Advanced full editor** for first-time
+manual setup or a deliberate full-category rebuild. Every unselected card in a
+category defaults to one copy, so the member records only missing/duplicate
+exceptions. A category becomes matchable only after both lists have been
+reviewed. Category writes retain their bounded revision compare-and-swap retry.
+**Everything still accurate** refreshes confirmation without re-entering data.
 
 ## Family board, matching, and freshness
 
@@ -184,7 +202,10 @@ the requested card, the proposed card to give, and the other compatible
 duplicates the requester has that the holder needs.
 
 The proposal is published to the configured `CARDS_CHANNEL_ID` trade-board
-channel and sent to the holder by best-effort DM. A typical alert is: “Shaun
+channel and sent to the holder by best-effort DM. Both initial deliveries carry
+a compact visual strip with the wanted card, offered card, and up to three
+other compatible offers; the full text remains the accessible fallback. A
+typical alert is: “Shaun
 needs your duplicate Root Rider. Shaun has Wizard and Dragon duplicates that
 you need. You are currently in different family clans.” The alert directs both
 players to **My trades** for the durable status and actions. Every follow-up DM
@@ -263,9 +284,24 @@ explicit identities and states, and adds the human confirmation plus database
 concurrency checks described above.
 
 This is a guided still-image importer, not arbitrary computer vision. Members
-must provide the five ordered two-row captures. Photos, arbitrary crops, video,
-missing rows, and layouts whose category colors or geometry do not match fail
-closed. The checked-in tests use synthetic fixtures; the supplied live 1280×591
-capture set is a separate manual calibration oracle and is not retained in the
-repository. Additional device and recompression samples should expand that
-oracle over time without weakening the unknown-state checks.
+must provide two-row collection captures, but their input order does not
+matter. Photos, arbitrary crops, video, and layouts whose category colors or
+geometry do not match fail closed. Missing sections remain resumable inside the
+private session instead of being guessed. The checked-in tests use synthetic
+fixtures; the supplied live 1280×591 capture set is a separate manual
+calibration oracle and is not retained in the repository. Additional device
+and recompression samples should expand that oracle over time without weakening
+the unknown-state checks.
+
+Discord's October 2025 File Upload modal component would also accept up to ten
+files, but the installed hikari 2.3.5 / lightbulb 3.0.3 stack cannot build or
+deserialize the required Label (type 18) and File Upload (type 19) components.
+The normal DM composer is therefore the supported one-selection upload surface.
+`DM_MESSAGES` is a standard gateway intent and is enabled so the bot receives
+only DMs relevant to an existing short-lived session.
+
+Sources checked on 2026-08-10:
+
+- <https://docs.discord.com/developers/components/reference>
+- <https://docs.discord.com/developers/events/gateway>
+- <https://docs.hikari-py.dev/en/stable/reference/hikari/events/message_events/>
