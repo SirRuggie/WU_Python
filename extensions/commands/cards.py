@@ -70,6 +70,7 @@ from utils.cards import (
     reciprocal_trade_error,
 )
 from utils.component_state import delete_state, get_state, insert_state, update_state
+from utils import troop_emoji
 from utils.emoji import emojis
 from utils.constants import GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
@@ -1920,7 +1921,12 @@ def _dashboard(
     )
 
     scan_is_primary = not all_complete
+    # The "More" panel is gone. It was eight ungrouped grey buttons that mixed
+    # navigation with mutation and carried no information of its own, so every
+    # action lives here and the two link buttons became masked links in the
+    # footer, which cost zero component nodes.
     body.extend([
+        Separator(divider=False),
         ActionRow(components=[
             Button(
                 style=(
@@ -1932,7 +1938,7 @@ def _dashboard(
                 label="Scan screenshots",
             ),
             Button(
-                style=hikari.ButtonStyle.SECONDARY,
+                style=hikari.ButtonStyle.PRIMARY,
                 custom_id=f"cards_matches:{tag}",
                 label="Find trades",
                 is_disabled=not inventory_is_matchable(inventory),
@@ -1947,15 +1953,42 @@ def _dashboard(
                 custom_id=f"cards_family:{tag}",
                 label="Who has what",
             ),
+        ]),
+        ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_more:{tag}",
-                label="More",
+                custom_id=f"cards_review:{tag}",
+                label="Full board",
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_advanced:{tag}",
+                label="Bulk edit",
+            ),
+            Button(
+                style=(
+                    hikari.ButtonStyle.SUCCESS
+                    if all_complete
+                    else hikari.ButtonStyle.SECONDARY
+                ),
+                custom_id=f"cards_confirm:{tag}",
+                label="Still accurate",
+                is_disabled=not complete,
+            ),
+            *(
+                [Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id="cards_account_page:0",
+                    label="Switch account",
+                )]
+                if account_count > 1
+                else []
             ),
         ]),
         Text(content=(
-            f"-# {age.title()} · A spare means 2+ copies. "
-            "Pick any card from a menu to change it."
+            f"-# {age.title()} · a spare means 2 or more copies · "
+            f"[Open in game]({COLLECTION_LINK}) · "
+            f"[Global Card Chat]({GLOBAL_CHAT_LINK})"
         )),
     ])
     return [Container(components=body)]
@@ -2503,57 +2536,6 @@ def _editor_search_choices(
         ),
     ]))
     return [Container(components=body)]
-
-
-def _more_panel(account, inventory: dict, *, account_count: int) -> list[Container]:
-    tag = _normalize_tag(account.tag)
-    complete = bool(inventory.get("complete_categories"))
-    actions = [
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_scan_start:{tag}",
-            label="Scan screenshots",
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_review:{tag}",
-            label="Full board",
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_advanced:{tag}",
-            label="Advanced manual editor",
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_confirm:{tag}",
-            label="Everything accurate",
-            is_disabled=not complete,
-        ),
-    ]
-    navigation = []
-    if account_count > 1:
-        navigation.append(Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id="cards_account_page:0",
-            label="Switch account",
-        ))
-    navigation.extend([
-        LinkButton(url=COLLECTION_LINK, label="Open in game"),
-        LinkButton(url=GLOBAL_CHAT_LINK, label="Global Card Chat"),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_dashboard:{tag}",
-            label="Back",
-        ),
-    ])
-    return [Container(components=[
-        Text(content=(
-            f"# More\n**{_escape_markdown(account.name)}** · `{tag}`"
-        )),
-        ActionRow(components=actions),
-        ActionRow(components=navigation),
-    ])]
 
 
 def _quick_transition_problem(inventory: dict, card_id: str, mode: str) -> str | None:
@@ -7255,28 +7237,6 @@ async def cards_dashboard(
     )
 
 
-@register_action("cards_more")
-@lightbulb.di.with_di
-async def cards_more(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    account, inventory, problem = await _load_target(
-        ctx, action_id, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    data = await load_accounts(coc_client, int(ctx.user.id))
-    return _more_panel(
-        account,
-        inventory,
-        account_count=len(_loaded_entries(data)),
-    )
-
-
 @register_action("cards_editor")
 @lightbulb.di.with_di
 async def cards_editor(
@@ -8221,6 +8181,42 @@ async def cards_matches(
     return _matches_view(account, available, find_matches(available, candidates))
 
 
+FAMILY_BULLET_LIMIT = 8
+
+
+def _card_bullets(entries, detail) -> str:
+    """Bullets grouped by category, each led by its troop emoji.
+
+    Replaces comma-joined runs of card names, which on a phone wrapped into an
+    unreadable paragraph. Grouping matters because a trade can never cross a
+    category, so the heading is what tells a member whether a card is even
+    reachable for them.
+    """
+    by_category: dict[str, list] = {}
+    for card, entry in entries:
+        by_category.setdefault(card.category, []).append((card, entry))
+
+    blocks: list[str] = []
+    for category in CATEGORIES:
+        rows = by_category.get(category.id)
+        if not rows:
+            continue
+        lines = [f"{category.emoji} **{category.short_name}**"]
+        for card, entry in rows[:FAMILY_BULLET_LIMIT]:
+            # markup() returns "" for an un-synced troop and never raises, so a
+            # missing emoji costs a space rather than the whole panel.
+            icon = troop_emoji.markup(card.id)
+            lead = f"{icon} " if icon else ""
+            lines.append(
+                f"- {lead}**{_escape_markdown(card.name)}** "
+                f"-# {detail(entry)}"
+            )
+        if len(rows) > FAMILY_BULLET_LIMIT:
+            lines.append(f"-# and {len(rows) - FAMILY_BULLET_LIMIT} more")
+        blocks.append("\n".join(lines))
+    return "\n".join(blocks)
+
+
 def _family_board(
     account,
     inventory: dict,
@@ -8258,40 +8254,32 @@ def _family_board(
     ]
 
     if gettable:
-        lines = [
-            f"**{_escape_markdown(card.name)}** · "
-            f"{entry.spare_count} can spare · "
-            f"{entry.demand} still need it"
-            for card, entry in gettable[:12]
-        ]
-        if len(gettable) > 12:
-            lines.append(f"-# and {len(gettable) - 12} more")
         body.extend([
             Separator(divider=True),
-            Text(content="### You can get\n" + "\n".join(lines)),
+            Text(content="### You can get\n" + _card_bullets(
+                gettable,
+                lambda entry: (
+                    f"{entry.spare_count} can spare · "
+                    f"{entry.demand} still need it"
+                ),
+            )),
         ])
 
     if offering:
-        lines = [
-            f"**{_escape_markdown(card.name)}** · "
-            f"{entry.demand} need your spare"
-            for card, entry in offering[:12]
-        ]
-        if len(offering) > 12:
-            lines.append(f"-# and {len(offering) - 12} more")
         body.extend([
             Separator(divider=True),
-            Text(content="### Others want from you\n" + "\n".join(lines)),
+            Text(content="### Others want from you\n" + _card_bullets(
+                offering,
+                lambda entry: f"{entry.demand} need your spare",
+            )),
         ])
 
     if unavailable:
         body.extend([
             Separator(divider=True),
             Text(content=(
-                f"### Nobody has a spare yet ({len(unavailable)})\n"
-                + ", ".join(
-                    _escape_markdown(card.name) for card, _ in unavailable[:15]
-                )
+                f"### Nobody has a spare yet\n"
+                + _card_bullets(unavailable, lambda _entry: "no holder yet")
             )),
         ])
 

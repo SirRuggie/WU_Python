@@ -2359,7 +2359,7 @@ def test_dashboard_keeps_my_trades_enabled_before_category_setup():
     assert button.get("disabled", False) is False
 
 
-def test_dashboard_leads_with_the_board_and_one_primary_action_at_most():
+def test_dashboard_leads_with_the_board_and_carries_every_action():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -2378,9 +2378,10 @@ def test_dashboard_leads_with_the_board_and_one_primary_action_at_most():
     for view in views:
         nodes = _view_nodes(view)
         buttons = [node for node in nodes if node.get("type") == 2]
-        primary = [node for node in buttons if node.get("style") == 1]
-        assert len(buttons) <= 6
-        assert len(primary) <= 1
+        # Two rows now, because the More router was dissolved into the board.
+        assert len(buttons) <= 9
+        rows = [node for node in nodes if node.get("type") == 1]
+        assert len(rows) <= 6
         # The collection board is the landing surface, not an optional extra.
         assert any(node.get("type") == 12 for node in nodes)
         _assert_discord_payload(view)
@@ -2395,12 +2396,16 @@ def test_dashboard_leads_with_the_board_and_one_primary_action_at_most():
         "cards_matches:#ME",
         "cards_trades:#ME",
         "cards_family:#ME",
-        "cards_more:#ME",
+        "cards_review:#ME",
+        "cards_advanced:#ME",
+        "cards_confirm:#ME",
         "cards_pick:#ME|elixir",
         "cards_pick:#ME|dark_elixir",
         "cards_pick:#ME|builder_base",
         "cards_pick:#ME|super_troop",
     }
+    # The junk-drawer router is gone entirely.
+    assert "cards_more:#ME" not in custom_ids
 
 
 def test_landing_reaches_every_card_in_one_interaction():
@@ -2671,25 +2676,25 @@ def test_card_editor_shows_accessible_card_tiles_and_valid_copy_controls(
     _assert_discord_payload(view)
 
 
-def test_more_panel_links_directly_to_global_card_chat():
+def test_global_card_chat_is_reachable_as_a_masked_link():
+    """The link buttons became masked links, which cost zero component nodes."""
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
-    view = cards_command._more_panel(
+    view = cards_command._dashboard(
         account, _complete_inventory(), account_count=1
     )
-    links = [
-        node
-        for node in _view_nodes(view)
-        if node.get("label") == "Global Card Chat"
-    ]
+    text = _view_text(view)
 
-    assert len(links) == 1
-    assert links[0]["style"] == cards_command.hikari.ButtonStyle.LINK
-    assert links[0]["url"] == cards_command.GLOBAL_CHAT_LINK
-    assert "OpenGlobalChat" in links[0]["url"]
-    assert "chatId=" in links[0]["url"]
+    assert f"[Global Card Chat]({cards_command.GLOBAL_CHAT_LINK})" in text
+    assert f"[Open in game]({cards_command.COLLECTION_LINK})" in text
+    assert "OpenGlobalChat" in cards_command.GLOBAL_CHAT_LINK
+    # No LINK-style buttons remain on the dashboard.
+    assert not [
+        node for node in _view_nodes(view)
+        if node.get("style") == cards_command.hikari.ButtonStyle.LINK
+    ]
     _assert_discord_payload(view)
 
 
@@ -2853,7 +2858,7 @@ def test_possible_spare_editor_missing_saves_only_that_card_and_advances(
     _assert_discord_payload(view)
 
 
-def test_card_editor_and_more_handlers_route_to_the_requested_account(monkeypatch):
+def test_card_editor_handler_routes_to_the_requested_account(monkeypatch):
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -2875,28 +2880,9 @@ def test_card_editor_and_more_handlers_route_to_the_requested_account(monkeypatc
     editor = asyncio.run(cards_command.cards_editor(
         ctx, "#ME|wizard", coc_client=SimpleNamespace(), mongo=SimpleNamespace()
     ))
-    more = asyncio.run(cards_command.cards_more(
-        ctx, "#ME", coc_client=SimpleNamespace(), mongo=SimpleNamespace()
-    ))
-
-    assert loaded_tags == ["#ME", "#ME"]
+    assert loaded_tags == ["#ME"]
     assert "## Wizard" in _view_text(editor)
-    more_nodes = _view_nodes(more)
-    assert {
-        node.get("custom_id")
-        for node in more_nodes
-        if node.get("custom_id")
-    } == {
-        "cards_scan_start:#ME",
-        "cards_review:#ME",
-        "cards_advanced:#ME",
-        "cards_confirm:#ME",
-        "cards_dashboard:#ME",
-    }
-    assert not any(
-        node.get("type") == 2 and node.get("style") == 1
-        for node in more_nodes
-    )
+    _assert_discord_payload(editor)
 
 
 def test_card_editor_search_modal_and_submit_route_to_card_choices(monkeypatch):
@@ -3413,7 +3399,7 @@ def test_cards_command_has_no_page_fields_and_opens_compact_dashboard(monkeypatc
 
     assert ctx.deferred == [True]
     assert any(
-        node.get("custom_id") == "cards_more:#ME"
+        node.get("custom_id") == "cards_review:#ME"
         for node in _view_nodes(ctx.interaction.edits[0]["components"])
     )
 
@@ -4900,3 +4886,47 @@ def test_copy_steppers_are_colour_coded():
 
     assert buttons["cards_step:#ME|wizard|-1"]["style"] == 4   # DANGER
     assert buttons["cards_step:#ME|wizard|1"]["style"] == 3    # SUCCESS
+
+
+def test_family_board_uses_grouped_bullets_not_comma_blobs():
+    from utils import troop_emoji
+
+    troop_emoji.clear()
+    troop_emoji.prime([
+        {"slug": "wizard", "emoji_id": 111111111111111111, "name": "troop_wizard"},
+    ])
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.MISSING
+    inventory["cards"]["minion"] = cards.MISSING
+    holder = _complete_inventory(tag="#H")
+    holder["cards"]["wizard"] = cards.DUPLICATE
+
+    supply = cards.family_supply([inventory, holder])
+    view = cards_command._family_board(account, inventory, supply, 1, 1)
+    text = _view_text(view)
+
+    assert "- " in text                       # bullets, not commas
+    assert "**Elixir**" in text               # grouped by category
+    assert "<:troop_wizard:111111111111111111>" in text
+    assert ", Minion," not in text
+    _assert_discord_payload(view)
+    troop_emoji.clear()
+
+
+def test_family_bullets_survive_a_troop_with_no_synced_emoji():
+    from utils import troop_emoji
+
+    troop_emoji.clear()
+    card = cards.CARD_BY_ID["wizard"]
+    entry = cards.CardSupply(
+        card_id="wizard", holders=("#H",), seekers=(), reporting=1
+    )
+
+    rendered = cards_command._card_bullets([(card, entry)], lambda e: "detail")
+
+    assert "**Wizard**" in rendered
+    assert "None" not in rendered
