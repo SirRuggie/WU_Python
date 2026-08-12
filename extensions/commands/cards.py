@@ -2408,21 +2408,20 @@ def _card_focus(
         # your count, so they were the current-value display disguised as
         # buttons. That is why the count itself appeared nowhere as a number
         # and why two rows looked like rival ways to change the same thing.
-        Text(content="**How many do you have?**"),
+        # The count is information, so it is text. It was briefly the middle
+        # button, which read as a display anyway - so the modal behind it was
+        # invisible, and tapping what looks like a readout did something
+        # unexpected. Controls look like actions; facts look like facts.
+        Text(content=(
+            "**You have 2 or more**" if unconfirmed
+            else f"**You have {state if isinstance(state, int) else 0}**"
+        )),
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.DANGER,
                 custom_id=f"cards_step:{tag}|{card.id}|-1",
                 label="-1",
                 is_disabled=reserved or not isinstance(state, int) or state <= MISSING,
-            ),
-            # The count IS the button, and tapping it opens the exact-number
-            # modal that "Type a number" used to own.
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_count:{tag}|{card.id}",
-                label=("2+" if unconfirmed else str(state if isinstance(state, int) else 0)),
-                is_disabled=reserved,
             ),
             Button(
                 style=hikari.ButtonStyle.SUCCESS,
@@ -2431,6 +2430,12 @@ def _card_focus(
                 is_disabled=reserved or (
                     isinstance(state, int) and state >= MAX_COPIES
                 ),
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_count:{tag}|{card.id}",
+                label="Type a number",
+                is_disabled=reserved,
             ),
             # Only for a spare the scanner proved exists without counting: the
             # answer is nearly always two, so it stays as a one-tap reply to

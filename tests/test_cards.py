@@ -2573,9 +2573,10 @@ def test_possible_spare_editor_missing_saves_only_that_card_and_advances(
     assert updated["scan_duplicate_unverified_card_ids"] == ["dragon"]
     assert updated["inventory_revision"] == 9
     assert "## Dragon" in _view_text(view)
+    assert "**You have 1**" in _view_text(view)
     assert any(
         node.get("custom_id") == "cards_count:#ME|dragon"
-        and node.get("label") == "1"
+        and node.get("label") == "Type a number"
         for node in _view_nodes(view)
     )
     assert len([node for node in _view_nodes(view) if "type" in node]) <= 40
@@ -4235,11 +4236,13 @@ def test_card_focus_marks_the_current_state_and_keeps_the_menu():
     count = next(
         n for n in nodes if n.get("custom_id") == "cards_count:#ME|wizard"
     )
-    # "2+" because a spare whose exact number was never confirmed is stored as
-    # the floor of two. The button says so instead of claiming a figure it
-    # does not have.
-    assert count["label"] == "2+"
-    assert count["style"] == 2, "the count is a readout, not a status colour"
+    # The count is TEXT, not a button. As the middle button it read as a
+    # display anyway, which hid the modal behind it and made tapping what
+    # looked like a readout do something unexpected.
+    assert count["label"] == "Type a number"
+    # "or more" because a spare whose exact number was never confirmed is
+    # stored as the floor of two. It says so rather than claim a figure.
+    assert "**You have 2 or more**" in _view_text(view)
     assert any(
         str(n.get("label")) == "Set to 2" for n in nodes
     ), "an unconfirmed spare keeps its one-tap answer"
