@@ -5987,3 +5987,64 @@ def test_find_trades_keeps_the_control_count_low():
     text = _view_text(view)
     assert "Pick a card from the menu below" in text
     assert text.index("Pick a card") < text.index("collection")
+
+
+def test_no_screen_overflows_with_a_hundred_family_members():
+    """Discord rejects the WHOLE message past 40 components, not the extras.
+
+    hikari does not catch it locally, so an overflow only ever shows up in
+    production, on the panel belonging to whoever has the most matches.
+    """
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#H",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    # Missing 59 of 60 cards, one spare, and everybody holds everything.
+    inventory = _complete_inventory()
+    for card in cards.CARDS[1:]:
+        inventory["cards"][card.id] = cards.MISSING
+    inventory["cards"][cards.CARDS[0].id] = cards.DUPLICATE
+    holders = [{
+        "_id": f"#H{index}",
+        # Long names, because they widen the text but not the component count.
+        "player_name": "Holder" * 8,
+        "discord_id": index,
+        "clan_tag": "#H", "clan_name": "Morning Woods",
+        "cards": dict(
+            {card.id: cards.DUPLICATE for card in cards.CARDS},
+            **{cards.CARDS[0].id: cards.MISSING},
+        ),
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    } for index in range(100)]
+    matches = cards.find_matches(inventory, holders)
+    supply = cards.family_supply([inventory, *holders])
+
+    def used(view):
+        payload = [component.build() for component in view]
+        return len([n for n in _walk_payload(payload) if "type" in n])
+
+    screens = {
+        "find trades": cards_command._matches_view(
+            account, inventory, matches, supply=supply,
+            achievable=cards_command._achievable_from_matches(matches, "#ME"),
+        ),
+        "ask for help": cards_command._favours_view(account, matches),
+        "spares in demand": cards_command._demand_view(
+            account, inventory, supply
+        ),
+        "who has": cards_command._holders_view(
+            account, cards.CARDS[1].id,
+            cards.holders_for_card(inventory, holders, cards.CARDS[1].id),
+        ),
+    }
+    for name, view in screens.items():
+        # Headroom, not just "fits": a screen at 39 breaks on the next edit.
+        assert used(view) <= 36, f"{name} is at {used(view)}/40"
+        _assert_discord_payload(view)
+
+    # And no menu can exceed Discord's 25 options.
+    for name, view in screens.items():
+        for node in _view_nodes(view):
+            if node.get("type") == 3:
+                assert len(node["options"]) <= 25, name

@@ -97,7 +97,11 @@ _log = logging.getLogger(__name__)
 
 ACCOUNT_PAGE_SIZE = 25
 MATCH_RESULT_LIMIT = 10
-HOLDER_RESULT_LIMIT = 6
+# Five, not six. Each holder costs four components (Section + Text +
+# Button + Separator), and six put a full page at 38 of Discord's 40 -
+# two away from the whole message being rejected, with no room for
+# anything to be added later.
+HOLDER_RESULT_LIMIT = 5
 TRADE_VIEW_LIMIT = 5
 MAX_OPEN_PROPOSALS_PER_ACCOUNT = 25
 COMMITTED_TRADE_FETCH_LIMIT = 100
