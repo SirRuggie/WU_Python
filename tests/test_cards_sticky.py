@@ -1,4 +1,5 @@
 import asyncio
+import pathlib
 from types import SimpleNamespace
 
 import hikari
@@ -492,3 +493,40 @@ def test_the_help_button_never_edits_the_sticky_itself():
 
     action = _resolve("cards_help")
     assert action.no_return is True
+
+
+def test_the_fingerprint_notices_more_than_words(monkeypatch):
+    """A text-only fingerprint would strand a picture or a button change.
+
+    The notice only edits itself when its fingerprint moves. Adding the banner
+    changed no text, so a words-only key would have left the live message
+    without it indefinitely.
+    """
+    baseline = sticky._content_key()
+
+    original = sticky._sticky_components
+
+    def without_banner():
+        containers = original()
+        for container in containers:
+            container._components = [
+                node for node in container.components
+                if not hasattr(node, "items")
+            ]
+        return containers
+
+    monkeypatch.setattr(sticky, "_sticky_components", without_banner)
+    assert sticky._content_key() != baseline, "an image change went unnoticed"
+
+
+def test_the_banner_is_the_first_thing_in_the_notice():
+    first = sticky._sticky_components()[0].components[0]
+    assert hasattr(first, "items"), "the banner is not at the top"
+    assert str(first.items[0].media).endswith(".jpg")
+
+
+def test_the_banner_file_is_small_enough_to_repost_all_day():
+    """It is re-uploaded on every repost, so the original 1.8MB was wasteful."""
+    banner = pathlib.Path(sticky.STICKY_BANNER)
+    assert banner.exists(), sticky.STICKY_BANNER
+    assert banner.stat().st_size < 400_000, banner.stat().st_size

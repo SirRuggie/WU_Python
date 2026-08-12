@@ -16,6 +16,8 @@ import lightbulb
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
     InteractiveButtonBuilder as Button,  # noqa: F401 - kept for future controls
     LinkButtonBuilder as LinkButton,
     MessageActionRowBuilder as ActionRow,
@@ -38,6 +40,10 @@ REPOST_INTERVAL_MINUTES = 10
 CONFIG_ID = "cards_sticky_message"
 
 COLLECTION_LINK = "https://link.clashofclans.com/en/?action=OpenCollection"
+
+# Re-uploaded on every repost, so it is stored at the size Discord actually
+# renders rather than the 1536px original: 157KB instead of 1.8MB.
+STICKY_BANNER = "assets/cards/sticky_banner.jpg"
 
 # Who to ask about the command. Rendered as a mention so it is tappable, but
 # posted with user_mentions=False: this message reposts all day, and a real
@@ -90,6 +96,10 @@ def _sticky_components() -> list[Container]:
     return [Container(
         accent_color=BLUE_ACCENT,
         components=[
+            # Full width, above everything. An emoji cannot carry this art at
+            # 22px, and the notice is the one place in the whole command where
+            # the vertical space is worth spending.
+            Media(items=[MediaItem(media=STICKY_BANNER)]),
             Text(content=(
                 "## 🃏 Clash of Cards\n"
                 "Find family members who have the card you need, and trade "
@@ -234,13 +244,25 @@ def _content_key() -> str:
     newest message, so the burial check returned early and the old wording sat
     there until somebody happened to talk.
     """
-    text = "\x00".join(
-        node.content
-        for container in _sticky_components()
-        for node in container.components
-        if hasattr(node, "content")
-    )
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    parts: list[str] = []
+    for container in _sticky_components():
+        for node in container.components:
+            if hasattr(node, "content"):
+                parts.append(str(node.content))
+                continue
+            # Not only the words. Adding the banner changed no text at all, so
+            # a text-only fingerprint would have left the live notice without
+            # it for ever - the burial check would keep returning early and
+            # nothing would ever trigger the edit.
+            for item in getattr(node, "items", ()) or ():
+                parts.append(f"media:{getattr(item, 'media', '')}")
+            for child in getattr(node, "components", ()) or ():
+                parts.append(
+                    f"control:{getattr(child, 'custom_id', '')}"
+                    f"|{getattr(child, 'label', '')}"
+                    f"|{getattr(child, 'url', '')}"
+                )
+    return hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
 async def _rewrite_in_place(
