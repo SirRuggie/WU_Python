@@ -4416,6 +4416,10 @@ async def _accept_trade_reservation(
             "accepted_at": now,
             "accepted_by": int(user_id),
             "updated_at": now,
+            # Nothing starts the confirm clock until somebody confirms, so an
+            # agreed swap both players abandon would hold their cards forever.
+            # This is the only thing that can end that state.
+            "backstop_at": now + SWAP_BACKSTOP_FOR,
         }},
     )
     if not getattr(started, "modified_count", 0):
@@ -4584,6 +4588,7 @@ async def _accept_trade_reservation(
     )
     if getattr(result, "modified_count", 0):
         await _release_proposal_slots(mongo, trade)
+        await _answered_a_request(mongo, trade.get("holder_tag"))
         return "accepted", status
     current = await mongo.card_trades.find_one({"_id": trade["_id"]})
     owner = _reservation_owner(trade)
@@ -4717,6 +4722,9 @@ async def _create_trade_request(
         "compatible_card_ids": compatible_card_ids,
         "created_at": now,
         "updated_at": now,
+        # Read by the deadline sweeper. Absolute, so a restart resumes and
+        # a bot that was down processes everything overdue on the next pass.
+        "accept_deadline_at": now + SWAP_ACCEPT_FOR,
     }
     trade["open_proposal_key"] = _open_proposal_key(trade)
     duplicate = await mongo.card_trades.find_one({
@@ -5660,7 +5668,9 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
 
 
 SWAP_ACCEPT_FOR = timedelta(hours=12)
-SWAP_CONFIRM_FOR = timedelta(hours=24)
+# Seven days, not one. A player who has agreed a swap may not open the game
+# for days, and taking their card away after 24 hours punishes that.
+SWAP_CONFIRM_FOR = timedelta(days=7)
 # Nothing starts the 24 hour clock until somebody confirms, so a trade both
 # players abandon would hold their cards for ever. This is the only thing that
 # can end that state.
@@ -9549,6 +9559,22 @@ async def cards_swap_dead(
     )
 
 
+async def _answered_a_request(mongo: MongoClient, tag: object) -> None:
+    """Clear the ignored-request counter, because they just answered one.
+
+    This is what makes the count CONSECUTIVE rather than lifetime. Without it,
+    somebody who trades happily for a month and misses one request at each end
+    would be asked whether they are still trading.
+    """
+    try:
+        await mongo.card_inventories.update_one(
+            {"_id": _normalize_tag(tag)},
+            {"$set": {"ignored_requests": 0, "checkin_sent_at": None}},
+        )
+    except Exception:
+        _log.info("ignored-request reset failed tag=%s", tag)
+
+
 @register_action("cards_trading_on")
 @lightbulb.di.with_di
 async def cards_trading_on(
@@ -9700,6 +9726,7 @@ async def cards_trade_decline(
     if not getattr(result, "modified_count", 0):
         return _notice("Trade is no longer pending", "Reopen **My trades**.")
     await _release_proposal_slots(mongo, trade)
+    await _answered_a_request(mongo, trade.get("holder_tag"))
     trade["status"] = "declined"
     dm_sent, _channel_updated = await asyncio.gather(
         _notify_trade_status(
