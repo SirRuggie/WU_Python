@@ -2103,11 +2103,10 @@ def _dashboard(
         Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_advanced:{tag}",
-            # The alternative to scanning, and named as setup rather than as a
-            # quick edit. "Enter by hand" promised a fast single-card fix and
-            # then opened a category-by-category walkthrough; the fast fix is
-            # the dropdowns above, which the instruction line already names.
-            label="Set up by hand",
+            # It edits a whole category in one pass, which is what bulk editing
+            # is. The single-card fast path is the dropdowns above, which the
+            # instruction line names, so this does not have to be one too.
+            label="Bulk edit",
             emoji=_safe_partial(emojis.edit),
         ),
     ]))
