@@ -111,6 +111,7 @@ class Emojis:
         self.next_page = EmojiType("<:nextPage:1536793616004022403>")
         self.previous_page = EmojiType("<:previousPage:1536793616863862784>")
         self.return_arrow = EmojiType("<:return_arrow_gray:1536796427198668911>")
+        self.home = EmojiType("<:home:1536924506147524730>")
         self.magnifier = EmojiType("<:magnifier_glass:1536797595089899540>")
         self.inbox = EmojiType("<:inbox:1536798617736847431>")
         self.switch = EmojiType("<:switch_horizontal_arrows:1536798904056815806>")

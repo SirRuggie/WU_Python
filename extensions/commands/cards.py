@@ -175,6 +175,7 @@ def category_partial(category_id: str):
 # table above rather than anything that can change between renders.
 REFRESH_EMOJI = _safe_partial(emojis.refresh)
 RETURN_EMOJI = _safe_partial(emojis.return_arrow)
+HOME_EMOJI = _safe_partial(emojis.home)
 SEARCH_EMOJI = _safe_partial(emojis.magnifier)
 CANCEL_EMOJI = _safe_partial(emojis.no)
 TRADES_EMOJI = _safe_partial(emojis.inbox)
@@ -3157,6 +3158,7 @@ def _match_list_view(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{tag}",
                 label="Back to board",
+                emoji=HOME_EMOJI,
             ),
         ]),
     ])
@@ -3525,7 +3527,7 @@ def _holders_view(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
                 label="Back to board",
-                emoji=RETURN_EMOJI,
+                emoji=HOME_EMOJI,
             ),
         ]),
         Media(items=[MediaItem(media=FOOTER)]),

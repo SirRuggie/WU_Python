@@ -5213,6 +5213,7 @@ def test_refresh_and_pagination_use_the_uploaded_control_emoji():
         (cards_command.SWITCH_EMOJI, 1536798904056815806),
         (cards_command.SORT_EMOJI, 1536804681555247144),
         (cards_command.SCAN_EMOJI, 1536807847042613398),
+        (cards_command.HOME_EMOJI, 1536924506147524730),
         (cards_command.GIVE_EMOJI, 1536827997808758866),
         (cards_command.SWAP_EMOJI, 1536828047330648074),
         (cards_command.HOT_EMOJI, 1536829240224251994),
@@ -6014,3 +6015,44 @@ def test_the_first_confirmation_starts_the_other_sides_clock():
     assert updated["status"] == "ready", "one answer does not finish a swap"
     deadline = writes[0]["$set"]["confirm_deadline_at"]
     assert deadline == now + cards_command.SWAP_CONFIRM_FOR
+
+
+def test_the_two_back_buttons_do_not_wear_the_same_mark():
+    """Two identically-marked buttons side by side read as one duplicated."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+    holders = [{
+        "_id": "#H", "player_name": "Holder", "discord_id": 7,
+        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    matches = cards.find_matches(inventory, holders)
+
+    views = [
+        cards_command._favours_view(account, matches),
+        cards_command._holders_view(
+            account, "root_rider",
+            cards.holders_for_card(inventory, holders, "root_rider"),
+        ),
+    ]
+    checked = 0
+    for view in views:
+        marks = {}
+        for node in _view_nodes(view):
+            label = str(node.get("label", ""))
+            if label in ("Back to board", "Back to Find trades"):
+                marks[label] = (node.get("emoji") or {}).get("id")
+        if len(marks) < 2:
+            continue
+        checked += 1
+        assert marks["Back to board"] == str(cards_command.HOME_EMOJI.id)
+        assert marks["Back to Find trades"] == str(
+            cards_command.RETURN_EMOJI.id
+        )
+        assert marks["Back to board"] != marks["Back to Find trades"]
+    assert checked == 2, f"only checked {checked} screens"
