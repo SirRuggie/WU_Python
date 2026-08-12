@@ -128,6 +128,8 @@ class Emojis:
         self.card_builder_base = EmojiType("<:buildervillage:1536777943710310421>")
         self.gems = EmojiType("<:gems:1537137164033331282>")
         self.balance_scale = EmojiType("<:balance_scale:1537143940480761997>")
+        self.update_collection = EmojiType("<:update_collection:1537238355517907095>")
+        self.admin_gear = EmojiType("<:admin_gear:1537238367857676310>")
 
 emojis = Emojis()
 

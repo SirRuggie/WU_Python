@@ -187,6 +187,8 @@ CANCEL_EMOJI = _safe_partial(emojis.no)
 TRADES_EMOJI = _safe_partial(emojis.inbox)
 SWITCH_EMOJI = _safe_partial(emojis.switch)
 SCAN_EMOJI = _safe_partial(emojis.scan)
+UPDATE_EMOJI = _safe_partial(emojis.update_collection)
+ADMIN_EMOJI = _safe_partial(emojis.admin_gear)
 GIVE_EMOJI = _safe_partial(emojis.card_give)
 SWAP_EMOJI = _safe_partial(emojis.card_swap)
 HOT_EMOJI = _safe_partial(emojis.card_hot)
@@ -2067,6 +2069,7 @@ def _dashboard(
         ))
     if view_row:
         body.append(ActionRow(components=view_row))
+    body.append(Separator(divider=True))
 
     # One way in, not three. This used to be four category menus, a sort
     # control, Scan screenshots and Edit counts - four routes to the same job,
@@ -2081,7 +2084,7 @@ def _dashboard(
             ),
             custom_id=f"cards_advanced:{tag}",
             label="Update collection",
-            emoji="✏️",
+            emoji=UPDATE_EMOJI,
         ),
     ]))
 
@@ -2106,6 +2109,7 @@ def _dashboard(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_admin:{tag}",
             label="Admin",
+            emoji=ADMIN_EMOJI,
         )]))
     if age != "fresh":
         body.append(Text(content=(
@@ -2603,13 +2607,18 @@ def _scan_saved_notice(account, *, pending: int = 0) -> list[Container]:
 
 
 
-def _quantity_selected(category_id: str, card_id: object) -> str:
-    """Which card the shared controller is pointed at, defaulting to the first."""
+def _quantity_selected(category_id: str, card_id: object) -> str | None:
+    """Which card the shared controller is pointed at, or None for nothing.
+
+    Returns None rather than falling back to the first card. The select menu
+    draws a default-marked option IN PLACE OF its placeholder, so "nothing
+    selected" is what lets the menu say "Choose a card to edit" - and picking
+    the first card for the member would have put a real card's number under
+    controls they had not aimed at anything.
+    """
     definitions = CATEGORY_CARDS[category_id]
     chosen = str(card_id or "")
-    if any(card.id == chosen for card in definitions):
-        return chosen
-    return definitions[0].id
+    return chosen if any(card.id == chosen for card in definitions) else None
 
 
 def _quantity_editor(
@@ -2637,7 +2646,7 @@ def _quantity_editor(
     tag = _normalize_tag(account.tag)
     definitions = CATEGORY_CARDS[category_id]
     card_id = _quantity_selected(category_id, card_id)
-    card = CARD_BY_ID[card_id]
+    card = CARD_BY_ID.get(card_id) if card_id else None
     saved_cards = normalize_cards(inventory.get("cards"))
     confirmed = _confirmed_count_ids(inventory)
     reservations = _card_reservations(inventory)
@@ -2661,10 +2670,10 @@ def _quantity_editor(
         unconfirmed = state == DUPLICATE and item.id not in confirmed
         return "2+" if unconfirmed else str(state)
 
-    state = saved_cards.get(card_id, OWNED)
+    state = saved_cards.get(card_id, OWNED) if card_id else OWNED
     if not isinstance(state, int) or isinstance(state, bool):
         state = OWNED
-    reserved = card_id in reservations
+    reserved = bool(card_id) and card_id in reservations
 
     # Completing a category is what makes it tradeable at all: find_matches
     # only pairs categories BOTH players have marked complete. Full size, not
@@ -2679,20 +2688,26 @@ def _quantity_editor(
     # nodes would have been legal too, but this is one node and the whole
     # screen then costs about a third of Discord's 40-component ceiling.
     #
-    # Bullets, because nineteen bare newlines pack the rows tight enough that
-    # the troop art runs together. Discord gives list items more vertical
-    # space than plain lines, which is the only way to loosen them without a
-    # blank line between every card - that would double the height and undo
-    # the reason this screen exists. Same "- emoji name" shape as every other
-    # list in the command.
+    # The count sits in an inline code span, which Discord draws as a small
+    # shaded box. That is the separation the list needed: the troop art
+    # anchors the left of every row and the boxed number anchors the right,
+    # so the quantities can be scanned down the column without any alignment.
+    # It replaced two attempts that both added a glyph instead of removing
+    # one - markdown bullets printed a visible dot on all nineteen rows, and
+    # an invisible spacer emoji only indented them.
+    #
+    # Markdown does render inside a TextDisplay, which is what makes this
+    # work. It does NOT render in a select option's label, so the menu below
+    # writes the same number as plain text rather than faking a box.
     listing = "\n".join(
-        "- " + (
+        (
             f"{troop_emoji.markup(item.id)} "
             + (
-                f"**{_escape_markdown(item.name)} · {count_for(item)}**"
+                f"**{_escape_markdown(item.name)}**"
                 if item.id == card_id
-                else f"{_escape_markdown(item.name)} · {count_for(item)}"
+                else _escape_markdown(item.name)
             )
+            + f" · `{count_for(item)}`"
             + (" · in a trade" if item.id in reservations else "")
         ).strip()
         for item in definitions
@@ -2721,6 +2736,7 @@ def _quantity_editor(
                 for item in CATEGORIES
             ],
         )]),
+        Separator(divider=True),
         Text(content=(
             f"{status}\n"
             f"-# {summary.collected}/{summary.known} owned · "
@@ -2730,52 +2746,64 @@ def _quantity_editor(
         Separator(divider=True),
         Text(content=listing),
         Separator(divider=True),
-        # No option is marked default. A default-marked option is drawn in
-        # place of the placeholder, which would leave the menu showing the
-        # chosen card and the line below saying the same thing twice. The menu
-        # states the action, the line below states the state.
+        # Names the control below it and says what it is for, in the words the
+        # reader needs. "Dropdown" is not one of them - it assumes the member
+        # knows Discord's own vocabulary. It stays on screen after a card is
+        # picked, because picking a different card is the next thing most
+        # people do.
+        Text(content="**Select a card below to change its number.**"),
+        # The chosen card IS the menu. A default-marked option is drawn in
+        # place of the placeholder, so the closed menu reads "Barbarian · 3"
+        # once something is chosen and "Choose a card to edit" before that.
+        # Every redraw re-sends the options, so the number on the menu moves
+        # with the number in the list above - there is no second line to fall
+        # out of step.
         ActionRow(components=[TextSelectMenu(
             custom_id=f"cards_qpick:{tag}|{category_id}",
-            placeholder="Choose a card",
+            placeholder="Choose a card to edit",
             max_values=1,
             options=[
                 SelectOption(
                     label=f"{item.name} · {count_for(item)}"[:100],
                     value=item.id,
                     emoji=troop_emoji.partial(item.id),
+                    is_default=item.id == card_id,
                 )
                 for item in definitions
             ],
         )]),
-        Text(content=(
-            f"**Editing {troop_emoji.markup(card.id)} "
-            f"{_escape_markdown(card.name)} · {count_for(card)}**"
-            + ("\n-# This card is in a trade and cannot change." if reserved else "")
-        )),
         # One controller for the whole category, not one per card. "Set number"
         # is spelled out rather than hidden behind tapping the count: a control
         # that looks like a readout is not a control anybody finds.
+        #
+        # With nothing chosen these are disabled rather than hidden, so the
+        # screen does not change shape under the reader. Their ids name no
+        # card, so even a click Discord should never deliver writes nothing.
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.DANGER,
-                custom_id=f"cards_qstep:{tag}|{card_id}|-1",
+                custom_id=f"cards_qstep:{tag}|{card_id or 'none'}|-1",
                 label="-1",
-                is_disabled=reserved or state <= MISSING,
+                is_disabled=not card_id or reserved or state <= MISSING,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_qnum:{tag}|{card_id}",
+                custom_id=f"cards_qnum:{tag}|{card_id or 'none'}",
                 label="Set number",
-                is_disabled=reserved,
+                is_disabled=not card_id or reserved,
             ),
             Button(
                 style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"cards_qstep:{tag}|{card_id}|1",
+                custom_id=f"cards_qstep:{tag}|{card_id or 'none'}|1",
                 label="+1",
-                is_disabled=reserved or state >= MAX_COPIES,
+                is_disabled=not card_id or reserved or state >= MAX_COPIES,
             ),
         ]),
     ]
+    if reserved:
+        body.append(Text(
+            content="-# This card is in a trade and cannot change."
+        ))
 
     # The divider belongs to whatever comes next, not to the controls. Ending
     # the block above with one drew two in a row whenever Ready to trade was
@@ -2797,9 +2825,13 @@ def _quantity_editor(
     body.extend([
         Separator(divider=True),
         Text(content=(
-            "**Scan screenshots**\n"
-            "Scan your collection from screenshots. Some cards may not be "
-            "detected, so check your collection after scanning."
+            # "instead" is doing the whole job of this heading: it says this
+            # is another way to do what the controls above do, not the next
+            # thing to do after them. The old first sentence went with it -
+            # the button underneath already says what tapping it does.
+            "**Scan screenshots instead**\n"
+            "Some cards may not be detected. Check your collection after "
+            "scanning."
         )),
         ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,

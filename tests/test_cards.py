@@ -1286,19 +1286,23 @@ def test_the_whole_category_is_visible_on_one_screen():
             c.id for c in cards.CATEGORIES
         ]
 
-        # Bullets, not bare newlines: Discord spaces list items further
-        # apart, which is the only lever for loosening nineteen rows short of
-        # a blank line between every card.
+        # Every count sits in an inline code span, which Discord draws as a
+        # small shaded box. That is what separates name from number, so the
+        # row needs no bullet, no spacer emoji and no alignment.
         listing_text = next(
             str(n["content"]) for n in _view_nodes(view)
             if n.get("type") == 10
             and all(card.name in str(n["content"]) for card in definitions)
         )
-        assert all(
-            line.startswith("- ")
-            for line in listing_text.splitlines()
-            if line.strip()
-        ), listing_text
+        for line in listing_text.splitlines():
+            if not line.strip():
+                continue
+            assert not line.startswith("- "), f"bullet came back: {line}"
+        for card in definitions:
+            assert (
+                f"{card.name} · `" in listing_text
+                or f"{card.name}** · `" in listing_text
+            ), f"{card.name} lost its boxed count"
 
         # And the counts are one component, not one per card.
         listings = [
@@ -1328,8 +1332,15 @@ def test_only_one_set_of_step_buttons_exists_for_the_whole_category():
         str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n
     ]
     steps = [cid for cid in custom_ids if cid.startswith("cards_qstep:")]
-    assert steps == ["cards_qstep:#ME|barbarian|-1", "cards_qstep:#ME|barbarian|1"]
-    assert custom_ids.count("cards_qnum:#ME|barbarian") == 1
+    assert steps == ["cards_qstep:#ME|none|-1", "cards_qstep:#ME|none|1"]
+    assert custom_ids.count("cards_qnum:#ME|none") == 1
+    # Disabled until a card is chosen, so the shape of the screen does not
+    # change under the reader when they pick one.
+    assert all(
+        n.get("disabled") for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith(("cards_qstep:", "cards_qnum:"))
+    )
+    assert "Select a card below to change its number." in _view_text(view)
     # Set number is spelled out rather than hidden behind tapping the count.
     assert "Set number" in _view_labels(view)
     # An unfinished category always offers the way to finish it.
@@ -1403,23 +1414,31 @@ def test_a_stale_paged_custom_id_still_opens_the_new_screen():
     assert (tag, parsed, delta) == ("#ME", "barbarian", 1)
 
 
-def test_an_unknown_card_falls_back_to_the_first_in_the_category():
+def test_an_unknown_card_selects_nothing_rather_than_guessing():
+    """The menu can then say "Choose a card to edit" instead of naming one.
+
+    Falling back to the first card would have put a real card's number under
+    controls the member never aimed at anything.
+    """
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
-    first = cards.CATEGORY_CARDS["elixir"][0]
     for bogus in (None, "", "not_a_card", "night_witch"):
         # night_witch is real but belongs to another category, so it must not
         # be editable from the elixir screen.
+        assert cards_command._quantity_selected("elixir", bogus) is None, bogus
         view = cards_command._quantity_editor(
             account,
             {"_id": "#ME", "cards": {}, "complete_categories": []},
             "elixir",
             card_id=bogus,
         )
-        ids = [str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n]
-        assert f"cards_qstep:#ME|{first.id}|1" in ids, bogus
+        menu = next(n for n in _view_nodes(view) if n.get("type") == 3
+                    and str(n.get("custom_id", "")).startswith("cards_qpick:"))
+        assert not any(o.get("default") for o in menu["options"]), bogus
+        # With no default option, the placeholder is what Discord draws.
+        assert menu["placeholder"] == "Choose a card to edit"
 
 
 def test_a_dm_can_answer_a_trade_but_a_stranger_cannot(monkeypatch):
@@ -5290,7 +5309,7 @@ def test_the_editor_never_uses_a_tick_to_mean_three_different_things():
     # one token that survives is 2+, which is the scanner's floor and means
     # something a flat 2 would not.
     counts = {
-        line.rsplit(" \u00b7 ", 1)[-1].strip("*")
+        line.rsplit(" \u00b7 ", 1)[-1].strip("*`")
         for line in _view_text(view).splitlines()
         if " \u00b7 " in line and not line.startswith(("#", "-#"))
     }
@@ -6890,8 +6909,8 @@ def test_the_category_editor_opens_showing_what_you_already_have():
     # Every card states its own count, all on the one screen. The old editor
     # could only say missing, one or spare, so the real number lived
     # elsewhere; the paged one showed six cards out of nineteen.
-    assert "Balloon \u00b7 0" in listing
-    assert "Wizard \u00b7 3" in listing
+    assert "Balloon \u00b7 `0`" in listing
+    assert "Wizard \u00b7 `3`" in listing
 
     view = cards_command._quantity_editor(account, inventory, "elixir")
     text = _view_text(view)
@@ -7123,8 +7142,20 @@ def test_the_plus_button_writes_and_keeps_the_card_selected(monkeypatch):
     assert document["cards"][target.id] == cards.OWNED + 1
     ids = [str(n["custom_id"]) for n in _view_nodes(result) if "custom_id" in n]
     assert f"cards_qstep:#ME|{target.id}|1" in ids, "selection must survive a step"
-    assert f"Editing" in _view_text(result)
-    assert target.name in _view_text(result)
+    # The closed menu is the only place the chosen card is named now, so its
+    # default-marked option has to carry the NEW number. A default option is
+    # drawn in place of the placeholder, which is what makes that readable.
+    menu = next(
+        n for n in _view_nodes(result)
+        if n.get("type") == 3
+        and str(n.get("custom_id", "")).startswith("cards_qpick:")
+    )
+    default = [o for o in menu["options"] if o.get("default")]
+    assert [o["value"] for o in default] == [target.id]
+    assert default[0]["label"] == f"{target.name} · 2"
+    assert "Editing" not in _view_text(result), (
+        "the menu carries the selection; a second line could fall out of step"
+    )
 
 
 def test_the_minus_button_stops_at_missing_and_never_goes_negative(monkeypatch):
@@ -7226,7 +7257,7 @@ def test_the_category_screen_stays_far_below_the_component_ceiling():
                 _assert_discord_payload(view)
     # Scanning and the category menu moved onto this screen, and it is still
     # nowhere near Discord's ceiling of 40.
-    assert worst == 25, f"expected a fixed 25, got {worst}"
+    assert worst == 26, f"expected a fixed 26, got {worst}"
 
 
 def test_set_number_opens_a_modal_for_the_selected_card():
@@ -7295,7 +7326,7 @@ def test_typing_an_exact_number_saves_and_stays_on_the_category(monkeypatch):
         coc_client=SimpleNamespace(), mongo=mongo,
     ))
     assert document["cards"][target.id] == 7
-    assert f"{target.name} · 7" in _view_text(sent["view"])
+    assert f"{target.name}** · `7`" in _view_text(sent["view"])
 
     # Junk in, nothing changed, and the member is told so on the same screen.
     asyncio.run(cards_command.cards_qnum_submit(
