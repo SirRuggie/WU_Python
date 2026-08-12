@@ -287,18 +287,34 @@ def _configured_cards_channel_id() -> int | None:
     return CARDS_CHANNEL_ID
 
 
+def _trade_guild_id(ctx) -> int | None:
+    """Which family a trade belongs to, usable from a DM.
+
+    A DM interaction has no guild, so keying a trade lookup on the
+    interaction's guild made every trade invisible there. Trades live in the
+    configured family, which is a constant, so use that and fall back to the
+    interaction only when nothing is configured.
+    """
+    return _configured_cards_guild_id() or _guild_id(ctx)
+
+
 def _guild_scope_error(ctx) -> str | None:
-    configured = _configured_cards_guild_id()
-    actual = _guild_id(ctx)
-    if configured is None:
+    """Whether this interaction may act on a trade.
+
+    Deliberately does NOT require the interaction to come from the family
+    server. It used to, which meant a trade could only be answered from inside
+    Warriors United - so a proposal that arrived by DM had to be answered
+    somewhere else, and answering it in the DM was impossible.
+
+    What actually protects a trade is the participant check every handler
+    already performs: you must be its requester or its holder. That is the
+    real gate, and it still applies. Guild membership never was: anybody in
+    the server could see a trade id, and nobody outside it can guess one.
+    """
+    if _configured_cards_guild_id() is None:
         return (
             "The Card Hub is not configured yet. An operator must set "
             "`CARDS_GUILD_ID` to the Warriors United Discord server ID."
-        )
-    if actual != configured:
-        return (
-            "Run `/cards` inside the configured Warriors United server so "
-            "collections and trades stay inside the correct clan family."
         )
     return None
 
@@ -1730,7 +1746,6 @@ async def _ensure_inventory(
         "discord_id": int(discord_id),
         "player_name": account.name,
         "town_hall": getattr(account, "town_hall", 0) or 0,
-        "clan_badge": getattr(account, "clan_badge", None),
         "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
         "clan_name": account.clan_name,
         "last_seen_at": now,
@@ -4459,10 +4474,10 @@ async def _create_trade_request(
         if requester_cards.get(card.id, OWNED) >= DUPLICATE
         and holder_cards.get(card.id, OWNED) == MISSING
     ]
-    # Our own logo for a family clan, the Clash badge for anyone else - the
-    # same order /todo uses in `_thumbnail_for`. Copied onto the trade so a
-    # notification never depends on a query that could fail later.
-    clan_logo: dict[str, str] = {}
+    # The clan's own emoji, copied onto the trade so a notification never
+    # depends on a query that could fail later. A missing row, a missing field
+    # or unparseable markup all end up as "", which renders as a shield.
+    clan_emoji: dict[str, str] = {}
     for clan_tag in {
         _normalize_tag(requester.get("clan_tag")),
         _normalize_tag(holder.get("clan_tag")),
@@ -4470,13 +4485,11 @@ async def _create_trade_request(
         if not clan_tag:
             continue
         try:
-            row = await mongo.clans.find_one({"tag": clan_tag}, {"logo": 1})
+            row = await mongo.clans.find_one({"tag": clan_tag}, {"emoji": 1})
         except Exception:
-            _log.info("card trade clan logo lookup failed clan=%s", clan_tag)
+            _log.info("card trade clan emoji lookup failed clan=%s", clan_tag)
             continue
-        logo = str((row or {}).get("logo") or "")
-        if logo.startswith("http"):
-            clan_logo[clan_tag] = logo
+        clan_emoji[clan_tag] = str((row or {}).get("emoji") or "")
 
     trade = {
         "_id": secrets.token_hex(8),
@@ -4486,9 +4499,9 @@ async def _create_trade_request(
         "category": CARD_BY_ID[wanted_card_id].category,
         "requester_clan_tag": requester.get("clan_tag"),
         "requester_clan_name": requester.get("clan_name"),
-        "requester_clan_badge": clan_logo.get(
-            _normalize_tag(requester.get("clan_tag"))
-        ) or requester.get("clan_badge"),
+        "requester_clan_emoji": clan_emoji.get(
+            _normalize_tag(requester.get("clan_tag")), ""
+        ),
         # Copied onto the trade rather than looked up when a DM is built, so a
         # notification never depends on a second query that could fail.
         "requester_town_hall": requester.get("town_hall") or 0,
@@ -4500,9 +4513,9 @@ async def _create_trade_request(
         "holder_discord_id": holder_discord_id,
         "holder_clan_tag": holder.get("clan_tag"),
         "holder_clan_name": holder.get("clan_name"),
-        "holder_clan_badge": clan_logo.get(
-            _normalize_tag(holder.get("clan_tag"))
-        ) or holder.get("clan_badge"),
+        "holder_clan_emoji": clan_emoji.get(
+            _normalize_tag(holder.get("clan_tag")), ""
+        ),
         "holder_town_hall": holder.get("town_hall") or 0,
         "wanted_card_id": wanted_card_id,
         "given_card_id": given_card_id,
@@ -4924,27 +4937,26 @@ def _trade_proposal_dm(
             f"**You give:** {_card_label(wanted)}\n"
             f"{receive}"
         ),
-        extra=[
-            _player_block(
+        extra=[Text(content=(
+            _player_line(
                 "You", trade.get("holder_name"), trade.get("holder_tag"),
                 trade.get("holder_town_hall"), trade.get("holder_clan_name"),
-                trade.get("holder_clan_badge"),
-            ),
-            _player_block(
+                trade.get("holder_clan_emoji"),
+            )
+            + "\n"
+            + _player_line(
                 "Them", trade.get("requester_name"),
                 trade.get("requester_tag"), trade.get("requester_town_hall"),
                 trade.get("requester_clan_name"),
-                trade.get("requester_clan_badge"),
-            ),
-            *(
-                []
+                trade.get("requester_clan_emoji"),
+            )
+            + (
+                ""
                 if same_clan
-                else [Text(content=(
-                    "-# You are in different clans. One of you must move to "
-                    "the same clan before you can trade."
-                ))]
-            ),
-        ],
+                else "\n\n-# You are in different clans. One of you must move "
+                "to the same clan before you can trade."
+            )
+        ))],
         accent=GREEN_ACCENT,
         attachment=attachment,
         controls=(
@@ -5199,20 +5211,33 @@ def _th_markup(level: object) -> str:
     return str(entry) if entry is not None else ""
 
 
-def _clan_badge_url(value: object) -> str | None:
-    """A usable shield URL, or None.
+CLAN_FALLBACK_EMOJI = "🛡️"
 
-    Custom emoji are not an option here: a clan emoji is a *guild* emoji, and
-    a guild emoji does not resolve in a DM - it prints as `:ClanName:`. The
-    badge is an image, which renders anywhere, and is what /todo uses.
+
+def _clan_emoji_markup(value: object) -> str:
+    """The clan's own emoji, or a plain shield.
+
+    `clans.emoji` holds `<:name:id>` markup set by hand through the clan
+    dashboard, so it can contain anything. Validated the way
+    `utils.classes.Clan` validates it - by parsing rather than pattern
+    matching - so this agrees with the rest of the bot about what is usable.
+
+    Not the `logo`: that is a full-size Cloudinary image meant for a thumbnail,
+    which is far too big to sit inside a line of text.
     """
-    url = str(value or "").strip()
-    return url if url.startswith("https://") else None
+    raw = str(value or "").strip()
+    if not raw or raw.count(":") < 2:
+        return CLAN_FALLBACK_EMOJI
+    try:
+        EmojiType(raw).partial_emoji
+    except (IndexError, ValueError, TypeError, AttributeError):
+        return CLAN_FALLBACK_EMOJI
+    return raw
 
 
 def _player_line(
     label: str, name: object, tag: object, town_hall: object,
-    clan_name: object,
+    clan_name: object, clan_emoji: object = None,
 ) -> str:
     """One account on one line: who, where, and how big."""
     th = _th_markup(town_hall)
@@ -5220,20 +5245,11 @@ def _player_line(
     head += f"{_escape_markdown(name, limit=40)} • `{_normalize_tag(tag)}`"
     clan = str(clan_name or "").strip()
     if clan:
-        head += f" • {_escape_markdown(clan, limit=40)}"
+        head += (
+            f" • {_clan_emoji_markup(clan_emoji)} "
+            f"{_escape_markdown(clan, limit=40)}"
+        )
     return head
-
-
-def _player_block(
-    label: str, name: object, tag: object, town_hall: object,
-    clan_name: object, badge: object,
-):
-    """One account, with its clan shield beside it when we have one."""
-    line = Text(content=_player_line(label, name, tag, town_hall, clan_name))
-    url = _clan_badge_url(badge)
-    if url is None:
-        return line
-    return Section(components=[line], accessory=Thumbnail(media=url))
 
 
 def _clan_label(name: object, tag: object) -> str:
@@ -5871,7 +5887,6 @@ async def _write_one_card(
             "discord_id": int(discord_id),
             "player_name": account.name,
         "town_hall": getattr(account, "town_hall", 0) or 0,
-        "clan_badge": getattr(account, "clan_badge", None),
             "clan_tag": (
                 _normalize_tag(account.clan_tag) if account.clan_tag else None
             ),
@@ -5963,7 +5978,6 @@ async def _write_card_state(
             "discord_id": int(discord_id),
             "player_name": account.name,
         "town_hall": getattr(account, "town_hall", 0) or 0,
-        "clan_badge": getattr(account, "clan_badge", None),
             "clan_tag": (
                 _normalize_tag(account.clan_tag) if account.clan_tag else None
             ),
@@ -6054,7 +6068,6 @@ async def _write_hidden_badge_batch(
             "discord_id": int(discord_id),
             "player_name": account.name,
         "town_hall": getattr(account, "town_hall", 0) or 0,
-        "clan_badge": getattr(account, "clan_badge", None),
             "clan_tag": (
                 _normalize_tag(account.clan_tag) if account.clan_tag else None
             ),
@@ -6156,7 +6169,6 @@ async def _write_category(
                 "discord_id": int(discord_id),
                 "player_name": account.name,
         "town_hall": getattr(account, "town_hall", 0) or 0,
-        "clan_badge": getattr(account, "clan_badge", None),
                 "clan_tag": (
                     _normalize_tag(account.clan_tag) if account.clan_tag else None
                 ),
@@ -6290,7 +6302,6 @@ async def _write_scan_draft(
             "discord_id": int(discord_id),
             "player_name": account.name,
         "town_hall": getattr(account, "town_hall", 0) or 0,
-        "clan_badge": getattr(account, "clan_badge", None),
             "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
             "clan_name": account.clan_name,
             "cards": card_states,
@@ -8698,7 +8709,7 @@ async def cards_trade_accept(
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
-        "guild_id": _guild_id(ctx),
+        "guild_id": _trade_guild_id(ctx),
     })
     if not trade:
         return _notice("Trade proposal not found", "Reopen **My trades**.")
@@ -8790,7 +8801,7 @@ async def cards_trade_ready(
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
-        "guild_id": _guild_id(ctx),
+        "guild_id": _trade_guild_id(ctx),
     })
     if not trade:
         return _notice("Trade not found", "Reopen **My trades**.")
@@ -8934,7 +8945,7 @@ async def cards_trade_decline(
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
-        "guild_id": _guild_id(ctx),
+        "guild_id": _trade_guild_id(ctx),
     })
     if not trade:
         return _notice("Trade request not found", "Reopen **My trades**.")
@@ -8994,7 +9005,7 @@ async def cards_trade_cancel(
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
-        "guild_id": _guild_id(ctx),
+        "guild_id": _trade_guild_id(ctx),
     })
     if not trade:
         return _notice("Trade request not found", "Reopen **My trades**.")
@@ -9091,7 +9102,7 @@ async def cards_trade_complete(
     trade = await mongo.card_trades.find_one({
         "_id": action_id,
         "kind": "trade",
-        "guild_id": _guild_id(ctx),
+        "guild_id": _trade_guild_id(ctx),
     })
     if not trade:
         return _notice("Trade request not found", "Reopen **My trades**.")

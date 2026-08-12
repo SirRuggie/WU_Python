@@ -1309,30 +1309,69 @@ def test_collection_edit_allows_unrelated_category_but_rejects_reserved_category
     assert "root_rider" not in document["cards"]
 
 
-def test_trade_component_scope_rejects_wrong_guild_before_database_access(monkeypatch):
-    class NoDatabaseAccess:
-        def __getattr__(self, name):
-            raise AssertionError(f"database was accessed through {name}")
+def test_a_dm_can_answer_a_trade_but_a_stranger_cannot(monkeypatch):
+    """Participation is the gate, not which server you clicked from.
 
+    Requiring the family server meant a proposal delivered by DM could not be
+    answered in that DM. What stops abuse is that every handler checks you are
+    the requester or the holder, which a forged id cannot satisfy.
+    """
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 123)
-    ctx = SimpleNamespace(guild_id=999, user=SimpleNamespace(id=1))
-    mongo = SimpleNamespace(card_trades=NoDatabaseAccess())
 
-    for handler in (
-        cards_command.cards_trade_accept,
-        cards_command.cards_trade_ready,
-        cards_command.cards_trade_decline,
-        cards_command.cards_trade_cancel,
-        cards_command.cards_trade_complete,
-    ):
-        result = asyncio.run(handler(
-            ctx,
-            "forged-trade-id",
-            coc_client=SimpleNamespace(),
-            mongo=mongo,
-            bot=SimpleNamespace(),
-        ))
-        assert result
+    looked_up: list[dict] = []
+
+    class Trades:
+        async def find_one(self, query):
+            looked_up.append(query)
+            return None
+
+    mongo = SimpleNamespace(card_trades=Trades())
+    # guild_id is None: this is a DM.
+    ctx = SimpleNamespace(guild_id=None, user=SimpleNamespace(id=1))
+
+    result = asyncio.run(cards_command.cards_trade_accept(
+        ctx, "some-trade-id",
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+
+    # It got past the scope check and searched, rather than refusing outright.
+    assert looked_up, "a DM interaction was blocked before reaching the trade"
+    # And it searched the configured family, not the (absent) DM guild.
+    assert looked_up[0]["guild_id"] == 123
+    # An id that matches nothing is simply not found. No write, no damage.
+    assert result
+
+
+def test_a_trade_action_is_refused_to_anyone_but_its_two_players(monkeypatch):
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 123)
+    trade = _trade_document()
+    trade.update({
+        "status": "pending",
+        "requester_discord_id": 111,
+        "holder_discord_id": 222,
+    })
+
+    class Trades:
+        async def find_one(self, _query):
+            return dict(trade)
+
+    async def _unchanged(_mongo, doc, **_kwargs):
+        return dict(doc)
+
+    monkeypatch.setattr(
+        cards_command, "_expire_trade_if_needed", _unchanged
+    )
+    mongo = SimpleNamespace(card_trades=Trades())
+    stranger = SimpleNamespace(guild_id=123, user=SimpleNamespace(id=999))
+
+    result = asyncio.run(cards_command.cards_trade_cancel(
+        stranger, trade["_id"],
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+
+    assert "not yours" in _view_text(result).lower()
+
+
 
 
 def test_allowed_guild_trade_lookup_is_scoped_to_that_guild(monkeypatch):
@@ -5682,32 +5721,36 @@ def test_different_clans_names_both_of_them():
 
 
 @pytest.mark.parametrize("stored", [
-    None, "", "   ", "not a url", "http://insecure.example/badge.png",
-    "ftp://example/badge.png", "<:Elixer:1536777630278357164>", 12345,
+    None, "", "   ", "my clan", "<:Broken:notanumber>", "<:Broken:",
+    "<:Bad:-5>", ":shrug:", 12345,
+    # A logo URL is not an emoji: it is a full-size image and would render as
+    # a link rather than a mark on the line.
+    "https://res.cloudinary.com/x/clan.png",
 ])
-def test_a_bad_clan_badge_is_dropped_rather_than_rendered(stored):
-    """A clan emoji here would print as text in a DM; only an image works."""
-    assert cards_command._clan_badge_url(stored) is None
-
-
-def test_a_real_clan_badge_is_kept():
-    url = "https://api-assets.clashofclans.com/badges/200/abc.png"
-    assert cards_command._clan_badge_url(url) == url
-
-
-def test_a_player_block_degrades_to_a_line_without_a_badge():
-    """No shield must not mean no account line."""
-    plain = cards_command._player_block(
-        "You", "Sir UwU", "#ME", 18, "Edrag Rush", None
+def test_a_bad_clan_emoji_falls_back_to_a_shield(stored):
+    """The field is hand-edited through the clan dashboard, so it holds anything."""
+    assert cards_command._clan_emoji_markup(stored) == (
+        cards_command.CLAN_FALLBACK_EMOJI
     )
-    assert not hasattr(plain, "accessory")
-    assert "Sir UwU" in plain.content and "Edrag Rush" in plain.content
 
-    shielded = cards_command._player_block(
-        "You", "Sir UwU", "#ME", 18, "Edrag Rush",
-        "https://api-assets.clashofclans.com/badges/200/abc.png",
+
+def test_a_usable_clan_emoji_is_kept():
+    markup = "<:Elixer:1536777630278357164>"
+    assert cards_command._clan_emoji_markup(markup) == markup
+
+
+def test_a_player_line_survives_every_piece_being_missing():
+    """A DM must render even when the clan, tag and town hall are all absent."""
+    bare = cards_command._player_line("You", None, None, None, None, None)
+    assert "**You:**" in bare
+
+    full = cards_command._player_line(
+        "Them", "Sir UwU", "#ME", 18, "Edrag Rush",
+        "<:Elixer:1536777630278357164>",
     )
-    assert shielded.accessory is not None
+    assert "Sir UwU" in full and "#ME" in full and "Edrag Rush" in full
+    assert str(cards_command.emojis.TH18) in full
+    assert "<:Elixer:1536777630278357164>" in full
 
 
 @pytest.mark.parametrize("level", [None, "", 0, -3, 99, "eighteen", object()])

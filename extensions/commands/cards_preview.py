@@ -36,7 +36,7 @@ ALTERNATIVES = ("balloon", "wizard", "dragon")
 
 
 async def _real_clans(mongo) -> list[dict]:
-    """Two actual family clans, so the preview shows real logos.
+    """Two actual family clans, so the preview shows their real emoji.
 
     Inventing clan data made this preview useless for judging the shields: a
     hardcoded URL always rendered and a hardcoded None never did, which said
@@ -45,13 +45,13 @@ async def _real_clans(mongo) -> list[dict]:
     """
     try:
         rows = await mongo.clans.find(
-            {}, {"tag": 1, "name": 1, "logo": 1}
+            {}, {"tag": 1, "name": 1, "emoji": 1}
         ).to_list(length=50)
     except Exception:
         return []
     # Prefer clans that actually have a logo, so the happy path is visible,
     # but keep the rest so a missing one can be seen too.
-    rows.sort(key=lambda row: not str(row.get("logo") or "").startswith("http"))
+    rows.sort(key=lambda row: str(row.get("emoji") or "").count(":") < 2)
     return rows[:2]
 
 
@@ -76,14 +76,14 @@ def _preview_trade(
         "requester_discord_id": int(discord_id),
         "requester_clan_tag": theirs.get("tag") or "#HOME",
         "requester_clan_name": theirs.get("name") or "Morning Woods",
-        "requester_clan_badge": theirs.get("logo"),
+        "requester_clan_emoji": theirs.get("emoji"),
         "requester_town_hall": 17,
         "holder_tag": "#9LRVV8G8",
         "holder_name": "Sir UwU",
         "holder_discord_id": int(discord_id),
         "holder_clan_tag": mine.get("tag") or "#AWAY",
         "holder_clan_name": mine.get("name") or "Edrag Rush",
-        "holder_clan_badge": mine.get("logo"),
+        "holder_clan_emoji": mine.get("emoji"),
         "holder_town_hall": 18,
         "created_at": now,
         "updated_at": now,
