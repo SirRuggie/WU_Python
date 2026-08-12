@@ -4110,16 +4110,18 @@ def _holders_view(
             Separator(divider=True),
             Text(content=(
                 f"## {emojis.card_give} What to do now\n"
-                f"You have no spare **{category.short_name}** card, and the "
-                "game will not let you post a request without one to offer. "
-                "**They have to start it.**\n\n"
-                f"**1.** Message one of the players above and ask for "
-                f"{_card_label(card)}.\n"
-                "**2.** They post the trade offer in game, asking for any "
-                f"**{category.short_name}** card back.\n"
-                f"**3.** You tap Trade and choose **Use Gems** — "
-                f"**{cost} gems**. You keep everything you own.\n\n"
-                "-# You must be in the same clan for the swap itself."
+                f"You have no spare **{category.short_name}** card, so you "
+                "cannot start this trade. They start it for you.\n\n"
+                # Names the button on this screen rather than telling anybody
+                # to go and write a message. One verb, one button, the same
+                # words as the label - which is what a reader translating in
+                # their head needs.
+                f"**1.** Tap **Ask for help** next to a player.\n"
+                "**2.** They get a message and answer yes or no.\n"
+                "**3.** If they say yes, they put the trade in the game.\n"
+                f"**4.** You tap **Trade**, then **Use Gems** — **{cost} "
+                "gems**. You keep all your cards.\n\n"
+                "-# You both need to be in the same clan to trade."
             )),
         ])
     if pages > 1:

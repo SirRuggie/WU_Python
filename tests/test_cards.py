@@ -6031,8 +6031,11 @@ def test_who_has_tells_you_what_to_do_when_you_cannot_ask():
 
     assert "Ask to swap" not in labels, "no spare means no swap is possible"
     assert "What to do now" in text
-    assert "They have to start it" in text
     assert "50 gems" in text
+    # It must point at the button on this screen, not tell somebody to go and
+    # write a message by hand - the approvals are meant to live in the app.
+    assert "Tap **Ask for help**" in text
+    assert "Message one of the players" not in text
     # It is still an ask, just not a swap - the bot sends it either way.
     ids = [
         str(n.get("custom_id")) for n in _view_nodes(view) if n.get("type") == 2
