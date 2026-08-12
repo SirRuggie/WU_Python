@@ -2402,43 +2402,27 @@ def _card_focus(
                 description=tile.alt_text,
             ),
         ),
-        ActionRow(components=[
-            Button(
-                style=(
-                    hikari.ButtonStyle.SUCCESS
-                    if state == MISSING and not possible_spare
-                    else hikari.ButtonStyle.SECONDARY
-                ),
-                custom_id=f"cards_set:{tag}|{card.id}|0",
-                label="None",
-                is_disabled=reserved,
-            ),
-            Button(
-                style=(
-                    hikari.ButtonStyle.SUCCESS
-                    if state == OWNED and not possible_spare
-                    else hikari.ButtonStyle.SECONDARY
-                ),
-                custom_id=f"cards_set:{tag}|{card.id}|1",
-                label="Have 1",
-                is_disabled=reserved,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_dashboard:{tag}",
-                label="Back to collection",
-                emoji=RETURN_EMOJI,
-            ),
-        ]),
-        # "Spare, 2+" used to sit above. It was redundant with +1 and could not
-        # express "exactly two", which is the common case: pressing it left the
-        # badge reading 2+ forever.
+        # One row, one meaning: minus, how many you have, plus. There used to
+        # be six controls for this number - None, Have 1, Exactly 2, -1, +1 and
+        # Type a number - and None and Have 1 turned green when they matched
+        # your count, so they were the current-value display disguised as
+        # buttons. That is why the count itself appeared nowhere as a number
+        # and why two rows looked like rival ways to change the same thing.
+        Text(content="**How many do you have?**"),
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.DANGER,
                 custom_id=f"cards_step:{tag}|{card.id}|-1",
                 label="-1",
                 is_disabled=reserved or not isinstance(state, int) or state <= MISSING,
+            ),
+            # The count IS the button, and tapping it opens the exact-number
+            # modal that "Type a number" used to own.
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_count:{tag}|{card.id}",
+                label=("2+" if unconfirmed else str(state if isinstance(state, int) else 0)),
+                is_disabled=reserved,
             ),
             Button(
                 style=hikari.ButtonStyle.SUCCESS,
@@ -2448,38 +2432,43 @@ def _card_focus(
                     isinstance(state, int) and state >= MAX_COPIES
                 ),
             ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_count:{tag}|{card.id}",
-                label="Type a number",
-                is_disabled=reserved,
-            ),
-            # Only rendered for an unconfirmed scanned spare, where the count is
-            # necessarily 2. Rendering it otherwise would repeat the custom_id
-            # of the None or Have 1 button, and Discord rejects a message that
-            # carries the same custom_id twice.
+            # Only for a spare the scanner proved exists without counting: the
+            # answer is nearly always two, so it stays as a one-tap reply to
+            # the "2 or more" prompt rather than a permanent fourth control.
             *(
                 [Button(
-                    style=hikari.ButtonStyle.SUCCESS,
+                    style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"cards_set:{tag}|{card.id}|{DUPLICATE}",
-                    label="Exactly 2",
+                    label="Set to 2",
                     is_disabled=reserved,
                 )]
                 if unconfirmed
                 else []
             ),
         ]),
+        Separator(divider=True),
+        # Above the menu, not below it. Underneath, you had already scrolled
+        # past the control before being told what it was for. It cannot be
+        # said in the menu itself: a default-marked option is drawn in place
+        # of the placeholder, so the placeholder is never seen.
+        Text(content="**Pick another card to keep editing**"),
         # The menu stays mounted, so fixing several cards in one category is
         # pick, tap, pick, tap without returning to the collection between
         # them.
         _category_select_row(
             account, inventory, card.category, _inventory_sort(inventory)
         ),
-        # That loop is the fastest way to edit and nothing announced it - you
-        # only found it by noticing the menu had not gone away. It cannot be
-        # said in the menu itself: a default-marked option is drawn in place
-        # of the placeholder, so the placeholder is never seen.
-        Text(content="-# Pick another card above to keep editing."),
+        Separator(divider=True),
+        # Navigation, on its own. It used to sit between "Have 1" and the
+        # step buttons, inside the controls that change the number.
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_dashboard:{tag}",
+                label="Back to collection",
+                emoji=RETURN_EMOJI,
+            ),
+        ]),
     ])
     return [Container(
         accent_color=CATEGORY_ACCENTS[card.category],

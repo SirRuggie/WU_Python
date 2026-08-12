@@ -2530,15 +2530,15 @@ def test_possible_spare_editor_yes_no_saves_and_advances(
         for node in _view_nodes(view)
         if node.get("custom_id")
     }
-    # Absolute state controls plus the copy-count steppers replace the
-    # increment/decrement/keep trio.
+    # One row, one meaning: minus, how many you have, plus. The absolute
+    # None / Have 1 buttons are gone - they turned green when they matched
+    # the count, so they were the value readout pretending to be actions.
     assert {
-        "cards_set:#ME|dragon|0",
-        "cards_set:#ME|dragon|1",
         "cards_step:#ME|dragon|1",
         "cards_step:#ME|dragon|-1",
         "cards_count:#ME|dragon",
     } <= custom_ids
+    assert not [i for i in custom_ids if i.startswith("cards_set:#ME|dragon|")]
 
 
 def test_possible_spare_editor_missing_saves_only_that_card_and_advances(
@@ -2574,8 +2574,8 @@ def test_possible_spare_editor_missing_saves_only_that_card_and_advances(
     assert updated["inventory_revision"] == 9
     assert "## Dragon" in _view_text(view)
     assert any(
-        node.get("custom_id") == "cards_set:#ME|dragon|0"
-        and node.get("label") == "None"
+        node.get("custom_id") == "cards_count:#ME|dragon"
+        and node.get("label") == "1"
         for node in _view_nodes(view)
     )
     assert len([node for node in _view_nodes(view) if "type" in node]) <= 40
@@ -4226,16 +4226,41 @@ def test_card_focus_marks_the_current_state_and_keeps_the_menu():
     inventory["cards"]["wizard"] = cards.DUPLICATE
 
     view = cards_command._card_focus(account, inventory, "wizard")
-    buttons = {
-        node["custom_id"]: node
-        for node in _view_nodes(view)
-        if node.get("custom_id", "").startswith("cards_set:")
-    }
+    nodes = _view_nodes(view)
 
-    # Style 3 is SUCCESS: the button matching the saved state is the green one.
-    assert buttons["cards_set:#ME|wizard|2"]["style"] == 3
-    assert buttons["cards_set:#ME|wizard|1"]["style"] == 2
-    assert buttons["cards_set:#ME|wizard|0"]["style"] == 2
+    # The count is a NUMBER now, not a green button. Colour used to carry the
+    # current value - the matching absolute button went SUCCESS - which left
+    # the actual figure nowhere on screen and made two rows of controls look
+    # like rival ways to change one thing.
+    count = next(
+        n for n in nodes if n.get("custom_id") == "cards_count:#ME|wizard"
+    )
+    # "2+" because a spare whose exact number was never confirmed is stored as
+    # the floor of two. The button says so instead of claiming a figure it
+    # does not have.
+    assert count["label"] == "2+"
+    assert count["style"] == 2, "the count is a readout, not a status colour"
+    assert any(
+        str(n.get("label")) == "Set to 2" for n in nodes
+    ), "an unconfirmed spare keeps its one-tap answer"
+    assert not [
+        n for n in nodes
+        if str(n.get("custom_id", "")).startswith("cards_set:#ME|wizard|")
+    ], "absolute state buttons were the disguised readout; they are gone"
+
+    # Navigation belongs outside the row that changes the number.
+    value_row = next(
+        n for n in nodes
+        if n.get("type") == 1
+        and any(
+            str(c.get("custom_id", "")).startswith("cards_step:")
+            for c in n.get("components", [])
+        )
+    )
+    assert not [
+        c for c in value_row["components"]
+        if str(c.get("custom_id", "")).startswith("cards_dashboard:")
+    ]
     custom_ids = {
         node.get("custom_id") for node in _view_nodes(view) if node.get("custom_id")
     }
@@ -5202,7 +5227,7 @@ def test_the_card_screen_says_you_can_keep_editing():
     ]
 
     assert menus, "the category menu must stay on the card screen"
-    assert "Pick another card above to keep editing" in text
+    assert "Pick another card to keep editing" in text
     _assert_discord_payload(view)
 
 
