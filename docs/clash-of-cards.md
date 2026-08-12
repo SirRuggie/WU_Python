@@ -187,6 +187,15 @@ text component, the card menu is a second, and a single `-1 / Set number / +1`
 controller acts on whichever card is chosen. The selected card is bold in the
 list and named again above the controller.
 
+The list is markdown bullets rather than bare newlines. Nineteen plain lines
+pack tightly enough that the troop art runs together, and Discord spaces list
+items further apart - the only lever short of a blank line between every card,
+which would double the height. Two columns were tested and rejected: the
+widest cell is 20-24 characters, so two columns need 43-51 per line against
+the roughly 32-40 a phone gives, and the only way to align them is a code
+block, which disables markdown and would print `<:Barbarian:123>` literally
+instead of the art.
+
 Two earlier shapes are worth recording. Six cards per page with their own
 -1/+1 pairs meant twelve large buttons filling a phone while thirteen of
 nineteen cards stayed hidden. Putting the card name into the ActionRow as a

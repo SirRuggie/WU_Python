@@ -1278,6 +1278,20 @@ def test_the_whole_category_is_visible_on_one_screen():
         values = [str(o["value"]) for o in menus[0]["options"]]
         assert values == [card.id for card in definitions]
 
+        # Bullets, not bare newlines: Discord spaces list items further
+        # apart, which is the only lever for loosening nineteen rows short of
+        # a blank line between every card.
+        listing_text = next(
+            str(n["content"]) for n in _view_nodes(view)
+            if n.get("type") == 10
+            and all(card.name in str(n["content"]) for card in definitions)
+        )
+        assert all(
+            line.startswith("- ")
+            for line in listing_text.splitlines()
+            if line.strip()
+        ), listing_text
+
         # And the counts are one component, not one per card.
         listings = [
             n for n in _view_nodes(view)

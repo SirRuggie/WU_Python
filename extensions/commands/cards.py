@@ -2812,8 +2812,15 @@ def _quantity_editor(
     # All nineteen quantities in a single component. Nineteen separate text
     # nodes would have been legal too, but this is one node and the whole
     # screen then costs about a third of Discord's 40-component ceiling.
+    #
+    # Bullets, because nineteen bare newlines pack the rows tight enough that
+    # the troop art runs together. Discord gives list items more vertical
+    # space than plain lines, which is the only way to loosen them without a
+    # blank line between every card - that would double the height and undo
+    # the reason this screen exists. Same "- emoji name" shape as every other
+    # list in the command.
     listing = "\n".join(
-        (
+        "- " + (
             f"{troop_emoji.markup(item.id)} "
             + (
                 f"**{_escape_markdown(item.name)} · {count_for(item)}**"
