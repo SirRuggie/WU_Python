@@ -2086,27 +2086,31 @@ def _dashboard(
     # controls. "Bulk edit" was neither bulk nor an editor: it opens a router
     # of four category setups, for a first-time entry or a full rebuild, which
     # is the same job as a scan and NOT the same job as sorting.
-    body.extend([
-        Separator(divider=True),
-        ActionRow(components=[
-            Button(
-                style=(
-                    hikari.ButtonStyle.PRIMARY
-                    if scan_is_primary
-                    else hikari.ButtonStyle.SECONDARY
-                ),
-                custom_id=f"cards_scan_start:{tag}",
-                label="Scan screenshots",
-                emoji=SCAN_EMOJI,
+    # No separator: this sits straight under the sort row so the collection
+    # tools read as one block. A divider between every pair of buttons chopped
+    # the lower half into slivers.
+    body.append(ActionRow(components=[
+        Button(
+            style=(
+                hikari.ButtonStyle.PRIMARY
+                if scan_is_primary
+                else hikari.ButtonStyle.SECONDARY
             ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_advanced:{tag}",
-                label="Rebuild a category",
-                emoji=_safe_partial(emojis.edit),
-            ),
-        ]),
-    ])
+            custom_id=f"cards_scan_start:{tag}",
+            label="Scan screenshots",
+            emoji=SCAN_EMOJI,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_advanced:{tag}",
+            # Named for when you would reach for it, not for what it does to
+            # the data. "Rebuild a category" is accurate and frightening; this
+            # is simply the alternative to scanning, which is the button
+            # beside it.
+            label="Enter by hand",
+            emoji=_safe_partial(emojis.edit),
+        ),
+    ]))
 
     body.append(Separator(divider=True))
     body.append(ActionRow(components=destinations))
