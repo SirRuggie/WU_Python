@@ -5212,6 +5212,14 @@ def test_the_editor_never_uses_a_tick_to_mean_three_different_things():
     )
     assert "reviewed" not in text.lower()
     assert "traded" in text
+    # One word for the concept. The rest of the command says "spare"
+    # everywhere, so this screen must not introduce "duplicate" as a second
+    # name for the same thing.
+    assert "duplicate" not in text.lower()
+    assert "spare" in text.lower()
+    # Headings say what the reader has, in plain words.
+    assert "Cards you do not have" in text
+    assert "Cards you have a spare of" in text
 
 
 def test_every_button_back_to_the_collection_names_it():

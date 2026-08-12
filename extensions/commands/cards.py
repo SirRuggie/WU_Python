@@ -2789,7 +2789,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
         setup_status = "**Do both lists to trade these cards.**"
     status = (
         f"{summary.collected}/{summary.known} owned · {summary.missing} missing · "
-        f"{summary.duplicates} duplicate{'s' if summary.duplicates != 1 else ''}"
+        f"{summary.duplicates} spare{'s' if summary.duplicates != 1 else ''}"
         if summary is not None
         else "Not set up yet"
     )
@@ -2817,18 +2817,18 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
         )),
         Text(content=f"-# {status} · {setup_status}"),
         Separator(divider=True),
-        Text(content="## Missing cards"),
+        Text(content="## Cards you do not have"),
         ActionRow(components=[
             TextSelectMenu(
                 custom_id=f"cards_set_missing:{_normalize_tag(account.tag)}|{category_id}",
-                placeholder="Select all cards you do not have...",
+                placeholder="Select the cards you do not have",
                 min_values=1,
                 max_values=len(missing_options),
                 options=missing_options,
             )
         ]),
         Text(content=(
-            "## Cards with a duplicate"
+            "## Cards you have a spare of"
             + (
                 f"\n📸 Check the duplicate badges for: "
                 f"**{_scan_card_names(unverified_duplicates)}**. They are currently "
@@ -2840,7 +2840,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
         ActionRow(components=[
             TextSelectMenu(
                 custom_id=f"cards_set_duplicates:{_normalize_tag(account.tag)}|{category_id}",
-                placeholder="Select all cards with at least one spare...",
+                placeholder="Select the cards you have a spare of",
                 min_values=1,
                 max_values=len(duplicate_options),
                 options=duplicate_options,
@@ -2856,7 +2856,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_clear_missing:{_normalize_tag(account.tag)}|{category_id}",
-                label="I have none missing",
+                label="I have them all",
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
@@ -2895,7 +2895,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
         # not required." Two clauses joined by a semicolon, saying the same
         # thing twice, to explain a storage detail. One short sentence answers
         # the only question a member actually has: why they cannot enter 4.
-        Text(content="-# 2 or more copies count as a duplicate."),
+        Text(content="-# 2 or more copies means you have a spare."),
         Media(items=[MediaItem(media=FOOTER)]),
     ])
     return [Container(accent_color=RED_ACCENT, components=body)]
