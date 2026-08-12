@@ -6211,6 +6211,36 @@ def test_player_spares_view_says_so_when_they_have_nothing():
     assert "no duplicates to give" in text
 
 
+def test_find_trades_only_says_pick_a_card_when_there_is_a_card_menu():
+    """With no even swaps the only menu on screen was the player lookup."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["root_rider"] = cards.MISSING
+
+    # A holder with the card and nothing of ours worth taking: one-way only.
+    holder = _complete_inventory(tag="#H")
+    holder["cards"]["root_rider"] = cards.DUPLICATE
+    oneway = cards.find_matches(inventory, [holder])
+    text = _view_text(cards_command._matches_view(account, inventory, oneway))
+
+    assert "Pick a card from the menu below" not in text
+    assert "No even swaps right now" in text
+
+    # And the card menu still leads when an even swap does exist.
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+    holder["cards"]["wizard"] = cards.MISSING
+    mutual = cards.find_matches(inventory, [holder])
+    mutual_text = _view_text(
+        cards_command._matches_view(account, inventory, mutual)
+    )
+
+    assert "Pick a card from the menu below" in mutual_text
+    assert "Even swaps" in mutual_text
+
+
 def test_find_trades_still_fits_discord_with_the_lookup_menu():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",

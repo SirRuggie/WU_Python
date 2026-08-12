@@ -3686,8 +3686,17 @@ def _matches_view(
     ]
     holders_total = len({match.holder_tag for match in matches})
 
+    # The card menus only exist for even swaps. Saying "pick a card from the
+    # menu below" when there are none sent people hunting for a menu that was
+    # never drawn - and pointed them at whichever menu happened to be below.
+    if mutual_ids:
+        lead = "**Pick a card from the menu below.**"
+    elif oneway_ids:
+        lead = "**No even swaps right now.** Tap **Ask for help** below."
+    else:
+        lead = "**Nothing to trade for right now.**"
     summary_line = (
-        "**Pick a card from the menu below.**\n"
+        f"{lead}\n"
         f"-# {holders_total} collection"
         f"{'s' if holders_total != 1 else ''} can supply something you need."
     )
