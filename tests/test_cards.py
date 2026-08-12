@@ -6702,6 +6702,32 @@ def test_the_admin_check_never_takes_the_panel_down(monkeypatch):
     assert cards_command._is_cards_admin_id(1, bot=bot) is False
 
 
+def test_bulk_edit_screen_names_itself_and_the_step():
+    """It read as a settings dialog from another product.
+
+    Titled "Advanced manual editor" - which is not what the button that opens
+    it says - and four buttons with no heading, so nothing told you what they
+    were for. It also repeated the name and tag from the board one tap back.
+    """
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    view = cards_command._update_overview(account, _complete_inventory())
+    text = _view_text(view)
+
+    assert "Bulk edit" in text
+    assert "Advanced manual editor" not in text
+    assert "Choose a category" in text
+    # The board named them one tap ago; repeating it spends the best space on
+    # the least useful fact.
+    assert "Sir Ruggie" not in text
+    assert "#ME" not in text
+    # The single-card route is where most people should actually go.
+    assert "category menus on the board" in text
+    _assert_discord_payload(view)
+
+
 def test_rebuild_a_category_survives_reviewing_every_category():
     """It vanished for anyone who finished reviewing, and never came back.
 

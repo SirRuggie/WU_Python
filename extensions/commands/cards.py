@@ -193,6 +193,15 @@ GIVE_EMOJI = _safe_partial(emojis.card_give)
 SWAP_EMOJI = _safe_partial(emojis.card_swap)
 HOT_EMOJI = _safe_partial(emojis.card_hot)
 GEMS_EMOJI = _safe_partial(emojis.gems)
+
+
+def _safe_markup(entry) -> str:
+    """Emoji markup for a heading, or "" when the entry is unusable.
+
+    Headings are plain text, so a malformed entry would print `<:name:123>`
+    verbatim rather than failing loudly.
+    """
+    return "" if _safe_partial(entry) is hikari.UNDEFINED else str(entry)
 NEXT_EMOJI = _safe_partial(emojis.next_page)
 PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
@@ -2690,10 +2699,12 @@ def _update_overview(account, inventory: dict) -> list[Container]:
             is_disabled=reserved,
         ))
 
+    # No name and tag. This screen is only ever reached from that member's own
+    # board, which named them one tap ago, so repeating it spent the best space
+    # on the least useful fact.
     intro = (
-        f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n\n"
-        "Use this only for first-time manual setup or a full category rebuild. "
-        "For normal changes, pick the card from a category menu on the board."
+        "Update a whole category at once.\n"
+        "-# To change one card, use the category menus on the board instead."
     )
     if unverified:
         intro += (
@@ -2703,9 +2714,14 @@ def _update_overview(account, inventory: dict) -> list[Container]:
         )
     return [Container(
         components=[
-            Text(content="# Advanced manual editor"),
+            # Named for the button that opened it. "Advanced manual editor"
+            # read as a settings dialog from some other product.
+            Text(content=f"# {_safe_markup(emojis.edit)} Bulk edit"),
             Text(content=intro),
             Separator(divider=True),
+            # Four buttons with no heading left the member to work out what
+            # they were for. One line turns them into a step.
+            Text(content="**Choose a category**"),
             ActionRow(components=buttons),
             ActionRow(components=[
                 Button(
