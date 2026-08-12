@@ -2322,11 +2322,11 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
         # Two rows now, because the More router was dissolved into the board.
         assert len(buttons) <= 9
         rows = [node for node in nodes if node.get("type") == 1]
-        # Seven: four category menus, the collection controls, the two
-        # destinations, and the links. The destinations became one row of
-        # buttons instead of two Sections, which is three fewer components
-        # overall - the real ceiling is the 40 checked below, not the row count.
-        assert len(rows) <= 7
+        # Rows went up when each group of controls was separated from the ones
+        # it has nothing to do with - sort apart from rebuild, rebuild apart
+        # from trading, admin on its own. That is the point, and rows are not
+        # the constraint: the 40 components checked below are.
+        assert len(rows) <= 10
         # The collection board is the landing surface, not an optional extra.
         assert any(node.get("type") == 12 for node in nodes)
         _assert_discord_payload(view)
@@ -6702,11 +6702,12 @@ def test_the_admin_check_never_takes_the_panel_down(monkeypatch):
     assert cards_command._is_cards_admin_id(1, bot=bot) is False
 
 
-def test_bulk_edit_survives_reviewing_every_category():
+def test_rebuild_a_category_survives_reviewing_every_category():
     """It vanished for anyone who finished reviewing, and never came back.
 
-    Reviewing a category cannot be undone, so the editor was gone for good -
-    on a collection that still had 28 missing cards.
+    Reviewing a category cannot be undone, so the only route back to a full
+    category rebuild was gone for good - on a collection that still had 28
+    missing cards and a bad scan to redo.
     """
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
@@ -6720,7 +6721,10 @@ def test_bulk_edit_survives_reviewing_every_category():
         str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
     ]
 
-    assert "Bulk edit" in labels
+    assert "Rebuild a category" in labels
+    # Named for what it opens - a router of four category setups - not "Bulk
+    # edit", which promised a quantity editor that has never existed.
+    assert "Bulk edit" not in labels
     _assert_discord_payload(view)
 
 

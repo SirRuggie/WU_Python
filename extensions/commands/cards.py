@@ -1971,11 +1971,22 @@ def _dashboard(
         # the same thing a second time, the headline a third, and the menu
         # labels a fourth. Repeating one fact in four visual languages is what
         # made the panel read as assembled rather than designed.
+        # Two lines: who this is, then how it is going. As one run it was six
+        # facts in a single sentence and nothing could be found at a glance.
         Text(content=(
-            f"**{_escape_markdown(account.name)}** · `{tag}` · "
+            f"**{_escape_markdown(account.name)}** · `{tag}`\n"
             f"{headline} · updated {_relative_timestamp(stamp)}"
         )),
     ]
+    if account_count > 1:
+        # Directly under the name, because that is what it changes. It used to
+        # sit in the row of collection controls, which act on the cards.
+        body.append(ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id="cards_account_page:0",
+            label="Switch account",
+            emoji=SWITCH_EMOJI,
+        )]))
 
     notes = []
     if unverified_duplicates:
@@ -2002,7 +2013,9 @@ def _dashboard(
     sort = _inventory_sort(inventory)
     body.extend([
         Separator(divider=True),
-        Text(content="**Your cards** · tap one to change how many you have"),
+        Text(content=(
+            "**Your cards** · Open a category, then select a card to update it"
+        )),
     ])
     body.extend(
         _category_select_row(account, inventory, category.id, sort)
@@ -2043,27 +2056,8 @@ def _dashboard(
             emoji=TRADES_EMOJI,
         ),
     ]
-    if is_admin:
-        # Under /cards rather than a command of its own, so there is one place
-        # to remember. Nobody without ADMINISTRATOR is ever drawn this button,
-        # and the handler rechecks anyway.
-        destinations.append(Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_admin:{tag}",
-            label="Admin",
-        ))
-    # The controls that act on the menus above, immediately below them.
-    collection_row: list = [
-        Button(
-            style=(
-                hikari.ButtonStyle.PRIMARY
-                if scan_is_primary
-                else hikari.ButtonStyle.SECONDARY
-            ),
-            custom_id=f"cards_scan_start:{tag}",
-            label="Scan screenshots",
-            emoji=SCAN_EMOJI,
-        ),
+    # Acts on the menus directly above it, and nothing else does.
+    view_row: list = [
         Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_sort:{tag}",
@@ -2075,39 +2069,44 @@ def _dashboard(
         # The note above already says these need checking. Until now the only
         # button that acted on it lived on a screen the board could not reach,
         # so the note was advice with nowhere to go.
-        collection_row.append(Button(
+        view_row.append(Button(
             style=hikari.ButtonStyle.PRIMARY,
             custom_id=f"cards_hidden:{tag}",
             label=f"Check spares ({len(unverified_duplicates)})",
         ))
-    # Always. This used to hide once every category had been reviewed, which
-    # took the editor away from exactly the people who had used the panel
-    # most - and reviewing your last category is not something you can undo,
-    # so it never came back. Missing cards keep changing after review.
-    collection_row.append(Button(
-        style=hikari.ButtonStyle.SECONDARY,
-        custom_id=f"cards_advanced:{tag}",
-        label="Bulk edit",
-    ))
     if complete and age != "fresh":
-        collection_row.append(Button(
+        view_row.append(Button(
             style=hikari.ButtonStyle.SUCCESS,
             custom_id=f"cards_confirm:{tag}",
             label="Still accurate",
         ))
-    if account_count > 1:
-        collection_row.append(Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id="cards_account_page:0",
-            label="Switch account",
-            emoji=SWITCH_EMOJI,
-        ))
-    # Wrap rather than slice. Discord takes five buttons to a row, and the
-    # previous [:5] quietly dropped the sixth: a member with an unfinished
-    # collection, a stale confirmation and several accounts lost a control
-    # without anything saying so.
-    for index in range(0, len(collection_row), 5):
-        body.append(ActionRow(components=collection_row[index:index + 5]))
+    body.append(ActionRow(components=view_row))
+
+    # Two ways to (re)build the collection, together and apart from the menu
+    # controls. "Bulk edit" was neither bulk nor an editor: it opens a router
+    # of four category setups, for a first-time entry or a full rebuild, which
+    # is the same job as a scan and NOT the same job as sorting.
+    body.extend([
+        Separator(divider=True),
+        ActionRow(components=[
+            Button(
+                style=(
+                    hikari.ButtonStyle.PRIMARY
+                    if scan_is_primary
+                    else hikari.ButtonStyle.SECONDARY
+                ),
+                custom_id=f"cards_scan_start:{tag}",
+                label="Scan screenshots",
+                emoji=SCAN_EMOJI,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_advanced:{tag}",
+                label="Rebuild a category",
+                emoji=_safe_partial(emojis.edit),
+            ),
+        ]),
+    ])
 
     body.append(Separator(divider=True))
     body.append(ActionRow(components=destinations))
@@ -2122,6 +2121,15 @@ def _dashboard(
         LinkButton(url=COLLECTION_LINK, label="Open in game"),
         LinkButton(url=GLOBAL_CHAT_LINK, label="Global Card Chat"),
     ]))
+    if is_admin:
+        # Last, and on its own. It sat beside Find trades because that row had
+        # room, which is not a reason - it is not part of trading and almost
+        # nobody on the panel can even see it.
+        body.append(ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_admin:{tag}",
+            label="Admin",
+        )]))
     if age != "fresh":
         body.append(Text(content=(
             f"-# {age.title()} · confirm above to keep matching."
