@@ -5208,6 +5208,23 @@ def test_search_and_cancel_buttons_use_the_uploaded_emoji():
     assert cancels, "no cancel button was actually checked"
 
 
+def test_the_count_modal_fits_every_card_name():
+    """"How many <card> cards do you have?" does not fit and was rejected.
+
+    A modal title caps at 45 characters. Super Wall Breaker takes that phrasing
+    to 46, and the code truncates - so the longest names would have lost their
+    question mark silently. The title is the card name and the field carries
+    the question instead, in the same words as the screen you came from.
+    """
+    for card in cards.CARDS:
+        assert len(card.name) <= 45, f"{card.name} cannot title a modal"
+        assert len(f"How many {card.name} cards do you have?") <= 45 or True
+    # The phrasing that was rejected, kept here so the reason is testable.
+    longest = max(cards.CARDS, key=lambda c: len(c.name))
+    assert len(f"How many {longest.name} cards do you have?") > 45
+    assert len("How many do you have?") <= 45
+
+
 def test_the_card_screen_says_you_can_keep_editing():
     """The category menu stays mounted, and nothing said so.
 

@@ -8906,13 +8906,19 @@ async def cards_count(
             ephemeral=True,
         )
         return
+    # The title is the card name alone. "How many <card> cards do you have?"
+    # reads better but does not fit: a modal title caps at 45 characters and
+    # Super Wall Breaker makes it 46, so the question mark would be silently
+    # chopped off for the longest names. The card name is 18 at worst, and the
+    # field below asks the question - in the same words as the screen you came
+    # from, rather than introducing "hold" as a second verb for "have".
     await ctx.respond_with_modal(
-        title=f"How many {CARD_BY_ID[card_id].name}?"[:45],
+        title=CARD_BY_ID[card_id].name[:45],
         custom_id=f"cards_count_submit:{tag}|{card_id}",
         components=[ModalActionRow().add_text_input(
             "copies",
-            "Copies you hold",
-            placeholder="0 to 99",
+            "How many do you have?",
+            placeholder=f"0 to {MAX_COPIES}",
             required=True,
             max_length=2,
         )],
