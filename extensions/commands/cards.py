@@ -4899,11 +4899,14 @@ async def _notify_trade_accepted(bot: hikari.GatewayBot, trade: dict) -> bool:
     wanted = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     given = _card_label(CARD_BY_ID[trade["given_card_id"]])
     status = str(trade.get("status") or "move_needed")
+    # No clan wizard. The bot cannot move accounts and checking for it was a
+    # step that sent people back into the server for nothing; state the
+    # requirement once and let the two players sort it out.
     next_step = (
-        "You are in different family clans. Move one account manually within "
-        "the family, then use `/cards` → **My trades** → **Check clans**."
+        "**You are in different clans.** One of you needs to move so you are "
+        "in the same clan, then send the cards in game."
         if status == "move_needed"
-        else "You are now in the same clan and can coordinate the two in-game requests."
+        else "**You are in the same clan.** Send the cards in game."
     )
     return await _send_trade_dm(
         bot,
@@ -4921,7 +4924,10 @@ async def _notify_trade_accepted(bot: hikari.GatewayBot, trade: dict) -> bool:
                 f"{next_step}"
             ),
             accent=GREEN_ACCENT,
-            footer="The exact cards are reserved. There is no completion timer.",
+            footer=(
+                "When you have sent it, open /cards and confirm. Your card is "
+                "held until then."
+            ),
         ),
         trade_id=str(trade["_id"]),
     )
