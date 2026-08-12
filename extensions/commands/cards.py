@@ -5216,6 +5216,168 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
     return [Container(accent_color=RED_ACCENT, components=body)]
 
 
+def _swap_confirm_view(
+    trade: dict, *, role: str, preview: bool = False
+) -> list[Container]:
+    """Ask the giver whether they actually sent their card.
+
+    Only the giver is asked, and answering only ever moves the giver's own
+    card. That is what stops a card sitting in limbo because the other player
+    went quiet: nobody is waiting on anybody to agree with them.
+    """
+    given, received = _swap_legs(trade, role=role)
+    other, other_tag = _swap_counterpart(trade, role=role)
+    trade_id = str(trade["_id"])
+    return [Container(
+        accent_color=GOLD_ACCENT,
+        components=[
+            Text(content=f"## {emojis.card_swap} Finish your swap"),
+            Text(content=(
+                f"You agreed to send {_card_label(given)} to "
+                f"**{_escape_markdown(other, limit=50)}** • `{other_tag}`.\n"
+                f"You get {_card_label(received)} back."
+            )),
+            Separator(divider=True),
+            Text(content="**Did you send your card in game?**"),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"cards_swap_sent:{trade_id}",
+                    label="Yes, I sent it",
+                    emoji=emojis.yes.partial_emoji,
+                    is_disabled=preview,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_swap_later:{trade_id}",
+                    label="Not yet",
+                    is_disabled=preview,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.DANGER,
+                    custom_id=f"cards_swap_no:{trade_id}",
+                    label="No",
+                    emoji=CANCEL_EMOJI,
+                    is_disabled=preview,
+                ),
+            ]),
+            Text(content=(
+                "-# **Yes** removes one copy of your card straight away. "
+                "**Not yet** asks again next time you open `/cards`."
+            )),
+        ],
+    )]
+
+
+def _swap_cancel_check_view(
+    trade: dict, *, role: str, preview: bool = False
+) -> list[Container]:
+    """After "No": is this swap dead, or just not done yet?"""
+    given, _received = _swap_legs(trade, role=role)
+    trade_id = str(trade["_id"])
+    return [Container(
+        accent_color=RED_ACCENT,
+        components=[
+            Text(content="## What happened with this swap?"),
+            Text(content=(
+                f"You have not sent {_card_label(given)} yet."
+            )),
+            Separator(divider=True),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.DANGER,
+                    custom_id=f"cards_swap_dead:{trade_id}",
+                    label="It was cancelled",
+                    emoji=CANCEL_EMOJI,
+                    is_disabled=preview,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_swap_later:{trade_id}",
+                    label="Still going to do it",
+                    is_disabled=preview,
+                ),
+            ]),
+            Text(content=(
+                "-# **Cancelled** closes the swap and frees both cards. "
+                "**Still going to do it** asks you again next time."
+            )),
+        ],
+    )]
+
+
+def _swap_sent_view(
+    trade: dict,
+    *,
+    role: str,
+    remaining: int,
+    other_confirmed: bool,
+    preview: bool = False,
+) -> list[Container]:
+    """What the giver sees straight after confirming."""
+    given, received = _swap_legs(trade, role=role)
+    other, _other_tag = _swap_counterpart(trade, role=role)
+    tag = _normalize_tag(
+        trade["requester_tag"] if role == "requester" else trade["holder_tag"]
+    )
+    waiting = (
+        f"**{_escape_markdown(other, limit=50)}** has confirmed too, so "
+        f"{_card_label(received)} is already in your collection."
+        if other_confirmed
+        else (
+            f"Waiting for **{_escape_markdown(other, limit=50)}** to confirm "
+            f"they sent {_card_label(received)}. If they do not confirm "
+            "within 24 hours it is added for you automatically."
+        )
+    )
+    return [Container(
+        accent_color=GREEN_ACCENT,
+        components=[
+            Text(content=f"## {emojis.yes} Card sent"),
+            Text(content=(
+                f"Removed one {_card_label(given)} — you now have "
+                f"**{remaining}**.\n\n{waiting}"
+            )),
+            Separator(divider=True),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_dashboard:{tag}",
+                    label="Back to board",
+                    emoji=RETURN_EMOJI,
+                    is_disabled=preview,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_trades:{tag}",
+                    label="My trades",
+                    emoji=TRADES_EMOJI,
+                    is_disabled=preview,
+                ),
+            ]),
+        ],
+    )]
+
+
+def _swap_legs(trade: dict, *, role: str):
+    """(what you send, what you get) for one side of a trade."""
+    wanted = CARD_BY_ID[str(trade["wanted_card_id"])]
+    given = CARD_BY_ID[str(trade["given_card_id"])]
+    return (given, wanted) if role == "requester" else (wanted, given)
+
+
+def _swap_counterpart(trade: dict, *, role: str) -> tuple[str, str]:
+    if role == "requester":
+        return (
+            str(trade.get("holder_name") or "the other player"),
+            _normalize_tag(trade.get("holder_tag")),
+        )
+    return (
+        str(trade.get("requester_name") or "the other player"),
+        _normalize_tag(trade.get("requester_tag")),
+    )
+
+
 def _trade_feedback(title: str, description: str, tag: str) -> list[Container]:
     tag = _normalize_tag(tag)
     return [Container(

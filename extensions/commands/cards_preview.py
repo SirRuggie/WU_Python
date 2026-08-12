@@ -93,6 +93,10 @@ class CardsDmPreview(
             lightbulb.Choice("Accepted, same clan", "accepted_ready"),
             lightbulb.Choice("Cancelled", "cancelled"),
             lightbulb.Choice("Completed", "completed"),
+            lightbulb.Choice("MOCKUP: did you send it?", "confirm_ask"),
+            lightbulb.Choice("MOCKUP: you answered No", "confirm_no"),
+            lightbulb.Choice("MOCKUP: you answered Yes", "confirm_yes"),
+            lightbulb.Choice("MOCKUP: card deducted for you", "auto_deduct"),
         ],
     )
 
@@ -158,6 +162,53 @@ class CardsDmPreview(
                 bot, dict(one, status="completed"), recipient_id=me,
                 title="Card swap completed",
                 detail="Both collections were updated.",
+            ),
+        )
+
+        # The confirmation flow is not wired to logic yet, so its buttons are
+        # rendered disabled. These are the real view functions, not a second
+        # copy of the wording, so approving them here approves what ships.
+        async def send_panel(key: str, name: str, components) -> None:
+            if wanted not in (key, "all"):
+                return
+            try:
+                channel = await bot.rest.create_dm_channel(me)
+                await bot.rest.create_message(
+                    channel=channel,
+                    components=components,
+                    flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+                )
+                sent.append((f"{name} (mockup)", True))
+            except Exception:
+                sent.append((f"{name} (mockup)", False))
+
+        await send_panel(
+            "confirm_ask", "Did you send it?",
+            cards_command._swap_confirm_view(one, role="holder", preview=True),
+        )
+        await send_panel(
+            "confirm_no", "You answered No",
+            cards_command._swap_cancel_check_view(
+                one, role="holder", preview=True
+            ),
+        )
+        await send_panel(
+            "confirm_yes", "You answered Yes",
+            cards_command._swap_sent_view(
+                one, role="holder", remaining=1,
+                other_confirmed=False, preview=True,
+            ),
+        )
+        await run(
+            "auto_deduct", "Card deducted for you",
+            cards_command._notify_trade_status(
+                bot, one, recipient_id=me,
+                title="Your card was deducted automatically",
+                detail=(
+                    "brilliant31508 confirmed they sent theirs over 24 hours "
+                    "ago and we did not hear back from you. If this is wrong, "
+                    "open /cards, tap the card and set your real count."
+                ),
             ),
         )
 
