@@ -6040,6 +6040,66 @@ def test_who_has_tells_you_what_to_do_when_you_cannot_ask():
     assert any(i.startswith("cards_gem_ask:") for i in ids)
 
 
+def test_a_spare_everyone_owns_is_still_a_spare_you_can_offer():
+    """Two Barbarians is a real card to trade, and it was ignored.
+
+    holders_for_card only counted a duplicate when the holder was MISSING it.
+    Everybody owns a Barbarian, so a genuine spare counted for nobody and the
+    screen told the player to pay gems instead of offering the swap.
+    """
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["clan_tag"] = "#MW"
+    inventory["cards"]["meteor_golem"] = cards.MISSING
+    inventory["cards"]["barbarian"] = cards.DUPLICATE      # the two barbarians
+    holder = _complete_inventory(tag="#H", clan_tag="#MW")
+    holder["cards"]["meteor_golem"] = cards.DUPLICATE
+    holder["cards"]["barbarian"] = cards.OWNED             # they have one too
+    holder["player_name"] = "Holder"
+    holder["discord_id"] = 9
+
+    found = cards.holders_for_card(inventory, [holder], "meteor_golem")
+    assert found[0].returns == ("barbarian",)
+
+    view = cards_command._holders_view(account, "meteor_golem", found)
+    labels = [
+        str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
+    ]
+    text = _view_text(view)
+
+    assert "Ask to swap" in labels
+    assert "Ask for help" not in labels
+    assert "no spare to give" not in text
+    assert "What to do now" not in text
+
+
+def test_who_has_fits_discord_with_a_full_page_of_holders():
+    """Every holder now carries a button, so the page had to be re-measured."""
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["clan_tag"] = "#MW"
+    inventory["cards"]["meteor_golem"] = cards.MISSING
+    holders = []
+    for index in range(60):
+        holder = _complete_inventory(tag=f"#H{index}", clan_tag="#MW")
+        holder["cards"]["meteor_golem"] = cards.DUPLICATE
+        holder["player_name"] = f"Holder {index}"
+        holder["discord_id"] = 1000 + index
+        holders.append(holder)
+
+    found = cards.holders_for_card(inventory, holders, "meteor_golem")
+    assert len(found) == 60, "the page must be capped, not the search"
+    _assert_discord_payload(
+        cards_command._holders_view(account, "meteor_golem", found)
+    )
+
+
 def test_the_gem_ask_states_the_price_before_anything_is_sent():
     """Gems are real money, so the number comes before the commit."""
     account = Account(

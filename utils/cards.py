@@ -703,11 +703,18 @@ def holders_for_card(
         ):
             continue
 
+        # Same rule as find_matches: any same-category duplicate is a legal
+        # offer. Requiring the holder to be MISSING it meant a spare Barbarian
+        # counted for nobody, because everybody has a Barbarian - so a player
+        # with a real card to trade was told they had none and must pay gems.
         returns = tuple(
             other.id
             for other in CATEGORY_CARDS[card.category]
             if requester_cards.get(other.id, OWNED) >= DUPLICATE
-            and candidate_cards.get(other.id, OWNED) == MISSING
+        )
+        wanted_returns = tuple(
+            other_id for other_id in returns
+            if candidate_cards.get(other_id, OWNED) == MISSING
         )
         discord_id = candidate.get("discord_id")
         try:
@@ -725,6 +732,7 @@ def holders_for_card(
                 category=card.category,
                 offers=(card_id,),
                 returns=returns,
+                wanted_returns=wanted_returns,
             ),),
             same_clan=bool(requester_clan and requester_clan == candidate.get("clan_tag")),
             confirmed_at=confirmed_at,
