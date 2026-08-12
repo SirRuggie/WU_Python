@@ -1995,7 +1995,11 @@ def _dashboard(
         notes.append(
             f"**{len(unverified_duplicates)} card"
             f"{'s need' if len(unverified_duplicates) != 1 else ' needs'} "
-            "a duplicate check.** They read *Might be a spare* in the menus."
+            # Was "They read *Might be a spare* in the menus". Both halves of
+            # that went stale in one go: this screen has no menus any more,
+            # and the counts became plain numbers, so the phrase it quoted is
+            # not on screen anywhere. Name the button that answers it instead.
+            "a duplicate check.** Tap **Check spares** below."
         )
     if reserved_count:
         notes.append(
@@ -2794,9 +2798,8 @@ def _quantity_editor(
         Separator(divider=True),
         Text(content=(
             "**Scan screenshots**\n"
-            "Scan your collection from screenshots.\n"
-            "Some cards may not be detected. Check your collection after "
-            "scanning."
+            "Scan your collection from screenshots. Some cards may not be "
+            "detected, so check your collection after scanning."
         )),
         ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
