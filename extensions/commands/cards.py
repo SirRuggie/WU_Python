@@ -2734,7 +2734,7 @@ def _update_overview(account, inventory: dict) -> list[Container]:
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                    label="Back",
+                    label="Back to collection",
                     emoji=RETURN_EMOJI,
                 ),
             ]),

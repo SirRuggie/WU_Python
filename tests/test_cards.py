@@ -1,6 +1,7 @@
 import asyncio
 import math
 import pathlib
+import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -5176,6 +5177,45 @@ def test_search_and_cancel_buttons_use_the_uploaded_emoji():
                 assert emoji.get("id") != str(cards_command.RETURN_EMOJI.id)
                 cancels += 1
     assert cancels, "no cancel button was actually checked"
+
+
+def test_every_button_back_to_the_collection_names_it():
+    """Audited by destination, not by label.
+
+    The terminology sweep searched for the old labels and replaced those, so a
+    button that had always just said "Back" was never found - it shipped
+    saying "Back" on a screen where everything else said "collection". Reading
+    the source for `cards_dashboard` targets is the only check that cannot
+    miss one.
+
+    Deliberate exceptions are listed by name: they answer a question rather
+    than navigate, and "Not now" must not become "Back to collection".
+    """
+    intentional = {
+        "Done", "Later", "Not now", "Skip, 2+ is fine", "Collection",
+    }
+    source = pathlib.Path(
+        cards_command.__file__.replace(".pyc", ".py")
+    ).read_text(encoding="utf-8")
+
+    offenders = []
+    for match in re.finditer(r"Button\((.*?)\)\s*,?\s*\n", source, re.S):
+        block = match.group(1)
+        target = re.search(r'custom_id=f?"([^"]+)"', block)
+        label = re.search(r'label=f?"([^"]+)"', block)
+        if not target or not label:
+            continue
+        if target.group(1).split(":")[0] != "cards_dashboard":
+            continue
+        text = label.group(1)
+        if text in intentional or text == "Back to collection":
+            continue
+        offenders.append((source[:match.start()].count("\n") + 1, text))
+
+    assert not offenders, (
+        "buttons returning to the collection without naming it: "
+        + ", ".join(f"line {line}: {text!r}" for line, text in offenders)
+    )
 
 
 def test_no_back_button_is_left_on_a_unicode_arrow():
