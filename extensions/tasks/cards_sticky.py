@@ -1,15 +1,21 @@
 """Keep a short /cards explainer pinned to the bottom of a channel.
 
 Discord has no real sticky message, so the only way to keep a notice visible is
-to delete it and post it again below whatever was said since. This does that on
-a timer, but only when the notice has actually been buried: reposting a message
-that is already last marks the channel unread and bumps it up everyone's sidebar
-for no visible change. It posts silently, so no repost ever notifies anyone.
+to delete it and post it again below whatever was said since.
+
+Three things have to be true before it moves. The notice has to be buried -
+reposting one that is already last marks the channel unread for no visible
+change. Enough time has to have passed since the last repost. And the channel
+has to have been quiet for a few minutes, because dropping the notice into a
+live conversation every ten minutes was worse than it being buried. The loop
+looks every minute so it can post shortly after people stop talking rather than
+on the next multiple of ten. It posts silently, so no repost ever notifies
+anyone.
 """
 
 import asyncio
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import hikari
 import lightbulb
@@ -36,7 +42,15 @@ loader = lightbulb.Loader()
 # one-line change; the stored message id is keyed by channel, so the old notice
 # in the previous channel is cleaned up on the next cycle.
 STICKY_CHANNEL_ID = 1533915865441894430
+# The shortest gap between two reposts. Not how often the loop looks: it wakes
+# every minute so that it can post soon after a conversation ends rather than
+# on the next multiple of ten.
 REPOST_INTERVAL_MINUTES = 10
+# How long the channel has to be silent first. Reposting into a live
+# conversation pushed the notice between people mid-sentence every ten minutes,
+# which is the single most irritating thing this task did.
+QUIET_PERIOD_MINUTES = 5
+CHECK_INTERVAL_SECONDS = 60
 CONFIG_ID = "cards_sticky_message"
 
 COLLECTION_LINK = "https://link.clashofclans.com/en/?action=OpenCollection"
@@ -347,6 +361,42 @@ async def _newest_message_id(bot: hikari.GatewayBot, channel_id: int):
     return int(latest) if latest else None
 
 
+def _snowflake_time(value: object) -> datetime | None:
+    """When a message id was minted, read out of the id itself.
+
+    A Discord snowflake encodes its own creation time, so the age of the last
+    message costs no API call - the channel fetch already handed us its id.
+    Fetching the message to read `created_at` would be a second round trip for
+    something already in hand, and would fail outright once that message is
+    deleted while the id remains perfectly readable.
+    """
+    try:
+        return hikari.Snowflake(int(value)).created_at
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _channel_is_quiet(newest: object, *, now: datetime) -> bool:
+    """Whether nobody has said anything for QUIET_PERIOD_MINUTES."""
+    spoke_at = _snowflake_time(newest)
+    if spoke_at is None:
+        # An empty channel, or an id that will not parse. There is no
+        # conversation to interrupt either way.
+        return True
+    return (now - spoke_at) >= timedelta(minutes=QUIET_PERIOD_MINUTES)
+
+
+def _interval_elapsed(stored: dict, *, now: datetime) -> bool:
+    """Whether enough time has passed since the notice was last posted."""
+    posted_at = stored.get("posted_at")
+    if not isinstance(posted_at, datetime):
+        # Never posted, or a document written before this field existed.
+        return True
+    if posted_at.tzinfo is None:
+        posted_at = posted_at.replace(tzinfo=timezone.utc)
+    return (now - posted_at) >= timedelta(minutes=REPOST_INTERVAL_MINUTES)
+
+
 async def _delete_previous(
     bot: hikari.GatewayBot, channel_id: int, message_id: int
 ) -> bool:
@@ -380,15 +430,17 @@ async def refresh_sticky() -> None:
     previous_channel = stored.get("channel_id")
     owed = [int(value) for value in (stored.get("pending_deletes") or ())]
 
+    newest = await _newest_message_id(bot_instance, channel_id)
+    if newest is UNKNOWN:
+        # Do not repost on a guess. If the channel cannot be read, posting
+        # into it is unlikely to work either, and a wrong guess repeats
+        # every cycle for as long as the failure lasts.
+        return
+
     if previous_id and int(previous_channel or 0) == channel_id:
-        newest = await _newest_message_id(bot_instance, channel_id)
-        if newest is UNKNOWN:
-            # Do not repost on a guess. If the channel cannot be read, posting
-            # into it is unlikely to work either, and a wrong guess repeats
-            # every cycle for as long as the failure lasts.
-            return
         # The notice already sits at the bottom, so a repost achieves nothing -
         # unless the wording changed, in which case edit it where it stands.
+        # An edit does not move the message, so it is not gated on quiet.
         if newest is not None and newest == int(previous_id):
             if stored.get("content_key") != _content_key():
                 if await _rewrite_in_place(
@@ -397,6 +449,18 @@ async def refresh_sticky() -> None:
                     await _remember_content_key(_content_key())
             await _drain_pending(owed, channel_id)
             return
+
+    # Buried, but that alone is no longer reason enough. Reposting on a plain
+    # timer dropped the notice into the middle of whatever people were saying,
+    # over and over, for as long as they kept talking. Both gates have to be
+    # open: long enough since the last post, and long enough since anyone
+    # spoke. The loop looks every minute, so the notice lands shortly after a
+    # conversation ends rather than in the middle of the next one.
+    now = datetime.now(timezone.utc)
+    if not _interval_elapsed(stored, now=now):
+        return
+    if not _channel_is_quiet(newest, now=now):
+        return
 
     try:
         message = await bot_instance.rest.create_message(
@@ -483,7 +547,7 @@ async def sticky_loop() -> None:
             raise
         except Exception as exc:
             print(f"[Cards Sticky] loop error: {type(exc).__name__}: {exc}")
-        await asyncio.sleep(REPOST_INTERVAL_MINUTES * 60)
+        await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 
 @loader.listener(hikari.StartedEvent)
@@ -505,8 +569,10 @@ async def on_bot_started(
         return
     await _learn_cards_mention(bot)
     sticky_task = asyncio.create_task(sticky_loop(), name="cards-sticky")
-    print(f"[Cards Sticky] task started for #{STICKY_CHANNEL_ID} "
-          f"every {REPOST_INTERVAL_MINUTES}m")
+    print(f"[Cards Sticky] task started for #{STICKY_CHANNEL_ID}: checks "
+          f"every {CHECK_INTERVAL_SECONDS}s, reposts at most every "
+          f"{REPOST_INTERVAL_MINUTES}m and only after "
+          f"{QUIET_PERIOD_MINUTES}m of quiet")
 
 
 @loader.listener(hikari.StoppingEvent)

@@ -1,5 +1,6 @@
 import asyncio
 import pathlib
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import hikari
@@ -533,3 +534,128 @@ def test_the_banner_file_is_small_enough_to_repost_all_day():
     banner = pathlib.Path(sticky.STICKY_BANNER)
     assert banner.exists(), sticky.STICKY_BANNER
     assert banner.stat().st_size < 400_000, banner.stat().st_size
+
+
+def _spoke_at(minutes_ago):
+    """A message id whose snowflake says it was sent that long ago."""
+    return int(hikari.Snowflake.from_datetime(
+        datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    ))
+
+
+def test_no_repost_while_people_are_still_talking(monkeypatch):
+    """The complaint this was built for.
+
+    On a plain timer the notice landed in the middle of a conversation every
+    ten minutes, over and over, for as long as people kept talking.
+    """
+    rest = _Rest(newest_id=_spoke_at(1))
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+        "content_key": sticky._content_key(),
+        "posted_at": datetime.now(timezone.utc) - timedelta(hours=3),
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert rest.created == [], "buried, but somebody is mid-conversation"
+    assert rest.deleted == []
+
+
+def test_repost_once_the_channel_has_gone_quiet(monkeypatch):
+    rest = _Rest(newest_id=_spoke_at(sticky.QUIET_PERIOD_MINUTES + 1))
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+        "content_key": sticky._content_key(),
+        "posted_at": datetime.now(timezone.utc) - timedelta(hours=3),
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert len(rest.created) == 1
+    assert rest.deleted == [(sticky.STICKY_CHANNEL_ID, 555)]
+
+
+def test_the_quiet_gate_is_exactly_the_configured_wait(monkeypatch):
+    """One minute either side of the line, so the boundary cannot drift."""
+    now = datetime.now(timezone.utc)
+    assert not sticky._channel_is_quiet(
+        _spoke_at(sticky.QUIET_PERIOD_MINUTES - 1), now=now
+    )
+    assert sticky._channel_is_quiet(
+        _spoke_at(sticky.QUIET_PERIOD_MINUTES + 1), now=now
+    )
+    # An empty channel has no conversation to interrupt.
+    assert sticky._channel_is_quiet(None, now=now)
+
+
+def test_no_repost_before_the_interval_even_in_a_silent_channel(monkeypatch):
+    """Quiet is necessary, not sufficient. Otherwise a dead channel would get
+    the notice reposted every single minute the loop wakes up."""
+    rest = _Rest(newest_id=_spoke_at(120))
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+        "content_key": sticky._content_key(),
+        "posted_at": datetime.now(timezone.utc) - timedelta(minutes=2),
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert rest.created == []
+
+
+def test_a_naive_posted_at_is_read_as_utc_not_crashed(monkeypatch):
+    """Mongo hands back naive datetimes, so this is the normal case."""
+    rest = _Rest(newest_id=_spoke_at(120))
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+        "content_key": sticky._content_key(),
+        "posted_at": (
+            datetime.now(timezone.utc) - timedelta(minutes=2)
+        ).replace(tzinfo=None),
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert rest.created == [], "two minutes ago is inside the ten minute gap"
+
+
+def test_reworded_notice_is_still_edited_while_people_talk(monkeypatch):
+    """An edit does not move the message, so it interrupts nobody.
+
+    Gating it on quiet would have stranded corrected wording in a busy
+    channel, which is the opposite of what the quiet rule is for.
+    """
+    rest = _Rest(newest_id=555)
+    config = _Config({
+        "_id": sticky.CONFIG_ID,
+        "channel_id": sticky.STICKY_CHANNEL_ID,
+        "message_id": 555,
+        "content_key": "the-old-wording",
+        "posted_at": datetime.now(timezone.utc),
+    })
+    _install(monkeypatch, rest, config)
+
+    asyncio.run(sticky.refresh_sticky())
+
+    assert rest.edited == [(sticky.STICKY_CHANNEL_ID, 555)]
+    assert rest.created == []
+
+
+def test_the_loop_looks_far_more_often_than_it_posts():
+    """It has to, or a conversation ending at 09:01 waits until 09:10."""
+    assert sticky.CHECK_INTERVAL_SECONDS <= 60
+    assert sticky.CHECK_INTERVAL_SECONDS < sticky.REPOST_INTERVAL_MINUTES * 60
+    assert sticky.QUIET_PERIOD_MINUTES < sticky.REPOST_INTERVAL_MINUTES
