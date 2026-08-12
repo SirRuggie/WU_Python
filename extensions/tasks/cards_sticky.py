@@ -50,6 +50,34 @@ STICKY_BANNER = "assets/cards/sticky_banner.jpg"
 # mention would notify them every single time.
 SUPPORT_USER_ID = 505227988229554179
 
+# Discord has no button that runs a slash command - a button can only send an
+# interaction back to us. `</cards:id>` is the closest thing: a blue chip that
+# opens the command when tapped. It needs the live command id, which only
+# exists after the client syncs, so it is looked up once at startup and falls
+# back to plain text if that lookup fails.
+_cards_mention = "`/cards`"
+
+
+def cards_mention() -> str:
+    return _cards_mention
+
+
+async def _learn_cards_mention(bot: hikari.GatewayBot) -> None:
+    global _cards_mention
+    try:
+        application = await bot.rest.fetch_application()
+        commands = await bot.rest.fetch_application_commands(application.id)
+    except Exception as exc:
+        print(f"[Cards Sticky] command id lookup failed: "
+              f"{type(exc).__name__}: {exc}")
+        return
+    for command in commands:
+        if getattr(command, "name", None) == "cards":
+            _cards_mention = f"</cards:{int(command.id)}>"
+            print(f"[Cards Sticky] /cards mention ready: {_cards_mention}")
+            return
+    print("[Cards Sticky] /cards command not found; using plain text")
+
 # Discord raises these for reasons a retry will never fix, so they are logged
 # once and skipped rather than retried into a rate limit. NotFoundError is in
 # here to match the other task modules; the one place it is survivable - a
@@ -108,7 +136,8 @@ def _sticky_components() -> list[Container]:
             Separator(divider=True),
             Text(content=(
                 f"**1 · Add your cards**\n"
-                f"{emojis.scan} Run **`/cards`** and tap **Scan screenshots**\n"
+                f"{emojis.scan} Tap {cards_mention()} and then "
+                "**Scan screenshots**\n"
                 f"{emojis.inbox} I will DM you — send your collection pictures "
                 "in that DM"
             )),
@@ -196,7 +225,7 @@ def _walkthrough() -> list[Container]:
                 "### After they accept\n"
                 "**8.** Get into the same clan, then send the cards to each "
                 "other in game — the same way you send any card\n\n"
-                f"**9.** Open **`/cards`**. I ask *Did you send your card?* "
+                f"**9.** Open {cards_mention()}. I ask *Did you send your card?* "
                 f"Tap **Yes, I sent it** {emojis.yes}\n"
                 "-# Only your own card moves when you answer. They confirm "
                 "theirs the same way. Nothing is lost if one of you is slow."
@@ -469,6 +498,7 @@ async def on_bot_started(
     if sticky_task and not sticky_task.done():
         print("[Cards Sticky] task already running; start skipped")
         return
+    await _learn_cards_mention(bot)
     sticky_task = asyncio.create_task(sticky_loop(), name="cards-sticky")
     print(f"[Cards Sticky] task started for #{STICKY_CHANNEL_ID} "
           f"every {REPOST_INTERVAL_MINUTES}m")
