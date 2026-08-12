@@ -2812,6 +2812,7 @@ async def _dashboard_view(
     account_count: int,
     mongo: MongoClient | None = None,
     guild_id: int | None = None,
+    skip_paused_gate: bool = False,
 ):
     """The board - unless this account owes somebody an answer.
 
@@ -2819,6 +2820,11 @@ async def _dashboard_view(
     the member has no reason to go looking for it. Asking the moment they open
     `/cards` is the only place they are guaranteed to see it.
     """
+    # A hidden account is asked whether it wants to come back before it is
+    # shown a board it cannot trade from. `|paused` on the custom_id is how
+    # "Not now" gets past this without turning trading back on.
+    if inventory.get("trading_paused") and not skip_paused_gate:
+        return _trading_paused_view(account)
     if mongo is not None and guild_id is not None:
         pending = await _swap_awaiting_confirmation(
             mongo, tag=account.tag, guild_id=guild_id
@@ -5782,6 +5788,85 @@ async def _record_swap_confirmation(
     return updated
 
 
+# Two requests expiring back to back is what triggers the check-in. Two ever
+# would nag somebody who trades happily for a month and misses one at each end,
+# so the counter resets the moment they answer anything.
+IGNORED_BEFORE_CHECKIN = 2
+CHECKIN_ANSWER_FOR = timedelta(hours=24)
+
+
+def _checkin_dm(tag: str, name: object) -> list[Container]:
+    """Ask whether somebody is still trading, before hiding them.
+
+    Nobody is removed for being idle any more, so this is the only path to
+    being hidden - and it always asks first.
+    """
+    return _trade_dm_container(
+        f"{emojis.magnifier} Are you still trading cards?",
+        (
+            f"Two trade requests for **{_escape_markdown(name, limit=40)}** "
+            "ran out because they were not answered.\n\n"
+            "**Yes** keeps your cards visible. You will keep getting a DM each "
+            "time somebody wants to trade, and you accept or decline there.\n\n"
+            "**No** hides your cards from everyone else. Nothing is deleted, "
+            "and you can turn it back on any time."
+        ),
+        accent=GOLD_ACCENT,
+        controls=[ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=f"cards_trading_on:{_normalize_tag(tag)}",
+                label="Yes, keep trading",
+                emoji=emojis.yes.partial_emoji,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_trading_off:{_normalize_tag(tag)}",
+                label="No, hide my cards",
+                emoji=CANCEL_EMOJI,
+            ),
+        ])],
+        footer=(
+            "No answer within 24 hours hides your cards, and you can turn "
+            "them back on whenever you like."
+        ),
+    )
+
+
+def _trading_paused_view(account, *, just_changed: bool = False) -> list[Container]:
+    """Shown when a hidden member opens /cards."""
+    tag = _normalize_tag(account.tag)
+    return [Container(
+        accent_color=GOLD_ACCENT,
+        components=[
+            Text(content=f"## {emojis.magnifier} Trading is off for this account"),
+            Text(content=(
+                "Your cards are hidden from everyone else, so nobody can send "
+                "you requests. Nothing was deleted - your collection is exactly "
+                "as you left it."
+                if not just_changed
+                else "Done. Your cards are hidden from everyone else and "
+                "nothing was deleted."
+            )),
+            Separator(divider=True),
+            Text(content="**Do you want to start trading cards again?**"),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"cards_trading_on:{tag}",
+                    label="Yes, start trading",
+                    emoji=emojis.yes.partial_emoji,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_dashboard:{tag}|paused",
+                    label="Not now",
+                ),
+            ]),
+        ],
+    )]
+
+
 def _swap_confirm_view(
     trade: dict, *, role: str, preview: bool = False
 ) -> list[Container]:
@@ -7948,8 +8033,9 @@ async def cards_dashboard(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
+    tag, suffix = _parse_target(str(action_id or ""))
     account, inventory, problem = await _load_target(
-        ctx, action_id, coc_client=coc_client, mongo=mongo
+        ctx, tag, coc_client=coc_client, mongo=mongo
     )
     if problem:
         return problem
@@ -8471,6 +8557,7 @@ async def cards_hidden(
         return await _dashboard_view(
             account, inventory, account_count=len(_loaded_entries(data)),
             mongo=mongo, guild_id=_trade_guild_id(ctx),
+            skip_paused_gate=str(action_id or "").endswith("|paused"),
         )
     return await _hidden_badge_review_view(account, inventory)
 
@@ -9460,6 +9547,82 @@ async def cards_swap_dead(
         ctx, str(action_id or "").partition("|")[0],
         coc_client=coc_client, mongo=mongo, bot=bot,
     )
+
+
+@register_action("cards_trading_on")
+@lightbulb.di.with_di
+async def cards_trading_on(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Make this account visible again. Works from the DM or from /cards."""
+    account, inventory, problem = await _set_trading_paused(
+        ctx, action_id, paused=False, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    data = await load_accounts(coc_client, int(ctx.user.id))
+    return await _dashboard_view(
+        account, inventory, account_count=len(_loaded_entries(data)),
+        mongo=mongo, guild_id=_trade_guild_id(ctx),
+    )
+
+
+@register_action("cards_trading_off")
+@lightbulb.di.with_di
+async def cards_trading_off(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Hide this account from everyone else. Nothing is deleted."""
+    account, _inventory, problem = await _set_trading_paused(
+        ctx, action_id, paused=True, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    return _trading_paused_view(account, just_changed=True)
+
+
+async def _set_trading_paused(
+    ctx, action_id: str, *, paused: bool, coc_client, mongo: MongoClient
+):
+    """Flip the visibility flag and reset the ignored-request counter.
+
+    The counter resets either way: saying yes proves they are responsive, and
+    saying no means the count has done its job.
+    """
+    tag, _rest = _parse_target(str(action_id or ""))
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return None, None, problem
+    now = datetime.now(timezone.utc)
+    try:
+        await mongo.card_inventories.update_one(
+            {"_id": _normalize_tag(account.tag)},
+            {"$set": {
+                "trading_paused": bool(paused),
+                "trading_paused_at": now if paused else None,
+                "ignored_requests": 0,
+                "checkin_sent_at": None,
+                "updated_at": now,
+            }},
+        )
+    except Exception:
+        _log.exception("trading visibility write failed tag=%s", account.tag)
+        return None, None, _notice(
+            "Could not save that", "Try again in a moment."
+        )
+    inventory = dict(inventory)
+    inventory["trading_paused"] = bool(paused)
+    return account, inventory, None
 
 
 @register_action("cards_dm_accept")

@@ -4060,19 +4060,35 @@ def test_family_supply_counts_holders_and_seekers_per_card():
     assert supply["archer"].seekers == ()
 
 
-def test_family_supply_ignores_stale_and_unreviewed_collections():
+def test_family_supply_ignores_paused_and_unreviewed_collections():
+    """Age no longer removes anyone; opting out does.
+
+    An event that runs for weeks made the old 72-hour cutoff remove people
+    whose cards were perfectly accurate, purely for not opening Discord, and
+    it never told them.
+    """
     values = {card.id: cards.DUPLICATE for card in cards.CARDS}
-    stale = _supply_document(
-        "#OLD",
-        cards_map=values,
-        confirmed_at=datetime.now(timezone.utc) - timedelta(days=9),
-    )
+    paused = _supply_document("#OFF", cards_map=values)
+    paused["trading_paused"] = True
     unreviewed = _supply_document("#NEW", cards_map=values, complete=[])
 
-    supply = cards.family_supply([stale, unreviewed])
+    supply = cards.family_supply([paused, unreviewed])
 
     assert supply["barbarian"].holders == ()
     assert supply["barbarian"].reporting == 0
+
+
+def test_family_supply_keeps_an_old_but_active_collection():
+    values = {card.id: cards.DUPLICATE for card in cards.CARDS}
+    old = _supply_document(
+        "#OLD",
+        cards_map=values,
+        confirmed_at=datetime.now(timezone.utc) - timedelta(days=20),
+    )
+
+    supply = cards.family_supply([old])
+
+    assert supply["barbarian"].holders == ("#OLD",)
 
 
 def test_family_supply_only_counts_reviewed_categories_of_a_partial_member():
@@ -4599,24 +4615,41 @@ def test_destination_buttons_say_what_is_waiting_there():
     _assert_discord_payload(view)
 
 
-def test_find_trades_button_is_disabled_and_explains_why_when_stale():
-    """Matching cuts off at 72 hours, so the label says so instead of dead-ending."""
+def test_find_trades_stays_open_on_an_old_collection():
+    """Idle is not the same as wrong, and this event runs for weeks."""
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
-    stale = _complete_inventory(
-        confirmed_at=datetime.now(timezone.utc) - timedelta(days=5)
+    old = _complete_inventory(
+        confirmed_at=datetime.now(timezone.utc) - timedelta(days=20)
     )
 
-    view = cards_command._dashboard(account, stale, account_count=1)
+    view = cards_command._dashboard(account, old, account_count=1)
+    find = next(
+        n for n in _view_nodes(view)
+        if n.get("custom_id") == "cards_matches:#ME"
+    )
+
+    assert find["disabled"] is False
+    _assert_discord_payload(view)
+
+
+def test_find_trades_is_closed_while_trading_is_paused():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    paused = _complete_inventory()
+    paused["trading_paused"] = True
+
+    view = cards_command._dashboard(account, paused, account_count=1)
     find = next(
         n for n in _view_nodes(view)
         if n.get("custom_id") == "cards_matches:#ME"
     )
 
     assert find["disabled"] is True
-    assert "collection is stale" in find["label"]
     _assert_discord_payload(view)
 
 

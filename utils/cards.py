@@ -28,7 +28,13 @@ MAX_COPIES = 99
 
 FRESH_FOR = timedelta(hours=24)
 AGING_FOR = timedelta(hours=48)
-MATCHABLE_FOR = timedelta(hours=72)
+# Kept only so an existing collection with no confirmation timestamp at all
+# is still recognised as never-scanned. A collection does NOT expire with age:
+# this event runs for weeks, and dropping somebody for being idle removed
+# people whose cards were perfectly accurate, without ever telling them.
+# Visibility is now driven by whether they answer requests - see
+# `trading_paused` and the check-in flow in extensions/commands/cards.py.
+MATCHABLE_FOR = timedelta(days=3650)
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,6 +346,13 @@ def _matchable(
     now: datetime,
     max_age: timedelta,
 ) -> datetime | None:
+    """When this collection was confirmed, or None if it cannot be matched.
+
+    Two ways to be unmatchable: never scanned at all, or the member turned
+    trading off. Age alone is no longer one of them.
+    """
+    if document.get("trading_paused"):
+        return None
     confirmed_at = _document_timestamp(document)
     if confirmed_at is None or now - confirmed_at > max_age:
         return None
