@@ -4243,10 +4243,14 @@ def test_card_focus_marks_the_current_state_and_keeps_the_menu():
     assert any(
         str(n.get("label")) == "Set to 2" for n in nodes
     ), "an unconfirmed spare keeps its one-tap answer"
+    # None (0) and Have 1 are gone - they were the disguised readout. Set to 2
+    # survives as cards_set:...|2, but only while the spare is unconfirmed.
     assert not [
         n for n in nodes
-        if str(n.get("custom_id", "")).startswith("cards_set:#ME|wizard|")
-    ], "absolute state buttons were the disguised readout; they are gone"
+        if str(n.get("custom_id", "")) in (
+            "cards_set:#ME|wizard|0", "cards_set:#ME|wizard|1",
+        )
+    ], "the absolute state buttons were the readout in disguise"
 
     # Navigation belongs outside the row that changes the number.
     value_row = next(
