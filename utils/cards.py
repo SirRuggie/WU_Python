@@ -399,9 +399,9 @@ def reciprocal_trade_error(
 
     now = as_utc(now) or datetime.now(timezone.utc)
     if not inventory_is_matchable(requester, now=now, max_age=max_age):
-        return "Your collection must be confirmed within the last 72 hours."
+        return "Your trading is turned off. Turn it back on in /cards."
     if not inventory_is_matchable(holder, now=now, max_age=max_age):
-        return "The holder's collection is no longer current."
+        return "That player has turned trading off."
 
     requester_cards = normalize_cards(requester.get("cards"))
     holder_cards = normalize_cards(holder.get("cards"))

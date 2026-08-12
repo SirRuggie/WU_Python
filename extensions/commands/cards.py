@@ -32,6 +32,7 @@ from extensions.commands.accounts import (
     AccountsData,
     load_accounts,
 )
+from extensions.commands.recruit.perms import guild_permissions
 from extensions.components import register_action
 from utils.card_board import (
     CARD_ARTWORK_DIR,
@@ -352,11 +353,17 @@ def _notice(title: str, description: str) -> list[Container]:
 
 
 def _stale_collection_notice() -> list[Container]:
+    """Why matching is closed to you.
+
+    Age stopped being the reason when the 72-hour window went; the only thing
+    that turns matching off now is having trading switched off, so the message
+    has to point at that instead or it sends people to confirm a collection
+    that was never the problem.
+    """
     return _notice(
-        "Confirm your collection first",
-        "Trade search only uses collections confirmed within the last 72 hours. "
-        "Return to the dashboard and choose **Everything still accurate**, or "
-        "update the lists that changed.",
+        "Your trading is turned off",
+        "Your cards are hidden from the family while trading is off, so there "
+        "is nothing to search. Open `/cards` and turn trading back on.",
     )
 
 
@@ -1907,6 +1914,7 @@ def _dashboard(
     *,
     account_count: int,
     rendered_board=None,
+    is_admin: bool = False,
 ) -> list[Container]:
     tag = _normalize_tag(account.tag)
     complete = set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
@@ -1995,12 +2003,12 @@ def _dashboard(
                 else hikari.ButtonStyle.SECONDARY
             ),
             custom_id=f"cards_matches:{tag}",
-            # Matching cuts off at 72 hours, so the unavailable case is
-            # staleness rather than an unfinished collection.
+            # Matching no longer expires with age; the only thing that turns
+            # this off is opting out, so the disabled label says so.
             label=(
                 f"Find trades · {summary.missing} needed"
                 if matchable
-                else "Find trades · collection is stale"
+                else "Find trades · trading is off"
             ),
             emoji=SEARCH_EMOJI,
             is_disabled=not matchable,
@@ -2012,6 +2020,15 @@ def _dashboard(
             emoji=TRADES_EMOJI,
         ),
     ]
+    if is_admin:
+        # Under /cards rather than a command of its own, so there is one place
+        # to remember. Nobody without ADMINISTRATOR is ever drawn this button,
+        # and the handler rechecks anyway.
+        destinations.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_admin:{tag}",
+            label="Admin",
+        ))
     # The controls that act on the menus above, immediately below them.
     collection_row: list = [
         Button(
@@ -2813,6 +2830,7 @@ async def _dashboard_view(
     mongo: MongoClient | None = None,
     guild_id: int | None = None,
     skip_paused_gate: bool = False,
+    is_admin: bool = False,
 ):
     """The board - unless this account owes somebody an answer.
 
@@ -2838,6 +2856,7 @@ async def _dashboard_view(
         inventory,
         account_count=account_count,
         rendered_board=board,
+        is_admin=is_admin,
     )
 
 
@@ -3358,6 +3377,294 @@ def _card_pickers(
     return rows
 
 
+def _member_names(bot, discord_ids, *, guild_id: int | None) -> dict[int, str]:
+    """Discord display names, from cache only.
+
+    The member intent is on, so the cache already holds the family and this
+    costs no API call. A miss simply leaves the name out and the caller falls
+    back to the in-game name, which is why nothing here raises.
+    """
+    names: dict[int, str] = {}
+    if bot is None or guild_id is None:
+        return names
+    for discord_id in discord_ids:
+        if not discord_id or int(discord_id) in names:
+            continue
+        try:
+            member = bot.cache.get_member(int(guild_id), int(discord_id))
+        except Exception:
+            continue
+        if member is None:
+            continue
+        shown = str(
+            getattr(member, "display_name", None)
+            or getattr(member, "username", "")
+        ).strip()
+        if shown:
+            names[int(discord_id)] = shown
+    return names
+
+
+def _browse_picker(
+    tag: str,
+    candidates: list[dict],
+    *,
+    names: dict[int, str],
+    clan_tag: str | None,
+) -> list:
+    """Look a player up by name, rather than by guessing one of their cards.
+
+    Every other route into this data starts from a card you are missing, which
+    dead-ends the moment you are missing nothing anyone holds. This starts from
+    the person, so it keeps working either way.
+
+    Keyed on the Discord name because that is what people recognise in chat;
+    the in-game name rides along for the accounts nobody knows by handle.
+    """
+    people: dict[str, list[dict]] = {}
+    for document in candidates:
+        if document.get("trading_paused"):
+            continue        # they opted out; they should not be browsable
+        discord_id = document.get("discord_id")
+        key = f"d:{int(discord_id)}" if discord_id else f"t:{_normalize_tag(document.get('_id'))}"
+        people.setdefault(key, []).append(document)
+
+    def option(key: str, documents: list[dict]) -> SelectOption:
+        # Spares are counted across every account they own, because the count
+        # is only there to say whether the lookup is worth making.
+        spares = sum(
+            1
+            for document in documents
+            for value in normalize_cards(document.get("cards")).values()
+            if value >= DUPLICATE
+        )
+        discord_id = documents[0].get("discord_id")
+        shown = names.get(int(discord_id)) if discord_id else None
+        in_game = str(documents[0].get("player_name") or "").strip()
+        label = shown or in_game or str(documents[0].get("_id") or "Unknown")
+        if shown and in_game and in_game.lower() != shown.lower():
+            label = f"{shown} · {in_game}"
+        detail = f"{spares} spare{'s' if spares != 1 else ''}"
+        if len(documents) > 1:
+            detail += f" · {len(documents)} accounts"
+        return SelectOption(
+            label=label[:100], value=key, description=detail[:100],
+        )
+
+    def rank(item: tuple[str, list[dict]]) -> tuple[int, str]:
+        # Clanmates first, so the 25 that survive the cap are the people you
+        # can actually trade with today. Alphabetical inside that, because a
+        # menu you are scanning for one name is easier to read sorted.
+        _key, documents = item
+        same_clan = bool(
+            clan_tag
+            and any(
+                _normalize_tag(document.get("clan_tag")) == clan_tag
+                for document in documents
+            )
+        )
+        return (0 if same_clan else 1, option(_key, documents).label.lower())
+
+    options = [option(key, docs) for key, docs in sorted(people.items(), key=rank)]
+    if not options:
+        return []
+    return [ActionRow(components=[TextSelectMenu(
+        custom_id=f"cards_browse:{tag}",
+        placeholder="Look up a player by name",
+        max_values=1,
+        options=options[:25],
+    )])]
+
+
+def _player_spares_view(
+    viewer_tag: str,
+    viewer_inventory: dict,
+    documents: list[dict],
+    *,
+    display_name: str,
+) -> list[Container]:
+    """Everything one player has spare, per account.
+
+    Deliberately NOT merged across their accounts: you trade in game with one
+    account, in one clan, so a merged list would tell you somebody has a card
+    that is actually sitting on an alt you cannot reach.
+    """
+    mine = normalize_cards(viewer_inventory.get("cards"))
+    body: list = [
+        Text(content=f"# {emojis.magnifier} {_escape_markdown(display_name)}"),
+    ]
+
+    total = 0
+    for document in sorted(
+        documents, key=lambda d: str(d.get("player_name") or "")
+    ):
+        spares = normalize_cards(document.get("cards"))
+        held = [
+            card for card in CARDS
+            if spares.get(card.id, OWNED) >= DUPLICATE
+        ]
+        total += len(held)
+        clan = str(document.get("clan_name") or "").strip()
+        heading = f"**{_escape_markdown(str(document.get('player_name') or 'Unknown'))}**"
+        if clan:
+            heading += f" · {_escape_markdown(clan)}"
+        body.extend([Separator(divider=True), Text(content=heading)])
+        if not held:
+            body.append(Text(content="-# No spares on this account right now."))
+            continue
+        for category in CATEGORIES:
+            in_category = [c for c in held if c.category == category.id]
+            if not in_category:
+                continue
+            lines = []
+            for card in in_category:
+                # The whole reason to look somebody up is to spot the ones you
+                # need, so they are marked rather than left to be cross-checked.
+                needed = mine.get(card.id, OWNED) == MISSING
+                lines.append(
+                    f"- {_card_label(card)}"
+                    + (" — **you need this**" if needed else "")
+                )
+            body.append(Text(content=(
+                f"{category_markup(category.id)} **{category.short_name}**\n"
+                + "\n".join(lines)
+            )[:4000]))
+
+    if total == 0:
+        body.append(Text(content=(
+            "-# Nothing spare anywhere. Their collection is recorded, they "
+            "just have no duplicates to give."
+        )))
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_matches:{viewer_tag}",
+            label="Back to Find trades",
+            emoji=RETURN_EMOJI,
+        ),
+    ]))
+    return [Container(components=body)]
+
+
+def _is_cards_admin(bot, ctx) -> bool:
+    """Whether this member runs the family.
+
+    `/cards` is usable from a DM, where the interaction carries no member and
+    no permissions at all. Falling back to the cached member in the configured
+    family guild is what lets an admin open the panel from the same DM they
+    scan their screenshots in.
+    """
+    guild_id = _configured_cards_guild_id()
+    if guild_id is None:
+        return False
+    member = getattr(ctx, "member", None)
+    guild = None
+    try:
+        guild = bot.cache.get_guild(guild_id) if bot is not None else None
+        if member is None and bot is not None:
+            member = bot.cache.get_member(guild_id, int(ctx.user.id))
+    except Exception:
+        return False
+    return bool(
+        guild_permissions(member, guild) & hikari.Permissions.ADMINISTRATOR
+    )
+
+
+async def _admin_stats(mongo: MongoClient, *, guild_id: int) -> dict:
+    """The handful of numbers that answer "is anyone actually using this".
+
+    Everything here is already stored, so it is retroactive: no counters were
+    added and no data had to accumulate first.
+    """
+    now = datetime.now(timezone.utc)
+    week = now - timedelta(days=7)
+    scope = {"guild_id": int(guild_id)}
+    inventories = mongo.card_inventories
+    trades = mongo.card_trades
+    live = list(SWAP_LIVE_STATUSES) + ["pending"]
+
+    stats = {
+        "opened": await inventories.count_documents(scope),
+        "entered": await inventories.count_documents(
+            {**scope, "cards": {"$nin": [{}, None]}}
+        ),
+        "finished": await inventories.count_documents(
+            {**scope, "complete_categories": {"$size": len(CATEGORIES)}}
+        ),
+        "hidden": await inventories.count_documents(
+            {**scope, "trading_paused": True}
+        ),
+        "active": await inventories.count_documents(
+            {**scope, "last_seen_at": {"$gte": week}}
+        ),
+        "proposed": await trades.count_documents({**scope, "kind": "trade"}),
+        "completed": await trades.count_documents(
+            {**scope, "kind": "trade", "status": "completed"}
+        ),
+        "expired": await trades.count_documents(
+            {**scope, "kind": "trade", "status": "expired"}
+        ),
+        "live": await trades.count_documents(
+            {**scope, "kind": "trade", "status": {"$in": live}}
+        ),
+    }
+    # The only actionable part of the screen: people who opened it, got as far
+    # as an account, and then entered nothing. They are the ones to go poke.
+    stats["stalled"] = await inventories.find(
+        {**scope, "cards": {"$in": [{}, None]}}
+    ).sort("created_at", 1).to_list(length=10)
+    return stats
+
+
+def _admin_view(stats: dict, *, names: dict[int, str]) -> list[Container]:
+    """Six numbers and one list of names. Deliberately nothing else.
+
+    Any figure that does not either say whether this is working or who to go
+    talk to was left out - a longer screen would just be a data dump nobody
+    acts on.
+    """
+    opened = stats["opened"]
+    entered = stats["entered"]
+    dropped = max(0, opened - entered)
+    body: list = [
+        Text(content=f"# {emojis.magnifier} Cards · admin"),
+        Text(content=(
+            f"**{entered} of {opened}** who opened it actually entered cards."
+            + (f"\n-# {dropped} opened it and entered nothing." if dropped else "")
+        )),
+        Separator(divider=True),
+        Text(content=(
+            f"- **{stats['finished']}** finished all {len(CATEGORIES)} categories\n"
+            f"- **{stats['active']}** used it in the last 7 days\n"
+            f"- **{stats['hidden']}** hidden (turned trading off, or went quiet)"
+        )),
+        Separator(divider=True),
+        Text(content=(
+            f"**Trades** · {stats['proposed']} proposed · "
+            f"{stats['completed']} completed · {stats['expired']} expired · "
+            f"{stats['live']} live right now"
+        )),
+    ]
+
+    stalled = stats.get("stalled") or []
+    if stalled:
+        lines = []
+        for document in stalled:
+            discord_id = document.get("discord_id")
+            who = names.get(int(discord_id)) if discord_id else None
+            label = who or str(document.get("player_name") or document.get("_id"))
+            mention = f"<@{int(discord_id)}>" if discord_id else ""
+            lines.append(f"- {_escape_markdown(str(label))} {mention}".rstrip())
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                "## Worth a nudge\n"
+                "-# Opened `/cards`, entered nothing.\n" + "\n".join(lines)
+            )[:4000]),
+        ])
+    return [Container(components=body)]
+
+
 def _matches_view(
     account,
     inventory: dict,
@@ -3366,6 +3673,7 @@ def _matches_view(
     supply: dict | None = None,
     achievable: tuple[int, int] | None = None,
     reserved: int = 0,
+    browse: list | None = None,
 ) -> list[Container]:
     tag = _normalize_tag(account.tag)
     per_card = _offers_by_card(matches)
@@ -3428,9 +3736,8 @@ def _matches_view(
         body.extend([
             Separator(divider=True),
             Text(content=(
-                "Nobody with a current collection has a spare of anything you "
-                "are missing yet. Collections older than 72 hours are ignored "
-                "on purpose, so this fills in as the family updates."
+                "Nobody in the family has a spare of anything you are missing "
+                "yet. This fills in as more people record their collections."
             )),
         ])
 
@@ -3461,6 +3768,19 @@ def _matches_view(
         ))
     if secondary:
         body.extend([Separator(divider=True), ActionRow(components=secondary)])
+
+    if browse:
+        # The one route in here that does not start from a card you are
+        # missing. Everything above this line is empty for somebody whose
+        # collection is complete; this still answers "what has Poppa got".
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                f"## {emojis.inbox} Look up a player\n"
+                "-# See everything one person has spare, by name."
+            )),
+            *browse,
+        ])
 
     body.append(ActionRow(components=[
         Button(
@@ -7190,6 +7510,7 @@ class Cards(
         ctx: lightbulb.Context,
         coc_client: coc.Client = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     ) -> None:
         scope_error = _guild_scope_error(ctx)
         if scope_error:
@@ -7211,6 +7532,7 @@ class Cards(
             components = await _dashboard_view(
                 account, inventory, account_count=1,
                 mongo=mongo, guild_id=_trade_guild_id(ctx),
+                is_admin=_is_cards_admin(bot, ctx),
             )
         await ctx.interaction.edit_initial_response(components=components)
 
@@ -8035,6 +8357,7 @@ async def cards_dashboard(
     action_id: str,
     coc_client: coc.Client = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
 ):
     tag, suffix = _parse_target(str(action_id or ""))
@@ -8047,6 +8370,7 @@ async def cards_dashboard(
     return await _dashboard_view(
         account, inventory, account_count=len(_loaded_entries(data)),
         mongo=mongo, guild_id=_trade_guild_id(ctx),
+        is_admin=_is_cards_admin(bot, ctx),
     )
 
 
@@ -8837,6 +9161,110 @@ async def cards_demand(
     )
 
 
+@register_action("cards_admin")
+@lightbulb.di.with_di
+async def cards_admin(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Adoption numbers for whoever runs the family."""
+    # Re-checked here rather than trusted from the button: a custom_id is just
+    # a string, and anyone who saw the panel could send this one back.
+    if not _is_cards_admin(bot, ctx):
+        return _notice(
+            "Admins only",
+            "This panel is for server administrators.",
+        )
+    guild_id = _trade_guild_id(ctx)
+    if guild_id is None:
+        return _notice(
+            "Not set up yet",
+            "The Card Hub is not configured for this family yet.",
+        )
+    stats = await _admin_stats(mongo, guild_id=int(guild_id))
+    return _admin_view(
+        stats,
+        names=_member_names(
+            bot,
+            [document.get("discord_id") for document in stats.get("stalled") or []],
+            guild_id=int(guild_id),
+        ),
+    )
+
+
+@register_action("cards_browse")
+@lightbulb.di.with_di
+async def cards_browse(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Everything one player has spare, looked up by their name."""
+    values = list(getattr(ctx.interaction, "values", ()) or ())
+    picked = str(values[0]) if values else ""
+    account, inventory, problem = await _load_target(
+        ctx, action_id, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    guild_id = _trade_guild_id(ctx)
+    if guild_id is None:
+        return _notice(
+            "Not set up yet",
+            "The Card Hub is not configured for this family yet.",
+        )
+
+    # The menu carries whichever key the inventory could be found by, so a
+    # record written before discord_id existed is still reachable.
+    query: dict = {"guild_id": int(guild_id), "trading_paused": {"$ne": True}}
+    if picked.startswith("d:"):
+        query["discord_id"] = int(picked[2:] or 0)
+    elif picked.startswith("t:"):
+        query["_id"] = _normalize_tag(picked[2:])
+    else:
+        return _notice("Unknown player", "Open `/cards` again for a fresh list.")
+    # The same family boundary matching applies. Without it an alt parked in a
+    # clan outside the family would be listed, and nobody can trade with it.
+    try:
+        family_tags = [
+            _normalize_tag(tag)
+            for tag in await mongo.clans.distinct("tag")
+            if _normalize_tag(tag)
+        ]
+    except Exception:
+        _log.exception("player lookup could not load family clan tags")
+        family_tags = []
+    if family_tags:
+        query["clan_tag"] = {"$in": family_tags}
+    documents = await mongo.card_inventories.find(query).to_list(length=25)
+    if not documents:
+        return _notice(
+            "Nothing to show",
+            "They have either turned trading off or removed their collection "
+            "since this menu was drawn. Open **Find trades** again.",
+        )
+
+    discord_id = documents[0].get("discord_id")
+    names = _member_names(bot, [discord_id], guild_id=guild_id)
+    display = (
+        names.get(int(discord_id)) if discord_id else None
+    ) or str(documents[0].get("player_name") or "That player")
+    return _player_spares_view(
+        _normalize_tag(account.tag),
+        _without_reserved_cards(inventory),
+        # Reserved cards are masked here too: a card promised to an accepted
+        # trade is not something a third player can ask for.
+        [_without_reserved_cards(document) for document in documents],
+        display_name=display,
+    )
+
+
 @register_action("cards_matches")
 @lightbulb.di.with_di
 async def cards_matches(
@@ -8844,6 +9272,7 @@ async def cards_matches(
     action_id: str,
     coc_client: coc.Client = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
 ):
     account, inventory, problem = await _load_target(
@@ -8876,6 +9305,16 @@ async def cards_matches(
         account,
         available,
         matches,
+        browse=_browse_picker(
+            _normalize_tag(account.tag),
+            candidates,
+            names=_member_names(
+                bot,
+                [document.get("discord_id") for document in candidates],
+                guild_id=guild_id,
+            ),
+            clan_tag=_normalize_tag(inventory.get("clan_tag")),
+        ),
         supply=family_supply(candidates),
         # Counted off the unmasked inventory: `available` has already had the
         # reserved cards rewritten, so it cannot report on them.

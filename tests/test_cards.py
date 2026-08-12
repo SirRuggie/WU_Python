@@ -6070,3 +6070,284 @@ def test_a_side_that_already_confirmed_is_not_asked_again():
 
 def test_the_clan_check_is_gone_entirely():
     assert not hasattr(cards_command, "cards_trade_ready")
+
+
+# ---- Looking a player up by name ----------------------------------------
+
+
+def _spare_inventory(tag, *, discord_id, name, clan_tag="#HOME", spares=()):
+    inventory = _complete_inventory(tag=tag, clan_tag=clan_tag)
+    inventory["discord_id"] = discord_id
+    inventory["player_name"] = name
+    for card_id in spares:
+        inventory["cards"][card_id] = cards.DUPLICATE
+    return inventory
+
+
+def _picker_options(rows):
+    return [
+        option
+        for node in _walk_payload([row.build() for row in rows])
+        for option in (node.get("options") or ())
+    ]
+
+
+def test_browse_picker_hides_players_who_turned_trading_off():
+    """Browsing somebody who opted out would route requests straight at them."""
+    here = _spare_inventory("#A", discord_id=1, name="Stays", spares=["wizard"])
+    gone = _spare_inventory("#B", discord_id=2, name="Opted Out")
+    gone["trading_paused"] = True
+
+    options = _picker_options(
+        cards_command._browse_picker("#ME", [here, gone], names={}, clan_tag=None)
+    )
+
+    assert [option["label"] for option in options] == ["Stays"]
+
+
+def test_browse_picker_puts_clanmates_first():
+    """Past 25 people the cap decides who survives, so relevance sorts first."""
+    away = _spare_inventory("#A", discord_id=1, name="Aaa", clan_tag="#OTHER")
+    home = _spare_inventory("#B", discord_id=2, name="Zzz", clan_tag="#HOME")
+
+    options = _picker_options(
+        cards_command._browse_picker(
+            "#ME", [away, home], names={}, clan_tag="#HOME"
+        )
+    )
+
+    assert [option["label"] for option in options] == ["Zzz", "Aaa"]
+
+
+def test_browse_picker_gives_one_person_one_row():
+    """Two accounts are still one human being, and you look up the human."""
+    main = _spare_inventory("#A", discord_id=7, name="Main", spares=["wizard"])
+    alt = _spare_inventory("#B", discord_id=7, name="Alt", spares=["archer"])
+
+    options = _picker_options(
+        cards_command._browse_picker("#ME", [main, alt], names={}, clan_tag=None)
+    )
+
+    assert len(options) == 1
+    assert "2 accounts" in options[0]["description"]
+    # Summed across both, because the count only decides whether the lookup is
+    # worth making.
+    assert options[0]["description"].startswith("2 spares")
+
+
+def test_browse_picker_leads_with_the_discord_name():
+    """People are known by their handle in chat, not by their in-game name."""
+    document = _spare_inventory("#A", discord_id=9, name="SomeCoCName")
+
+    options = _picker_options(
+        cards_command._browse_picker(
+            "#ME", [document], names={9: "PoppaSlayer"}, clan_tag=None
+        )
+    )
+
+    assert options[0]["label"] == "PoppaSlayer · SomeCoCName"
+    assert options[0]["value"] == "d:9"
+
+
+def test_browse_picker_falls_back_when_the_member_cache_misses():
+    document = _spare_inventory("#A", discord_id=9, name="SomeCoCName")
+
+    options = _picker_options(
+        cards_command._browse_picker("#ME", [document], names={}, clan_tag=None)
+    )
+
+    assert options[0]["label"] == "SomeCoCName"
+
+
+def test_browse_picker_keeps_people_with_no_spares_listed():
+    """A missing name reads as a bug; a zero answers itself."""
+    document = _spare_inventory("#A", discord_id=9, name="Empty")
+
+    options = _picker_options(
+        cards_command._browse_picker("#ME", [document], names={}, clan_tag=None)
+    )
+
+    assert options[0]["description"].startswith("0 spares")
+
+
+def test_player_spares_view_never_merges_their_accounts():
+    """You trade with one account in one clan; a merged list would misdirect."""
+    main = _spare_inventory("#A", discord_id=7, name="Main", spares=["wizard"])
+    main["clan_name"] = "Home Clan"
+    alt = _spare_inventory("#B", discord_id=7, name="Alt", spares=["archer"])
+    alt["clan_name"] = "Far Clan"
+
+    text = _view_text(cards_command._player_spares_view(
+        "#ME", _complete_inventory(), [main, alt], display_name="Poppa",
+    ))
+
+    assert "Main" in text and "Home Clan" in text
+    assert "Alt" in text and "Far Clan" in text
+
+
+def test_player_spares_view_marks_the_ones_you_need():
+    mine = _complete_inventory()
+    mine["cards"]["wizard"] = cards.MISSING
+    theirs = _spare_inventory(
+        "#A", discord_id=7, name="Them", spares=["wizard", "archer"]
+    )
+
+    text = _view_text(cards_command._player_spares_view(
+        "#ME", mine, [theirs], display_name="Them",
+    ))
+
+    wanted = [line for line in text.split("\n") if "you need this" in line]
+    assert len(wanted) == 1
+    assert "Wizard" in wanted[0]
+
+
+def test_player_spares_view_says_so_when_they_have_nothing():
+    theirs = _spare_inventory("#A", discord_id=7, name="Them")
+
+    text = _view_text(cards_command._player_spares_view(
+        "#ME", _complete_inventory(), [theirs], display_name="Them",
+    ))
+
+    assert "no duplicates to give" in text
+
+
+def test_find_trades_still_fits_discord_with_the_lookup_menu():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    for card_id in ("root_rider", "druid", "cannon_cart"):
+        inventory["cards"][card_id] = cards.MISSING
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+    holders = _many_holders(inventory, 40, ["root_rider", "druid", "cannon_cart"])
+    browse = cards_command._browse_picker(
+        "#ME", holders, names={}, clan_tag="#HOME"
+    )
+
+    assert browse, "40 holders should produce a lookup menu"
+    _assert_discord_payload(cards_command._matches_view(
+        account, inventory, cards.find_matches(inventory, holders), browse=browse,
+    ))
+
+
+# ---- Admin panel ---------------------------------------------------------
+
+
+def test_admin_view_leads_with_the_adoption_gap():
+    """The gap between opened and entered is the number that matters."""
+    view = cards_command._admin_view(
+        {
+            "opened": 30, "entered": 12, "finished": 4, "hidden": 2,
+            "active": 9, "proposed": 20, "completed": 7, "expired": 5,
+            "live": 3, "stalled": [],
+        },
+        names={},
+    )
+    text = _view_text(view)
+
+    assert "**12 of 30**" in text
+    assert "18 opened it and entered nothing" in text
+    _assert_discord_payload(view)
+
+
+def test_admin_view_names_the_people_worth_a_nudge():
+    view = cards_command._admin_view(
+        {
+            "opened": 2, "entered": 1, "finished": 0, "hidden": 0,
+            "active": 1, "proposed": 0, "completed": 0, "expired": 0,
+            "live": 0,
+            "stalled": [{"_id": "#A", "discord_id": 55, "player_name": "InGame"}],
+        },
+        names={55: "PoppaSlayer"},
+    )
+    text = _view_text(view)
+
+    assert "PoppaSlayer" in text
+    assert "<@55>" in text
+    _assert_discord_payload(view)
+
+
+class _FakeRole:
+    def __init__(self, role_id, permissions):
+        self.id = role_id
+        self.permissions = permissions
+
+
+class _FakeGuild:
+    def __init__(self, guild_id, roles, owner_id=0):
+        self.id = guild_id
+        self.owner_id = owner_id
+        self._roles = {role.id: role for role in roles}
+
+    def get_role(self, role_id):
+        return self._roles.get(role_id)
+
+
+class _FakeCache:
+    def __init__(self, guild, member):
+        self._guild = guild
+        self._member = member
+
+    def get_guild(self, _guild_id):
+        return self._guild
+
+    def get_member(self, _guild_id, _user_id):
+        return self._member
+
+
+def _admin_ctx(member=None, user_id=1):
+    return SimpleNamespace(member=member, user=SimpleNamespace(id=user_id))
+
+
+def test_an_admin_is_recognised_from_a_dm(monkeypatch):
+    """/cards runs in DMs, where the interaction carries no member at all."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
+    guild = _FakeGuild(500, [
+        _FakeRole(10, hikari.Permissions.ADMINISTRATOR),
+        _FakeRole(500, hikari.Permissions.NONE),
+    ])
+    cached = SimpleNamespace(id=1, role_ids=[10])
+    bot = SimpleNamespace(cache=_FakeCache(guild, cached))
+
+    assert cards_command._is_cards_admin(bot, _admin_ctx()) is True
+
+
+def test_an_ordinary_member_is_not(monkeypatch):
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
+    guild = _FakeGuild(500, [_FakeRole(500, hikari.Permissions.SEND_MESSAGES)])
+    cached = SimpleNamespace(id=1, role_ids=[])
+    bot = SimpleNamespace(cache=_FakeCache(guild, cached))
+
+    assert cards_command._is_cards_admin(bot, _admin_ctx()) is False
+
+
+def test_the_admin_check_never_takes_the_panel_down(monkeypatch):
+    """A cache that misbehaves should hide one button, not break /cards."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
+
+    class _Broken:
+        def get_guild(self, _guild_id):
+            raise RuntimeError("cache exploded")
+
+    bot = SimpleNamespace(cache=_Broken())
+    assert cards_command._is_cards_admin(bot, _admin_ctx()) is False
+
+
+def test_the_admin_button_is_only_drawn_for_admins():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+
+    def labels(is_admin):
+        view = cards_command._dashboard(
+            account, inventory, account_count=1, is_admin=is_admin
+        )
+        return [
+            str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
+        ]
+
+    assert "Admin" in labels(True)
+    assert "Admin" not in labels(False)
