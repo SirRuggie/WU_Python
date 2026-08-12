@@ -9038,13 +9038,30 @@ async def cards_trade_request(
         _post_trade_channel(bot, mongo, trade),
         _notify_trade_holder(bot, trade),
     )
-    delivery: list[str] = []
-    delivery.append("posted it in the trade channel" if channel_sent else "could not post in the configured trade channel")
-    delivery.append("sent the holder a DM" if dm_sent else f"could not DM <@{trade['holder_discord_id']}>")
+    # Lead with where it went. "Proposal posted" left people asking where,
+    # because the delivery was the last clause of a sentence about reserving.
+    holder_name = _escape_markdown(trade.get("holder_name"), limit=40)
+    if dm_sent:
+        landed = (
+            f"**{holder_name}** got a DM with your offer. They can accept or "
+            "decline right there."
+        )
+    else:
+        landed = (
+            f"I could not DM <@{trade['holder_discord_id']}> — their DMs are "
+            "closed. Ping them so they open `/cards` and check **My trades**."
+        )
+    if channel_sent:
+        landed += " I also posted it in the trade channel."
     return _trade_feedback(
-        "Proposal posted",
-        f"You proposed **{given.name}** for **{wanted.name}**; nothing is reserved "
-        f"until they accept. I {' and '.join(delivery)}.",
+        "Offer sent",
+        f"{landed}\n\n"
+        f"**You give:** {_card_label(given)}\n"
+        f"**You get:** {_card_label(wanted)}\n\n"
+        f"-# Nothing is reserved yet. Your {given.name} stays available to "
+        "everyone else until they accept, so you can still trade it "
+        "elsewhere.\n"
+        "-# Changed your mind? Open **My trades** and cancel it.",
         account.tag,
     )
 
