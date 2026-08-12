@@ -180,13 +180,27 @@ to spare; and it is one write primitive with one revision guard rather than
 several. The category menu stays mounted below, so correcting several cards in
 one category is pick, tap, pick, tap without returning to the board.
 
-**Edit counts** walks one category six cards at a time. Each card is a line
-of text - troop emoji, name, and what you currently have - above its own
-**-1**/**+1** pair, with Previous, Next and a **Jump to a card** menu below.
-Six is the largest page that fits: at six the screen uses 36 of Discord's 40
-components, and Discord rejects the whole message past 40. Paging is in game
-order, never the member's chosen sort, so changing a count cannot move a card
-to another page while they are tapping it. Each write changes only that card,
+**Edit counts** walks one category six cards at a time. Each card is one
+horizontal row - `[emoji Name . count] [-1] [+1]` - with Previous, Next and a
+**Jump to a card** menu below. The name is a button because an ActionRow is
+the only Components V2 element that lays out horizontally and it accepts
+nothing but buttons; a Section cannot substitute, as its accessory is exactly
+one Button or one Thumbnail (`SectionBuilderAccessoriesT`), so text-left with
+both steps on the right is not expressible. hikari will build a Section with
+an ActionRow accessory without complaining and Discord then rejects the
+message, so that is a local false positive rather than a way through. Since
+the name has to be a button, tapping it opens a modal for an exact count.
+
+Counts are digits: 0, 1, 2, 3. The one token is `2+`, the scanner's floor,
+where a badge proved a spare exists but not how many - printing a flat 2 would
+invent a number. Five English phrasings ("Missing", "Have 1", "3 copies . 2 to
+trade") were replaced by the digit, which needs no translation.
+
+A page is a fixed 37 of Discord's 40 components and cannot drift: always six
+cards, always the same rows. Other screens are held to 36 because they grow
+with the size of the family. Paging is in game order, never the member's
+chosen sort, so changing a count cannot move a card to another page while they
+are tapping it. Each write changes only that card,
 checks that exact card's reservation, and uses the inventory revision as a
 compare-and-swap guard. Accepted swaps on other cards do not block it, so one
 held card no longer locks the other eighteen in its category.
