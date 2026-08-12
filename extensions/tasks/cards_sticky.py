@@ -24,6 +24,7 @@ from hikari.impl import (
 )
 
 from utils.constants import BLUE_ACCENT
+from utils.emoji import emojis
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
@@ -68,13 +69,18 @@ mongo_client = None
 
 
 def _sticky_components() -> list[Container]:
-    """The notice itself.
+    """The notice itself, as three numbered steps.
 
-    One line saying what it is for, then one line per step. The DM is mentioned
-    exactly once: saying it twice is what made earlier drafts read long, and
-    "check your DMs" on its own leaves a first-timer waiting in the channel for
-    something that is never going to appear there, so the line names who sends
-    it.
+    Somebody read the previous version and still asked how to send a trade,
+    because it described what the feature is rather than which buttons to
+    press in what order. Each step is now its own block with its own heading,
+    separated by real gaps, and every bold phrase is the exact label on the
+    button - so a reader can match the words to the screen.
+
+    The emoji are the ones the command itself uses, so the mark beside a step
+    is the mark on the button it is telling you to press. Where the command
+    has no matching emoji (entering cards by hand), the line carries none
+    rather than an invented one.
 
     The family reads this in a dozen countries, so the wording stays plain:
     short sentences, no contractions in the instructions, no idioms, and
@@ -85,17 +91,40 @@ def _sticky_components() -> list[Container]:
         components=[
             Text(content=(
                 "## 🃏 Clash of Cards\n"
-                "Run **`/cards`** — find family members who have the card "
-                "you need."
+                "Find family members who have the card you need, and trade "
+                "for it."
             )),
             Separator(divider=True),
             Text(content=(
-                "📸 **Scan screenshots** → **I will DM you** → send your "
-                "collection pictures there\n"
-                "✍️ Or add cards by hand — tap any card on the board\n"
-                "🔁 **Find trades** → who has it, and what clan they are in\n"
-                "🤝 Pick one → I send that player your offer"
+                f"**1 · Add your cards**\n"
+                f"{emojis.scan} Run **`/cards`** and tap **Scan screenshots**\n"
+                f"{emojis.inbox} I will DM you — send your collection pictures "
+                "in that DM"
             )),
+            Text(content=(
+                "-# No screenshots? Tap any card on the board and set the "
+                "number by hand."
+            )),
+            Separator(divider=False),
+            Text(content=(
+                f"**2 · See who has it**\n"
+                f"{emojis.magnifier} Tap **Find trades**, then pick the card "
+                "you need\n"
+                "You will see who has a spare and which clan they are in"
+            )),
+            Separator(divider=False),
+            Text(content=(
+                f"**3 · Send the offer**\n"
+                f"{emojis.card_swap} Tap **Ask to swap**, then choose the card "
+                "you give\n"
+                f"{emojis.yes} They get a DM and tap **Accept**"
+            )),
+            Separator(divider=False),
+            Text(content=(
+                "-# You must both be in the same clan to send the cards in "
+                "game."
+            )),
+            Separator(divider=True),
             ActionRow(components=[
                 LinkButton(url=COLLECTION_LINK, label="Open collection"),
             ]),

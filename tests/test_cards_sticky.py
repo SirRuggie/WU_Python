@@ -5,6 +5,7 @@ import hikari
 import pytest
 
 from extensions.tasks import cards_sticky as sticky
+from utils.emoji import emojis
 
 
 class _Rest:
@@ -321,8 +322,13 @@ def test_notice_avoids_shortenings_that_travel_badly():
 
 
 def test_notice_stays_short_enough_to_actually_be_read():
-    # The trailing support note is small print, not part of what a member has
-    # to read to use the command, so it is not charged to the budget.
+    """Bounded, but no longer minimal.
+
+    An earlier version fitted in 70 words and somebody still read it and asked
+    how to send a trade, because it said what the feature was instead of which
+    buttons to press. Numbered steps cost words and are worth them; the cap
+    exists so it cannot grow into something nobody reads.
+    """
     body = [
         node.content
         for container in sticky._sticky_components()
@@ -330,7 +336,45 @@ def test_notice_stays_short_enough_to_actually_be_read():
         if hasattr(node, "content") and not node.content.startswith("-#")
     ]
 
-    assert len(" ".join(body).split()) <= 70, "the whole point is that people read it"
+    assert len(" ".join(body).split()) <= 110
+
+
+def test_every_step_is_its_own_block():
+    """One wall of lines is what made it skimmable past rather than readable."""
+    parts = [
+        node for container in sticky._sticky_components()
+        for node in container.components
+    ]
+    headings = [
+        node.content for node in parts
+        if hasattr(node, "content") and node.content.startswith("**")
+    ]
+    assert [h.splitlines()[0] for h in headings] == [
+        "**1 · Add your cards**",
+        "**2 · See who has it**",
+        "**3 · Send the offer**",
+    ]
+    # Gaps between the steps, not one continuous run of text.
+    assert sum(1 for node in parts if hasattr(node, "divider")) >= 5
+
+
+def test_the_notice_uses_the_commands_own_emoji():
+    """The mark beside a step must be the mark on the button it names."""
+    text = " ".join(
+        node.content
+        for container in sticky._sticky_components()
+        for node in container.components
+        if hasattr(node, "content")
+    )
+    for emoji, button in (
+        (emojis.scan, "Scan screenshots"),
+        (emojis.magnifier, "Find trades"),
+        (emojis.card_swap, "Ask to swap"),
+    ):
+        assert str(emoji) in text, f"{button} is not marked like the command"
+    # Entering cards by hand has no emoji in the command, so it gets none here
+    # rather than an invented one.
+    assert "✍️" not in text
 
 
 def test_support_contact_is_the_last_thing_and_rendered_small():
