@@ -50,11 +50,15 @@ def _preview_trade(discord_id: int, *, alternatives: bool) -> dict:
         "requester_discord_id": int(discord_id),
         "requester_clan_tag": "#HOME",
         "requester_clan_name": "Morning Woods",
+        "requester_clan_emoji": "<:MorningWoods:1393247569970331688>",
+        "requester_town_hall": 17,
         "holder_tag": "#9LRVV8G8",
         "holder_name": "Sir UwU",
         "holder_discord_id": int(discord_id),
         "holder_clan_tag": "#AWAY",
         "holder_clan_name": "Edrag Rush",
+        "holder_clan_emoji": "",  # no clan emoji set: falls back to a shield
+        "holder_town_hall": 18,
         "created_at": now,
         "updated_at": now,
     }

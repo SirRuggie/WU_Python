@@ -1729,6 +1729,7 @@ async def _ensure_inventory(
     identity = {
         "discord_id": int(discord_id),
         "player_name": account.name,
+        "town_hall": getattr(account, "town_hall", 0) or 0,
         "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
         "clan_name": account.clan_name,
         "last_seen_at": now,
@@ -4457,6 +4458,23 @@ async def _create_trade_request(
         if requester_cards.get(card.id, OWNED) >= DUPLICATE
         and holder_cards.get(card.id, OWNED) == MISSING
     ]
+    # One lookup for both clans. A missing row, a missing field or a broken
+    # emoji all end up as "", which renders as a plain shield.
+    clan_emoji: dict[str, str] = {}
+    for clan_tag in {
+        _normalize_tag(requester.get("clan_tag")),
+        _normalize_tag(holder.get("clan_tag")),
+    }:
+        if not clan_tag:
+            continue
+        try:
+            row = await mongo.clans.find_one({"tag": clan_tag})
+        except Exception:
+            _log.info("card trade clan emoji lookup failed clan=%s", clan_tag)
+            continue
+        if row:
+            clan_emoji[clan_tag] = str(row.get("emoji") or "")
+
     trade = {
         "_id": secrets.token_hex(8),
         "kind": "trade",
@@ -4465,6 +4483,12 @@ async def _create_trade_request(
         "category": CARD_BY_ID[wanted_card_id].category,
         "requester_clan_tag": requester.get("clan_tag"),
         "requester_clan_name": requester.get("clan_name"),
+        "requester_clan_emoji": clan_emoji.get(
+            _normalize_tag(requester.get("clan_tag")), ""
+        ),
+        # Copied onto the trade rather than looked up when a DM is built, so a
+        # notification never depends on a second query that could fail.
+        "requester_town_hall": requester.get("town_hall") or 0,
         "requester_tag": _normalize_tag(requester.get("_id")),
         "requester_name": str(requester.get("player_name") or "Unknown player"),
         "requester_discord_id": requester_discord_id,
@@ -4473,6 +4497,10 @@ async def _create_trade_request(
         "holder_discord_id": holder_discord_id,
         "holder_clan_tag": holder.get("clan_tag"),
         "holder_clan_name": holder.get("clan_name"),
+        "holder_clan_emoji": clan_emoji.get(
+            _normalize_tag(holder.get("clan_tag")), ""
+        ),
+        "holder_town_hall": holder.get("town_hall") or 0,
         "wanted_card_id": wanted_card_id,
         "given_card_id": given_card_id,
         "compatible_card_ids": compatible_card_ids,
@@ -4879,14 +4907,33 @@ def _trade_proposal_dm(
     else:
         receive = f"**You receive:** {_card_label(given)}"
         chooser = ""
+    same_clan = _normalize_tag(
+        trade.get("requester_clan_tag")
+    ) == _normalize_tag(trade.get("holder_clan_tag"))
     return _trade_dm_container(
         f"{emojis.inbox} New card proposal",
         (
-            f"**{requester}** needs your spare {_card_label(wanted)}.\n\n"
+            f"**{requester}** wants your {_card_label(wanted)}.\n\n"
             f"**You give:** {_card_label(wanted)}\n"
             f"{receive}\n\n"
-            f"**Your account:** {holder} • `{trade['holder_tag']}`\n"
-            f"**Clans:** {_trade_location_line(trade, role='holder')}"
+            + _player_line(
+                "You", trade.get("holder_name"), trade.get("holder_tag"),
+                trade.get("holder_town_hall"), trade.get("holder_clan_name"),
+                trade.get("holder_clan_emoji"),
+            )
+            + "\n"
+            + _player_line(
+                "Them", trade.get("requester_name"),
+                trade.get("requester_tag"), trade.get("requester_town_hall"),
+                trade.get("requester_clan_name"),
+                trade.get("requester_clan_emoji"),
+            )
+            + (
+                ""
+                if same_clan
+                else "\n\n-# You are in different clans. One of you must move "
+                "to the same clan before you can trade."
+            )
         ),
         accent=GREEN_ACCENT,
         attachment=attachment,
@@ -5127,6 +5174,52 @@ def _card_label(card) -> str:
     """A card's name with its troop art, matching every other card list."""
     icon = troop_emoji.markup(card.id)
     return f"{icon} **{card.name}**" if icon else f"**{card.name}**"
+
+
+def _th_markup(level: object) -> str:
+    """`<:TH18:...>` for a town hall level, or "" when there is no such emoji.
+
+    Never raises. A missing or unconfigured level simply contributes nothing,
+    because a DM that fails to send is worse than one without a picture.
+    """
+    try:
+        entry = getattr(emojis, f"TH{int(level)}", None)
+    except (TypeError, ValueError):
+        return ""
+    return str(entry) if entry is not None else ""
+
+
+CLAN_FALLBACK_EMOJI = "🛡️"
+
+
+def _clan_emoji_markup(value: object) -> str:
+    """A clan's own emoji, falling back to a plain shield.
+
+    `mongo.clans` stores the emoji as `<:name:id>` markup, but the field is
+    optional and can hold anything a human typed, so anything that is not
+    recognisable markup degrades to the shield rather than printing junk.
+    """
+    raw = str(value or "").strip()
+    if re.fullmatch(r"<a?:[A-Za-z0-9_]{2,32}:\d{15,25}>", raw):
+        return raw
+    return CLAN_FALLBACK_EMOJI
+
+
+def _player_line(
+    label: str, name: object, tag: object, town_hall: object,
+    clan_name: object, clan_emoji: object,
+) -> str:
+    """One account on one line: who, where, and how big."""
+    th = _th_markup(town_hall)
+    head = f"**{label}:** {th + ' ' if th else ''}"
+    head += f"{_escape_markdown(name, limit=40)} • `{_normalize_tag(tag)}`"
+    clan = str(clan_name or "").strip()
+    if clan:
+        head += (
+            f" • {_clan_emoji_markup(clan_emoji)} "
+            f"{_escape_markdown(clan, limit=40)}"
+        )
+    return head
 
 
 def _clan_label(name: object, tag: object) -> str:
@@ -5763,6 +5856,7 @@ async def _write_one_card(
         identity = {
             "discord_id": int(discord_id),
             "player_name": account.name,
+        "town_hall": getattr(account, "town_hall", 0) or 0,
             "clan_tag": (
                 _normalize_tag(account.clan_tag) if account.clan_tag else None
             ),
@@ -5853,6 +5947,7 @@ async def _write_card_state(
         identity = {
             "discord_id": int(discord_id),
             "player_name": account.name,
+        "town_hall": getattr(account, "town_hall", 0) or 0,
             "clan_tag": (
                 _normalize_tag(account.clan_tag) if account.clan_tag else None
             ),
@@ -5942,6 +6037,7 @@ async def _write_hidden_badge_batch(
         identity = {
             "discord_id": int(discord_id),
             "player_name": account.name,
+        "town_hall": getattr(account, "town_hall", 0) or 0,
             "clan_tag": (
                 _normalize_tag(account.clan_tag) if account.clan_tag else None
             ),
@@ -6042,6 +6138,7 @@ async def _write_category(
             identity_updates = {
                 "discord_id": int(discord_id),
                 "player_name": account.name,
+        "town_hall": getattr(account, "town_hall", 0) or 0,
                 "clan_tag": (
                     _normalize_tag(account.clan_tag) if account.clan_tag else None
                 ),
@@ -6174,6 +6271,7 @@ async def _write_scan_draft(
         identity = {
             "discord_id": int(discord_id),
             "player_name": account.name,
+        "town_hall": getattr(account, "town_hall", 0) or 0,
             "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
             "clan_name": account.clan_name,
             "cards": card_states,

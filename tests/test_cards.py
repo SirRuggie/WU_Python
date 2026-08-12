@@ -885,7 +885,11 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
         "holder_name": "Holder",
         "holder_discord_id": 222,
         "requester_clan_tag": "#HOME",
+        "requester_clan_name": "Morning Woods",
+        "requester_town_hall": 17,
         "holder_clan_tag": "#AWAY",
+        "holder_clan_name": "Edrag Rush",
+        "holder_town_hall": 18,
         "compatible_card_ids": ["wizard", "dragon"],
     })
 
@@ -895,14 +899,17 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     assert "Root Rider" in content
     assert "Wizard" in content
     assert "Dragon" in content
-    assert "**Shaun** needs your spare" in content
+    assert "**Shaun** wants your" in content
     # Every card they could take, as a list - not one named card plus an
     # aside about others, which read as a contradiction.
     assert "You receive one of:" in content
     assert "You pick which one when you accept" in content
     assert "You receive:" not in content
-    # Both clans are named now, because somebody has to decide who moves.
-    assert "#HOME" in content and "#AWAY" in content
+    # Both clans are named, and both town halls shown, so a reader can see
+    # who they are dealing with without opening the game.
+    assert "Morning Woods" in content and "Edrag Rush" in content
+    assert "TH_18" in content and "TH_17" in content
+    assert "different clans" in content
     assert "token" not in content.casefold()
     assert "password" not in content.casefold()
     # Mounted in the container's gallery, which is the only way a V2
@@ -960,7 +967,7 @@ def test_trade_visual_failure_still_delivers_accessible_text(monkeypatch):
     sent = rest.messages[0]["components"]
     # No gallery at all when the render failed, but the words still arrive.
     assert _view_media(sent) is None
-    assert "needs your spare" in _view_text(sent)
+    assert "wants your" in _view_text(sent)
     assert "Root Rider" in _view_text(sent)
 
 
