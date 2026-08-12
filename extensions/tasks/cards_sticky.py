@@ -126,6 +126,12 @@ def _sticky_components() -> list[Container]:
             )),
             Separator(divider=True),
             ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.PRIMARY,
+                    custom_id="cards_help:sticky",
+                    label="I am lost",
+                    emoji="🙋",
+                ),
                 LinkButton(url=COLLECTION_LINK, label="Open collection"),
             ]),
             Separator(divider=True),
@@ -137,6 +143,79 @@ def _sticky_components() -> list[Container]:
             )),
         ],
     )]
+
+
+def _walkthrough() -> list[Container]:
+    """Every tap, in order, for somebody who is stuck.
+
+    The sticky itself has to stay short enough that people read it, which
+    means it cannot also be a manual. This is the manual: one numbered step
+    per tap, each naming the exact button label, so a reader can match the
+    words to what is on their screen. It is only ever shown to the one person
+    who asked for it, so length costs nobody anything.
+    """
+    return [Container(
+        accent_color=BLUE_ACCENT,
+        components=[
+            Text(content="## 🙋 How to trade a card, step by step"),
+            Text(content="-# Seven taps. Only you can see this."),
+            Separator(divider=True),
+            Text(content=(
+                "**1.** Type **`/cards`** in the server\n\n"
+                f"**2.** Tap **Scan screenshots** {emojis.scan}\n"
+                f"{emojis.inbox} I will send you a DM — open it and send your "
+                "collection pictures there\n"
+                "-# No screenshots? Tap any card on the board and set the "
+                "number by hand instead.\n\n"
+                f"**3.** Tap **Find trades** {emojis.magnifier}"
+            )),
+            Separator(divider=False),
+            Text(content=(
+                "**4.** Tap the card you need\n"
+                "You will see who has a spare, and which clan they are in\n\n"
+                f"**5.** Tap **Ask to swap** next to the person you want\n\n"
+                "**6.** Choose which of your spare cards to give\n\n"
+                f"**7.** They get a DM and tap **Accept** {emojis.yes} — done"
+            )),
+            Separator(divider=True),
+            Text(content=(
+                "**Before the cards can move**\n"
+                "You must both be in the same clan. Send the cards to each "
+                "other in game, the same way you send any card."
+            )),
+            Separator(divider=True),
+            Text(content=(
+                f"-# Still stuck? Message <@{SUPPORT_USER_ID}>"
+            )),
+        ],
+    )]
+
+
+@loader.listener(hikari.InteractionCreateEvent)
+async def on_sticky_help(event: hikari.InteractionCreateEvent) -> None:
+    """Answer the sticky's help button.
+
+    A plain listener rather than a `register_action` handler: the sticky is
+    posted by a background task, not by a command, so it has no button_store
+    row and nothing to look its action id up against.
+    """
+    interaction = event.interaction
+    if not isinstance(interaction, hikari.ComponentInteraction):
+        return
+    if interaction.custom_id != "cards_help:sticky":
+        return
+    try:
+        await interaction.create_initial_response(
+            hikari.ResponseType.MESSAGE_CREATE,
+            components=_walkthrough(),
+            flags=(
+                hikari.MessageFlag.IS_COMPONENTS_V2
+                | hikari.MessageFlag.EPHEMERAL
+            ),
+        )
+    except Exception as exc:
+        print(f"[Cards Sticky] help response failed: "
+              f"{type(exc).__name__}: {exc}")
 
 
 def _content_key() -> str:

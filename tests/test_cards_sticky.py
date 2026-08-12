@@ -412,3 +412,40 @@ def test_the_notice_neither_pings_nor_notifies(monkeypatch):
     flags = rest.created[0][2]
     assert flags & hikari.MessageFlag.SUPPRESS_NOTIFICATIONS
     assert flags & hikari.MessageFlag.IS_COMPONENTS_V2
+
+
+def test_the_sticky_offers_a_way_out_for_someone_stuck():
+    """Somebody read the notice and still asked; the button answers them."""
+    ids = []
+    for container in sticky._sticky_components():
+        for node in container.components:
+            for child in getattr(node, "components", ()) or ():
+                custom_id = getattr(child, "custom_id", None)
+                if custom_id:
+                    ids.append(custom_id)
+    assert "cards_help:sticky" in ids
+
+
+def test_the_walkthrough_names_every_button_in_order():
+    """Each step must match a label the reader can actually see on screen."""
+    text = "\n".join(
+        node.content
+        for container in sticky._walkthrough()
+        for node in container.components
+        if hasattr(node, "content")
+    )
+
+    order = [
+        "/cards", "Scan screenshots", "Find trades", "Ask to swap", "Accept",
+    ]
+    positions = [text.index(label) for label in order]
+    assert positions == sorted(positions), "the steps are out of order"
+
+    # Seven numbered taps, none skipped.
+    for step in range(1, 8):
+        assert f"**{step}.**" in text, f"step {step} is missing"
+
+    # The two things people got wrong: where the pictures go, and the clan.
+    assert "DM" in text
+    assert "same clan" in text
+    assert "by hand" in text
