@@ -5681,6 +5681,33 @@ def test_different_clans_names_both_of_them():
     assert together == "You are both in Morning Woods • `#HOME`"
 
 
+@pytest.mark.parametrize("stored", [
+    None, "", "   ", "my clan", "<:Broken:notanumber>", "<:Broken:",
+    "<:Bad:-5>", ":shrug:", "<@1234567890123456789>",
+])
+def test_a_bad_clan_emoji_falls_back_instead_of_raising(stored):
+    """The field is hand-edited, so it can hold anything at all."""
+    assert cards_command._clan_emoji_markup(stored) == (
+        cards_command.CLAN_FALLBACK_EMOJI
+    )
+
+
+def test_a_usable_clan_emoji_is_kept():
+    markup = "<:Elixer:1536777630278357164>"
+    assert cards_command._clan_emoji_markup(markup) == markup
+
+
+# 18.5 is deliberately absent: truncating it to TH18 is sensible, not a bug.
+@pytest.mark.parametrize("level", [None, "", 0, -3, 99, "eighteen", object()])
+def test_an_unknown_town_hall_contributes_nothing(level):
+    assert cards_command._th_markup(level) == ""
+
+
+def test_a_known_town_hall_renders():
+    assert cards_command._th_markup(18) == str(cards_command.emojis.TH18)
+    assert cards_command._th_markup("17") == str(cards_command.emojis.TH17)
+
+
 def test_who_has_what_destination_is_gone():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",

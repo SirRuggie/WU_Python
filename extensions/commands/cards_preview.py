@@ -50,7 +50,8 @@ def _preview_trade(discord_id: int, *, alternatives: bool) -> dict:
         "requester_discord_id": int(discord_id),
         "requester_clan_tag": "#HOME",
         "requester_clan_name": "Morning Woods",
-        "requester_clan_emoji": "<:MorningWoods:1393247569970331688>",
+        # A real emoji id, so the rendering path is genuinely exercised.
+        "requester_clan_emoji": str(cards_command.emojis.card_elixir),
         "requester_town_hall": 17,
         "holder_tag": "#9LRVV8G8",
         "holder_name": "Sir UwU",

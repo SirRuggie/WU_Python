@@ -71,7 +71,7 @@ from utils.cards import (
 )
 from utils.component_state import delete_state, get_state, insert_state, update_state
 from utils import troop_emoji
-from utils.emoji import emojis
+from utils.emoji import EmojiType, emojis
 from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
@@ -5195,14 +5195,19 @@ CLAN_FALLBACK_EMOJI = "🛡️"
 def _clan_emoji_markup(value: object) -> str:
     """A clan's own emoji, falling back to a plain shield.
 
-    `mongo.clans` stores the emoji as `<:name:id>` markup, but the field is
-    optional and can hold anything a human typed, so anything that is not
-    recognisable markup degrades to the shield rather than printing junk.
+    `mongo.clans` stores it as `<:name:id>` markup, set by hand, so the field
+    can hold anything. Validated the same way `utils.classes.Clan` does - by
+    actually parsing it rather than pattern-matching - so this agrees with the
+    rest of the bot about which values are usable.
     """
     raw = str(value or "").strip()
-    if re.fullmatch(r"<a?:[A-Za-z0-9_]{2,32}:\d{15,25}>", raw):
-        return raw
-    return CLAN_FALLBACK_EMOJI
+    if not raw or raw.count(":") < 2:
+        return CLAN_FALLBACK_EMOJI
+    try:
+        EmojiType(raw).partial_emoji
+    except (IndexError, ValueError, TypeError, AttributeError):
+        return CLAN_FALLBACK_EMOJI
+    return raw
 
 
 def _player_line(
