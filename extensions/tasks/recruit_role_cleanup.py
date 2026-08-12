@@ -315,7 +315,12 @@ async def on_bot_started(
                 ("cleanup_next_attempt_at", 1),
                 ("walkthrough_started_at", 1),
             ],
-            name="recruit_role_cleanup_due",
+            # A three-field index of the SAME name already exists in Atlas, and
+            # Mongo refuses to redefine a name in place - which is why this has
+            # warned on every startup and the query has run unindexed. A new
+            # name creates it without a migration; the old one is unused and
+            # can be dropped in Atlas whenever convenient.
+            name="recruit_role_cleanup_due_v2",
         )
     except Exception as e:
         print(f"[Recruit Role Cleanup] WARNING: due-work index unavailable: {e}")

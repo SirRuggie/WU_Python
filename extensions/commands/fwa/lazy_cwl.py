@@ -5,6 +5,7 @@ Tracks FWA clan players during CWL to ensure they return for sync wars.
 Train ⇨ Join ⇨ Attack ⇨ Return (15-30min tops)
 """
 
+import asyncio
 import uuid
 import aiohttp
 import hikari
