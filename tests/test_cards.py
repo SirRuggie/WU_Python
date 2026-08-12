@@ -6702,6 +6702,48 @@ def test_the_admin_check_never_takes_the_panel_down(monkeypatch):
     assert cards_command._is_cards_admin_id(1, bot=bot) is False
 
 
+def test_the_category_editor_opens_showing_what_you_already_have():
+    """Doing nothing must change nothing, and the screen must say so.
+
+    Both menus mark your current state as the default selection, each list
+    saves through its own handler, and Done is navigation carrying no select
+    data - so leaving without submitting cannot alter anything. The old copy
+    said "unselected cards are treated as 1 copy", which describes submitting
+    ONE list but reads as a threat over the whole screen.
+    """
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["balloon"] = cards.MISSING
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+
+    view = cards_command._category_editor(account, inventory, "elixir")
+    nodes = _view_nodes(view)
+    text = _view_text(view)
+
+    menus = {
+        str(n["custom_id"]).split(":")[0]: n
+        for n in nodes if n.get("type") == 3
+    }
+    defaults = {
+        name: {o["value"] for o in menu["options"] if o.get("default")}
+        for name, menu in menus.items()
+    }
+
+    assert defaults["cards_set_missing"] == {"balloon"}
+    assert defaults["cards_set_duplicates"] == {"wizard"}
+    # Two menus, two handlers: one list can never overwrite the other.
+    assert set(menus) == {"cards_set_missing", "cards_set_duplicates"}
+
+    assert "Bulk edit" in text, "continuity with the button that opened it"
+    assert "leaving without submitting changes nothing" in text
+    assert "treated as **1 copy**" not in text
+    assert "Sir Ruggie" not in text
+    _assert_discord_payload(view)
+
+
 def test_bulk_edit_screen_names_itself_and_the_step():
     """It read as a settings dialog from another product.
 

@@ -2785,14 +2785,24 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
     )
 
     body: list = [
-        Text(content=f"# {category_markup(category.id)} {category.name}"),
+        # Titled for the flow that opened it, so two taps in you still know
+        # where you are. The name and tag are gone: the board named them, and
+        # the Bulk edit screen before this one named them again.
         Text(content=(
-            f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
-            f"{status}\n{setup_status}\n\n"
-            "Select every card that applies in each list. Unselected cards are "
-            "treated as **1 copy**. You can return here after a pack or trade "
-            "and change only the affected list."
+            f"# {_safe_markup(emojis.edit)} Bulk edit · "
+            f"{category_markup(category.id)} {category.name}"
         )),
+        Text(content=(
+            # Each list saves on its own, so the old warning that "unselected
+            # cards are treated as 1 copy" described submitting ONE list but
+            # read as a standing threat over the whole screen. Both menus open
+            # already ticked to match your collection, so the safe thing to say
+            # is that nothing moves until you submit one.
+            "Each list already shows what you have now.\n"
+            "-# Change a list and submit it to save that list. The other list "
+            "is untouched, and leaving without submitting changes nothing."
+        )),
+        Text(content=f"-# {status} · {setup_status}"),
         Separator(divider=True),
         Text(content="## Missing cards"),
         ActionRow(components=[
