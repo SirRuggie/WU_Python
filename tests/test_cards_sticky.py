@@ -354,6 +354,9 @@ def test_every_step_is_its_own_block():
         "**1 · Add your cards**",
         "**2 · See who has it**",
         "**3 · Send the offer**",
+        # Accepting is not the trade. Without this the list stopped one step
+        # short of the thing it is asking people to do.
+        "**4 · Send the cards**",
     ]
     # Gaps between the steps, not one continuous run of text.
     assert sum(1 for node in parts if hasattr(node, "divider")) >= 5

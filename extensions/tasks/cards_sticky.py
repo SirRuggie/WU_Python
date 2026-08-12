@@ -161,9 +161,13 @@ def _sticky_components() -> list[Container]:
                 f"{emojis.yes} They get a DM and tap **Accept**"
             )),
             Separator(divider=False),
+            # This was a footnote hanging off step 3, which left the numbered
+            # list ending at "they accept" - and accepting is not the trade.
+            # The same fact as a step tells you what to do next instead.
             Text(content=(
-                "-# You must both be in the same clan to send the cards in "
-                "game."
+                f"**4 · Send the cards**\n"
+                f"{emojis.card_give} Same clan, then trade in game\n"
+                f"{emojis.yes} Then tap **Yes, I sent it**"
             )),
             Separator(divider=True),
             ActionRow(components=[
