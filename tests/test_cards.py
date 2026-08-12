@@ -6270,14 +6270,15 @@ def test_admin_view_leads_with_the_adoption_gap():
         {
             "opened": 30, "entered": 12, "finished": 4, "hidden": 2,
             "active": 9, "proposed": 20, "completed": 7, "expired": 5,
-            "live": 3, "stalled": [],
+            "live": 3, "stalled": [], "stalled_total": 0,
         },
         names={},
+        tag="#ME",
     )
     text = _view_text(view)
 
-    assert "**12 of 30**" in text
-    assert "18 opened it and entered nothing" in text
+    assert "**12 of 30 people**" in text
+    assert "18 entered nothing on any account" in text
     _assert_discord_payload(view)
 
 
@@ -6286,15 +6287,54 @@ def test_admin_view_names_the_people_worth_a_nudge():
         {
             "opened": 2, "entered": 1, "finished": 0, "hidden": 0,
             "active": 1, "proposed": 0, "completed": 0, "expired": 0,
-            "live": 0,
+            "live": 0, "stalled_total": 1,
             "stalled": [{"_id": "#A", "discord_id": 55, "player_name": "InGame"}],
         },
         names={55: "PoppaSlayer"},
+        tag="#ME",
     )
     text = _view_text(view)
 
-    assert "PoppaSlayer" in text
     assert "<@55>" in text
+    _assert_discord_payload(view)
+
+
+def test_admin_view_always_offers_a_way_back():
+    """It replaces the board, so with no control it was a dead end."""
+    view = cards_command._admin_view(
+        {
+            "opened": 0, "entered": 0, "finished": 0, "hidden": 0,
+            "active": 0, "proposed": 0, "completed": 0, "expired": 0,
+            "live": 0, "stalled": [], "stalled_total": 0,
+        },
+        names={},
+        tag="#ME",
+    )
+    ids = [
+        str(n.get("custom_id")) for n in _view_nodes(view) if n.get("type") == 2
+    ]
+
+    assert "cards_dashboard:#ME" in ids
+
+
+def test_admin_view_says_when_the_nudge_list_is_truncated():
+    """Fifty stalled people must not silently render as ten."""
+    view = cards_command._admin_view(
+        {
+            "opened": 60, "entered": 10, "finished": 0, "hidden": 0,
+            "active": 5, "proposed": 0, "completed": 0, "expired": 0,
+            "live": 0, "stalled_total": 50,
+            "stalled": [
+                {"_id": f"#T{i}", "discord_id": 100 + i} for i in range(10)
+            ],
+        },
+        names={},
+        tag="#ME",
+    )
+    text = _view_text(view)
+
+    assert "Showing 10 of 50" in text
+    # The whole point of the cap: the panel still fits whatever the number is.
     _assert_discord_payload(view)
 
 
@@ -6330,26 +6370,35 @@ def _admin_ctx(member=None, user_id=1):
     return SimpleNamespace(member=member, user=SimpleNamespace(id=user_id))
 
 
+def _admin_bot(*, admin: bool):
+    permissions = (
+        hikari.Permissions.ADMINISTRATOR if admin
+        else hikari.Permissions.SEND_MESSAGES
+    )
+    guild = _FakeGuild(500, [
+        _FakeRole(10, permissions),
+        _FakeRole(500, hikari.Permissions.NONE),
+    ])
+    return SimpleNamespace(
+        cache=_FakeCache(guild, SimpleNamespace(id=1, role_ids=[10]))
+    )
+
+
 def test_an_admin_is_recognised_from_a_dm(monkeypatch):
     """/cards runs in DMs, where the interaction carries no member at all."""
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
-    guild = _FakeGuild(500, [
-        _FakeRole(10, hikari.Permissions.ADMINISTRATOR),
-        _FakeRole(500, hikari.Permissions.NONE),
-    ])
-    cached = SimpleNamespace(id=1, role_ids=[10])
-    bot = SimpleNamespace(cache=_FakeCache(guild, cached))
 
-    assert cards_command._is_cards_admin(bot, _admin_ctx()) is True
+    assert cards_command._is_cards_admin(
+        _admin_ctx(), _admin_bot(admin=True)
+    ) is True
 
 
 def test_an_ordinary_member_is_not(monkeypatch):
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
-    guild = _FakeGuild(500, [_FakeRole(500, hikari.Permissions.SEND_MESSAGES)])
-    cached = SimpleNamespace(id=1, role_ids=[])
-    bot = SimpleNamespace(cache=_FakeCache(guild, cached))
 
-    assert cards_command._is_cards_admin(bot, _admin_ctx()) is False
+    assert cards_command._is_cards_admin(
+        _admin_ctx(), _admin_bot(admin=False)
+    ) is False
 
 
 def test_the_admin_check_never_takes_the_panel_down(monkeypatch):
@@ -6360,8 +6409,12 @@ def test_the_admin_check_never_takes_the_panel_down(monkeypatch):
         def get_guild(self, _guild_id):
             raise RuntimeError("cache exploded")
 
+        def get_member(self, _guild_id, _user_id):
+            raise RuntimeError("cache exploded")
+
     bot = SimpleNamespace(cache=_Broken())
-    assert cards_command._is_cards_admin(bot, _admin_ctx()) is False
+    assert cards_command._is_cards_admin(_admin_ctx(), bot) is False
+    assert cards_command._is_cards_admin_id(1, bot) is False
 
 
 def test_the_admin_button_is_only_drawn_for_admins():
@@ -6381,3 +6434,25 @@ def test_the_admin_button_is_only_drawn_for_admins():
 
     assert "Admin" in labels(True)
     assert "Admin" not in labels(False)
+
+
+def test_the_board_resolves_admin_itself_on_every_screen(monkeypatch):
+    """Threading a flag meant the button showed on some screens, not others."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
+    monkeypatch.setattr(
+        cards_command.bot_data, "data", {"bot": _admin_bot(admin=True)}
+    )
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["discord_id"] = 1
+
+    # No is_admin argument at all, which is how every call site renders it.
+    view = cards_command._dashboard(account, inventory, account_count=1)
+    labels = [
+        str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
+    ]
+
+    assert "Admin" in labels

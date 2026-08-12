@@ -34,6 +34,7 @@ from extensions.commands.accounts import (
 )
 from extensions.commands.recruit.perms import guild_permissions
 from extensions.components import register_action
+from utils import bot_data
 from utils.card_board import (
     CARD_ARTWORK_DIR,
     CATEGORY_ACCENTS,
@@ -1914,9 +1915,15 @@ def _dashboard(
     *,
     account_count: int,
     rendered_board=None,
-    is_admin: bool = False,
+    is_admin: bool | None = None,
 ) -> list[Container]:
     tag = _normalize_tag(account.tag)
+    if is_admin is None:
+        # Resolved here rather than passed in. You only ever see your own
+        # board, so the inventory already names who is looking - and a dozen
+        # handlers render this screen, which is why a threaded flag made the
+        # button appear on some of them and vanish on others.
+        is_admin = _is_cards_admin_id(inventory.get("discord_id"))
     complete = set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
     summary = inventory_summary(inventory.get("cards"), complete)
     all_complete = len(complete) == len(CATEGORIES)
@@ -2830,7 +2837,7 @@ async def _dashboard_view(
     mongo: MongoClient | None = None,
     guild_id: int | None = None,
     skip_paused_gate: bool = False,
-    is_admin: bool = False,
+    is_admin: bool | None = None,
 ):
     """The board - unless this account owes somebody an answer.
 
@@ -3546,22 +3553,48 @@ def _player_spares_view(
     return [Container(components=body)]
 
 
-def _is_cards_admin(bot, ctx) -> bool:
+def _is_cards_admin_id(discord_id: object, bot=None) -> bool:
+    """Whether one Discord user runs the family. Never raises."""
+    guild_id = _configured_cards_guild_id()
+    if guild_id is None or not discord_id:
+        return False
+    if bot is None:
+        bot = bot_data.data.get("bot")
+    if bot is None:
+        return False
+    try:
+        member = bot.cache.get_member(guild_id, int(discord_id))
+        guild = bot.cache.get_guild(guild_id)
+    except Exception:
+        return False
+    return bool(
+        guild_permissions(member, guild) & hikari.Permissions.ADMINISTRATOR
+    )
+
+
+def _is_cards_admin(ctx, bot=None) -> bool:
     """Whether this member runs the family.
 
-    `/cards` is usable from a DM, where the interaction carries no member and
-    no permissions at all. Falling back to the cached member in the configured
-    family guild is what lets an admin open the panel from the same DM they
-    scan their screenshots in.
+    Takes the bot from the shared registry rather than an argument, because
+    the board is rendered from a dozen different handlers and threading a flag
+    through all of them meant the button appeared on some screens and vanished
+    on others - which is exactly what happened.
+
+    `/cards` is also usable from a DM, where the interaction carries no member
+    and no permissions at all, so a cached lookup in the configured family
+    guild is the fallback.
     """
     guild_id = _configured_cards_guild_id()
     if guild_id is None:
         return False
+    if bot is None:
+        bot = bot_data.data.get("bot")
+    if bot is None:
+        return False
     member = getattr(ctx, "member", None)
-    guild = None
     try:
-        guild = bot.cache.get_guild(guild_id) if bot is not None else None
-        if member is None and bot is not None:
+        guild = bot.cache.get_guild(guild_id)
+        if member is None:
             member = bot.cache.get_member(guild_id, int(ctx.user.id))
     except Exception:
         return False
@@ -3583,20 +3616,35 @@ async def _admin_stats(mongo: MongoClient, *, guild_id: int) -> dict:
     trades = mongo.card_trades
     live = list(SWAP_LIVE_STATUSES) + ["pending"]
 
+    async def people(extra: dict | None = None) -> set[int]:
+        """Distinct humans, not inventory rows.
+
+        One person can own several accounts, so counting documents counted a
+        main and its alts as separate members - and listed somebody who uses
+        this every day as having entered nothing, because one of their alts
+        was empty.
+        """
+        try:
+            found = await inventories.distinct(
+                "discord_id", {**scope, **(extra or {})}
+            )
+        except Exception:
+            _log.exception("cards admin count failed")
+            return set()
+        return {int(value) for value in found if value}
+
+    opened = await people()
+    entered = await people({"cards": {"$nin": [{}, None]}})
+    stalled_ids = opened - entered
+
     stats = {
-        "opened": await inventories.count_documents(scope),
-        "entered": await inventories.count_documents(
-            {**scope, "cards": {"$nin": [{}, None]}}
-        ),
-        "finished": await inventories.count_documents(
-            {**scope, "complete_categories": {"$size": len(CATEGORIES)}}
-        ),
-        "hidden": await inventories.count_documents(
-            {**scope, "trading_paused": True}
-        ),
-        "active": await inventories.count_documents(
-            {**scope, "last_seen_at": {"$gte": week}}
-        ),
+        "opened": len(opened),
+        "entered": len(entered),
+        "finished": len(await people(
+            {"complete_categories": {"$size": len(CATEGORIES)}}
+        )),
+        "hidden": len(await people({"trading_paused": True})),
+        "active": len(await people({"last_seen_at": {"$gte": week}})),
         "proposed": await trades.count_documents({**scope, "kind": "trade"}),
         "completed": await trades.count_documents(
             {**scope, "kind": "trade", "status": "completed"}
@@ -3607,16 +3655,31 @@ async def _admin_stats(mongo: MongoClient, *, guild_id: int) -> dict:
         "live": await trades.count_documents(
             {**scope, "kind": "trade", "status": {"$in": live}}
         ),
+        "stalled_total": len(stalled_ids),
     }
-    # The only actionable part of the screen: people who opened it, got as far
-    # as an account, and then entered nothing. They are the ones to go poke.
-    stats["stalled"] = await inventories.find(
-        {**scope, "cards": {"$in": [{}, None]}}
-    ).sort("created_at", 1).to_list(length=10)
+
+    # The only actionable part of the screen: people with no cards on ANY of
+    # their accounts. Bounded, because a long list is not more actionable.
+    stats["stalled"] = []
+    if stalled_ids:
+        rows = await inventories.find(
+            {**scope, "discord_id": {"$in": sorted(stalled_ids)[:ADMIN_NUDGE_LIMIT]}}
+        ).sort("created_at", 1).to_list(length=ADMIN_NUDGE_LIMIT * 4)
+        seen: set[int] = set()
+        for row in rows:
+            discord_id = int(row.get("discord_id") or 0)
+            if discord_id and discord_id not in seen:
+                seen.add(discord_id)
+                stats["stalled"].append(row)
     return stats
 
 
-def _admin_view(stats: dict, *, names: dict[int, str]) -> list[Container]:
+ADMIN_NUDGE_LIMIT = 10
+
+
+def _admin_view(
+    stats: dict, *, names: dict[int, str], tag: str = ""
+) -> list[Container]:
     """Six numbers and one list of names. Deliberately nothing else.
 
     Any figure that does not either say whether this is working or who to go
@@ -3629,8 +3692,8 @@ def _admin_view(stats: dict, *, names: dict[int, str]) -> list[Container]:
     body: list = [
         Text(content=f"# {emojis.magnifier} Cards · admin"),
         Text(content=(
-            f"**{entered} of {opened}** who opened it actually entered cards."
-            + (f"\n-# {dropped} opened it and entered nothing." if dropped else "")
+            f"**{entered} of {opened} people** who opened it entered cards."
+            + (f"\n-# {dropped} entered nothing on any account." if dropped else "")
         )),
         Separator(divider=True),
         Text(content=(
@@ -3648,20 +3711,35 @@ def _admin_view(stats: dict, *, names: dict[int, str]) -> list[Container]:
 
     stalled = stats.get("stalled") or []
     if stalled:
-        lines = []
-        for document in stalled:
-            discord_id = document.get("discord_id")
-            who = names.get(int(discord_id)) if discord_id else None
-            label = who or str(document.get("player_name") or document.get("_id"))
-            mention = f"<@{int(discord_id)}>" if discord_id else ""
-            lines.append(f"- {_escape_markdown(str(label))} {mention}".rstrip())
+        total = int(stats.get("stalled_total") or len(stalled))
+        # A mention already renders the name. Printing both put the same
+        # person on screen twice, which is what made this list a wall.
+        lines = [
+            f"- <@{int(document['discord_id'])}>"
+            if document.get("discord_id")
+            else f"- {_escape_markdown(str(document.get('player_name') or document.get('_id')))}"
+            for document in stalled
+        ]
+        more = (
+            f"\n-# Showing {len(stalled)} of {total}."
+            if total > len(stalled) else ""
+        )
         body.extend([
             Separator(divider=True),
             Text(content=(
                 "## Worth a nudge\n"
-                "-# Opened `/cards`, entered nothing.\n" + "\n".join(lines)
+                "-# Opened `/cards`, entered nothing on any account.\n"
+                + "\n".join(lines) + more
             )[:4000]),
         ])
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{_normalize_tag(tag)}",
+            label="Back to board",
+            emoji=RETURN_EMOJI,
+        ),
+    ]))
     return [Container(components=body)]
 
 
@@ -7541,7 +7619,6 @@ class Cards(
             components = await _dashboard_view(
                 account, inventory, account_count=1,
                 mongo=mongo, guild_id=_trade_guild_id(ctx),
-                is_admin=_is_cards_admin(bot, ctx),
             )
         await ctx.interaction.edit_initial_response(components=components)
 
@@ -8379,7 +8456,6 @@ async def cards_dashboard(
     return await _dashboard_view(
         account, inventory, account_count=len(_loaded_entries(data)),
         mongo=mongo, guild_id=_trade_guild_id(ctx),
-        is_admin=_is_cards_admin(bot, ctx),
     )
 
 
@@ -9201,6 +9277,7 @@ async def cards_admin(
             [document.get("discord_id") for document in stats.get("stalled") or []],
             guild_id=int(guild_id),
         ),
+        tag=_parse_target(str(action_id or ""))[0],
     )
 
 
