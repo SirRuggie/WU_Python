@@ -157,31 +157,38 @@ def _walkthrough() -> list[Container]:
     return [Container(
         accent_color=BLUE_ACCENT,
         components=[
-            Text(content="## 🙋 How to trade a card, step by step"),
-            Text(content="-# Seven taps. Only you can see this."),
+            Text(content="## 🙋 How to trade a card"),
+            Text(content="-# Only you can see this."),
             Separator(divider=True),
             Text(content=(
+                "### First time only\n"
                 "**1.** Type **`/cards`** in the server\n\n"
                 f"**2.** Tap **Scan screenshots** {emojis.scan}\n"
-                f"{emojis.inbox} I will send you a DM — open it and send your "
-                "collection pictures there\n"
+                f"{emojis.inbox} I send you a DM. Open it and send your "
+                "collection pictures there.\n"
                 "-# No screenshots? Tap any card on the board and set the "
-                "number by hand instead.\n\n"
-                f"**3.** Tap **Find trades** {emojis.magnifier}"
+                "number by hand instead."
             )),
             Separator(divider=False),
             Text(content=(
-                "**4.** Tap the card you need\n"
+                "### Every trade\n"
+                f"**3.** Tap **Find trades** {emojis.magnifier}\n\n"
+                "**4.** Open the menu for the category you want, and pick "
+                "the card you need\n"
                 "You will see who has a spare, and which clan they are in\n\n"
-                f"**5.** Tap **Ask to swap** next to the person you want\n\n"
+                "**5.** Tap **Ask to swap** next to the person you want\n\n"
                 "**6.** Choose which of your spare cards to give\n\n"
-                f"**7.** They get a DM and tap **Accept** {emojis.yes} — done"
+                f"**7.** They get a DM and tap **Accept** {emojis.yes}"
             )),
-            Separator(divider=True),
+            Separator(divider=False),
             Text(content=(
-                "**Before the cards can move**\n"
-                "You must both be in the same clan. Send the cards to each "
-                "other in game, the same way you send any card."
+                "### After they accept\n"
+                "**8.** Get into the same clan, then send the cards to each "
+                "other in game — the same way you send any card\n\n"
+                f"**9.** Open **`/cards`**. I ask *Did you send your card?* "
+                f"Tap **Yes, I sent it** {emojis.yes}\n"
+                "-# Only your own card moves when you answer. They confirm "
+                "theirs the same way. Nothing is lost if one of you is slow."
             )),
             Separator(divider=True),
             Text(content=(

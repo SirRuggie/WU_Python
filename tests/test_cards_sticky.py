@@ -437,15 +437,21 @@ def test_the_walkthrough_names_every_button_in_order():
 
     order = [
         "/cards", "Scan screenshots", "Find trades", "Ask to swap", "Accept",
+        "same clan", "Yes, I sent it",
     ]
     positions = [text.index(label) for label in order]
     assert positions == sorted(positions), "the steps are out of order"
 
-    # Seven numbered taps, none skipped.
-    for step in range(1, 8):
+    # Nine numbered steps, none skipped.
+    for step in range(1, 10):
         assert f"**{step}.**" in text, f"step {step} is missing"
 
-    # The two things people got wrong: where the pictures go, and the clan.
+    # Three phases, because setup happens once and trading happens often.
+    for heading in ("First time only", "Every trade", "After they accept"):
+        assert f"### {heading}" in text, heading
+
+    # The things people got wrong: where the pictures go, the clan, and that
+    # accepting is not the end of it.
     assert "DM" in text
-    assert "same clan" in text
     assert "by hand" in text
+    assert "Did you send your card?" in text
