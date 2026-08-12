@@ -288,14 +288,14 @@ def _configured_cards_channel_id() -> int | None:
 
 
 def _trade_guild_id(ctx) -> int | None:
-    """Which family a trade belongs to, usable from a DM.
+    """Which family this interaction belongs to.
 
-    A DM interaction has no guild, so keying a trade lookup on the
-    interaction's guild made every trade invisible there. Trades live in the
-    configured family, which is a constant, so use that and fall back to the
-    interaction only when nothing is configured.
+    The server you are actually in wins, so nothing is pinned to one hardcoded
+    community. The configured id is only a fallback for a DM, which has no
+    guild of its own - without it, every collection and trade would be
+    invisible there.
     """
-    return _configured_cards_guild_id() or _guild_id(ctx)
+    return _guild_id(ctx) or _configured_cards_guild_id()
 
 
 def _guild_scope_error(ctx) -> str | None:
@@ -1498,7 +1498,7 @@ def _scan_session_problem(ctx, user_id: object, guild_id: object) -> list[Contai
         owns_session = int(user_id) == int(ctx.user.id)
         session_guild = int(guild_id)
         configured_guild = int(_configured_cards_guild_id() or 0)
-        context_guild = _guild_id(ctx)
+        context_guild = _trade_guild_id(ctx)
         correct_guild = (
             session_guild == configured_guild
             and (context_guild is None or int(context_guild) == session_guild)
@@ -1817,7 +1817,7 @@ async def _load_target(
         mongo,
         account,
         discord_id=int(ctx.user.id),
-        guild_id=_guild_id(ctx),
+        guild_id=_trade_guild_id(ctx),
     )
     return account, inventory, None
 
@@ -4967,8 +4967,8 @@ def _trade_proposal_dm(
         footer=(
             "Nothing is reserved until you accept."
             if controls
-            else "Run /cards in Warriors United and open My trades to accept "
-            f"or decline.{chooser} Nothing is reserved until you accept."
+            else "Run /cards here or in the server, then open My trades to "
+            f"accept or decline.{chooser} Nothing is reserved until you accept."
         ),
     )
 
@@ -5053,7 +5053,7 @@ async def _notify_trade_status(
             f"{swap}\n\n{detail}\n\n{accounts}",
             accent=GOLD_ACCENT,
             footer=(
-                "Run /cards in Warriors United for the current collection and "
+                "Run /cards here or in the server for your collection and "
                 "trade status."
             ),
         ),
@@ -6785,7 +6785,7 @@ class Cards(
                 mongo,
                 account,
                 discord_id=int(ctx.user.id),
-                guild_id=_guild_id(ctx),
+                guild_id=_trade_guild_id(ctx),
             )
             components = await _dashboard_view(
                 account, inventory, account_count=1
@@ -6831,7 +6831,7 @@ async def cards_account_select(
         mongo,
         account,
         discord_id=int(ctx.user.id),
-        guild_id=_guild_id(ctx),
+        guild_id=_trade_guild_id(ctx),
     )
     return await _dashboard_view(
         account, inventory, account_count=len(_loaded_entries(data))
@@ -6858,7 +6858,7 @@ async def cards_scan_start(
         return problem
 
     user_id = int(ctx.user.id)
-    guild_id = int(_guild_id(ctx) or 0)
+    guild_id = int(_trade_guild_id(ctx) or 0)
     session_id = f"cards_upload_{secrets.token_urlsafe(12)}"
     usable_until = datetime.now(timezone.utc) + CARD_SCAN_DRAFT_FOR
     document = {
@@ -6970,7 +6970,7 @@ async def _load_scan_bound_account(
             usable_until=usable_until,
             account_tag=account_tag,
         )
-    if _guild_id(ctx) is None:
+    if _trade_guild_id(ctx) is None:
         inventory = await _ensure_inventory(
             mongo,
             account,
@@ -7246,7 +7246,7 @@ async def cards_scan_cancel(
     if problem:
         return problem
     await _discard_scan_state(mongo, action_id)
-    if _guild_id(ctx) is None:
+    if _trade_guild_id(ctx) is None:
         return _notice(
             "Screenshot Import Canceled",
             "Nothing was saved. Run `/cards` in the family server to return to "
@@ -7374,7 +7374,7 @@ async def _confirm_scan_draft(
         )
 
     await _discard_scan_state(mongo, action_id)
-    if _guild_id(ctx) is None:
+    if _trade_guild_id(ctx) is None:
         return _scan_saved_notice(account)
     spare_prompt = _spare_counts_panel(account, updated)
     if spare_prompt is not None:
@@ -7677,7 +7677,7 @@ async def cards_set(
             target,
             expected_revision=_inventory_revision_value(inventory),
             discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
+            guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
         return await _card_focus_view(
@@ -7728,7 +7728,7 @@ async def _apply_card_count(
             target,
             expected_revision=_inventory_revision_value(inventory),
             discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
+            guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
         return await _card_focus_view(
@@ -7776,7 +7776,7 @@ async def _resolve_hidden_batch(
             chosen,
             expected_revision=_inventory_revision_value(inventory),
             discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
+            guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
         return _notice(
@@ -7978,7 +7978,7 @@ async def _card_editor_step(
             mode,
             expected_revision=_inventory_revision_value(inventory),
             discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
+            guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
         return await _card_editor_view(
@@ -8067,7 +8067,7 @@ async def cards_editor_keep(
             [],
             expected_revision=_inventory_revision_value(inventory),
             discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
+            guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
         return await _card_editor_view(
@@ -8185,7 +8185,7 @@ async def _selection_update(
             selected,
             mode=mode,
             discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
+            guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
         return _active_trade_notice(account.tag)
@@ -8221,7 +8221,7 @@ async def _clear_category_list(
             [],
             mode=mode,
             discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
+            guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
         return _active_trade_notice(account.tag)
@@ -8339,7 +8339,7 @@ async def cards_baseline(
             [],
             mode=mode,
             discord_id=int(ctx.user.id),
-            guild_id=_guild_id(ctx),
+            guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
         return _active_trade_notice(account.tag)
@@ -8366,7 +8366,7 @@ async def cards_favours(
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
     candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_guild_id(ctx)
+        mongo, inventory, guild_id=_trade_guild_id(ctx)
     )
     available = _without_reserved_cards(inventory)
     return _favours_view(
@@ -8392,7 +8392,7 @@ async def cards_demand(
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
     candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_guild_id(ctx)
+        mongo, inventory, guild_id=_trade_guild_id(ctx)
     )
     return _demand_view(
         account,
@@ -8418,7 +8418,7 @@ async def cards_matches(
         return problem
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
-    guild_id = _guild_id(ctx)
+    guild_id = _trade_guild_id(ctx)
     if guild_id is not None:
         # A cancel whose cleanup failed leaves the cards fenced, and a fenced
         # card is masked out of matching - so the swap silently vanishes on
@@ -8496,7 +8496,7 @@ async def cards_open_card(
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
     candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_guild_id(ctx)
+        mongo, inventory, guild_id=_trade_guild_id(ctx)
     )
     holders = holders_for_card(
         _without_reserved_cards(inventory), candidates, card_id
@@ -8525,7 +8525,7 @@ async def cards_holder_page(
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
     candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_guild_id(ctx)
+        mongo, inventory, guild_id=_trade_guild_id(ctx)
     )
     holders = holders_for_card(
         _without_reserved_cards(inventory), candidates, card_id
@@ -8549,9 +8549,12 @@ async def cards_trades(
     )
     if problem:
         return problem
-    guild_id = _guild_id(ctx)
+    guild_id = _trade_guild_id(ctx)
     if guild_id is None:
-        return _notice("Open trades in the server", "Run `/cards` in Warriors United.")
+        return _notice(
+            "Card Hub is not set up",
+            "An operator must configure the family server before trades work.",
+        )
     trades = await _active_trades(
         mongo, tag=account.tag, guild_id=guild_id, bot=bot
     )
@@ -8588,7 +8591,7 @@ async def cards_trade_holder(
     if not inventory_is_matchable(requester):
         return _stale_collection_notice()
     candidates = await _candidate_inventories(
-        mongo, requester, guild_id=_guild_id(ctx)
+        mongo, requester, guild_id=_trade_guild_id(ctx)
     )
     holders = holders_for_card(
         _without_reserved_cards(requester), candidates, wanted_card_id
@@ -8642,9 +8645,12 @@ async def cards_trade_request(
         return problem
     if not inventory_is_matchable(requester):
         return _stale_collection_notice()
-    guild_id = _guild_id(ctx)
+    guild_id = _trade_guild_id(ctx)
     if guild_id is None:
-        return _notice("Open trades in the server", "Run `/cards` in Warriors United.")
+        return _notice(
+            "Card Hub is not set up",
+            "An operator must configure the family server before trades work.",
+        )
     candidates = await _candidate_inventories(mongo, requester, guild_id=guild_id)
     holder = next(
         (item for item in candidates if _normalize_tag(item.get("_id")) == holder_tag),
