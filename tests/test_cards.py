@@ -4945,47 +4945,6 @@ def test_find_trades_is_card_shaped_so_it_does_not_grow_with_the_family():
     )
 
 
-def test_find_trades_separates_even_swaps_from_one_way_favours():
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    inventory["cards"]["root_rider"] = cards.MISSING
-    inventory["cards"]["druid"] = cards.MISSING
-    inventory["cards"]["wizard"] = cards.DUPLICATE
-
-    base = {card.id: cards.OWNED for card in cards.CARDS}
-    holders = [
-        # Wants the requester's spare Wizard: an even swap.
-        {"_id": "#EVEN", "player_name": "Even",
-         "cards": dict(base, root_rider=cards.DUPLICATE, wizard=cards.MISSING),
-         "complete_categories": [c.id for c in cards.CATEGORIES],
-         "confirmed_at": datetime.now(timezone.utc)},
-        # Needs nothing back: a favour.
-        {"_id": "#GIFT", "player_name": "Gift",
-         "cards": dict(base, druid=cards.DUPLICATE),
-         "complete_categories": [c.id for c in cards.CATEGORIES],
-         "confirmed_at": datetime.now(timezone.utc)},
-    ]
-    matches = cards.find_matches(inventory, holders)
-    view = cards_command._matches_view(account, inventory, matches)
-    text = _view_text(view)
-
-    # The screen leads with the swaps that actually complete; favours live one
-    # button away rather than tripling the height of this one.
-    assert "Even swaps" in text
-    assert "Root Rider" in text
-    assert "Druid" not in text
-    assert any(
-        n.get("custom_id") == "cards_favours:#ME" for n in _view_nodes(view)
-    ), "no way through to the favours"
-
-    favours = _view_text(cards_command._favours_view(account, matches))
-    assert "Druid" in favours
-    assert "Root Rider" not in favours, "an even swap is not a favour"
-
-
 def test_dashboard_states_each_fact_once():
     """Four representations of the same counts read as thrown together."""
     account = Account(
@@ -5045,51 +5004,6 @@ def test_find_trades_absorbs_what_who_has_what_uniquely_showed():
     assert "Your spares others want" in _view_text(demand)
     assert "Wizard" in _view_text(demand)
     _assert_discord_payload(demand)
-
-
-def test_find_trades_picker_reaches_every_match_and_hides_the_rest():
-    """The single 25-option menu dropped matches; per-category menus cannot."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    # Miss far more than one menu could ever list.
-    missing = [card.id for card in cards.CARDS][:40]
-    for card_id in missing:
-        inventory["cards"][card_id] = cards.MISSING
-
-    base = {card.id: cards.DUPLICATE for card in cards.CARDS}
-    holders = [{
-        "_id": "#H", "player_name": "Holder", "cards": base,
-        "complete_categories": [c.id for c in cards.CATEGORIES],
-        "confirmed_at": datetime.now(timezone.utc),
-    }]
-    matches = cards.find_matches(inventory, holders)
-    view = cards_command._matches_view(account, inventory, matches)
-
-    selects = [
-        n for n in _view_nodes(view)
-        if str(n.get("custom_id", "")).startswith("cards_open_card:")
-    ]
-    offered = {
-        card_id
-        for match in matches
-        for exchange in match.exchanges
-        for card_id in exchange.offers
-    }
-    reachable = {
-        option["value"] for select in selects for option in select["options"]
-        if option["value"] != cards_command.CATEGORY_HEADER_VALUE
-    }
-    assert reachable == offered, "every match must be pickable, none invented"
-    assert len(offered) > 25, "the case the old single menu silently truncated"
-    # Four menus in one message need four distinct ids or Discord drops it.
-    ids = [select["custom_id"] for select in selects]
-    assert len(ids) == len(set(ids))
-    for select in selects:
-        assert len(select["options"]) <= 25
-    _assert_discord_payload(view)
 
 
 def test_board_controls_wrap_instead_of_dropping_the_sixth():
@@ -5152,52 +5066,6 @@ def test_each_board_dropdown_is_visually_distinct(monkeypatch):
             cards_command.category_partial(category_id).id
         ), f"{category_id} menu is unmarked"
         assert cards.CATEGORY_BY_ID[category_id].short_name in header["label"]
-
-
-def test_find_trades_dividers_only_separate_the_picker_block(monkeypatch):
-    """Dividing four sibling menus from each other read as unrelated sections."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    for card in cards.CARDS[:30]:
-        inventory["cards"][card.id] = cards.MISSING
-    holders = [{
-        "_id": "#H", "player_name": "Holder",
-        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
-        "complete_categories": [c.id for c in cards.CATEGORIES],
-        "confirmed_at": datetime.now(timezone.utc),
-    }]
-    view = cards_command._matches_view(
-        account, inventory, cards.find_matches(inventory, holders)
-    )
-
-    # Walk the container in order; once the menus start, nothing divides them.
-    children = view[0].components
-    kinds = [
-        "select" if getattr(c, "components", None)
-        and any(hasattr(x, "options") for x in c.components)
-        else "separator" if hasattr(c, "divider") else "other"
-        for c in children
-    ]
-    first = kinds.index("select")
-    last = len(kinds) - 1 - kinds[::-1].index("select")
-    assert "separator" not in kinds[first:last + 1], "a divider splits the menus"
-    assert kinds[first - 1] == "separator", "the block is not set off from the text"
-
-    # Each menu carries its own category art on its default option rather than
-    # a label above it, so the block stays four rows tall.
-    for menu in _view_nodes(view):
-        if not str(menu.get("custom_id", "")).startswith("cards_open_card:"):
-            continue
-        category_id = menu["custom_id"].split("|")[1]
-        header = menu["options"][0]
-        assert header["value"] == cards_command.CATEGORY_HEADER_VALUE
-        assert header["default"] is True
-        assert header["emoji"]["id"] == str(
-            cards_command.category_partial(category_id).id
-        ), f"{category_id} menu is unmarked"
 
 
 def test_refresh_and_pagination_use_the_uploaded_control_emoji():
@@ -5448,6 +5316,9 @@ def test_no_control_button_is_left_on_a_stand_in_emoji():
                 inventory, holders, "root_rider"
             )
         ),
+        # Find trades no longer carries Refresh - it was one control too many
+        # on the screen people got lost on - so My trades is where it lives.
+        cards_command._trades_view(account, []),
     ]
     wanted = {"refresh", "next", "previous"}
     seen = set()
@@ -5585,10 +5456,13 @@ def test_match_lists_page_rather_than_truncate():
     page, pages = 0, 99
     while page < pages:
         view = cards_command._favours_view(account, matches, page=page)
-        text = _view_text(view)
-        for card_id in missing:
-            if cards.CARD_BY_ID[card_id].name in text:
-                seen.add(card_id)
+        # The cards live in the menu now, not in text above it.
+        seen |= {
+            option["value"]
+            for node in _view_nodes(view)
+            if node.get("type") == 3
+            for option in node["options"]
+        }
         label = next(
             (
                 n["label"] for n in _view_nodes(view)
@@ -5645,52 +5519,6 @@ def test_find_trades_explains_a_swap_hidden_by_a_reservation():
     assert "2 of your cards are promised to an accepted trade" in text
     assert "My trades" in text
     _assert_discord_payload(view)
-
-
-def test_no_match_can_fall_between_the_two_lists():
-    """A card reachable in a menu but absent from both lists reads as broken."""
-    account = Account(
-        tag="#ME", name="Sir Ruggie", clan_tag="#H",
-        clan_name="Morning Woods", town_hall=18,
-    )
-    inventory = _complete_inventory()
-    inventory["cards"]["electro_dragon"] = cards.MISSING   # even swap
-    inventory["cards"]["balloon"] = cards.DUPLICATE
-    inventory["cards"]["bomber"] = cards.MISSING           # one-way
-    inventory["cards"]["super_minion"] = cards.MISSING
-
-    holders = [{
-        "_id": "#UWU", "player_name": "Sir UwU", "discord_id": 5,
-        "clan_tag": "#H", "clan_name": "Morning Woods",
-        "cards": dict(
-            {card.id: cards.OWNED for card in cards.CARDS},
-            electro_dragon=cards.DUPLICATE, balloon=cards.MISSING,
-            bomber=cards.DUPLICATE, super_minion=cards.DUPLICATE,
-        ),
-        "complete_categories": [c.id for c in cards.CATEGORIES],
-        "confirmed_at": datetime.now(timezone.utc),
-    }]
-    matches = cards.find_matches(inventory, holders)
-    view = cards_command._matches_view(account, inventory, matches)
-
-    per_card = cards_command._offers_by_card(matches)
-    mutual = {c.id for c in cards.CARDS if per_card.get(c.id, {}).get("mutual")}
-    oneway = {
-        c.id for c in cards.CARDS
-        if c.id in per_card and not per_card[c.id]["mutual"]
-    }
-    pickable = {
-        option["value"]
-        for node in _view_nodes(view)
-        if str(node.get("custom_id", "")).startswith("cards_open_card:")
-        for option in node["options"]
-        if option["value"] != cards_command.CATEGORY_HEADER_VALUE
-    }
-
-    assert "electro_dragon" in mutual, "a two-way trade is an even swap"
-    assert pickable == mutual | oneway, "a match is reachable but listed nowhere"
-    # And the even swap is actually printed, not just classified.
-    assert "Electro Dragon" in _view_text(view)
 
 
 def test_different_clans_names_both_of_them():
@@ -6056,3 +5884,106 @@ def test_the_two_back_buttons_do_not_wear_the_same_mark():
         )
         assert marks["Back to board"] != marks["Back to Find trades"]
     assert checked == 2, f"only checked {checked} screens"
+
+
+def _two_way_and_one_way():
+    """A fixture with one even swap and three one-way offers."""
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#H",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["electro_dragon"] = cards.MISSING   # even swap
+    inventory["cards"]["balloon"] = cards.DUPLICATE
+    for card_id in ("bomber", "super_minion", "hog_rider"):
+        inventory["cards"][card_id] = cards.MISSING        # one-way
+    holder_cards = dict(
+        {card.id: cards.OWNED for card in cards.CARDS},
+        electro_dragon=cards.DUPLICATE, balloon=cards.MISSING,
+    )
+    for card_id in ("bomber", "super_minion", "hog_rider"):
+        holder_cards[card_id] = cards.DUPLICATE
+    holders = [{
+        "_id": "#UWU", "player_name": "Sir UwU", "discord_id": 5,
+        "clan_tag": "#H", "clan_name": "Morning Woods",
+        "cards": holder_cards,
+        "complete_categories": [c.id for c in cards.CATEGORIES],
+        "confirmed_at": datetime.now(timezone.utc),
+    }]
+    return account, inventory, holders, cards.find_matches(inventory, holders)
+
+
+def _menu_values(view):
+    return {
+        option["value"]
+        for node in _view_nodes(view)
+        if node.get("type") == 3
+        for option in node["options"]
+        if option["value"] != cards_command.CATEGORY_HEADER_VALUE
+    }
+
+
+def test_the_card_you_read_is_the_card_you_tap():
+    """Naming a card in text above an unrelated menu is what lost people.
+
+    A member could read "Electro Dragon" under Even swaps and then had to
+    work out on their own that it lived behind a menu called "Elixir".
+    """
+    account, inventory, _holders, matches = _two_way_and_one_way()
+    view = cards_command._matches_view(account, inventory, matches)
+
+    assert "electro_dragon" in _menu_values(view), "the even swap is not tappable"
+    # And it is not ALSO printed as unreachable text above the menu.
+    text = _view_text(view)
+    assert "Electro Dragon" not in text
+    # Nothing one-way leaks onto the front screen.
+    assert _menu_values(view) == {"electro_dragon"}
+    _assert_discord_payload(view)
+
+
+def test_every_match_is_tappable_on_one_screen_or_the_other():
+    account, inventory, _holders, matches = _two_way_and_one_way()
+    per_card = cards_command._offers_by_card(matches)
+
+    front = _menu_values(cards_command._matches_view(account, inventory, matches))
+    favours = _menu_values(cards_command._favours_view(account, matches))
+
+    assert front | favours == set(per_card), "a match is reachable nowhere"
+    assert not (front & favours), "the same card is offered on both screens"
+    assert favours == {"bomber", "super_minion", "hog_rider"}
+
+
+def test_a_long_list_splits_by_category_but_still_names_cards():
+    """Past 25 options Discord forces a split; the labels stay card names."""
+    account, inventory, holders, _matches = _two_way_and_one_way()
+    for card in cards.CARDS[:40]:
+        inventory["cards"][card.id] = cards.MISSING
+    holders[0]["cards"] = {card.id: cards.DUPLICATE for card in cards.CARDS}
+    matches = cards.find_matches(inventory, holders)
+
+    view = cards_command._favours_view(account, matches)
+    menus = [n for n in _view_nodes(view) if n.get("type") == 3]
+    for menu in menus:
+        assert len(menu["options"]) <= 25
+        for option in menu["options"]:
+            assert option["label"] in {c.name for c in cards.CARDS}
+    _assert_discord_payload(view)
+
+
+def test_find_trades_keeps_the_control_count_low():
+    """Eight controls with no instruction is what lost people."""
+    account, inventory, _holders, matches = _two_way_and_one_way()
+    view = cards_command._matches_view(
+        account, inventory, matches,
+        achievable=cards_command._achievable_from_matches(matches, "#ME"),
+    )
+    controls = [
+        node for node in _view_nodes(view)
+        if node.get("type") in (2, 3)
+    ]
+
+    assert len(controls) <= 5, [n.get("label") or n.get("placeholder") for n in controls]
+    # And the screen says what to do, before it says anything else.
+    text = _view_text(view)
+    assert "Pick a card from the menu below" in text
+    assert text.index("Pick a card") < text.index("collection")

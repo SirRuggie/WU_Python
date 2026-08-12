@@ -3105,6 +3105,7 @@ def _match_list_view(
     page: int,
     pages: int,
     accent: int,
+    pickers: list | None = None,
 ) -> list[Container]:
     """One paginated list, shared by the favour and demand screens.
 
@@ -3117,8 +3118,11 @@ def _match_list_view(
         Text(content=title),
         Text(content=f"-# {blurb}"),
         Separator(divider=False),
-        Text(content=rows or "-# Nothing here right now."),
     ]
+    if pickers:
+        body.extend(pickers)
+    else:
+        body.append(Text(content=rows or "-# Nothing here right now."))
     if pages > 1:
         body.extend([
             Separator(divider=True),
@@ -3177,13 +3181,20 @@ def _favours_view(account, matches: list, *, page: int = 0) -> list[Container]:
         title=f"# {emojis.card_give} Ask for help",
         blurb=(
             "You have nothing these players need, so they would get nothing "
-            "back. Open a card to see who holds it and ask."
+            "back. Tap the menu, pick a card, then ask whoever holds it."
         ),
-        rows=_offer_rows([c.id for c in window], per_card),
+        rows="",
         action="cards_favours",
         page=page,
         pages=pages,
         accent=GOLD_ACCENT,
+        # Same reason as Even swaps: a list you cannot tap is a dead end.
+        pickers=_card_pickers(
+            _normalize_tag(account.tag),
+            [card.id for card in window],
+            per_card,
+            placeholder="Pick a card to ask for",
+        ),
     )
 
 
@@ -3229,6 +3240,54 @@ def _demand_view(
     )
 
 
+def _card_pickers(
+    tag: str, card_ids: list[str], per_card: dict, *, placeholder: str
+) -> list:
+    """Menus listing the cards themselves, not the categories they live in.
+
+    One menu while the list fits Discord's 25-option cap, which it almost
+    always does. Beyond that it splits by category, because that is the only
+    grouping guaranteed to fit - but the labels stay card names either way, so
+    a member never has to know which category a card belongs to.
+    """
+    def option(card_id: str) -> SelectOption:
+        entry = per_card.get(card_id) or {}
+        givers = len(entry.get("givers") or ())
+        return SelectOption(
+            label=CARD_BY_ID[card_id].name,
+            value=card_id,
+            description=(
+                f"{givers} can give it"
+                + (" · they want one of yours" if entry.get("mutual") else "")
+            )[:100],
+            emoji=troop_emoji.partial(card_id),
+        )
+
+    if len(card_ids) <= 25:
+        return [ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_open_card:{tag}",
+            placeholder=placeholder[:150],
+            max_values=1,
+            options=[option(card_id) for card_id in card_ids],
+        )])]
+
+    rows: list = []
+    for category in CATEGORIES:
+        in_category = [
+            card_id for card_id in card_ids
+            if CARD_BY_ID[card_id].category == category.id
+        ]
+        if not in_category:
+            continue
+        rows.append(ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_open_card:{tag}|{category.id}",
+            placeholder=f"{placeholder} · {category.short_name}"[:150],
+            max_values=1,
+            options=[option(card_id) for card_id in in_category[:25]],
+        )]))
+    return rows
+
+
 def _matches_view(
     account,
     inventory: dict,
@@ -3250,8 +3309,9 @@ def _matches_view(
     holders_total = len({match.holder_tag for match in matches})
 
     summary_line = (
+        "**Pick a card from the menu below.**\n"
         f"-# {holders_total} collection"
-        f"{'s' if holders_total != 1 else ''} can supply something you need"
+        f"{'s' if holders_total != 1 else ''} can supply something you need."
     )
     if reserved:
         # Cards held by an accepted trade are masked out of matching, which
@@ -3267,14 +3327,21 @@ def _matches_view(
         Text(content=summary_line),
     ]
     if mutual_ids:
+        # The cards ARE the menu. Printing them as text above an unrelated
+        # menu is what lost people: a member read "Electro Dragon" and then had
+        # to work out for themselves that it lived behind a menu called
+        # "Elixir". One thing to tap, and it lists what it acts on.
         body.extend([
             Separator(divider=True),
             Text(content=(
                 f"## {emojis.card_swap} Even swaps\n"
-                "-# They have what you need and want one of your spares."
+                "-# They have what you need and want one of your spares.\n"
+                "-# Tap the menu, pick a card, then tap **Ask to swap**."
             )),
-            Separator(divider=False),
-            Text(content=_offer_rows([c.id for c in mutual_ids], per_card)),
+            *_card_pickers(
+                tag, [c.id for c in mutual_ids], per_card,
+                placeholder="Pick a card to swap for",
+            ),
         ])
     # What your own spares are worth. This is the one thing the old "Who has
     # what" panel said that this screen did not, so it moved here rather than
@@ -3297,55 +3364,11 @@ def _matches_view(
             )),
         ])
 
-    # One menu per category rather than a single menu capped at 25. The old
-    # single menu silently dropped every match past the twenty-fifth; no
-    # category holds more than nineteen cards, so a per-category menu always
-    # fits. This is also what retired the separate browse-by-category screen,
-    # which listed cards nobody held and so mostly led to "nobody has this".
-    pickers: list = []
-    for category in CATEGORIES:
-        offered = [c for c in CATEGORY_CARDS[category.id] if c.id in per_card]
-        if not offered:
-            continue
-        pickers.append(
-            ActionRow(components=[TextSelectMenu(
-                custom_id=f"cards_open_card:{tag}|{category.id}",
-                placeholder=f"{category.short_name} — see who has one",
-                max_values=1,
-                options=[
-                    _category_header_option(
-                        category, f"see who has one ({len(offered)})"
-                    ),
-                    *(
-                        SelectOption(
-                            label=card.name,
-                            value=card.id,
-                            description=(
-                                f"{len(per_card[card.id]['givers'])} can give it"
-                                + (
-                                    " · even swap"
-                                    if per_card[card.id]["mutual"] else ""
-                                )
-                            )[:100],
-                            emoji=troop_emoji.partial(card.id),
-                        )
-                        for card in offered
-                    ),
-                ],
-            )])
-        )
-    if pickers:
-        # One divider above the whole block, not one between every menu. The
-        # menus are four of the same thing; dividing them from each other read
-        # as four unrelated sections.
-        body.append(Separator(divider=True))
-        body.extend(pickers)
-    if achievable and achievable[0]:
-        listed, doable = achievable
-        # A menu is not a plan: one spare offered to five people is one trade.
+    if achievable and achievable[1] > 1:
+        # Only worth saying when it changes what you would do: one spare
+        # offered to five people is still one trade. Silent otherwise.
         body.append(Text(content=(
-            f"-# {listed} swap option{'s' if listed != 1 else ''} listed · "
-            f"up to **{doable}** could complete at once"
+            f"-# You could complete up to **{achievable[1]}** of these."
         )))
 
     # The two secondary lists moved behind their own buttons. Printed inline
@@ -3381,12 +3404,6 @@ def _matches_view(
             custom_id=f"cards_trades:{tag}",
             label="My trades",
             emoji=TRADES_EMOJI,
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_matches:{tag}",
-            label="Refresh",
-            emoji=REFRESH_EMOJI,
         ),
     ]))
     return [Container(
