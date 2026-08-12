@@ -5179,6 +5179,33 @@ def test_search_and_cancel_buttons_use_the_uploaded_emoji():
     assert cancels, "no cancel button was actually checked"
 
 
+def test_the_card_screen_says_you_can_keep_editing():
+    """The category menu stays mounted, and nothing said so.
+
+    Pick, set, pick, set without returning to the collection is the fastest
+    way to edit - and you only found it by noticing the menu had not gone
+    away. It cannot be said in the menu: the default-marked header option is
+    drawn in place of the placeholder, so the placeholder is never seen.
+    """
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    view = cards_command._card_focus(
+        account, _complete_inventory(), "barbarian"
+    )
+    text = _view_text(view)
+    menus = [
+        n for n in _view_nodes(view)
+        if n.get("type") == 3
+        and str(n.get("custom_id", "")).startswith("cards_pick:")
+    ]
+
+    assert menus, "the category menu must stay on the card screen"
+    assert "Pick another card above to keep editing" in text
+    _assert_discord_payload(view)
+
+
 def test_the_editor_never_uses_a_tick_to_mean_three_different_things():
     """Green and a tick meant "there are none", "reviewed" and "done" at once.
 

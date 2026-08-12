@@ -2470,10 +2470,16 @@ def _card_focus(
             ),
         ]),
         # The menu stays mounted, so fixing several cards in one category is
-        # pick, tap, pick, tap without returning to the board between them.
+        # pick, tap, pick, tap without returning to the collection between
+        # them.
         _category_select_row(
             account, inventory, card.category, _inventory_sort(inventory)
         ),
+        # That loop is the fastest way to edit and nothing announced it - you
+        # only found it by noticing the menu had not gone away. It cannot be
+        # said in the menu itself: a default-marked option is drawn in place
+        # of the placeholder, so the placeholder is never seen.
+        Text(content="-# Pick another card above to keep editing."),
     ])
     return [Container(
         accent_color=CATEGORY_ACCENTS[card.category],
