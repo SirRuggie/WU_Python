@@ -1273,10 +1273,18 @@ def test_the_whole_category_is_visible_on_one_screen():
         for card in definitions:
             assert card.name in text, f"{card.name} missing from {category.id}"
 
-        menus = [n for n in _view_nodes(view) if n.get("type") == 3]
-        assert len(menus) == 1
-        values = [str(o["value"]) for o in menus[0]["options"]]
+        menus = {
+            str(n["custom_id"]).split(":")[0]: n
+            for n in _view_nodes(view) if n.get("type") == 3
+        }
+        assert set(menus) == {"cards_qcat", "cards_qpick"}
+        values = [str(o["value"]) for o in menus["cards_qpick"]["options"]]
         assert values == [card.id for card in definitions]
+        # The category menu offers all four, so switching category never
+        # needs a separate screen.
+        assert [str(o["value"]) for o in menus["cards_qcat"]["options"]] == [
+            c.id for c in cards.CATEGORIES
+        ]
 
         # Bullets, not bare newlines: Discord spaces list items further
         # apart, which is the only lever for loosening nineteen rows short of
@@ -2437,42 +2445,14 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
         if node.get("custom_id")
     }
     assert custom_ids == {
-        "cards_scan_start:#ME",
         "cards_matches:#ME",
         "cards_trades:#ME",
-        "cards_sort:#ME",
         # Not setup-only: your cards keep changing after every category has
-        # been reviewed, and reviewing cannot be undone.
+        # been reviewed, and marking one ready cannot be undone.
         "cards_advanced:#ME",
-        "cards_pick:#ME|elixir",
-        "cards_pick:#ME|dark_elixir",
-        "cards_pick:#ME|builder_base",
-        "cards_pick:#ME|super_troop",
     }
     # The junk-drawer router is gone entirely.
     assert "cards_more:#ME" not in custom_ids
-
-
-def test_landing_reaches_every_card_in_one_interaction():
-    """All sixty cards are menu options on the first screen, no pagination."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    view = cards_command._dashboard(
-        account, _complete_inventory(), account_count=1
-    )
-    payload = [component.build() for component in view]
-    offered = {
-        str(option["value"])
-        for node in _walk_payload(payload)
-        for option in (node.get("options") or ())
-        if option["value"] != cards_command.CATEGORY_HEADER_VALUE
-    }
-
-    assert offered == {card.id for card in cards.CARDS}
-    assert len(offered) == 60
-    _assert_discord_payload(view)
 
 
 def test_dashboard_without_any_recorded_cards_still_shows_the_board():
@@ -2491,8 +2471,11 @@ def test_dashboard_without_any_recorded_cards_still_shows_the_board():
         node.get("custom_id") for node in nodes if node.get("custom_id")
     }
     # Editing is reachable immediately; there is no setup wall in front of it.
-    assert "cards_pick:#NEW|elixir" in custom_ids
-    assert "cards_scan_start:#NEW" in custom_ids
+    assert "cards_advanced:#NEW" in custom_ids
+    assert not any(cid.startswith("cards_pick:") for cid in custom_ids), (
+        "the collection screen shows the collection; every edit lives behind "
+        "Update collection"
+    )
     _assert_discord_payload(view)
 
 
@@ -2879,7 +2862,6 @@ def test_all_member_views_build_with_discord_component_limits():
         cards_command._dashboard(account, empty, account_count=1),
         cards_command._dashboard(account, complete, account_count=2),
         cards_command._dashboard(account, active, account_count=2),
-        cards_command._update_overview(account, empty),
         cards_command._active_trade_notice(account.tag),
         cards_command._matches_view(account, complete, []),
         cards_command._matches_view(account, complete, broad_matches),
@@ -3035,7 +3017,7 @@ def test_cards_opens_the_existing_private_dashboard(monkeypatch):
     assert len(ctx.interaction.edits) == 1
     nodes = _view_nodes(ctx.interaction.edits[0]["components"])
     assert any(
-        node.get("custom_id") == "cards_pick:#ME|elixir"
+        node.get("custom_id") == "cards_advanced:#ME"
         for node in nodes
     )
 
@@ -3067,7 +3049,7 @@ def test_cards_command_has_no_page_fields_and_opens_compact_dashboard(monkeypatc
 
     assert ctx.deferred == [True]
     assert any(
-        node.get("custom_id") == "cards_pick:#ME|elixir"
+        node.get("custom_id") == "cards_advanced:#ME"
         for node in _view_nodes(ctx.interaction.edits[0]["components"])
     )
 
@@ -4695,7 +4677,7 @@ def test_board_destinations_are_buttons_not_two_line_rows():
     nodes = _view_nodes(view)
 
     assert [n for n in nodes if n.get("type") == 9] == []
-    assert "**Your cards**" in _view_text(view)
+    assert "Update collection" in _view_labels(view)
     ids = {n.get("custom_id") for n in nodes}
     assert {"cards_matches:#ME", "cards_trades:#ME"} <= ids
     _assert_discord_payload(view)
@@ -4717,49 +4699,9 @@ def test_every_scan_button_carries_the_scan_mark():
                 emoji = node.get("emoji") or {}
                 assert emoji.get("id") == "1536807847042613398", node.get("label")
                 seen += 1
-    assert seen == 2, f"only checked {seen} scan buttons"
+    assert seen == 1, f"only checked {seen} scan buttons"
 
 
-def test_the_sort_button_is_marked_in_every_order():
-    """The label changes as it cycles; the mark identifying it must not."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    for order in cards_command.CARD_SORTS:
-        inventory = _complete_inventory()
-        inventory["card_sort"] = order
-        view = cards_command._dashboard(account, inventory, account_count=1)
-        button = next(
-            n for n in _view_nodes(view)
-            if n.get("custom_id") == "cards_sort:#ME"
-        )
-        assert (button.get("emoji") or {}).get("id") == "1536804681555247144"
-        assert button["label"] == cards_command.CARD_SORT_LABELS[order]
-
-
-def test_sort_control_sits_with_the_menus_it_sorts():
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    view = cards_command._dashboard(
-        account, _complete_inventory(), account_count=1
-    )
-    rows = [n for n in _view_nodes(view) if n.get("type") == 1]
-
-    def row_with(prefix):
-        return next(
-            i for i, row in enumerate(rows)
-            if any(
-                str(c.get("custom_id", "")).startswith(prefix)
-                for c in row.get("components", [])
-            )
-        )
-
-    # Sort sits with the menus it acts on, above the places you can go next.
-    assert row_with("cards_sort:") < row_with("cards_matches:")
-    assert row_with("cards_pick:") < row_with("cards_sort:")
 
 def test_collection_group_hides_controls_that_would_do_nothing():
     account = Account(
@@ -4784,47 +4726,9 @@ def test_collection_group_hides_controls_that_would_do_nothing():
     assert "cards_advanced:#ME" in partial_ids
     assert "cards_account_page:0" in partial_ids
     # Scanning is always available.
-    assert "cards_scan_start:#ME" in done_ids and "cards_scan_start:#ME" in partial_ids
-
-
-def test_card_menus_can_be_sorted_by_quantity():
-    """Game order matches the board; the other two put actionable cards on top."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
+    assert "cards_scan_start:#ME" not in done_ids, (
+        "scanning moved inside Update collection"
     )
-    inventory = _complete_inventory()
-    inventory["cards"]["giant"] = cards.MISSING
-    inventory["cards"]["barbarian"] = 4
-    inventory["cards"]["archer"] = 2
-
-    def order(sort):
-        inv = dict(inventory, card_sort=sort)
-        row = cards_command._category_select_row(account, inv, "elixir", sort)
-        return [
-            o.value for o in row.components[0].options
-            if o.value != cards_command.CATEGORY_HEADER_VALUE
-        ]
-
-    game = order("game")
-    need = order("need")
-    have = order("have")
-
-    assert game[:3] == ["barbarian", "archer", "giant"]     # catalog order
-    assert need[0] == "giant"                               # missing first
-    assert have[0] == "barbarian"                           # 4 copies first
-    assert have[1] == "archer"                              # then 2
-    assert set(game) == set(need) == set(have)              # nothing lost
-
-
-def test_sort_cycles_and_persists():
-    assert cards_command._next_sort("game") == "need"
-    assert cards_command._next_sort("need") == "have"
-    assert cards_command._next_sort("have") == "game"
-    # An unknown stored value falls back rather than raising.
-    assert cards_command._inventory_sort({"card_sort": "nonsense"}) == "game"
-    assert cards_command._inventory_sort({"card_sort": "have"}) == "have"
-    assert cards_command._inventory_sort({}) == "game"
 
 
 def test_scan_review_does_not_ask_for_a_retake_once_cards_are_resolved():
@@ -5090,8 +4994,6 @@ def test_board_controls_wrap_instead_of_dropping_the_sixth():
     # Six controls: one more than a row holds, so the last one is exactly what
     # the old slice discarded.
     for expected in (
-        "cards_scan_start:#ME",
-        "cards_sort:#ME",
         "cards_hidden:#ME",
         "cards_advanced:#ME",
         "cards_confirm:#ME",
@@ -5102,34 +5004,6 @@ def test_board_controls_wrap_instead_of_dropping_the_sixth():
         if node.get("type") == 1:
             assert len(node.get("components", [])) <= 5
     _assert_discord_payload(view)
-
-
-def test_each_board_dropdown_is_visually_distinct(monkeypatch):
-    """Four identically-styled menus are hard to tell apart at a glance."""
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    view = cards_command._dashboard(
-        account, _complete_inventory(), account_count=1
-    )
-    menus = [
-        n for n in _view_nodes(view)
-        if str(n.get("custom_id", "")).startswith("cards_pick:")
-    ]
-
-    assert len(menus) == len(cards.CATEGORIES)
-    for menu in menus:
-        category_id = menu["custom_id"].split("|")[1]
-        header = menu["options"][0]
-        # The default option is what Discord draws on a closed menu, so this
-        # is the only place the uploaded category art can appear there.
-        assert header["value"] == cards_command.CATEGORY_HEADER_VALUE
-        assert header["default"] is True
-        assert header["emoji"]["id"] == str(
-            cards_command.category_partial(category_id).id
-        ), f"{category_id} menu is unmarked"
-        assert cards.CATEGORY_BY_ID[category_id].short_name in header["label"]
 
 
 def test_refresh_and_pagination_use_the_uploaded_control_emoji():
@@ -5151,7 +5025,6 @@ def test_refresh_and_pagination_use_the_uploaded_control_emoji():
         ("no", cards_command.CANCEL_EMOJI),
         ("inbox", cards_command.TRADES_EMOJI),
         ("switch", cards_command.SWITCH_EMOJI),
-        ("sort", cards_command.SORT_EMOJI),
         ("scan", cards_command.SCAN_EMOJI),
         ("home", cards_command.HOME_EMOJI),
         ("card_give", cards_command.GIVE_EMOJI),
@@ -5487,7 +5360,6 @@ def test_no_back_button_is_left_on_a_unicode_arrow():
             account, "root_rider",
             cards.holders_for_card(inventory, holders, "root_rider"),
         ),
-        cards_command._update_overview(account, inventory),
         cards_command._quantity_editor(account, inventory, "elixir"),
         cards_command._trades_view(account, []),
         cards_command._active_trade_notice(account.tag),
@@ -7023,7 +6895,7 @@ def test_the_category_editor_opens_showing_what_you_already_have():
 
     view = cards_command._quantity_editor(account, inventory, "elixir")
     text = _view_text(view)
-    assert "Edit counts" in text, "continuity with the button that opened it"
+    assert "Update collection" in text, "continuity with the button that opened it"
     assert "Changes save automatically." in text
     # Dropped deliberately: a change saves on its own, so telling people what
     # happens when they leave raises a question nobody had.
@@ -7033,51 +6905,6 @@ def test_the_category_editor_opens_showing_what_you_already_have():
     _assert_discord_payload(view)
 
 
-def test_bulk_edit_screen_names_itself_and_the_step():
-    """It read as a settings dialog from another product.
-
-    Titled "Advanced manual editor" - which is not what the button that opens
-    it says - and four buttons with no heading, so nothing told you what they
-    were for. It also repeated the name and tag from the board one tap back.
-    """
-    account = Account(
-        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
-        clan_name="Morning Woods", town_hall=18,
-    )
-    view = cards_command._update_overview(account, _complete_inventory())
-    text = _view_text(view)
-
-    assert "Edit counts" in text
-    assert "Advanced manual editor" not in text
-    assert "Bulk edit" not in text, "one name for one destination"
-    # One instruction, in one place. The intro says what the screen does and
-    # the heading says what to do, rather than both giving the same order in
-    # different words.
-    assert "Choose a category" in text
-    assert "Pick a category" not in text
-    # One category per row, so they stack. Four in one row is laid out
-    # horizontally and wrapped 3 + 1.
-    category_rows = [
-        n for n in _view_nodes(view)
-        if n.get("type") == 1
-        and any(
-            str(c.get("custom_id", "")).startswith("cards_category:")
-            for c in n.get("components", [])
-        )
-    ]
-    assert len(category_rows) == len(cards.CATEGORIES)
-    assert all(len(row["components"]) == 1 for row in category_rows)
-    # emojis.edit is a stale id from an old server: Discord cannot resolve it
-    # and prints ":Edit:" as literal text. _safe_partial only catches
-    # malformed strings, so nothing local can spot a dead id.
-    assert ":Edit:" not in text
-    # The board named them one tap ago; repeating it spends the best space on
-    # the least useful fact.
-    assert "Sir Ruggie" not in text
-    assert "#ME" not in text
-    # The single-card route is where most people should actually go.
-    assert "menus in your collection" in text
-    _assert_discord_payload(view)
 
 
 def test_rebuild_a_category_survives_reviewing_every_category():
@@ -7099,7 +6926,7 @@ def test_rebuild_a_category_survives_reviewing_every_category():
         str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
     ]
 
-    assert "Edit counts" in labels
+    assert "Update collection" in labels
     _assert_discord_payload(view)
 
 
@@ -7397,7 +7224,9 @@ def test_the_category_screen_stays_far_below_the_component_ceiling():
                     worst, len([n for n in _view_nodes(view) if "type" in n])
                 )
                 _assert_discord_payload(view)
-    assert worst == 16, f"expected a fixed 16, got {worst}"
+    # Scanning and the category menu moved onto this screen, and it is still
+    # nowhere near Discord's ceiling of 40.
+    assert worst == 25, f"expected a fixed 25, got {worst}"
 
 
 def test_set_number_opens_a_modal_for_the_selected_card():

@@ -265,9 +265,25 @@ same.
   comma-joined runs of names, which wrap into a paragraph on a phone.
   `troop_emoji.markup()` returns `""` for an unsynced troop and never raises.
 
-**Edit counts** is the router for first-time manual setup or a deliberate
-rebuild: four buttons, one per category, each opening that category's pages.
-Cards default to one copy, so the member only has to change the exceptions.
+**Update collection** is the single entry point for every change. The
+collection screen itself no longer edits anything: the four category menus,
+the sort control, Scan screenshots and Edit counts were four competing routes
+to one job, and all of them collapsed into this one button. It opens on the
+first category that cannot be traded yet, so first-time setup starts where the
+work is. Cards default to one copy, so the member only changes the exceptions.
+
+The category menu sits at the top of that screen, which is what let the old
+router - four buttons whose only job was to ask which category - be deleted
+outright rather than replaced. Scanning sits at the bottom, below the manual
+controls: typing is the main path and scanning is the faster alternative, so
+putting them side by side made two unlike things compete. Its warning is
+stated plainly, with what to do about it: "Some cards may not be detected.
+Check your collection after scanning."
+
+Card sorting was removed with the menus it sorted. It only ever ordered those
+four dropdowns - never the rendered board, never any trade screen - so once
+they were gone it was a control for a UI that no longer existed. `cards_sort`
+is aliased to `cards_dashboard` so an open board redraws instead of erroring.
 
 A category is matchable only once it is in `complete_categories`, because
 `find_matches` intersects that field across both players. Two things write it:

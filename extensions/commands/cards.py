@@ -186,7 +186,6 @@ SEARCH_EMOJI = _safe_partial(emojis.magnifier)
 CANCEL_EMOJI = _safe_partial(emojis.no)
 TRADES_EMOJI = _safe_partial(emojis.inbox)
 SWITCH_EMOJI = _safe_partial(emojis.switch)
-SORT_EMOJI = _safe_partial(emojis.sort)
 SCAN_EMOJI = _safe_partial(emojis.scan)
 GIVE_EMOJI = _safe_partial(emojis.card_give)
 SWAP_EMOJI = _safe_partial(emojis.card_swap)
@@ -2009,23 +2008,10 @@ def _dashboard(
             Text(content="\n".join(notes)),
         ])
 
-    # Four menus, one per category, every card one interaction away. The label
-    # and the controls that act on them sit either side of the menus, so Sort
-    # is visibly attached to the thing it sorts rather than stranded under an
-    # unrelated heading.
-    sort = _inventory_sort(inventory)
-    body.extend([
-        Separator(divider=True),
-        Text(content=(
-            "**Your cards** · Open a category, then select a card to update it"
-        )),
-    ])
-    body.extend(
-        _category_select_row(account, inventory, category.id, sort)
-        for category in CATEGORIES
-    )
-
-    scan_is_primary = not all_complete
+    # No category menus here any more, and no sort control with them. This
+    # screen shows the collection and helps you trade; every way of CHANGING
+    # the collection now lives behind one button, so there are not three
+    # competing routes to the same edit.
     matchable = inventory_is_matchable(inventory)
     spare_total = sum(
         1 for value in normalize_cards(inventory.get("cards")).values()
@@ -2059,15 +2045,7 @@ def _dashboard(
             emoji=TRADES_EMOJI,
         ),
     ]
-    # Acts on the menus directly above it, and nothing else does.
-    view_row: list = [
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_sort:{tag}",
-            label=CARD_SORT_LABELS[sort],
-            emoji=SORT_EMOJI,
-        ),
-    ]
+    view_row: list = []
     if unverified_duplicates:
         # The note above already says these need checking. Until now the only
         # button that acted on it lived on a screen the board could not reach,
@@ -2083,32 +2061,23 @@ def _dashboard(
             custom_id=f"cards_confirm:{tag}",
             label="Still accurate",
         ))
-    body.append(ActionRow(components=view_row))
+    if view_row:
+        body.append(ActionRow(components=view_row))
 
-    # Two ways to (re)build the collection, together and apart from the menu
-    # controls. Edit counts opens a router of four categories, for a first-time
-    # entry or a full rebuild, which is the same job as a scan and NOT the same
-    # job as sorting.
-    # No separator: this sits straight under the sort row so the collection
-    # tools read as one block. A divider between every pair of buttons chopped
-    # the lower half into slivers.
+    # One way in, not three. This used to be four category menus, a sort
+    # control, Scan screenshots and Edit counts - four routes to the same job,
+    # spread across the screen. Scanning still exists; it moved inside, where
+    # it reads as the faster alternative to typing rather than a rival to it.
     body.append(ActionRow(components=[
         Button(
             style=(
-                hikari.ButtonStyle.PRIMARY
-                if scan_is_primary
-                else hikari.ButtonStyle.SECONDARY
+                hikari.ButtonStyle.SECONDARY
+                if all_complete
+                else hikari.ButtonStyle.PRIMARY
             ),
-            custom_id=f"cards_scan_start:{tag}",
-            label="Scan screenshots",
-            emoji=SCAN_EMOJI,
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_advanced:{tag}",
-            # Walks a category six cards at a time. The single-card fast path
-            # is the dropdowns above, which the instruction line names.
-            label="Edit counts",
+            label="Update collection",
+            emoji="✏️",
         ),
     ]))
 
@@ -2168,44 +2137,10 @@ def _card_state_words(
     return "Have 1"
 
 
-CARD_SORTS = ("game", "need", "have")
-CARD_SORT_LABELS = {
-    "game": "Game order",
-    "need": "Missing first",
-    "have": "Most copies first",
-}
 
 
-def _inventory_sort(inventory: dict) -> str:
-    """Which order the member last chose for the card menus."""
-    value = str(inventory.get("card_sort") or "game")
-    return value if value in CARD_SORTS else "game"
 
 
-def _next_sort(current: str) -> str:
-    return CARD_SORTS[(CARD_SORTS.index(current) + 1) % len(CARD_SORTS)]
-
-
-def _sorted_category_cards(inventory: dict, category_id: str, sort: str):
-    """Category cards in the member's chosen order.
-
-    Game order matches the rendered board, so a member reading the picture can
-    find the same card in the menu. The other two put whatever they are about
-    to act on at the top: missing cards to chase, or the biggest piles to trade
-    away. Ties keep game order so the list never reshuffles between renders.
-    """
-    cards_in_category = CATEGORY_CARDS[category_id]
-    if sort == "game":
-        return cards_in_category
-    saved = normalize_cards(inventory.get("cards"))
-    reverse = sort == "have"
-    return sorted(
-        cards_in_category,
-        key=lambda card: (
-            -saved.get(card.id, OWNED) if reverse else saved.get(card.id, OWNED),
-            card.position,
-        ),
-    )
 
 
 CATEGORY_HEADER_VALUE = "__category__"
@@ -2232,7 +2167,6 @@ def _category_select_row(
     account,
     inventory: dict,
     category_id: str,
-    sort: str = "game",
 ) -> ActionRow:
     """One menu per category, so every card is one interaction from the board.
 
@@ -2246,7 +2180,7 @@ def _category_select_row(
     possible = set(_scan_unverified_ids(inventory))
     confirmed = _confirmed_count_ids(inventory)
     options = []
-    for card in _sorted_category_cards(inventory, category_id, sort):
+    for card in CATEGORY_CARDS[category_id]:
         state = saved.get(card.id, OWNED)
         options.append(SelectOption(
             label=card.name,
@@ -2453,9 +2387,7 @@ def _card_focus(
         # The menu stays mounted, so fixing several cards in one category is
         # pick, tap, pick, tap without returning to the collection between
         # them.
-        _category_select_row(
-            account, inventory, card.category, _inventory_sort(inventory)
-        ),
+        _category_select_row(account, inventory, card.category),
         Separator(divider=True),
         # Navigation, on its own. It used to sit between "Have 1" and the
         # step buttons, inside the controls that change the number.
@@ -2665,76 +2597,6 @@ def _scan_saved_notice(account, *, pending: int = 0) -> list[Container]:
     )
 
 
-def _update_overview(account, inventory: dict) -> list[Container]:
-    complete = set(inventory.get("complete_categories") or ())
-    unverified = set(_scan_unverified_ids(inventory))
-    buttons = []
-    for category in CATEGORIES:
-        if category.id in complete:
-            summary = category_summary(inventory.get("cards"), category.id)
-            label = f"{category.short_name} {summary.collected}/{summary.known}"
-        else:
-            label = f"Set up {category.short_name}"
-        # No longer disabled when a card in the category is reserved. The editor
-        # behind this button now writes one card at a time, so a Wizard held by
-        # an accepted trade no longer stops you fixing your Barbarian count.
-        # That card alone comes back disabled on the page itself.
-        buttons.append(Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_category:{_normalize_tag(account.tag)}|{category.id}",
-            label=label,
-            emoji=category_partial(category.id),
-        ))
-
-    # No name and tag. This screen is only ever reached from that member's own
-    # board, which named them one tap ago, so repeating it spent the best space
-    # on the least useful fact.
-    # Says what the screen is for, and leaves the instruction to the heading
-    # below. Both lines were imperatives before - "Pick a category to edit"
-    # above "Choose a category" - which is two different verbs for one action.
-    intro = (
-        "Change how many of each card you have.\n"
-        "-# You can also tap any card in the menus in your collection."
-    )
-    if unverified:
-        # Was "1 possible spare still need review", which does not agree in the
-        # singular. Counting cards instead of spares makes one sentence work
-        # for every number.
-        intro += (
-            f"\n\n📸 **{len(unverified)} card"
-            f"{'s' if len(unverified) != 1 else ''} might be a spare.**\n"
-            "Tap **Check spares** in your collection to answer."
-        )
-    return [Container(
-        components=[
-            # Named for the job, not the mechanic. It was "Bulk edit" when it
-            # opened two whole-category select menus; it now opens a list of
-            # cards you change one at a time, so "bulk" would be a lie.
-            Text(content="# Edit counts"),
-            Text(content=intro),
-            # A bold heading is not enough on its own here. Rendered, the
-            # title, the explanation, the heading, four buttons and Back ran
-            # together as one block with nothing marking where reading stops
-            # and choosing starts.
-            Separator(divider=True),
-            Text(content="**Choose a category**"),
-            # One row each, so they stack. Four in a single row is laid out
-            # horizontally by Discord and wrapped 3 + 1, which read as three
-            # choices and an afterthought rather than one list of four.
-            *(ActionRow(components=[button]) for button in buttons),
-            # Back is navigation, not a fifth category. Without this it sat
-            # directly under Super Troops and read as one more choice.
-            Separator(divider=True),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                    label="Back to collection",
-                    emoji=RETURN_EMOJI,
-                ),
-            ]),
-        ],
-    )]
 
 
 def _quantity_selected(category_id: str, card_id: object) -> str:
@@ -2834,7 +2696,28 @@ def _quantity_editor(
 
     body: list = [
         Text(content=(
-            f"# Edit counts · {category_markup(category.id)} {category.name}\n"
+            f"# Update collection · {category_markup(category.id)} "
+            f"{category.name}"
+        )),
+        # The category picker is the first control, because choosing which
+        # category you are looking at comes before anything you do inside it.
+        # It also replaced a whole screen: there used to be a router of four
+        # category buttons in front of this one, which existed only to answer
+        # the question this menu answers without a page change.
+        ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_qcat:{tag}",
+            placeholder="Choose a category",
+            max_values=1,
+            options=[
+                SelectOption(
+                    label=item.name,
+                    value=item.id,
+                    emoji=category_partial(item.id),
+                )
+                for item in CATEGORIES
+            ],
+        )]),
+        Text(content=(
             f"{status}\n"
             f"-# {summary.collected}/{summary.known} owned · "
             "Changes save automatically."
@@ -2888,23 +2771,47 @@ def _quantity_editor(
                 is_disabled=reserved or state >= MAX_COPIES,
             ),
         ]),
-        Separator(divider=True),
     ]
 
-    footer = []
+    # The divider belongs to whatever comes next, not to the controls. Ending
+    # the block above with one drew two in a row whenever Ready to trade was
+    # absent, which is every category that is already tradeable.
     if not complete:
-        footer.append(Button(
-            style=hikari.ButtonStyle.PRIMARY,
-            custom_id=f"cards_ready:{tag}|{category_id}",
-            label="Ready to trade",
-        ))
-    footer.append(Button(
-        style=hikari.ButtonStyle.SECONDARY,
-        custom_id=f"cards_dashboard:{tag}",
-        label="Back to collection",
-        emoji=RETURN_EMOJI,
-    ))
-    body.append(ActionRow(components=footer))
+        body.extend([
+            Separator(divider=True),
+            ActionRow(components=[Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"cards_ready:{tag}|{category_id}",
+                label="Ready to trade",
+            )]),
+        ])
+
+    # Below the manual controls, not beside them. Typing is the main way to do
+    # this; scanning is the faster alternative, and putting it up top made two
+    # unlike things compete. The warning is here because the scanner does miss
+    # cards - said plainly, with what to do about it, rather than hedged.
+    body.extend([
+        Separator(divider=True),
+        Text(content=(
+            "**Scan screenshots**\n"
+            "Scan your collection from screenshots.\n"
+            "Some cards may not be detected. Check your collection after "
+            "scanning."
+        )),
+        ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_scan_start:{tag}",
+            label="Scan screenshots",
+            emoji=SCAN_EMOJI,
+        )]),
+        Separator(divider=True),
+        ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{tag}",
+            label="Back to collection",
+            emoji=RETURN_EMOJI,
+        )]),
+    ])
     return [Container(
         accent_color=CATEGORY_ACCENTS[category_id],
         components=body,
@@ -8563,7 +8470,10 @@ async def cards_scan_hidden_later(
     return _scan_saved_notice(account, pending=len(_scan_unverified_ids(inventory)))
 
 
-@register_action("cards_dashboard")
+# cards_sort was the board's order control, removed with the card menus it
+# sorted. Its custom_id is the same shape as this one, so a board someone
+# still has open redraws instead of answering "This panel is out of date".
+@register_action("cards_dashboard", aliases=("cards_sort",))
 @lightbulb.di.with_di
 async def cards_dashboard(
     ctx: lightbulb.components.MenuContext,
@@ -8789,34 +8699,6 @@ async def cards_hidden_none_of_these(
     return await _resolve_hidden_batch(
         ctx, _normalize_tag(action_id), [],
         coc_client=coc_client, mongo=mongo,
-    )
-
-
-@register_action("cards_sort")
-@lightbulb.di.with_di
-async def cards_sort(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    """Cycle the card menus between game order, missing first and most copies."""
-    tag = _normalize_tag(action_id)
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    chosen = _next_sort(_inventory_sort(inventory))
-    await mongo.card_inventories.update_one(
-        {"_id": tag}, {"$set": {"card_sort": chosen}}, upsert=True
-    )
-    inventory = dict(inventory, card_sort=chosen)
-    data = await load_accounts(coc_client, int(ctx.user.id))
-    return await _dashboard_view(
-        account, inventory, account_count=len(_loaded_entries(data)),
-        mongo=mongo, guild_id=_trade_guild_id(ctx),
     )
 
 
@@ -9069,10 +8951,26 @@ async def cards_advanced(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
+    """Update collection. Opens straight into a category, not a menu of them.
+
+    This used to render a router of four category buttons whose only job was
+    to ask which category you wanted. The editor now carries that question as
+    a menu at the top, so the router was a page-change that answered nothing.
+    """
     account, inventory, problem = await _load_target(
         ctx, action_id, coc_client=coc_client, mongo=mongo
     )
-    return problem or _update_overview(account, inventory)
+    if problem:
+        return problem
+    # Land on the first category that still cannot be traded, so setting up
+    # for the first time starts where the work is. Once everything is ready
+    # this is simply the first category.
+    complete = set(inventory.get("complete_categories") or ())
+    landing = next(
+        (category.id for category in CATEGORIES if category.id not in complete),
+        CATEGORIES[0].id,
+    )
+    return _quantity_editor(account, inventory, landing)
 
 
 def _modal_text_value(ctx, custom_id: str) -> str:
@@ -9187,6 +9085,28 @@ async def cards_category(
     return await _quantity_screen(
         ctx, action_id, coc_client=coc_client, mongo=mongo
     )
+
+
+@register_action("cards_qcat")
+@lightbulb.di.with_di
+async def cards_qcat(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Switch which category the screen is showing, without a page change."""
+    tag = _normalize_tag(str(action_id or "").split("|")[0])
+    chosen = next(iter(getattr(ctx.interaction, "values", ()) or ()), None)
+    if chosen not in CATEGORY_BY_ID:
+        return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    return _quantity_editor(account, inventory, chosen)
 
 
 @register_action("cards_qpick", aliases=("cards_qjump",))
