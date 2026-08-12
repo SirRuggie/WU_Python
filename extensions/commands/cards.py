@@ -9456,10 +9456,13 @@ async def cards_gem_ask(
     **_kwargs,
 ):
     """Confirm the gem cost before anything is sent."""
-    tag, rest = _parse_target(str(action_id or ""))
-    parts = (rest or "").split("|")
-    card = CARD_BY_ID.get(parts[0] if parts else "")
-    holder_tag = _normalize_tag(parts[1]) if len(parts) > 1 else ""
+    # NOT _parse_target: that one only returns a second value when it is a
+    # CATEGORY id, so "balloon|#TAG" came back as None and every Ask for help
+    # answered "Out of date".
+    parts = str(action_id or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    card = CARD_BY_ID.get(parts[1] if len(parts) > 1 else "")
+    holder_tag = _normalize_tag(parts[2]) if len(parts) > 2 else ""
     if card is None or not holder_tag:
         return _notice("Out of date", "Open `/cards` again.", back_tag=tag)
     account, _inventory, problem = await _load_target(
@@ -9485,10 +9488,13 @@ async def cards_gem_send(
     **_kwargs,
 ):
     """Send the ask. One per pair per card, so nobody can be spammed."""
-    tag, rest = _parse_target(str(action_id or ""))
-    parts = (rest or "").split("|")
-    card = CARD_BY_ID.get(parts[0] if parts else "")
-    holder_tag = _normalize_tag(parts[1]) if len(parts) > 1 else ""
+    # NOT _parse_target: that one only returns a second value when it is a
+    # CATEGORY id, so "balloon|#TAG" came back as None and every Ask for help
+    # answered "Out of date".
+    parts = str(action_id or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    card = CARD_BY_ID.get(parts[1] if len(parts) > 1 else "")
+    holder_tag = _normalize_tag(parts[2]) if len(parts) > 2 else ""
     if card is None or not holder_tag:
         return _notice("Out of date", "Open `/cards` again.", back_tag=tag)
     account, _inventory, problem = await _load_target(

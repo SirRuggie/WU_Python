@@ -6103,6 +6103,42 @@ def test_who_has_fits_discord_with_a_full_page_of_holders():
     )
 
 
+def test_the_ask_for_help_button_id_actually_parses(monkeypatch):
+    """It shipped answering "Out of date" to every single click.
+
+    The button was built with three parts but read with _parse_target, which
+    only returns a second value when it is a CATEGORY id. No view test could
+    see it: the button rendered perfectly and the handler rejected it.
+    """
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["clan_tag"] = "#MW"
+    inventory["cards"]["balloon"] = cards.MISSING
+    holder = _complete_inventory(tag="#H", clan_tag="#MW")
+    holder["cards"]["balloon"] = cards.DUPLICATE
+    holder["player_name"] = "Holder"
+    holder["discord_id"] = 9
+
+    view = cards_command._holders_view(
+        account, "balloon",
+        cards.holders_for_card(inventory, [holder], "balloon"),
+    )
+    custom_id = next(
+        str(n["custom_id"]) for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith("cards_gem_ask:")
+    )
+    action_id = custom_id.split(":", 1)[1]
+
+    # Read it back exactly as the handler does.
+    parts = action_id.split("|")
+    assert cards_command._normalize_tag(parts[0]) == "#ME"
+    assert cards_command.CARD_BY_ID.get(parts[1]) is not None
+    assert cards_command._normalize_tag(parts[2]) == "#H"
+
+
 def test_the_gem_ask_states_the_price_before_anything_is_sent():
     """Gems are real money, so the number comes before the commit."""
     account = Account(
