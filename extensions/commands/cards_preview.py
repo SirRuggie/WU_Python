@@ -23,6 +23,7 @@ from hikari.impl import (
 
 from extensions.commands import cards as cards_command
 from utils.constants import GREEN_ACCENT, RED_ACCENT
+from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
 
@@ -34,9 +35,34 @@ GIVEN_CARD = "electro_titan"
 ALTERNATIVES = ("balloon", "wizard", "dragon")
 
 
-def _preview_trade(discord_id: int, *, alternatives: bool) -> dict:
+async def _real_clans(mongo) -> list[dict]:
+    """Two actual family clans, so the preview shows real logos.
+
+    Inventing clan data made this preview useless for judging the shields: a
+    hardcoded URL always rendered and a hardcoded None never did, which said
+    nothing about production. Reading the same collection /todo reads means a
+    missing logo here is a missing logo there.
+    """
+    try:
+        rows = await mongo.clans.find(
+            {}, {"tag": 1, "name": 1, "logo": 1}
+        ).to_list(length=50)
+    except Exception:
+        return []
+    # Prefer clans that actually have a logo, so the happy path is visible,
+    # but keep the rest so a missing one can be seen too.
+    rows.sort(key=lambda row: not str(row.get("logo") or "").startswith("http"))
+    return rows[:2]
+
+
+def _preview_trade(
+    discord_id: int, *, alternatives: bool, clans: list[dict] | None = None
+) -> dict:
     """A trade document shaped like the real thing, never persisted."""
     now = datetime.now(timezone.utc)
+    rows = list(clans or ())
+    mine = rows[0] if rows else {}
+    theirs = rows[1] if len(rows) > 1 else mine
     return {
         "_id": "preview-trade",
         "kind": "trade",
@@ -48,20 +74,16 @@ def _preview_trade(discord_id: int, *, alternatives: bool) -> dict:
         "requester_tag": "#YURL2QVJJ",
         "requester_name": "brilliant31508",
         "requester_discord_id": int(discord_id),
-        "requester_clan_tag": "#HOME",
-        "requester_clan_name": "Morning Woods",
-        # A real Clash badge URL, so the shield genuinely renders.
-        "requester_clan_badge": (
-            "https://api-assets.clashofclans.com/badges/200/"
-            "0Ppq-Ho7Ke6cIzBQlM5-lb0vBvPHqmT1DkkkkV1YRZY.png"
-        ),
+        "requester_clan_tag": theirs.get("tag") or "#HOME",
+        "requester_clan_name": theirs.get("name") or "Morning Woods",
+        "requester_clan_badge": theirs.get("logo"),
         "requester_town_hall": 17,
         "holder_tag": "#9LRVV8G8",
         "holder_name": "Sir UwU",
         "holder_discord_id": int(discord_id),
-        "holder_clan_tag": "#AWAY",
-        "holder_clan_name": "Edrag Rush",
-        "holder_clan_badge": None,  # no badge stored: renders without one
+        "holder_clan_tag": mine.get("tag") or "#AWAY",
+        "holder_clan_name": mine.get("name") or "Edrag Rush",
+        "holder_clan_badge": mine.get("logo"),
         "holder_town_hall": 18,
         "created_at": now,
         "updated_at": now,
@@ -118,6 +140,7 @@ class CardsDmPreview(
         self,
         ctx: lightbulb.Context,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
         if ctx.user.id != OWNER_ID:
@@ -136,8 +159,9 @@ class CardsDmPreview(
         me = int(ctx.user.id)
         wanted = self.which
         sent: list[tuple[str, bool]] = []
-        one = _preview_trade(me, alternatives=False)
-        many = _preview_trade(me, alternatives=True)
+        clans = await _real_clans(mongo)
+        one = _preview_trade(me, alternatives=False, clans=clans)
+        many = _preview_trade(me, alternatives=True, clans=clans)
 
         async def notify(key: str, name: str, coro) -> None:
             """Send through the real notifier."""
