@@ -2798,9 +2798,9 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
             # read as a standing threat over the whole screen. Both menus open
             # already ticked to match your collection, so the safe thing to say
             # is that nothing moves until you submit one.
-            "Each list already shows what you have now.\n"
-            "-# Change a list and submit it to save that list. The other list "
-            "is untouched, and leaving without submitting changes nothing."
+            "Each list shows what you have now.\n"
+            "-# Submit a list to update that list only. "
+            "Leaving without submitting changes nothing."
         )),
         Text(content=f"-# {status} · {setup_status}"),
         Separator(divider=True),

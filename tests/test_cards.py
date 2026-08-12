@@ -6738,7 +6738,7 @@ def test_the_category_editor_opens_showing_what_you_already_have():
     assert set(menus) == {"cards_set_missing", "cards_set_duplicates"}
 
     assert "Bulk edit" in text, "continuity with the button that opened it"
-    assert "leaving without submitting changes nothing" in text
+    assert "Leaving without submitting changes nothing" in text
     assert "treated as **1 copy**" not in text
     assert "Sir Ruggie" not in text
     _assert_discord_payload(view)
