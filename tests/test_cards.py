@@ -1247,7 +1247,52 @@ def test_one_reserved_card_no_longer_locks_the_rest_of_its_category():
     assert reserved_id not in updated["cards"]
 
 
-def test_the_quantity_editor_offers_one_pair_of_steps_per_card():
+def test_the_whole_category_is_visible_on_one_screen():
+    """No pagination, because none is needed.
+
+    The biggest category is nineteen cards against Discord's limit of
+    twenty-five select options, so every card fits one menu and every count
+    fits one text component. The paged version showed six at a time and hid
+    thirteen.
+    """
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    for category in cards.CATEGORIES:
+        definitions = cards.CATEGORY_CARDS[category.id]
+        assert len(definitions) <= 25, (
+            f"{category.id} would no longer fit one select menu"
+        )
+        view = cards_command._quantity_editor(
+            account,
+            {"_id": "#ME", "cards": {}, "complete_categories": []},
+            category.id,
+        )
+        text = _view_text(view)
+        for card in definitions:
+            assert card.name in text, f"{card.name} missing from {category.id}"
+
+        menus = [n for n in _view_nodes(view) if n.get("type") == 3]
+        assert len(menus) == 1
+        values = [str(o["value"]) for o in menus[0]["options"]]
+        assert values == [card.id for card in definitions]
+
+        # And the counts are one component, not one per card.
+        listings = [
+            n for n in _view_nodes(view)
+            if n.get("type") == 10
+            and all(card.name in str(n["content"]) for card in definitions)
+        ]
+        assert len(listings) == 1, "every quantity belongs to a single Text node"
+
+
+def test_only_one_set_of_step_buttons_exists_for_the_whole_category():
+    """The point of the shared controller.
+
+    Six cards each carrying their own -1/+1 pair put twelve large buttons on a
+    phone screen and still showed only six of nineteen cards.
+    """
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -1256,20 +1301,15 @@ def test_the_quantity_editor_offers_one_pair_of_steps_per_card():
         account,
         {"_id": "#ME", "cards": {}, "complete_categories": []},
         "elixir",
-        page=0,
     )
-    nodes = _view_nodes(view)
-    custom_ids = [str(n["custom_id"]) for n in nodes if "custom_id" in n]
-    page_one = cards_command._quantity_pages("elixir")[0]
-
-    for card in page_one:
-        assert f"cards_qstep:#ME|{card.id}|1|0" in custom_ids
-        assert f"cards_qstep:#ME|{card.id}|-1|0" in custom_ids
-    # Cards on later pages are not mounted, which is the point of paging.
-    last_id = cards.CATEGORY_CARDS["elixir"][-1].id
-    assert not any(
-        cid.startswith(f"cards_qstep:#ME|{last_id}|") for cid in custom_ids
-    ), "the last elixir card belongs to the last page"
+    custom_ids = [
+        str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n
+    ]
+    steps = [cid for cid in custom_ids if cid.startswith("cards_qstep:")]
+    assert steps == ["cards_qstep:#ME|barbarian|-1", "cards_qstep:#ME|barbarian|1"]
+    assert custom_ids.count("cards_qnum:#ME|barbarian") == 1
+    # Set number is spelled out rather than hidden behind tapping the count.
+    assert "Set number" in _view_labels(view)
     # An unfinished category always offers the way to finish it.
     assert "cards_ready:#ME|elixir" in custom_ids
 
@@ -1280,55 +1320,84 @@ def test_the_ready_button_disappears_once_the_category_is_tradeable():
         clan_name="Home Clan", town_hall=18,
     )
     done = cards_command._quantity_editor(
-        account, _complete_inventory(), "elixir", page=0,
+        account, _complete_inventory(), "elixir",
     )
     ids = [str(n["custom_id"]) for n in _view_nodes(done) if "custom_id" in n]
     assert "cards_ready:#ME|elixir" not in ids
     assert "These cards can be traded." in _view_text(done)
 
 
-def test_every_step_button_on_a_page_parses_back_to_that_page():
-    """The custom_id is parsed by hand, so parse the rendered one, not a guess.
+def test_every_rendered_custom_id_parses_back_to_what_drew_it():
+    """The ids are split by hand, so parse the rendered ones, not a guess.
 
-    Shipping a button whose id the handler could not read has happened twice on
+    Shipping a button whose id its handler could not read has happened twice on
     this command, both times because the test built the id itself.
     """
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
-    for page in range(len(cards_command._quantity_pages("super_troop"))):
+    for category in cards.CATEGORIES:
+        for card in cards.CATEGORY_CARDS[category.id]:
+            view = cards_command._quantity_editor(
+                account,
+                {"_id": "#ME", "cards": {}, "complete_categories": []},
+                category.id,
+                card_id=card.id,
+            )
+            for node in _view_nodes(view):
+                custom_id = str(node.get("custom_id", ""))
+                head, _, rest = custom_id.partition(":")
+                if head in ("cards_qstep", "cards_qnum"):
+                    tag, parsed, delta = cards_command._parse_quantity_card(rest)
+                    assert tag == "#ME", custom_id
+                    assert parsed == card.id, custom_id
+                    if head == "cards_qstep":
+                        assert delta in (1, -1), custom_id
+                elif head in ("cards_qpick", "cards_ready"):
+                    tag, parsed, _card = cards_command._parse_quantity_target(rest)
+                    assert tag == "#ME", custom_id
+                    assert parsed == category.id, custom_id
+
+
+def test_a_stale_paged_custom_id_still_opens_the_new_screen():
+    """Panels sent by the paged build must not answer "out of date".
+
+    Those ids carried a trailing page number - cards_qty:#ME|elixir|2 and
+    cards_qstep:#ME|barbarian|1|2. The extra field is tolerated and ignored,
+    and the two retired names are registered as aliases.
+    """
+    from extensions.components import _resolve
+
+    for retired in ("cards_qty", "cards_qjump"):
+        assert _resolve(retired) is not None, retired
+
+    tag, category_id, card_id = cards_command._parse_quantity_target(
+        "#ME|elixir|2"
+    )
+    assert (tag, category_id, card_id) == ("#ME", "elixir", None)
+
+    tag, parsed, delta = cards_command._parse_quantity_card("#ME|barbarian|1|2")
+    assert (tag, parsed, delta) == ("#ME", "barbarian", 1)
+
+
+def test_an_unknown_card_falls_back_to_the_first_in_the_category():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    first = cards.CATEGORY_CARDS["elixir"][0]
+    for bogus in (None, "", "not_a_card", "night_witch"):
+        # night_witch is real but belongs to another category, so it must not
+        # be editable from the elixir screen.
         view = cards_command._quantity_editor(
             account,
             {"_id": "#ME", "cards": {}, "complete_categories": []},
-            "super_troop",
-            page=page,
+            "elixir",
+            card_id=bogus,
         )
-        for node in _view_nodes(view):
-            custom_id = str(node.get("custom_id", ""))
-            if custom_id.startswith("cards_qstep:"):
-                parts = custom_id.split(":", 1)[1].split("|")
-                assert parts[1] in cards.CARD_BY_ID, custom_id
-                assert int(parts[2]) in (1, -1), custom_id
-                assert int(parts[3]) == page, custom_id
-            elif custom_id.startswith(("cards_qty:", "cards_qjump:", "cards_ready:")):
-                tag, category_id, _page = cards_command._parse_quantity_target(
-                    custom_id.split(":", 1)[1]
-                )
-                assert tag == "#ME", custom_id
-                assert category_id == "super_troop", custom_id
-
-
-def test_jumping_to_a_card_lands_on_the_page_that_holds_it():
-    for category in cards.CATEGORIES:
-        pages = cards_command._quantity_pages(category.id)
-        for index, page in enumerate(pages):
-            for card in page:
-                assert cards_command._page_holding_card(category.id, card.id) == index
-        # Every card in the category is reachable, none dropped by the slicing.
-        assert sum(len(page) for page in pages) == len(
-            cards.CATEGORY_CARDS[category.id]
-        )
+        ids = [str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n]
+        assert f"cards_qstep:#ME|{first.id}|1" in ids, bogus
 
 
 def test_a_dm_can_answer_a_trade_but_a_stranger_cannot(monkeypatch):
@@ -2809,9 +2878,11 @@ def test_all_member_views_build_with_discord_component_limits():
         cards_command._trade_feedback("Saved", "Ready", "#ME"),
     ]
     views.extend(
-        cards_command._quantity_editor(account, empty, category.id, page=page)
+        cards_command._quantity_editor(
+            account, empty, category.id, card_id=card.id
+        )
         for category in cards.CATEGORIES
-        for page in range(len(cards_command._quantity_pages(category.id)))
+        for card in cards.CATEGORY_CARDS[category.id]
     )
     for view in views:
         _assert_discord_payload(view)
@@ -5298,25 +5369,22 @@ def test_the_editor_never_uses_a_tick_to_mean_three_different_things():
 
     for complete in ([], ["elixir"]):
         inventory["complete_categories"] = complete
-        for page in range(len(cards_command._quantity_pages("elixir"))):
+        for card in cards.CATEGORY_CARDS["elixir"]:
             view = cards_command._quantity_editor(
-                account, inventory, "elixir", page=page
+                account, inventory, "elixir", card_id=card.id
             )
             for button in [n for n in _view_nodes(view) if n.get("type") == 2]:
                 assert not (button.get("emoji") or {}).get("name") == "\u2705", (
                     "no tick anywhere: it meant none, reviewed and done at once"
                 )
-            # Green survives on +1 only, where it means "add", not "this is
-            # your current state". The name chip is neutral even though it is
-            # a button, so nothing green ever reports a value.
+            # Green survives on +1 alone, where it means "add" rather than
+            # "this is your current state". Nothing green ever reports a value.
             green = [
                 str(n.get("label"))
                 for n in _view_nodes(view)
                 if n.get("type") == 2 and n.get("style") == 3
             ]
-            assert green == ["+1"] * len(
-                cards_command._quantity_pages("elixir")[page]
-            ), green
+            assert green == ["+1"], green
 
     # Status says what finishing buys you, not that a list was "reviewed".
     text = _view_text(
@@ -5327,30 +5395,21 @@ def test_the_editor_never_uses_a_tick_to_mean_three_different_things():
     # One word for the concept, on every page. The rest of the command says
     # "spare" everywhere, so this screen must not introduce "duplicate" as a
     # second name for the same thing.
-    for page in range(len(cards_command._quantity_pages("elixir"))):
-        view = cards_command._quantity_editor(
-            account, inventory, "elixir", page=page
-        )
-        written = (_view_text(view) + " ".join(_view_labels(view))).lower()
-        assert "duplicate" not in written, page
+    view = cards_command._quantity_editor(account, inventory, "elixir")
+    written = (_view_text(view) + " ".join(_view_labels(view))).lower()
+    assert "duplicate" not in written
 
     # Counts are digits, not five different English phrasings of a digit. The
     # one token that survives is 2+, which is the scanner's floor and means
     # something a flat 2 would not.
     counts = {
-        label.split(" \u00b7 ")[-1]
-        for label in _view_labels(cards_command._quantity_editor(
-            account, inventory, "elixir"
-        ))
-        if " \u00b7 " in label
+        line.rsplit(" \u00b7 ", 1)[-1].strip("*")
+        for line in _view_text(view).splitlines()
+        if " \u00b7 " in line and not line.startswith(("#", "-#"))
     }
     assert counts <= {"0", "1", "2", "3", "2+"}, counts
     for banned in ("Missing", "Have 1", "copies", "Might be"):
-        assert not any(
-            banned in label for label in _view_labels(
-                cards_command._quantity_editor(account, inventory, "elixir")
-            )
-        ), banned
+        assert banned not in _view_text(view), banned
 
 
 def test_every_button_back_to_the_collection_names_it():
@@ -6938,20 +6997,15 @@ def test_the_category_editor_opens_showing_what_you_already_have():
     inventory["cards"]["balloon"] = cards.MISSING
     inventory["cards"]["wizard"] = 3
 
-    balloon_page = cards_command._page_holding_card("elixir", "balloon")
-    wizard_page = cards_command._page_holding_card("elixir", "wizard")
+    listing = _view_text(
+        cards_command._quantity_editor(account, inventory, "elixir")
+    )
 
-    balloon_labels = _view_labels(cards_command._quantity_editor(
-        account, inventory, "elixir", page=balloon_page
-    ))
-    wizard_labels = _view_labels(cards_command._quantity_editor(
-        account, inventory, "elixir", page=wizard_page
-    ))
-
-    # Every card states its own count on its own row. The old screen could only
-    # say missing, one, or spare, so the real number lived on another screen.
-    assert "Balloon \u00b7 0" in balloon_labels
-    assert "Wizard \u00b7 3" in wizard_labels
+    # Every card states its own count, all on the one screen. The old editor
+    # could only say missing, one or spare, so the real number lived
+    # elsewhere; the paged one showed six cards out of nineteen.
+    assert "Balloon \u00b7 0" in listing
+    assert "Wizard \u00b7 3" in listing
 
     view = cards_command._quantity_editor(account, inventory, "elixir")
     text = _view_text(view)
@@ -7202,34 +7256,34 @@ def _quantity_env(cards_state=None, complete=()):
     return document, mongo
 
 
-def test_the_plus_button_on_the_page_actually_writes_and_stays_put(monkeypatch):
+def test_the_plus_button_writes_and_keeps_the_card_selected(monkeypatch):
     """End to end through the real dispatcher, on the real rendered id."""
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
     document, mongo = _quantity_env()
-    coc_client = SimpleNamespace()
     monkeypatch.setattr(
-        cards_command, "_load_target",
-        _fake_load_target(account, document),
+        cards_command, "_load_target", _fake_load_target(account, document),
     )
-
-    # Page 2, so a wrong page in the id would land somewhere visibly different.
-    page = 1
-    view = cards_command._quantity_editor(account, document, "elixir", page=page)
-    target = cards_command._quantity_pages("elixir")[page][0]
+    # Not the default card, so a handler that forgot the selection would be
+    # visibly editing the wrong one.
+    target = cards.CATEGORY_CARDS["elixir"][7]
+    view = cards_command._quantity_editor(
+        account, document, "elixir", card_id=target.id
+    )
     plus = next(
         str(n["custom_id"]) for n in _view_nodes(view)
-        if str(n.get("custom_id", "")).startswith(f"cards_qstep:#ME|{target.id}|1|")
+        if str(n.get("custom_id", "")) == f"cards_qstep:#ME|{target.id}|1"
     )
 
-    result = _run_rendered(plus, mongo=mongo, coc_client=coc_client)
+    result = _run_rendered(plus, mongo=mongo, coc_client=SimpleNamespace())
 
     assert document["cards"][target.id] == cards.OWNED + 1
-    text = _view_text(result)
-    assert f"Page {page + 1} of" in text, "a step must not throw you back to page 1"
-    assert target.name in text
+    ids = [str(n["custom_id"]) for n in _view_nodes(result) if "custom_id" in n]
+    assert f"cards_qstep:#ME|{target.id}|1" in ids, "selection must survive a step"
+    assert f"Editing" in _view_text(result)
+    assert target.name in _view_text(result)
 
 
 def test_the_minus_button_stops_at_missing_and_never_goes_negative(monkeypatch):
@@ -7241,7 +7295,7 @@ def test_the_minus_button_stops_at_missing_and_never_goes_negative(monkeypatch):
     monkeypatch.setattr(
         cards_command, "_load_target", _fake_load_target(account, document),
     )
-    minus = f"cards_qstep:#ME|barbarian|-1|0"
+    minus = "cards_qstep:#ME|barbarian|-1"
 
     _run_rendered(minus, mongo=mongo, coc_client=SimpleNamespace())
     assert document["cards"]["barbarian"] == cards.MISSING
@@ -7276,7 +7330,7 @@ def test_ready_to_trade_button_makes_the_category_matchable(monkeypatch):
     assert "These cards can be traded." in _view_text(result)
 
 
-def test_the_jump_menu_lands_on_the_page_holding_the_chosen_card(monkeypatch):
+def test_choosing_a_card_points_the_controller_at_it(monkeypatch):
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -7285,116 +7339,28 @@ def test_the_jump_menu_lands_on_the_page_holding_the_chosen_card(monkeypatch):
     monkeypatch.setattr(
         cards_command, "_load_target", _fake_load_target(account, document),
     )
-    view = cards_command._quantity_editor(account, document, "elixir", page=0)
-    jump = next(
+    view = cards_command._quantity_editor(account, document, "elixir")
+    picker = next(
         str(n["custom_id"]) for n in _view_nodes(view)
-        if str(n.get("custom_id", "")).startswith("cards_qjump:")
+        if str(n.get("custom_id", "")).startswith("cards_qpick:")
     )
     last = cards.CATEGORY_CARDS["elixir"][-1]
-    expected = cards_command._page_holding_card("elixir", last.id)
-    assert expected > 0, "pick a card that is not already on the open page"
 
     result = _run_rendered(
-        jump, mongo=mongo, coc_client=SimpleNamespace(), values=[last.id],
+        picker, mongo=mongo, coc_client=SimpleNamespace(), values=[last.id],
     )
-    assert f"Page {expected + 1} of" in _view_text(result)
-    assert any(label.startswith(last.name) for label in _view_labels(result))
+    ids = [str(n["custom_id"]) for n in _view_nodes(result) if "custom_id" in n]
+    assert f"cards_qstep:#ME|{last.id}|1" in ids
+    assert f"cards_qnum:#ME|{last.id}" in ids
+    assert last.name in _view_text(result)
 
 
-def test_paging_next_and_previous_walk_the_whole_category(monkeypatch):
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    document, mongo = _quantity_env()
-    monkeypatch.setattr(
-        cards_command, "_load_target", _fake_load_target(account, document),
-    )
-    pages = cards_command._quantity_pages("elixir")
-    seen = set()
-    custom_id = "cards_qty:#ME|elixir|0"
-    for index in range(len(pages)):
-        result = _run_rendered(custom_id, mongo=mongo, coc_client=SimpleNamespace())
-        text = _view_text(result)
-        assert f"Page {index + 1} of {len(pages)}" in text
-        seen.update(card.name for card in pages[index])
-        nodes = _view_nodes(result)
-        nxt = [
-            n for n in nodes
-            if str(n.get("custom_id", "")).startswith("cards_qty:")
-            and n.get("label") == "Next"
-        ]
-        assert len(nxt) == 1
-        assert nxt[0].get("disabled", False) is (index == len(pages) - 1)
-        if index < len(pages) - 1:
-            custom_id = str(nxt[0]["custom_id"])
+def test_the_category_screen_stays_far_below_the_component_ceiling():
+    """Discord rejects the whole message past 40 components.
 
-    assert seen == {card.name for card in cards.CATEGORY_CARDS["elixir"]}
-
-
-def test_a_page_number_past_the_end_is_clamped_not_crashed(monkeypatch):
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    document, mongo = _quantity_env()
-    monkeypatch.setattr(
-        cards_command, "_load_target", _fake_load_target(account, document),
-    )
-    pages = len(cards_command._quantity_pages("elixir"))
-    for action_id in ("#ME|elixir|99", "#ME|elixir|-4", "#ME|elixir|abc"):
-        result = _run_rendered(
-            f"cards_qty:{action_id}", mongo=mongo, coc_client=SimpleNamespace(),
-        )
-        text = _view_text(result)
-        assert f" of {pages}" in text, action_id
-
-
-def test_every_card_is_one_horizontal_row_not_two_stacked_components():
-    """Six cards must not fill a phone screen.
-
-    Each card was a Text node above its own ActionRow, so a page rendered as
-    six stacked mini-forms. An ActionRow lays its buttons out horizontally, and
-    it accepts nothing but buttons - so the name and count share the row by
-    being a button too. A Section cannot do this instead: its accessory is
-    exactly one Button or one Thumbnail, never an ActionRow and never two
-    buttons, so text-left/steps-right is not expressible in Components V2.
-    """
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    inventory = {"_id": "#ME", "cards": {}, "complete_categories": []}
-    view = cards_command._quantity_editor(account, inventory, "elixir", page=0)
-    page_cards = cards_command._quantity_pages("elixir")[0]
-
-    rows = [
-        node for node in _view_nodes(view)
-        if node.get("type") == 1
-        and any(
-            str(c.get("custom_id", "")).startswith("cards_qnum:")
-            for c in node.get("components", [])
-        )
-    ]
-    assert len(rows) == len(page_cards), "one row per card"
-    for row, card in zip(rows, page_cards):
-        labels = [str(c.get("label")) for c in row["components"]]
-        assert labels == [f"{card.name} · 1", "-1", "+1"], labels
-
-    # And no card renders any Text of its own - that was the second row.
-    names = {card.name for card in cards.CATEGORY_CARDS["elixir"]}
-    assert not any(
-        name in _view_text(view) for name in names
-    ), "a card name in a Text node means the row was split again"
-
-
-def test_the_quantity_page_stays_within_a_fixed_component_ceiling():
-    """37 of 40, and it cannot drift.
-
-    Discord rejects the whole message past 40 components, and hikari does not
-    catch it locally. The other screens are held to 36 because they grow with
-    the size of the family; this one is a fixed shape - always six cards,
-    always the same rows - so its worst case is arithmetic, not a guess.
+    The paged build sat at 37 of 40. Listing the category as one text
+    component instead of six rows of buttons costs about a third of that, and
+    the number does not move with the size of the category.
     """
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
@@ -7408,30 +7374,32 @@ def test_the_quantity_page_stays_within_a_fixed_component_ceiling():
                 "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
                 "complete_categories": complete,
             }
-            for page in range(len(cards_command._quantity_pages(category.id))):
+            for card in cards.CATEGORY_CARDS[category.id]:
                 view = cards_command._quantity_editor(
-                    account, inventory, category.id, page=page,
+                    account, inventory, category.id, card_id=card.id,
                     saved="A saved line, which is the widest this ever gets.",
                 )
-                used = len([n for n in _view_nodes(view) if "type" in n])
-                worst = max(worst, used)
+                worst = max(
+                    worst, len([n for n in _view_nodes(view) if "type" in n])
+                )
                 _assert_discord_payload(view)
-    assert worst == 37, f"expected a fixed 37, got {worst}"
+    assert worst == 16, f"expected a fixed 16, got {worst}"
 
 
-def test_tapping_a_card_name_opens_a_modal_that_remembers_the_page():
+def test_set_number_opens_a_modal_for_the_selected_card():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
     document, _mongo = _quantity_env()
-    page = 2
-    view = cards_command._quantity_editor(account, document, "elixir", page=page)
-    chip = next(
+    target = cards.CATEGORY_CARDS["elixir"][5]
+    view = cards_command._quantity_editor(
+        account, document, "elixir", card_id=target.id
+    )
+    opener = next(
         str(n["custom_id"]) for n in _view_nodes(view)
         if str(n.get("custom_id", "")).startswith("cards_qnum:")
     )
-
     opened = {}
 
     class ModalCtx:
@@ -7443,17 +7411,31 @@ def test_tapping_a_card_name_opens_a_modal_that_remembers_the_page():
             opened["title"] = title
             opened["custom_id"] = custom_id
 
-    asyncio.run(cards_command.cards_qnum(
-        ModalCtx(), chip.split(":", 1)[1],
-    ))
+    asyncio.run(cards_command.cards_qnum(ModalCtx(), opener.split(":", 1)[1]))
 
-    card_id = chip.split(":", 1)[1].split("|")[1]
-    assert opened["title"] == cards.CARD_BY_ID[card_id].name[:45]
-    # The page rides on the submit id, or the answer lands on page 1.
-    assert opened["custom_id"] == f"cards_qnum_submit:#ME|{card_id}|{page}"
+    assert opened["title"] == target.name[:45]
+    assert opened["custom_id"] == f"cards_qnum_submit:#ME|{target.id}"
 
 
-def test_typing_an_exact_number_saves_and_returns_to_the_same_page(monkeypatch):
+class _SubmitCtx:
+    user = SimpleNamespace(id=123)
+    guild_id = 1
+
+    def __init__(self, raw, sink):
+        self._sink = sink
+        self.interaction = SimpleNamespace(
+            components=[[SimpleNamespace(custom_id="copies", value=raw)]],
+            edit_initial_response=self._edit,
+        )
+
+    async def defer(self, *_args, **_kwargs):
+        return None
+
+    async def _edit(self, components=None, **_kwargs):
+        self._sink["view"] = components
+
+
+def test_typing_an_exact_number_saves_and_stays_on_the_category(monkeypatch):
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -7463,42 +7445,23 @@ def test_typing_an_exact_number_saves_and_returns_to_the_same_page(monkeypatch):
         cards_command, "_load_target", _fake_load_target(account, document),
     )
     sent = {}
-
-    class SubmitCtx:
-        user = SimpleNamespace(id=123)
-        guild_id = 1
-
-        def __init__(self, raw):
-            self.interaction = SimpleNamespace(
-                components=[[SimpleNamespace(custom_id="copies", value=raw)]],
-                edit_initial_response=self._edit,
-            )
-
-        async def defer(self, *_args, **_kwargs):
-            return None
-
-        async def _edit(self, components=None, **_kwargs):
-            sent["view"] = components
-
-    page = 2
-    target = cards_command._quantity_pages("elixir")[page][0]
+    target = cards.CATEGORY_CARDS["elixir"][5]
 
     asyncio.run(cards_command.cards_qnum_submit(
-        SubmitCtx("7"), f"#ME|{target.id}|{page}",
+        _SubmitCtx("7", sent), f"#ME|{target.id}",
         coc_client=SimpleNamespace(), mongo=mongo,
     ))
     assert document["cards"][target.id] == 7
-    assert f"Page {page + 1} of" in _view_text(sent["view"])
-    assert f"{target.name} · 7" in _view_labels(sent["view"])
+    assert f"{target.name} · 7" in _view_text(sent["view"])
 
-    # Junk in, nothing changed, and the member is told so on the same page.
+    # Junk in, nothing changed, and the member is told so on the same screen.
     asyncio.run(cards_command.cards_qnum_submit(
-        SubmitCtx("lots"), f"#ME|{target.id}|{page}",
+        _SubmitCtx("lots", sent), f"#ME|{target.id}",
         coc_client=SimpleNamespace(), mongo=mongo,
     ))
     assert document["cards"][target.id] == 7
     assert "not a number" in _view_text(sent["view"])
-    assert f"Page {page + 1} of" in _view_text(sent["view"])
+    assert target.name in _view_text(sent["view"])
 
 
 def test_a_number_beyond_the_maximum_is_clamped_not_rejected(monkeypatch):
@@ -7511,25 +7474,8 @@ def test_a_number_beyond_the_maximum_is_clamped_not_rejected(monkeypatch):
         cards_command, "_load_target", _fake_load_target(account, document),
     )
     sent = {}
-
-    class SubmitCtx:
-        user = SimpleNamespace(id=123)
-        guild_id = 1
-
-        def __init__(self, raw):
-            self.interaction = SimpleNamespace(
-                components=[[SimpleNamespace(custom_id="copies", value=raw)]],
-                edit_initial_response=self._edit,
-            )
-
-        async def defer(self, *_args, **_kwargs):
-            return None
-
-        async def _edit(self, components=None, **_kwargs):
-            sent["view"] = components
-
     asyncio.run(cards_command.cards_qnum_submit(
-        SubmitCtx("99"), "#ME|barbarian|0",
+        _SubmitCtx("99", sent), "#ME|barbarian",
         coc_client=SimpleNamespace(), mongo=mongo,
     ))
     assert document["cards"]["barbarian"] == cards.MAX_COPIES

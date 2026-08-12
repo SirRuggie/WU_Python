@@ -2737,31 +2737,13 @@ def _update_overview(account, inventory: dict) -> list[Container]:
     )]
 
 
-# Six fits Discord's 40-component ceiling with the pager, the jump menu and a
-# Ready button all mounted: 36 nodes at the widest. Five would be cheaper but
-# costs an extra page on two of the four categories.
-QUANTITY_PAGE_SIZE = 6
-
-
-def _quantity_pages(category_id: str) -> list[list]:
-    """A category's cards split into pages, always in game order.
-
-    Deliberately not the member's chosen sort. Under "Most copies first" a card
-    would move to a different page the moment you changed its count, so the row
-    you were tapping would vanish from under your thumb.
-    """
-    definitions = list(CATEGORY_CARDS[category_id])
-    return [
-        definitions[start:start + QUANTITY_PAGE_SIZE]
-        for start in range(0, len(definitions), QUANTITY_PAGE_SIZE)
-    ] or [[]]
-
-
-def _page_holding_card(category_id: str, card_id: str) -> int:
-    for index, page in enumerate(_quantity_pages(category_id)):
-        if any(card.id == card_id for card in page):
-            return index
-    return 0
+def _quantity_selected(category_id: str, card_id: object) -> str:
+    """Which card the shared controller is pointed at, defaulting to the first."""
+    definitions = CATEGORY_CARDS[category_id]
+    chosen = str(card_id or "")
+    if any(card.id == chosen for card in definitions):
+        return chosen
+    return definitions[0].id
 
 
 def _quantity_editor(
@@ -2769,164 +2751,138 @@ def _quantity_editor(
     inventory: dict,
     category_id: str,
     *,
-    page: int = 0,
+    card_id: object = None,
     saved: str | None = None,
 ) -> list[Container]:
-    """One category, six cards at a time, each with its own count.
+    """One category on one screen: every count listed, one set of controls.
 
-    This replaced two whole-category select menus - one for "cards you do not
-    have", one for "cards you have a spare of". That model could only ever say
-    missing, one, or spare, so the exact count lived on a different screen, and
-    submitting one list while thinking about the other was the single most
-    common way members wiped their own data.
+    Three shapes were tried. Two whole-category select menus could only say
+    missing, one or spare, so exact counts lived elsewhere and submitting one
+    list while thinking about the other wiped data. Six cards a page with their
+    own -1/+1 pairs made six mini-forms that filled a phone and still hid
+    thirteen of the nineteen cards.
+
+    Every category fits one Discord select - the largest is nineteen against a
+    limit of twenty-five - so there is nothing to paginate. The whole category
+    lists as ONE text component, and the big buttons exist once instead of
+    once per card.
     """
     category = CATEGORY_BY_ID[category_id]
     tag = _normalize_tag(account.tag)
-    pages = _quantity_pages(category_id)
-    page = max(0, min(int(page), len(pages) - 1))
+    definitions = CATEGORY_CARDS[category_id]
+    card_id = _quantity_selected(category_id, card_id)
+    card = CARD_BY_ID[card_id]
     saved_cards = normalize_cards(inventory.get("cards"))
-    possible = set(_scan_unverified_ids(inventory))
     confirmed = _confirmed_count_ids(inventory)
     reservations = _card_reservations(inventory)
     complete = category_id in set(inventory.get("complete_categories") or ())
     summary = category_summary(saved_cards, category_id)
 
-    def count_for(card) -> str:
+    def count_for(item) -> str:
         """The number, and nothing else that can be avoided.
 
-        Every card used to describe itself in its own words - "Missing", "Have
-        1", "3 copies · 2 to trade", "2 or more · tell me the exact number".
-        Five phrasings for one fact, each needing translation in the reader's
-        head, when the digit already says it: 0 is none, 1 is one, 2 or more
-        means there is a spare to trade.
+        Every card used to describe itself in words - "Missing", "Have 1",
+        "3 copies · 2 to trade". Five phrasings for one fact, each needing
+        translation in the reader's head, when the digit already says it.
 
-        Two exceptions earn their words. "2+" is the scanner's floor, where a
-        badge proved a spare exists but not how many, and printing a flat "2"
-        would be inventing a number the bot does not have; the rest of the
-        command already uses 2+ for exactly this. A reserved card says so,
-        because both its buttons are disabled and silence would look broken.
+        "2+" is the one token that stays. It is the scanner's floor, where a
+        badge proved a spare exists but not how many, and a flat 2 would be
+        inventing a number the bot does not have.
         """
-        state = saved_cards.get(card.id, OWNED)
+        state = saved_cards.get(item.id, OWNED)
         if not isinstance(state, int) or isinstance(state, bool):
             state = OWNED
-        unconfirmed = state == DUPLICATE and card.id not in confirmed
-        count = "2+" if unconfirmed else str(state)
-        return f"{count} · in a trade" if card.id in reservations else count
+        unconfirmed = state == DUPLICATE and item.id not in confirmed
+        return "2+" if unconfirmed else str(state)
+
+    state = saved_cards.get(card_id, OWNED)
+    if not isinstance(state, int) or isinstance(state, bool):
+        state = OWNED
+    reserved = card_id in reservations
 
     # Completing a category is what makes it tradeable at all: find_matches
-    # only pairs categories BOTH players have marked complete. So this gets its
-    # own full-size line. It spent a while inside the small print at the end of
-    # the page counter, which is the least-read spot on the screen.
+    # only pairs categories BOTH players have marked complete. Full size, not
+    # small print - it was buried at the end of a page counter for a while.
     status = (
         "These cards can be traded."
         if complete
         else "**Not ready to trade yet.** Tap **Ready to trade** below."
     )
+
+    # All nineteen quantities in a single component. Nineteen separate text
+    # nodes would have been legal too, but this is one node and the whole
+    # screen then costs about a third of Discord's 40-component ceiling.
+    listing = "\n".join(
+        (
+            f"{troop_emoji.markup(item.id)} "
+            + (
+                f"**{_escape_markdown(item.name)} · {count_for(item)}**"
+                if item.id == card_id
+                else f"{_escape_markdown(item.name)} · {count_for(item)}"
+            )
+            + (" · in a trade" if item.id in reservations else "")
+        ).strip()
+        for item in definitions
+    )
+
     body: list = [
         Text(content=(
-            f"# Edit counts · {category_markup(category.id)} {category.name}"
-        )),
-        # One node, three lines. Splitting these onto separate Text components
-        # would cost a node each and buy nothing - which is what left room for
-        # the divider above the pager. "Tap -1 or +1 to change a card" is gone:
-        # a row reading "Barbarian · 1  -1  +1" does not need a caption.
-        Text(content=(
+            f"# Edit counts · {category_markup(category.id)} {category.name}\n"
             f"{status}\n"
             f"-# {summary.collected}/{summary.known} owned · "
-            f"Page {page + 1} of {len(pages)} · Changes save automatically."
+            "Changes save automatically."
             + (f"\n-# {_escape_markdown(saved, limit=180)}" if saved else "")
         )),
         Separator(divider=True),
-    ]
-
-    for card in pages[page]:
-        state = saved_cards.get(card.id, OWNED)
-        reserved = card.id in reservations
-        # One ActionRow per card, so the name, the count and both steps sit on
-        # a single horizontal line. Two stacked components per card turned six
-        # cards into six mini-forms filling a whole phone screen.
-        #
-        # The name has to be a button to share the row: an ActionRow holds
-        # buttons and nothing else, and a Section cannot do it either - its
-        # accessory is exactly one Button or one Thumbnail, so text on the left
-        # with both steps on the right is not expressible. (hikari will build a
-        # Section with an ActionRow accessory without complaint; the type union
-        # excludes it and Discord rejects the message, so that is a local
-        # false positive, not a way through.)
-        #
-        # Given it must be a button, it may as well work. Tapping it types an
-        # exact number - which the paged editor otherwise lost, and which beats
-        # tapping +1 six times. I argued against a count-as-button on the
-        # single-card screen and still would: there it was one readout among
-        # roomy controls and it hid the modal. Here every card is a row of
-        # three buttons, so the chip reads as part of a control group, and the
-        # only alternative is a greyed-out chip that does nothing.
-        body.append(ActionRow(components=[
+        Text(content=listing),
+        Separator(divider=True),
+        # No option is marked default. A default-marked option is drawn in
+        # place of the placeholder, which would leave the menu showing the
+        # chosen card and the line below saying the same thing twice. The menu
+        # states the action, the line below states the state.
+        ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_qpick:{tag}|{category_id}",
+            placeholder="Choose a card",
+            max_values=1,
+            options=[
+                SelectOption(
+                    label=f"{item.name} · {count_for(item)}"[:100],
+                    value=item.id,
+                    emoji=troop_emoji.partial(item.id),
+                )
+                for item in definitions
+            ],
+        )]),
+        Text(content=(
+            f"**Editing {troop_emoji.markup(card.id)} "
+            f"{_escape_markdown(card.name)} · {count_for(card)}**"
+            + ("\n-# This card is in a trade and cannot change." if reserved else "")
+        )),
+        # One controller for the whole category, not one per card. "Set number"
+        # is spelled out rather than hidden behind tapping the count: a control
+        # that looks like a readout is not a control anybody finds.
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.DANGER,
+                custom_id=f"cards_qstep:{tag}|{card_id}|-1",
+                label="-1",
+                is_disabled=reserved or state <= MISSING,
+            ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_qnum:{tag}|{card.id}|{page}",
-                label=f"{card.name} · {count_for(card)}",
-                emoji=troop_emoji.partial(card.id),
+                custom_id=f"cards_qnum:{tag}|{card_id}",
+                label="Set number",
                 is_disabled=reserved,
             ),
             Button(
-                style=hikari.ButtonStyle.DANGER,
-                custom_id=f"cards_qstep:{tag}|{card.id}|-1|{page}",
-                label="-1",
-                is_disabled=(
-                    reserved or not isinstance(state, int) or state <= MISSING
-                ),
-            ),
-            Button(
                 style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"cards_qstep:{tag}|{card.id}|1|{page}",
+                custom_id=f"cards_qstep:{tag}|{card_id}|1",
                 label="+1",
-                is_disabled=reserved or (
-                    isinstance(state, int) and state >= MAX_COPIES
-                ),
+                is_disabled=reserved or state >= MAX_COPIES,
             ),
-        ]))
-
-    # Rendered, the pager sat flush against the last card's buttons and read
-    # as a seventh card's controls. This divider costs the page its 37th of
-    # Discord's 40 components, which is affordable here and nowhere else: the
-    # screen is a fixed shape - always six cards, always the same rows - so it
-    # cannot grow with the size of the family the way the match screens can.
-    if len(pages) > 1:
-        body.append(Separator(divider=True))
-        body.append(ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_qty:{tag}|{category_id}|{page - 1}",
-                label="Previous",
-                is_disabled=page <= 0,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_qty:{tag}|{category_id}|{page + 1}",
-                label="Next",
-                is_disabled=page >= len(pages) - 1,
-            ),
-        ]))
-        # No option is marked default, so the placeholder is what a closed menu
-        # draws. A default-marked option would replace it and the menu would
-        # stop saying what it is for.
-        body.append(ActionRow(components=[TextSelectMenu(
-            custom_id=f"cards_qjump:{tag}|{category_id}",
-            placeholder="Jump to a card",
-            max_values=1,
-            options=[
-                # No description. This menu is for getting to a card, and
-                # repeating every count here just doubled the numbers already
-                # on the page.
-                SelectOption(
-                    label=card.name,
-                    value=card.id,
-                    emoji=troop_emoji.partial(card.id),
-                )
-                for card in CATEGORY_CARDS[category_id]
-            ],
-        )]))
+        ]),
+        Separator(divider=True),
+    ]
 
     footer = []
     if not complete:
@@ -9145,36 +9101,55 @@ async def cards_hidden(
     return await _hidden_badge_review_view(account, inventory)
 
 
-def _parse_quantity_target(value: object) -> tuple[str, str | None, int]:
-    """Split `tag|category|page`, defaulting the page to the first.
+def _parse_quantity_target(value: object) -> tuple[str, str | None, str | None]:
+    """Split `tag|category` and an optional trailing card id.
 
     Explicit split, not _parse_target: that helper only ever returns a second
-    value when the second field is a category id, so handing it a three-field
-    id silently loses the page.
+    value when the second field is a category id, so it silently drops
+    anything after it.
+
+    The third field is tolerated rather than required. The paged version of
+    this screen put a page number there, so buttons on messages sent before
+    this change still parse - they just land on the category's first card
+    instead of erroring at the member.
     """
     parts = str(value or "").split("|")
     tag = _normalize_tag(parts[0] if parts else "")
     category_id = (
         parts[1] if len(parts) > 1 and parts[1] in CATEGORY_BY_ID else None
     )
-    page = 0
+    card_id = parts[2] if len(parts) > 2 and parts[2] in CARD_BY_ID else None
+    return tag, category_id, card_id
+
+
+def _parse_quantity_card(value: object) -> tuple[str, str | None, int]:
+    """Split `tag|card` and an optional step.
+
+    Also tolerates the paged version's trailing page number, which is simply
+    ignored - there are no pages any more.
+    """
+    parts = str(value or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    card_id = parts[1] if len(parts) > 1 and parts[1] in CARD_BY_ID else None
+    delta = 0
     if len(parts) > 2:
         try:
-            page = int(parts[2])
+            delta = int(parts[2])
         except (TypeError, ValueError):
-            page = 0
-    return tag, category_id, page
+            delta = 0
+    return tag, card_id, delta
 
 
-async def _quantity_page(
+async def _quantity_screen(
     ctx,
     action_id: str,
     *,
     coc_client: coc.Client,
     mongo: MongoClient,
+    card_id: object = None,
 ):
-    """Shared open/refresh for the quantity editor."""
-    tag, category_id, page = _parse_quantity_target(action_id)
+    """Shared open/refresh for the category screen."""
+    tag, category_id, from_id = _parse_quantity_target(action_id)
     if category_id is None:
         return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
     account, inventory, problem = await _load_target(
@@ -9182,10 +9157,15 @@ async def _quantity_page(
     )
     if problem:
         return problem
-    return _quantity_editor(account, inventory, category_id, page=page)
+    return _quantity_editor(
+        account, inventory, category_id, card_id=card_id or from_id
+    )
 
 
-@register_action("cards_category")
+# cards_qty and cards_qjump were the paged version's controls. They are kept as
+# aliases rather than deleted so a panel someone still has open answers with
+# the new screen instead of "This panel is out of date".
+@register_action("cards_category", aliases=("cards_qty",))
 @lightbulb.di.with_di
 async def cards_category(
     ctx: lightbulb.components.MenuContext,
@@ -9194,89 +9174,47 @@ async def cards_category(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    # No category-wide reservation gate any more. Writes are per card, and
+    # No category-wide reservation gate. Writes are per card, and
     # _write_card_state still refuses a reserved one, so a single held card no
-    # longer locks the other eighteen.
-    return await _quantity_page(
+    # longer locks the rest of its category.
+    return await _quantity_screen(
         ctx, action_id, coc_client=coc_client, mongo=mongo
     )
 
 
-@register_action("cards_qty")
+@register_action("cards_qpick", aliases=("cards_qjump",))
 @lightbulb.di.with_di
-async def cards_qty(
+async def cards_qpick(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
     coc_client: coc.Client = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    return await _quantity_page(
-        ctx, action_id, coc_client=coc_client, mongo=mongo
-    )
-
-
-@register_action("cards_qjump")
-@lightbulb.di.with_di
-async def cards_qjump(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    """Jump to the page holding the chosen card, not to a separate screen."""
-    tag, category_id, _page = _parse_quantity_target(action_id)
-    if category_id is None:
-        return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
+    """Point the shared controller at another card in the same category."""
     chosen = next(iter(getattr(ctx.interaction, "values", ()) or ()), None)
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
+    return await _quantity_screen(
+        ctx, action_id, coc_client=coc_client, mongo=mongo, card_id=chosen
     )
-    if problem:
-        return problem
-    page = (
-        _page_holding_card(category_id, chosen)
-        if chosen in CARD_BY_ID
-        else 0
-    )
-    return _quantity_editor(account, inventory, category_id, page=page)
 
 
-@register_action("cards_qstep")
-@lightbulb.di.with_di
-async def cards_qstep(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
+async def _quantity_write(
+    ctx,
+    tag: str,
+    card_id: str,
+    target: int,
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
 ):
-    """One step on one card, then redraw the same page in place."""
-    parts = str(action_id or "").split("|")
-    tag = _normalize_tag(parts[0] if parts else "")
-    card_id = parts[1] if len(parts) > 1 and parts[1] in CARD_BY_ID else None
-    if card_id is None:
-        return _notice("Unknown card", "Re-run `/cards` to open a fresh panel.")
-    try:
-        delta = int(parts[2]) if len(parts) > 2 else 0
-    except (TypeError, ValueError):
-        delta = 0
-    try:
-        page = int(parts[3]) if len(parts) > 3 else 0
-    except (TypeError, ValueError):
-        page = 0
-
+    """Write one card and redraw its category with that card still selected."""
     category_id = CARD_BY_ID[card_id].category
     account, inventory, problem = await _load_target(
         ctx, tag, coc_client=coc_client, mongo=mongo
     )
     if problem:
         return problem
-    current = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
-    if not isinstance(current, int):
-        current = OWNED
-    target = max(MISSING, min(current + delta, MAX_COPIES))
+    target = max(MISSING, min(int(target), MAX_COPIES))
     try:
         updated = await _write_card_state(
             mongo,
@@ -9290,18 +9228,44 @@ async def cards_qstep(
         )
     except ActiveCardTradeError:
         return _quantity_editor(
-            account, inventory, category_id, page=page,
-            saved=f"{CARD_BY_ID[card_id].name} is reserved and was not changed.",
+            account, inventory, category_id, card_id=card_id,
+            saved=f"{CARD_BY_ID[card_id].name} is in a trade and was not changed.",
         )
     except (InventoryWriteConflict, ValueError):
-        current_doc = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
         return _quantity_editor(
-            account, current_doc, category_id, page=page,
-            saved="The collection changed, so this page was refreshed.",
+            account, current, category_id, card_id=card_id,
+            saved="The collection changed, so this screen was refreshed.",
         )
     return _quantity_editor(
-        account, updated, category_id, page=page,
+        account, updated, category_id, card_id=card_id,
         saved=_saved_count_line(CARD_BY_ID[card_id].name, target),
+    )
+
+
+@register_action("cards_qstep")
+@lightbulb.di.with_di
+async def cards_qstep(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    tag, card_id, delta = _parse_quantity_card(action_id)
+    if card_id is None:
+        return _notice("Unknown card", "Re-run `/cards` to open a fresh panel.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    current = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
+    if not isinstance(current, int) or isinstance(current, bool):
+        current = OWNED
+    return await _quantity_write(
+        ctx, tag, card_id, current + delta,
+        coc_client=coc_client, mongo=mongo,
     )
 
 
@@ -9312,22 +9276,20 @@ async def cards_qnum(
     action_id: str,
     **_kwargs,
 ):
-    """Type an exact count for one card, without leaving its page."""
-    parts = str(action_id or "").split("|")
-    tag = _normalize_tag(parts[0] if parts else "")
-    card_id = parts[1] if len(parts) > 1 and parts[1] in CARD_BY_ID else None
-    page = parts[2] if len(parts) > 2 else "0"
+    """Type an exact count, rather than tapping +1 six times."""
+    tag, card_id, _delta = _parse_quantity_card(action_id)
     if card_id is None:
         await ctx.respond(
             components=_notice("Card unavailable", "Open `/cards` again."),
             ephemeral=True,
         )
         return
-    # The page rides along on the submit id so the answer lands back on the
-    # page the member was reading, not on the single-card screen.
+    # The title is the card name alone. A modal title caps at 45 characters
+    # and "How many <card> cards do you have?" overruns it for the longest
+    # names, so the field below asks the question instead.
     await ctx.respond_with_modal(
         title=CARD_BY_ID[card_id].name[:45],
-        custom_id=f"cards_qnum_submit:{tag}|{card_id}|{page}",
+        custom_id=f"cards_qnum_submit:{tag}|{card_id}",
         components=[ModalActionRow().add_text_input(
             "copies",
             "How many do you have?",
@@ -9348,62 +9310,25 @@ async def cards_qnum_submit(
     **_kwargs,
 ):
     await ctx.defer(ephemeral=True)
-    parts = str(action_id or "").split("|")
-    tag = _normalize_tag(parts[0] if parts else "")
-    card_id = parts[1] if len(parts) > 1 and parts[1] in CARD_BY_ID else None
+    tag, card_id, _delta = _parse_quantity_card(action_id)
     if card_id is None:
         await ctx.interaction.edit_initial_response(
             components=_notice("Card unavailable", "Open `/cards` again.")
         )
         return
     try:
-        page = int(parts[2]) if len(parts) > 2 else 0
-    except (TypeError, ValueError):
-        page = 0
-    category_id = CARD_BY_ID[card_id].category
-
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        await ctx.interaction.edit_initial_response(components=problem)
-        return
-    try:
         target = int(str(_modal_text_value(ctx, "copies")).strip())
     except (TypeError, ValueError):
-        await ctx.interaction.edit_initial_response(components=_quantity_editor(
-            account, inventory, category_id, page=page,
+        account, inventory, problem = await _load_target(
+            ctx, tag, coc_client=coc_client, mongo=mongo
+        )
+        view = problem or _quantity_editor(
+            account, inventory, CARD_BY_ID[card_id].category, card_id=card_id,
             saved="That was not a number, so nothing changed.",
-        ))
-        return
-
-    target = max(MISSING, min(target, MAX_COPIES))
-    try:
-        updated = await _write_card_state(
-            mongo,
-            account,
-            inventory,
-            card_id,
-            target,
-            expected_revision=_inventory_revision_value(inventory),
-            discord_id=int(ctx.user.id),
-            guild_id=_trade_guild_id(ctx),
-        )
-    except ActiveCardTradeError:
-        view = _quantity_editor(
-            account, inventory, category_id, page=page,
-            saved=f"{CARD_BY_ID[card_id].name} is reserved and was not changed.",
-        )
-    except (InventoryWriteConflict, ValueError):
-        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
-        view = _quantity_editor(
-            account, current, category_id, page=page,
-            saved="The collection changed, so this page was refreshed.",
         )
     else:
-        view = _quantity_editor(
-            account, updated, category_id, page=page,
-            saved=_saved_count_line(CARD_BY_ID[card_id].name, target),
+        view = await _quantity_write(
+            ctx, tag, card_id, target, coc_client=coc_client, mongo=mongo
         )
     await ctx.interaction.edit_initial_response(components=view)
 
@@ -9418,7 +9343,7 @@ async def cards_ready(
     **_kwargs,
 ):
     """Mark the category tradeable. Nothing else makes a member matchable."""
-    tag, category_id, page = _parse_quantity_target(action_id)
+    tag, category_id, card_id = _parse_quantity_target(action_id)
     if category_id is None:
         return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
     account, inventory, problem = await _load_target(
@@ -9438,7 +9363,7 @@ async def cards_ready(
     except (InventoryWriteConflict, ValueError):
         return _inventory_retry_notice()
     return _quantity_editor(
-        account, updated, category_id, page=page,
+        account, updated, category_id, card_id=card_id,
         saved=f"{CATEGORY_BY_ID[category_id].name} can be traded now.",
     )
 

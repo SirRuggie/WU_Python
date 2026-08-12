@@ -180,27 +180,34 @@ to spare; and it is one write primitive with one revision guard rather than
 several. The category menu stays mounted below, so correcting several cards in
 one category is pick, tap, pick, tap without returning to the board.
 
-**Edit counts** walks one category six cards at a time. Each card is one
-horizontal row - `[emoji Name . count] [-1] [+1]` - with Previous, Next and a
-**Jump to a card** menu below. The name is a button because an ActionRow is
-the only Components V2 element that lays out horizontally and it accepts
-nothing but buttons; a Section cannot substitute, as its accessory is exactly
-one Button or one Thumbnail (`SectionBuilderAccessoriesT`), so text-left with
-both steps on the right is not expressible. hikari will build a Section with
-an ActionRow accessory without complaining and Discord then rejects the
-message, so that is a local false positive rather than a way through. Since
-the name has to be a button, tapping it opens a modal for an exact count.
+**Edit counts** puts one whole category on one screen. Every category fits a
+single Discord select - nineteen options at the largest, against a limit of
+twenty-five - so there is nothing to paginate. All of the counts render as ONE
+text component, the card menu is a second, and a single `-1 / Set number / +1`
+controller acts on whichever card is chosen. The selected card is bold in the
+list and named again above the controller.
+
+Two earlier shapes are worth recording. Six cards per page with their own
+-1/+1 pairs meant twelve large buttons filling a phone while thirteen of
+nineteen cards stayed hidden. Putting the card name into the ActionRow as a
+button got each card onto one row - an ActionRow is the only Components V2
+element that lays out horizontally and it accepts nothing but buttons, and a
+Section cannot substitute because its accessory is exactly one Button or one
+Thumbnail (`SectionBuilderAccessoriesT`) - but it still showed only six cards.
+Note that hikari will build a Section with an ActionRow accessory without
+complaining and Discord then rejects the message, so that is a local false
+positive rather than a way through.
 
 Counts are digits: 0, 1, 2, 3. The one token is `2+`, the scanner's floor,
 where a badge proved a spare exists but not how many - printing a flat 2 would
 invent a number. Five English phrasings ("Missing", "Have 1", "3 copies . 2 to
 trade") were replaced by the digit, which needs no translation.
 
-A page is a fixed 37 of Discord's 40 components and cannot drift: always six
-cards, always the same rows. Other screens are held to 36 because they grow
-with the size of the family. Paging is in game order, never the member's
-chosen sort, so changing a count cannot move a card to another page while they
-are tapping it. Each write changes only that card,
+The screen is a fixed 15-16 of Discord's 40 components regardless of category
+size, against 37 for the paged build. `cards_qty` and `cards_qjump`, the paged
+controls, survive as aliases so a panel someone still has open answers with
+the new screen rather than "This panel is out of date"; the trailing page
+number on those older custom_ids is parsed and ignored. Each write changes only that card,
 checks that exact card's reservation, and uses the inventory revision as a
 compare-and-swap guard. Accepted swaps on other cards do not block it, so one
 held card no longer locks the other eighteen in its category.
