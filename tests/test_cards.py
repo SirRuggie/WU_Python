@@ -1133,150 +1133,86 @@ class _FakeCategoryCollection:
         return SimpleNamespace(matched_count=1, modified_count=1)
 
 
-def test_category_is_not_searchable_until_both_exception_lists_are_reviewed():
+def test_a_category_cannot_be_traded_until_the_member_marks_it_ready():
+    """The gate the quantity editor had to keep.
+
+    find_matches only pairs categories BOTH players have in
+    complete_categories, and before this only a full screenshot scan or the old
+    two-list editor ever wrote that field. Deleting the two-list editor without
+    a replacement would have left anyone who never scanned permanently
+    unmatchable, with nothing on screen to say why.
+    """
     account = Account(
-        tag="#ME",
-        name="Member",
-        clan_tag="#HOME",
-        clan_name="Home Clan",
-        town_hall=18,
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
     )
     document = {
         "_id": "#ME",
-        "cards": {},
+        "cards": {"root_rider": cards.MISSING, "wizard": 3},
         "complete_categories": [],
         "reviewed_lists": [],
+    }
+    partner = {
+        "_id": "#YOU",
+        "player_name": "Partner",
+        "cards": {"root_rider": cards.DUPLICATE, "wizard": cards.MISSING},
+        "complete_categories": ["elixir"],
+        "confirmed_at": datetime.now(timezone.utc),
     }
     mongo = SimpleNamespace(card_inventories=_FakeCategoryCollection(document))
     cards_command._inventory_locks.clear()
 
-    after_missing = asyncio.run(cards_command._write_category(
-        mongo,
-        account,
-        document,
-        "elixir",
-        ["root_rider"],
-        mode="missing",
-        discord_id=123,
-        guild_id=456,
-    ))
-    assert after_missing["complete_categories"] == []
-    assert after_missing["reviewed_lists"] == ["elixir:missing"]
-    assert after_missing["cards"]["root_rider"] == cards.MISSING
+    assert cards.find_matches(document, [partner]) == []
 
-    after_duplicates = asyncio.run(cards_command._write_category(
-        mongo,
-        account,
-        after_missing,
-        "elixir",
-        ["wizard"],
-        mode="duplicates",
-        discord_id=123,
-        guild_id=456,
+    updated = asyncio.run(cards_command._write_category_ready(
+        mongo, account, document, "elixir", discord_id=123, guild_id=456,
     ))
-    assert after_duplicates["complete_categories"] == ["elixir"]
-    assert set(after_duplicates["reviewed_lists"]) == {
-        "elixir:missing",
-        "elixir:duplicates",
+
+    assert updated["complete_categories"] == ["elixir"]
+    assert set(updated["reviewed_lists"]) == {
+        "elixir:missing", "elixir:duplicates",
     }
-    assert after_duplicates["cards"]["root_rider"] == cards.MISSING
-    assert after_duplicates["cards"]["wizard"] == cards.DUPLICATE
+    # The counts the member just typed survive. apply_category_selection's
+    # "baseline" mode would have reset every card in the category to one copy,
+    # which is why marking ready is its own write and not a reuse of that.
+    assert updated["cards"]["root_rider"] == cards.MISSING
+    assert updated["cards"]["wizard"] == 3
+    assert cards.find_matches(updated, [partner]), "ready should open matching"
 
 
-def test_category_revision_retry_merges_a_cross_process_list_update():
-    class RacingCategory(_FakeCategoryCollection):
-        def __init__(self, document):
-            super().__init__(document)
-            self.raced = False
-
-        async def update_one(self, query, update, upsert=False):
-            if not self.raced:
-                self.raced = True
-                self.document.setdefault("cards", {})["wizard"] = cards.DUPLICATE
-                self.document.setdefault("reviewed_lists", []).append(
-                    "elixir:duplicates"
-                )
-                self.document["inventory_revision"] = 1
-                return SimpleNamespace(matched_count=0, modified_count=0)
-            return await super().update_one(query, update, upsert=upsert)
-
+def test_marking_one_category_ready_leaves_the_other_three_alone():
     account = Account(
-        tag="#ME",
-        name="Member",
-        clan_tag="#HOME",
-        clan_name="Home Clan",
-        town_hall=18,
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
     )
     document = {
-        "_id": "#ME",
-        "cards": {},
-        "complete_categories": [],
-        "reviewed_lists": [],
+        "_id": "#ME", "cards": {}, "complete_categories": [], "reviewed_lists": [],
     }
-    mongo = SimpleNamespace(card_inventories=RacingCategory(document))
+    mongo = SimpleNamespace(card_inventories=_FakeCategoryCollection(document))
     cards_command._inventory_locks.clear()
 
-    merged = asyncio.run(cards_command._write_category(
-        mongo,
-        account,
-        document,
-        "elixir",
-        ["root_rider"],
-        mode="missing",
-        discord_id=123,
-        guild_id=456,
+    updated = asyncio.run(cards_command._write_category_ready(
+        mongo, account, document, "dark_elixir", discord_id=1, guild_id=1,
     ))
+    assert updated["complete_categories"] == ["dark_elixir"]
 
-    assert merged["cards"]["wizard"] == cards.DUPLICATE
-    assert merged["cards"]["root_rider"] == cards.MISSING
-    assert set(merged["reviewed_lists"]) == {
-        "elixir:duplicates",
-        "elixir:missing",
-    }
-    assert merged["complete_categories"] == ["elixir"]
-    assert merged["inventory_revision"] == 2
+    updated = asyncio.run(cards_command._write_category_ready(
+        mongo, account, updated, "elixir", discord_id=1, guild_id=1,
+    ))
+    assert set(updated["complete_categories"]) == {"dark_elixir", "elixir"}
 
 
-def test_category_editor_uses_explicit_clear_buttons_not_a_none_select_option():
+def test_one_reserved_card_no_longer_locks_the_rest_of_its_category():
+    """The whole category used to be refused, which the new editor need not do.
+
+    A whole-category select menu rewrote every card at once, so a single held
+    card had to block all nineteen. Writes are now per card, so only the held
+    card is refused - including when the card being edited sits in the same
+    category as it.
+    """
     account = Account(
-        tag="#ME",
-        name="Member",
-        clan_tag="#HOME",
-        clan_name="Home Clan",
-        town_hall=18,
-    )
-    payload = [
-        component.build()
-        for component in cards_command._category_editor(
-            account,
-            {"_id": "#ME", "cards": {}, "complete_categories": []},
-            "elixir",
-        )
-    ]
-    nodes = list(_walk_payload(payload))
-    option_values = {
-        str(option["value"])
-        for node in nodes
-        for option in node.get("options", [])
-    }
-    custom_ids = {
-        str(node["custom_id"])
-        for node in nodes
-        if "custom_id" in node
-    }
-
-    assert "__none__" not in option_values
-    assert "cards_clear_missing:#ME|elixir" in custom_ids
-    assert "cards_clear_duplicates:#ME|elixir" in custom_ids
-
-
-def test_collection_edit_allows_unrelated_category_but_rejects_reserved_category():
-    account = Account(
-        tag="#ME",
-        name="Member",
-        clan_tag="#HOME",
-        clan_name="Home Clan",
-        town_hall=18,
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
     trade["reservation_token"] = "token-a"
@@ -1285,34 +1221,114 @@ def test_collection_edit_allows_unrelated_category_but_rejects_reserved_category
         "cards": {},
         "complete_categories": [],
         "reviewed_lists": [],
+        "inventory_revision": 0,
     }, trade)
+    reserved_id = next(iter(cards_command._card_reservations(document)))
+    same_category = next(
+        card.id
+        for card in cards.CATEGORY_CARDS[cards.CARD_BY_ID[reserved_id].category]
+        if card.id != reserved_id
+    )
     mongo = SimpleNamespace(card_inventories=_FakeCategoryCollection(document))
     cards_command._inventory_locks.clear()
 
-    updated = asyncio.run(cards_command._write_category(
-        mongo,
-        account,
-        document,
-        "builder_base",
-        ["night_witch"],
-        mode="missing",
-        discord_id=123,
-        guild_id=1,
+    updated = asyncio.run(cards_command._write_card_state(
+        mongo, account, document, same_category, cards.DUPLICATE,
+        expected_revision=0, discord_id=123, guild_id=1,
     ))
-    assert updated["cards"]["night_witch"] == cards.MISSING
+    assert updated["cards"][same_category] == cards.DUPLICATE
 
     with pytest.raises(cards_command.ActiveCardTradeError):
-        asyncio.run(cards_command._write_category(
-            mongo,
-            account,
-            document,
-            "elixir",
-            ["root_rider"],
-            mode="missing",
-            discord_id=123,
-            guild_id=1,
+        asyncio.run(cards_command._write_card_state(
+            mongo, account, updated, reserved_id, cards.MISSING,
+            expected_revision=cards_command._inventory_revision_value(updated),
+            discord_id=123, guild_id=1,
         ))
-    assert "root_rider" not in document["cards"]
+    assert reserved_id not in updated["cards"]
+
+
+def test_the_quantity_editor_offers_one_pair_of_steps_per_card():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._quantity_editor(
+        account,
+        {"_id": "#ME", "cards": {}, "complete_categories": []},
+        "elixir",
+        page=0,
+    )
+    nodes = _view_nodes(view)
+    custom_ids = [str(n["custom_id"]) for n in nodes if "custom_id" in n]
+    page_one = cards_command._quantity_pages("elixir")[0]
+
+    for card in page_one:
+        assert f"cards_qstep:#ME|{card.id}|1|0" in custom_ids
+        assert f"cards_qstep:#ME|{card.id}|-1|0" in custom_ids
+    # Cards on later pages are not mounted, which is the point of paging.
+    last_id = cards.CATEGORY_CARDS["elixir"][-1].id
+    assert not any(
+        cid.startswith(f"cards_qstep:#ME|{last_id}|") for cid in custom_ids
+    ), "the last elixir card belongs to the last page"
+    # An unfinished category always offers the way to finish it.
+    assert "cards_ready:#ME|elixir" in custom_ids
+
+
+def test_the_ready_button_disappears_once_the_category_is_tradeable():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    done = cards_command._quantity_editor(
+        account, _complete_inventory(), "elixir", page=0,
+    )
+    ids = [str(n["custom_id"]) for n in _view_nodes(done) if "custom_id" in n]
+    assert "cards_ready:#ME|elixir" not in ids
+    assert "These cards can be traded." in _view_text(done)
+
+
+def test_every_step_button_on_a_page_parses_back_to_that_page():
+    """The custom_id is parsed by hand, so parse the rendered one, not a guess.
+
+    Shipping a button whose id the handler could not read has happened twice on
+    this command, both times because the test built the id itself.
+    """
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    for page in range(len(cards_command._quantity_pages("super_troop"))):
+        view = cards_command._quantity_editor(
+            account,
+            {"_id": "#ME", "cards": {}, "complete_categories": []},
+            "super_troop",
+            page=page,
+        )
+        for node in _view_nodes(view):
+            custom_id = str(node.get("custom_id", ""))
+            if custom_id.startswith("cards_qstep:"):
+                parts = custom_id.split(":", 1)[1].split("|")
+                assert parts[1] in cards.CARD_BY_ID, custom_id
+                assert int(parts[2]) in (1, -1), custom_id
+                assert int(parts[3]) == page, custom_id
+            elif custom_id.startswith(("cards_qty:", "cards_qjump:", "cards_ready:")):
+                tag, category_id, _page = cards_command._parse_quantity_target(
+                    custom_id.split(":", 1)[1]
+                )
+                assert tag == "#ME", custom_id
+                assert category_id == "super_troop", custom_id
+
+
+def test_jumping_to_a_card_lands_on_the_page_that_holds_it():
+    for category in cards.CATEGORIES:
+        pages = cards_command._quantity_pages(category.id)
+        for index, page in enumerate(pages):
+            for card in page:
+                assert cards_command._page_holding_card(category.id, card.id) == index
+        # Every card in the category is reachable, none dropped by the slicing.
+        assert sum(len(page) for page in pages) == len(
+            cards.CATEGORY_CARDS[category.id]
+        )
 
 
 def test_a_dm_can_answer_a_trade_but_a_stranger_cannot(monkeypatch):
@@ -2793,8 +2809,9 @@ def test_all_member_views_build_with_discord_component_limits():
         cards_command._trade_feedback("Saved", "Ready", "#ME"),
     ]
     views.extend(
-        cards_command._category_editor(account, empty, category.id)
+        cards_command._quantity_editor(account, empty, category.id, page=page)
         for category in cards.CATEGORIES
+        for page in range(len(cards_command._quantity_pages(category.id)))
     )
     for view in views:
         _assert_discord_payload(view)
@@ -3830,34 +3847,33 @@ def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed(
         for node in _view_nodes(board)
     )
 
-    category_collection = _FakeCategoryCollection(saved)
-    category_mongo = SimpleNamespace(card_inventories=category_collection)
-    after_missing = asyncio.run(cards_command._write_category(
+    # Answering one card clears that card's badge and no other. The old
+    # duplicate list cleared a whole category in one submit, so answering about
+    # a Barbarian also silently claimed the other eighteen had been checked.
+    category_mongo = SimpleNamespace(
+        card_inventories=_FakeCategoryCollection(saved)
+    )
+    cards_command._inventory_locks.clear()
+    answered = asyncio.run(cards_command._write_card_state(
         category_mongo,
         account,
         saved,
-        "elixir",
-        [],
-        mode="missing",
-        discord_id=123,
-        guild_id=1,
-    ))
-    assert after_missing["scan_duplicate_unverified_card_ids"] == [
         elixir_hidden,
-        dark_hidden,
-    ]
-
-    after_duplicates = asyncio.run(cards_command._write_category(
-        category_mongo,
-        account,
-        after_missing,
-        "elixir",
-        [],
-        mode="duplicates",
+        cards.DUPLICATE,
+        expected_revision=cards_command._inventory_revision_value(saved),
         discord_id=123,
         guild_id=1,
     ))
-    assert after_duplicates["scan_duplicate_unverified_card_ids"] == [dark_hidden]
+    assert answered["scan_duplicate_unverified_card_ids"] == [dark_hidden]
+    assert answered["cards"][elixir_hidden] == cards.DUPLICATE
+
+    # Marking the category ready does NOT clear the remaining badge. It is a
+    # statement about trading, not an answer to "how many of these do you have".
+    ready = asyncio.run(cards_command._write_category_ready(
+        category_mongo, account, answered, "dark_elixir",
+        discord_id=123, guild_id=1,
+    ))
+    assert ready["scan_duplicate_unverified_card_ids"] == [dark_hidden]
 
 
 def test_scan_save_stale_revision_and_active_reservation_cannot_overwrite():
@@ -5270,32 +5286,52 @@ def test_the_editor_never_uses_a_tick_to_mean_three_different_things():
     for card_id in ("balloon", "thrower", "meteor_golem"):
         inventory["cards"][card_id] = cards.MISSING
 
+    inventory["cards"]["barbarian"] = 3
+
     for complete in ([], ["elixir"]):
         inventory["complete_categories"] = complete
-        view = cards_command._category_editor(account, inventory, "elixir")
-        clears = [
-            n for n in _view_nodes(view)
-            if str(n.get("custom_id", "")).startswith("cards_clear_")
-        ]
-        assert len(clears) == 2
-        for button in clears:
-            assert button["style"] != 3, "a clear button must never read green"
-            assert not (button.get("emoji") or {}), "no tick on a claim button"
+        for page in range(len(cards_command._quantity_pages("elixir"))):
+            view = cards_command._quantity_editor(
+                account, inventory, "elixir", page=page
+            )
+            for button in [n for n in _view_nodes(view) if n.get("type") == 2]:
+                assert not (button.get("emoji") or {}).get("name") == "\u2705", (
+                    "no tick anywhere: it meant none, reviewed and done at once"
+                )
+            # Green survives on +1 only, where it means "add", not "this is
+            # your current state". Nothing on the page reports a value as a
+            # button - the counts are text.
+            green = [
+                str(n.get("label"))
+                for n in _view_nodes(view)
+                if n.get("type") == 2 and n.get("style") == 3
+            ]
+            assert green == ["+1"] * len(
+                cards_command._quantity_pages("elixir")[page]
+            ), green
 
     # Status says what finishing buys you, not that a list was "reviewed".
     text = _view_text(
-        cards_command._category_editor(account, inventory, "elixir")
+        cards_command._quantity_editor(account, inventory, "elixir")
     )
     assert "reviewed" not in text.lower()
     assert "traded" in text
-    # One word for the concept. The rest of the command says "spare"
-    # everywhere, so this screen must not introduce "duplicate" as a second
-    # name for the same thing.
-    assert "duplicate" not in text.lower()
-    assert "spare" in text.lower()
-    # Headings say what the reader has, in plain words.
-    assert "Cards you do not have" in text
-    assert "Cards you have a spare of" in text
+    # One word for the concept, on every page. The rest of the command says
+    # "spare" everywhere, so this screen must not introduce "duplicate" as a
+    # second name for the same thing.
+    for page in range(len(cards_command._quantity_pages("elixir"))):
+        page_text = _view_text(
+            cards_command._quantity_editor(account, inventory, "elixir", page=page)
+        ).lower()
+        assert "duplicate" not in page_text, page
+
+    # And a card the scanner could not count says so in that same word.
+    unverified = dict(inventory)
+    unverified["scan_duplicate_unverified_card_ids"] = ["barbarian"]
+    assert "Might be a spare" in _view_text(cards_command._quantity_editor(
+        account, unverified, "elixir",
+        page=cards_command._page_holding_card("elixir", "barbarian"),
+    ))
 
 
 def test_every_button_back_to_the_collection_names_it():
@@ -5360,7 +5396,7 @@ def test_no_back_button_is_left_on_a_unicode_arrow():
             cards.holders_for_card(inventory, holders, "root_rider"),
         ),
         cards_command._update_overview(account, inventory),
-        cards_command._category_editor(account, inventory, "elixir"),
+        cards_command._quantity_editor(account, inventory, "elixir"),
         cards_command._trades_view(account, []),
         cards_command._active_trade_notice(account.tag),
     ]
@@ -5459,7 +5495,7 @@ def test_category_headings_carry_the_uploaded_emoji():
         clan_name="Home Clan", town_hall=18,
     )
     text = _view_text(
-        cards_command._category_editor(account, _complete_inventory(), "dark_elixir")
+        cards_command._quantity_editor(account, _complete_inventory(), "dark_elixir")
     )
     assert "<:Dark_Elixer:1536777729511391322>" in text
 
@@ -5483,7 +5519,7 @@ def test_select_placeholders_never_carry_custom_emoji_markup():
         cards_command._matches_view(
             account, inventory, cards.find_matches(inventory, holders)
         ),
-        cards_command._category_editor(account, inventory, "elixir"),
+        cards_command._quantity_editor(account, inventory, "elixir"),
     ]
     for view in views:
         for node in _view_nodes(view):
@@ -6881,30 +6917,30 @@ def test_the_category_editor_opens_showing_what_you_already_have():
     )
     inventory = _complete_inventory()
     inventory["cards"]["balloon"] = cards.MISSING
-    inventory["cards"]["wizard"] = cards.DUPLICATE
+    inventory["cards"]["wizard"] = 3
 
-    view = cards_command._category_editor(account, inventory, "elixir")
-    nodes = _view_nodes(view)
+    balloon_page = cards_command._page_holding_card("elixir", "balloon")
+    wizard_page = cards_command._page_holding_card("elixir", "wizard")
+
+    balloon_text = _view_text(cards_command._quantity_editor(
+        account, inventory, "elixir", page=balloon_page
+    ))
+    wizard_text = _view_text(cards_command._quantity_editor(
+        account, inventory, "elixir", page=wizard_page
+    ))
+
+    # Every card states its own count next to its own buttons. The old screen
+    # could only say missing, one, or spare, so the real number lived on a
+    # different screen entirely.
+    assert "Missing" in balloon_text
+    assert "to trade" in wizard_text
+
+    view = cards_command._quantity_editor(account, inventory, "elixir")
     text = _view_text(view)
-
-    menus = {
-        str(n["custom_id"]).split(":")[0]: n
-        for n in nodes if n.get("type") == 3
-    }
-    defaults = {
-        name: {o["value"] for o in menu["options"] if o.get("default")}
-        for name, menu in menus.items()
-    }
-
-    assert defaults["cards_set_missing"] == {"balloon"}
-    assert defaults["cards_set_duplicates"] == {"wizard"}
-    # Two menus, two handlers: one list can never overwrite the other.
-    assert set(menus) == {"cards_set_missing", "cards_set_duplicates"}
-
-    assert "Bulk edit" in text, "continuity with the button that opened it"
-    assert "Change a list to save it" in text
-    # Dropped deliberately: a change saves on its own now, so telling
-    # people what happens when they leave raises a question nobody had.
+    assert "Edit counts" in text, "continuity with the button that opened it"
+    assert "Every tap saves." in text
+    # Dropped deliberately: a change saves on its own, so telling people what
+    # happens when they leave raises a question nobody had.
     assert "Leaving" not in text
     assert "treated as **1 copy**" not in text
     assert "Sir Ruggie" not in text
@@ -6925,9 +6961,14 @@ def test_bulk_edit_screen_names_itself_and_the_step():
     view = cards_command._update_overview(account, _complete_inventory())
     text = _view_text(view)
 
-    assert "Bulk edit" in text
+    assert "Edit counts" in text
     assert "Advanced manual editor" not in text
+    assert "Bulk edit" not in text, "one name for one destination"
+    # One instruction, in one place. The intro says what the screen does and
+    # the heading says what to do, rather than both giving the same order in
+    # different words.
     assert "Choose a category" in text
+    assert "Pick a category" not in text
     # One category per row, so they stack. Four in one row is laid out
     # horizontally and wrapped 3 + 1.
     category_rows = [
@@ -6949,7 +6990,7 @@ def test_bulk_edit_screen_names_itself_and_the_step():
     assert "Sir Ruggie" not in text
     assert "#ME" not in text
     # The single-card route is where most people should actually go.
-    assert "category menus in your collection" in text
+    assert "menus in your collection" in text
     _assert_discord_payload(view)
 
 
@@ -6972,7 +7013,7 @@ def test_rebuild_a_category_survives_reviewing_every_category():
         str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
     ]
 
-    assert "Bulk edit" in labels
+    assert "Edit counts" in labels
     _assert_discord_payload(view)
 
 
@@ -7083,3 +7124,210 @@ def test_the_board_resolves_admin_itself_on_every_screen(monkeypatch):
     ]
 
     assert "Admin" in labels
+
+
+def _fake_load_target(account, document):
+    async def load_target(*_args, **_kwargs):
+        # The live document, not a snapshot: _write_card_state checks the
+        # revision it was handed against the one in the database, so a stale
+        # copy here would fail the second write for the wrong reason.
+        return account, document, None
+    return load_target
+
+
+def _quantity_ctx(user_id=123, values=()):
+    return SimpleNamespace(
+        user=SimpleNamespace(id=user_id),
+        guild_id=1,
+        interaction=SimpleNamespace(values=list(values)),
+    )
+
+
+def _run_rendered(custom_id, *, mongo, coc_client, values=()):
+    """Dispatch a rendered custom_id the way extensions/components.py does.
+
+    The id is split here exactly as _dispatch splits it - on the first colon -
+    and the handler is looked up in the real registry. Building the action_id
+    by hand is how two shipped buttons were wrong before: cards_gem_ask went
+    out answering "Out of date" to every click, and the admin gate refused
+    every admin, both because the test called the function directly with
+    arguments the dispatcher would never have produced.
+    """
+    from extensions.components import _resolve
+
+    command_name, _, action_id = str(custom_id).partition(":")
+    action = _resolve(command_name)
+    assert action is not None, f"{command_name} is not registered"
+    handler = getattr(cards_command, command_name)
+    return asyncio.run(handler(
+        _quantity_ctx(values=values),
+        action_id,
+        coc_client=coc_client,
+        mongo=mongo,
+    ))
+
+
+def _quantity_env(cards_state=None, complete=()):
+    document = {
+        "_id": "#ME",
+        "discord_id": 123,
+        "inventory_revision": 0,
+        "cards": dict(cards_state or {}),
+        "complete_categories": list(complete),
+        "reviewed_lists": [],
+        "confirmed_at": datetime.now(timezone.utc),
+    }
+    mongo = SimpleNamespace(
+        card_inventories=_FakeCategoryCollection(document),
+    )
+    cards_command._inventory_locks.clear()
+    return document, mongo
+
+
+def test_the_plus_button_on_the_page_actually_writes_and_stays_put(monkeypatch):
+    """End to end through the real dispatcher, on the real rendered id."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document, mongo = _quantity_env()
+    coc_client = SimpleNamespace()
+    monkeypatch.setattr(
+        cards_command, "_load_target",
+        _fake_load_target(account, document),
+    )
+
+    # Page 2, so a wrong page in the id would land somewhere visibly different.
+    page = 1
+    view = cards_command._quantity_editor(account, document, "elixir", page=page)
+    target = cards_command._quantity_pages("elixir")[page][0]
+    plus = next(
+        str(n["custom_id"]) for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith(f"cards_qstep:#ME|{target.id}|1|")
+    )
+
+    result = _run_rendered(plus, mongo=mongo, coc_client=coc_client)
+
+    assert document["cards"][target.id] == cards.OWNED + 1
+    text = _view_text(result)
+    assert f"Page {page + 1} of" in text, "a step must not throw you back to page 1"
+    assert target.name in text
+
+
+def test_the_minus_button_stops_at_missing_and_never_goes_negative(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document, mongo = _quantity_env({"barbarian": cards.OWNED})
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+    minus = f"cards_qstep:#ME|barbarian|-1|0"
+
+    _run_rendered(minus, mongo=mongo, coc_client=SimpleNamespace())
+    assert document["cards"]["barbarian"] == cards.MISSING
+
+    # The button renders disabled at this point, but a stale click must still
+    # be harmless rather than writing -1.
+    _run_rendered(minus, mongo=mongo, coc_client=SimpleNamespace())
+    assert document["cards"]["barbarian"] == cards.MISSING
+
+
+def test_ready_to_trade_button_makes_the_category_matchable(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document, mongo = _quantity_env({"root_rider": cards.MISSING, "wizard": 3})
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+    view = cards_command._quantity_editor(account, document, "elixir")
+    ready = next(
+        str(n["custom_id"]) for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith("cards_ready:")
+    )
+
+    result = _run_rendered(ready, mongo=mongo, coc_client=SimpleNamespace())
+
+    assert document["complete_categories"] == ["elixir"]
+    # Counts survived, and the screen now says the state changed.
+    assert document["cards"]["wizard"] == 3
+    assert document["cards"]["root_rider"] == cards.MISSING
+    assert "These cards can be traded." in _view_text(result)
+
+
+def test_the_jump_menu_lands_on_the_page_holding_the_chosen_card(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document, mongo = _quantity_env()
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+    view = cards_command._quantity_editor(account, document, "elixir", page=0)
+    jump = next(
+        str(n["custom_id"]) for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith("cards_qjump:")
+    )
+    last = cards.CATEGORY_CARDS["elixir"][-1]
+    expected = cards_command._page_holding_card("elixir", last.id)
+    assert expected > 0, "pick a card that is not already on the open page"
+
+    result = _run_rendered(
+        jump, mongo=mongo, coc_client=SimpleNamespace(), values=[last.id],
+    )
+    text = _view_text(result)
+    assert f"Page {expected + 1} of" in text
+    assert last.name in text
+
+
+def test_paging_next_and_previous_walk_the_whole_category(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document, mongo = _quantity_env()
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+    pages = cards_command._quantity_pages("elixir")
+    seen = set()
+    custom_id = "cards_qty:#ME|elixir|0"
+    for index in range(len(pages)):
+        result = _run_rendered(custom_id, mongo=mongo, coc_client=SimpleNamespace())
+        text = _view_text(result)
+        assert f"Page {index + 1} of {len(pages)}" in text
+        seen.update(card.name for card in pages[index])
+        nodes = _view_nodes(result)
+        nxt = [
+            n for n in nodes
+            if str(n.get("custom_id", "")).startswith("cards_qty:")
+            and n.get("label") == "Next"
+        ]
+        assert len(nxt) == 1
+        assert nxt[0].get("disabled", False) is (index == len(pages) - 1)
+        if index < len(pages) - 1:
+            custom_id = str(nxt[0]["custom_id"])
+
+    assert seen == {card.name for card in cards.CATEGORY_CARDS["elixir"]}
+
+
+def test_a_page_number_past_the_end_is_clamped_not_crashed(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document, mongo = _quantity_env()
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+    pages = len(cards_command._quantity_pages("elixir"))
+    for action_id in ("#ME|elixir|99", "#ME|elixir|-4", "#ME|elixir|abc"):
+        result = _run_rendered(
+            f"cards_qty:{action_id}", mongo=mongo, coc_client=SimpleNamespace(),
+        )
+        text = _view_text(result)
+        assert f" of {pages}" in text, action_id

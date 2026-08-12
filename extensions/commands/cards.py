@@ -58,7 +58,6 @@ from utils.cards import (
     MAX_COPIES,
     MISSING,
     OWNED,
-    apply_category_selection,
     as_utc,
     category_summary,
     family_supply,
@@ -585,11 +584,6 @@ def _inventory_has_active_trade(inventory: dict, *, now: datetime | None = None)
     """Compatibility helper: whether any exact card is currently reserved."""
     del now
     return bool(_card_reservations(inventory))
-
-
-def _category_has_reservations(inventory: dict, category_id: str) -> bool:
-    reserved = _card_reservations(inventory)
-    return any(card.id in reserved for card in CATEGORY_CARDS[category_id])
 
 
 def _without_reserved_cards(inventory: dict) -> dict:
@@ -1292,7 +1286,7 @@ def _scan_dm_unavailable(account) -> list[Container]:
             Text(content="# I Couldn't Open the Private Upload"),
             Text(content=(
                 "Allow direct messages from members of the family Discord server, "
-                "then tap **Try scan again**. The Advanced editor still works "
+                "then tap **Try scan again**. **Edit counts** still works "
                 "without DMs."
             )),
             Separator(divider=True),
@@ -1306,7 +1300,7 @@ def _scan_dm_unavailable(account) -> list[Container]:
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-                    label="Advanced editor",
+                    label="Edit counts",
                     emoji="⚙️",
                 ),
                 Button(
@@ -1736,10 +1730,10 @@ def _scan_review(
         save_buttons.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-            label="Advanced manual editor",
+            label="Edit counts",
         ))
         body.append(Text(content=(
-            "The Advanced editor starts from your saved collection; this scan "
+            "**Edit counts** starts from your saved collection. This scan "
             "result will not be copied into it."
         )))
     body.extend([
@@ -2092,9 +2086,9 @@ def _dashboard(
     body.append(ActionRow(components=view_row))
 
     # Two ways to (re)build the collection, together and apart from the menu
-    # controls. "Bulk edit" was neither bulk nor an editor: it opens a router
-    # of four category setups, for a first-time entry or a full rebuild, which
-    # is the same job as a scan and NOT the same job as sorting.
+    # controls. Edit counts opens a router of four categories, for a first-time
+    # entry or a full rebuild, which is the same job as a scan and NOT the same
+    # job as sorting.
     # No separator: this sits straight under the sort row so the collection
     # tools read as one block. A divider between every pair of buttons chopped
     # the lower half into slivers.
@@ -2112,10 +2106,9 @@ def _dashboard(
         Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_advanced:{tag}",
-            # It edits a whole category in one pass, which is what bulk editing
-            # is. The single-card fast path is the dropdowns above, which the
-            # instruction line names, so this does not have to be one too.
-            label="Bulk edit",
+            # Walks a category six cards at a time. The single-card fast path
+            # is the dropdowns above, which the instruction line names.
+            label="Edit counts",
         ),
     ]))
 
@@ -2674,48 +2667,50 @@ def _scan_saved_notice(account, *, pending: int = 0) -> list[Container]:
 
 def _update_overview(account, inventory: dict) -> list[Container]:
     complete = set(inventory.get("complete_categories") or ())
-    reviewed = set(inventory.get("reviewed_lists") or ())
     unverified = set(_scan_unverified_ids(inventory))
     buttons = []
     for category in CATEGORIES:
-        reserved = _category_has_reservations(inventory, category.id)
         if category.id in complete:
             summary = category_summary(inventory.get("cards"), category.id)
-            label = (
-                f"{category.short_name} reserved"
-                if reserved
-                else f"{category.short_name} {summary.collected}/{summary.known}"
-            )
-        elif any(step.startswith(f"{category.id}:") for step in reviewed):
-            label = f"Continue {category.short_name}"
+            label = f"{category.short_name} {summary.collected}/{summary.known}"
         else:
             label = f"Set up {category.short_name}"
+        # No longer disabled when a card in the category is reserved. The editor
+        # behind this button now writes one card at a time, so a Wizard held by
+        # an accepted trade no longer stops you fixing your Barbarian count.
+        # That card alone comes back disabled on the page itself.
         buttons.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_category:{_normalize_tag(account.tag)}|{category.id}",
             label=label,
             emoji=category_partial(category.id),
-            is_disabled=reserved,
         ))
 
     # No name and tag. This screen is only ever reached from that member's own
     # board, which named them one tap ago, so repeating it spent the best space
     # on the least useful fact.
+    # Says what the screen is for, and leaves the instruction to the heading
+    # below. Both lines were imperatives before - "Pick a category to edit"
+    # above "Choose a category" - which is two different verbs for one action.
     intro = (
-        "Update a whole category at once.\n"
-        "-# To change one card, use the category menus in your collection instead."
+        "Change how many of each card you have.\n"
+        "-# You can also tap any card in the menus in your collection."
     )
     if unverified:
+        # Was "1 possible spare still need review", which does not agree in the
+        # singular. Counting cards instead of spares makes one sentence work
+        # for every number.
         intro += (
-            f"\n\n📸 **{len(unverified)} possible spare"
-            f"{'s' if len(unverified) != 1 else ''} still need review.** "
-            "**Check spares** in your collection handles them one at a time."
+            f"\n\n📸 **{len(unverified)} card"
+            f"{'s' if len(unverified) != 1 else ''} might be a spare.**\n"
+            "Tap **Check spares** in your collection to answer."
         )
     return [Container(
         components=[
-            # Named for the button that opened it. "Advanced manual editor"
-            # read as a settings dialog from some other product.
-            Text(content="# Bulk edit"),
+            # Named for the job, not the mechanic. It was "Bulk edit" when it
+            # opened two whole-category select menus; it now opens a list of
+            # cards you change one at a time, so "bulk" would be a lie.
+            Text(content="# Edit counts"),
             Text(content=intro),
             # A bold heading is not enough on its own here. Rendered, the
             # title, the explanation, the heading, four buttons and Back ran
@@ -2742,163 +2737,178 @@ def _update_overview(account, inventory: dict) -> list[Container]:
     )]
 
 
-def _category_editor(account, inventory: dict, category_id: str) -> list[Container]:
+# Six fits Discord's 40-component ceiling with the pager, the jump menu and a
+# Ready button all mounted: 36 nodes at the widest. Five would be cheaper but
+# costs an extra page on two of the four categories.
+QUANTITY_PAGE_SIZE = 6
+
+
+def _quantity_pages(category_id: str) -> list[list]:
+    """A category's cards split into pages, always in game order.
+
+    Deliberately not the member's chosen sort. Under "Most copies first" a card
+    would move to a different page the moment you changed its count, so the row
+    you were tapping would vanish from under your thumb.
+    """
+    definitions = list(CATEGORY_CARDS[category_id])
+    return [
+        definitions[start:start + QUANTITY_PAGE_SIZE]
+        for start in range(0, len(definitions), QUANTITY_PAGE_SIZE)
+    ] or [[]]
+
+
+def _page_holding_card(category_id: str, card_id: str) -> int:
+    for index, page in enumerate(_quantity_pages(category_id)):
+        if any(card.id == card_id for card in page):
+            return index
+    return 0
+
+
+def _quantity_editor(
+    account,
+    inventory: dict,
+    category_id: str,
+    *,
+    page: int = 0,
+    saved: str | None = None,
+) -> list[Container]:
+    """One category, six cards at a time, each with its own count.
+
+    This replaced two whole-category select menus - one for "cards you do not
+    have", one for "cards you have a spare of". That model could only ever say
+    missing, one, or spare, so the exact count lived on a different screen, and
+    submitting one list while thinking about the other was the single most
+    common way members wiped their own data.
+    """
     category = CATEGORY_BY_ID[category_id]
-    cards = normalize_cards(inventory.get("cards"))
+    tag = _normalize_tag(account.tag)
+    pages = _quantity_pages(category_id)
+    page = max(0, min(int(page), len(pages) - 1))
+    saved_cards = normalize_cards(inventory.get("cards"))
+    possible = set(_scan_unverified_ids(inventory))
+    confirmed = _confirmed_count_ids(inventory)
+    reservations = _card_reservations(inventory)
     complete = category_id in set(inventory.get("complete_categories") or ())
-    reviewed = set(inventory.get("reviewed_lists") or ())
-    missing_reviewed = f"{category_id}:missing" in reviewed
-    duplicates_reviewed = f"{category_id}:duplicates" in reviewed
-    definitions = CATEGORY_CARDS[category_id]
-    unverified_duplicates = [
-        card.id
-        for card in definitions
-        if card.id in set(_scan_unverified_ids(inventory))
-    ]
+    summary = category_summary(saved_cards, category_id)
 
-    missing_empty = not any(cards.get(card.id, OWNED) == MISSING for card in definitions)
-    duplicates_empty = not any(cards.get(card.id, OWNED) >= DUPLICATE for card in definitions)
-    missing_options = [
-        SelectOption(
-            label=card.name,
-            value=card.id,
-            is_default=cards.get(card.id, OWNED) == MISSING,
+    def words_for(card) -> str:
+        state = saved_cards.get(card.id, OWNED)
+        if card.id in reservations:
+            return "Reserved by an accepted trade"
+        return _card_state_words(
+            state,
+            possible_spare=card.id in possible,
+            unconfirmed=(
+                _is_spare_state(state)
+                and state == DUPLICATE
+                and card.id not in _confirmed_count_ids(inventory)
+            ),
         )
-        for card in definitions
-    ]
-    duplicate_options = [
-        SelectOption(
-            label=card.name,
-            value=card.id,
-            is_default=cards.get(card.id, OWNED) >= DUPLICATE,
-        )
-        for card in definitions
-    ]
-    summary = category_summary(cards, category_id) if complete else None
-    # This is not decoration. Both lists done marks the category complete, and
-    # find_matches only pairs categories BOTH players have completed - so an
-    # unfinished category is invisible to trading. The old wording said
-    # "reviewed", which names the mechanic instead of what it gets you.
-    if complete:
-        setup_status = "These cards can be traded."
-    elif missing_reviewed:
-        setup_status = "**Do the spares list too, then these can be traded.**"
-    elif duplicates_reviewed:
-        setup_status = "**Do the missing list too, then these can be traded.**"
-    else:
-        setup_status = "**Do both lists to trade these cards.**"
+
+    # Completing a category is what makes it tradeable at all: find_matches
+    # only pairs categories BOTH players have marked complete. So the state has
+    # to be said out loud on every page, not buried on a summary screen.
     status = (
-        f"{summary.collected}/{summary.known} owned · {summary.missing} missing · "
-        f"{summary.duplicates} spare{'s' if summary.duplicates != 1 else ''}"
-        if summary is not None
-        else "Not set up yet"
+        "These cards can be traded."
+        if complete
+        else "**Not ready to trade yet.**"
     )
-
     body: list = [
-        # Titled for the flow that opened it, so two taps in you still know
-        # where you are. The name and tag are gone: the board named them, and
-        # the Bulk edit screen before this one named them again.
         Text(content=(
-            f"# Bulk edit · "
-            f"{category_markup(category.id)} {category.name}"
+            f"# Edit counts · {category_markup(category.id)} {category.name}"
         )),
         Text(content=(
-            # Each list saves on its own, so the old warning that "unselected
-            # cards are treated as 1 copy" described submitting ONE list but
-            # read as a standing threat over the whole screen. Both menus open
-            # already ticked to match your collection, so the safe thing to say
-            # is that nothing moves until you submit one.
-            # "Submit a list" assumed the reader knows how a Discord select
-            # behaves. The handler fires when the menu closes, so it simply
-            # saves - say that. No line about leaving: now that a change saves
-            # on its own, mentioning it raises a question nobody had.
-            "Each list already shows what you have now.\n"
-            "-# Change a list to save it. The other list stays the same."
+            "Tap **-1** or **+1** to change a card.\n"
+            "Every tap saves.\n"
+            f"-# Page {page + 1} of {len(pages)} · "
+            f"{summary.collected}/{summary.known} owned · {status}"
+            + (f"\n-# {_escape_markdown(saved, limit=180)}" if saved else "")
         )),
-        Text(content=f"-# {status} · {setup_status}"),
         Separator(divider=True),
-        Text(content="## Cards you do not have"),
-        ActionRow(components=[
-            TextSelectMenu(
-                custom_id=f"cards_set_missing:{_normalize_tag(account.tag)}|{category_id}",
-                placeholder="Select the cards you do not have",
-                min_values=1,
-                max_values=len(missing_options),
-                options=missing_options,
-            )
-        ]),
-        Text(content=(
-            "## Cards you have a spare of"
-            + (
-                f"\n📸 Check the duplicate badges for: "
-                f"**{_scan_card_names(unverified_duplicates)}**. They are currently "
-                "saved as 1 copy; submit this duplicate list after checking."
-                if unverified_duplicates
-                else ""
-            )
-        )),
-        ActionRow(components=[
-            TextSelectMenu(
-                custom_id=f"cards_set_duplicates:{_normalize_tag(account.tag)}|{category_id}",
-                placeholder="Select the cards you have a spare of",
-                min_values=1,
-                max_values=len(duplicate_options),
-                options=duplicate_options,
-            )
-        ]),
-        ActionRow(components=[
-            # Always neutral, never green, and no tick. The style used to turn
-            # SUCCESS once the list was already empty, so green meant "this is
-            # your current state" - which is why a button reading "✅ No
-            # missing cards" appeared directly under three missing cards and
-            # looked like the bot contradicting itself. These are claims you
-            # make, so they are worded in the first person.
+    ]
+
+    for card in pages[page]:
+        state = saved_cards.get(card.id, OWNED)
+        reserved = card.id in reservations
+        icon = troop_emoji.markup(card.id)
+        # The count is a fact, so it is text. Making it a button was tried on
+        # the single-card screen and read as a readout that did something
+        # unexpected when tapped.
+        body.append(Text(content=(
+            f"{icon} **{_escape_markdown(card.name)}** · {words_for(card)}"
+        ).strip()))
+        body.append(ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.DANGER,
+                custom_id=f"cards_qstep:{tag}|{card.id}|-1|{page}",
+                label="-1",
+                is_disabled=(
+                    reserved or not isinstance(state, int) or state <= MISSING
+                ),
+            ),
+            Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=f"cards_qstep:{tag}|{card.id}|1|{page}",
+                label="+1",
+                is_disabled=reserved or (
+                    isinstance(state, int) and state >= MAX_COPIES
+                ),
+            ),
+        ]))
+
+    # No separator above this row. At six cards the page is already at 36 of
+    # Discord's 40 components, and Discord rejects the whole message past 40.
+    if len(pages) > 1:
+        body.append(ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_clear_missing:{_normalize_tag(account.tag)}|{category_id}",
-                label="I have them all",
+                custom_id=f"cards_qty:{tag}|{category_id}|{page - 1}",
+                label="Previous",
+                is_disabled=page <= 0,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_clear_duplicates:{_normalize_tag(account.tag)}|{category_id}",
-                label="I have no spares",
+                custom_id=f"cards_qty:{tag}|{category_id}|{page + 1}",
+                label="Next",
+                is_disabled=page >= len(pages) - 1,
             ),
-        ]),
-        Separator(divider=True),
-    ]
-    action_buttons = [
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-            # Named for the screen it opens, which is headed "Choose a
-            # category". "All categories" could equally mean edit them all.
-            label="Choose a category",
-            emoji=RETURN_EMOJI,
-        ),
-        Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-            label="Done",
-            emoji="✅",
-        ),
-    ]
-    if not complete and not missing_reviewed and not duplicates_reviewed:
-        action_buttons.insert(0, Button(
+        ]))
+        # No option is marked default, so the placeholder is what a closed menu
+        # draws. A default-marked option would replace it and the menu would
+        # stop saying what it is for.
+        body.append(ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_qjump:{tag}|{category_id}",
+            placeholder="Jump to a card",
+            max_values=1,
+            options=[
+                SelectOption(
+                    label=card.name,
+                    value=card.id,
+                    description=words_for(card),
+                    emoji=troop_emoji.partial(card.id),
+                )
+                for card in CATEGORY_CARDS[category_id]
+            ],
+        )]))
+
+    footer = []
+    if not complete:
+        footer.append(Button(
             style=hikari.ButtonStyle.PRIMARY,
-            custom_id=f"cards_baseline:{_normalize_tag(account.tag)}|{category_id}",
-            label="No missing or spares",
-            emoji="1️⃣",
+            custom_id=f"cards_ready:{tag}|{category_id}",
+            label="Ready to trade",
         ))
-    body.extend([
-        ActionRow(components=action_buttons),
-        # Was: "2+ copies are stored simply as "duplicate"; exact counts are
-        # not required." Two clauses joined by a semicolon, saying the same
-        # thing twice, to explain a storage detail. One short sentence answers
-        # the only question a member actually has: why they cannot enter 4.
-        Text(content="-# 2 or more copies means you have a spare."),
-        Media(items=[MediaItem(media=FOOTER)]),
-    ])
-    return [Container(accent_color=RED_ACCENT, components=body)]
+    footer.append(Button(
+        style=hikari.ButtonStyle.SECONDARY,
+        custom_id=f"cards_dashboard:{tag}",
+        label="Back to collection",
+        emoji=RETURN_EMOJI,
+    ))
+    body.append(ActionRow(components=footer))
+    return [Container(
+        accent_color=CATEGORY_ACCENTS[category_id],
+        components=body,
+    )]
 
 
 async def _dashboard_view(
@@ -7127,119 +7137,61 @@ async def _write_hidden_badge_batch(
         raise InventoryWriteConflict
 
 
-async def _write_category(
+async def _write_category_ready(
     mongo: MongoClient,
     account,
     inventory: dict,
     category_id: str,
-    selected: list[str],
     *,
-    mode: str,
     discord_id: int,
     guild_id: int | None,
 ) -> dict:
+    """Mark a category complete without touching a single card count.
+
+    This is the whole reason the quantity editor can exist. find_matches only
+    pairs categories BOTH players have in complete_categories, and the only
+    two things that ever wrote that field were a full screenshot scan and the
+    old two-list editor. Deleting that editor without this would have left
+    anyone who never scanned unable to trade, silently - no error, they simply
+    stop appearing in anybody's matches.
+
+    apply_category_selection(mode="baseline") could not be reused here: it sets
+    every card in the category back to one copy, which would wipe the counts
+    the member just typed in.
+    """
+    if category_id not in CATEGORY_BY_ID:
+        raise ValueError(f"unknown card category: {category_id}")
     tag = _normalize_tag(account.tag)
-    async with _inventory_lock(tag):
-        for _attempt in range(5):
-            latest = await mongo.card_inventories.find_one({"_id": tag}) or inventory
-            if _category_has_reservations(latest, category_id):
-                raise ActiveCardTradeError
-            updated_cards = apply_category_selection(
-                latest.get("cards"),
-                category_id,
-                selected,
-                mode=mode,
-            )
-            now = datetime.now(timezone.utc)
-            existing_steps = set(latest.get("reviewed_lists") or ())
-            if mode == "baseline":
-                new_steps = {
-                    f"{category_id}:missing",
-                    f"{category_id}:duplicates",
-                }
-            else:
-                new_steps = {f"{category_id}:{mode}"}
-            reviewed_after = existing_steps | new_steps
-            category_complete = {
-                f"{category_id}:missing",
-                f"{category_id}:duplicates",
-            } <= reviewed_after
-            card_updates = {
-                f"cards.{card.id}": updated_cards[card.id]
-                for card in CATEGORY_CARDS[category_id]
-            }
-            identity_updates = {
-                "discord_id": int(discord_id),
-                "player_name": account.name,
+    now = datetime.now(timezone.utc)
+    steps = sorted({f"{category_id}:missing", f"{category_id}:duplicates"})
+    identity = {
+        "discord_id": int(discord_id),
+        "player_name": account.name,
         "town_hall": getattr(account, "town_hall", 0) or 0,
-                "clan_tag": (
-                    _normalize_tag(account.clan_tag) if account.clan_tag else None
-                ),
-                "clan_name": account.clan_name,
-                "updated_at": now,
-                "confirmed_at": now,
-                "update_source": "quick_select",
-            }
-            if guild_id is not None:
-                identity_updates["guild_id"] = guild_id
-            add_to_set: dict = {
-                "reviewed_lists": {"$each": sorted(new_steps)},
-            }
-            if category_complete:
-                add_to_set["complete_categories"] = category_id
-            try:
-                revision = max(0, int(latest.get("inventory_revision", 0)))
-            except (TypeError, ValueError):
-                revision = 0
-            revision_guard: dict
-            if revision == 0:
-                revision_guard = {"$or": [
-                    {"inventory_revision": {"$exists": False}},
-                    {"inventory_revision": 0},
-                ]}
-            else:
-                revision_guard = {"inventory_revision": revision}
-            update_document: dict = {
-                "$set": card_updates | identity_updates,
-                "$addToSet": add_to_set,
-                "$inc": {"inventory_revision": 1},
-            }
-            if mode in {"duplicates", "baseline"}:
-                update_document["$pull"] = {
-                    "scan_duplicate_unverified_card_ids": {
-                        "$in": [card.id for card in CATEGORY_CARDS[category_id]],
-                    },
-                }
-            result = await mongo.card_inventories.update_one(
-                {
-                    "_id": tag,
-                    "$and": [
-                        *(
-                            {"$or": [
-                                {
-                                    f"card_trade_reservations.{card.id}": {
-                                        "$exists": False,
-                                    },
-                                },
-                                {
-                                    f"card_trade_reservations.{card.id}.until": {
-                                        "$lte": now,
-                                    },
-                                },
-                            ]}
-                            for card in CATEGORY_CARDS[category_id]
-                        ),
-                        revision_guard,
-                    ],
+        "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
+        "clan_name": account.clan_name,
+        "updated_at": now,
+        "confirmed_at": now,
+        "update_source": "category_ready",
+    }
+    if guild_id is not None:
+        identity["guild_id"] = guild_id
+    async with _inventory_lock(tag):
+        # No revision guard and no reservation guard. This writes no card
+        # states, so there is nothing for a concurrent edit to clobber and
+        # nothing an accepted trade needs protecting from.
+        await mongo.card_inventories.update_one(
+            {"_id": tag},
+            {
+                "$set": identity,
+                "$addToSet": {
+                    "reviewed_lists": {"$each": steps},
+                    "complete_categories": category_id,
                 },
-                update_document,
-            )
-            if getattr(result, "matched_count", 1):
-                return await mongo.card_inventories.find_one({"_id": tag}) or {}
-            current = await mongo.card_inventories.find_one({"_id": tag}) or {}
-            if _category_has_reservations(current, category_id):
-                raise ActiveCardTradeError
-        raise InventoryWriteConflict
+                "$inc": {"inventory_revision": 1},
+            },
+        )
+        return await mongo.card_inventories.find_one({"_id": tag}) or {}
 
 
 def _inventory_revision_value(inventory: dict) -> int:
@@ -9156,6 +9108,46 @@ async def cards_hidden(
     return await _hidden_badge_review_view(account, inventory)
 
 
+def _parse_quantity_target(value: object) -> tuple[str, str | None, int]:
+    """Split `tag|category|page`, defaulting the page to the first.
+
+    Explicit split, not _parse_target: that helper only ever returns a second
+    value when the second field is a category id, so handing it a three-field
+    id silently loses the page.
+    """
+    parts = str(value or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    category_id = (
+        parts[1] if len(parts) > 1 and parts[1] in CATEGORY_BY_ID else None
+    )
+    page = 0
+    if len(parts) > 2:
+        try:
+            page = int(parts[2])
+        except (TypeError, ValueError):
+            page = 0
+    return tag, category_id, page
+
+
+async def _quantity_page(
+    ctx,
+    action_id: str,
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+):
+    """Shared open/refresh for the quantity editor."""
+    tag, category_id, page = _parse_quantity_target(action_id)
+    if category_id is None:
+        return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    return _quantity_editor(account, inventory, category_id, page=page)
+
+
 @register_action("cards_category")
 @lightbulb.di.with_di
 async def cards_category(
@@ -9165,65 +9157,128 @@ async def cards_category(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    tag, category_id = _parse_target(action_id)
-    if category_id is None:
-        return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
+    # No category-wide reservation gate any more. Writes are per card, and
+    # _write_card_state still refuses a reserved one, so a single held card no
+    # longer locks the other eighteen.
+    return await _quantity_page(
+        ctx, action_id, coc_client=coc_client, mongo=mongo
     )
-    if problem:
-        return problem
-    if _category_has_reservations(inventory, category_id):
-        return _active_trade_notice(account.tag)
-    return _category_editor(account, inventory, category_id)
 
 
-async def _selection_update(
-    ctx,
+@register_action("cards_qty")
+@lightbulb.di.with_di
+async def cards_qty(
+    ctx: lightbulb.components.MenuContext,
     action_id: str,
-    *,
-    mode: str,
-    coc_client: coc.Client,
-    mongo: MongoClient,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
 ):
-    tag, category_id = _parse_target(action_id)
+    return await _quantity_page(
+        ctx, action_id, coc_client=coc_client, mongo=mongo
+    )
+
+
+@register_action("cards_qjump")
+@lightbulb.di.with_di
+async def cards_qjump(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Jump to the page holding the chosen card, not to a separate screen."""
+    tag, category_id, _page = _parse_quantity_target(action_id)
     if category_id is None:
         return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
+    chosen = next(iter(getattr(ctx.interaction, "values", ()) or ()), None)
     account, inventory, problem = await _load_target(
         ctx, tag, coc_client=coc_client, mongo=mongo
     )
     if problem:
         return problem
-    if _category_has_reservations(inventory, category_id):
-        return _active_trade_notice(account.tag)
-    selected = list(getattr(ctx.interaction, "values", ()) or ())
+    page = (
+        _page_holding_card(category_id, chosen)
+        if chosen in CARD_BY_ID
+        else 0
+    )
+    return _quantity_editor(account, inventory, category_id, page=page)
+
+
+@register_action("cards_qstep")
+@lightbulb.di.with_di
+async def cards_qstep(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """One step on one card, then redraw the same page in place."""
+    parts = str(action_id or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    card_id = parts[1] if len(parts) > 1 and parts[1] in CARD_BY_ID else None
+    if card_id is None:
+        return _notice("Unknown card", "Re-run `/cards` to open a fresh panel.")
     try:
-        inventory = await _write_category(
+        delta = int(parts[2]) if len(parts) > 2 else 0
+    except (TypeError, ValueError):
+        delta = 0
+    try:
+        page = int(parts[3]) if len(parts) > 3 else 0
+    except (TypeError, ValueError):
+        page = 0
+
+    category_id = CARD_BY_ID[card_id].category
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    current = normalize_cards(inventory.get("cards")).get(card_id, OWNED)
+    if not isinstance(current, int):
+        current = OWNED
+    target = max(MISSING, min(current + delta, MAX_COPIES))
+    try:
+        updated = await _write_card_state(
             mongo,
             account,
             inventory,
-            category_id,
-            selected,
-            mode=mode,
+            card_id,
+            target,
+            expected_revision=_inventory_revision_value(inventory),
             discord_id=int(ctx.user.id),
             guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
-        return _active_trade_notice(account.tag)
-    except InventoryWriteConflict:
-        return _inventory_retry_notice()
-    return _category_editor(account, inventory, category_id)
+        return _quantity_editor(
+            account, inventory, category_id, page=page,
+            saved=f"{CARD_BY_ID[card_id].name} is reserved and was not changed.",
+        )
+    except (InventoryWriteConflict, ValueError):
+        current_doc = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        return _quantity_editor(
+            account, current_doc, category_id, page=page,
+            saved="The collection changed, so this page was refreshed.",
+        )
+    return _quantity_editor(
+        account, updated, category_id, page=page,
+        saved=_saved_count_line(CARD_BY_ID[card_id].name, target),
+    )
 
 
-async def _clear_category_list(
-    ctx,
+@register_action("cards_ready")
+@lightbulb.di.with_di
+async def cards_ready(
+    ctx: lightbulb.components.MenuContext,
     action_id: str,
-    *,
-    mode: str,
-    coc_client: coc.Client,
-    mongo: MongoClient,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
 ):
-    tag, category_id = _parse_target(action_id)
+    """Mark the category tradeable. Nothing else makes a member matchable."""
+    tag, category_id, page = _parse_quantity_target(action_id)
     if category_id is None:
         return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
     account, inventory, problem = await _load_target(
@@ -9231,142 +9286,21 @@ async def _clear_category_list(
     )
     if problem:
         return problem
-    if _category_has_reservations(inventory, category_id):
-        return _active_trade_notice(account.tag)
     try:
-        inventory = await _write_category(
+        updated = await _write_category_ready(
             mongo,
             account,
             inventory,
             category_id,
-            [],
-            mode=mode,
             discord_id=int(ctx.user.id),
             guild_id=_trade_guild_id(ctx),
         )
-    except ActiveCardTradeError:
-        return _active_trade_notice(account.tag)
-    except InventoryWriteConflict:
+    except (InventoryWriteConflict, ValueError):
         return _inventory_retry_notice()
-    return _category_editor(account, inventory, category_id)
-
-
-@register_action("cards_set_missing")
-@lightbulb.di.with_di
-async def cards_set_missing(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _selection_update(
-        ctx,
-        action_id,
-        mode="missing",
-        coc_client=coc_client,
-        mongo=mongo,
+    return _quantity_editor(
+        account, updated, category_id, page=page,
+        saved=f"{CATEGORY_BY_ID[category_id].name} can be traded now.",
     )
-
-
-@register_action("cards_set_duplicates")
-@lightbulb.di.with_di
-async def cards_set_duplicates(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _selection_update(
-        ctx,
-        action_id,
-        mode="duplicates",
-        coc_client=coc_client,
-        mongo=mongo,
-    )
-
-
-@register_action("cards_clear_missing")
-@lightbulb.di.with_di
-async def cards_clear_missing(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _clear_category_list(
-        ctx,
-        action_id,
-        mode="missing",
-        coc_client=coc_client,
-        mongo=mongo,
-    )
-
-
-@register_action("cards_clear_duplicates")
-@lightbulb.di.with_di
-async def cards_clear_duplicates(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    return await _clear_category_list(
-        ctx,
-        action_id,
-        mode="duplicates",
-        coc_client=coc_client,
-        mongo=mongo,
-    )
-
-
-@register_action("cards_baseline")
-@lightbulb.di.with_di
-async def cards_baseline(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    tag, category_id = _parse_target(action_id)
-    if category_id is None:
-        return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
-    account, inventory, problem = await _load_target(
-        ctx, tag, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    if _category_has_reservations(inventory, category_id):
-        return _active_trade_notice(account.tag)
-    reviewed = set(inventory.get("reviewed_lists") or ())
-    missing_reviewed = f"{category_id}:missing" in reviewed
-    duplicates_reviewed = f"{category_id}:duplicates" in reviewed
-    if missing_reviewed and not duplicates_reviewed:
-        mode = "duplicates"
-    elif duplicates_reviewed and not missing_reviewed:
-        mode = "missing"
-    else:
-        mode = "baseline"
-    try:
-        inventory = await _write_category(
-            mongo,
-            account,
-            inventory,
-            category_id,
-            [],
-            mode=mode,
-            discord_id=int(ctx.user.id),
-            guild_id=_trade_guild_id(ctx),
-        )
-    except ActiveCardTradeError:
-        return _active_trade_notice(account.tag)
-    except InventoryWriteConflict:
-        return _inventory_retry_notice()
-    return _category_editor(account, inventory, category_id)
 
 
 @register_action("cards_favours")

@@ -180,15 +180,16 @@ to spare; and it is one write primitive with one revision guard rather than
 several. The category menu stays mounted below, so correcting several cards in
 one category is pick, tap, pick, tap without returning to the board.
 
-The older four-per-page category browser and the **Advanced manual editor**
-remain for a deliberate full-category rebuild, which is still how a category
-earns its completeness. Every card has framed artwork, its saved state,
-and direct **-1**/**+1** controls. Missing art is gray with an X, spares carry
-`x2+`, and possible spares carry `?`. Previous, Find card, and Next avoid the
-old category-list workflow. Each write changes only that card, checks its exact
-reservation, and uses the inventory revision as a compare-and-swap guard.
-Accepted swaps on other cards do not block it; stale controls never overwrite
-newer collection data.
+**Edit counts** walks one category six cards at a time. Each card is a line
+of text - troop emoji, name, and what you currently have - above its own
+**-1**/**+1** pair, with Previous, Next and a **Jump to a card** menu below.
+Six is the largest page that fits: at six the screen uses 36 of Discord's 40
+components, and Discord rejects the whole message past 40. Paging is in game
+order, never the member's chosen sort, so changing a count cannot move a card
+to another page while they are tapping it. Each write changes only that card,
+checks that exact card's reservation, and uses the inventory revision as a
+compare-and-swap guard. Accepted swaps on other cards do not block it, so one
+held card no longer locks the other eighteen in its category.
 
 When a screenshot proves ownership but the reward bar hides the duplicate
 badge, duplicate review also uses the individual card screen. The member sees
@@ -234,11 +235,19 @@ same.
   comma-joined runs of names, which wrap into a paragraph on a phone.
   `troop_emoji.markup()` returns `""` for an unsynced troop and never raises.
 
-The category editor remains under **Advanced manual editor** for first-time
-manual setup or a deliberate full-category rebuild. Every unselected card in a
-category defaults to one copy, so the member records only missing/duplicate
-exceptions. A category becomes matchable only after both lists have been
-reviewed. Category writes retain their bounded revision compare-and-swap retry.
+**Edit counts** is the router for first-time manual setup or a deliberate
+rebuild: four buttons, one per category, each opening that category's pages.
+Cards default to one copy, so the member only has to change the exceptions.
+
+A category is matchable only once it is in `complete_categories`, because
+`find_matches` intersects that field across both players. Two things write it:
+a confirmed screenshot scan, which completes all four at once, and the
+**Ready to trade** button on the quantity editor, which completes one. That
+button is the direct replacement for the old two-list model, where a category
+earned completeness by having both its missing and duplicate lists submitted.
+It is its own write and not a reuse of `apply_category_selection(mode=
+"baseline")`, which resets every card in the category to one copy and would
+therefore discard the counts the member had just entered.
 **Everything still accurate** refreshes confirmation without re-entering data.
 
 ## Family board, matching, and freshness
