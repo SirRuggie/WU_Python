@@ -6006,6 +6006,35 @@ def test_the_proposal_dm_states_the_category_rule_and_the_gem_price():
     assert "Only same-category trades exist" in text
 
 
+def test_who_has_tells_you_what_to_do_when_you_cannot_ask():
+    """It listed people and stopped, with no button and no explanation."""
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["clan_tag"] = "#MW"
+    inventory["cards"]["balloon"] = cards.MISSING     # elixir, and no spares
+    holder = _complete_inventory(tag="#H", clan_tag="#MW")
+    holder["cards"]["balloon"] = cards.DUPLICATE
+    holder["player_name"] = "Holder"
+    holder["discord_id"] = 9
+
+    view = cards_command._holders_view(
+        account, "balloon",
+        cards.holders_for_card(inventory, [holder], "balloon"),
+    )
+    text = _view_text(view)
+    labels = [
+        str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
+    ]
+
+    assert "Ask to swap" not in labels, "no spare means no request is possible"
+    assert "What to do now" in text
+    assert "They have to start it" in text
+    assert "50 gems" in text
+
+
 def test_the_gem_prices_match_the_event():
     """Wrong numbers here cost somebody real money, so they are pinned."""
     assert cards.TRADE_GEM_COST == {

@@ -4084,6 +4084,28 @@ def _holders_view(
             "-# Nothing is reserved until they accept. If you are in different "
             "clans, move only after acceptance."
         )))
+    elif holders:
+        # No Ask button on any of them, and until now the screen said nothing
+        # about why - it just listed people and stopped. The event will not let
+        # you post a request without a duplicate to offer, so the trade has to
+        # start from their side and the instructions have to say so.
+        cost = TRADE_GEM_COST.get(card.category, 0)
+        components.extend([
+            Separator(divider=True),
+            Text(content=(
+                f"## {emojis.card_give} What to do now\n"
+                f"You have no spare **{category.short_name}** card, and the "
+                "game will not let you post a request without one to offer. "
+                "**They have to start it.**\n\n"
+                f"**1.** Message one of the players above and ask for "
+                f"{_card_label(card)}.\n"
+                "**2.** They post the trade offer in game, asking for any "
+                f"**{category.short_name}** card back.\n"
+                f"**3.** You tap Trade and choose **Use Gems** — "
+                f"**{cost} gems**. You keep everything you own.\n\n"
+                "-# You must be in the same clan for the swap itself."
+            )),
+        ])
     if pages > 1:
         components.extend([
             Separator(divider=True),
