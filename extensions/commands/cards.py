@@ -4711,15 +4711,34 @@ def _trade_offer_names(trade: dict) -> str:
     return _card_names(card_ids, limit=8)
 
 
-def _trade_location_line(trade: dict) -> str:
-    requester_clan = _normalize_tag(trade.get("requester_clan_tag"))
-    holder_clan = _normalize_tag(trade.get("holder_clan_tag"))
-    if requester_clan and requester_clan == holder_clan:
+def _trade_location_line(trade: dict, *, role: str | None = None) -> str:
+    """Where both accounts are, named.
+
+    The different-clans case used to say only "you are in different family
+    clans", which is the one case where the names matter: somebody has to
+    move, and they cannot decide who without knowing where the other one is.
+    """
+    requester = (
+        trade.get("requester_clan_name"),
+        _normalize_tag(trade.get("requester_clan_tag")),
+    )
+    holder = (
+        trade.get("holder_clan_name"),
+        _normalize_tag(trade.get("holder_clan_tag")),
+    )
+    if requester[1] and requester[1] == holder[1]:
         # The name first: a bare tag tells a member nothing about where that is.
-        return "You are both in " + _clan_label(
-            trade.get("requester_clan_name"), requester_clan
-        )
-    return "You are in different family clans."
+        return "You are both in " + _clan_label(*requester)
+    if role not in {"holder", "requester"}:
+        # The channel post is read by everyone, so it names neither side "you".
+        return f"{_clan_label(*requester)} and {_clan_label(*holder)}"
+    mine, theirs = (
+        (holder, requester) if role == "holder" else (requester, holder)
+    )
+    return (
+        f"you are in {_clan_label(*mine)}, "
+        f"they are in {_clan_label(*theirs)}"
+    )
 
 
 def _trade_channel_content(trade: dict) -> str:
@@ -4867,7 +4886,7 @@ def _trade_proposal_dm(
             f"**You give:** {_card_label(wanted)}\n"
             f"{receive}\n\n"
             f"**Your account:** {holder} • `{trade['holder_tag']}`\n"
-            f"**Clans:** {_trade_location_line(trade)}"
+            f"**Clans:** {_trade_location_line(trade, role='holder')}"
         ),
         accent=GREEN_ACCENT,
         attachment=attachment,
@@ -4903,10 +4922,13 @@ async def _notify_trade_accepted(bot: hikari.GatewayBot, trade: dict) -> bool:
     # step that sent people back into the server for nothing; state the
     # requirement once and let the two players sort it out.
     next_step = (
-        "**You are in different clans.** One of you needs to move so you are "
-        "in the same clan, then send the cards in game."
+        "**Different clans:** "
+        + _trade_location_line(trade, role="requester")
+        + ".\nOne of you needs to move so you are in the same clan, then send "
+        "the cards in game."
         if status == "move_needed"
-        else "**You are in the same clan.** Send the cards in game."
+        else "**Same clan:** " + _trade_location_line(trade, role="requester")
+        + ". Send the cards in game."
     )
     return await _send_trade_dm(
         bot,

@@ -5643,6 +5643,34 @@ def test_no_match_can_fall_between_the_two_lists():
     assert "Electro Dragon" in _view_text(view)
 
 
+def test_different_clans_names_both_of_them():
+    """"You are in different clans" is useless when somebody has to move."""
+    trade = {
+        "requester_clan_name": "Morning Woods", "requester_clan_tag": "#HOME",
+        "holder_clan_name": "Edrag Rush", "holder_clan_tag": "#AWAY",
+    }
+    holder_view = cards_command._trade_location_line(trade, role="holder")
+    requester_view = cards_command._trade_location_line(trade, role="requester")
+
+    # Both clans named, and "you" points at whoever is reading.
+    for text in (holder_view, requester_view):
+        assert "Morning Woods" in text and "#HOME" in text
+        assert "Edrag Rush" in text and "#AWAY" in text
+    assert holder_view.startswith("you are in Edrag Rush")
+    assert requester_view.startswith("you are in Morning Woods")
+
+    # The channel post is read by everyone, so it names neither side "you".
+    everyone = cards_command._trade_location_line(trade)
+    assert "you are in" not in everyone
+    assert "Morning Woods" in everyone and "Edrag Rush" in everyone
+
+    together = cards_command._trade_location_line(
+        dict(trade, holder_clan_tag="#HOME", holder_clan_name="Morning Woods"),
+        role="holder",
+    )
+    assert together == "You are both in Morning Woods • `#HOME`"
+
+
 def test_who_has_what_destination_is_gone():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
