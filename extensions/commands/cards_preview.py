@@ -93,6 +93,8 @@ class CardsDmPreview(
             lightbulb.Choice("Accepted, same clan", "accepted_ready"),
             lightbulb.Choice("Cancelled", "cancelled"),
             lightbulb.Choice("Completed", "completed"),
+            lightbulb.Choice("MOCKUP: proposal with Accept in the DM", "dm_accept_one"),
+            lightbulb.Choice("MOCKUP: proposal with a pick-one menu", "dm_accept_many"),
             lightbulb.Choice("MOCKUP: did you send it?", "confirm_ask"),
             lightbulb.Choice("MOCKUP: you answered No", "confirm_no"),
             lightbulb.Choice("MOCKUP: you answered Yes", "confirm_yes"),
@@ -182,6 +184,18 @@ class CardsDmPreview(
             except Exception:
                 sent.append((f"{name} (mockup)", False))
 
+        await send_panel(
+            "dm_accept_one", "Proposal with Accept in the DM",
+            cards_command._trade_proposal_dm(
+                one, controls=True, preview=True
+            ),
+        )
+        await send_panel(
+            "dm_accept_many", "Proposal with a pick-one menu",
+            cards_command._trade_proposal_dm(
+                many, controls=True, preview=True
+            ),
+        )
         await send_panel(
             "confirm_ask", "Did you send it?",
             cards_command._swap_confirm_view(one, role="holder", preview=True),

@@ -4576,6 +4576,60 @@ async def _live_family_clans(
     return left_clan, right_clan
 
 
+def _trade_proposal_controls(
+    trade: dict, choices: list, *, preview: bool
+) -> list:
+    """Accept/decline for the proposal DM, so no server trip is needed.
+
+    With more than one card on offer the accept is a menu, because choosing
+    which card you want and agreeing to the swap are the same decision. One
+    option needs no menu.
+    """
+    trade_id = str(trade["_id"])
+    rows: list = []
+    if len(choices) > 1:
+        rows.append(ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_dm_accept:{trade_id}",
+            placeholder="Accept — pick the card you want",
+            min_values=1,
+            max_values=1,
+            is_disabled=preview,
+            options=[
+                SelectOption(
+                    label=card.name,
+                    value=card.id,
+                    emoji=troop_emoji.partial(card.id),
+                )
+                for card in choices[:25]
+            ],
+        )]))
+        rows.append(ActionRow(components=[Button(
+            style=hikari.ButtonStyle.DANGER,
+            custom_id=f"cards_dm_decline:{trade_id}",
+            label="Decline",
+            emoji=CANCEL_EMOJI,
+            is_disabled=preview,
+        )]))
+        return rows
+    rows.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            custom_id=f"cards_dm_accept:{trade_id}|{choices[0].id}",
+            label=f"Accept · take {choices[0].name}"[:80],
+            emoji=emojis.yes.partial_emoji,
+            is_disabled=preview,
+        ),
+        Button(
+            style=hikari.ButtonStyle.DANGER,
+            custom_id=f"cards_dm_decline:{trade_id}",
+            label="Decline",
+            emoji=CANCEL_EMOJI,
+            is_disabled=preview,
+        ),
+    ]))
+    return rows
+
+
 def _trade_dm_container(
     title: str,
     body: str,
@@ -4583,6 +4637,7 @@ def _trade_dm_container(
     accent: int,
     attachment=None,
     footer: str | None = None,
+    controls: list | None = None,
 ) -> list[Container]:
     """One shape for every trade DM, so they read like the panels do.
 
@@ -4597,6 +4652,9 @@ def _trade_dm_container(
         components.extend([Separator(divider=True), Media(items=[
             MediaItem(media=attachment),
         ])])
+    if controls:
+        components.append(Separator(divider=True))
+        components.extend(controls)
     if footer:
         components.extend([Separator(divider=True), Text(content=f"-# {footer}")])
     return [Container(accent_color=accent, components=components)]
@@ -4766,12 +4824,24 @@ async def _update_trade_channel(bot: hikari.GatewayBot, trade: dict) -> bool:
         return False
 
 
-async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
+def _trade_proposal_dm(
+    trade: dict,
+    *,
+    attachment=None,
+    controls: bool = False,
+    preview: bool = False,
+) -> list[Container]:
+    """The proposal DM.
+
+    `controls` adds accept/decline in the DM itself. It stays off until the
+    handlers behind those custom_ids exist - a button that answers "something
+    went wrong" is worse than no button. The preview command turns it on with
+    `preview=True`, which renders them disabled for reading.
+    """
     wanted = CARD_BY_ID[trade["wanted_card_id"]]
     given = CARD_BY_ID[trade["given_card_id"]]
     requester = _escape_markdown(trade.get("requester_name"), limit=60)
     holder = _escape_markdown(trade.get("holder_name"), limit=60)
-    attachment = await asyncio.to_thread(_trade_strip_attachment, trade)
     # Everything of theirs this holder could take, the proposed card first.
     # Naming one card and then mentioning the others as an aside read as a
     # contradiction: it stated what you receive, then said to pick.
@@ -4790,26 +4860,37 @@ async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
     else:
         receive = f"**You receive:** {_card_label(given)}"
         chooser = ""
+    return _trade_dm_container(
+        f"{emojis.inbox} New card proposal",
+        (
+            f"**{requester}** needs your spare {_card_label(wanted)}.\n\n"
+            f"**You give:** {_card_label(wanted)}\n"
+            f"{receive}\n\n"
+            f"**Your account:** {holder} • `{trade['holder_tag']}`\n"
+            f"**Clans:** {_trade_location_line(trade)}"
+        ),
+        accent=GREEN_ACCENT,
+        attachment=attachment,
+        controls=(
+            _trade_proposal_controls(trade, choices, preview=preview)
+            if controls
+            else None
+        ),
+        footer=(
+            "Nothing is reserved until you accept."
+            if controls
+            else "Run /cards in Warriors United and open My trades to accept "
+            f"or decline.{chooser} Nothing is reserved until you accept."
+        ),
+    )
+
+
+async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
+    attachment = await asyncio.to_thread(_trade_strip_attachment, trade)
     return await _send_trade_dm(
         bot,
         int(trade["holder_discord_id"]),
-        _trade_dm_container(
-            f"{emojis.inbox} New card proposal",
-            (
-                f"**{requester}** needs your spare {_card_label(wanted)}.\n\n"
-                f"**You give:** {_card_label(wanted)}\n"
-                f"{receive}\n\n"
-                f"**Your account:** {holder} • "
-                f"`{trade['holder_tag']}`\n"
-                f"**Clans:** {_trade_location_line(trade)}"
-            ),
-            accent=GREEN_ACCENT,
-            attachment=attachment,
-            footer=(
-                "Run /cards in Warriors United and open My trades to accept or "
-                f"decline.{chooser} Nothing is reserved until you accept."
-            ),
-        ),
+        _trade_proposal_dm(trade, attachment=attachment),
         trade_id=str(trade["_id"]),
     )
 
