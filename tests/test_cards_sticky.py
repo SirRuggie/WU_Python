@@ -455,3 +455,40 @@ def test_the_walkthrough_names_every_button_in_order():
     assert "DM" in text
     assert "by hand" in text
     assert "Did you send your card?" in text
+
+
+def test_every_sticky_button_is_registered_with_the_dispatcher():
+    """An unregistered custom_id is refused before any listener sees it.
+
+    extensions/components.py listens to EVERY component interaction, resolves
+    the name before the colon, and answers "this panel is out of date" when it
+    finds nothing. A plain event listener in this module never gets a look in,
+    which is exactly how the first version of the help button failed.
+    """
+    from extensions.components import _resolve
+
+    ids = [
+        child.custom_id
+        for container in sticky._sticky_components()
+        for node in container.components
+        for child in getattr(node, "components", ()) or ()
+        if getattr(child, "custom_id", None)
+    ]
+    assert ids, "the sticky has no interactive button at all"
+    for custom_id in ids:
+        name = custom_id.partition(":")[0]
+        assert _resolve(name) is not None, (
+            f"{custom_id} has no registered action, so clicking it is refused"
+        )
+
+
+def test_the_help_button_never_edits_the_sticky_itself():
+    """The dispatcher's default reply is an edit of the clicked message.
+
+    That message is the sticky, seen by everyone, so returning components
+    would replace the notice with a private walkthrough for the whole channel.
+    """
+    from extensions.components import _resolve
+
+    action = _resolve("cards_help")
+    assert action.no_return is True

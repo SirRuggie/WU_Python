@@ -23,6 +23,7 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
 )
 
+from extensions.components import register_action
 from utils.constants import BLUE_ACCENT
 from utils.emoji import emojis
 from utils.mongo import MongoClient
@@ -198,22 +199,22 @@ def _walkthrough() -> list[Container]:
     )]
 
 
-@loader.listener(hikari.InteractionCreateEvent)
-async def on_sticky_help(event: hikari.InteractionCreateEvent) -> None:
-    """Answer the sticky's help button.
+@register_action("cards_help", no_return=True)
+async def cards_help(ctx, action_id: str, **_kwargs) -> None:
+    """Answer the sticky's help button with a private walkthrough.
 
-    A plain listener rather than a `register_action` handler: the sticky is
-    posted by a background task, not by a command, so it has no button_store
-    row and nothing to look its action id up against.
+    Registered with the shared dispatcher rather than listening for the raw
+    event: that dispatcher handles EVERY component interaction, so an
+    unregistered custom_id is refused as an out-of-date panel before any other
+    listener sees it.
+
+    `no_return=True` because the dispatcher's normal reply is an EDIT of the
+    message that was clicked - which here is the sticky itself, so returning
+    components would replace the notice with this walkthrough for everybody.
+    A followup is a separate message and can be ephemeral.
     """
-    interaction = event.interaction
-    if not isinstance(interaction, hikari.ComponentInteraction):
-        return
-    if interaction.custom_id != "cards_help:sticky":
-        return
     try:
-        await interaction.create_initial_response(
-            hikari.ResponseType.MESSAGE_CREATE,
+        await ctx.interaction.execute(
             components=_walkthrough(),
             flags=(
                 hikari.MessageFlag.IS_COMPONENTS_V2
