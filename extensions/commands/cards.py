@@ -3173,8 +3173,16 @@ def _match_list_view(
     return [Container(accent_color=accent, components=body)]
 
 
-def _favours_view(account, matches: list, *, page: int = 0) -> list[Container]:
-    """Cards somebody could hand over with nothing of yours to give back."""
+def _favours_view(
+    account, matches: list, *, page: int = 0, spares: int = 0
+) -> list[Container]:
+    """Cards somebody could hand over with nothing of yours to give back.
+
+    Only a same-category swap is free in the event, so everything on this
+    screen costs the sender gems. Saying so is the difference between a member
+    wondering why nobody replies and understanding they are asking a favour
+    that costs real money.
+    """
     per_card = _offers_by_card(matches)
     oneway = [c for c in CARDS if c.id in per_card and not per_card[c.id]["mutual"]]
     pages = max(1, math.ceil(len(oneway) / MATCH_LIST_PAGE))
@@ -3184,8 +3192,17 @@ def _favours_view(account, matches: list, *, page: int = 0) -> list[Container]:
         account,
         title=f"# {emojis.card_give} Ask for help",
         blurb=(
-            "You have nothing these players need, so they would get nothing "
-            "back. Tap the menu, pick a card, then ask whoever holds it."
+            (
+                "Nothing of yours matches these in the same category, and a "
+                "same-category swap is the only free one — so whoever sends "
+                "you these pays gems. Offer one of your spares anyway when "
+                "you ask; it is still a favour."
+                if spares
+                else "You have no spare cards yet, so whoever sends you these "
+                "pays gems and gets nothing back. Add your spares first, or "
+                "ask politely."
+            )
+            + " Tap the menu, pick a card, then ask whoever holds it."
         ),
         rows="",
         action="cards_favours",
@@ -8605,8 +8622,12 @@ async def cards_favours(
         mongo, inventory, guild_id=_trade_guild_id(ctx)
     )
     available = _without_reserved_cards(inventory)
+    mine = normalize_cards(available.get("cards"))
     return _favours_view(
-        account, find_matches(available, candidates), page=page
+        account,
+        find_matches(available, candidates),
+        page=page,
+        spares=sum(1 for value in mine.values() if value >= DUPLICATE),
     )
 
 

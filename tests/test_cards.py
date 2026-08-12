@@ -6048,3 +6048,20 @@ def test_no_screen_overflows_with_a_hundred_family_members():
         for node in _view_nodes(view):
             if node.get("type") == 3:
                 assert len(node["options"]) <= 25, name
+
+
+def test_ask_for_help_says_who_pays_gems():
+    """Only a same-category swap is free, so this screen costs somebody money."""
+    account, inventory, _holders, matches = _two_way_and_one_way()
+
+    with_spares = _view_text(
+        cards_command._favours_view(account, matches, spares=3)
+    )
+    assert "gems" in with_spares
+    assert "same-category swap is the only free one" in with_spares
+
+    none = _view_text(cards_command._favours_view(account, matches, spares=0))
+    assert "gems" in none
+    assert "no spare cards yet" in none
+    # Somebody with nothing to offer is told to fix that first.
+    assert "Add your spares first" in none
