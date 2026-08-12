@@ -5132,9 +5132,11 @@ def _card_label(card) -> str:
 def _clan_label(name: object, tag: object) -> str:
     """`Name • #TAG`. A bare tag tells a member nothing about where that is."""
     clan_tag = _normalize_tag(tag)
-    clan_name = _escape_markdown(str(name or "").strip(), limit=50)
-    if clan_name and clan_tag:
-        return f"{clan_name} • `{clan_tag}`"
+    raw_name = str(name or "").strip()
+    # `_escape_markdown` substitutes "Unknown" for an empty value, which would
+    # render a nameless clan as "Unknown • #TAG". The tag alone is honest.
+    if raw_name and clan_tag:
+        return f"{_escape_markdown(raw_name, limit=50)} • `{clan_tag}`"
     return f"`{clan_tag}`" if clan_tag else "no clan"
 
 

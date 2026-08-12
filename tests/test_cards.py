@@ -901,7 +901,8 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     assert "You receive one of:" in content
     assert "You pick which one when you accept" in content
     assert "You receive:" not in content
-    assert "different family clans" in content
+    # Both clans are named now, because somebody has to decide who moves.
+    assert "#HOME" in content and "#AWAY" in content
     assert "token" not in content.casefold()
     assert "password" not in content.casefold()
     # Mounted in the container's gallery, which is the only way a V2
@@ -911,7 +912,9 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     channel_copy = cards_command._trade_channel_content(trade)
     assert "Shaun needs your duplicate Root Rider" in channel_copy
     assert "Wizard, Dragon" in channel_copy
-    assert "different family clans" in channel_copy
+    # The channel post names both clans and calls neither side "you".
+    assert "`#HOME`" in channel_copy and "`#AWAY`" in channel_copy
+    assert "you are in" not in channel_copy
 
     class ClosedRest:
         async def create_dm_channel(self, _discord_id):
