@@ -2717,15 +2717,19 @@ def _update_overview(account, inventory: dict) -> list[Container]:
             # read as a settings dialog from some other product.
             Text(content="# Bulk edit"),
             Text(content=intro),
-            # No divider. The bold heading below already marks the break
-            # between what this screen is and what to do next, and on a screen
-            # this short a rule under two lines of text is a line for its own
-            # sake.
+            # A bold heading is not enough on its own here. Rendered, the
+            # title, the explanation, the heading, four buttons and Back ran
+            # together as one block with nothing marking where reading stops
+            # and choosing starts.
+            Separator(divider=True),
             Text(content="**Choose a category**"),
             # One row each, so they stack. Four in a single row is laid out
             # horizontally by Discord and wrapped 3 + 1, which read as three
             # choices and an afterthought rather than one list of four.
             *(ActionRow(components=[button]) for button in buttons),
+            # Back is navigation, not a fifth category. Without this it sat
+            # directly under Super Troops and read as one more choice.
+            Separator(divider=True),
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
