@@ -54,6 +54,7 @@ from utils.cards import (
     CATEGORY_CARDS,
     DUPLICATE,
     MATCHABLE_FOR,
+    TRADE_GEM_COST,
     MAX_COPIES,
     MISSING,
     OWNED,
@@ -3060,17 +3061,33 @@ def _holder_line(match, ordinal: int, *, clan_emoji: dict | None = None) -> str:
         else "no clan"
     )
     standing = "**same clan**" if match.same_clan else "different clan"
-    returns = []
+    returns: list[str] = []
+    wanted: list[str] = []
+    categories: set[str] = set()
     for exchange in match.exchanges:
         returns.extend(exchange.returns)
-    wants = (
-        "wants " + ", ".join(
-            CARD_BY_ID[card_id].name for card_id in returns[:3]
+        wanted.extend(exchange.wanted_returns)
+        categories.add(exchange.category)
+    if wanted:
+        wants = "wants " + ", ".join(
+            CARD_BY_ID[card_id].name for card_id in wanted[:3]
             if card_id in CARD_BY_ID
         )
-        if returns
-        else "wants nothing back"
-    )
+    elif returns:
+        # They already own everything you could give, which is fine: your card
+        # becomes a duplicate for them. This used to read "wants nothing back",
+        # which sounded like a decision they had made rather than a fact about
+        # your own collection.
+        wants = "your card becomes a spare for them"
+    else:
+        cost = max(
+            (TRADE_GEM_COST.get(category, 0) for category in categories),
+            default=0,
+        )
+        wants = (
+            f"you have no spare to give — **costs you {cost} gems**"
+            if cost else "you have no spare to give"
+        )
     return (
         f"**{ordinal}. {_escape_markdown(match.holder_name, limit=40)}** "
         f"{mention}\n"
@@ -3132,14 +3149,22 @@ def _offers_by_card(matches: list) -> dict[str, dict]:
     per_card: dict[str, dict] = {}
     for match in matches:
         for exchange in match.exchanges:
-            mutual = bool(exchange.returns)
+            # Three different trades, and the difference is what it costs you.
+            # `free` means you hold a same-category duplicate to hand over;
+            # without one the event makes you pay gems instead. `mutual` is
+            # the subset where they are also missing what you would give.
+            free = bool(exchange.returns)
+            mutual = bool(exchange.wanted_returns)
             for card_id in exchange.offers:
                 entry = per_card.setdefault(
-                    card_id, {"givers": set(), "mutual": set()}
+                    card_id,
+                    {"givers": set(), "mutual": set(), "free": set()},
                 )
                 entry["givers"].add(match.holder_tag)
                 if mutual:
                     entry["mutual"].add(match.holder_tag)
+                if free:
+                    entry["free"].add(match.holder_tag)
     return per_card
 
 
@@ -3265,12 +3290,15 @@ def _match_list_view(
 def _favours_view(
     account, matches: list, *, page: int = 0, spares: int = 0
 ) -> list[Container]:
-    """Cards somebody could hand over with nothing of yours to give back.
+    """Cards in a category where you hold no duplicate at all.
 
-    Only a same-category swap is free in the event, so everything on this
-    screen costs the sender gems. Saying so is the difference between a member
-    wondering why nobody replies and understanding they are asking a favour
-    that costs real money.
+    These cost YOU gems, not the holder. The event only lets a request be
+    posted by somebody offering a duplicate, so when you have none the holder
+    posts the offer and you answer it - and answering without a duplicate of
+    what they asked for is exactly what the gems pay for.
+
+    This screen previously said the sender paid, which is backwards, and
+    quoted no figure at all.
     """
     per_card = _offers_by_card(matches)
     oneway = [c for c in CARDS if c.id in per_card and not per_card[c.id]["mutual"]]
@@ -3278,18 +3306,16 @@ def _favours_view(
         account,
         title=f"# {emojis.card_give} Ask for help",
         blurb=(
-            (
-                "Nothing of yours matches these in the same category, and a "
-                "same-category swap is the only free one — so whoever sends "
-                "you these pays gems. Offer one of your spares anyway when "
-                "you ask; it is still a favour."
-                if spares
-                else "You have no spare cards yet, so whoever sends you these "
-                "pays gems and gets nothing back. Add your spares first, or "
-                "ask politely."
+            "You have no spare in these categories, so there is nothing you "
+            "can hand over — **you pay gems instead**: "
+            + " · ".join(
+                f"{CATEGORY_BY_ID[category].short_name} **{cost}**"
+                for category, cost in TRADE_GEM_COST.items()
+                if category in CATEGORY_BY_ID
             )
-            + " Open the menu for the card you want, pick it, then ask "
-            "whoever holds it."
+            + ". The other player posts the trade in game and you answer it. "
+            "Open the menu for the card you want, pick it, then ask whoever "
+            "holds it."
         ),
         rows="",
         action="cards_favours",
@@ -3795,9 +3821,13 @@ def _matches_view(
     # A swap where both sides get something is the one worth doing first. The
     # rest are still real - somebody may hand a card over for a duplicate they
     # do not need - so they stay, one rank down rather than mixed in.
-    mutual_ids = [c for c in CARDS if c.id in per_card and per_card[c.id]["mutual"]]
+    # Split on cost, not on whether they happen to want your card. A swap
+    # where they already own what you give is still free and still legal - it
+    # just leaves them a duplicate. Only a category where you hold no spare at
+    # all costs you gems, and that is the one worth separating.
+    mutual_ids = [c for c in CARDS if c.id in per_card and per_card[c.id]["free"]]
     oneway_ids = [
-        c for c in CARDS if c.id in per_card and not per_card[c.id]["mutual"]
+        c for c in CARDS if c.id in per_card and not per_card[c.id]["free"]
     ]
     holders_total = len({match.holder_tag for match in matches})
 

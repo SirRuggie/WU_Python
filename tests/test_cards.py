@@ -169,7 +169,12 @@ def test_matching_prefers_same_clan_reciprocal_and_rejects_stale_inventory():
     assert found[0].offers == ("root_rider",)
     assert found[0].returns == ("wizard",)
     assert found[0].same_clan is True
-    assert found[1].returns == ()
+    assert found[0].wanted_returns == ("wizard",)
+    # The other holder already owns the wizard, which does NOT disqualify it:
+    # the event lets any same-category duplicate be offered and they simply
+    # end up with a spare. It is only a worse trade, not an illegal one.
+    assert found[1].returns == ("wizard",)
+    assert found[1].wanted_returns == ()
 
 
 def test_specific_card_lookup_lists_fresh_duplicate_holders_only():
@@ -5969,21 +5974,59 @@ def test_no_screen_overflows_with_a_hundred_family_members():
                 assert len(node["options"]) <= 25, name
 
 
-def test_ask_for_help_says_who_pays_gems():
-    """Only a same-category swap is free, so this screen costs somebody money."""
-    account, inventory, _holders, matches = _two_way_and_one_way()
+def test_ask_for_help_says_you_pay_and_quotes_the_real_price():
+    """It said the SENDER pays, which is backwards, and quoted no figure.
 
-    with_spares = _view_text(
-        cards_command._favours_view(account, matches, spares=3)
-    )
-    assert "gems" in with_spares
-    assert "same-category swap is the only free one" in with_spares
+    The gems cover the card you cannot supply a duplicate of, so they come out
+    of the asker's pocket, and the price is fixed per category.
+    """
+    account, _inventory, _holders, matches = _two_way_and_one_way()
+    text = _view_text(cards_command._favours_view(account, matches))
 
-    none = _view_text(cards_command._favours_view(account, matches, spares=0))
-    assert "gems" in none
-    assert "no spare cards yet" in none
-    # Somebody with nothing to offer is told to fix that first.
-    assert "Add your spares first" in none
+    assert "you pay gems instead" in text
+    for cost in (50, 70, 90, 110):
+        assert str(cost) in text
+    # The holder posts the offer in this direction, not the asker.
+    assert "posts the trade in game" in text
+
+
+def test_the_gem_prices_match_the_event():
+    """Wrong numbers here cost somebody real money, so they are pinned."""
+    assert cards.TRADE_GEM_COST == {
+        "elixir": 50,
+        "dark_elixir": 70,
+        "builder_base": 90,
+        "super_troop": 110,
+    }
+    # Every category has a price, or a screen would quote a blank one.
+    assert set(cards.TRADE_GEM_COST) == {c.id for c in cards.CATEGORIES}
+
+
+def test_a_card_they_already_own_is_still_a_legal_offer():
+    """The rule that hid most trades: they never had to be missing it."""
+    requester = _complete_inventory()
+    requester["cards"]["root_rider"] = cards.MISSING
+    requester["cards"]["wizard"] = cards.DUPLICATE
+    holder = _complete_inventory(tag="#H")
+    holder["cards"]["root_rider"] = cards.DUPLICATE
+    holder["cards"]["wizard"] = cards.OWNED      # they already have one
+
+    assert cards.reciprocal_trade_error(
+        requester, holder, "root_rider", "wizard"
+    ) is None
+
+
+def test_the_same_category_rule_is_still_absolute():
+    """Elixir for elixir, dark for dark. Nothing relaxed this."""
+    requester = _complete_inventory()
+    requester["cards"]["root_rider"] = cards.MISSING      # elixir
+    requester["cards"]["ice_hound"] = cards.DUPLICATE     # dark elixir
+    holder = _complete_inventory(tag="#H")
+    holder["cards"]["root_rider"] = cards.DUPLICATE
+
+    assert cards.reciprocal_trade_error(
+        requester, holder, "root_rider", "ice_hound"
+    ) == "Both cards must belong to the same category."
 
 
 def test_holders_in_your_clan_are_listed_first():

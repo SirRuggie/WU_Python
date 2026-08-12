@@ -34,6 +34,17 @@ AGING_FOR = timedelta(hours=48)
 # people whose cards were perfectly accurate, without ever telling them.
 # Visibility is now driven by whether they answer requests - see
 # `trading_paused` and the check-in flow in extensions/commands/cards.py.
+# Gems the responder pays when they hold no duplicate of the requested card.
+# Only a same-category trade exists at all - elixir for elixir, dark for dark,
+# builder for builder, super for super - so the cost keys on that category.
+# Source: Clash of Clans wiki, Clash of Cards, "Clan Chat Trades".
+TRADE_GEM_COST = {
+    "elixir": 50,
+    "dark_elixir": 70,
+    "builder_base": 90,
+    "super_troop": 110,
+}
+
 MATCHABLE_FOR = timedelta(days=3650)
 
 
@@ -66,7 +77,14 @@ class InventorySummary:
 class CategoryExchange:
     category: str
     offers: tuple[str, ...]
+    # Every same-category duplicate the requester could hand over. The event
+    # does NOT require the holder to be missing it - a second copy is simply a
+    # duplicate for them, which the Trader accepts. Treating "they need it" as
+    # a requirement hid most legal trades.
     returns: tuple[str, ...]
+    # The subset the holder is actually missing. Not a rule, just the better
+    # trade, so it still sorts first.
+    wanted_returns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +100,18 @@ class CardMatch:
 
     @property
     def reciprocal(self) -> bool:
+        """A genuine two-way trade: they are missing what you would give.
+
+        Keys on wanted_returns rather than returns. Since any same-category
+        duplicate became a legal offer, `returns` is non-empty for almost
+        everybody, so sorting on it would rank every holder identically and
+        the best trades would stop floating to the top.
+        """
+        return any(exchange.wanted_returns for exchange in self.exchanges)
+
+    @property
+    def free(self) -> bool:
+        """You hold a same-category duplicate, so this costs you no gems."""
         return any(exchange.returns for exchange in self.exchanges)
 
     @property
@@ -98,6 +128,14 @@ class CardMatch:
             card_id
             for exchange in self.exchanges
             for card_id in exchange.returns
+        )
+
+    @property
+    def wanted_returns(self) -> tuple[str, ...]:
+        return tuple(
+            card_id
+            for exchange in self.exchanges
+            for card_id in exchange.wanted_returns
         )
 
 
@@ -411,8 +449,9 @@ def reciprocal_trade_error(
         return "You no longer list the offered card as a duplicate."
     if holder_cards.get(wanted.id, OWNED) < DUPLICATE:
         return "The holder no longer lists the requested card as a duplicate."
-    if holder_cards.get(given.id, OWNED) != MISSING:
-        return "The holder no longer lists your offered card as missing."
+    # No check that the holder is MISSING the offered card. The event lets any
+    # same-category duplicate be offered; if they already own it they simply
+    # gain a duplicate, which the Trader takes. Requiring it hid most trades.
     return None
 
 
@@ -467,12 +506,15 @@ def find_matches(
                 card.id
                 for card in CATEGORY_CARDS[category_id]
                 if requester_cards.get(card.id, OWNED) >= DUPLICATE
-                and candidate_cards.get(card.id, OWNED) == MISSING
             ]
             exchanges.append(CategoryExchange(
                 category=category_id,
                 offers=tuple(category_offers),
                 returns=tuple(category_returns),
+                wanted_returns=tuple(
+                    card_id for card_id in category_returns
+                    if candidate_cards.get(card_id, OWNED) == MISSING
+                ),
             ))
 
         if not exchanges:
