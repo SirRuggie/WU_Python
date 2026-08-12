@@ -2341,6 +2341,9 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
         "cards_matches:#ME",
         "cards_trades:#ME",
         "cards_sort:#ME",
+        # Not setup-only: your cards keep changing after every category has
+        # been reviewed, and reviewing cannot be undone.
+        "cards_advanced:#ME",
         "cards_pick:#ME|elixir",
         "cards_pick:#ME|dark_elixir",
         "cards_pick:#ME|builder_base",
@@ -4632,9 +4635,10 @@ def test_collection_group_hides_controls_that_would_do_nothing():
     done_ids = {n.get("custom_id") for n in _view_nodes(done)}
     partial_ids = {n.get("custom_id") for n in _view_nodes(partial)}
 
-    # Bulk edit is for setup; Switch account needs a second account.
-    assert "cards_advanced:#ME" not in done_ids
+    # Switch account needs a second account. Bulk edit is NOT setup - your
+    # cards keep changing after review, so it stays on both.
     assert "cards_account_page:0" not in done_ids
+    assert "cards_advanced:#ME" in done_ids
     assert "cards_advanced:#ME" in partial_ids
     assert "cards_account_page:0" in partial_ids
     # Scanning is always available.
@@ -6696,6 +6700,28 @@ def test_the_admin_check_never_takes_the_panel_down(monkeypatch):
     bot = SimpleNamespace(cache=_Broken())
     assert cards_command._is_cards_admin(_admin_ctx(), bot=bot) is False
     assert cards_command._is_cards_admin_id(1, bot=bot) is False
+
+
+def test_bulk_edit_survives_reviewing_every_category():
+    """It vanished for anyone who finished reviewing, and never came back.
+
+    Reviewing a category cannot be undone, so the editor was gone for good -
+    on a collection that still had 28 missing cards.
+    """
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    reviewed = _complete_inventory()      # all four categories reviewed
+    assert len(reviewed["complete_categories"]) == len(cards.CATEGORIES)
+
+    view = cards_command._dashboard(account, reviewed, account_count=1)
+    labels = [
+        str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
+    ]
+
+    assert "Bulk edit" in labels
+    _assert_discord_payload(view)
 
 
 def test_the_admin_button_is_only_drawn_for_admins():

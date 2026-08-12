@@ -2080,12 +2080,15 @@ def _dashboard(
             custom_id=f"cards_hidden:{tag}",
             label=f"Check spares ({len(unverified_duplicates)})",
         ))
-    if not all_complete:
-        collection_row.append(Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_advanced:{tag}",
-            label="Bulk edit",
-        ))
+    # Always. This used to hide once every category had been reviewed, which
+    # took the editor away from exactly the people who had used the panel
+    # most - and reviewing your last category is not something you can undo,
+    # so it never came back. Missing cards keep changing after review.
+    collection_row.append(Button(
+        style=hikari.ButtonStyle.SECONDARY,
+        custom_id=f"cards_advanced:{tag}",
+        label="Bulk edit",
+    ))
     if complete and age != "fresh":
         collection_row.append(Button(
             style=hikari.ButtonStyle.SUCCESS,
