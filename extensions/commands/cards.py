@@ -2103,11 +2103,11 @@ def _dashboard(
         Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_advanced:{tag}",
-            # Named for when you would reach for it, not for what it does to
-            # the data. "Rebuild a category" is accurate and frightening; this
-            # is simply the alternative to scanning, which is the button
-            # beside it.
-            label="Enter by hand",
+            # The alternative to scanning, and named as setup rather than as a
+            # quick edit. "Enter by hand" promised a fast single-card fix and
+            # then opened a category-by-category walkthrough; the fast fix is
+            # the dropdowns above, which the instruction line already names.
+            label="Set up by hand",
             emoji=_safe_partial(emojis.edit),
         ),
     ]))

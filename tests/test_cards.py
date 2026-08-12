@@ -6721,7 +6721,7 @@ def test_rebuild_a_category_survives_reviewing_every_category():
         str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
     ]
 
-    assert "Enter by hand" in labels
+    assert "Set up by hand" in labels
     # Named for what it opens - a router of four category setups - not "Bulk
     # edit", which promised a quantity editor that has never existed.
     assert "Bulk edit" not in labels
