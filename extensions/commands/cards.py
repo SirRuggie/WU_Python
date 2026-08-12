@@ -2880,7 +2880,11 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
         ))
     body.extend([
         ActionRow(components=action_buttons),
-        Text(content="-# 2+ copies are stored simply as “duplicate”; exact counts are not required."),
+        # Was: "2+ copies are stored simply as "duplicate"; exact counts are
+        # not required." Two clauses joined by a semicolon, saying the same
+        # thing twice, to explain a storage detail. One short sentence answers
+        # the only question a member actually has: why they cannot enter 4.
+        Text(content="-# 2 or more copies count as a duplicate."),
         Media(items=[MediaItem(media=FOOTER)]),
     ])
     return [Container(accent_color=RED_ACCENT, components=body)]
