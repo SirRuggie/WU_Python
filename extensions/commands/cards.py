@@ -2990,6 +2990,49 @@ async def _candidate_inventories(
     ]
 
 
+def _holder_line(match, ordinal: int, *, clan_emoji: dict | None = None) -> str:
+    """One holder: their name, then everything else as one subtext line.
+
+    The category and the give/get pair used to repeat under every holder,
+    which is the same three lines said once per person. They are identical for
+    everyone on this screen, so they moved to the top and each holder is now
+    two lines instead of nine.
+    """
+    mention = (
+        f"<@{match.holder_discord_id}>"
+        if match.holder_discord_id
+        else "Discord member"
+    )
+    clan = str(match.holder_clan_name or "").strip()
+    badge = _clan_emoji_markup((clan_emoji or {}).get(
+        _normalize_tag(match.holder_clan_tag)
+    )) if clan else ""
+    where = (
+        f"{badge} {_escape_markdown(clan, limit=40)} • "
+        f"`{_normalize_tag(match.holder_clan_tag)}`"
+        if clan
+        else "no clan"
+    )
+    standing = "**same clan**" if match.same_clan else "different clan"
+    returns = []
+    for exchange in match.exchanges:
+        returns.extend(exchange.returns)
+    wants = (
+        "wants " + ", ".join(
+            CARD_BY_ID[card_id].name for card_id in returns[:3]
+            if card_id in CARD_BY_ID
+        )
+        if returns
+        else "wants nothing back"
+    )
+    return (
+        f"**{ordinal}. {_escape_markdown(match.holder_name, limit=40)}** "
+        f"{mention}\n"
+        f"-# {where} • {standing} • {wants} • "
+        f"confirmed {_relative_timestamp(match.confirmed_at)}"
+    )
+
+
 def _match_line(match, ordinal: int) -> str:
     """One holder, in three labelled parts with a blank line between each.
 
@@ -3433,15 +3476,46 @@ def _matches_view(
     )]
 
 
+async def _clan_emoji_map(mongo: MongoClient, holders: list) -> dict:
+    """{clan tag: emoji markup} for the clans on screen, best effort.
+
+    One query for the whole page. A failure is cosmetic - every clan just
+    falls back to a shield - so it must never take the panel down.
+    """
+    tags = {
+        _normalize_tag(match.holder_clan_tag)
+        for match in holders
+        if getattr(match, "holder_clan_tag", None)
+    }
+    if not tags:
+        return {}
+    try:
+        rows = await mongo.clans.find(
+            {"tag": {"$in": sorted(tags)}}, {"tag": 1, "emoji": 1}
+        ).to_list(length=len(tags))
+    except Exception:
+        _log.info("holder clan emoji lookup failed")
+        return {}
+    return {
+        _normalize_tag(row.get("tag")): str(row.get("emoji") or "")
+        for row in rows
+    }
+
+
 def _holders_view(
     account,
     card_id: str,
     holders: list,
     *,
     page: int = 0,
+    clan_emoji: dict | None = None,
 ) -> list[Container]:
     card = CARD_BY_ID[card_id]
     category = CATEGORY_BY_ID[card.category]
+    # Same clan first: those two can trade right now, everybody else has to
+    # move an account before the cards can go anywhere. Stable within each
+    # group, so the underlying match order still decides ties.
+    holders = sorted(holders, key=lambda match: not match.same_clan)
     pages = max(1, math.ceil(len(holders) / HOLDER_RESULT_LIMIT))
     page = min(max(0, page), pages - 1)
     start = page * HOLDER_RESULT_LIMIT
@@ -3481,7 +3555,9 @@ def _holders_view(
                 # A rule between people, so six holders read as six entries
                 # rather than one continuous block of names and cards.
                 holder_components.append(Separator(divider=True))
-            line = Text(content=_match_line(holder, index))
+            line = Text(content=_holder_line(
+                holder, index, clan_emoji=clan_emoji
+            ))
             if tag in askable:
                 holder_components.append(Section(
                     components=[line],
@@ -3501,11 +3577,22 @@ def _holders_view(
             f"Nobody with a fresh collection currently lists a duplicate **{card.name}**. "
             "Try Refresh later as more family members finish setup."
         ))]
+    # What you get is the same for everyone on this screen, so it is said
+    # once at the top instead of once per holder.
+    same_clan_total = sum(1 for match in holders if match.same_clan)
     components: list = [
         Text(content=f"# {category_markup(card.category)} Who Has {card.name}?"),
         Text(content=(
-            f"Searching for **{_escape_markdown(account.name)}** · "
+            f"**You get:** {_card_label(card)}\n"
+            f"-# {category.short_name} • searching for "
+            f"**{_escape_markdown(account.name)}** • "
             f"`{_normalize_tag(account.tag)}`"
+            + (
+                f"\n-# {same_clan_total} of these are in your clan and can "
+                "trade right away, listed first."
+                if same_clan_total
+                else ""
+            )
         )),
         Separator(divider=True),
         *holder_components,
@@ -8758,7 +8845,10 @@ async def cards_open_card(
     holders = holders_for_card(
         _without_reserved_cards(inventory), candidates, card_id
     )
-    return _holders_view(account, card_id, holders)
+    return _holders_view(
+        account, card_id, holders,
+        clan_emoji=await _clan_emoji_map(mongo, holders),
+    )
 
 
 @register_action("cards_holder_page")
@@ -8787,7 +8877,10 @@ async def cards_holder_page(
     holders = holders_for_card(
         _without_reserved_cards(inventory), candidates, card_id
     )
-    return _holders_view(account, card_id, holders, page=page)
+    return _holders_view(
+        account, card_id, holders, page=page,
+        clan_emoji=await _clan_emoji_map(mongo, holders),
+    )
 
 
 @register_action("cards_trades")

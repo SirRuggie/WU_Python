@@ -6065,3 +6065,43 @@ def test_ask_for_help_says_who_pays_gems():
     assert "no spare cards yet" in none
     # Somebody with nothing to offer is told to fix that first.
     assert "Add your spares first" in none
+
+
+def test_holders_in_your_clan_are_listed_first():
+    """Same-clan holders can trade now; everyone else must move an account."""
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["clan_tag"] = "#MW"
+    inventory["cards"]["balloon"] = cards.MISSING
+    inventory["cards"]["electro_dragon"] = cards.DUPLICATE
+
+    def holder(tag, name, clan_tag, clan_name):
+        return {
+            "_id": tag, "player_name": name, "discord_id": abs(hash(tag)) % 9999,
+            "clan_tag": clan_tag, "clan_name": clan_name,
+            "cards": dict(
+                {card.id: cards.OWNED for card in cards.CARDS},
+                balloon=cards.DUPLICATE, electro_dragon=cards.MISSING,
+            ),
+            "complete_categories": [c.id for c in cards.CATEGORIES],
+            "confirmed_at": datetime.now(timezone.utc),
+        }
+
+    holders = cards.holders_for_card(inventory, [
+        holder("#A", "Faraway", "#CT", "ClashofThrones"),
+        holder("#B", "Neighbour", "#MW", "Morning Woods"),
+        holder("#C", "AlsoFar", "#CT", "ClashofThrones"),
+    ], "balloon")
+    assert any(m.same_clan for m in holders), "fixture produced no same-clan match"
+
+    view = cards_command._holders_view(account, "balloon", holders)
+    text = _view_text(view)
+
+    assert text.index("Neighbour") < text.index("Faraway")
+    assert "are in your clan and can trade right away" in text
+    # The give/get pair is stated once, not repeated under every holder.
+    assert text.count("**You get:**") == 1
+    _assert_discord_payload(view)
