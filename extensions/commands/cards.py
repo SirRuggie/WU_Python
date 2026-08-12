@@ -2775,14 +2775,18 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
         for card in definitions
     ]
     summary = category_summary(cards, category_id) if complete else None
+    # This is not decoration. Both lists done marks the category complete, and
+    # find_matches only pairs categories BOTH players have completed - so an
+    # unfinished category is invisible to trading. The old wording said
+    # "reviewed", which names the mechanic instead of what it gets you.
     if complete:
-        setup_status = "✅ Both lists reviewed"
+        setup_status = "These cards can be traded."
     elif missing_reviewed:
-        setup_status = "✅ Missing saved · **review duplicates to finish**"
+        setup_status = "**Do the spares list too, then these can be traded.**"
     elif duplicates_reviewed:
-        setup_status = "✅ Duplicates saved · **review missing cards to finish**"
+        setup_status = "**Do the missing list too, then these can be traded.**"
     else:
-        setup_status = "Review both lists to finish this category"
+        setup_status = "**Do both lists to trade these cards.**"
     status = (
         f"{summary.collected}/{summary.known} owned · {summary.missing} missing · "
         f"{summary.duplicates} duplicate{'s' if summary.duplicates != 1 else ''}"
@@ -2804,9 +2808,12 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
             # read as a standing threat over the whole screen. Both menus open
             # already ticked to match your collection, so the safe thing to say
             # is that nothing moves until you submit one.
-            "Each list shows what you have now.\n"
-            "-# Submit a list to update that list only. "
-            "Leaving without submitting changes nothing."
+            # "Submit a list" assumed the reader knows how a Discord select
+            # behaves. The handler fires when the menu closes, so it simply
+            # saves - say that.
+            "Each list already shows what you have now.\n"
+            "-# Change a list and it saves right away. "
+            "The other list is not touched. Leaving changes nothing."
         )),
         Text(content=f"-# {status} · {setup_status}"),
         Separator(divider=True),
@@ -2840,25 +2847,21 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
             )
         ]),
         ActionRow(components=[
+            # Always neutral, never green, and no tick. The style used to turn
+            # SUCCESS once the list was already empty, so green meant "this is
+            # your current state" - which is why a button reading "✅ No
+            # missing cards" appeared directly under three missing cards and
+            # looked like the bot contradicting itself. These are claims you
+            # make, so they are worded in the first person.
             Button(
-                style=(
-                    hikari.ButtonStyle.SUCCESS
-                    if (complete or missing_reviewed) and missing_empty
-                    else hikari.ButtonStyle.SECONDARY
-                ),
+                style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_clear_missing:{_normalize_tag(account.tag)}|{category_id}",
-                label="No missing cards",
-                emoji="✅",
+                label="I have none missing",
             ),
             Button(
-                style=(
-                    hikari.ButtonStyle.SUCCESS
-                    if (complete or duplicates_reviewed) and duplicates_empty
-                    else hikari.ButtonStyle.SECONDARY
-                ),
+                style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_clear_duplicates:{_normalize_tag(account.tag)}|{category_id}",
-                label="No duplicate cards",
-                emoji="✅",
+                label="I have no spares",
             ),
         ]),
         Separator(divider=True),
@@ -2867,7 +2870,9 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
         Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-            label="All categories",
+            # Named for the screen it opens, which is headed "Choose a
+            # category". "All categories" could equally mean edit them all.
+            label="Choose a category",
             emoji=RETURN_EMOJI,
         ),
         Button(

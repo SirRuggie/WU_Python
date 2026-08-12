@@ -5179,6 +5179,41 @@ def test_search_and_cancel_buttons_use_the_uploaded_emoji():
     assert cancels, "no cancel button was actually checked"
 
 
+def test_the_editor_never_uses_a_tick_to_mean_three_different_things():
+    """Green and a tick meant "there are none", "reviewed" and "done" at once.
+
+    The worst of it: the clear buttons turned SUCCESS once their list was
+    already empty, so "✅ No missing cards" rendered directly beneath three
+    missing cards and read as the bot contradicting itself.
+    """
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    for card_id in ("balloon", "thrower", "meteor_golem"):
+        inventory["cards"][card_id] = cards.MISSING
+
+    for complete in ([], ["elixir"]):
+        inventory["complete_categories"] = complete
+        view = cards_command._category_editor(account, inventory, "elixir")
+        clears = [
+            n for n in _view_nodes(view)
+            if str(n.get("custom_id", "")).startswith("cards_clear_")
+        ]
+        assert len(clears) == 2
+        for button in clears:
+            assert button["style"] != 3, "a clear button must never read green"
+            assert not (button.get("emoji") or {}), "no tick on a claim button"
+
+    # Status says what finishing buys you, not that a list was "reviewed".
+    text = _view_text(
+        cards_command._category_editor(account, inventory, "elixir")
+    )
+    assert "reviewed" not in text.lower()
+    assert "traded" in text
+
+
 def test_every_button_back_to_the_collection_names_it():
     """Audited by destination, not by label.
 
@@ -6783,7 +6818,7 @@ def test_the_category_editor_opens_showing_what_you_already_have():
     assert set(menus) == {"cards_set_missing", "cards_set_duplicates"}
 
     assert "Bulk edit" in text, "continuity with the button that opened it"
-    assert "Leaving without submitting changes nothing" in text
+    assert "Leaving changes nothing" in text
     assert "treated as **1 copy**" not in text
     assert "Sir Ruggie" not in text
     _assert_discord_payload(view)
