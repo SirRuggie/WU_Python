@@ -6389,7 +6389,7 @@ def test_an_admin_is_recognised_from_a_dm(monkeypatch):
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
 
     assert cards_command._is_cards_admin(
-        _admin_ctx(), _admin_bot(admin=True)
+        _admin_ctx(), bot=_admin_bot(admin=True)
     ) is True
 
 
@@ -6397,7 +6397,7 @@ def test_an_ordinary_member_is_not(monkeypatch):
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
 
     assert cards_command._is_cards_admin(
-        _admin_ctx(), _admin_bot(admin=False)
+        _admin_ctx(), bot=_admin_bot(admin=False)
     ) is False
 
 
@@ -6413,8 +6413,8 @@ def test_the_admin_check_never_takes_the_panel_down(monkeypatch):
             raise RuntimeError("cache exploded")
 
     bot = SimpleNamespace(cache=_Broken())
-    assert cards_command._is_cards_admin(_admin_ctx(), bot) is False
-    assert cards_command._is_cards_admin_id(1, bot) is False
+    assert cards_command._is_cards_admin(_admin_ctx(), bot=bot) is False
+    assert cards_command._is_cards_admin_id(1, bot=bot) is False
 
 
 def test_the_admin_button_is_only_drawn_for_admins():
@@ -6434,6 +6434,74 @@ def test_the_admin_button_is_only_drawn_for_admins():
 
     assert "Admin" in labels(True)
     assert "Admin" not in labels(False)
+
+
+class _AdminInventories:
+    def __init__(self, documents):
+        self.documents = documents
+
+    async def distinct(self, field, query=None):
+        return [d.get(field) for d in self.documents if d.get(field)]
+
+    def find(self, _query):
+        return _AdminCursor(self.documents)
+
+
+class _AdminCursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def sort(self, *_a, **_k):
+        return self
+
+    async def to_list(self, length=None):
+        return self.rows[:length] if length else self.rows
+
+
+class _AdminTrades:
+    async def count_documents(self, _query):
+        return 0
+
+
+def test_an_admin_actually_gets_the_panel_from_the_button(monkeypatch):
+    """The unit checks passed while the handler still refused every admin.
+
+    The gate was called with its arguments the wrong way round, which no test
+    of the gate itself could ever see. This runs the handler.
+    """
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
+    bot = _admin_bot(admin=True)
+    mongo = SimpleNamespace(
+        card_inventories=_AdminInventories([
+            {"_id": "#A", "discord_id": 1, "cards": {"wizard": 2}},
+        ]),
+        card_trades=_AdminTrades(),
+    )
+
+    view = asyncio.run(cards_command.cards_admin(
+        _admin_ctx(), "#ME", mongo=mongo, bot=bot
+    ))
+    text = _view_text(view)
+
+    assert "Admins only" not in text
+    assert "Cards · admin" in text
+
+
+def test_a_non_admin_is_turned_away_but_not_stranded(monkeypatch):
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 500)
+
+    view = asyncio.run(cards_command.cards_admin(
+        _admin_ctx(), "#ME",
+        mongo=SimpleNamespace(), bot=_admin_bot(admin=False),
+    ))
+
+    assert "Admins only" in _view_text(view)
+    # Every notice replaces the whole panel, so one without a control leaves
+    # running /cards again as the only way out.
+    ids = [
+        str(n.get("custom_id")) for n in _view_nodes(view) if n.get("type") == 2
+    ]
+    assert "cards_dashboard:#ME" in ids
 
 
 def test_the_board_resolves_admin_itself_on_every_screen(monkeypatch):

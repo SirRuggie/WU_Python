@@ -341,16 +341,30 @@ def _plain(value: object, *, limit: int = 90) -> str:
     return text if len(text) <= limit else f"{text[:limit - 1]}…"
 
 
-def _notice(title: str, description: str) -> list[Container]:
-    return [Container(
-        accent_color=RED_ACCENT,
-        components=[
-            Text(content=f"# {title}"),
-            Separator(divider=True),
-            Text(content=description),
-            Media(items=[MediaItem(media=FOOTER)]),
-        ],
-    )]
+def _notice(
+    title: str, description: str, *, back_tag: str | None = None
+) -> list[Container]:
+    """A message, and - when the caller knows the account - a way out of it.
+
+    A notice replaces the whole panel, so without a control it is a dead end
+    and the only escape is running /cards again.
+    """
+    body: list = [
+        Text(content=f"# {title}"),
+        Separator(divider=True),
+        Text(content=description),
+    ]
+    if back_tag:
+        body.append(ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_dashboard:{_normalize_tag(back_tag)}",
+                label="Back to board",
+                emoji=RETURN_EMOJI,
+            ),
+        ]))
+    body.append(Media(items=[MediaItem(media=FOOTER)]))
+    return [Container(accent_color=RED_ACCENT, components=body)]
 
 
 def _stale_collection_notice() -> list[Container]:
@@ -3553,7 +3567,7 @@ def _player_spares_view(
     return [Container(components=body)]
 
 
-def _is_cards_admin_id(discord_id: object, bot=None) -> bool:
+def _is_cards_admin_id(discord_id: object, *, bot=None) -> bool:
     """Whether one Discord user runs the family. Never raises."""
     guild_id = _configured_cards_guild_id()
     if guild_id is None or not discord_id:
@@ -3572,35 +3586,18 @@ def _is_cards_admin_id(discord_id: object, bot=None) -> bool:
     )
 
 
-def _is_cards_admin(ctx, bot=None) -> bool:
-    """Whether this member runs the family.
+def _is_cards_admin(ctx, *, bot=None) -> bool:
+    """Whether whoever sent this interaction runs the family.
 
-    Takes the bot from the shared registry rather than an argument, because
-    the board is rendered from a dozen different handlers and threading a flag
-    through all of them meant the button appeared on some screens and vanished
-    on others - which is exactly what happened.
+    Deliberately the SAME lookup that draws the button, not a second one based
+    on the interaction's own member object. Two implementations disagreed: the
+    button appeared and then the handler refused it. Whatever answer decides
+    the button has to be the answer that decides access.
 
-    `/cards` is also usable from a DM, where the interaction carries no member
-    and no permissions at all, so a cached lookup in the configured family
-    guild is the fallback.
+    It also means "admin of the family server", not "admin of whichever server
+    you happened to click in", and it works identically from a DM.
     """
-    guild_id = _configured_cards_guild_id()
-    if guild_id is None:
-        return False
-    if bot is None:
-        bot = bot_data.data.get("bot")
-    if bot is None:
-        return False
-    member = getattr(ctx, "member", None)
-    try:
-        guild = bot.cache.get_guild(guild_id)
-        if member is None:
-            member = bot.cache.get_member(guild_id, int(ctx.user.id))
-    except Exception:
-        return False
-    return bool(
-        guild_permissions(member, guild) & hikari.Permissions.ADMINISTRATOR
-    )
+    return _is_cards_admin_id(getattr(ctx.user, "id", None), bot=bot)
 
 
 async def _admin_stats(mongo: MongoClient, *, guild_id: int) -> dict:
@@ -9256,18 +9253,21 @@ async def cards_admin(
     **_kwargs,
 ):
     """Adoption numbers for whoever runs the family."""
+    tag = _parse_target(str(action_id or ""))[0]
     # Re-checked here rather than trusted from the button: a custom_id is just
     # a string, and anyone who saw the panel could send this one back.
-    if not _is_cards_admin(bot, ctx):
+    if not _is_cards_admin(ctx, bot=bot):
         return _notice(
             "Admins only",
             "This panel is for server administrators.",
+            back_tag=tag,
         )
     guild_id = _trade_guild_id(ctx)
     if guild_id is None:
         return _notice(
             "Not set up yet",
             "The Card Hub is not configured for this family yet.",
+            back_tag=tag,
         )
     stats = await _admin_stats(mongo, guild_id=int(guild_id))
     return _admin_view(
@@ -9277,7 +9277,7 @@ async def cards_admin(
             [document.get("discord_id") for document in stats.get("stalled") or []],
             guild_id=int(guild_id),
         ),
-        tag=_parse_target(str(action_id or ""))[0],
+        tag=tag,
     )
 
 
