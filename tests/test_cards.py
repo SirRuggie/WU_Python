@@ -6029,10 +6029,49 @@ def test_who_has_tells_you_what_to_do_when_you_cannot_ask():
         str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
     ]
 
-    assert "Ask to swap" not in labels, "no spare means no request is possible"
+    assert "Ask to swap" not in labels, "no spare means no swap is possible"
     assert "What to do now" in text
     assert "They have to start it" in text
     assert "50 gems" in text
+    # It is still an ask, just not a swap - the bot sends it either way.
+    ids = [
+        str(n.get("custom_id")) for n in _view_nodes(view) if n.get("type") == 2
+    ]
+    assert any(i.startswith("cards_gem_ask:") for i in ids)
+
+
+def test_the_gem_ask_states_the_price_before_anything_is_sent():
+    """Gems are real money, so the number comes before the commit."""
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    view = cards_command._gem_ask_confirm_view(
+        account, cards.CARD_BY_ID["balloon"], "Holder", "#H",
+    )
+    text = _view_text(view)
+
+    assert "50 gems" in text
+    assert "they** post the trade offer" in text
+    assert "Nothing is reserved" in text
+    _assert_discord_payload(view)
+
+
+def test_the_gem_ask_dm_tells_the_holder_they_post_it():
+    """The holder has to act in game; the DM has to say so plainly."""
+    ask = {
+        "_id": "gem:#ME:#H:balloon", "card_id": "balloon", "gem_cost": 50,
+        "asker_name": "Sir Ruggie", "holder_name": "Holder",
+    }
+    text = _view_text(cards_command._gem_ask_dm(ask))
+
+    assert "no spare" in text
+    assert "50 gems" in text
+    assert "you post the trade offer in game" in text
+    # It is not a trade record, so nothing may claim to be held.
+    assert "reserved" not in text.lower().replace(
+        "nothing is reserved", ""
+    )
 
 
 def test_the_gem_prices_match_the_event():

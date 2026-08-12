@@ -4050,6 +4050,22 @@ def _holders_view(
                         label="Ask to swap",
                     ),
                 ))
+            elif holder.holder_discord_id is not None:
+                # No spare to offer, so this cannot be a swap - but it can
+                # still be an ask. The bot sends it so the whole approve and
+                # deny flow stays here rather than turning into cold DMs.
+                holder_components.append(Section(
+                    components=[line],
+                    accessory=Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=(
+                            f"cards_gem_ask:{_normalize_tag(account.tag)}|"
+                            f"{card.id}|{tag}"
+                        ),
+                        label="Ask for help",
+                        emoji=GIVE_EMOJI,
+                    ),
+                ))
             else:
                 holder_components.append(line)
     else:
@@ -9344,6 +9360,277 @@ async def cards_demand(
         family_supply(candidates),
         page=page,
     )
+
+
+def _gem_ask_confirm_view(account, card, holder_name: str, holder_tag: str):
+    """Say the price before they commit, because gems are real money."""
+    category = CATEGORY_BY_ID[card.category]
+    cost = TRADE_GEM_COST.get(card.category, 0)
+    return [Container(accent_color=GOLD_ACCENT, components=[
+        Text(content=f"## {emojis.card_give} This will cost you {cost} gems"),
+        Text(content=(
+            f"You have no spare **{category.short_name}** card, so you have "
+            f"nothing to trade back for {_card_label(card)}.\n\n"
+            f"If **{_escape_markdown(holder_name, limit=40)}** agrees, **they** "
+            "post the trade offer in game and ask for any "
+            f"**{category.short_name}** card back. You tap Trade and choose "
+            f"**Use Gems** — **{cost} gems**.\n\n"
+            "You keep every card you own. Nothing is reserved."
+        )),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=(
+                    f"cards_gem_send:{_normalize_tag(account.tag)}|"
+                    f"{card.id}|{_normalize_tag(holder_tag)}"
+                ),
+                label=f"Yes, ask them ({cost} gems)",
+                emoji=emojis.yes.partial_emoji,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_open_card:{_normalize_tag(account.tag)}",
+                label="Cancel", emoji=CANCEL_EMOJI,
+            ),
+        ]),
+    ])]
+
+
+def _gem_ask_dm(ask: dict, *, preview: bool = False) -> list[Container]:
+    """Asking somebody to post an offer. Deliberately not a trade record.
+
+    No card is reserved and nothing moves in either collection, because the
+    asker gives nothing up - they buy their side with gems. Modelling it as a
+    trade would mean reserving a card that is never sent.
+    """
+    card = CARD_BY_ID[ask["card_id"]]
+    category = CATEGORY_BY_ID[card.category]
+    return _trade_dm_container(
+        f"{emojis.card_give} Somebody needs your help",
+        (
+            f"**{_escape_markdown(ask.get('asker_name'), limit=40)}** is "
+            f"missing {_card_label(card)} and you have a spare.\n\n"
+            "They have **no spare "
+            f"{category.short_name} card**, so they cannot post the request "
+            f"themselves — they will pay **{ask.get('gem_cost')} gems** "
+            "instead.\n\n"
+            "**If you accept, you post the trade offer in game:** offer your "
+            f"{_card_label(card)} and ask for any **{category.short_name}** "
+            "card back. They pay the gems and you get the card you asked for."
+        ),
+        accent=GOLD_ACCENT,
+        controls=[ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=f"cards_gem_yes:{ask['_id']}",
+                label="Yes, I will post it",
+                emoji=emojis.yes.partial_emoji,
+                is_disabled=preview,
+            ),
+            Button(
+                style=hikari.ButtonStyle.DANGER,
+                custom_id=f"cards_gem_no:{ask['_id']}",
+                label="No thanks", emoji=CANCEL_EMOJI,
+                is_disabled=preview,
+            ),
+        ])],
+        footer=(
+            "Nothing is reserved and nothing changes in your collection until "
+            "you both trade in game."
+        ),
+    )
+
+
+@register_action("cards_gem_ask")
+@lightbulb.di.with_di
+async def cards_gem_ask(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Confirm the gem cost before anything is sent."""
+    tag, rest = _parse_target(str(action_id or ""))
+    parts = (rest or "").split("|")
+    card = CARD_BY_ID.get(parts[0] if parts else "")
+    holder_tag = _normalize_tag(parts[1]) if len(parts) > 1 else ""
+    if card is None or not holder_tag:
+        return _notice("Out of date", "Open `/cards` again.", back_tag=tag)
+    account, _inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    holder = await mongo.card_inventories.find_one({"_id": holder_tag}) or {}
+    return _gem_ask_confirm_view(
+        account, card,
+        str(holder.get("player_name") or "That player"), holder_tag,
+    )
+
+
+@register_action("cards_gem_send")
+@lightbulb.di.with_di
+async def cards_gem_send(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Send the ask. One per pair per card, so nobody can be spammed."""
+    tag, rest = _parse_target(str(action_id or ""))
+    parts = (rest or "").split("|")
+    card = CARD_BY_ID.get(parts[0] if parts else "")
+    holder_tag = _normalize_tag(parts[1]) if len(parts) > 1 else ""
+    if card is None or not holder_tag:
+        return _notice("Out of date", "Open `/cards` again.", back_tag=tag)
+    account, _inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    guild_id = _trade_guild_id(ctx)
+    holder = await mongo.card_inventories.find_one({"_id": holder_tag}) or {}
+    holder_discord_id = holder.get("discord_id")
+    if not holder_discord_id:
+        return _notice(
+            "Cannot reach them",
+            "That player has no Discord account linked, so I cannot ask them.",
+            back_tag=tag,
+        )
+    if holder.get("trading_paused"):
+        return _notice(
+            "They have trading off",
+            "They have hidden their cards, so they are not taking requests.",
+            back_tag=tag,
+        )
+
+    now = datetime.now(timezone.utc)
+    ask = {
+        "_id": f"gem:{_normalize_tag(account.tag)}:{holder_tag}:{card.id}",
+        "kind": "gem_ask",         # the trade sweeper only looks at "trade"
+        "guild_id": int(guild_id) if guild_id else None,
+        "status": "pending",
+        "card_id": card.id,
+        "gem_cost": TRADE_GEM_COST.get(card.category, 0),
+        "asker_tag": _normalize_tag(account.tag),
+        "asker_name": account.name,
+        "asker_discord_id": int(ctx.user.id),
+        "holder_tag": holder_tag,
+        "holder_name": str(holder.get("player_name") or "Unknown"),
+        "holder_discord_id": int(holder_discord_id),
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        await mongo.card_trades.insert_one(ask)
+    except DuplicateKeyError:
+        return _notice(
+            "Already asked",
+            f"You have already asked them for {card.name}. Give them a chance "
+            "to answer before asking again.",
+            back_tag=tag,
+        )
+    sent = await _send_trade_dm(
+        bot, int(holder_discord_id), _gem_ask_dm(ask), trade_id=str(ask["_id"])
+    )
+    if not sent:
+        await mongo.card_trades.delete_one({"_id": ask["_id"]})
+        return _notice(
+            "Could not DM them",
+            "Their DMs are closed, so I could not pass the message on.",
+            back_tag=tag,
+        )
+    return [Container(accent_color=GREEN_ACCENT, components=[
+        Text(content=f"## {emojis.yes} Asked"),
+        Text(content=(
+            f"**{_escape_markdown(ask['holder_name'], limit=40)}** has been "
+            f"asked for {_card_label(card)}. I will DM you their answer.\n\n"
+            "-# If they accept, watch clan chat: they post the offer and you "
+            f"tap Trade, then **Use Gems** ({ask['gem_cost']})."
+        )),
+        ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
+            label="Back to board", emoji=RETURN_EMOJI,
+        )]),
+    ])]
+
+
+async def _answer_gem_ask(ctx, mongo, bot, action_id: str, *, agreed: bool):
+    """Record the answer and tell the asker. No cards move either way."""
+    ask = await mongo.card_trades.find_one(
+        {"_id": str(action_id or ""), "kind": "gem_ask"}
+    )
+    if ask is None:
+        return _notice("Out of date", "That request is no longer open.")
+    await mongo.card_trades.update_one(
+        {"_id": ask["_id"]},
+        {"$set": {
+            "status": "accepted" if agreed else "declined",
+            "updated_at": datetime.now(timezone.utc),
+        }},
+    )
+    card = CARD_BY_ID[ask["card_id"]]
+    category = CATEGORY_BY_ID[card.category]
+    if ask.get("asker_discord_id"):
+        await _send_trade_dm(
+            bot, int(ask["asker_discord_id"]),
+            _trade_dm_container(
+                f"{emojis.yes} They said yes" if agreed
+                else f"{emojis.no} They said no",
+                (
+                    f"**{_escape_markdown(ask.get('holder_name'), limit=40)}** "
+                    f"will post the offer for {_card_label(card)} in game. "
+                    "Watch clan chat, tap **Trade**, then **Use Gems** — "
+                    f"**{ask.get('gem_cost')} gems**."
+                    if agreed else
+                    f"**{_escape_markdown(ask.get('holder_name'), limit=40)}** "
+                    f"cannot help with {_card_label(card)} right now. Open "
+                    "`/cards` and ask somebody else who holds it."
+                ),
+                accent=GREEN_ACCENT if agreed else RED_ACCENT,
+            ),
+            trade_id=str(ask["_id"]),
+        )
+    if not agreed:
+        return _notice(
+            "Declined", "Thanks for answering — they have been told."
+        )
+    return [Container(accent_color=GREEN_ACCENT, components=[
+        Text(content=f"## {emojis.yes} Thanks for helping"),
+        Text(content=(
+            f"Now post the offer in game: offer your {_card_label(card)} and "
+            f"ask for any **{category.short_name}** card back. They pay the "
+            f"gems.\n\n-# You must be in the same clan for the trade itself."
+        )),
+    ])]
+
+
+@register_action("cards_gem_yes")
+@lightbulb.di.with_di
+async def cards_gem_yes(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _answer_gem_ask(ctx, mongo, bot, action_id, agreed=True)
+
+
+@register_action("cards_gem_no")
+@lightbulb.di.with_di
+async def cards_gem_no(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _answer_gem_ask(ctx, mongo, bot, action_id, agreed=False)
 
 
 @register_action("cards_admin")
