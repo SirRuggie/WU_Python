@@ -2810,10 +2810,10 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
             # is that nothing moves until you submit one.
             # "Submit a list" assumed the reader knows how a Discord select
             # behaves. The handler fires when the menu closes, so it simply
-            # saves - say that.
+            # saves - say that. No line about leaving: now that a change saves
+            # on its own, mentioning it raises a question nobody had.
             "Each list already shows what you have now.\n"
-            "-# Change a list and it saves right away. "
-            "The other list is not touched. Leaving changes nothing."
+            "-# Change a list to save it. The other list stays the same."
         )),
         Text(content=f"-# {status} · {setup_status}"),
         Separator(divider=True),
