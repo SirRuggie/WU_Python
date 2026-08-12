@@ -5211,7 +5211,12 @@ def test_no_back_button_is_left_on_a_unicode_arrow():
             label = str(node.get("label", "")).lower()
             if not any(
                 word in label
-                for word in ("back", "dashboard", "return", "all categories")
+                # "collection" is here because the buttons that used to be
+                # labelled "Dashboard" are now "Collection" - one name for one
+                # screen. Without it this scan quietly checked one fewer.
+                for word in (
+                    "back", "dashboard", "collection", "return", "all categories"
+                )
             ):
                 continue
             emoji = node.get("emoji") or {}
@@ -5799,16 +5804,16 @@ def test_the_two_back_buttons_do_not_wear_the_same_mark():
         marks = {}
         for node in _view_nodes(view):
             label = str(node.get("label", ""))
-            if label in ("Back to board", "Back to Find trades"):
+            if label in ("Back to collection", "Back to Find trades"):
                 marks[label] = (node.get("emoji") or {}).get("id")
         if len(marks) < 2:
             continue
         checked += 1
-        assert marks["Back to board"] == str(cards_command.HOME_EMOJI.id)
+        assert marks["Back to collection"] == str(cards_command.HOME_EMOJI.id)
         assert marks["Back to Find trades"] == str(
             cards_command.RETURN_EMOJI.id
         )
-        assert marks["Back to board"] != marks["Back to Find trades"]
+        assert marks["Back to collection"] != marks["Back to Find trades"]
     assert checked == 2, f"only checked {checked} screens"
 
 
@@ -6782,7 +6787,7 @@ def test_bulk_edit_screen_names_itself_and_the_step():
     assert "Sir Ruggie" not in text
     assert "#ME" not in text
     # The single-card route is where most people should actually go.
-    assert "category menus on the board" in text
+    assert "category menus in your collection" in text
     _assert_discord_payload(view)
 
 

@@ -370,7 +370,7 @@ def _notice(
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{_normalize_tag(back_tag)}",
-                label="Back to board",
+                label="Back to collection",
                 emoji=RETURN_EMOJI,
             ),
         ]))
@@ -415,7 +415,7 @@ def _active_trade_notice(tag: str) -> list[Container]:
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{tag}",
-                    label="Dashboard",
+                    label="Collection",
                     emoji=RETURN_EMOJI,
                 ),
             ]),
@@ -1276,7 +1276,7 @@ def _scan_upload_started(account, *, usable_until: object) -> list[Container]:
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                    label="Back to dashboard",
+                    label="Back to collection",
                     emoji=RETURN_EMOJI,
                 ),
             ]),
@@ -1312,7 +1312,7 @@ def _scan_dm_unavailable(account) -> list[Container]:
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                    label="Dashboard",
+                    label="Collection",
                     emoji=RETURN_EMOJI,
                 ),
             ]),
@@ -1548,7 +1548,7 @@ def _scan_session_problem(ctx, user_id: object, guild_id: object) -> list[Contai
     return _notice(
         "This screenshot draft is private",
         "Only the member who started it can use it. Begin a new scan from your "
-        "own `/cards` dashboard in the family server.",
+        "own `/cards` collection in the family server.",
     )
 
 
@@ -2339,7 +2339,7 @@ def _spare_counts_panel(account, inventory: dict) -> list[Container] | None:
     if len(spares) > len(shown):
         body.append(Text(content=(
             f"-# {len(spares) - len(shown)} more are in the category menus "
-            "on the board."
+            "in your collection."
         )))
     return [Container(components=body)]
 
@@ -2426,7 +2426,7 @@ def _card_focus(
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{tag}",
-                label="Back to board",
+                label="Back to collection",
                 emoji=RETURN_EMOJI,
             ),
         ]),
@@ -2668,7 +2668,7 @@ def _scan_saved_notice(account, *, pending: int = 0) -> list[Container]:
     return _notice(
         "Collection Saved",
         f"**{_escape_markdown(account.name)}** is updated.{detail} Run `/cards` "
-        "in the family server to open the dashboard.",
+        "in the family server to open your collection.",
     )
 
 
@@ -2703,13 +2703,13 @@ def _update_overview(account, inventory: dict) -> list[Container]:
     # on the least useful fact.
     intro = (
         "Update a whole category at once.\n"
-        "-# To change one card, use the category menus on the board instead."
+        "-# To change one card, use the category menus in your collection instead."
     )
     if unverified:
         intro += (
             f"\n\n📸 **{len(unverified)} possible spare"
             f"{'s' if len(unverified) != 1 else ''} still need review.** "
-            "**Check spares** on the board handles them one at a time."
+            "**Check spares** in your collection handles them one at a time."
         )
     return [Container(
         components=[
@@ -3331,7 +3331,7 @@ def _match_list_view(
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{tag}",
-                label="Back to board",
+                label="Back to collection",
                 emoji=HOME_EMOJI,
             ),
         ]),
@@ -3809,7 +3809,7 @@ def _admin_view(
         Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_dashboard:{_normalize_tag(tag)}",
-            label="Back to board",
+            label="Back to collection",
             emoji=RETURN_EMOJI,
         ),
     ]))
@@ -3992,7 +3992,7 @@ def _matches_view(
         Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_dashboard:{tag}",
-            label="Back to board",
+            label="Back to collection",
             emoji=RETURN_EMOJI,
         ),
         Button(
@@ -4223,7 +4223,7 @@ def _holders_view(
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-                label="Back to board",
+                label="Back to collection",
                 emoji=HOME_EMOJI,
             ),
         ]),
@@ -6223,7 +6223,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
                 custom_id=f"cards_dashboard:{tag}",
-                label="Dashboard",
+                label="Collection",
                 emoji=RETURN_EMOJI,
             ),
             Button(
@@ -6575,7 +6575,7 @@ def _swap_sent_view(
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{tag}",
-                    label="Back to board",
+                    label="Back to collection",
                     emoji=RETURN_EMOJI,
                     is_disabled=preview,
                 ),
@@ -6628,7 +6628,7 @@ def _trade_feedback(title: str, description: str, tag: str) -> list[Container]:
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_dashboard:{tag}",
-                    label="Dashboard",
+                    label="Collection",
                     emoji=RETURN_EMOJI,
                 ),
             ]),
@@ -6649,7 +6649,7 @@ async def _load_trade_actor(
     if expected_id is None or int(expected_id) != int(ctx.user.id):
         return None, None, _notice(
             "That trade action is not yours",
-            "Open **My trades** from your own `/cards` dashboard.",
+            "Open **My trades** from your own `/cards` collection.",
         )
     return await _load_target(
         ctx,
@@ -8251,7 +8251,7 @@ async def cards_scan_cancel(
         return _notice(
             "Screenshot Import Canceled",
             "Nothing was saved. Run `/cards` in the family server to return to "
-            "your collection dashboard.",
+            "your collection.",
         )
     if account_tag:
         account, inventory, target_problem = await _load_target(
@@ -8349,8 +8349,8 @@ async def _confirm_scan_draft(
     except ScanDraftStaleError:
         return _notice(
             "Collection changed after this scan",
-            "Nothing was overwritten. Start a new scan, or edit the card from the "
-            "board.",
+            "Nothing was overwritten. Start a new scan, or edit the card in your "
+            "collection.",
         )
     pending = _scan_unverified_ids(updated)
     if pending:
@@ -9616,7 +9616,7 @@ async def cards_gem_send(
         ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_dashboard:{_normalize_tag(account.tag)}",
-            label="Back to board", emoji=RETURN_EMOJI,
+            label="Back to collection", emoji=RETURN_EMOJI,
         )]),
     ])]
 
@@ -10274,7 +10274,7 @@ async def _load_swap_for_confirm(ctx, action_id: str, *, mongo: MongoClient):
             break
     if role is None:
         return None, _notice(
-            "That swap is not yours", "Open **My trades** from your own board."
+            "That swap is not yours", "Open **My trades** from your own collection."
         )
     if str(trade.get("status")) not in SWAP_LIVE_STATUSES:
         return None, _notice(
@@ -10604,7 +10604,7 @@ async def cards_trade_cancel(
     elif user_id == int(trade.get("holder_discord_id", -1)):
         role = "holder"
     else:
-        return _notice("That trade action is not yours", "Open **My trades** from your own dashboard.")
+        return _notice("That trade action is not yours", "Open **My trades** from your own collection.")
     account, _inventory, problem = await _load_trade_actor(
         ctx, trade, role=role, coc_client=coc_client, mongo=mongo
     )
@@ -10701,7 +10701,7 @@ async def cards_trade_complete(
     elif user_id == int(trade.get("holder_discord_id", -1)):
         role = "holder"
     else:
-        return _notice("That trade action is not yours", "Open **My trades** from your own dashboard.")
+        return _notice("That trade action is not yours", "Open **My trades** from your own collection.")
     account, _inventory, problem = await _load_trade_actor(
         ctx, trade, role=role, coc_client=coc_client, mongo=mongo
     )

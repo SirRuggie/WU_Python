@@ -143,7 +143,7 @@ def _sticky_components() -> list[Container]:
                 "in that DM"
             )),
             Text(content=(
-                "-# No screenshots? Tap any card on the board and set the "
+                "-# No screenshots? Tap any card in your collection and set the "
                 "number by hand."
             )),
             Separator(divider=False),
@@ -211,7 +211,7 @@ def _walkthrough() -> list[Container]:
                 f"**2.** Tap **Scan screenshots** {emojis.scan}\n"
                 f"{emojis.inbox} I send you a DM. Open it and send your "
                 "collection pictures there.\n"
-                "-# No screenshots? Tap any card on the board and set the "
+                "-# No screenshots? Tap any card in your collection and set the "
                 "number by hand instead."
             )),
             Separator(divider=False),
