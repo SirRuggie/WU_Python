@@ -5682,22 +5682,34 @@ def test_different_clans_names_both_of_them():
 
 
 @pytest.mark.parametrize("stored", [
-    None, "", "   ", "my clan", "<:Broken:notanumber>", "<:Broken:",
-    "<:Bad:-5>", ":shrug:", "<@1234567890123456789>",
+    None, "", "   ", "not a url", "http://insecure.example/badge.png",
+    "ftp://example/badge.png", "<:Elixer:1536777630278357164>", 12345,
 ])
-def test_a_bad_clan_emoji_falls_back_instead_of_raising(stored):
-    """The field is hand-edited, so it can hold anything at all."""
-    assert cards_command._clan_emoji_markup(stored) == (
-        cards_command.CLAN_FALLBACK_EMOJI
+def test_a_bad_clan_badge_is_dropped_rather_than_rendered(stored):
+    """A clan emoji here would print as text in a DM; only an image works."""
+    assert cards_command._clan_badge_url(stored) is None
+
+
+def test_a_real_clan_badge_is_kept():
+    url = "https://api-assets.clashofclans.com/badges/200/abc.png"
+    assert cards_command._clan_badge_url(url) == url
+
+
+def test_a_player_block_degrades_to_a_line_without_a_badge():
+    """No shield must not mean no account line."""
+    plain = cards_command._player_block(
+        "You", "Sir UwU", "#ME", 18, "Edrag Rush", None
     )
+    assert not hasattr(plain, "accessory")
+    assert "Sir UwU" in plain.content and "Edrag Rush" in plain.content
+
+    shielded = cards_command._player_block(
+        "You", "Sir UwU", "#ME", 18, "Edrag Rush",
+        "https://api-assets.clashofclans.com/badges/200/abc.png",
+    )
+    assert shielded.accessory is not None
 
 
-def test_a_usable_clan_emoji_is_kept():
-    markup = "<:Elixer:1536777630278357164>"
-    assert cards_command._clan_emoji_markup(markup) == markup
-
-
-# 18.5 is deliberately absent: truncating it to TH18 is sensible, not a bug.
 @pytest.mark.parametrize("level", [None, "", 0, -3, 99, "eighteen", object()])
 def test_an_unknown_town_hall_contributes_nothing(level):
     assert cards_command._th_markup(level) == ""

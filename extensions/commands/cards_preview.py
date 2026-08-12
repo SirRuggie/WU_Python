@@ -50,15 +50,18 @@ def _preview_trade(discord_id: int, *, alternatives: bool) -> dict:
         "requester_discord_id": int(discord_id),
         "requester_clan_tag": "#HOME",
         "requester_clan_name": "Morning Woods",
-        # A real emoji id, so the rendering path is genuinely exercised.
-        "requester_clan_emoji": str(cards_command.emojis.card_elixir),
+        # A real Clash badge URL, so the shield genuinely renders.
+        "requester_clan_badge": (
+            "https://api-assets.clashofclans.com/badges/200/"
+            "0Ppq-Ho7Ke6cIzBQlM5-lb0vBvPHqmT1DkkkkV1YRZY.png"
+        ),
         "requester_town_hall": 17,
         "holder_tag": "#9LRVV8G8",
         "holder_name": "Sir UwU",
         "holder_discord_id": int(discord_id),
         "holder_clan_tag": "#AWAY",
         "holder_clan_name": "Edrag Rush",
-        "holder_clan_emoji": "",  # no clan emoji set: falls back to a shield
+        "holder_clan_badge": None,  # no badge stored: renders without one
         "holder_town_hall": 18,
         "created_at": now,
         "updated_at": now,
