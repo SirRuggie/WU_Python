@@ -1599,126 +1599,6 @@ def _patch_trade_handler_dependencies(monkeypatch, account):
     monkeypatch.setattr(cards_command, "_verify_trade_reservation", verify)
 
 
-def test_cross_clan_swap_becomes_ready_after_accounts_move_together(monkeypatch):
-    trade = _reserved_trade()
-    trade.update({
-        "kind": "trade",
-        "status": "move_needed",
-        "requester_name": "Requester",
-        "requester_discord_id": 111,
-        "holder_name": "Holder",
-        "holder_discord_id": 222,
-        "requester_clan_tag": "#HOME",
-        "holder_clan_tag": "#AWAY",
-        "updated_at": datetime.now(timezone.utc),
-    })
-    trades = _FakeTradeCollection()
-    trades.docs[trade["_id"]] = trade
-    account = Account(
-        tag="#ME", name="Requester", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-
-    async def load_actor(*_args, **_kwargs):
-        return account, {}, None
-
-    async def live_clans(*_args, **_kwargs):
-        return "#FAMILY", "#FAMILY"
-
-    async def verify(*_args, **_kwargs):
-        return True
-
-    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
-    monkeypatch.setattr(cards_command, "_load_trade_actor", load_actor)
-    monkeypatch.setattr(cards_command, "_live_family_clans", live_clans)
-    monkeypatch.setattr(cards_command, "_verify_trade_reservation", verify)
-    rest = _TradeHandlerRest()
-    ctx = SimpleNamespace(guild_id=1, user=SimpleNamespace(id=111))
-
-    result = asyncio.run(cards_command.cards_trade_ready(
-        ctx,
-        trade["_id"],
-        coc_client=SimpleNamespace(),
-        mongo=SimpleNamespace(card_trades=trades),
-        bot=SimpleNamespace(rest=rest),
-    ))
-
-    assert result
-    saved = trades.docs[trade["_id"]]
-    assert saved["status"] == "ready"
-    assert saved["requester_clan_tag"] == "#FAMILY"
-    assert saved["holder_clan_tag"] == "#FAMILY"
-    assert saved["clan_tag"] == "#FAMILY"
-    assert "expires_at" not in saved
-    assert rest.messages and rest.messages[0][0] == "dm-222"
-
-
-def test_ready_check_cas_loser_does_not_cleanup_or_notify(monkeypatch):
-    trade = _reserved_trade()
-    trade.update({
-        "kind": "trade",
-        "status": "move_needed",
-        "requester_name": "Requester",
-        "requester_discord_id": 111,
-        "holder_name": "Holder",
-        "holder_discord_id": 222,
-    })
-
-    class CasLoserTrades(_FakeTradeCollection):
-        def __init__(self):
-            super().__init__()
-            self.review_attempts = 0
-
-        async def update_one(self, query, update, upsert=False):
-            if update.get("$set", {}).get("status") == "needs_review":
-                self.review_attempts += 1
-                return SimpleNamespace(matched_count=0, modified_count=0)
-            return await super().update_one(query, update, upsert=upsert)
-
-    trades = CasLoserTrades()
-    trades.docs[trade["_id"]] = dict(trade)
-    account = Account(
-        tag="#ME", name="Requester", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-
-    async def load_actor(*_args, **_kwargs):
-        return account, {}, None
-
-    async def live_clans(*_args, **_kwargs):
-        return "#FAMILY", "#FAMILY"
-
-    async def missing_reservation(*_args, **_kwargs):
-        return False
-
-    async def forbidden(*_args, **_kwargs):
-        raise AssertionError("CAS loser performed cleanup or notification")
-
-    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
-    monkeypatch.setattr(cards_command, "_load_trade_actor", load_actor)
-    monkeypatch.setattr(cards_command, "_live_family_clans", live_clans)
-    monkeypatch.setattr(
-        cards_command, "_verify_trade_reservation", missing_reservation
-    )
-    monkeypatch.setattr(cards_command, "_finish_trade_cleanup", forbidden)
-    monkeypatch.setattr(cards_command, "_notify_trade_status", forbidden)
-    monkeypatch.setattr(cards_command, "_update_trade_channel", forbidden)
-    ctx = SimpleNamespace(guild_id=1, user=SimpleNamespace(id=111))
-
-    result = asyncio.run(cards_command.cards_trade_ready(
-        ctx,
-        trade["_id"],
-        coc_client=SimpleNamespace(),
-        mongo=SimpleNamespace(card_trades=trades),
-        bot=SimpleNamespace(),
-    ))
-
-    assert result
-    assert trades.review_attempts == 1
-    assert trades.docs[trade["_id"]]["status"] == "move_needed"
-    assert "cleanup_pending" not in trades.docs[trade["_id"]]
-
-
 def test_completion_second_write_exception_persists_review_and_releases(
     monkeypatch,
 ):
@@ -6138,3 +6018,55 @@ def test_holders_in_your_clan_are_listed_first():
     # The give/get pair is stated once, not repeated under every holder.
     assert text.count("**You get:**") == 1
     _assert_discord_payload(view)
+
+
+def test_a_live_swap_offers_one_button_whatever_the_clans_say():
+    """The clan check used to be the ONLY control while a swap was move_needed.
+
+    Somebody who had already sent their card in game could not record it until
+    a scan agreed they were in the same clan. The bot cannot verify the clans
+    at the moment cards actually move, so it no longer stands in the way.
+    """
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    for status in ("move_needed", "ready", "accepted"):
+        trade = _trade_document()
+        trade.update({
+            "status": status,
+            "requester_discord_id": 111,
+            "holder_discord_id": 222,
+        })
+        view = cards_command._trades_view(account, [trade])
+        labels = [
+            str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
+        ]
+        assert "I sent my card" in labels, status
+        assert "Check clans" not in labels, status
+        assert "Trade completed" not in labels, status
+
+
+def test_a_side_that_already_confirmed_is_not_asked_again():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    trade = _trade_document()
+    trade.update({
+        "status": "ready",
+        "requester_discord_id": 111,
+        "holder_discord_id": 222,
+        "requester_confirmed_at": datetime.now(timezone.utc),
+    })
+    view = cards_command._trades_view(account, [trade])
+    labels = [
+        str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
+    ]
+
+    assert "I sent my card" not in labels
+    assert "Cancel" in labels
+
+
+def test_the_clan_check_is_gone_entirely():
+    assert not hasattr(cards_command, "cards_trade_ready")

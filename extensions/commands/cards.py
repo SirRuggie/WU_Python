@@ -5583,26 +5583,20 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 label="Cancel request",
                 emoji=CANCEL_EMOJI,
             ))
-        elif status == "move_needed":
-            buttons.append(Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"cards_trade_ready:{trade['_id']}",
-                label="Check clans",
-                emoji="🏠",
-            ))
-            buttons.append(Button(
-                style=hikari.ButtonStyle.DANGER,
-                custom_id=f"cards_trade_cancel:{trade['_id']}",
-                label="Cancel swap",
-                emoji=CANCEL_EMOJI,
-            ))
-        elif status in {"ready", "accepted"}:
-            buttons.append(Button(
-                style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"cards_trade_complete:{trade['_id']}",
-                label="Trade completed",
-                emoji="✅",
-            ))
+        elif status in SWAP_LIVE_STATUSES:
+            # One button, whatever the clans say. The clan check used to be the
+            # ONLY control here while a swap was move_needed, so a member who
+            # had already sent their card in game could not record it until a
+            # scan agreed with them. Nothing about being in the same clan is
+            # something the bot can verify at the moment the cards actually
+            # move, so it no longer stands in the way.
+            if _awaiting_confirmation(trade, role=role):
+                buttons.append(Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"cards_swap_sent:{trade['_id']}",
+                    label="I sent my card",
+                    emoji=emojis.yes.partial_emoji,
+                ))
             buttons.append(Button(
                 style=hikari.ButtonStyle.DANGER,
                 custom_id=f"cards_trade_cancel:{trade['_id']}",
@@ -9283,150 +9277,6 @@ async def _perform_trade_accept(
             if status == "move_needed"
             else "The exact cards are reserved and both accounts are in the same family clan. Complete both in-game requests, then mark the swap complete. "
         ) + f"{delivery}",
-        account.tag,
-    )
-
-
-@register_action("cards_trade_ready")
-@lightbulb.di.with_di
-async def cards_trade_ready(
-    ctx: lightbulb.components.MenuContext,
-    action_id: str,
-    coc_client: coc.Client = lightbulb.di.INJECTED,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    **_kwargs,
-):
-    scope_error = _guild_scope_error(ctx)
-    if scope_error:
-        return _notice("Open Card Hub in its family server", scope_error)
-    trade = await mongo.card_trades.find_one({
-        "_id": action_id,
-        "kind": "trade",
-        "guild_id": _trade_guild_id(ctx),
-    })
-    if not trade:
-        return _notice("Trade not found", "Reopen **My trades**.")
-    user_id = int(ctx.user.id)
-    if user_id == int(trade.get("requester_discord_id", -1)):
-        role = "requester"
-    elif user_id == int(trade.get("holder_discord_id", -1)):
-        role = "holder"
-    else:
-        return _notice("That trade action is not yours", "Open **My trades** from your own dashboard.")
-    account, _inventory, problem = await _load_trade_actor(
-        ctx, trade, role=role, coc_client=coc_client, mongo=mongo
-    )
-    if problem:
-        return problem
-    if trade.get("status") != "move_needed":
-        return _notice("This swap is not waiting on a move", "Reopen **My trades** for its current status.")
-    live_clans = await _live_family_clans(
-        mongo, coc_client, trade["requester_tag"], trade["holder_tag"]
-    )
-    if live_clans is None:
-        return _trade_feedback(
-            "Both accounts must stay in family clans",
-            "I could not verify both accounts in the configured family. The card reservations remain until you retry or cancel.",
-            account.tag,
-        )
-    now = datetime.now(timezone.utc)
-    if not await _verify_trade_reservation(mongo, trade, now=now):
-        review = await mongo.card_trades.update_one(
-            {"_id": trade["_id"], "status": "move_needed"},
-            {
-                "$set": {
-                    "status": "needs_review",
-                    "failure": "reservation_lost",
-                    "review_expires_at": now + TRADE_REVIEW_FOR,
-                    "updated_at": now,
-                    **_cleanup_fields(trade),
-                },
-                "$unset": {"open_proposal_key": ""},
-            },
-        )
-        if not getattr(review, "modified_count", 0):
-            return _trade_feedback(
-                "Swap changed while clans were checked",
-                "Reopen **My trades** for its current status.",
-                account.tag,
-            )
-        await _finish_trade_cleanup(
-            mongo, trade, owner=_reservation_owner(trade)
-        )
-        trade["status"] = "needs_review"
-        other_id = (
-            int(trade["holder_discord_id"])
-            if role == "requester"
-            else int(trade["requester_discord_id"])
-        )
-        await asyncio.gather(
-            _notify_trade_status(
-                bot,
-                trade,
-                recipient_id=other_id,
-                title="Card swap needs review",
-                detail="An exact-card reservation is missing. Recheck both collections.",
-            ),
-            _update_trade_channel(bot, trade),
-        )
-        return _notice(
-            "Swap needs review",
-            "An exact-card reservation is missing. Recheck both collections before making another proposal.",
-        )
-    requester_clan, holder_clan = live_clans
-    if requester_clan != holder_clan:
-        await mongo.card_trades.update_one(
-            {"_id": trade["_id"], "status": "move_needed"},
-            {"$set": {
-                "requester_clan_tag": requester_clan,
-                "holder_clan_tag": holder_clan,
-                "updated_at": now,
-            }},
-        )
-        return _trade_feedback(
-            "Still in different clans",
-            f"The accounts are currently in `{requester_clan}` and `{holder_clan}`. The exact cards remain reserved; check again after the move.",
-            account.tag,
-        )
-    result = await mongo.card_trades.update_one(
-        {"_id": trade["_id"], "status": "move_needed"},
-        {"$set": {
-            "status": "ready",
-            "requester_clan_tag": requester_clan,
-            "holder_clan_tag": holder_clan,
-            "clan_tag": requester_clan,
-            "ready_at": now,
-            "updated_at": now,
-        }},
-    )
-    if not getattr(result, "modified_count", 0):
-        return _notice("Trade changed while checking clans", "Reopen **My trades**.")
-    trade.update({
-        "status": "ready",
-        "requester_clan_tag": requester_clan,
-        "holder_clan_tag": holder_clan,
-        "clan_tag": requester_clan,
-    })
-    other_id = (
-        int(trade["holder_discord_id"])
-        if role == "requester"
-        else int(trade["requester_discord_id"])
-    )
-    dm_sent, _channel_updated = await asyncio.gather(
-        _notify_trade_status(
-            bot,
-            trade,
-            recipient_id=other_id,
-            title="Card swap is ready",
-            detail="Both accounts are now in the same family clan. Coordinate both in-game requests.",
-        ),
-        _update_trade_channel(bot, trade),
-    )
-    return _trade_feedback(
-        "Ready in the same clan",
-        "Coordinate both in-game requests. Mark **Trade completed** only after both finish."
-        + _dm_fallback_note(dm_sent, other_id),
         account.tag,
     )
 

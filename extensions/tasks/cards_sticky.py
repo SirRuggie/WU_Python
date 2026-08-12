@@ -128,8 +128,9 @@ def _sticky_components() -> list[Container]:
             # 22px, and the notice is the one place in the whole command where
             # the vertical space is worth spending.
             Media(items=[MediaItem(media=STICKY_BANNER)]),
+            # No title here: the banner above already says CLASH OF CARDS, and
+            # a heading repeating it put the same words on screen twice.
             Text(content=(
-                "## 🃏 Clash of Cards\n"
                 "Find family members who have the card you need, and trade "
                 "for it."
             )),
