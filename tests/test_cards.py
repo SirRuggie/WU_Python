@@ -4987,25 +4987,36 @@ def test_each_board_dropdown_is_visually_distinct(monkeypatch):
 
 
 def test_refresh_and_pagination_use_the_uploaded_control_emoji():
-    """Every refresh, next, previous and return button carries the same mark."""
-    for resolved, expected in (
-        (cards_command.REFRESH_EMOJI, 1533869685509197834),
-        (cards_command.NEXT_EMOJI, 1536793616004022403),
-        (cards_command.PREVIOUS_EMOJI, 1536793616863862784),
-        (cards_command.RETURN_EMOJI, 1536796427198668911),
-        (cards_command.SEARCH_EMOJI, 1536797595089899540),
-        (cards_command.CANCEL_EMOJI, 1397096986506825778),
-        (cards_command.TRADES_EMOJI, 1536798617736847431),
-        (cards_command.SWITCH_EMOJI, 1536798904056815806),
-        (cards_command.SORT_EMOJI, 1536804681555247144),
-        (cards_command.SCAN_EMOJI, 1536807847042613398),
-        (cards_command.HOME_EMOJI, 1536924506147524730),
-        (cards_command.GIVE_EMOJI, 1536827997808758866),
-        (cards_command.SWAP_EMOJI, 1536828047330648074),
-        (cards_command.HOT_EMOJI, 1536829240224251994),
+    """Every control resolves to the emoji the registry names for it.
+
+    Pinned to the registry rather than to literal snowflakes: the ids change
+    whenever an emoji is re-uploaded, and a test that hardcodes them fails on
+    a swap that is entirely correct, which teaches people to edit the numbers
+    until it passes. What must not break is a control silently losing its
+    mark - _safe_partial returns UNDEFINED instead of raising, so a malformed
+    entry would go unnoticed.
+    """
+    for name, resolved in (
+        ("refresh", cards_command.REFRESH_EMOJI),
+        ("next_page", cards_command.NEXT_EMOJI),
+        ("previous_page", cards_command.PREVIOUS_EMOJI),
+        ("return_arrow", cards_command.RETURN_EMOJI),
+        ("magnifier", cards_command.SEARCH_EMOJI),
+        ("no", cards_command.CANCEL_EMOJI),
+        ("inbox", cards_command.TRADES_EMOJI),
+        ("switch", cards_command.SWITCH_EMOJI),
+        ("sort", cards_command.SORT_EMOJI),
+        ("scan", cards_command.SCAN_EMOJI),
+        ("home", cards_command.HOME_EMOJI),
+        ("card_give", cards_command.GIVE_EMOJI),
+        ("card_swap", cards_command.SWAP_EMOJI),
+        ("card_hot", cards_command.HOT_EMOJI),
+        ("gems", cards_command.GEMS_EMOJI),
     ):
-        assert resolved is not hikari.UNDEFINED
-        assert resolved.id == expected
+        assert resolved is not hikari.UNDEFINED, f"{name} lost its emoji"
+        assert resolved.id == getattr(
+            cards_command.emojis, name
+        ).partial_emoji.id
 
 
 def _offer_holder(returns):

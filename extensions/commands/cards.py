@@ -3867,7 +3867,7 @@ def _matches_view(
         body.extend([
             Separator(divider=True),
             Text(content=(
-                f"## {emojis.card_swap} Even swaps\n"
+                f"## {emojis.balance_scale} Even swaps\n"
                 "-# They have what you need and want one of your spares.\n"
                 "-# Tap the menu, pick a card, then tap **Ask to swap**."
             )),
@@ -6412,7 +6412,7 @@ def _swap_confirm_view(
     return [Container(
         accent_color=GOLD_ACCENT,
         components=[
-            Text(content=f"## {emojis.card_swap} Finish your swap"),
+            Text(content=f"## {emojis.balance_scale} Finish your swap"),
             Text(content=(
                 f"You agreed to send {_card_label(given)} to "
                 f"**{_escape_markdown(other, limit=50)}** • `{other_tag}`.\n"
