@@ -5646,6 +5646,17 @@ def _trade_proposal_dm(
                 else "\n\n-# You are in different clans. One of you must move "
                 "to the same clan before you can trade."
             )
+            + (
+                # True for whoever answers the in-game offer, whichever of you
+                # posts it. Without this the DM read as though a missing
+                # duplicate ended the trade, when it only sets a price.
+                "\n-# Only same-category trades exist — "
+                f"{CATEGORY_BY_ID[wanted.category].short_name} for "
+                f"{CATEGORY_BY_ID[wanted.category].short_name}. Whoever "
+                "answers the offer in game without a spare of the card asked "
+                f"for pays **{TRADE_GEM_COST.get(wanted.category, 0)} gems** "
+                "instead."
+            )
         ))],
         accent=GREEN_ACCENT,
         attachment=attachment,

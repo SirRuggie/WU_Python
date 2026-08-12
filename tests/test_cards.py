@@ -5990,6 +5990,22 @@ def test_ask_for_help_says_you_pay_and_quotes_the_real_price():
     assert "posts the trade in game" in text
 
 
+def test_the_proposal_dm_states_the_category_rule_and_the_gem_price():
+    """The DM never mentioned gems, so a missing spare read as a dead trade."""
+    trade = {
+        "_id": "t1", "guild_id": 1,
+        "wanted_card_id": "balloon",          # elixir, so 50 gems
+        "given_card_id": "wizard",
+        "requester_name": "Asker", "requester_tag": "#ME",
+        "holder_name": "Holder", "holder_tag": "#H",
+        "requester_clan_tag": "#A", "holder_clan_tag": "#A",
+    }
+    text = _view_text(cards_command._trade_proposal_dm(trade))
+
+    assert "50 gems" in text
+    assert "Only same-category trades exist" in text
+
+
 def test_the_gem_prices_match_the_event():
     """Wrong numbers here cost somebody real money, so they are pinned."""
     assert cards.TRADE_GEM_COST == {
