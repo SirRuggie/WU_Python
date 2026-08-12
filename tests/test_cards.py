@@ -6117,7 +6117,45 @@ def test_the_gem_ask_states_the_price_before_anything_is_sent():
     assert "50 gems" in text
     assert "they** post the trade offer" in text
     assert "Nothing is reserved" in text
+    # A price without the gem mark reads as points or coins to somebody
+    # skimming in a second language.
+    assert str(cards_command.emojis.gems) in text
     _assert_discord_payload(view)
+
+
+def test_every_screen_that_names_a_price_shows_the_gem_mark():
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["clan_tag"] = "#MW"
+    inventory["cards"]["balloon"] = cards.MISSING
+    holder = _complete_inventory(tag="#H", clan_tag="#MW")
+    holder["cards"]["balloon"] = cards.DUPLICATE
+    holder["player_name"] = "Holder"
+    holder["discord_id"] = 9
+
+    screens = [
+        cards_command._holders_view(
+            account, "balloon",
+            cards.holders_for_card(inventory, [holder], "balloon"),
+        ),
+        cards_command._gem_ask_dm({
+            "_id": "gem:#ME:#H:balloon", "card_id": "balloon",
+            "gem_cost": 50, "asker_name": "A", "holder_name": "H",
+        }),
+        cards_command._trade_proposal_dm({
+            "_id": "t1", "guild_id": 1,
+            "wanted_card_id": "balloon", "given_card_id": "wizard",
+            "requester_name": "A", "requester_tag": "#ME",
+            "holder_name": "H", "holder_tag": "#H",
+        }),
+    ]
+    for view in screens:
+        text = _view_text(view)
+        assert "gems" in text
+        assert str(cards_command.emojis.gems) in text
 
 
 def test_the_gem_ask_dm_tells_the_holder_they_post_it():

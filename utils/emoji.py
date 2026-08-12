@@ -126,6 +126,7 @@ class Emojis:
         self.card_dark_elixir = EmojiType("<:Dark_Elixer:1536777729511391322>")
         self.card_super_troop = EmojiType("<:SuperTroops:1536777871111225374>")
         self.card_builder_base = EmojiType("<:buildervillage:1536777943710310421>")
+        self.gems = EmojiType("<:gems:1537137164033331282>")
 
 emojis = Emojis()
 

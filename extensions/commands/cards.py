@@ -192,6 +192,7 @@ SCAN_EMOJI = _safe_partial(emojis.scan)
 GIVE_EMOJI = _safe_partial(emojis.card_give)
 SWAP_EMOJI = _safe_partial(emojis.card_swap)
 HOT_EMOJI = _safe_partial(emojis.card_hot)
+GEMS_EMOJI = _safe_partial(emojis.gems)
 NEXT_EMOJI = _safe_partial(emojis.next_page)
 PREVIOUS_EMOJI = _safe_partial(emojis.previous_page)
 
@@ -3085,7 +3086,7 @@ def _holder_line(match, ordinal: int, *, clan_emoji: dict | None = None) -> str:
             default=0,
         )
         wants = (
-            f"you have no spare to give — **costs you {cost} gems**"
+            f"you have no spare to give — **costs you {cost} gems** {emojis.gems}"
             if cost else "you have no spare to give"
         )
     return (
@@ -3307,7 +3308,7 @@ def _favours_view(
         title=f"# {emojis.card_give} Ask for help",
         blurb=(
             "You have no spare in these categories, so there is nothing you "
-            "can hand over — **you pay gems instead**: "
+            f"can hand over — **you pay gems instead** {emojis.gems}: "
             + " · ".join(
                 f"{CATEGORY_BY_ID[category].short_name} **{cost}**"
                 for category, cost in TRADE_GEM_COST.items()
@@ -4120,7 +4121,7 @@ def _holders_view(
                 "**2.** They get a message and answer yes or no.\n"
                 "**3.** If they say yes, they put the trade in the game.\n"
                 f"**4.** You tap **Trade**, then **Use Gems** — **{cost} "
-                "gems**. You keep all your cards.\n\n"
+                f"gems** {emojis.gems}. You keep all your cards.\n\n"
                 "-# You both need to be in the same clan to trade."
             )),
         ])
@@ -5694,7 +5695,7 @@ def _trade_proposal_dm(
                 f"{CATEGORY_BY_ID[wanted.category].short_name} for "
                 f"{CATEGORY_BY_ID[wanted.category].short_name}. Whoever "
                 "answers the offer in game without a spare of the card asked "
-                f"for pays **{TRADE_GEM_COST.get(wanted.category, 0)} gems** "
+                f"for pays **{TRADE_GEM_COST.get(wanted.category, 0)} gems** {emojis.gems} "
                 "instead."
             )
         ))],
@@ -9376,7 +9377,7 @@ def _gem_ask_confirm_view(account, card, holder_name: str, holder_tag: str):
             f"If **{_escape_markdown(holder_name, limit=40)}** agrees, **they** "
             "post the trade offer in game and ask for any "
             f"**{category.short_name}** card back. You tap Trade and choose "
-            f"**Use Gems** — **{cost} gems**.\n\n"
+            f"**Use Gems** — **{cost} gems** {emojis.gems}.\n\n"
             "You keep every card you own. Nothing is reserved."
         )),
         ActionRow(components=[
@@ -9387,7 +9388,9 @@ def _gem_ask_confirm_view(account, card, holder_name: str, holder_tag: str):
                     f"{card.id}|{_normalize_tag(holder_tag)}"
                 ),
                 label=f"Yes, ask them ({cost} gems)",
-                emoji=emojis.yes.partial_emoji,
+                # A label is plain text, so the gem mark has to ride in the
+                # emoji slot rather than as markup inside the words.
+                emoji=GEMS_EMOJI,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
@@ -9414,7 +9417,7 @@ def _gem_ask_dm(ask: dict, *, preview: bool = False) -> list[Container]:
             f"missing {_card_label(card)} and you have a spare.\n\n"
             "They have **no spare "
             f"{category.short_name} card**, so they cannot post the request "
-            f"themselves — they will pay **{ask.get('gem_cost')} gems** "
+            f"themselves — they will pay **{ask.get('gem_cost')} gems** {emojis.gems} "
             "instead.\n\n"
             "**If you accept, you post the trade offer in game:** offer your "
             f"{_card_label(card)} and ask for any **{category.short_name}** "
@@ -9587,7 +9590,7 @@ async def _answer_gem_ask(ctx, mongo, bot, action_id: str, *, agreed: bool):
                     f"**{_escape_markdown(ask.get('holder_name'), limit=40)}** "
                     f"will post the offer for {_card_label(card)} in game. "
                     "Watch clan chat, tap **Trade**, then **Use Gems** — "
-                    f"**{ask.get('gem_cost')} gems**."
+                    f"**{ask.get('gem_cost')} gems** {emojis.gems}."
                     if agreed else
                     f"**{_escape_markdown(ask.get('holder_name'), limit=40)}** "
                     f"cannot help with {_card_label(card)} right now. Open "
