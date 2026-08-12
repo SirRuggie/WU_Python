@@ -3274,9 +3274,6 @@ def _favours_view(
     """
     per_card = _offers_by_card(matches)
     oneway = [c for c in CARDS if c.id in per_card and not per_card[c.id]["mutual"]]
-    pages = max(1, math.ceil(len(oneway) / MATCH_LIST_PAGE))
-    page = min(max(0, page), pages - 1)
-    window = oneway[page * MATCH_LIST_PAGE:(page + 1) * MATCH_LIST_PAGE]
     return _match_list_view(
         account,
         title=f"# {emojis.card_give} Ask for help",
@@ -3291,19 +3288,20 @@ def _favours_view(
                 "pays gems and gets nothing back. Add your spares first, or "
                 "ask politely."
             )
-            + " Tap the menu, pick a card, then ask whoever holds it."
+            + " Open the menu for the card you want, pick it, then ask "
+            "whoever holds it."
         ),
         rows="",
         action="cards_favours",
-        page=page,
-        pages=pages,
+        # One menu per category means every card fits, so there is no second
+        # page to hide any of them behind.
+        page=0,
+        pages=1,
         accent=GOLD_ACCENT,
-        # Same reason as Even swaps: a list you cannot tap is a dead end.
-        pickers=_card_pickers(
+        pickers=_category_card_pickers(
             _normalize_tag(account.tag),
-            [card.id for card in window],
+            [card.id for card in oneway],
             per_card,
-            placeholder="Pick a card to ask for",
         ),
     )
 
@@ -3738,6 +3736,48 @@ def _admin_view(
         ),
     ]))
     return [Container(components=body)]
+
+
+def _category_card_pickers(tag: str, card_ids: list[str], per_card: dict) -> list:
+    """One menu per category, which is what removes paging entirely.
+
+    The biggest category holds 19 cards, so every category fits inside
+    Discord's 25-option limit with room for its header. A single combined menu
+    could not, which is why this screen used to page - and a Next button on a
+    list of cards is a worse way to find one than four labelled menus.
+
+    Each menu carries the category art on its closed state through the same
+    default-option trick the board uses.
+    """
+    rows: list = []
+    for category in CATEGORIES:
+        in_category = [
+            card_id for card_id in card_ids
+            if CARD_BY_ID[card_id].category == category.id
+        ]
+        if not in_category:
+            continue      # nothing to ask for here; an empty menu is noise
+        options = []
+        for card_id in in_category[:24]:
+            entry = per_card.get(card_id) or {}
+            givers = len(entry.get("givers") or ())
+            options.append(SelectOption(
+                label=CARD_BY_ID[card_id].name,
+                value=card_id,
+                description=(
+                    f"{givers} can give it"
+                    + (" · they want one of yours" if entry.get("mutual") else "")
+                )[:100],
+                emoji=troop_emoji.partial(card_id),
+            ))
+        detail = f"{len(options)} to ask for"
+        rows.append(ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_open_card:{tag}|{category.id}",
+            placeholder=f"{category.name} · {detail}"[:150],
+            max_values=1,
+            options=[_category_header_option(category, detail), *options],
+        )]))
+    return rows
 
 
 def _matches_view(

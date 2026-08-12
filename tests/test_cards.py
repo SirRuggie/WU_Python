@@ -5365,28 +5365,21 @@ def test_match_lists_page_rather_than_truncate():
     }]
     matches = cards.find_matches(inventory, holders)
 
-    seen: set[str] = set()
-    page, pages = 0, 99
-    while page < pages:
-        view = cards_command._favours_view(account, matches, page=page)
-        # The cards live in the menu now, not in text above it.
-        seen |= {
-            option["value"]
-            for node in _view_nodes(view)
-            if node.get("type") == 3
-            for option in node["options"]
-        }
-        label = next(
-            (
-                n["label"] for n in _view_nodes(view)
-                if str(n.get("label", "")).startswith("Page ")
-            ),
-            "Page 1/1",
-        )
-        pages = int(label.split("/")[1])
-        page += 1
+    view = cards_command._favours_view(account, matches)
+    seen = {
+        option["value"]
+        for node in _view_nodes(view)
+        if node.get("type") == 3
+        for option in node["options"]
+    } - {cards_command.CATEGORY_HEADER_VALUE}
 
+    # Forty cards, no Next button: one menu per category holds all of them,
+    # because the biggest category is 19 and the cap is 25.
     assert seen == set(missing), f"never reachable: {set(missing) - seen}"
+    assert not [
+        n for n in _view_nodes(view)
+        if str(n.get("label", "")).startswith("Page ")
+    ], "Ask for help should no longer page"
 
 
 def test_find_trades_explains_a_swap_hidden_by_a_reservation():
@@ -5867,7 +5860,11 @@ def test_every_match_is_tappable_on_one_screen_or_the_other():
 
 
 def test_a_long_list_splits_by_category_but_still_names_cards():
-    """Past 25 options Discord forces a split; the labels stay card names."""
+    """Four labelled menus, and inside them the labels stay card names.
+
+    The only non-card option is each menu's own category header, which is the
+    default-marked row that puts the category art on the closed menu.
+    """
     account, inventory, holders, _matches = _two_way_and_one_way()
     for card in cards.CARDS[:40]:
         inventory["cards"][card.id] = cards.MISSING
@@ -5876,9 +5873,18 @@ def test_a_long_list_splits_by_category_but_still_names_cards():
 
     view = cards_command._favours_view(account, matches)
     menus = [n for n in _view_nodes(view) if n.get("type") == 3]
+
+    assert len(menus) == len(cards.CATEGORIES)
     for menu in menus:
         assert len(menu["options"]) <= 25
+        headers = [
+            option for option in menu["options"]
+            if option["value"] == cards_command.CATEGORY_HEADER_VALUE
+        ]
+        assert len(headers) == 1 and headers[0].get("default") is True
         for option in menu["options"]:
+            if option["value"] == cards_command.CATEGORY_HEADER_VALUE:
+                continue
             assert option["label"] in {c.name for c in cards.CARDS}
     _assert_discord_payload(view)
 
