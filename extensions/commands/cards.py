@@ -2718,9 +2718,10 @@ def _update_overview(account, inventory: dict) -> list[Container]:
             # read as a settings dialog from some other product.
             Text(content=f"# {_safe_markup(emojis.edit)} Bulk edit"),
             Text(content=intro),
-            Separator(divider=True),
-            # Four buttons with no heading left the member to work out what
-            # they were for. One line turns them into a step.
+            # No divider. The bold heading below already marks the break
+            # between what this screen is and what to do next, and on a screen
+            # this short a rule under two lines of text is a line for its own
+            # sake.
             Text(content="**Choose a category**"),
             ActionRow(components=buttons),
             ActionRow(components=[
