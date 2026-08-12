@@ -202,7 +202,7 @@ def _walkthrough() -> list[Container]:
             Separator(divider=True),
             Text(content=(
                 "### First time only\n"
-                "**1.** Type **`/cards`** in the server\n\n"
+                f"**1.** Tap {cards_mention()} to open it\n\n"
                 f"**2.** Tap **Scan screenshots** {emojis.scan}\n"
                 f"{emojis.inbox} I send you a DM. Open it and send your "
                 "collection pictures there.\n"
