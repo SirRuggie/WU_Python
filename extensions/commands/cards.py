@@ -2116,7 +2116,6 @@ def _dashboard(
             # is. The single-card fast path is the dropdowns above, which the
             # instruction line names, so this does not have to be one too.
             label="Bulk edit",
-            emoji=_safe_partial(emojis.edit),
         ),
     ]))
 
@@ -2716,14 +2715,17 @@ def _update_overview(account, inventory: dict) -> list[Container]:
         components=[
             # Named for the button that opened it. "Advanced manual editor"
             # read as a settings dialog from some other product.
-            Text(content=f"# {_safe_markup(emojis.edit)} Bulk edit"),
+            Text(content="# Bulk edit"),
             Text(content=intro),
             # No divider. The bold heading below already marks the break
             # between what this screen is and what to do next, and on a screen
             # this short a rule under two lines of text is a line for its own
             # sake.
             Text(content="**Choose a category**"),
-            ActionRow(components=buttons),
+            # One row each, so they stack. Four in a single row is laid out
+            # horizontally by Discord and wrapped 3 + 1, which read as three
+            # choices and an afterthought rather than one list of four.
+            *(ActionRow(components=[button]) for button in buttons),
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -2789,7 +2791,7 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
         # where you are. The name and tag are gone: the board named them, and
         # the Bulk edit screen before this one named them again.
         Text(content=(
-            f"# {_safe_markup(emojis.edit)} Bulk edit · "
+            f"# Bulk edit · "
             f"{category_markup(category.id)} {category.name}"
         )),
         Text(content=(

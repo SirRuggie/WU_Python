@@ -6761,6 +6761,22 @@ def test_bulk_edit_screen_names_itself_and_the_step():
     assert "Bulk edit" in text
     assert "Advanced manual editor" not in text
     assert "Choose a category" in text
+    # One category per row, so they stack. Four in one row is laid out
+    # horizontally and wrapped 3 + 1.
+    category_rows = [
+        n for n in _view_nodes(view)
+        if n.get("type") == 1
+        and any(
+            str(c.get("custom_id", "")).startswith("cards_category:")
+            for c in n.get("components", [])
+        )
+    ]
+    assert len(category_rows) == len(cards.CATEGORIES)
+    assert all(len(row["components"]) == 1 for row in category_rows)
+    # emojis.edit is a stale id from an old server: Discord cannot resolve it
+    # and prints ":Edit:" as literal text. _safe_partial only catches
+    # malformed strings, so nothing local can spot a dead id.
+    assert ":Edit:" not in text
     # The board named them one tap ago; repeating it spends the best space on
     # the least useful fact.
     assert "Sir Ruggie" not in text
