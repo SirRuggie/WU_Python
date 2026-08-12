@@ -2800,7 +2800,27 @@ def _category_editor(account, inventory: dict, category_id: str) -> list[Contain
     return [Container(accent_color=RED_ACCENT, components=body)]
 
 
-async def _dashboard_view(account, inventory: dict, *, account_count: int):
+async def _dashboard_view(
+    account,
+    inventory: dict,
+    *,
+    account_count: int,
+    mongo: MongoClient | None = None,
+    guild_id: int | None = None,
+):
+    """The board - unless this account owes somebody an answer.
+
+    An agreed swap that nobody confirms holds both cards out of matching, and
+    the member has no reason to go looking for it. Asking the moment they open
+    `/cards` is the only place they are guaranteed to see it.
+    """
+    if mongo is not None and guild_id is not None:
+        pending = await _swap_awaiting_confirmation(
+            mongo, tag=account.tag, guild_id=guild_id
+        )
+        if pending is not None:
+            trade, role = pending
+            return _swap_confirm_view(trade, role=role)
     board = await _render_inventory_board_async(account, inventory)
     return _dashboard(
         account,
@@ -2808,6 +2828,28 @@ async def _dashboard_view(account, inventory: dict, *, account_count: int):
         account_count=account_count,
         rendered_board=board,
     )
+
+
+async def _swap_awaiting_confirmation(
+    mongo: MongoClient, *, tag: str, guild_id: int
+) -> tuple[dict, str] | None:
+    """The oldest agreed swap this account has not answered for, if any."""
+    tag = _normalize_tag(tag)
+    try:
+        rows = await mongo.card_trades.find({
+            "kind": "trade",
+            "guild_id": int(guild_id),
+            "status": {"$in": list(SWAP_LIVE_STATUSES)},
+            "$or": [{"requester_tag": tag}, {"holder_tag": tag}],
+        }).sort("accepted_at", 1).to_list(length=25)
+    except Exception:
+        _log.info("swap confirmation lookup failed tag=%s", tag)
+        return None
+    for trade in rows:
+        role = _trade_role_for(trade, tag)
+        if role and _awaiting_confirmation(trade, role=role):
+            return trade, role
+    return None
 
 
 async def _card_focus_view(
@@ -5484,6 +5526,135 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
     return [Container(accent_color=RED_ACCENT, components=body)]
 
 
+SWAP_ACCEPT_FOR = timedelta(hours=12)
+SWAP_CONFIRM_FOR = timedelta(hours=24)
+# Nothing starts the 24 hour clock until somebody confirms, so a trade both
+# players abandon would hold their cards for ever. This is the only thing that
+# can end that state.
+SWAP_BACKSTOP_FOR = timedelta(days=7)
+
+SWAP_LIVE_STATUSES = ("move_needed", "ready", "accepted")
+
+
+def _swap_leg(trade: dict, *, role: str) -> tuple[str, str, str]:
+    """(giver tag, receiver tag, card id) for one side of an agreed swap."""
+    if role == "requester":
+        return (
+            _normalize_tag(trade["requester_tag"]),
+            _normalize_tag(trade["holder_tag"]),
+            str(trade["given_card_id"]),
+        )
+    return (
+        _normalize_tag(trade["holder_tag"]),
+        _normalize_tag(trade["requester_tag"]),
+        str(trade["wanted_card_id"]),
+    )
+
+
+def _awaiting_confirmation(trade: dict, *, role: str) -> bool:
+    """Whether this side still has to say what they did."""
+    return (
+        str(trade.get("status")) in SWAP_LIVE_STATUSES
+        and not trade.get(f"{role}_confirmed_at")
+    )
+
+
+def _trade_role_for(trade: dict, tag: str) -> str | None:
+    tag = _normalize_tag(tag)
+    if _normalize_tag(trade.get("requester_tag")) == tag:
+        return "requester"
+    if _normalize_tag(trade.get("holder_tag")) == tag:
+        return "holder"
+    return None
+
+
+async def _confirm_swap_leg(
+    mongo: MongoClient, trade: dict, *, role: str, now: datetime
+) -> tuple[bool, int]:
+    """Move one card, because one player says they sent it.
+
+    Deliberately one-sided: it never waits for the other player to agree.
+    Waiting was the whole problem - a card sat reserved indefinitely because
+    somebody went quiet - so each side's answer only ever moves the card that
+    side promised, and the other card moves when they answer for themselves.
+
+    Returns (did anything move, copies the giver has left).
+    """
+    giver, receiver, card_id = _swap_leg(trade, role=role)
+    guild_id = int(trade["guild_id"])
+    owner = _reservation_owner(trade)
+    fence = [
+        {f"card_trade_reservations.{card_id}": owner},
+        {f"card_trade_reservations.{card_id}.owner": owner},
+    ]
+
+    given = await mongo.card_inventories.update_one(
+        {
+            "_id": giver,
+            "guild_id": guild_id,
+            "$or": fence,
+            f"cards.{card_id}": {"$gte": DUPLICATE},
+        },
+        {
+            "$set": {"updated_at": now, "update_source": "confirmed_trade"},
+            # One copy, not the whole stack.
+            "$inc": {f"cards.{card_id}": -1, "inventory_revision": 1},
+            "$unset": {f"card_trade_reservations.{card_id}": ""},
+        },
+    )
+    moved = bool(getattr(given, "modified_count", 0))
+
+    if moved:
+        await mongo.card_inventories.update_one(
+            {"_id": receiver, "guild_id": guild_id, "$or": fence},
+            {
+                "$set": {
+                    f"cards.{card_id}": OWNED,
+                    "updated_at": now,
+                    "update_source": "confirmed_trade",
+                },
+                "$inc": {"inventory_revision": 1},
+                "$unset": {f"card_trade_reservations.{card_id}": ""},
+            },
+        )
+
+    remaining = 0
+    document = await mongo.card_inventories.find_one({"_id": giver})
+    if document:
+        remaining = int(normalize_cards(document.get("cards")).get(card_id, 0))
+    return moved, remaining
+
+
+async def _record_swap_confirmation(
+    mongo: MongoClient, trade: dict, *, role: str, now: datetime
+) -> dict:
+    """Stamp this side as done and close the trade once both sides are."""
+    other = "holder" if role == "requester" else "requester"
+    fields: dict = {
+        f"{role}_confirmed_at": now,
+        "updated_at": now,
+        # The other side now has a deadline. Until the first confirmation
+        # there was nothing to count from.
+        "confirm_deadline_at": now + SWAP_CONFIRM_FOR,
+    }
+    finished = bool(trade.get(f"{other}_confirmed_at"))
+    if finished:
+        fields.update({
+            "status": "completed",
+            "completed_at": now,
+            **_cleanup_fields(trade),
+        })
+    await mongo.card_trades.update_one(
+        {"_id": trade["_id"], f"{role}_confirmed_at": {"$exists": False}},
+        {"$set": fields, "$unset": {"open_proposal_key": ""}},
+    )
+    updated = dict(trade)
+    updated.update(fields)
+    if finished:
+        await _finish_trade_cleanup(mongo, updated, owner=_reservation_owner(trade))
+    return updated
+
+
 def _swap_confirm_view(
     trade: dict, *, role: str, preview: bool = False
 ) -> list[Container]:
@@ -6822,7 +6993,8 @@ class Cards(
                 guild_id=_trade_guild_id(ctx),
             )
             components = await _dashboard_view(
-                account, inventory, account_count=1
+                account, inventory, account_count=1,
+                mongo=mongo, guild_id=_trade_guild_id(ctx),
             )
         await ctx.interaction.edit_initial_response(components=components)
 
@@ -6868,7 +7040,8 @@ async def cards_account_select(
         guild_id=_trade_guild_id(ctx),
     )
     return await _dashboard_view(
-        account, inventory, account_count=len(_loaded_entries(data))
+        account, inventory, account_count=len(_loaded_entries(data)),
+        mongo=mongo, guild_id=_trade_guild_id(ctx),
     )
 
 
@@ -7297,7 +7470,8 @@ async def cards_scan_cancel(
             return target_problem
         data = await load_accounts(coc_client, int(ctx.user.id))
         return await _dashboard_view(
-            account, inventory, account_count=len(_loaded_entries(data))
+            account, inventory, account_count=len(_loaded_entries(data)),
+            mongo=mongo, guild_id=_trade_guild_id(ctx),
         )
     data = await load_accounts(coc_client, int(ctx.user.id))
     return _account_picker(data)
@@ -7414,7 +7588,8 @@ async def _confirm_scan_draft(
     if spare_prompt is not None:
         return spare_prompt
     return await _dashboard_view(
-        account, updated, account_count=len(_loaded_entries(data))
+        account, updated, account_count=len(_loaded_entries(data)),
+        mongo=mongo, guild_id=_trade_guild_id(ctx),
     )
 
 
@@ -7653,7 +7828,8 @@ async def cards_dashboard(
         return problem
     data = await load_accounts(coc_client, int(ctx.user.id))
     return await _dashboard_view(
-        account, inventory, account_count=len(_loaded_entries(data))
+        account, inventory, account_count=len(_loaded_entries(data)),
+        mongo=mongo, guild_id=_trade_guild_id(ctx),
     )
 
 
@@ -7799,7 +7975,7 @@ async def _resolve_hidden_batch(
         return problem
     batch = _scan_unverified_ids(inventory)[:HIDDEN_BADGE_BATCH_SIZE]
     if not batch:
-        return await _dashboard_view(account, inventory, account_count=1)
+        return await _dashboard_view(account, inventory, account_count=1, mongo=mongo, guild_id=_trade_guild_id(ctx))
     chosen = [card_id for card_id in batch if card_id in set(spares)]
     try:
         updated = await _write_hidden_badge_batch(
@@ -7819,12 +7995,13 @@ async def _resolve_hidden_batch(
         )
     except (InventoryWriteConflict, ValueError):
         current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
-        return await _dashboard_view(account, current, account_count=1)
+        return await _dashboard_view(account, current, account_count=1, mongo=mongo, guild_id=_trade_guild_id(ctx))
     if _scan_unverified_ids(updated):
         return _hidden_badge_review(account, updated)
     data = await load_accounts(coc_client, int(ctx.user.id))
     return await _dashboard_view(
-        account, updated, account_count=len(_loaded_entries(data))
+        account, updated, account_count=len(_loaded_entries(data)),
+        mongo=mongo, guild_id=_trade_guild_id(ctx),
     )
 
 
@@ -7885,7 +8062,8 @@ async def cards_sort(
     inventory = dict(inventory, card_sort=chosen)
     data = await load_accounts(coc_client, int(ctx.user.id))
     return await _dashboard_view(
-        account, inventory, account_count=len(_loaded_entries(data))
+        account, inventory, account_count=len(_loaded_entries(data)),
+        mongo=mongo, guild_id=_trade_guild_id(ctx),
     )
 
 
@@ -8164,7 +8342,8 @@ async def cards_hidden(
         # Nothing left to check, so show the result rather than a menu about it.
         data = await load_accounts(coc_client, int(ctx.user.id))
         return await _dashboard_view(
-            account, inventory, account_count=len(_loaded_entries(data))
+            account, inventory, account_count=len(_loaded_entries(data)),
+            mongo=mongo, guild_id=_trade_guild_id(ctx),
         )
     return await _hidden_badge_review_view(account, inventory)
 
@@ -9001,6 +9180,134 @@ async def cards_trade_ready(
     )
 
 
+async def _load_swap_for_confirm(ctx, action_id: str, *, mongo: MongoClient):
+    """(trade, role) for a confirmation click, or (None, notice)."""
+    trade = await mongo.card_trades.find_one({
+        "_id": str(action_id or "").partition("|")[0],
+        "kind": "trade",
+        "guild_id": _trade_guild_id(ctx),
+    })
+    if not trade:
+        return None, _notice("Swap not found", "Reopen **My trades**.")
+    role = None
+    for candidate in ("requester", "holder"):
+        if int(trade.get(f"{candidate}_discord_id") or -1) == int(ctx.user.id):
+            role = candidate
+            break
+    if role is None:
+        return None, _notice(
+            "That swap is not yours", "Open **My trades** from your own board."
+        )
+    if str(trade.get("status")) not in SWAP_LIVE_STATUSES:
+        return None, _notice(
+            "This swap is already closed", "Reopen **My trades** for its status."
+        )
+    return (trade, role), None
+
+
+@register_action("cards_swap_sent")
+@lightbulb.di.with_di
+async def cards_swap_sent(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Yes, I sent my card. Moves only this side's card."""
+    loaded, problem = await _load_swap_for_confirm(ctx, action_id, mongo=mongo)
+    if problem:
+        return problem
+    trade, role = loaded
+    now = datetime.now(timezone.utc)
+    moved, remaining = await _confirm_swap_leg(mongo, trade, role=role, now=now)
+    if not moved:
+        return _notice(
+            "That card is no longer there",
+            "Your collection no longer shows a spare of it. Open the card and "
+            "set your real count, then try again.",
+        )
+    updated = await _record_swap_confirmation(mongo, trade, role=role, now=now)
+    other = "holder" if role == "requester" else "requester"
+    other_id = int(trade.get(f"{other}_discord_id") or 0)
+    if other_id:
+        _, receiver_card = _swap_leg(trade, role=role)[1:]
+        await _notify_trade_status(
+            bot, updated, recipient_id=other_id,
+            title="Your card arrived",
+            detail=(
+                f"{_escape_markdown(trade.get(f'{role}_name'), limit=50)} "
+                f"confirmed they sent it, so it is now in your collection."
+            ),
+        )
+    return _swap_sent_view(
+        updated, role=role, remaining=remaining,
+        other_confirmed=bool(updated.get(f"{other}_confirmed_at")),
+    )
+
+
+@register_action("cards_swap_later")
+@lightbulb.di.with_di
+async def cards_swap_later(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Not yet. Nothing changes; it asks again next time."""
+    loaded, problem = await _load_swap_for_confirm(ctx, action_id, mongo=mongo)
+    if problem:
+        return problem
+    trade, role = loaded
+    account, inventory, target_problem = await _load_target(
+        ctx,
+        _normalize_tag(trade[f"{role}_tag"]),
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+    if target_problem:
+        return target_problem
+    data = await load_accounts(coc_client, int(ctx.user.id))
+    return await _dashboard_view(
+        account, inventory, account_count=len(_loaded_entries(data)),
+        mongo=mongo, guild_id=_trade_guild_id(ctx),
+    )
+
+
+@register_action("cards_swap_no")
+@lightbulb.di.with_di
+async def cards_swap_no(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """No. Ask whether it is dead or simply not done yet."""
+    loaded, problem = await _load_swap_for_confirm(ctx, action_id, mongo=mongo)
+    if problem:
+        return problem
+    trade, role = loaded
+    return _swap_cancel_check_view(trade, role=role)
+
+
+@register_action("cards_swap_dead")
+@lightbulb.di.with_di
+async def cards_swap_dead(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Cancelled. Same path as cancelling from My trades."""
+    return await cards_trade_cancel(
+        ctx, str(action_id or "").partition("|")[0],
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+
+
 @register_action("cards_dm_accept")
 @lightbulb.di.with_di
 async def cards_dm_accept(
@@ -9528,5 +9835,6 @@ async def cards_confirm(
         ) or inventory
     data = await load_accounts(coc_client, int(ctx.user.id))
     return await _dashboard_view(
-        account, inventory, account_count=len(_loaded_entries(data))
+        account, inventory, account_count=len(_loaded_entries(data)),
+        mongo=mongo, guild_id=_trade_guild_id(ctx),
     )

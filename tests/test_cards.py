@@ -5847,3 +5847,170 @@ def test_both_accept_entry_points_share_one_body():
         start = source.index(f"async def {entry}(")
         body = source[start:start + 1200]
         assert "_perform_trade_accept(" in body, entry
+
+
+class _ConfirmInventories:
+    """Two collections that honour the reservation fence."""
+
+    def __init__(self, documents):
+        self.documents = {d["_id"]: d for d in documents}
+
+    async def find_one(self, query):
+        return self.documents.get(query.get("_id"))
+
+    async def update_one(self, query, update):
+        document = self.documents.get(query.get("_id"))
+        if document is None:
+            return SimpleNamespace(modified_count=0)
+        for clause in query.get("$or") or ():
+            path, want = next(iter(clause.items()))
+            card = path.split(".")[1]
+            marker = document.get("card_trade_reservations", {}).get(card)
+            owner = marker.get("owner") if isinstance(marker, dict) else marker
+            if owner == want:
+                break
+        else:
+            if query.get("$or"):
+                return SimpleNamespace(modified_count=0)
+        for key, want in query.items():
+            if not key.startswith("cards."):
+                continue
+            have = document.get("cards", {}).get(key.split(".")[1], 1)
+            if isinstance(want, dict) and have < want.get("$gte", 0):
+                return SimpleNamespace(modified_count=0)
+        for key, value in (update.get("$set") or {}).items():
+            if key.startswith("cards."):
+                document.setdefault("cards", {})[key.split(".")[1]] = value
+        for key, delta in (update.get("$inc") or {}).items():
+            if key.startswith("cards."):
+                card = key.split(".")[1]
+                document["cards"][card] = document["cards"].get(card, 0) + delta
+        for key in (update.get("$unset") or {}):
+            if key.startswith("card_trade_reservations."):
+                document.get("card_trade_reservations", {}).pop(
+                    key.split(".")[1], None
+                )
+        return SimpleNamespace(modified_count=1)
+
+
+def _agreed_trade():
+    trade = _trade_document()
+    trade.update({
+        "status": "ready",
+        "reservation_token": "tok",
+        "requester_discord_id": 111,
+        "holder_discord_id": 222,
+    })
+    return trade
+
+
+def test_confirming_moves_only_your_own_card():
+    """Nobody waits for the other player; that was the whole point."""
+    trade = _agreed_trade()
+    owner = cards_command._reservation_owner(trade)
+    given, wanted = trade["given_card_id"], trade["wanted_card_id"]
+    inventories = _ConfirmInventories([
+        {"_id": "#ME", "cards": {given: 3, wanted: 0},
+         "card_trade_reservations": {given: owner, wanted: owner}},
+        {"_id": "#HOLDER", "cards": {given: 0, wanted: 2},
+         "card_trade_reservations": {given: owner, wanted: owner}},
+    ])
+    mongo = SimpleNamespace(card_inventories=inventories)
+
+    moved, remaining = asyncio.run(cards_command._confirm_swap_leg(
+        mongo, trade, role="requester", now=datetime.now(timezone.utc)
+    ))
+
+    assert moved is True
+    assert remaining == 2, "one copy left, not the whole stack"
+    # The card they sent moved to the other side.
+    assert inventories.documents["#HOLDER"]["cards"][given] == cards.OWNED
+    # And the holder's own card has NOT moved: they have not answered yet.
+    assert inventories.documents["#HOLDER"]["cards"][wanted] == 2
+    assert inventories.documents["#ME"]["cards"][wanted] == 0
+    # Only the confirmed card is unreserved.
+    assert given not in inventories.documents["#ME"]["card_trade_reservations"]
+    assert wanted in inventories.documents["#ME"]["card_trade_reservations"]
+
+
+def test_confirming_a_card_you_no_longer_hold_moves_nothing():
+    trade = _agreed_trade()
+    owner = cards_command._reservation_owner(trade)
+    given = trade["given_card_id"]
+    inventories = _ConfirmInventories([
+        {"_id": "#ME", "cards": {given: 1},
+         "card_trade_reservations": {given: owner}},
+        {"_id": "#HOLDER", "cards": {given: 0},
+         "card_trade_reservations": {given: owner}},
+    ])
+    mongo = SimpleNamespace(card_inventories=inventories)
+
+    moved, _remaining = asyncio.run(cards_command._confirm_swap_leg(
+        mongo, trade, role="requester", now=datetime.now(timezone.utc)
+    ))
+
+    assert moved is False
+    assert inventories.documents["#HOLDER"]["cards"][given] == 0
+
+
+def test_only_the_unanswered_side_is_asked():
+    trade = _agreed_trade()
+    assert cards_command._awaiting_confirmation(trade, role="requester")
+    assert cards_command._awaiting_confirmation(trade, role="holder")
+
+    trade["requester_confirmed_at"] = datetime.now(timezone.utc)
+    assert not cards_command._awaiting_confirmation(trade, role="requester")
+    assert cards_command._awaiting_confirmation(trade, role="holder")
+
+    # A closed swap asks nobody.
+    trade["status"] = "completed"
+    assert not cards_command._awaiting_confirmation(trade, role="holder")
+
+
+def test_the_second_confirmation_closes_the_swap():
+    trade = _agreed_trade()
+    trade["requester_confirmed_at"] = datetime.now(timezone.utc)
+    writes = []
+
+    class Trades:
+        async def update_one(self, query, update):
+            writes.append((query, update))
+
+        async def find_one(self, _query):
+            return dict(trade)
+
+    async def _no_cleanup(*_args, **_kwargs):
+        return True
+
+    mongo = SimpleNamespace(card_trades=Trades())
+    import extensions.commands.cards as module
+    original = module._finish_trade_cleanup
+    module._finish_trade_cleanup = _no_cleanup
+    try:
+        updated = asyncio.run(cards_command._record_swap_confirmation(
+            mongo, trade, role="holder", now=datetime.now(timezone.utc)
+        ))
+    finally:
+        module._finish_trade_cleanup = original
+
+    assert updated["status"] == "completed"
+    assert writes[0][1]["$set"]["status"] == "completed"
+
+
+def test_the_first_confirmation_starts_the_other_sides_clock():
+    trade = _agreed_trade()
+    writes = []
+
+    class Trades:
+        async def update_one(self, query, update):
+            writes.append(update)
+
+    mongo = SimpleNamespace(card_trades=Trades())
+    now = datetime.now(timezone.utc)
+    updated = asyncio.run(cards_command._record_swap_confirmation(
+        mongo, trade, role="requester", now=now
+    ))
+
+    assert updated["status"] == "ready", "one answer does not finish a swap"
+    deadline = writes[0]["$set"]["confirm_deadline_at"]
+    assert deadline == now + cards_command.SWAP_CONFIRM_FOR
