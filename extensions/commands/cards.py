@@ -4206,8 +4206,17 @@ async def _accept_trade_reservation(
     user_id: int,
     live_clans: tuple[str, str],
     now: datetime,
+    chosen_card_id: str | None = None,
 ) -> tuple[str, str]:
-    """Reserve exact cards on acceptance, never while merely proposed."""
+    """Reserve exact cards on acceptance, never while merely proposed.
+
+    `chosen_card_id` lets the accepter take a different one of the requester's
+    spares. It is written INSIDE the pending -> reserving CAS below, which is
+    the single-winner gate: only the accept that wins can change the card, and
+    every fence and lease afterwards is derived from the updated document. A
+    losing accept cannot repoint a card that is already reserved, and cleanup
+    can never release a different card from the one it locked.
+    """
     await _reconcile_trade_cleanups(
         mongo, guild_id=int(trade["guild_id"])
     )
@@ -4216,10 +4225,17 @@ async def _accept_trade_reservation(
     )
     reservation_token = secrets.token_hex(8)
     reservation_until = now + TRADE_COMPLETION_FOR
+    taken = str(chosen_card_id or trade["given_card_id"])
+    if taken not in _trade_choice_ids(trade):
+        return "changed", "unavailable"
     started = await mongo.card_trades.update_one(
         {"_id": trade["_id"], "status": "pending"},
         {"$set": {
             "status": "reserving",
+            "given_card_id": taken,
+            "open_proposal_key": _open_proposal_key(
+                dict(trade, given_card_id=taken)
+            ),
             "reservation_token": reservation_token,
             "reservation_until": reservation_until,
             "accepted_at": now,
@@ -4232,6 +4248,10 @@ async def _accept_trade_reservation(
     trade = dict(trade)
     trade.update({
         "status": "reserving",
+        # Every fence, lease and cleanup below reads this dict, so the chosen
+        # card has to land here too or they would lock one card and release
+        # another.
+        "given_card_id": taken,
         "reservation_token": reservation_token,
         "reservation_until": reservation_until,
     })
@@ -4752,6 +4772,20 @@ def _trade_strip_attachment(trade: dict):
         return None
 
 
+def _trade_choice_ids(trade: dict) -> list[str]:
+    """Every card the accepter may take: the proposed one plus the spares.
+
+    `compatible_card_ids` is the requester's consent - the set they agreed to
+    part with when they proposed - so it bounds the choice. Whether each one is
+    still actually held is re-checked against live inventories afterwards.
+    """
+    ids = [str(trade.get("given_card_id") or "")]
+    for card_id in trade.get("compatible_card_ids") or ():
+        if str(card_id) not in ids:
+            ids.append(str(card_id))
+    return [card_id for card_id in ids if card_id in CARD_BY_ID]
+
+
 def _trade_offer_names(trade: dict) -> str:
     card_ids = list(trade.get("compatible_card_ids") or ())
     if trade.get("given_card_id") not in card_ids:
@@ -4900,10 +4934,9 @@ def _trade_proposal_dm(
 ) -> list[Container]:
     """The proposal DM.
 
-    `controls` adds accept/decline in the DM itself. It stays off until the
-    handlers behind those custom_ids exist - a button that answers "something
-    went wrong" is worse than no button. The preview command turns it on with
-    `preview=True`, which renders them disabled for reading.
+    `controls` adds accept/decline in the DM itself, handled by
+    `cards_dm_accept` / `cards_dm_decline`. The preview command passes
+    `preview=True` to render them disabled for reading.
     """
     wanted = CARD_BY_ID[trade["wanted_card_id"]]
     given = CARD_BY_ID[trade["given_card_id"]]
@@ -4978,7 +5011,8 @@ async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
     return await _send_trade_dm(
         bot,
         int(trade["holder_discord_id"]),
-        _trade_proposal_dm(trade, attachment=attachment),
+        # Handlers exist now, so the DM carries its own accept/decline.
+        _trade_proposal_dm(trade, attachment=attachment, controls=True),
         trade_id=str(trade["_id"]),
     )
 
@@ -8709,6 +8743,28 @@ async def cards_trade_accept(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
 ):
+    """Accept from My trades, taking the card the requester proposed."""
+    return await _perform_trade_accept(
+        ctx, action_id, chosen_card_id=None,
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+
+
+async def _perform_trade_accept(
+    ctx,
+    action_id: str,
+    *,
+    chosen_card_id: str | None,
+    coc_client,
+    mongo: MongoClient,
+    bot,
+):
+    """Shared by the My trades button and the DM accept.
+
+    One body, so the DM path cannot drift from the server path: the same
+    participant check, the same live re-validation and the same fenced
+    reservation run either way.
+    """
     scope_error = _guild_scope_error(ctx)
     if scope_error:
         return _notice("Open Card Hub in its family server", scope_error)
@@ -8733,11 +8789,20 @@ async def cards_trade_accept(
     })
     if not requester:
         return _notice("Requester collection unavailable", "Decline this request and ask them to refresh.")
+    # The accepter may take any card the requester consented to give, but
+    # only one they still actually hold - `compatible_card_ids` was computed
+    # when the proposal was made and can be stale by now.
+    taken = str(chosen_card_id or trade["given_card_id"])
+    if taken not in _trade_choice_ids(trade):
+        return _notice(
+            "That card is not part of this swap",
+            "Open the proposal again for the current list.",
+        )
     error = reciprocal_trade_error(
         _without_reserved_cards(requester),
         _without_reserved_cards(holder),
         trade["wanted_card_id"],
-        trade["given_card_id"],
+        taken,
     )
     if error:
         return _notice("Trade can no longer be accepted", error)
@@ -8756,6 +8821,7 @@ async def cards_trade_accept(
         user_id=int(ctx.user.id),
         live_clans=live_clans,
         now=now,
+        chosen_card_id=taken,
     )
     if outcome == "conflict":
         return _notice(
@@ -8932,6 +8998,44 @@ async def cards_trade_ready(
         "Coordinate both in-game requests. Mark **Trade completed** only after both finish."
         + _dm_fallback_note(dm_sent, other_id),
         account.tag,
+    )
+
+
+@register_action("cards_dm_accept")
+@lightbulb.di.with_di
+async def cards_dm_accept(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Accept straight from the proposal DM, choosing which card you take."""
+    trade_id, _, suffix = str(action_id or "").partition("|")
+    values = list(getattr(ctx.interaction, "values", ()) or ())
+    chosen = str(values[0]) if values else suffix
+    return await _perform_trade_accept(
+        ctx, trade_id,
+        chosen_card_id=chosen or None,
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+
+
+@register_action("cards_dm_decline")
+@lightbulb.di.with_di
+async def cards_dm_decline(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Decline from the DM. Same path as declining in the server."""
+    return await cards_trade_decline(
+        ctx, str(action_id or "").partition("|")[0],
+        coc_client=coc_client, mongo=mongo, bot=bot,
     )
 
 

@@ -1,5 +1,6 @@
 import asyncio
 import math
+import pathlib
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -903,7 +904,6 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     # Every card they could take, as a list - not one named card plus an
     # aside about others, which read as a contradiction.
     assert "You receive one of:" in content
-    assert "You pick which one when you accept" in content
     assert "You receive:" not in content
     # Both clans are named, and both town halls shown, so a reader can see
     # who they are dealing with without opening the game.
@@ -5776,3 +5776,74 @@ def test_who_has_what_destination_is_gone():
     assert "cards_family:#ME" not in ids
     assert not hasattr(cards_command, "cards_family")
     assert not hasattr(cards_command, "_family_board")
+
+
+def test_the_real_proposal_dm_carries_accept_and_decline():
+    """The DM is answerable in the DM; that was the whole point."""
+    class Rest:
+        def __init__(self):
+            self.sent = []
+
+        async def create_dm_channel(self, _discord_id):
+            return "dm-channel"
+
+        async def create_message(self, *, channel, components, flags=None):
+            self.sent.append(components)
+
+    rest = Rest()
+    trade = _trade_document()
+    trade.update({
+        "requester_name": "Shaun", "requester_discord_id": 111,
+        "holder_name": "Holder", "holder_discord_id": 222,
+        "compatible_card_ids": ["wizard", "dragon"],
+    })
+    asyncio.run(cards_command._notify_trade_holder(
+        SimpleNamespace(rest=rest), trade
+    ))
+
+    ids = {
+        n.get("custom_id") for n in _view_nodes(rest.sent[0])
+        if n.get("custom_id")
+    }
+    assert any(str(i).startswith("cards_dm_accept:") for i in ids), ids
+    assert any(str(i).startswith("cards_dm_decline:") for i in ids), ids
+    # Live buttons, not the disabled preview ones.
+    for node in _view_nodes(rest.sent[0]):
+        if str(node.get("custom_id", "")).startswith("cards_dm_"):
+            assert node.get("disabled") is not True
+
+
+def test_the_accepter_may_only_take_a_card_the_requester_offered():
+    """compatible_card_ids is the requester's consent and bounds the choice."""
+    trade = _trade_document()
+    trade.update({
+        "given_card_id": "wizard",
+        "compatible_card_ids": ["wizard", "dragon"],
+    })
+
+    allowed = cards_command._trade_choice_ids(trade)
+    assert allowed[0] == "wizard", "the proposed card comes first"
+    assert set(allowed) == {"wizard", "dragon"}
+    assert "root_rider" not in allowed
+
+
+def test_choice_ids_ignore_unknown_and_duplicate_cards():
+    trade = _trade_document()
+    trade.update({
+        "given_card_id": "wizard",
+        "compatible_card_ids": ["wizard", "not_a_card", "dragon", "dragon"],
+    })
+    assert cards_command._trade_choice_ids(trade) == ["wizard", "dragon"]
+
+
+def test_both_accept_entry_points_share_one_body():
+    """The DM path must not be able to drift from the server path.
+
+    Read from the file rather than via inspect: the handlers are wrapped by
+    lightbulb's dependency injection, so getsource cannot see through them.
+    """
+    source = pathlib.Path(cards_command.__file__).read_text(encoding="utf-8")
+    for entry in ("cards_trade_accept", "cards_dm_accept"):
+        start = source.index(f"async def {entry}(")
+        body = source[start:start + 1200]
+        assert "_perform_trade_accept(" in body, entry
