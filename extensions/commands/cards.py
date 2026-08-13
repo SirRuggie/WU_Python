@@ -765,7 +765,9 @@ def _account_picker(
     # accounts they are about to open before they open it.
     if pages > 1:
         summary_line = (
-            f"-# Accounts {start + 1}-{start + len(window)} of {len(entries)}"
+            # En dash, not a hyphen: it is a range, and 1–25 reads as one at a
+            # glance where 1-25 can read as a subtraction.
+            f"-# Accounts {start + 1}–{start + len(window)} of {len(entries)}"
             " · Each has its own collection."
         )
     else:

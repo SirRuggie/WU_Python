@@ -4629,8 +4629,8 @@ def test_account_picker_paginates_without_a_dead_counter_button():
     first = cards_command._account_picker(data, 0)
     second = cards_command._account_picker(data, 1)
 
-    assert "Accounts 1-25 of 30" in _view_text(first)
-    assert "Accounts 26-30 of 30" in _view_text(second)
+    assert "Accounts 1–25 of 30" in _view_text(first)
+    assert "Accounts 26–30 of 30" in _view_text(second)
     assert not [
         n for n in _view_nodes(first)
         if n.get("type") == 2 and n.get("disabled") and "Page" in str(n.get("label"))
@@ -7535,8 +7535,8 @@ def test_the_switcher_pages_at_discords_twenty_five_option_limit():
     # accounts they are opening before they open it, and it carries the total
     # rather than repeating it on a second line.
     text = _view_text(first)
-    assert "Accounts 1-25 of 37" in text
-    assert "Accounts 26-37 of 37" in _view_text(last)
+    assert "Accounts 1–25 of 37" in text
+    assert "Accounts 26–37 of 37" in _view_text(last)
     assert text.count("37") == 1, "the total belongs on one line only"
     assert "linked" not in text
 
