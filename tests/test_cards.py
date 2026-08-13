@@ -1332,18 +1332,32 @@ def test_only_one_set_of_step_buttons_exists_for_the_whole_category():
     custom_ids = [
         str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n
     ]
-    steps = [cid for cid in custom_ids if cid.startswith("cards_qstep:")]
-    assert steps == ["cards_qstep:#ME|none|-1", "cards_qstep:#ME|none|1"]
-    assert custom_ids.count("cards_qnum:#ME|none") == 1
-    # Disabled until a card is chosen, so the shape of the screen does not
-    # change under the reader when they pick one.
-    assert all(
-        n.get("disabled") for n in _view_nodes(view)
-        if str(n.get("custom_id", "")).startswith(("cards_qstep:", "cards_qnum:"))
+    # Nothing selected yet, so there is nothing to act on and no controls are
+    # drawn. They were briefly rendered disabled instead; three greyed-out
+    # buttons under an empty menu read as broken rather than as waiting.
+    assert not [cid for cid in custom_ids if cid.startswith("cards_qstep:")]
+    assert not [cid for cid in custom_ids if cid.startswith("cards_qnum:")]
+    assert "Select a card below to change how many you have." in _view_text(view)
+
+    # Pick a card and exactly one set of controls appears, aimed at it.
+    chosen = cards.CATEGORY_CARDS["elixir"][4]
+    picked = cards_command._quantity_editor(
+        account,
+        {"_id": "#ME", "cards": {}, "complete_categories": []},
+        "elixir",
+        card_id=chosen.id,
     )
-    assert "Select a card below to change its number." in _view_text(view)
+    picked_ids = [
+        str(n["custom_id"]) for n in _view_nodes(picked) if "custom_id" in n
+    ]
+    steps = [cid for cid in picked_ids if cid.startswith("cards_qstep:")]
+    assert steps == [
+        f"cards_qstep:#ME|{chosen.id}|-1",
+        f"cards_qstep:#ME|{chosen.id}|1",
+    ]
+    assert picked_ids.count(f"cards_qnum:#ME|{chosen.id}") == 1
     # Set number is spelled out rather than hidden behind tapping the count.
-    assert "Set number" in _view_labels(view)
+    assert "Set number" in _view_labels(picked)
     # An unfinished category always offers the way to finish it.
     assert "cards_ready:#ME|elixir" in custom_ids
 

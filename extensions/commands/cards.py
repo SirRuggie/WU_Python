@@ -2756,7 +2756,11 @@ def _quantity_editor(
         # knows Discord's own vocabulary. It stays on screen after a card is
         # picked, because picking a different card is the next thing most
         # people do.
-        Text(content="**Select a card below to change its number.**"),
+        # "how many you have", not "its number": the screen shows a count, and
+        # a card also has a number in the game, so "number" could be read as
+        # the wrong one. This is the same phrase the modal behind Set number
+        # asks - "How many do you have?" - so the two agree.
+        Text(content="**Select a card below to change how many you have.**"),
         # The chosen card IS the menu. A default-marked option is drawn in
         # place of the placeholder, so the closed menu reads "Barbarian · 3"
         # once something is chosen and "Choose a card to edit" before that.
@@ -2777,34 +2781,37 @@ def _quantity_editor(
                 for item in definitions
             ],
         )]),
-        # One controller for the whole category, not one per card. "Set number"
-        # is spelled out rather than hidden behind tapping the count: a control
-        # that looks like a readout is not a control anybody finds.
-        #
-        # With nothing chosen these are disabled rather than hidden, so the
-        # screen does not change shape under the reader. Their ids name no
-        # card, so even a click Discord should never deliver writes nothing.
-        ActionRow(components=[
+    ]
+
+    # Not mounted at all until a card is chosen. These were drawn disabled so
+    # the screen would not change shape, but rendered, three greyed-out
+    # buttons under an empty menu read as something broken rather than
+    # something waiting. There is nothing to act on yet, so there is nothing
+    # to show.
+    if card_id:
+        # One controller for the whole category, not one per card. "Set
+        # number" is spelled out rather than hidden behind tapping the count:
+        # a control that looks like a readout is not a control anybody finds.
+        body.append(ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.DANGER,
-                custom_id=f"cards_qstep:{tag}|{card_id or 'none'}|-1",
+                custom_id=f"cards_qstep:{tag}|{card_id}|-1",
                 label="-1",
-                is_disabled=not card_id or reserved or state <= MISSING,
+                is_disabled=reserved or state <= MISSING,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_qnum:{tag}|{card_id or 'none'}",
+                custom_id=f"cards_qnum:{tag}|{card_id}",
                 label="Set number",
-                is_disabled=not card_id or reserved,
+                is_disabled=reserved,
             ),
             Button(
                 style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"cards_qstep:{tag}|{card_id or 'none'}|1",
+                custom_id=f"cards_qstep:{tag}|{card_id}|1",
                 label="+1",
-                is_disabled=not card_id or reserved or state >= MAX_COPIES,
+                is_disabled=reserved or state >= MAX_COPIES,
             ),
-        ]),
-    ]
+        ]))
     if reserved:
         body.append(Text(
             content="-# This card is in a trade and cannot change."
