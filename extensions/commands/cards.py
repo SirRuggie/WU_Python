@@ -826,7 +826,12 @@ def _account_picker(
                 emoji=RETURN_EMOJI,
             )]),
         ])
-    return [Container(accent_color=GOLD_ACCENT, components=body)]
+    # No accent, which is what the collection screen does. Gold across this
+    # command has drifted into meaning "something wants your answer" - Ask for
+    # help, Finish your swap, the gem asks, Trading paused, the DMs. Switching
+    # account asks nothing; it is a step inside the collection flow, so it is
+    # styled like the collection rather than like a request.
+    return [Container(components=body)]
 
 
 def _scan_field(value: object, *names: str, default=None):
