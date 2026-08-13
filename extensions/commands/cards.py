@@ -2709,6 +2709,11 @@ def _quantity_editor(
             )
             + f" · `{count_for(item)}`"
             + (" · in a trade" if item.id in reservations else "")
+            # A second mark on the chosen row, at the far end of it. Bold alone
+            # has to be compared against the eighteen rows around it to be
+            # noticed; a mark that only ever appears once can be found without
+            # comparing anything.
+            + (f" {emojis.editing_pencil}" if item.id == card_id else "")
         ).strip()
         for item in definitions
     )

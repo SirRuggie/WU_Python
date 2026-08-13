@@ -11,6 +11,7 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import cards as cards_command
 from utils import card_board, cards, troop_emoji
+from utils.emoji import emojis
 from utils.todo_data import Account
 
 
@@ -7353,3 +7354,64 @@ def test_a_number_beyond_the_maximum_is_clamped_not_rejected(monkeypatch):
         coc_client=SimpleNamespace(), mongo=mongo,
     ))
     assert document["cards"]["barbarian"] == cards.MAX_COPIES
+
+
+def test_the_pencil_marks_only_the_row_being_edited():
+    """One mark, on one row, at the end of it.
+
+    Bold alone can only be spotted by comparing a row against the eighteen
+    around it. A mark that appears exactly once is found without comparing
+    anything - so it has to appear exactly once.
+    """
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = {"_id": "#ME", "cards": {"wizard": 3}, "complete_categories": []}
+    pencil = str(emojis.editing_pencil)
+
+    # Nothing selected: no pencil anywhere on the screen.
+    blank = cards_command._quantity_editor(account, inventory, "elixir")
+    assert pencil not in _view_text(blank)
+
+    for card in cards.CATEGORY_CARDS["elixir"]:
+        view = cards_command._quantity_editor(
+            account, inventory, "elixir", card_id=card.id
+        )
+        text = _view_text(view)
+        assert text.count(pencil) == 1, card.id
+        marked = [
+            line for line in text.splitlines() if pencil in line
+        ]
+        assert len(marked) == 1
+        # On the chosen card's row, after its count, and that row is also the
+        # bold one - the two marks agree rather than pointing at different
+        # cards.
+        assert card.name in marked[0], marked[0]
+        assert marked[0].rstrip().endswith(pencil), marked[0]
+        assert f"**{card.name}**" in marked[0], marked[0]
+
+
+def test_a_selected_card_still_reports_a_clean_count():
+    """The pencil sits outside the code span, so the number stays readable."""
+    import re
+
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = {
+        "_id": "#ME",
+        "cards": {"wizard": 3, "barbarian": 0},
+        "complete_categories": [],
+    }
+    view = cards_command._quantity_editor(
+        account, inventory, "elixir", card_id="wizard"
+    )
+    listing = next(
+        str(n["content"]) for n in _view_nodes(view)
+        if n.get("type") == 10 and "Meteor Golem" in str(n["content"])
+    )
+    counts = set(re.findall(r"`([^`]+)`", listing))
+    assert counts <= {"0", "1", "2", "2+", "3"}, counts
+    assert "`3`" in listing and "`0`" in listing

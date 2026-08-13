@@ -130,6 +130,7 @@ class Emojis:
         self.balance_scale = EmojiType("<:balance_scale:1537143940480761997>")
         self.update_collection = EmojiType("<:update_collection:1537238355517907095>")
         self.admin_gear = EmojiType("<:admin_gear:1537238367857676310>")
+        self.editing_pencil = EmojiType("<:editing_pencil:1537264251603779764>")
 
 emojis = Emojis()
 
