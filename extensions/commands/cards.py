@@ -695,7 +695,21 @@ def _town_hall_emoji(level: object):
         return hikari.UNDEFINED
 
 
-def _account_picker(data: AccountsData, page: int = 0) -> list[Container]:
+def _parse_account_page(value: object) -> tuple[int, str | None]:
+    """Split `page` or `page|tag`.
+
+    The tag says which collection to go back to. Buttons on messages sent
+    before it was threaded through carry the page alone, which parses to no
+    tag - those panels simply render without a Back button rather than
+    erroring at whoever clicks them.
+    """
+    page_part, _, tag = str(value or "").partition("|")
+    return _parse_page(page_part), (_normalize_tag(tag) if tag else None)
+
+
+def _account_picker(
+    data: AccountsData, page: int = 0, *, back_tag: str | None = None
+) -> list[Container]:
     if data.problem == LINK_FAILURE:
         return _notice(
             "Couldn't reach the account link service",
@@ -726,58 +740,91 @@ def _account_picker(data: AccountsData, page: int = 0) -> list[Container]:
     for entry in window:
         town_hall = getattr(entry.account, "town_hall", None)
         emoji = _town_hall_emoji(town_hall)
-        label = (
-            entry.account.name
-            if emoji is not hikari.UNDEFINED
-            else f"{entry.account.name} · TH{town_hall}"
-        )
+        # An account whose town hall never loaded used to read "THNone", in
+        # both the name and the line under it. No level is better than a
+        # wrong one, so the whole piece drops out.
+        town_hall_text = f"TH{town_hall}" if town_hall else ""
+        label = entry.account.name
+        if emoji is hikari.UNDEFINED and town_hall_text:
+            label = f"{entry.account.name} · {town_hall_text}"
+        detail = " · ".join(part for part in (
+            town_hall_text,
+            entry.account.clan_name or "No clan",
+            entry.tag,
+        ) if part)
         options.append(SelectOption(
             label=_plain(label),
             value=entry.tag,
-            description=_plain(
-                f"TH{town_hall} · {entry.account.clan_name or 'No clan'} · {entry.tag}",
-                limit=100,
-            ),
+            description=_plain(detail, limit=100),
             emoji=emoji,
         ))
 
+    # One small line, not two. "Accounts 1-25 of 37" already carries the total,
+    # so a separate "37 accounts" line above it said the same number twice -
+    # and this sits above the menu, so the reader knows which stretch of
+    # accounts they are about to open before they open it.
+    if pages > 1:
+        summary_line = (
+            f"-# Accounts {start + 1}-{start + len(window)} of {len(entries)}"
+            " · Each has its own collection."
+        )
+    else:
+        summary_line = (
+            f"-# {len(entries)} account{'s' if len(entries) != 1 else ''}"
+            " · Each has its own collection."
+        )
+
     body: list = [
         Text(content="# Your card collections"),
-        Text(content=(
-            f"-# {len(entries)} linked accounts · each keeps its own collection"
-        )),
+        # "linked" named the mechanic rather than the thing, and "keeps" is a
+        # less common word than "has" for the same idea.
+        Text(content=summary_line),
         Separator(divider=True),
         ActionRow(components=[
             TextSelectMenu(
                 custom_id=f"cards_account_select:{page}",
-                placeholder="Choose a Clash account...",
+                # No "Clash", because every account here is one, and no
+                # trailing dots - Discord does not need them and they read as
+                # an unfinished sentence.
+                placeholder="Choose an account",
                 max_values=1,
                 options=options,
             )
         ]),
     ]
+    # Directly under the menu they page, with nothing between.
+    suffix = f"|{_normalize_tag(back_tag)}" if back_tag else ""
     if pages > 1:
+        body.append(ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_account_page:{page - 1}{suffix}",
+                label="Previous",
+                emoji=PREVIOUS_EMOJI,
+                is_disabled=page == 0,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_account_page:{page + 1}{suffix}",
+                label="Next",
+                emoji=NEXT_EMOJI,
+                is_disabled=page >= pages - 1,
+            ),
+        ]))
+    # This screen REPLACES the collection it was opened from - the dispatcher
+    # edits the message in place, and the whole panel is ephemeral, so there is
+    # nothing underneath to go back to and dismissing it loses everything.
+    # Without this, opening the switcher and changing your mind meant running
+    # /cards again.
+    if back_tag:
         body.extend([
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_account_page:{page - 1}",
-                    label="Previous",
-                    emoji=PREVIOUS_EMOJI,
-                    is_disabled=page == 0,
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_account_page:{page + 1}",
-                    label="Next",
-                    emoji=NEXT_EMOJI,
-                    is_disabled=page >= pages - 1,
-                ),
-            ]),
-            Text(content=(
-                f"-# Accounts {start + 1}-{start + len(window)} "
-                f"of {len(entries)}"
-            )),
+            Separator(divider=True),
+            ActionRow(components=[Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_dashboard:{_normalize_tag(back_tag)}",
+                label="Back to collection",
+                emoji=RETURN_EMOJI,
+            )]),
         ])
     return [Container(accent_color=GOLD_ACCENT, components=body)]
 
@@ -1987,7 +2034,7 @@ def _dashboard(
         # sit in the row of collection controls, which act on the cards.
         body.append(ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
-            custom_id="cards_account_page:0",
+            custom_id=f"cards_account_page:0|{tag}",
             label="Switch account",
             emoji=SWITCH_EMOJI,
         )]))
@@ -7715,8 +7762,9 @@ async def cards_account_page(
     scope_error = _guild_scope_error(ctx)
     if scope_error:
         return _notice("Open Card Hub in its family server", scope_error)
+    page, back_tag = _parse_account_page(action_id)
     data = await load_accounts(coc_client, int(ctx.user.id))
-    return _account_picker(data, _parse_page(action_id))
+    return _account_picker(data, page, back_tag=back_tag)
 
 
 @register_action("cards_account_select")

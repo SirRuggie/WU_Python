@@ -4755,10 +4755,10 @@ def test_collection_group_hides_controls_that_would_do_nothing():
 
     # Switch account needs a second account. Bulk edit is NOT setup - your
     # cards keep changing after review, so it stays on both.
-    assert "cards_account_page:0" not in done_ids
+    assert "cards_account_page:0|#ME" not in done_ids
     assert "cards_advanced:#ME" in done_ids
     assert "cards_advanced:#ME" in partial_ids
-    assert "cards_account_page:0" in partial_ids
+    assert "cards_account_page:0|#ME" in partial_ids
     # Scanning is always available.
     assert "cards_scan_start:#ME" not in done_ids, (
         "scanning moved inside Update collection"
@@ -5031,7 +5031,7 @@ def test_board_controls_wrap_instead_of_dropping_the_sixth():
         "cards_hidden:#ME",
         "cards_advanced:#ME",
         "cards_confirm:#ME",
-        "cards_account_page:0",
+        "cards_account_page:0|#ME",
     ):
         assert expected in ids, f"{expected} was dropped from the board"
     for node in _view_nodes(view):
@@ -5191,7 +5191,7 @@ def test_my_trades_and_switch_account_use_the_uploaded_emoji():
 
     switch = next(
         n for n in _view_nodes(views[0])
-        if n.get("custom_id") == "cards_account_page:0"
+        if n.get("custom_id") == "cards_account_page:0|#ME"
     )
     assert (switch.get("emoji") or {}).get("id") == "1536798904056815806"
 
@@ -7429,3 +7429,154 @@ def test_a_selected_card_still_reports_a_clean_count():
     counts = set(re.findall(r"`([^`]+)`", listing))
     assert counts <= {"0", "1", "2", "2+", "3"}, counts
     assert "`3`" in listing and "`0`" in listing
+
+
+def _switcher_account(name, town_hall, clan, tag):
+    return SimpleNamespace(
+        name=name, town_hall=town_hall, clan_name=clan, tag=tag, clan_tag="#C",
+    )
+
+
+def _switcher_data(count=37):
+    from extensions.commands.accounts import AccountEntry, AccountsData
+
+    return AccountsData(entries=tuple(
+        AccountEntry(
+            tag=f"#T{index:04d}",
+            status=cards_command.STATUS_LOADED,
+            account=_switcher_account(
+                f"Alt {index}", 18 - (index % 4), "Warriors United",
+                f"#T{index:04d}",
+            ),
+        )
+        for index in range(count)
+    ))
+
+
+def _switcher_options(view):
+    return [
+        option
+        for node in _view_nodes(view)
+        for option in (node.get("options") or ())
+    ]
+
+
+def test_an_account_with_no_town_hall_does_not_read_th_none():
+    """It printed "THNone", in the name and in the line under it.
+
+    The town hall is missing whenever the profile lookup came back thin. No
+    level at all is better than a wrong one.
+    """
+    from extensions.commands.accounts import AccountEntry, AccountsData
+
+    for missing in (None, 0):
+        data = AccountsData(entries=(AccountEntry(
+            tag="#GHOST",
+            status=cards_command.STATUS_LOADED,
+            account=_switcher_account("Ghost", missing, "Some Clan", "#GHOST"),
+        ),))
+        option = _switcher_options(cards_command._account_picker(data))[0]
+        assert "None" not in option["label"], option["label"]
+        assert "None" not in option["description"], option["description"]
+        assert "TH0" not in option["description"], option["description"]
+        # What is known is still shown.
+        assert "Some Clan" in option["description"]
+        assert "#GHOST" in option["description"]
+
+
+def test_a_missing_clan_reads_as_no_clan_not_as_nothing():
+    from extensions.commands.accounts import AccountEntry, AccountsData
+
+    data = AccountsData(entries=(AccountEntry(
+        tag="#LONE",
+        status=cards_command.STATUS_LOADED,
+        account=_switcher_account("Loner", 18, None, "#LONE"),
+    ),))
+    option = _switcher_options(cards_command._account_picker(data))[0]
+    assert option["description"] == "TH18 · No clan · #LONE"
+
+
+def test_long_names_and_clans_stay_inside_discord_limits():
+    """Discord rejects a select option label over 100 or description over 100."""
+    from extensions.commands.accounts import AccountEntry, AccountsData
+
+    data = AccountsData(entries=(AccountEntry(
+        tag="#LONG",
+        status=cards_command.STATUS_LOADED,
+        account=_switcher_account("N" * 200, 17, "C" * 200, "#LONG"),
+    ),))
+    option = _switcher_options(cards_command._account_picker(data))[0]
+    assert len(option["label"]) <= 100
+    assert len(option["description"]) <= 100
+
+
+def test_the_switcher_pages_at_discords_twenty_five_option_limit():
+    """A select menu takes 25 options, which is why this pages at all."""
+    assert cards_command.ACCOUNT_PAGE_SIZE == 25
+    data = _switcher_data(37)
+
+    first = cards_command._account_picker(data, 0, back_tag="#ME")
+    last = cards_command._account_picker(data, 1, back_tag="#ME")
+
+    assert len(_switcher_options(first)) == 25
+    assert len(_switcher_options(last)) == 12
+
+    def pager(view):
+        return {
+            str(n.get("label")): bool(n.get("disabled"))
+            for n in _view_nodes(view)
+            if str(n.get("custom_id", "")).startswith("cards_account_page:")
+        }
+
+    assert pager(first) == {"Previous": True, "Next": False}
+    assert pager(last) == {"Previous": False, "Next": True}
+
+    # The range sits above the menu, so the reader knows which stretch of
+    # accounts they are opening before they open it, and it carries the total
+    # rather than repeating it on a second line.
+    text = _view_text(first)
+    assert "Accounts 1-25 of 37" in text
+    assert "Accounts 26-37 of 37" in _view_text(last)
+    assert text.count("37") == 1, "the total belongs on one line only"
+    assert "linked" not in text
+
+
+def test_one_page_of_accounts_needs_no_pager():
+    data = _switcher_data(5)
+    view = cards_command._account_picker(data, 0, back_tag="#ME")
+    assert not [
+        n for n in _view_nodes(view)
+        if str(n.get("custom_id", "")).startswith("cards_account_page:")
+    ]
+    assert "5 accounts · Each has its own collection." in _view_text(view)
+
+
+def test_the_switcher_offers_a_way_back_to_the_collection_it_replaced():
+    """It edits the panel in place, so there is nothing underneath.
+
+    The dispatcher answers a component with `respond(edit=True)` and the whole
+    /cards panel is ephemeral, so opening the switcher replaces the collection
+    entirely. Without this button, changing your mind meant running /cards
+    again.
+    """
+    data = _switcher_data(37)
+    view = cards_command._account_picker(data, 0, back_tag="#ME")
+    ids = [str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n]
+    assert "cards_dashboard:#ME" in ids
+    assert "Back to collection" in _view_labels(view)
+    # Both pagers carry the tag too, or paging once would lose the way back.
+    assert "cards_account_page:1|#ME" in ids
+
+
+def test_a_switcher_opened_without_a_tag_simply_has_no_back_button():
+    """Buttons sent before the tag was threaded through must still work."""
+    page, tag = cards_command._parse_account_page("0")
+    assert (page, tag) == (0, None)
+    page, tag = cards_command._parse_account_page("1|#ME")
+    assert (page, tag) == (1, "#ME")
+
+    view = cards_command._account_picker(_switcher_data(37), 0)
+    ids = [str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n]
+    assert not any(cid.startswith("cards_dashboard:") for cid in ids)
+    # And it still pages.
+    assert "cards_account_page:1" in ids
