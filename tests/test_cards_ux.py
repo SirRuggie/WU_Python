@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import hikari
+from hikari.impl import TextDisplayComponentBuilder as Text
 
 from extensions.commands import cards as cards_command
 from extensions.commands import cards_preview
@@ -435,6 +436,56 @@ def test_trades_view_empty_offers_find_trades():
     assert "Find trades" not in _labels(busy)
 
 
+def test_nested_fwa_experiment_is_preview_only_and_single_container():
+    """The nesting experiment never touches production.
+
+    Nested Containers are unsupported (a Container's legal children exclude
+    Container at the schema level), so the preview variant carries the
+    warning as an in-Container Text block - one container total - while the
+    production builder keeps its settled two-container shape.
+    """
+    variant = cards_preview._nested_fwa_variant(1, [])
+    assert len(variant) == 1 and len(_containers(variant)) == 1
+    text = _text(variant)
+    assert "⚠️ **FWA — Wait for war**" in text
+    assert "Do not trade until war starts." in text
+    assert "-# Your account:" in text, "the derived layout keeps its tail"
+
+    # Production is untouched: still main Container + compact callout.
+    production = cards_command._accepted_trade_dm(_trade(), fwa_relevant=True)
+    assert len(_containers(production)) == 2
+
+
+def test_fwa_markup_variants_keep_the_copy_and_stay_preview_only():
+    """Every markup variant carries the same words, only dressed differently.
+
+    The experiment varies emphasis, never wording: stripped of markdown
+    characters, each variant must still say exactly the two warning lines,
+    hold a single container, and leave production alone.
+    """
+    import re
+
+    def _bare(value):
+        return re.sub(r"[>#*_`]", "", value).replace("  ", " ").strip()
+
+    for letter_label, markup in cards_preview.FWA_MARKUP_VARIANTS:
+        bare = "\n".join(
+            _bare(line) for line in markup.splitlines()
+        )
+        assert "⚠️ FWA — Wait for war" in bare, letter_label
+        assert "Do not trade until war starts." in bare, letter_label
+
+        variant = cards_preview._fwa_treatment_variant(1, [], markup)
+        assert len(variant) == 1 and len(_containers(variant)) == 1, (
+            f"variant {letter_label} must stay one container"
+        )
+        assert markup in _text(variant), letter_label
+
+    # The labelled wrapper adds only a quiet root note.
+    labelled = cards_preview._labelled("Variant X", [Text(content="body")])
+    assert str(_built(labelled[0])["content"]).startswith("-# ")
+
+
 class _PreviewRest:
     def __init__(self):
         self.messages = []
@@ -486,6 +537,10 @@ def test_the_full_preview_suite_renders_within_discord_limits():
         "24a · Callout samples — red, gold, blue, green",
         "24b · Accepted trade + FWA callout",
         "24d · Notice, search unavailable",
+        "24e · Experiment: FWA inside the main container",
+        "24f · FWA A — compact red callout (production)",
+        "24g · FWA B — bold heading",
+        "24l · FWA G — underline",
     ):
         assert expected in names, f"preview scenario missing: {expected}"
 

@@ -19,6 +19,7 @@ import lightbulb
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
+    SeparatorComponentBuilder as Separator,
     TextDisplayComponentBuilder as Text,
 )
 
@@ -99,6 +100,76 @@ def _preview_holder_doc(discord_id: int) -> dict:
         "confirmed_at": datetime.now(timezone.utc),
         "discord_id": int(discord_id),
     }
+
+
+def _fwa_treatment_variant(
+    discord_id: int, clans: list[dict], warning_markup: str
+) -> list:
+    """PREVIEW-ONLY: the accepted trade with an in-Container FWA treatment.
+
+    A true nested compact callout is impossible: a Container's legal
+    children are ActionRow, TextDisplay, Section, MediaGallery, Separator
+    and File - never another Container - in the Discord schema and in the
+    pinned hikari builders alike (`ContainerBuilderComponentsT`), so the
+    accent bar cannot exist inside the box. These variants therefore test
+    what native TextDisplay Markdown can do for the warning instead. The
+    layout derives from the production builder, so it cannot drift;
+    production stays `cards._accepted_trade_dm`.
+    """
+    trade = _preview_trade(discord_id, alternatives=False, clans=clans)
+    trade["status"] = "move_needed"
+    main = cards_command._accepted_trade_dm(trade, fwa_relevant=False)[0]
+    children = list(main.components)
+    # In front of the trailing [spacing separator, quiet subtext] pair.
+    children[-2:-2] = [
+        Separator(divider=True),
+        Text(content=warning_markup),
+    ]
+    return [Container(accent_color=GREEN_ACCENT, components=children)]
+
+
+def _nested_fwa_variant(discord_id: int, clans: list[dict]) -> list:
+    """The original in-Container experiment: bold heading + normal text."""
+    return _fwa_treatment_variant(
+        discord_id, clans, cards_command.FWA_WARNING_TEXT
+    )
+
+
+# The same two warning lines, wording untouched, markup varied. Only native
+# Discord Markdown that renders reliably on mobile in both themes; code-fence
+# syntax-coloring tricks (ansi/diff fences) are deliberately excluded because
+# their colors are not dependable across clients and themes.
+FWA_MARKUP_VARIANTS: tuple[tuple[str, str], ...] = (
+    (
+        "B — bold heading",
+        "⚠️ **FWA — Wait for war**\nDo not trade until war starts.",
+    ),
+    (
+        "C — blockquote",
+        "> ⚠️ **FWA — Wait for war**\n> Do not trade until war starts.",
+    ),
+    (
+        "D — inline-code line",
+        "⚠️ **FWA — Wait for war**\n`Do not trade until war starts.`",
+    ),
+    (
+        "E — small heading",
+        "### ⚠️ FWA — Wait for war\nDo not trade until war starts.",
+    ),
+    (
+        "F — blockquote + heading",
+        "> ### ⚠️ FWA — Wait for war\n> Do not trade until war starts.",
+    ),
+    (
+        "G — underline",
+        "⚠️ **FWA — Wait for war**\n__Do not trade until war starts.__",
+    ),
+)
+
+
+def _labelled(label: str, components: list) -> list:
+    """A quiet root-level label above a preview message, preview-only."""
+    return [Text(content=f"-# {label}"), *components]
 
 
 def _preview_gem_ask(discord_id: int) -> dict:
@@ -627,5 +698,41 @@ async def _send_previews(
             "callouts", "24d · Notice, search unavailable",
             cards_command._search_unavailable_notice(PREVIEW_TAG),
         )
+        # Nested-callout experiment: a Container cannot legally contain
+        # another Container, so this renders the closest in-Container
+        # warning treatment for comparison against 24b. Preview only.
+        await panel(
+            "callouts", "24e · Experiment: FWA inside the main container",
+            _nested_fwa_variant(me, clans),
+        )
+
+        # FWA markup series: the same two warning lines under every native
+        # TextDisplay treatment, each message labelled, so the owner can
+        # choose the final design on a phone. Variant A is production.
+        if wanted in ("callouts", "all"):
+            fwa_trade = dict(
+                _preview_trade(me, alternatives=False, clans=clans),
+                status="move_needed",
+            )
+            await panel(
+                "callouts", "24f · FWA A — compact red callout (production)",
+                _labelled(
+                    "Variant A — compact red callout (current production)",
+                    cards_command._accepted_trade_dm(
+                        fwa_trade, fwa_relevant=True
+                    ),
+                ),
+            )
+            for offset, (letter_label, markup) in enumerate(
+                FWA_MARKUP_VARIANTS
+            ):
+                await panel(
+                    "callouts",
+                    f"24{'ghijkl'[offset]} · FWA {letter_label}",
+                    _labelled(
+                        f"Variant {letter_label}",
+                        _fwa_treatment_variant(me, clans, markup),
+                    ),
+                )
 
         return sent
