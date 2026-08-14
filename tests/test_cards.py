@@ -7192,6 +7192,147 @@ def _picker_options(rows):
     ]
 
 
+class _BrowseInventories:
+    def __init__(self, documents):
+        self.documents = list(documents)
+        self.query = None
+
+    def find(self, query):
+        self.query = query
+        allowed_clans = set(query.get("clan_tag", {}).get("$in", ()))
+        rows = []
+        for document in self.documents:
+            if int(document.get("guild_id") or 0) != int(query["guild_id"]):
+                continue
+            if document.get("trading_paused") is True:
+                continue
+            if allowed_clans and document.get("clan_tag") not in allowed_clans:
+                continue
+            if "discord_id" in query and document.get("discord_id") != query["discord_id"]:
+                continue
+            if "_id" in query and document.get("_id") != query["_id"]:
+                continue
+            rows.append(document)
+        return _FakeCursor(rows)
+
+
+class _BrowseClans:
+    async def distinct(self, field):
+        assert field == "tag"
+        return ["#HOME"]
+
+
+def _run_player_lookup(monkeypatch, documents, picked, *, viewer=None):
+    account = Account(
+        tag="#ME", name="Viewer", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    viewer = viewer or _complete_inventory()
+    viewer.update({
+        "guild_id": 1,
+        "discord_id": 77,
+        "trusted_card_ids": [card.id for card in cards.CARDS],
+    })
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, viewer),
+    )
+    inventories = _BrowseInventories(documents)
+    mongo = SimpleNamespace(
+        clans=_BrowseClans(), card_inventories=inventories,
+    )
+    result = asyncio.run(cards_command.cards_browse(
+        _quantity_ctx(user_id=77, values=[picked]),
+        "#ME",
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+        bot=SimpleNamespace(),
+    ))
+    return result, inventories
+
+
+def test_real_player_lookup_handles_the_invokers_seven_linked_accounts(monkeypatch):
+    """The live d:<self> choice used to overflow Discord at 46 components."""
+    trusted = [card.id for card in cards.CARDS]
+    documents = []
+    for index in range(7):
+        document = _spare_inventory(
+            "#ME" if index == 0 else f"#ALT{index}",
+            discord_id=77,
+            name=f"Own account {index}",
+        )
+        document.update({
+            "guild_id": 1,
+            "trusted_card_ids": trusted,
+            "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+        })
+        documents.append(document)
+
+    picker = cards_command._browse_picker(
+        "#ME", documents[1:], names={77: "Viewer"}, clan_tag="#HOME",
+    )
+    option = _picker_options(picker)[0]
+    assert option["value"] == "d:77"
+
+    view, inventories = _run_player_lookup(
+        monkeypatch, documents, option["value"],
+    )
+
+    text = _view_text(view)
+    assert all(f"Own account {index}" in text for index in range(7))
+    assert inventories.query == {
+        "guild_id": 1,
+        "trading_paused": {"$ne": True},
+        "discord_id": 77,
+        "clan_tag": {"$in": ["#HOME"]},
+    }
+    _assert_discord_payload(view)
+
+
+def test_real_player_lookup_shows_other_player_but_sanitizes_untrusted_spares(
+    monkeypatch,
+):
+    document = _spare_inventory(
+        "#OTHER", discord_id=88, name="Other player",
+        spares=["wizard", "minion"],
+    )
+    document.update({
+        "guild_id": 1,
+        # A stale Ready category cannot make its untrusted raw duplicate
+        # visible. Dark Elixir remains fully trusted and displayable.
+        "trusted_card_ids": [
+            card.id for card in cards.CARDS if card.id != "wizard"
+        ],
+    })
+
+    view, inventories = _run_player_lookup(
+        monkeypatch, [document], "d:88",
+    )
+
+    text = _view_text(view)
+    assert "Other player" in text
+    assert "Minion" in text
+    assert "Wizard" not in text
+    assert inventories.query["discord_id"] == 88
+    _assert_discord_payload(view)
+
+
+@pytest.mark.parametrize(
+    ("picked", "message"),
+    [
+        ("d:not-a-number", "Unknown player"),
+        ("d:999", "Nothing to show"),
+        ("t:#GONE", "Nothing to show"),
+    ],
+)
+def test_real_player_lookup_stale_values_fail_cleanly(
+    monkeypatch, picked, message,
+):
+    view, _inventories = _run_player_lookup(monkeypatch, [], picked)
+
+    assert message in _view_text(view)
+    _assert_discord_payload(view)
+
+
 def test_browse_picker_hides_players_who_turned_trading_off():
     """Browsing somebody who opted out would route requests straight at them."""
     here = _spare_inventory("#A", discord_id=1, name="Stays", spares=["wizard"])

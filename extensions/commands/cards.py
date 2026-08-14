@@ -4371,6 +4371,8 @@ def _player_spares_view(
     body: list = [
         Text(content=f"# {emojis.magnifier} {_escape_markdown(display_name)}"),
     ]
+    if documents:
+        body.append(Separator(divider=True))
 
     total = 0
     for document in sorted(
@@ -4391,9 +4393,10 @@ def _player_spares_view(
         heading = f"**{_escape_markdown(str(document.get('player_name') or 'Unknown'))}**"
         if clan:
             heading += f" · {_escape_markdown(clan)}"
-        body.extend([Separator(divider=True), Text(content=heading)])
+        account_lines = [heading]
         if not held:
-            body.append(Text(content="-# No spares on this account right now."))
+            account_lines.append("-# No spares on this account right now.")
+            body.append(Text(content="\n".join(account_lines)))
             continue
         for category in CATEGORIES:
             in_category = [c for c in held if c.category == category.id]
@@ -4408,10 +4411,14 @@ def _player_spares_view(
                     f"- {_card_label(card)}"
                     + (" — **you need this**" if needed else "")
                 )
-            body.append(Text(content=(
+            account_lines.append(
                 f"{category_markup(category.id)} **{category.short_name}**\n"
                 + "\n".join(lines)
-            )[:4000]))
+            )
+        # One bounded Text Display per account preserves the per-account
+        # truth while keeping the handler's maximum 25-account result inside
+        # Discord's 40-component message limit.
+        body.append(Text(content="\n".join(account_lines)[:4000]))
 
     if total == 0:
         body.append(Text(content=(
@@ -13073,7 +13080,17 @@ async def cards_browse(
     # record written before discord_id existed is still reachable.
     query: dict = {"guild_id": int(guild_id), "trading_paused": {"$ne": True}}
     if picked.startswith("d:"):
-        query["discord_id"] = int(picked[2:] or 0)
+        try:
+            discord_id = int(picked[2:])
+        except (TypeError, ValueError):
+            return _notice(
+                "Unknown player", "Open `/cards` again for a fresh list."
+            )
+        if discord_id <= 0:
+            return _notice(
+                "Unknown player", "Open `/cards` again for a fresh list."
+            )
+        query["discord_id"] = discord_id
     elif picked.startswith("t:"):
         query["_id"] = _normalize_tag(picked[2:])
     else:
