@@ -907,7 +907,9 @@ def test_trade_dm_is_best_effort_and_contains_no_account_secrets():
     assert "Root Rider" in content
     assert "Wizard" in content
     assert "Dragon" in content
-    assert "**Shaun** wants your" in content
+    # The labels carry the ask; the old lead sentence repeated the card.
+    assert "**You give:**" in content
+    assert "wants your" not in content
     # Every card they could take, as a list - not one named card plus an
     # aside about others, which read as a contradiction.
     assert "You receive one of:" in content
@@ -974,11 +976,16 @@ def test_trade_visual_failure_still_delivers_accessible_text(monkeypatch):
     sent = rest.messages[0]["components"]
     # No gallery at all when the render failed, but the words still arrive.
     assert _view_media(sent) is None
-    assert "wants your" in _view_text(sent)
+    assert "**You give:**" in _view_text(sent)
     assert "Root Rider" in _view_text(sent)
 
 
-def test_follow_up_status_dm_identifies_both_account_tags():
+def test_follow_up_status_dm_names_only_the_readers_account():
+    """A status DM names the reader's account, not both players' accounts.
+
+    The pair of account lines was clutter: the reader only needs to know
+    which of their own accounts the notice is about.
+    """
     class Rest:
         def __init__(self):
             self.messages = []
@@ -994,7 +1001,9 @@ def test_follow_up_status_dm_identifies_both_account_tags():
     trade = _trade_document()
     trade.update({
         "requester_name": "Shaun",
+        "requester_discord_id": 111,
         "holder_name": "Holder",
+        "holder_discord_id": 222,
     })
     rest = Rest()
 
@@ -1008,8 +1017,8 @@ def test_follow_up_status_dm_identifies_both_account_tags():
 
     assert sent is True
     assert len(rest.messages) == 1
-    assert "`#ME`" in rest.messages[0]
-    assert "`#HOLDER`" in rest.messages[0]
+    assert "`#HOLDER`" in rest.messages[0], "the reader's own account"
+    assert "`#ME`" not in rest.messages[0], "the partner's tag is not listed"
 
 
 def test_trade_channel_posts_in_configured_guild_and_mentions_holder_only(monkeypatch):
@@ -1337,7 +1346,8 @@ def test_only_one_set_of_step_buttons_exists_for_the_whole_category():
     # buttons under an empty menu read as broken rather than as waiting.
     assert not [cid for cid in custom_ids if cid.startswith("cards_qstep:")]
     assert not [cid for cid in custom_ids if cid.startswith("cards_qnum:")]
-    assert "Select a card below to change how many you have." in _view_text(view)
+    # Same verb as the menu placeholder ("Choose a card to edit").
+    assert "Choose a card below to change how many you have." in _view_text(view)
 
     # Pick a card and exactly one set of controls appears, aimed at it.
     chosen = cards.CATEGORY_CARDS["elixir"][4]
@@ -1372,7 +1382,8 @@ def test_the_ready_button_disappears_once_the_category_is_tradeable():
     )
     ids = [str(n["custom_id"]) for n in _view_nodes(done) if "custom_id" in n]
     assert "cards_ready:#ME|elixir" not in ids
-    assert "These cards can be traded." in _view_text(done)
+    assert "Ready to trade." in _view_text(done)
+    assert "Other players can see these spares." in _view_text(done)
 
 
 def test_every_rendered_custom_id_parses_back_to_what_drew_it():
@@ -3163,13 +3174,13 @@ def test_scan_button_opens_one_account_bound_private_dm_session(monkeypatch):
     assert _contains_raw_bytes(document) is False
     assert sent[0][0] == 777
     prompt_text = _view_text(sent[0][1])
-    assert "send all of its screenshots" in prompt_text.lower()
+    assert "send all screenshots here in one message" in prompt_text.lower()
     assert "any order is fine" in prompt_text.lower()
     assert updated[0][1]["$set"] == {
         "upload_prompt_channel_id": 777,
         "upload_prompt_message_id": 888,
     }
-    assert "Private Upload Ready" in _view_text(view)
+    assert "Private upload ready" in _view_text(view)
 
 
 def test_rapid_scan_starts_are_serialized_to_one_current_session(monkeypatch):
@@ -3385,7 +3396,7 @@ def test_dm_upload_accepts_partial_any_order_and_keeps_only_checkpoint(monkeypat
     assert "matched **3 of 5**" in progress
     assert "**Rows 7–10:**" in progress
     assert "→" in progress
-    assert "do **not** need to resend" in progress
+    assert "Do not resend accepted rows." in progress
 
 
 def test_dm_followup_merges_checkpoint_and_opens_account_bound_review(monkeypatch):
@@ -3670,7 +3681,12 @@ def test_hidden_duplicate_badge_is_disclosed_but_safe_owned_minimum_can_confirm(
     assert confirm["disabled"] is False
     assert confirm["label"] == "Save collection"
     review_text = _view_text(view)
-    assert "1 cards still need a duplicate check" in review_text
+    # The review no longer pre-announces the duplicate check: saving routes
+    # straight into the hidden-badge question, which is the disclosure. What
+    # matters here is that the covered badge is stored as the safe minimum
+    # and the review never claims a spare the member has not confirmed.
+    assert "spare" not in review_text.casefold()
+    assert "All 60 cards were read." in review_text
     buttons = [node for node in nodes if node.get("type") == 2]
     assert [button.get("label") for button in buttons] == [
         "Save collection",
@@ -5031,8 +5047,7 @@ def test_board_controls_wrap_instead_of_dropping_the_sixth():
         clan_name="Home Clan", town_hall=18,
     )
     # The state that produces the most controls at once: some categories set
-    # up but not all, a stale confirmation, a pending spare check, and more
-    # than one linked account.
+    # up but not all, a pending spare check, and more than one linked account.
     inventory = _complete_inventory()
     inventory["complete_categories"] = ["elixir"]
     inventory["confirmed_at"] = datetime.now(timezone.utc) - timedelta(days=5)
@@ -5041,12 +5056,9 @@ def test_board_controls_wrap_instead_of_dropping_the_sixth():
     view = cards_command._dashboard(account, inventory, account_count=3)
     ids = {n.get("custom_id") for n in _view_nodes(view)}
 
-    # Six controls: one more than a row holds, so the last one is exactly what
-    # the old slice discarded.
     for expected in (
         "cards_hidden:#ME",
         "cards_advanced:#ME",
-        "cards_confirm:#ME",
         "cards_account_page:0|#ME",
     ):
         assert expected in ids, f"{expected} was dropped from the board"
@@ -5328,7 +5340,8 @@ def test_the_editor_never_uses_a_tick_to_mean_three_different_things():
         cards_command._quantity_editor(account, inventory, "elixir")
     )
     assert "reviewed" not in text.lower()
-    assert "traded" in text
+    assert "Ready to trade." in text
+    assert "Other players can see these spares." in text
     # One word for the concept, on every page. The rest of the command says
     # "spare" everywhere, so this screen must not introduce "duplicate" as a
     # second name for the same thing.
@@ -6237,7 +6250,7 @@ def test_the_proposal_dm_states_the_category_rule_and_never_gems():
     text = _view_text(cards_command._trade_proposal_dm(trade))
 
     assert "gem" not in text.lower()
-    assert "Only same-category trades exist" in text
+    assert "Same-category trade" in text
 
 
 def test_who_has_tells_you_what_to_do_when_you_cannot_ask():
@@ -6385,7 +6398,7 @@ def test_the_gem_ask_states_the_price_before_anything_is_sent():
     text = _view_text(view)
 
     assert "50 gems" in text
-    assert "they** post the trade offer" in text
+    assert "they post the trade in game" in text
     assert "Nothing is reserved" in text
     # A price without the gem mark reads as points or coins to somebody
     # skimming in a second language.
@@ -6432,9 +6445,9 @@ def test_the_gem_ask_dm_tells_the_holder_they_post_it():
     }
     text = _view_text(cards_command._gem_ask_dm(ask))
 
-    assert "no spare" in text
+    assert "spare to give back" in text
     assert "50 gems" in text
-    assert "you post the trade offer in game" in text
+    assert "**If you say yes:** post the trade in game" in text
     # It is not a trade record, so nothing may claim to be held.
     assert "reserved" not in text.lower().replace(
         "nothing is reserved", ""
@@ -7231,7 +7244,8 @@ def test_ready_to_trade_button_makes_the_category_matchable(monkeypatch):
     # Counts survived, and the screen now says the state changed.
     assert document["cards"]["wizard"] == 3
     assert document["cards"]["root_rider"] == cards.MISSING
-    assert "These cards can be traded." in _view_text(result)
+    assert "Ready to trade." in _view_text(result)
+    assert "is ready to trade." in _view_text(result)
 
 
 def test_choosing_a_card_points_the_controller_at_it(monkeypatch):
@@ -7665,11 +7679,11 @@ def test_a_partial_scan_offers_the_confirmed_cards_and_the_manual_editor():
     assert "cards_scan_save_partial:draft-partial" in ids
     assert "cards_advanced:#ME" in ids
     assert "cards_scan_confirm:draft-partial" not in ids
-    assert "Some cards could not be confirmed." in text
-    assert "Check them before you trade." in text
+    assert "I read 12 of 60 cards." in text
+    assert "Nothing is saved yet." in text
     assert "Nothing was guessed." in text
     assert "Still to check: 48 cards" in text
-    assert "Ready to trade" in text
+    assert "not ready to trade" in text
     # Scanner diagnostics belong in the evidence, never in player copy.
     for jargon in ("top1", "hash", "hamming", "margin", "pitch", "gate"):
         assert jargon not in text.lower()
@@ -7952,7 +7966,7 @@ def test_the_dm_review_appears_as_soon_as_one_row_is_confirmed(monkeypatch):
 
     text = _view_text(sent[0][1])
     assert "Scan complete" in text
-    assert "Some cards could not be confirmed." in text
+    assert "Nothing is saved yet." in text
     assert "Save confirmed cards" in _view_labels(sent[0][1])
     # The draft was stored, and the upload stays open so more screenshots can
     # still reach the same draft.
@@ -8049,7 +8063,7 @@ def test_a_draft_with_every_identity_bound_keeps_the_correction_flow():
     ]
     assert "cards_scan_save_partial:draft-correctable" not in ids
     assert "cards_scan_confirm:draft-correctable" in ids
-    assert "Fix the uncertain card below before saving." in _view_text(view)
+    assert "Fix 1 uncertain card, then save." in _view_text(view)
 
 
 def test_a_partial_review_names_an_uncertain_card_inside_a_confirmed_row():
@@ -8450,7 +8464,7 @@ def test_a_scan_started_in_the_configured_server_creates_a_valid_session(
 
     assert len(calls["inserted"]) == 1
     assert calls["inserted"][0]["guild_id"] == 1
-    assert "Private Upload Ready" in _view_text(view)
+    assert "Private upload ready" in _view_text(view)
 
     found = asyncio.run(cards_command._find_card_upload_state(
         SimpleNamespace(component_state=store), 123
@@ -8480,7 +8494,7 @@ def test_a_scan_started_from_a_dm_binds_to_the_configured_family(monkeypatch):
     assert asyncio.run(cards_command._find_card_upload_state(
         SimpleNamespace(component_state=store), 123
     )) is not None
-    assert "Private Upload Ready" in _view_text(view)
+    assert "Private upload ready" in _view_text(view)
 
 
 def test_a_valid_session_survives_its_own_ownership_recheck(monkeypatch):
@@ -9269,18 +9283,23 @@ def test_the_accepted_dm_is_self_contained_and_carries_optional_regions():
 
     assert "<@222>" in text, "the partner's Discord identity is present"
     assert "`#H`" in text
-    assert "**Their clan:**" in text
+    assert "**Your account:**" in text and "`#ME`" in text
+    assert "**Trading with:**" in text
+    assert "[Open their clan]" in text
     assert "OpenClanProfile&tag=B" in text
-    # Different clans: the optional meeting place renders, quiet and separate.
-    assert "Noahs Ark" in text
+    # Different clans: the optional meeting place renders as one quiet line
+    # inside the main container - never another card.
+    assert len(view) == 1
+    assert "-# ℹ️ Need a place to trade?" in text
     assert "#8VPQCR2R" in text
-    # No FWA flag, no warning region.
+    # No FWA flag, no warning callout.
     assert "FWA" not in text
 
     warned = cards_command._accepted_trade_dm(trade, fwa_relevant=True)
     warned_text = _view_text(warned)
-    assert "Warning: FWA" in warned_text
-    assert "wait until it starts" in warned_text
+    assert len(warned) == 2, "the FWA warning is its own compact callout"
+    assert "⚠️ **FWA — Wait for war**" in warned_text
+    assert "Do not trade until war starts." in warned_text
 
     same_clan = cards_command._accepted_trade_dm(
         dict(trade, status="ready", holder_clan_tag="#A"), fwa_relevant=False
@@ -9388,12 +9407,13 @@ def test_the_modal_lifecycle_is_ack_update_then_edit_in_order(monkeypatch):
     assert document["cards"][target.id] == 4
 
 
-def test_still_accurate_updates_the_check_date_and_copy_says_so(monkeypatch):
-    """The button's real function is small; the copy must not overclaim.
+def test_freshness_confirmation_is_gone_and_legacy_button_redirects(monkeypatch):
+    """The freshness-confirmation concept is removed from the rendered UI.
 
-    cards_confirm stamps confirmed_at/last_seen_at. Matching does not stop
-    without it (MATCHABLE_FOR is ten years and every member write refreshes
-    confirmed_at), so the footer must not say "keep matching".
+    Its stamp never affected matching (MATCHABLE_FOR is ten years and every
+    member write refreshes confirmed_at), so the dashboard no longer asks for
+    meaningless maintenance. The old cards_confirm button on messages already
+    posted must still work: it opens the collection and writes nothing.
     """
     account = _gate_account()
     old = datetime.now(timezone.utc) - timedelta(days=10)
@@ -9405,11 +9425,20 @@ def test_still_accurate_updates_the_check_date_and_copy_says_so(monkeypatch):
     }
     view = cards_command._dashboard(account, inventory, account_count=1)
     text = _view_text(view)
-    assert "keep matching" not in text
-    assert "saves today's date" in text
-    assert "Matching does not stop" in text
+    for phrase in (
+        "Still accurate",
+        "Still correct",
+        "saves today's date",
+        "keep matching",
+        "Matching does not stop",
+    ):
+        assert phrase not in text, f"freshness copy survived: {phrase}"
+    ids = {n.get("custom_id") for n in _view_nodes(view)}
+    assert not any(
+        str(i).startswith("cards_confirm:") for i in ids if i
+    ), "the dashboard still renders the removed freshness button"
 
-    # And the handler really does only that: refresh the stamps.
+    # A legacy button click redirects to the collection and stamps nothing.
     document = dict(inventory)
     monkeypatch.setattr(
         cards_command, "_load_target", _fake_load_target(account, document),
@@ -9456,15 +9485,15 @@ def test_still_accurate_updates_the_check_date_and_copy_says_so(monkeypatch):
     inventories = Inventories()
     mongo = SimpleNamespace(card_inventories=inventories, card_trades=NoSwaps())
 
-    asyncio.run(cards_command.cards_confirm(
+    result = asyncio.run(cards_command.cards_confirm(
         _quantity_ctx(), "#ME", coc_client=SimpleNamespace(), mongo=mongo,
     ))
 
-    assert len(inventories.sets) == 1
-    assert set(inventories.sets[0]) == {"confirmed_at", "last_seen_at"}, (
-        "Still accurate touches nothing but the check stamps"
+    assert result == ["BOARD"], "the legacy button must land on the collection"
+    assert inventories.sets == [], (
+        "the legacy freshness button must not write confirmed_at"
     )
-    assert document["confirmed_at"] > old
+    assert document["confirmed_at"] == old
 
 
 def test_scan_prompt_does_not_require_two_rows_per_image():
@@ -9474,8 +9503,8 @@ def test_scan_prompt_does_not_require_two_rows_per_image():
         account, "session-1", usable_until=None,
     ))
     assert "two complete rows" not in prompt.lower()
-    assert "complete rows of six" in prompt.lower()
-    assert "overlap between screenshots is fine" in prompt.lower()
+    assert "every row of six cards" in prompt.lower()
+    assert "overlap is fine" in prompt.lower()
     assert "any order is fine" in prompt.lower()
 
     progress = _view_text(cards_command._scan_upload_progress(
@@ -9549,10 +9578,10 @@ def test_the_preview_actually_sends_the_fwa_warning_state():
     assert sent == [("13 · Accepted with FWA warning", True)]
     assert len(rest.messages) == 1
     text = _view_text(rest.messages[0])
-    assert "Warning: FWA" in text
-    assert "wait until it starts" in text
-    assert "Your swap was accepted" in text, (
-        "the warning rides with the accepted message, in its own region"
+    assert "⚠️ **FWA — Wait for war**" in text
+    assert "Do not trade until war starts." in text
+    assert "Trade accepted" in text, (
+        "the warning rides with the accepted message, as the compact callout"
     )
 
 

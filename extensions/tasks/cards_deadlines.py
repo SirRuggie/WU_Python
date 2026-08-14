@@ -43,28 +43,25 @@ mongo_client = None
 # wording members receive - never a second copy that can drift.
 PROPOSAL_EXPIRED_TITLE = "Card proposal expired"
 PROPOSAL_EXPIRED_DETAIL = (
-    "Nobody answered within 12 hours, so it closed. "
-    "Nothing changed in either collection."
+    "Nobody answered within 12 hours, so it closed. Nothing changed."
 )
 AUTO_DEDUCT_TITLE = "Your card was deducted automatically"
 AUTO_DEDUCT_DETAIL_MOVED = (
-    "The other player confirmed they sent theirs over "
-    "7 days ago and we did not hear back from you. "
-    "If this is wrong, open /cards, tap the card and "
+    "The other player confirmed they sent theirs over 7 days ago. "
+    "We did not hear back from you, so one copy was removed. "
+    "If this is wrong, open /cards, tap **Update collection**, and "
     "set your real count."
 )
 AUTO_DEDUCT_DETAIL_NO_SPARE = (
-    "The other player confirmed theirs over "
-    "7 days ago. Your collection no longer showed a "
-    "spare, so nothing was changed."
+    "The other player confirmed theirs over 7 days ago. "
+    "Your collection no longer showed a spare, so nothing was changed."
 )
 SWAP_CLOSED_OWED_TITLE = "Card swap closed"
 SWAP_CLOSED_OWED_DETAIL = (
-    "The other player never confirmed, and their "
-    "collection no longer showed a spare of the "
-    "card you were waiting for. It was not added. "
-    "If you did receive it in game, open /cards "
-    "and set your count for that card."
+    "The other player never confirmed. Their collection no longer "
+    "showed a spare of the card you were waiting for, so it was not "
+    "added. If you did receive it in game, open /cards, tap "
+    "**Update collection**, and set your count."
 )
 
 
@@ -233,6 +230,11 @@ async def _finish_one_sided_swaps(mongo, bot, *, now) -> int:
                             if moved
                             else AUTO_DEDUCT_DETAIL_NO_SPARE
                         ),
+                        # Gold when a copy was actually removed: the reader
+                        # may want to correct it. Otherwise a quiet close.
+                        accent=(
+                            cards_command.GOLD_ACCENT if moved else None
+                        ),
                     )
                 if not moved:
                     # The player who confirmed was promised the other card
@@ -299,8 +301,8 @@ async def _close_abandoned_swaps(mongo, bot, *, now) -> int:
                     title="Card swap closed",
                     detail=(
                         "Neither of you confirmed within 7 days, so it was "
-                        "closed and both cards are free again. Nothing was "
-                        "changed in either collection."
+                        "closed. Both cards are free again and nothing was "
+                        "changed."
                     ),
                 )
     return closed

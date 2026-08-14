@@ -26,14 +26,13 @@ OWNED = 1
 DUPLICATE = 2
 MAX_COPIES = 99
 
-FRESH_FOR = timedelta(hours=24)
-AGING_FOR = timedelta(hours=48)
-# Kept only so an existing collection with no confirmation timestamp at all
-# is still recognised as never-scanned. A collection does NOT expire with age:
-# this event runs for weeks, and dropping somebody for being idle removed
-# people whose cards were perfectly accurate, without ever telling them.
-# Visibility is now driven by whether they answer requests - see
-# `trading_paused` and the check-in flow in extensions/commands/cards.py.
+# A collection does NOT expire with age: this event runs for weeks, and
+# dropping somebody for being idle removed people whose cards were perfectly
+# accurate, without ever telling them. Visibility is driven by whether they
+# answer requests - see `trading_paused` and the check-in flow in
+# extensions/commands/cards.py. The player-facing freshness-confirmation
+# control was removed with it; `MATCHABLE_FOR` below survives only so a
+# collection with no timestamp at all is recognised as never-scanned.
 # Gems the responder pays when they hold no duplicate of the requested card.
 # Only a same-category trade exists at all - elixir for elixir, dark for dark,
 # builder for builder, super for super - so the cost keys on that category.
@@ -359,19 +358,6 @@ def as_utc(value: object) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
-
-
-def freshness_label(value: object, *, now: datetime | None = None) -> str:
-    stamp = as_utc(value)
-    if stamp is None:
-        return "stale"
-    now = as_utc(now) or datetime.now(timezone.utc)
-    age = max(timedelta(), now - stamp)
-    if age <= FRESH_FOR:
-        return "fresh"
-    if age <= AGING_FOR:
-        return "aging"
-    return "stale"
 
 
 def _document_timestamp(document: Mapping[str, object]) -> datetime | None:

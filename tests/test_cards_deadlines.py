@@ -379,4 +379,4 @@ def test_a_no_spare_auto_settle_tells_the_owed_player_too(monkeypatch):
     assert trades.docs["t10"]["holder_auto_settled"] == "no_spare"
     text = " ".join(str(dm) for dm in rest.dms)
     assert "nothing was changed" in text
-    assert "It was not added" in text, "the owed player is told as well"
+    assert "was not added" in text, "the owed player is told as well"

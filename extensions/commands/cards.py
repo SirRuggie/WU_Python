@@ -62,7 +62,6 @@ from utils.cards import (
     category_summary,
     family_supply,
     find_matches,
-    freshness_label,
     holders_for_card,
     inventory_summary,
     inventory_is_matchable,
@@ -74,7 +73,7 @@ from utils.cards import (
 from utils.component_state import delete_state, get_state, insert_state, update_state
 from utils import troop_emoji
 from utils.emoji import EmojiType, emojis
-from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
+from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
 from hikari.impl import (
@@ -143,7 +142,6 @@ GLOBAL_CHAT_LINK = (
     "https://link.clashofclans.com/?action=OpenGlobalChat&"
     "chatId=P592bad3209a4408a9ba356469caaaa81"
 )
-FOOTER = "assets/Red_Footer.png"
 
 def _parse_snowflake_env(name: str) -> int | None:
     raw = os.getenv(name, "").strip()
@@ -378,13 +376,32 @@ def _plain(value: object, *, limit: int = 90) -> str:
     return text if len(text) <= limit else f"{text[:limit - 1]}…"
 
 
+def _panel(accent: object, components: list) -> Container:
+    """One Container, colored only when a semantic accent is passed.
+
+    `accent_color` is typed UndefinedOr[Color], so "no accent" must omit the
+    argument rather than pass None.
+    """
+    if accent is None:
+        return Container(components=components)
+    return Container(accent_color=accent, components=components)
+
+
 def _notice(
-    title: str, description: str, *, back_tag: str | None = None
+    title: str,
+    description: str,
+    *,
+    back_tag: str | None = None,
+    accent: object = RED_ACCENT,
 ) -> list[Container]:
     """A message, and - when the caller knows the account - a way out of it.
 
     A notice replaces the whole panel, so without a control it is a dead end
     and the only escape is running /cards again.
+
+    Color follows the accent canon: most notices refuse something, so red
+    stays the default; a success passes GREEN_ACCENT and a routine
+    acknowledgement passes None.
     """
     body: list = [
         Text(content=f"# {title}"),
@@ -400,8 +417,7 @@ def _notice(
                 emoji=RETURN_EMOJI,
             ),
         ]))
-    body.append(Media(items=[MediaItem(media=FOOTER)]))
-    return [Container(accent_color=RED_ACCENT, components=body)]
+    return [_panel(accent, body)]
 
 
 def _stale_collection_notice() -> list[Container]:
@@ -454,7 +470,6 @@ def _active_trade_notice(tag: str) -> list[Container]:
                     emoji=RETURN_EMOJI,
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
         ],
     )]
 
@@ -1531,28 +1546,20 @@ def _scan_upload_prompt(
     *,
     usable_until: object,
 ) -> list[Container]:
+    # Gold, not red: the bot is waiting on the player, nothing is wrong.
     return [Container(
-        accent_color=RED_ACCENT,
+        accent_color=GOLD_ACCENT,
         components=[
-            Text(content=f"# {emojis.scan} Send Your Card Screenshots"),
+            Text(content=f"# {emojis.scan} Send your card screenshots"),
             Text(content=(
-                f"## {_escape_markdown(account.name)} · `{_normalize_tag(account.tag)}`\n"
-                "Open the full **Clash of Cards** collection, then send all of its "
-                "screenshots **together in your next DM**.\n\n"
-                "- Select every screenshot at once; **any order is fine**.\n"
-                "- Show complete rows of six cards. Do not cut a row at the "
-                "edge.\n"
-                "- Overlap between screenshots is fine.\n"
-                "- Five screenshots normally cover all 60 cards. You can send "
-                "more later.\n\n"
-                "I will work out which row is which automatically and tell you "
-                "which rows are still needed."
-            )),
-            Separator(divider=True),
-            Text(content=(
-                f"This upload stays linked to **{_escape_markdown(account.name)}** "
-                f"and is open {_scan_expiry_text(usable_until)}.\n\n"
-                f"{_scan_privacy_text()}"
+                f"**{_escape_markdown(account.name)}** · "
+                f"`{_normalize_tag(account.tag)}`\n"
+                "Open your collection in game. Screenshot every row of six "
+                "cards.\n"
+                "Send all screenshots here in one message.\n"
+                "- Any order is fine. Overlap is fine.\n"
+                "- Do not cut a row at the edge. Five screenshots normally "
+                "cover all 60 cards."
             )),
             ActionRow(components=[
                 LinkButton(
@@ -1567,7 +1574,10 @@ def _scan_upload_prompt(
                     emoji=CANCEL_EMOJI,
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
+            Text(content=(
+                f"-# Open {_scan_expiry_text(usable_until)}. "
+                "The bot reads the images once and does not keep them."
+            )),
         ],
     )]
 
@@ -1576,11 +1586,12 @@ def _scan_upload_started(account, *, usable_until: object) -> list[Container]:
     return [Container(
         accent_color=GREEN_ACCENT,
         components=[
-            Text(content=f"# {emojis.scan} Private Upload Ready"),
+            Text(content=f"# {emojis.scan} Private upload ready"),
             Text(content=(
-                f"I sent **{_escape_markdown(account.name)}** a private upload DM. "
-                "Open it, select every collection screenshot at once, and send. "
-                f"Any order is fine. The upload closes {_scan_expiry_text(usable_until)}."
+                f"I sent **{_escape_markdown(account.name)}** a private "
+                "upload DM. Open it and send your collection screenshots "
+                "there.\n"
+                f"-# The upload is open {_scan_expiry_text(usable_until)}."
             )),
             Separator(divider=True),
             ActionRow(components=[
@@ -1591,7 +1602,6 @@ def _scan_upload_started(account, *, usable_until: object) -> list[Container]:
                     emoji=RETURN_EMOJI,
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
         ],
     )]
 
@@ -1600,7 +1610,7 @@ def _scan_dm_unavailable(account) -> list[Container]:
     return [Container(
         accent_color=RED_ACCENT,
         components=[
-            Text(content="# I Couldn't Open the Private Upload"),
+            Text(content="# I could not open a private upload"),
             Text(content=(
                 "Allow direct messages from members of the family Discord server, "
                 "then tap **Try scan again**. **Edit counts** still works "
@@ -1627,7 +1637,6 @@ def _scan_dm_unavailable(account) -> list[Container]:
                     emoji=RETURN_EMOJI,
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
         ],
     )]
 
@@ -1727,23 +1736,18 @@ def _scan_upload_progress(
     issue_text = ""
     if issue_lines:
         issue_text = "\n\n" + "\n".join(issue_lines[:3])
+    # Gold: the bot is waiting on more screenshots, nothing is wrong.
     return [Container(
-        accent_color=RED_ACCENT,
+        accent_color=GOLD_ACCENT,
         components=[
-            Text(content=f"# {emojis.scan} I Still Need More of the Collection"),
+            Text(content=f"# {emojis.scan} More screenshots needed"),
             Text(content=(
-                f"## {_escape_markdown(account.name)} · `{_normalize_tag(account.tag)}`\n"
+                f"**{_escape_markdown(account.name)}** · "
+                f"`{_normalize_tag(account.tag)}`\n"
                 f"{result}\n\n"
                 f"**Still needed:**\n{_scan_missing_rows_text(draft)}\n\n"
-                "Send only those missing screenshots in this DM. You do **not** "
-                "need to resend sections already accepted, and the order does not "
-                f"matter.{issue_text}"
-            )),
-            Separator(divider=True),
-            Text(content=(
-                f"Upload open {_scan_expiry_text(usable_until)}. "
-                "Show complete rows of six cards. Overlap between screenshots "
-                "is fine."
+                "Send only the missing rows in this DM. Do not resend "
+                f"accepted rows.{issue_text}"
             )),
             ActionRow(components=[
                 LinkButton(
@@ -1758,7 +1762,9 @@ def _scan_upload_progress(
                     emoji=CANCEL_EMOJI,
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
+            Text(content=(
+                f"-# Open {_scan_expiry_text(usable_until)}."
+            )),
         ],
     )]
 
@@ -1789,7 +1795,6 @@ def _scan_upload_problem(
                     emoji=CANCEL_EMOJI,
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
         ],
     )]
 
@@ -1803,7 +1808,7 @@ def _scan_capture_issue_lines(draft: object) -> list[str]:
     except TypeError:
         return []
     translations = {
-        "capture_requires_two_rows": "could not find exactly two complete card rows",
+        "capture_requires_two_rows": "could not find a complete card row",
         "duplicate_capture_ignored": "repeats an already accepted section",
         "duplicate_page_ignored": "repeats an already accepted section",
         "overlapping_capture_rows": "overlaps rows already shown on another page",
@@ -1820,10 +1825,10 @@ def _scan_capture_issue_lines(draft: object) -> list[str]:
         "image_decode_failed": "could not be decoded",
         "invalid_or_corrupt_image": "was invalid or corrupt",
         "no_card_rows_detected": "did not contain readable card rows",
-        "no_valid_rows": "did not contain two readable card rows",
-        "no_valid_six_column_rows": "did not contain two complete six-card rows",
+        "no_valid_rows": "did not contain a readable card row",
+        "no_valid_six_column_rows": "did not contain a complete six-card row",
         "no_card_sized_components": "did not contain readable card portraits",
-        "insufficient_card_slots": "did not show all six cards in both rows",
+        "insufficient_card_slots": "did not show all six cards in a row",
         "no_new_collection_pages": "did not add a new collection section",
         "no_new_collection_rows": "did not add a new card row",
         "no_confirmed_card_rows": "did not show a card row I could confirm",
@@ -1854,7 +1859,7 @@ def _scan_capture_issue_lines(draft: object) -> list[str]:
             if detail not in reasons:
                 reasons.append(detail)
         if not reasons:
-            reasons.append("could not be validated as the expected two rows")
+            reasons.append("could not be read as complete six-card rows")
         assignment = (
             f" (collection rows {assigned_page * 2 - 1}–{assigned_page * 2})"
             if 1 <= assigned_page <= CARD_SCAN_CAPTURE_COUNT
@@ -1954,7 +1959,7 @@ def _scan_accounts_problem(
     return [Container(
         accent_color=RED_ACCENT,
         components=[
-            Text(content=f"# {emojis.scan} Account Check Needed"),
+            Text(content=f"# {emojis.scan} Account check needed"),
             Text(content=(
                 f"{reason} The selected profile must load before its screenshot "
                 f"draft can be shown or saved. {preserved}\n\n{privacy}"
@@ -1974,7 +1979,6 @@ def _scan_accounts_problem(
                     emoji=CANCEL_EMOJI,
                 ),
             ]),
-            Media(items=[MediaItem(media=FOOTER)]),
         ],
     )]
 
@@ -2007,9 +2011,6 @@ def _scan_review(
     unknown = _ordered_card_ids(draft.get("unknown_card_ids") or ())
     unseen = _ordered_card_ids(draft.get("unseen_card_ids") or ())
     errors = _scan_strings(draft.get("errors"), limit=5)
-    unverified_duplicates = _ordered_card_ids(
-        draft.get("duplicate_unverified_card_ids") or ()
-    )
     manual_required = _scan_manual_required_ids(draft)
     reserved = bool(_card_reservations(inventory))
     confirmable = _scan_draft_confirmable(draft) and not reserved
@@ -2068,53 +2069,53 @@ def _scan_review(
             "**Send these pages again:**\n" + "\n".join(capture_issue_lines)
         )
 
+    # One state line: what happened, and that nothing is saved yet.
     if errors:
-        status = "**This scan cannot be saved.** The scanner could not read it."
+        state_line = "**This scan cannot be read.** Nothing is saved."
     elif reserved:
-        status = "**Finish or cancel the accepted card trade before saving this scan.**"
-    elif correctable and not reserved:
-        status = "**Fix the uncertain card below before saving.**"
+        state_line = (
+            "**Finish or cancel your accepted trade first.** "
+            "Nothing is saved yet."
+        )
+    elif correctable:
+        state_line = (
+            f"**Fix {len(unknown)} uncertain card"
+            f"{'s' if len(unknown) != 1 else ''}, then save.** "
+            "Nothing is saved yet."
+        )
     elif partial:
-        # The scanner never guesses a row it could not confirm. Say that
-        # plainly, and say what the reader must do about it.
-        status = (
-            "**Some cards could not be confirmed.**\n"
-            "Check them before you trade. Nothing was guessed."
+        state_line = (
+            f"**I read {len(states)} of 60 cards.** Nothing is saved yet."
         )
     elif not confirmable:
-        status = "**This scan needs another screenshot before it can be saved.**"
+        state_line = (
+            "**This scan needs another screenshot.** Nothing is saved yet."
+        )
     else:
-        status = "**All 60 cards were read.**"
+        state_line = (
+            "**All 60 cards were read.** Nothing is saved yet.\n"
+            f"**{collected} collected** · {len(missing)} missing"
+        )
 
     body: list = [
         Text(content="# Scan complete"),
         Text(content=(
-            f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
-            + (f"I read {len(states)} of 60 cards.\n" if partial else "")
-            + f"**{collected} collected** · {len(missing)} missing\n"
-            # Two similar counts side by side read as one. On a partial scan
-            # the cards still to check are the message; the spare question is
-            # asked later, from the collection, once these are saved.
-            + (
-                f"{len(unverified_duplicates)} cards still need a duplicate check.\n"
-                if unverified_duplicates and not partial else ""
-            )
-            + "-# Nothing has been saved. The bot does not retain the image files. "
-            f"This review is usable {_scan_expiry_text(usable_until)}."
+            f"**{_escape_markdown(account.name)}** · "
+            f"`{_normalize_tag(account.tag)}`\n"
+            + state_line
         )),
-        Separator(divider=True),
-        Text(content=status),
     ]
     if details:
-        body.append(Text(content="\n".join(details)))
+        body.extend([
+            Separator(divider=True),
+            Text(content="\n".join(details)),
+        ])
     if correctable:
         next_card_id = unknown[0]
         body.extend([
             Separator(divider=True),
-            Text(content=(
-                f"## Correct next: {CARD_BY_ID[next_card_id].name}\n"
-                f"{len(unknown)} uncertain card{'s' if len(unknown) != 1 else ''} remaining"
-            )),
+            # The remaining count already sits in the state line above.
+            Text(content=f"## Next: {CARD_BY_ID[next_card_id].name}"),
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
@@ -2147,11 +2148,8 @@ def _scan_review(
             ),
         ]
         body.append(Text(content=(
-            f"**Save confirmed cards** keeps the {len(states)} "
-            "cards I read. It changes nothing else.\n"
-            "A category with cards still to check stops being ready to trade.\n"
-            "Open **Update collection**, set those cards, then tap "
-            "**Ready to trade**."
+            f"**Save confirmed cards** saves the {len(states)} cards I "
+            "read.\nThen set the rest in **Update collection**."
         )))
     else:
         save_buttons = [
@@ -2169,8 +2167,8 @@ def _scan_review(
                 label="Update collection",
             ))
             body.append(Text(content=(
-                "**Update collection** starts from your saved collection. "
-                "This scan result is not copied into it."
+                "-# **Update collection** edits your saved collection, "
+                "not this scan."
             )))
     body.extend([
         Separator(divider=True),
@@ -2184,6 +2182,14 @@ def _scan_review(
             ),
         ]),
     ])
+    quiet = []
+    if partial:
+        quiet.append(
+            "-# Nothing was guessed. A category with unchecked cards is "
+            "not ready to trade."
+        )
+    quiet.append(f"-# This review is open {_scan_expiry_text(usable_until)}.")
+    body.append(Text(content="\n".join(quiet)))
     return [Container(components=body)]
 
 
@@ -2384,8 +2390,10 @@ def _dashboard(
     all_complete = len(complete) == len(CATEGORIES)
     reserved_count = len(_card_reservations(inventory))
     unverified_duplicates = _scan_unverified_ids(inventory)
+    # Informational only: when this collection last changed. There is no
+    # freshness-confirmation control any more - every write refreshes the
+    # stamp, and age never turns matching off.
     stamp = inventory.get("confirmed_at") or inventory.get("updated_at")
-    age = freshness_label(stamp)
     recorded = bool(normalize_cards(inventory.get("cards")))
 
     if summary.known:
@@ -2486,24 +2494,15 @@ def _dashboard(
             emoji=TRADES_EMOJI,
         ),
     ]
-    view_row: list = []
     if unverified_duplicates:
         # The note above already says these need checking. Until now the only
         # button that acted on it lived on a screen the board could not reach,
         # so the note was advice with nowhere to go.
-        view_row.append(Button(
+        body.append(ActionRow(components=[Button(
             style=hikari.ButtonStyle.PRIMARY,
             custom_id=f"cards_hidden:{tag}",
             label=f"Check spares ({len(unverified_duplicates)})",
-        ))
-    if complete and age != "fresh":
-        view_row.append(Button(
-            style=hikari.ButtonStyle.SUCCESS,
-            custom_id=f"cards_confirm:{tag}",
-            label="Still accurate",
-        ))
-    if view_row:
-        body.append(ActionRow(components=view_row))
+        )]))
     body.append(Separator(divider=True))
 
     # One way in, not three. This used to be four category menus, a sort
@@ -2546,15 +2545,6 @@ def _dashboard(
             label="Admin",
             emoji=ADMIN_EMOJI,
         )]))
-    # Informational age only. Matching does not expire with age, so this must
-    # not threaten an effect the rules do not have. The button's real work is
-    # small and stated literally: it saves today's date as the last check.
-    if complete and age != "fresh":
-        body.append(Text(content=(
-            f"-# Numbers last confirmed {_relative_timestamp(stamp)}. "
-            "**Still accurate** saves today's date. "
-            "Matching does not stop either way."
-        )))
     return [Container(components=body)]
 
 
@@ -2925,6 +2915,7 @@ def _hidden_badge_review(
         return _notice(
             "Possible spares checked",
             "The hidden duplicate-badge review is complete.",
+            accent=GREEN_ACCENT,
         )
     tag = _normalize_tag(account.tag)
     batch = pending[:HIDDEN_BADGE_BATCH_SIZE]
@@ -3039,9 +3030,10 @@ def _hidden_badge_review(
 def _scan_saved_notice(account, *, pending: int = 0) -> list[Container]:
     detail = f" {pending} possible spare{'s' if pending != 1 else ''} can be checked later." if pending else ""
     return _notice(
-        "Collection Saved",
+        "Collection saved",
         f"**{_escape_markdown(account.name)}** is updated.{detail} Run `/cards` "
         "in the family server to open your collection.",
+        accent=GREEN_ACCENT,
     )
 
 
@@ -3119,9 +3111,10 @@ def _quantity_editor(
     # only pairs categories BOTH players have marked complete. Full size, not
     # small print - it was buried at the end of a page counter for a while.
     status = (
-        "These cards can be traded."
+        "**Ready to trade.** Other players can see these spares."
         if complete
-        else "**Not ready to trade yet.** Tap **Ready to trade** below."
+        else "**Not ready to trade yet.** Check every number. "
+        "Then tap **Ready to trade**."
     )
 
     # All nineteen quantities in a single component. Nineteen separate text
@@ -3200,7 +3193,7 @@ def _quantity_editor(
         # a card also has a number in the game, so "number" could be read as
         # the wrong one. This is the same phrase the modal behind Set number
         # asks - "How many do you have?" - so the two agree.
-        Text(content="**Select a card below to change how many you have.**"),
+        Text(content="**Choose a card below to change how many you have.**"),
         # The chosen card IS the menu. A default-marked option is drawn in
         # place of the placeholder, so the closed menu reads "Barbarian · 3"
         # once something is chosen and "Choose a card to edit" before that.
@@ -3295,8 +3288,7 @@ def _quantity_editor(
             # thing to do after them. The old first sentence went with it -
             # the button underneath already says what tapping it does.
             "**Scan screenshots instead**\n"
-            "Some cards may not be detected. Check your collection after "
-            "scanning."
+            "-# Some cards may not be read. Check the result after scanning."
         )),
         ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -3466,7 +3458,11 @@ async def _hidden_badge_review_view(
         return (
             await _card_editor_view(account, inventory, pending[0])
             if pending
-            else _notice("Duplicate checks complete", "No cards still need review.")
+            else _notice(
+                "Duplicate checks complete",
+                "No cards still need review.",
+                accent=GREEN_ACCENT,
+            )
         )
     return _hidden_badge_review(
         account,
@@ -3571,7 +3567,7 @@ def _holder_line(match, ordinal: int, *, clan_emoji: dict | None = None) -> str:
         f"**{ordinal}. {_escape_markdown(match.holder_name, limit=40)}** "
         f"{mention}\n"
         f"-# {where} • {standing} • {wants} • "
-        f"confirmed {_relative_timestamp(match.confirmed_at)}"
+        f"updated {_relative_timestamp(match.confirmed_at)}"
     )
 
 
@@ -3612,7 +3608,7 @@ def _match_line(match, ordinal: int) -> str:
             )
     blocks.append(
         f"-# `{match.holder_tag}` • {location}{same_clan} • "
-        f"confirmed {_relative_timestamp(match.confirmed_at)}"
+        f"updated {_relative_timestamp(match.confirmed_at)}"
     )
     return "\n\n".join(blocks)
 
@@ -3701,7 +3697,7 @@ def _match_list_view(
     action: str,
     page: int,
     pages: int,
-    accent: int,
+    accent: object,
     pickers: list | None = None,
 ) -> list[Container]:
     """One paginated list, shared by the favour and demand screens.
@@ -3763,7 +3759,7 @@ def _match_list_view(
             ),
         ]),
     ])
-    return [Container(accent_color=accent, components=body)]
+    return [_panel(accent, body)]
 
 
 def _favours_view(
@@ -3844,12 +3840,13 @@ def _demand_view(
     return _match_list_view(
         account,
         title=f"# {emojis.card_hot} Your spares others want",
-        blurb="Worth keeping when you bargain.",
+        blurb="Other players need these. Good cards to offer.",
         rows="\n\n".join(blocks),
         action="cards_demand",
         page=page,
         pages=pages,
-        accent=GOLD_ACCENT,
+        # A list to read, not something waiting on the player: no accent.
+        accent=None,
     )
 
 
@@ -4439,10 +4436,9 @@ def _matches_view(
             emoji=TRADES_EMOJI,
         ),
     ]))
-    return [Container(
-        accent_color=GREEN_ACCENT if per_card else RED_ACCENT,
-        components=body,
-    )]
+    # Green only when there is something to act on. An empty result is not a
+    # warning, so it carries no accent.
+    return [_panel(GREEN_ACCENT if per_card else None, body)]
 
 
 async def _clan_emoji_map(mongo: MongoClient, holders: list) -> dict:
@@ -4566,7 +4562,7 @@ def _holders_view(
     # once at the top instead of once per holder.
     same_clan_total = sum(1 for match in holders if match.same_clan)
     components: list = [
-        Text(content=f"# {category_markup(card.category)} Who Has {card.name}?"),
+        Text(content=f"# {category_markup(card.category)} Who has {card.name}?"),
         Text(content=(
             f"**You get:** {_card_label(card)}\n"
             f"-# {category.short_name} • searching for "
@@ -4664,12 +4660,9 @@ def _holders_view(
                 emoji=HOME_EMOJI,
             ),
         ]),
-        Media(items=[MediaItem(media=FOOTER)]),
     ])
-    return [Container(
-        accent_color=GREEN_ACCENT if holders else RED_ACCENT,
-        components=components,
-    )]
+    # Nobody holding a spare is an empty result, not a warning.
+    return [_panel(GREEN_ACCENT if holders else None, components)]
 
 
 def _trade_offer_view(account, card_id: str, holder) -> list[Container]:
@@ -4735,38 +4728,35 @@ def _trade_offer_view(account, card_id: str, holder) -> list[Container]:
             ],
         )])
 
-    return [Container(
-        accent_color=GREEN_ACCENT,
-        components=[
-            Text(content=f"# 🤝 Swap for {wanted.name}"),
-            Text(content=(
-                f"**You receive:** {wanted.name}\n"
-                f"**From:** {_escape_markdown(holder.holder_name, limit=60)} "
-                f"· `{holder_tag}`\n\n"
-                f"{instruction}"
-            )),
-            Separator(divider=True),
-            chooser,
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=(
-                        f"cards_holder_page:{_normalize_tag(account.tag)}"
-                        f"|{wanted.id}|0"
-                    ),
-                    label="Back to holders",
-                    emoji=RETURN_EMOJI,
+    # Composing an offer is not a success yet: no accent.
+    return [_panel(None, [
+        Text(content=f"# 🤝 Swap for {wanted.name}"),
+        Text(content=(
+            f"**You receive:** {wanted.name}\n"
+            f"**From:** {_escape_markdown(holder.holder_name, limit=60)} "
+            f"· `{holder_tag}`\n\n"
+            f"{instruction}"
+        )),
+        Separator(divider=True),
+        chooser,
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=(
+                    f"cards_holder_page:{_normalize_tag(account.tag)}"
+                    f"|{wanted.id}|0"
                 ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
-                    label="All matches",
-                    emoji=SEARCH_EMOJI,
-                ),
-            ]),
-            Media(items=[MediaItem(media=FOOTER)]),
-        ],
-    )]
+                label="Back to holders",
+                emoji=RETURN_EMOJI,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_matches:{_normalize_tag(account.tag)}",
+                label="All matches",
+                emoji=SEARCH_EMOJI,
+            ),
+        ]),
+    ])]
 
 
 def _trade_lease_specs(trade: dict) -> tuple[tuple[str, str, str], ...]:
@@ -6126,8 +6116,6 @@ def _trade_proposal_dm(
     """
     wanted = CARD_BY_ID[trade["wanted_card_id"]]
     given = CARD_BY_ID[trade["given_card_id"]]
-    requester = _escape_markdown(trade.get("requester_name"), limit=60)
-    holder = _escape_markdown(trade.get("holder_name"), limit=60)
     # Everything of theirs this holder could take, the proposed card first.
     # Naming one card and then mentioning the others as an aside read as a
     # contradiction: it stated what you receive, then said to pick.
@@ -6152,7 +6140,6 @@ def _trade_proposal_dm(
     return _trade_dm_container(
         f"{emojis.inbox} New card proposal",
         (
-            f"**{requester}** wants your {_card_label(wanted)}.\n\n"
             f"**You give:** {_card_label(wanted)}\n"
             f"{receive}"
         ),
@@ -6172,19 +6159,20 @@ def _trade_proposal_dm(
             + (
                 ""
                 if same_clan
-                else "\n\n-# You are in different clans. One of you must move "
-                "to the same clan before you can trade."
+                else "\n-# You are in different clans. One of you must move "
+                "before trading."
             )
             + (
                 # This proposal is card for card, so it does not mention gems.
                 # The real gem path is the separate Ask for help flow, which
                 # states payer and price before anything is sent.
-                "\n-# Only same-category trades exist — "
+                "\n-# Same-category trade: "
                 f"{CATEGORY_BY_ID[wanted.category].short_name} for "
                 f"{CATEGORY_BY_ID[wanted.category].short_name}."
             )
         ))],
-        accent=GREEN_ACCENT,
+        # A proposal is a question waiting on the reader, not a success.
+        accent=GOLD_ACCENT,
         attachment=attachment,
         controls=(
             _trade_proposal_controls(trade, choices, preview=preview)
@@ -6194,8 +6182,8 @@ def _trade_proposal_dm(
         footer=(
             "Nothing is reserved until you accept."
             if controls
-            else "Run /cards here or in the server, then open My trades to "
-            f"accept or decline.{chooser} Nothing is reserved until you accept."
+            else "Open /cards and tap **My trades** to accept or decline."
+            f"{chooser} Nothing is reserved until you accept."
         ),
     )
 
@@ -6211,96 +6199,157 @@ async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
     )
 
 
+def _fwa_warning() -> Container:
+    """The one compact accent callout: a red bar, one Text, two short lines.
+
+    Deliberately no heading component, no separator, no footer and no
+    buttons. The emoji and bold words carry the meaning without the color,
+    which the accessibility rule requires anyway.
+    """
+    return Container(
+        accent_color=RED_ACCENT,
+        components=[Text(content=(
+            "⚠️ **FWA — Wait for war**\n"
+            "Do not trade until war starts."
+        ))],
+    )
+
+
+def _noahs_ark_line() -> str:
+    """Optional quick-trade help as one quiet line, never its own card."""
+    return (
+        f"-# ℹ️ Need a place to trade? [**Open Noahs Ark**]({NOAHS_ARK_LINK})"
+        f" · `{NOAHS_ARK_TAG}`"
+    )
+
+
 def _accepted_trade_dm(
     trade: dict, *, fwa_relevant: bool = False
 ) -> list[Container]:
-    """The requester's accepted-swap handoff.
+    """The requester's accepted-trade handoff.
 
     Self-contained on purpose: both accounts and tags, both cards, the
     partner's Discord identity, their clan with a link, and the next action.
     Users kept forgetting who they accepted with and had nothing to search
     for, so the message must stand alone days later.
+
+    One main Container. FWA, when relevant, is the compact red callout;
+    Noahs Ark is a quiet subtext line, not another card.
     """
     wanted = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     given = _card_label(CARD_BY_ID[trade["given_card_id"]])
     status = str(trade.get("status") or "move_needed")
-    # No clan wizard. The bot cannot move accounts and checking for it was a
-    # step that sent people back into the server for nothing; state the
-    # requirement once and let the two players sort it out.
-    next_step = (
-        "**Different clans:** "
-        + _trade_location_line(trade, role="requester")
-        + ".\nOne of you needs to move so you are in the same clan, then send "
-        "the cards in game."
-        if status == "move_needed"
-        else "**Same clan:** " + _trade_location_line(trade, role="requester")
-        + ". Send the cards in game."
-    )
-    holder_clan_name = str(trade.get("holder_clan_name") or "").strip()
-    holder_clan_link = _clan_link(trade.get("holder_clan_tag"))
-    their_clan = ""
-    if holder_clan_name or holder_clan_link:
-        their_clan = (
-            "\n**Their clan:** "
-            + (_escape_markdown(holder_clan_name, limit=50) or "their clan")
-            + (
-                f" — [Open their clan]({holder_clan_link})"
-                if holder_clan_link
-                else ""
-            )
+    move_needed = status == "move_needed"
+    # No clan wizard. The bot cannot move accounts; state the requirement
+    # once and let the two players sort it out.
+    if move_needed:
+        mine = _clan_label(
+            trade.get("requester_clan_name"), trade.get("requester_clan_tag")
         )
+        theirs = _clan_label(
+            trade.get("holder_clan_name"), trade.get("holder_clan_tag")
+        )
+        next_step = (
+            f"**Next:** You are in {mine}. They are in {theirs}.\n"
+            "One of you moves clans. Then send the cards in game."
+        )
+    else:
+        next_step = "**Next:** Send the cards in game."
+    holder_clan_link = _clan_link(trade.get("holder_clan_tag"))
+    partner = (
+        f"**Trading with:** <@{int(trade['holder_discord_id'])}> · "
+        f"**{_escape_markdown(trade['holder_name'], limit=60)}** · "
+        f"`{trade['holder_tag']}`"
+        + (
+            f" · [Open their clan]({holder_clan_link})"
+            if holder_clan_link
+            else ""
+        )
+    )
+    involved_clans = {
+        _normalize_tag(trade.get("requester_clan_tag")),
+        _normalize_tag(trade.get("holder_clan_tag")),
+    }
+    quiet_lines = []
+    if move_needed and NOAHS_ARK_TAG not in involved_clans:
+        quiet_lines.append(_noahs_ark_line())
+    quiet_lines.append("-# Your card is reserved until you confirm.")
     containers = _trade_dm_container(
-        f"{emojis.yes} Your swap was accepted",
+        f"{emojis.yes} Trade accepted",
         (
             f"**You give:** {given}\n"
             f"**You receive:** {wanted}\n"
             f"**Your account:** "
             f"{_escape_markdown(trade['requester_name'], limit=60)} "
-            f"• `{trade['requester_tag']}`\n\n"
-            f"**Trading with:** <@{int(trade['holder_discord_id'])}> · "
-            f"**{_escape_markdown(trade['holder_name'], limit=60)}** · "
-            f"`{trade['holder_tag']}`"
-            f"{their_clan}\n\n"
-            f"{next_step}"
+            f"· `{trade['requester_tag']}`\n"
+            f"{partner}"
         ),
+        extra=[Text(content=(
+            f"{next_step}\n"
+            "Then open /cards and tap **I sent my card**.\n"
+            + "\n".join(quiet_lines)
+        ))],
         accent=GREEN_ACCENT,
-        footer=(
-            "When you have sent it, open /cards and confirm. Your card is "
-            "held until then."
-        ),
     )
     if fwa_relevant:
-        # Its own red region so the warning is findable, without painting the
-        # whole accepted message as an error.
-        containers.append(Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Text(content="## Warning: FWA"),
-                Text(content=(
-                    "If war has not started yet, wait until it starts before "
-                    "trading."
-                )),
-            ],
-        ))
-    involved_clans = {
-        _normalize_tag(trade.get("requester_clan_tag")),
-        _normalize_tag(trade.get("holder_clan_tag")),
-    }
-    if status == "move_needed" and NOAHS_ARK_TAG not in involved_clans:
-        # Optional help for the one case where the players need a place to
-        # meet. Quiet and blue: it is an offer, never an instruction.
-        containers.append(Container(
-            accent_color=BLUE_ACCENT,
-            components=[
-                Text(content="## Need a place to trade?"),
-                Text(content=(
-                    "Noahs Ark is open for quick trades. Anyone can join.\n"
-                    f"[Open Noahs Ark]({NOAHS_ARK_LINK})\n"
-                    f"-# Clan tag: `{NOAHS_ARK_TAG}`"
-                )),
-            ],
-        ))
+        containers.append(_fwa_warning())
     return containers
+
+
+def _holder_accept_feedback(
+    trade: dict,
+    *,
+    taken_card_id: str,
+    status: str,
+    dm_sent: bool,
+    fwa_relevant: bool,
+    tag: str,
+) -> list[Container]:
+    """The holder's half of the handoff, in the same grammar as the DM.
+
+    No "Your account" line: this panel replaces the screen the holder just
+    acted from, so context already binds the account. FWA uses the same
+    compact callout as the requester DM, so there is one FWA presentation.
+    """
+    gives = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
+    receives = _card_label(CARD_BY_ID[str(taken_card_id)])
+    requester_clan = str(trade.get("requester_clan_name") or "").strip()
+    partner = (
+        f"**Trading with:** <@{int(trade['requester_discord_id'])}> · "
+        f"**{_escape_markdown(trade.get('requester_name'), limit=60)}** · "
+        f"`{trade['requester_tag']}`"
+        + (
+            f" · {_escape_markdown(requester_clan, limit=50)}"
+            if requester_clan
+            else ""
+        )
+    )
+    next_step = (
+        "**Next:** Move to the same clan. Then send your card in game."
+        if status == "move_needed"
+        else "**Next:** Send your card in game."
+    )
+    delivery = (
+        "I told them by DM."
+        if dm_sent
+        else f"I could not DM <@{int(trade['requester_discord_id'])}>. "
+        "Please ping them."
+    )
+    feedback = _trade_feedback(
+        "Trade accepted",
+        (
+            f"**You give:** {gives}\n"
+            f"**You receive:** {receives}\n"
+            f"{partner}\n\n"
+            f"{next_step}\n"
+            "Then open **My trades** and tap **I sent my card**.\n"
+            f"-# The exact cards are reserved. {delivery}"
+        ),
+        tag,
+    )
+    if fwa_relevant:
+        feedback.append(_fwa_warning())
+    return feedback
 
 
 async def _trade_involves_fwa(mongo, trade: dict) -> bool:
@@ -6345,6 +6394,29 @@ async def _notify_trade_accepted(
     )
 
 
+def _reader_account_line(trade: dict, recipient_id: int) -> str:
+    """`-# Account: …` for whichever side the recipient is, or "".
+
+    A status DM used to name both players' accounts. The reader only ever
+    needs their own - the detail already names the partner where it matters -
+    so the pair of lines collapses to one quiet line.
+    """
+    try:
+        rid = int(recipient_id)
+    except (TypeError, ValueError):
+        return ""
+    for role in ("requester", "holder"):
+        try:
+            if int(trade.get(f"{role}_discord_id") or 0) != rid:
+                continue
+        except (TypeError, ValueError):
+            continue
+        name = _escape_markdown(trade.get(f"{role}_name"), limit=60)
+        tag = _normalize_tag(trade.get(f"{role}_tag"))
+        return f"-# Account: {name} · `{tag}`"
+    return ""
+
+
 async def _notify_trade_status(
     bot: hikari.GatewayBot,
     trade: dict,
@@ -6352,7 +6424,14 @@ async def _notify_trade_status(
     recipient_id: int,
     title: str,
     detail: str,
+    accent: object = None,
 ) -> bool:
+    """One slim status DM: title, the swap, what happened, whose account.
+
+    Terminal notices deliberately carry no accent, no separators and no
+    navigation footer. Green marks a card arriving, gold an automatic change
+    the reader may want to correct, red a swap that needs review.
+    """
     wanted = CARD_BY_ID.get(str(trade.get("wanted_card_id")))
     given = CARD_BY_ID.get(str(trade.get("given_card_id")))
     swap = (
@@ -6360,24 +6439,17 @@ async def _notify_trade_status(
         if wanted is not None and given is not None
         else "the card swap"
     )
-    accounts = (
-        f"**{_escape_markdown(trade.get('requester_name'), limit=60)}** "
-        f"• `{trade.get('requester_tag')}`\n"
-        f"**{_escape_markdown(trade.get('holder_name'), limit=60)}** "
-        f"• `{trade.get('holder_tag')}`"
-    )
+    components: list = [
+        Text(content=f"## {title}"),
+        Text(content=f"{swap}\n{detail}"),
+    ]
+    account_line = _reader_account_line(trade, recipient_id)
+    if account_line:
+        components.append(Text(content=account_line))
     return await _send_trade_dm(
         bot,
         int(recipient_id),
-        _trade_dm_container(
-            f"{emojis.inbox} {title}",
-            f"{swap}\n\n{detail}\n\n{accounts}",
-            accent=GOLD_ACCENT,
-            footer=(
-                "Run /cards here or in the server for your collection and "
-                "trade status."
-            ),
-        ),
+        [_panel(accent, components)],
         trade_id=str(trade["_id"]),
     )
 
@@ -6411,6 +6483,7 @@ async def _notify_review_participants(
             recipient_id=recipient,
             title="Card swap needs review",
             detail=detail,
+            accent=RED_ACCENT,
         )
         for recipient in recipients
     ))
@@ -6659,10 +6732,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
     ]
     shown = trades[start:start + TRADE_VIEW_LIMIT]
     if not shown:
-        body.append(Text(content=(
-            "No open proposals or accepted swaps for this account. Find a "
-            "specific missing card to propose a family-wide swap."
-        )))
+        body.append(Text(content="No open trades for this account."))
     for trade in shown:
         role = "requester" if _normalize_tag(trade.get("requester_tag")) == tag else "holder"
         status = trade.get("status")
@@ -6748,24 +6818,33 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
                 is_disabled=page >= pages - 1,
             ),
         ]))
-    body.extend([
-        ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_dashboard:{tag}",
-                label="Collection",
-                emoji=RETURN_EMOJI,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_trades:{tag}",
-                label="Refresh",
-                emoji=REFRESH_EMOJI,
-            ),
-        ]),
-        Media(items=[MediaItem(media=FOOTER)]),
+    bottom_row: list = []
+    if not trades:
+        # An empty list's next step is starting a trade, so the route is a
+        # button here rather than a sentence pointing somewhere else.
+        bottom_row.append(Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_matches:{tag}",
+            label="Find trades",
+            emoji=SEARCH_EMOJI,
+        ))
+    bottom_row.extend([
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{tag}",
+            label="Collection",
+            emoji=RETURN_EMOJI,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_trades:{tag}",
+            label="Refresh",
+            emoji=REFRESH_EMOJI,
+        ),
     ])
-    return [Container(accent_color=RED_ACCENT, components=body)]
+    body.append(ActionRow(components=bottom_row))
+    # A routine list, not a warning: no accent.
+    return [_panel(None, body)]
 
 
 SWAP_ACCEPT_FOR = timedelta(hours=12)
@@ -6954,11 +7033,9 @@ def _checkin_dm(tag: str, name: object) -> list[Container]:
         f"{emojis.magnifier} Are you still trading cards?",
         (
             f"Two trade requests for **{_escape_markdown(name, limit=40)}** "
-            "ran out because they were not answered.\n\n"
-            "**Yes** keeps your cards visible. You will keep getting a DM each "
-            "time somebody wants to trade, and you accept or decline there.\n\n"
-            "**No** hides your cards from everyone else. Nothing is deleted, "
-            "and you can turn it back on any time."
+            "were not answered.\n"
+            "**Yes** — your cards stay visible.\n"
+            "**No** — your cards are hidden. Nothing is deleted."
         ),
         accent=GOLD_ACCENT,
         controls=[ActionRow(components=[
@@ -6976,8 +7053,8 @@ def _checkin_dm(tag: str, name: object) -> list[Container]:
             ),
         ])],
         footer=(
-            "No answer within 24 hours hides your cards, and you can turn "
-            "them back on whenever you like."
+            "No answer in 24 hours hides your cards. You can turn them "
+            "back on any time."
         ),
     )
 
@@ -6990,12 +7067,10 @@ def _trading_paused_view(account, *, just_changed: bool = False) -> list[Contain
         components=[
             Text(content=f"## {emojis.magnifier} Trading is off for this account"),
             Text(content=(
-                "Your cards are hidden from everyone else, so nobody can send "
-                "you requests. Nothing was deleted - your collection is exactly "
-                "as you left it."
+                "Your cards are hidden. Nobody can send you requests.\n"
+                "Nothing was deleted."
                 if not just_changed
-                else "Done. Your cards are hidden from everyone else and "
-                "nothing was deleted."
+                else "Done. Your cards are hidden.\nNothing was deleted."
             )),
             Separator(divider=True),
             Text(content="**Do you want to start trading cards again?**"),
@@ -7144,8 +7219,8 @@ def _swap_sent_view(
         components=[
             Text(content=f"## {emojis.yes} Card sent"),
             Text(content=(
-                f"Removed one {_card_label(given)} — you now have "
-                f"**{remaining}**.\n\n{waiting}"
+                f"Removed one {_card_label(given)}. You have "
+                f"**{remaining}** left.\n\n{waiting}"
             )),
             Separator(divider=True),
             ActionRow(components=[
@@ -7183,7 +7258,7 @@ SWAP_ARRIVED_TITLE = "Your card arrived"
 def _swap_arrived_detail(name: object) -> str:
     return (
         f"{_escape_markdown(name, limit=50)} "
-        "confirmed they sent it, so it is now in your collection."
+        "confirmed they sent it. It is in your collection now."
     )
 
 
@@ -7233,31 +7308,33 @@ def _swap_counterpart(trade: dict, *, role: str) -> tuple[str, str]:
     )
 
 
-def _trade_feedback(title: str, description: str, tag: str) -> list[Container]:
+def _trade_feedback(
+    title: str,
+    description: str,
+    tag: str,
+    *,
+    accent: object = GREEN_ACCENT,
+) -> list[Container]:
     tag = _normalize_tag(tag)
-    return [Container(
-        accent_color=GREEN_ACCENT,
-        components=[
-            Text(content=f"# {title}"),
-            Text(content=description),
-            Separator(divider=True),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"cards_trades:{tag}",
-                    label="My trades",
-                    emoji=TRADES_EMOJI,
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_dashboard:{tag}",
-                    label="Collection",
-                    emoji=RETURN_EMOJI,
-                ),
-            ]),
-            Media(items=[MediaItem(media=FOOTER)]),
-        ],
-    )]
+    return [_panel(accent, [
+        Text(content=f"# {title}"),
+        Text(content=description),
+        Separator(divider=True),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"cards_trades:{tag}",
+                label="My trades",
+                emoji=TRADES_EMOJI,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_dashboard:{tag}",
+                label="Collection",
+                emoji=RETURN_EMOJI,
+            ),
+        ]),
+    ])]
 
 
 async def _load_trade_actor(
@@ -8120,6 +8197,7 @@ async def _mark_scan_prompt_received(
             components=_notice(
                 "Screenshots received",
                 f"The private review for **{_escape_markdown(account.name)}** is below.",
+                accent=GREEN_ACCENT,
             ),
         )
     except Exception:
@@ -8153,7 +8231,7 @@ async def _handle_card_scan_dm_upload(
             bot,
             int(event.channel_id),
             _notice(
-                "I Couldn't Verify That Account",
+                "I could not verify that account",
                 "I did not read or retain the attachments. The linked-account "
                 "check must succeed before a screenshot can change a collection. "
                 "Try sending the screenshots again shortly.",
@@ -8174,7 +8252,7 @@ async def _handle_card_scan_dm_upload(
             _scan_upload_problem(
                 account,
                 session_id,
-                "Attach the Collection Screenshots",
+                "Attach the collection screenshots",
                 "Use Discord's **+** button, select every screenshot together, "
                 "then send them in this DM. PNG, JPEG, and still WebP images work.",
                 usable_until=usable_until,
@@ -8188,7 +8266,7 @@ async def _handle_card_scan_dm_upload(
             _scan_upload_problem(
                 account,
                 session_id,
-                "Too Many Images at Once",
+                "Too many images at once",
                 f"Send at most {CARD_SCAN_MAX_UPLOAD_ATTACHMENTS} screenshots in one "
                 "message. Five clean images normally cover the collection.",
                 usable_until=usable_until,
@@ -8202,7 +8280,7 @@ async def _handle_card_scan_dm_upload(
             _scan_upload_problem(
                 account,
                 session_id,
-                "Send Only Screenshot Images",
+                "Send only screenshot images",
                 f"I found {len(images)} supported image"
                 f"{'s' if len(images) != 1 else ''} and "
                 f"{len(attachments) - len(images)} other file"
@@ -8225,7 +8303,7 @@ async def _handle_card_scan_dm_upload(
             _scan_upload_problem(
                 account,
                 session_id,
-                "Those Screenshots Are Too Large",
+                "Those screenshots are too large",
                 "Each image must be 10 MB or smaller and the complete message must "
                 "be 50 MB or smaller. Discord received the files, but the bot did "
                 "not read or retain them.",
@@ -8250,7 +8328,7 @@ async def _handle_card_scan_dm_upload(
                 bot,
                 int(event.channel_id),
                 _notice(
-                    "That Upload Has Closed",
+                    "That upload has closed",
                     "No attachment was read. Start a new scan from `/cards` in the "
                     "family server.",
                 ),
@@ -8283,7 +8361,7 @@ async def _handle_card_scan_dm_upload(
                     _scan_upload_problem(
                         account,
                         session_id,
-                        "I Couldn't Read Those Screenshots",
+                        "I could not read those screenshots",
                         "Nothing was saved. Send the images again in one message.",
                         usable_until=usable_until,
                     ),
@@ -8312,7 +8390,7 @@ async def _handle_card_scan_dm_upload(
                 _scan_upload_problem(
                     account,
                     session_id,
-                    "I Couldn't Process Those Screenshots",
+                    "I could not process those screenshots",
                     f"{preserved}Send this same set again; no collection was changed.",
                     usable_until=usable_until,
                 ),
@@ -8340,7 +8418,7 @@ async def _handle_card_scan_dm_upload(
                 bot,
                 int(event.channel_id),
                 _notice(
-                    "That Upload Has Closed",
+                    "That upload has closed",
                     "Nothing was saved. Start a new scan from `/cards` in the "
                     "family server.",
                 ),
@@ -8694,9 +8772,10 @@ async def cards_upload_cancel(
         return problem
     if type != "cards_scan_upload":
         return _notice(
-            "Upload Already Finished",
+            "Upload already finished",
             "The screenshots already moved to review. Use the review's Save or "
             "Cancel button instead.",
+            accent=None,
         )
     await _discard_scan_state(mongo, action_id)
     discord_id = int(ctx.user.id)
@@ -8704,8 +8783,9 @@ async def cards_upload_cancel(
     if lock is not None and not lock.locked():
         _card_upload_locks.pop(discord_id, None)
     return _notice(
-        "Upload Canceled",
-        "No collection was changed, and the bot retained no raw screenshot files.",
+        "Upload cancelled",
+        "No collection was changed. The bot kept no image files.",
+        accent=None,
     )
 
 
@@ -8776,7 +8856,7 @@ async def cards_scan_accounts_retry(
         )
     if not has_draft:
         return _notice(
-            "Screenshot Review Unavailable",
+            "Screenshot review unavailable",
             "Start a new scan from `/cards` in the family server.",
         )
     if account is not None:
@@ -8794,7 +8874,7 @@ async def cards_scan_accounts_retry(
             usable_until=usable_until,
         )
     return _notice(
-        "That Account Is No Longer Linked",
+        "That account is no longer linked",
         "Nothing was shown or changed. Start a new scan from `/cards` in the "
         "family server.",
     )
@@ -8815,8 +8895,9 @@ async def cards_scan_retry_cancel(
         return problem
     await _discard_scan_state(mongo, action_id)
     return _notice(
-        "Screenshot import canceled",
-        "The bot did not retain the raw image files and no scan result was saved.",
+        "Screenshot import cancelled",
+        "Nothing was saved. The bot kept no image files.",
+        accent=None,
     )
 
 
@@ -9007,9 +9088,10 @@ async def cards_scan_cancel(
     await _discard_scan_state(mongo, action_id)
     if _trade_guild_id(ctx) is None:
         return _notice(
-            "Screenshot Import Canceled",
+            "Screenshot import cancelled",
             "Nothing was saved. Run `/cards` in the family server to return to "
             "your collection.",
+            accent=None,
         )
     if account_tag:
         account, inventory, target_problem = await _load_target(
@@ -10349,7 +10431,7 @@ async def cards_ready(
         return _inventory_retry_notice()
     return _quantity_editor(
         account, updated, category_id, card_id=card_id,
-        saved=f"{CATEGORY_BY_ID[category_id].name} can be traded now.",
+        saved=f"{CATEGORY_BY_ID[category_id].name} is ready to trade.",
     )
 
 
@@ -10424,12 +10506,11 @@ def _gem_ask_confirm_view(account, card, holder_name: str, holder_tag: str):
     return [Container(accent_color=GOLD_ACCENT, components=[
         Text(content=f"## {emojis.card_give} This will cost you {cost} gems"),
         Text(content=(
-            f"You have no spare **{category.short_name}** card, so you have "
-            f"nothing to trade back for {_card_label(card)}.\n\n"
-            f"If **{_escape_markdown(holder_name, limit=40)}** agrees, **they** "
-            "post the trade offer in game and ask for any "
-            f"**{category.short_name}** card back. You tap Trade and choose "
-            f"**Use Gems** — **{cost} gems** {emojis.gems}.\n\n"
+            f"You have no spare **{category.short_name}** card to give back "
+            f"for {_card_label(card)}.\n"
+            f"**If {_escape_markdown(holder_name, limit=40)} agrees:** they "
+            "post the trade in game. You tap Trade, then **Use Gems** — "
+            f"**{cost} gems** {emojis.gems}.\n"
             "You keep every card you own. Nothing is reserved."
         )),
         ActionRow(components=[
@@ -10466,14 +10547,11 @@ def _gem_ask_dm(ask: dict, *, preview: bool = False) -> list[Container]:
         f"{emojis.card_give} Somebody needs your help",
         (
             f"**{_escape_markdown(ask.get('asker_name'), limit=40)}** is "
-            f"missing {_card_label(card)} and you have a spare.\n\n"
-            "They have **no spare "
-            f"{category.short_name} card**, so they cannot post the request "
-            f"themselves — they will pay **{ask.get('gem_cost')} gems** {emojis.gems} "
-            "instead.\n\n"
-            "**If you accept, you post the trade offer in game:** offer your "
-            f"{_card_label(card)} and ask for any **{category.short_name}** "
-            "card back. They pay the gems and you get the card you asked for."
+            f"missing {_card_label(card)}. You have a spare.\n"
+            f"They have no **{category.short_name}** spare to give back. "
+            f"They pay **{ask.get('gem_cost')} gems** {emojis.gems} instead.\n"
+            "**If you say yes:** post the trade in game — offer your "
+            f"{_card_label(card)}, ask for any **{category.short_name}** card."
         ),
         accent=GOLD_ACCENT,
         controls=[ActionRow(components=[
@@ -10498,8 +10576,7 @@ def _gem_ask_dm(ask: dict, *, preview: bool = False) -> list[Container]:
             ),
         ])],
         footer=(
-            "Nothing is reserved and nothing changes in your collection until "
-            "you both trade in game."
+            "Nothing changes in your collection until you trade in game."
         ),
     )
 
@@ -10754,7 +10831,9 @@ async def _answer_gem_ask(ctx, mongo, bot, action_id: str, *, agreed: bool):
         else "I could not send them a DM. Please tell them your answer."
     )
     if not agreed:
-        return _notice("Declined", f"Thanks for answering. {told}")
+        return _notice(
+            "Declined", f"Thanks for answering. {told}", accent=None
+        )
     return [Container(accent_color=GREEN_ACCENT, components=[
         Text(content=f"## {emojis.yes} Thanks for helping"),
         Text(content=(
@@ -11372,44 +11451,13 @@ async def _perform_trade_accept(
         _notify_trade_accepted(bot, accepted_trade, mongo=mongo),
         _update_trade_channel(bot, accepted_trade),
     )
-    delivery = (
-        "I notified the requester by DM."
-        if dm_sent
-        else f"I could not DM <@{trade['requester_discord_id']}>; please ping them."
-    )
-    # The holder's half of the handoff. Same rule as the requester DM: name
-    # the partner so this panel is enough to act on days later, and name only
-    # controls that exist - the confirm action is I sent my card in My trades.
-    requester_clan = str(trade.get("requester_clan_name") or "").strip()
-    partner = (
-        f"You are trading with <@{int(trade['requester_discord_id'])}> · "
-        f"**{_escape_markdown(trade.get('requester_name'), limit=60)}** · "
-        f"`{trade['requester_tag']}`"
-        + (f" in **{_escape_markdown(requester_clan, limit=50)}**" if requester_clan else "")
-        + ". "
-    )
-    fwa_note = (
-        "\n\n**FWA:** if war has not started yet, wait until it starts "
-        "before trading."
-        if await _trade_involves_fwa(mongo, accepted_trade)
-        else ""
-    )
-    return _trade_feedback(
-        "Swap accepted",
-        partner
-        + (
-            "The exact cards are reserved. You are in different family "
-            "clans. One of you moves clans, then send the cards in game. "
-            "After you send yours, open **My trades** and tap "
-            "**I sent my card**. "
-            if status == "move_needed"
-            else "The exact cards are reserved and both accounts are in the "
-            "same family clan. Send the cards in game. After you send "
-            "yours, open **My trades** and tap **I sent my card**. "
-        )
-        + delivery
-        + fwa_note,
-        account.tag,
+    return _holder_accept_feedback(
+        accepted_trade,
+        taken_card_id=taken,
+        status=status,
+        dm_sent=dm_sent,
+        fwa_relevant=await _trade_involves_fwa(mongo, accepted_trade),
+        tag=account.tag,
     )
 
 
@@ -11482,6 +11530,7 @@ async def cards_swap_sent(
             bot, updated, recipient_id=other_id,
             title=SWAP_ARRIVED_TITLE,
             detail=_swap_arrived_detail(trade.get(f"{role}_name")),
+            accent=GREEN_ACCENT,
         )
     return _swap_sent_view(
         updated, role=role, remaining=remaining,
@@ -11842,6 +11891,7 @@ async def cards_trade_cancel(
             f"complete. {delivery}"
         ),
         account.tag,
+        accent=None,
     )
 
 
@@ -11894,6 +11944,7 @@ async def cards_trade_complete(
             "Could not verify both family clans",
             "The exact cards remain reserved. Retry when both accounts are inside configured family clans, or cancel the swap.",
             account.tag,
+            accent=RED_ACCENT,
         )
     if live_clans[0] != live_clans[1]:
         demoted = await mongo.card_trades.update_one(
@@ -11918,6 +11969,7 @@ async def cards_trade_complete(
             "After you send your card in game, open **My trades** and tap "
             "**I sent my card**.",
             account.tag,
+            accent=GOLD_ACCENT,
         )
     completing_until = now + TRADE_COMPLETION_FOR
     if not await _verify_trade_reservation(mongo, trade, now=now):
@@ -11949,6 +12001,7 @@ async def cards_trade_complete(
                     "A reservation expired before completion. No automatic "
                     "inventory update was attempted."
                 ),
+                accent=RED_ACCENT,
             )
             return _notice(
                 "Trade needs manual review",
@@ -12010,6 +12063,7 @@ async def cards_trade_complete(
                 recipient_id=other_id,
                 title="Card swap needs review",
                 detail=detail,
+                accent=RED_ACCENT,
             ),
             _update_trade_channel(bot, trade),
         )
@@ -12017,6 +12071,7 @@ async def cards_trade_complete(
             "Trade needs review",
             detail + _dm_fallback_note(dm_sent, other_id),
             account.tag,
+            accent=RED_ACCENT,
         )
     prevalidated = updates["requester_prevalidated"] and updates["holder_prevalidated"]
     both_updated = updates["requester"] and updates["holder"]
@@ -12052,6 +12107,7 @@ async def cards_trade_complete(
                 recipient_id=other_id,
                 title="Card swap needs review",
                 detail=detail,
+                accent=RED_ACCENT,
             ),
             _update_trade_channel(bot, trade),
         )
@@ -12059,6 +12115,7 @@ async def cards_trade_complete(
             "Trade needs review",
             detail + _dm_fallback_note(dm_sent, other_id),
             account.tag,
+            accent=RED_ACCENT,
         )
 
     finalize_error: Exception | None = None
@@ -12121,6 +12178,7 @@ async def cards_trade_complete(
                 recipient_id=other_id,
                 title="Card swap needs review",
                 detail=review_detail,
+                accent=RED_ACCENT,
             ),
             _update_trade_channel(bot, trade),
         )
@@ -12130,6 +12188,7 @@ async def cards_trade_complete(
             "Review both collections before making another request."
             + _dm_fallback_note(dm_sent, other_id),
             account.tag,
+            accent=RED_ACCENT,
         )
     await _finish_trade_cleanup(
         mongo, trade, owner=_reservation_owner(trade)
@@ -12142,6 +12201,7 @@ async def cards_trade_complete(
             recipient_id=other_id,
             title="Card swap completed",
             detail="Both tracked collections were updated conservatively.",
+            accent=GREEN_ACCENT,
         ),
         _update_trade_channel(bot, trade),
     )
@@ -12163,20 +12223,19 @@ async def cards_confirm(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
+    """Legacy freshness button on old messages: redirect to the collection.
+
+    "Still accurate" was removed from the UI because its stamp never affected
+    matching (every write refreshes `confirmed_at`, and `MATCHABLE_FOR` is
+    ten years). Old panels can still carry the button indefinitely, so it
+    stays registered - it just opens the collection and writes nothing
+    beyond the ordinary open-time activity stamp.
+    """
     account, inventory, problem = await _load_target(
         ctx, action_id, coc_client=coc_client, mongo=mongo
     )
     if problem:
         return problem
-    if inventory.get("complete_categories"):
-        now = datetime.now(timezone.utc)
-        await mongo.card_inventories.update_one(
-            {"_id": _normalize_tag(account.tag)},
-            {"$set": {"confirmed_at": now, "last_seen_at": now}},
-        )
-        inventory = await mongo.card_inventories.find_one(
-            {"_id": _normalize_tag(account.tag)}
-        ) or inventory
     data = await load_accounts(coc_client, int(ctx.user.id))
     return await _dashboard_view(
         account, inventory, account_count=len(_loaded_entries(data)),

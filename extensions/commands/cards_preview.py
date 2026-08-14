@@ -11,7 +11,8 @@ omitted, so the layout can be judged before the logic exists.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
 
 import hikari
 import lightbulb
@@ -63,6 +64,40 @@ def _preview_inventory() -> dict:
         "complete_categories": [],
         "count_confirmed_card_ids": [],
         "scan_duplicate_unverified_card_ids": [],
+    }
+
+
+def _preview_requester_doc(discord_id: int) -> dict:
+    """The previewing member's own matchable collection document."""
+    counts = {card.id: cards.OWNED for card in cards.CARDS}
+    counts[WANTED_CARD] = cards.MISSING
+    counts[GIVEN_CARD] = 3
+    return {
+        "_id": PREVIEW_TAG,
+        "cards": counts,
+        "complete_categories": [category.id for category in cards.CATEGORIES],
+        "clan_tag": "#HOME",
+        "clan_name": "Morning Woods",
+        "player_name": "Preview Member",
+        "confirmed_at": datetime.now(timezone.utc),
+        "discord_id": int(discord_id),
+    }
+
+
+def _preview_holder_doc(discord_id: int) -> dict:
+    """A same-clan holder with a spare of the wanted card."""
+    counts = {card.id: cards.OWNED for card in cards.CARDS}
+    counts[WANTED_CARD] = 2
+    counts[GIVEN_CARD] = cards.MISSING
+    return {
+        "_id": "#9LRVV8G8",
+        "cards": counts,
+        "complete_categories": [category.id for category in cards.CATEGORIES],
+        "clan_tag": "#HOME",
+        "clan_name": "Morning Woods",
+        "player_name": "Sir UwU",
+        "confirmed_at": datetime.now(timezone.utc),
+        "discord_id": int(discord_id),
     }
 
 
@@ -225,6 +260,11 @@ class CardsDmPreview(
             lightbulb.Choice("17 · Trading is off screen", "paused"),
             lightbulb.Choice("18 · Scan complete, partial", "scan_partial"),
             lightbulb.Choice("19 · Update collection editor", "editor"),
+            lightbulb.Choice("20 · Accept feedback (holder)", "accept_feedback"),
+            lightbulb.Choice("21 · Dashboard + editor ready", "screens_core"),
+            lightbulb.Choice("22 · Find trades, holders, My trades", "screens_trade"),
+            lightbulb.Choice("23 · Upload prompt + progress", "scan_screens"),
+            lightbulb.Choice("24 · Notices (success + failure)", "notices"),
         ],
     )
 
@@ -445,6 +485,117 @@ async def _send_previews(
                 cards.CARD_BY_ID[GIVEN_CARD].category,
                 card_id=GIVEN_CARD,
             ),
+        )
+
+        # 20. The holder's acceptance feedback, both clan states, through the
+        # production builder - including the shared compact FWA callout.
+        await panel(
+            "accept_feedback", "20a · Accept feedback, different clans",
+            cards_command._holder_accept_feedback(
+                dict(one, status="move_needed"),
+                taken_card_id=GIVEN_CARD,
+                status="move_needed",
+                dm_sent=True,
+                fwa_relevant=False,
+                tag=PREVIEW_TAG,
+            ),
+        )
+        await panel(
+            "accept_feedback", "20b · Accept feedback, same clan + FWA",
+            cards_command._holder_accept_feedback(
+                dict(one, status="ready"),
+                taken_card_id=GIVEN_CARD,
+                status="ready",
+                dm_sent=True,
+                fwa_relevant=True,
+                tag=PREVIEW_TAG,
+            ),
+        )
+
+        # 21. The dashboard (board render is CPU-bound, so off the loop) and
+        # the editor's ready-state banner.
+        if wanted in ("screens_core", "all"):
+            dashboard = await asyncio.to_thread(
+                cards_command._dashboard,
+                preview_account,
+                _preview_inventory(),
+                account_count=2,
+            )
+            await panel("screens_core", "21a · Collection dashboard", dashboard)
+            ready_inventory = dict(
+                _preview_inventory(),
+                complete_categories=[cards.CARD_BY_ID[GIVEN_CARD].category],
+            )
+            await panel(
+                "screens_core", "21b · Editor, category ready",
+                cards_command._quantity_editor(
+                    preview_account,
+                    ready_inventory,
+                    cards.CARD_BY_ID[GIVEN_CARD].category,
+                ),
+            )
+
+        # 22. The trade-discovery screens over synthetic matchable documents.
+        if wanted in ("screens_trade", "all"):
+            requester_doc = _preview_requester_doc(me)
+            holder_doc = _preview_holder_doc(me)
+            matches = cards.find_matches(requester_doc, [holder_doc])
+            await panel(
+                "screens_trade", "22a · Find trades",
+                cards_command._matches_view(
+                    preview_account,
+                    requester_doc,
+                    matches,
+                    supply=cards.family_supply([holder_doc]),
+                ),
+            )
+            holders = cards.holders_for_card(
+                requester_doc, [holder_doc], WANTED_CARD
+            )
+            await panel(
+                "screens_trade", "22b · Holder list",
+                cards_command._holders_view(
+                    preview_account, WANTED_CARD, holders
+                ),
+            )
+            await panel(
+                "screens_trade", "22c · My trades",
+                cards_command._trades_view(
+                    preview_account,
+                    [dict(one, status="pending"), dict(one, status="ready")],
+                ),
+            )
+            await panel(
+                "screens_trade", "22d · My trades, empty",
+                cards_command._trades_view(preview_account, []),
+            )
+
+        # 23. The upload prompt and mid-scan progress screens.
+        upload_until = datetime.now(timezone.utc) + timedelta(minutes=20)
+        await panel(
+            "scan_screens", "23a · Upload prompt",
+            cards_command._scan_upload_prompt(
+                preview_account, "preview-session", usable_until=upload_until,
+            ),
+        )
+        await panel(
+            "scan_screens", "23b · Upload progress, rows missing",
+            cards_command._scan_upload_progress(
+                preview_account,
+                "preview-session",
+                _preview_partial_draft(),
+                usable_until=upload_until,
+            ),
+        )
+
+        # 24. One success notice and one failure notice, for the accent canon.
+        await panel(
+            "notices", "24a · Notice, collection saved",
+            cards_command._scan_saved_notice(preview_account, pending=3),
+        )
+        await panel(
+            "notices", "24b · Notice, search unavailable",
+            cards_command._search_unavailable_notice(PREVIEW_TAG),
         )
 
         return sent
