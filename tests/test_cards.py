@@ -7120,43 +7120,103 @@ def test_holders_in_your_clan_are_listed_first():
     _assert_discord_payload(view)
 
 
-def test_a_live_swap_offers_one_button_whatever_the_clans_say():
-    """The clan check used to be the ONLY control while a swap was move_needed.
-
-    Somebody who had already sent their card in game could not record it until
-    a scan agreed they were in the same clan. The bot cannot verify the clans
-    at the moment cards actually move, so it no longer stands in the way.
-    """
-    account = Account(
-        tag="#ME", name="Member", clan_tag="#HOME",
-        clan_name="Home Clan", town_hall=18,
-    )
-    for status in ("move_needed", "ready", "accepted"):
-        trade = _trade_document()
-        trade.update({
-            "status": status,
-            "requester_discord_id": 111,
-            "holder_discord_id": 222,
-        })
-        view = cards_command._trades_view(account, [trade])
-        labels = [
-            str(n.get("label")) for n in _view_nodes(view) if n.get("type") == 2
-        ]
-        assert "I sent my card" in labels, status
-        assert "Check clans" not in labels, status
-        assert "Trade completed" not in labels, status
-
-
-def test_a_side_that_already_confirmed_is_not_asked_again():
+def test_my_trades_exact_move_needed_state_exposes_canonical_sent_action(monkeypatch):
+    """The live different-clan, reserved swap must be finishable here."""
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
     trade = _trade_document()
     trade.update({
-        "status": "ready",
+        "kind": "trade",
+        "status": "move_needed",
+        "wanted_card_id": "healer",
+        "given_card_id": "archer",
+        "requester_name": "Member",
+        "holder_name": "Other account",
+        # A member may legitimately trade between two of their linked accounts.
+        "requester_discord_id": 111,
+        "holder_discord_id": 111,
+        "requester_clan_tag": "#WU",
+        "requester_clan_name": "Warriors United",
+        "holder_clan_tag": "#WW",
+        "holder_clan_name": "WONDER WALL",
+        "reservation_token": "exact-card-reservation",
+        "reservation_until": datetime.now(timezone.utc) + timedelta(days=7),
+    })
+
+    async def load_target(*_args, **_kwargs):
+        return account, _complete_inventory(), None
+
+    async def active_trades(_mongo, *, tag, guild_id, bot):
+        assert tag == "#ME" and guild_id == 1
+        return [trade]
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    monkeypatch.setattr(cards_command, "_active_trades", active_trades)
+    view = asyncio.run(cards_command.cards_trades(
+        _quantity_ctx(user_id=111),
+        "#ME",
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+        bot=SimpleNamespace(),
+    ))
+    controls = {
+        str(node.get("label")): str(node.get("custom_id"))
+        for node in _view_nodes(view) if node.get("type") == 2
+    }
+    text = _view_text(view)
+
+    assert "Accepted · move needed" in text
+    assert "Warriors United" in text and "WONDER WALL" in text
+    assert "Exact cards are reserved" in text
+    assert controls["I sent my card"] == "cards_swap_sent:trade-a|requester"
+    assert "Cancel" in controls
+    assert "Check clans" not in controls
+    assert "Trade completed" not in controls
+
+
+@pytest.mark.parametrize("status", ["ready", "accepted"])
+def test_my_trades_same_clan_live_swap_exposes_the_same_action(status):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    trade = _trade_document()
+    trade.update({
+        "status": status,
         "requester_discord_id": 111,
         "holder_discord_id": 222,
+        "requester_clan_tag": "#HOME",
+        "holder_clan_tag": "#HOME",
+        "reservation_token": "exact-card-reservation",
+    })
+
+    ids = {
+        str(node.get("custom_id")) for node in _view_nodes(
+            cards_command._trades_view(account, [trade])
+        )
+    }
+
+    assert "cards_swap_sent:trade-a|requester" in ids
+
+
+def test_my_trades_confirmed_side_waits_while_other_side_is_pending():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    trade = _trade_document()
+    trade.update({
+        "status": "move_needed",
+        "requester_discord_id": 111,
+        "holder_discord_id": 222,
+        "requester_name": "Member",
+        "holder_name": "Other player",
+        "requester_clan_tag": "#HOME",
+        "requester_clan_name": "Warriors United",
+        "holder_clan_tag": "#AWAY",
+        "holder_clan_name": "WONDER WALL",
         "requester_confirmed_at": datetime.now(timezone.utc),
     })
     view = cards_command._trades_view(account, [trade])
@@ -7166,6 +7226,196 @@ def test_a_side_that_already_confirmed_is_not_asked_again():
 
     assert "I sent my card" not in labels
     assert "Cancel" in labels
+    assert "already marked your card sent" in _view_text(view)
+    assert "Waiting for **Other player**" in _view_text(view)
+
+
+def test_my_trades_other_confirmation_does_not_hide_my_pending_action():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    trade = _trade_document()
+    trade.update({
+        "status": "move_needed",
+        "requester_discord_id": 111,
+        "holder_discord_id": 222,
+        "holder_confirmed_at": datetime.now(timezone.utc),
+    })
+
+    ids = {
+        str(node.get("custom_id")) for node in _view_nodes(
+            cards_command._trades_view(account, [trade])
+        )
+    }
+
+    assert "cards_swap_sent:trade-a|requester" in ids
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["completed", "completing", "needs_review", "cancelled", "expired", "abandoned"],
+)
+def test_my_trades_never_exposes_confirmation_for_non_live_states(status):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    trade = _trade_document()
+    trade.update({
+        "status": status,
+        "requester_discord_id": 111,
+        "holder_discord_id": 222,
+    })
+    if status == "completed":
+        confirmed = datetime.now(timezone.utc)
+        trade.update({
+            "requester_confirmed_at": confirmed,
+            "holder_confirmed_at": confirmed,
+        })
+
+    ids = {
+        str(node.get("custom_id")) for node in _view_nodes(
+            cards_command._trades_view(account, [trade])
+        )
+    }
+
+    assert not any(custom_id.startswith("cards_swap_sent:") for custom_id in ids)
+
+
+def test_same_owner_my_trades_click_records_only_the_selected_account_leg(monkeypatch):
+    """The old Discord-only resolver made this holder click hit requester."""
+    trade = _agreed_trade()
+    trade.update({
+        "status": "move_needed",
+        "requester_discord_id": 111,
+        "holder_discord_id": 111,
+    })
+
+    class Trades:
+        async def find_one(self, _query):
+            return dict(trade)
+
+    loaded_tags = []
+    recorded_roles = []
+
+    async def load_target(_ctx, tag, **_kwargs):
+        loaded_tags.append(tag)
+        return (
+            Account(
+                tag=tag, name="Member", clan_tag="#HOME",
+                clan_name="Home Clan", town_hall=18,
+            ),
+            _complete_inventory(tag=tag),
+            None,
+        )
+
+    async def record(_mongo, current, *, role, now, **_kwargs):
+        recorded_roles.append(role)
+        updated = dict(current)
+        updated[f"{role}_confirmed_at"] = now
+        trade.update(updated)
+        return "moved", 1, updated
+
+    async def notify(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    monkeypatch.setattr(cards_command, "_run_swap_leg_confirmation", record)
+    monkeypatch.setattr(cards_command, "_notify_trade_status", notify)
+    mongo = SimpleNamespace(card_trades=Trades())
+
+    holder_account = Account(
+        tag="#HOLDER", name="Holder", clan_tag="#AWAY",
+        clan_name="Away Clan", town_hall=18,
+    )
+    holder_view = cards_command._trades_view(holder_account, [trade])
+    holder_sent_id = next(
+        str(node["custom_id"]) for node in _view_nodes(holder_view)
+        if node.get("label") == "I sent my card"
+    )
+    assert holder_sent_id == "cards_swap_sent:trade-a|holder"
+
+    panel_ids = {
+        str(node.get("custom_id")) for node in _view_nodes(
+            cards_command._swap_confirm_view(trade, role="holder")
+        )
+    }
+    assert "cards_swap_sent:trade-a|holder" in panel_ids
+
+    asyncio.run(cards_command.cards_swap_sent(
+        _quantity_ctx(user_id=111),
+        holder_sent_id.partition(":")[2],
+        coc_client=SimpleNamespace(),
+        mongo=mongo,
+        bot=SimpleNamespace(),
+    ))
+
+    assert loaded_tags == ["#HOLDER"]
+    assert recorded_roles == ["holder"]
+    assert "holder_confirmed_at" in trade
+    assert "requester_confirmed_at" not in trade
+
+    requester_account = Account(
+        tag="#ME", name="Requester", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    requester_ids = {
+        str(node.get("custom_id")) for node in _view_nodes(
+            cards_command._trades_view(requester_account, [trade])
+        )
+    }
+    assert "cards_swap_sent:trade-a|requester" in requester_ids
+
+    holder_after = cards_command._trades_view(holder_account, [trade])
+    assert not any(
+        str(node.get("custom_id", "")).startswith("cards_swap_sent:")
+        for node in _view_nodes(holder_after)
+    )
+    assert "already marked your card sent" in _view_text(holder_after)
+
+
+def test_confirmation_role_hint_cannot_claim_the_other_participant(monkeypatch):
+    trade = _agreed_trade()
+
+    class Trades:
+        async def find_one(self, _query):
+            return dict(trade)
+
+    async def explode(*_args, **_kwargs):
+        raise AssertionError("an unauthorized role must stop before account loading")
+
+    monkeypatch.setattr(cards_command, "_load_target", explode)
+    loaded, problem = asyncio.run(cards_command._load_swap_for_confirm(
+        _quantity_ctx(user_id=111),
+        f"{trade['_id']}|holder",
+        mongo=SimpleNamespace(card_trades=Trades()),
+    ))
+
+    assert loaded is None
+    assert "not yours" in _view_text(problem)
+
+
+def test_legacy_same_owner_confirmation_control_fails_cleanly():
+    """An old role-less control must not guess which linked account sent."""
+    trade = _agreed_trade()
+    trade.update({
+        "requester_discord_id": 111,
+        "holder_discord_id": 111,
+    })
+
+    class Trades:
+        async def find_one(self, _query):
+            return dict(trade)
+
+    loaded, problem = asyncio.run(cards_command._load_swap_for_confirm(
+        _quantity_ctx(user_id=111),
+        trade["_id"],
+        mongo=SimpleNamespace(card_trades=Trades()),
+    ))
+
+    assert loaded is None
+    assert "Reopen **My trades**" in _view_text(problem)
 
 
 def test_the_clan_check_is_gone_entirely():

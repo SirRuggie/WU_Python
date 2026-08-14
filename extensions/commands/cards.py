@@ -7140,6 +7140,9 @@ def _trade_summary(trade: dict, *, role: str) -> str:
         "needs_review": "Needs review",
     }.get(raw_status, raw_status.replace("_", " ").title())
     needs_review = trade.get("status") == "needs_review"
+    own_confirmed = bool(trade.get(f"{role}_confirmed_at"))
+    other_role = "holder" if role == "requester" else "requester"
+    other_confirmed = bool(trade.get(f"{other_role}_confirmed_at"))
     detail = ""
     if raw_status == "pending":
         detail = (
@@ -7156,19 +7159,33 @@ def _trade_summary(trade: dict, *, role: str) -> str:
             + _clan_label(
                 trade.get("holder_clan_name"), trade.get("holder_clan_tag")
             )
-            + ". Exact cards are reserved."
+            + (
+                "."
+                if own_confirmed
+                else ". Exact cards are reserved."
+            )
         )
     elif raw_status in {"ready", "accepted"}:
-        detail = (
-            "\n-# Same family clan. Send your card in game, then tap "
-            "**I sent my card**."
-        )
+        if not own_confirmed:
+            detail = (
+                "\n-# Same family clan. Send your card in game, then tap "
+                "**I sent my card**."
+            )
     elif raw_status == "completing":
         detail = "\n-# Saving the tracked collection updates now."
     elif needs_review:
         detail = (
             f"\n-# Review visible until {_relative_timestamp(trade.get('review_expires_at'))}. "
             "Recheck both affected categories manually."
+        )
+    if raw_status in SWAP_LIVE_STATUSES and own_confirmed:
+        detail += (
+            "\n-# Both card sends are recorded. Refresh while the trade closes."
+            if other_confirmed
+            else (
+                "\n-# You already marked your card sent. Waiting for "
+                f"**{_escape_markdown(counterpart, limit=50)}** to confirm theirs."
+            )
         )
     return (
         f"**{status} with {_escape_markdown(counterpart, limit=50)}** "
@@ -7229,7 +7246,7 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
             if _awaiting_confirmation(trade, role=role):
                 buttons.append(Button(
                     style=hikari.ButtonStyle.SUCCESS,
-                    custom_id=f"cards_swap_sent:{trade['_id']}",
+                    custom_id=f"cards_swap_sent:{trade['_id']}|{role}",
                     label="I sent my card",
                     emoji=emojis.yes.partial_emoji,
                 ))
@@ -7668,6 +7685,7 @@ def _swap_confirm_view(
     given, received = _swap_legs(trade, role=role)
     other, other_tag = _swap_counterpart(trade, role=role)
     trade_id = str(trade["_id"])
+    role_action_id = f"{trade_id}|{role}"
     return [Container(
         accent_color=GOLD_ACCENT,
         components=[
@@ -7682,20 +7700,20 @@ def _swap_confirm_view(
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SUCCESS,
-                    custom_id=f"cards_swap_sent:{trade_id}",
+                    custom_id=f"cards_swap_sent:{role_action_id}",
                     label="Yes, I sent it",
                     emoji=emojis.yes.partial_emoji,
                     is_disabled=preview,
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_swap_later:{trade_id}",
+                    custom_id=f"cards_swap_later:{role_action_id}",
                     label="Not yet",
                     is_disabled=preview,
                 ),
                 Button(
                     style=hikari.ButtonStyle.DANGER,
-                    custom_id=f"cards_swap_no:{trade_id}",
+                    custom_id=f"cards_swap_no:{role_action_id}",
                     label="No",
                     emoji=CANCEL_EMOJI,
                     is_disabled=preview,
@@ -7715,6 +7733,7 @@ def _swap_cancel_check_view(
     """After "No": is this swap dead, or just not done yet?"""
     given, _received = _swap_legs(trade, role=role)
     trade_id = str(trade["_id"])
+    role_action_id = f"{trade_id}|{role}"
     other = "holder" if role == "requester" else "requester"
     # "Frees both cards" is only true while neither side has confirmed. Once
     # the other player sent theirs, that card already moved and stays.
@@ -7742,7 +7761,7 @@ def _swap_cancel_check_view(
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_swap_later:{trade_id}",
+                    custom_id=f"cards_swap_later:{role_action_id}",
                     label="Still going to do it",
                     is_disabled=preview,
                 ),
@@ -13617,18 +13636,42 @@ async def _perform_trade_accept(
 
 async def _load_swap_for_confirm(ctx, action_id: str, *, mongo: MongoClient):
     """(trade, role) for a confirmation click, or (None, notice)."""
+    trade_id, separator, role_suffix = str(action_id or "").partition("|")
+    role_hint = (
+        role_suffix
+        if separator and role_suffix in {"requester", "holder"}
+        else None
+    )
     trade = await mongo.card_trades.find_one({
-        "_id": str(action_id or "").partition("|")[0],
+        "_id": trade_id,
         "kind": "trade",
         "guild_id": _trade_guild_id(ctx),
     })
     if not trade:
         return None, _notice("Swap not found", "Reopen **My trades**.")
-    role = None
+    matching_roles = []
     for candidate in ("requester", "holder"):
-        if int(trade.get(f"{candidate}_discord_id") or -1) == int(ctx.user.id):
-            role = candidate
-            break
+        try:
+            participant_id = int(trade.get(f"{candidate}_discord_id") or -1)
+        except (TypeError, ValueError):
+            continue
+        if participant_id == int(ctx.user.id):
+            matching_roles.append(candidate)
+    if role_hint is not None:
+        role = role_hint if role_hint in matching_roles else None
+    elif len(matching_roles) == 1:
+        # Compatibility for controls posted before the account role was added.
+        role = matching_roles[0]
+    elif len(matching_roles) > 1:
+        # An old control cannot distinguish two linked accounts owned by the
+        # same Discord user. Never guess and move the wrong inventory leg.
+        return None, _notice(
+            "Choose the account again",
+            "This older control cannot tell which linked account sent the card. "
+            "Reopen **My trades** from that account and use the current button.",
+        )
+    else:
+        role = None
     if role is None:
         return None, _notice(
             "That swap is not yours", "Open **My trades** from your own collection."
