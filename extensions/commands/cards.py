@@ -6246,12 +6246,13 @@ def _accepted_trade_dm(
     Users kept forgetting who they accepted with and had nothing to search
     for, so the message must stand alone days later.
 
-    Composed at the message root - Text Displays and Separators with no
-    outer Container - so the content reads as normal message text with real
-    breathing room instead of one large card. The only box in the message
-    is the compact red FWA callout, placed in the flow when relevant.
-    Success is carried by the title's words and emoji, not by a green card.
-    Noahs Ark and the reader's own account are quiet subtext.
+    Final settled shape (owner-verified on a live phone preview): one main
+    Container holding short Text blocks with separators at the real section
+    boundaries - cards, partner, next step - then the compact red FWA
+    callout as its own small box after the Container when relevant. Fully
+    unboxed root text was tried and rejected as looking unfinished; a large
+    FWA card was tried and rejected as heavy. Noahs Ark and the reader's
+    own account stay quiet subtext inside the main Container.
     """
     wanted = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     given = _card_label(CARD_BY_ID[trade["given_card_id"]])
@@ -6310,7 +6311,7 @@ def _accepted_trade_dm(
         f"`{trade['requester_tag']}`"
     )
 
-    components: list = [
+    body: list = [
         Text(content=f"## {emojis.yes} Trade accepted"),
         Text(content=(
             f"**You give:** {given}\n"
@@ -6320,13 +6321,12 @@ def _accepted_trade_dm(
         Text(content=partner_lines),
         Separator(divider=True),
         Text(content=next_lines),
-    ]
-    if fwa_relevant:
-        components.extend([Separator(divider=False), _fwa_warning()])
-    components.extend([
         Separator(divider=False),
         Text(content="\n".join(quiet_lines)),
-    ])
+    ]
+    components: list = [Container(accent_color=GREEN_ACCENT, components=body)]
+    if fwa_relevant:
+        components.append(_fwa_warning())
     return components
 
 
@@ -6342,9 +6342,9 @@ def _holder_accept_feedback(
     """The holder's half of the handoff, in the same rhythm as the DM.
 
     No "Your account" line: this panel replaces the screen the holder just
-    acted from, so context already binds the account. Root-level Text
-    Displays and Separators, no outer Container; the compact red FWA
-    callout in the flow is the only box, exactly as in the requester DM.
+    acted from, so context already binds the account. Same settled shape as
+    the requester DM: one main Container of short blocks, then the compact
+    red FWA callout as its own small box when relevant.
     """
     gives = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     receives = _card_label(CARD_BY_ID[str(taken_card_id)])
@@ -6378,7 +6378,7 @@ def _holder_accept_feedback(
         "Please ping them."
     )
     normalized = _normalize_tag(tag)
-    components: list = [
+    body: list = [
         Text(content=f"# {emojis.yes} Trade accepted"),
         Text(content=(
             f"**You give:** {gives}\n"
@@ -6388,10 +6388,6 @@ def _holder_accept_feedback(
         Text(content=partner_lines),
         Separator(divider=True),
         Text(content=next_lines),
-    ]
-    if fwa_relevant:
-        components.extend([Separator(divider=False), _fwa_warning()])
-    components.extend([
         Separator(divider=False),
         Text(content=(
             f"-# The exact cards are reserved. {delivery}"
@@ -6411,7 +6407,10 @@ def _holder_accept_feedback(
                 emoji=RETURN_EMOJI,
             ),
         ]),
-    ])
+    ]
+    components: list = [Container(accent_color=GREEN_ACCENT, components=body)]
+    if fwa_relevant:
+        components.append(_fwa_warning())
     return components
 
 

@@ -9290,8 +9290,8 @@ def test_the_accepted_dm_is_self_contained_and_carries_optional_regions():
     assert "[Open their clan]" in text
     assert "OpenClanProfile&tag=B" in text
     # Different clans: the optional meeting place renders as one quiet line
-    # in the flow - never another card. The whole DM is unboxed root
-    # composition; a container appears only when a colored callout earns it.
+    # inside the main Container - never another card. The settled shape is
+    # one main Container, plus the compact callout only when FWA earns it.
     def containers(items):
         found = []
         for item in items:
@@ -9301,7 +9301,7 @@ def test_the_accepted_dm_is_self_contained_and_carries_optional_regions():
                 found.append(payload)
         return found
 
-    assert containers(view) == [], "no card without a callout"
+    assert len(containers(view)) == 1, "exactly one main Container"
     assert "-# ℹ️ Need a place to trade?" in text
     assert "#8VPQCR2R" in text
     # No FWA flag, no warning block.
@@ -9309,7 +9309,9 @@ def test_the_accepted_dm_is_self_contained_and_carries_optional_regions():
 
     warned = cards_command._accepted_trade_dm(trade, fwa_relevant=True)
     warned_text = _view_text(warned)
-    assert len(containers(warned)) == 1, "the compact callout is the only box"
+    assert len(containers(warned)) == 2, (
+        "main Container + exactly one compact FWA callout"
+    )
     assert "⚠️ **FWA — Wait for war**" in warned_text
     assert "Do not trade until war starts." in warned_text
 

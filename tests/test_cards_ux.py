@@ -166,29 +166,30 @@ def test_compact_callout_is_the_smallest_possible_container():
         "Do not trade until war starts.",
     ]
 
-    # On the real message the callout is the ONLY box: the trade content
-    # flows unboxed at the message root, and the warning never leaks into
-    # that flow.
+    # On the real message: the main Container plus exactly this one compact
+    # callout - never a second full card, and the warning never leaks into
+    # the main content.
     view = cards_command._accepted_trade_dm(_trade(), fwa_relevant=True)
     boxes = _containers(view)
-    assert len(boxes) == 1, "the compact callout is the only container"
-    callout = _built(boxes[0])
+    assert len(boxes) == 2, "main Container + exactly one compact callout"
+    callout = _built(boxes[1])
     assert len(callout["components"]) == 1
     assert callout["accent_color"] == int(RED_ACCENT)
-    unboxed = [item for item in view if item not in boxes]
-    assert "FWA" not in _text(unboxed), "the warning lives in the callout"
+    assert "FWA" not in _text(boxes[:1]), "the warning lives in the callout"
 
 
-def test_accepted_trade_dm_is_unboxed_blocks_with_gaps():
-    """Root-level Texts and Separators, no outer card at all.
+def test_accepted_trade_dm_is_one_main_container_of_blocks():
+    """The settled shape: ONE main Container of short blocks with real gaps.
 
-    A Container renders as a boxed card; composing the trade content at the
-    message root removes that chrome entirely, which is the breathing room
-    the owner asked for. Blocks: cards, partner, next - divided by real
-    separators, with the quiet lines behind a spacing gap.
+    Fully unboxed root text was tried and rejected as looking unfinished;
+    stacked cards were rejected as heavy. The main Container stays, and
+    inside it the content reads as short Text blocks divided by separators
+    - never one dense text blob.
     """
     view = cards_command._accepted_trade_dm(_trade(), fwa_relevant=False)
-    assert _containers(view) == [], "no card when no callout is needed"
+    assert len(view) == 1 and len(_containers(view)) == 1, (
+        "exactly one main Container when no callout is needed"
+    )
 
     text = _text(view)
     for label in (
@@ -200,14 +201,20 @@ def test_accepted_trade_dm_is_unboxed_blocks_with_gaps():
     assert "I sent my card" in text
     assert "reserved until you confirm" in text
 
-    types = _root_types(view)
-    texts = [t for t in types if t == int(hikari.ComponentType.TEXT_DISPLAY)]
-    separators = [t for t in types if t == int(hikari.ComponentType.SEPARATOR)]
+    children = _built(view[0])["components"]
+    texts = [
+        c for c in children
+        if int(c["type"]) == int(hikari.ComponentType.TEXT_DISPLAY)
+    ]
+    separators = [
+        c for c in children
+        if int(c["type"]) == int(hikari.ComponentType.SEPARATOR)
+    ]
     assert len(texts) >= 5, "blocks, not one dense text blob"
     assert len(separators) >= 3, "real boundaries between the blocks"
     give_block = next(
-        str(_built(item)["content"]) for item in view
-        if "**You give:**" in str(_built(item).get("content", ""))
+        str(c["content"]) for c in texts
+        if "**You give:**" in str(c.get("content", ""))
     )
     assert "Trading with" not in give_block, (
         "cards and partner are separate blocks"
@@ -218,14 +225,14 @@ def test_accepted_trade_dm_is_unboxed_blocks_with_gaps():
                holder_clan_name="Home Clan"),
         fwa_relevant=False,
     )
-    assert _containers(same_clan) == []
+    assert len(_containers(same_clan)) == 1
     assert "moves to the other clan" not in _text(same_clan)
 
 
 def test_noahs_ark_is_a_quiet_line_not_a_container():
-    """Optional help is a quiet subtext line in the flow, never a blue card."""
+    """Optional help is quiet subtext in the main Container, never a card."""
     view = cards_command._accepted_trade_dm(_trade(), fwa_relevant=False)
-    assert _containers(view) == []
+    assert len(_containers(view)) == 1, "Noahs Ark must not add a container"
     text = _text(view)
     assert "-# ℹ️ Need a place to trade?" in text
     assert f"[**Open Noahs Ark**]({cards_command.NOAHS_ARK_LINK})" in text
@@ -255,8 +262,8 @@ def test_holder_accept_feedback_shares_grammar_and_inline_warning():
         tag="#HOLD",
     )
     boxes = _containers(view)
-    assert len(boxes) == 1, "the compact FWA callout is the only box"
-    assert len(_built(boxes[0])["components"]) == 1, (
+    assert len(boxes) == 2, "feedback panel + exactly one compact callout"
+    assert len(_built(boxes[1])["components"]) == 1, (
         "the callout stays the smallest possible container"
     )
     text = _text(view)
