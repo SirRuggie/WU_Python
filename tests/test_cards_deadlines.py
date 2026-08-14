@@ -333,3 +333,50 @@ def test_the_confirm_window_is_seven_days_not_one():
     assert cards_command.SWAP_BACKSTOP_FOR == timedelta(days=7)
     assert cards_command.CHECKIN_ANSWER_FOR == timedelta(hours=24)
     assert cards_command.IGNORED_BEFORE_CHECKIN == 2
+
+
+def test_a_no_spare_auto_settle_tells_the_owed_player_too(monkeypatch):
+    """Closing without the card is the design; silence about it was the bug.
+
+    The waiting player was promised the card would be added automatically.
+    When the silent side no longer shows a spare nothing can move, so the
+    close must say so to BOTH players and record which leg never moved.
+    """
+    now = datetime.now(timezone.utc)
+    owner = "t10:tok"
+    trades = _Trades([{
+        "_id": "t10", "kind": "trade", "status": "ready", "guild_id": 1,
+        "reservation_token": "tok",
+        "wanted_card_id": "balloon", "given_card_id": "electro_dragon",
+        "requester_tag": "#ME", "requester_name": "Requester",
+        "requester_discord_id": 111,
+        "holder_tag": "#HOLDER", "holder_name": "Holder",
+        "holder_discord_id": 222,
+        "requester_confirmed_at": now - timedelta(days=8),
+        "confirm_deadline_at": now - timedelta(days=1),
+    }])
+    inventories = _Inventories([
+        {"_id": "#ME", "guild_id": 1,
+         "cards": {"electro_dragon": 2, "balloon": 0},
+         "card_trade_reservations": {"balloon": owner}},
+        # The holder's spare is gone, so the guarded move must refuse.
+        {"_id": "#HOLDER", "guild_id": 1,
+         "cards": {"balloon": 1, "electro_dragon": 0},
+         "card_trade_reservations": {
+             "balloon": owner, "electro_dragon": owner,
+         }},
+    ])
+    rest = _install(monkeypatch, trades, inventories)
+
+    asyncio.run(sweeper.sweep_once())
+
+    # Nothing moved in either collection.
+    assert inventories.docs["#HOLDER"]["cards"]["balloon"] == 1
+    assert inventories.docs["#ME"]["cards"]["balloon"] == 0
+    # The trade still closes - that is the documented design - but the
+    # document records that this leg never moved.
+    assert trades.docs["t10"]["status"] == "completed"
+    assert trades.docs["t10"]["holder_auto_settled"] == "no_spare"
+    text = " ".join(str(dm) for dm in rest.dms)
+    assert "nothing was changed" in text
+    assert "It was not added" in text, "the owed player is told as well"

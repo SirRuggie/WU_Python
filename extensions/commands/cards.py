@@ -74,7 +74,7 @@ from utils.cards import (
 from utils.component_state import delete_state, get_state, insert_state, update_state
 from utils import troop_emoji
 from utils.emoji import EmojiType, emojis
-from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
+from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
 from hikari.impl import (
@@ -122,6 +122,23 @@ CARD_SCAN_MIN_CONFIDENCE = 0.75
 CARD_SCAN_CONCURRENCY = 2
 HIDDEN_BADGE_BATCH_SIZE = 25
 COLLECTION_LINK = "https://link.clashofclans.com/en/?action=OpenCollection"
+
+# Owner-designated optional quick-trade clan for different-clan swaps.
+NOAHS_ARK_TAG = "#8VPQCR2R"
+NOAHS_ARK_LINK = (
+    "https://link.clashofclans.com/en?action=OpenClanProfile&tag=8VPQCR2R"
+)
+
+
+def _clan_link(tag: object) -> str | None:
+    """Deep link to a clan profile, or None when there is no tag."""
+    clean = _normalize_tag(tag).lstrip("#")
+    if not clean:
+        return None
+    return (
+        "https://link.clashofclans.com/en/?action=OpenClanProfile"
+        f"&tag={clean}"
+    )
 GLOBAL_CHAT_LINK = (
     "https://link.clashofclans.com/?action=OpenGlobalChat&"
     "chatId=P592bad3209a4408a9ba356469caaaa81"
@@ -219,6 +236,15 @@ class ActiveCardTradeError(RuntimeError):
 
 class InventoryWriteConflict(RuntimeError):
     """Raised after repeated cross-process collection revision conflicts."""
+
+
+class CandidateLookupUnavailable(RuntimeError):
+    """The family-clan boundary could not be loaded, so searching must stop.
+
+    Distinct from an empty result on purpose: "nobody has a spare" and "the
+    search failed" need different player copy, and conflating them told
+    players the family had nothing during a database blip.
+    """
 
 
 class ScanDraftStaleError(RuntimeError):
@@ -390,6 +416,15 @@ def _stale_collection_notice() -> list[Container]:
         "Your trading is turned off",
         "Your cards are hidden from the family while trading is off, so there "
         "is nothing to search. Open `/cards` and turn trading back on.",
+    )
+
+
+def _search_unavailable_notice(tag: object = None) -> list[Container]:
+    """The search failed. Says so, instead of claiming nobody has spares."""
+    return _notice(
+        "Search is not available right now",
+        "Nothing was changed. Try again in a minute.",
+        back_tag=_normalize_tag(tag) if tag else None,
     )
 
 
@@ -1505,10 +1540,13 @@ def _scan_upload_prompt(
                 "Open the full **Clash of Cards** collection, then send all of its "
                 "screenshots **together in your next DM**.\n\n"
                 "- Select every screenshot at once; **any order is fine**.\n"
-                "- Show two complete rows of six cards in each image.\n"
-                "- Five clean screenshots normally cover all 60 cards.\n\n"
-                "I will sort them automatically and tell you exactly which rows are "
-                "still needed."
+                "- Show complete rows of six cards. Do not cut a row at the "
+                "edge.\n"
+                "- Overlap between screenshots is fine.\n"
+                "- Five screenshots normally cover all 60 cards. You can send "
+                "more later.\n\n"
+                "I will work out which row is which automatically and tell you "
+                "which rows are still needed."
             )),
             Separator(divider=True),
             Text(content=(
@@ -1656,14 +1694,34 @@ def _scan_upload_progress(
     missing_pages = _scan_missing_page_numbers(draft)
     accepted = CARD_SCAN_CAPTURE_COUNT - len(missing_pages)
     gained = max(0, accepted - max(0, int(accepted_before)))
+    # Recognition is per six-card row, so a single accepted row must not be
+    # reported as "nothing matched" just because its partner row is missing.
+    rows_accepted = None
+    raw_missing_rows = (
+        draft.get("missing_global_rows") if isinstance(draft, dict) else None
+    )
+    if raw_missing_rows is not None:
+        try:
+            rows_accepted = max(
+                0, CARD_SCAN_CAPTURE_COUNT * 2 - len({
+                    int(value) for value in raw_missing_rows
+                })
+            )
+        except (TypeError, ValueError):
+            rows_accepted = None
     if accepted:
         result = (
             f"✅ I matched **{accepted} of {CARD_SCAN_CAPTURE_COUNT}** collection "
             f"sections" + (f" (**+{gained}** this time)." if gained else ".")
         )
+    elif rows_accepted:
+        result = (
+            f"✅ I matched **{rows_accepted}** six-card "
+            f"{'row' if rows_accepted == 1 else 'rows'} so far."
+        )
     else:
         result = (
-            "I couldn't match a complete two-row collection section in those images."
+            "I couldn't match a complete six-card row in those images."
         )
     issue_lines = _scan_capture_issue_lines(draft)
     issue_text = ""
@@ -1684,7 +1742,8 @@ def _scan_upload_progress(
             Separator(divider=True),
             Text(content=(
                 f"Upload open {_scan_expiry_text(usable_until)}. "
-                "Keep two full six-card rows visible in each screenshot."
+                "Show complete rows of six cards. Overlap between screenshots "
+                "is fine."
             )),
             ActionRow(components=[
                 LinkButton(
@@ -2487,9 +2546,14 @@ def _dashboard(
             label="Admin",
             emoji=ADMIN_EMOJI,
         )]))
-    if age != "fresh":
+    # Informational age only. Matching does not expire with age, so this must
+    # not threaten an effect the rules do not have. The button's real work is
+    # small and stated literally: it saves today's date as the last check.
+    if complete and age != "fresh":
         body.append(Text(content=(
-            f"-# {age.title()} · confirm above to keep matching."
+            f"-# Numbers last confirmed {_relative_timestamp(stamp)}. "
+            "**Still accurate** saves today's date. "
+            "Matching does not stop either way."
         )))
     return [Container(components=body)]
 
@@ -3168,6 +3232,7 @@ def _quantity_editor(
         # One controller for the whole category, not one per card. "Set
         # number" is spelled out rather than hidden behind tapping the count:
         # a control that looks like a readout is not a control anybody finds.
+        selected_unconfirmed = state == DUPLICATE and card_id not in confirmed
         body.append(ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.DANGER,
@@ -3186,6 +3251,18 @@ def _quantity_editor(
                 custom_id=f"cards_qstep:{tag}|{card_id}|1",
                 label="+1",
                 is_disabled=reserved or state >= MAX_COPIES,
+            ),
+            # Only for a scanner "2+": the same one-tap answer the focused
+            # card screen has, so confirming exactly 2 never needs the modal.
+            *(
+                [Button(
+                    style=hikari.ButtonStyle.PRIMARY,
+                    custom_id=f"cards_qset:{tag}|{card_id}|{DUPLICATE}",
+                    label="Set to 2",
+                    is_disabled=reserved,
+                )]
+                if selected_unconfirmed
+                else []
             ),
         ]))
     if reserved:
@@ -3249,6 +3326,7 @@ async def _dashboard_view(
     mongo: MongoClient | None = None,
     guild_id: int | None = None,
     skip_paused_gate: bool = False,
+    skip_swap_gate: bool = False,
     is_admin: bool | None = None,
 ):
     """The board - unless this account owes somebody an answer.
@@ -3262,7 +3340,10 @@ async def _dashboard_view(
     # "Not now" gets past this without turning trading back on.
     if inventory.get("trading_paused") and not skip_paused_gate:
         return _trading_paused_view(account)
-    if mongo is not None and guild_id is not None:
+    # "Not yet" on the swap prompt needs the same one-render pass the paused
+    # gate has, or the prompt re-renders itself and the button is a trap. The
+    # next `/cards` open asks again, which is what its copy promises.
+    if not skip_swap_gate and mongo is not None and guild_id is not None:
         pending = await _swap_awaiting_confirmation(
             mongo, tag=account.tag, guild_id=guild_id
         )
@@ -3408,9 +3489,10 @@ async def _candidate_inventories(
         "guild_id": guild_id,
     }
 
-    # Current family-clan membership is an additional safety boundary.  If the
-    # clan database is temporarily unavailable/empty, guild scoping still keeps
-    # results inside the Discord community using this panel.
+    # Current family-clan membership is an additional safety boundary. When
+    # the clan database is unavailable or empty the search refuses, and the
+    # caller says the search failed - an empty list here would render as
+    # "nobody has a spare", which is a different claim and a false one.
     try:
         family_tags = [
             _normalize_tag(tag)
@@ -3419,10 +3501,10 @@ async def _candidate_inventories(
         ]
     except Exception:
         _log.exception("card matching could not load family clan tags")
-        return []
+        raise CandidateLookupUnavailable from None
     if not family_tags:
         _log.warning("card matching disabled because no family clan tags are configured")
-        return []
+        raise CandidateLookupUnavailable
     query["clan_tag"] = {"$in": family_tags}
 
     documents = await mongo.card_inventories.find(query).to_list(length=2_000)
@@ -3873,13 +3955,18 @@ def _browse_picker(
 
     def option(key: str, documents: list[dict]) -> SelectOption:
         # Spares are counted across every account they own, because the count
-        # is only there to say whether the lookup is worth making.
-        spares = sum(
-            1
-            for document in documents
-            for value in normalize_cards(document.get("cards")).values()
-            if value >= DUPLICATE
-        )
+        # is only there to say whether the lookup is worth making. Counted the
+        # same way the lookup lists them: Ready categories only.
+        spares = 0
+        for document in documents:
+            ready = set(document.get("complete_categories") or ())
+            counts = normalize_cards(document.get("cards"))
+            spares += sum(
+                1
+                for card in CARDS
+                if card.category in ready
+                and counts.get(card.id, OWNED) >= DUPLICATE
+            )
         discord_id = documents[0].get("discord_id")
         shown = names.get(int(discord_id)) if discord_id else None
         in_game = str(documents[0].get("player_name") or "").strip()
@@ -3941,9 +4028,14 @@ def _player_spares_view(
         documents, key=lambda d: str(d.get("player_name") or "")
     ):
         spares = normalize_cards(document.get("cards"))
+        # Only categories the holder marked Ready to trade are listed. A
+        # half-reviewed category's counts are not supply any trade path would
+        # accept, so showing them here invites asks that must be refused.
+        ready = set(document.get("complete_categories") or ())
         held = [
             card for card in CARDS
-            if spares.get(card.id, OWNED) >= DUPLICATE
+            if card.category in ready
+            and spares.get(card.id, OWNED) >= DUPLICATE
         ]
         total += len(held)
         clan = str(document.get("clan_name") or "").strip()
@@ -4467,8 +4559,8 @@ def _holders_view(
                 holder_components.append(line)
     else:
         holder_components = [Text(content=(
-            f"Nobody with a fresh collection currently lists a duplicate **{card.name}**. "
-            "Try Refresh later as more family members finish setup."
+            f"Nobody currently lists a duplicate **{card.name}**. "
+            "Check again later as more family members finish setup."
         ))]
     # What you get is the same for everyone on this screen, so it is said
     # once at the top instead of once per holder.
@@ -6084,15 +6176,12 @@ def _trade_proposal_dm(
                 "to the same clan before you can trade."
             )
             + (
-                # True for whoever answers the in-game offer, whichever of you
-                # posts it. Without this the DM read as though a missing
-                # duplicate ended the trade, when it only sets a price.
+                # This proposal is card for card, so it does not mention gems.
+                # The real gem path is the separate Ask for help flow, which
+                # states payer and price before anything is sent.
                 "\n-# Only same-category trades exist — "
                 f"{CATEGORY_BY_ID[wanted.category].short_name} for "
-                f"{CATEGORY_BY_ID[wanted.category].short_name}. Whoever "
-                "answers the offer in game without a spare of the card asked "
-                f"for pays **{TRADE_GEM_COST.get(wanted.category, 0)} gems** {emojis.gems} "
-                "instead."
+                f"{CATEGORY_BY_ID[wanted.category].short_name}."
             )
         ))],
         accent=GREEN_ACCENT,
@@ -6122,7 +6211,16 @@ async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
     )
 
 
-async def _notify_trade_accepted(bot: hikari.GatewayBot, trade: dict) -> bool:
+def _accepted_trade_dm(
+    trade: dict, *, fwa_relevant: bool = False
+) -> list[Container]:
+    """The requester's accepted-swap handoff.
+
+    Self-contained on purpose: both accounts and tags, both cards, the
+    partner's Discord identity, their clan with a link, and the next action.
+    Users kept forgetting who they accepted with and had nothing to search
+    for, so the message must stand alone days later.
+    """
     wanted = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     given = _card_label(CARD_BY_ID[trade["given_card_id"]])
     status = str(trade.get("status") or "move_needed")
@@ -6138,27 +6236,111 @@ async def _notify_trade_accepted(bot: hikari.GatewayBot, trade: dict) -> bool:
         else "**Same clan:** " + _trade_location_line(trade, role="requester")
         + ". Send the cards in game."
     )
+    holder_clan_name = str(trade.get("holder_clan_name") or "").strip()
+    holder_clan_link = _clan_link(trade.get("holder_clan_tag"))
+    their_clan = ""
+    if holder_clan_name or holder_clan_link:
+        their_clan = (
+            "\n**Their clan:** "
+            + (_escape_markdown(holder_clan_name, limit=50) or "their clan")
+            + (
+                f" — [Open their clan]({holder_clan_link})"
+                if holder_clan_link
+                else ""
+            )
+        )
+    containers = _trade_dm_container(
+        f"{emojis.yes} Your swap was accepted",
+        (
+            f"**You give:** {given}\n"
+            f"**You receive:** {wanted}\n"
+            f"**Your account:** "
+            f"{_escape_markdown(trade['requester_name'], limit=60)} "
+            f"• `{trade['requester_tag']}`\n\n"
+            f"**Trading with:** <@{int(trade['holder_discord_id'])}> · "
+            f"**{_escape_markdown(trade['holder_name'], limit=60)}** · "
+            f"`{trade['holder_tag']}`"
+            f"{their_clan}\n\n"
+            f"{next_step}"
+        ),
+        accent=GREEN_ACCENT,
+        footer=(
+            "When you have sent it, open /cards and confirm. Your card is "
+            "held until then."
+        ),
+    )
+    if fwa_relevant:
+        # Its own red region so the warning is findable, without painting the
+        # whole accepted message as an error.
+        containers.append(Container(
+            accent_color=RED_ACCENT,
+            components=[
+                Text(content="## Warning: FWA"),
+                Text(content=(
+                    "If war has not started yet, wait until it starts before "
+                    "trading."
+                )),
+            ],
+        ))
+    involved_clans = {
+        _normalize_tag(trade.get("requester_clan_tag")),
+        _normalize_tag(trade.get("holder_clan_tag")),
+    }
+    if status == "move_needed" and NOAHS_ARK_TAG not in involved_clans:
+        # Optional help for the one case where the players need a place to
+        # meet. Quiet and blue: it is an offer, never an instruction.
+        containers.append(Container(
+            accent_color=BLUE_ACCENT,
+            components=[
+                Text(content="## Need a place to trade?"),
+                Text(content=(
+                    "Noahs Ark is open for quick trades. Anyone can join.\n"
+                    f"[Open Noahs Ark]({NOAHS_ARK_LINK})\n"
+                    f"-# Clan tag: `{NOAHS_ARK_TAG}`"
+                )),
+            ],
+        ))
+    return containers
+
+
+async def _trade_involves_fwa(mongo, trade: dict) -> bool:
+    """Whether either side's clan is an FWA clan. Best-effort: never raises.
+
+    Membership comes from the clans collection's type field, the same source
+    every FWA command uses. Live war state is deliberately not consulted -
+    it can fail (private log, maintenance) and would be stale by the time the
+    cards move - so the DM carries the simple timing reminder instead.
+    """
+    if mongo is None:
+        return False
+    tags = [
+        tag
+        for tag in (
+            _normalize_tag(trade.get("requester_clan_tag")),
+            _normalize_tag(trade.get("holder_clan_tag")),
+        )
+        if tag
+    ]
+    if not tags:
+        return False
+    try:
+        row = await mongo.clans.find_one(
+            {"tag": {"$in": tags}, "type": "FWA"}, {"_id": 1}
+        )
+    except Exception:
+        _log.exception("fwa lookup failed trade=%s", trade.get("_id"))
+        return False
+    return row is not None
+
+
+async def _notify_trade_accepted(
+    bot: hikari.GatewayBot, trade: dict, *, mongo=None
+) -> bool:
+    fwa_relevant = await _trade_involves_fwa(mongo, trade)
     return await _send_trade_dm(
         bot,
         int(trade["requester_discord_id"]),
-        _trade_dm_container(
-            f"{emojis.yes} Your swap was accepted",
-            (
-                f"**{_escape_markdown(trade['holder_name'], limit=60)}** "
-                f"• `{trade['holder_tag']}` accepted.\n\n"
-                f"**You give:** {given}\n"
-                f"**You receive:** {wanted}\n"
-                f"**Your account:** "
-                f"{_escape_markdown(trade['requester_name'], limit=60)} "
-                f"• `{trade['requester_tag']}`\n\n"
-                f"{next_step}"
-            ),
-            accent=GREEN_ACCENT,
-            footer=(
-                "When you have sent it, open /cards and confirm. Your card is "
-                "held until then."
-            ),
-        ),
+        _accepted_trade_dm(trade, fwa_relevant=fwa_relevant),
         trade_id=str(trade["_id"]),
     )
 
@@ -6445,7 +6627,10 @@ def _trade_summary(trade: dict, *, role: str) -> str:
             + ". Exact cards are reserved."
         )
     elif raw_status in {"ready", "accepted"}:
-        detail = "\n-# Same family clan. Finish both in-game requests, then mark complete."
+        detail = (
+            "\n-# Same family clan. Send your card in game, then tap "
+            "**I sent my card**."
+        )
     elif raw_status == "completing":
         detail = "\n-# Saving the tracked collection updates now."
     elif needs_review:
@@ -6664,7 +6849,7 @@ async def _confirm_swap_leg(
     moved = bool(getattr(given, "modified_count", 0))
 
     if moved:
-        await mongo.card_inventories.update_one(
+        credited = await mongo.card_inventories.update_one(
             {"_id": receiver, "guild_id": guild_id, "$or": fence},
             {
                 "$set": {
@@ -6676,6 +6861,37 @@ async def _confirm_swap_leg(
                 "$unset": {f"card_trade_reservations.{card_id}": ""},
             },
         )
+        if not getattr(credited, "modified_count", 0):
+            # The giver's copy is already gone, so failing to credit the
+            # receiver silently would lose the card. The fence can legitimately
+            # be missing here (released by recovery); credit anyway, but only
+            # a card the receiver is still missing, so a count they set by
+            # hand in the meantime is never overwritten downward.
+            fallback = await mongo.card_inventories.update_one(
+                {
+                    "_id": receiver,
+                    "guild_id": guild_id,
+                    f"cards.{card_id}": {"$lt": OWNED},
+                },
+                {
+                    "$set": {
+                        f"cards.{card_id}": OWNED,
+                        "updated_at": now,
+                        "update_source": "confirmed_trade",
+                    },
+                    "$inc": {"inventory_revision": 1},
+                },
+            )
+            if not getattr(fallback, "modified_count", 0):
+                _log.warning(
+                    "swap credit skipped: receiver=%s card=%s already owns it "
+                    "or is out of scope (trade=%s)",
+                    receiver, card_id, trade.get("_id"),
+                )
+            await mongo.card_inventories.update_one(
+                {"_id": receiver},
+                {"$unset": {f"card_trade_reservations.{card_id}": ""}},
+            )
 
     remaining = 0
     document = await mongo.card_inventories.find_one({"_id": giver})
@@ -6704,7 +6920,14 @@ async def _record_swap_confirmation(
             **_cleanup_fields(trade),
         })
     await mongo.card_trades.update_one(
-        {"_id": trade["_id"], f"{role}_confirmed_at": {"$exists": False}},
+        {
+            "_id": trade["_id"],
+            f"{role}_confirmed_at": {"$exists": False},
+            # A confirm racing a cancel must not stamp a closed trade. The
+            # inventory move already happened either way; this only keeps the
+            # trade document's final status honest.
+            "status": {"$in": list(SWAP_LIVE_STATUSES)},
+        },
         {"$set": fields, "$unset": {"open_proposal_key": ""}},
     )
     updated = dict(trade)
@@ -6852,6 +7075,15 @@ def _swap_cancel_check_view(
     """After "No": is this swap dead, or just not done yet?"""
     given, _received = _swap_legs(trade, role=role)
     trade_id = str(trade["_id"])
+    other = "holder" if role == "requester" else "requester"
+    # "Frees both cards" is only true while neither side has confirmed. Once
+    # the other player sent theirs, that card already moved and stays.
+    cancel_note = (
+        "**Cancelled** closes the swap. The card they sent stays in your "
+        "collection. Your card is not removed."
+        if trade.get(f"{other}_confirmed_at")
+        else "**Cancelled** closes the swap and frees both cards."
+    )
     return [Container(
         accent_color=RED_ACCENT,
         components=[
@@ -6876,7 +7108,7 @@ def _swap_cancel_check_view(
                 ),
             ]),
             Text(content=(
-                "-# **Cancelled** closes the swap and frees both cards. "
+                f"-# {cancel_note} "
                 "**Still going to do it** asks you again next time."
             )),
         ],
@@ -6904,7 +7136,7 @@ def _swap_sent_view(
         else (
             f"Waiting for **{_escape_markdown(other, limit=50)}** to confirm "
             f"they sent {_card_label(received)}. If they do not confirm "
-            "within 24 hours it is added for you automatically."
+            "within 7 days it is added for you automatically."
         )
     )
     return [Container(
@@ -6941,6 +7173,52 @@ def _swap_legs(trade: dict, *, role: str):
     wanted = CARD_BY_ID[str(trade["wanted_card_id"])]
     given = CARD_BY_ID[str(trade["given_card_id"])]
     return (given, wanted) if role == "requester" else (wanted, given)
+
+
+# Shared with the owner preview command, so what it sends is exactly what a
+# member receives rather than a second copy of the wording that can drift.
+SWAP_ARRIVED_TITLE = "Your card arrived"
+
+
+def _swap_arrived_detail(name: object) -> str:
+    return (
+        f"{_escape_markdown(name, limit=50)} "
+        "confirmed they sent it, so it is now in your collection."
+    )
+
+
+def _swap_cancel_note(trade: dict, reader_role: str) -> str:
+    """What already happened to the cards, from this reader's side."""
+    reader_sent = bool(trade.get(f"{reader_role}_confirmed_at"))
+    other_role = "holder" if reader_role == "requester" else "requester"
+    other_sent = bool(trade.get(f"{other_role}_confirmed_at"))
+    if reader_sent:
+        return (
+            "You already confirmed you sent your card, so one copy stays "
+            "removed from your collection. The card you were waiting for "
+            "was not added."
+        )
+    if other_sent:
+        return (
+            "The other player already sent their card. It stays in your "
+            "collection. Your card was not removed."
+        )
+    return "No tracked inventory changed."
+
+
+CANCELLED_DM_TITLE = "Card swap cancelled"
+
+
+def _cancelled_dm_detail(trade: dict, *, reader_role: str, released: bool) -> str:
+    return (
+        f"The other player cancelled it. {_swap_cancel_note(trade, reader_role)} "
+        + (
+            "The remaining exact-card reservations were released."
+            if released
+            else "Releasing the reserved cards is still finishing; "
+            "open Find trades in a moment."
+        )
+    )
 
 
 def _swap_counterpart(trade: dict, *, role: str) -> tuple[str, str]:
@@ -9229,6 +9507,10 @@ async def cards_dashboard(
     return await _dashboard_view(
         account, inventory, account_count=len(_loaded_entries(data)),
         mongo=mongo, guild_id=_trade_guild_id(ctx),
+        # The paused screen's "Not now" carries `|paused` so it can show the
+        # board once without turning trading back on. _parse_target drops the
+        # suffix (it only returns category ids), so read it off the raw id.
+        skip_paused_gate=str(action_id or "").endswith("|paused"),
     )
 
 
@@ -9509,7 +9791,14 @@ async def cards_count_submit(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    await ctx.defer(ephemeral=True)
+    # Same as cards_qnum_submit: update the panel the modal came from rather
+    # than answering with a duplicate message.
+    if getattr(ctx.interaction, "message", None) is not None:
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+        )
+    else:
+        await ctx.defer(ephemeral=True)
     tag, card_id, _target = _parse_card_set_target(f"{action_id}|0")
     if card_id is None:
         view = _notice("Card unavailable", "Open `/cards` again.")
@@ -9932,6 +10221,29 @@ async def cards_qstep(
     )
 
 
+@register_action("cards_qset")
+@lightbulb.di.with_di
+async def cards_qset(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """One tap to answer the scanner's "2 or more" with exactly 2.
+
+    An absolute write, so the member confirms the count without opening the
+    Set number modal. Stays on the category screen like every other control
+    there.
+    """
+    tag, card_id, target = _parse_card_set_target(action_id)
+    if card_id is None or target is None:
+        return _notice("Card unavailable", "Open `/cards` again.")
+    return await _quantity_write(
+        ctx, tag, card_id, int(target), coc_client=coc_client, mongo=mongo
+    )
+
+
 @register_action("cards_qnum", opens_modal=True, no_return=True)
 @lightbulb.di.with_di
 async def cards_qnum(
@@ -9972,7 +10284,17 @@ async def cards_qnum_submit(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    await ctx.defer(ephemeral=True)
+    # ModalContext.defer can only DEFERRED_MESSAGE_CREATE, which answers the
+    # modal with a brand-new message; in a DM that new panel piles up under
+    # the old one forever. A modal opened from a component carries .message,
+    # and hikari 2.4.1 allows DEFERRED_MESSAGE_UPDATE there, so the edit
+    # below lands on the panel the modal came from instead.
+    if getattr(ctx.interaction, "message", None) is not None:
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+        )
+    else:
+        await ctx.defer(ephemeral=True)
     tag, card_id, _delta = _parse_quantity_card(action_id)
     if card_id is None:
         await ctx.interaction.edit_initial_response(
@@ -10048,9 +10370,12 @@ async def cards_favours(
         return problem
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
-    candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_trade_guild_id(ctx)
-    )
+    try:
+        candidates = await _candidate_inventories(
+            mongo, inventory, guild_id=_trade_guild_id(ctx)
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
     available = _without_reserved_cards(inventory)
     mine = normalize_cards(available.get("cards"))
     return _favours_view(
@@ -10078,9 +10403,12 @@ async def cards_demand(
         return problem
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
-    candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_trade_guild_id(ctx)
-    )
+    try:
+        candidates = await _candidate_inventories(
+            mongo, inventory, guild_id=_trade_guild_id(ctx)
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
     return _demand_view(
         account,
         _without_reserved_cards(inventory),
@@ -10151,14 +10479,20 @@ def _gem_ask_dm(ask: dict, *, preview: bool = False) -> list[Container]:
         controls=[ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"cards_gem_yes:{ask['_id']}",
+                custom_id=(
+                    f"cards_gem_yes:{ask['_id']}|"
+                    f"{int(ask.get('generation') or 0)}"
+                ),
                 label="Yes, I will post it",
                 emoji=emojis.yes.partial_emoji,
                 is_disabled=preview,
             ),
             Button(
                 style=hikari.ButtonStyle.DANGER,
-                custom_id=f"cards_gem_no:{ask['_id']}",
+                custom_id=(
+                    f"cards_gem_no:{ask['_id']}|"
+                    f"{int(ask.get('generation') or 0)}"
+                ),
                 label="No thanks", emoji=CANCEL_EMOJI,
                 is_disabled=preview,
             ),
@@ -10194,7 +10528,18 @@ async def cards_gem_ask(
     )
     if problem:
         return problem
-    holder = await mongo.card_inventories.find_one({"_id": holder_tag}) or {}
+    guild_id = _trade_guild_id(ctx)
+    holder = {}
+    if guild_id is not None:
+        holder = await mongo.card_inventories.find_one(
+            {"_id": holder_tag, "guild_id": int(guild_id)}
+        ) or {}
+    if not holder:
+        return _notice(
+            "Cannot reach them",
+            "That player is not in the family card system any more.",
+            back_tag=tag,
+        )
     return _gem_ask_confirm_view(
         account, card,
         str(holder.get("player_name") or "That player"), holder_tag,
@@ -10227,7 +10572,43 @@ async def cards_gem_send(
     if problem:
         return problem
     guild_id = _trade_guild_id(ctx)
-    holder = await mongo.card_inventories.find_one({"_id": holder_tag}) or {}
+    if guild_id is None:
+        return _notice(
+            "Not set up yet",
+            "The Card Hub is not configured for this family yet.",
+            back_tag=tag,
+        )
+    # The holder must still be a guild-scoped inventory inside the configured
+    # family. A stale button can name somebody who left; that fails closed
+    # here, the same boundary the candidate search applies.
+    holder = await mongo.card_inventories.find_one(
+        {"_id": holder_tag, "guild_id": int(guild_id)}
+    ) or {}
+    if not holder:
+        return _notice(
+            "Cannot reach them",
+            "That player is not in the family card system any more.",
+            back_tag=tag,
+        )
+    try:
+        family_tags = {
+            _normalize_tag(clan_tag)
+            for clan_tag in await mongo.clans.distinct("tag")
+            if _normalize_tag(clan_tag)
+        }
+    except Exception:
+        _log.exception("gem ask could not load family clan tags")
+        return _notice(
+            "Cannot check their clan right now",
+            "Nothing was sent. Try again in a moment.",
+            back_tag=tag,
+        )
+    if not family_tags or _normalize_tag(holder.get("clan_tag")) not in family_tags:
+        return _notice(
+            "Cannot reach them",
+            "That player is not in a family clan right now.",
+            back_tag=tag,
+        )
     holder_discord_id = holder.get("discord_id")
     if not holder_discord_id:
         return _notice(
@@ -10246,7 +10627,7 @@ async def cards_gem_send(
     ask = {
         "_id": f"gem:{_normalize_tag(account.tag)}:{holder_tag}:{card.id}",
         "kind": "gem_ask",         # the trade sweeper only looks at "trade"
-        "guild_id": int(guild_id) if guild_id else None,
+        "guild_id": int(guild_id),
         "status": "pending",
         "card_id": card.id,
         "gem_cost": TRADE_GEM_COST.get(card.category, 0),
@@ -10256,26 +10637,41 @@ async def cards_gem_send(
         "holder_tag": holder_tag,
         "holder_name": str(holder.get("player_name") or "Unknown"),
         "holder_discord_id": int(holder_discord_id),
+        # Buttons carry this, so a DM from an earlier ask for the same card
+        # cannot answer a later one.
+        "generation": int(now.timestamp()),
         "created_at": now,
         "updated_at": now,
     }
     try:
         await mongo.card_trades.insert_one(ask)
     except DuplicateKeyError:
-        return _notice(
-            "Already asked",
-            f"You have already asked them for {card.name}. Give them a chance "
-            "to answer before asking again.",
-            back_tag=tag,
+        # One document per asker/holder/card. While it is pending, repeat
+        # asks stay blocked; once it was answered, asking again takes the
+        # document over as a fresh pending ask instead of blocking for ever.
+        takeover = await mongo.card_trades.update_one(
+            {"_id": ask["_id"], "kind": "gem_ask", "status": {"$ne": "pending"}},
+            {"$set": {**{k: v for k, v in ask.items() if k != "_id"}}},
         )
+        if not getattr(takeover, "modified_count", 0):
+            return _notice(
+                "Already asked",
+                f"You have already asked them for {card.name}. Give them a "
+                "chance to answer before asking again.",
+                back_tag=tag,
+            )
     sent = await _send_trade_dm(
         bot, int(holder_discord_id), _gem_ask_dm(ask), trade_id=str(ask["_id"])
     )
     if not sent:
         await mongo.card_trades.delete_one({"_id": ask["_id"]})
+        # The send can fail for reasons besides closed DMs (rate limit,
+        # network); do not report the recipient made a choice they may not
+        # have made.
         return _notice(
             "Could not DM them",
-            "Their DMs are closed, so I could not pass the message on.",
+            "I could not send them a DM, so nothing was asked. Ping them in "
+            "the server, or try again later.",
             back_tag=tag,
         )
     return [Container(accent_color=GREEN_ACCENT, components=[
@@ -10296,22 +10692,44 @@ async def cards_gem_send(
 
 async def _answer_gem_ask(ctx, mongo, bot, action_id: str, *, agreed: bool):
     """Record the answer and tell the asker. No cards move either way."""
+    ask_id, _, generation = str(action_id or "").partition("|")
     ask = await mongo.card_trades.find_one(
-        {"_id": str(action_id or ""), "kind": "gem_ask"}
+        {"_id": ask_id, "kind": "gem_ask"}
     )
     if ask is None:
         return _notice("Out of date", "That request is no longer open.")
-    await mongo.card_trades.update_one(
-        {"_id": ask["_id"]},
+    # Only the player who was asked can answer. The DM makes this the normal
+    # case anyway, but the ask id is predictable, so it is checked, not
+    # assumed - the same rule every trade handler applies.
+    holder_id = ask.get("holder_discord_id")
+    if not holder_id or int(holder_id) != int(ctx.user.id):
+        return _notice(
+            "That request is not yours",
+            "Only the player who was asked can answer it.",
+        )
+    # A button from an earlier ask for the same card must not answer a newer
+    # one. Old buttons without a generation still answer their own document.
+    if generation and str(int(ask.get("generation") or 0)) != generation:
+        return _notice("Out of date", "That request is no longer open.")
+    # Compare-and-swap on pending: the first answer wins, and a stale or
+    # double-clicked button cannot flip an answer that was already given.
+    result = await mongo.card_trades.update_one(
+        {"_id": ask["_id"], "kind": "gem_ask", "status": "pending"},
         {"$set": {
             "status": "accepted" if agreed else "declined",
             "updated_at": datetime.now(timezone.utc),
         }},
     )
+    if not getattr(result, "modified_count", 0):
+        return _notice(
+            "Already answered",
+            "This request was already answered. Nothing changed.",
+        )
     card = CARD_BY_ID[ask["card_id"]]
     category = CATEGORY_BY_ID[card.category]
+    sent = False
     if ask.get("asker_discord_id"):
-        await _send_trade_dm(
+        sent = await _send_trade_dm(
             bot, int(ask["asker_discord_id"]),
             _trade_dm_container(
                 f"{emojis.yes} They said yes" if agreed
@@ -10330,16 +10748,20 @@ async def _answer_gem_ask(ctx, mongo, bot, action_id: str, *, agreed: bool):
             ),
             trade_id=str(ask["_id"]),
         )
+    told = (
+        "They have been told."
+        if sent
+        else "I could not send them a DM. Please tell them your answer."
+    )
     if not agreed:
-        return _notice(
-            "Declined", "Thanks for answering — they have been told."
-        )
+        return _notice("Declined", f"Thanks for answering. {told}")
     return [Container(accent_color=GREEN_ACCENT, components=[
         Text(content=f"## {emojis.yes} Thanks for helping"),
         Text(content=(
             f"Now post the offer in game: offer your {_card_label(card)} and "
             f"ask for any **{category.short_name}** card back. They pay the "
-            f"gems.\n\n-# You must be in the same clan for the trade itself."
+            f"gems.\n\n-# {told}\n"
+            "-# You must be in the same clan for the trade itself."
         )),
     ])]
 
@@ -10442,6 +10864,8 @@ async def cards_browse(
         return _notice("Unknown player", "Open `/cards` again for a fresh list.")
     # The same family boundary matching applies. Without it an alt parked in a
     # clan outside the family would be listed, and nobody can trade with it.
+    # Fail closed exactly like _candidate_inventories: a failed or empty clan
+    # lookup refuses the search instead of quietly dropping the boundary.
     try:
         family_tags = [
             _normalize_tag(tag)
@@ -10451,8 +10875,13 @@ async def cards_browse(
     except Exception:
         _log.exception("player lookup could not load family clan tags")
         family_tags = []
-    if family_tags:
-        query["clan_tag"] = {"$in": family_tags}
+    if not family_tags:
+        return _notice(
+            "Player lookup is not available right now",
+            "Nothing was changed. Try again in a minute.",
+            back_tag=_normalize_tag(account.tag),
+        )
+    query["clan_tag"] = {"$in": family_tags}
     documents = await mongo.card_inventories.find(query).to_list(length=25)
     if not documents:
         return _notice(
@@ -10507,9 +10936,12 @@ async def cards_matches(
         inventory = await mongo.card_inventories.find_one({
             "_id": _normalize_tag(account.tag), "guild_id": int(guild_id),
         }) or inventory
-    candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=guild_id
-    )
+    try:
+        candidates = await _candidate_inventories(
+            mongo, inventory, guild_id=guild_id
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
     available = _without_reserved_cards(inventory)
     matches = find_matches(available, candidates)
     return _matches_view(
@@ -10580,9 +11012,12 @@ async def cards_open_card(
         return problem
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
-    candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_trade_guild_id(ctx)
-    )
+    try:
+        candidates = await _candidate_inventories(
+            mongo, inventory, guild_id=_trade_guild_id(ctx)
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
     holders = holders_for_card(
         _without_reserved_cards(inventory), candidates, card_id
     )
@@ -10612,9 +11047,12 @@ async def cards_holder_page(
         return problem
     if not inventory_is_matchable(inventory):
         return _stale_collection_notice()
-    candidates = await _candidate_inventories(
-        mongo, inventory, guild_id=_trade_guild_id(ctx)
-    )
+    try:
+        candidates = await _candidate_inventories(
+            mongo, inventory, guild_id=_trade_guild_id(ctx)
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
     holders = holders_for_card(
         _without_reserved_cards(inventory), candidates, card_id
     )
@@ -10681,9 +11119,12 @@ async def cards_trade_holder(
         return problem
     if not inventory_is_matchable(requester):
         return _stale_collection_notice()
-    candidates = await _candidate_inventories(
-        mongo, requester, guild_id=_trade_guild_id(ctx)
-    )
+    try:
+        candidates = await _candidate_inventories(
+            mongo, requester, guild_id=_trade_guild_id(ctx)
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
     holders = holders_for_card(
         _without_reserved_cards(requester), candidates, wanted_card_id
     )
@@ -10697,7 +11138,8 @@ async def cards_trade_holder(
     if holder is None:
         return _notice(
             "That holder is no longer available",
-            "Refresh the specific-card results and choose another player.",
+            "Go back and open the card search again, then choose another "
+            "player.",
         )
     return _trade_offer_view(account, wanted_card_id, holder)
 
@@ -10742,13 +11184,21 @@ async def cards_trade_request(
             "Card Hub is not set up",
             "An operator must configure the family server before trades work.",
         )
-    candidates = await _candidate_inventories(mongo, requester, guild_id=guild_id)
+    try:
+        candidates = await _candidate_inventories(
+            mongo, requester, guild_id=guild_id
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
     holder = next(
         (item for item in candidates if _normalize_tag(item.get("_id")) == holder_tag),
         None,
     )
     if holder is None:
-        return _notice("That match is no longer available", "Refresh the holder list and try again.")
+        return _notice(
+            "That match is no longer available",
+            "Go back and open the holder list again.",
+        )
     error = reciprocal_trade_error(
         _without_reserved_cards(requester), holder, wanted_card_id, given_card_id
     )
@@ -10789,8 +11239,8 @@ async def cards_trade_request(
         )
     else:
         landed = (
-            f"I could not DM <@{trade['holder_discord_id']}> — their DMs are "
-            "closed. Ping them so they open `/cards` and check **My trades**."
+            f"I could not send <@{trade['holder_discord_id']}> a DM. "
+            "Ping them so they open `/cards` and check **My trades**."
         )
     if channel_sent:
         landed += " I also posted it in the trade channel."
@@ -10863,6 +11313,13 @@ async def _perform_trade_accept(
     })
     if not requester:
         return _notice("Requester collection unavailable", "Decline this request and ask them to refresh.")
+    # A proposal with several valid return cards is a choice, and the plain
+    # Accept button in My trades cannot carry one. When the DM never arrived
+    # this was the only accept path, and it silently took the default card -
+    # so instead of guessing, show the same pick-and-accept controls the DM
+    # carries. Old Accept buttons land here too and get the chooser.
+    if chosen_card_id is None and len(_trade_choice_ids(trade)) > 1:
+        return _trade_proposal_dm(trade, controls=True)
     # The accepter may take any card the requester consented to give, but
     # only one they still actually hold - `compatible_card_ids` was computed
     # when the proposal was made and can be stale by now.
@@ -10912,7 +11369,7 @@ async def _perform_trade_accept(
     accepted_trade = await mongo.card_trades.find_one({"_id": trade["_id"]}) or dict(trade)
     accepted_trade["status"] = status
     dm_sent, _channel_updated = await asyncio.gather(
-        _notify_trade_accepted(bot, accepted_trade),
+        _notify_trade_accepted(bot, accepted_trade, mongo=mongo),
         _update_trade_channel(bot, accepted_trade),
     )
     delivery = (
@@ -10920,13 +11377,38 @@ async def _perform_trade_accept(
         if dm_sent
         else f"I could not DM <@{trade['requester_discord_id']}>; please ping them."
     )
+    # The holder's half of the handoff. Same rule as the requester DM: name
+    # the partner so this panel is enough to act on days later, and name only
+    # controls that exist - the confirm action is I sent my card in My trades.
+    requester_clan = str(trade.get("requester_clan_name") or "").strip()
+    partner = (
+        f"You are trading with <@{int(trade['requester_discord_id'])}> · "
+        f"**{_escape_markdown(trade.get('requester_name'), limit=60)}** · "
+        f"`{trade['requester_tag']}`"
+        + (f" in **{_escape_markdown(requester_clan, limit=50)}**" if requester_clan else "")
+        + ". "
+    )
+    fwa_note = (
+        "\n\n**FWA:** if war has not started yet, wait until it starts "
+        "before trading."
+        if await _trade_involves_fwa(mongo, accepted_trade)
+        else ""
+    )
     return _trade_feedback(
         "Swap accepted",
-        (
-            "The exact cards are reserved. You are in different family clans; move one account manually, then click **Check clans**. "
+        partner
+        + (
+            "The exact cards are reserved. You are in different family "
+            "clans. One of you moves clans, then send the cards in game. "
+            "After you send yours, open **My trades** and tap "
+            "**I sent my card**. "
             if status == "move_needed"
-            else "The exact cards are reserved and both accounts are in the same family clan. Complete both in-game requests, then mark the swap complete. "
-        ) + f"{delivery}",
+            else "The exact cards are reserved and both accounts are in the "
+            "same family clan. Send the cards in game. After you send "
+            "yours, open **My trades** and tap **I sent my card**. "
+        )
+        + delivery
+        + fwa_note,
         account.tag,
     )
 
@@ -10961,6 +11443,7 @@ async def _load_swap_for_confirm(ctx, action_id: str, *, mongo: MongoClient):
 async def cards_swap_sent(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
@@ -10970,6 +11453,18 @@ async def cards_swap_sent(
     if problem:
         return problem
     trade, role = loaded
+    # The trade stores who the participants were at acceptance. This is the
+    # one action that mutates two inventories, so recheck against the live
+    # links that the clicking user still owns this tag - the same recheck
+    # cancel, decline, and accept already run. Fails closed on link outage.
+    _account, _inventory, target_problem = await _load_target(
+        ctx,
+        _normalize_tag(trade[f"{role}_tag"]),
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+    if target_problem:
+        return target_problem
     now = datetime.now(timezone.utc)
     moved, remaining = await _confirm_swap_leg(mongo, trade, role=role, now=now)
     if not moved:
@@ -10985,11 +11480,8 @@ async def cards_swap_sent(
         _, receiver_card = _swap_leg(trade, role=role)[1:]
         await _notify_trade_status(
             bot, updated, recipient_id=other_id,
-            title="Your card arrived",
-            detail=(
-                f"{_escape_markdown(trade.get(f'{role}_name'), limit=50)} "
-                f"confirmed they sent it, so it is now in your collection."
-            ),
+            title=SWAP_ARRIVED_TITLE,
+            detail=_swap_arrived_detail(trade.get(f"{role}_name")),
         )
     return _swap_sent_view(
         updated, role=role, remaining=remaining,
@@ -11023,6 +11515,9 @@ async def cards_swap_later(
     return await _dashboard_view(
         account, inventory, account_count=len(_loaded_entries(data)),
         mongo=mongo, guild_id=_trade_guild_id(ctx),
+        # One render only. Without this the swap gate re-finds the same trade
+        # and "Not yet" shows the question it was pressed to leave.
+        skip_swap_gate=True,
     )
 
 
@@ -11284,16 +11779,25 @@ async def cards_trade_cancel(
     if problem:
         return problem
     now = datetime.now(timezone.utc)
+    # A swap where one player already confirmed has already moved one card.
+    # Cancelling is still allowed - it is how a dead half-swap gets closed -
+    # but the copy below must not claim nothing changed when it did.
+    one_leg_applied = bool(
+        trade.get("requester_confirmed_at") or trade.get("holder_confirmed_at")
+    )
+    cancel_fields = {
+        "status": "cancelled",
+        "cancelled_at": now,
+        "cancelled_by": user_id,
+        "updated_at": now,
+        **_cleanup_fields(trade),
+    }
+    if one_leg_applied:
+        cancel_fields["cancelled_after_confirmation"] = True
     result = await mongo.card_trades.update_one(
         {"_id": trade["_id"], "status": {"$in": ["pending", "move_needed", "ready", "accepted"]}},
         {
-            "$set": {
-                "status": "cancelled",
-                "cancelled_at": now,
-                "cancelled_by": user_id,
-                "updated_at": now,
-                **_cleanup_fields(trade),
-            },
+            "$set": cancel_fields,
             "$unset": {"open_proposal_key": ""},
         },
     )
@@ -11307,23 +11811,16 @@ async def cards_trade_cancel(
         mongo, trade, owner=_reservation_owner(trade)
     )
     trade["status"] = "cancelled"
-    other_id = (
-        int(trade["holder_discord_id"])
-        if role == "requester"
-        else int(trade["requester_discord_id"])
-    )
+    other = "holder" if role == "requester" else "requester"
+    other_id = int(trade[f"{other}_discord_id"])
     dm_sent, _channel_updated = await asyncio.gather(
         _notify_trade_status(
             bot,
             trade,
             recipient_id=other_id,
-            title="Card swap cancelled",
-            detail=(
-                "The other player cancelled it and exact-card reservations "
-                "were released."
-                if released
-                else "The other player cancelled it. Releasing the reserved "
-                "cards is still finishing; open Find trades in a moment."
+            title=CANCELLED_DM_TITLE,
+            detail=_cancelled_dm_detail(
+                trade, reader_role=other, released=released
             ),
         ),
         _update_trade_channel(bot, trade),
@@ -11333,15 +11830,16 @@ async def cards_trade_cancel(
         if dm_sent
         else f"I could not DM <@{other_id}>; please ping them."
     )
+    note = _swap_cancel_note(trade, role)
     return _trade_feedback(
         "Trade cancelled",
         (
-            f"No tracked inventory changed; exact-card reservations were "
+            f"{note} The remaining exact-card reservations were "
             f"released. {delivery}"
             if released
-            else f"No tracked inventory changed. Releasing the reserved cards "
-            f"is still finishing — open **Find trades** in a moment and it "
-            f"will complete. {delivery}"
+            else f"{note} Releasing the reserved cards is still "
+            f"finishing — open **Find trades** in a moment and it will "
+            f"complete. {delivery}"
         ),
         account.tag,
     )
@@ -11416,7 +11914,9 @@ async def cards_trade_complete(
             await _update_trade_channel(bot, trade)
         return _trade_feedback(
             "The accounts moved apart",
-            "The exact cards remain reserved. Move into the same family clan, then use **Check clans**.",
+            "The exact cards remain reserved. Move into the same family clan. "
+            "After you send your card in game, open **My trades** and tap "
+            "**I sent my card**.",
             account.tag,
         )
     completing_until = now + TRADE_COMPLETION_FOR

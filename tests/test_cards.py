@@ -1550,10 +1550,20 @@ def test_allowed_guild_trade_lookup_is_scoped_to_that_guild(monkeypatch):
 
 
 def test_candidate_search_fails_closed_without_guild_or_configured_family_clans():
+    """No guild is an empty result; a broken family boundary is a refusal.
+
+    The distinction matters to the player: an empty list renders as "nobody
+    has a spare", which is a false claim during a clans-database blip, so the
+    boundary failure now raises and the caller says the search failed.
+    """
     class Clans:
         async def distinct(self, field):
             assert field == "tag"
             return []
+
+    class BrokenClans:
+        async def distinct(self, field):
+            raise RuntimeError("clans lookup down")
 
     class Inventories:
         def find(self, _query):
@@ -1565,9 +1575,15 @@ def test_candidate_search_fails_closed_without_guild_or_configured_family_clans(
     assert asyncio.run(cards_command._candidate_inventories(
         mongo, requester, guild_id=None
     )) == []
-    assert asyncio.run(cards_command._candidate_inventories(
-        mongo, requester, guild_id=123
-    )) == []
+    with pytest.raises(cards_command.CandidateLookupUnavailable):
+        asyncio.run(cards_command._candidate_inventories(
+            mongo, requester, guild_id=123
+        ))
+    broken = SimpleNamespace(clans=BrokenClans(), card_inventories=Inventories())
+    with pytest.raises(cards_command.CandidateLookupUnavailable):
+        asyncio.run(cards_command._candidate_inventories(
+            broken, requester, guild_id=123
+        ))
 
 
 def test_missing_or_taken_over_exact_card_token_blocks_every_completion_write():
@@ -6203,11 +6219,16 @@ def test_ask_for_help_says_you_pay_and_quotes_the_real_price():
     assert "posts the trade in game" in text
 
 
-def test_the_proposal_dm_states_the_category_rule_and_the_gem_price():
-    """The DM never mentioned gems, so a missing spare read as a dead trade."""
+def test_the_proposal_dm_states_the_category_rule_and_never_gems():
+    """A card-for-card proposal must not mention gems at all.
+
+    This trade cannot cost gems; the real gem path is the separate Ask for
+    help flow, which states payer and price before anything is sent. The
+    earlier hypothetical price line made a plain swap read as a paid one.
+    """
     trade = {
         "_id": "t1", "guild_id": 1,
-        "wanted_card_id": "balloon",          # elixir, so 50 gems
+        "wanted_card_id": "balloon",
         "given_card_id": "wizard",
         "requester_name": "Asker", "requester_tag": "#ME",
         "holder_name": "Holder", "holder_tag": "#H",
@@ -6215,7 +6236,7 @@ def test_the_proposal_dm_states_the_category_rule_and_the_gem_price():
     }
     text = _view_text(cards_command._trade_proposal_dm(trade))
 
-    assert "50 gems" in text
+    assert "gem" not in text.lower()
     assert "Only same-category trades exist" in text
 
 
@@ -6385,6 +6406,8 @@ def test_every_screen_that_names_a_price_shows_the_gem_mark():
     holder["player_name"] = "Holder"
     holder["discord_id"] = 9
 
+    # The proposal DM is deliberately absent here: a card-for-card proposal
+    # names no price any more, so there is no price to mark.
     screens = [
         cards_command._holders_view(
             account, "balloon",
@@ -6393,12 +6416,6 @@ def test_every_screen_that_names_a_price_shows_the_gem_mark():
         cards_command._gem_ask_dm({
             "_id": "gem:#ME:#H:balloon", "card_id": "balloon",
             "gem_cost": 50, "asker_name": "A", "holder_name": "H",
-        }),
-        cards_command._trade_proposal_dm({
-            "_id": "t1", "guild_id": 1,
-            "wanted_card_id": "balloon", "given_card_id": "wizard",
-            "requester_name": "A", "requester_tag": "#ME",
-            "holder_name": "H", "holder_tag": "#H",
         }),
     ]
     for view in screens:
@@ -7271,8 +7288,9 @@ def test_the_category_screen_stays_far_below_the_component_ceiling():
                 )
                 _assert_discord_payload(view)
     # Scanning and the category menu moved onto this screen, and it is still
-    # nowhere near Discord's ceiling of 40.
-    assert worst == 26, f"expected a fixed 26, got {worst}"
+    # nowhere near Discord's ceiling of 40. The worst case includes the
+    # Set to 2 button, mounted because every card here is an unconfirmed 2+.
+    assert worst == 27, f"expected a fixed 27, got {worst}"
 
 
 def test_set_number_opens_a_modal_for_the_selected_card():
@@ -8686,3 +8704,872 @@ def test_unseen_cards_from_rejected_rows_stay_ordinary_manual_work():
     ))
     assert "Still to check: 48 cards" in text
     assert "Rows 3–10" in text
+
+
+# --- 2026-08-14 bug-pass regressions ----------------------------------------
+
+
+def _gate_account():
+    return Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+
+
+class _PendingSwapTrades:
+    """card_trades holding one live swap awaiting #ME's answer."""
+
+    def __init__(self):
+        self.trade = dict(_agreed_trade(), accepted_at=datetime.now(timezone.utc))
+
+    def find(self, _query):
+        rows = [dict(self.trade)]
+
+        class Cursor:
+            def sort(self, *_a, **_k):
+                return self
+
+            async def to_list(self, length=None):
+                return rows
+
+        return Cursor()
+
+
+def test_not_yet_bypasses_the_swap_gate_for_one_render(monkeypatch):
+    """"Not yet" must reach the collection, not re-render the question.
+
+    The gate re-finds the same unanswered swap on every dashboard render, so
+    without the one-render bypass the button that promises "asks again next
+    time" asked again immediately and trapped the player.
+    """
+    sentinel = ["DASHBOARD"]
+    monkeypatch.setattr(
+        cards_command, "_dashboard", lambda *_a, **_k: sentinel
+    )
+
+    async def fake_board(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(
+        cards_command, "_render_inventory_board_async", fake_board
+    )
+    mongo = SimpleNamespace(card_trades=_PendingSwapTrades())
+    inventory = {"_id": "#ME"}
+
+    gated = asyncio.run(cards_command._dashboard_view(
+        _gate_account(), inventory, account_count=1, mongo=mongo, guild_id=1,
+    ))
+    ids = [str(n.get("custom_id", "")) for n in _view_nodes(gated)]
+    assert any(cid.startswith("cards_swap_sent:") for cid in ids), (
+        "without the bypass the swap question renders"
+    )
+
+    passed = asyncio.run(cards_command._dashboard_view(
+        _gate_account(), inventory, account_count=1, mongo=mongo, guild_id=1,
+        skip_swap_gate=True,
+    ))
+    assert passed is sentinel, "the bypass shows the board exactly once"
+
+
+def test_not_now_on_the_paused_screen_reaches_the_board(monkeypatch):
+    """The paused screen's Not now carries |paused; the handler must honor it.
+
+    It parsed the suffix off and re-rendered the paused screen, so the only
+    working exit was turning trading back on.
+    """
+    sentinel = ["DASHBOARD"]
+    monkeypatch.setattr(
+        cards_command, "_dashboard", lambda *_a, **_k: sentinel
+    )
+
+    async def fake_board(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(
+        cards_command, "_render_inventory_board_async", fake_board
+    )
+    account = _gate_account()
+    paused = {"_id": "#ME", "trading_paused": True}
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, paused)
+    )
+
+    async def fake_accounts(*_a, **_k):
+        return _scan_accounts_data(account)
+
+    monkeypatch.setattr(cards_command, "load_accounts", fake_accounts)
+
+    class NoSwaps:
+        def find(self, _query):
+            class Cursor:
+                def sort(self, *_a, **_k):
+                    return self
+
+                async def to_list(self, length=None):
+                    return []
+
+            return Cursor()
+
+    mongo = SimpleNamespace(card_trades=NoSwaps())
+    ctx = _quantity_ctx()
+
+    still_gated = asyncio.run(cards_command.cards_dashboard(
+        ctx, "#ME", coc_client=SimpleNamespace(), mongo=mongo,
+        bot=SimpleNamespace(),
+    ))
+    labels = _view_labels(still_gated)
+    assert "Not now" in labels, "a plain open still shows the paused screen"
+
+    passed = asyncio.run(cards_command.cards_dashboard(
+        ctx, "#ME|paused", coc_client=SimpleNamespace(), mongo=mongo,
+        bot=SimpleNamespace(),
+    ))
+    assert passed is sentinel, "|paused passes the gate for one render"
+
+
+class _PanelModalCtx(_SubmitCtx):
+    """A modal submit that arrived from a component-launched modal."""
+
+    def __init__(self, raw, sink):
+        super().__init__(raw, sink)
+        self.deferred = []
+        self.responses = []
+        self.interaction.message = SimpleNamespace(id=42)
+        self.interaction.create_initial_response = self._initial
+
+    async def defer(self, *_args, **_kwargs):
+        self.deferred.append(True)
+        return None
+
+    async def _initial(self, response_type, **_kwargs):
+        self.responses.append(response_type)
+
+
+def test_set_number_updates_the_panel_instead_of_sending_a_second_one(monkeypatch):
+    """The modal answer must edit the panel the modal came from.
+
+    ModalContext.defer can only DEFERRED_MESSAGE_CREATE, which answers with a
+    brand-new message; in a DM every Set number added another Update
+    collection panel under the old one, and the old one kept the stale count.
+    """
+    account = _gate_account()
+    document, mongo = _quantity_env()
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+    target = cards.CATEGORY_CARDS["elixir"][5]
+    sent = {}
+    ctx = _PanelModalCtx("7", sent)
+
+    asyncio.run(cards_command.cards_qnum_submit(
+        ctx, f"#ME|{target.id}",
+        coc_client=SimpleNamespace(), mongo=mongo,
+    ))
+
+    assert ctx.responses == [hikari.ResponseType.DEFERRED_MESSAGE_UPDATE]
+    assert ctx.deferred == [], "a create-defer would add a second message"
+    assert document["cards"][target.id] == 7
+    assert f"{target.name}** · `7`" in _view_text(sent["view"])
+
+    # The focused-card twin shares the fix.
+    focus_sent = {}
+    focus_ctx = _PanelModalCtx("5", focus_sent)
+    asyncio.run(cards_command.cards_count_submit(
+        focus_ctx, f"#ME|{target.id}",
+        coc_client=SimpleNamespace(), mongo=mongo,
+    ))
+    assert focus_ctx.responses == [hikari.ResponseType.DEFERRED_MESSAGE_UPDATE]
+    assert focus_ctx.deferred == []
+
+
+def test_a_scanner_two_plus_offers_set_to_2_in_the_quantity_editor(monkeypatch):
+    """Confirming "exactly 2" must be one tap, not a workaround through 3.
+
+    The write layer always confirmed an explicit member write, but the
+    category screen offered no direct control, so members stepped 2+ -> 3 ->
+    2 to make the plus go away.
+    """
+    account = _gate_account()
+    document, mongo = _quantity_env({"wizard": cards.DUPLICATE})
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+    view = cards_command._quantity_editor(
+        account, document, "elixir", card_id="wizard"
+    )
+    ids = [str(n.get("custom_id", "")) for n in _view_nodes(view)]
+    assert "cards_qset:#ME|wizard|2" in ids
+    assert "`2+`" in _view_text(view)
+
+    result = _run_rendered(
+        "cards_qset:#ME|wizard|2", mongo=mongo, coc_client=SimpleNamespace(),
+    )
+
+    assert document["cards"]["wizard"] == cards.DUPLICATE
+    assert "wizard" in document["count_confirmed_card_ids"]
+    text = _view_text(result)
+    assert "`2+`" not in text, "the confirmed count drops the plus"
+    ids = [str(n.get("custom_id", "")) for n in _view_nodes(result)]
+    assert "cards_qset:#ME|wizard|2" not in ids, (
+        "the confirm control disappears once there is nothing to confirm"
+    )
+
+
+def test_writing_the_same_number_still_confirms_the_count(monkeypatch):
+    """Set number = 2 on a stored 2 must confirm, not skip as a no-op."""
+    account = _gate_account()
+    document, mongo = _quantity_env({"wizard": cards.DUPLICATE})
+    cards_command._inventory_locks.clear()
+
+    updated = asyncio.run(cards_command._write_card_state(
+        mongo, account, document, "wizard", cards.DUPLICATE,
+        expected_revision=0, discord_id=123, guild_id=1,
+    ))
+
+    assert updated["cards"]["wizard"] == cards.DUPLICATE
+    assert "wizard" in updated["count_confirmed_card_ids"]
+
+
+def test_the_receiver_is_credited_even_when_their_fence_is_gone():
+    """moved=True must mean both legs, not just the giver's decrement.
+
+    The receiver update was fire-and-forget: a lost receiver fence meant the
+    giver lost a copy, the bot said "it is now in your collection", and the
+    receiver never got the card.
+    """
+    trade = _agreed_trade()
+    owner = cards_command._reservation_owner(trade)
+    given = trade["given_card_id"]
+    inventories = _FakeInventoryCollection([
+        {"_id": "#ME", "guild_id": 1, "cards": {given: 3},
+         "card_trade_reservations": {given: owner}},
+        # The receiver's fence is already gone and the card is missing.
+        {"_id": "#HOLDER", "guild_id": 1, "cards": {given: cards.MISSING},
+         "card_trade_reservations": {}},
+    ])
+    mongo = SimpleNamespace(card_inventories=inventories)
+
+    moved, remaining = asyncio.run(cards_command._confirm_swap_leg(
+        mongo, trade, role="requester", now=datetime.now(timezone.utc)
+    ))
+
+    assert moved is True
+    assert remaining == 2
+    assert inventories.documents["#HOLDER"]["cards"][given] == cards.OWNED
+
+
+def test_the_receiver_fallback_never_downgrades_a_hand_set_count():
+    """If the receiver already recorded copies, the credit must not shrink them."""
+    trade = _agreed_trade()
+    owner = cards_command._reservation_owner(trade)
+    given = trade["given_card_id"]
+    inventories = _FakeInventoryCollection([
+        {"_id": "#ME", "guild_id": 1, "cards": {given: 3},
+         "card_trade_reservations": {given: owner}},
+        {"_id": "#HOLDER", "guild_id": 1, "cards": {given: 4},
+         "card_trade_reservations": {}},
+    ])
+    mongo = SimpleNamespace(card_inventories=inventories)
+
+    moved, _remaining = asyncio.run(cards_command._confirm_swap_leg(
+        mongo, trade, role="requester", now=datetime.now(timezone.utc)
+    ))
+
+    assert moved is True
+    assert inventories.documents["#HOLDER"]["cards"][given] == 4
+
+
+def test_confirming_a_cancelled_swap_does_not_stamp_it(monkeypatch):
+    """A confirm racing a cancel must not mark a closed trade confirmed."""
+    trade = dict(_agreed_trade(), status="cancelled")
+    document = dict(trade)
+
+    class Trades:
+        async def update_one(self, query, update):
+            if not _matches_query(document, query):
+                return SimpleNamespace(matched_count=0, modified_count=0)
+            _apply_update(document, update)
+            return SimpleNamespace(matched_count=1, modified_count=1)
+
+    mongo = SimpleNamespace(card_trades=Trades())
+    asyncio.run(cards_command._record_swap_confirmation(
+        mongo, trade, role="requester", now=datetime.now(timezone.utc)
+    ))
+
+    assert "requester_confirmed_at" not in document
+    assert document["status"] == "cancelled"
+
+
+def test_i_sent_it_rechecks_that_the_account_is_still_yours(monkeypatch):
+    """The one mutating swap handler must revalidate live ownership."""
+    trade = _agreed_trade()
+
+    class Trades:
+        async def find_one(self, _query):
+            return dict(trade)
+
+    problem = ["NOT-YOURS"]
+
+    async def refuse_target(*_a, **_k):
+        return None, None, problem
+
+    monkeypatch.setattr(cards_command, "_load_target", refuse_target)
+
+    def explode(*_a, **_k):
+        raise AssertionError("no inventory may move without ownership")
+
+    monkeypatch.setattr(cards_command, "_confirm_swap_leg", explode)
+    ctx = _quantity_ctx(user_id=111)
+
+    result = asyncio.run(cards_command.cards_swap_sent(
+        ctx, trade["_id"],
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(card_trades=Trades()),
+        bot=SimpleNamespace(),
+    ))
+
+    assert result is problem
+
+
+def test_cancelling_after_one_leg_moved_tells_the_truth():
+    """"No tracked inventory changed" is false once one card moved."""
+    trade = _agreed_trade()
+    assert cards_command._swap_cancel_note(trade, "requester") == (
+        "No tracked inventory changed."
+    )
+
+    trade["requester_confirmed_at"] = datetime.now(timezone.utc)
+    mine = cards_command._swap_cancel_note(trade, "requester")
+    theirs = cards_command._swap_cancel_note(trade, "holder")
+    assert "stays removed from your collection" in mine
+    assert "was not added" in mine
+    assert "stays in your collection" in theirs
+    assert "Your card was not removed" in theirs
+    assert "No tracked inventory changed" not in mine
+    assert "No tracked inventory changed" not in theirs
+
+    # The "It was cancelled" question screen stops claiming both cards free.
+    view = cards_command._swap_cancel_check_view(trade, role="holder")
+    text = _view_text(view)
+    assert "frees both cards" not in text
+    assert "stays in your collection" in text
+
+
+def test_a_gem_answer_cannot_flip_or_be_replayed(monkeypatch):
+    """The first answer wins; stale buttons and strangers change nothing."""
+    ask = {
+        "_id": "gem:#ME:#H:balloon", "kind": "gem_ask", "status": "pending",
+        "card_id": "balloon", "gem_cost": 50,
+        "asker_name": "Asker", "asker_discord_id": 111,
+        "holder_name": "Holder", "holder_discord_id": 222,
+        "generation": 1000,
+    }
+    document = dict(ask)
+    mongo = SimpleNamespace(card_trades=_FakeCategoryCollection(document))
+    dms = []
+
+    async def fake_dm(_bot, recipient_id, _components, **_kwargs):
+        dms.append(recipient_id)
+        return True
+
+    monkeypatch.setattr(cards_command, "_send_trade_dm", fake_dm)
+
+    # A stranger cannot answer at all.
+    stranger = _quantity_ctx(user_id=999)
+    refused = asyncio.run(cards_command._answer_gem_ask(
+        stranger, mongo, SimpleNamespace(), ask["_id"], agreed=True
+    ))
+    assert "not yours" in _view_text(refused)
+    assert document["status"] == "pending" and dms == []
+
+    # A button from an older generation of the same ask is out of date.
+    holder = _quantity_ctx(user_id=222)
+    stale = asyncio.run(cards_command._answer_gem_ask(
+        holder, mongo, SimpleNamespace(), f"{ask['_id']}|999", agreed=True
+    ))
+    assert "no longer open" in _view_text(stale)
+    assert document["status"] == "pending" and dms == []
+
+    # The real answer lands once.
+    first = asyncio.run(cards_command._answer_gem_ask(
+        holder, mongo, SimpleNamespace(), f"{ask['_id']}|1000", agreed=True
+    ))
+    assert "Thanks for helping" in _view_text(first)
+    assert document["status"] == "accepted"
+    assert dms == [111]
+
+    # Pressing No afterwards must not flip the recorded answer.
+    second = asyncio.run(cards_command._answer_gem_ask(
+        holder, mongo, SimpleNamespace(), f"{ask['_id']}|1000", agreed=False
+    ))
+    assert "Already answered" in _view_text(second)
+    assert document["status"] == "accepted"
+    assert dms == [111], "no second DM after a refused replay"
+
+
+def test_a_failed_answer_dm_is_not_reported_as_delivered(monkeypatch):
+    ask = {
+        "_id": "gem:#ME:#H:balloon", "kind": "gem_ask", "status": "pending",
+        "card_id": "balloon", "gem_cost": 50,
+        "asker_name": "Asker", "asker_discord_id": 111,
+        "holder_name": "Holder", "holder_discord_id": 222,
+    }
+    mongo = SimpleNamespace(card_trades=_FakeCategoryCollection(dict(ask)))
+
+    async def failing_dm(*_a, **_k):
+        return False
+
+    monkeypatch.setattr(cards_command, "_send_trade_dm", failing_dm)
+    holder = _quantity_ctx(user_id=222)
+
+    result = asyncio.run(cards_command._answer_gem_ask(
+        holder, mongo, SimpleNamespace(), ask["_id"], agreed=False
+    ))
+    text = _view_text(result)
+    assert "could not send them a DM" in text
+    assert "they have been told" not in text.lower()
+
+
+def test_player_lookup_refuses_when_the_family_boundary_is_unavailable(monkeypatch):
+    """cards_browse must fail closed like the candidate search, not widen."""
+    account = _gate_account()
+    inventory = _complete_inventory()
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, inventory),
+    )
+
+    class BrokenClans:
+        async def distinct(self, _field):
+            raise RuntimeError("clans down")
+
+    class Inventories:
+        def find(self, _query):
+            raise AssertionError("no lookup may run without the family filter")
+
+    mongo = SimpleNamespace(
+        clans=BrokenClans(), card_inventories=Inventories(),
+    )
+    ctx = _quantity_ctx(values=["t:#SOMEBODY"])
+
+    result = asyncio.run(cards_command.cards_browse(
+        ctx, "#ME", coc_client=SimpleNamespace(), mongo=mongo,
+        bot=SimpleNamespace(),
+    ))
+    assert "not available right now" in _view_text(result)
+
+
+def test_the_spares_lookup_hides_categories_not_marked_ready():
+    """Supply no trade path would accept must not be advertised."""
+    viewer = _complete_inventory()
+    holder = {
+        "_id": "#H", "player_name": "Holder", "clan_name": "Home Clan",
+        "cards": {"wizard": 3, "minion": 2},
+        "complete_categories": ["elixir"],
+    }
+    assert cards.CARD_BY_ID["wizard"].category == "elixir"
+    assert cards.CARD_BY_ID["minion"].category == "dark_elixir"
+
+    view = cards_command._player_spares_view(
+        "#ME", viewer, [holder], display_name="Holder",
+    )
+    text = _view_text(view)
+    assert "Wizard" in text
+    assert "Minion" not in text, "that category was never marked Ready"
+
+
+def test_a_search_failure_is_not_reported_as_nobody_has_a_spare(monkeypatch):
+    account = _gate_account()
+    inventory = _complete_inventory()
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, inventory),
+    )
+
+    class BrokenClans:
+        async def distinct(self, _field):
+            raise RuntimeError("clans down")
+
+    mongo = SimpleNamespace(clans=BrokenClans())
+    ctx = _quantity_ctx()
+
+    result = asyncio.run(cards_command.cards_favours(
+        ctx, "#ME", coc_client=SimpleNamespace(), mongo=mongo,
+    ))
+    text = _view_text(result)
+    assert "Search is not available right now" in text
+    assert "Nobody" not in text
+
+
+def test_accept_without_a_chosen_card_shows_the_chooser(monkeypatch):
+    """A plain Accept on a multi-card proposal must offer the choice.
+
+    When the proposal DM never arrived, My trades was the only accept path
+    and it silently took the default card.
+    """
+    trade = {
+        "_id": "t1", "kind": "trade", "guild_id": 1, "status": "pending",
+        "wanted_card_id": "balloon", "given_card_id": "wizard",
+        "compatible_card_ids": ["witch", "healer"],
+        "requester_tag": "#ME", "requester_name": "Asker",
+        "requester_discord_id": 111,
+        "holder_tag": "#H", "holder_name": "Holder",
+        "holder_discord_id": 222,
+        "requester_clan_tag": "#A", "holder_clan_tag": "#A",
+    }
+
+    class Trades:
+        async def find_one(self, _query):
+            return dict(trade)
+
+    class Inventories:
+        async def find_one(self, _query):
+            return _complete_inventory()
+
+    monkeypatch.setattr(cards_command, "_guild_scope_error", lambda _ctx: None)
+
+    async def keep(mongo, t, **_k):
+        return t
+
+    monkeypatch.setattr(cards_command, "_expire_trade_if_needed", keep)
+
+    async def actor(*_a, **_k):
+        return _gate_account(), _complete_inventory(tag="#H"), None
+
+    monkeypatch.setattr(cards_command, "_load_trade_actor", actor)
+
+    def explode(*_a, **_k):
+        raise AssertionError("nothing may reserve before a card is chosen")
+
+    monkeypatch.setattr(cards_command, "_accept_trade_reservation", explode)
+    mongo = SimpleNamespace(card_trades=Trades(), card_inventories=Inventories())
+    ctx = _quantity_ctx(user_id=222)
+
+    view = asyncio.run(cards_command._perform_trade_accept(
+        ctx, "t1", chosen_card_id=None,
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+
+    ids = [str(n.get("custom_id", "")) for n in _view_nodes(view)]
+    assert "cards_dm_accept:t1" in ids, "the pick-and-accept select renders"
+    assert any(cid.startswith("cards_dm_decline:") for cid in ids)
+
+
+def test_the_accepted_dm_is_self_contained_and_carries_optional_regions():
+    trade = {
+        "_id": "t1", "status": "move_needed",
+        "wanted_card_id": "balloon", "given_card_id": "wizard",
+        "requester_tag": "#ME", "requester_name": "Asker",
+        "requester_discord_id": 111,
+        "holder_tag": "#H", "holder_name": "Holder",
+        "holder_discord_id": 222,
+        "requester_clan_tag": "#A", "requester_clan_name": "Alpha",
+        "holder_clan_tag": "#B", "holder_clan_name": "Bravo",
+    }
+    view = cards_command._accepted_trade_dm(trade)
+    text = _view_text(view)
+
+    assert "<@222>" in text, "the partner's Discord identity is present"
+    assert "`#H`" in text
+    assert "**Their clan:**" in text
+    assert "OpenClanProfile&tag=B" in text
+    # Different clans: the optional meeting place renders, quiet and separate.
+    assert "Noahs Ark" in text
+    assert "#8VPQCR2R" in text
+    # No FWA flag, no warning region.
+    assert "FWA" not in text
+
+    warned = cards_command._accepted_trade_dm(trade, fwa_relevant=True)
+    warned_text = _view_text(warned)
+    assert "Warning: FWA" in warned_text
+    assert "wait until it starts" in warned_text
+
+    same_clan = cards_command._accepted_trade_dm(
+        dict(trade, status="ready", holder_clan_tag="#A"), fwa_relevant=False
+    )
+    assert "Noahs Ark" not in _view_text(same_clan), (
+        "a same-clan trade needs no meeting place"
+    )
+
+
+def test_fwa_membership_comes_from_the_clans_collection(monkeypatch):
+    trade = {
+        "_id": "t1",
+        "requester_clan_tag": "#A", "holder_clan_tag": "#B",
+    }
+
+    class Clans:
+        def __init__(self, row):
+            self.row = row
+            self.queries = []
+
+        async def find_one(self, query, _projection=None):
+            self.queries.append(query)
+            return self.row
+
+    fwa = Clans({"_id": "x"})
+    assert asyncio.run(cards_command._trade_involves_fwa(
+        SimpleNamespace(clans=fwa), trade
+    )) is True
+    assert fwa.queries[0]["type"] == "FWA"
+
+    assert asyncio.run(cards_command._trade_involves_fwa(
+        SimpleNamespace(clans=Clans(None)), trade
+    )) is False
+
+    class Broken:
+        async def find_one(self, *_a, **_k):
+            raise RuntimeError("down")
+
+    assert asyncio.run(cards_command._trade_involves_fwa(
+        SimpleNamespace(clans=Broken()), trade
+    )) is False, "an FWA lookup failure must never block acceptance"
+
+
+def test_swap_sent_view_promises_seven_days_not_twenty_four_hours():
+    trade = _agreed_trade()
+    view = cards_command._swap_sent_view(
+        trade, role="requester", remaining=2, other_confirmed=False,
+    )
+    text = _view_text(view)
+    assert "7 days" in text
+    assert "24 hours" not in text
+
+
+# --- 2026-08-14 live smoke-test follow-up -----------------------------------
+
+
+class _OrderedModalCtx(_SubmitCtx):
+    """Records the full modal-response lifecycle in order."""
+
+    def __init__(self, raw, sink):
+        super().__init__(raw, sink)
+        self.sequence = []
+        self.interaction.message = SimpleNamespace(id=42)
+        self.interaction.create_initial_response = self._initial
+        self.interaction.edit_initial_response = self._ordered_edit
+
+    async def defer(self, *_args, **_kwargs):
+        self.sequence.append("defer_create")
+        return None
+
+    async def _initial(self, response_type, **_kwargs):
+        self.sequence.append(("ack", response_type))
+
+    async def _ordered_edit(self, components=None, **_kwargs):
+        self.sequence.append("edit_initial")
+        self._sink["view"] = components
+
+
+def test_the_modal_lifecycle_is_ack_update_then_edit_in_order(monkeypatch):
+    """The exact response sequence Discord needs to edit the source panel.
+
+    DEFERRED_MESSAGE_UPDATE acknowledges the modal against the message the
+    modal was launched from, and the @original edit then lands on that same
+    panel. Any DEFERRED_MESSAGE_CREATE in this sequence would answer with a
+    brand-new message instead - the live duplicate-panel failure.
+    """
+    account = _gate_account()
+    document, mongo = _quantity_env()
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+    target = cards.CATEGORY_CARDS["elixir"][3]
+    sent = {}
+    ctx = _OrderedModalCtx("4", sent)
+
+    asyncio.run(cards_command.cards_qnum_submit(
+        ctx, f"#ME|{target.id}",
+        coc_client=SimpleNamespace(), mongo=mongo,
+    ))
+
+    assert ctx.sequence == [
+        ("ack", hikari.ResponseType.DEFERRED_MESSAGE_UPDATE),
+        "edit_initial",
+    ], "one update-ack, one @original edit, nothing that creates a message"
+    assert document["cards"][target.id] == 4
+
+
+def test_still_accurate_updates_the_check_date_and_copy_says_so(monkeypatch):
+    """The button's real function is small; the copy must not overclaim.
+
+    cards_confirm stamps confirmed_at/last_seen_at. Matching does not stop
+    without it (MATCHABLE_FOR is ten years and every member write refreshes
+    confirmed_at), so the footer must not say "keep matching".
+    """
+    account = _gate_account()
+    old = datetime.now(timezone.utc) - timedelta(days=10)
+    inventory = {
+        "_id": "#ME",
+        "cards": {"wizard": 3},
+        "complete_categories": ["elixir"],
+        "confirmed_at": old,
+    }
+    view = cards_command._dashboard(account, inventory, account_count=1)
+    text = _view_text(view)
+    assert "keep matching" not in text
+    assert "saves today's date" in text
+    assert "Matching does not stop" in text
+
+    # And the handler really does only that: refresh the stamps.
+    document = dict(inventory)
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, document),
+    )
+
+    async def fake_accounts(*_a, **_k):
+        return _scan_accounts_data(account)
+
+    monkeypatch.setattr(cards_command, "load_accounts", fake_accounts)
+    monkeypatch.setattr(
+        cards_command, "_dashboard", lambda *_a, **_k: ["BOARD"]
+    )
+
+    async def fake_board(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(
+        cards_command, "_render_inventory_board_async", fake_board
+    )
+
+    class Inventories:
+        def __init__(self):
+            self.sets = []
+
+        async def update_one(self, _query, update):
+            self.sets.append(update["$set"])
+            document.update(update["$set"])
+            return SimpleNamespace(modified_count=1)
+
+        async def find_one(self, _query):
+            return dict(document)
+
+    class NoSwaps:
+        def find(self, _query):
+            class Cursor:
+                def sort(self, *_a, **_k):
+                    return self
+
+                async def to_list(self, length=None):
+                    return []
+
+            return Cursor()
+
+    inventories = Inventories()
+    mongo = SimpleNamespace(card_inventories=inventories, card_trades=NoSwaps())
+
+    asyncio.run(cards_command.cards_confirm(
+        _quantity_ctx(), "#ME", coc_client=SimpleNamespace(), mongo=mongo,
+    ))
+
+    assert len(inventories.sets) == 1
+    assert set(inventories.sets[0]) == {"confirmed_at", "last_seen_at"}, (
+        "Still accurate touches nothing but the check stamps"
+    )
+    assert document["confirmed_at"] > old
+
+
+def test_scan_prompt_does_not_require_two_rows_per_image():
+    """The row scanner accepts any complete six-card rows in any order."""
+    account = _gate_account()
+    prompt = _view_text(cards_command._scan_upload_prompt(
+        account, "session-1", usable_until=None,
+    ))
+    assert "two complete rows" not in prompt.lower()
+    assert "complete rows of six" in prompt.lower()
+    assert "overlap between screenshots is fine" in prompt.lower()
+    assert "any order is fine" in prompt.lower()
+
+    progress = _view_text(cards_command._scan_upload_progress(
+        account, "session-1", {"missing_global_rows": list(range(3, 11))},
+        usable_until=None,
+    ))
+    assert "two-row" not in progress.lower()
+    assert "two full six-card rows" not in progress.lower()
+
+
+def test_every_deadline_string_matches_its_actual_timer():
+    """Each player-facing duration is tied to the constant that enforces it."""
+    from extensions.tasks import cards_deadlines as sweeper
+
+    assert cards_command.SWAP_CONFIRM_FOR == timedelta(days=7)
+    assert "7 days" in sweeper.AUTO_DEDUCT_DETAIL_MOVED
+    assert "7 days" in sweeper.AUTO_DEDUCT_DETAIL_NO_SPARE
+    assert "24 hours" not in sweeper.AUTO_DEDUCT_DETAIL_MOVED
+    assert "24 hours" not in sweeper.AUTO_DEDUCT_DETAIL_NO_SPARE
+
+    assert cards_command.SWAP_ACCEPT_FOR == timedelta(hours=12)
+    assert "12 hours" in sweeper.PROPOSAL_EXPIRED_DETAIL
+
+    # The check-in really is 24 hours; that copy is correct and stays.
+    assert cards_command.CHECKIN_ANSWER_FOR == timedelta(hours=24)
+    checkin = _view_text(cards_command._checkin_dm("#ME", "Member"))
+    assert "24 hours" in checkin
+
+
+class _PreviewRest:
+    def __init__(self):
+        self.messages = []
+
+    async def create_dm_channel(self, _user_id):
+        return SimpleNamespace(id=777)
+
+    async def create_message(self, channel=None, components=None, flags=None):
+        self.messages.append(components)
+        return SimpleNamespace(id=1)
+
+
+class _PreviewClans:
+    def find(self, _query, _projection=None):
+        class Cursor:
+            async def to_list(self, length=None):
+                return []
+
+        return Cursor()
+
+    async def find_one(self, _query, _projection=None):
+        return None
+
+
+def test_the_preview_actually_sends_the_fwa_warning_state():
+    """The accepted-with-FWA preview must exist AND be emitted when asked.
+
+    The live review never saw the FWA region because the deployed build
+    predates the state; this pins that the harness in this tree sends it and
+    that it renders the separate warning treatment.
+    """
+    import extensions.commands.cards_preview as preview
+
+    rest = _PreviewRest()
+    bot = SimpleNamespace(rest=rest)
+    mongo = SimpleNamespace(clans=_PreviewClans())
+
+    sent = asyncio.run(preview._send_previews(
+        "accepted_fwa", me=1, bot=bot, mongo=mongo,
+    ))
+
+    assert sent == [("13 · Accepted with FWA warning", True)]
+    assert len(rest.messages) == 1
+    text = _view_text(rest.messages[0])
+    assert "Warning: FWA" in text
+    assert "wait until it starts" in text
+    assert "Your swap was accepted" in text, (
+        "the warning rides with the accepted message, in its own region"
+    )
+
+
+def test_the_preview_auto_deduct_state_says_seven_days():
+    """The state the live review saw saying '24 hours' now shares the
+    production string, which says 7 days."""
+    import extensions.commands.cards_preview as preview
+
+    rest = _PreviewRest()
+    bot = SimpleNamespace(rest=rest)
+    mongo = SimpleNamespace(clans=_PreviewClans())
+
+    sent = asyncio.run(preview._send_previews(
+        "auto_deduct", me=1, bot=bot, mongo=mongo,
+    ))
+
+    assert sent and sent[0][1] is True
+    text = _view_text(rest.messages[0])
+    assert "7 days" in text
+    assert "24 hours" not in text

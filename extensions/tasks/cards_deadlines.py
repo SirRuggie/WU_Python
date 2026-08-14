@@ -39,6 +39,34 @@ sweep_task = None
 bot_instance = None
 mongo_client = None
 
+# Shared with the owner preview command, so the wording it sends is the
+# wording members receive - never a second copy that can drift.
+PROPOSAL_EXPIRED_TITLE = "Card proposal expired"
+PROPOSAL_EXPIRED_DETAIL = (
+    "Nobody answered within 12 hours, so it closed. "
+    "Nothing changed in either collection."
+)
+AUTO_DEDUCT_TITLE = "Your card was deducted automatically"
+AUTO_DEDUCT_DETAIL_MOVED = (
+    "The other player confirmed they sent theirs over "
+    "7 days ago and we did not hear back from you. "
+    "If this is wrong, open /cards, tap the card and "
+    "set your real count."
+)
+AUTO_DEDUCT_DETAIL_NO_SPARE = (
+    "The other player confirmed theirs over "
+    "7 days ago. Your collection no longer showed a "
+    "spare, so nothing was changed."
+)
+SWAP_CLOSED_OWED_TITLE = "Card swap closed"
+SWAP_CLOSED_OWED_DETAIL = (
+    "The other player never confirmed, and their "
+    "collection no longer showed a spare of the "
+    "card you were waiting for. It was not added. "
+    "If you did receive it in game, open /cards "
+    "and set your count for that card."
+)
+
 
 async def _expire_unanswered_proposals(mongo, bot, *, now) -> int:
     """Job 1 and 2: close ignored proposals, then ask if they are still here."""
@@ -91,11 +119,8 @@ async def _expire_unanswered_proposals(mongo, bot, *, now) -> int:
             if discord_id:
                 await cards_command._notify_trade_status(
                     bot, trade, recipient_id=int(discord_id),
-                    title="Card proposal expired",
-                    detail=(
-                        "Nobody answered within 12 hours, so it closed. "
-                        "Nothing changed in either collection."
-                    ),
+                    title=PROPOSAL_EXPIRED_TITLE,
+                    detail=PROPOSAL_EXPIRED_DETAIL,
                 )
 
         if ignored >= cards_command.IGNORED_BEFORE_CHECKIN:
@@ -176,32 +201,54 @@ async def _finish_one_sided_swaps(mongo, bot, *, now) -> int:
 
     settled = 0
     for trade in due:
-        for role in ("requester", "holder"):
-            if trade.get(f"{role}_confirmed_at"):
-                continue
-            moved, _remaining = await cards_command._confirm_swap_leg(
-                mongo, trade, role=role, now=now
-            )
-            updated = await cards_command._record_swap_confirmation(
-                mongo, trade, role=role, now=now
-            )
-            settled += 1
-            discord_id = trade.get(f"{role}_discord_id")
-            if discord_id:
-                await cards_command._notify_trade_status(
-                    bot, updated, recipient_id=int(discord_id),
-                    title="Your card was deducted automatically",
-                    detail=(
-                        "The other player confirmed they sent theirs over "
-                        "7 days ago and we did not hear back from you. "
-                        "If this is wrong, open /cards, tap the card and set "
-                        "your real count."
-                        if moved
-                        else "The other player confirmed theirs over 7 days "
-                        "ago. Your collection no longer showed a spare, so "
-                        "nothing was changed."
-                    ),
+        try:
+            for role in ("requester", "holder"):
+                if trade.get(f"{role}_confirmed_at"):
+                    continue
+                moved, _remaining = await cards_command._confirm_swap_leg(
+                    mongo, trade, role=role, now=now
                 )
+                updated = await cards_command._record_swap_confirmation(
+                    mongo, trade, role=role, now=now
+                )
+                # The trade closes either way; this records whether the leg
+                # really moved, so a completed trade with an unmoved leg can
+                # be told apart from a clean one later.
+                await mongo.card_trades.update_one(
+                    {"_id": trade["_id"]},
+                    {"$set": {
+                        f"{role}_auto_settled": (
+                            "deducted" if moved else "no_spare"
+                        ),
+                    }},
+                )
+                settled += 1
+                discord_id = trade.get(f"{role}_discord_id")
+                if discord_id:
+                    await cards_command._notify_trade_status(
+                        bot, updated, recipient_id=int(discord_id),
+                        title=AUTO_DEDUCT_TITLE,
+                        detail=(
+                            AUTO_DEDUCT_DETAIL_MOVED
+                            if moved
+                            else AUTO_DEDUCT_DETAIL_NO_SPARE
+                        ),
+                    )
+                if not moved:
+                    # The player who confirmed was promised the other card
+                    # would be added automatically. It could not be, and
+                    # staying silent about that breaks the promise.
+                    other = "holder" if role == "requester" else "requester"
+                    other_id = trade.get(f"{other}_discord_id")
+                    if other_id:
+                        await cards_command._notify_trade_status(
+                            bot, updated, recipient_id=int(other_id),
+                            title=SWAP_CLOSED_OWED_TITLE,
+                            detail=SWAP_CLOSED_OWED_DETAIL,
+                        )
+        except Exception as exc:
+            print(f"[Cards Deadlines] confirm settle failed trade="
+                  f"{trade.get('_id')}: {type(exc).__name__}: {exc}")
     return settled
 
 

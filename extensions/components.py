@@ -269,9 +269,26 @@ async def _dispatch(
         await _refuse(ctx, MSG_STALE_PANEL)
         return
 
-    # Only defer if not a modal AND not opening a modal
+    # Only defer if not a modal AND not opening a modal. The defer comes
+    # before ANY other await (state load, handler) on purpose: it is the
+    # 3-second acknowledgement, and everything after it has 15 minutes.
+    token_dead = False
     if not action.is_modal and not action.opens_modal:
-        await ctx.defer(edit=True)
+        try:
+            await ctx.defer(edit=True)
+        except hikari.NotFoundError:
+            # (10062) Unknown interaction: the 3-second window was already
+            # gone when the defer arrived - on a busy host the event loop can
+            # stall that long. Live symptom: "WU Wizard didn't respond in
+            # time" on Save confirmed cards. The button still sits on a real
+            # message, so the work continues and the result is delivered by
+            # editing that message over REST instead of dying silently.
+            token_dead = True
+            _log.warning(
+                "interaction token dead before defer custom_id=%r user=%s; "
+                "falling back to editing the message over REST",
+                raw, ctx.user.id,
+            )
 
     kw = await get_state(mongo, action_id, {"_id": 0})
     if kw is None and action.requires_state:
@@ -283,7 +300,16 @@ async def _dispatch(
     components = await action.fn(**kw)
 
     if not action.no_return:
-        if action.is_modal:
+        if token_dead:
+            # The interaction can no longer answer, but the originating
+            # message can still be edited directly - same visible result as
+            # the deferred edit would have had.
+            message = getattr(ctx.interaction, "message", None)
+            if components is not None and message is not None:
+                await ctx.interaction.app.rest.edit_message(
+                    message.channel_id, message.id, components=components,
+                )
+        elif action.is_modal:
             # ModalContext inherits the plain response mixin, which has no edit=
             # parameter at all - passing one raises TypeError. Unreached so far
             # only because all 12 is_modal registrations also set no_return=True,

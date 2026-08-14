@@ -151,13 +151,13 @@ def _sticky_components() -> list[Container]:
             Separator(divider=True),
             Text(content=(
                 f"**1 · Add your cards**\n"
-                f"{emojis.scan} Tap {cards_mention()} and then "
-                "**Scan screenshots**\n"
-                f"{emojis.inbox} I will DM you — send your collection pictures "
-                "in that DM"
+                f"{emojis.scan} Tap {cards_mention()}, tap "
+                "**Update collection**, then **Scan screenshots**\n"
+                f"{emojis.inbox} I will DM you — send your collection "
+                "pictures there"
             )),
             Text(content=(
-                "-# No screenshots? Tap any card in your collection and set the "
+                "-# No screenshots? Tap **Update collection** and set each "
                 "number by hand."
             )),
             Separator(divider=False),
@@ -222,10 +222,11 @@ def _walkthrough() -> list[Container]:
             Text(content=(
                 "### First time only\n"
                 f"**1.** Tap {cards_mention()} to open it\n\n"
-                f"**2.** Tap **Scan screenshots** {emojis.scan}\n"
+                f"**2.** Tap **Update collection**, then **Scan screenshots** "
+                f"{emojis.scan}\n"
                 f"{emojis.inbox} I send you a DM. Open it and send your "
                 "collection pictures there.\n"
-                "-# No screenshots? Tap any card in your collection and set the "
+                "-# No screenshots? Stay on **Update collection** and set each "
                 "number by hand instead."
             )),
             Separator(divider=False),
