@@ -9309,11 +9309,11 @@ def test_the_accepted_dm_is_self_contained_and_carries_optional_regions():
 
     warned = cards_command._accepted_trade_dm(trade, fwa_relevant=True)
     warned_text = _view_text(warned)
-    assert len(containers(warned)) == 2, (
-        "main Container + exactly one compact FWA callout"
+    assert len(containers(warned)) == 1, (
+        "the FWA warning rides inside the one main Container"
     )
-    assert "⚠️ **FWA — Wait for war**" in warned_text
-    assert "Do not trade until war starts." in warned_text
+    assert "> ### ⚠️ FWA — Wait for war" in warned_text
+    assert "> Do not trade until war starts." in warned_text
 
     same_clan = cards_command._accepted_trade_dm(
         dict(trade, status="ready", holder_clan_tag="#A"), fwa_relevant=False
@@ -9592,10 +9592,10 @@ def test_the_preview_actually_sends_the_fwa_warning_state():
     assert sent == [("13 · Accepted with FWA warning", True)]
     assert len(rest.messages) == 1
     text = _view_text(rest.messages[0])
-    assert "⚠️ **FWA — Wait for war**" in text
-    assert "Do not trade until war starts." in text
+    assert "> ### ⚠️ FWA — Wait for war" in text
+    assert "> Do not trade until war starts." in text
     assert "Trade accepted" in text, (
-        "the warning rides with the accepted message, as the compact callout"
+        "the warning rides inside the accepted message as the inline callout"
     )
 
 

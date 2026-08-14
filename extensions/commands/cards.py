@@ -6204,6 +6204,17 @@ FWA_WARNING_TEXT = (
     "Do not trade until war starts."
 )
 
+# The settled INLINE CALLOUT pattern (owner-chosen from the live markup
+# comparison): a blockquote-wrapped small heading plus one short line.
+# Discord draws the blockquote's vertical bar and the heading's weight, so
+# the warning stands out inside an existing Container without a second box.
+# Use this shape when information belongs inside a Container, a separate
+# colored Container would be too heavy, and Markdown emphasis is enough.
+FWA_WARNING_MARKUP = (
+    "> ### ⚠️ FWA — Wait for war\n"
+    "> Do not trade until war starts."
+)
+
 
 def _compact_callout(accent: object, text: str) -> Container:
     """The smallest colored structure a Discord message can carry.
@@ -6218,14 +6229,17 @@ def _compact_callout(accent: object, text: str) -> Container:
 
     The reusable semantic palette: red warning, gold action required,
     blue information, green success. Emoji plus bold words must carry the
-    meaning without the color.
+    meaning without the color. Reach for this only when a true colored
+    accent is genuinely appropriate as its own message region; inside an
+    existing Container, prefer the inline-callout Markdown pattern
+    (`FWA_WARNING_MARKUP` is the reference example).
     """
     return Container(accent_color=accent, components=[Text(content=text)])
 
 
-def _fwa_warning() -> Container:
-    """The FWA timing warning as the compact red callout."""
-    return _compact_callout(RED_ACCENT, FWA_WARNING_TEXT)
+def _fwa_warning() -> Text:
+    """The FWA warning as the settled inline callout for a Container."""
+    return Text(content=FWA_WARNING_MARKUP)
 
 
 def _noahs_ark_line() -> str:
@@ -6246,13 +6260,14 @@ def _accepted_trade_dm(
     Users kept forgetting who they accepted with and had nothing to search
     for, so the message must stand alone days later.
 
-    Final settled shape (owner-verified on a live phone preview): one main
+    Final settled shape (owner-verified on live phone previews): one main
     Container holding short Text blocks with separators at the real section
-    boundaries - cards, partner, next step - then the compact red FWA
-    callout as its own small box after the Container when relevant. Fully
-    unboxed root text was tried and rejected as looking unfinished; a large
-    FWA card was tried and rejected as heavy. Noahs Ark and the reader's
-    own account stay quiet subtext inside the main Container.
+    boundaries - cards, partner, next step - and the FWA warning, when
+    relevant, as the inline blockquote-heading callout inside that same
+    Container. Fully unboxed root text was rejected as looking unfinished;
+    a separate FWA card was rejected as heavy; the inline markup treatment
+    won the live comparison. Noahs Ark and the reader's own account stay
+    quiet subtext.
     """
     wanted = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     given = _card_label(CARD_BY_ID[trade["given_card_id"]])
@@ -6321,13 +6336,14 @@ def _accepted_trade_dm(
         Text(content=partner_lines),
         Separator(divider=True),
         Text(content=next_lines),
+    ]
+    if fwa_relevant:
+        body.extend([Separator(divider=True), _fwa_warning()])
+    body.extend([
         Separator(divider=False),
         Text(content="\n".join(quiet_lines)),
-    ]
-    components: list = [Container(accent_color=GREEN_ACCENT, components=body)]
-    if fwa_relevant:
-        components.append(_fwa_warning())
-    return components
+    ])
+    return [Container(accent_color=GREEN_ACCENT, components=body)]
 
 
 def _holder_accept_feedback(
@@ -6343,8 +6359,8 @@ def _holder_accept_feedback(
 
     No "Your account" line: this panel replaces the screen the holder just
     acted from, so context already binds the account. Same settled shape as
-    the requester DM: one main Container of short blocks, then the compact
-    red FWA callout as its own small box when relevant.
+    the requester DM: one main Container of short blocks, with the FWA
+    warning as the inline blockquote-heading callout when relevant.
     """
     gives = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     receives = _card_label(CARD_BY_ID[str(taken_card_id)])
@@ -6388,6 +6404,10 @@ def _holder_accept_feedback(
         Text(content=partner_lines),
         Separator(divider=True),
         Text(content=next_lines),
+    ]
+    if fwa_relevant:
+        body.extend([Separator(divider=True), _fwa_warning()])
+    body.extend([
         Separator(divider=False),
         Text(content=(
             f"-# The exact cards are reserved. {delivery}"
@@ -6407,11 +6427,8 @@ def _holder_accept_feedback(
                 emoji=RETURN_EMOJI,
             ),
         ]),
-    ]
-    components: list = [Container(accent_color=GREEN_ACCENT, components=body)]
-    if fwa_relevant:
-        components.append(_fwa_warning())
-    return components
+    ])
+    return [Container(accent_color=GREEN_ACCENT, components=body)]
 
 
 async def _trade_involves_fwa(mongo, trade: dict) -> bool:

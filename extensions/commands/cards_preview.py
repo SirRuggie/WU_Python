@@ -157,7 +157,7 @@ FWA_MARKUP_VARIANTS: tuple[tuple[str, str], ...] = (
         "### ⚠️ FWA — Wait for war\nDo not trade until war starts.",
     ),
     (
-        "F — blockquote + heading",
+        "F — blockquote + heading (production)",
         "> ### ⚠️ FWA — Wait for war\n> Do not trade until war starts.",
     ),
     (
@@ -685,7 +685,7 @@ async def _send_previews(
             ],
         )
         await panel(
-            "callouts", "24b · Accepted trade + FWA callout",
+            "callouts", "24b · Accepted trade + FWA (production)",
             cards_command._accepted_trade_dm(
                 dict(one, status="move_needed"), fwa_relevant=True
             ),
@@ -714,13 +714,21 @@ async def _send_previews(
                 _preview_trade(me, alternatives=False, clans=clans),
                 status="move_needed",
             )
+            # Variant A is the retired separate-callout shape, rebuilt
+            # explicitly for reference: production now renders variant F
+            # inside the main container.
             await panel(
-                "callouts", "24f · FWA A — compact red callout (production)",
+                "callouts", "24f · FWA A — compact red callout",
                 _labelled(
-                    "Variant A — compact red callout (current production)",
-                    cards_command._accepted_trade_dm(
-                        fwa_trade, fwa_relevant=True
-                    ),
+                    "Variant A — compact red callout (reference, not production)",
+                    [
+                        *cards_command._accepted_trade_dm(
+                            fwa_trade, fwa_relevant=False
+                        ),
+                        cards_command._compact_callout(
+                            RED_ACCENT, cards_command.FWA_WARNING_TEXT
+                        ),
+                    ],
                 ),
             )
             for offset, (letter_label, markup) in enumerate(

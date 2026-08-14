@@ -160,23 +160,22 @@ def test_compact_callout_is_the_smallest_possible_container():
         assert len(children) == 1, "exactly one Text Display, nothing else"
         assert children[0]["type"] == int(hikari.ComponentType.TEXT_DISPLAY)
 
+    # The FWA warning is the settled INLINE callout (owner-chosen variant F):
+    # a blockquote-wrapped small heading inside the main Container, so the
+    # message never grows a second box for it.
     fwa = _built(cards_command._fwa_warning())
-    assert fwa["accent_color"] == int(RED_ACCENT)
-    assert str(fwa["components"][0]["content"]).splitlines() == [
-        "⚠️ **FWA — Wait for war**",
-        "Do not trade until war starts.",
+    assert fwa["type"] == int(hikari.ComponentType.TEXT_DISPLAY)
+    assert str(fwa["content"]).splitlines() == [
+        "> ### ⚠️ FWA — Wait for war",
+        "> Do not trade until war starts.",
     ]
 
-    # On the real message: the main Container plus exactly this one compact
-    # callout - never a second full card, and the warning never leaks into
-    # the main content.
     view = cards_command._accepted_trade_dm(_trade(), fwa_relevant=True)
     boxes = _containers(view)
-    assert len(boxes) == 2, "main Container + exactly one compact callout"
-    callout = _built(boxes[1])
-    assert len(callout["components"]) == 1
-    assert callout["accent_color"] == int(RED_ACCENT)
-    assert "FWA" not in _text(boxes[:1]), "the warning lives in the callout"
+    assert len(boxes) == 1, "FWA stays inside the one main Container"
+    assert _built(boxes[0])["accent_color"] != int(RED_ACCENT)
+    assert "> ### ⚠️ FWA — Wait for war" in _text(view)
+    assert "> Do not trade until war starts." in _text(view)
 
 
 def test_accepted_trade_dm_is_one_main_container_of_blocks():
@@ -263,15 +262,12 @@ def test_holder_accept_feedback_shares_grammar_and_inline_warning():
         tag="#HOLD",
     )
     boxes = _containers(view)
-    assert len(boxes) == 2, "feedback panel + exactly one compact callout"
-    assert len(_built(boxes[1])["components"]) == 1, (
-        "the callout stays the smallest possible container"
-    )
+    assert len(boxes) == 1, "the FWA warning stays inside the one panel"
     text = _text(view)
     for label in ("**You give:**", "**You receive:**", "**Trading with:**",
                   "**Next**"):
         assert label in text
-    assert "⚠️ **FWA — Wait for war**" in text
+    assert "> ### ⚠️ FWA — Wait for war" in text
     assert "My trades" in text and "I sent my card" in text
     assert "I told them by DM." in text
     assert "Your account" not in text, (
@@ -451,9 +447,9 @@ def test_nested_fwa_experiment_is_preview_only_and_single_container():
     assert "Do not trade until war starts." in text
     assert "-# Your account:" in text, "the derived layout keeps its tail"
 
-    # Production is untouched: still main Container + compact callout.
+    # Production keeps the settled single-container shape.
     production = cards_command._accepted_trade_dm(_trade(), fwa_relevant=True)
-    assert len(_containers(production)) == 2
+    assert len(_containers(production)) == 1
 
 
 def test_fwa_markup_variants_keep_the_copy_and_stay_preview_only():
@@ -535,10 +531,10 @@ def test_the_full_preview_suite_renders_within_discord_limits():
         "22d · My trades, empty",
         "23a · Upload prompt",
         "24a · Callout samples — red, gold, blue, green",
-        "24b · Accepted trade + FWA callout",
         "24d · Notice, search unavailable",
+        "24b · Accepted trade + FWA (production)",
         "24e · Experiment: FWA inside the main container",
-        "24f · FWA A — compact red callout (production)",
+        "24f · FWA A — compact red callout",
         "24g · FWA B — bold heading",
         "24l · FWA G — underline",
     ):
