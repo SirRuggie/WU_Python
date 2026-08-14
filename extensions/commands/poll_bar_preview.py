@@ -1,4 +1,4 @@
-"""Owner-only Discord phone preview for WU poll bar lengths."""
+"""Owner-only Discord phone preview for the final WU poll composition."""
 
 from __future__ import annotations
 
@@ -39,8 +39,7 @@ class PreviewVariant:
 
 
 FINALISTS = (
-    PreviewVariant("A", 16),
-    PreviewVariant("B", 20),
+    PreviewVariant("A", 20),
 )
 
 
@@ -75,9 +74,7 @@ def _result_line(
         f"**{_percent(count, total)}% · {count}**"
     )
     option = f"**{int(option_id)}. {label}**"
-    if len(label) > 24:
-        return f"{option}\n{result}"
-    return f"{option} {result}"
+    return f"{option}\n{result}"
 
 
 def _variant_for(code: str) -> PreviewVariant:
@@ -143,7 +140,7 @@ def build_poll_bar_preview_components(
     creator_id: int,
     observed_at: datetime | None = None,
 ) -> list[Container]:
-    """Build one complete compact poll for the 16/20-cell phone comparison."""
+    """Build the complete deterministic two-line mobile poll preview."""
     variant = _variant_for(code)
     results = "\n".join(
         _result_line(
@@ -164,8 +161,7 @@ def build_poll_bar_preview_components(
         _admin_row(variant.code),
         Text(content=(
             f"-# {POLL_TOTAL} votes · You can change your vote.\n"
-            f"-# ⏱️ Closes <t:{_closes_at(observed_at)}:R> · <@{int(creator_id)}>\n"
-            f"-# Preview {variant.code} · WU bar · {variant.width} cells"
+            f"-# ⏱️ Closes <t:{_closes_at(observed_at)}:R> · <@{int(creator_id)}>"
         )),
     ]
     return [Container(accent_color=GOLD_ACCENT, components=body)]
@@ -177,7 +173,7 @@ async def _send_poll_bar_previews(
     owner_id: int,
     observed_at: datetime | None = None,
 ) -> int:
-    """DM the owner the complete 16- and 20-cell poll previews."""
+    """DM the owner the final complete mobile-safe poll preview."""
     channel = await bot.rest.create_dm_channel(owner_id)
     views = [
         build_poll_bar_preview_components(
@@ -205,7 +201,7 @@ async def _send_poll_bar_previews(
 class PollBarPreview(
     lightbulb.SlashCommand,
     name="poll-bar-preview",
-    description="DM the owner the 16- and 20-cell WU poll previews",
+    description="DM the owner the final mobile-safe WU poll preview",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
 ):
     @lightbulb.invoke
@@ -233,6 +229,6 @@ class PollBarPreview(
             return
 
         await ctx.respond(
-            f"Sent {sent} WU poll bar-length previews to your DMs.",
+            f"Sent {sent} mobile-safe WU poll preview to your DMs.",
             ephemeral=True,
         )

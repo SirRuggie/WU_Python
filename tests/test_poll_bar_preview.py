@@ -14,14 +14,10 @@ from extensions.commands.help_catalog import command_paths
 NOW = datetime(2026, 8, 14, 12, 0, tzinfo=timezone.utc)
 EXPECTED_RESULTS = {
     "A": (
-        "**1. Minecraft** █████████░░░░░░░ **55% · 12**\n"
-        "**2. Jackbox Party Pack** █████░░░░░░░░░░░ **32% · 7**\n"
-        "**3. Gartic Phone with custom prompts**\n"
-        "██░░░░░░░░░░░░░░ **14% · 3**"
-    ),
-    "B": (
-        "**1. Minecraft** ███████████░░░░░░░░░ **55% · 12**\n"
-        "**2. Jackbox Party Pack** ██████░░░░░░░░░░░░░░ **32% · 7**\n"
+        "**1. Minecraft**\n"
+        "███████████░░░░░░░░░ **55% · 12**\n"
+        "**2. Jackbox Party Pack**\n"
+        "██████░░░░░░░░░░░░░░ **32% · 7**\n"
         "**3. Gartic Phone with custom prompts**\n"
         "███░░░░░░░░░░░░░░░░░ **14% · 3**"
     ),
@@ -58,7 +54,7 @@ def _button_nodes(view):
     ]
 
 
-def test_realistic_fixture_and_two_bar_lengths_are_exact():
+def test_realistic_fixture_and_final_twenty_cell_bar_are_exact():
     assert preview.POLL_QUESTION == "What should we play tonight?"
     assert preview.POLL_DETAILS == "Pick one for game night."
     assert preview.POLL_OPTIONS == (
@@ -70,7 +66,7 @@ def test_realistic_fixture_and_two_bar_lengths_are_exact():
     assert tuple(
         (variant.code, variant.width)
         for variant in preview.FINALISTS
-    ) == (("A", 16), ("B", 20))
+    ) == (("A", 20),)
 
 
 def test_wu_bars_use_exact_half_up_lengths_without_backticks():
@@ -79,32 +75,26 @@ def test_wu_bars_use_exact_half_up_lengths_without_backticks():
     assert preview._percent(12, 22) == 55
     assert preview._percent(7, 22) == 32
     assert preview._percent(3, 22) == 14
+    assert preview._bar(20, 1, 8) == "███" + "░" * 17
 
-    expected = {
-        16: (
-            "█████████░░░░░░░",
-            "█████░░░░░░░░░░░",
-            "██░░░░░░░░░░░░░░",
-        ),
-        20: (
-            "███████████░░░░░░░░░",
-            "██████░░░░░░░░░░░░░░",
-            "███░░░░░░░░░░░░░░░░░",
-        ),
-    }
-    for width, bars in expected.items():
-        for (_option_id, _label, count), bar in zip(preview.POLL_OPTIONS, bars):
-            rendered = preview._bar(width, count, preview.POLL_TOTAL)
-            assert rendered == bar
-            assert len(rendered) == width
-            assert "`" not in rendered
+    bars = (
+        "███████████░░░░░░░░░",
+        "██████░░░░░░░░░░░░░░",
+        "███░░░░░░░░░░░░░░░░░",
+    )
+    for (_option_id, _label, count), bar in zip(preview.POLL_OPTIONS, bars):
+        rendered = preview._bar(20, count, preview.POLL_TOTAL)
+        assert rendered == bar
+        assert len(rendered) == 20
+        assert set(rendered) <= {"█", "░"}
+        assert "`" not in rendered
 
-    assert preview._bar(16, 1, 0) == "░" * 16
-    assert preview._bar(16, 23, 22) == "█" * 16
+    assert preview._bar(20, 1, 0) == "░" * 20
+    assert preview._bar(20, 23, 22) == "█" * 20
 
 
 @pytest.mark.parametrize("variant", preview.FINALISTS)
-def test_result_rows_are_exact_and_only_long_option_forces_a_line_break(variant):
+def test_every_result_uses_the_exact_deterministic_two_line_layout(variant):
     rendered = "\n".join(
         preview._result_line(
             variant,
@@ -126,9 +116,9 @@ def test_result_rows_are_exact_and_only_long_option_forces_a_line_break(variant)
         )
         for option_id, label, count in preview.POLL_OPTIONS
     ]
-    assert "\n" not in rows[0]
-    assert "\n" not in rows[1]
-    assert rows[2].count("\n") == 1
+    assert all(row.count("\n") == 1 for row in rows)
+    assert len(rendered.splitlines()) == 6
+    assert not any(not line for line in rendered.splitlines())
     assert rows[0].endswith("**55% · 12**")
     assert rows[1].endswith("**32% · 7**")
     assert rows[2].endswith("**14% · 3**")
@@ -164,8 +154,7 @@ def test_complete_poll_card_keeps_the_approved_layout_and_component_budget(varia
         (
             "-# 22 votes · You can change your vote.\n"
             f"-# ⏱️ Closes <t:{int(NOW.timestamp()) + 3600}:R> · "
-            f"<@{preview.OWNER_ID}>\n"
-            f"-# Preview {variant.code} · WU bar · {variant.width} cells"
+            f"<@{preview.OWNER_ID}>"
         ),
     ]
     assert all("Poll ID" not in content for content in text)
@@ -226,7 +215,7 @@ class _Context:
         self.responses.append((args, kwargs))
 
 
-def test_delivery_sends_only_two_gold_complete_polls_without_mentions():
+def test_delivery_sends_one_gold_complete_poll_without_mentions():
     rest = _Rest()
     sent = asyncio.run(preview._send_poll_bar_previews(
         SimpleNamespace(rest=rest),
@@ -234,9 +223,9 @@ def test_delivery_sends_only_two_gold_complete_polls_without_mentions():
         observed_at=NOW,
     ))
 
-    assert sent == 2
+    assert sent == 1
     assert rest.dm_users == [preview.OWNER_ID]
-    assert len(rest.messages) == 2
+    assert len(rest.messages) == 1
     for message in rest.messages:
         assert message["channel"].id == 700
         assert message["flags"] == hikari.MessageFlag.IS_COMPONENTS_V2
@@ -275,10 +264,10 @@ def test_preview_command_enforces_owner_before_any_dm_work():
     ))
 
     assert owner.deferred == [{"ephemeral": True}]
-    assert len(owner_rest.messages) == 2
+    assert len(owner_rest.messages) == 1
     assert owner.responses[-1][1]["ephemeral"] is True
     assert owner.responses[-1][0] == (
-        "Sent 2 WU poll bar-length previews to your DMs.",
+        "Sent 1 mobile-safe WU poll preview to your DMs.",
     )
 
 
