@@ -1,10 +1,28 @@
-"""Experimental, review-only Clash of Cards still-image classifier.
+"""Review-only Clash of Cards still-image classifier.
 
 This module deliberately has no Discord or database imports.  Its batch entry
-point identifies five two-row collection captures and binds them to the
-canonical 60-card catalog regardless of upload order.  The positional binding
-is intentionally narrow: category-frame patterns and privacy-safe artwork
-anchors must agree, while arbitrary crops fail closed instead of being guessed.
+point reads collection screenshots in any order and recognizes them **one
+six-card row at a time** against the frozen reference in
+:mod:`utils.card_scan_reference`.
+
+Identity is decided per row, never per page and never per card:
+
+1. an adaptive frame detector recovers the visible six-card rows;
+2. a resolution-normalized band sampler measures each card's width and centre
+   from image structure alone, with run-to-centre assignment;
+3. the six artwork hashes are scored against two coherent templates per catalog
+   row, and the best and second-best catalog rows are ranked;
+4. an independent per-slot frame category vetoes a contradicting row, and an
+   unknown category fails closed;
+5. a per-slot artwork guard rejects a slot a same-category rival explains
+   better, so one wrong card cannot hide inside a healthy row average;
+6. the frozen row gate accepts only ``top1 <= 48/6`` with a rival gap of at
+   least ``276/6``.
+
+A row that clears every step contributes six identity-bound card states.  A row
+that fails any step contributes **nothing at all** — not even its five
+apparently good cards — and its positions are reported as needing manual
+review.  Zero wrong accepted row identities outranks recovering every row.
 
 The output is never safe to persist without human review.  Missing portraits
 can be recognized even when the fixed reward track covers the badge area.  A
@@ -13,8 +31,8 @@ owned while its possibly hidden duplicate badge is explicitly left unverified.
 
 Only ordinary PNG, JPEG, and single-frame WebP still images are accepted.
 Video decoding and arbitrary-scroll row merging are intentionally out of scope.
-Scanning is CPU-bound; any future async preview caller must run it outside the
-Discord event loop.  This module intentionally provides no such integration.
+Scanning is CPU-bound; any async caller must run it outside the Discord event
+loop.  This module intentionally provides no such integration.
 """
 
 from __future__ import annotations
@@ -25,17 +43,24 @@ import statistics
 import warnings
 from collections.abc import Mapping
 from collections import deque
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from itertools import islice
 from typing import Literal
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from utils import card_scan_reference as reference
 from utils.cards import CARDS, CATEGORY_BY_ID
 
 
+# The recognition stack is the qualified frozen package, but a scan result is
+# still only a review draft: nothing in this module authorizes a write.
 EXPERIMENTAL = True
 PERSISTENCE_SAFE = False
+SCANNER_VERSION = (
+    f"{reference.FROZEN_SPEC_VERSION} "
+    f"artifact:{reference.FROZEN_ARTIFACT_CHECKSUM[:16]}"
+)
 
 MISSING = "missing"
 OWNED = "owned"
@@ -96,112 +121,25 @@ CATEGORY_FRAME_HUES = {
     "builder_base": 145.0,
     "super_troop": 12.0,
 }
-CATEGORY_FRAME_HUE_TOLERANCE = 8.0
-ROW_OVERLAP_MAX_MEAN_DELTA = 1.0
+# Row identity, per-slot guard, category veto, sampler, and brightness floor
+# all come from the frozen package.  They are imported rather than restated so
+# production cannot drift away from the evaluated numbers.
+CARD_ASPECT = reference.CARD_ASPECT
+ROW_GATE_TOP1_MAX = reference.ROW_GATE_TOP1_MAX
+ROW_GATE_GAP_MIN = reference.ROW_GATE_GAP_MIN
+NOMINAL_VALUE_P95 = reference.NOMINAL_VALUE_P95
 
-# The only retained information derived from the supplied live screenshots is
-# one 128-bit grayscale perceptual hash per portrait.  These values cannot
-# reconstruct the screenshots, player state, badges, or account identity.  The
-# inner-art crop deliberately excludes the xN badge; grid medians keep detector
-# edge noise from moving a crop under ordinary resize or JPEG recompression.
-# Calibrated against a live five-capture set at 3120x1440 whose correct
-# identifications ran 0..53 bits away from their anchor, median 20, while the
-# nearest wrong card in the same category sat a median 34 bits further out.
-#
-# The old ceiling of 22 was fitted to one device and rejected 29 of those 60
-# correct cards, which is what made half a real collection import as unknown.
-# Absolute distance shifts with device scaling and JPEG recompression; the
-# RANKING does not, so the runner-up gap is the load-bearing test and the
-# ceiling is only a sanity bound.
-#
-# A gap of 8 also keeps the two genuinely ambiguous pairs in that set failing
-# closed rather than guessing: dragon/root_rider tied at 52, and
-# baby_dragon/wall_breaker at 53 against 52. Those become "unknown" and the
-# member is asked, which is the correct outcome.
-#
-# The ceiling is additionally bounded by the anchors themselves: with the
-# re-derived set the two closest same-category anchors sit 42 bits apart, so
-# 41 is the largest value that cannot put a portrait inside the wrong card's
-# radius. `test_artwork_anchor_catalog_is_complete_private_and_separated`
-# pins that relationship.
-ARTWORK_HASH_MAX_DISTANCE = 41
-ARTWORK_HASH_MIN_RUNNER_UP_GAP = 8
-
-# Page-level identity. A capture's twelve cards are compared as a group against
-# each of the five catalog positions. Live captures score a mean of about 28
-# against their own position and 62 to 65 against every other one, so a ceiling
-# of 45 with a required 15-bit lead over the nearest rival accepts a correct
-# page comfortably while a wrong page, which lands near zero lead, fails.
-ARTWORK_PAGE_MAX_MEAN_DISTANCE = 45.0
-ARTWORK_PAGE_MIN_RIVAL_GAP = 15.0
+# The only information retained from the development captures is one 128-bit
+# grayscale perceptual hash per card portrait, held in
+# `card_scan_reference.REFERENCE_BANK`.  Those values cannot reconstruct a
+# screenshot, a badge, a collection, or an account identity.  The inner-art
+# crop deliberately excludes the xN badge.
 ARTWORK_HASH_SIZE = 32
 ARTWORK_HASH_MAX_FREQUENCY = 10
 ARTWORK_CROP_LEFT = -0.38
 ARTWORK_CROP_TOP = 0.08
 ARTWORK_CROP_RIGHT = 0.38
 ARTWORK_CROP_BOTTOM = 0.66
-CARD_ARTWORK_HASHES = {
-    "barbarian": 0xB6F007CA4379AE549FED71333FCEB333,
-    "archer": 0x5FC3B8E02BE902F203032A6A6B6E6474,
-    "giant": 0x16CFA534CC997F04486373B3B63938FC,
-    "goblin": 0xAA54B47372AB6781A7E362F63E3F9392,
-    "wall_breaker": 0xB0054B27E165BCB7FBDBC6CBC9CF9BAE,
-    "balloon": 0x5066B47EDC31AEB07133735373B5A7E2,
-    "wizard": 0x864EBA12B4D3D374F2A33571CCD67258,
-    "healer": 0xACC01D63BF871BE064569B39321A591D,
-    "dragon": 0x9ABE44C5CC1FA3A4393C3ECBF9A0938E,
-    "pekka": 0xB2B9AE1F8AD62D023060DCDCCD2B49AF,
-    "baby_dragon": 0xD007D60FF9D06CD472E8CC60634F9CB6,
-    "miner": 0x1F8F0B5CBD589071D9D8EE35DC3C3878,
-    "electro_dragon": 0xF8A2035F02F8F95CA08999842D233B8A,
-    "yeti": 0xB933B87D4A3D3118532B2C846125AE8E,
-    "dragon_rider": 0xC33CCA13D488D5E7DC6CE8A4A1C2B361,
-    "electro_titan": 0xF428AFDA4E10F22B69C8D08C8C8D83C3,
-    "root_rider": 0x3A3B3BAE482E253A091F37FECDFD4F8F,
-    "thrower": 0x8CE191BC7335E2D4FCBCB837767C37F1,
-    "meteor_golem": 0xC05BD3BB45D5AA0599E7E6D10E113213,
-    "minion": 0x0397EED83412CE9DD97C6CF6DED9E878,
-    "hog_rider": 0xB28386590EC9DCF6438EBDAC8C8E3B99,
-    "valkyrie": 0x1DD3382AE1F3063DA423717199EAECDC,
-    "golem": 0x92A8558CA1D2F75DFEF63E3F5B4D3EB6,
-    "witch": 0x3D8AEC3C1F88075D3F1F1F3F5CCCECFD,
-    "lava_hound": 0xA0A9C059077EFC5B9C9D9E16070F0F0F,
-    "bowler": 0x97E4D25A277813E2B89983AAF6EE7278,
-    "ice_golem": 0xE84E8572294F6C76D29347711B0A8B9B,
-    "headhunter": 0xE9BC52717ACD4C0A1D1D1E4CD6A68373,
-    "apprentice_warden": 0x198FF0636F960CCC3B7FFE001266ACB8,
-    "druid": 0xB843E5D5741E20ED7939E3C39B3758BC,
-    "furnace": 0x412A74D1F1D5761DE2EACCC7D3C3D0D6,
-    "rubble_witch": 0x6E3172E2275C8D6C2E5E23426646EB09,
-    "raged_barbarian": 0x9A43C7B061AE1C7BFFDFEF7D53DBDE3B,
-    "sneaky_archer": 0x8F802FC019FB7B4CE6F43C4CD4DCE829,
-    "boxer_giant": 0xAC35105B165E7976DD9E8EE47643EBC8,
-    "beta_minion": 0xA22CCE55B57A0B1B327CEED6D78F4F5B,
-    "bomber": 0x118C5B7E9F0D151E3C48DCCDAC5C5D79,
-    "bb_baby_dragon": 0xC007FE0979F26CD472E8CC60634E94B4,
-    "cannon_cart": 0x99D95899A1C5E6CC808C39797B697934,
-    "night_witch": 0x278E1F05281BAF9D3D7E36DE48683D98,
-    "drop_ship": 0x10EF709DD1C3AF14B0FCBC751355369E,
-    "power_pekka": 0xFE458B0A83227F69F099838D492E0F63,
-    "hog_glider": 0x908592750759DEF662CE9CAC8C8E3239,
-    "super_barbarian": 0xB5443876273BBC326F4F0223726E6668,
-    "super_archer": 0xC7890BDC9805B63FEC6C3889C9F03060,
-    "super_giant": 0x909BAC99CD7C78916B79FCFAB3B9ACCE,
-    "sneaky_goblin": 0x9340ECBD4BE2C3C6F3D9E1636FE7B0F0,
-    "super_wall_breaker": 0x3DA5D25F0047A976983D24440C6EA6B4,
-    "rocket_balloon": 0x2BC3ED0DF8BC2D015F7B77173B3F199C,
-    "super_wizard": 0xF6DB368C04AE0F85B431321E2C3A2819,
-    "super_dragon": 0x5DB34515C37C64F00E9494C0F178B6F8,
-    "inferno_dragon": 0x1792029367D56EE5D3C59CDE7AB2B8AE,
-    "super_miner": 0x97E6BB0922F7920532656DE8AE3C78EA,
-    "super_yeti": 0x2D2570BBC1CCD1B3368F2614C3C676E6,
-    "super_minion": 0x52638C362C0FED5EC08173A6817BE3A1,
-    "super_hog_rider": 0xFAC2C9F949A6C21698CDCD6F2D3D30A5,
-    "super_valkyrie": 0xCCD8ABB48AA7266AE673F19969742DED,
-    "super_witch": 0x95C76AB434DA232B69793338C9747C79,
-    "ice_hound": 0xF655B564E2B50D845667F373323E8787,
-    "super_bowler": 0xA87559D6AD116595BEFFFF733BEB6737,
-}
 
 _ARTWORK_PHASH_FREQUENCIES = (
     (1, 0), (0, 1), (0, 2), (1, 1), (2, 0), (3, 0), (2, 1), (1, 2),
@@ -283,6 +221,27 @@ class ScanResult:
 
 
 @dataclass(frozen=True, slots=True)
+class RowScanDecision:
+    """What the frozen stack decided about one detected six-card row.
+
+    ``proposed_row`` is the nearest catalog row the reference bank suggested.
+    It is a proposal and nothing more: it is recorded for diagnostics even when
+    the row was rejected, and it is **never** an identity.  ``catalog_row`` is
+    the trusted identity and is set only on an accepted row.
+    """
+
+    input_index: int
+    row_index: int
+    accepted: bool
+    outcome: str
+    reason: str
+    proposed_row: int | None = None
+    catalog_row: int | None = None
+    identity_top1: float | None = None
+    identity_gap: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CollectionCaptureScan:
     """Disposition of one supplied screenshot in a collection batch."""
 
@@ -295,6 +254,9 @@ class CollectionCaptureScan:
     assigned_page_number: int | None = None
     mismatched_card_ids: tuple[str, ...] = ()
     conflicting_card_ids: tuple[str, ...] = ()
+    rows_detected: int = 0
+    rows_accepted: int = 0
+    rows_manual: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,9 +293,14 @@ class CategoryScanDraft:
 class CollectionScanDraft:
     """Identity-bound preview; ``persistence_safe`` is intentionally false.
 
-    ``coverage_complete`` means all 60 catalog positions were visibly bound to
-    one of the five validated captures.  ``complete`` additionally requires no
-    unknown state.  Neither flag authorizes an automatic database write.
+    ``coverage_complete`` means all ten catalog rows were accepted by the
+    frozen row gate.  ``complete`` additionally requires no unknown state.
+    Neither flag authorizes an automatic database write.
+
+    ``manual_required_global_rows`` and ``manual_required_card_ids`` are the
+    positions the scanner refused to guess.  They are the manual fallback's
+    input, and they are the reason a rejected row costs the player a few taps
+    instead of a wrong collection.
     """
 
     cards: tuple[DraftCardScan, ...]
@@ -353,6 +320,15 @@ class CollectionScanDraft:
     coverage_complete: bool
     complete: bool
     warnings: tuple[str, ...]
+    accepted_global_rows: tuple[int, ...] = ()
+    manual_required_global_rows: tuple[int, ...] = ()
+    manual_required_card_ids: tuple[str, ...] = ()
+    row_decisions: tuple[RowScanDecision, ...] = ()
+    # Non-empty only when the scan could not be performed at all, for example
+    # because the frozen reference no longer describes this code.  An error
+    # makes the draft unsavable rather than partly trusted.
+    errors: tuple[str, ...] = ()
+    scanner_version: str = SCANNER_VERSION
     experimental: bool = True
     persistence_safe: bool = False
 
@@ -374,6 +350,24 @@ def _result_failure(
 
 
 def _load_still(image_bytes: object) -> tuple[Image.Image, tuple[int, int]] | str:
+    """Return the normalized scan image and the original source size."""
+    loaded = _load_still_pair(image_bytes)
+    if isinstance(loaded, str):
+        return loaded
+    scan, _source, source_size = loaded
+    return scan, source_size
+
+
+def _load_still_pair(
+    image_bytes: object,
+) -> tuple[Image.Image, Image.Image, tuple[int, int]] | str:
+    """Return (scan image, full-resolution source, source size) or a code.
+
+    Geometry and card states are read from the normalized scan image, while the
+    band sampler and the artwork crops read the full-resolution source, because
+    a band one to three per cent of a card wide has too few pixels once the
+    capture has been shrunk to 1000 px.  Both come from one decode.
+    """
     if not isinstance(image_bytes, (bytes, bytearray, memoryview)):
         return "invalid_image_bytes"
     if not image_bytes:
@@ -414,11 +408,12 @@ def _load_still(image_bytes: object) -> tuple[Image.Image, tuple[int, int]] | st
     except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
         return "invalid_or_corrupt_image"
 
-    image.thumbnail(
+    scan = image.copy()
+    scan.thumbnail(
         (MAX_SCAN_WIDTH, MAX_SCAN_HEIGHT),
         Image.Resampling.LANCZOS,
     )
-    return image, source_size
+    return scan, image, source_size
 
 
 def _pixel_data(image: Image.Image):
@@ -481,93 +476,6 @@ def _artwork_perceptual_hash(image: Image.Image) -> int:
     return fingerprint
 
 
-def _artwork_hashes_for_rows(
-    image: Image.Image,
-    rows: tuple[RowScan, ...],
-) -> tuple[int, ...]:
-    """Hash stable inner-art crops in visual row/column order."""
-    fingerprints: list[int] = []
-    card_width = statistics.median(
-        slot.bounds.width for row in rows for slot in row.slots
-    )
-    column_centers = tuple(
-        statistics.median(row.slots[column].bounds.center_x for row in rows)
-        for column in range(COLLECTION_COLUMNS)
-    )
-    for row in rows:
-        row_top = statistics.median(slot.bounds.top for slot in row.slots)
-        row_height = statistics.median(slot.bounds.height for slot in row.slots)
-        for center_x in column_centers:
-            crop = image.crop((
-                round(center_x + card_width * ARTWORK_CROP_LEFT),
-                round(row_top + row_height * ARTWORK_CROP_TOP),
-                round(center_x + card_width * ARTWORK_CROP_RIGHT),
-                round(row_top + row_height * ARTWORK_CROP_BOTTOM),
-            ))
-            fingerprints.append(_artwork_perceptual_hash(crop))
-    return tuple(fingerprints)
-
-
-def _artwork_identity_mismatches(
-    image: Image.Image,
-    result: ScanResult,
-    capture_position: int,
-) -> tuple[str, ...]:
-    """Return expected card ids whose portrait does not prove that identity."""
-    catalog_ids = {card.id for card in CARDS}
-    start = capture_position * COLLECTION_COLUMNS * 2
-    expected = CARDS[start:start + COLLECTION_COLUMNS * 2]
-    if set(CARD_ARTWORK_HASHES) != catalog_ids:
-        # Adding, removing, or renaming a catalog entry without new live artwork
-        # anchors is a deliberate global kill-switch, not a best-effort scan.
-        return tuple(card.id for card in expected)
-
-    observed = _artwork_hashes_for_rows(image, result.rows)
-    if not observed:
-        return tuple(card.id for card in expected)
-
-    # Identity is decided for the PAGE, not card by card.
-    #
-    # A single card's perceptual hash is noisy between sessions: a few pixels
-    # of drift in where the tile is detected moves a 32x32 crop enough to add
-    # tens of bits. Judging each card alone therefore stranded cards that are
-    # obviously correct, and it did so differently on every capture set.
-    #
-    # Twelve cards together are not noisy. Measured on live captures, a page
-    # scores a mean distance around 28 against its own position and 62 to 65
-    # against every other position, so the correct page is unmistakable even
-    # when individual cards inside it are not. Once the page is confirmed, each
-    # card's identity follows from its grid position, which the six-column
-    # geometry and category frame colours already validated.
-    def _mean_for(position: int) -> float | None:
-        candidates = CARDS[position * COLLECTION_COLUMNS * 2:]
-        candidates = candidates[:len(observed)]
-        if len(candidates) < len(observed):
-            return None
-        return sum(
-            (fingerprint ^ CARD_ARTWORK_HASHES[card.id]).bit_count()
-            for card, fingerprint in zip(candidates, observed)
-        ) / len(observed)
-
-    assigned_mean = _mean_for(capture_position)
-    if assigned_mean is None:
-        return tuple(card.id for card in expected)
-    rivals = [
-        mean
-        for position in range(len(CARDS) // (COLLECTION_COLUMNS * 2))
-        if position != capture_position
-        for mean in (_mean_for(position),)
-        if mean is not None
-    ]
-    nearest_rival = min(rivals, default=math.inf)
-    if (
-        assigned_mean > ARTWORK_PAGE_MAX_MEAN_DISTANCE
-        or nearest_rival - assigned_mean < ARTWORK_PAGE_MIN_RIVAL_GAP
-    ):
-        return tuple(card.id for card in expected)
-    return ()
-
-
 def _bounds_area(bounds: Bounds) -> int:
     return max(bounds.width, 0) * max(bounds.height, 0)
 
@@ -603,12 +511,40 @@ def _prune_nested_components(components: list[Bounds]) -> list[Bounds]:
     return kept
 
 
+def _adaptive_value_floor(values: list[int]) -> int:
+    """Scale the frame value floor by how bright this capture actually is.
+
+    Pillow's brightness transform scales HSV value linearly and leaves
+    saturation, a ratio, almost still, so on a dim capture only the absolute
+    value floor moves - and an absolute floor of 120 then erodes real frames
+    below the component fill floor.  The frame-to-bright-end value ratio is
+    brightness invariant (0.127-0.141 measured across native, brightness
+    0.7-0.9, JPEG 70/30/15, and resize 0.5-1.5) while the image's own bright
+    end tracks brightness faithfully, so the capture can be asked how bright it
+    is instead of being assumed.
+
+    ``min()`` is what makes this safe: on any capture as bright as the
+    development set the floor is exactly the unchanged FRAME_MIN_VALUE, so the
+    rule is inert on every image that already worked.  Only a measurably dim
+    capture relaxes the floor, and only by the factor its own pixels report.
+    """
+    if not values:
+        return FRAME_MIN_VALUE
+    bright_end = sorted(values)[int(len(values) * 0.95)]
+    return min(
+        FRAME_MIN_VALUE,
+        round(FRAME_MIN_VALUE * bright_end / NOMINAL_VALUE_P95),
+    )
+
+
 def _saturated_components(image: Image.Image) -> list[Bounds]:
     width, height = image.size
     hsv = image.convert("HSV")
+    pixels = list(_pixel_data(hsv))
+    floor = _adaptive_value_floor([value for _hue, _saturation, value in pixels])
     mask = bytearray(width * height)
-    for index, (_hue, saturation, value) in enumerate(_pixel_data(hsv)):
-        if saturation >= FRAME_MIN_SATURATION and value >= FRAME_MIN_VALUE:
+    for index, (_hue, saturation, value) in enumerate(pixels):
+        if saturation >= FRAME_MIN_SATURATION and value >= floor:
             mask[index] = 1
 
     components: list[Bounds] = []
@@ -1016,23 +952,33 @@ def _classify_slot(image: Image.Image, box: Bounds, column: int) -> SlotScan:
     )
 
 
+_BASE_SCAN_WARNINGS = (
+    "experimental_preview_only",
+    "card_identity_not_inferred",
+)
+
+
 def scan_visible_rows(image_bytes: object) -> ScanResult:
     """Conservatively classify complete visible six-card rows in one still.
 
     The function never raises for bad user input and never assigns card names,
     category names, or collection positions.  Callers must treat every result
     as a preview requiring human review; ``PERSISTENCE_SAFE`` is permanently
-    false for this experimental implementation.
+    false, and identity is decided separately by the frozen row stack.
     """
-    base_warnings = (
-        "experimental_preview_only",
-        "card_identity_not_inferred",
-    )
     loaded = _load_still(image_bytes)
     if isinstance(loaded, str):
-        return _result_failure(loaded, prior=base_warnings)
+        return _result_failure(loaded, prior=_BASE_SCAN_WARNINGS)
     image, source_size = loaded
+    return _scan_rows(image, source_size)
 
+
+def _scan_rows(
+    image: Image.Image,
+    source_size: tuple[int, int],
+) -> ScanResult:
+    """Detect and classify rows in an already validated scan image."""
+    base_warnings = _BASE_SCAN_WARNINGS
     candidates = _saturated_components(image)
     if not candidates:
         return _result_failure(
@@ -1092,75 +1038,502 @@ def scan_visible_rows(image_bytes: object) -> ScanResult:
     )
 
 
-def _frame_hue(image: Image.Image, box: Bounds) -> float | None:
-    """Return the median saturated hue around a detected category frame."""
-    crop = image.crop((box.left, box.top, box.right, box.bottom)).convert("HSV")
-    width, height = crop.size
-    inset = max(3, round(min(width, height) * 0.08))
-    hues: list[int] = []
-    for y in range(height):
-        for x in range(width):
-            if not (
-                x < inset
-                or x >= width - inset
-                or y < inset
-                or y >= height - inset
-            ):
-                continue
-            hue, saturation, value = crop.getpixel((x, y))
-            if saturation >= FRAME_MIN_SATURATION and value >= FRAME_MIN_VALUE:
-                hues.append(hue)
-    return float(statistics.median(hues)) if hues else None
-
-
 def _hue_distance(left: float, right: float) -> float:
+    """Circular hue distance: a super troop frame at 254 is 14 from centre 12."""
     difference = abs(left - right)
     return min(difference, 256.0 - difference)
 
 
-def _capture_matches_catalog_position(
-    image: Image.Image,
+# --- the frozen row identity stack -----------------------------------------
+#
+# Everything from here to `_decide_row_identity` is the frozen development
+# package, transcribed into production unchanged.  Every constant lives in
+# `card_scan_reference`; none of them may be retuned here.  Geometry is chosen
+# from image structure and never sees an identity score.
+
+
+def _percentile(values, share: float) -> int:
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(len(ordered) * share))]
+
+
+def _row_geometry(
     result: ScanResult,
-    capture_position: int,
-) -> bool:
-    start = capture_position * COLLECTION_COLUMNS * 2
-    slots = tuple(slot for row in result.rows for slot in row.slots)
-    expected = CARDS[start:start + len(slots)]
-    if len(slots) != COLLECTION_COLUMNS * 2 or len(expected) != len(slots):
-        return False
+) -> tuple[float, tuple[float, ...], list[tuple[float, float]]]:
+    """Shared card width, column centres, and each row's (top, height).
 
-    for slot, card in zip(slots, expected):
-        hue = _frame_hue(image, slot.bounds)
-        target = CATEGORY_FRAME_HUES.get(card.category)
-        if (
-            hue is None
-            or target is None
-            or _hue_distance(hue, target) > CATEGORY_FRAME_HUE_TOLERANCE
+    Medians across every detected row, so one noisy frame edge cannot move a
+    crop.  All three are in scan-image coordinates.
+    """
+    width = statistics.median(
+        slot.bounds.width for row in result.rows for slot in row.slots
+    )
+    columns = tuple(
+        statistics.median(
+            row.slots[column].bounds.center_x for row in result.rows
+        )
+        for column in range(COLLECTION_COLUMNS)
+    )
+    rows = [
+        (
+            statistics.median(slot.bounds.top for slot in row.slots),
+            statistics.median(slot.bounds.height for slot in row.slots),
+        )
+        for row in result.rows
+    ]
+    return width, columns, rows
+
+
+def _band_sample_offsets(expected_width: float) -> list[int]:
+    """The five logical band positions, in source pixels below the top edge.
+
+    Positions are a fraction of measured card width, so the logical pattern is
+    identical at every resolution and a bigger capture cannot spend its extra
+    pixel rows as extra evidence.  Two positions may land on the same pixel row
+    on a small capture; they still count as two logical samples.
+    """
+    span = reference.BAND_BOTTOM - reference.BAND_TOP
+    return [
+        max(1, round(expected_width * (
+            reference.BAND_TOP + span * index / (reference.BAND_SAMPLES - 1)
+        )))
+        for index in range(reference.BAND_SAMPLES)
+    ]
+
+
+def _saturation_line(hsv: Image.Image, y: int, x_from: int, x_to: int):
+    """One scanline's saturation channel, read in a single pass."""
+    if not (0 <= y < hsv.size[1]):
+        return None
+    x_from = max(0, x_from)
+    x_to = min(hsv.size[0], x_to)
+    if x_to - x_from < 2:
+        return None
+    return hsv.crop((x_from, y, x_to, y + 1)).tobytes()[1::3], x_from
+
+
+def _frame_runs(
+    hsv: Image.Image,
+    y: int,
+    x_from: int,
+    x_to: int,
+    expected_width: float,
+) -> list[tuple[int, int]] | None:
+    """Contiguous saturated stretches, thresholded against this line only."""
+    line = _saturation_line(hsv, y, x_from, x_to)
+    if line is None:
+        return None
+    saturations, start_x = line
+    if len(saturations) < expected_width:
+        return None
+    high = _percentile(saturations, 0.9)
+    low = _percentile(saturations, 0.1)
+    if high - low < reference.BAND_MIN_CONTRAST:
+        # No frame-to-gap contrast on this line, so it says nothing at all.
+        return None
+    threshold = (high + low) / 2
+    runs: list[tuple[int, int]] = []
+    start = None
+    for offset, saturation in enumerate(saturations):
+        if saturation >= threshold:
+            if start is None:
+                start = offset
+        elif start is not None:
+            runs.append((start_x + start, start_x + offset - 1))
+            start = None
+    if start is not None:
+        runs.append((start_x + start, start_x + len(saturations) - 1))
+    return [
+        run for run in runs
+        if run[1] - run[0] >= expected_width * reference.BAND_MIN_RUN_SHARE
+    ]
+
+
+def _assign_runs(
+    runs: list[tuple[int, int]],
+    centres: list[float],
+    pitch: float,
+) -> dict[int, tuple[int, float]] | None:
+    """One frame run per expected card centre, or an explicit refusal.
+
+    Six runs appearing somewhere on the line is not evidence that six cards
+    were measured.  Each expected centre must fall inside exactly one run, and
+    no run may swallow two centres - which is what a weld between neighbouring
+    cards looks like, and it rejects the whole line.
+    """
+    owner: dict[tuple[int, int], list[int]] = {}
+    for centre_index, centre in enumerate(centres):
+        for run in runs:
+            if run[0] <= centre <= run[1]:
+                owner.setdefault(run, []).append(centre_index)
+                break
+    if any(len(claimants) > 1 for claimants in owner.values()):
+        return None
+
+    assigned: dict[int, tuple[int, float]] = {}
+    for run, claimants in owner.items():
+        width = run[1] - run[0] + 1
+        share = width / pitch
+        if not (
+            reference.RUN_MIN_OF_PITCH <= share <= reference.RUN_MAX_OF_PITCH
         ):
-            return False
-    return True
+            # Pathological width: drop this measurement rather than trust it.
+            continue
+        assigned[claimants[0]] = (width, (run[0] + run[1]) / 2)
+    return assigned or None
 
 
-def _row_fingerprint(image: Image.Image, row: RowScan) -> bytes:
-    bounds = row.bounds
-    crop = image.crop(
-        (bounds.left, bounds.top, bounds.right, bounds.bottom)
-    ).convert("L")
-    return crop.resize((192, 48), Image.Resampling.BILINEAR).tobytes()
+def _find_source_top(
+    hsv: Image.Image,
+    x0: int,
+    x1: int,
+    start: float,
+    reach: int,
+) -> int | None:
+    """First scanline where the six frames are lit, at source resolution.
+
+    This deliberately keeps the fixed saturation/value predicate rather than
+    the brightness-relative floor.  It is the frozen sampler's known limit: on
+    an extremely dim capture it fails to find the edge, which costs recall and
+    fails closed.  Changing it would change a frozen recognition decision.
+    """
+    image_width, image_height = hsv.size
+    x0 = max(0, min(image_width - 1, x0))
+    x1 = max(x0 + 1, min(image_width, x1))
+    step = max(1, (x1 - x0) // 24)
+    for offset in range(reach):
+        y = int(start + offset)
+        if not (0 <= y < image_height):
+            return None
+        pixels = [hsv.getpixel((x, y)) for x in range(x0, x1, step)]
+        lit = sum(
+            1 for _hue, saturation, value in pixels
+            if saturation >= FRAME_MIN_SATURATION and value >= FRAME_MIN_VALUE
+        )
+        if lit >= len(pixels) * 0.6:
+            return y
+    return None
 
 
-def _fingerprint_delta(left: bytes, right: bytes) -> float:
-    if len(left) != len(right) or not left:
-        return math.inf
-    return sum(abs(a - b) for a, b in zip(left, right)) / len(left)
+def _slot_frame_category(hues: list[int], lines: int) -> str | None:
+    """Observe one slot's category, or answer unknown.
+
+    The classifier is a veto and never chooses a card, so a confident mistake
+    would reject a legitimate row.  It answers only when the nearest category
+    is close enough AND clearly ahead of the runner-up; the documented
+    elixir/dark-elixir tolerance overlap therefore answers unknown by
+    construction rather than by preference.
+    """
+    if lines < reference.CATEGORY_MIN_LINES or not hues:
+        return None
+    distances = {
+        name: statistics.median(_hue_distance(hue, centre) for hue in hues)
+        for name, centre in CATEGORY_FRAME_HUES.items()
+    }
+    ordered = sorted(distances.items(), key=lambda item: item[1])
+    (nearest_name, nearest), (_runner_name, runner_up) = ordered[0], ordered[1]
+    if nearest > reference.CATEGORY_TOLERANCE:
+        return None
+    if runner_up - nearest < reference.CATEGORY_MARGIN:
+        return None
+    return nearest_name
 
 
-def _empty_draft_card(
-    card,
-    catalog_index: int,
-    *,
-    artwork_mismatch: bool = False,
-) -> DraftCardScan:
+def _measure_row_band(
+    hsv: Image.Image,
+    source_top: int,
+    columns: tuple[float, ...],
+    scan_width: float,
+    scale: float,
+) -> tuple[dict | None, str]:
+    """Six card widths, centres, and frame categories from one band.
+
+    Each card is built only from the band lines that actually reached it.  The
+    hue pixels come from the same assigned runs, so the category measurement
+    inherits the sampler's resolution independence for free.
+    """
+    expected = scan_width * scale
+    centres = [centre * scale for centre in columns]
+    pitch = statistics.median(
+        centres[index + 1] - centres[index]
+        for index in range(COLLECTION_COLUMNS - 1)
+    )
+    x_from = int((columns[0] - scan_width) * scale)
+    x_to = int((columns[-1] + scan_width) * scale)
+
+    per_card_width: list[list[int]] = [[] for _ in range(COLLECTION_COLUMNS)]
+    per_card_centre: list[list[float]] = [[] for _ in range(COLLECTION_COLUMNS)]
+    per_card_hues: list[list[int]] = [[] for _ in range(COLLECTION_COLUMNS)]
+    for offset in _band_sample_offsets(expected):
+        y = source_top + offset
+        runs = _frame_runs(hsv, y, x_from, x_to, expected)
+        if not runs:
+            continue
+        assigned = _assign_runs(runs, centres, pitch)
+        if assigned is None:
+            continue
+        for index, (width, centre) in assigned.items():
+            per_card_width[index].append(width)
+            per_card_centre[index].append(centre)
+            left = max(0, int(centre - (width - 1) / 2))
+            right = min(hsv.size[0] - 1, int(centre + (width - 1) / 2))
+            per_card_hues[index].extend(
+                hsv.getpixel((x, y))[0] for x in range(left, right + 1)
+            )
+
+    support = [len(values) for values in per_card_width]
+    if min(support) < reference.MIN_LINES_PER_CARD:
+        thin = [
+            index + 1 for index, count in enumerate(support)
+            if count < reference.MIN_LINES_PER_CARD
+        ]
+        return None, (
+            f"cards {thin} measured on {support} of "
+            f"{reference.BAND_SAMPLES} band lines"
+        )
+
+    widths = [statistics.median(values) for values in per_card_width]
+    card_centres = [statistics.median(values) for values in per_card_centre]
+    median_width = statistics.median(widths)
+    ordered = sorted(widths)
+    five = min(
+        (ordered[:5], ordered[1:]),
+        key=lambda group: group[-1] - group[0],
+    )
+    measured_pitch = statistics.median(
+        card_centres[index + 1] - card_centres[index]
+        for index in range(COLLECTION_COLUMNS - 1)
+    )
+    return {
+        "widths": widths,
+        "centres": card_centres,
+        "median_width": median_width,
+        "all_spread": (max(widths) - min(widths)) / median_width,
+        "five_spread": (five[-1] - five[0]) / median_width,
+        "width_over_pitch": median_width / measured_pitch,
+        # One pixel over the card width: the finest distinction this capture
+        # can draw, and therefore the slack a frozen spread limit owes it.
+        "quantum": reference.SPREAD_QUANT_PIXELS / median_width,
+        "categories": tuple(
+            _slot_frame_category(per_card_hues[index], support[index])
+            for index in range(COLLECTION_COLUMNS)
+        ),
+    }, ""
+
+
+def _geometry_breach(evidence: dict) -> str:
+    """Width evidence that does not describe six equal cards in a row."""
+    quantum = evidence["quantum"]
+    if evidence["five_spread"] > reference.FIVE_SPREAD_MAX + quantum:
+        return f"five-card width spread {evidence['five_spread']:.4f}"
+    if evidence["all_spread"] > reference.ALL_SPREAD_MAX + quantum:
+        return f"six-card width spread {evidence['all_spread']:.4f}"
+    if not (
+        reference.PITCH_MIN
+        <= evidence["width_over_pitch"]
+        <= reference.PITCH_MAX
+    ):
+        return f"width over pitch {evidence['width_over_pitch']:.4f}"
+    return ""
+
+
+def _reference_row_scores(hashes: tuple[int, ...]) -> dict[int, float]:
+    """Mean bit distance from this row to each catalog row's nearest template."""
+    return {
+        row: min(
+            statistics.mean(
+                (observed ^ template_hash).bit_count()
+                for observed, template_hash in zip(hashes, template)
+            )
+            for template in templates
+        )
+        for row, templates in reference.REFERENCE_BANK.items()
+    }
+
+
+def _reference_card_distance(slot_hash: int, catalog_index: int) -> int | None:
+    """Bit distance from one slot to one catalog card's nearest template."""
+    row = catalog_index // COLLECTION_COLUMNS + 1
+    slot = catalog_index % COLLECTION_COLUMNS
+    templates = reference.REFERENCE_BANK.get(row)
+    if not templates:
+        return None
+    return min(
+        (slot_hash ^ template[slot]).bit_count() for template in templates
+    )
+
+
+def _slot_artwork_verdict(slot_hash: int, expected_index: int) -> str:
+    """Judge one slot against same-category rivals only.
+
+    Rivals are drawn from the expected card's own category rather than filtered
+    by the observed one.  If the category filtered the candidate set instead, a
+    wrong cross-category match could be forced back into the target's category
+    and thereby rescued.
+    """
+    expected = _reference_card_distance(slot_hash, expected_index)
+    if expected is None:
+        return "ambiguous"
+    category = CARDS[expected_index].category
+    rival = None
+    for index, card in enumerate(CARDS):
+        if index == expected_index or card.category != category:
+            continue
+        distance = _reference_card_distance(slot_hash, index)
+        if distance is not None and (rival is None or distance < rival):
+            rival = distance
+    if rival is None:
+        return "ambiguous"
+    if rival + reference.SLOT_GAP_MARGIN <= expected \
+            or expected >= reference.SLOT_GROSS:
+        return "contradicted"
+    if expected <= reference.SLOT_SUPPORT_MAX \
+            and expected + reference.SLOT_GAP_MARGIN <= rival:
+        return "supported"
+    return "ambiguous"
+
+
+def _decide_row_identity(
+    hashes: tuple[int, ...],
+    categories: tuple[str | None, ...],
+) -> tuple[str, str, int, float, float]:
+    """Run the frozen decision order over one registered row.
+
+    Returns ``(outcome, reason, proposed row, top1, gap)``.  ``accepted`` is
+    the only outcome that yields an identity; every other one leaves the row's
+    six positions to the manual editor.
+    """
+    scores = _reference_row_scores(hashes)
+    # Ranking is by (score, catalog row), so a tie breaks on row number rather
+    # than dictionary order.  Scores reduce to one per catalog row before
+    # ranking, so the runner-up is structurally a different catalog row.
+    ordered = sorted(scores.items(), key=lambda item: (item[1], item[0]))
+    (proposed_row, top1), (_runner_up_row, top2) = ordered[0], ordered[1]
+    gap = top2 - top1
+
+    supported: list[bool] = []
+    for slot in range(COLLECTION_COLUMNS):
+        expected_index = (proposed_row - 1) * COLLECTION_COLUMNS + slot
+        observed = categories[slot]
+        if observed is not None and observed != CARDS[expected_index].category:
+            return (
+                "category",
+                f"card {slot + 1} has a {observed} frame",
+                proposed_row, top1, gap,
+            )
+        verdict = _slot_artwork_verdict(hashes[slot], expected_index)
+        if verdict == "contradicted":
+            return (
+                "slot",
+                f"card {slot + 1} artwork contradicts the row",
+                proposed_row, top1, gap,
+            )
+        # Category agreement is necessary and never sufficient: an unknown
+        # category cannot support a slot, so the row fails closed.
+        supported.append(verdict == "supported" and observed is not None)
+
+    if not all(supported):
+        unsupported = [
+            index + 1 for index, ok in enumerate(supported) if not ok
+        ]
+        return (
+            "unresolved",
+            f"cards {unsupported} are not clearly supported",
+            proposed_row, top1, gap,
+        )
+    if top1 > ROW_GATE_TOP1_MAX:
+        return (
+            "distance",
+            f"row distance {top1:.2f} over {ROW_GATE_TOP1_MAX:.2f}",
+            proposed_row, top1, gap,
+        )
+    if gap < ROW_GATE_GAP_MIN:
+        return (
+            "separation",
+            f"rival gap {gap:.2f} under {ROW_GATE_GAP_MIN:.2f}",
+            proposed_row, top1, gap,
+        )
+    return "accepted", "", proposed_row, top1, gap
+
+
+@dataclass(frozen=True, slots=True)
+class _RegisteredRow:
+    """One detected row, measured and hashed, before identity is decided."""
+
+    row_index: int
+    slots: tuple[SlotScan, ...]
+    hashes: tuple[int, ...] | None
+    categories: tuple[str | None, ...]
+    reason: str
+
+
+def _register_capture(
+    payload: object,
+) -> tuple[ScanResult, tuple[_RegisteredRow, ...]]:
+    """Detect every visible row, then measure and hash each one."""
+    loaded = _load_still_pair(payload)
+    if isinstance(loaded, str):
+        return _result_failure(loaded, prior=_BASE_SCAN_WARNINGS), ()
+    scan, source, source_size = loaded
+    result = _scan_rows(scan, source_size)
+    if not result.rows:
+        return result, ()
+
+    scan_width, columns, row_bounds = _row_geometry(result)
+    scale = source.size[0] / scan.size[0]
+    hsv = source.convert("HSV")
+    reach = int(scale * 4) + 4
+    x0 = round((columns[0] + scan_width * ARTWORK_CROP_LEFT) * scale)
+    x1 = round((columns[-1] + scan_width * ARTWORK_CROP_RIGHT) * scale)
+
+    unmeasured = (None,) * COLLECTION_COLUMNS
+    registered: list[_RegisteredRow] = []
+    for index, row in enumerate(result.rows):
+        top, _height = row_bounds[index]
+        source_top = _find_source_top(
+            hsv, x0, x1, top * scale - scale * 2, reach
+        )
+        if source_top is None:
+            registered.append(_RegisteredRow(
+                index, row.slots, None, unmeasured, "top edge not found",
+            ))
+            continue
+        evidence, failure = _measure_row_band(
+            hsv, source_top, columns, scan_width, scale
+        )
+        if evidence is None:
+            registered.append(
+                _RegisteredRow(index, row.slots, None, unmeasured, failure)
+            )
+            continue
+        breach = _geometry_breach(evidence)
+        if breach:
+            registered.append(
+                _RegisteredRow(index, row.slots, None, unmeasured, breach)
+            )
+            continue
+        width = evidence["median_width"]
+        card_height = width * CARD_ASPECT
+        registered.append(_RegisteredRow(
+            row_index=index,
+            slots=row.slots,
+            hashes=tuple(
+                _artwork_perceptual_hash(source.crop((
+                    round(centre + width * ARTWORK_CROP_LEFT),
+                    round(source_top + card_height * ARTWORK_CROP_TOP),
+                    round(centre + width * ARTWORK_CROP_RIGHT),
+                    round(source_top + card_height * ARTWORK_CROP_BOTTOM),
+                )))
+                for centre in evidence["centres"]
+            ),
+            categories=evidence["categories"],
+            reason="",
+        ))
+    return result, tuple(registered)
+
+
+def _empty_draft_card(card, catalog_index: int) -> DraftCardScan:
+    """A catalog position no accepted row covered, so a human must supply it."""
     return DraftCardScan(
         card_id=card.id,
         card_name=card.name,
@@ -1171,22 +1544,7 @@ def _empty_draft_card(
         state=UNKNOWN,
         confidence=0.0,
         source_index=None,
-        warnings=(
-            "unseen_card",
-            *(("artwork_identity_mismatch",) if artwork_mismatch else ()),
-        ),
-    )
-
-
-def _matching_catalog_positions(
-    image: Image.Image,
-    result: ScanResult,
-) -> tuple[int, ...]:
-    """Return zero-based catalog pages proved by the capture's frame colors."""
-    return tuple(
-        position
-        for position in range(COLLECTION_CAPTURE_COUNT)
-        if _capture_matches_catalog_position(image, result, position)
+        warnings=("unseen_card", "manual_review_required"),
     )
 
 
@@ -1235,12 +1593,20 @@ def _checkpoint_warnings(value: object) -> tuple[str, ...] | None:
     return tuple(dict.fromkeys(values))
 
 
-def _pages_are_atomic(mapped: Mapping[int, DraftCardScan]) -> bool:
-    """A checkpoint may retain complete pages, never identity fragments."""
-    for position in range(COLLECTION_CAPTURE_COUNT):
-        start = position * COLLECTION_COLUMNS * 2 + 1
-        count = sum(index in mapped for index in range(start, start + 12))
-        if count not in (0, 12):
+def _rows_are_atomic(mapped: Mapping[int, DraftCardScan]) -> bool:
+    """A checkpoint may retain whole accepted rows, never identity fragments.
+
+    Row atomicity is the persistence side of the recognition rule: a row is
+    accepted as six cards or not at all, so five apparently good cards from a
+    rejected row must never survive into a later batch as trusted evidence.
+    """
+    for row in range(COLLECTION_ROWS):
+        start = row * COLLECTION_COLUMNS + 1
+        count = sum(
+            index in mapped
+            for index in range(start, start + COLLECTION_COLUMNS)
+        )
+        if count not in (0, COLLECTION_COLUMNS):
             return False
     return True
 
@@ -1299,7 +1665,7 @@ def _validated_prior_cards(
                     source_index=0,
                     warnings=tuple(record.warnings),
                 )
-        return (mapped, True) if _pages_are_atomic(mapped) else ({}, False)
+        return (mapped, True) if _rows_are_atomic(mapped) else ({}, False)
 
     if not isinstance(prior_draft, Mapping):
         return {}, False
@@ -1392,7 +1758,7 @@ def _validated_prior_cards(
             warnings=warnings_found,
         )
 
-    return (mapped, True) if _pages_are_atomic(mapped) else ({}, False)
+    return (mapped, True) if _rows_are_atomic(mapped) else ({}, False)
 
 
 def collection_scan_checkpoint(draft: CollectionScanDraft) -> dict[str, object]:
@@ -1404,21 +1770,14 @@ def collection_scan_checkpoint(draft: CollectionScanDraft) -> dict[str, object]:
     if not valid:
         raise ValueError("draft is not an identity-bound collection scan")
     seen = tuple(mapped[index] for index in sorted(mapped))
-    accepted_positions = {
-        position
-        for position in range(COLLECTION_CAPTURE_COUNT)
-        if all(
-            index in mapped
-            for index in range(position * 12 + 1, position * 12 + 13)
-        )
-    }
-    accepted_page_numbers = [
-        position + 1 for position in sorted(accepted_positions)
+    accepted_rows = _accepted_rows_in(mapped)
+    missing_global_rows = [
+        row for row in range(1, COLLECTION_ROWS + 1) if row not in accepted_rows
     ]
+    accepted_page_numbers = _pages_fully_covered(accepted_rows)
     missing_page_numbers = [
-        position + 1
-        for position in range(COLLECTION_CAPTURE_COUNT)
-        if position not in accepted_positions
+        page for page in range(1, COLLECTION_CAPTURE_COUNT + 1)
+        if page not in accepted_page_numbers
     ]
     unseen_card_ids = [
         card.id
@@ -1451,48 +1810,67 @@ def collection_scan_checkpoint(draft: CollectionScanDraft) -> dict[str, object]:
             for card in seen
             if "duplicate_badge_unverified" in card.warnings
         ],
+        "accepted_global_rows": list(accepted_rows),
         "accepted_page_numbers": accepted_page_numbers,
         "missing_page_numbers": missing_page_numbers,
-        "missing_global_rows": [
-            row
-            for page_number in missing_page_numbers
-            for row in (page_number * 2 - 1, page_number * 2)
-        ],
+        "missing_global_rows": missing_global_rows,
         "identity_bound": True,
         "coverage_complete": not unseen_card_ids,
         "errors": [],
     }
 
 
-def _page_cards(
-    capture_position: int,
+def _accepted_rows_in(mapped: Mapping[int, DraftCardScan]) -> tuple[int, ...]:
+    """Catalog rows whose six positions are all present."""
+    return tuple(
+        row
+        for row in range(1, COLLECTION_ROWS + 1)
+        if all(
+            index in mapped
+            for index in range(
+                (row - 1) * COLLECTION_COLUMNS + 1,
+                row * COLLECTION_COLUMNS + 1,
+            )
+        )
+    )
+
+
+def _pages_fully_covered(accepted_rows) -> list[int]:
+    """Screen pages whose two catalog rows were both accepted."""
+    rows = set(accepted_rows)
+    return [
+        page
+        for page in range(1, COLLECTION_CAPTURE_COUNT + 1)
+        if {page * 2 - 1, page * 2} <= rows
+    ]
+
+
+def _row_cards(
+    catalog_row: int,
     source_index: int,
-    result: ScanResult,
+    slots: tuple[SlotScan, ...],
 ) -> dict[int, DraftCardScan]:
+    """Bind one accepted row's six slots to their catalog positions."""
     mapped: dict[int, DraftCardScan] = {}
-    for local_row, row in enumerate(result.rows):
-        global_row = capture_position * 2 + local_row + 1
-        for slot in row.slots:
-            catalog_index = (
-                (global_row - 1) * COLLECTION_COLUMNS + slot.column
-            )
-            card = CARDS[catalog_index - 1]
-            mapped[catalog_index] = DraftCardScan(
-                card_id=card.id,
-                card_name=card.name,
-                category_id=card.category,
-                catalog_index=catalog_index,
-                global_row=global_row,
-                column=slot.column,
-                state=slot.state,
-                confidence=slot.confidence,
-                source_index=source_index,
-                warnings=slot.warnings,
-            )
+    for slot in slots:
+        catalog_index = (catalog_row - 1) * COLLECTION_COLUMNS + slot.column
+        card = CARDS[catalog_index - 1]
+        mapped[catalog_index] = DraftCardScan(
+            card_id=card.id,
+            card_name=card.name,
+            category_id=card.category,
+            catalog_index=catalog_index,
+            global_row=catalog_row,
+            column=slot.column,
+            state=slot.state,
+            confidence=slot.confidence,
+            source_index=source_index,
+            warnings=slot.warnings,
+        )
     return mapped
 
 
-def _merge_duplicate_page(
+def _merge_repeat_cards(
     mapped: dict[int, DraftCardScan],
     incoming: Mapping[int, DraftCardScan],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -1534,6 +1912,86 @@ def _merge_duplicate_page(
     return tuple(resolved), tuple(conflicts)
 
 
+def _capture_failure_code(result: ScanResult) -> str:
+    """The one code explaining why a capture produced no usable row."""
+    for code in reversed(result.warnings):
+        if code not in _BASE_SCAN_WARNINGS:
+            return code
+    return "no_valid_six_column_rows"
+
+
+def _fail_closed_draft(
+    payload_count: int,
+    errors: tuple[str, ...],
+) -> CollectionScanDraft:
+    """Every position unseen, with the reason recorded and nothing guessed."""
+    cards = tuple(
+        _empty_draft_card(card, index)
+        for index, card in enumerate(CARDS, start=1)
+    )
+    categories = tuple(
+        CategoryScanDraft(
+            category_id=category.id,
+            category_name=category.name,
+            cards=tuple(
+                card for card in cards if card.category_id == category.id
+            ),
+            recognized_count=0,
+            unknown_card_ids=tuple(
+                card.card_id for card in cards
+                if card.category_id == category.id
+            ),
+            unseen_card_ids=tuple(
+                card.card_id for card in cards
+                if card.category_id == category.id
+            ),
+            duplicate_unverified_card_ids=(),
+            complete=False,
+        )
+        for category in CATEGORY_BY_ID.values()
+    )
+    every_card = tuple(card.card_id for card in cards)
+    every_row = tuple(range(1, COLLECTION_ROWS + 1))
+    return CollectionScanDraft(
+        cards=cards,
+        categories=categories,
+        captures=tuple(
+            CollectionCaptureScan(
+                input_index=index,
+                accepted=False,
+                global_rows=(),
+                source_size=None,
+                scan_size=None,
+                warnings=errors,
+            )
+            for index in range(1, payload_count + 1)
+        ),
+        accepted_page_numbers=(),
+        missing_page_numbers=tuple(range(1, COLLECTION_CAPTURE_COUNT + 1)),
+        missing_global_rows=every_row,
+        recognized_count=0,
+        missing_count=0,
+        owned_count=0,
+        duplicate_count=0,
+        unknown_count=len(every_card),
+        unknown_card_ids=every_card,
+        unseen_card_ids=every_card,
+        duplicate_unverified_card_ids=(),
+        coverage_complete=False,
+        complete=False,
+        warnings=(
+            "experimental_review_draft",
+            "human_confirmation_required",
+            "manual_review_required",
+        ),
+        accepted_global_rows=(),
+        manual_required_global_rows=every_row,
+        manual_required_card_ids=every_card,
+        row_decisions=(),
+        errors=errors,
+    )
+
+
 def scan_collection_screenshots(
     image_items: object,
     *,
@@ -1541,16 +1999,19 @@ def scan_collection_screenshots(
 ) -> CollectionScanDraft:
     """Build a conservative 60-card review draft from any-order screenshots.
 
-    Up to ten still images may be supplied in any order.  Each accepted image
-    contains exactly two complete rows and must match exactly one of the five
-    catalog pages by both category-frame colors and privacy-safe artwork hashes.
-    Duplicate pages, including the observed phone-toolbar copy, are ignored.
+    Up to ten still images may be supplied in any order.  Every complete
+    six-card row found in them is recognized on its own against the frozen
+    reference: a row that clears the category veto, the per-slot artwork guard
+    and the frozen row gate contributes its six identity-bound card states, and
+    a row that fails any of them contributes nothing and is reported as needing
+    manual review.  Upload order is never an identity signal, and a repeated
+    row is simply recognized again.
 
     ``prior_draft`` may be an earlier :class:`CollectionScanDraft`, the BSON-safe
     mapping returned by :func:`collection_scan_checkpoint`, or the normalized
-    version-2 mapping used by the Discord adapter.  Only complete identity-bound
-    pages are accumulated; invalid checkpoints are rejected atomically.  This
-    lets a caller discard raw image bytes between follow-up upload messages.
+    version-2 mapping used by the Discord adapter.  Only complete accepted rows
+    are accumulated; invalid checkpoints are rejected atomically.  This lets a
+    caller discard raw image bytes between follow-up upload messages.
 
     Clearly colored cards with an obstructed badge are recorded as ``owned`` --
     the minimum quantity proven by the portrait -- and listed in
@@ -1569,198 +2030,136 @@ def scan_collection_screenshots(
         except TypeError:
             payloads = ()
 
+    # The sealed evaluator verified its artifact before answering any query.
+    # Production cannot re-read that file, so it checks the same relationships
+    # against the live catalog and detector constants, and refuses outright if
+    # the frozen reference no longer describes this code.
+    reference_problems = reference.reference_problems(
+        catalog=CARDS,
+        frame_min_saturation=FRAME_MIN_SATURATION,
+        frame_min_value=FRAME_MIN_VALUE,
+        category_frame_hues=CATEGORY_FRAME_HUES,
+    )
+    if reference_problems:
+        return _fail_closed_draft(
+            min(len(payloads), MAX_COLLECTION_INPUTS),
+            tuple(f"frozen_reference_{code}" for code in reference_problems),
+        )
+
     mapped, prior_valid = _validated_prior_cards(prior_draft)
     had_prior = prior_draft is not None
     captures: list[CollectionCaptureScan] = []
-    row_fingerprints: list[bytes] = []
-    duplicate_ignored = False
-    duplicate_merged = False
-    duplicate_conflict = False
-    overlap_ignored = False
-    unrecognized_capture = False
-    ambiguous_capture = False
-    artwork_mismatch_ids: set[str] = set()
+    row_decisions: list[RowScanDecision] = []
     too_many = len(payloads) > MAX_COLLECTION_INPUTS
-    new_page_positions: set[int] = set()
+    rows_added = False
+    repeat_ignored = False
+    repeat_merged = False
+    repeat_conflict = False
+    manual_rows_seen = False
 
-    def present_positions() -> set[int]:
-        return {
-            position
-            for position in range(COLLECTION_CAPTURE_COUNT)
-            if all(
-                index in mapped
-                for index in range(position * 12 + 1, position * 12 + 13)
-            )
-        }
-
-    for input_index, payload in enumerate(payloads[:MAX_COLLECTION_INPUTS], start=1):
-        result = scan_visible_rows(payload)
-        loaded = _load_still(payload)
-        if isinstance(loaded, str) or len(result.rows) != 2:
+    for input_index, payload in enumerate(
+        payloads[:MAX_COLLECTION_INPUTS], start=1
+    ):
+        result, registered = _register_capture(payload)
+        if not registered:
             captures.append(CollectionCaptureScan(
                 input_index=input_index,
                 accepted=False,
                 global_rows=(),
                 source_size=result.source_size,
                 scan_size=result.scan_size,
-                warnings=tuple(dict.fromkeys((
-                    *result.warnings,
-                    "capture_requires_two_rows",
-                ))),
+                warnings=(_capture_failure_code(result),),
             ))
             continue
 
-        image, _source_size = loaded
-        matching_positions = _matching_catalog_positions(image, result)
-        if not matching_positions:
-            unrecognized_capture = True
-            captures.append(CollectionCaptureScan(
-                input_index=input_index,
-                accepted=False,
-                global_rows=(),
-                source_size=result.source_size,
-                scan_size=result.scan_size,
-                warnings=("capture_page_unrecognized",),
-            ))
-            continue
-        if len(matching_positions) != 1:
-            ambiguous_capture = True
-            captures.append(CollectionCaptureScan(
-                input_index=input_index,
-                accepted=False,
-                global_rows=(),
-                source_size=result.source_size,
-                scan_size=result.scan_size,
-                warnings=("capture_page_ambiguous",),
-            ))
-            continue
-        capture_position = matching_positions[0]
-        global_rows = (
-            capture_position * 2 + 1,
-            capture_position * 2 + 2,
-        )
-
-        candidate_row_fingerprints = [
-            _row_fingerprint(image, row) for row in result.rows
-        ]
-        if capture_position not in present_positions() and any(
-            _fingerprint_delta(candidate, prior)
-            <= ROW_OVERLAP_MAX_MEAN_DELTA
-            for candidate in candidate_row_fingerprints
-            for prior in row_fingerprints
-        ):
-            overlap_ignored = True
-            captures.append(CollectionCaptureScan(
-                input_index=input_index,
-                accepted=False,
-                global_rows=global_rows,
-                source_size=result.source_size,
-                scan_size=result.scan_size,
-                warnings=("overlapping_capture_rows",),
-                assigned_page_number=capture_position + 1,
-            ))
-            continue
-
-        mismatched_card_ids = _artwork_identity_mismatches(
-            image, result, capture_position
-        )
-        page_slots = COLLECTION_COLUMNS * len(result.rows)
-        if mismatched_card_ids:
-            artwork_mismatch_ids.update(mismatched_card_ids)
-        if len(mismatched_card_ids) >= page_slots:
-            # Nothing on the page proved its identity, so the page assignment
-            # itself is not trustworthy. Reject the whole capture.
-            captures.append(CollectionCaptureScan(
-                input_index=input_index,
-                accepted=False,
-                global_rows=global_rows,
-                source_size=result.source_size,
-                scan_size=result.scan_size,
-                warnings=("artwork_identity_mismatch",),
-                assigned_page_number=capture_position + 1,
-                mismatched_card_ids=mismatched_card_ids,
-            ))
-            continue
-
-        # A partial mismatch used to discard the whole capture, so four
-        # unproven portraits cost the member all twelve cards on the page and
-        # the collection came back mostly unseen. The proven cards are kept and
-        # only the unproven ones become unknown, which is the same fail-closed
-        # outcome per card without throwing away good data.
-        incoming = _page_cards(capture_position, input_index, result)
-        if mismatched_card_ids:
-            unproven = set(mismatched_card_ids)
-            incoming = {
-                index: (
-                    replace(
-                        card,
-                        state=UNKNOWN,
-                        confidence=0.0,
-                        warnings=tuple(dict.fromkeys((
-                            *card.warnings,
-                            # Keep the established name so anything keyed on it
-                            # downstream still sees the card as unproven.
-                            "artwork_identity_mismatch",
-                            "artwork_identity_unproven",
-                        ))),
-                    )
-                    if card.card_id in unproven
-                    else card
+        accepted_rows: list[int] = []
+        conflicting_card_ids: list[str] = []
+        capture_codes: list[str] = []
+        repeats: list[str] = []
+        manual_rows = 0
+        for record in registered:
+            if record.hashes is None:
+                decision = RowScanDecision(
+                    input_index=input_index,
+                    row_index=record.row_index,
+                    accepted=False,
+                    outcome="geometry",
+                    reason=record.reason,
                 )
-                for index, card in incoming.items()
-            }
-        if capture_position in present_positions():
-            resolved_ids, conflicting_ids = _merge_duplicate_page(
-                mapped,
-                incoming,
-            )
-            duplicate_ignored = duplicate_ignored or (
-                not resolved_ids and not conflicting_ids
-            )
-            duplicate_merged = duplicate_merged or bool(resolved_ids)
-            duplicate_conflict = duplicate_conflict or bool(conflicting_ids)
-            if conflicting_ids:
-                disposition = "conflicting_duplicate_page"
-            elif resolved_ids:
-                disposition = "duplicate_page_merged"
             else:
-                disposition = "duplicate_page_ignored"
-            captures.append(CollectionCaptureScan(
-                input_index=input_index,
-                accepted=False,
-                global_rows=global_rows,
-                source_size=result.source_size,
-                scan_size=result.scan_size,
-                warnings=(disposition,),
-                assigned_page_number=capture_position + 1,
-                conflicting_card_ids=conflicting_ids,
-            ))
-            continue
+                outcome, reason, proposed_row, top1, gap = _decide_row_identity(
+                    record.hashes, record.categories
+                )
+                accepted = outcome == "accepted"
+                decision = RowScanDecision(
+                    input_index=input_index,
+                    row_index=record.row_index,
+                    accepted=accepted,
+                    outcome=outcome,
+                    reason=reason,
+                    proposed_row=proposed_row,
+                    catalog_row=proposed_row if accepted else None,
+                    identity_top1=round(float(top1), 4),
+                    identity_gap=round(float(gap), 4),
+                )
+            row_decisions.append(decision)
+            if not decision.accepted or decision.catalog_row is None:
+                # Row atomicity: a rejected row contributes nothing, not even
+                # the five cards inside it that happen to look right.
+                manual_rows += 1
+                continue
 
-        mapped.update(incoming)
-        new_page_positions.add(capture_position)
+            accepted_rows.append(decision.catalog_row)
+            incoming = _row_cards(
+                decision.catalog_row, input_index, record.slots
+            )
+            if decision.catalog_row in _accepted_rows_in(mapped):
+                resolved_ids, conflicts = _merge_repeat_cards(mapped, incoming)
+                conflicting_card_ids.extend(conflicts)
+                repeat_conflict = repeat_conflict or bool(conflicts)
+                repeat_merged = repeat_merged or bool(resolved_ids)
+                repeat_ignored = repeat_ignored or not (
+                    conflicts or resolved_ids
+                )
+                repeats.append(
+                    "conflicting_repeat_rows" if conflicts
+                    else "repeat_rows_merged" if resolved_ids
+                    else "repeat_rows_ignored"
+                )
+                continue
+            mapped.update(incoming)
+            rows_added = True
+
+        # One summary code per image, worst first: a member reads "this image
+        # disagreed with an earlier one", not a list of per-row bookkeeping.
+        for code in ("conflicting_repeat_rows", "repeat_rows_merged",
+                     "repeat_rows_ignored"):
+            if code in repeats:
+                capture_codes.append(code)
+                break
+        if manual_rows:
+            manual_rows_seen = True
+            capture_codes.append(
+                "capture_rows_need_manual_review" if accepted_rows
+                else "no_confirmed_card_rows"
+            )
+        elif accepted_rows and not capture_codes:
+            capture_codes.append("capture_rows_confirmed")
         captures.append(CollectionCaptureScan(
             input_index=input_index,
-            accepted=True,
-            global_rows=global_rows,
+            accepted=bool(accepted_rows),
+            global_rows=tuple(sorted(set(accepted_rows))),
             source_size=result.source_size,
             scan_size=result.scan_size,
-            warnings=(
-                ("catalog_position_and_artwork_validated",)
-                if not mismatched_card_ids
-                else ("partial_artwork_identity_mismatch",)
-            ),
-            assigned_page_number=capture_position + 1,
-            mismatched_card_ids=mismatched_card_ids,
+            warnings=tuple(dict.fromkeys(capture_codes)),
+            conflicting_card_ids=tuple(dict.fromkeys(conflicting_card_ids)),
+            rows_detected=len(registered),
+            rows_accepted=len(accepted_rows),
+            rows_manual=manual_rows,
         ))
-        row_fingerprints.extend(candidate_row_fingerprints)
 
     cards = tuple(
-        mapped.get(index) or _empty_draft_card(
-            card,
-            index,
-            artwork_mismatch=card.id in artwork_mismatch_ids,
-        )
+        mapped.get(index) or _empty_draft_card(card, index)
         for index, card in enumerate(CARDS, start=1)
     )
     unknown_card_ids = tuple(
@@ -1773,6 +2172,11 @@ def scan_collection_screenshots(
         card.card_id
         for card in cards
         if "duplicate_badge_unverified" in card.warnings
+    )
+    manual_required_card_ids = tuple(
+        card.card_id
+        for card in cards
+        if card.state == UNKNOWN or card.source_index is None
     )
 
     categories: list[CategoryScanDraft] = []
@@ -1802,6 +2206,17 @@ def scan_collection_screenshots(
             complete=not category_unknown,
         ))
 
+    accepted_global_rows = _accepted_rows_in(mapped)
+    manual_required_global_rows = tuple(
+        row for row in range(1, COLLECTION_ROWS + 1)
+        if row not in accepted_global_rows
+    )
+    accepted_page_numbers = tuple(_pages_fully_covered(accepted_global_rows))
+    missing_page_numbers = tuple(
+        page for page in range(1, COLLECTION_CAPTURE_COUNT + 1)
+        if page not in accepted_page_numbers
+    )
+
     warnings_found = [
         "experimental_review_draft",
         "human_confirmation_required",
@@ -1812,44 +2227,26 @@ def scan_collection_screenshots(
         warnings_found.append("invalid_prior_scan_checkpoint")
     if too_many:
         warnings_found.append("too_many_collection_inputs")
-    if duplicate_ignored:
-        warnings_found.append("duplicate_page_ignored")
-    if duplicate_merged:
-        warnings_found.append("duplicate_page_merged")
-    if duplicate_conflict:
-        warnings_found.append("conflicting_duplicate_page")
-    if overlap_ignored:
-        warnings_found.append("overlapping_capture_rows")
-    if unrecognized_capture:
-        warnings_found.append("capture_page_unrecognized")
-    if ambiguous_capture:
-        warnings_found.append("capture_page_ambiguous")
-    if artwork_mismatch_ids:
-        warnings_found.append("artwork_identity_mismatch")
-    accepted_positions = present_positions()
-    accepted_page_numbers = tuple(
-        position + 1 for position in sorted(accepted_positions)
-    )
-    missing_page_numbers = tuple(
-        position + 1
-        for position in range(COLLECTION_CAPTURE_COUNT)
-        if position not in accepted_positions
-    )
-    missing_global_rows = tuple(
-        row
-        for page_number in missing_page_numbers
-        for row in (page_number * 2 - 1, page_number * 2)
-    )
-    if accepted_positions != set(range(COLLECTION_CAPTURE_COUNT)):
+    if repeat_ignored:
+        warnings_found.append("repeat_rows_ignored")
+    if repeat_merged:
+        warnings_found.append("repeat_rows_merged")
+    if repeat_conflict:
+        warnings_found.append("conflicting_repeat_rows")
+    if manual_rows_seen:
+        warnings_found.append("rows_need_manual_review")
+    if manual_required_global_rows:
         warnings_found.append("incomplete_capture_set")
     else:
-        warnings_found.append("collection_pages_validated")
-    if payloads and not new_page_positions:
-        warnings_found.append("no_new_collection_pages")
+        warnings_found.append("collection_rows_validated")
+    if payloads and not rows_added:
+        warnings_found.append("no_new_collection_rows")
     if unknown_card_ids:
         warnings_found.append("unknown_states_require_review")
     if duplicate_unverified_card_ids:
         warnings_found.append("hidden_duplicates_require_review")
+    if manual_required_card_ids:
+        warnings_found.append("manual_review_required")
 
     coverage_complete = not unseen_card_ids
     return CollectionScanDraft(
@@ -1858,7 +2255,7 @@ def scan_collection_screenshots(
         captures=tuple(captures),
         accepted_page_numbers=accepted_page_numbers,
         missing_page_numbers=missing_page_numbers,
-        missing_global_rows=missing_global_rows,
+        missing_global_rows=manual_required_global_rows,
         recognized_count=len(cards) - len(unknown_card_ids),
         missing_count=sum(card.state == MISSING for card in cards),
         owned_count=sum(card.state == OWNED for card in cards),
@@ -1870,4 +2267,8 @@ def scan_collection_screenshots(
         coverage_complete=coverage_complete,
         complete=coverage_complete and not unknown_card_ids,
         warnings=tuple(warnings_found),
+        accepted_global_rows=accepted_global_rows,
+        manual_required_global_rows=manual_required_global_rows,
+        manual_required_card_ids=manual_required_card_ids,
+        row_decisions=tuple(row_decisions),
     )

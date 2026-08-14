@@ -918,6 +918,89 @@ def _scan_id_set(value: object) -> tuple[set[str], bool]:
     return parsed, invalid
 
 
+def _scan_row_numbers(value: object) -> list[int]:
+    """Collection row numbers 1..10, deduplicated and ordered."""
+    try:
+        parsed = {int(item) for item in (value or ())}
+    except (TypeError, ValueError):
+        return []
+    return sorted(row for row in parsed if 1 <= row <= CARD_SCAN_CAPTURE_COUNT * 2)
+
+
+def _row_card_ids(rows) -> set[str]:
+    """The six catalog card ids in each of these collection rows."""
+    catalog = list(CARD_BY_ID)
+    ids: set[str] = set()
+    for row in rows:
+        start = (int(row) - 1) * 6
+        ids.update(catalog[start:start + 6])
+    return ids
+
+
+def _rows_missing_positions(rows, present: set[str]) -> list[int]:
+    """Collection rows whose six catalog positions are not all represented.
+
+    Row atomicity is the persistence side of the recognition rule. The scanner
+    accepts or rejects a whole six-card row, so a row that reaches storage has
+    to arrive whole: five of its six cards is not a smaller success, it is a
+    different claim than the one the scanner made.
+    """
+    catalog = list(CARD_BY_ID)
+    return [
+        int(row)
+        for row in rows
+        if not set(catalog[(int(row) - 1) * 6:int(row) * 6]) <= present
+    ]
+
+
+def _scan_row_decisions(value: object) -> list[dict]:
+    """Keep the scanner's per-row verdicts as BSON-safe evidence.
+
+    This is diagnostic provenance, not player copy. It records the proposed
+    row separately from the trusted identity, so a later investigation can see
+    what the scanner nearly said without that proposal ever having counted as
+    an identity.
+    """
+    try:
+        records = list(value or ())
+    except TypeError:
+        return []
+    decisions: list[dict] = []
+    for record in records[:20]:
+        outcome = str(_scan_field(record, "outcome", default="") or "")[:32]
+        if not outcome:
+            continue
+
+        def number(name: str) -> int | None:
+            raw = _scan_field(record, name, default=None)
+            try:
+                parsed = int(raw)
+            except (TypeError, ValueError):
+                return None
+            return parsed
+
+        def measure(name: str) -> float | None:
+            raw = _scan_field(record, name, default=None)
+            try:
+                parsed = float(raw)
+            except (TypeError, ValueError):
+                return None
+            return round(parsed, 4) if math.isfinite(parsed) else None
+
+        decisions.append({
+            "image": max(1, number("input_index") or 1),
+            "row_index": max(0, number("row_index") or 0),
+            "accepted": bool(_scan_field(record, "accepted", default=False)),
+            "outcome": outcome,
+            "reason": str(_scan_field(record, "reason", default="") or "")[:160],
+            "proposed_row": number("proposed_row"),
+            "catalog_row": number("catalog_row"),
+            "identity_top1": measure("identity_top1"),
+            "identity_gap": measure("identity_gap"),
+        })
+    return decisions
+
+
 def _normalize_collection_scan(result: object, *, capture_count: int) -> dict:
     """Convert the evolving batch-scanner result into a BSON-safe review draft.
 
@@ -952,11 +1035,19 @@ def _normalize_collection_scan(result: object, *, capture_count: int) -> dict:
         capture_records = list(raw_captures or ())
     except TypeError:
         capture_records = []
+    # Codes that describe a normal outcome rather than a problem with the
+    # image. A capture that produced trusted rows and also left one row for
+    # manual checking is not a capture worth telling the member to retake:
+    # the rows still to check are listed once, for the whole scan.
     harmless_capture_codes = {
         "catalog_position_and_artwork_validated",
         "catalog_position_bound_by_batch_order",
+        "capture_rows_confirmed",
+        "capture_rows_need_manual_review",
         "duplicate_capture_ignored",
         "duplicate_page_ignored",
+        "repeat_rows_ignored",
+        "repeat_rows_merged",
     }
     for fallback_index, capture in enumerate(capture_records, start=1):
         try:
@@ -992,7 +1083,12 @@ def _normalize_collection_scan(result: object, *, capture_count: int) -> dict:
         if bad_mismatch_id:
             identity_bound = False
         harmless_duplicate = bool(
-            {"duplicate_capture_ignored", "duplicate_page_ignored"} & set(all_codes)
+            {
+                "duplicate_capture_ignored",
+                "duplicate_page_ignored",
+                "repeat_rows_ignored",
+                "repeat_rows_merged",
+            } & set(all_codes)
         )
         if (
             codes
@@ -1075,9 +1171,19 @@ def _normalize_collection_scan(result: object, *, capture_count: int) -> dict:
     # unseen even if a scanner accidentally labels global coverage complete.
     identified = set(states) | unknown
     unseen.update(set(CARD_BY_ID) - identified)
+    # Make the three classifications a partition before anything reads them.
+    #
+    # A card that was never seen has no state, so the scanner reports it as
+    # unknown as well; the two lists genuinely overlap on every partial scan.
+    # Left overlapping, "unknown" would vouch for a position that was in fact
+    # never observed, and an accepted row could look complete through a card
+    # nothing ever looked at. Never seen is the stronger claim, so it wins, and
+    # states / unknown / unseen become mutually exclusive.
+    unknown -= unseen
     for card_id in unknown | unseen:
         states.pop(card_id, None)
         confidences.pop(card_id, None)
+    identified = set(states) | unknown
     if any(states.get(card_id) != OWNED for card_id in unverified_duplicates):
         identity_bound = False
 
@@ -1133,6 +1239,28 @@ def _normalize_collection_scan(result: object, *, capture_count: int) -> dict:
             for row in (page * 2 - 1, page * 2)
         ]
 
+    accepted_rows = [
+        row
+        for row in _scan_row_numbers(
+            _scan_field(result, "accepted_global_rows", default=())
+        )
+        if row not in set(missing_rows)
+    ]
+    # Row atomicity, checked here rather than assumed. An accepted row means
+    # six identified cards, so every one of its positions must have arrived as
+    # exactly one of a trusted state or an explicit unknown - never absent,
+    # never unseen, never both. A row claiming acceptance while one of its
+    # positions was never seen is an inconsistent scanner result, and the safe
+    # answer to that is to trust none of it.
+    accepted_card_ids = _row_card_ids(accepted_rows)
+    if (
+        _rows_missing_positions(accepted_rows, set(states) | unknown)
+        or accepted_card_ids & unseen
+        or accepted_card_ids & (unknown & unseen)
+    ):
+        identity_bound = False
+        coverage_complete = False
+        accepted_rows = []
     return {
         "version": 2,
         "capture_count": int(capture_count),
@@ -1149,6 +1277,18 @@ def _normalize_collection_scan(result: object, *, capture_count: int) -> dict:
         "coverage_complete": bool(coverage_complete),
         "missing_page_numbers": missing_pages,
         "missing_global_rows": missing_rows,
+        # Row provenance. Only accepted rows contributed card states, so these
+        # are the rows a human still has to answer for, and the evidence behind
+        # each verdict is kept for debugging rather than for the player.
+        "accepted_global_rows": accepted_rows,
+        "manual_required_global_rows": missing_rows,
+        "manual_required_card_ids": _ordered_card_ids(unknown | unseen),
+        "row_decisions": _scan_row_decisions(
+            _scan_field(result, "row_decisions", default=())
+        ),
+        "scanner_version": str(
+            _scan_field(result, "scanner_version", default="") or ""
+        )[:120],
         # Scanner output is always a review draft. This records the scanner's
         # own claim for diagnostics but never bypasses explicit confirmation.
         "scanner_persistence_safe": bool(_scan_field(result, "persistence_safe", default=False)),
@@ -1212,6 +1352,90 @@ def _scan_draft_confirmable(draft: object) -> bool:
         and not draft.get("unseen_card_ids")
         and not draft.get("errors")
     )
+
+
+def _scan_accepted_rows(draft: object) -> list[int]:
+    if not isinstance(draft, dict):
+        return []
+    return _scan_row_numbers(draft.get("accepted_global_rows"))
+
+
+def _scan_manual_required_ids(draft: object) -> list[str]:
+    """Every card this scan could not answer for, ordered by catalog position.
+
+    The union of what the scanner declared and what the draft's own accounting
+    implies. Erring wide is the safe direction: this set decides which
+    categories lose their readiness, so missing a card would leave an
+    unreviewed category matchable.
+    """
+    if not isinstance(draft, dict):
+        return []
+    unknown, _invalid_unknown = _scan_id_set(draft.get("unknown_card_ids") or ())
+    unseen, _invalid_unseen = _scan_id_set(draft.get("unseen_card_ids") or ())
+    declared, _invalid_declared = _scan_id_set(
+        draft.get("manual_required_card_ids") or ()
+    )
+    return _ordered_card_ids(unknown | unseen | declared)
+
+
+def _scan_draft_partially_savable(draft: object) -> bool:
+    """Whether some rows are safe to keep even though the scan is incomplete.
+
+    The scanner accepts or rejects a whole six-card row, so this is strictly
+    row-atomic in both directions:
+
+    * every card offered here must come from an accepted row - five apparently
+      good cards out of a rejected row are not evidence;
+    * every accepted row must arrive whole - all six of its catalog positions
+      present, each one **exactly one** of a valid state or an explicit
+      unknown, which is the frozen model's way of saying "this row is that row,
+      but I could not read this card's count".
+
+    A position that is absent, unseen, both unknown and unseen, or carries a
+    state while also being called unseen is a contradictory claim about a row
+    the scanner said it recognized. None of the draft is trusted then: this
+    does not lean on normalization having tidied the classifications up.
+    """
+    if not isinstance(draft, dict):
+        return False
+    states = draft.get("card_states")
+    if not isinstance(states, dict) or not states:
+        return False
+    accepted_rows = _scan_accepted_rows(draft)
+    if not accepted_rows:
+        return False
+    unknown, invalid_unknown = _scan_id_set(draft.get("unknown_card_ids") or ())
+    unseen, invalid_unseen = _scan_id_set(draft.get("unseen_card_ids") or ())
+    accepted_card_ids = _row_card_ids(accepted_rows)
+    return (
+        not invalid_unknown
+        and not invalid_unseen
+        and all(_scan_card_state(state) is not None for state in states.values())
+        and set(states) <= accepted_card_ids
+        # No card may be classified two ways at once.
+        and not (unknown & unseen)
+        and not (set(states) & (unknown | unseen))
+        # No position of a recognized row may be unseen or missing.
+        and not (accepted_card_ids & unseen)
+        and not _rows_missing_positions(accepted_rows, set(states) | unknown)
+        and (set(states) | unknown | unseen) == set(CARD_BY_ID)
+        and bool(draft.get("identity_bound"))
+        and not draft.get("errors")
+    )
+
+
+def _scan_ready_for_review(draft: object) -> bool:
+    """Whether there is a result worth showing the member now.
+
+    Either every collection section matched, or enough rows were confirmed for
+    a partial save to be offered. Anything less means asking for the missing
+    screenshots is still the more useful answer.
+    """
+    if not isinstance(draft, dict):
+        return False
+    if not _scan_missing_page_numbers(draft):
+        return True
+    return _scan_draft_partially_savable(draft)
 
 
 def _scan_draft_correctable(draft: object) -> bool:
@@ -1542,6 +1766,9 @@ def _scan_capture_issue_lines(draft: object) -> list[str]:
         "no_card_sized_components": "did not contain readable card portraits",
         "insufficient_card_slots": "did not show all six cards in both rows",
         "no_new_collection_pages": "did not add a new collection section",
+        "no_new_collection_rows": "did not add a new card row",
+        "no_confirmed_card_rows": "did not show a card row I could confirm",
+        "conflicting_repeat_rows": "disagrees with a row I already read",
     }
     lines: list[str] = []
     for issue in issues:
@@ -1578,6 +1805,33 @@ def _scan_capture_issue_lines(draft: object) -> list[str]:
             f"**Image {image_number}{assignment}:** {'; '.join(reasons)}. Retake it."
         )
     return lines
+
+
+def _scan_guild_problem(ctx) -> list[Container] | None:
+    """Refuse to start a scan outside the family that owns card collections.
+
+    A scan session is only ever resolvable in the configured family. The DM
+    listener looks the session up by that one guild id, and every button on the
+    session rechecks it, so storing the guild the member happens to be standing
+    in creates a session nothing can ever answer - and the collection would
+    have been rescoped to that guild on the way in. Both fail closed here,
+    before any inventory is touched.
+    """
+    configured = _configured_cards_guild_id()
+    if configured is None:
+        return _notice(
+            "Open Card Hub in its family server",
+            "The Card Hub is not configured yet. An operator must set "
+            "`CARDS_GUILD_ID` to the family Discord server ID.",
+        )
+    here = _guild_id(ctx)
+    if here is not None and int(here) != int(configured):
+        return _notice(
+            "Scanning only works in the family server",
+            "Run `/cards` in the family server, then tap **Update collection** "
+            "and **Scan screenshots**. Nothing was changed here.",
+        )
+    return None
 
 
 def _scan_session_problem(ctx, user_id: object, guild_id: object) -> list[Container] | None:
@@ -1697,18 +1951,54 @@ def _scan_review(
     unverified_duplicates = _ordered_card_ids(
         draft.get("duplicate_unverified_card_ids") or ()
     )
+    manual_required = _scan_manual_required_ids(draft)
     reserved = bool(_card_reservations(inventory))
     confirmable = _scan_draft_confirmable(draft) and not reserved
     correctable = _scan_draft_correctable(draft)
+    # Some rows were read safely and some were not. The safe ones are worth
+    # keeping; the rest go to the manual editor rather than being guessed.
+    #
+    # A correctable draft is deliberately excluded: every identity is already
+    # bound there, so answering the few uncertain cards in place leads to a
+    # full save and is strictly better than keeping part of the collection.
+    partial = (
+        not _scan_draft_confirmable(draft)
+        and not correctable
+        and _scan_draft_partially_savable(draft)
+        and not reserved
+    )
     capture_issue_lines = _scan_capture_issue_lines(draft)
 
     collected = len(states) - len(missing)
     details = []
-    if unknown:
+    if correctable and unknown:
         details.append(
             f"**Needs review ({len(unknown)})**\n{_card_rows(unknown)}"
         )
-    if unseen:
+    elif manual_required and not confirmable:
+        # Name the unread rows once, then any single card inside a confirmed
+        # row whose count the scanner could not read. Both need checking, and
+        # the reader should not have to work out which is which.
+        loose = [
+            card_id for card_id in manual_required
+            if card_id not in _row_card_ids(
+                _scan_row_numbers(draft.get("manual_required_global_rows"))
+            )
+        ]
+        lines = [
+            f"**Still to check: {len(manual_required)} "
+            f"card{'s' if len(manual_required) != 1 else ''}**",
+            _scan_missing_rows_text(draft),
+        ]
+        if loose:
+            named = _scan_card_names(loose[:6])
+            extra = len(loose) - 6
+            lines.append(
+                f"- **Also:** {named}"
+                + (f" and {extra} more" if extra > 0 else "")
+            )
+        details.append("\n".join(lines))
+    if unseen and not partial:
         details.append(f"**Not visible:** {len(unseen)} card positions")
     if capture_issue_lines and unseen:
         # Only ask for another image when card positions were never seen. A
@@ -1725,6 +2015,13 @@ def _scan_review(
         status = "**Finish or cancel the accepted card trade before saving this scan.**"
     elif correctable and not reserved:
         status = "**Fix the uncertain card below before saving.**"
+    elif partial:
+        # The scanner never guesses a row it could not confirm. Say that
+        # plainly, and say what the reader must do about it.
+        status = (
+            "**Some cards could not be confirmed.**\n"
+            "Check them before you trade. Nothing was guessed."
+        )
     elif not confirmable:
         status = "**This scan needs another screenshot before it can be saved.**"
     else:
@@ -1734,10 +2031,14 @@ def _scan_review(
         Text(content="# Scan complete"),
         Text(content=(
             f"**{_escape_markdown(account.name)}** · `{_normalize_tag(account.tag)}`\n"
-            f"**{collected} collected** · {len(missing)} missing\n"
+            + (f"I read {len(states)} of 60 cards.\n" if partial else "")
+            + f"**{collected} collected** · {len(missing)} missing\n"
+            # Two similar counts side by side read as one. On a partial scan
+            # the cards still to check are the message; the spare question is
+            # asked later, from the collection, once these are saved.
             + (
                 f"{len(unverified_duplicates)} cards still need a duplicate check.\n"
-                if unverified_duplicates else ""
+                if unverified_duplicates and not partial else ""
             )
             + "-# Nothing has been saved. The bot does not retain the image files. "
             f"This review is usable {_scan_expiry_text(usable_until)}."
@@ -1773,24 +2074,45 @@ def _scan_review(
                 ),
             ]),
         ])
-    save_buttons = [
-        Button(
-            style=hikari.ButtonStyle.PRIMARY,
-            custom_id=f"cards_scan_confirm:{draft_id}",
-            label="Save collection",
-            is_disabled=not confirmable,
-        ),
-    ]
-    if not confirmable:
-        save_buttons.append(Button(
-            style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-            label="Edit counts",
-        ))
+    if partial:
+        save_buttons = [
+            Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"cards_scan_save_partial:{draft_id}",
+                label="Save confirmed cards",
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
+                label="Update collection",
+            ),
+        ]
         body.append(Text(content=(
-            "**Edit counts** starts from your saved collection. This scan "
-            "result will not be copied into it."
+            f"**Save confirmed cards** keeps the {len(states)} "
+            "cards I read. It changes nothing else.\n"
+            "A category with cards still to check stops being ready to trade.\n"
+            "Open **Update collection**, set those cards, then tap "
+            "**Ready to trade**."
         )))
+    else:
+        save_buttons = [
+            Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"cards_scan_confirm:{draft_id}",
+                label="Save collection",
+                is_disabled=not confirmable,
+            ),
+        ]
+        if not confirmable:
+            save_buttons.append(Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
+                label="Update collection",
+            ))
+            body.append(Text(content=(
+                "**Update collection** starts from your saved collection. "
+                "This scan result is not copied into it."
+            )))
     body.extend([
         Separator(divider=True),
         ActionRow(components=[
@@ -7271,6 +7593,10 @@ async def _write_scan_draft(
             "complete_categories": [category.id for category in CATEGORIES],
             "reviewed_lists": reviewed_lists,
             "scan_duplicate_unverified_card_ids": duplicate_unverified,
+            # Every count here came from the scanner, and a scanner spare is a
+            # floor. Keeping an older member-entered "exact" flag would print a
+            # proven-at-least-two card as exactly two.
+            "count_confirmed_card_ids": [],
             "updated_at": now,
             "confirmed_at": now,
             "update_source": "confirmed_screenshot_review",
@@ -7283,6 +7609,176 @@ async def _write_scan_draft(
                 "$and": [revision_guard, *no_live_reservation],
             },
             {"$set": identity, "$inc": {"inventory_revision": 1}},
+        )
+        if getattr(result, "matched_count", 1):
+            return await mongo.card_inventories.find_one({"_id": tag}) or {}
+
+        current = await mongo.card_inventories.find_one({"_id": tag}) or {}
+        if _inventory_has_active_trade(current):
+            raise ActiveCardTradeError
+        raise ScanDraftStaleError
+
+
+async def _write_scan_partial(
+    mongo: MongoClient,
+    account,
+    draft: dict,
+    *,
+    expected_revision: int,
+    discord_id: int,
+    guild_id: int | None,
+) -> dict:
+    """Merge only the rows the scanner confirmed into an unreserved inventory.
+
+    This is the partial-success write and it is deliberately narrower than
+    `_write_scan_draft`:
+
+    * only whole accepted rows are written. A rejected row contributes nothing,
+      and an accepted row that did not arrive with all six of its positions
+      invalidates the save rather than persisting the part that did arrive;
+    * a category that still holds a card needing manual review loses its
+      readiness, so scanning can never leave an unchecked category matchable;
+    * `confirmed_at` is not set, because the member has not confirmed this
+      collection, only the part the scanner could prove;
+    * every card it overwrites leaves `count_confirmed_card_ids`, because a
+      scanner spare is a floor and only a member-entered number is exact.
+
+    The revision compare-and-swap and the reservation guard are the same as the
+    full write.
+    """
+    if not _scan_draft_partially_savable(draft):
+        raise ValueError("screenshot draft has no confirmed rows to save")
+    raw_states = draft.get("card_states") or {}
+    accepted_rows = _scan_accepted_rows(draft)
+    accepted_card_ids = _row_card_ids(accepted_rows)
+    unknown, _invalid_unknown = _scan_id_set(draft.get("unknown_card_ids") or ())
+    unseen, _invalid_unseen = _scan_id_set(draft.get("unseen_card_ids") or ())
+    # Independent of the gate above: the write boundary decides for itself
+    # which cards it is allowed to touch, and refuses a row that is not whole
+    # or a card that is classified two ways at once. Nothing here trusts an
+    # earlier layer to have already looked.
+    if unknown & unseen:
+        raise ValueError("screenshot draft calls a card both unknown and unseen")
+    if set(raw_states) & (unknown | unseen):
+        raise ValueError("screenshot draft contradicts its own card states")
+    if accepted_card_ids & unseen:
+        raise ValueError("screenshot draft has an unseen card in an accepted row")
+    if _rows_missing_positions(accepted_rows, set(raw_states) | unknown):
+        raise ValueError("screenshot draft has an incomplete accepted row")
+    confirmed = {}
+    for card_id in CARD_BY_ID:
+        if card_id not in raw_states:
+            continue
+        if card_id not in accepted_card_ids:
+            raise ValueError("screenshot draft state outside an accepted row")
+        state = _scan_card_state(raw_states.get(card_id))
+        if state is None:
+            raise ValueError("screenshot draft contains an invalid card state")
+        confirmed[card_id] = state
+    if not confirmed:
+        raise ValueError("screenshot draft has no confirmed rows to save")
+
+    tag = _normalize_tag(account.tag)
+    async with _inventory_lock(tag):
+        latest = await mongo.card_inventories.find_one({"_id": tag}) or {}
+        if _inventory_revision_value(latest) != int(expected_revision):
+            raise ScanDraftStaleError
+        if _inventory_has_active_trade(latest):
+            raise ActiveCardTradeError
+
+        now = datetime.now(timezone.utc)
+        revision_guard: dict
+        if expected_revision == 0:
+            revision_guard = {"$or": [
+                {"inventory_revision": {"$exists": False}},
+                {"inventory_revision": 0},
+            ]}
+        else:
+            revision_guard = {"inventory_revision": int(expected_revision)}
+        no_live_reservation = [
+            {"$or": [
+                {f"card_trade_reservations.{card_id}": {"$exists": False}},
+                {f"card_trade_reservations.{card_id}.until": {"$lte": now}},
+            ]}
+            for card_id in CARD_BY_ID
+        ]
+        # A card this scan read definitely leaves the unverified list; a card
+        # it read as an obstructed spare joins it. Cards it did not touch keep
+        # whatever the collection already said about them.
+        proven_spares = {
+            card_id
+            for card_id in _ordered_card_ids(
+                draft.get("duplicate_unverified_card_ids") or ()
+            )
+            if card_id in confirmed
+        }
+        duplicate_unverified = _ordered_card_ids(
+            (set(_scan_unverified_ids(latest)) - set(confirmed)) | proven_spares
+        )
+        # Readiness must not survive a category this save left half answered.
+        #
+        # `complete_categories` is the whole matchability gate: find_matches,
+        # family_supply and holders_for_card all read only complete categories,
+        # and family_supply reads a card missing from `cards` as OWNED, so a
+        # category left complete with unreviewed cards would invent supply.
+        # `_matchable` also falls back to `updated_at`, which this write
+        # refreshes, so an inventory with no confirmed_at becomes matchable the
+        # moment it is saved. The invalidation is therefore load bearing, not
+        # cosmetic.
+        #
+        # It is deliberately narrow: only a category this save actually wrote
+        # into AND that still contains a manual-review card is invalidated. A
+        # category the scan never touched keeps whatever the member already
+        # verified about it. This mirrors `_invalidate_trade_categories`, which
+        # is the existing way this collection makes a category unmatchable.
+        manual_required = set(_scan_manual_required_ids(draft))
+        written_categories = {
+            CARD_BY_ID[card_id].category for card_id in confirmed
+        }
+        unready = sorted(
+            category_id
+            for category_id in written_categories
+            if any(
+                card.id in manual_required
+                for card in CATEGORY_CARDS[category_id]
+            )
+        )
+        identity = {
+            "scan_duplicate_unverified_card_ids": duplicate_unverified,
+            "discord_id": int(discord_id),
+            "player_name": account.name,
+            "town_hall": getattr(account, "town_hall", 0) or 0,
+            "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
+            "clan_name": account.clan_name,
+            "updated_at": now,
+            "update_source": "confirmed_partial_screenshot_review",
+        }
+        for card_id, state in confirmed.items():
+            identity[f"cards.{card_id}"] = state
+        if guild_id is not None:
+            identity["guild_id"] = guild_id
+        pulls: dict[str, object] = {
+            # A scanner spare is a floor, so a card it overwrites can no
+            # longer claim a member-entered exact count.
+            "count_confirmed_card_ids": {"$in": list(confirmed)},
+        }
+        if unready:
+            pulls["complete_categories"] = {"$in": unready}
+            pulls["reviewed_lists"] = {"$in": [
+                f"{category_id}:{mode}"
+                for category_id in unready
+                for mode in ("missing", "duplicates")
+            ]}
+        result = await mongo.card_inventories.update_one(
+            {
+                "_id": tag,
+                "$and": [revision_guard, *no_live_reservation],
+            },
+            {
+                "$set": identity,
+                "$pull": pulls,
+                "$inc": {"inventory_revision": 1},
+            },
         )
         if getattr(result, "matched_count", 1):
             return await mongo.card_inventories.find_one({"_id": tag}) or {}
@@ -7573,15 +8069,13 @@ async def _handle_card_scan_dm_upload(
             )
             return
 
-        if missing_pages:
-            components = _scan_upload_progress(
-                account,
-                session_id,
-                draft,
-                usable_until=usable_until,
-                accepted_before=accepted_before,
-            )
-        else:
+        # The scanner accepts rows one at a time, so a batch can end with some
+        # rows proven and some not. Showing the review then is the point: the
+        # member keeps the proven part and finishes the rest by hand, instead
+        # of being told to resend screenshots that will fail the same way.
+        reviewed = _scan_ready_for_review(draft)
+        finished = reviewed and not missing_pages
+        if reviewed:
             inventory = await _ensure_inventory(
                 mongo,
                 account,
@@ -7595,19 +8089,30 @@ async def _handle_card_scan_dm_upload(
                 draft,
                 usable_until=usable_until,
             )
-            finished = True
+        else:
+            components = _scan_upload_progress(
+                account,
+                session_id,
+                draft,
+                usable_until=usable_until,
+                accepted_before=accepted_before,
+            )
 
         await _send_scan_dm_components(bot, int(event.channel_id), components)
-        if finished:
-            await update_state(
-                mongo,
-                {
-                    "_id": session_id,
-                    "type": "cards_scan_upload",
-                    "user_id": user_id,
-                },
-                {"$set": {"type": "cards_scan_draft"}},
-            )
+        if reviewed:
+            if finished:
+                # Nothing more can arrive for this scan, so close the upload.
+                # A partial scan keeps its session open, so a member who has
+                # more screenshots can still send them into the same draft.
+                await update_state(
+                    mongo,
+                    {
+                        "_id": session_id,
+                        "type": "cards_scan_upload",
+                        "user_id": user_id,
+                    },
+                    {"$set": {"type": "cards_scan_draft"}},
+                )
             await _mark_scan_prompt_received(bot, state, account)
 
     if finished and _card_upload_locks.get(user_id) is lock:
@@ -7815,6 +8320,13 @@ async def cards_scan_start(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
 ):
+    # Before _load_target, deliberately: loading the target ensures the
+    # inventory, and ensuring it from the wrong server would rewrite that
+    # collection's family scope before anything had authorised the scan.
+    scope_problem = _scan_guild_problem(ctx)
+    if scope_problem:
+        return scope_problem
+
     account, inventory, problem = await _load_target(
         ctx,
         action_id,
@@ -7825,7 +8337,9 @@ async def cards_scan_start(
         return problem
 
     user_id = int(ctx.user.id)
-    guild_id = int(_trade_guild_id(ctx) or 0)
+    # The configured family, never the interaction's guild. This is the id the
+    # DM listener searches and every session button rechecks.
+    guild_id = int(_configured_cards_guild_id())
     session_id = f"cards_upload_{secrets.token_urlsafe(12)}"
     usable_until = datetime.now(timezone.utc) + CARD_SCAN_DRAFT_FOR
     document = {
@@ -8369,6 +8883,126 @@ async def cards_scan_confirm(
     **_kwargs,
 ):
     return await _confirm_scan_draft(
+        ctx,
+        action_id,
+        scan_draft=scan_draft,
+        user_id=user_id,
+        guild_id=guild_id,
+        account_tag=account_tag,
+        base_revision=base_revision,
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+async def _save_partial_scan_draft(
+    ctx,
+    action_id: str,
+    *,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object,
+    base_revision: object,
+    usable_until: object,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+):
+    """Keep the rows the scanner confirmed, then hand over the rest by hand.
+
+    Throwing away six proven cards because another row failed costs the member
+    work for nothing, and guessing the failed row costs them a wrong
+    collection. This keeps the proven part and routes the rest into the manual
+    editor that already exists.
+    """
+    problem = _scan_session_problem(ctx, user_id, guild_id)
+    if problem:
+        return problem
+    if not account_tag:
+        return _notice(
+            "Choose an account first",
+            "This draft is not attached to a collection. Run `/cards` again.",
+        )
+    account, inventory, _data, target_problem = await _load_scan_bound_account(
+        ctx,
+        action_id,
+        _normalize_tag(account_tag),
+        usable_until=usable_until,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+    if target_problem:
+        return target_problem
+    if not _scan_draft_partially_savable(scan_draft) or base_revision is None:
+        return await _scan_review_view(
+            account, inventory, action_id, scan_draft, usable_until=usable_until,
+        )
+    if _inventory_has_active_trade(inventory):
+        return await _scan_review_view(
+            account, inventory, action_id, scan_draft, usable_until=usable_until,
+        )
+    try:
+        updated = await _write_scan_partial(
+            mongo,
+            account,
+            scan_draft,
+            expected_revision=int(base_revision),
+            discord_id=int(ctx.user.id),
+            guild_id=int(guild_id),
+        )
+    except (TypeError, ValueError):
+        return await _scan_review_view(
+            account, inventory, action_id, scan_draft, usable_until=usable_until,
+        )
+    except ActiveCardTradeError:
+        latest = await mongo.card_inventories.find_one({
+            "_id": _normalize_tag(account.tag)
+        }) or inventory
+        return await _scan_review_view(
+            account, latest, action_id, scan_draft, usable_until=usable_until,
+        )
+    except ScanDraftStaleError:
+        return _notice(
+            "Collection changed after this scan",
+            "Nothing was overwritten. Start a new scan, or set the card in "
+            "your collection.",
+        )
+
+    await _discard_scan_state(mongo, action_id)
+    saved_count = len(scan_draft.get("card_states") or {})
+    complete = set(updated.get("complete_categories") or ())
+    landing = next(
+        (category.id for category in CATEGORIES if category.id not in complete),
+        CATEGORIES[0].id,
+    )
+    return _quantity_editor(
+        account,
+        updated,
+        landing,
+        saved=(
+            f"Saved {saved_count} cards from the scan. "
+            "Check the rest here, then tap **Ready to trade**."
+        ),
+    )
+
+
+@register_action("cards_scan_save_partial", requires_state=True)
+@lightbulb.di.with_di
+async def cards_scan_save_partial(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    scan_draft: dict,
+    user_id: object,
+    guild_id: object,
+    account_tag: object = None,
+    base_revision: object = None,
+    usable_until: object = None,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _save_partial_scan_draft(
         ctx,
         action_id,
         scan_draft=scan_draft,

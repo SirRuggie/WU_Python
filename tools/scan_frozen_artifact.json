@@ -1,0 +1,587 @@
+{
+ "aspect": "1.2757333333333334",
+ "bank": {
+  "1": [
+   {
+    "file": "Screenshot_20260813_001659_Clash of Clans.jpg",
+    "hashes": [
+     "bcf38770434f484bbdbfaf60333fce33",
+     "dd83b808a1e069ff6f13032a4a6b6ee4",
+     "9edcc50ccd3e8d0ce3cc637393b7393c",
+     "8e5577267245949e30b3e373f63e1793",
+     "b425eeaca99b6c906478dbc6cbcdcfbb",
+     "447d81c659eeca5a9bd935735333b7a3"
+    ],
+    "position": 0,
+    "sha256": "f4e59ae084bddc5468dcf79f19a05a5c32839c46a2952d08d804c681e8d44d5c"
+   },
+   {
+    "file": "Screenshot_20260813_002559_Clash of Clans.jpg",
+    "hashes": [
+     "bcf38770434f484bbdbfaf60333fce33",
+     "dd83b808a1e069ff6f13032a4a6b6ee4",
+     "9edcc50ccd3e8d0ce3cc637393b7393c",
+     "8e5577267245949e30b3e373f63e1793",
+     "b425eeaca99b6c906478dbc6cbcdcfbb",
+     "447d81c659eeca599bd935735333b7a3"
+    ],
+    "position": 0,
+    "sha256": "a503cfa66410f1f4b7e36f9ebf2d368520b19083c438eb5d3b79a4f1daefb116"
+   }
+  ],
+  "10": [
+   {
+    "file": "Screenshot_20260813_002801_Clash of Clans.jpg",
+    "hashes": [
+     "52638ca61c2fe59ec08073238559e161",
+     "fa82c9f94ba6823698cdcc4f2d3d30a1",
+     "ccd9aaa49aaa267ae6f3f19949746cad",
+     "958fe8a4b4da332a4968333acdd47c79",
+     "f655b56562b50c861367f353733e0787",
+     "a87549f6ad116c95bfbfff733beb6737"
+    ],
+    "position": 0,
+    "sha256": "ec47581307897fc871eff60dbccaad571f8533f5732a4bfce5819b32111f30f0"
+   },
+   {
+    "file": "Screenshot_20260813_002751_Clash of Clans.jpg",
+    "hashes": [
+     "52638ca61c2fe59ec08073238559e161",
+     "fa82cbf949a62236984dcc4f2d3d30a1",
+     "ccd9aaa49aaa267ae6f3f19949746cad",
+     "958fe8a634da332a4968333acdd47c78",
+     "f655a56562b58c861367f353733e1f87",
+     "a87549f6ad11649dbfbfff733beb6737"
+    ],
+    "position": 1,
+    "sha256": "05e3777bc84e44dbad37b6bf42ddf490903e433e5353ddcbb05fa964645b645e"
+   }
+  ],
+  "2": [
+   {
+    "file": "Screenshot_20260813_002618_Clash of Clans.jpg",
+    "hashes": [
+     "874eba12b4d3d354f2633571cc965258",
+     "acc01d23bf871fe064d69b39325a591d",
+     "9abe45c5cc1fa2a4393c3ecbf8a0938e",
+     "b2b98e9f8ad62d023060dcdccd2b6d2f",
+     "d007d60ff9d06cd472e8c464634f9cb6",
+     "1f8f0b5cfd589051d9d8ee34dc3c3c78"
+    ],
+    "position": 0,
+    "sha256": "fadcf8e3b010f9354592a896f25d5dd4ee58fc99e21596a85481679d04173ed1"
+   },
+   {
+    "file": "IMG_7466.png",
+    "hashes": [
+     "874eba12b4d39374f2e33571ccd65258",
+     "acc01d23bf871fe064569b39325a591d",
+     "9abe55c5cc0fa2a4393c3ecbf8a093ce",
+     "b2b98e9f8ad62c033060dcdc4d2b2daf",
+     "c007d60ff9d26cd472e8c460634f9cb6",
+     "1f8f0b5cfd389051d9d8ee34dc3c3838"
+    ],
+    "position": 0,
+    "sha256": "1a95b1bc65c2695115398cec1931442009325d6de761c6f4b1123f3ddacc87c3"
+   }
+  ],
+  "3": [
+   {
+    "file": "Screenshot_20260813_002637_Clash of Clans.jpg",
+    "hashes": [
+     "f8e2027f02d8f85ea28119942d2b3bab",
+     "a9b3b87d4a213d1cd36b2e8c41656f8e",
+     "c33cc612d41cd5e7dcccedecb4c8b261",
+     "f428afd06e10e2af6928d8c48c8c83c3",
+     "3a3f698a5c3aa13c2d1d37fe4dddcf0f",
+     "8ce1d1bc7305e2c7fcbcf83f367c37f1"
+    ],
+    "position": 0,
+    "sha256": "bc482350bbf34fa9b0f61409234d88213b4f4a8d6396dde830eead946f93ad9e"
+   },
+   {
+    "file": "IMG_7467.png",
+    "hashes": [
+     "f8a2027f02d8f95ea28199942d2b3b8a",
+     "a9b3b87d4a213d1cd36b2e8c416d6f8e",
+     "c33cc612d41cd5e7dcccedecb4c8b260",
+     "f428bfd06e10e2ab6928d8448c8c81c3",
+     "3a3f2b8e583e213c2d1d37fe4ddd4f8f",
+     "8ce1d1ac7325e2c7fcbcf83f367c37f1"
+    ],
+    "position": 0,
+    "sha256": "091e26524f62fa74c4e9628076fe8d8cfad08f4a9bba69d1c34529fcb455bddb"
+   }
+  ],
+  "4": [
+   {
+    "file": "Screenshot_20260813_002651_Clash of Clans.jpg",
+    "hashes": [
+     "c05b8fab549ba3259967e4d11e3132cb",
+     "0393cec93432e6ddd97cecf6ded96878",
+     "b28386590ed8d6fc438eada48e9639dd",
+     "1dd3b822a1bb86f4a5a33171d9ea6c5c",
+     "92e1d504a1f3e3e9fef63e3f4b5d1e76",
+     "3d8bee183fa8061d3f1f1f1e5c4c6cd9"
+    ],
+    "position": 0,
+    "sha256": "e5364d0793915ee25ad7c438b8cd3e78dc7ffa4a312bccd000393df503b81c47"
+   },
+   {
+    "file": "IMG_7468.png",
+    "hashes": [
+     "c05b8fab549ba2a599e6e4d11e3132cb",
+     "0393cee9343266ddd97cecf6ded96879",
+     "b28386590ed8d6fc439cada48eb639dd",
+     "1dd3b822a2fb86b4a5a33151d9ec6c4c",
+     "92e9d504a1f3e369fef63f3f4b5d1e76",
+     "3d8bee183fe8061c3f1f3f1e5c4cecd9"
+    ],
+    "position": 0,
+    "sha256": "9b35d7ac6d08a48cbd87af7120dcdfcbe8129c30b532f652f962a3d55498cc19"
+   }
+  ],
+  "5": [
+   {
+    "file": "Screenshot_20260813_002705_Clash of Clans.jpg",
+    "hashes": [
+     "e6ac8205cfe69c4b599c9c9d96270f0f",
+     "9ce13224e72f16ba7878b881aafee678",
+     "c22d456526b26f6bccc4928761130b89",
+     "edec32ae72b284253e3d1d1f4c46b683",
+     "34ac741fe2698cf134363b7f6002669c",
+     "b84fcc0a74eb94d1d4c77970c38b375c"
+    ],
+    "position": 0,
+    "sha256": "f1ce318594fb15c60c7de6b88ab521dd64292660a8229628c0ab54ba960f4c22"
+   },
+   {
+    "file": "IMG_7469.png",
+    "hashes": [
+     "f6ac8205cee69c4b599c9c9d96270f0f",
+     "9ce33224e72f1cb87978b891a3fae672",
+     "c2ad45e506b26e6b8cc4928565531a89",
+     "efea32aa729284353e3d1d1f4c46b689",
+     "34ac703fe2618cf334363b7fe80276ac",
+     "b84fcc0a70e9d4d3d5c77970c38b375c"
+    ],
+    "position": 0,
+    "sha256": "a4e9bee69e472da36823f252a6b6e21b2e91500364aa2ec514aa8e7ac27c2158"
+   }
+  ],
+  "6": [
+   {
+    "file": "Screenshot_20260813_002716_Clash of Clans.jpg",
+    "hashes": [
+     "412af4d171c5765de2eae8c6c3c3c0d6",
+     "6e317ae2275c8e642e5e238346c6eb09",
+     "98438f3075ae5e78ffdfeffdd3dbde7b",
+     "0f803fd01df94b1deef03c4c94dce869",
+     "ac35105b345ef956dc9e8ee47643ebc8",
+     "a22cce55b57a0b17337ceed7d78b4f5b"
+    ],
+    "position": 0,
+    "sha256": "74bae75f462e890374ea15f566533d08b539f646eeacb97ab2080584c86db34d"
+   },
+   {
+    "file": "IMG_7470.png",
+    "hashes": [
+     "412af6d171c5761da2eae8c6c3c3c0f6",
+     "6e317ae2275c8c6c2e5e238366c6eb09",
+     "98438f2075ae5e79ffdfeffdd3dbde7b",
+     "0d803fd01df96b1deef03c4cd4dce869",
+     "ae35001b165ef976dd9e8ee47643ebc8",
+     "a22cce55b55e0b17337cecd7d78b4f5b"
+    ],
+    "position": 0,
+    "sha256": "dacd4a088b73564e995a9d8e3dbda3e43514156c11a77e84f61c979079cee507"
+   }
+  ],
+  "7": [
+   {
+    "file": "Screenshot_20260813_002729_Clash of Clans.jpg",
+    "hashes": [
+     "118c5b769f0d17173c4d9cc5acdc5479",
+     "c007d60ff9d26cd472e8c460634f9cb6",
+     "99d95890a1cfe6cc808c39796b696974",
+     "278c1f84281fa7dd3d7a369ec8682c3c",
+     "10ff709dd1478d5430fcbc753355269e",
+     "fe258b0a83227f69f09981844d2e8d63"
+    ],
+    "position": 0,
+    "sha256": "a16cb5e08328e3d9d3780c7556bebb253c2504b985ee1bf4351c68bf17f5d777"
+   },
+   {
+    "file": "IMG_7471.png",
+    "hashes": [
+     "118c5b769f0d17173c4cdcc5ac5c5c79",
+     "d007d60df9d26cd472e0cc60634f9cb6",
+     "99d95890a1cfe6cc808c39796b696d74",
+     "278c3784281fa7dd3d3a369ec8682c3c",
+     "10ff709dd1478f1430f8bc751355369e",
+     "fe258b0a83227de9f09981844d2e8d63"
+    ],
+    "position": 0,
+    "sha256": "7256c13b61cd41c65e9ce9fdbfdc365f2953e8cbbe2129aa13eb0bfd2446a42c"
+   }
+  ],
+  "8": [
+   {
+    "file": "Screenshot_20260813_002740_Clash of Clans.jpg",
+    "hashes": [
+     "b28282190fd9dcfe63cebca48e8e3add",
+     "b56438722f0dbc36cf4b232372e6636c",
+     "c5890bdcfa01963faece798988b07060",
+     "909bad998d7c78916bf8fcf23b29edce",
+     "1300e8bd4be2cbee71d9a1636ff4b8f0",
+     "3da6d25b4856a9669d3d26144c6e2634"
+    ],
+    "position": 0,
+    "sha256": "e2f0ec97db75bfab9536d99e419055c1b9ef387160045c716d4bbf7987a1958c"
+   },
+   {
+    "file": "IMG_7472.png",
+    "hashes": [
+     "b28282190fd9dcfe63cebca48e8e3add",
+     "b56438722f0dbc36ef4b232372e6636c",
+     "c5890bdcba05963faece798988b07060",
+     "909bad998d7c78916bf8fcfa3b29edce",
+     "1300e8bd4be2cbee71d9a1636fe6b8f0",
+     "3da4d25b4856a9e69d3d26144c6ea624"
+    ],
+    "position": 0,
+    "sha256": "90ad9297af79ccfc89f72ffc49b0c70fd14269a0351ad53391c2b03a0b4817ea"
+   }
+  ],
+  "9": [
+   {
+    "file": "Screenshot_20260813_002751_Clash of Clans.jpg",
+    "hashes": [
+     "2addec7f50828b1c8f4f7f75153b3f9c",
+     "73dab0da04128ffa99b431721e2c2a2c",
+     "59b94419d88b3d5dcc0e349440f1fcb2",
+     "1d0707d366e8ec4ed2d3c69eda7ab3ba",
+     "9cc1fb5c28c817f27a7a756cea2e3468",
+     "2d683422f13e79e67636972616c7e676"
+    ],
+    "position": 0,
+    "sha256": "05e3777bc84e44dbad37b6bf42ddf490903e433e5353ddcbb05fa964645b645e"
+   },
+   {
+    "file": "IMG_7473.png",
+    "hashes": [
+     "2addec7d50828f1c8f4f7f77153b3f9c",
+     "73dab0da04128ffa99b431721e2c2a2c",
+     "59b94439c88b3d5dcc0e349440f1fcb2",
+     "1d0707d366e8ec4ed2d3c69eda7bb1ba",
+     "9cc1fb5c28c817f27a7a756cea2e3468",
+     "2d683422f13e79e67676972616c7e676"
+    ],
+    "position": 0,
+    "sha256": "10e5587ca473c4abcf5be32f7a9ccf04297a56866633211bb5d03cc87eead56d"
+   }
+  ]
+ },
+ "catalog": [
+  {
+   "category": "elixir",
+   "id": "barbarian"
+  },
+  {
+   "category": "elixir",
+   "id": "archer"
+  },
+  {
+   "category": "elixir",
+   "id": "giant"
+  },
+  {
+   "category": "elixir",
+   "id": "goblin"
+  },
+  {
+   "category": "elixir",
+   "id": "wall_breaker"
+  },
+  {
+   "category": "elixir",
+   "id": "balloon"
+  },
+  {
+   "category": "elixir",
+   "id": "wizard"
+  },
+  {
+   "category": "elixir",
+   "id": "healer"
+  },
+  {
+   "category": "elixir",
+   "id": "dragon"
+  },
+  {
+   "category": "elixir",
+   "id": "pekka"
+  },
+  {
+   "category": "elixir",
+   "id": "baby_dragon"
+  },
+  {
+   "category": "elixir",
+   "id": "miner"
+  },
+  {
+   "category": "elixir",
+   "id": "electro_dragon"
+  },
+  {
+   "category": "elixir",
+   "id": "yeti"
+  },
+  {
+   "category": "elixir",
+   "id": "dragon_rider"
+  },
+  {
+   "category": "elixir",
+   "id": "electro_titan"
+  },
+  {
+   "category": "elixir",
+   "id": "root_rider"
+  },
+  {
+   "category": "elixir",
+   "id": "thrower"
+  },
+  {
+   "category": "elixir",
+   "id": "meteor_golem"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "minion"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "hog_rider"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "valkyrie"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "golem"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "witch"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "lava_hound"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "bowler"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "ice_golem"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "headhunter"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "apprentice_warden"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "druid"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "furnace"
+  },
+  {
+   "category": "dark_elixir",
+   "id": "rubble_witch"
+  },
+  {
+   "category": "builder_base",
+   "id": "raged_barbarian"
+  },
+  {
+   "category": "builder_base",
+   "id": "sneaky_archer"
+  },
+  {
+   "category": "builder_base",
+   "id": "boxer_giant"
+  },
+  {
+   "category": "builder_base",
+   "id": "beta_minion"
+  },
+  {
+   "category": "builder_base",
+   "id": "bomber"
+  },
+  {
+   "category": "builder_base",
+   "id": "bb_baby_dragon"
+  },
+  {
+   "category": "builder_base",
+   "id": "cannon_cart"
+  },
+  {
+   "category": "builder_base",
+   "id": "night_witch"
+  },
+  {
+   "category": "builder_base",
+   "id": "drop_ship"
+  },
+  {
+   "category": "builder_base",
+   "id": "power_pekka"
+  },
+  {
+   "category": "builder_base",
+   "id": "hog_glider"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_barbarian"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_archer"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_giant"
+  },
+  {
+   "category": "super_troop",
+   "id": "sneaky_goblin"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_wall_breaker"
+  },
+  {
+   "category": "super_troop",
+   "id": "rocket_balloon"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_wizard"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_dragon"
+  },
+  {
+   "category": "super_troop",
+   "id": "inferno_dragon"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_miner"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_yeti"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_minion"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_hog_rider"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_valkyrie"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_witch"
+  },
+  {
+   "category": "super_troop",
+   "id": "ice_hound"
+  },
+  {
+   "category": "super_troop",
+   "id": "super_bowler"
+  }
+ ],
+ "category": {
+  "centres": {
+   "builder_base": 145.0,
+   "dark_elixir": 198.0,
+   "elixir": 211.0,
+   "super_troop": 12.0
+  },
+  "margin": 8.0,
+  "min_lines": 3,
+  "tol": 8.0
+ },
+ "checksum": "0b435fc4ae66675beff9f94057eaed446a309a885bfac6ca1be8c322e034c0b7",
+ "gate": {
+  "gap_min_sixths": 276,
+  "top1_max_sixths": 48
+ },
+ "sampler": {
+  "all_spread_max": 0.11,
+  "band_bottom": 0.03,
+  "band_top": 0.01,
+  "five_spread_max": 0.07,
+  "min_lines_per_card": 3,
+  "pitch_max": 0.8,
+  "pitch_min": 0.6,
+  "run_max_of_pitch": 0.95,
+  "run_min_of_pitch": 0.45,
+  "samples": 5
+ },
+ "slot_guard": {
+  "gap_margin": 10,
+  "gross": 46,
+  "support_max": 29
+ },
+ "sources": {
+  "IMG_7466.png": "1a95b1bc65c2695115398cec1931442009325d6de761c6f4b1123f3ddacc87c3",
+  "IMG_7467.png": "091e26524f62fa74c4e9628076fe8d8cfad08f4a9bba69d1c34529fcb455bddb",
+  "IMG_7468.png": "9b35d7ac6d08a48cbd87af7120dcdfcbe8129c30b532f652f962a3d55498cc19",
+  "IMG_7469.png": "a4e9bee69e472da36823f252a6b6e21b2e91500364aa2ec514aa8e7ac27c2158",
+  "IMG_7470.png": "dacd4a088b73564e995a9d8e3dbda3e43514156c11a77e84f61c979079cee507",
+  "IMG_7471.png": "7256c13b61cd41c65e9ce9fdbfdc365f2953e8cbbe2129aa13eb0bfd2446a42c",
+  "IMG_7472.png": "90ad9297af79ccfc89f72ffc49b0c70fd14269a0351ad53391c2b03a0b4817ea",
+  "IMG_7473.png": "10e5587ca473c4abcf5be32f7a9ccf04297a56866633211bb5d03cc87eead56d",
+  "Screenshot_20260813_001659_Clash of Clans.jpg": "f4e59ae084bddc5468dcf79f19a05a5c32839c46a2952d08d804c681e8d44d5c",
+  "Screenshot_20260813_002559_Clash of Clans.jpg": "a503cfa66410f1f4b7e36f9ebf2d368520b19083c438eb5d3b79a4f1daefb116",
+  "Screenshot_20260813_002618_Clash of Clans.jpg": "fadcf8e3b010f9354592a896f25d5dd4ee58fc99e21596a85481679d04173ed1",
+  "Screenshot_20260813_002637_Clash of Clans.jpg": "bc482350bbf34fa9b0f61409234d88213b4f4a8d6396dde830eead946f93ad9e",
+  "Screenshot_20260813_002651_Clash of Clans.jpg": "e5364d0793915ee25ad7c438b8cd3e78dc7ffa4a312bccd000393df503b81c47",
+  "Screenshot_20260813_002705_Clash of Clans.jpg": "f1ce318594fb15c60c7de6b88ab521dd64292660a8229628c0ab54ba960f4c22",
+  "Screenshot_20260813_002716_Clash of Clans.jpg": "74bae75f462e890374ea15f566533d08b539f646eeacb97ab2080584c86db34d",
+  "Screenshot_20260813_002729_Clash of Clans.jpg": "a16cb5e08328e3d9d3780c7556bebb253c2504b985ee1bf4351c68bf17f5d777",
+  "Screenshot_20260813_002740_Clash of Clans.jpg": "e2f0ec97db75bfab9536d99e419055c1b9ef387160045c716d4bbf7987a1958c",
+  "Screenshot_20260813_002751_Clash of Clans.jpg": "05e3777bc84e44dbad37b6bf42ddf490903e433e5353ddcbb05fa964645b645e",
+  "Screenshot_20260813_002801_Clash of Clans.jpg": "ec47581307897fc871eff60dbccaad571f8533f5732a4bfce5819b32111f30f0"
+ },
+ "spec_version": "wu-cards scanner development freeze 2026-08-13",
+ "upstream": {
+  "frame_min_saturation": 110,
+  "frame_min_value": 120,
+  "nominal_p95": 235
+ }
+}

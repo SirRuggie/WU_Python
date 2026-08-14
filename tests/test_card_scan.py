@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import io
+import json
 from collections.abc import Sequence
+from pathlib import Path
+from types import MappingProxyType
 
-from PIL import Image, ImageDraw
+import pytest
+from PIL import Image, ImageDraw, ImageEnhance
 
 from utils import card_scan
+from utils import card_scan_reference
 from utils.cards import CARDS
 
 
@@ -216,26 +221,120 @@ def _collection_capture(
     return encoded.getvalue()
 
 
-def _install_synthetic_artwork_anchors(monkeypatch, payloads: Sequence[bytes]) -> None:
-    """Bind synthetic art to the real scanner contract for focused batch tests."""
-    fingerprints: list[int] = []
-    for payload in payloads:
-        loaded = card_scan._load_still(payload)
-        assert not isinstance(loaded, str)
-        image, _source_size = loaded
-        result = card_scan.scan_visible_rows(payload)
-        assert len(result.rows) == 2
-        fingerprints.extend(card_scan._artwork_hashes_for_rows(image, result.rows))
-    assert len(fingerprints) == len(CARDS)
-    monkeypatch.setattr(
-        card_scan,
-        "CARD_ARTWORK_HASHES",
-        dict(zip((card.id for card in CARDS), fingerprints)),
+def _install_synthetic_reference_bank(
+    monkeypatch,
+    payloads: Sequence[bytes],
+) -> dict[int, tuple[tuple[int, ...], ...]]:
+    """Bind synthetic art to the real frozen contract for focused batch tests.
+
+    This is a test seam and nothing else.  Production has no runtime path that
+    can add a reference; the only way a synthetic row reaches the bank is a
+    monkeypatch, which is what
+    `test_scanning_cannot_change_the_frozen_reference` exists to pin.
+    """
+    bank: dict[int, tuple[tuple[int, ...], ...]] = {}
+    for capture_index, payload in enumerate(payloads):
+        _result, rows = card_scan._register_capture(payload)
+        assert len(rows) == 2
+        for local_row, record in enumerate(rows):
+            assert record.hashes is not None, record.reason
+            # The frozen bank holds exactly two coherent templates per catalog
+            # row and production refuses anything else, so the fixture has to
+            # honour that shape. Minimum reduction makes a repeated template
+            # score identically to a single one.
+            bank[capture_index * 2 + local_row + 1] = (
+                record.hashes, record.hashes,
+            )
+    assert sorted(bank) == list(range(1, 11))
+    assert all(
+        len(templates) == card_scan_reference.TEMPLATES_PER_ROW
+        for templates in bank.values()
     )
-    # Six tiny bit bars are intentionally much less separated than live card
-    # artwork.  Preserve unique-nearest checking without pretending this test
-    # fixture has the live anchors' measured 12-bit runner-up margin.
-    monkeypatch.setattr(card_scan, "ARTWORK_HASH_MIN_RUNNER_UP_GAP", 1)
+    monkeypatch.setattr(
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(bank)
+    )
+    return bank
+
+
+def _pseudo_hash(index: int) -> int:
+    """A deterministic 128-bit stand-in for one card's artwork hash."""
+    state = ((index + 1) * 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+    value = 0
+    for _ in range(4):
+        state = (
+            state * 6364136223846793005 + 1442695040888963407
+        ) & 0xFFFFFFFFFFFFFFFF
+        value = (value << 32) | (state >> 32)
+    return value
+
+
+def _bit_flipped(value: int, count: int) -> int:
+    for bit in range(count):
+        value ^= 1 << bit
+    return value
+
+
+def _separated_bank(monkeypatch) -> dict[int, tuple[tuple[int, ...], ...]]:
+    """Ten rows whose cards sit as far apart as real card artwork does.
+
+    With a bank like this a single bit can be moved on purpose, so each frozen
+    rejection reason can be reached one at a time instead of by luck.
+    """
+    bank = {}
+    for row in range(1, 11):
+        template = tuple(
+            _pseudo_hash((row - 1) * 6 + slot) for slot in range(6)
+        )
+        # Two templates per row, as the frozen bank has.
+        bank[row] = (template, template)
+    every_card = [value for templates in bank.values() for value in templates[0]]
+    closest_card = min(
+        (left ^ right).bit_count()
+        for index, left in enumerate(every_card)
+        for right in every_card[index + 1:]
+    )
+    closest_row = min(
+        sum(
+            (left ^ right).bit_count()
+            for left, right in zip(bank[first][0], bank[second][0])
+        ) / 6
+        for first in bank
+        for second in bank
+        if first < second
+    )
+    # The fixture has to leave room for the guard (rival at least ten bits
+    # past the expected card) and for the frozen rival gap of 46.
+    assert closest_card > 30, f"fixture cards are only {closest_card} apart"
+    assert closest_row > 50, f"fixture rows are only {closest_row} apart"
+    monkeypatch.setattr(
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(bank)
+    )
+    return bank
+
+
+def _dimmed(payload: bytes, factor: float) -> bytes:
+    image = Image.open(io.BytesIO(payload)).convert("RGB")
+    encoded = io.BytesIO()
+    ImageEnhance.Brightness(image).enhance(factor).save(encoded, format="PNG")
+    return encoded.getvalue()
+
+
+def _assert_bson_safe(value) -> None:
+    if isinstance(value, dict):
+        assert all(isinstance(key, str) for key in value)
+        for nested in value.values():
+            _assert_bson_safe(nested)
+        return
+    if isinstance(value, list):
+        for nested in value:
+            _assert_bson_safe(nested)
+        return
+    assert value is None or type(value) in (bool, int, float, str)
+
+
+# Catalog rows 1 to 3 are entirely elixir, so an all-elixir observation is the
+# honest category evidence for them.
+ELIXIR_ROW = ("elixir",) * 6
 
 
 def _reencode_collection_capture(
@@ -602,205 +701,456 @@ def test_invalid_collection_capture_set_fails_closed_with_every_card_unseen():
     assert "incomplete_capture_set" in draft.warnings
 
 
-def test_artwork_anchor_catalog_is_complete_private_and_separated():
-    assert set(card_scan.CARD_ARTWORK_HASHES) == {card.id for card in CARDS}
+# --- the frozen reference and its boundary ---------------------------------
+
+
+def test_frozen_reference_matches_the_sealed_development_artifact():
+    """Production must recognize with the numbers the holdout was run on."""
+    artifact_path = (
+        Path(__file__).resolve().parents[1]
+        / "tools" / "scan_frozen_artifact.json"
+    )
+    if not artifact_path.exists():
+        pytest.skip("the frozen development artifact is not in this checkout")
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert artifact["checksum"] == card_scan_reference.FROZEN_ARTIFACT_CHECKSUM
+    assert artifact["spec_version"] == card_scan_reference.FROZEN_SPEC_VERSION
+    assert float(artifact["aspect"]) == card_scan_reference.CARD_ASPECT
+    assert artifact["gate"] == {"top1_max_sixths": 48, "gap_min_sixths": 276}
+    assert artifact["slot_guard"] == {
+        "support_max": card_scan_reference.SLOT_SUPPORT_MAX,
+        "gross": card_scan_reference.SLOT_GROSS,
+        "gap_margin": card_scan_reference.SLOT_GAP_MARGIN,
+    }
+    assert artifact["category"]["centres"] == dict(card_scan.CATEGORY_FRAME_HUES)
+    assert artifact["upstream"]["nominal_p95"] == card_scan.NOMINAL_VALUE_P95
+    for row, templates in artifact["bank"].items():
+        assert card_scan_reference.REFERENCE_BANK[int(row)] == tuple(
+            tuple(int(value, 16) for value in template["hashes"])
+            for template in templates
+        )
+    # The manifest is the artifact's catalog, slot for slot and in order.
+    assert card_scan_reference.FROZEN_CATALOG == tuple(
+        (card["id"], card["category"]) for card in artifact["catalog"]
+    )
+    # Exactly two coherent templates per catalog row, and nothing but hashes.
+    assert sorted(card_scan_reference.REFERENCE_BANK) == list(range(1, 11))
     assert all(
-        isinstance(anchor, int) and 0 <= anchor < (1 << 128)
-        for anchor in card_scan.CARD_ARTWORK_HASHES.values()
+        len(templates) == card_scan_reference.TEMPLATES_PER_ROW
+        for templates in artifact["bank"].values()
     )
-    same_category_distances = [
-        (
-            card_scan.CARD_ARTWORK_HASHES[left.id]
-            ^ card_scan.CARD_ARTWORK_HASHES[right.id]
-        ).bit_count()
-        for left_index, left in enumerate(CARDS)
-        for right in CARDS[left_index + 1:]
-        if left.category == right.category
-    ]
-    assert min(same_category_distances) > card_scan.ARTWORK_HASH_MAX_DISTANCE
-
-
-def test_a_small_artwork_difference_does_not_strand_the_page(monkeypatch):
-    """Identity is decided for the page, not card by card.
-
-    A single card's perceptual hash drifts between sessions, so judging each
-    card alone stranded obviously-correct cards. Twelve together do not drift:
-    a page scores about 28 against its own position and 62+ against any other.
-    """
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    swapped_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
-    swapped_rows[0][0], swapped_rows[0][1] = (
-        swapped_rows[0][1],
-        swapped_rows[0][0],
+    assert all(
+        len(templates) == card_scan_reference.TEMPLATES_PER_ROW
+        and all(len(t) == 6 for t in templates)
+        for templates in card_scan_reference.REFERENCE_BANK.values()
     )
-    swapped_art = (1, 0, *range(2, 12))
-    payloads = [
-        _collection_capture(0, rows=swapped_rows, art_indices=swapped_art),
-        *canonical[1:],
-    ]
-
-    draft = card_scan.scan_collection_screenshots(payloads)
-
-    first_page = draft.captures[0]
-    assert first_page.input_index == 1
-    assert first_page.accepted is True
-    assert set(draft.unseen_card_ids) == set()
 
 
-def test_a_page_that_proves_nothing_is_still_rejected_whole(monkeypatch):
-    """If no portrait proves its identity, the page assignment is untrusted."""
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    payloads = [
-        # Page 5's artwork submitted where page 1 belongs.
-        _collection_capture(0, art_indices=tuple(range(48, 60))),
-        *canonical[1:],
-    ]
+def test_the_retired_row_gate_cannot_be_used():
+    """The candidate 37/6 + 313/6 gate is retired, not merely unused."""
+    assert card_scan_reference.ROW_GATE_TOP1_MAX_SIXTHS == 48
+    assert card_scan_reference.ROW_GATE_GAP_MIN_SIXTHS == 276
+    assert card_scan.ROW_GATE_TOP1_MAX == 48 / 6
+    assert card_scan.ROW_GATE_GAP_MIN == 276 / 6
 
-    draft = card_scan.scan_collection_screenshots(payloads)
+    for module in (card_scan, card_scan_reference):
+        constants = {
+            name: getattr(module, name)
+            for name in dir(module)
+            if name.isupper()
+        }
+        assert 37 / 6 not in constants.values(), module.__name__
+        assert 313 / 6 not in constants.values(), module.__name__
+        # The historical experiment tools keep the retired values under
+        # RETIRED_ names. Production must not reach them at all.
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        assert "scan_identity_gate" not in source
+        assert "scan_slot_guard" not in source
 
-    first_page = draft.captures[0]
-    assert first_page.accepted is False
-    assert first_page.warnings == ("artwork_identity_mismatch",)
+
+def test_scanning_cannot_change_the_frozen_reference(monkeypatch):
+    """No production input can enter the reference or calibration state."""
+    shipped = {
+        row: tuple(templates)
+        for row, templates in card_scan_reference.REFERENCE_BANK.items()
+    }
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    card_scan.scan_collection_screenshots(payloads)
+    monkeypatch.undo()
+
+    assert {
+        row: tuple(templates)
+        for row, templates in card_scan_reference.REFERENCE_BANK.items()
+    } == shipped
+    assert isinstance(card_scan_reference.REFERENCE_BANK, MappingProxyType)
+    with pytest.raises(TypeError):
+        card_scan_reference.REFERENCE_BANK[1] = ()
+
+    # The reference module offers two functions and both are read-only: one
+    # projects a catalog into a manifest, one reports problems. There is no
+    # add, fit, learn, or recalibrate.
+    owned_callables = {
+        name
+        for name in dir(card_scan_reference)
+        if not name.startswith("_")
+        and callable(getattr(card_scan_reference, name))
+        and getattr(getattr(card_scan_reference, name), "__module__", "")
+        == card_scan_reference.__name__
+    }
+    assert owned_callables == {"catalog_manifest", "reference_problems"}
+
+
+def test_a_frozen_reference_that_no_longer_describes_this_code_refuses(
+    monkeypatch,
+):
+    monkeypatch.setattr(card_scan, "FRAME_MIN_VALUE", 99)
+
+    draft = card_scan.scan_collection_screenshots([_collection_capture(0)])
+
+    assert draft.errors == ("frozen_reference_upstream_value_drifted",)
+    assert draft.accepted_global_rows == ()
+    assert len(draft.unseen_card_ids) == 60
     assert draft.complete is False
 
 
-def test_artwork_anchors_survive_jpeg_and_resize_without_changing_identity(
+# --- the frozen decision order, one rejection reason at a time --------------
+
+
+def test_a_row_that_clears_every_gate_is_accepted(monkeypatch):
+    bank = _separated_bank(monkeypatch)
+
+    outcome, reason, proposed, top1, gap = card_scan._decide_row_identity(
+        bank[2][0], ELIXIR_ROW
+    )
+
+    assert (outcome, reason, proposed, top1) == ("accepted", "", 2, 0)
+    assert gap >= card_scan_reference.ROW_GATE_GAP_MIN
+
+
+def test_a_contradicting_frame_category_rejects_the_whole_row(monkeypatch):
+    bank = _separated_bank(monkeypatch)
+    categories = list(ELIXIR_ROW)
+    categories[2] = "dark_elixir"
+
+    outcome, reason, proposed, top1, _gap = card_scan._decide_row_identity(
+        bank[2][0], tuple(categories)
+    )
+
+    assert outcome == "category"
+    assert "card 3" in reason
+    # The proposal is recorded for diagnostics and is not an identity.
+    assert (proposed, top1) == (2, 0)
+
+
+def test_an_unknown_frame_category_fails_the_row_closed(monkeypatch):
+    """Category unknown cannot support a slot, however good the artwork is."""
+    bank = _separated_bank(monkeypatch)
+    categories = list(ELIXIR_ROW)
+    categories[4] = None
+
+    outcome, reason, _proposed, top1, gap = card_scan._decide_row_identity(
+        bank[2][0], tuple(categories)
+    )
+
+    assert outcome == "unresolved"
+    assert "card" in reason and "5" in reason
+    assert top1 == 0 and gap >= card_scan_reference.ROW_GATE_GAP_MIN
+
+
+def test_one_wrong_card_cannot_hide_inside_a_healthy_row_average(monkeypatch):
+    """The blind spot the per-slot guard exists to close.
+
+    A wrong card 35 bits away averages to 5.83 over six cards, which clears
+    the frozen ceiling of 8.00 while leaving the rival gap wide. The row-level
+    numbers alone would accept it; the per-slot guard does not.
+    """
+    bank = dict(_separated_bank(monkeypatch))
+    intruder = _bit_flipped(bank[2][0][3], 35)
+    bank[1] = (bank[1][0][:3] + (intruder,) + bank[1][0][4:],)
+    monkeypatch.setattr(
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(bank)
+    )
+    observed = bank[2][0][:3] + (intruder,) + bank[2][0][4:]
+
+    outcome, reason, proposed, top1, gap = card_scan._decide_row_identity(
+        observed, ELIXIR_ROW
+    )
+
+    assert top1 <= card_scan_reference.ROW_GATE_TOP1_MAX
+    assert gap >= card_scan_reference.ROW_GATE_GAP_MIN
+    assert outcome == "slot"
+    assert "card 4" in reason
+    assert proposed == 2
+
+
+def test_a_row_over_the_frozen_distance_ceiling_is_rejected(monkeypatch):
+    bank = _separated_bank(monkeypatch)
+    observed = tuple(_bit_flipped(value, 9) for value in bank[2][0])
+
+    outcome, reason, proposed, top1, gap = card_scan._decide_row_identity(
+        observed, ELIXIR_ROW
+    )
+
+    assert (proposed, top1) == (2, 9.0)
+    assert top1 > card_scan_reference.ROW_GATE_TOP1_MAX
+    assert gap >= card_scan_reference.ROW_GATE_GAP_MIN
+    assert outcome == "distance"
+    assert "8.00" in reason
+
+
+def test_a_row_without_the_frozen_rival_gap_is_rejected(monkeypatch):
+    """Catalog row 9 is super troop, so a near twin there changes no slot.
+
+    Rivals are drawn from the expected card's own category, so this isolates
+    the row-level separation term from the per-slot guard.
+    """
+    bank = dict(_separated_bank(monkeypatch))
+    bank[9] = (tuple(_bit_flipped(value, 2) for value in bank[2][0]),)
+    monkeypatch.setattr(
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(bank)
+    )
+
+    outcome, reason, proposed, top1, gap = card_scan._decide_row_identity(
+        bank[2][0], ELIXIR_ROW
+    )
+
+    assert (proposed, top1) == (2, 0)
+    assert gap < card_scan_reference.ROW_GATE_GAP_MIN
+    assert outcome == "separation"
+    assert "46.00" in reason
+
+
+def test_ranking_breaks_a_tie_on_catalog_row_rather_than_dictionary_order(
     monkeypatch,
 ):
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    variants = (
-        [
-            _reencode_collection_capture(
-                payload,
-                image_format="JPEG",
-                quality=95,
-            )
-            for payload in canonical
-        ],
-        [
-            _reencode_collection_capture(
-                payload,
-                image_format="JPEG",
-                quality=85,
-            )
-            for payload in canonical
-        ],
-        [
-            _reencode_collection_capture(payload, width=1080)
-            for payload in canonical
-        ],
-        [
-            _reencode_collection_capture(payload, width=800)
-            for payload in canonical
-        ],
+    bank = dict(_separated_bank(monkeypatch))
+    bank[7] = (bank[2][0],)
+    monkeypatch.setattr(
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(bank)
     )
 
-    for payloads in variants:
-        draft = card_scan.scan_collection_screenshots(payloads)
-        assert draft.complete is True
-        assert draft.unseen_card_ids == ()
-        assert all(capture.accepted for capture in draft.captures)
-        assert all(
-            capture.warnings == ("catalog_position_and_artwork_validated",)
-            for capture in draft.captures
-        )
-
-
-def test_ordered_batch_maps_all_cards_and_discloses_toolbar_hidden_duplicates(
-    monkeypatch,
-):
-    patterns = (
-        [card_scan.OWNED] * 12,
-        [card_scan.MISSING] * 6 + [card_scan.OWNED] * 6,
-        [card_scan.MISSING, card_scan.OWNED] * 6,
-        [card_scan.OWNED] * 6 + [card_scan.MISSING] * 6,
-        [card_scan.MISSING] * 12,
+    _outcome, _reason, proposed, top1, gap = card_scan._decide_row_identity(
+        bank[2][0], ELIXIR_ROW
     )
-    payloads = tuple(
-        _collection_capture(
-            position,
-            pattern,
-            overlay_rows=frozenset({0}) if position == 0 else frozenset(),
-        )
-        for position, pattern in enumerate(patterns)
-    )
-    _install_synthetic_artwork_anchors(monkeypatch, payloads)
 
-    draft = card_scan.scan_collection_screenshots(payloads)
+    assert (proposed, top1, gap) == (2, 0, 0)
 
-    assert draft.coverage_complete is True
-    assert draft.complete is True
-    assert len(draft.cards) == 60
-    assert all(capture.accepted for capture in draft.captures)
-    assert tuple(card.card_id for card in draft.cards) == tuple(
-        card.id for card in card_scan.CARDS
+
+# --- whole captures through the row scanner --------------------------------
+
+
+def test_a_confirmed_row_binds_its_six_cards_and_nothing_else(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+
+    draft = card_scan.scan_collection_screenshots([payloads[0]])
+
+    assert draft.accepted_global_rows == (1, 2)
+    assert draft.manual_required_global_rows == (3, 4, 5, 6, 7, 8, 9, 10)
+    assert [decision.outcome for decision in draft.row_decisions] == [
+        "accepted", "accepted",
+    ]
+    assert [decision.catalog_row for decision in draft.row_decisions] == [1, 2]
+    assert draft.recognized_count == 12
+    assert [card.card_id for card in draft.cards[:12]] == [
+        card.id for card in CARDS[:12]
+    ]
+    assert all(card.source_index == 1 for card in draft.cards[:12])
+    assert all(card.source_index is None for card in draft.cards[12:])
+    assert draft.captures[0].rows_detected == 2
+    assert draft.captures[0].rows_accepted == 2
+    assert draft.captures[0].rows_manual == 0
+    assert draft.captures[0].warnings == ("capture_rows_confirmed",)
+    assert draft.complete is False
+    assert draft.persistence_safe is False
+
+
+def test_a_rejected_row_contributes_no_cards_at_all(monkeypatch):
+    """Row atomicity: five good cards out of a bad row are not evidence."""
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    tampered = _collection_capture(
+        0, art_indices=(0, 1, 30, 3, 4, 5, *range(6, 12))
     )
-    assert draft.duplicate_count == 0
-    assert draft.duplicate_unverified_card_ids == tuple(
-        card.id for card in card_scan.CARDS[:6]
+
+    draft = card_scan.scan_collection_screenshots([tampered])
+
+    first, second = draft.row_decisions
+    assert first.accepted is False
+    assert first.outcome in {"slot", "category", "unresolved", "distance"}
+    assert first.catalog_row is None
+    assert first.proposed_row == 1
+    assert second.accepted is True and second.catalog_row == 2
+
+    assert draft.accepted_global_rows == (2,)
+    assert 1 in draft.manual_required_global_rows
+    assert all(card.source_index is None for card in draft.cards[:6])
+    assert tuple(draft.unseen_card_ids[:6]) == tuple(
+        card.id for card in CARDS[:6]
     )
     assert all(
-        draft.cards[index].state == card_scan.OWNED
-        and "duplicate_badge_unverified" in draft.cards[index].warnings
-        for index in range(6)
+        card.id in draft.manual_required_card_ids for card in CARDS[:6]
+    )
+    assert draft.captures[0].rows_accepted == 1
+    assert draft.captures[0].rows_manual == 1
+    assert "rows_need_manual_review" in draft.warnings
+
+
+def test_mixed_captures_keep_the_confirmed_rows_and_flag_the_rest(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    tampered = _collection_capture(
+        0, art_indices=(0, 1, 30, 3, 4, 5, *range(6, 12))
     )
 
+    draft = card_scan.scan_collection_screenshots([tampered, payloads[1]])
 
-def test_batch_maps_any_order_captures_and_ignores_toolbar_copy(monkeypatch):
-    clean = [_collection_capture(index) for index in range(5)]
-    payloads = [
-        clean[3],
-        clean[0],
-        _collection_capture(0, toolbar=True),
-        clean[4],
-        clean[1],
-        clean[2],
-    ]
-    _install_synthetic_artwork_anchors(monkeypatch, clean)
+    assert draft.accepted_global_rows == (2, 3, 4)
+    assert draft.manual_required_global_rows == (1, 5, 6, 7, 8, 9, 10)
+    assert draft.recognized_count == 18
+    assert draft.coverage_complete is False
+    assert draft.complete is False
+    assert draft.captures[1].accepted is True
+    assert len(draft.manual_required_card_ids) == 42
+
+
+def test_every_row_confirmed_produces_a_complete_draft(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
 
     draft = card_scan.scan_collection_screenshots(payloads)
 
-    assert [capture.accepted for capture in draft.captures] == [
-        True, True, False, True, True, True
-    ]
-    assert [capture.assigned_page_number for capture in draft.captures] == [
-        4, 1, 1, 5, 2, 3
-    ]
-    assert draft.captures[2].warnings == ("duplicate_page_ignored",)
-    assert [capture.global_rows for capture in draft.captures if capture.accepted] == [
-        (7, 8), (1, 2), (9, 10), (3, 4), (5, 6)
-    ]
-    assert len(draft.cards) == 60
-    assert [card.card_id for card in draft.cards] == [card.id for card in CARDS]
-    assert draft.cards[0].card_name == "Barbarian"
-    assert draft.cards[-1].card_name == "Super Bowler"
-    assert draft.cards[12].source_index == 5
-
-    assert draft.recognized_count == 60
-    assert draft.missing_count == 31
-    assert draft.owned_count == 29
-    assert draft.duplicate_count == 0
-    assert draft.unknown_count == 0
-    assert draft.unknown_card_ids == ()
-    assert draft.unseen_card_ids == ()
-    assert len(draft.duplicate_unverified_card_ids) == 13
+    assert draft.accepted_global_rows == tuple(range(1, 11))
+    assert draft.manual_required_global_rows == ()
+    assert draft.manual_required_card_ids == ()
     assert draft.coverage_complete is True
     assert draft.complete is True
-    assert draft.persistence_safe is False
     assert draft.accepted_page_numbers == (1, 2, 3, 4, 5)
     assert draft.missing_page_numbers == ()
     assert draft.missing_global_rows == ()
-    assert "collection_pages_validated" in draft.warnings
-    assert "duplicate_page_ignored" in draft.warnings
+    assert [card.card_id for card in draft.cards] == [
+        card.id for card in CARDS
+    ]
+    assert "collection_rows_validated" in draft.warnings
     assert "human_confirmation_required" in draft.warnings
-    assert "hidden_duplicates_require_review" in draft.warnings
-    assert all(category.complete for category in draft.categories)
+    assert card_scan.PERSISTENCE_SAFE is False
 
 
-def test_batch_reads_visible_badges_and_still_defers_obstructed_ones(monkeypatch):
+def test_upload_order_is_never_an_identity_signal(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    shuffled = [payloads[3], payloads[0], payloads[4], payloads[2], payloads[1]]
+
+    draft = card_scan.scan_collection_screenshots(shuffled)
+
+    assert draft.complete is True
+    assert [
+        tuple(capture.global_rows) for capture in draft.captures
+    ] == [(7, 8), (1, 2), (9, 10), (5, 6), (3, 4)]
+    assert draft.cards[0].source_index == 2
+    assert draft.cards[36].source_index == 1
+
+
+def test_a_scrolled_capture_of_two_far_apart_rows_is_read_correctly(
+    monkeypatch,
+):
+    """Row identity makes a scroll overlap an ordinary, correct reading."""
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    scrolled = _collection_capture(
+        1,
+        rows=(REAL_CAPTURE_STATES[1], REAL_CAPTURE_STATES[3]),
+        art_indices=(*range(6, 12), *range(18, 24)),
+    )
+
+    draft = card_scan.scan_collection_screenshots([scrolled])
+
+    assert draft.accepted_global_rows == (2, 4)
+    assert draft.cards[6].source_index == 1
+    assert draft.cards[18].source_index == 1
+    assert all(card.source_index is None for card in draft.cards[12:18])
+
+
+def test_an_unreadable_image_does_not_shift_any_catalog_position(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+
+    draft = card_scan.scan_collection_screenshots([
+        b"not-an-image", payloads[4], payloads[0], payloads[2], payloads[3],
+    ])
+
+    assert [capture.accepted for capture in draft.captures] == [
+        False, True, True, True, True,
+    ]
+    assert draft.captures[0].warnings == ("invalid_or_corrupt_image",)
+    assert draft.accepted_global_rows == (1, 2, 5, 6, 7, 8, 9, 10)
+    assert draft.manual_required_global_rows == (3, 4)
+    assert draft.missing_page_numbers == (2,)
+    assert tuple(draft.unseen_card_ids) == tuple(
+        card.id for card in CARDS[12:24]
+    )
+
+
+def test_a_repeated_row_resolves_unknowns_but_fails_a_contradiction_closed(
+    monkeypatch,
+):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+
+    unknown_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
+    unknown_rows[0][0] = card_scan.UNKNOWN
+    resolved = card_scan.scan_collection_screenshots((
+        _collection_capture(0, rows=unknown_rows), payloads[0],
+    ))
+
+    assert resolved.cards[0].state == card_scan.OWNED
+    assert resolved.captures[1].warnings == ("repeat_rows_merged",)
+    assert resolved.captures[1].global_rows == (1, 2)
+    assert "repeat_rows_merged" in resolved.warnings
+
+    conflicting_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
+    conflicting_rows[0][0] = card_scan.MISSING
+    conflicted = card_scan.scan_collection_screenshots((
+        payloads[0], _collection_capture(0, rows=conflicting_rows),
+    ))
+
+    assert conflicted.cards[0].state == card_scan.UNKNOWN
+    assert "conflicting_duplicate_capture_state" in conflicted.cards[0].warnings
+    assert conflicted.captures[1].warnings == ("conflicting_repeat_rows",)
+    assert conflicted.captures[1].conflicting_card_ids == ("barbarian",)
+    assert conflicted.complete is False
+
+
+def test_an_ambiguous_portrait_stays_unknown_inside_a_confirmed_row(
+    monkeypatch,
+):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    first_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
+    first_rows[0][0] = card_scan.UNKNOWN
+
+    draft = card_scan.scan_collection_screenshots([
+        _collection_capture(0, rows=first_rows), *payloads[1:],
+    ])
+
+    # Identity confidence and ownership confidence are separate: the row is
+    # confirmed, one portrait inside it is not.
+    assert draft.accepted_global_rows == tuple(range(1, 11))
+    assert draft.coverage_complete is True
+    assert draft.complete is False
+    assert draft.unknown_card_ids == ("barbarian",)
+    assert draft.recognized_count == 59
+    assert draft.categories[0].complete is False
+    assert "unknown_states_require_review" in draft.warnings
+
+
+def test_the_reward_bar_row_is_read_and_its_badges_left_unverified(
+    monkeypatch,
+):
+    """Item 9 and item 12 together: a clipped badge lowers the claim, not the
+    row. A visible badge is a spare; an obstructed one is one proven copy."""
     first_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
     first_rows[0][0] = card_scan.DUPLICATE
     first_rows[1][0] = card_scan.DUPLICATE
@@ -808,182 +1158,200 @@ def test_batch_reads_visible_badges_and_still_defers_obstructed_ones(monkeypatch
         _collection_capture(0, rows=first_rows),
         *(_collection_capture(index) for index in range(1, 5)),
     ]
-    _install_synthetic_artwork_anchors(monkeypatch, payloads)
+    _install_synthetic_reference_bank(monkeypatch, payloads)
 
     draft = card_scan.scan_collection_screenshots(payloads)
 
-    # A badge the scanner could actually read is a spare, so the member is no
-    # longer asked a question per card about something already on screen.
+    assert draft.accepted_global_rows == tuple(range(1, 11))
     assert draft.cards[0].state == card_scan.DUPLICATE
     assert "duplicate_badge_read" in draft.cards[0].warnings
-    # The second one sits under the reward track, so its badge cannot be read
-    # and it is still demoted to one copy and queued for review.
+    # Row 2 sits under the reward track, so its badge cannot be read.
     assert draft.cards[6].state == card_scan.OWNED
     assert "duplicate_badge_unverified" in draft.cards[6].warnings
-    assert draft.duplicate_count == 1
-    assert draft.owned_count == 28
-    # Nothing about this authorizes a write on its own.
-    assert card_scan.PERSISTENCE_SAFE is False
+    assert "barbarian" not in draft.duplicate_unverified_card_ids
+    assert "wizard" in draft.duplicate_unverified_card_ids
+    assert "hidden_duplicates_require_review" in draft.warnings
 
 
-def test_batch_accepts_out_of_order_capture_without_shifting_catalog_ids(monkeypatch):
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    payloads = [
-        canonical[0],
-        canonical[2],
-        canonical[1],
-        canonical[3],
-        canonical[4],
-    ]
+def test_a_dim_capture_keeps_its_rows_and_the_floor_is_inert_when_bright():
+    """Item 10: the frame floor scales with the capture's own bright end."""
+    assert card_scan._adaptive_value_floor([250] * 100) == card_scan.FRAME_MIN_VALUE
+    assert card_scan._adaptive_value_floor([]) == card_scan.FRAME_MIN_VALUE
+    assert card_scan._adaptive_value_floor([150] * 100) < card_scan.FRAME_MIN_VALUE
 
-    draft = card_scan.scan_collection_screenshots(payloads)
+    dim = _dimmed(_collection_capture(0), 0.55)
+    assert len(card_scan.scan_visible_rows(dim).rows) == 2
 
-    assert all(capture.accepted for capture in draft.captures)
-    assert [capture.assigned_page_number for capture in draft.captures] == [
-        1, 3, 2, 4, 5
-    ]
-    assert [card.card_id for card in draft.cards] == [card.id for card in CARDS]
-    assert draft.cards[12].source_index == 3
-    assert draft.cards[24].source_index == 2
-    assert draft.coverage_complete is True
-    assert draft.complete is True
-    assert draft.recognized_count == 60
-    assert draft.unseen_card_ids == ()
+    fixed_floor = card_scan._adaptive_value_floor
+    try:
+        card_scan._adaptive_value_floor = lambda _values: card_scan.FRAME_MIN_VALUE
+        assert card_scan.scan_visible_rows(dim).rows == ()
+    finally:
+        card_scan._adaptive_value_floor = fixed_floor
 
 
-def test_batch_rejects_one_row_scroll_overlap_without_shifting_later_pages(
+def test_a_dim_capture_still_reaches_the_right_identity(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+
+    draft = card_scan.scan_collection_screenshots(
+        [_dimmed(payload, 0.7) for payload in payloads]
+    )
+
+    assert draft.accepted_global_rows == tuple(range(1, 11))
+    assert all(
+        decision.catalog_row == decision.row_index + 1 + 2 * (decision.input_index - 1)
+        for decision in draft.row_decisions
+    )
+
+
+def test_resize_and_recompression_never_produce_a_wrong_identity(monkeypatch):
+    """Recall may fall on a transformed capture; identity may not be wrong."""
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    variants = {
+        "jpeg 95": [
+            _reencode_collection_capture(p, image_format="JPEG", quality=95)
+            for p in payloads
+        ],
+        "jpeg 85": [
+            _reencode_collection_capture(p, image_format="JPEG", quality=85)
+            for p in payloads
+        ],
+        "width 1080": [
+            _reencode_collection_capture(p, width=1080) for p in payloads
+        ],
+        "width 800": [
+            _reencode_collection_capture(p, width=800) for p in payloads
+        ],
+    }
+
+    for label, transformed in variants.items():
+        draft = card_scan.scan_collection_screenshots(transformed)
+        for decision in draft.row_decisions:
+            if not decision.accepted:
+                continue
+            expected = 2 * (decision.input_index - 1) + decision.row_index + 1
+            assert decision.catalog_row == expected, label
+        assert draft.accepted_global_rows, label
+
+
+def test_a_horizontally_squeezed_capture_is_never_accepted_as_a_wrong_row(
     monkeypatch,
 ):
-    overlap_rows = (
-        REAL_CAPTURE_STATES[1],
-        REAL_CAPTURE_STATES[3],
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    squeezed = []
+    for payload in payloads:
+        image = Image.open(io.BytesIO(payload)).convert("RGB")
+        narrowed = image.resize(
+            (round(image.width * 0.9), image.height), Image.Resampling.LANCZOS
+        )
+        encoded = io.BytesIO()
+        narrowed.save(encoded, format="PNG")
+        squeezed.append(encoded.getvalue())
+
+    draft = card_scan.scan_collection_screenshots(squeezed)
+
+    for decision in draft.row_decisions:
+        if decision.accepted:
+            expected = 2 * (decision.input_index - 1) + decision.row_index + 1
+            assert decision.catalog_row == expected
+
+
+def test_the_same_bytes_always_produce_the_same_decisions(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+
+    first = card_scan.scan_collection_screenshots(payloads)
+    again = card_scan.scan_collection_screenshots(payloads)
+    reversed_order = card_scan.scan_collection_screenshots(payloads[::-1])
+
+    assert first.row_decisions == again.row_decisions
+    assert first.cards == again.cards
+    # Order changes which image proved a row, never which row was proved.
+    assert {
+        (decision.catalog_row, decision.outcome)
+        for decision in reversed_order.row_decisions
+    } == {
+        (decision.catalog_row, decision.outcome)
+        for decision in first.row_decisions
+    }
+    assert reversed_order.accepted_global_rows == first.accepted_global_rows
+
+
+def test_the_scan_records_which_reference_decided_it(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+
+    draft = card_scan.scan_collection_screenshots(payloads[:1])
+
+    assert card_scan_reference.FROZEN_SPEC_VERSION in draft.scanner_version
+    assert (
+        card_scan_reference.FROZEN_ARTIFACT_CHECKSUM[:16]
+        in draft.scanner_version
     )
-    overlap_art = (*range(6, 12), *range(18, 24))
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    payloads = [
-        canonical[0],
-        _collection_capture(1, rows=overlap_rows, art_indices=overlap_art),
-        *canonical[2:],
-    ]
-
-    draft = card_scan.scan_collection_screenshots(payloads)
-
-    assert draft.captures[1].accepted is False
-    assert draft.captures[1].warnings == ("overlapping_capture_rows",)
-    assert draft.coverage_complete is False
-    assert draft.complete is False
-    assert draft.recognized_count == 48
-    assert tuple(draft.unseen_card_ids) == tuple(
-        card.id for card in CARDS[12:24]
-    )
-    assert "overlapping_capture_rows" in draft.warnings
-    assert [
-        capture.global_rows for capture in draft.captures if capture.accepted
-    ] == [(1, 2), (5, 6), (7, 8), (9, 10)]
 
 
-def test_unreadable_page_does_not_shift_later_catalog_positions(monkeypatch):
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    payloads = [
-        b"not-an-image",
-        canonical[4],
-        canonical[0],
-        canonical[2],
-        canonical[3],
-    ]
-
-    draft = card_scan.scan_collection_screenshots(payloads)
-
-    assert [capture.accepted for capture in draft.captures] == [
-        False, True, True, True, True
-    ]
-    assert "capture_requires_two_rows" in draft.captures[0].warnings
-    assert draft.recognized_count == 48
-    assert tuple(draft.unseen_card_ids) == tuple(
-        card.id for card in CARDS[12:24]
-    )
-    assert draft.accepted_page_numbers == (1, 3, 4, 5)
-    assert draft.missing_page_numbers == (2,)
-    assert draft.missing_global_rows == (3, 4)
-    assert [
-        capture.global_rows for capture in draft.captures if capture.accepted
-    ] == [(9, 10), (1, 2), (5, 6), (7, 8)]
+# --- checkpoints ------------------------------------------------------------
 
 
-def test_batch_keeps_ambiguous_portrait_unknown_for_explicit_review(monkeypatch):
-    first_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
-    first_rows[0][0] = card_scan.UNKNOWN
-    payloads = [
-        _collection_capture(0, rows=first_rows),
-        *(_collection_capture(index) for index in range(1, 5)),
-    ]
-    _install_synthetic_artwork_anchors(monkeypatch, payloads)
+def test_partial_rows_resume_from_a_bson_checkpoint_without_raw_images(
+    monkeypatch,
+):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
 
-    draft = card_scan.scan_collection_screenshots(payloads)
-
-    assert draft.coverage_complete is True
-    assert draft.complete is False
-    assert draft.recognized_count == 59
-    assert draft.unknown_count == 1
-    assert draft.unknown_card_ids == ("barbarian",)
-    assert draft.unseen_card_ids == ()
-    assert draft.categories[0].complete is False
-    assert "unknown_states_require_review" in draft.warnings
-
-
-def test_partial_batches_resume_from_bson_checkpoint_without_raw_images(monkeypatch):
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-
-    first = card_scan.scan_collection_screenshots((canonical[4], canonical[1]))
+    first = card_scan.scan_collection_screenshots((payloads[4], payloads[1]))
     checkpoint = card_scan.collection_scan_checkpoint(first)
 
-    assert first.accepted_page_numbers == (2, 5)
-    assert first.missing_page_numbers == (1, 3, 4)
-    assert first.missing_global_rows == (1, 2, 5, 6, 7, 8)
-    assert checkpoint["version"] == card_scan.SCAN_CHECKPOINT_VERSION
+    assert first.accepted_global_rows == (3, 4, 9, 10)
+    assert checkpoint["accepted_global_rows"] == [3, 4, 9, 10]
+    assert checkpoint["missing_global_rows"] == [1, 2, 5, 6, 7, 8]
     assert checkpoint["missing_page_numbers"] == [1, 3, 4]
-
-    def assert_bson_safe(value):
-        if isinstance(value, dict):
-            assert all(isinstance(key, str) for key in value)
-            for nested in value.values():
-                assert_bson_safe(nested)
-            return
-        if isinstance(value, list):
-            for nested in value:
-                assert_bson_safe(nested)
-            return
-        assert value is None or type(value) in (bool, int, float, str)
-
-    assert_bson_safe(checkpoint)
+    assert checkpoint["version"] == card_scan.SCAN_CHECKPOINT_VERSION
+    _assert_bson_safe(checkpoint)
 
     resumed = card_scan.scan_collection_screenshots(
-        (canonical[3], canonical[0], canonical[2]),
+        (payloads[3], payloads[0], payloads[2]),
         prior_draft=checkpoint,
     )
 
     assert resumed.coverage_complete is True
     assert resumed.complete is True
-    assert resumed.accepted_page_numbers == (1, 2, 3, 4, 5)
-    assert resumed.missing_page_numbers == ()
-    assert resumed.missing_global_rows == ()
-    assert [capture.assigned_page_number for capture in resumed.captures] == [
-        4, 1, 3
-    ]
+    assert resumed.accepted_global_rows == tuple(range(1, 11))
     assert resumed.cards[12].source_index == 0
-    assert resumed.cards[48].source_index == 0
     assert resumed.cards[0].source_index == 2
     assert "prior_scan_checkpoint_merged" in resumed.warnings
 
 
-def test_normalized_v2_checkpoint_is_accepted_for_partial_resume(monkeypatch):
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    first = card_scan.scan_collection_screenshots((canonical[0], canonical[2]))
+def test_a_checkpoint_holding_half_a_row_is_rejected_atomically(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    first = card_scan.scan_collection_screenshots((payloads[0],))
+    checkpoint = card_scan.collection_scan_checkpoint(first)
+
+    stranded = CARDS[3].id
+    checkpoint["card_states"].pop(stranded, None)
+    checkpoint["card_confidences"].pop(stranded, None)
+    checkpoint["unseen_card_ids"] = [
+        *checkpoint["unseen_card_ids"], stranded,
+    ]
+
+    resumed = card_scan.scan_collection_screenshots(
+        (payloads[2],), prior_draft=checkpoint
+    )
+
+    assert "invalid_prior_scan_checkpoint" in resumed.warnings
+    assert resumed.accepted_global_rows == (5, 6)
+
+
+def test_a_normalized_v2_checkpoint_is_accepted_for_a_partial_resume(
+    monkeypatch,
+):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    first = card_scan.scan_collection_screenshots((payloads[0], payloads[2]))
     checkpoint = card_scan.collection_scan_checkpoint(first)
     checkpoint["version"] = 2
     checkpoint["card_states"] = {
@@ -995,87 +1363,140 @@ def test_normalized_v2_checkpoint_is_accepted_for_partial_resume(monkeypatch):
         for card_id, state in checkpoint["card_states"].items()
     }
     checkpoint["unknown_card_ids"] = [
-        *checkpoint["unknown_card_ids"],
-        *checkpoint["unseen_card_ids"],
+        *checkpoint["unknown_card_ids"], *checkpoint["unseen_card_ids"],
     ]
 
     resumed = card_scan.scan_collection_screenshots(
-        (canonical[4], canonical[1], canonical[3]),
+        (payloads[4], payloads[1], payloads[3]),
         prior_draft=checkpoint,
     )
 
     assert resumed.complete is True
-    assert resumed.accepted_page_numbers == (1, 2, 3, 4, 5)
-    assert resumed.unseen_card_ids == ()
+    assert resumed.accepted_global_rows == tuple(range(1, 11))
 
 
-def test_invalid_prior_checkpoint_is_ignored_atomically(monkeypatch):
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
-    first = card_scan.scan_collection_screenshots((canonical[0], canonical[1]))
+def test_an_invalid_prior_checkpoint_is_ignored_atomically(monkeypatch):
+    payloads = [_collection_capture(index) for index in range(5)]
+    _install_synthetic_reference_bank(monkeypatch, payloads)
+    first = card_scan.scan_collection_screenshots((payloads[0], payloads[1]))
     checkpoint = card_scan.collection_scan_checkpoint(first)
     checkpoint["identity_bound"] = False
 
     resumed = card_scan.scan_collection_screenshots(
-        (canonical[3],),
-        prior_draft=checkpoint,
+        (payloads[3],), prior_draft=checkpoint
     )
 
-    assert resumed.accepted_page_numbers == (4,)
-    assert resumed.missing_page_numbers == (1, 2, 3, 5)
+    assert resumed.accepted_global_rows == (7, 8)
     assert resumed.recognized_count == 12
     assert "invalid_prior_scan_checkpoint" in resumed.warnings
 
 
-def test_duplicate_page_resolves_unknown_but_conflicting_known_states_fail_closed(
-    monkeypatch,
-):
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
+# --- the frozen catalog manifest -------------------------------------------
 
-    unknown_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
-    unknown_rows[0][0] = card_scan.UNKNOWN
-    unknown_capture = _collection_capture(0, rows=unknown_rows)
-    resolved = card_scan.scan_collection_screenshots(
-        (unknown_capture, canonical[0])
+
+class _CatalogEntry:
+    """The only two catalog fields the frozen manifest is defined over."""
+
+    def __init__(self, card_id: str, category: str):
+        self.id = card_id
+        self.category = category
+
+
+def _live_catalog():
+    return [
+        _CatalogEntry(card_id, category)
+        for card_id, category in card_scan_reference.FROZEN_CATALOG
+    ]
+
+
+def _manifest_problems(catalog=None):
+    return card_scan_reference.reference_problems(
+        catalog=_live_catalog() if catalog is None else catalog,
+        frame_min_saturation=card_scan_reference.EXPECTED_FRAME_MIN_SATURATION,
+        frame_min_value=card_scan_reference.EXPECTED_FRAME_MIN_VALUE,
+        category_frame_hues=dict(
+            card_scan_reference.EXPECTED_CATEGORY_FRAME_HUES
+        ),
     )
 
-    assert resolved.cards[0].state == card_scan.OWNED
-    assert resolved.captures[1].warnings == ("duplicate_page_merged",)
-    assert resolved.captures[1].assigned_page_number == 1
-    assert "duplicate_page_merged" in resolved.warnings
 
-    conflicting_rows = [list(row) for row in REAL_CAPTURE_STATES[:2]]
-    conflicting_rows[0][0] = card_scan.MISSING
-    conflict_capture = _collection_capture(0, rows=conflicting_rows)
-    conflicted = card_scan.scan_collection_screenshots(
-        (canonical[0], conflict_capture)
+def test_the_frozen_manifest_pins_every_catalog_slot():
+    assert len(card_scan_reference.FROZEN_CATALOG) == 60
+    assert card_scan_reference.FROZEN_CATALOG == tuple(
+        (card.id, card.category) for card in CARDS
     )
-
-    assert conflicted.cards[0].state == card_scan.UNKNOWN
-    assert conflicted.cards[0].source_index == 1
-    assert "conflicting_duplicate_capture_state" in conflicted.cards[0].warnings
-    assert conflicted.captures[1].warnings == ("conflicting_duplicate_page",)
-    assert conflicted.captures[1].conflicting_card_ids == ("barbarian",)
-    assert conflicted.complete is False
-    assert "conflicting_duplicate_page" in conflicted.warnings
+    assert _manifest_problems() == ()
 
 
-def test_ambiguous_page_assignment_fails_closed(monkeypatch):
-    canonical = [_collection_capture(index) for index in range(5)]
-    _install_synthetic_artwork_anchors(monkeypatch, canonical)
+def test_a_reordered_catalog_of_the_same_size_is_refused():
+    """A reference hash means the artwork at slot N. Reorder and it lies."""
+    catalog = _live_catalog()
+    catalog[0], catalog[1] = catalog[1], catalog[0]
+
+    assert _manifest_problems(catalog) == ("catalog_manifest_drifted",)
+
+
+def test_a_recategorised_card_is_refused():
+    catalog = _live_catalog()
+    catalog[0] = _CatalogEntry(catalog[0].id, "dark_elixir")
+
+    assert _manifest_problems(catalog) == ("catalog_manifest_drifted",)
+
+
+def test_a_renamed_or_resized_catalog_is_refused():
+    renamed = _live_catalog()
+    renamed[7] = _CatalogEntry("some_new_card", renamed[7].category)
+    assert _manifest_problems(renamed) == ("catalog_manifest_drifted",)
+
+    assert _manifest_problems(_live_catalog()[:59]) == (
+        "catalog_manifest_drifted",
+    )
+    assert _manifest_problems(
+        [*_live_catalog(), _CatalogEntry("extra", "elixir")]
+    ) == ("catalog_manifest_drifted",)
+
+
+def test_exactly_two_templates_per_catalog_row_are_required(monkeypatch):
+    assert card_scan_reference.TEMPLATES_PER_ROW == 2
+    assert _manifest_problems() == ()
+
+    complete = dict(card_scan_reference.REFERENCE_BANK)
+
+    missing = dict(complete)
+    missing[3] = (complete[3][0],)
     monkeypatch.setattr(
-        card_scan,
-        "_matching_catalog_positions",
-        lambda _image, _result: (0, 1),
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(missing)
     )
+    assert _manifest_problems() == ("reference_template_count_changed",)
 
-    draft = card_scan.scan_collection_screenshots((canonical[0],))
+    extra = dict(complete)
+    extra[3] = (*complete[3], complete[3][0])
+    monkeypatch.setattr(
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(extra)
+    )
+    assert _manifest_problems() == ("reference_template_count_changed",)
 
-    assert draft.captures[0].accepted is False
-    assert draft.captures[0].assigned_page_number is None
-    assert draft.captures[0].warnings == ("capture_page_ambiguous",)
-    assert draft.accepted_page_numbers == ()
-    assert draft.missing_page_numbers == (1, 2, 3, 4, 5)
-    assert draft.missing_global_rows == tuple(range(1, 11))
-    assert draft.recognized_count == 0
+    dropped = dict(complete)
+    dropped.pop(10)
+    monkeypatch.setattr(
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(dropped)
+    )
+    assert _manifest_problems() == ("reference_rows_incomplete",)
+
+    monkeypatch.setattr(
+        card_scan_reference, "REFERENCE_BANK", MappingProxyType(complete)
+    )
+    assert _manifest_problems() == ()
+
+
+def test_a_drifted_catalog_makes_the_scanner_refuse_to_answer(monkeypatch):
+    reordered = (CARDS[1], CARDS[0], *CARDS[2:])
+    monkeypatch.setattr(card_scan, "CARDS", reordered)
+
+    draft = card_scan.scan_collection_screenshots([_collection_capture(0)])
+
+    assert draft.errors == ("frozen_reference_catalog_manifest_drifted",)
+    assert draft.accepted_global_rows == ()
+    assert draft.row_decisions == ()
+    assert len(draft.unseen_card_ids) == 60
+    assert draft.complete is False

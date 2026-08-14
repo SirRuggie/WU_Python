@@ -7580,3 +7580,1109 @@ def test_a_switcher_opened_without_a_tag_simply_has_no_back_button():
     assert not any(cid.startswith("cards_dashboard:") for cid in ids)
     # And it still pages.
     assert "cards_account_page:1" in ids
+
+
+# --- partial scan success and the manual fallback ---------------------------
+
+
+def _partial_scan_draft(*, accepted_rows=(1, 2), duplicate_unverified=()):
+    """What the row scanner produces when only some rows were confirmed."""
+    confirmed = [
+        card.id
+        for row in accepted_rows
+        for card in cards.CARDS[(row - 1) * 6:row * 6]
+    ]
+    unseen = [card.id for card in cards.CARDS if card.id not in confirmed]
+    manual_rows = [row for row in range(1, 11) if row not in accepted_rows]
+    return {
+        "version": 2,
+        "capture_count": 5,
+        "card_states": {card_id: cards.OWNED for card_id in confirmed},
+        "card_confidences": {card_id: 0.95 for card_id in confirmed},
+        "card_warnings": {},
+        "unknown_card_ids": [],
+        "unseen_card_ids": unseen,
+        "duplicate_unverified_card_ids": list(duplicate_unverified),
+        "capture_issues": [],
+        "warnings": ["manual_review_required"],
+        "errors": [],
+        "identity_bound": True,
+        "coverage_complete": False,
+        "missing_page_numbers": sorted({(row + 1) // 2 for row in manual_rows}),
+        "missing_global_rows": manual_rows,
+        "accepted_global_rows": list(accepted_rows),
+        "manual_required_global_rows": manual_rows,
+        "manual_required_card_ids": unseen,
+        "row_decisions": [
+            {
+                "image": 1,
+                "row_index": 0,
+                "accepted": True,
+                "outcome": "accepted",
+                "reason": "",
+                "proposed_row": accepted_rows[0],
+                "catalog_row": accepted_rows[0],
+                "identity_top1": 2.5,
+                "identity_gap": 52.0,
+            },
+        ],
+        "scanner_version": "wu-cards scanner development freeze 2026-08-13",
+    }
+
+
+def test_a_partial_scan_offers_the_confirmed_cards_and_the_manual_editor():
+    draft = _partial_scan_draft()
+
+    assert cards_command._scan_draft_confirmable(draft) is False
+    assert cards_command._scan_draft_partially_savable(draft) is True
+
+    view = cards_command._scan_review(
+        _scan_account(), {"_id": "#ME"}, "draft-partial", draft
+    )
+    labels = _view_labels(view)
+    ids = {node.get("custom_id") for node in _view_nodes(view)}
+    text = _view_text(view)
+
+    assert labels == ["Save confirmed cards", "Update collection", "Cancel"]
+    assert "cards_scan_save_partial:draft-partial" in ids
+    assert "cards_advanced:#ME" in ids
+    assert "cards_scan_confirm:draft-partial" not in ids
+    assert "Some cards could not be confirmed." in text
+    assert "Check them before you trade." in text
+    assert "Nothing was guessed." in text
+    assert "Still to check: 48 cards" in text
+    assert "Ready to trade" in text
+    # Scanner diagnostics belong in the evidence, never in player copy.
+    for jargon in ("top1", "hash", "hamming", "margin", "pitch", "gate"):
+        assert jargon not in text.lower()
+    _assert_discord_payload(view)
+
+
+def test_a_partial_scan_saves_only_confirmed_rows_and_drops_stale_readiness():
+    account = _scan_account()
+    draft = _partial_scan_draft(duplicate_unverified=("archer",))
+    document = {
+        "_id": "#ME",
+        "inventory_revision": 2,
+        "cards": {card.id: cards.MISSING for card in cards.CARDS},
+        "complete_categories": ["elixir"],
+        "reviewed_lists": ["elixir:missing"],
+        "count_confirmed_card_ids": ["barbarian", "super_bowler"],
+        "confirmed_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+    }
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([document])
+    )
+    cards_command._inventory_locks.clear()
+
+    updated = asyncio.run(cards_command._write_scan_partial(
+        mongo,
+        account,
+        draft,
+        expected_revision=2,
+        discord_id=123,
+        guild_id=1,
+    ))
+
+    confirmed_ids = {card.id for card in cards.CARDS[:12]}
+    assert all(updated["cards"][card_id] == cards.OWNED for card_id in confirmed_ids)
+    assert all(
+        updated["cards"][card.id] == cards.MISSING
+        for card in cards.CARDS
+        if card.id not in confirmed_ids
+    )
+    # Rows 1 and 2 are elixir, and elixir cards further down still need
+    # checking, so elixir cannot stay ready to trade.
+    assert updated["complete_categories"] == []
+    assert updated["reviewed_lists"] == []
+    # No new confirmation date: the member confirmed the scanned part, not the
+    # collection.
+    assert updated["confirmed_at"] == datetime(2026, 8, 1, tzinfo=timezone.utc)
+    assert updated["update_source"] == "confirmed_partial_screenshot_review"
+    assert updated["inventory_revision"] == 3
+    # A scanner floor cannot inherit a member's exact count.
+    assert updated["count_confirmed_card_ids"] == ["super_bowler"]
+    assert updated["scan_duplicate_unverified_card_ids"] == ["archer"]
+
+
+def test_a_partial_scan_write_keeps_revision_and_reservation_protection():
+    account = _scan_account()
+    draft = _partial_scan_draft()
+
+    stale = {
+        "_id": "#ME",
+        "inventory_revision": 3,
+        "cards": {"wizard": cards.DUPLICATE},
+    }
+    stale_mongo = SimpleNamespace(card_inventories=_FakeInventoryCollection([stale]))
+    cards_command._inventory_locks.clear()
+    with pytest.raises(cards_command.ScanDraftStaleError):
+        asyncio.run(cards_command._write_scan_partial(
+            stale_mongo, account, draft,
+            expected_revision=2, discord_id=123, guild_id=1,
+        ))
+    assert stale["cards"] == {"wizard": cards.DUPLICATE}
+    assert stale["inventory_revision"] == 3
+
+    reserved = {
+        "_id": "#ME",
+        "inventory_revision": 2,
+        "cards": {"wizard": cards.DUPLICATE},
+        "card_trade_reservations": {
+            "wizard": {
+                "owner": "trade-a:token-a",
+                "until": datetime.now(timezone.utc) + timedelta(hours=1),
+            },
+        },
+    }
+    reserved_mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([reserved])
+    )
+    cards_command._inventory_locks.clear()
+    with pytest.raises(cards_command.ActiveCardTradeError):
+        asyncio.run(cards_command._write_scan_partial(
+            reserved_mongo, account, draft,
+            expected_revision=2, discord_id=123, guild_id=1,
+        ))
+    assert reserved["cards"] == {"wizard": cards.DUPLICATE}
+    assert reserved["inventory_revision"] == 2
+
+
+def test_a_card_from_a_rejected_row_can_never_be_saved():
+    """Row atomicity at the write boundary, not only in the scanner."""
+    draft = _partial_scan_draft(accepted_rows=(1,))
+    stowaway = cards.CARDS[7].id            # a card from unconfirmed row 2
+    draft["card_states"][stowaway] = cards.DUPLICATE
+    draft["card_confidences"][stowaway] = 0.99
+    draft["unseen_card_ids"] = [
+        card_id for card_id in draft["unseen_card_ids"] if card_id != stowaway
+    ]
+
+    assert cards_command._scan_draft_partially_savable(draft) is False
+
+    document = {"_id": "#ME", "inventory_revision": 0, "cards": {}}
+    mongo = SimpleNamespace(card_inventories=_FakeInventoryCollection([document]))
+    cards_command._inventory_locks.clear()
+    with pytest.raises(ValueError):
+        asyncio.run(cards_command._write_scan_partial(
+            mongo, _scan_account(), draft,
+            expected_revision=0, discord_id=123, guild_id=1,
+        ))
+    assert document["cards"] == {}
+
+
+def test_a_partial_draft_cannot_use_the_full_save_path(monkeypatch):
+    account = _scan_account()
+    draft = _partial_scan_draft()
+    inventory = _complete_inventory()
+    inventory["inventory_revision"] = 4
+    writes = []
+
+    async def load_bound(*_args, **_kwargs):
+        return account, inventory, _scan_accounts_data(account), None
+
+    async def write_scan(*args, **kwargs):
+        writes.append((args, kwargs))
+        return inventory
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_scan_bound_account", load_bound)
+    monkeypatch.setattr(cards_command, "_write_scan_draft", write_scan)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+
+    view = asyncio.run(cards_command._confirm_scan_draft(
+        ctx,
+        "draft-partial",
+        scan_draft=draft,
+        user_id=123,
+        guild_id=1,
+        account_tag="#ME",
+        base_revision=4,
+        usable_until=None,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert writes == []
+    assert "Save confirmed cards" in _view_labels(view)
+
+
+def test_saving_a_partial_scan_opens_update_collection(monkeypatch):
+    account = _scan_account()
+    draft = _partial_scan_draft()
+    saved_inventory = _complete_inventory()
+    saved_inventory["inventory_revision"] = 5
+    saved_inventory["complete_categories"] = []
+    discarded = []
+    writes = []
+
+    async def load_bound(*_args, **_kwargs):
+        return account, saved_inventory, _scan_accounts_data(account), None
+
+    async def write_partial(_mongo, _account, _draft, **kwargs):
+        writes.append(kwargs)
+        return saved_inventory
+
+    async def discard(_mongo, draft_id):
+        discarded.append(draft_id)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_scan_bound_account", load_bound)
+    monkeypatch.setattr(cards_command, "_write_scan_partial", write_partial)
+    monkeypatch.setattr(cards_command, "_discard_scan_state", discard)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+
+    view = asyncio.run(cards_command._save_partial_scan_draft(
+        ctx,
+        "draft-partial",
+        scan_draft=draft,
+        user_id=123,
+        guild_id=1,
+        account_tag="#ME",
+        base_revision=4,
+        usable_until=None,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert writes == [{
+        "expected_revision": 4, "discord_id": 123, "guild_id": 1,
+    }]
+    assert discarded == ["draft-partial"]
+    text = _view_text(view)
+    ids = {node.get("custom_id") for node in _view_nodes(view)}
+    assert "Update collection" in text
+    assert "Saved 12 cards from the scan." in text
+    assert "Ready to trade" in text
+    assert any(str(value).startswith("cards_ready:#ME|") for value in ids)
+    _assert_discord_payload(view)
+
+
+def test_the_dm_review_appears_as_soon_as_one_row_is_confirmed(monkeypatch):
+    account = _scan_account()
+    data = _scan_accounts_data(account)
+    state = {
+        "_id": "cards_upload_partial",
+        "type": "cards_scan_upload",
+        "user_id": 123,
+        "guild_id": 1,
+        "account_tag": "#ME",
+        "base_revision": 4,
+        "usable_until": datetime.now(timezone.utc) + timedelta(minutes=10),
+    }
+    updates = []
+    sent = []
+
+    class Attachment:
+        size = 12
+        media_type = "image/png"
+        filename = "rows.png"
+
+        async def read(self):
+            return b"rows"
+
+    async def find_state(*_args, **_kwargs):
+        return state
+
+    async def get_state(*_args, **_kwargs):
+        return state
+
+    async def load_accounts(*_args, **_kwargs):
+        return data
+
+    def scan(_payloads, *, prior_draft=None):
+        return _partial_scan_draft()
+
+    async def update_state(_mongo, query, update, **_kwargs):
+        updates.append((query, update))
+        return SimpleNamespace(matched_count=1)
+
+    async def send(_bot, channel_id, components):
+        sent.append((channel_id, components))
+        return SimpleNamespace(id=999)
+
+    async def ensure_inventory(*_args, **_kwargs):
+        inventory = _complete_inventory()
+        inventory["inventory_revision"] = 4
+        return inventory
+
+    async def mark_prompt(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_find_card_upload_state", find_state)
+    monkeypatch.setattr(cards_command, "get_state", get_state)
+    monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "_scan_collection_payloads", scan)
+    monkeypatch.setattr(cards_command, "update_state", update_state)
+    monkeypatch.setattr(cards_command, "_send_scan_dm_components", send)
+    monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
+    monkeypatch.setattr(cards_command, "_mark_scan_prompt_received", mark_prompt)
+    event = SimpleNamespace(
+        is_human=True,
+        author_id=123,
+        channel_id=777,
+        message=SimpleNamespace(attachments=(Attachment(),)),
+    )
+
+    asyncio.run(cards_command._handle_card_scan_dm_upload(
+        event,
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(),
+        bot=SimpleNamespace(),
+    ))
+
+    text = _view_text(sent[0][1])
+    assert "Scan complete" in text
+    assert "Some cards could not be confirmed." in text
+    assert "Save confirmed cards" in _view_labels(sent[0][1])
+    # The draft was stored, and the upload stays open so more screenshots can
+    # still reach the same draft.
+    assert len(updates) == 1
+    assert updates[0][1]["$set"]["scan_draft"]["accepted_global_rows"] == [1, 2]
+    assert _contains_raw_bytes(updates[0][1]["$set"]["scan_draft"]) is False
+
+
+def test_the_adapter_keeps_row_provenance_and_stays_bson_safe():
+    draft = cards_command._normalize_collection_scan(
+        {
+            "cards": {
+                card.id: {"state": cards.OWNED, "confidence": 0.95}
+                for card in cards.CARDS[:6]
+            },
+            "unseen_card_ids": [card.id for card in cards.CARDS[6:]],
+            "missing_global_rows": [2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "missing_page_numbers": [1, 2, 3, 4, 5],
+            "accepted_global_rows": [1],
+            "row_decisions": [
+                SimpleNamespace(
+                    input_index=1, row_index=0, accepted=True,
+                    outcome="accepted", reason="", proposed_row=1,
+                    catalog_row=1, identity_top1=3.1667, identity_gap=56.5,
+                ),
+                SimpleNamespace(
+                    input_index=1, row_index=1, accepted=False,
+                    outcome="separation", reason="rival gap 24.83 under 46.00",
+                    proposed_row=5, catalog_row=None, identity_top1=34.67,
+                    identity_gap=24.83,
+                ),
+            ],
+            "scanner_version": "wu-cards scanner development freeze 2026-08-13",
+            "identity_bound": True,
+        },
+        capture_count=1,
+    )
+
+    assert draft["accepted_global_rows"] == [1]
+    assert draft["manual_required_global_rows"] == [2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert len(draft["manual_required_card_ids"]) == 54
+    accepted, rejected = draft["row_decisions"]
+    assert accepted["catalog_row"] == 1 and accepted["accepted"] is True
+    # A rejected row keeps its proposal as evidence and no identity.
+    assert rejected["proposed_row"] == 5
+    assert rejected["catalog_row"] is None
+    assert rejected["outcome"] == "separation"
+    assert rejected["identity_gap"] == 24.83
+    assert cards_command._scan_draft_partially_savable(draft) is True
+
+    def assert_bson_safe(value):
+        if isinstance(value, dict):
+            assert all(isinstance(key, str) for key in value)
+            for nested in value.values():
+                assert_bson_safe(nested)
+            return
+        if isinstance(value, (list, tuple)):
+            for nested in value:
+                assert_bson_safe(nested)
+            return
+        assert value is None or type(value) in (bool, int, float, str)
+
+    assert_bson_safe(draft)
+
+
+def test_a_draft_with_every_identity_bound_keeps_the_correction_flow():
+    """One uncertain count is answered in place, not traded for a part save.
+
+    Every card here is identity bound, so three taps produce a complete
+    collection. Offering a partial save instead would keep less and ask the
+    member to redo the same work in the editor.
+    """
+    draft = _complete_scan_draft()
+    uncertain = cards.CARDS[26].id
+    draft["card_states"].pop(uncertain)
+    draft["card_confidences"].pop(uncertain)
+    draft["unknown_card_ids"] = [uncertain]
+    draft["accepted_global_rows"] = list(range(1, 11))
+    draft["manual_required_global_rows"] = []
+    draft["manual_required_card_ids"] = [uncertain]
+
+    assert cards_command._scan_draft_correctable(draft) is True
+    assert cards_command._scan_draft_partially_savable(draft) is True
+
+    view = cards_command._scan_review(
+        _scan_account(), {"_id": "#ME"}, "draft-correctable", draft
+    )
+    labels = _view_labels(view)
+    ids = {node.get("custom_id") for node in _view_nodes(view)}
+
+    assert labels == [
+        "Missing", "Have 1", "Duplicate",
+        "Save collection", "Update collection", "Cancel",
+    ]
+    assert "cards_scan_save_partial:draft-correctable" not in ids
+    assert "cards_scan_confirm:draft-correctable" in ids
+    assert "Fix the uncertain card below before saving." in _view_text(view)
+
+
+def test_a_partial_review_names_an_uncertain_card_inside_a_confirmed_row():
+    draft = _partial_scan_draft(accepted_rows=(1, 2))
+    uncertain = cards.CARDS[4].id
+    draft["card_states"].pop(uncertain)
+    draft["card_confidences"].pop(uncertain)
+    draft["unknown_card_ids"] = [uncertain]
+    draft["manual_required_card_ids"] = [
+        uncertain, *draft["manual_required_card_ids"],
+    ]
+
+    text = _view_text(cards_command._scan_review(
+        _scan_account(), {"_id": "#ME"}, "draft-loose", draft
+    ))
+
+    assert "Still to check: 49 cards" in text
+    assert "**Rows 3–10:**" in text
+    assert f"**Also:** {cards.CARD_BY_ID[uncertain].name}" in text
+
+
+# --- row atomicity, all three layers ---------------------------------------
+
+
+def _sparse_partial_draft(kept_positions):
+    """An accepted row that arrived with only some of its six positions.
+
+    The scanner cannot produce this. A stale or edited persisted draft can, and
+    the answer to it is the same at every layer: refuse.
+    """
+    draft = _partial_scan_draft(accepted_rows=(1, 2))
+    dropped = [
+        card.id
+        for index, card in enumerate(cards.CARDS[:6])
+        if index not in set(kept_positions)
+    ]
+    for card_id in dropped:
+        draft["card_states"].pop(card_id, None)
+        draft["card_confidences"].pop(card_id, None)
+    draft["unseen_card_ids"] = [*dropped, *draft["unseen_card_ids"]]
+    draft["manual_required_card_ids"] = [
+        *dropped, *draft["manual_required_card_ids"],
+    ]
+    return draft
+
+
+def test_an_accepted_row_with_one_saved_card_is_refused():
+    draft = _sparse_partial_draft((0,))
+
+    assert cards_command._scan_draft_partially_savable(draft) is False
+
+
+def test_an_accepted_row_missing_one_card_is_refused():
+    draft = _sparse_partial_draft((0, 1, 2, 3, 4))
+
+    assert cards_command._scan_draft_partially_savable(draft) is False
+
+
+def test_an_accepted_row_with_all_six_cards_is_allowed():
+    draft = _sparse_partial_draft((0, 1, 2, 3, 4, 5))
+
+    assert cards_command._scan_draft_partially_savable(draft) is True
+    assert set(draft["card_states"]) == {
+        card.id for card in cards.CARDS[:12]
+    }
+
+
+def test_an_accepted_row_may_hold_an_unknown_count_and_still_save_the_rest():
+    """Row identity and card state are separate claims.
+
+    The frozen model can prove a row is that row and still fail to read one
+    card's count. That position is explicitly unknown, not unseen: the row
+    arrived whole, so the other five are safe to keep and the unknown one goes
+    to manual review.
+    """
+    draft = _partial_scan_draft(accepted_rows=(1, 2))
+    uncertain = cards.CARDS[3].id
+    draft["card_states"].pop(uncertain)
+    draft["card_confidences"].pop(uncertain)
+    draft["unknown_card_ids"] = [uncertain]
+    draft["manual_required_card_ids"] = [
+        uncertain, *draft["manual_required_card_ids"],
+    ]
+
+    assert cards_command._scan_draft_partially_savable(draft) is True
+
+    document = {
+        "_id": "#ME",
+        "inventory_revision": 0,
+        "cards": {card.id: cards.MISSING for card in cards.CARDS},
+    }
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([document])
+    )
+    cards_command._inventory_locks.clear()
+    updated = asyncio.run(cards_command._write_scan_partial(
+        mongo, _scan_account(), draft,
+        expected_revision=0, discord_id=123, guild_id=1,
+    ))
+
+    assert updated["cards"][cards.CARDS[2].id] == cards.OWNED
+    # The unread count keeps whatever the collection already said.
+    assert updated["cards"][uncertain] == cards.MISSING
+
+
+def test_the_adapter_refuses_an_accepted_row_that_did_not_arrive_whole():
+    """Layer one: normalization will not publish an inconsistent claim."""
+    draft = cards_command._normalize_collection_scan(
+        {
+            "cards": {
+                card.id: {"state": cards.OWNED, "confidence": 0.95}
+                for card in cards.CARDS[:5]
+            },
+            "unseen_card_ids": [card.id for card in cards.CARDS[5:]],
+            "accepted_global_rows": [1],
+            "missing_global_rows": list(range(2, 11)),
+            "identity_bound": True,
+        },
+        capture_count=1,
+    )
+
+    assert draft["identity_bound"] is False
+    assert draft["coverage_complete"] is False
+    assert draft["accepted_global_rows"] == []
+    assert cards_command._scan_draft_partially_savable(draft) is False
+    assert cards_command._scan_draft_confirmable(draft) is False
+
+
+def test_the_write_refuses_an_incomplete_accepted_row_on_its_own(monkeypatch):
+    """Layer three: the write boundary does not delegate its own safety."""
+    draft = _sparse_partial_draft((0, 1, 2, 3, 4))
+    monkeypatch.setattr(
+        cards_command, "_scan_draft_partially_savable", lambda _draft: True
+    )
+    document = {"_id": "#ME", "inventory_revision": 0, "cards": {}}
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([document])
+    )
+    cards_command._inventory_locks.clear()
+
+    with pytest.raises(ValueError):
+        asyncio.run(cards_command._write_scan_partial(
+            mongo, _scan_account(), draft,
+            expected_revision=0, discord_id=123, guild_id=1,
+        ))
+    assert document["cards"] == {}
+
+
+def test_the_write_refuses_a_state_outside_an_accepted_row_on_its_own(
+    monkeypatch,
+):
+    draft = _partial_scan_draft(accepted_rows=(1,))
+    stowaway = cards.CARDS[7].id
+    draft["card_states"][stowaway] = cards.DUPLICATE
+    draft["card_confidences"][stowaway] = 0.99
+    draft["unseen_card_ids"] = [
+        card_id for card_id in draft["unseen_card_ids"] if card_id != stowaway
+    ]
+    monkeypatch.setattr(
+        cards_command, "_scan_draft_partially_savable", lambda _draft: True
+    )
+    document = {"_id": "#ME", "inventory_revision": 0, "cards": {}}
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([document])
+    )
+    cards_command._inventory_locks.clear()
+
+    with pytest.raises(ValueError):
+        asyncio.run(cards_command._write_scan_partial(
+            mongo, _scan_account(), draft,
+            expected_revision=0, discord_id=123, guild_id=1,
+        ))
+    assert document["cards"] == {}
+
+
+# --- readiness cannot survive a half answered category ----------------------
+
+
+def _partial_write(draft, document):
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([document])
+    )
+    cards_command._inventory_locks.clear()
+    return asyncio.run(cards_command._write_scan_partial(
+        mongo,
+        _scan_account(),
+        draft,
+        expected_revision=int(document.get("inventory_revision", 0)),
+        discord_id=123,
+        guild_id=1,
+    ))
+
+
+def _ready_inventory(**overrides):
+    document = {
+        "_id": "#ME",
+        "inventory_revision": 2,
+        "cards": {card.id: cards.OWNED for card in cards.CARDS},
+        "complete_categories": [category.id for category in cards.CATEGORIES],
+        "reviewed_lists": sorted(
+            f"{category.id}:{mode}"
+            for category in cards.CATEGORIES
+            for mode in ("missing", "duplicates")
+        ),
+        "confirmed_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+    }
+    document.update(overrides)
+    return document
+
+
+def test_a_partial_scan_cannot_preserve_readiness_for_a_half_answered_category():
+    # Rows 1 and 2 are elixir; elixir also owns cards in rows 3 and 4, which
+    # this scan could not read.
+    updated = _partial_write(
+        _partial_scan_draft(accepted_rows=(1, 2)), _ready_inventory()
+    )
+
+    assert "elixir" not in updated["complete_categories"]
+    assert "elixir:missing" not in updated["reviewed_lists"]
+    assert "elixir:duplicates" not in updated["reviewed_lists"]
+
+
+def test_a_partial_scan_keeps_readiness_for_a_category_it_fully_answered():
+    # Rows 1 to 4 cover every elixir card and the first dark elixir cards.
+    updated = _partial_write(
+        _partial_scan_draft(accepted_rows=(1, 2, 3, 4)), _ready_inventory()
+    )
+
+    assert "elixir" in updated["complete_categories"]
+    assert "elixir:missing" in updated["reviewed_lists"]
+    # Dark elixir was written into and still has cards needing review.
+    assert "dark_elixir" not in updated["complete_categories"]
+    assert "dark_elixir:missing" not in updated["reviewed_lists"]
+
+
+def test_a_partial_scan_leaves_a_category_it_never_touched_alone():
+    """Do not punish scanning by wiping categories the scan never wrote to."""
+    updated = _partial_write(
+        _partial_scan_draft(accepted_rows=(9, 10)), _ready_inventory()
+    )
+
+    assert "super_troop" not in updated["complete_categories"]
+    assert set(updated["complete_categories"]) == {
+        "elixir", "dark_elixir", "builder_base",
+    }
+    assert "elixir:missing" in updated["reviewed_lists"]
+
+
+def test_a_partial_scan_cannot_make_a_player_matchable_on_an_unread_category():
+    """The end the invalidation exists for, checked through the domain rules.
+
+    `_matchable` falls back to `updated_at`, which this write refreshes, so
+    without the invalidation an inventory with no confirmation date at all
+    would become matchable the moment a partial scan saved.
+    """
+    document = _ready_inventory(
+        cards={card.id: cards.MISSING for card in cards.CARDS},
+        complete_categories=["elixir"],
+        reviewed_lists=["elixir:missing", "elixir:duplicates"],
+    )
+    document.pop("confirmed_at")
+    wanted = cards.CARDS[12].id            # elixir, row 3, not scanned
+    partner = {
+        "_id": "#YOU",
+        "player_name": "Partner",
+        "cards": {card.id: cards.OWNED for card in cards.CARDS}
+        | {wanted: cards.DUPLICATE, cards.CARDS[0].id: cards.MISSING},
+        "complete_categories": ["elixir"],
+        "confirmed_at": datetime.now(timezone.utc),
+    }
+
+    updated = _partial_write(_partial_scan_draft(accepted_rows=(1, 2)), document)
+
+    # The write did refresh updated_at, so the collection is "matchable" in the
+    # age sense - and still matches nothing, because elixir is no longer ready.
+    assert cards.inventory_is_matchable(updated) is True
+    assert cards.find_matches(updated, [partner]) == []
+    assert cards.family_supply([updated])[wanted].seekers == ()
+    # Proof that readiness was the only thing standing in the way.
+    would_have_matched = dict(updated, complete_categories=["elixir"])
+    assert cards.find_matches(would_have_matched, [partner])
+
+
+def test_update_collection_restores_readiness_after_a_partial_scan():
+    document = _ready_inventory(
+        cards={card.id: cards.MISSING for card in cards.CARDS},
+    )
+    mongo = SimpleNamespace(card_inventories=_FakeCategoryCollection(document))
+    cards_command._inventory_locks.clear()
+
+    updated = asyncio.run(cards_command._write_scan_partial(
+        mongo,
+        _scan_account(),
+        _partial_scan_draft(accepted_rows=(1, 2)),
+        expected_revision=2,
+        discord_id=123,
+        guild_id=1,
+    ))
+    assert "elixir" not in updated["complete_categories"]
+
+    # The normal manual path puts it back: no scan-only repair route exists.
+    restored = asyncio.run(cards_command._write_category_ready(
+        mongo,
+        _scan_account(),
+        updated,
+        "elixir",
+        discord_id=123,
+        guild_id=1,
+    ))
+
+    assert "elixir" in restored["complete_categories"]
+    assert {"elixir:missing", "elixir:duplicates"} <= set(
+        restored["reviewed_lists"]
+    )
+    assert restored["confirmed_at"] is not None
+    assert cards.inventory_is_matchable(restored) is True
+
+
+# --- a scan session must be resolvable where it is created ------------------
+
+
+class _UploadSessionStore:
+    """Just enough component_state to prove a session can be looked up.
+
+    Scalar equality only: the TTL clause is not what these tests are about.
+    """
+
+    def __init__(self):
+        self.documents: list[dict] = []
+
+    async def delete_many(self, query):
+        self.documents = [
+            document for document in self.documents
+            if not all(
+                document.get(key) == value for key, value in query.items()
+            )
+        ]
+
+    async def find_one(self, query, sort=None):
+        for document in self.documents:
+            if all(
+                document.get(key) == value
+                for key, value in query.items()
+                if not isinstance(value, dict)
+            ):
+                return document
+        return None
+
+
+def _scan_start_harness(monkeypatch, *, guild_id, sessions=None):
+    account = _scan_account()
+    inventory = _complete_inventory()
+    inventory["inventory_revision"] = 9
+    calls = {"load_target": 0, "inserted": [], "ensured": []}
+    store = sessions if sessions is not None else _UploadSessionStore()
+
+    async def load_target(*_args, **_kwargs):
+        calls["load_target"] += 1
+        return account, inventory, None
+
+    async def ensure_inventory(_mongo, _account, *, discord_id, guild_id):
+        calls["ensured"].append(guild_id)
+        return inventory
+
+    async def insert_state(_mongo, document, *, ttl):
+        calls["inserted"].append(document)
+        store.documents.append(document)
+
+    async def update_state(_mongo, _query, _update, **_kwargs):
+        return SimpleNamespace(matched_count=1)
+
+    async def send(_bot, _channel_id, _components):
+        return SimpleNamespace(id=888)
+
+    class Rest:
+        async def create_dm_channel(self, user_id):
+            return SimpleNamespace(id=777)
+
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    monkeypatch.setattr(cards_command, "_ensure_inventory", ensure_inventory)
+    monkeypatch.setattr(cards_command, "insert_state", insert_state)
+    monkeypatch.setattr(cards_command, "update_state", update_state)
+    monkeypatch.setattr(cards_command, "_send_scan_dm_components", send)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=guild_id)
+    mongo = SimpleNamespace(component_state=store)
+    bot = SimpleNamespace(rest=Rest())
+    view = asyncio.run(cards_command.cards_scan_start(
+        ctx, "#ME", coc_client=SimpleNamespace(), mongo=mongo, bot=bot,
+    ))
+    return view, calls, store
+
+
+def test_a_scan_started_in_the_configured_server_creates_a_valid_session(
+    monkeypatch,
+):
+    view, calls, store = _scan_start_harness(monkeypatch, guild_id=1)
+
+    assert len(calls["inserted"]) == 1
+    assert calls["inserted"][0]["guild_id"] == 1
+    assert "Private Upload Ready" in _view_text(view)
+
+    found = asyncio.run(cards_command._find_card_upload_state(
+        SimpleNamespace(component_state=store), 123
+    ))
+    assert found is not None
+    assert found["_id"] == calls["inserted"][0]["_id"]
+
+
+def test_a_scan_cannot_start_outside_the_configured_family_server(monkeypatch):
+    """The bug: the session stored the wrong guild and nothing could find it."""
+    view, calls, store = _scan_start_harness(monkeypatch, guild_id=999)
+
+    assert calls["inserted"] == []
+    assert store.documents == []
+    # Nothing was loaded, so nothing rescoped the inventory on the way in.
+    assert calls["load_target"] == 0
+    assert calls["ensured"] == []
+    text = _view_text(view)
+    assert "Scanning only works in the family server" in text
+    assert "Nothing was changed here." in text
+
+
+def test_a_scan_started_from_a_dm_binds_to_the_configured_family(monkeypatch):
+    view, calls, store = _scan_start_harness(monkeypatch, guild_id=None)
+
+    assert calls["inserted"][0]["guild_id"] == 1
+    assert asyncio.run(cards_command._find_card_upload_state(
+        SimpleNamespace(component_state=store), 123
+    )) is not None
+    assert "Private Upload Ready" in _view_text(view)
+
+
+def test_a_valid_session_survives_its_own_ownership_recheck(monkeypatch):
+    _view, calls, _store = _scan_start_harness(monkeypatch, guild_id=1)
+    document = calls["inserted"][0]
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+
+    assert cards_command._scan_session_problem(
+        ctx, document["user_id"], document["guild_id"]
+    ) is None
+    # And the same session cannot be driven from another server.
+    elsewhere = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=999)
+    assert cards_command._scan_session_problem(
+        elsewhere, document["user_id"], document["guild_id"]
+    ) is not None
+
+
+def test_the_scan_session_never_rescopes_the_inventory_guild(monkeypatch):
+    """A scan may only ever bind a collection to the configured family."""
+    _view, calls, _store = _scan_start_harness(monkeypatch, guild_id=1)
+
+    assert calls["inserted"][0]["guild_id"] == cards_command.CARDS_GUILD_ID
+    assert all(
+        guild_id == cards_command.CARDS_GUILD_ID for guild_id in calls["ensured"]
+    )
+
+
+# --- a card may not be classified two ways at once --------------------------
+
+
+def _row_scanner_result(*, accepted_rows, uncertain=(), extra_unseen=()):
+    """A scanner result shaped the way `utils/card_scan.py` really shapes one.
+
+    An unseen position has no state, so the scanner reports it as unknown as
+    well: on a real partial scan the two lists genuinely overlap. This fixture
+    reproduces that rather than an idealised disjoint version, so the tests run
+    against what production actually receives.
+    """
+    accepted_ids = [
+        card.id
+        for row in accepted_rows
+        for card in cards.CARDS[(row - 1) * 6:row * 6]
+    ]
+    stated = [card_id for card_id in accepted_ids if card_id not in uncertain]
+    unseen = [
+        card.id for card in cards.CARDS if card.id not in accepted_ids
+    ]
+    unseen.extend(extra_unseen)
+    return {
+        "cards": {
+            card_id: {"state": cards.OWNED, "confidence": 0.95}
+            for card_id in stated
+        },
+        "unknown_card_ids": [*uncertain, *unseen],
+        "unseen_card_ids": unseen,
+        "accepted_global_rows": list(accepted_rows),
+        "missing_global_rows": [
+            row for row in range(1, 11) if row not in accepted_rows
+        ],
+        "identity_bound": True,
+    }
+
+
+def _normalized_row_scan(**kwargs):
+    return cards_command._normalize_collection_scan(
+        _row_scanner_result(**kwargs), capture_count=5
+    )
+
+
+def _attempt_partial_write(draft):
+    """Run the real writer and report whether anything reached the document."""
+    document = {
+        "_id": "#ME",
+        "inventory_revision": 0,
+        "cards": {card.id: cards.MISSING for card in cards.CARDS},
+    }
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([document])
+    )
+    cards_command._inventory_locks.clear()
+    try:
+        return cards_command._inventory_revision_value(
+            asyncio.run(cards_command._write_scan_partial(
+                mongo, _scan_account(), draft,
+                expected_revision=0, discord_id=123, guild_id=1,
+            ))
+        ), document
+    except ValueError as error:
+        return error, document
+
+
+def test_normalization_turns_the_scanner_classifications_into_a_partition():
+    """The overlap is real and legitimate; leaving it in place is not.
+
+    Unseen is the stronger claim, so it wins. Without this an accepted row
+    could look complete through an "unknown" card that was in fact never
+    observed, which is the bypass this pins shut.
+    """
+    draft = _normalized_row_scan(accepted_rows=(1, 2), uncertain=())
+    unknown = set(draft["unknown_card_ids"])
+    unseen = set(draft["unseen_card_ids"])
+    stated = set(draft["card_states"])
+
+    assert unknown & unseen == set()
+    assert stated & (unknown | unseen) == set()
+    assert stated | unknown | unseen == set(cards.CARD_BY_ID)
+    # Nothing was lost: everything the scanner could not answer for is still
+    # manual-required.
+    assert set(cards_command._scan_manual_required_ids(draft)) == unknown | unseen
+
+
+def test_an_accepted_row_card_called_both_unknown_and_unseen_is_rejected():
+    """Codex's bypass: five states rode along behind a contradictory sixth."""
+    sixth = cards.CARDS[5].id
+    draft = _normalized_row_scan(
+        accepted_rows=(1, 2), uncertain=(sixth,), extra_unseen=(sixth,)
+    )
+
+    # 1. normalization refuses to publish the accepted-row identity
+    assert draft["identity_bound"] is False
+    assert draft["accepted_global_rows"] == []
+    assert draft["coverage_complete"] is False
+    # 2. the partial-save gate refuses
+    assert cards_command._scan_draft_partially_savable(draft) is False
+    assert cards_command._scan_draft_confirmable(draft) is False
+    # 3. and nothing reaches the collection
+    outcome, document = _attempt_partial_write(draft)
+    assert isinstance(outcome, ValueError)
+    assert all(state == cards.MISSING for state in document["cards"].values())
+
+
+def test_the_writer_refuses_the_contradiction_even_with_the_gate_stubbed(
+    monkeypatch,
+):
+    """The writer does not lean on any earlier layer having looked."""
+    sixth = cards.CARDS[5].id
+    draft = _normalized_row_scan(accepted_rows=(1, 2), uncertain=(sixth,))
+    # Reintroduce the contradiction after normalization tidied it away, then
+    # bypass every gate in front of the writer.
+    draft["unseen_card_ids"] = [sixth, *draft["unseen_card_ids"]]
+    monkeypatch.setattr(
+        cards_command, "_scan_draft_partially_savable", lambda _draft: True
+    )
+
+    outcome, document = _attempt_partial_write(draft)
+
+    assert isinstance(outcome, ValueError)
+    assert "both unknown and unseen" in str(outcome)
+    assert all(state == cards.MISSING for state in document["cards"].values())
+
+
+def test_an_accepted_row_card_with_a_state_and_unseen_is_rejected(monkeypatch):
+    first = cards.CARDS[0].id
+    draft = _normalized_row_scan(accepted_rows=(1, 2), extra_unseen=(first,))
+
+    assert draft["identity_bound"] is False
+    assert draft["accepted_global_rows"] == []
+    assert cards_command._scan_draft_partially_savable(draft) is False
+
+    # And again straight at the writer, with the state membership forced back.
+    forced = _normalized_row_scan(accepted_rows=(1, 2))
+    forced["unseen_card_ids"] = [first, *forced["unseen_card_ids"]]
+    monkeypatch.setattr(
+        cards_command, "_scan_draft_partially_savable", lambda _draft: True
+    )
+    outcome, document = _attempt_partial_write(forced)
+    assert isinstance(outcome, ValueError)
+    assert "contradicts its own card states" in str(outcome)
+    assert all(state == cards.MISSING for state in document["cards"].values())
+
+
+def test_five_states_and_one_clean_unknown_still_save_the_five():
+    """The valid UNKNOWN semantics survive the fix."""
+    sixth = cards.CARDS[5].id
+    draft = _normalized_row_scan(accepted_rows=(1, 2), uncertain=(sixth,))
+
+    assert draft["identity_bound"] is True
+    assert draft["accepted_global_rows"] == [1, 2]
+    assert sixth in draft["unknown_card_ids"]
+    assert sixth not in draft["unseen_card_ids"]
+    assert cards_command._scan_draft_partially_savable(draft) is True
+
+    outcome, document = _attempt_partial_write(draft)
+
+    assert not isinstance(outcome, ValueError)
+    written = [
+        card.id for card in cards.CARDS
+        if document["cards"][card.id] == cards.OWNED
+    ]
+    assert len(written) == 11
+    assert sixth not in written
+    assert sixth in cards_command._scan_manual_required_ids(draft)
+
+
+def test_a_whole_six_state_accepted_row_still_saves():
+    draft = _normalized_row_scan(accepted_rows=(1, 2))
+
+    assert cards_command._scan_draft_partially_savable(draft) is True
+
+    outcome, document = _attempt_partial_write(draft)
+
+    assert not isinstance(outcome, ValueError)
+    assert sum(
+        document["cards"][card.id] == cards.OWNED for card in cards.CARDS
+    ) == 12
+
+
+def test_unseen_cards_from_rejected_rows_stay_ordinary_manual_work():
+    """Rejected rows are unresolved data, not a contradiction."""
+    draft = _normalized_row_scan(accepted_rows=(1, 2))
+    rejected_ids = [card.id for card in cards.CARDS[12:]]
+
+    assert set(draft["unseen_card_ids"]) == set(rejected_ids)
+    assert set(draft["unknown_card_ids"]) == set()
+    assert set(cards_command._scan_manual_required_ids(draft)) == set(rejected_ids)
+    assert draft["manual_required_global_rows"] == list(range(3, 11))
+    assert cards_command._scan_draft_partially_savable(draft) is True
+
+    text = _view_text(cards_command._scan_review(
+        _scan_account(), {"_id": "#ME"}, "draft-rejected-rows", draft
+    ))
+    assert "Still to check: 48 cards" in text
+    assert "Rows 3–10" in text
