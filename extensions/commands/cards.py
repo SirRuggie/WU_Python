@@ -114,6 +114,8 @@ TRADE_REVIEW_FOR = timedelta(days=7)
 TRADE_LEASE_COUNT = 4
 CARD_SCAN_CAPTURE_COUNT = 5
 CARD_SCAN_DRAFT_FOR = timedelta(minutes=20)
+CARD_BULK_SESSION_FOR = timedelta(hours=2)
+CARD_BULK_WRITE_GRACE = timedelta(minutes=2)
 CARD_SCAN_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 CARD_SCAN_MAX_BATCH_BYTES = 50 * 1024 * 1024
 CARD_SCAN_MAX_UPLOAD_ATTACHMENTS = 10
@@ -3053,6 +3055,34 @@ def _quantity_selected(category_id: str, card_id: object) -> str | None:
     return chosen if any(card.id == chosen for card in definitions) else None
 
 
+def _bulk_editable_ids(category_id: str, inventory: dict) -> list[str]:
+    """Canonical category cards that are not currently reserved for a trade."""
+    reserved = set(_card_reservations(inventory))
+    return [
+        card.id for card in CATEGORY_CARDS[category_id]
+        if card.id not in reserved
+    ]
+
+
+def _bulk_state_id(tag: object, category_id: str) -> str:
+    """Opaque state key that retains only enough scope for expiry recovery."""
+    clean_tag = _normalize_tag(tag).lstrip("#")
+    token = secrets.token_urlsafe(8)
+    return f"cards_bulk_{token}|{clean_tag}|{category_id}"
+
+
+def _bulk_state_target(state_id: object) -> tuple[str, str | None]:
+    """Recover the account/category encoded in an expired bulk state key."""
+    parts = str(state_id or "").split("|")
+    if len(parts) != 3 or not parts[0].startswith("cards_bulk_"):
+        return "", None
+    tag = _normalize_tag(parts[1]) if len(parts) > 1 else ""
+    category_id = (
+        parts[2] if len(parts) > 2 and parts[2] in CATEGORY_BY_ID else None
+    )
+    return tag, category_id
+
+
 def _quantity_editor(
     account,
     inventory: dict,
@@ -3060,6 +3090,7 @@ def _quantity_editor(
     *,
     card_id: object = None,
     saved: str | None = None,
+    bulk_state_id: str | None = None,
 ) -> list[Container]:
     """One category on one screen: every count listed, one set of controls.
 
@@ -3082,8 +3113,12 @@ def _quantity_editor(
     saved_cards = normalize_cards(inventory.get("cards"))
     confirmed = _confirmed_count_ids(inventory)
     reservations = _card_reservations(inventory)
+    category_reservations = {
+        item.id for item in definitions if item.id in reservations
+    }
     complete = category_id in set(inventory.get("complete_categories") or ())
     summary = category_summary(saved_cards, category_id)
+    editable_ids = _bulk_editable_ids(category_id, inventory)
 
     def count_for(item) -> str:
         """The number, and nothing else that can be avoided.
@@ -3151,10 +3186,62 @@ def _quantity_editor(
         for item in definitions
     )
 
+    bulk_controls: list = []
+    if bulk_state_id and editable_ids:
+        reserved_note = (
+            f" {len(category_reservations)} reserved card"
+            f"{'s' if len(category_reservations) != 1 else ''} remain listed and unchanged."
+            if category_reservations else ""
+        )
+        bulk_controls = [
+            Text(content=(
+                "**Update several cards**\n"
+                "-# Choose every changed card once. Each submitted group saves "
+                "automatically."
+                f"{reserved_note}"
+            )),
+            ActionRow(components=[TextSelectMenu(
+                custom_id=f"cards_bulk_select:{bulk_state_id}",
+                placeholder="Choose cards to update",
+                min_values=1,
+                max_values=len(editable_ids),
+                options=[
+                    SelectOption(
+                        label=(
+                            f"{CARD_BY_ID[item_id].name} - "
+                            f"{count_for(CARD_BY_ID[item_id])}"
+                        )[:100],
+                        value=item_id,
+                        emoji=troop_emoji.partial(item_id),
+                    )
+                    for item_id in editable_ids
+                ],
+            )]),
+            ActionRow(components=[Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_bulk_edit_all:{bulk_state_id}",
+                label=f"Edit all {len(editable_ids)} editable counts",
+            )]),
+            Separator(divider=True),
+        ]
+    elif bulk_state_id:
+        bulk_controls = [
+            Text(content=(
+                "**Bulk edit exact counts**\n"
+                "-# Every card in this category is reserved in a trade, so none "
+                "can be changed right now."
+            )),
+            Separator(divider=True),
+        ]
+
     body: list = [
         Text(content=(
             f"# Update collection · {category_markup(category.id)} "
             f"{category.name}"
+            + (
+                f"\n-# {_escape_markdown(account.name)} \u00b7 `{tag}`"
+                if bulk_state_id else ""
+            )
         )),
         # The category picker is the first control, because choosing which
         # category you are looking at comes before anything you do inside it.
@@ -3184,6 +3271,7 @@ def _quantity_editor(
         Separator(divider=True),
         Text(content=listing),
         Separator(divider=True),
+        *bulk_controls,
         # Names the control below it and says what it is for, in the words the
         # reader needs. "Dropdown" is not one of them - it assumes the member
         # knows Discord's own vocabulary. It stays on screen after a card is
@@ -3308,6 +3396,78 @@ def _quantity_editor(
         accent_color=CATEGORY_ACCENTS[category_id],
         components=body,
     )]
+
+
+async def _quantity_editor_view(
+    ctx,
+    account,
+    inventory: dict,
+    category_id: str,
+    *,
+    mongo: MongoClient,
+    card_id: object = None,
+    saved: str | None = None,
+) -> list[Container]:
+    """Render a category with a restart-safe, owner-bound bulk edit session."""
+    saved_cards = normalize_cards(inventory.get("cards"))
+    confirmed = _confirmed_count_ids(inventory)
+    editable_ids = _bulk_editable_ids(category_id, inventory)
+    count_snapshot = {}
+    for item_id in editable_ids:
+        value = saved_cards.get(item_id, OWNED)
+        count_snapshot[item_id] = (
+            value if isinstance(value, int) and not isinstance(value, bool)
+            else OWNED
+        )
+    unconfirmed_ids = [
+        item_id for item_id in editable_ids
+        if count_snapshot[item_id] == DUPLICATE and item_id not in confirmed
+    ]
+    state_id = None
+    state = {
+        "type": "cards_bulk_edit",
+        "user_id": int(ctx.user.id),
+        "guild_id": _trade_guild_id(ctx),
+        "account_tag": _normalize_tag(account.tag),
+        "account_name": str(account.name),
+        "category_id": category_id,
+        "editable_ids": editable_ids,
+        "count_snapshot": count_snapshot,
+        "unconfirmed_ids": unconfirmed_ids,
+        "selected_ids": [],
+        "next_index": 0,
+        "expected_revision": _inventory_revision_value(inventory),
+        "processed_count": 0,
+        "written_count": 0,
+        "phase": "select",
+        "nonce": secrets.token_urlsafe(5),
+    }
+    for _attempt in range(2):
+        candidate = _bulk_state_id(account.tag, category_id)
+        try:
+            await insert_state(
+                mongo,
+                {"_id": candidate, **state},
+                ttl=CARD_BULK_SESSION_FOR,
+            )
+        except DuplicateKeyError:
+            continue
+        except Exception:
+            _log.exception(
+                "could not create card bulk state tag=%s category=%s",
+                _normalize_tag(account.tag), category_id,
+            )
+            break
+        state_id = candidate
+        break
+    return _quantity_editor(
+        account,
+        inventory,
+        category_id,
+        card_id=card_id,
+        saved=saved,
+        bulk_state_id=state_id,
+    )
 
 
 async def _dashboard_view(
@@ -7903,6 +8063,130 @@ async def _write_hidden_badge_batch(
         raise InventoryWriteConflict
 
 
+async def _write_exact_card_batch(
+    mongo: MongoClient,
+    account,
+    inventory: dict,
+    batch_ids: list[str],
+    values: dict[str, int],
+    *,
+    expected_revision: int,
+    discord_id: int,
+    guild_id: int | None,
+) -> dict:
+    """Save one exact-count modal atomically without touching other cards.
+
+    ``batch_ids`` is the complete modal scope. ``values`` contains only fields
+    that supplied an exact number; a scanner-derived ``2+`` may be left blank
+    to preserve that uncertainty. Blank fields are still revision/reservation
+    guarded, but they are never written or marked exact.
+    """
+    ordered = _ordered_card_ids(batch_ids)
+    explicit = dict(values)
+    if (
+        not ordered
+        or len(ordered) > 5
+        or len(ordered) != len(batch_ids)
+        or ordered != list(batch_ids)
+        or not set(explicit) <= set(ordered)
+        or len({CARD_BY_ID[card_id].category for card_id in ordered}) != 1
+    ):
+        raise ValueError("invalid exact card batch")
+    for card_id, target in explicit.items():
+        if (
+            not isinstance(target, int)
+            or isinstance(target, bool)
+            or not (MISSING <= target <= MAX_COPIES)
+        ):
+            raise ValueError(f"invalid exact count for {card_id}")
+
+    tag = _normalize_tag(account.tag)
+    async with _inventory_lock(tag):
+        latest = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        if _inventory_revision_value(latest) != int(expected_revision):
+            raise InventoryWriteConflict
+        if set(ordered) & set(_card_reservations(latest)):
+            raise ActiveCardTradeError
+
+        # The only legal blank is an unchanged scanner floor. Recheck against
+        # the latest document so a stale modal cannot preserve a certainty that
+        # no longer exists or silently skip an exact card.
+        latest_cards = normalize_cards(latest.get("cards"))
+        latest_confirmed = _confirmed_count_ids(latest)
+        for card_id in set(ordered) - set(explicit):
+            if (
+                latest_cards.get(card_id, OWNED) != DUPLICATE
+                or card_id in latest_confirmed
+            ):
+                raise InventoryWriteConflict
+
+        # An all-blank batch is a guarded no-op: advance the UI session without
+        # manufacturing a revision, timestamp, or exact-count confirmation.
+        if not explicit:
+            return latest
+
+        now = datetime.now(timezone.utc)
+        identity = {
+            "discord_id": int(discord_id),
+            "player_name": account.name,
+            "town_hall": getattr(account, "town_hall", 0) or 0,
+            "clan_tag": (
+                _normalize_tag(account.clan_tag) if account.clan_tag else None
+            ),
+            "clan_name": account.clan_name,
+            "updated_at": now,
+            "confirmed_at": now,
+            "update_source": "card_batch_set",
+        }
+        for card_id, target in explicit.items():
+            identity[f"cards.{card_id}"] = int(target)
+        if guild_id is not None:
+            identity["guild_id"] = guild_id
+
+        revision_guard = (
+            {"$or": [
+                {"inventory_revision": {"$exists": False}},
+                {"inventory_revision": 0},
+            ]}
+            if expected_revision == 0
+            else {"inventory_revision": int(expected_revision)}
+        )
+        reservation_guards = [
+            {"$or": [
+                {f"card_trade_reservations.{card_id}": {"$exists": False}},
+                {
+                    f"card_trade_reservations.{card_id}.until": {
+                        "$lte": now,
+                    },
+                },
+            ]}
+            for card_id in ordered
+        ]
+        written_ids = list(explicit)
+        result = await mongo.card_inventories.update_one(
+            {
+                "_id": tag,
+                "$and": [revision_guard, *reservation_guards],
+            },
+            {
+                "$set": identity,
+                "$pull": {
+                    "scan_duplicate_unverified_card_ids": {"$in": written_ids},
+                },
+                "$addToSet": {
+                    "count_confirmed_card_ids": {"$each": written_ids},
+                },
+                "$inc": {"inventory_revision": 1},
+            },
+        )
+        if getattr(result, "matched_count", 1):
+            return await mongo.card_inventories.find_one({"_id": tag}) or {}
+        current = await mongo.card_inventories.find_one({"_id": tag}) or {}
+        if set(ordered) & set(_card_reservations(current)):
+            raise ActiveCardTradeError
+        raise InventoryWriteConflict
+
+
 async def _write_category_ready(
     mongo: MongoClient,
     account,
@@ -9417,10 +9701,12 @@ async def _save_partial_scan_draft(
         (category.id for category in CATEGORIES if category.id not in complete),
         CATEGORIES[0].id,
     )
-    return _quantity_editor(
+    return await _quantity_editor_view(
+        ctx,
         account,
         updated,
         landing,
+        mongo=mongo,
         saved=(
             f"Saved {saved_count} cards from the scan. "
             "Check the rest here, then tap **Ready to trade**."
@@ -10158,7 +10444,9 @@ async def cards_advanced(
         (category.id for category in CATEGORIES if category.id not in complete),
         CATEGORIES[0].id,
     )
-    return _quantity_editor(account, inventory, landing)
+    return await _quantity_editor_view(
+        ctx, account, inventory, landing, mongo=mongo
+    )
 
 
 def _modal_text_value(ctx, custom_id: str) -> str:
@@ -10250,8 +10538,962 @@ async def _quantity_screen(
     )
     if problem:
         return problem
-    return _quantity_editor(
-        account, inventory, category_id, card_id=card_id or from_id
+    return await _quantity_editor_view(
+        ctx,
+        account,
+        inventory,
+        category_id,
+        mongo=mongo,
+        card_id=card_id or from_id,
+    )
+
+
+def _bulk_state_owned(ctx, state_id: str, state: dict) -> bool:
+    """Whether this live session belongs to this user and family scope."""
+    if state.get("type") != "cards_bulk_edit":
+        return False
+    tag, category_id = _bulk_state_target(state_id)
+    try:
+        owner_id = int(state.get("user_id"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        owner_id == int(ctx.user.id)
+        and state.get("guild_id") == _trade_guild_id(ctx)
+        and _normalize_tag(state.get("account_tag")) == tag
+        and state.get("category_id") == category_id
+    )
+
+
+def _bulk_state_well_formed(state: dict) -> bool:
+    category_id = state.get("category_id")
+    if category_id not in CATEGORY_BY_ID:
+        return False
+    editable = list(state.get("editable_ids") or ())
+    canonical = [
+        item.id for item in CATEGORY_CARDS[category_id]
+        if item.id in set(editable)
+    ]
+    counts = state.get("count_snapshot")
+    selected = list(state.get("selected_ids") or ())
+    canonical_selected = [
+        item_id for item_id in editable if item_id in set(selected)
+    ]
+    unconfirmed = set(state.get("unconfirmed_ids") or ())
+    return (
+        editable == canonical
+        and bool(editable)
+        and isinstance(counts, dict)
+        and set(counts) == set(editable)
+        and all(
+            isinstance(counts[item_id], int)
+            and not isinstance(counts[item_id], bool)
+            and MISSING <= counts[item_id] <= MAX_COPIES
+            for item_id in editable
+        )
+        and selected == canonical_selected
+        and unconfirmed <= set(editable)
+        and all(counts[item_id] == DUPLICATE for item_id in unconfirmed)
+    )
+
+
+async def _bulk_state_update(
+    mongo: MongoClient,
+    state_id: str,
+    state: dict,
+    *,
+    guard: dict,
+    values: dict,
+    unset: tuple[str, ...] = (),
+):
+    """CAS a live state transition and slide its expiry in the same update."""
+    now = datetime.now(timezone.utc)
+    filt = {
+        "_id": state_id,
+        "type": "cards_bulk_edit",
+        "user_id": int(state["user_id"]),
+        "guild_id": state.get("guild_id"),
+        "account_tag": _normalize_tag(state.get("account_tag")),
+        "category_id": state.get("category_id"),
+        "expires_at": {"$gt": now},
+        **guard,
+    }
+    update: dict = {"$set": {
+        **values,
+        "expires_at": now + CARD_BULK_SESSION_FOR,
+    }}
+    if unset:
+        update["$unset"] = {name: "" for name in unset}
+    return await update_state(mongo, filt, update)
+
+
+def _bulk_matched(result) -> bool:
+    return bool(getattr(result, "matched_count", 0))
+
+
+def _bulk_selected(state: dict, values) -> list[str] | None:
+    raw = [str(value) for value in (values or ())]
+    if not raw or len(raw) != len(set(raw)):
+        return None
+    allowed = list(state.get("editable_ids") or ())
+    selected_set = set(raw)
+    selected = [item_id for item_id in allowed if item_id in selected_set]
+    return selected if set(selected) == selected_set else None
+
+
+def _bulk_exact_modal(state_id: str, state: dict) -> dict:
+    """Build the current one-to-five-card modal from persisted state."""
+    selected = list(state.get("selected_ids") or ())
+    start = int(state.get("next_index") or 0)
+    batch = selected[start:start + 5]
+    total = len(selected)
+    nonce = str(state.get("nonce") or "")
+    counts = dict(state.get("count_snapshot") or {})
+    uncertain = set(state.get("unconfirmed_ids") or ())
+    inputs = []
+    for offset, item_id in enumerate(batch):
+        custom_id = f"q_{nonce}_{offset}"
+        label = f"{start + offset + 1}. {CARD_BY_ID[item_id].name}"[:45]
+        if item_id in uncertain:
+            inputs.append(ModalActionRow().add_text_input(
+                custom_id,
+                label,
+                placeholder="Current 2+ - leave blank to keep it",
+                required=False,
+                max_length=2,
+            ))
+        else:
+            inputs.append(ModalActionRow().add_text_input(
+                custom_id,
+                label,
+                value=str(counts[item_id]),
+                placeholder=f"0 to {MAX_COPIES}",
+                min_length=1,
+                max_length=2,
+                required=True,
+            ))
+    end = start + len(batch)
+    category = CATEGORY_BY_ID[state["category_id"]]
+    return {
+        "title": f"{category.name} \u00b7 {start + 1}-{end} of {total}"[:45],
+        "custom_id": f"cards_bulk_submit:{state_id}",
+        "components": inputs,
+    }
+
+
+def _bulk_progress_view(
+    state_id: str,
+    state: dict,
+    *,
+    note: str | None = None,
+    retry: bool = False,
+) -> list[Container]:
+    selected = list(state.get("selected_ids") or ())
+    processed = int(state.get("processed_count") or 0)
+    written = int(state.get("written_count") or 0)
+    total = len(selected)
+    remaining = max(0, total - int(state.get("next_index") or 0))
+    last_batch = selected[max(0, processed - 5):processed]
+    checked = "\n".join(
+        f"\u2713 {_escape_markdown(CARD_BY_ID[item_id].name)}"
+        for item_id in last_batch
+    )
+    detail = (
+        f"## {processed} of {total} checked\n"
+        + (f"{checked}\n\n" if checked else "")
+        + f"**{remaining} remaining**\n"
+        f"-# {written} exact count{'s' if written != 1 else ''} saved. "
+        "Submitted batches are already saved."
+    )
+    if note:
+        detail += f"\n\n{_escape_markdown(note, limit=300)}"
+    return [Container(
+        accent_color=CATEGORY_ACCENTS[state["category_id"]],
+        components=[
+            Text(content=(
+                f"# Bulk edit \u00b7 {CATEGORY_BY_ID[state['category_id']].name}\n"
+                f"-# {_escape_markdown(state.get('account_name'))} \u00b7 "
+                f"`{_normalize_tag(state.get('account_tag'))}`"
+            )),
+            Text(content=detail),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.PRIMARY,
+                    custom_id=f"cards_bulk_continue:{state_id}",
+                    label="Try again" if retry else "Continue",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_bulk_finish:{state_id}",
+                    label="Finish here",
+                ),
+            ]),
+            Text(content=(
+                "-# Finish here keeps every submitted batch and leaves the "
+                "remaining cards unchanged."
+            )),
+        ],
+    )]
+
+
+def _bulk_modal_values(
+    ctx, state: dict
+) -> tuple[dict[str, int] | None, str | None]:
+    selected = list(state.get("selected_ids") or ())
+    start = int(state.get("next_index") or 0)
+    batch = selected[start:start + 5]
+    nonce = str(state.get("nonce") or "")
+    expected_ids = [f"q_{nonce}_{offset}" for offset in range(len(batch))]
+    supplied: list[tuple[str, str]] = []
+    for row in getattr(ctx.interaction, "components", ()) or ():
+        for component in row:
+            supplied.append((
+                str(getattr(component, "custom_id", "") or ""),
+                str(getattr(component, "value", "") or "").strip(),
+            ))
+    supplied_ids = [custom_id for custom_id, _value in supplied]
+    if (
+        set(supplied_ids) != set(expected_ids)
+        or len(supplied_ids) != len(set(supplied_ids))
+    ):
+        return None, "That form is no longer current. Nothing changed."
+
+    uncertain = set(state.get("unconfirmed_ids") or ())
+    supplied_by_id = dict(supplied)
+    values: dict[str, int] = {}
+    for offset, item_id in enumerate(batch):
+        raw = supplied_by_id[expected_ids[offset]]
+        if not raw and item_id in uncertain:
+            continue
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return {}, f"Enter a whole number from {MISSING} to {MAX_COPIES}. Nothing changed."
+        if not (MISSING <= value <= MAX_COPIES):
+            return {}, f"Enter a whole number from {MISSING} to {MAX_COPIES}. Nothing changed."
+        values[item_id] = value
+    return values, None
+
+
+async def _bulk_defer_update(ctx) -> None:
+    if getattr(ctx.interaction, "message", None) is not None:
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+        )
+    else:
+        await ctx.defer(ephemeral=True)
+
+
+async def _bulk_recovery_view(
+    ctx,
+    state_id: str,
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+    saved: str | None = None,
+) -> list[Container]:
+    tag, category_id = _bulk_state_target(state_id)
+    if not tag or category_id is None:
+        return _notice("Bulk editor unavailable", "Re-run `/cards` to open a fresh panel.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return [
+            *problem,
+            *_notice(
+                "Completed batches remain saved",
+                "This session could not be refreshed right now. Re-run `/cards` "
+                "when the account is available; saved counts remain in the collection.",
+            ),
+        ]
+    return await _quantity_editor_view(
+        ctx,
+        account,
+        inventory,
+        category_id,
+        mongo=mongo,
+        saved=saved or (
+            "This bulk session expired. Counts from completed batches are shown "
+            "below. Select any remaining cards again."
+        ),
+    )
+
+
+async def _bulk_discard_state(mongo: MongoClient, state_id: str) -> None:
+    """Best-effort cleanup; inventory truth must still reach the player."""
+    try:
+        await delete_state(mongo, state_id)
+    except Exception:
+        _log.exception("could not discard card bulk state id=%s", state_id)
+
+
+async def _bulk_writing_recovery_view(
+    ctx,
+    state_id: str,
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+) -> list[Container]:
+    """Recover a state stranded while a process was saving a batch."""
+    await _bulk_discard_state(mongo, state_id)
+    return await _bulk_recovery_view(
+        ctx,
+        state_id,
+        coc_client=coc_client,
+        mongo=mongo,
+        saved=(
+            "Bulk editing was interrupted. Counts from completed batches are "
+            "shown below. Select any remaining cards again."
+        ),
+    )
+
+
+async def _bulk_ack_recovery(
+    ctx,
+    state_id: str,
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+) -> None:
+    await _bulk_defer_update(ctx)
+    view = await _bulk_recovery_view(
+        ctx, state_id, coc_client=coc_client, mongo=mongo
+    )
+    await ctx.interaction.edit_initial_response(components=view)
+
+
+async def _bulk_ack_writing_recovery(
+    ctx,
+    state_id: str,
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+) -> None:
+    await _bulk_defer_update(ctx)
+    view = await _bulk_writing_recovery_view(
+        ctx, state_id, coc_client=coc_client, mongo=mongo
+    )
+    await ctx.interaction.edit_initial_response(components=view)
+
+
+def _bulk_writing_stalled(state: dict) -> bool:
+    started_at = as_utc(state.get("writing_started_at"))
+    return (
+        started_at is None
+        or started_at <= datetime.now(timezone.utc) - CARD_BULK_WRITE_GRACE
+    )
+
+
+async def _bulk_respond_writing(
+    ctx,
+    state_id: str,
+    state: dict,
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+) -> None:
+    """Keep an active write intact; recover only after a restart-safe grace."""
+    if _bulk_writing_stalled(state):
+        await _bulk_ack_writing_recovery(
+            ctx, state_id, coc_client=coc_client, mongo=mongo
+        )
+        return
+    await ctx.respond(
+        components=_notice(
+            "This batch is still saving",
+            "Try again shortly. Previously saved batches remain saved.",
+        ),
+        ephemeral=True,
+    )
+
+
+async def _bulk_open_current(
+    ctx,
+    state_id: str,
+    state: dict,
+    selected: list[str],
+    *,
+    coc_client: coc.Client,
+    mongo: MongoClient,
+) -> None:
+    nonce = secrets.token_urlsafe(5)
+    result = await _bulk_state_update(
+        mongo,
+        state_id,
+        state,
+        guard={
+            "phase": "select",
+            "nonce": state.get("nonce"),
+            "next_index": 0,
+            "expected_revision": int(state.get("expected_revision") or 0),
+        },
+        values={
+            "selected_ids": selected,
+            "next_index": 0,
+            "processed_count": 0,
+            "written_count": 0,
+            "nonce": nonce,
+        },
+    )
+    if not _bulk_matched(result):
+        fresh = await get_state(mongo, state_id, {"_id": 0})
+        if fresh is None:
+            await _bulk_ack_recovery(
+                ctx, state_id, coc_client=coc_client, mongo=mongo
+            )
+        elif fresh.get("phase") == "writing":
+            await _bulk_respond_writing(
+                ctx,
+                state_id,
+                fresh,
+                coc_client=coc_client,
+                mongo=mongo,
+            )
+        else:
+            await ctx.respond(
+                components=_notice(
+                    "A newer form is already open",
+                    "Use the newest bulk-count form, or tap its button again if you dismissed it.",
+                ),
+                ephemeral=True,
+            )
+        return
+    opened = {
+        **state,
+        "selected_ids": selected,
+        "next_index": 0,
+        "processed_count": 0,
+        "written_count": 0,
+        "nonce": nonce,
+    }
+    await ctx.respond_with_modal(**_bulk_exact_modal(state_id, opened))
+
+
+@register_action("cards_bulk_select", opens_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def cards_bulk_select(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **state,
+):
+    if state.get("type") != "cards_bulk_edit":
+        await _bulk_ack_recovery(
+            ctx, action_id, coc_client=coc_client, mongo=mongo
+        )
+        return
+    if not _bulk_state_owned(ctx, action_id, state):
+        await ctx.respond(
+            components=_notice(
+                "This bulk editor belongs to another player",
+                "Open your own collection with `/cards`.",
+            ),
+            ephemeral=True,
+        )
+        return
+    if state.get("phase") == "writing":
+        await _bulk_respond_writing(
+            ctx, action_id, state, coc_client=coc_client, mongo=mongo
+        )
+        return
+    if not _bulk_state_well_formed(state):
+        await _bulk_ack_recovery(
+            ctx, action_id, coc_client=coc_client, mongo=mongo
+        )
+        return
+    selected = _bulk_selected(
+        state, getattr(ctx.interaction, "values", ()) or ()
+    )
+    if selected is None:
+        await ctx.respond(
+            components=_notice(
+                "Choose at least one editable card",
+                "Reserved cards stay visible in the list but cannot be selected.",
+            ),
+            ephemeral=True,
+        )
+        return
+    await _bulk_open_current(
+        ctx,
+        action_id,
+        state,
+        selected,
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_bulk_edit_all", opens_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def cards_bulk_edit_all(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **state,
+):
+    if state.get("type") != "cards_bulk_edit":
+        await _bulk_ack_recovery(
+            ctx, action_id, coc_client=coc_client, mongo=mongo
+        )
+        return
+    if not _bulk_state_owned(ctx, action_id, state):
+        await ctx.respond(
+            components=_notice(
+                "This bulk editor belongs to another player",
+                "Open your own collection with `/cards`.",
+            ),
+            ephemeral=True,
+        )
+        return
+    if state.get("phase") == "writing":
+        await _bulk_respond_writing(
+            ctx, action_id, state, coc_client=coc_client, mongo=mongo
+        )
+        return
+    if not _bulk_state_well_formed(state):
+        await _bulk_ack_recovery(
+            ctx, action_id, coc_client=coc_client, mongo=mongo
+        )
+        return
+    await _bulk_open_current(
+        ctx,
+        action_id,
+        state,
+        list(state["editable_ids"]),
+        coc_client=coc_client,
+        mongo=mongo,
+    )
+
+
+@register_action("cards_bulk_continue", opens_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def cards_bulk_continue(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **state,
+):
+    if state.get("type") != "cards_bulk_edit":
+        await _bulk_ack_recovery(
+            ctx, action_id, coc_client=coc_client, mongo=mongo
+        )
+        return
+    if not _bulk_state_owned(ctx, action_id, state):
+        await ctx.respond(
+            components=_notice(
+                "This bulk editor belongs to another player",
+                "Open your own collection with `/cards`.",
+            ),
+            ephemeral=True,
+        )
+        return
+    if state.get("phase") == "writing":
+        await _bulk_respond_writing(
+            ctx, action_id, state, coc_client=coc_client, mongo=mongo
+        )
+        return
+    selected = list(state.get("selected_ids") or ())
+    start = int(state.get("next_index") or 0)
+    if (
+        not _bulk_state_well_formed(state)
+        or state.get("phase") != "continue"
+        or not (0 <= start < len(selected))
+    ):
+        await ctx.respond(
+            components=_notice(
+                "This step is no longer current",
+                "Use the newest bulk editor panel.",
+            ),
+            ephemeral=True,
+        )
+        return
+    nonce = secrets.token_urlsafe(5)
+    result = await _bulk_state_update(
+        mongo,
+        action_id,
+        state,
+        guard={
+            "phase": "continue",
+            "nonce": state.get("nonce"),
+            "next_index": start,
+            "expected_revision": int(state.get("expected_revision") or 0),
+        },
+        values={"nonce": nonce},
+    )
+    if not _bulk_matched(result):
+        fresh = await get_state(mongo, action_id, {"_id": 0})
+        if fresh is None:
+            await _bulk_ack_recovery(
+                ctx, action_id, coc_client=coc_client, mongo=mongo
+            )
+        elif fresh.get("phase") == "writing":
+            await _bulk_respond_writing(
+                ctx,
+                action_id,
+                fresh,
+                coc_client=coc_client,
+                mongo=mongo,
+            )
+        else:
+            await ctx.respond(
+                components=_notice(
+                    "A newer form is already open",
+                    "Use the newest form, or tap Continue again if you dismissed it.",
+                ),
+                ephemeral=True,
+            )
+        return
+    opened = {**state, "nonce": nonce}
+    await ctx.respond_with_modal(**_bulk_exact_modal(action_id, opened))
+
+
+@register_action("cards_bulk_finish", no_return=True)
+@lightbulb.di.with_di
+async def cards_bulk_finish(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **state,
+):
+    if state.get("type") != "cards_bulk_edit":
+        view = await _bulk_recovery_view(
+            ctx, action_id, coc_client=coc_client, mongo=mongo
+        )
+        await ctx.interaction.edit_initial_response(components=view)
+        return
+    if not _bulk_state_owned(ctx, action_id, state):
+        # The dispatcher already acknowledged this message update before the
+        # state read. Fail closed without editing another player's panel.
+        return
+    if state.get("phase") == "writing":
+        if _bulk_writing_stalled(state):
+            view = await _bulk_writing_recovery_view(
+                ctx, action_id, coc_client=coc_client, mongo=mongo
+            )
+            await ctx.interaction.edit_initial_response(components=view)
+        return
+    result = await _bulk_state_update(
+        mongo,
+        action_id,
+        state,
+        guard={
+            "phase": "continue",
+            "nonce": state.get("nonce"),
+            "next_index": int(state.get("next_index") or 0),
+            "expected_revision": int(state.get("expected_revision") or 0),
+        },
+        values={"phase": "closed"},
+    )
+    if not _bulk_matched(result):
+        fresh = await get_state(mongo, action_id, {"_id": 0})
+        if fresh is None:
+            view = await _bulk_recovery_view(
+                ctx, action_id, coc_client=coc_client, mongo=mongo
+            )
+            await ctx.interaction.edit_initial_response(components=view)
+        elif fresh.get("phase") == "writing":
+            if _bulk_writing_stalled(fresh):
+                view = await _bulk_writing_recovery_view(
+                    ctx, action_id, coc_client=coc_client, mongo=mongo
+                )
+                await ctx.interaction.edit_initial_response(components=view)
+        return
+    await _bulk_discard_state(mongo, action_id)
+    tag = _normalize_tag(state.get("account_tag"))
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        view = [
+            *problem,
+            *_notice(
+                "Submitted batches remain saved",
+                "The remaining cards were not changed. Re-run `/cards` when the "
+                "account is available to continue.",
+            ),
+        ]
+    else:
+        view = await _quantity_editor_view(
+            ctx,
+            account,
+            inventory,
+            state["category_id"],
+            mongo=mongo,
+            saved=(
+                f"Bulk editing finished. {int(state.get('written_count') or 0)} "
+                "exact counts were saved; remaining cards were unchanged."
+            ),
+        )
+    await ctx.interaction.edit_initial_response(components=view)
+
+
+@register_action("cards_bulk_submit", is_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def cards_bulk_submit(
+    ctx: lightbulb.components.ModalContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **state,
+):
+    if state.get("type") != "cards_bulk_edit":
+        await _bulk_ack_recovery(
+            ctx, action_id, coc_client=coc_client, mongo=mongo
+        )
+        return
+    if not _bulk_state_owned(ctx, action_id, state):
+        await ctx.respond(
+            components=_notice(
+                "This bulk editor belongs to another player",
+                "Open your own collection with `/cards`.",
+            ),
+            ephemeral=True,
+        )
+        return
+    if state.get("phase") == "writing":
+        await _bulk_respond_writing(
+            ctx, action_id, state, coc_client=coc_client, mongo=mongo
+        )
+        return
+    selected = list(state.get("selected_ids") or ())
+    start = int(state.get("next_index") or 0)
+    phase = state.get("phase")
+    if (
+        not _bulk_state_well_formed(state)
+        or phase not in {"select", "continue"}
+        or not selected
+        or not (0 <= start < len(selected))
+    ):
+        await ctx.respond(
+            components=_notice(
+                "This form is no longer current",
+                "Use the newest bulk editor form. No count was changed by this form.",
+            ),
+            ephemeral=True,
+        )
+        return
+    values, validation_problem = _bulk_modal_values(ctx, state)
+    if values is None:
+        await ctx.respond(
+            components=_notice(
+                "This form is no longer current",
+                "Use the newest bulk editor form. No count was changed by this form.",
+            ),
+            ephemeral=True,
+        )
+        return
+    await _bulk_defer_update(ctx)
+    if validation_problem:
+        nonce = secrets.token_urlsafe(5)
+        result = await _bulk_state_update(
+            mongo,
+            action_id,
+            state,
+            guard={
+                "phase": phase,
+                "nonce": state.get("nonce"),
+                "next_index": start,
+                "expected_revision": int(state.get("expected_revision") or 0),
+            },
+            values={"phase": "continue", "nonce": nonce},
+        )
+        if _bulk_matched(result):
+            retry = {**state, "phase": "continue", "nonce": nonce}
+            await ctx.interaction.edit_initial_response(
+                components=_bulk_progress_view(
+                    action_id, retry, note=validation_problem, retry=True
+                )
+            )
+        else:
+            fresh = await get_state(mongo, action_id, {"_id": 0})
+            if fresh is None:
+                view = await _bulk_recovery_view(
+                    ctx, action_id, coc_client=coc_client, mongo=mongo
+                )
+                await ctx.interaction.edit_initial_response(components=view)
+        return
+
+    expected_revision = int(state.get("expected_revision") or 0)
+    claim = await _bulk_state_update(
+        mongo,
+        action_id,
+        state,
+        guard={
+            "phase": phase,
+            "nonce": state.get("nonce"),
+            "next_index": start,
+            "expected_revision": expected_revision,
+        },
+        values={
+            "phase": "writing",
+            "writing_started_at": datetime.now(timezone.utc),
+        },
+    )
+    if not _bulk_matched(claim):
+        fresh = await get_state(mongo, action_id, {"_id": 0})
+        if fresh is None:
+            view = await _bulk_recovery_view(
+                ctx, action_id, coc_client=coc_client, mongo=mongo
+            )
+            await ctx.interaction.edit_initial_response(components=view)
+        elif fresh.get("phase") == "writing":
+            if _bulk_writing_stalled(fresh):
+                view = await _bulk_writing_recovery_view(
+                    ctx, action_id, coc_client=coc_client, mongo=mongo
+                )
+                await ctx.interaction.edit_initial_response(components=view)
+        return
+
+    tag = _normalize_tag(state.get("account_tag"))
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        await _bulk_discard_state(mongo, action_id)
+        await ctx.interaction.edit_initial_response(components=[
+            *problem,
+            *_notice(
+                "Earlier saved batches remain saved",
+                "This group was not saved. Counts from earlier completed "
+                "batches remain in the collection.",
+            ),
+        ])
+        return
+    batch = selected[start:start + 5]
+    try:
+        updated = await _write_exact_card_batch(
+            mongo,
+            account,
+            inventory,
+            batch,
+            values,
+            expected_revision=expected_revision,
+            discord_id=int(ctx.user.id),
+            guild_id=_trade_guild_id(ctx),
+        )
+    except ActiveCardTradeError:
+        await _bulk_discard_state(mongo, action_id)
+        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        view = await _quantity_editor_view(
+            ctx,
+            account,
+            current,
+            state["category_id"],
+            mongo=mongo,
+            saved=(
+                "A card in this batch entered a trade, so this batch was not "
+                "changed. Any earlier submitted batches remain saved. Select "
+                "the remaining editable cards again."
+            ),
+        )
+        await ctx.interaction.edit_initial_response(components=view)
+        return
+    except (InventoryWriteConflict, ValueError):
+        await _bulk_discard_state(mongo, action_id)
+        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        view = await _quantity_editor_view(
+            ctx,
+            account,
+            current,
+            state["category_id"],
+            mongo=mongo,
+            saved=(
+                "The collection changed, so this batch was not changed. Any "
+                "earlier submitted batches remain saved. Select the remaining "
+                "cards again."
+            ),
+        )
+        await ctx.interaction.edit_initial_response(components=view)
+        return
+
+    next_index = start + len(batch)
+    written_count = int(state.get("written_count") or 0) + len(values)
+    count_snapshot = dict(state.get("count_snapshot") or {})
+    count_snapshot.update(values)
+    unconfirmed_ids = [
+        item_id for item_id in (state.get("unconfirmed_ids") or ())
+        if item_id not in values
+    ]
+    next_revision = expected_revision + (1 if values else 0)
+    if next_index >= len(selected):
+        await _bulk_discard_state(mongo, action_id)
+        view = await _quantity_editor_view(
+            ctx,
+            account,
+            updated,
+            state["category_id"],
+            mongo=mongo,
+            saved=(
+                f"Bulk edit complete. {written_count} exact count"
+                f"{'s were' if written_count != 1 else ' was'} saved."
+            ),
+        )
+        await ctx.interaction.edit_initial_response(components=view)
+        return
+
+    nonce = secrets.token_urlsafe(5)
+    try:
+        advanced = await _bulk_state_update(
+            mongo,
+            action_id,
+            state,
+            guard={
+                "phase": "writing",
+                "nonce": state.get("nonce"),
+                "next_index": start,
+                "expected_revision": expected_revision,
+            },
+            values={
+                "phase": "continue",
+                "nonce": nonce,
+                "next_index": next_index,
+                "processed_count": next_index,
+                "written_count": written_count,
+                "expected_revision": next_revision,
+                "count_snapshot": count_snapshot,
+                "unconfirmed_ids": unconfirmed_ids,
+            },
+            unset=("writing_started_at",),
+        )
+    except Exception:
+        _log.exception(
+            "card bulk batch saved but state could not advance id=%s",
+            action_id,
+        )
+        advanced = None
+    if not _bulk_matched(advanced):
+        await _bulk_discard_state(mongo, action_id)
+        view = await _quantity_editor_view(
+            ctx,
+            account,
+            updated,
+            state["category_id"],
+            mongo=mongo,
+            saved=(
+                "This submitted batch was saved. Reopen bulk editing and select "
+                "the remaining cards again."
+            ),
+        )
+        await ctx.interaction.edit_initial_response(components=view)
+        return
+    progressed = {
+        **state,
+        "phase": "continue",
+        "nonce": nonce,
+        "next_index": next_index,
+        "processed_count": next_index,
+        "written_count": written_count,
+        "expected_revision": next_revision,
+        "count_snapshot": count_snapshot,
+        "unconfirmed_ids": unconfirmed_ids,
+    }
+    await ctx.interaction.edit_initial_response(
+        components=_bulk_progress_view(action_id, progressed)
     )
 
 
@@ -10294,7 +11536,9 @@ async def cards_qcat(
     )
     if problem:
         return problem
-    return _quantity_editor(account, inventory, chosen)
+    return await _quantity_editor_view(
+        ctx, account, inventory, chosen, mongo=mongo
+    )
 
 
 @register_action("cards_qpick", aliases=("cards_qjump",))
@@ -10342,18 +11586,18 @@ async def _quantity_write(
             guild_id=_trade_guild_id(ctx),
         )
     except ActiveCardTradeError:
-        return _quantity_editor(
-            account, inventory, category_id, card_id=card_id,
+        return await _quantity_editor_view(
+            ctx, account, inventory, category_id, mongo=mongo, card_id=card_id,
             saved=f"{CARD_BY_ID[card_id].name} is in a trade and was not changed.",
         )
     except (InventoryWriteConflict, ValueError):
         current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
-        return _quantity_editor(
-            account, current, category_id, card_id=card_id,
+        return await _quantity_editor_view(
+            ctx, account, current, category_id, mongo=mongo, card_id=card_id,
             saved="The collection changed, so this screen was refreshed.",
         )
-    return _quantity_editor(
-        account, updated, category_id, card_id=card_id,
+    return await _quantity_editor_view(
+        ctx, account, updated, category_id, mongo=mongo, card_id=card_id,
         saved=_saved_count_line(CARD_BY_ID[card_id].name, target),
     )
 
@@ -10470,8 +11714,13 @@ async def cards_qnum_submit(
         account, inventory, problem = await _load_target(
             ctx, tag, coc_client=coc_client, mongo=mongo
         )
-        view = problem or _quantity_editor(
-            account, inventory, CARD_BY_ID[card_id].category, card_id=card_id,
+        view = problem or await _quantity_editor_view(
+            ctx,
+            account,
+            inventory,
+            CARD_BY_ID[card_id].category,
+            mongo=mongo,
+            card_id=card_id,
             saved="That was not a number, so nothing changed.",
         )
     else:
@@ -10510,8 +11759,8 @@ async def cards_ready(
         )
     except (InventoryWriteConflict, ValueError):
         return _inventory_retry_notice()
-    return _quantity_editor(
-        account, updated, category_id, card_id=card_id,
+    return await _quantity_editor_view(
+        ctx, account, updated, category_id, mongo=mongo, card_id=card_id,
         saved=f"{CATEGORY_BY_ID[category_id].name} is ready to trade.",
     )
 
