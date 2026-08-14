@@ -22,6 +22,10 @@ class MongoClient(AsyncMongoClient):
         # Durable ticket history remains in tickets; handlers.py owns this TTL.
         self.ticket_creation_state = self.__settings.get_collection("ticket_creation_state")
         self.bot_config = self.__settings.get_collection("bot_config")
+        # WU-owned Discord polls and named votes. Keep these separate from
+        # Arcane's discord_polls rows: each bot can edit only messages it posted.
+        # utils.poll_store adds a post-end TTL through the optional purge_at field.
+        self.discord_polls = self.__settings.get_collection("wu_discord_polls")
         #self.reddit_monitor = self.__settings.get_collection("reddit_monitor")
         #self.reddit_notifications = self.__settings.get_collection("reddit_notifications")
         #self.clan_bidding = self.__settings.get_collection("clan_bidding")

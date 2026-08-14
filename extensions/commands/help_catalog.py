@@ -112,6 +112,9 @@ HELP_CATEGORIES = {
         "emoji": "🛠️",
         "description": "Bot operations, monitors, diagnostics, and privileged utilities",
         "commands": [
+            ("/poll create", "Create a timed poll with named votes. Admin only."),
+            ("/poll view", "View recent polls or named voters for one poll. Admin only."),
+            ("/poll active", "List polls that are currently open. Admin only."),
             ("/say", "Send a message as the bot. Restricted role only."),
             ("/steal", "Copy an emoji into the bot application."),
             ("/reboot", "Restart the bot process. Owner only."),
