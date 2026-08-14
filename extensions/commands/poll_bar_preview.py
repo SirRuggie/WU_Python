@@ -1,4 +1,4 @@
-"""Owner-only Discord phone lab for compact poll visuals."""
+"""Owner-only Discord phone preview for WU poll bar lengths."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import hikari
 import lightbulb
 
-from utils.constants import BLUE_ACCENT, GOLD_ACCENT
+from utils.constants import GOLD_ACCENT
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -31,30 +31,16 @@ POLL_OPTIONS = (
 )
 POLL_TOTAL = sum(count for _option_id, _label, count in POLL_OPTIONS)
 
-GLYPH_PAIRS = {
-    "parallelogram": ("▰", "▱"),
-    "square": ("■", "□"),
-    "vertical": ("▮", "▯"),
-    "horizontal": ("▬", "▭"),
-    "circle": ("●", "○"),
-}
-LAB_PERCENTAGES = (25, 50, 75)
-LAB_WIDTHS = (10, 12, 14)
-
 
 @dataclass(frozen=True, slots=True)
 class PreviewVariant:
     code: str
-    name: str
-    pair: str
     width: int
-    button_mode: str
 
 
 FINALISTS = (
-    PreviewVariant("A", "Reference", "parallelogram", 10, "number"),
-    PreviewVariant("B", "Thicker squares", "square", 10, "emoji"),
-    PreviewVariant("C", "Horizontal blocks", "horizontal", 10, "number"),
+    PreviewVariant("A", 16),
+    PreviewVariant("B", 20),
 )
 
 
@@ -65,14 +51,11 @@ def _round_half_up(numerator: int, denominator: int) -> int:
     return (max(int(numerator), 0) + denominator // 2) // denominator
 
 
-def _bar(pair: str, width: int, count: int, total: int) -> str:
-    """Render one plain-Unicode preview bar with explicit half-up rounding."""
-    if pair not in GLYPH_PAIRS:
-        raise ValueError(f"Unknown poll bar glyph pair: {pair}")
+def _bar(width: int, count: int, total: int) -> str:
+    """Render one plain-text WU bar with explicit half-up rounding."""
     width = max(int(width), 1)
-    filled_glyph, empty_glyph = GLYPH_PAIRS[pair]
     filled = min(_round_half_up(max(int(count), 0) * width, total), width)
-    return filled_glyph * filled + empty_glyph * (width - filled)
+    return "█" * filled + "░" * (width - filled)
 
 
 def _percent(count: int, total: int) -> int:
@@ -88,7 +71,7 @@ def _result_line(
     total: int = POLL_TOTAL,
 ) -> str:
     result = (
-        f"{_bar(variant.pair, variant.width, count, total)} "
+        f"{_bar(variant.width, count, total)} "
         f"**{_percent(count, total)}% · {count}**"
     )
     option = f"**{int(option_id)}. {label}**"
@@ -102,43 +85,34 @@ def _variant_for(code: str) -> PreviewVariant:
     for variant in FINALISTS:
         if variant.code == normalized:
             return variant
-    raise ValueError(f"Unknown poll visual-lab variant: {code}")
+    raise ValueError(f"Unknown poll bar-length variant: {code}")
 
 
 def _preview_button(
     *,
     preview: str,
     control: str,
-    label: str | None = None,
-    emoji: str | None = None,
+    label: str,
     style: hikari.ButtonStyle = hikari.ButtonStyle.SECONDARY,
 ) -> Button:
-    kwargs = {
-        "style": style,
-        "custom_id": f"poll_bar_preview_noop:{preview}|{control}",
-        "is_disabled": True,
-    }
-    if emoji is not None:
-        kwargs["emoji"] = emoji
-    elif label is not None:
-        kwargs["label"] = label
-    else:
-        raise ValueError("A preview button needs a label or emoji")
-    return Button(**kwargs)
+    return Button(
+        style=style,
+        custom_id=f"poll_bar_preview_noop:{preview}|{control}",
+        label=label,
+        is_disabled=True,
+    )
 
 
-def _vote_row(preview: str, mode: str, option_count: int) -> ActionRow:
-    buttons: list[Button] = []
-    for number in range(1, int(option_count) + 1):
-        display = f"{number}️⃣"
-        buttons.append(_preview_button(
+def _vote_row(preview: str, option_count: int) -> ActionRow:
+    return ActionRow(components=[
+        _preview_button(
             preview=preview,
-            control=f"{mode}-{option_count}-{number}",
-            emoji=display if mode == "emoji" else None,
-            label=str(number) if mode == "number" else None,
+            control=f"vote-{number}",
+            label=str(number),
             style=hikari.ButtonStyle.PRIMARY,
-        ))
-    return ActionRow(components=buttons)
+        )
+        for number in range(1, int(option_count) + 1)
+    ])
 
 
 def _admin_row(preview: str) -> ActionRow:
@@ -169,10 +143,8 @@ def build_poll_bar_preview_components(
     creator_id: int,
     observed_at: datetime | None = None,
 ) -> list[Container]:
-    """Build one complete, compact finalist poll for phone comparison."""
+    """Build one complete compact poll for the 16/20-cell phone comparison."""
     variant = _variant_for(code)
-    filled, empty = GLYPH_PAIRS[variant.pair]
-    button_name = "[1] buttons" if variant.button_mode == "number" else "1️⃣ buttons"
     results = "\n".join(
         _result_line(
             variant,
@@ -188,63 +160,15 @@ def build_poll_bar_preview_components(
         Separator(divider=True, spacing=hikari.SpacingType.SMALL),
         Text(content=results),
         Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-        _vote_row(variant.code, variant.button_mode, len(POLL_OPTIONS)),
+        _vote_row(variant.code, len(POLL_OPTIONS)),
         _admin_row(variant.code),
         Text(content=(
             f"-# {POLL_TOTAL} votes · You can change your vote.\n"
             f"-# ⏱️ Closes <t:{_closes_at(observed_at)}:R> · <@{int(creator_id)}>\n"
-            f"-# Preview {variant.code} · {variant.name} · "
-            f"{variant.width}-cell {filled}/{empty} · {button_name}"
+            f"-# Preview {variant.code} · WU bar · {variant.width} cells"
         )),
     ]
     return [Container(accent_color=GOLD_ACCENT, components=body)]
-
-
-def _pair_matrix_text() -> str:
-    lines = ["**10 cells · 25 / 50 / 75%**"]
-    for pair, (filled, empty) in GLYPH_PAIRS.items():
-        bars = " · ".join(
-            _bar(pair, 10, percent, 100)
-            for percent in LAB_PERCENTAGES
-        )
-        lines.append(f"**{filled}/{empty}** {bars}")
-    return "\n".join(lines)
-
-
-def _length_matrix_text() -> str:
-    lines = ["**Strongest pairs · 50% at 10 / 12 / 14 cells**"]
-    for pair in ("parallelogram", "square", "horizontal"):
-        filled, empty = GLYPH_PAIRS[pair]
-        bars = " · ".join(
-            _bar(pair, width, 50, 100)
-            for width in LAB_WIDTHS
-        )
-        lines.append(f"**{filled}/{empty}** {bars}")
-    return "\n".join(lines)
-
-
-def build_poll_visual_lab_components() -> list[Container]:
-    """Build the compact glyph and two-/three-option button comparison."""
-    body = [
-        Text(content=(
-            "## 🔬 Poll visual lab\n"
-            "Plain Unicode bars and real Discord button construction."
-        )),
-        Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-        Text(content=_pair_matrix_text()),
-        Separator(divider=False, spacing=hikari.SpacingType.SMALL),
-        Text(content=_length_matrix_text()),
-        Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-        Text(content="**Plain number labels**\n-# 2 options, then 3 options"),
-        _vote_row("lab-number", "number", 2),
-        _vote_row("lab-number", "number", 3),
-        Text(content="**Emoji-only buttons**\n-# 2 options, then 3 options"),
-        _vote_row("lab-emoji", "emoji", 2),
-        _vote_row("lab-emoji", "emoji", 3),
-        Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-        Text(content="-# Visual lab only · Controls are intentionally disabled."),
-    ]
-    return [Container(accent_color=BLUE_ACCENT, components=body)]
 
 
 async def _send_poll_bar_previews(
@@ -253,7 +177,7 @@ async def _send_poll_bar_previews(
     owner_id: int,
     observed_at: datetime | None = None,
 ) -> int:
-    """DM three complete finalist polls and one compact comparison lab."""
+    """DM the owner the complete 16- and 20-cell poll previews."""
     channel = await bot.rest.create_dm_channel(owner_id)
     views = [
         build_poll_bar_preview_components(
@@ -263,7 +187,6 @@ async def _send_poll_bar_previews(
         )
         for variant in FINALISTS
     ]
-    views.append(build_poll_visual_lab_components())
 
     for components in views:
         await bot.rest.create_message(
@@ -282,7 +205,7 @@ async def _send_poll_bar_previews(
 class PollBarPreview(
     lightbulb.SlashCommand,
     name="poll-bar-preview",
-    description="DM the owner a compact poll visual lab",
+    description="DM the owner the 16- and 20-cell WU poll previews",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
 ):
     @lightbulb.invoke
@@ -310,6 +233,6 @@ class PollBarPreview(
             return
 
         await ctx.respond(
-            f"Sent {sent} compact poll visual-lab previews to your DMs.",
+            f"Sent {sent} WU poll bar-length previews to your DMs.",
             ephemeral=True,
         )
