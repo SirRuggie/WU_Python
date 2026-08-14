@@ -396,6 +396,18 @@ def _apply_update(document, update, *, inserted=False):
         else:
             remaining = [value for value in current if value != condition]
         _set_field(document, path, remaining)
+    for path, operation in update.get("$addToSet", {}).items():
+        values = (
+            operation.get("$each", [])
+            if isinstance(operation, dict)
+            else [operation]
+        )
+        current = _field_value(document, path)
+        target = [] if current is _ABSENT or not isinstance(current, list) else current
+        for value in values:
+            if value not in target:
+                target.append(value)
+        _set_field(document, path, target)
 
 
 def _trade_document(*, trade_id="trade-a"):
@@ -1143,24 +1155,24 @@ class _FakeCategoryCollection:
         return SimpleNamespace(matched_count=1, modified_count=1)
 
 
-def test_a_category_cannot_be_traded_until_the_member_marks_it_ready():
-    """The gate the quantity editor had to keep.
-
-    find_matches only pairs categories BOTH players have in
-    complete_categories, and before this only a full screenshot scan or the old
-    two-list editor ever wrote that field. Deleting the two-list editor without
-    a replacement would have left anyone who never scanned permanently
-    unmatchable, with nothing on screen to say why.
-    """
+def test_final_manual_card_automatically_makes_the_category_matchable():
+    """Manual trust opens matching in the same write as the final count."""
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
+    elixir_ids = [card.id for card in cards.CATEGORY_CARDS["elixir"]]
     document = {
         "_id": "#ME",
-        "cards": {"root_rider": cards.MISSING, "wizard": 3},
+        "inventory_revision": 0,
+        "cards": {card_id: cards.OWNED for card_id in elixir_ids}
+        | {"root_rider": cards.MISSING, "wizard": 3},
+        "trusted_card_ids": [
+            card_id for card_id in elixir_ids if card_id != "root_rider"
+        ],
         "complete_categories": [],
         "reviewed_lists": [],
+        "confirmed_at": datetime.now(timezone.utc),
     }
     partner = {
         "_id": "#YOU",
@@ -1174,42 +1186,209 @@ def test_a_category_cannot_be_traded_until_the_member_marks_it_ready():
 
     assert cards.find_matches(document, [partner]) == []
 
-    updated = asyncio.run(cards_command._write_category_ready(
-        mongo, account, document, "elixir", discord_id=123, guild_id=456,
+    updated = asyncio.run(cards_command._write_card_state(
+        mongo, account, document, "root_rider", cards.MISSING,
+        expected_revision=0, discord_id=123, guild_id=456,
     ))
 
     assert updated["complete_categories"] == ["elixir"]
+    assert set(updated["trusted_card_ids"]) == set(elixir_ids)
     assert set(updated["reviewed_lists"]) == {
         "elixir:missing", "elixir:duplicates",
     }
-    # The counts the member just typed survive. apply_category_selection's
-    # "baseline" mode would have reset every card in the category to one copy,
-    # which is why marking ready is its own write and not a reuse of that.
     assert updated["cards"]["root_rider"] == cards.MISSING
     assert updated["cards"]["wizard"] == 3
-    assert cards.find_matches(updated, [partner]), "ready should open matching"
+    assert cards.find_matches(updated, [partner]), "final count should open matching"
 
 
-def test_marking_one_category_ready_leaves_the_other_three_alone():
+def test_legacy_ready_v1_manifest_is_frozen_to_the_launch_catalog():
+    """Freeze the historical trust boundary from f4ca757 (2026-08-10)."""
+    expected = {
+        "elixir": frozenset({
+            "barbarian", "archer", "giant", "goblin", "wall_breaker",
+            "balloon", "wizard", "healer", "dragon", "pekka",
+            "baby_dragon", "miner", "electro_dragon", "yeti",
+            "dragon_rider", "electro_titan", "root_rider", "thrower",
+            "meteor_golem",
+        }),
+        "dark_elixir": frozenset({
+            "minion", "hog_rider", "valkyrie", "golem", "witch",
+            "lava_hound", "bowler", "ice_golem", "headhunter",
+            "apprentice_warden", "druid", "furnace", "rubble_witch",
+        }),
+        "builder_base": frozenset({
+            "raged_barbarian", "sneaky_archer", "boxer_giant",
+            "beta_minion", "bomber", "bb_baby_dragon", "cannon_cart",
+            "night_witch", "drop_ship", "power_pekka", "hog_glider",
+        }),
+        "super_troop": frozenset({
+            "super_barbarian", "super_archer", "super_giant",
+            "sneaky_goblin", "super_wall_breaker", "rocket_balloon",
+            "super_wizard", "super_dragon", "inferno_dragon",
+            "super_miner", "super_yeti", "super_minion",
+            "super_hog_rider", "super_valkyrie", "super_witch",
+            "ice_hound", "super_bowler",
+        }),
+    }
+    expected_counts = {
+        "elixir": 19,
+        "dark_elixir": 13,
+        "builder_base": 11,
+        "super_troop": 17,
+    }
+    expected_categories = {
+        "elixir", "dark_elixir", "builder_base", "super_troop",
+    }
+    actual = cards_command._LEGACY_READY_CARD_IDS_V1_BY_CATEGORY
+
+    assert set(expected) == expected_categories
+    assert set(actual) == expected_categories
+    assert {
+        key: len(value) for key, value in actual.items()
+    } == expected_counts
+    all_ids = [card_id for card_ids in actual.values() for card_id in card_ids]
+    assert len(all_ids) == 60
+    assert len(set(all_ids)) == 60
+    assert actual == expected
+
+
+def test_a_historical_ready_inventory_is_trusted_and_stays_ready_when_edited():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
-    document = {
-        "_id": "#ME", "cards": {}, "complete_categories": [], "reviewed_lists": [],
-    }
+    # No trusted_card_ids: this is the legacy shape already in production.
+    document = _complete_inventory()
+    document["inventory_revision"] = 0
     mongo = SimpleNamespace(card_inventories=_FakeCategoryCollection(document))
     cards_command._inventory_locks.clear()
 
-    updated = asyncio.run(cards_command._write_category_ready(
-        mongo, account, document, "dark_elixir", discord_id=1, guild_id=1,
+    updated = asyncio.run(cards_command._write_card_state(
+        mongo, account, document, "wizard", 4,
+        expected_revision=0, discord_id=1, guild_id=1,
     ))
-    assert updated["complete_categories"] == ["dark_elixir"]
 
-    updated = asyncio.run(cards_command._write_category_ready(
-        mongo, account, updated, "elixir", discord_id=1, guild_id=1,
+    assert set(updated["trusted_card_ids"]) == {card.id for card in cards.CARDS}
+    assert set(updated["complete_categories"]) == {
+        category.id for category in cards.CATEGORIES
+    }
+    assert updated["cards"]["wizard"] == 4
+
+
+def test_a_historical_ambiguous_partial_inventory_fails_closed():
+    document = {
+        "_id": "#ME",
+        "cards": {"wizard": cards.DUPLICATE, "dragon": cards.MISSING},
+        "complete_categories": [],
+        # This legacy marker proves only Wizard was explicitly entered.
+        "count_confirmed_card_ids": ["wizard"],
+    }
+
+    assert cards_command._trusted_card_ids(document) == {"wizard"}
+    assert "dragon" in cards_command._untrusted_card_ids(document)
+    trusted, ready, reviewed = cards_command._trust_projection(document)
+    assert trusted == ["wizard"]
+    assert ready == []
+    assert reviewed == []
+
+
+def test_safe_legacy_exact_counts_materialize_automatic_readiness():
+    elixir_ids = [card.id for card in cards.CATEGORY_CARDS["elixir"]]
+    document = {
+        "_id": "#ME",
+        "cards": {card_id: cards.OWNED for card_id in elixir_ids},
+        "complete_categories": [],
+        "reviewed_lists": [],
+        "count_confirmed_card_ids": list(elixir_ids),
+        "inventory_revision": 0,
+    }
+    mongo = SimpleNamespace(
+        card_inventories=_FakeCategoryCollection(document)
+    )
+
+    materialized = asyncio.run(
+        cards_command._materialize_legacy_trust(mongo, document)
+    )
+
+    assert materialized["trusted_card_ids"] == elixir_ids
+    assert materialized["complete_categories"] == ["elixir"]
+    assert set(materialized["reviewed_lists"]) == {
+        "elixir:missing", "elixir:duplicates",
+    }
+    assert materialized["inventory_revision"] == 1
+
+
+def test_legacy_ready_hidden_badge_stays_untrusted_and_reopens_its_category():
+    document = _complete_inventory()
+    document.pop("trusted_card_ids", None)
+    document["scan_duplicate_unverified_card_ids"] = ["wizard"]
+    document["inventory_revision"] = 0
+    mongo = SimpleNamespace(
+        card_inventories=_FakeCategoryCollection(document)
+    )
+
+    materialized = asyncio.run(
+        cards_command._materialize_legacy_trust(mongo, document)
+    )
+
+    assert "wizard" not in materialized["trusted_card_ids"]
+    assert "elixir" not in materialized["complete_categories"]
+    assert set(materialized["complete_categories"]) == {
+        "dark_elixir", "builder_base", "super_troop",
+    }
+
+
+def test_legacy_ready_does_not_trust_a_future_catalog_card(monkeypatch):
+    """The V1 compatibility boundary must not expand with the live catalog."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    document = _complete_inventory()
+    document.pop("trusted_card_ids", None)
+    document["inventory_revision"] = 0
+    mongo = SimpleNamespace(
+        card_inventories=_FakeCategoryCollection(document)
+    )
+    original_elixir_ids = {
+        card.id for card in cards_command.CATEGORY_CARDS["elixir"]
+    }
+    future = cards.Card(
+        "future_elixir", "Future Elixir", "elixir",
+        len(cards_command.CATEGORY_CARDS["elixir"]) + 1,
+    )
+    monkeypatch.setattr(cards_command, "CARDS", (*cards_command.CARDS, future))
+    monkeypatch.setattr(
+        cards_command, "CARD_BY_ID",
+        {**cards_command.CARD_BY_ID, future.id: future},
+    )
+    monkeypatch.setitem(
+        cards_command.CATEGORY_CARDS, "elixir",
+        (*cards_command.CATEGORY_CARDS["elixir"], future),
+    )
+    cards_command._inventory_locks.clear()
+
+    materialized = asyncio.run(
+        cards_command._materialize_legacy_trust(mongo, document)
+    )
+
+    assert original_elixir_ids <= set(materialized["trusted_card_ids"])
+    assert future.id not in materialized["trusted_card_ids"]
+    assert "elixir" not in materialized["complete_categories"]
+
+    unrelated = asyncio.run(cards_command._write_card_state(
+        mongo, account, materialized, "wizard", 4,
+        expected_revision=1, discord_id=1, guild_id=1,
     ))
-    assert set(updated["complete_categories"]) == {"dark_elixir", "elixir"}
+    assert future.id not in unrelated["trusted_card_ids"]
+    assert "elixir" not in unrelated["complete_categories"]
+
+    confirmed = asyncio.run(cards_command._write_card_state(
+        mongo, account, unrelated, future.id, cards.OWNED,
+        expected_revision=2, discord_id=1, guild_id=1,
+    ))
+    assert future.id in confirmed["trusted_card_ids"]
+    assert "elixir" in confirmed["complete_categories"]
 
 
 def test_one_reserved_card_no_longer_locks_the_rest_of_its_category():
@@ -1247,7 +1426,10 @@ def test_one_reserved_card_no_longer_locks_the_rest_of_its_category():
         expected_revision=0, discord_id=123, guild_id=1,
     ))
     assert updated["cards"][same_category] == cards.DUPLICATE
+    assert same_category in updated["trusted_card_ids"]
 
+    trusted_before = list(updated["trusted_card_ids"])
+    revision_before = updated["inventory_revision"]
     with pytest.raises(cards_command.ActiveCardTradeError):
         asyncio.run(cards_command._write_card_state(
             mongo, account, updated, reserved_id, cards.MISSING,
@@ -1255,6 +1437,8 @@ def test_one_reserved_card_no_longer_locks_the_rest_of_its_category():
             discord_id=123, guild_id=1,
         ))
     assert reserved_id not in updated["cards"]
+    assert updated["trusted_card_ids"] == trusted_before
+    assert updated["inventory_revision"] == revision_before
 
 
 def test_the_whole_category_is_visible_on_one_screen():
@@ -1368,11 +1552,12 @@ def test_only_one_set_of_step_buttons_exists_for_the_whole_category():
     assert picked_ids.count(f"cards_qnum:#ME|{chosen.id}") == 1
     # Set number is spelled out rather than hidden behind tapping the count.
     assert "Set number" in _view_labels(picked)
-    # An unfinished category always offers the way to finish it.
-    assert "cards_ready:#ME|elixir" in custom_ids
+    # Trust is established by entering counts; there is no separate Ready tap.
+    assert not any(cid.startswith("cards_ready:") for cid in custom_ids)
+    assert "tap **Ready to trade**" not in _view_text(view)
 
 
-def test_the_ready_button_disappears_once_the_category_is_tradeable():
+def test_the_category_screen_never_renders_a_manual_ready_button():
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -1381,9 +1566,26 @@ def test_the_ready_button_disappears_once_the_category_is_tradeable():
         account, _complete_inventory(), "elixir",
     )
     ids = [str(n["custom_id"]) for n in _view_nodes(done) if "custom_id" in n]
-    assert "cards_ready:#ME|elixir" not in ids
+    assert not any(custom_id.startswith("cards_ready:") for custom_id in ids)
     assert "Ready to trade." in _view_text(done)
     assert "Other players can see these spares." in _view_text(done)
+
+    unfinished = cards_command._quantity_editor(
+        account,
+        {"_id": "#ME", "cards": {}, "complete_categories": []},
+        "elixir",
+    )
+    unfinished_ids = [
+        str(node["custom_id"])
+        for node in _view_nodes(unfinished)
+        if "custom_id" in node
+    ]
+    unfinished_text = _view_text(unfinished)
+    assert not any(
+        custom_id.startswith("cards_ready:") for custom_id in unfinished_ids
+    )
+    assert "tap **Ready to trade**" not in unfinished_text
+    assert "still need" in unfinished_text
 
 
 def test_every_rendered_custom_id_parses_back_to_what_drew_it():
@@ -1413,7 +1615,7 @@ def test_every_rendered_custom_id_parses_back_to_what_drew_it():
                     assert parsed == card.id, custom_id
                     if head == "cards_qstep":
                         assert delta in (1, -1), custom_id
-                elif head in ("cards_qpick", "cards_ready"):
+                elif head == "cards_qpick":
                     tag, parsed, _card = cards_command._parse_quantity_target(rest)
                     assert tag == "#ME", custom_id
                     assert parsed == category.id, custom_id
@@ -1595,6 +1797,102 @@ def test_candidate_search_fails_closed_without_guild_or_configured_family_clans(
         asyncio.run(cards_command._candidate_inventories(
             broken, requester, guild_id=123
         ))
+
+
+def test_candidate_search_sanitizes_unopened_legacy_ready_hidden_spare():
+    """A legacy hidden badge cannot leak through matching before migration.
+
+    This holder has not opened ``/cards`` since the trust-ledger migration, so
+    the stored document still says every category is Ready.  Candidate loading
+    must project the legacy uncertainty on read instead of waiting for the
+    owner's next dashboard open to persist the modern ledger.
+    """
+    class Clans:
+        async def distinct(self, field):
+            assert field == "tag"
+            return ["#HOME"]
+
+    class Inventories:
+        def __init__(self, document):
+            self.document = document
+            self.query = None
+
+        def find(self, query):
+            self.query = query
+            return _FakeCursor([self.document])
+
+    requester = _complete_inventory(tag="#REQUESTER")
+    requester["cards"]["wizard"] = cards.MISSING
+    holder = _complete_inventory(tag="#HOLDER")
+    holder.update({"guild_id": 123, "discord_id": 222})
+    holder["cards"]["wizard"] = cards.DUPLICATE
+    holder["scan_duplicate_unverified_card_ids"] = ["wizard"]
+    assert "trusted_card_ids" not in holder
+    assert cards.find_matches(requester, [holder]), (
+        "the untouched legacy Ready row demonstrates the leak being guarded"
+    )
+
+    inventories = Inventories(holder)
+    candidates = asyncio.run(cards_command._candidate_inventories(
+        SimpleNamespace(clans=Clans(), card_inventories=inventories),
+        requester,
+        guild_id=123,
+    ))
+
+    assert inventories.query["guild_id"] == 123
+    assert inventories.query["clan_tag"] == {"$in": ["#HOME"]}
+    assert len(candidates) == 1
+    safe_holder = candidates[0]
+    assert "elixir" not in safe_holder["complete_categories"]
+    assert safe_holder["cards"]["wizard"] == cards.OWNED
+    assert cards.find_matches(requester, candidates) == []
+    assert cards.holders_for_card(requester, candidates, "wizard") == []
+    # Candidate reads are non-mutating: the unopened legacy row remains legacy
+    # until its owner opens /cards and the normal materializer persists it.
+    assert "trusted_card_ids" not in holder
+    assert "elixir" in holder["complete_categories"]
+
+
+def test_matching_snapshot_neutralizes_untrusted_counts_for_direct_summaries():
+    """Raw partial-scan 0/2 values cannot become demand or supply claims."""
+    inventory = _complete_inventory()
+    inventory["cards"].update({
+        "wizard": cards.MISSING,
+        "dragon": cards.DUPLICATE,
+        "archer": cards.MISSING,
+        "barbarian": cards.DUPLICATE,
+    })
+    # Only the member-confirmed controls are trusted. The other raw values are
+    # preserved scanner evidence, not trade data, even if stale readiness says
+    # this category had once been complete.
+    inventory["trusted_card_ids"] = ["archer", "barbarian"]
+
+    safe = cards_command._without_reserved_cards(inventory)
+
+    assert safe["cards"]["wizard"] == cards.OWNED
+    assert safe["cards"]["dragon"] == cards.OWNED
+    assert safe["cards"]["archer"] == cards.MISSING
+    assert safe["cards"]["barbarian"] == cards.DUPLICATE
+    assert "elixir" not in safe["complete_categories"]
+    # The read boundary returns a snapshot; it does not rewrite preserved scan
+    # evidence while hiding it from matching and summaries.
+    assert inventory["cards"]["wizard"] == cards.MISSING
+    assert inventory["cards"]["dragon"] == cards.DUPLICATE
+
+    supply = {
+        card_id: cards.CardSupply(
+            card_id=card_id,
+            holders=(),
+            seekers=("#SEEKER",),
+            reporting=1,
+        )
+        for card_id in ("dragon", "barbarian")
+    }
+    view = cards_command._demand_view(_scan_account(), safe, supply)
+    text = _view_text(view)
+    assert "Barbarian" in text
+    assert "Dragon" not in text
+    _assert_discord_payload(view)
 
 
 def test_missing_or_taken_over_exact_card_token_blocks_every_completion_write():
@@ -1892,9 +2190,20 @@ def test_needs_review_invalidates_both_categories_before_releasing_reservations(
     })
     requester = _reserve_inventory(_complete_inventory(), trade)
     holder = _reserve_inventory(_complete_inventory(tag="#HOLDER"), trade)
+    affected = {trade["wanted_card_id"], trade["given_card_id"]}
+    expected_trusted = {card.id for card in cards.CARDS} - affected
+    expected_reviewed = sorted(
+        f"{category.id}:{mode}"
+        for category in cards.CATEGORIES
+        if category.id != "elixir"
+        for mode in ("missing", "duplicates")
+    )
     review_steps = ["elixir:missing", "elixir:duplicates", "builder_base:missing"]
     for document in (requester, holder):
         document["reviewed_lists"] = list(review_steps)
+        document["count_confirmed_card_ids"] = [
+            trade["wanted_card_id"], trade["given_card_id"], "barbarian",
+        ]
 
     class OrderedInventories(_FakeInventoryCollection):
         async def update_one(self, query, update, upsert=False):
@@ -1906,6 +2215,7 @@ def test_needs_review_invalidates_both_categories_before_releasing_reservations(
                     "elixir" not in document["complete_categories"]
                     and "elixir:missing" not in document["reviewed_lists"]
                     and "elixir:duplicates" not in document["reviewed_lists"]
+                    and set(document["trusted_card_ids"]) == expected_trusted
                     for document in self.documents.values()
                 )
             return await super().update_one(query, update, upsert=upsert)
@@ -1938,7 +2248,13 @@ def test_needs_review_invalidates_both_categories_before_releasing_reservations(
     assert saved_trade.get("released_at") is not None
     for document in inventories.documents.values():
         assert "elixir" not in document["complete_categories"]
-        assert document["reviewed_lists"] == ["builder_base:missing"]
+        assert document["reviewed_lists"] == expected_reviewed
+        assert set(document["trusted_card_ids"]) == expected_trusted
+        assert affected.isdisjoint(document["trusted_card_ids"])
+        assert "barbarian" in document["trusted_card_ids"], (
+            "needs_review narrows uncertainty to the two trade legs"
+        )
+        assert document["count_confirmed_card_ids"] == ["barbarian"]
         assert document.get("card_trade_reservations") == {}
         assert trade["_id"] in document["card_trade_review_invalidations"]
 
@@ -2806,6 +3122,10 @@ def test_global_hidden_badge_review_saves_one_batch_and_clears_only_that_batch()
     document = _complete_inventory()
     document["inventory_revision"] = 5
     hidden = [card.id for card in cards.CARDS[:27]]
+    document["trusted_card_ids"] = [
+        card.id for card in cards.CARDS if card.id not in hidden
+    ]
+    document["complete_categories"] = ["builder_base", "super_troop"]
     document["scan_duplicate_unverified_card_ids"] = hidden
     collection = _FakeInventoryCollection([document])
     mongo = SimpleNamespace(card_inventories=collection)
@@ -2829,6 +3149,10 @@ def test_global_hidden_badge_review_saves_one_batch_and_clears_only_that_batch()
         for card_id in first_batch[1:-1]
     )
     assert updated["scan_duplicate_unverified_card_ids"] == hidden[25:]
+    assert set(first_batch) <= set(updated["trusted_card_ids"])
+    assert set(hidden[25:]).isdisjoint(updated["trusted_card_ids"])
+    assert "elixir" in updated["complete_categories"]
+    assert "dark_elixir" not in updated["complete_categories"]
     assert updated["inventory_revision"] == 6
     # The leftovers are offered together in one more batch question, not two
     # more single-card screens.
@@ -3679,17 +4003,16 @@ def test_hidden_duplicate_badge_is_disclosed_but_safe_owned_minimum_can_confirm(
         if node.get("custom_id") == "cards_scan_confirm:draft-hidden"
     )
     assert confirm["disabled"] is False
-    assert confirm["label"] == "Save collection"
+    assert confirm["label"] == "Finish collection"
     review_text = _view_text(view)
-    # The review no longer pre-announces the duplicate check: saving routes
-    # straight into the hidden-badge question, which is the disclosure. What
-    # matters here is that the covered badge is stored as the safe minimum
-    # and the review never claims a spare the member has not confirmed.
+    # The safe owned minimum may be saved, but the unread badge itself remains
+    # a required manual count in the shared Finish collection queue.
     assert "spare" not in review_text.casefold()
-    assert "All 60 cards were read." in review_text
+    assert "59 of 60 cards" in review_text
+    assert "1 still need a count" in review_text
     buttons = [node for node in nodes if node.get("type") == 2]
     assert [button.get("label") for button in buttons] == [
-        "Save collection",
+        "Finish collection",
         "Cancel",
     ]
     assert len([button for button in buttons if button.get("style") == 1]) == 1
@@ -3700,17 +4023,26 @@ def test_hidden_duplicate_badge_is_disclosed_but_safe_owned_minimum_can_confirm(
 def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypatch):
     account = _scan_account()
     draft = _complete_scan_draft()
+    draft["card_states"]["wizard"] = cards.DUPLICATE
     inventory = _complete_inventory()
     inventory["inventory_revision"] = 4
+    saved = dict(inventory, update_source="confirmed_screenshot_review")
+    saved["cards"] = dict(inventory["cards"], wizard=cards.DUPLICATE)
+    saved["trusted_card_ids"] = [card.id for card in cards.CARDS]
+    saved["count_confirmed_card_ids"] = []
     writes = []
     discarded = []
+    dashboard_calls = []
+    dashboard_result = cards_command._notice(
+        "Collection dashboard", "Full scan saved."
+    )
 
     async def load_target(*_args, **_kwargs):
         return account, inventory, None
 
     async def write_scan(*args, **kwargs):
         writes.append((args, kwargs))
-        return dict(inventory, update_source="confirmed_screenshot_review")
+        return saved
 
     async def discard(_mongo, draft_id):
         discarded.append(draft_id)
@@ -3718,11 +4050,20 @@ def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypa
     async def load_accounts(*_args, **_kwargs):
         return _scan_accounts_data(account)
 
+    async def dashboard(account_arg, inventory_arg, **kwargs):
+        dashboard_calls.append((account_arg, inventory_arg, kwargs))
+        return dashboard_result
+
+    def spare_count_detour(*_args, **_kwargs):
+        raise AssertionError("an ordinary scanner 2+ must not open the old detour")
+
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
     monkeypatch.setattr(cards_command, "_load_target", load_target)
     monkeypatch.setattr(cards_command, "_write_scan_draft", write_scan)
     monkeypatch.setattr(cards_command, "_discard_scan_state", discard)
     monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
+    monkeypatch.setattr(cards_command, "_dashboard_view", dashboard)
+    monkeypatch.setattr(cards_command, "_spare_counts_panel", spare_count_detour)
     ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
 
     # Rendering review is side-effect free; only its explicit button writes.
@@ -3730,7 +4071,7 @@ def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypa
     assert writes == []
     assert discarded == []
 
-    asyncio.run(cards_command.cards_scan_confirm(
+    result = asyncio.run(cards_command.cards_scan_confirm(
         ctx,
         "draft-confirm",
         scan_draft=draft,
@@ -3744,6 +4085,12 @@ def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypa
     assert len(writes) == 1
     assert writes[0][1]["expected_revision"] == 4
     assert discarded == ["draft-confirm"]
+    assert result is dashboard_result
+    assert len(dashboard_calls) == 1
+    assert dashboard_calls[0][0] is account
+    assert dashboard_calls[0][1] is saved
+    assert saved["cards"]["wizard"] == cards.DUPLICATE
+    assert "wizard" not in saved["count_confirmed_card_ids"]
 
     async def forbidden(*_args, **_kwargs):
         raise AssertionError("unauthorized draft reached inventory access")
@@ -3781,7 +4128,7 @@ def test_scan_confirm_is_explicit_and_private_session_checks_precede_db(monkeypa
     assert discarded == ["draft-confirm"]
 
 
-def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
+def test_scan_save_routes_hidden_badges_into_the_bulk_finish_queue(
     monkeypatch,
 ):
     account = _scan_account()
@@ -3792,7 +4139,13 @@ def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
     saved = dict(inventory)
     saved["inventory_revision"] = 5
     saved["scan_duplicate_unverified_card_ids"] = hidden
-    state_updates = []
+    saved["trusted_card_ids"] = [
+        card.id for card in cards.CARDS if card.id not in hidden
+    ]
+    saved["complete_categories"] = [
+        "dark_elixir", "builder_base", "super_troop",
+    ]
+    inserted = []
     discarded = []
 
     async def load_target(*_args, **_kwargs):
@@ -3804,8 +4157,8 @@ def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
     async def load_accounts(*_args, **_kwargs):
         return _scan_accounts_data(account)
 
-    async def update_state(_mongo, query, update):
-        state_updates.append((query, update))
+    async def insert_state(_mongo, document, *, ttl):
+        inserted.append((document, ttl))
 
     async def discard(_mongo, draft_id):
         discarded.append(draft_id)
@@ -3814,7 +4167,7 @@ def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
     monkeypatch.setattr(cards_command, "_load_target", load_target)
     monkeypatch.setattr(cards_command, "_write_scan_draft", write_scan)
     monkeypatch.setattr(cards_command, "load_accounts", load_accounts)
-    monkeypatch.setattr(cards_command, "update_state", update_state)
+    monkeypatch.setattr(cards_command, "insert_state", insert_state)
     monkeypatch.setattr(cards_command, "_discard_scan_state", discard)
     ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
 
@@ -3831,24 +4184,17 @@ def test_scan_save_continues_hidden_spare_review_directly_in_private_session(
     ))
 
     nodes = _view_nodes(view)
-    # Several hidden badges are asked about together, not one screen each.
-    assert any(
-        node.get("custom_id") == "cards_hidden_pick:#ME"
-        for node in nodes
-    )
-    assert any(
-        node.get("custom_id") == "cards_hidden_none_of_these:#ME"
-        for node in nodes
-    )
-    # Every unread badge is offered in one multi-select.
-    picker = next(n for n in nodes if n.get("custom_id") == "cards_hidden_pick:#ME")
-    assert {str(o["value"]) for o in picker["options"]} == set(hidden[:25])
-    assert picker["max_values"] == len(hidden[:25])
+    assert "Scan finished" in _view_text(view)
+    assert "58 of 60 cards read" in _view_text(view)
+    assert "2 still need a count" in _view_text(view)
+    assert _view_labels(view) == ["Enter counts", "Finish later"]
+    state = inserted[0][0]
+    assert state["scope"] == "scan_finish"
+    assert state["selected_ids"] == hidden
+    assert state["required_entry_ids"] == hidden
     assert len([node for node in nodes if "type" in node]) <= 40
     _assert_discord_payload(view)
-    assert discarded == []
-    assert state_updates[0][1]["$set"]["type"] == "cards_hidden_badge_review"
-    assert state_updates[0][1]["$set"]["base_revision"] == 5
+    assert discarded == ["draft-hidden-review"]
 
 
 @pytest.mark.parametrize(
@@ -3978,13 +4324,19 @@ def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed(
         elixir_hidden,
         dark_hidden,
     ]
+    assert elixir_hidden not in saved["trusted_card_ids"]
+    assert dark_hidden not in saved["trusted_card_ids"]
+    assert set(saved["complete_categories"]) == {
+        "builder_base", "super_troop",
+    }
     assert saved["update_source"] == "confirmed_screenshot_review"
     assert saved["inventory_revision"] == 1
-    # The board both reports the pending check and carries the button for it.
+    # The board routes unresolved scanner values into the canonical editor.
     board = cards_command._dashboard(account, saved, account_count=1)
-    assert "2 cards need a duplicate check" in _view_text(board)
+    assert "2 cards still need a count" in _view_text(board)
     assert any(
         node.get("custom_id") == "cards_hidden:#ME"
+        and node.get("label") == "Finish collection (2)"
         for node in _view_nodes(board)
     )
 
@@ -4007,14 +4359,64 @@ def test_scan_save_persists_hidden_badges_until_that_duplicate_list_is_reviewed(
     ))
     assert answered["scan_duplicate_unverified_card_ids"] == [dark_hidden]
     assert answered["cards"][elixir_hidden] == cards.DUPLICATE
+    assert elixir_hidden in answered["trusted_card_ids"]
+    assert "elixir" in answered["complete_categories"]
 
-    # Marking the category ready does NOT clear the remaining badge. It is a
-    # statement about trading, not an answer to "how many of these do you have".
-    ready = asyncio.run(cards_command._write_category_ready(
-        category_mongo, account, answered, "dark_elixir",
-        discord_id=123, guild_id=1,
+    # Only an actual answer can trust the remaining card. That final answer
+    # clears the uncertainty and makes its category Ready in the same write.
+    ready = asyncio.run(cards_command._write_card_state(
+        category_mongo,
+        account,
+        answered,
+        dark_hidden,
+        cards.OWNED,
+        expected_revision=cards_command._inventory_revision_value(answered),
+        discord_id=123,
+        guild_id=1,
     ))
-    assert ready["scan_duplicate_unverified_card_ids"] == [dark_hidden]
+    assert ready["scan_duplicate_unverified_card_ids"] == []
+    assert dark_hidden in ready["trusted_card_ids"]
+    assert set(ready["complete_categories"]) == {
+        category.id for category in cards.CATEGORIES
+    }
+
+
+def test_a_full_successful_scan_trusts_every_card_and_scanner_two_plus_is_ready():
+    account = _scan_account()
+    draft = _complete_scan_draft()
+    draft["card_states"]["wizard"] = cards.DUPLICATE
+    document = {
+        "_id": "#ME",
+        "inventory_revision": 0,
+        "cards": {},
+        "complete_categories": [],
+        "reviewed_lists": [],
+    }
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([document])
+    )
+    cards_command._inventory_locks.clear()
+
+    saved = asyncio.run(cards_command._write_scan_draft(
+        mongo,
+        account,
+        draft,
+        expected_revision=0,
+        discord_id=123,
+        guild_id=1,
+    ))
+
+    assert set(saved["trusted_card_ids"]) == {card.id for card in cards.CARDS}
+    assert set(saved["complete_categories"]) == {
+        category.id for category in cards.CATEGORIES
+    }
+    assert "wizard" not in saved.get("count_confirmed_card_ids", [])
+    assert cards_command._inventory_board_values(saved)["wizard"] == (
+        card_board.SPARE_FLOOR
+    )
+    assert "`2+`" in _view_text(
+        cards_command._quantity_editor(account, saved, "elixir")
+    )
 
 
 def test_scan_save_stale_revision_and_active_reservation_cannot_overwrite():
@@ -5891,10 +6293,14 @@ def test_confirming_moves_only_your_own_card():
     trade = _agreed_trade()
     owner = cards_command._reservation_owner(trade)
     given, wanted = trade["given_card_id"], trade["wanted_card_id"]
+    trusted = [card.id for card in cards.CARDS]
+    ready = [category.id for category in cards.CATEGORIES]
     inventories = _ConfirmInventories([
         {"_id": "#ME", "cards": {given: 3, wanted: 0},
+         "trusted_card_ids": trusted, "complete_categories": ready,
          "card_trade_reservations": {given: owner, wanted: owner}},
         {"_id": "#HOLDER", "cards": {given: 0, wanted: 2},
+         "trusted_card_ids": trusted, "complete_categories": ready,
          "card_trade_reservations": {given: owner, wanted: owner}},
     ])
     mongo = SimpleNamespace(card_inventories=inventories)
@@ -5910,6 +6316,10 @@ def test_confirming_moves_only_your_own_card():
     # And the holder's own card has NOT moved: they have not answered yet.
     assert inventories.documents["#HOLDER"]["cards"][wanted] == 2
     assert inventories.documents["#ME"]["cards"][wanted] == 0
+    assert inventories.documents["#ME"]["trusted_card_ids"] == trusted
+    assert inventories.documents["#HOLDER"]["trusted_card_ids"] == trusted
+    assert inventories.documents["#ME"]["complete_categories"] == ready
+    assert inventories.documents["#HOLDER"]["complete_categories"] == ready
     # Only the confirmed card is unreserved.
     assert given not in inventories.documents["#ME"]["card_trade_reservations"]
     assert wanted in inventories.documents["#ME"]["card_trade_reservations"]
@@ -6384,6 +6794,182 @@ def test_the_ask_for_help_button_id_actually_parses(monkeypatch):
     assert cards_command._normalize_tag(parts[0]) == "#ME"
     assert cards_command.CARD_BY_ID.get(parts[1]) is not None
     assert cards_command._normalize_tag(parts[2]) == "#H"
+
+
+class _GemInventoryCollection:
+    def __init__(self, documents):
+        self.documents = {document["_id"]: document for document in documents}
+
+    def find(self, query):
+        return _FakeCursor([
+            document
+            for document in self.documents.values()
+            if _matches_query(document, query)
+        ])
+
+
+class _GemClans:
+    def __init__(self, tags=("#HOME",)):
+        self.tags = list(tags)
+
+    async def distinct(self, field):
+        assert field == "tag"
+        return list(self.tags)
+
+
+def _gem_handler_env(monkeypatch):
+    now = datetime.now(timezone.utc)
+    account = Account(
+        tag="#ME", name="Asker", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    requester = _complete_inventory(tag="#ME", confirmed_at=now)
+    requester.update({"guild_id": 1, "discord_id": 123})
+    requester["trusted_card_ids"] = [card.id for card in cards.CARDS]
+    requester["cards"]["balloon"] = cards.MISSING
+
+    holder = _complete_inventory(tag="#H", confirmed_at=now)
+    holder.update({
+        "guild_id": 1,
+        "discord_id": 222,
+        "player_name": "Holder",
+    })
+    holder["trusted_card_ids"] = [card.id for card in cards.CARDS]
+    holder["cards"]["balloon"] = cards.DUPLICATE
+
+    monkeypatch.setattr(
+        cards_command, "_load_target", _fake_load_target(account, requester)
+    )
+    mongo = SimpleNamespace(
+        card_inventories=_GemInventoryCollection([requester, holder]),
+        card_trades=_FakeTradeCollection(),
+        clans=_GemClans(),
+    )
+    return account, requester, holder, mongo
+
+
+@pytest.mark.parametrize(
+    "stale_state",
+    [
+        "requester_demand_untrusted",
+        "requester_category_incomplete",
+        "holder_supply_untrusted",
+        "holder_category_incomplete",
+        "requester_now_has_a_return",
+        "requester_left_family",
+        "holder_left_family",
+    ],
+)
+def test_gem_confirmation_revalidates_normal_matching_eligibility(
+    monkeypatch, stale_state
+):
+    """A rendered help button is not evidence that either raw count is safe."""
+    _account, requester, holder, mongo = _gem_handler_env(monkeypatch)
+    if stale_state == "requester_demand_untrusted":
+        requester["trusted_card_ids"].remove("balloon")
+        assert requester["cards"]["balloon"] == cards.MISSING
+    elif stale_state == "requester_category_incomplete":
+        requester["trusted_card_ids"].remove("barbarian")
+    elif stale_state == "holder_supply_untrusted":
+        holder["trusted_card_ids"].remove("balloon")
+        assert holder["cards"]["balloon"] == cards.DUPLICATE
+    elif stale_state == "holder_category_incomplete":
+        holder["trusted_card_ids"].remove("barbarian")
+    elif stale_state == "requester_now_has_a_return":
+        requester["cards"]["wizard"] = cards.DUPLICATE
+    elif stale_state == "requester_left_family":
+        requester["clan_tag"] = "#OUTSIDE"
+    elif stale_state == "holder_left_family":
+        holder["clan_tag"] = "#OUTSIDE"
+
+    result = asyncio.run(cards_command.cards_gem_ask(
+        _quantity_ctx(), "#ME|balloon|#H",
+        coc_client=SimpleNamespace(), mongo=mongo,
+    ))
+
+    assert "no longer available" in _view_text(result)
+    assert not any(
+        str(node.get("custom_id", "")).startswith("cards_gem_send:")
+        for node in _view_nodes(result)
+    )
+
+
+@pytest.mark.parametrize(
+    "stale_state",
+    [
+        "requester_demand_untrusted", "holder_supply_untrusted",
+        "requester_left_family", "holder_left_family",
+    ],
+)
+def test_gem_send_revalidates_a_stale_confirmation_before_dm(
+    monkeypatch, stale_state
+):
+    """Final send repeats trust and family checks after the price screen."""
+    _account, requester, holder, mongo = _gem_handler_env(monkeypatch)
+    confirmation = asyncio.run(cards_command.cards_gem_ask(
+        _quantity_ctx(), "#ME|balloon|#H",
+        coc_client=SimpleNamespace(), mongo=mongo,
+    ))
+    send_id = next(
+        str(node["custom_id"]).split(":", 1)[1]
+        for node in _view_nodes(confirmation)
+        if str(node.get("custom_id", "")).startswith("cards_gem_send:")
+    )
+
+    if stale_state == "requester_demand_untrusted":
+        requester["trusted_card_ids"].remove("balloon")
+    elif stale_state == "holder_supply_untrusted":
+        holder["trusted_card_ids"].remove("balloon")
+    elif stale_state == "requester_left_family":
+        requester["clan_tag"] = "#OUTSIDE"
+    elif stale_state == "holder_left_family":
+        holder["clan_tag"] = "#OUTSIDE"
+
+    dms = []
+
+    async def fake_dm(_bot, recipient_id, _components, **_kwargs):
+        dms.append(recipient_id)
+        return True
+
+    monkeypatch.setattr(cards_command, "_send_trade_dm", fake_dm)
+    result = asyncio.run(cards_command.cards_gem_send(
+        _quantity_ctx(), send_id,
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+
+    assert "no longer available" in _view_text(result)
+    assert dms == []
+    assert mongo.card_trades.docs == {}
+
+
+def test_gem_send_uses_live_eligibility_and_replayed_stale_button_fails_closed(
+    monkeypatch,
+):
+    _account, _requester, holder, mongo = _gem_handler_env(monkeypatch)
+    dms = []
+
+    async def fake_dm(_bot, recipient_id, _components, **_kwargs):
+        dms.append(recipient_id)
+        return True
+
+    monkeypatch.setattr(cards_command, "_send_trade_dm", fake_dm)
+    first = asyncio.run(cards_command.cards_gem_send(
+        _quantity_ctx(), "#ME|balloon|#H",
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+    assert "Asked" in _view_text(first)
+    assert dms == [222]
+    assert set(mongo.card_trades.docs) == {"gem:#ME:#H:balloon"}
+
+    # The same indefinitely clickable button must not send again once the
+    # holder's value is no longer trusted, even though the raw 2 is preserved.
+    holder["trusted_card_ids"].remove("balloon")
+    replay = asyncio.run(cards_command.cards_gem_send(
+        _quantity_ctx(), "#ME|balloon|#H",
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+    assert "no longer available" in _view_text(replay)
+    assert dms == [222]
 
 
 def test_the_gem_ask_states_the_price_before_anything_is_sent():
@@ -7224,47 +7810,31 @@ def test_the_minus_button_stops_at_missing_and_never_goes_negative(monkeypatch):
     assert document["cards"]["barbarian"] == cards.MISSING
 
 
-def test_ready_to_trade_button_makes_the_category_matchable(monkeypatch):
+def test_a_legacy_ready_button_refreshes_without_granting_trust(monkeypatch):
+    """Old Discord messages must not bypass the per-card trust invariant."""
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
     )
     document, mongo = _quantity_env({"root_rider": cards.MISSING, "wizard": 3})
+    document["trusted_card_ids"] = ["wizard"]
     monkeypatch.setattr(
         cards_command, "_load_target", _fake_load_target(account, document),
     )
-    view = cards_command._quantity_editor(account, document, "elixir")
-    ready = next(
-        str(n["custom_id"]) for n in _view_nodes(view)
-        if str(n.get("custom_id", "")).startswith("cards_ready:")
+    result = _run_rendered(
+        "cards_ready:#ME|elixir", mongo=mongo, coc_client=SimpleNamespace(),
     )
 
-    result = _run_rendered(ready, mongo=mongo, coc_client=SimpleNamespace())
-
-    assert document["complete_categories"] == ["elixir"]
-    # Counts survived, and the screen now says the state changed.
+    assert document["complete_categories"] == []
+    assert document["trusted_card_ids"] == ["wizard"]
+    assert document["inventory_revision"] == 0
     assert document["cards"]["wizard"] == 3
     assert document["cards"]["root_rider"] == cards.MISSING
-    nodes = _view_nodes(result)
-    ready_state = "**Ready to trade.**\nOther players can see these spares."
-    ready_state_positions = [
-        index for index, node in enumerate(nodes)
-        if node.get("content") == ready_state
-    ]
-    picker_position = next(
-        index for index, node in enumerate(nodes)
-        if str(node.get("custom_id", "")).startswith("cards_qpick:")
+    assert "Ready to trade." not in _view_text(result)
+    assert not any(
+        str(node.get("custom_id", "")).startswith("cards_ready:")
+        for node in _view_nodes(result)
     )
-    scanner_position = next(
-        index for index, node in enumerate(nodes)
-        if str(node.get("custom_id", "")).startswith("cards_scan_start:")
-    )
-    ids = {str(node.get("custom_id", "")) for node in nodes}
-
-    assert len(ready_state_positions) == 1
-    assert picker_position < ready_state_positions[0] < scanner_position
-    assert not any(custom_id.startswith("cards_ready:") for custom_id in ids)
-    assert "is ready to trade." in _view_text(result)
 
 
 def test_choosing_a_card_points_the_controller_at_it(monkeypatch):
@@ -7320,10 +7890,10 @@ def test_the_category_screen_stays_far_below_the_component_ceiling():
                     worst, len([n for n in _view_nodes(view) if "type" in n])
                 )
                 _assert_discord_payload(view)
-    # Scanning and the category menu moved onto this screen, and it is still
-    # nowhere near Discord's ceiling of 40. The worst case includes the
-    # Set to 2 button, mounted because every card here is an unconfirmed 2+.
-    assert worst == 27, f"expected a fixed 27, got {worst}"
+    # Scanning and the category menu sit on this screen, and it remains far
+    # below Discord's ceiling. The removed Ready row saves three components;
+    # the worst case still includes Set to 2 for an unconfirmed scanner 2+.
+    assert worst == 24, f"expected a fixed 24, got {worst}"
 
 
 def test_set_number_opens_a_modal_for_the_selected_card():
@@ -7681,7 +8251,17 @@ def _partial_scan_draft(*, accepted_rows=(1, 2), duplicate_unverified=()):
     }
 
 
-def test_a_partial_scan_offers_the_confirmed_cards_and_the_manual_editor():
+def _one_unknown_scan_draft(card_id="wizard"):
+    draft = _partial_scan_draft(accepted_rows=tuple(range(1, 11)))
+    draft["card_states"].pop(card_id)
+    draft["card_confidences"].pop(card_id)
+    draft["unknown_card_ids"] = [card_id]
+    draft["manual_required_card_ids"] = [card_id]
+    draft["warnings"] = ["manual_review_required"]
+    return draft
+
+
+def test_a_partial_scan_makes_finish_collection_the_primary_recovery():
     draft = _partial_scan_draft()
 
     assert cards_command._scan_draft_confirmable(draft) is False
@@ -7694,14 +8274,17 @@ def test_a_partial_scan_offers_the_confirmed_cards_and_the_manual_editor():
     ids = {node.get("custom_id") for node in _view_nodes(view)}
     text = _view_text(view)
 
-    assert labels == ["Save confirmed cards", "Update collection", "Cancel"]
+    assert labels == ["Finish collection", "Cancel"]
     assert "cards_scan_save_partial:draft-partial" in ids
-    assert "cards_advanced:#ME" in ids
+    assert "cards_advanced:#ME" not in ids
     assert "cards_scan_confirm:draft-partial" not in ids
     assert "I read 12 of 60 cards." in text
     assert "Nothing is saved yet." in text
     assert "Nothing was guessed." in text
-    assert "Still to check: 48 cards" in text
+    assert "48 still need a count." in text
+    assert "Finish collection" in text
+    assert "opens the remaining cards for exact counts" in text
+    assert "try again" in text, "screenshot retry remains a secondary hint"
     assert "not ready to trade" in text
     # Scanner diagnostics belong in the evidence, never in player copy.
     for jargon in ("top1", "hash", "hamming", "margin", "pitch", "gate"):
@@ -7746,14 +8329,55 @@ def test_a_partial_scan_saves_only_confirmed_rows_and_drops_stale_readiness():
     # checking, so elixir cannot stay ready to trade.
     assert updated["complete_categories"] == []
     assert updated["reviewed_lists"] == []
-    # No new confirmation date: the member confirmed the scanned part, not the
-    # collection.
-    assert updated["confirmed_at"] == datetime(2026, 8, 1, tzinfo=timezone.utc)
+    assert set(updated["trusted_card_ids"]) == confirmed_ids - {"archer"}
+    assert "archer" not in updated["trusted_card_ids"], (
+        "an uncertain duplicate badge is not a trusted count"
+    )
+    # The accepted save refreshes candidate lookup; complete_categories still
+    # keeps every unchecked category out of matching.
+    assert updated["confirmed_at"] > datetime(2026, 8, 1, tzinfo=timezone.utc)
     assert updated["update_source"] == "confirmed_partial_screenshot_review"
     assert updated["inventory_revision"] == 3
     # A scanner floor cannot inherit a member's exact count.
     assert updated["count_confirmed_card_ids"] == ["super_bowler"]
     assert updated["scan_duplicate_unverified_card_ids"] == ["archer"]
+
+
+def test_a_partial_scan_with_one_unknown_card_exposes_no_untrusted_match():
+    unknown_id = "wizard"
+    document = {
+        "_id": "#ME",
+        "inventory_revision": 0,
+        "cards": {card.id: cards.OWNED for card in cards.CARDS},
+        "complete_categories": [],
+        "reviewed_lists": [],
+    }
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryCollection([document])
+    )
+    cards_command._inventory_locks.clear()
+
+    updated = asyncio.run(cards_command._write_scan_partial(
+        mongo,
+        _scan_account(),
+        _one_unknown_scan_draft(unknown_id),
+        expected_revision=0,
+        discord_id=123,
+        guild_id=1,
+    ))
+
+    assert len(updated["trusted_card_ids"]) == len(cards.CARDS) - 1
+    assert unknown_id not in updated["trusted_card_ids"]
+    assert "elixir" not in updated["complete_categories"]
+    assert set(updated["complete_categories"]) == {
+        "dark_elixir", "builder_base", "super_troop",
+    }
+    assert updated["confirmed_at"] is not None
+
+    partner = _complete_inventory(tag="#YOU")
+    partner["cards"][unknown_id] = cards.DUPLICATE
+    updated["cards"][unknown_id] = cards.MISSING
+    assert cards.find_matches(updated, [partner]) == []
 
 
 def test_a_partial_scan_write_keeps_revision_and_reservation_protection():
@@ -7855,17 +8479,21 @@ def test_a_partial_draft_cannot_use_the_full_save_path(monkeypatch):
     ))
 
     assert writes == []
-    assert "Save confirmed cards" in _view_labels(view)
+    assert "Finish collection" in _view_labels(view)
 
 
-def test_saving_a_partial_scan_opens_update_collection(monkeypatch):
+def test_saving_a_partial_scan_hands_untrusted_cards_to_bulk_finish(monkeypatch):
     account = _scan_account()
     draft = _partial_scan_draft()
     saved_inventory = _complete_inventory()
     saved_inventory["inventory_revision"] = 5
     saved_inventory["complete_categories"] = []
+    saved_inventory["trusted_card_ids"] = [
+        card.id for card in cards.CARDS[:12]
+    ]
     discarded = []
     writes = []
+    created = []
 
     async def load_bound(*_args, **_kwargs):
         return account, saved_inventory, _scan_accounts_data(account), None
@@ -7877,10 +8505,29 @@ def test_saving_a_partial_scan_opens_update_collection(monkeypatch):
     async def discard(_mongo, draft_id):
         discarded.append(draft_id)
 
+    async def create_bulk(
+        _ctx, _account, inventory, *, mongo, category_id, scope, selected_ids,
+    ):
+        created.append({
+            "inventory": inventory,
+            "mongo": mongo,
+            "category_id": category_id,
+            "scope": scope,
+            "selected_ids": list(selected_ids),
+        })
+        state = {
+            "account_name": account.name,
+            "account_tag": account.tag,
+            "category_id": category_id,
+            "selected_ids": list(selected_ids),
+        }
+        return "cards_finish_test|ME|elixir", state
+
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
     monkeypatch.setattr(cards_command, "_load_scan_bound_account", load_bound)
     monkeypatch.setattr(cards_command, "_write_scan_partial", write_partial)
     monkeypatch.setattr(cards_command, "_discard_scan_state", discard)
+    monkeypatch.setattr(cards_command, "_create_bulk_state", create_bulk)
     ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
 
     view = asyncio.run(cards_command._save_partial_scan_draft(
@@ -7900,13 +8547,153 @@ def test_saving_a_partial_scan_opens_update_collection(monkeypatch):
         "expected_revision": 4, "discord_id": 123, "guild_id": 1,
     }]
     assert discarded == ["draft-partial"]
+    unresolved = [card.id for card in cards.CARDS[12:]]
+    assert len(created) == 1
+    assert created[0]["inventory"] is saved_inventory
+    assert created[0]["category_id"] == cards.CARD_BY_ID[unresolved[0]].category
+    assert created[0]["scope"] == "scan_finish"
+    assert created[0]["selected_ids"] == unresolved
     text = _view_text(view)
     ids = {node.get("custom_id") for node in _view_nodes(view)}
-    assert "Update collection" in text
-    assert "Saved 12 cards from the scan." in text
-    assert "Ready to trade" in text
-    assert any(str(value).startswith("cards_ready:#ME|") for value in ids)
+    assert "Scan finished" in text
+    assert "12 of 60 cards read" in text
+    assert "48 still need a count" in text
+    assert "Finish these cards to complete your collection" in text
+    assert "Ready to trade" not in text
+    assert "cards_bulk_continue:cards_finish_test|ME|elixir" in ids
+    assert "cards_bulk_finish:cards_finish_test|ME|elixir" in ids
+    assert not any(str(value).startswith("cards_ready:") for value in ids)
     _assert_discord_payload(view)
+
+
+def test_scanner_finish_state_preselects_a_cross_category_required_queue(
+    monkeypatch,
+):
+    account = _scan_account()
+    unresolved = [
+        cards.CATEGORY_CARDS["elixir"][-2].id,
+        cards.CATEGORY_CARDS["elixir"][-1].id,
+        *[card.id for card in cards.CATEGORY_CARDS["dark_elixir"][:5]],
+    ]
+    inventory = {
+        "_id": "#ME",
+        "inventory_revision": 7,
+        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+        "trusted_card_ids": [
+            card.id for card in cards.CARDS if card.id not in unresolved
+        ],
+        "complete_categories": ["builder_base", "super_troop"],
+    }
+    inserted = []
+
+    async def insert(_mongo, document, *, ttl):
+        inserted.append((document, ttl))
+
+    monkeypatch.setattr(cards_command, "insert_state", insert)
+    ctx = SimpleNamespace(user=SimpleNamespace(id=123), guild_id=1)
+    state_id, state = asyncio.run(cards_command._create_bulk_state(
+        ctx,
+        account,
+        inventory,
+        mongo=SimpleNamespace(),
+        category_id="elixir",
+        scope="scan_finish",
+        selected_ids=unresolved,
+    ))
+
+    assert state_id.startswith("cards_finish_")
+    assert state["scope"] == "scan_finish"
+    assert state["editable_ids"] == unresolved
+    assert state["selected_ids"] == unresolved
+    assert state["required_entry_ids"] == unresolved
+    assert state["unconfirmed_ids"] == [], (
+        "untrusted scanner values require an answer even when stored as 2+"
+    )
+    assert state["expected_revision"] == 7
+    assert state["phase"] == "continue"
+    assert cards_command._bulk_state_well_formed(state) is True
+    assert inserted and inserted[0][0]["_id"] == state_id
+
+    modal = cards_command._bulk_exact_modal(state_id, state)
+    assert modal["title"] == "Finish collection · 1-5 of 7"
+    assert modal["custom_id"] == f"cards_bulk_submit:{state_id}"
+    nodes = list(_walk_payload([
+        component.build() for component in modal["components"]
+    ]))
+    inputs = [node for node in nodes if node.get("type") == 4]
+    assert len(inputs) == 5
+    assert all(node["required"] is True for node in inputs)
+    assert all("value" not in node for node in inputs), (
+        "stored uncertain values must not prefill a required manual answer"
+    )
+
+
+def test_scanner_finish_batches_autosave_and_the_final_batch_makes_ready():
+    account = _scan_account()
+    unresolved = [
+        cards.CATEGORY_CARDS["elixir"][-2].id,
+        cards.CATEGORY_CARDS["elixir"][-1].id,
+        *[card.id for card in cards.CATEGORY_CARDS["dark_elixir"][:5]],
+    ]
+    document = {
+        "_id": "#ME",
+        "inventory_revision": 0,
+        "cards": {card.id: cards.OWNED for card in cards.CARDS},
+        "trusted_card_ids": [
+            card.id for card in cards.CARDS if card.id not in unresolved
+        ],
+        "complete_categories": ["builder_base", "super_troop"],
+        "reviewed_lists": [],
+    }
+    collection = _FakeInventoryCollection([document])
+    mongo = SimpleNamespace(card_inventories=collection)
+    cards_command._inventory_locks.clear()
+
+    first_ids = unresolved[:5]
+    first_values = dict(zip(first_ids, (0, 1, 2, 3, 4), strict=True))
+    after_first = asyncio.run(cards_command._write_exact_card_batch(
+        mongo,
+        account,
+        document,
+        first_ids,
+        first_values,
+        expected_revision=0,
+        discord_id=123,
+        guild_id=1,
+        allowed_ids=unresolved,
+    ))
+
+    assert after_first["inventory_revision"] == 1
+    assert all(
+        after_first["cards"][card_id] == value
+        for card_id, value in first_values.items()
+    )
+    assert set(first_ids) <= set(after_first["trusted_card_ids"])
+    assert set(unresolved[5:]).isdisjoint(after_first["trusted_card_ids"])
+    assert "elixir" in after_first["complete_categories"]
+    assert "dark_elixir" not in after_first["complete_categories"]
+
+    final_ids = unresolved[5:]
+    after_final = asyncio.run(cards_command._write_exact_card_batch(
+        mongo,
+        account,
+        after_first,
+        final_ids,
+        {card_id: 2 for card_id in final_ids},
+        expected_revision=1,
+        discord_id=123,
+        guild_id=1,
+        allowed_ids=unresolved,
+    ))
+
+    assert after_final["inventory_revision"] == 2
+    assert set(after_final["trusted_card_ids"]) == {
+        card.id for card in cards.CARDS
+    }
+    assert set(after_final["complete_categories"]) == {
+        category.id for category in cards.CATEGORIES
+    }
+    assert set(final_ids) <= set(after_final["count_confirmed_card_ids"])
 
 
 def test_the_dm_review_appears_as_soon_as_one_row_is_confirmed(monkeypatch):
@@ -7986,7 +8773,7 @@ def test_the_dm_review_appears_as_soon_as_one_row_is_confirmed(monkeypatch):
     text = _view_text(sent[0][1])
     assert "Scan complete" in text
     assert "Nothing is saved yet." in text
-    assert "Save confirmed cards" in _view_labels(sent[0][1])
+    assert "Finish collection" in _view_labels(sent[0][1])
     # The draft was stored, and the upload stays open so more screenshots can
     # still reach the same draft.
     assert len(updates) == 1
@@ -8051,13 +8838,7 @@ def test_the_adapter_keeps_row_provenance_and_stays_bson_safe():
     assert_bson_safe(draft)
 
 
-def test_a_draft_with_every_identity_bound_keeps_the_correction_flow():
-    """One uncertain count is answered in place, not traded for a part save.
-
-    Every card here is identity bound, so three taps produce a complete
-    collection. Offering a partial save instead would keep less and ask the
-    member to redo the same work in the editor.
-    """
+def test_a_draft_with_one_uncertain_count_uses_the_shared_bulk_finish_flow():
     draft = _complete_scan_draft()
     uncertain = cards.CARDS[26].id
     draft["card_states"].pop(uncertain)
@@ -8076,13 +8857,14 @@ def test_a_draft_with_every_identity_bound_keeps_the_correction_flow():
     labels = _view_labels(view)
     ids = {node.get("custom_id") for node in _view_nodes(view)}
 
-    assert labels == [
-        "Missing", "Have 1", "Duplicate",
-        "Save collection", "Update collection", "Cancel",
-    ]
-    assert "cards_scan_save_partial:draft-correctable" not in ids
-    assert "cards_scan_confirm:draft-correctable" in ids
-    assert "Fix 1 uncertain card, then save." in _view_text(view)
+    assert labels == ["Finish collection", "Cancel"]
+    assert "cards_scan_save_partial:draft-correctable" in ids
+    assert "cards_scan_confirm:draft-correctable" not in ids
+    assert not any(str(value).startswith("cards_scan_fix_") for value in ids)
+    text = _view_text(view)
+    assert "59 of 60 cards" in text
+    assert "1 still need a count" in text
+    assert "opens the remaining cards for exact counts" in text
 
 
 def test_a_partial_review_names_an_uncertain_card_inside_a_confirmed_row():
@@ -8099,7 +8881,7 @@ def test_a_partial_review_names_an_uncertain_card_inside_a_confirmed_row():
         _scan_account(), {"_id": "#ME"}, "draft-loose", draft
     ))
 
-    assert "Still to check: 49 cards" in text
+    assert "49 still need a count" in text
     assert "**Rows 3–10:**" in text
     assert f"**Also:** {cards.CARD_BY_ID[uncertain].name}" in text
 
@@ -8318,17 +9100,16 @@ def test_a_partial_scan_keeps_readiness_for_a_category_it_fully_answered():
     assert "dark_elixir:missing" not in updated["reviewed_lists"]
 
 
-def test_a_partial_scan_leaves_a_category_it_never_touched_alone():
-    """Do not punish scanning by wiping categories the scan never wrote to."""
+def test_a_collection_wide_partial_scan_untrusts_every_unread_card():
     updated = _partial_write(
         _partial_scan_draft(accepted_rows=(9, 10)), _ready_inventory()
     )
 
-    assert "super_troop" not in updated["complete_categories"]
-    assert set(updated["complete_categories"]) == {
-        "elixir", "dark_elixir", "builder_base",
+    assert updated["complete_categories"] == []
+    assert updated["reviewed_lists"] == []
+    assert set(updated["trusted_card_ids"]) == {
+        card.id for card in cards.CARDS[48:60]
     }
-    assert "elixir:missing" in updated["reviewed_lists"]
 
 
 def test_a_partial_scan_cannot_make_a_player_matchable_on_an_unread_category():
@@ -8366,7 +9147,7 @@ def test_a_partial_scan_cannot_make_a_player_matchable_on_an_unread_category():
     assert cards.find_matches(would_have_matched, [partner])
 
 
-def test_update_collection_restores_readiness_after_a_partial_scan():
+def test_manual_counts_restore_readiness_after_a_partial_scan_without_ready_tap():
     document = _ready_inventory(
         cards={card.id: cards.MISSING for card in cards.CARDS},
     )
@@ -8383,15 +9164,26 @@ def test_update_collection_restores_readiness_after_a_partial_scan():
     ))
     assert "elixir" not in updated["complete_categories"]
 
-    # The normal manual path puts it back: no scan-only repair route exists.
-    restored = asyncio.run(cards_command._write_category_ready(
-        mongo,
-        _scan_account(),
-        updated,
-        "elixir",
-        discord_id=123,
-        guild_id=1,
-    ))
+    remaining = [
+        card.id
+        for card in cards.CATEGORY_CARDS["elixir"]
+        if card.id not in cards_command._trusted_card_ids(updated)
+    ]
+    assert remaining
+    restored = updated
+    for index, card_id in enumerate(remaining):
+        restored = asyncio.run(cards_command._write_card_state(
+            mongo,
+            _scan_account(),
+            restored,
+            card_id,
+            restored["cards"][card_id],
+            expected_revision=cards_command._inventory_revision_value(restored),
+            discord_id=123,
+            guild_id=1,
+        ))
+        if index < len(remaining) - 1:
+            assert "elixir" not in restored["complete_categories"]
 
     assert "elixir" in restored["complete_categories"]
     assert {"elixir:missing", "elixir:duplicates"} <= set(
@@ -9010,6 +9802,243 @@ def test_the_receiver_fallback_never_downgrades_a_hand_set_count():
 
     assert moved is True
     assert inventories.documents["#HOLDER"]["cards"][given] == 4
+
+
+def _fully_trusted_swap_inventory(tag, *, owner, given, wanted, values):
+    trusted = [card.id for card in cards.CARDS]
+    ready = [category.id for category in cards.CATEGORIES]
+    return {
+        "_id": tag,
+        "guild_id": 1,
+        "inventory_revision": 0,
+        "cards": {card.id: cards.OWNED for card in cards.CARDS} | values,
+        "trusted_card_ids": list(trusted),
+        "count_confirmed_card_ids": list(trusted),
+        "complete_categories": list(ready),
+        "reviewed_lists": [
+            f"{category_id}:{mode}"
+            for category_id in ready
+            for mode in ("missing", "duplicates")
+        ],
+        "card_trade_reservations": {given: owner, wanted: owner},
+    }
+
+
+class _ReceiverCreditFailureInventories(_FakeInventoryCollection):
+    """Fail once before the receiver credit while recording cleanup order."""
+
+    def __init__(self, documents, *, giver, receiver, card_id, other_card_id):
+        super().__init__(documents)
+        self.giver = giver
+        self.receiver = receiver
+        self.card_id = card_id
+        self.other_card_id = other_card_id
+        self.failed_credit = False
+        self.giver_debits = 0
+        self.events = []
+
+    async def update_one(self, query, update, upsert=False):
+        receiver_credit = (
+            query.get("_id") == self.receiver
+            and f"cards.{self.card_id}" in (update.get("$set") or {})
+            and bool(query.get("$or"))
+        )
+        if receiver_credit and not self.failed_credit:
+            self.failed_credit = True
+            self.events.append("receiver_credit_failed")
+            # The exception is injected at the exact blocker boundary: the
+            # giver write committed, but the receiver write did not.
+            assert self.documents[self.giver]["cards"][self.card_id] == 2
+            assert self.card_id not in self.documents[self.giver][
+                "card_trade_reservations"
+            ]
+            assert self.other_card_id in self.documents[self.giver][
+                "card_trade_reservations"
+            ]
+            assert set(self.documents[self.receiver]["card_trade_reservations"]) == {
+                self.card_id, self.other_card_id,
+            }
+            raise RuntimeError("injected receiver write failure")
+
+        result = await super().update_one(query, update, upsert=upsert)
+        if not getattr(result, "modified_count", 0):
+            return result
+        if f"cards.{self.card_id}" in (update.get("$inc") or {}):
+            self.giver_debits += 1
+            self.events.append("giver_debited")
+        elif "trusted_card_ids" in (update.get("$set") or {}):
+            self.events.append(f"invalidated:{query['_id']}")
+        elif any(
+            path.startswith("card_trade_reservations.")
+            for path in (update.get("$unset") or {})
+        ):
+            self.events.append(f"released:{query['_id']}")
+        return result
+
+
+def _review_failure_swap_fixture(*, trade_id="trade-review-failure"):
+    trade = _agreed_trade()
+    trade.update({
+        "_id": trade_id,
+        "kind": "trade",
+        "backstop_at": datetime.now(timezone.utc) - timedelta(days=1),
+    })
+    owner = cards_command._reservation_owner(trade)
+    given, wanted = trade["given_card_id"], trade["wanted_card_id"]
+    inventories = _ReceiverCreditFailureInventories(
+        [
+            _fully_trusted_swap_inventory(
+                "#ME", owner=owner, given=given, wanted=wanted,
+                values={given: 3, wanted: cards.MISSING},
+            ),
+            _fully_trusted_swap_inventory(
+                "#HOLDER", owner=owner, given=given, wanted=wanted,
+                values={given: cards.MISSING, wanted: 3},
+            ),
+        ],
+        giver="#ME",
+        receiver="#HOLDER",
+        card_id=given,
+        other_card_id=wanted,
+    )
+    trades = _FakeTradeCollection()
+    trades.docs[trade["_id"]] = dict(trade)
+    return trade, SimpleNamespace(
+        card_trades=trades,
+        card_inventories=inventories,
+    )
+
+
+def test_receiver_exception_enters_durable_review_without_a_second_debit():
+    """The one-sided write blocker is fenced, auditable, and fail closed."""
+    from extensions.tasks import cards_deadlines as sweeper
+
+    trade, mongo = _review_failure_swap_fixture()
+    given, wanted = trade["given_card_id"], trade["wanted_card_id"]
+
+    with pytest.raises(cards_command._SwapLegNeedsReview) as raised:
+        asyncio.run(cards_command._run_swap_leg_confirmation(
+            mongo,
+            trade,
+            role="requester",
+            now=datetime.now(timezone.utc),
+            record_no_spare=False,
+        ))
+
+    saved = mongo.card_trades.docs[trade["_id"]]
+    assert raised.value.trade["status"] == "needs_review"
+    assert saved["status"] == "needs_review"
+    assert saved["failure"].startswith("swap_leg_partial_failure:")
+    assert saved["swap_leg_progress"]["role"] == "requester"
+    assert saved["swap_leg_progress"]["card_id"] == given
+    assert saved["swap_leg_progress"]["phase"] == "receiver_credit_unknown"
+    assert saved["swap_leg_progress"]["giver_debited"] is True
+    assert saved["swap_leg_progress"]["receiver_credit"] == "unknown"
+    assert "requester_confirmed_at" not in saved
+
+    requester = mongo.card_inventories.documents["#ME"]
+    holder = mongo.card_inventories.documents["#HOLDER"]
+    assert requester["cards"][given] == 2
+    assert holder["cards"][given] == cards.MISSING, (
+        "an exception before the receiver write must not invent a credit"
+    )
+    assert mongo.card_inventories.giver_debits == 1
+
+    for inventory in (requester, holder):
+        assert {given, wanted}.isdisjoint(inventory["trusted_card_ids"])
+        assert {given, wanted}.isdisjoint(inventory["count_confirmed_card_ids"])
+        assert "elixir" not in inventory["complete_categories"]
+        assert not any(
+            marker.startswith("elixir:")
+            for marker in inventory["reviewed_lists"]
+        )
+        assert inventory["card_trade_reservations"] == {}
+        assert trade["_id"] in inventory["card_trade_review_invalidations"]
+
+    invalidations = [
+        index for index, event in enumerate(mongo.card_inventories.events)
+        if event.startswith("invalidated:")
+    ]
+    releases = [
+        index for index, event in enumerate(mongo.card_inventories.events)
+        if event.startswith("released:")
+    ]
+    assert len(invalidations) == 2
+    assert releases and min(releases) > max(invalidations), (
+        "remaining reservation fences must stay until both inventories fail closed"
+    )
+
+    # A replay holding the original live document cannot claim again after the
+    # durable needs_review transition, so the giver is never debited twice.
+    outcome, _remaining, replayed = asyncio.run(
+        cards_command._run_swap_leg_confirmation(
+            mongo,
+            trade,
+            role="requester",
+            now=datetime.now(timezone.utc),
+            record_no_spare=False,
+        )
+    )
+    assert outcome == "changed"
+    assert replayed["status"] == "needs_review"
+    assert requester["cards"][given] == 2
+    assert mongo.card_inventories.giver_debits == 1
+
+    # Even with an overdue backstop, ordinary expiry only selects live states.
+    closed = asyncio.run(sweeper._close_abandoned_swaps(
+        mongo, SimpleNamespace(), now=datetime.now(timezone.utc)
+    ))
+    assert closed == 0
+    assert saved["status"] == "needs_review"
+
+
+def test_expired_claimed_swap_leg_recovers_to_review_not_ordinary_expiry():
+    """A worker restart cannot strand or normally expire an unknown write."""
+    from extensions.tasks import cards_deadlines as sweeper
+
+    trade, mongo = _review_failure_swap_fixture(
+        trade_id="trade-expired-swap-leg"
+    )
+    now = datetime.now(timezone.utc)
+    trade.update({
+        "status": "completing",
+        "completion_kind": "swap_leg",
+        "completion_started_at": now - timedelta(minutes=2),
+        "expires_at": now - timedelta(seconds=1),
+        "swap_leg_progress": {
+            "attempt_nonce": "durable-attempt",
+            "role": "requester",
+            "card_id": trade["given_card_id"],
+            "giver_tag": "#ME",
+            "receiver_tag": "#HOLDER",
+            "previous_status": "ready",
+            "phase": "inventory_update_started",
+            "started_at": now - timedelta(minutes=2),
+        },
+    })
+    mongo.card_trades.docs[trade["_id"]] = dict(trade)
+
+    recovered = asyncio.run(sweeper._recover_interrupted_completions(
+        mongo, None, now=now
+    ))
+
+    saved = mongo.card_trades.docs[trade["_id"]]
+    assert recovered == 1
+    assert saved["status"] == "needs_review"
+    assert saved["failure"] == "completion_expired"
+    assert saved["swap_leg_progress"]["attempt_nonce"] == "durable-attempt"
+    assert saved["swap_leg_progress"]["phase"] == "inventory_update_started"
+    for inventory in mongo.card_inventories.documents.values():
+        assert {
+            trade["wanted_card_id"], trade["given_card_id"],
+        }.isdisjoint(inventory["trusted_card_ids"])
+        assert inventory["card_trade_reservations"] == {}
+
+    closed = asyncio.run(sweeper._close_abandoned_swaps(
+        mongo, SimpleNamespace(), now=now + timedelta(days=30)
+    ))
+    assert closed == 0
+    assert saved["status"] == "needs_review"
 
 
 def test_confirming_a_cancelled_swap_does_not_stamp_it(monkeypatch):

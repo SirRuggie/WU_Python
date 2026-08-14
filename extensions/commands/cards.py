@@ -640,13 +640,25 @@ def _inventory_has_active_trade(inventory: dict, *, now: datetime | None = None)
 
 
 def _without_reserved_cards(inventory: dict) -> dict:
-    """Return a matching snapshot with committed needs/supplies masked out."""
-    reserved = _card_reservations(inventory)
-    if not reserved:
-        return inventory
+    """Return a safe matching snapshot with reservations masked out.
+
+    The positive per-card trust ledger is canonical for modern documents.
+    Project it here as a read-side compatibility boundary too: an untouched
+    legacy Ready document may still carry durable hidden-badge uncertainty,
+    and it must fail closed even before that owner next opens ``/cards`` and
+    materializes the ledger.
+    """
+    trusted, ready_categories, reviewed_lists = _trust_projection(inventory)
     snapshot = dict(inventory)
+    snapshot["complete_categories"] = ready_categories
+    snapshot["reviewed_lists"] = reviewed_lists
+    reserved = _card_reservations(inventory)
     cards = normalize_cards(inventory.get("cards"))
-    for card_id in reserved:
+    # Some read-only trade summaries inspect counts directly instead of first
+    # checking category readiness. Neutralize every value the trust ledger
+    # cannot vouch for so a preserved partial-scan 0/2 cannot appear as false
+    # demand or supply through those secondary views.
+    for card_id in (set(CARD_BY_ID) - set(trusted)) | set(reserved):
         cards[card_id] = OWNED
     snapshot["cards"] = cards
     return snapshot
@@ -1427,7 +1439,10 @@ def _scan_manual_required_ids(draft: object) -> list[str]:
     declared, _invalid_declared = _scan_id_set(
         draft.get("manual_required_card_ids") or ()
     )
-    return _ordered_card_ids(unknown | unseen | declared)
+    hidden_badges, _invalid_hidden = _scan_id_set(
+        draft.get("duplicate_unverified_card_ids") or ()
+    )
+    return _ordered_card_ids(unknown | unseen | declared | hidden_badges)
 
 
 def _scan_draft_partially_savable(draft: object) -> bool:
@@ -2010,48 +2025,42 @@ def _scan_review(
     states = draft.get("card_states") if isinstance(draft, dict) else {}
     states = states if isinstance(states, dict) else {}
     missing = [card_id for card_id, state in states.items() if state == MISSING]
-    unknown = _ordered_card_ids(draft.get("unknown_card_ids") or ())
     unseen = _ordered_card_ids(draft.get("unseen_card_ids") or ())
     errors = _scan_strings(draft.get("errors"), limit=5)
     manual_required = _scan_manual_required_ids(draft)
     reserved = bool(_card_reservations(inventory))
     confirmable = _scan_draft_confirmable(draft) and not reserved
-    correctable = _scan_draft_correctable(draft)
     # Some rows were read safely and some were not. The safe ones are worth
     # keeping; the rest go to the manual editor rather than being guessed.
-    #
-    # A correctable draft is deliberately excluded: every identity is already
-    # bound there, so answering the few uncertain cards in place leads to a
-    # full save and is strictly better than keeping part of the collection.
     partial = (
         not _scan_draft_confirmable(draft)
-        and not correctable
         and _scan_draft_partially_savable(draft)
         and not reserved
     )
+    scan_read = len(set(states) - set(manual_required))
+    finish_needed = bool(manual_required) and (partial or confirmable)
     capture_issue_lines = _scan_capture_issue_lines(draft)
 
     collected = len(states) - len(missing)
     details = []
-    if correctable and unknown:
-        details.append(
-            f"**Needs review ({len(unknown)})**\n{_card_rows(unknown)}"
-        )
-    elif manual_required and not confirmable:
+    if manual_required and (partial or confirmable):
         # Name the unread rows once, then any single card inside a confirmed
         # row whose count the scanner could not read. Both need checking, and
         # the reader should not have to work out which is which.
+        manual_rows = _scan_row_numbers(
+            draft.get("manual_required_global_rows")
+        )
+        row_card_ids = _row_card_ids(manual_rows)
         loose = [
             card_id for card_id in manual_required
-            if card_id not in _row_card_ids(
-                _scan_row_numbers(draft.get("manual_required_global_rows"))
-            )
+            if card_id not in row_card_ids
         ]
         lines = [
             f"**Still to check: {len(manual_required)} "
             f"card{'s' if len(manual_required) != 1 else ''}**",
-            _scan_missing_rows_text(draft),
         ]
+        if manual_rows or _scan_missing_page_numbers(draft):
+            lines.append(_scan_missing_rows_text(draft))
         if loose:
             named = _scan_card_names(loose[:6])
             extra = len(loose) - 6
@@ -2062,7 +2071,7 @@ def _scan_review(
         details.append("\n".join(lines))
     if unseen and not partial:
         details.append(f"**Not visible:** {len(unseen)} card positions")
-    if capture_issue_lines and unseen:
+    if capture_issue_lines and unseen and not partial:
         # Only ask for another image when card positions were never seen. A
         # capture that merely produced an uncertain card is resolvable in place,
         # and telling a member to retake it right after they answered every card
@@ -2079,15 +2088,10 @@ def _scan_review(
             "**Finish or cancel your accepted trade first.** "
             "Nothing is saved yet."
         )
-    elif correctable:
+    elif partial or finish_needed:
         state_line = (
-            f"**Fix {len(unknown)} uncertain card"
-            f"{'s' if len(unknown) != 1 else ''}, then save.** "
-            "Nothing is saved yet."
-        )
-    elif partial:
-        state_line = (
-            f"**I read {len(states)} of 60 cards.** Nothing is saved yet."
+            f"**I read {scan_read} of 60 cards.** Nothing is saved yet.\n"
+            f"**{len(manual_required)} still need a count.**"
         )
     elif not confirmable:
         state_line = (
@@ -2112,46 +2116,27 @@ def _scan_review(
             Separator(divider=True),
             Text(content="\n".join(details)),
         ])
-    if correctable:
-        next_card_id = unknown[0]
-        body.extend([
-            Separator(divider=True),
-            # The remaining count already sits in the state line above.
-            Text(content=f"## Next: {CARD_BY_ID[next_card_id].name}"),
-            ActionRow(components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_scan_fix_missing:{draft_id}",
-                    label="Missing",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_scan_fix_owned:{draft_id}",
-                    label="Have 1",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"cards_scan_fix_duplicate:{draft_id}",
-                    label="Duplicate",
-                ),
-            ]),
-        ])
     if partial:
         save_buttons = [
             Button(
                 style=hikari.ButtonStyle.PRIMARY,
                 custom_id=f"cards_scan_save_partial:{draft_id}",
-                label="Save confirmed cards",
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_advanced:{_normalize_tag(account.tag)}",
-                label="Update collection",
+                label="Finish collection",
             ),
         ]
         body.append(Text(content=(
-            f"**Save confirmed cards** saves the {len(states)} cards I "
-            "read.\nThen set the rest in **Update collection**."
+            f"**Finish collection** saves the {scan_read} cards I read, then "
+            "opens the remaining cards for exact counts."
+        )))
+    elif finish_needed:
+        save_buttons = [Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_scan_confirm:{draft_id}",
+            label="Finish collection",
+        )]
+        body.append(Text(content=(
+            f"**Finish collection** saves the {scan_read} cards I read, then "
+            "opens the remaining cards for exact counts."
         )))
     else:
         save_buttons = [
@@ -2185,10 +2170,13 @@ def _scan_review(
         ]),
     ])
     quiet = []
-    if partial:
+    if partial or finish_needed:
         quiet.append(
             "-# Nothing was guessed. A category with unchecked cards is "
             "not ready to trade."
+        )
+        quiet.append(
+            "-# You can send another screenshot here first if you want to try again."
         )
     quiet.append(f"-# This review is open {_scan_expiry_text(usable_until)}.")
     body.append(Text(content="\n".join(quiet)))
@@ -2244,7 +2232,10 @@ async def _ensure_inventory(
         },
         upsert=True,
     )
-    return await mongo.card_inventories.find_one({"_id": _normalize_tag(account.tag)}) or {}
+    inventory = await mongo.card_inventories.find_one({
+        "_id": _normalize_tag(account.tag)
+    }) or {}
+    return await _materialize_legacy_trust(mongo, inventory)
 
 
 async def _load_target(
@@ -2326,6 +2317,154 @@ def _confirmed_count_ids(inventory: dict) -> set[str]:
     return {str(value) for value in raw if str(value) in CARD_BY_ID}
 
 
+# Compatibility boundary for documents created before ``trusted_card_ids``.
+# These are exactly the 60 cards shipped with the initial Cards catalog
+# (2026-08-10, f4ca757). Keep this literal and versioned: deriving it from the
+# live catalog would silently trust a future card merely because its category
+# was historically Ready. A later catalog addition must start untrusted until
+# the member confirms it through a trust-aware writer.
+_LEGACY_READY_CARD_IDS_V1_BY_CATEGORY: dict[str, frozenset[str]] = {
+    "elixir": frozenset({
+        "barbarian", "archer", "giant", "goblin", "wall_breaker",
+        "balloon", "wizard", "healer", "dragon", "pekka", "baby_dragon",
+        "miner", "electro_dragon", "yeti", "dragon_rider",
+        "electro_titan", "root_rider", "thrower", "meteor_golem",
+    }),
+    "dark_elixir": frozenset({
+        "minion", "hog_rider", "valkyrie", "golem", "witch",
+        "lava_hound", "bowler", "ice_golem", "headhunter",
+        "apprentice_warden", "druid", "furnace", "rubble_witch",
+    }),
+    "builder_base": frozenset({
+        "raged_barbarian", "sneaky_archer", "boxer_giant", "beta_minion",
+        "bomber", "bb_baby_dragon", "cannon_cart", "night_witch",
+        "drop_ship", "power_pekka", "hog_glider",
+    }),
+    "super_troop": frozenset({
+        "super_barbarian", "super_archer", "super_giant", "sneaky_goblin",
+        "super_wall_breaker", "rocket_balloon", "super_wizard",
+        "super_dragon", "inferno_dragon", "super_miner", "super_yeti",
+        "super_minion", "super_hog_rider", "super_valkyrie",
+        "super_witch", "ice_hound", "super_bowler",
+    }),
+}
+
+
+def _trusted_card_ids(inventory: dict) -> set[str]:
+    """Return the collection values that are safe to use for trading.
+
+    ``trusted_card_ids`` is the canonical positive ledger.  Its presence is
+    also the schema marker: a card absent from a modern document is untrusted.
+
+    Historical documents predate that ledger.  A legacy Ready category is
+    retained as fully trusted, while an explicit exact-count marker is also
+    durable proof that the member entered that one card by hand.  Nothing else
+    is inferred for an incomplete legacy collection, so old partial scans fail
+    closed instead of turning their preserved/default values into trade data.
+    """
+    if "trusted_card_ids" in inventory:
+        raw = inventory.get("trusted_card_ids") or ()
+        if not isinstance(raw, (list, tuple, set)):
+            return set()
+        return {str(value) for value in raw if str(value) in CARD_BY_ID}
+
+    trusted = set(_confirmed_count_ids(inventory))
+    for category_id in set(inventory.get("complete_categories") or ()):
+        trusted.update(
+            card_id
+            for card_id in _LEGACY_READY_CARD_IDS_V1_BY_CATEGORY.get(
+                str(category_id), ()
+            )
+            if card_id in CARD_BY_ID
+        )
+    # Older full scans marked every category Ready before their hidden-badge
+    # review was finished. Those durable IDs are direct evidence that the
+    # stored neutral value was only a conservative placeholder, so they are
+    # the one exception to preserving a historical Ready category wholesale.
+    trusted.difference_update(_scan_unverified_ids(inventory))
+    return trusted
+
+
+def _trust_projection(
+    inventory: dict,
+    *,
+    add: object = (),
+    remove: object = (),
+) -> tuple[list[str], list[str], list[str]]:
+    """Project canonical trust into the existing category readiness fields."""
+    trusted = _trusted_card_ids(inventory)
+    added, _invalid_added = _scan_id_set(add or ())
+    removed, _invalid_removed = _scan_id_set(remove or ())
+    trusted.update(added)
+    trusted.difference_update(removed)
+    ordered = _ordered_card_ids(trusted)
+    ready = [
+        category.id
+        for category in CATEGORIES
+        if all(card.id in trusted for card in CATEGORY_CARDS[category.id])
+    ]
+    reviewed = sorted(
+        f"{category_id}:{mode}"
+        for category_id in ready
+        for mode in ("missing", "duplicates")
+    )
+    return ordered, ready, reviewed
+
+
+def _untrusted_card_ids(inventory: dict) -> list[str]:
+    trusted = _trusted_card_ids(inventory)
+    return _ordered_card_ids(set(CARD_BY_ID) - trusted)
+
+
+async def _materialize_legacy_trust(
+    mongo: MongoClient,
+    inventory: dict,
+) -> dict:
+    """Persist the safe legacy inference before UI and matching can diverge."""
+    if not inventory or "trusted_card_ids" in inventory:
+        return inventory
+    tag = _normalize_tag(inventory.get("_id"))
+    if not tag:
+        return inventory
+    for _attempt in range(2):
+        latest = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+        if "trusted_card_ids" in latest:
+            return latest
+        trusted_ids, ready_categories, reviewed_lists = _trust_projection(latest)
+        # A brand-new or wholly ambiguous legacy collection already fails
+        # closed without a migration write. Materialize only durable positive
+        # evidence: historical Ready categories or exact member entries.
+        if not trusted_ids:
+            return latest
+        revision = _inventory_revision_value(latest)
+        revision_guard = (
+            {"$or": [
+                {"inventory_revision": {"$exists": False}},
+                {"inventory_revision": 0},
+            ]}
+            if revision == 0
+            else {"inventory_revision": revision}
+        )
+        result = await mongo.card_inventories.update_one(
+            {
+                "_id": tag,
+                "trusted_card_ids": {"$exists": False},
+                **revision_guard,
+            },
+            {
+                "$set": {
+                    "trusted_card_ids": trusted_ids,
+                    "complete_categories": ready_categories,
+                    "reviewed_lists": reviewed_lists,
+                },
+                "$inc": {"inventory_revision": 1},
+            },
+        )
+        if getattr(result, "matched_count", 0):
+            return await mongo.card_inventories.find_one({"_id": tag}) or latest
+    return await mongo.card_inventories.find_one({"_id": tag}) or inventory
+
+
 def _inventory_board_values(inventory: dict) -> dict:
     values: dict = normalize_cards(inventory.get("cards"))
     confirmed = _confirmed_count_ids(inventory)
@@ -2387,11 +2526,13 @@ def _dashboard(
         # handlers render this screen, which is why a threaded flag made the
         # button appear on some of them and vanish on others.
         is_admin = _is_cards_admin_id(inventory.get("discord_id"))
-    complete = set(inventory.get("complete_categories") or ()) & set(CATEGORY_BY_ID)
+    _trusted, projected_ready, _reviewed = _trust_projection(inventory)
+    complete = set(projected_ready)
     summary = inventory_summary(inventory.get("cards"), complete)
     all_complete = len(complete) == len(CATEGORIES)
     reserved_count = len(_card_reservations(inventory))
     unverified_duplicates = _scan_unverified_ids(inventory)
+    untrusted = _untrusted_card_ids(inventory)
     # Informational only: when this collection last changed. There is no
     # freshness-confirmation control any more - every write refreshes the
     # stamp, and age never turns matching off.
@@ -2438,15 +2579,11 @@ def _dashboard(
         )]))
 
     notes = []
-    if unverified_duplicates:
+    if unverified_duplicates and untrusted:
         notes.append(
-            f"**{len(unverified_duplicates)} card"
-            f"{'s need' if len(unverified_duplicates) != 1 else ' needs'} "
-            # Was "They read *Might be a spare* in the menus". Both halves of
-            # that went stale in one go: this screen has no menus any more,
-            # and the counts became plain numbers, so the phrase it quoted is
-            # not on screen anywhere. Name the button that answers it instead.
-            "a duplicate check.** Tap **Check spares** below."
+            f"**{len(untrusted)} card"
+            f"{'s still need' if len(untrusted) != 1 else ' still needs'} "
+            "a count.** Tap **Finish collection** below."
         )
     if reserved_count:
         notes.append(
@@ -2496,14 +2633,11 @@ def _dashboard(
             emoji=TRADES_EMOJI,
         ),
     ]
-    if unverified_duplicates:
-        # The note above already says these need checking. Until now the only
-        # button that acted on it lived on a screen the board could not reach,
-        # so the note was advice with nowhere to go.
+    if unverified_duplicates and untrusted:
         body.append(ActionRow(components=[Button(
             style=hikari.ButtonStyle.PRIMARY,
             custom_id=f"cards_hidden:{tag}",
-            label=f"Check spares ({len(unverified_duplicates)})",
+            label=f"Finish collection ({len(untrusted)})",
         )]))
     body.append(Separator(divider=True))
 
@@ -3064,17 +3198,29 @@ def _bulk_editable_ids(category_id: str, inventory: dict) -> list[str]:
     ]
 
 
-def _bulk_state_id(tag: object, category_id: str) -> str:
+def _bulk_state_id(
+    tag: object,
+    category_id: str,
+    *,
+    scope: str = "category",
+) -> str:
     """Opaque state key that retains only enough scope for expiry recovery."""
     clean_tag = _normalize_tag(tag).lstrip("#")
     token = secrets.token_urlsafe(8)
-    return f"cards_bulk_{token}|{clean_tag}|{category_id}"
+    prefix = "cards_finish" if scope == "scan_finish" else "cards_bulk"
+    return f"{prefix}_{token}|{clean_tag}|{category_id}"
+
+
+def _bulk_is_scan_finish_id(state_id: object) -> bool:
+    return str(state_id or "").split("|", 1)[0].startswith("cards_finish_")
 
 
 def _bulk_state_target(state_id: object) -> tuple[str, str | None]:
     """Recover the account/category encoded in an expired bulk state key."""
     parts = str(state_id or "").split("|")
-    if len(parts) != 3 or not parts[0].startswith("cards_bulk_"):
+    if len(parts) != 3 or not parts[0].startswith((
+        "cards_bulk_", "cards_finish_"
+    )):
         return "", None
     tag = _normalize_tag(parts[1]) if len(parts) > 1 else ""
     category_id = (
@@ -3112,11 +3258,13 @@ def _quantity_editor(
     card = CARD_BY_ID.get(card_id) if card_id else None
     saved_cards = normalize_cards(inventory.get("cards"))
     confirmed = _confirmed_count_ids(inventory)
+    trusted = _trusted_card_ids(inventory)
     reservations = _card_reservations(inventory)
     category_reservations = {
         item.id for item in definitions if item.id in reservations
     }
-    complete = category_id in set(inventory.get("complete_categories") or ())
+    untrusted = [item.id for item in definitions if item.id not in trusted]
+    complete = not untrusted
     summary = category_summary(saved_cards, category_id)
     editable_ids = _bulk_editable_ids(category_id, inventory)
 
@@ -3142,14 +3290,16 @@ def _quantity_editor(
         state = OWNED
     reserved = bool(card_id) and card_id in reservations
 
-    # Completing a category is what makes it tradeable at all: find_matches
-    # only pairs categories BOTH players have marked complete. Full size, not
-    # small print - it was buried at the end of a page counter for a while.
+    # A category is tradeable only after every card has a trusted value.
+    # ``complete_categories`` remains the matching gate, and every writer
+    # projects it from this same per-card ledger in its atomic update.
     status = (
         "**Ready to trade.** Other players can see these spares."
         if complete
-        else "**Not ready to trade yet.** Check every number. "
-        "Then tap **Ready to trade**."
+        else (
+            f"**Not ready to trade yet.** {len(untrusted)} card"
+            f"{'s' if len(untrusted) != 1 else ''} still need a count."
+        )
     )
 
     # All nineteen quantities in a single component. Nineteen separate text
@@ -3177,6 +3327,7 @@ def _quantity_editor(
             )
             + f" · `{count_for(item)}`"
             + (" · in a trade" if item.id in reservations else "")
+            + (" · needs a count" if item.id in untrusted else "")
             # A second mark on the chosen row, at the far end of it. Bold alone
             # has to be compared against the eighteen rows around it to be
             # noticed; a mark that only ever appears once can be found without
@@ -3351,24 +3502,6 @@ def _quantity_editor(
             content="-# This card is in a trade and cannot change."
         ))
 
-    # Keep the completed state where the Ready to trade control used to be.
-    # The status at the top is easy to miss after a phone redraw because the
-    # member remains beside the button they just tapped. Replacing that button
-    # with its outcome makes the state change visible without another action.
-    body.append(Separator(divider=True))
-    if complete:
-        body.append(Text(
-            content="**Ready to trade.**\nOther players can see these spares."
-        ))
-    else:
-        body.append(
-            ActionRow(components=[Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                custom_id=f"cards_ready:{tag}|{category_id}",
-                label="Ready to trade",
-            )])
-        )
-
     # Below the manual controls, not beside them. Typing is the main way to do
     # this; scanning is the faster alternative, and putting it up top made two
     # unlike things compete. The warning is here because the scanner does miss
@@ -3403,20 +3536,41 @@ def _quantity_editor(
     )]
 
 
-async def _quantity_editor_view(
+async def _create_bulk_state(
     ctx,
     account,
     inventory: dict,
-    category_id: str,
     *,
     mongo: MongoClient,
-    card_id: object = None,
-    saved: str | None = None,
-) -> list[Container]:
-    """Render a category with a restart-safe, owner-bound bulk edit session."""
+    category_id: str,
+    scope: str = "category",
+    selected_ids: list[str] | None = None,
+) -> tuple[str | None, dict]:
+    """Persist one owner-bound category or scanner-finish edit session."""
+    if category_id not in CATEGORY_BY_ID or scope not in {
+        "category", "scan_finish"
+    }:
+        raise ValueError("invalid card bulk scope")
+
+    if scope == "scan_finish":
+        requested = list(selected_ids or ())
+        editable_ids = _ordered_card_ids(requested)
+        if (
+            not editable_ids
+            or editable_ids != requested
+            or set(editable_ids) & set(_card_reservations(inventory))
+        ):
+            raise ValueError("invalid scanner finish scope")
+        selected = list(editable_ids)
+        phase = "continue"
+    else:
+        editable_ids = _bulk_editable_ids(category_id, inventory)
+        selected = []
+        phase = "select"
+
     saved_cards = normalize_cards(inventory.get("cards"))
     confirmed = _confirmed_count_ids(inventory)
-    editable_ids = _bulk_editable_ids(category_id, inventory)
+    trusted = _trusted_card_ids(inventory)
     count_snapshot = {}
     for item_id in editable_ids:
         value = saved_cards.get(item_id, OWNED)
@@ -3426,11 +3580,16 @@ async def _quantity_editor_view(
         )
     unconfirmed_ids = [
         item_id for item_id in editable_ids
-        if count_snapshot[item_id] == DUPLICATE and item_id not in confirmed
+        if (
+            item_id in trusted
+            and count_snapshot[item_id] == DUPLICATE
+            and item_id not in confirmed
+        )
     ]
     state_id = None
     state = {
         "type": "cards_bulk_edit",
+        "scope": scope,
         "user_id": int(ctx.user.id),
         "guild_id": _trade_guild_id(ctx),
         "account_tag": _normalize_tag(account.tag),
@@ -3439,16 +3598,17 @@ async def _quantity_editor_view(
         "editable_ids": editable_ids,
         "count_snapshot": count_snapshot,
         "unconfirmed_ids": unconfirmed_ids,
-        "selected_ids": [],
+        "selected_ids": selected,
+        "required_entry_ids": selected if scope == "scan_finish" else [],
         "next_index": 0,
         "expected_revision": _inventory_revision_value(inventory),
         "processed_count": 0,
         "written_count": 0,
-        "phase": "select",
+        "phase": phase,
         "nonce": secrets.token_urlsafe(5),
     }
     for _attempt in range(2):
-        candidate = _bulk_state_id(account.tag, category_id)
+        candidate = _bulk_state_id(account.tag, category_id, scope=scope)
         try:
             await insert_state(
                 mongo,
@@ -3465,6 +3625,27 @@ async def _quantity_editor_view(
             break
         state_id = candidate
         break
+    return state_id, state
+
+
+async def _quantity_editor_view(
+    ctx,
+    account,
+    inventory: dict,
+    category_id: str,
+    *,
+    mongo: MongoClient,
+    card_id: object = None,
+    saved: str | None = None,
+) -> list[Container]:
+    """Render a category with a restart-safe, owner-bound bulk edit session."""
+    state_id, _state = await _create_bulk_state(
+        ctx,
+        account,
+        inventory,
+        mongo=mongo,
+        category_id=category_id,
+    )
     return _quantity_editor(
         account,
         inventory,
@@ -3641,6 +3822,7 @@ async def _candidate_inventories(
     requester: dict,
     *,
     guild_id: int | None,
+    require_requester_family: bool = False,
 ) -> list[dict]:
     if guild_id is None:
         return []
@@ -3666,6 +3848,11 @@ async def _candidate_inventories(
     if not family_tags:
         _log.warning("card matching disabled because no family clan tags are configured")
         raise CandidateLookupUnavailable
+    if (
+        require_requester_family
+        and _normalize_tag(requester.get("clan_tag")) not in set(family_tags)
+    ):
+        return []
     query["clan_tag"] = {"$in": family_tags}
 
     documents = await mongo.card_inventories.find(query).to_list(length=2_000)
@@ -5198,53 +5385,74 @@ async def _invalidate_trade_categories(
     mongo: MongoClient,
     trade: dict,
 ) -> bool:
-    """Make uncertain trade legs unmatchable until both lists are reviewed."""
-    category_id = str(
-        trade.get("category")
-        or CARD_BY_ID[str(trade["wanted_card_id"])].category
-    )
-    review_steps = [
-        f"{category_id}:missing",
-        f"{category_id}:duplicates",
-    ]
+    """Untrust only the card values a legacy trade may have changed."""
     marker = f"card_trade_review_invalidations.{trade['_id']}"
-    invalidated_at = datetime.now(timezone.utc)
     safe = 0
-    for tag in {
-        _normalize_tag(trade["requester_tag"]),
-        _normalize_tag(trade["holder_tag"]),
-    }:
-        result = await mongo.card_inventories.update_one(
-            {
-                "_id": tag,
-                "guild_id": int(trade["guild_id"]),
-                marker: {"$exists": False},
-            },
-            {
-                "$pull": {
-                    "complete_categories": category_id,
-                    "reviewed_lists": {"$in": review_steps},
-                },
-                "$set": {
-                    marker: invalidated_at,
-                    "updated_at": invalidated_at,
-                    "update_source": "trade_needs_review",
-                },
-                "$inc": {"inventory_revision": 1},
-            },
-        )
-        if getattr(result, "matched_count", 0):
-            safe += 1
-            continue
-        current = await mongo.card_inventories.find_one({
-            "_id": tag,
-            "guild_id": int(trade["guild_id"]),
-        })
-        invalidations = (
-            current.get("card_trade_review_invalidations", {})
-            if current else {}
-        )
-        if current is None or str(trade["_id"]) in invalidations:
+    for tag, affected_ids in _trade_inventory_cards(trade).items():
+        handled = False
+        async with _inventory_lock(tag):
+            # Cross-process inventory writes can race cleanup. The revision
+            # fence prevents a projection computed from an older document
+            # from replacing newer trust; cleanup remains queued if retries
+            # cannot obtain a current snapshot.
+            for _attempt in range(3):
+                current = await mongo.card_inventories.find_one({
+                    "_id": tag,
+                    "guild_id": int(trade["guild_id"]),
+                })
+                if current is None:
+                    handled = True
+                    break
+                invalidations = current.get(
+                    "card_trade_review_invalidations", {}
+                )
+                if not isinstance(invalidations, dict):
+                    invalidations = {}
+                if str(trade["_id"]) in invalidations:
+                    handled = True
+                    break
+
+                trusted_ids, ready_categories, reviewed_lists = _trust_projection(
+                    current, remove=affected_ids
+                )
+                invalidated_at = datetime.now(timezone.utc)
+                revision = _inventory_revision_value(current)
+                revision_guard = (
+                    {"$or": [
+                        {"inventory_revision": {"$exists": False}},
+                        {"inventory_revision": 0},
+                    ]}
+                    if revision == 0
+                    else {"inventory_revision": revision}
+                )
+                result = await mongo.card_inventories.update_one(
+                    {
+                        "_id": tag,
+                        "guild_id": int(trade["guild_id"]),
+                        marker: {"$exists": False},
+                        **revision_guard,
+                    },
+                    {
+                        "$set": {
+                            "trusted_card_ids": trusted_ids,
+                            "complete_categories": ready_categories,
+                            "reviewed_lists": reviewed_lists,
+                            marker: invalidated_at,
+                            "updated_at": invalidated_at,
+                            "update_source": "trade_needs_review",
+                        },
+                        "$pull": {
+                            "count_confirmed_card_ids": {
+                                "$in": list(affected_ids)
+                            },
+                        },
+                        "$inc": {"inventory_revision": 1},
+                    },
+                )
+                if getattr(result, "matched_count", 0):
+                    handled = True
+                    break
+        if handled:
             safe += 1
     return safe == 2
 
@@ -7103,6 +7311,18 @@ SWAP_BACKSTOP_FOR = timedelta(days=7)
 SWAP_LIVE_STATUSES = ("move_needed", "ready", "accepted")
 
 
+class _SwapReceiverCreditError(RuntimeError):
+    """The giver debit succeeded but the receiver credit is not trustworthy."""
+
+
+class _SwapLegNeedsReview(RuntimeError):
+    """A claimed one-sided transfer stopped in a durable review state."""
+
+    def __init__(self, trade: dict):
+        super().__init__("card swap leg needs review")
+        self.trade = trade
+
+
 def _swap_leg(trade: dict, *, role: str) -> tuple[str, str, str]:
     """(giver tag, receiver tag, card id) for one side of an agreed swap."""
     if role == "requester":
@@ -7172,30 +7392,9 @@ async def _confirm_swap_leg(
     moved = bool(getattr(given, "modified_count", 0))
 
     if moved:
-        credited = await mongo.card_inventories.update_one(
-            {"_id": receiver, "guild_id": guild_id, "$or": fence},
-            {
-                "$set": {
-                    f"cards.{card_id}": OWNED,
-                    "updated_at": now,
-                    "update_source": "confirmed_trade",
-                },
-                "$inc": {"inventory_revision": 1},
-                "$unset": {f"card_trade_reservations.{card_id}": ""},
-            },
-        )
-        if not getattr(credited, "modified_count", 0):
-            # The giver's copy is already gone, so failing to credit the
-            # receiver silently would lose the card. The fence can legitimately
-            # be missing here (released by recovery); credit anyway, but only
-            # a card the receiver is still missing, so a count they set by
-            # hand in the meantime is never overwritten downward.
-            fallback = await mongo.card_inventories.update_one(
-                {
-                    "_id": receiver,
-                    "guild_id": guild_id,
-                    f"cards.{card_id}": {"$lt": OWNED},
-                },
+        try:
+            credited = await mongo.card_inventories.update_one(
+                {"_id": receiver, "guild_id": guild_id, "$or": fence},
                 {
                     "$set": {
                         f"cards.{card_id}": OWNED,
@@ -7203,18 +7402,53 @@ async def _confirm_swap_leg(
                         "update_source": "confirmed_trade",
                     },
                     "$inc": {"inventory_revision": 1},
+                    "$unset": {f"card_trade_reservations.{card_id}": ""},
                 },
             )
-            if not getattr(fallback, "modified_count", 0):
-                _log.warning(
-                    "swap credit skipped: receiver=%s card=%s already owns it "
-                    "or is out of scope (trade=%s)",
-                    receiver, card_id, trade.get("_id"),
+            if not getattr(credited, "modified_count", 0):
+                # The giver's copy is already gone, so failing to credit the
+                # receiver silently would lose the card. The fence can
+                # legitimately be missing here (released by recovery); credit
+                # anyway, but only while the receiver is still missing it.
+                fallback = await mongo.card_inventories.update_one(
+                    {
+                        "_id": receiver,
+                        "guild_id": guild_id,
+                        f"cards.{card_id}": {"$lt": OWNED},
+                    },
+                    {
+                        "$set": {
+                            f"cards.{card_id}": OWNED,
+                            "updated_at": now,
+                            "update_source": "confirmed_trade",
+                        },
+                        "$inc": {"inventory_revision": 1},
+                    },
                 )
-            await mongo.card_inventories.update_one(
-                {"_id": receiver},
-                {"$unset": {f"card_trade_reservations.{card_id}": ""}},
-            )
+                if not getattr(fallback, "modified_count", 0):
+                    receiver_document = await mongo.card_inventories.find_one({
+                        "_id": receiver,
+                        "guild_id": guild_id,
+                    })
+                    receiver_count = (
+                        normalize_cards(receiver_document.get("cards")).get(
+                            card_id, OWNED
+                        )
+                        if receiver_document is not None
+                        else MISSING
+                    )
+                    if receiver_count < OWNED:
+                        raise RuntimeError("receiver credit was not applied")
+                await mongo.card_inventories.update_one(
+                    {"_id": receiver},
+                    {"$unset": {f"card_trade_reservations.{card_id}": ""}},
+                )
+        except Exception as exc:
+            # The giver debit was acknowledged. A receiver exception may be a
+            # before-commit failure or a lost acknowledgement after commit, so
+            # never guess. The claimed saga records the receiver as unknown and
+            # projects both affected inventories fail closed.
+            raise _SwapReceiverCreditError(str(exc)) from exc
 
     remaining = 0
     document = await mongo.card_inventories.find_one({"_id": giver})
@@ -7227,6 +7461,86 @@ async def _record_swap_confirmation(
     mongo: MongoClient, trade: dict, *, role: str, now: datetime
 ) -> dict:
     """Stamp this side as done and close the trade once both sides are."""
+    progress = _swap_leg_progress(trade)
+    claimed = (
+        trade.get("status") == "completing"
+        and trade.get("completion_kind") == "swap_leg"
+        and progress.get("attempt_nonce")
+        and progress.get("role") == role
+    )
+    if claimed:
+        # Reload after the claim. The other participant may have completed
+        # their side immediately before this claim won the status CAS.
+        latest = await mongo.card_trades.find_one({"_id": trade["_id"]}) or trade
+        latest_progress = _swap_leg_progress(latest)
+        if latest_progress.get("attempt_nonce") != progress.get("attempt_nonce"):
+            if latest.get(f"{role}_confirmed_at"):
+                return latest
+            raise RuntimeError("swap leg claim changed before confirmation")
+        other = "holder" if role == "requester" else "requester"
+        finished = bool(latest.get(f"{other}_confirmed_at"))
+        previous_status = str(
+            latest_progress.get("previous_status") or "ready"
+        )
+        fields: dict[str, object] = {
+            f"{role}_confirmed_at": now,
+            "updated_at": now,
+            "confirm_deadline_at": now + SWAP_CONFIRM_FOR,
+            "status": "completed" if finished else previous_status,
+        }
+        if finished:
+            fields.update({
+                "completed_at": now,
+                **_cleanup_fields(latest),
+            })
+        update = {
+            "$set": fields,
+            "$unset": {
+                "open_proposal_key": "",
+                "completion_kind": "",
+                "completion_started_at": "",
+                "expires_at": "",
+                "swap_leg_progress": "",
+            },
+        }
+        try:
+            result = await mongo.card_trades.update_one(
+                {
+                    **_swap_leg_claim_query(latest, role=role),
+                    f"{role}_confirmed_at": {"$exists": False},
+                },
+                update,
+            )
+        except Exception:
+            result = None
+        current = await mongo.card_trades.find_one({"_id": trade["_id"]})
+        if getattr(result, "modified_count", 0) or (
+            current and current.get(f"{role}_confirmed_at")
+        ):
+            updated = current or dict(latest)
+            if current is None:
+                updated.update(fields)
+            if updated.get("status") == "completed":
+                await _finish_trade_cleanup(
+                    mongo, updated, owner=_reservation_owner(latest)
+                )
+            return updated
+
+        review = await _mark_swap_leg_needs_review(
+            mongo,
+            latest,
+            role=role,
+            now=datetime.now(timezone.utc),
+            phase="confirmation_record_unknown",
+            failure_type="confirmation_record_failed",
+            giver_debited=True,
+            receiver_credit="acknowledged",
+        )
+        raise _SwapLegNeedsReview(review)
+
+    # Compatibility path for old internal callers/tests that predate the
+    # write-ahead one-sided claim. Production confirmations use the branch
+    # above; keeping this path avoids changing old stored action semantics.
     other = "holder" if role == "requester" else "requester"
     fields: dict = {
         f"{role}_confirmed_at": now,
@@ -7825,6 +8139,9 @@ async def _write_one_card(
         problem = _quick_transition_problem(latest, card_id, mode)
         if problem:
             raise InvalidCardTransitionError(problem)
+        trusted_ids, ready_categories, reviewed_lists = _trust_projection(
+            latest, add=[card_id]
+        )
 
         now = datetime.now(timezone.utc)
         identity = {
@@ -7838,6 +8155,9 @@ async def _write_one_card(
             "updated_at": now,
             "confirmed_at": now,
             "update_source": "quick_card_update",
+            "trusted_card_ids": trusted_ids,
+            "complete_categories": ready_categories,
+            "reviewed_lists": reviewed_lists,
             # "Used a spare" means one copy left, not all of them. The action
             # table's flat target of OWNED was written when two was the ceiling;
             # with real counts it would drop a member holding five down to one.
@@ -7916,6 +8236,9 @@ async def _write_card_state(
             raise InventoryWriteConflict
         if card_id in _card_reservations(latest):
             raise ActiveCardTradeError
+        trusted_ids, ready_categories, reviewed_lists = _trust_projection(
+            latest, add=[card_id]
+        )
 
         now = datetime.now(timezone.utc)
         identity = {
@@ -7929,6 +8252,9 @@ async def _write_card_state(
             "updated_at": now,
             "confirmed_at": now,
             "update_source": "card_set",
+            "trusted_card_ids": trusted_ids,
+            "complete_categories": ready_categories,
+            "reviewed_lists": reviewed_lists,
             f"cards.{card_id}": int(target),
         }
         if guild_id is not None:
@@ -8006,6 +8332,9 @@ async def _write_hidden_badge_batch(
             raise InventoryWriteConflict
         if set(batch_ids) & set(_card_reservations(latest)):
             raise ActiveCardTradeError
+        trusted_ids, ready_categories, reviewed_lists = _trust_projection(
+            latest, add=batch_ids
+        )
 
         now = datetime.now(timezone.utc)
         identity = {
@@ -8019,6 +8348,9 @@ async def _write_hidden_badge_batch(
             "updated_at": now,
             "confirmed_at": now,
             "update_source": "hidden_badge_review",
+            "trusted_card_ids": trusted_ids,
+            "complete_categories": ready_categories,
+            "reviewed_lists": reviewed_lists,
         }
         if guild_id is not None:
             identity["guild_id"] = guild_id
@@ -8078,6 +8410,7 @@ async def _write_exact_card_batch(
     expected_revision: int,
     discord_id: int,
     guild_id: int | None,
+    allowed_ids: list[str] | None = None,
 ) -> dict:
     """Save one exact-count modal atomically without touching other cards.
 
@@ -8088,13 +8421,24 @@ async def _write_exact_card_batch(
     """
     ordered = _ordered_card_ids(batch_ids)
     explicit = dict(values)
+    allowed = _ordered_card_ids(allowed_ids or ()) if allowed_ids is not None else None
     if (
         not ordered
         or len(ordered) > 5
         or len(ordered) != len(batch_ids)
         or ordered != list(batch_ids)
         or not set(explicit) <= set(ordered)
-        or len({CARD_BY_ID[card_id].category for card_id in ordered}) != 1
+        or (
+            allowed is None
+            and len({CARD_BY_ID[card_id].category for card_id in ordered}) != 1
+        )
+        or (
+            allowed is not None
+            and (
+                allowed != list(allowed_ids or ())
+                or not set(ordered) <= set(allowed)
+            )
+        )
     ):
         raise ValueError("invalid exact card batch")
     for card_id, target in explicit.items():
@@ -8130,6 +8474,10 @@ async def _write_exact_card_batch(
         if not explicit:
             return latest
 
+        trusted_ids, ready_categories, reviewed_lists = _trust_projection(
+            latest, add=list(explicit)
+        )
+
         now = datetime.now(timezone.utc)
         identity = {
             "discord_id": int(discord_id),
@@ -8142,6 +8490,9 @@ async def _write_exact_card_batch(
             "updated_at": now,
             "confirmed_at": now,
             "update_source": "card_batch_set",
+            "trusted_card_ids": trusted_ids,
+            "complete_categories": ready_categories,
+            "reviewed_lists": reviewed_lists,
         }
         for card_id, target in explicit.items():
             identity[f"cards.{card_id}"] = int(target)
@@ -8190,63 +8541,6 @@ async def _write_exact_card_batch(
         if set(ordered) & set(_card_reservations(current)):
             raise ActiveCardTradeError
         raise InventoryWriteConflict
-
-
-async def _write_category_ready(
-    mongo: MongoClient,
-    account,
-    inventory: dict,
-    category_id: str,
-    *,
-    discord_id: int,
-    guild_id: int | None,
-) -> dict:
-    """Mark a category complete without touching a single card count.
-
-    This is the whole reason the quantity editor can exist. find_matches only
-    pairs categories BOTH players have in complete_categories, and the only
-    two things that ever wrote that field were a full screenshot scan and the
-    old two-list editor. Deleting that editor without this would have left
-    anyone who never scanned unable to trade, silently - no error, they simply
-    stop appearing in anybody's matches.
-
-    apply_category_selection(mode="baseline") could not be reused here: it sets
-    every card in the category back to one copy, which would wipe the counts
-    the member just typed in.
-    """
-    if category_id not in CATEGORY_BY_ID:
-        raise ValueError(f"unknown card category: {category_id}")
-    tag = _normalize_tag(account.tag)
-    now = datetime.now(timezone.utc)
-    steps = sorted({f"{category_id}:missing", f"{category_id}:duplicates"})
-    identity = {
-        "discord_id": int(discord_id),
-        "player_name": account.name,
-        "town_hall": getattr(account, "town_hall", 0) or 0,
-        "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
-        "clan_name": account.clan_name,
-        "updated_at": now,
-        "confirmed_at": now,
-        "update_source": "category_ready",
-    }
-    if guild_id is not None:
-        identity["guild_id"] = guild_id
-    async with _inventory_lock(tag):
-        # No revision guard and no reservation guard. This writes no card
-        # states, so there is nothing for a concurrent edit to clobber and
-        # nothing an accepted trade needs protecting from.
-        await mongo.card_inventories.update_one(
-            {"_id": tag},
-            {
-                "$set": identity,
-                "$addToSet": {
-                    "reviewed_lists": {"$each": steps},
-                    "complete_categories": category_id,
-                },
-                "$inc": {"inventory_revision": 1},
-            },
-        )
-        return await mongo.card_inventories.find_one({"_id": tag}) or {}
 
 
 def _inventory_revision_value(inventory: dict) -> int:
@@ -8300,13 +8594,13 @@ async def _write_scan_draft(
             ]}
             for card_id in CARD_BY_ID
         ]
-        reviewed_lists = sorted(
-            f"{category.id}:{mode}"
-            for category in CATEGORIES
-            for mode in ("missing", "duplicates")
-        )
         duplicate_unverified = _ordered_card_ids(
             draft.get("duplicate_unverified_card_ids") or ()
+        )
+        manual_required = set(_scan_manual_required_ids(draft))
+        trusted_ids, ready_categories, reviewed_lists = _trust_projection(
+            {"trusted_card_ids": []},
+            add=set(CARD_BY_ID) - manual_required,
         )
         identity = {
             "discord_id": int(discord_id),
@@ -8315,7 +8609,8 @@ async def _write_scan_draft(
             "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
             "clan_name": account.clan_name,
             "cards": card_states,
-            "complete_categories": [category.id for category in CATEGORIES],
+            "trusted_card_ids": trusted_ids,
+            "complete_categories": ready_categories,
             "reviewed_lists": reviewed_lists,
             "scan_duplicate_unverified_card_ids": duplicate_unverified,
             # Every count here came from the scanner, and a scanner spare is a
@@ -8363,8 +8658,9 @@ async def _write_scan_partial(
       invalidates the save rather than persisting the part that did arrive;
     * a category that still holds a card needing manual review loses its
       readiness, so scanning can never leave an unchecked category matchable;
-    * `confirmed_at` is not set, because the member has not confirmed this
-      collection, only the part the scanner could prove;
+    * `confirmed_at` records this accepted collection update. Per-category
+      trust, not the timestamp, remains the gate that prevents unchecked cards
+      from matching;
     * every card it overwrites leaves `count_confirmed_card_ids`, because a
       scanner spare is a floor and only a member-entered number is exact.
 
@@ -8440,42 +8736,29 @@ async def _write_scan_partial(
         duplicate_unverified = _ordered_card_ids(
             (set(_scan_unverified_ids(latest)) - set(confirmed)) | proven_spares
         )
-        # Readiness must not survive a category this save left half answered.
-        #
-        # `complete_categories` is the whole matchability gate: find_matches,
-        # family_supply and holders_for_card all read only complete categories,
-        # and family_supply reads a card missing from `cards` as OWNED, so a
-        # category left complete with unreviewed cards would invent supply.
-        # `_matchable` also falls back to `updated_at`, which this write
-        # refreshes, so an inventory with no confirmed_at becomes matchable the
-        # moment it is saved. The invalidation is therefore load bearing, not
-        # cosmetic.
-        #
-        # It is deliberately narrow: only a category this save actually wrote
-        # into AND that still contains a manual-review card is invalidated. A
-        # category the scan never touched keeps whatever the member already
-        # verified about it. This mirrors `_invalidate_trade_categories`, which
-        # is the existing way this collection makes a category unmatchable.
+        # This scan is a collection-wide refresh. Values it read confidently
+        # become trusted; every unknown, unseen or hidden-badge value becomes
+        # untrusted even if an older collection happened to contain a number.
+        # That durable complement is what the Finish collection queue uses.
         manual_required = set(_scan_manual_required_ids(draft))
-        written_categories = {
-            CARD_BY_ID[card_id].category for card_id in confirmed
-        }
-        unready = sorted(
-            category_id
-            for category_id in written_categories
-            if any(
-                card.id in manual_required
-                for card in CATEGORY_CARDS[category_id]
-            )
+        scanner_trusted = set(confirmed) - proven_spares
+        trusted_ids, ready_categories, reviewed_lists = _trust_projection(
+            latest,
+            add=scanner_trusted,
+            remove=manual_required,
         )
         identity = {
             "scan_duplicate_unverified_card_ids": duplicate_unverified,
+            "trusted_card_ids": trusted_ids,
+            "complete_categories": ready_categories,
+            "reviewed_lists": reviewed_lists,
             "discord_id": int(discord_id),
             "player_name": account.name,
             "town_hall": getattr(account, "town_hall", 0) or 0,
             "clan_tag": _normalize_tag(account.clan_tag) if account.clan_tag else None,
             "clan_name": account.clan_name,
             "updated_at": now,
+            "confirmed_at": now,
             "update_source": "confirmed_partial_screenshot_review",
         }
         for card_id, state in confirmed.items():
@@ -8487,13 +8770,6 @@ async def _write_scan_partial(
             # longer claim a member-entered exact count.
             "count_confirmed_card_ids": {"$in": list(confirmed)},
         }
-        if unready:
-            pulls["complete_categories"] = {"$in": unready}
-            pulls["reviewed_lists"] = {"$in": [
-                f"{category_id}:{mode}"
-                for category_id in unready
-                for mode in ("missing", "duplicates")
-            ]}
         result = await mongo.card_inventories.update_one(
             {
                 "_id": tag,
@@ -9307,6 +9583,13 @@ async def _scan_fix_unknown(
     revised["card_confidences"] = confidences
     revised["card_warnings"] = warnings
     revised["unknown_card_ids"] = [item for item in unknown if item != card_id]
+    revised["manual_required_card_ids"] = [
+        item
+        for item in _ordered_card_ids(
+            revised.get("manual_required_card_ids") or ()
+        )
+        if item != card_id
+    ]
     revised["duplicate_unverified_card_ids"] = [
         item
         for item in _ordered_card_ids(
@@ -9481,6 +9764,55 @@ async def cards_scan_cancel(
     return _account_picker(data)
 
 
+async def _scan_finish_handoff(
+    ctx,
+    account,
+    inventory: dict,
+    *,
+    mongo: MongoClient,
+    read_count: int,
+) -> list[Container] | None:
+    """Open a preselected exact-count queue for durable untrusted values."""
+    reservations = set(_card_reservations(inventory))
+    remaining = [
+        item_id for item_id in _untrusted_card_ids(inventory)
+        if item_id not in reservations
+    ]
+    if not remaining:
+        return None
+    landing = CARD_BY_ID[remaining[0]].category
+    try:
+        state_id, state = await _create_bulk_state(
+            ctx,
+            account,
+            inventory,
+            mongo=mongo,
+            category_id=landing,
+            scope="scan_finish",
+            selected_ids=remaining,
+        )
+    except ValueError:
+        state_id = None
+        state = {}
+    if state_id:
+        return _scan_finish_view(
+            state_id,
+            state,
+            read_count=read_count,
+        )
+    return await _quantity_editor_view(
+        ctx,
+        account,
+        inventory,
+        landing,
+        mongo=mongo,
+        saved=(
+            "The scan values were saved, but the Finish collection session "
+            "could not be opened. Use Edit all counts; nothing saved was lost."
+        ),
+    )
+
+
 async def _confirm_scan_draft(
     ctx,
     action_id: str,
@@ -9562,35 +9894,18 @@ async def _confirm_scan_draft(
             "Nothing was overwritten. Start a new scan, or edit the card in your "
             "collection.",
         )
-    pending = _scan_unverified_ids(updated)
-    if pending:
-        try:
-            await update_state(
-                mongo,
-                {
-                    "_id": action_id,
-                    "user_id": int(ctx.user.id),
-                    "guild_id": int(guild_id),
-                },
-                {"$set": {
-                    "type": "cards_hidden_badge_review",
-                    "base_revision": _inventory_revision_value(updated),
-                }},
-            )
-        except Exception:
-            _log.exception("hidden badge session handoff failed draft=%s", action_id)
-            await _discard_scan_state(mongo, action_id)
-            return _scan_saved_notice(account, pending=len(pending))
-        return await _hidden_badge_review_view(
-            account, updated, session_id=action_id
-        )
-
     await _discard_scan_state(mongo, action_id)
+    finish = await _scan_finish_handoff(
+        ctx,
+        account,
+        updated,
+        mongo=mongo,
+        read_count=len(CARDS) - len(_scan_manual_required_ids(scan_draft)),
+    )
+    if finish is not None:
+        return finish
     if _trade_guild_id(ctx) is None:
         return _scan_saved_notice(account)
-    spare_prompt = _spare_counts_panel(account, updated)
-    if spare_prompt is not None:
-        return spare_prompt
     return await _dashboard_view(
         account, updated, account_count=len(_loaded_entries(data)),
         mongo=mongo, guild_id=_trade_guild_id(ctx),
@@ -9700,22 +10015,26 @@ async def _save_partial_scan_draft(
         )
 
     await _discard_scan_state(mongo, action_id)
-    saved_count = len(scan_draft.get("card_states") or {})
-    complete = set(updated.get("complete_categories") or ())
-    landing = next(
-        (category.id for category in CATEGORIES if category.id not in complete),
-        CATEGORIES[0].id,
-    )
-    return await _quantity_editor_view(
+    finish = await _scan_finish_handoff(
         ctx,
         account,
         updated,
-        landing,
         mongo=mongo,
-        saved=(
-            f"Saved {saved_count} cards from the scan. "
-            "Check the rest here, then tap **Ready to trade**."
+        read_count=len(
+            set(scan_draft.get("card_states") or ())
+            - set(_scan_manual_required_ids(scan_draft))
         ),
+    )
+    if finish is not None:
+        return finish
+    if _trade_guild_id(ctx) is None:
+        return _scan_saved_notice(account)
+    return await _dashboard_view(
+        account,
+        updated,
+        account_count=len(_loaded_entries(_data)),
+        mongo=mongo,
+        guild_id=_trade_guild_id(ctx),
     )
 
 
@@ -10476,15 +10795,28 @@ async def cards_hidden(
     )
     if problem:
         return problem
-    if not _scan_unverified_ids(inventory):
-        # Nothing left to check, so show the result rather than a menu about it.
-        data = await load_accounts(coc_client, int(ctx.user.id))
-        return await _dashboard_view(
-            account, inventory, account_count=len(_loaded_entries(data)),
-            mongo=mongo, guild_id=_trade_guild_id(ctx),
-            skip_paused_gate=str(action_id or "").endswith("|paused"),
+    if _scan_unverified_ids(inventory):
+        finish = await _scan_finish_handoff(
+            ctx,
+            account,
+            inventory,
+            mongo=mongo,
+            read_count=len(CARDS) - len(_untrusted_card_ids(inventory)),
         )
-    return await _hidden_badge_review_view(account, inventory)
+        if finish is not None:
+            return finish
+    # Compatibility for an old posted cards_hidden button: once every value
+    # is trusted it simply returns to the collection instead of reviving the
+    # retired scanner-specific review path.
+    data = await load_accounts(coc_client, int(ctx.user.id))
+    return await _dashboard_view(
+        account,
+        inventory,
+        account_count=len(_loaded_entries(data)),
+        mongo=mongo,
+        guild_id=_trade_guild_id(ctx),
+        skip_paused_gate=str(action_id or "").endswith("|paused"),
+    )
 
 
 def _parse_quantity_target(value: object) -> tuple[str, str | None, str | None]:
@@ -10562,11 +10894,16 @@ def _bulk_state_owned(ctx, state_id: str, state: dict) -> bool:
         owner_id = int(state.get("user_id"))
     except (TypeError, ValueError):
         return False
+    scope = state.get("scope") or "category"
     return (
         owner_id == int(ctx.user.id)
         and state.get("guild_id") == _trade_guild_id(ctx)
         and _normalize_tag(state.get("account_tag")) == tag
         and state.get("category_id") == category_id
+        and (
+            (scope == "scan_finish" and _bulk_is_scan_finish_id(state_id))
+            or (scope == "category" and not _bulk_is_scan_finish_id(state_id))
+        )
     )
 
 
@@ -10574,17 +10911,24 @@ def _bulk_state_well_formed(state: dict) -> bool:
     category_id = state.get("category_id")
     if category_id not in CATEGORY_BY_ID:
         return False
+    scope = state.get("scope") or "category"
     editable = list(state.get("editable_ids") or ())
-    canonical = [
-        item.id for item in CATEGORY_CARDS[category_id]
-        if item.id in set(editable)
-    ]
+    if scope == "scan_finish":
+        canonical = _ordered_card_ids(editable)
+    elif scope == "category":
+        canonical = [
+            item.id for item in CATEGORY_CARDS[category_id]
+            if item.id in set(editable)
+        ]
+    else:
+        return False
     counts = state.get("count_snapshot")
     selected = list(state.get("selected_ids") or ())
     canonical_selected = [
         item_id for item_id in editable if item_id in set(selected)
     ]
     unconfirmed = set(state.get("unconfirmed_ids") or ())
+    required = list(state.get("required_entry_ids") or ())
     return (
         editable == canonical
         and bool(editable)
@@ -10599,6 +10943,16 @@ def _bulk_state_well_formed(state: dict) -> bool:
         and selected == canonical_selected
         and unconfirmed <= set(editable)
         and all(counts[item_id] == DUPLICATE for item_id in unconfirmed)
+        and (
+            (scope == "category" and not required)
+            or (
+                scope == "scan_finish"
+                and selected == editable
+                and required == selected
+                and not (unconfirmed & set(required))
+                and CARD_BY_ID[editable[0]].category == category_id
+            )
+        )
     )
 
 
@@ -10623,6 +10977,8 @@ async def _bulk_state_update(
         "expires_at": {"$gt": now},
         **guard,
     }
+    if "scope" in state:
+        filt["scope"] = state.get("scope")
     update: dict = {"$set": {
         **values,
         "expires_at": now + CARD_BULK_SESSION_FOR,
@@ -10655,11 +11011,21 @@ def _bulk_exact_modal(state_id: str, state: dict) -> dict:
     nonce = str(state.get("nonce") or "")
     counts = dict(state.get("count_snapshot") or {})
     uncertain = set(state.get("unconfirmed_ids") or ())
+    required_entries = set(state.get("required_entry_ids") or ())
     inputs = []
     for offset, item_id in enumerate(batch):
         custom_id = f"q_{nonce}_{offset}"
         label = f"{start + offset + 1}. {CARD_BY_ID[item_id].name}"[:45]
-        if item_id in uncertain:
+        if item_id in required_entries:
+            inputs.append(ModalActionRow().add_text_input(
+                custom_id,
+                label,
+                placeholder=f"Enter {MISSING} to {MAX_COPIES}",
+                min_length=1,
+                max_length=2,
+                required=True,
+            ))
+        elif item_id in uncertain:
             inputs.append(ModalActionRow().add_text_input(
                 custom_id,
                 label,
@@ -10679,8 +11045,13 @@ def _bulk_exact_modal(state_id: str, state: dict) -> dict:
             ))
     end = start + len(batch)
     category = CATEGORY_BY_ID[state["category_id"]]
+    title = (
+        f"Finish collection \u00b7 {start + 1}-{end} of {total}"
+        if state.get("scope") == "scan_finish"
+        else f"{category.name} \u00b7 {start + 1}-{end} of {total}"
+    )
     return {
-        "title": f"{category.name} \u00b7 {start + 1}-{end} of {total}"[:45],
+        "title": title[:45],
         "custom_id": f"cards_bulk_submit:{state_id}",
         "components": inputs,
     }
@@ -10712,12 +11083,28 @@ def _bulk_progress_view(
     )
     if note:
         detail += f"\n\n{_escape_markdown(note, limit=300)}"
+    scan_finish = state.get("scope") == "scan_finish"
+    if scan_finish and processed == 0:
+        detail = (
+            f"**{total} card{'s' if total != 1 else ''} still need a count.**\n"
+            "Enter a count for every card. Each submitted group saves "
+            "automatically."
+        )
+        if note:
+            detail += f"\n\n{_escape_markdown(note, limit=300)}"
     return [Container(
         accent_color=CATEGORY_ACCENTS[state["category_id"]],
         components=[
             Text(content=(
-                f"# Bulk edit \u00b7 {CATEGORY_BY_ID[state['category_id']].name}\n"
-                f"-# {_escape_markdown(state.get('account_name'))} \u00b7 "
+                (
+                    "# Finish collection\n"
+                    if scan_finish
+                    else (
+                        f"# Bulk edit \u00b7 "
+                        f"{CATEGORY_BY_ID[state['category_id']].name}\n"
+                    )
+                )
+                + f"-# {_escape_markdown(state.get('account_name'))} \u00b7 "
                 f"`{_normalize_tag(state.get('account_tag'))}`"
             )),
             Text(content=detail),
@@ -10725,18 +11112,60 @@ def _bulk_progress_view(
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"cards_bulk_continue:{state_id}",
-                    label="Try again" if retry else "Continue",
+                    label=(
+                        "Try again"
+                        if retry
+                        else "Enter counts" if scan_finish and processed == 0
+                        else "Continue"
+                    ),
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"cards_bulk_finish:{state_id}",
-                    label="Finish here",
+                    label="Finish later" if scan_finish else "Finish here",
                 ),
             ]),
             Text(content=(
-                "-# Finish here keeps every submitted batch and leaves the "
+                f"-# {'Finish later' if scan_finish else 'Finish here'} keeps "
+                "every submitted batch and leaves the "
                 "remaining cards unchanged."
             )),
+        ],
+    )]
+
+
+def _scan_finish_view(
+    state_id: str,
+    state: dict,
+    *,
+    read_count: int,
+) -> list[Container]:
+    """Handoff from a saved scan into its preselected exact-count queue."""
+    remaining = len(state.get("selected_ids") or ())
+    return [Container(
+        accent_color=GOLD_ACCENT,
+        components=[
+            Text(content="# Scan finished"),
+            Text(content=(
+                f"{_escape_markdown(state.get('account_name'))} \u00b7 "
+                f"`{_normalize_tag(state.get('account_tag'))}`\n"
+                f"**{max(0, int(read_count))} of {len(CARDS)} cards read.**\n"
+                f"**{remaining} still need a count.**\n\n"
+                "Finish these cards to complete your collection. Each "
+                "submitted group saves automatically."
+            )),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.PRIMARY,
+                    custom_id=f"cards_bulk_continue:{state_id}",
+                    label="Enter counts",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"cards_bulk_finish:{state_id}",
+                    label="Finish later",
+                ),
+            ]),
         ],
     )]
 
@@ -10812,6 +11241,58 @@ async def _bulk_recovery_view(
                 "when the account is available; saved counts remain in the collection.",
             ),
         ]
+    if _bulk_is_scan_finish_id(state_id):
+        reservations = set(_card_reservations(inventory))
+        untrusted = _untrusted_card_ids(inventory)
+        remaining = [
+            item_id for item_id in untrusted
+            if item_id not in reservations
+        ]
+        if remaining:
+            landing = CARD_BY_ID[remaining[0]].category
+            try:
+                fresh_id, fresh_state = await _create_bulk_state(
+                    ctx,
+                    account,
+                    inventory,
+                    mongo=mongo,
+                    category_id=landing,
+                    scope="scan_finish",
+                    selected_ids=remaining,
+                )
+            except ValueError:
+                fresh_id = None
+                fresh_state = {}
+            if fresh_id:
+                return _bulk_progress_view(
+                    fresh_id,
+                    fresh_state,
+                    note=(
+                        saved
+                        or "This session expired. Completed groups remain saved; "
+                        "continue with the cards that still need a count."
+                    ),
+                )
+        blocked = [item_id for item_id in untrusted if item_id in reservations]
+        recovery_note = saved
+        if recovery_note is None:
+            recovery_note = (
+                "This session expired. Completed groups remain saved. "
+                "Reserved cards can be finished after their trade ends."
+                if blocked
+                else (
+                    "This session expired after all remaining counts were "
+                    "saved. The collection below is current."
+                )
+            )
+        return await _quantity_editor_view(
+            ctx,
+            account,
+            inventory,
+            category_id,
+            mongo=mongo,
+            saved=recovery_note,
+        )
     return await _quantity_editor_view(
         ctx,
         account,
@@ -10848,8 +11329,8 @@ async def _bulk_writing_recovery_view(
         coc_client=coc_client,
         mongo=mongo,
         saved=(
-            "Bulk editing was interrupted. Counts from completed batches are "
-            "shown below. Select any remaining cards again."
+            "Bulk editing was interrupted. Completed groups remain saved; "
+            "continue with cards that still need a count."
         ),
     )
 
@@ -11230,8 +11711,16 @@ async def cards_bulk_finish(
             state["category_id"],
             mongo=mongo,
             saved=(
-                f"Bulk editing finished. {int(state.get('written_count') or 0)} "
-                "exact counts were saved; remaining cards were unchanged."
+                (
+                    "Finished for now. Submitted groups remain saved; cards "
+                    "still needing a count are not ready to trade."
+                    if state.get("scope") == "scan_finish"
+                    else (
+                        f"Bulk editing finished. "
+                        f"{int(state.get('written_count') or 0)} exact counts "
+                        "were saved; remaining cards were unchanged."
+                    )
+                )
             ),
         )
     await ctx.interaction.edit_initial_response(components=view)
@@ -11380,39 +11869,70 @@ async def cards_bulk_submit(
             expected_revision=expected_revision,
             discord_id=int(ctx.user.id),
             guild_id=_trade_guild_id(ctx),
+            allowed_ids=(
+                list(state.get("required_entry_ids") or ())
+                if state.get("scope") == "scan_finish"
+                else None
+            ),
         )
     except ActiveCardTradeError:
         await _bulk_discard_state(mongo, action_id)
-        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
-        view = await _quantity_editor_view(
-            ctx,
-            account,
-            current,
-            state["category_id"],
-            mongo=mongo,
-            saved=(
-                "A card in this batch entered a trade, so this batch was not "
-                "changed. Any earlier submitted batches remain saved. Select "
-                "the remaining editable cards again."
-            ),
-        )
+        if state.get("scope") == "scan_finish":
+            view = await _bulk_recovery_view(
+                ctx,
+                action_id,
+                coc_client=coc_client,
+                mongo=mongo,
+                saved=(
+                    "A card in this group entered a trade, so this group was "
+                    "not changed. Earlier completed groups remain saved; "
+                    "continue with cards that still need a count."
+                ),
+            )
+        else:
+            current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+            view = await _quantity_editor_view(
+                ctx,
+                account,
+                current,
+                state["category_id"],
+                mongo=mongo,
+                saved=(
+                    "A card in this batch entered a trade, so this batch was not "
+                    "changed. Any earlier submitted batches remain saved. Select "
+                    "the remaining editable cards again."
+                ),
+            )
         await ctx.interaction.edit_initial_response(components=view)
         return
     except (InventoryWriteConflict, ValueError):
         await _bulk_discard_state(mongo, action_id)
-        current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
-        view = await _quantity_editor_view(
-            ctx,
-            account,
-            current,
-            state["category_id"],
-            mongo=mongo,
-            saved=(
-                "The collection changed, so this batch was not changed. Any "
-                "earlier submitted batches remain saved. Select the remaining "
-                "cards again."
-            ),
-        )
+        if state.get("scope") == "scan_finish":
+            view = await _bulk_recovery_view(
+                ctx,
+                action_id,
+                coc_client=coc_client,
+                mongo=mongo,
+                saved=(
+                    "The collection changed, so this group was not changed. "
+                    "Earlier completed groups remain saved; continue with "
+                    "cards that still need a count."
+                ),
+            )
+        else:
+            current = await mongo.card_inventories.find_one({"_id": tag}) or inventory
+            view = await _quantity_editor_view(
+                ctx,
+                account,
+                current,
+                state["category_id"],
+                mongo=mongo,
+                saved=(
+                    "The collection changed, so this batch was not changed. Any "
+                    "earlier submitted batches remain saved. Select the remaining "
+                    "cards again."
+                ),
+            )
         await ctx.interaction.edit_initial_response(components=view)
         return
 
@@ -11427,11 +11947,16 @@ async def cards_bulk_submit(
     next_revision = expected_revision + (1 if values else 0)
     if next_index >= len(selected):
         await _bulk_discard_state(mongo, action_id)
+        landing_category = (
+            CARD_BY_ID[batch[-1]].category
+            if state.get("scope") == "scan_finish"
+            else state["category_id"]
+        )
         view = await _quantity_editor_view(
             ctx,
             account,
             updated,
-            state["category_id"],
+            landing_category,
             mongo=mongo,
             saved=(
                 f"Bulk edit complete. {written_count} exact count"
@@ -11473,17 +11998,29 @@ async def cards_bulk_submit(
         advanced = None
     if not _bulk_matched(advanced):
         await _bulk_discard_state(mongo, action_id)
-        view = await _quantity_editor_view(
-            ctx,
-            account,
-            updated,
-            state["category_id"],
-            mongo=mongo,
-            saved=(
-                "This submitted batch was saved. Reopen bulk editing and select "
-                "the remaining cards again."
-            ),
-        )
+        if state.get("scope") == "scan_finish":
+            view = await _bulk_recovery_view(
+                ctx,
+                action_id,
+                coc_client=coc_client,
+                mongo=mongo,
+                saved=(
+                    "This submitted group was saved. Continue with cards that "
+                    "still need a count."
+                ),
+            )
+        else:
+            view = await _quantity_editor_view(
+                ctx,
+                account,
+                updated,
+                state["category_id"],
+                mongo=mongo,
+                saved=(
+                    "This submitted batch was saved. Reopen bulk editing and select "
+                    "the remaining cards again."
+                ),
+            )
         await ctx.interaction.edit_initial_response(components=view)
         return
     progressed = {
@@ -11744,7 +12281,7 @@ async def cards_ready(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    """Mark the category tradeable. Nothing else makes a member matchable."""
+    """Safely refresh an old posted Ready button without granting trust."""
     tag, category_id, card_id = _parse_quantity_target(action_id)
     if category_id is None:
         return _notice("Unknown card category", "Re-run `/cards` to open a fresh panel.")
@@ -11753,20 +12290,17 @@ async def cards_ready(
     )
     if problem:
         return problem
-    try:
-        updated = await _write_category_ready(
-            mongo,
-            account,
-            inventory,
-            category_id,
-            discord_id=int(ctx.user.id),
-            guild_id=_trade_guild_id(ctx),
-        )
-    except (InventoryWriteConflict, ValueError):
-        return _inventory_retry_notice()
     return await _quantity_editor_view(
-        ctx, account, updated, category_id, mongo=mongo, card_id=card_id,
-        saved=f"{CATEGORY_BY_ID[category_id].name} is ready to trade.",
+        ctx,
+        account,
+        inventory,
+        category_id,
+        mongo=mongo,
+        card_id=card_id,
+        saved=(
+            "Readiness is automatic. Enter a count for every card still marked "
+            "as needing one."
+        ),
     )
 
 
@@ -11876,6 +12410,277 @@ def _gem_ask_confirm_view(account, card, holder_name: str, holder_tag: str):
     ])]
 
 
+async def _gem_help_match(
+    mongo: MongoClient,
+    requester: dict,
+    card_id: str,
+    holder_tag: str,
+    *,
+    guild_id: int | None,
+):
+    """Revalidate one paid-help route through canonical matching snapshots.
+
+    Gem-help buttons are long-lived Discord components.  Both clicks therefore
+    rebuild normal matching eligibility instead of trusting the raw counts that
+    were true when the holder list was rendered.  The matching boundary
+    projects ``trusted_card_ids``, masks reservations, and confines candidates
+    to the interaction's guild and the configured family clans.
+    """
+    if guild_id is None:
+        return None
+    candidates = await _candidate_inventories(
+        mongo,
+        requester,
+        guild_id=int(guild_id),
+        require_requester_family=True,
+    )
+    wanted_holder = _normalize_tag(holder_tag)
+    for match in find_matches(_without_reserved_cards(requester), candidates):
+        if _normalize_tag(match.holder_tag) != wanted_holder:
+            continue
+        exchange = next(
+            (
+                item
+                for item in match.exchanges
+                if card_id in item.offers and not item.returns
+            ),
+            None,
+        )
+        if exchange is not None and match.holder_discord_id is not None:
+            return match
+    return None
+
+
+def _swap_leg_progress(trade: dict) -> dict:
+    progress = trade.get("swap_leg_progress")
+    return progress if isinstance(progress, dict) else {}
+
+
+async def _claim_swap_leg(
+    mongo: MongoClient,
+    trade: dict,
+    *,
+    role: str,
+    now: datetime,
+) -> dict | None:
+    """Fence one confirmation attempt before either inventory can change."""
+    previous_status = str(trade.get("status") or "")
+    if previous_status not in SWAP_LIVE_STATUSES:
+        return None
+    giver, receiver, card_id = _swap_leg(trade, role=role)
+    nonce = secrets.token_hex(12)
+    progress = {
+        "attempt_nonce": nonce,
+        "role": role,
+        "card_id": card_id,
+        "giver_tag": giver,
+        "receiver_tag": receiver,
+        "previous_status": previous_status,
+        "phase": "inventory_update_started",
+        "started_at": now,
+    }
+    query: dict[str, object] = {
+        "_id": trade["_id"],
+        "guild_id": int(trade["guild_id"]),
+        "status": previous_status,
+        f"{role}_confirmed_at": {"$exists": False},
+    }
+    if trade.get("reservation_token") is not None:
+        query["reservation_token"] = trade.get("reservation_token")
+    fields = {
+        "status": "completing",
+        "completion_kind": "swap_leg",
+        "completion_started_at": now,
+        "expires_at": now + TRADE_COMPLETION_FOR,
+        "updated_at": now,
+        "swap_leg_progress": progress,
+    }
+    try:
+        result = await mongo.card_trades.update_one(query, {"$set": fields})
+    except Exception:
+        # An acknowledgement can be lost after Mongo committed the claim.
+        # Continue only when our nonce is durably visible.
+        current = await mongo.card_trades.find_one({"_id": trade["_id"]})
+        if (
+            current
+            and current.get("status") == "completing"
+            and _swap_leg_progress(current).get("attempt_nonce") == nonce
+        ):
+            return current
+        raise
+    if not getattr(result, "modified_count", 0):
+        return None
+    current = await mongo.card_trades.find_one({"_id": trade["_id"]})
+    if current is not None:
+        return current
+    claimed = dict(trade)
+    claimed.update(fields)
+    return claimed
+
+
+def _swap_leg_claim_query(trade: dict, *, role: str) -> dict[str, object]:
+    progress = _swap_leg_progress(trade)
+    return {
+        "_id": trade["_id"],
+        "status": "completing",
+        "completion_kind": "swap_leg",
+        "swap_leg_progress.attempt_nonce": progress.get("attempt_nonce"),
+        "swap_leg_progress.role": role,
+        "swap_leg_progress.card_id": progress.get("card_id"),
+    }
+
+
+async def _restore_swap_leg_claim(
+    mongo: MongoClient,
+    trade: dict,
+    *,
+    role: str,
+    now: datetime,
+) -> dict:
+    """Release a no-spare interactive claim without recording confirmation."""
+    progress = _swap_leg_progress(trade)
+    previous_status = str(progress.get("previous_status") or "ready")
+    result = await mongo.card_trades.update_one(
+        _swap_leg_claim_query(trade, role=role),
+        {
+            "$set": {"status": previous_status, "updated_at": now},
+            "$unset": {
+                "completion_kind": "",
+                "completion_started_at": "",
+                "expires_at": "",
+                "swap_leg_progress": "",
+            },
+        },
+    )
+    current = await mongo.card_trades.find_one({"_id": trade["_id"]})
+    if getattr(result, "modified_count", 0):
+        return current or dict(trade, status=previous_status)
+    if current and current.get("status") == "needs_review":
+        raise _SwapLegNeedsReview(current)
+    if current and current.get(f"{role}_confirmed_at"):
+        return current
+    raise RuntimeError("swap leg claim could not be restored")
+
+
+async def _mark_swap_leg_needs_review(
+    mongo: MongoClient,
+    trade: dict,
+    *,
+    role: str,
+    now: datetime,
+    phase: str,
+    failure_type: str,
+    giver_debited: bool | str,
+    receiver_credit: str,
+) -> dict:
+    """Persist a partial/unknown leg, then invalidate trust before release."""
+    progress = dict(_swap_leg_progress(trade))
+    progress.update({
+        "phase": phase,
+        "giver_debited": giver_debited,
+        "receiver_credit": receiver_credit,
+        "failed_at": now,
+        "failure_type": failure_type,
+    })
+    fields = {
+        "status": "needs_review",
+        "updated_at": now,
+        "review_expires_at": now + TRADE_REVIEW_FOR,
+        "failure": f"swap_leg_partial_failure:{failure_type}",
+        "swap_leg_progress": progress,
+        **_cleanup_fields(trade),
+    }
+    try:
+        await mongo.card_trades.update_one(
+            _swap_leg_claim_query(trade, role=role),
+            {"$set": fields, "$unset": {"open_proposal_key": ""}},
+        )
+    except Exception:
+        _log.exception(
+            "swap leg review transition failed trade=%s role=%s",
+            trade.get("_id"), role,
+        )
+    current = await mongo.card_trades.find_one({"_id": trade["_id"]})
+    if current is None:
+        current = dict(trade)
+        current.update(fields)
+    if current.get("status") == "needs_review":
+        await _finish_trade_cleanup(
+            mongo, current, owner=_reservation_owner(trade)
+        )
+        current = await mongo.card_trades.find_one({"_id": trade["_id"]}) or current
+    return current
+
+
+async def _run_swap_leg_confirmation(
+    mongo: MongoClient,
+    trade: dict,
+    *,
+    role: str,
+    now: datetime,
+    record_no_spare: bool,
+) -> tuple[str, int, dict]:
+    """Claim, apply, and audit one side without an untracked write window."""
+    claimed = await _claim_swap_leg(mongo, trade, role=role, now=now)
+    if claimed is None:
+        current = await mongo.card_trades.find_one({"_id": trade["_id"]}) or trade
+        return "changed", 0, current
+    try:
+        moved, remaining = await _confirm_swap_leg(
+            mongo, claimed, role=role, now=now
+        )
+    except _SwapReceiverCreditError as exc:
+        review = await _mark_swap_leg_needs_review(
+            mongo,
+            claimed,
+            role=role,
+            now=datetime.now(timezone.utc),
+            phase="receiver_credit_unknown",
+            failure_type=type(exc.__cause__ or exc).__name__,
+            giver_debited=True,
+            receiver_credit="unknown",
+        )
+        raise _SwapLegNeedsReview(review) from exc
+    except Exception as exc:
+        review = await _mark_swap_leg_needs_review(
+            mongo,
+            claimed,
+            role=role,
+            now=datetime.now(timezone.utc),
+            phase="inventory_update_unknown",
+            failure_type=type(exc).__name__,
+            giver_debited="unknown",
+            receiver_credit="not_started",
+        )
+        raise _SwapLegNeedsReview(review) from exc
+
+    if not moved and not record_no_spare:
+        try:
+            restored = await _restore_swap_leg_claim(
+                mongo, claimed, role=role, now=datetime.now(timezone.utc)
+            )
+        except _SwapLegNeedsReview:
+            raise
+        except Exception as exc:
+            review = await _mark_swap_leg_needs_review(
+                mongo,
+                claimed,
+                role=role,
+                now=datetime.now(timezone.utc),
+                phase="no_spare_restore_unknown",
+                failure_type=type(exc).__name__,
+                giver_debited=False,
+                receiver_credit="not_started",
+            )
+            raise _SwapLegNeedsReview(review) from exc
+        return "no_spare", remaining, restored
+
+    updated = await _record_swap_confirmation(
+        mongo, claimed, role=role, now=now
+    )
+    return ("moved" if moved else "no_spare_recorded"), remaining, updated
+
+
 def _gem_ask_dm(ask: dict, *, preview: bool = False) -> list[Container]:
     """Asking somebody to post an offer. Deliberately not a trade record.
 
@@ -11953,26 +12758,34 @@ async def cards_gem_ask(
     holder_tag = _normalize_tag(parts[2]) if len(parts) > 2 else ""
     if card is None or not holder_tag:
         return _notice("Out of date", "Open `/cards` again.", back_tag=tag)
-    account, _inventory, problem = await _load_target(
+    account, inventory, problem = await _load_target(
         ctx, tag, coc_client=coc_client, mongo=mongo
     )
     if problem:
         return problem
     guild_id = _trade_guild_id(ctx)
-    holder = {}
-    if guild_id is not None:
-        holder = await mongo.card_inventories.find_one(
-            {"_id": holder_tag, "guild_id": int(guild_id)}
-        ) or {}
-    if not holder:
+    if guild_id is None:
         return _notice(
-            "Cannot reach them",
-            "That player is not in the family card system any more.",
+            "Not set up yet",
+            "The Card Hub is not configured for this family yet.",
+            back_tag=tag,
+        )
+    try:
+        holder = await _gem_help_match(
+            mongo, inventory, card.id, holder_tag, guild_id=guild_id
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
+    if holder is None:
+        return _notice(
+            "That help request is no longer available",
+            "The missing card, spare, or family eligibility changed. Open "
+            "**Find trades** again for the current options.",
             back_tag=tag,
         )
     return _gem_ask_confirm_view(
         account, card,
-        str(holder.get("player_name") or "That player"), holder_tag,
+        holder.holder_name, holder.holder_tag,
     )
 
 
@@ -11996,7 +12809,7 @@ async def cards_gem_send(
     holder_tag = _normalize_tag(parts[2]) if len(parts) > 2 else ""
     if card is None or not holder_tag:
         return _notice("Out of date", "Open `/cards` again.", back_tag=tag)
-    account, _inventory, problem = await _load_target(
+    account, inventory, problem = await _load_target(
         ctx, tag, coc_client=coc_client, mongo=mongo
     )
     if problem:
@@ -12008,50 +12821,21 @@ async def cards_gem_send(
             "The Card Hub is not configured for this family yet.",
             back_tag=tag,
         )
-    # The holder must still be a guild-scoped inventory inside the configured
-    # family. A stale button can name somebody who left; that fails closed
-    # here, the same boundary the candidate search applies.
-    holder = await mongo.card_inventories.find_one(
-        {"_id": holder_tag, "guild_id": int(guild_id)}
-    ) or {}
-    if not holder:
-        return _notice(
-            "Cannot reach them",
-            "That player is not in the family card system any more.",
-            back_tag=tag,
-        )
     try:
-        family_tags = {
-            _normalize_tag(clan_tag)
-            for clan_tag in await mongo.clans.distinct("tag")
-            if _normalize_tag(clan_tag)
-        }
-    except Exception:
-        _log.exception("gem ask could not load family clan tags")
+        holder = await _gem_help_match(
+            mongo, inventory, card.id, holder_tag, guild_id=guild_id
+        )
+    except CandidateLookupUnavailable:
+        return _search_unavailable_notice(account.tag)
+    if holder is None:
         return _notice(
-            "Cannot check their clan right now",
-            "Nothing was sent. Try again in a moment.",
+            "That help request is no longer available",
+            "Nothing was sent. The missing card, spare, or family eligibility "
+            "changed. Open **Find trades** again for the current options.",
             back_tag=tag,
         )
-    if not family_tags or _normalize_tag(holder.get("clan_tag")) not in family_tags:
-        return _notice(
-            "Cannot reach them",
-            "That player is not in a family clan right now.",
-            back_tag=tag,
-        )
-    holder_discord_id = holder.get("discord_id")
-    if not holder_discord_id:
-        return _notice(
-            "Cannot reach them",
-            "That player has no Discord account linked, so I cannot ask them.",
-            back_tag=tag,
-        )
-    if holder.get("trading_paused"):
-        return _notice(
-            "They have trading off",
-            "They have hidden their cards, so they are not taking requests.",
-            back_tag=tag,
-        )
+    holder_discord_id = int(holder.holder_discord_id)
+    holder_tag = _normalize_tag(holder.holder_tag)
 
     now = datetime.now(timezone.utc)
     ask = {
@@ -12065,8 +12849,8 @@ async def cards_gem_send(
         "asker_name": account.name,
         "asker_discord_id": int(ctx.user.id),
         "holder_tag": holder_tag,
-        "holder_name": str(holder.get("player_name") or "Unknown"),
-        "holder_discord_id": int(holder_discord_id),
+        "holder_name": holder.holder_name,
+        "holder_discord_id": holder_discord_id,
         # Buttons carry this, so a DM from an earlier ask for the same card
         # cannot answer a later one.
         "generation": int(now.timestamp()),
@@ -12858,7 +13642,7 @@ async def cards_swap_sent(
     # one action that mutates two inventories, so recheck against the live
     # links that the clicking user still owns this tag - the same recheck
     # cancel, decline, and accept already run. Fails closed on link outage.
-    _account, _inventory, target_problem = await _load_target(
+    account, _inventory, target_problem = await _load_target(
         ctx,
         _normalize_tag(trade[f"{role}_tag"]),
         coc_client=coc_client,
@@ -12867,14 +13651,42 @@ async def cards_swap_sent(
     if target_problem:
         return target_problem
     now = datetime.now(timezone.utc)
-    moved, remaining = await _confirm_swap_leg(mongo, trade, role=role, now=now)
-    if not moved:
+    try:
+        outcome, remaining, updated = await _run_swap_leg_confirmation(
+            mongo,
+            trade,
+            role=role,
+            now=now,
+            record_no_spare=False,
+        )
+    except _SwapLegNeedsReview as exc:
+        review = exc.trade
+        detail = (
+            "One collection update could not be confirmed. Both affected "
+            "cards are hidden from matching until the counts are checked."
+        )
+        await asyncio.gather(
+            _notify_review_participants(bot, review, detail),
+            _update_trade_channel(bot, review),
+            return_exceptions=True,
+        )
+        return _trade_feedback(
+            "Trade needs review",
+            detail,
+            account.tag,
+            accent=RED_ACCENT,
+        )
+    if outcome == "changed":
+        return _notice(
+            "This swap changed",
+            "Reopen **My trades** and check its current status.",
+        )
+    if outcome == "no_spare":
         return _notice(
             "That card is no longer there",
             "Your collection no longer shows a spare of it. Open the card and "
             "set your real count, then try again.",
         )
-    updated = await _record_swap_confirmation(mongo, trade, role=role, now=now)
     other = "holder" if role == "requester" else "requester"
     other_id = int(trade.get(f"{other}_discord_id") or 0)
     if other_id:

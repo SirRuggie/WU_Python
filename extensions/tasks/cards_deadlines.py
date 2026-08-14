@@ -181,6 +181,33 @@ async def _pause_silent_members(mongo, bot, *, now) -> int:
     return paused
 
 
+async def _recover_interrupted_completions(mongo, bot, *, now) -> int:
+    """Move expired write-ahead claims into the existing review cleanup."""
+    try:
+        due = await mongo.card_trades.find({
+            "kind": "trade",
+            "status": "completing",
+            "expires_at": {"$lte": now},
+        }).to_list(length=BATCH)
+    except Exception as exc:
+        print(f"[Cards Deadlines] completion recovery query failed: "
+              f"{type(exc).__name__}: {exc}")
+        return 0
+
+    recovered = 0
+    for trade in due:
+        try:
+            updated = await cards_command._expire_trade_if_needed(
+                mongo, trade, bot=bot
+            )
+            if updated.get("status") == "needs_review":
+                recovered += 1
+        except Exception as exc:
+            print(f"[Cards Deadlines] completion recovery failed trade="
+                  f"{trade.get('_id')}: {type(exc).__name__}: {exc}")
+    return recovered
+
+
 async def _finish_one_sided_swaps(mongo, bot, *, now) -> int:
     """Job 4: one player confirmed, the other never did."""
     cutoff = now - cards_command.SWAP_CONFIRM_FOR
@@ -201,12 +228,20 @@ async def _finish_one_sided_swaps(mongo, bot, *, now) -> int:
             for role in ("requester", "holder"):
                 if trade.get(f"{role}_confirmed_at"):
                     continue
-                moved, _remaining = await cards_command._confirm_swap_leg(
-                    mongo, trade, role=role, now=now
+                outcome, _remaining, updated = (
+                    await cards_command._run_swap_leg_confirmation(
+                        mongo,
+                        trade,
+                        role=role,
+                        now=now,
+                        # The deadline path deliberately closes a silent side
+                        # even when its reserved spare is no longer present.
+                        record_no_spare=True,
+                    )
                 )
-                updated = await cards_command._record_swap_confirmation(
-                    mongo, trade, role=role, now=now
-                )
+                if outcome == "changed":
+                    continue
+                moved = outcome == "moved"
                 # The trade closes either way; this records whether the leg
                 # really moved, so a completed trade with an unmoved leg can
                 # be told apart from a clean one later.
@@ -313,11 +348,15 @@ async def sweep_once() -> None:
     now = datetime.now(timezone.utc)
     expired = await _expire_unanswered_proposals(mongo_client, bot_instance, now=now)
     paused = await _pause_silent_members(mongo_client, bot_instance, now=now)
+    recovered = await _recover_interrupted_completions(
+        mongo_client, bot_instance, now=now
+    )
     settled = await _finish_one_sided_swaps(mongo_client, bot_instance, now=now)
     closed = await _close_abandoned_swaps(mongo_client, bot_instance, now=now)
-    if expired or paused or settled or closed:
+    if expired or paused or recovered or settled or closed:
         print(f"[Cards Deadlines] expired={expired} paused={paused} "
-              f"auto_confirmed={settled} abandoned={closed}")
+              f"review_recovered={recovered} auto_confirmed={settled} "
+              f"abandoned={closed}")
 
 
 async def sweep_loop() -> None:

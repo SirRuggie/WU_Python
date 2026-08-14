@@ -407,8 +407,11 @@ def test_scan_review_partial_is_short_and_states_the_save():
     text = _text(view)
     assert "**I read 12 of 60 cards.** Nothing is saved yet." in text
     assert "Still to check: 48 cards" in text
-    assert "**Save confirmed cards** saves the 12 cards I read." in text
-    assert "Then set the rest in **Update collection**." in text
+    assert (
+        "**Finish collection** saves the 12 cards I read, then opens the "
+        "remaining cards for exact counts."
+    ) in text
+    assert "You can send another screenshot here first" in text
     assert "Nothing was guessed." in text
     for gone in (
         "does not retain the image files",
@@ -417,8 +420,9 @@ def test_scan_review_partial_is_short_and_states_the_save():
     ):
         assert gone not in text
     labels = _labels(view)
-    for expected in ("Save confirmed cards", "Update collection", "Cancel"):
+    for expected in ("Finish collection", "Cancel"):
         assert expected in labels
+    assert "Update collection" not in labels
     assert len(text.splitlines()) <= 14, "the partial review stays short"
 
 
