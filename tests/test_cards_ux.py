@@ -67,6 +67,18 @@ def _custom_ids(view):
     ]
 
 
+def _root_types(view):
+    """The component type of each top-level builder in a message."""
+    return [int(_built(item)["type"]) for item in view]
+
+
+def _containers(view):
+    return [
+        item for item in view
+        if int(_built(item)["type"]) == int(hikari.ComponentType.CONTAINER)
+    ]
+
+
 def _account():
     return Account(
         tag="#ME", name="Member", clan_tag="#HOME",
@@ -130,57 +142,96 @@ class _CaptureBot:
         return SimpleNamespace(id=1)
 
 
-def test_fwa_callout_is_one_compact_red_text():
-    """The FWA warning is a red bar, one Text, two short lines - nothing else."""
-    callout = cards_command._fwa_warning()
-    payload = _built(callout)
-    assert payload["accent_color"] == int(cards_command.RED_ACCENT)
-    children = payload["components"]
-    assert len(children) == 1, "the compact callout holds exactly one Text"
-    assert children[0]["type"] == int(hikari.ComponentType.TEXT_DISPLAY)
-    lines = str(children[0]["content"]).splitlines()
-    assert lines == [
+def test_compact_callout_is_the_smallest_possible_container():
+    """The reusable callout: one accent, one Text, 1-2 lines, nothing else.
+
+    Verified against the Discord component reference: the accent bar exists
+    only on a Container and no smaller callout component exists in messages,
+    so this single-Text Container is the floor. It must never grow a
+    heading component, separator, footer, buttons or media.
+    """
+    from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
+
+    for accent in (RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT):
+        payload = _built(cards_command._compact_callout(accent, "a\nb"))
+        assert payload["accent_color"] == int(accent)
+        children = payload["components"]
+        assert len(children) == 1, "exactly one Text Display, nothing else"
+        assert children[0]["type"] == int(hikari.ComponentType.TEXT_DISPLAY)
+
+    fwa = _built(cards_command._fwa_warning())
+    assert fwa["accent_color"] == int(RED_ACCENT)
+    assert str(fwa["components"][0]["content"]).splitlines() == [
         "⚠️ **FWA — Wait for war**",
         "Do not trade until war starts.",
     ]
 
-
-def test_accepted_trade_dm_is_one_container_plus_compact_fwa():
-    """FWA rides as the compact callout; nothing else adds a container."""
+    # On the real message the callout is the ONLY box: the trade content
+    # flows unboxed at the message root, and the warning never leaks into
+    # that flow.
     view = cards_command._accepted_trade_dm(_trade(), fwa_relevant=True)
-    assert len(view) == 2, "main container + compact FWA callout only"
-    fwa_payload = _built(view[1])
-    assert fwa_payload["accent_color"] == int(cards_command.RED_ACCENT)
-    assert len(fwa_payload["components"]) == 1
+    boxes = _containers(view)
+    assert len(boxes) == 1, "the compact callout is the only container"
+    callout = _built(boxes[0])
+    assert len(callout["components"]) == 1
+    assert callout["accent_color"] == int(RED_ACCENT)
+    unboxed = [item for item in view if item not in boxes]
+    assert "FWA" not in _text(unboxed), "the warning lives in the callout"
+
+
+def test_accepted_trade_dm_is_unboxed_blocks_with_gaps():
+    """Root-level Texts and Separators, no outer card at all.
+
+    A Container renders as a boxed card; composing the trade content at the
+    message root removes that chrome entirely, which is the breathing room
+    the owner asked for. Blocks: cards, partner, next - divided by real
+    separators, with the quiet lines behind a spacing gap.
+    """
+    view = cards_command._accepted_trade_dm(_trade(), fwa_relevant=False)
+    assert _containers(view) == [], "no card when no callout is needed"
 
     text = _text(view)
     for label in (
         "**You give:**", "**You receive:**",
-        "**Your account:**", "**Trading with:**", "**Next:**",
+        "**Trading with:**", "**Their clan:**", "**Next**",
     ):
         assert label in text, f"label grammar lost {label}"
+    assert "-# Your account:" in text, "the reader's account rides as subtext"
     assert "I sent my card" in text
     assert "reserved until you confirm" in text
+
+    types = _root_types(view)
+    texts = [t for t in types if t == int(hikari.ComponentType.TEXT_DISPLAY)]
+    separators = [t for t in types if t == int(hikari.ComponentType.SEPARATOR)]
+    assert len(texts) >= 5, "blocks, not one dense text blob"
+    assert len(separators) >= 3, "real boundaries between the blocks"
+    give_block = next(
+        str(_built(item)["content"]) for item in view
+        if "**You give:**" in str(_built(item).get("content", ""))
+    )
+    assert "Trading with" not in give_block, (
+        "cards and partner are separate blocks"
+    )
 
     same_clan = cards_command._accepted_trade_dm(
         _trade(status="ready", holder_clan_tag="#HOME",
                holder_clan_name="Home Clan"),
         fwa_relevant=False,
     )
-    assert len(same_clan) == 1, "no callout, no extra container"
-    assert "moves clans" not in _text(same_clan)
+    assert _containers(same_clan) == []
+    assert "moves to the other clan" not in _text(same_clan)
 
 
 def test_noahs_ark_is_a_quiet_line_not_a_container():
-    """Optional help is subtext inside the main container, never a blue card."""
+    """Optional help is a quiet subtext line in the flow, never a blue card."""
     view = cards_command._accepted_trade_dm(_trade(), fwa_relevant=False)
-    assert len(view) == 1
+    assert _containers(view) == []
     text = _text(view)
     assert "-# ℹ️ Need a place to trade?" in text
     assert f"[**Open Noahs Ark**]({cards_command.NOAHS_ARK_LINK})" in text
     assert cards_command.NOAHS_ARK_TAG in text
-    for container in view:
-        assert _built(container).get("accent_color") != int(BLUE_ACCENT), (
+    for item in view:
+        assert _built(item).get("accent_color") != int(BLUE_ACCENT), (
             "Noahs Ark must not become a blue container again"
         )
 
@@ -194,7 +245,7 @@ def test_noahs_ark_is_a_quiet_line_not_a_container():
     ))
 
 
-def test_holder_accept_feedback_shares_grammar_and_callout():
+def test_holder_accept_feedback_shares_grammar_and_inline_warning():
     view = cards_command._holder_accept_feedback(
         _trade(status="ready"),
         taken_card_id="electro_titan",
@@ -203,17 +254,23 @@ def test_holder_accept_feedback_shares_grammar_and_callout():
         fwa_relevant=True,
         tag="#HOLD",
     )
-    assert len(view) == 2, "feedback panel + compact FWA callout"
-    assert _built(view[1])["accent_color"] == int(cards_command.RED_ACCENT)
+    boxes = _containers(view)
+    assert len(boxes) == 1, "the compact FWA callout is the only box"
+    assert len(_built(boxes[0])["components"]) == 1, (
+        "the callout stays the smallest possible container"
+    )
     text = _text(view)
     for label in ("**You give:**", "**You receive:**", "**Trading with:**",
-                  "**Next:**"):
+                  "**Next**"):
         assert label in text
+    assert "⚠️ **FWA — Wait for war**" in text
     assert "My trades" in text and "I sent my card" in text
     assert "I told them by DM." in text
     assert "Your account" not in text, (
         "the holder acted from this panel; their account needs no line"
     )
+    labels = _labels(view)
+    assert "My trades" in labels and "Collection" in labels
 
 
 def test_status_dm_is_slim_and_names_only_the_reader():
@@ -419,7 +476,9 @@ def test_the_full_preview_suite_renders_within_discord_limits():
         "22a · Find trades",
         "22d · My trades, empty",
         "23a · Upload prompt",
-        "24b · Notice, search unavailable",
+        "24a · Callout samples — red, gold, blue, green",
+        "24b · Accepted trade + FWA callout",
+        "24d · Notice, search unavailable",
     ):
         assert expected in names, f"preview scenario missing: {expected}"
 

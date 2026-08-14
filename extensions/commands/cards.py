@@ -6199,20 +6199,33 @@ async def _notify_trade_holder(bot: hikari.GatewayBot, trade: dict) -> bool:
     )
 
 
-def _fwa_warning() -> Container:
-    """The one compact accent callout: a red bar, one Text, two short lines.
+FWA_WARNING_TEXT = (
+    "⚠️ **FWA — Wait for war**\n"
+    "Do not trade until war starts."
+)
 
-    Deliberately no heading component, no separator, no footer and no
-    buttons. The emoji and bold words carry the meaning without the color,
-    which the accessibility rule requires anyway.
+
+def _compact_callout(accent: object, text: str) -> Container:
+    """The smallest colored structure a Discord message can carry.
+
+    Verified 2026-08-14 against the Discord component reference and the
+    pinned hikari builders: the accent bar exists only on a Container, and
+    no smaller callout/alert component exists in messages - the callout
+    boxes in Discord's own documentation are site styling, not message
+    components. A compact callout is therefore exactly this: one accent,
+    one Text Display, one or two short lines. No heading component, no
+    separator, no footer, no buttons, no image.
+
+    The reusable semantic palette: red warning, gold action required,
+    blue information, green success. Emoji plus bold words must carry the
+    meaning without the color.
     """
-    return Container(
-        accent_color=RED_ACCENT,
-        components=[Text(content=(
-            "⚠️ **FWA — Wait for war**\n"
-            "Do not trade until war starts."
-        ))],
-    )
+    return Container(accent_color=accent, components=[Text(content=text)])
+
+
+def _fwa_warning() -> Container:
+    """The FWA timing warning as the compact red callout."""
+    return _compact_callout(RED_ACCENT, FWA_WARNING_TEXT)
 
 
 def _noahs_ark_line() -> str:
@@ -6225,7 +6238,7 @@ def _noahs_ark_line() -> str:
 
 def _accepted_trade_dm(
     trade: dict, *, fwa_relevant: bool = False
-) -> list[Container]:
+) -> list:
     """The requester's accepted-trade handoff.
 
     Self-contained on purpose: both accounts and tags, both cards, the
@@ -6233,39 +6246,56 @@ def _accepted_trade_dm(
     Users kept forgetting who they accepted with and had nothing to search
     for, so the message must stand alone days later.
 
-    One main Container. FWA, when relevant, is the compact red callout;
-    Noahs Ark is a quiet subtext line, not another card.
+    Composed at the message root - Text Displays and Separators with no
+    outer Container - so the content reads as normal message text with real
+    breathing room instead of one large card. The only box in the message
+    is the compact red FWA callout, placed in the flow when relevant.
+    Success is carried by the title's words and emoji, not by a green card.
+    Noahs Ark and the reader's own account are quiet subtext.
     """
     wanted = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     given = _card_label(CARD_BY_ID[trade["given_card_id"]])
     status = str(trade.get("status") or "move_needed")
     move_needed = status == "move_needed"
-    # No clan wizard. The bot cannot move accounts; state the requirement
-    # once and let the two players sort it out.
+
+    partner_lines = (
+        f"**Trading with:** <@{int(trade['holder_discord_id'])}> · "
+        f"{_escape_markdown(trade['holder_name'], limit=60)} · "
+        f"`{trade['holder_tag']}`"
+    )
+    holder_clan_name = str(trade.get("holder_clan_name") or "").strip()
+    holder_clan_link = _clan_link(trade.get("holder_clan_tag"))
+    if holder_clan_name or holder_clan_link:
+        clan_label = (
+            _escape_markdown(holder_clan_name, limit=50)
+            if holder_clan_name
+            else "their clan"
+        )
+        partner_lines += (
+            "\n**Their clan:** " + clan_label
+            + (
+                f" · [Open their clan]({holder_clan_link})"
+                if holder_clan_link
+                else ""
+            )
+        )
+
+    # One action per line. The reader knows their own clan, and the partner
+    # block above names the other one, so nothing is repeated here.
     if move_needed:
-        mine = _clan_label(
-            trade.get("requester_clan_name"), trade.get("requester_clan_tag")
-        )
-        theirs = _clan_label(
-            trade.get("holder_clan_name"), trade.get("holder_clan_tag")
-        )
-        next_step = (
-            f"**Next:** You are in {mine}. They are in {theirs}.\n"
-            "One of you moves clans. Then send the cards in game."
+        next_lines = (
+            "**Next**\n"
+            "One of you moves to the other clan.\n"
+            "Send the cards in game.\n"
+            "Then tap **I sent my card** in /cards."
         )
     else:
-        next_step = "**Next:** Send the cards in game."
-    holder_clan_link = _clan_link(trade.get("holder_clan_tag"))
-    partner = (
-        f"**Trading with:** <@{int(trade['holder_discord_id'])}> · "
-        f"**{_escape_markdown(trade['holder_name'], limit=60)}** · "
-        f"`{trade['holder_tag']}`"
-        + (
-            f" · [Open their clan]({holder_clan_link})"
-            if holder_clan_link
-            else ""
+        next_lines = (
+            "**Next**\n"
+            "Send the cards in game.\n"
+            "Then tap **I sent my card** in /cards."
         )
-    )
+
     involved_clans = {
         _normalize_tag(trade.get("requester_clan_tag")),
         _normalize_tag(trade.get("holder_clan_tag")),
@@ -6274,26 +6304,30 @@ def _accepted_trade_dm(
     if move_needed and NOAHS_ARK_TAG not in involved_clans:
         quiet_lines.append(_noahs_ark_line())
     quiet_lines.append("-# Your card is reserved until you confirm.")
-    containers = _trade_dm_container(
-        f"{emojis.yes} Trade accepted",
-        (
-            f"**You give:** {given}\n"
-            f"**You receive:** {wanted}\n"
-            f"**Your account:** "
-            f"{_escape_markdown(trade['requester_name'], limit=60)} "
-            f"· `{trade['requester_tag']}`\n"
-            f"{partner}"
-        ),
-        extra=[Text(content=(
-            f"{next_step}\n"
-            "Then open /cards and tap **I sent my card**.\n"
-            + "\n".join(quiet_lines)
-        ))],
-        accent=GREEN_ACCENT,
+    quiet_lines.append(
+        "-# Your account: "
+        f"{_escape_markdown(trade['requester_name'], limit=60)} · "
+        f"`{trade['requester_tag']}`"
     )
+
+    components: list = [
+        Text(content=f"## {emojis.yes} Trade accepted"),
+        Text(content=(
+            f"**You give:** {given}\n"
+            f"**You receive:** {wanted}"
+        )),
+        Separator(divider=True),
+        Text(content=partner_lines),
+        Separator(divider=True),
+        Text(content=next_lines),
+    ]
     if fwa_relevant:
-        containers.append(_fwa_warning())
-    return containers
+        components.extend([Separator(divider=False), _fwa_warning()])
+    components.extend([
+        Separator(divider=False),
+        Text(content="\n".join(quiet_lines)),
+    ])
+    return components
 
 
 def _holder_accept_feedback(
@@ -6304,52 +6338,81 @@ def _holder_accept_feedback(
     dm_sent: bool,
     fwa_relevant: bool,
     tag: str,
-) -> list[Container]:
-    """The holder's half of the handoff, in the same grammar as the DM.
+) -> list:
+    """The holder's half of the handoff, in the same rhythm as the DM.
 
     No "Your account" line: this panel replaces the screen the holder just
-    acted from, so context already binds the account. FWA uses the same
-    compact callout as the requester DM, so there is one FWA presentation.
+    acted from, so context already binds the account. Root-level Text
+    Displays and Separators, no outer Container; the compact red FWA
+    callout in the flow is the only box, exactly as in the requester DM.
     """
     gives = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     receives = _card_label(CARD_BY_ID[str(taken_card_id)])
-    requester_clan = str(trade.get("requester_clan_name") or "").strip()
-    partner = (
+    partner_lines = (
         f"**Trading with:** <@{int(trade['requester_discord_id'])}> · "
-        f"**{_escape_markdown(trade.get('requester_name'), limit=60)}** · "
+        f"{_escape_markdown(trade.get('requester_name'), limit=60)} · "
         f"`{trade['requester_tag']}`"
-        + (
-            f" · {_escape_markdown(requester_clan, limit=50)}"
-            if requester_clan
-            else ""
+    )
+    requester_clan = str(trade.get("requester_clan_name") or "").strip()
+    if requester_clan:
+        partner_lines += (
+            f"\n**Their clan:** {_escape_markdown(requester_clan, limit=50)}"
         )
-    )
-    next_step = (
-        "**Next:** Move to the same clan. Then send your card in game."
-        if status == "move_needed"
-        else "**Next:** Send your card in game."
-    )
+    if status == "move_needed":
+        next_lines = (
+            "**Next**\n"
+            "One of you moves to the other clan.\n"
+            "Send your card in game.\n"
+            "Then tap **I sent my card** in **My trades**."
+        )
+    else:
+        next_lines = (
+            "**Next**\n"
+            "Send your card in game.\n"
+            "Then tap **I sent my card** in **My trades**."
+        )
     delivery = (
         "I told them by DM."
         if dm_sent
         else f"I could not DM <@{int(trade['requester_discord_id'])}>. "
         "Please ping them."
     )
-    feedback = _trade_feedback(
-        "Trade accepted",
-        (
+    normalized = _normalize_tag(tag)
+    components: list = [
+        Text(content=f"# {emojis.yes} Trade accepted"),
+        Text(content=(
             f"**You give:** {gives}\n"
-            f"**You receive:** {receives}\n"
-            f"{partner}\n\n"
-            f"{next_step}\n"
-            "Then open **My trades** and tap **I sent my card**.\n"
-            f"-# The exact cards are reserved. {delivery}"
-        ),
-        tag,
-    )
+            f"**You receive:** {receives}"
+        )),
+        Separator(divider=True),
+        Text(content=partner_lines),
+        Separator(divider=True),
+        Text(content=next_lines),
+    ]
     if fwa_relevant:
-        feedback.append(_fwa_warning())
-    return feedback
+        components.extend([Separator(divider=False), _fwa_warning()])
+    components.extend([
+        Separator(divider=False),
+        Text(content=(
+            f"-# The exact cards are reserved. {delivery}"
+        )),
+        Separator(divider=True),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"cards_trades:{normalized}",
+                label="My trades",
+                emoji=TRADES_EMOJI,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_dashboard:{normalized}",
+                label="Collection",
+                emoji=RETURN_EMOJI,
+            ),
+        ]),
+    ])
+    return components
 
 
 async def _trade_involves_fwa(mongo, trade: dict) -> bool:
@@ -7285,13 +7348,15 @@ CANCELLED_DM_TITLE = "Card swap cancelled"
 
 
 def _cancelled_dm_detail(trade: dict, *, reader_role: str, released: bool) -> str:
+    # One fact per line, so the truth about what moved is easy to find.
     return (
-        f"The other player cancelled it. {_swap_cancel_note(trade, reader_role)} "
+        "The other player cancelled it.\n"
+        f"{_swap_cancel_note(trade, reader_role)}\n"
         + (
             "The remaining exact-card reservations were released."
             if released
-            else "Releasing the reserved cards is still finishing; "
-            "open Find trades in a moment."
+            else "Releasing the reserved cards is still finishing. "
+            "Open Find trades in a moment."
         )
     )
 
@@ -10506,12 +10571,19 @@ def _gem_ask_confirm_view(account, card, holder_name: str, holder_tag: str):
     return [Container(accent_color=GOLD_ACCENT, components=[
         Text(content=f"## {emojis.card_give} This will cost you {cost} gems"),
         Text(content=(
-            f"You have no spare **{category.short_name}** card to give back "
-            f"for {_card_label(card)}.\n"
-            f"**If {_escape_markdown(holder_name, limit=40)} agrees:** they "
-            "post the trade in game. You tap Trade, then **Use Gems** — "
-            f"**{cost} gems** {emojis.gems}.\n"
-            "You keep every card you own. Nothing is reserved."
+            f"You have no **{category.short_name}** spare to give back "
+            f"for {_card_label(card)}."
+        )),
+        Separator(divider=True),
+        Text(content=(
+            f"**If {_escape_markdown(holder_name, limit=40)} agrees**\n"
+            "They post the trade in game.\n"
+            f"You tap Trade, then **Use Gems** — **{cost} gems** "
+            f"{emojis.gems}."
+        )),
+        Separator(divider=False),
+        Text(content=(
+            "-# You keep every card you own. Nothing is reserved."
         )),
         ActionRow(components=[
             Button(
@@ -10547,12 +10619,23 @@ def _gem_ask_dm(ask: dict, *, preview: bool = False) -> list[Container]:
         f"{emojis.card_give} Somebody needs your help",
         (
             f"**{_escape_markdown(ask.get('asker_name'), limit=40)}** is "
-            f"missing {_card_label(card)}. You have a spare.\n"
-            f"They have no **{category.short_name}** spare to give back. "
-            f"They pay **{ask.get('gem_cost')} gems** {emojis.gems} instead.\n"
-            "**If you say yes:** post the trade in game — offer your "
-            f"{_card_label(card)}, ask for any **{category.short_name}** card."
+            f"missing {_card_label(card)}.\n"
+            "You have a spare."
         ),
+        extra=[
+            Text(content=(
+                f"They have no **{category.short_name}** spare to give "
+                "back.\n"
+                f"They pay **{ask.get('gem_cost')} gems** {emojis.gems} "
+                "instead."
+            )),
+            Text(content=(
+                "**If you say yes**\n"
+                "Post the trade in game.\n"
+                f"Offer your {_card_label(card)}. Ask for any "
+                f"**{category.short_name}** card."
+            )),
+        ],
         accent=GOLD_ACCENT,
         controls=[ActionRow(components=[
             Button(

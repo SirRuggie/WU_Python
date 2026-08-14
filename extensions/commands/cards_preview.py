@@ -25,7 +25,7 @@ from hikari.impl import (
 from extensions.commands import cards as cards_command
 from extensions.tasks import cards_deadlines
 from utils import cards
-from utils.constants import GREEN_ACCENT, RED_ACCENT
+from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 from utils.todo_data import Account
 
@@ -264,7 +264,7 @@ class CardsDmPreview(
             lightbulb.Choice("21 · Dashboard + editor ready", "screens_core"),
             lightbulb.Choice("22 · Find trades, holders, My trades", "screens_trade"),
             lightbulb.Choice("23 · Upload prompt + progress", "scan_screens"),
-            lightbulb.Choice("24 · Notices (success + failure)", "notices"),
+            lightbulb.Choice("24 · Compact callouts + notices", "callouts"),
         ],
     )
 
@@ -588,13 +588,43 @@ async def _send_previews(
             ),
         )
 
-        # 24. One success notice and one failure notice, for the accent canon.
+        # 24. The compact-callout primitive in all four semantic colors, one
+        # message so the sizes compare directly, plus the real accepted-trade
+        # message carrying its FWA callout - the state the owner inspects
+        # before this primitive is standardized across WU Wizard. Then one
+        # success and one failure notice for the accent canon.
         await panel(
-            "notices", "24a · Notice, collection saved",
+            "callouts", "24a · Callout samples — red, gold, blue, green",
+            [
+                cards_command._compact_callout(
+                    RED_ACCENT, cards_command.FWA_WARNING_TEXT,
+                ),
+                cards_command._compact_callout(
+                    GOLD_ACCENT,
+                    "⏳ **Waiting for you**\nAnswer this trade in **My trades**.",
+                ),
+                cards_command._compact_callout(
+                    BLUE_ACCENT,
+                    "ℹ️ **Need a place to trade?**\nOpen Noahs Ark · `#8VPQCR2R`",
+                ),
+                cards_command._compact_callout(
+                    GREEN_ACCENT,
+                    "✅ **Saved**\nYour collection is up to date.",
+                ),
+            ],
+        )
+        await panel(
+            "callouts", "24b · Accepted trade + FWA callout",
+            cards_command._accepted_trade_dm(
+                dict(one, status="move_needed"), fwa_relevant=True
+            ),
+        )
+        await panel(
+            "callouts", "24c · Notice, collection saved",
             cards_command._scan_saved_notice(preview_account, pending=3),
         )
         await panel(
-            "notices", "24b · Notice, search unavailable",
+            "callouts", "24d · Notice, search unavailable",
             cards_command._search_unavailable_notice(PREVIEW_TAG),
         )
 

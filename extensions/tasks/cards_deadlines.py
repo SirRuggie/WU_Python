@@ -47,21 +47,20 @@ PROPOSAL_EXPIRED_DETAIL = (
 )
 AUTO_DEDUCT_TITLE = "Your card was deducted automatically"
 AUTO_DEDUCT_DETAIL_MOVED = (
-    "The other player confirmed they sent theirs over 7 days ago. "
-    "We did not hear back from you, so one copy was removed. "
-    "If this is wrong, open /cards, tap **Update collection**, and "
-    "set your real count."
+    "The other player confirmed over 7 days ago. You did not answer.\n"
+    "One copy of your card was removed.\n"
+    "If this is wrong: set your real count in **Update collection**."
 )
 AUTO_DEDUCT_DETAIL_NO_SPARE = (
-    "The other player confirmed theirs over 7 days ago. "
+    "The other player confirmed over 7 days ago.\n"
     "Your collection no longer showed a spare, so nothing was changed."
 )
 SWAP_CLOSED_OWED_TITLE = "Card swap closed"
 SWAP_CLOSED_OWED_DETAIL = (
-    "The other player never confirmed. Their collection no longer "
-    "showed a spare of the card you were waiting for, so it was not "
-    "added. If you did receive it in game, open /cards, tap "
-    "**Update collection**, and set your count."
+    "The other player never confirmed.\n"
+    "Their collection had no spare left, so the card was not added.\n"
+    "If you did receive it in game: set your count in "
+    "**Update collection**."
 )
 
 
@@ -301,7 +300,7 @@ async def _close_abandoned_swaps(mongo, bot, *, now) -> int:
                     title="Card swap closed",
                     detail=(
                         "Neither of you confirmed within 7 days, so it was "
-                        "closed. Both cards are free again and nothing was "
+                        "closed.\nBoth cards are free again. Nothing was "
                         "changed."
                     ),
                 )

@@ -6398,7 +6398,7 @@ def test_the_gem_ask_states_the_price_before_anything_is_sent():
     text = _view_text(view)
 
     assert "50 gems" in text
-    assert "they post the trade in game" in text
+    assert "They post the trade in game." in text
     assert "Nothing is reserved" in text
     # A price without the gem mark reads as points or coins to somebody
     # skimming in a second language.
@@ -6447,7 +6447,8 @@ def test_the_gem_ask_dm_tells_the_holder_they_post_it():
 
     assert "spare to give back" in text
     assert "50 gems" in text
-    assert "**If you say yes:** post the trade in game" in text
+    assert "**If you say yes**" in text
+    assert "Post the trade in game." in text
     # It is not a trade record, so nothing may claim to be held.
     assert "reserved" not in text.lower().replace(
         "nothing is reserved", ""
@@ -9283,21 +9284,32 @@ def test_the_accepted_dm_is_self_contained_and_carries_optional_regions():
 
     assert "<@222>" in text, "the partner's Discord identity is present"
     assert "`#H`" in text
-    assert "**Your account:**" in text and "`#ME`" in text
+    assert "-# Your account:" in text and "`#ME`" in text
     assert "**Trading with:**" in text
+    assert "**Their clan:**" in text
     assert "[Open their clan]" in text
     assert "OpenClanProfile&tag=B" in text
     # Different clans: the optional meeting place renders as one quiet line
-    # inside the main container - never another card.
-    assert len(view) == 1
+    # in the flow - never another card. The whole DM is unboxed root
+    # composition; a container appears only when a colored callout earns it.
+    def containers(items):
+        found = []
+        for item in items:
+            built = item.build()
+            payload = built[0] if isinstance(built, tuple) else built
+            if int(payload["type"]) == 17:
+                found.append(payload)
+        return found
+
+    assert containers(view) == [], "no card without a callout"
     assert "-# ℹ️ Need a place to trade?" in text
     assert "#8VPQCR2R" in text
-    # No FWA flag, no warning callout.
+    # No FWA flag, no warning block.
     assert "FWA" not in text
 
     warned = cards_command._accepted_trade_dm(trade, fwa_relevant=True)
     warned_text = _view_text(warned)
-    assert len(warned) == 2, "the FWA warning is its own compact callout"
+    assert len(containers(warned)) == 1, "the compact callout is the only box"
     assert "⚠️ **FWA — Wait for war**" in warned_text
     assert "Do not trade until war starts." in warned_text
 
