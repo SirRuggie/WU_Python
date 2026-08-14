@@ -7245,7 +7245,25 @@ def test_ready_to_trade_button_makes_the_category_matchable(monkeypatch):
     # Counts survived, and the screen now says the state changed.
     assert document["cards"]["wizard"] == 3
     assert document["cards"]["root_rider"] == cards.MISSING
-    assert "Ready to trade." in _view_text(result)
+    nodes = _view_nodes(result)
+    ready_state = "**Ready to trade.**\nOther players can see these spares."
+    ready_state_positions = [
+        index for index, node in enumerate(nodes)
+        if node.get("content") == ready_state
+    ]
+    picker_position = next(
+        index for index, node in enumerate(nodes)
+        if str(node.get("custom_id", "")).startswith("cards_qpick:")
+    )
+    scanner_position = next(
+        index for index, node in enumerate(nodes)
+        if str(node.get("custom_id", "")).startswith("cards_scan_start:")
+    )
+    ids = {str(node.get("custom_id", "")) for node in nodes}
+
+    assert len(ready_state_positions) == 1
+    assert picker_position < ready_state_positions[0] < scanner_position
+    assert not any(custom_id.startswith("cards_ready:") for custom_id in ids)
     assert "is ready to trade." in _view_text(result)
 
 

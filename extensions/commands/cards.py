@@ -3351,18 +3351,23 @@ def _quantity_editor(
             content="-# This card is in a trade and cannot change."
         ))
 
-    # The divider belongs to whatever comes next, not to the controls. Ending
-    # the block above with one drew two in a row whenever Ready to trade was
-    # absent, which is every category that is already tradeable.
-    if not complete:
-        body.extend([
-            Separator(divider=True),
+    # Keep the completed state where the Ready to trade control used to be.
+    # The status at the top is easy to miss after a phone redraw because the
+    # member remains beside the button they just tapped. Replacing that button
+    # with its outcome makes the state change visible without another action.
+    body.append(Separator(divider=True))
+    if complete:
+        body.append(Text(
+            content="**Ready to trade.**\nOther players can see these spares."
+        ))
+    else:
+        body.append(
             ActionRow(components=[Button(
                 style=hikari.ButtonStyle.PRIMARY,
                 custom_id=f"cards_ready:{tag}|{category_id}",
                 label="Ready to trade",
-            )]),
-        ])
+            )])
+        )
 
     # Below the manual controls, not beside them. Typing is the main way to do
     # this; scanning is the faster alternative, and putting it up top made two
