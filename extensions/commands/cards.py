@@ -104,6 +104,7 @@ MATCH_RESULT_LIMIT = 10
 # anything to be added later.
 HOLDER_RESULT_LIMIT = 5
 TRADE_VIEW_LIMIT = 5
+PLAYER_LOOKUP_TEXT_LIMIT = 4_000
 MAX_OPEN_PROPOSALS_PER_ACCOUNT = 25
 COMMITTED_TRADE_FETCH_LIMIT = 100
 PROPOSAL_TRADE_FETCH_LIMIT = 250
@@ -4360,6 +4361,8 @@ def _player_spares_view(
     documents: list[dict],
     *,
     display_name: str,
+    lookup_value: str | None = None,
+    focused_tag: str | None = None,
 ) -> list[Container]:
     """Everything one player has spare, per account.
 
@@ -4368,12 +4371,8 @@ def _player_spares_view(
     that is actually sitting on an alt you cannot reach.
     """
     mine = normalize_cards(viewer_inventory.get("cards"))
-    body: list = [
-        Text(content=f"# {emojis.magnifier} {_escape_markdown(display_name)}"),
-    ]
-    if documents:
-        body.append(Separator(divider=True))
-
+    title = f"# {emojis.magnifier} {_escape_markdown(display_name)}"
+    rendered_accounts: list[tuple[dict, list, str]] = []
     total = 0
     for document in sorted(
         documents, key=lambda d: str(d.get("player_name") or "")
@@ -4396,7 +4395,7 @@ def _player_spares_view(
         account_lines = [heading]
         if not held:
             account_lines.append("-# No spares on this account right now.")
-            body.append(Text(content="\n".join(account_lines)))
+            rendered_accounts.append((document, held, "\n".join(account_lines)))
             continue
         for category in CATEGORIES:
             in_category = [c for c in held if c.category == category.id]
@@ -4415,16 +4414,123 @@ def _player_spares_view(
                 f"{category_markup(category.id)} **{category.short_name}**\n"
                 + "\n".join(lines)
             )
-        # One bounded Text Display per account preserves the per-account
-        # truth while keeping the handler's maximum 25-account result inside
-        # Discord's 40-component message limit.
-        body.append(Text(content="\n".join(account_lines)[:4000]))
+        rendered_accounts.append((document, held, "\n".join(account_lines)))
+
+    nothing_spare = (
+        "-# Nothing spare anywhere. Their collection is recorded, they "
+        "just have no duplicates to give."
+    )
+    full_text_length = len(title) + sum(
+        len(content) for _document, _held, content in rendered_accounts
+    )
+    if total == 0:
+        full_text_length += len(nothing_spare)
+
+    # Text Display's 4,000-character ceiling applies to the whole Components
+    # V2 message, not to each Text component independently. Keep the familiar
+    # all-account view when it fits. Rich multi-account owners use the same
+    # cards_browse select to focus one complete account at a time, so no spare
+    # is truncated and old d:/t: lookup values remain valid.
+    selected_tag = _normalize_tag(focused_tag)
+    focused_mode = bool(selected_tag) or full_text_length > PLAYER_LOOKUP_TEXT_LIMIT
+    selected_account: tuple[dict, list, str] | None = None
+    if focused_mode and rendered_accounts:
+        if selected_tag:
+            selected_account = next(
+                (
+                    rendered
+                    for rendered in rendered_accounts
+                    if _normalize_tag(rendered[0].get("_id")) == selected_tag
+                ),
+                None,
+            )
+            if selected_account is None:
+                return _notice(
+                    "Nothing to show",
+                    "That linked account is no longer available. Open "
+                    "**Find trades** again.",
+                )
+        else:
+            selected_account = next(
+                (
+                    rendered
+                    for rendered in rendered_accounts
+                    if _normalize_tag(rendered[0].get("_id"))
+                    == _normalize_tag(viewer_tag)
+                ),
+                rendered_accounts[0],
+            )
+        selected_tag = _normalize_tag(selected_account[0].get("_id"))
+
+    body: list = [Text(content=title)]
+    if focused_mode and selected_account is not None:
+        account_count = len(rendered_accounts)
+        note = (
+            f"-# Showing 1 of {account_count} linked accounts. "
+            "Choose another account below."
+            if account_count > 1
+            else ""
+        )
+        if note:
+            body.append(Text(content=note))
+
+        if account_count > 1:
+            if not lookup_value:
+                owner_id = selected_account[0].get("discord_id")
+                try:
+                    lookup_value = f"d:{int(owner_id)}" if owner_id else None
+                except (TypeError, ValueError):
+                    lookup_value = None
+            if not lookup_value:
+                return _notice(
+                    "Player lookup is too large",
+                    "Open **Find trades** again for a fresh player list.",
+                )
+            options = []
+            for document, held, _content in rendered_accounts:
+                tag = _normalize_tag(document.get("_id"))
+                player = _plain(document.get("player_name"), limit=70)
+                label = f"{player} · {tag}" if tag else player
+                clan = _plain(document.get("clan_name"), limit=65)
+                spare_count = len(held)
+                detail = f"{spare_count} spare{'s' if spare_count != 1 else ''}"
+                if clan and clan != "Unknown":
+                    detail = f"{clan} · {detail}"
+                options.append(SelectOption(
+                    label=label[:100],
+                    value=f"{lookup_value}|a:{tag}",
+                    description=detail[:100],
+                    is_default=tag == selected_tag,
+                ))
+            body.append(ActionRow(components=[TextSelectMenu(
+                custom_id=f"cards_browse:{viewer_tag}",
+                placeholder="Choose a linked account",
+                max_values=1,
+                options=options,
+            )]))
+
+        body.append(Separator(divider=True))
+        account_content = selected_account[2]
+        reserved_text = len(title) + len(note)
+        if total == 0:
+            reserved_text += len(nothing_spare)
+        if len(account_content) + reserved_text > PLAYER_LOOKUP_TEXT_LIMIT:
+            return _notice(
+                "Player lookup is too large",
+                "That account has more spare-card text than Discord can show "
+                "safely. Nothing was changed.",
+            )
+        body.append(Text(content=account_content))
+    else:
+        if rendered_accounts:
+            body.append(Separator(divider=True))
+        body.extend(
+            Text(content=content)
+            for _document, _held, content in rendered_accounts
+        )
 
     if total == 0:
-        body.append(Text(content=(
-            "-# Nothing spare anywhere. Their collection is recorded, they "
-            "just have no duplicates to give."
-        )))
+        body.append(Text(content=nothing_spare))
     body.append(ActionRow(components=[
         Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -13102,6 +13208,18 @@ async def cards_browse(
     """Everything one player has spare, looked up by their name."""
     values = list(getattr(ctx.interaction, "values", ()) or ())
     picked = str(values[0]) if values else ""
+    lookup_value, separator, focus_value = picked.partition("|")
+    focused_tag = None
+    if separator:
+        if "|" in focus_value or not focus_value.startswith("a:"):
+            return _notice(
+                "Unknown player", "Open `/cards` again for a fresh list."
+            )
+        focused_tag = _normalize_tag(focus_value[2:])
+        if not focused_tag:
+            return _notice(
+                "Unknown player", "Open `/cards` again for a fresh list."
+            )
     account, inventory, problem = await _load_target(
         ctx, action_id, coc_client=coc_client, mongo=mongo
     )
@@ -13117,9 +13235,9 @@ async def cards_browse(
     # The menu carries whichever key the inventory could be found by, so a
     # record written before discord_id existed is still reachable.
     query: dict = {"guild_id": int(guild_id), "trading_paused": {"$ne": True}}
-    if picked.startswith("d:"):
+    if lookup_value.startswith("d:"):
         try:
-            discord_id = int(picked[2:])
+            discord_id = int(lookup_value[2:])
         except (TypeError, ValueError):
             return _notice(
                 "Unknown player", "Open `/cards` again for a fresh list."
@@ -13129,8 +13247,8 @@ async def cards_browse(
                 "Unknown player", "Open `/cards` again for a fresh list."
             )
         query["discord_id"] = discord_id
-    elif picked.startswith("t:"):
-        query["_id"] = _normalize_tag(picked[2:])
+    elif lookup_value.startswith("t:"):
+        query["_id"] = _normalize_tag(lookup_value[2:])
     else:
         return _notice("Unknown player", "Open `/cards` again for a fresh list.")
     # The same family boundary matching applies. Without it an alt parked in a
@@ -13161,6 +13279,19 @@ async def cards_browse(
             "since this menu was drawn. Open **Find trades** again.",
         )
 
+    safe_documents = [
+        _without_reserved_cards(document) for document in documents
+    ]
+    if focused_tag and not any(
+        _normalize_tag(document.get("_id")) == focused_tag
+        for document in safe_documents
+    ):
+        return _notice(
+            "Nothing to show",
+            "That linked account is no longer available. Open **Find trades** "
+            "again.",
+        )
+
     discord_id = documents[0].get("discord_id")
     names = _member_names(bot, [discord_id], guild_id=guild_id)
     display = (
@@ -13171,8 +13302,10 @@ async def cards_browse(
         _without_reserved_cards(inventory),
         # Reserved cards are masked here too: a card promised to an accepted
         # trade is not something a third player can ask for.
-        [_without_reserved_cards(document) for document in documents],
+        safe_documents,
         display_name=display,
+        lookup_value=lookup_value,
+        focused_tag=focused_tag,
     )
 
 

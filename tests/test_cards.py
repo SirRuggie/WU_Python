@@ -31,6 +31,11 @@ def _assert_discord_payload(view):
     # Discord counts nested Components V2 objects, but select options are data,
     # not components and carry no `type` field.
     assert len([node for node in nodes if "type" in node]) <= 40
+    text_nodes = [
+        node for node in nodes
+        if int(node.get("type", -1)) == int(hikari.ComponentType.TEXT_DISPLAY)
+    ]
+    assert sum(len(str(node.get("content") or "")) for node in text_nodes) <= 4_000
     custom_ids = [node["custom_id"] for node in nodes if "custom_id" in node]
     assert len(custom_ids) == len(set(custom_ids))
     for node in nodes:
@@ -7692,8 +7697,8 @@ def _run_player_lookup(monkeypatch, documents, picked, *, viewer=None):
     viewer.update({
         "guild_id": 1,
         "discord_id": 77,
-        "trusted_card_ids": [card.id for card in cards.CARDS],
     })
+    viewer.setdefault("trusted_card_ids", [card.id for card in cards.CARDS])
     monkeypatch.setattr(
         cards_command, "_load_target", _fake_load_target(account, viewer),
     )
@@ -7706,13 +7711,17 @@ def _run_player_lookup(monkeypatch, documents, picked, *, viewer=None):
         "#ME",
         coc_client=SimpleNamespace(),
         mongo=mongo,
-        bot=SimpleNamespace(),
+        bot=SimpleNamespace(cache=SimpleNamespace(
+            get_member=lambda _guild_id, _user_id: SimpleNamespace(
+                display_name="Viewer",
+            ),
+        )),
     ))
     return result, inventories
 
 
 def test_real_player_lookup_handles_the_invokers_seven_linked_accounts(monkeypatch):
-    """The live d:<self> choice used to overflow Discord at 46 components."""
+    """The live d:<self> choice must fit both Discord message budgets."""
     trusted = [card.id for card in cards.CARDS]
     documents = []
     for index in range(7):
@@ -7735,17 +7744,181 @@ def test_real_player_lookup_handles_the_invokers_seven_linked_accounts(monkeypat
     assert option["value"] == "d:77"
 
     view, inventories = _run_player_lookup(
-        monkeypatch, documents, option["value"],
+        monkeypatch, documents, option["value"], viewer=documents[0],
     )
 
     text = _view_text(view)
-    assert all(f"Own account {index}" in text for index in range(7))
+    assert "Own account 0" in text
+    assert "Own account 1" not in text
+    payload = [component.build() for component in view]
+    nodes = list(_walk_payload(payload))
+    selects = [
+        node for node in nodes
+        if int(node.get("type", -1)) == int(hikari.ComponentType.TEXT_SELECT_MENU)
+    ]
+    assert len(selects) == 1
+    assert selects[0]["custom_id"] == "cards_browse:#ME"
+    account_options = selects[0]["options"]
+    assert [entry["value"] for entry in account_options] == [
+        "d:77|a:#ME",
+        *(f"d:77|a:#ALT{index}" for index in range(1, 7)),
+    ]
+    assert all(
+        f"Own account {index}" in account_options[index]["label"]
+        for index in range(7)
+    )
     assert inventories.query == {
         "guild_id": 1,
         "trading_paused": {"$ne": True},
         "discord_id": 77,
         "clan_tag": {"$in": ["#HOME"]},
     }
+    _assert_discord_payload(view)
+
+    # Every linked account remains losslessly reachable through the same
+    # canonical cards_browse custom ID. No account body is silently clipped.
+    for index, entry in enumerate(account_options):
+        focused, _ = _run_player_lookup(
+            monkeypatch, documents, entry["value"], viewer=documents[0],
+        )
+        focused_text = _view_text(focused)
+        assert f"Own account {index}" in focused_text
+        assert all(card.name in focused_text for card in cards.CARDS)
+        assert all(
+            f"Own account {other}" not in focused_text
+            for other in range(7)
+            if other != index
+        )
+        _assert_discord_payload(focused)
+
+
+def test_real_player_lookup_handles_one_self_linked_account(monkeypatch):
+    document = _spare_inventory(
+        "#ME", discord_id=77, name="Only own account", spares=["wizard"],
+    )
+    document.update({
+        "guild_id": 1,
+        "trusted_card_ids": [card.id for card in cards.CARDS],
+    })
+
+    view, inventories = _run_player_lookup(
+        monkeypatch, [document], "d:77", viewer=document,
+    )
+
+    assert "Only own account" in _view_text(view)
+    assert "Wizard" in _view_text(view)
+    assert inventories.query["discord_id"] == 77
+    assert not _picker_options(view)
+    _assert_discord_payload(view)
+
+
+def test_real_player_lookup_handles_another_users_multiple_accounts(monkeypatch):
+    documents = [
+        _spare_inventory(
+            "#OTHER1", discord_id=88, name="Other main", spares=["wizard"],
+        ),
+        _spare_inventory(
+            "#OTHER2", discord_id=88, name="Other alt", spares=["minion"],
+        ),
+    ]
+    for document in documents:
+        document.update({
+            "guild_id": 1,
+            "trusted_card_ids": [card.id for card in cards.CARDS],
+        })
+
+    view, inventories = _run_player_lookup(monkeypatch, documents, "d:88")
+
+    text = _view_text(view)
+    assert "Other main" in text
+    assert "Other alt" in text
+    assert "Wizard" in text
+    assert "Minion" in text
+    assert inventories.query["discord_id"] == 88
+    _assert_discord_payload(view)
+
+
+def test_self_lookup_focus_keeps_target_and_viewer_trust_separate(monkeypatch):
+    viewer = _spare_inventory("#ME", discord_id=77, name="Viewer")
+    viewer.update({
+        "guild_id": 1,
+        "trusted_card_ids": [
+            card.id for card in cards.CARDS if card.id != "night_witch"
+        ],
+    })
+    viewer["cards"].update({
+        "night_witch": cards.MISSING,
+        "minion": cards.MISSING,
+    })
+
+    alt = _spare_inventory("#ALT", discord_id=77, name="Own alt")
+    alt.update({
+        "guild_id": 1,
+        "trusted_card_ids": [
+            card.id for card in cards.CARDS if card.id != "wizard"
+        ],
+    })
+    alt["cards"].update({
+        "wizard": cards.DUPLICATE,
+        "night_witch": cards.DUPLICATE,
+        "minion": cards.DUPLICATE,
+    })
+
+    view, _inventories = _run_player_lookup(
+        monkeypatch, [viewer, alt], "d:77|a:#ALT", viewer=viewer,
+    )
+
+    text = _view_text(view)
+    assert "Own alt" in text
+    assert "Wizard" not in text  # untrusted raw target supply is neutralized
+    night_witch_line = next(
+        line for line in text.splitlines() if "Night Witch" in line
+    )
+    minion_line = next(line for line in text.splitlines() if "Minion" in line)
+    assert "you need this" not in night_witch_line  # untrusted viewer 0 is neutralized
+    assert "you need this" in minion_line      # trusted viewer need remains canonical
+    _assert_discord_payload(view)
+
+
+def test_self_lookup_full_needed_account_stays_within_total_text_budget(monkeypatch):
+    trusted = [card.id for card in cards.CARDS]
+    viewer = _spare_inventory("#ME", discord_id=77, name="Viewer")
+    viewer.update({
+        "guild_id": 1,
+        "trusted_card_ids": trusted,
+        "cards": {card.id: cards.MISSING for card in cards.CARDS},
+    })
+    alt = _spare_inventory("#ALT", discord_id=77, name="Own full alt")
+    alt.update({
+        "guild_id": 1,
+        "trusted_card_ids": trusted,
+        "cards": {card.id: cards.DUPLICATE for card in cards.CARDS},
+    })
+
+    view, _inventories = _run_player_lookup(
+        monkeypatch, [viewer, alt], "d:77|a:#ALT", viewer=viewer,
+    )
+
+    text = _view_text(view)
+    assert all(card.name in text for card in cards.CARDS)
+    assert text.count("you need this") == len(cards.CARDS)
+    _assert_discord_payload(view)
+
+
+def test_real_player_lookup_stale_focused_account_fails_cleanly(monkeypatch):
+    document = _spare_inventory(
+        "#ME", discord_id=77, name="Viewer", spares=["wizard"],
+    )
+    document.update({
+        "guild_id": 1,
+        "trusted_card_ids": [card.id for card in cards.CARDS],
+    })
+
+    view, _inventories = _run_player_lookup(
+        monkeypatch, [document], "d:77|a:#GONE", viewer=document,
+    )
+
+    assert "Nothing to show" in _view_text(view)
     _assert_discord_payload(view)
 
 
@@ -7777,10 +7950,33 @@ def test_real_player_lookup_shows_other_player_but_sanitizes_untrusted_spares(
     _assert_discord_payload(view)
 
 
+def test_real_player_lookup_keeps_legacy_tag_values_compatible(monkeypatch):
+    document = _spare_inventory(
+        "#LEGACY", discord_id=None, name="Legacy player", spares=["minion"],
+    )
+    document.update({
+        "guild_id": 1,
+        "trusted_card_ids": [card.id for card in cards.CARDS],
+    })
+
+    view, inventories = _run_player_lookup(
+        monkeypatch, [document], "t:#LEGACY",
+    )
+
+    assert "Legacy player" in _view_text(view)
+    assert "Minion" in _view_text(view)
+    assert inventories.query["_id"] == "#LEGACY"
+    _assert_discord_payload(view)
+
+
 @pytest.mark.parametrize(
     ("picked", "message"),
     [
         ("d:not-a-number", "Unknown player"),
+        ("d:0", "Unknown player"),
+        ("d:-1", "Unknown player"),
+        ("d:77|bad-focus", "Unknown player"),
+        ("d:77|a:", "Unknown player"),
         ("d:999", "Nothing to show"),
         ("t:#GONE", "Nothing to show"),
     ],
