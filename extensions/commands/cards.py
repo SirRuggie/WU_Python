@@ -6956,10 +6956,23 @@ async def _active_trades(
     bot: hikari.GatewayBot | None = None,
 ) -> list[dict]:
     now = datetime.now(timezone.utc)
+    normalized_tag = _normalize_tag(tag)
     participant = {
         "$or": [
-            {"requester_tag": _normalize_tag(tag)},
-            {"holder_tag": _normalize_tag(tag)},
+            {"requester_tag": normalized_tag},
+            {"holder_tag": normalized_tag},
+        ],
+    }
+    unfinished_participant = {
+        "$or": [
+            {
+                "requester_tag": normalized_tag,
+                "requester_confirmed_at": {"$exists": False},
+            },
+            {
+                "holder_tag": normalized_tag,
+                "holder_confirmed_at": {"$exists": False},
+            },
         ],
     }
     await _reconcile_trade_cleanups(mongo, guild_id=int(guild_id))
@@ -7013,9 +7026,15 @@ async def _active_trades(
         "$and": [
             participant,
             {"$or": [
-                {"status": {"$in": [
-                    "reserving", "move_needed", "ready", "accepted"
-                ]}},
+                {"status": "reserving"},
+                {"$and": [
+                    {"status": {"$in": list(SWAP_LIVE_STATUSES)}},
+                    # A role confirmation is recorded only after that card's
+                    # debit and receiver credit are acknowledged. The other
+                    # account still sees the same live trade and can finish
+                    # its own leg.
+                    unfinished_participant,
+                ]},
                 {"status": "completing", "expires_at": {"$gt": now}},
             ]},
         ],

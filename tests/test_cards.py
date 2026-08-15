@@ -2512,6 +2512,98 @@ def test_pending_move_needed_and_ready_trades_remain_visible_without_deadlines()
     }
 
 
+@pytest.mark.parametrize("status", list(cards_command.SWAP_LIVE_STATUSES))
+@pytest.mark.parametrize(
+    ("confirmed_role", "viewer_tag", "visible"),
+    [
+        (None, "#ME", True),
+        ("requester", "#ME", False),
+        ("requester", "#HOLDER", True),
+        ("holder", "#HOLDER", False),
+        ("holder", "#ME", True),
+    ],
+)
+def test_active_my_trades_visibility_tracks_the_selected_account_leg(
+    status, confirmed_role, viewer_tag, visible,
+):
+    now = datetime.now(timezone.utc)
+    trade = _trade_document(trade_id="participant-leg")
+    trade.update({
+        "kind": "trade",
+        "status": status,
+        "updated_at": now,
+        # Both account roles may belong to one Discord user. The selected
+        # account tag, not this shared owner ID, determines visibility.
+        "requester_discord_id": 111,
+        "holder_discord_id": 111,
+    })
+    if confirmed_role is not None:
+        trade[f"{confirmed_role}_confirmed_at"] = now
+    trades = _FakeTradeCollection()
+    trades.docs[trade["_id"]] = trade
+    mongo = SimpleNamespace(
+        card_trades=trades,
+        card_inventories=_FakeInventoryCollection([]),
+    )
+
+    active = asyncio.run(cards_command._active_trades(
+        mongo, tag=viewer_tag, guild_id=1
+    ))
+
+    assert bool(active) is visible
+    if visible:
+        assert [row["_id"] for row in active] == [trade["_id"]]
+
+
+@pytest.mark.parametrize("status", ["completing", "needs_review"])
+def test_active_my_trades_keeps_recovery_states_visible_to_both_accounts(status):
+    now = datetime.now(timezone.utc)
+    trade = _trade_document(trade_id=f"recovery-{status}")
+    trade.update({
+        "kind": "trade",
+        "status": status,
+        "updated_at": now,
+        "requester_confirmed_at": now,
+        "expires_at": now + timedelta(minutes=5),
+        "review_expires_at": now + timedelta(days=1),
+    })
+    trades = _FakeTradeCollection()
+    trades.docs[trade["_id"]] = trade
+    mongo = SimpleNamespace(
+        card_trades=trades,
+        card_inventories=_FakeInventoryCollection([]),
+    )
+
+    for viewer_tag in ("#ME", "#HOLDER"):
+        active = asyncio.run(cards_command._active_trades(
+            mongo, tag=viewer_tag, guild_id=1
+        ))
+        assert [row["_id"] for row in active] == [trade["_id"]]
+
+
+def test_completed_trade_remains_out_of_both_active_account_lists():
+    now = datetime.now(timezone.utc)
+    trade = _trade_document(trade_id="completed")
+    trade.update({
+        "kind": "trade",
+        "status": "completed",
+        "updated_at": now,
+        "requester_confirmed_at": now,
+        "holder_confirmed_at": now,
+    })
+    trades = _FakeTradeCollection()
+    trades.docs[trade["_id"]] = trade
+    mongo = SimpleNamespace(
+        card_trades=trades,
+        card_inventories=_FakeInventoryCollection([]),
+    )
+
+    for viewer_tag in ("#ME", "#HOLDER"):
+        assert asyncio.run(cards_command._active_trades(
+            mongo, tag=viewer_tag, guild_id=1
+        )) == []
+
+
 def test_actionable_trades_are_returned_before_newer_review_records():
     now = datetime.now(timezone.utc)
     pending = _trade_document(trade_id="actionable")
@@ -2598,6 +2690,37 @@ def test_committed_trade_cannot_be_hidden_by_more_than_proposal_fetch_limit():
 
     assert active[0]["_id"] == "committed"
     assert len(active) == cards_command.PROPOSAL_TRADE_FETCH_LIMIT + 1
+
+
+def test_completed_legs_do_not_consume_the_committed_trade_fetch_limit():
+    now = datetime.now(timezone.utc)
+    trades = _FakeTradeCollection()
+    unfinished = _trade_document(trade_id="unfinished")
+    unfinished.update({
+        "kind": "trade",
+        "status": "ready",
+        "updated_at": now - timedelta(days=2),
+    })
+    trades.docs[unfinished["_id"]] = unfinished
+    for index in range(cards_command.COMMITTED_TRADE_FETCH_LIMIT + 10):
+        completed_leg = _trade_document(trade_id=f"my-done-leg-{index}")
+        completed_leg.update({
+            "kind": "trade",
+            "status": "ready",
+            "updated_at": now + timedelta(seconds=index),
+            "requester_confirmed_at": now,
+        })
+        trades.docs[completed_leg["_id"]] = completed_leg
+    mongo = SimpleNamespace(
+        card_trades=trades,
+        card_inventories=_FakeInventoryCollection([]),
+    )
+
+    active = asyncio.run(cards_command._active_trades(
+        mongo, tag="#ME", guild_id=1
+    ))
+
+    assert [trade["_id"] for trade in active] == ["unfinished"]
 
 
 def test_expired_completing_trade_remains_visible_as_needs_review():
@@ -6320,9 +6443,97 @@ def test_confirming_moves_only_your_own_card():
     assert inventories.documents["#HOLDER"]["trusted_card_ids"] == trusted
     assert inventories.documents["#ME"]["complete_categories"] == ready
     assert inventories.documents["#HOLDER"]["complete_categories"] == ready
-    # Only the confirmed card is unreserved.
-    assert given not in inventories.documents["#ME"]["card_trade_reservations"]
-    assert wanted in inventories.documents["#ME"]["card_trade_reservations"]
+    # Only the transferred card is unreserved, on both inventory documents.
+    # The other participant's promised card remains fenced until their leg.
+    for tag in ("#ME", "#HOLDER"):
+        reservations = inventories.documents[tag]["card_trade_reservations"]
+        assert given not in reservations
+        assert wanted in reservations
+
+
+def test_real_first_leg_hides_only_the_completed_same_owner_account():
+    now = datetime.now(timezone.utc)
+    trade = _agreed_trade()
+    trade.update({
+        "kind": "trade",
+        "updated_at": now,
+        "requester_discord_id": 111,
+        "holder_discord_id": 111,
+    })
+    owner = cards_command._reservation_owner(trade)
+    given, wanted = trade["given_card_id"], trade["wanted_card_id"]
+    trades = _FakeTradeCollection()
+    trades.docs[trade["_id"]] = dict(trade)
+    trades.docs.update(_lease_documents(trade))
+    inventories = _FakeInventoryCollection([
+        {
+            "_id": "#ME",
+            "guild_id": 1,
+            "cards": {given: cards.DUPLICATE, wanted: cards.MISSING},
+            "card_trade_reservations": {given: owner, wanted: owner},
+        },
+        {
+            "_id": "#HOLDER",
+            "guild_id": 1,
+            "cards": {given: cards.MISSING, wanted: cards.DUPLICATE},
+            "card_trade_reservations": {given: owner, wanted: owner},
+        },
+    ])
+    mongo = SimpleNamespace(
+        card_trades=trades,
+        card_inventories=inventories,
+    )
+
+    outcome, remaining, saved = asyncio.run(
+        cards_command._run_swap_leg_confirmation(
+            mongo,
+            trade,
+            role="requester",
+            now=now,
+            record_no_spare=False,
+        )
+    )
+
+    assert outcome == "moved"
+    assert remaining == cards.OWNED
+    assert saved["status"] == "ready"
+    assert saved["requester_confirmed_at"] == now
+    assert "holder_confirmed_at" not in saved
+    assert inventories.documents["#ME"]["cards"][given] == cards.OWNED
+    assert inventories.documents["#ME"]["cards"][wanted] == cards.MISSING
+    assert inventories.documents["#HOLDER"]["cards"][given] == cards.OWNED
+    assert inventories.documents["#HOLDER"]["cards"][wanted] == cards.DUPLICATE
+    for inventory in inventories.documents.values():
+        assert set(inventory["card_trade_reservations"]) == {wanted}
+    assert len([
+        row for row in trades.docs.values() if row.get("kind") == "lease"
+    ]) == 4, "terminal cleanup must not release the other leg's leases"
+
+    requester_active = asyncio.run(cards_command._active_trades(
+        mongo, tag="#ME", guild_id=1
+    ))
+    holder_active = asyncio.run(cards_command._active_trades(
+        mongo, tag="#HOLDER", guild_id=1
+    ))
+    unrelated_active = asyncio.run(cards_command._active_trades(
+        mongo, tag="#THIRD", guild_id=1
+    ))
+
+    assert requester_active == []
+    assert [row["_id"] for row in holder_active] == [trade["_id"]]
+    assert unrelated_active == []
+    holder_ids = {
+        str(node.get("custom_id")) for node in _view_nodes(
+            cards_command._trades_view(
+                Account(
+                    tag="#HOLDER", name="Holder", clan_tag="#HOME",
+                    clan_name="Home Clan", town_hall=18,
+                ),
+                holder_active,
+            )
+        )
+    }
+    assert "cards_swap_sent:trade-a|holder" in holder_ids
 
 
 def test_confirming_a_card_you_no_longer_hold_moves_nothing():
