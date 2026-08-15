@@ -250,12 +250,15 @@ def build_poll_components(document: dict) -> list[Container]:
                 custom_id=f"poll_end:{poll_id}",
             ),
         ]))
-        body.append(Text(content=(
-            f"-# {total} vote{'s' if total != 1 else ''} · "
-            "You can change your vote.\n"
-            f"-# ⏱️ Closes {_discord_timestamp(ends_at)} · "
-            f"<@{int(document['creator_id'])}>"
-        )))
+        body.extend([
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+            Text(content=(
+                f"-# {total} vote{'s' if total != 1 else ''} · "
+                "You can change your vote.\n"
+                f"-# ⏱️ Closes {_discord_timestamp(ends_at)} · "
+                f"<@{int(document['creator_id'])}>"
+            )),
+        ])
     else:
         body.append(Text(content=f"**Poll closed.** {_result_text(document, counts, total)}"))
         body.append(ActionRow(components=[

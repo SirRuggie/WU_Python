@@ -12,7 +12,6 @@ def test_extension_discovery_only_returns_loader_entry_points():
     assert "extensions.commands.accounts" in discovered
     assert "extensions.commands.cards" in discovered
     assert "extensions.commands.poll" in discovered
-    assert "extensions.commands.poll_bar_preview" in discovered
     assert "extensions.commands.todo" in discovered
     assert "extensions.commands.fwa.lazy_cwl" in discovered
     assert "extensions.commands.clan.dashboard.dashboard" in discovered
@@ -20,6 +19,24 @@ def test_extension_discovery_only_returns_loader_entry_points():
     assert "extensions.commands.fwa.helpers" not in discovered
     assert "extensions.commands.clan.info_hub.helpers" not in discovered
     assert "extensions.commands.recruit.dashboard.manage_roles" not in discovered
+
+
+def test_development_preview_extensions_are_retained_but_not_discovered():
+    discovered = set(startup.load_cogs(
+        disallowed={"example"}, disallowed_folders={"tickets"}
+    ))
+    preview_modules = {
+        "cards_bulk_preview": "extensions.commands.cards_bulk_preview",
+        "cards_preview": "extensions.commands.cards_preview",
+        "poll_bar_preview": "extensions.commands.poll_bar_preview",
+    }
+
+    assert startup.DISABLED_PREVIEW_EXTENSIONS == frozenset(preview_modules)
+    for module_stem, module_name in preview_modules.items():
+        source = startup.COMMANDS_ROOT / f"{module_stem}.py"
+        assert source.is_file()
+        assert startup._binds_loader(source)
+        assert module_name not in discovered
 
 
 def test_explicit_and_discovered_extensions_are_loaded_once():

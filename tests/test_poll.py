@@ -205,10 +205,10 @@ def test_public_poll_renderer_matches_the_approved_mobile_hierarchy():
     empty_bar = "░" * poll_command.POLL_BAR_WIDTH
 
     assert container["accent_color"] == int(poll_command.GOLD_ACCENT)
-    assert len(children) == 7
+    assert len(children) == 8
     assert len([
         node for node in _payload_nodes(view) if "type" in node
-    ]) == 13
+    ]) == 14
     assert text_children == [
         (
             "# 📊 Is this thing on\n"
@@ -226,14 +226,15 @@ def test_public_poll_renderer_matches_the_approved_mobile_hierarchy():
             f"<@{document['creator_id']}>"
         ),
     ]
-    assert [children[index]["type"] for index in (1, 3)] == [
+    assert [children[index]["type"] for index in (1, 3, 6)] == [
+        hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
     ]
-    assert all(children[index]["divider"] is True for index in (1, 3))
+    assert all(children[index]["divider"] is True for index in (1, 3, 6))
     assert all(
         children[index]["spacing"] == hikari.SpacingType.SMALL
-        for index in (1, 3)
+        for index in (1, 3, 6)
     )
 
     vote_rows = _vote_rows(view)
@@ -585,7 +586,7 @@ def test_public_poll_payload_stays_within_discord_component_and_id_limits():
         custom_ids = _custom_ids(view)
         component_count = len([node for node in nodes if "type" in node])
 
-        assert component_count == (14 if active else 11)
+        assert component_count == (15 if active else 11)
         assert component_count <= 40
         assert len(custom_ids) == len(set(custom_ids))
         assert custom_ids

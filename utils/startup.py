@@ -12,6 +12,14 @@ import coc
 
 COMMANDS_ROOT = Path("extensions/commands")
 
+# Development-only command modules retained for future visual testing. Removing
+# a module stem here re-enables its normal loader discovery.
+DISABLED_PREVIEW_EXTENSIONS = frozenset({
+    "cards_bulk_preview",
+    "cards_preview",
+    "poll_bar_preview",
+})
+
 
 def _binds_loader(module_path: Path) -> bool:
     """Return whether a module exposes a top-level name named ``loader``.
@@ -49,7 +57,10 @@ def load_cogs(disallowed: set[str], disallowed_folders: set[str] | None = None) 
             continue
         if any(part in disallowed_folders for part in relative.parts[:-1]):
             continue
-        if full_path.stem in disallowed:
+        if (
+            full_path.stem in disallowed
+            or full_path.stem in DISABLED_PREVIEW_EXTENSIONS
+        ):
             continue
         if not _binds_loader(full_path):
             continue
