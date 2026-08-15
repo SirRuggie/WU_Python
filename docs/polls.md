@@ -16,8 +16,8 @@ poll message.
 | `/poll view` | Server administrators | Inspect a poll and its named voter breakdown. |
 | `/poll active` | Server administrators | List polls that are currently open in the server. |
 | Vote buttons | All server members | Cast or change one vote on an open poll. |
-| **View voters (Admin)** | Server administrators | Open the named voter breakdown from a poll message. |
-| **End poll (Admin)** | Server administrators | Close an open poll immediately. Any administrator may close it, not only its creator. |
+| **View voters** | Server administrators | Open the named voter breakdown from a poll message. |
+| **End poll** | Server administrators | Close an open poll immediately. Any administrator may close it, not only its creator. |
 
 The commands are server-only and administrator-only. Component handlers repeat
 the relevant guild and administrator checks because the shared dispatcher does
@@ -44,11 +44,20 @@ Each member has one current vote. Choosing another option replaces the previous
 choice instead of adding a second vote. Voting stops once the persisted deadline
 passes or an administrator closes the poll.
 
+An active poll uses a gold Components V2 container with the question as its
+headline and optional details immediately below it. Every option uses the same
+two-line layout: its numbered label appears first, followed by a plain 20-cell
+`█`/`░` bar with an integer half-up percentage and compact vote count. Voting
+buttons use the same option numbers, while the total vote count, change-vote
+hint, closing time, and creator stay in a quiet footer.
+
 The public poll message shows option totals and percentages but never names the
 voters. Named votes are deliberately restricted to administrator-only
-`/poll view` and **View voters (Admin)** responses. This is visibility control, not an
-anonymous ballot: Discord user IDs remain stored with the poll so the bot can
-enforce one changeable vote and produce the administrator breakdown.
+`/poll view` and **View voters** responses. The public card does not show its
+Poll ID; administrator-only views and lists retain the ID for lookup. This is
+visibility control, not an anonymous ballot: Discord user IDs remain stored
+with the poll so the bot can enforce one changeable vote and produce the
+administrator breakdown.
 
 ## Persistence and deadlines
 

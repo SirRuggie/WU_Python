@@ -52,8 +52,17 @@ def _walk_payload(value):
             yield from _walk_payload(child)
 
 
+def _built_payload(component):
+    payload = component.build()
+    return payload[0] if isinstance(payload, tuple) else payload
+
+
+def _container_children(view):
+    return _built_payload(view[0])["components"]
+
+
 def _payload_nodes(view):
-    return list(_walk_payload([component.build() for component in view]))
+    return list(_walk_payload([_built_payload(component) for component in view]))
 
 
 def _payload_text(view):
@@ -72,17 +81,47 @@ def _custom_ids(view):
     ]
 
 
+def _vote_rows(view):
+    rows = []
+    for child in _container_children(view):
+        if child.get("type") != hikari.ComponentType.ACTION_ROW:
+            continue
+        if any(
+            str(component.get("custom_id", "")).startswith("poll_vote:")
+            for component in child.get("components", ())
+        ):
+            rows.append(child)
+    return rows
+
+
 @pytest.mark.parametrize("option_count", [2, 3])
-def test_public_poll_renders_exactly_one_vote_button_per_option(option_count):
+def test_public_poll_renders_one_numbered_vote_button_per_option(option_count):
     document = _poll(option_count=option_count)
 
     view = poll_command.build_poll_components(document)
+    vote_rows = _vote_rows(view)
     vote_ids = [
         custom_id
         for custom_id in _custom_ids(view)
         if custom_id.startswith("poll_vote:")
     ]
 
+    assert len(vote_rows) == 1
+    assert [
+        button["label"] for button in vote_rows[0]["components"]
+    ] == [str(option_id) for option_id in range(1, option_count + 1)]
+    assert all(
+        button["style"] == hikari.ButtonStyle.PRIMARY
+        for button in vote_rows[0]["components"]
+    )
+    assert all(
+        "emoji" not in button
+        for button in vote_rows[0]["components"]
+    )
+    assert all(
+        button.get("disabled", False) is False
+        for button in vote_rows[0]["components"]
+    )
     assert vote_ids == [
         f"poll_vote:{document['_id']}|{option_id}"
         for option_id in range(1, option_count + 1)
@@ -138,11 +177,169 @@ def test_public_poll_shows_aggregates_without_voter_names():
 
     text = _payload_text(poll_command.build_poll_components(document))
 
-    assert "**3** voters" in text
-    assert "**2** votes" in text
+    assert "-# 3 votes · You can change your vote." in text
+    assert "**67% · 2**" in text
     assert "<@111>" not in text
     assert "<@222>" not in text
     assert "<@333>" not in text
+
+
+def test_public_poll_renderer_matches_the_approved_mobile_hierarchy():
+    document = _poll(votes={})
+    document["title"] = "Is this thing on"
+    document["description"] = (
+        "Testing 1, 2, 3\nPoppa Slay Slay can you hear me?"
+    )
+    labels = ("Yes", "No", "Let me turn my hearing aid on")
+    document["options"] = [
+        {"id": index, "text": label}
+        for index, label in enumerate(labels, start=1)
+    ]
+
+    view = poll_command.build_poll_components(document)
+    container = _built_payload(view[0])
+    children = container["components"]
+    text_children = [
+        child["content"] for child in children if "content" in child
+    ]
+    empty_bar = "░" * poll_command.POLL_BAR_WIDTH
+
+    assert container["accent_color"] == int(poll_command.GOLD_ACCENT)
+    assert len(children) == 7
+    assert len([
+        node for node in _payload_nodes(view) if "type" in node
+    ]) == 13
+    assert text_children == [
+        (
+            "# 📊 Is this thing on\n"
+            "Testing 1, 2, 3\nPoppa Slay Slay can you hear me?"
+        ),
+        (
+            f"**1. Yes**\n{empty_bar} **0% · 0**\n"
+            f"**2. No**\n{empty_bar} **0% · 0**\n"
+            "**3. Let me turn my hearing aid on**\n"
+            f"{empty_bar} **0% · 0**"
+        ),
+        (
+            "-# 0 votes · You can change your vote.\n"
+            f"-# ⏱️ Closes {poll_command._discord_timestamp(document['ends_at'])} · "
+            f"<@{document['creator_id']}>"
+        ),
+    ]
+    assert [children[index]["type"] for index in (1, 3)] == [
+        hikari.ComponentType.SEPARATOR,
+        hikari.ComponentType.SEPARATOR,
+    ]
+    assert all(children[index]["divider"] is True for index in (1, 3))
+    assert all(
+        children[index]["spacing"] == hikari.SpacingType.SMALL
+        for index in (1, 3)
+    )
+
+    vote_rows = _vote_rows(view)
+    assert len(vote_rows) == 1
+    assert [button["label"] for button in vote_rows[0]["components"]] == [
+        "1", "2", "3",
+    ]
+    admin_buttons = children[5]["components"]
+    assert [button["label"] for button in admin_buttons] == [
+        "View voters", "End poll",
+    ]
+    assert [button["style"] for button in admin_buttons] == [
+        hikari.ButtonStyle.SECONDARY,
+        hikari.ButtonStyle.SECONDARY,
+    ]
+    assert all(button.get("disabled", False) is False for button in admin_buttons)
+    assert [button["custom_id"] for button in admin_buttons] == [
+        f"poll_details:{document['_id']}",
+        f"poll_end:{document['_id']}",
+    ]
+    assert document["_id"] not in _payload_text(view)
+    assert "`" not in _payload_text(view)
+
+    without_details = dict(document, description="")
+    assert _container_children(
+        poll_command.build_poll_components(without_details)
+    )[0]["content"] == "# 📊 Is this thing on"
+
+
+def test_public_poll_uses_exact_plain_twenty_cell_half_up_result_rows():
+    document = _poll()
+    labels = (
+        "Minecraft", "Jackbox Party Pack", "Gartic Phone with custom prompts",
+    )
+    document["options"] = [
+        {"id": index, "text": label}
+        for index, label in enumerate(labels, start=1)
+    ]
+    choices = [1] * 12 + [2] * 7 + [3] * 3
+    document["votes"] = {
+        str(1000 + index): choice
+        for index, choice in enumerate(choices)
+    }
+
+    result_text = _container_children(
+        poll_command.build_poll_components(document)
+    )[2]["content"]
+
+    assert poll_command.POLL_BAR_WIDTH == 20
+    assert poll_command._round_half_up(5, 2) == 3
+    assert poll_command._round_half_up(20, 8) == 3
+    assert poll_command._round_half_up(100, 8) == 13
+    assert result_text == (
+        "**1. Minecraft**\n"
+        "███████████░░░░░░░░░ **55% · 12**\n"
+        "**2. Jackbox Party Pack**\n"
+        "██████░░░░░░░░░░░░░░ **32% · 7**\n"
+        "**3. Gartic Phone with custom prompts**\n"
+        "███░░░░░░░░░░░░░░░░░ **14% · 3**"
+    )
+    assert len(result_text.splitlines()) == 6
+    assert not any(not line for line in result_text.splitlines())
+    assert "`" not in result_text
+
+
+@pytest.mark.parametrize(
+    ("votes", "expected"),
+    [
+        ({"111": 1}, "-# 1 vote · You can change your vote."),
+        ({"111": 1, "222": 2}, "-# 2 votes · You can change your vote."),
+    ],
+)
+def test_public_poll_quiet_total_footer_uses_singular_plural_grammar(
+    votes, expected,
+):
+    footer = _container_children(
+        poll_command.build_poll_components(_poll(votes=votes))
+    )[-1]["content"]
+
+    assert footer.splitlines()[0] == expected
+
+
+def test_closed_poll_keeps_results_admin_details_and_quiet_footer_only():
+    document = _poll(
+        option_count=2,
+        votes={"11": 1, "22": 1},
+        active=False,
+    )
+    document["ended_at"] = NOW
+
+    view = poll_command.build_poll_components(document)
+    text = _payload_text(view)
+    custom_ids = _custom_ids(view)
+    children = _container_children(view)
+
+    assert "**100% · 2**" in text
+    assert "**Poll closed.** Winner: **Goblin Machine** with **2** votes." in text
+    assert "You can change your vote" not in text
+    assert not any(custom_id.startswith("poll_vote:") for custom_id in custom_ids)
+    assert not any(custom_id.startswith("poll_end:") for custom_id in custom_ids)
+    assert f"poll_details:{document['_id']}" in custom_ids
+    assert document["_id"] not in text
+    assert children[-1]["content"] == (
+        f"-# ⏱️ Closed {poll_command._discord_timestamp(NOW)} · "
+        f"<@{document['creator_id']}>"
+    )
 
 
 def test_named_voter_view_is_the_only_renderer_that_lists_voters():
@@ -374,17 +571,34 @@ def test_end_button_rechecks_admin_and_uses_manual_reason(monkeypatch):
 
 def test_public_poll_payload_stays_within_discord_component_and_id_limits():
     for active in (True, False):
-        view = poll_command.build_poll_components(
-            _poll(option_count=3, active=active)
-        )
+        document = _poll(option_count=3, active=active)
+        document["description"] = "First detail line\nSecond detail line"
+        document["ping_role_id"] = 555
+        document["options"] = [
+            {"id": index, "text": character * 80}
+            for index, character in enumerate(("A", "B", "C"), start=1)
+        ]
+        if not active:
+            document["ended_at"] = NOW
+        view = poll_command.build_poll_components(document)
         nodes = _payload_nodes(view)
         custom_ids = _custom_ids(view)
+        component_count = len([node for node in nodes if "type" in node])
 
-        assert len([node for node in nodes if "type" in node]) <= 40
+        assert component_count == (14 if active else 11)
+        assert component_count <= 40
         assert len(custom_ids) == len(set(custom_ids))
         assert custom_ids
         assert all(custom_id.count(":") == 1 for custom_id in custom_ids)
         assert all(len(custom_id) <= 100 for custom_id in custom_ids)
+        assert all(
+            len(str(node["label"])) <= 80
+            for node in nodes if "label" in node
+        )
+        assert all(
+            len(str(node["content"])) <= 4000
+            for node in nodes if "content" in node
+        )
 
 
 def test_poll_group_registers_admin_only_management_subcommands():

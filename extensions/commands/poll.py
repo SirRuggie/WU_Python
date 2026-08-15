@@ -65,6 +65,7 @@ POLL_JOB_OPTIONS = {
 }
 MAX_RECENT_POLLS = 15
 MAX_NAMED_VOTERS_PER_OPTION = 50
+POLL_BAR_WIDTH = 20
 
 
 def _utcnow() -> datetime:
@@ -179,6 +180,27 @@ def _result_text(document: dict, counts: dict[int, int], total: int) -> str:
     )
 
 
+def _round_half_up(numerator: int, denominator: int) -> int:
+    """Round a non-negative rational number to the nearest integer."""
+    if denominator <= 0:
+        return 0
+    return (max(int(numerator), 0) + denominator // 2) // denominator
+
+
+def _vote_action_rows(document: dict) -> list[ActionRow]:
+    """Build one compact numbered vote row without changing action IDs."""
+    poll_id = str(document["_id"])
+    buttons = [
+        Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            label=str(int(option["id"])),
+            custom_id=f"poll_vote:{poll_id}|{int(option['id'])}",
+        )
+        for option in document.get("options", ())
+    ]
+    return [ActionRow(components=buttons)] if buttons else []
+
+
 def build_poll_components(document: dict) -> list[Container]:
     """Render the public poll. Voter identities are intentionally omitted."""
     counts, total = _option_counts(document)
@@ -191,69 +213,66 @@ def build_poll_components(document: dict) -> list[Container]:
     body: list = []
     if document.get("ping_role_id") is not None:
         body.append(Text(content=f"<@&{int(document['ping_role_id'])}>"))
-    body.append(Text(content=f"## 📊 {title}"))
+    heading = f"# 📊 {title}"
     if description:
-        body.append(Text(content=description))
-    timing = (
-        f"Closes {_discord_timestamp(ends_at)}"
-        if active
-        else f"Closed {_discord_timestamp(document.get('ended_at') or ends_at)}"
-    )
-    body.extend([
-        Separator(divider=True),
-        Text(content=(
-            f"{timing} • "
-            f"Created by <@{int(document['creator_id'])}> • Poll `{poll_id}`"
-        )),
-    ])
+        heading += f"\n{description}"
+    body.append(Text(content=heading))
+    body.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
 
+    option_lines: list[str] = []
     for option in document.get("options", ()):
         option_id = int(option["id"])
         count = counts.get(option_id, 0)
-        proportion = count / total if total else 0
-        filled = round(proportion * 10)
-        bar = "█" * filled + "░" * (10 - filled)
-        percent = round(proportion * 100)
-        body.append(Text(content=(
-            f"**{option_id}. {_escape_user_text(option['text'])}**\n"
-            f"`{bar}` **{count}** vote{'s' if count != 1 else ''} ({percent}%)"
-        )))
+        filled = min(
+            _round_half_up(count * POLL_BAR_WIDTH, total),
+            POLL_BAR_WIDTH,
+        )
+        bar = "█" * filled + "░" * (POLL_BAR_WIDTH - filled)
+        percent = _round_half_up(count * 100, total)
+        option_lines.extend([
+            f"**{option_id}. {_escape_user_text(option['text'])}**",
+            f"{bar} **{percent}% · {count}**",
+        ])
+    body.append(Text(content="\n".join(option_lines)))
 
-    body.append(Separator(divider=True))
+    body.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
     if active:
-        body.append(Text(content=(
-            f"**{total}** voter{'s' if total != 1 else ''} • "
-            "Choose an option below. You may change your vote while the poll is open."
-        )))
-        body.append(ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.PRIMARY,
-                label=f"Vote {int(option['id'])}",
-                custom_id=f"poll_vote:{poll_id}|{int(option['id'])}",
-            )
-            for option in document.get("options", ())
-        ]))
+        body.extend(_vote_action_rows(document))
         body.append(ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                label="View voters (Admin)",
+                label="View voters",
                 custom_id=f"poll_details:{poll_id}",
             ),
             Button(
-                style=hikari.ButtonStyle.DANGER,
-                label="End poll (Admin)",
+                style=hikari.ButtonStyle.SECONDARY,
+                label="End poll",
                 custom_id=f"poll_end:{poll_id}",
             ),
         ]))
+        body.append(Text(content=(
+            f"-# {total} vote{'s' if total != 1 else ''} · "
+            "You can change your vote.\n"
+            f"-# ⏱️ Closes {_discord_timestamp(ends_at)} · "
+            f"<@{int(document['creator_id'])}>"
+        )))
     else:
         body.append(Text(content=f"**Poll closed.** {_result_text(document, counts, total)}"))
         body.append(ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                label="View voters (Admin)",
+                label="View voters",
                 custom_id=f"poll_details:{poll_id}",
             ),
         ]))
+        footer_time = _as_utc(document.get("ended_at") or ends_at)
+        body.extend([
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+            Text(content=(
+                f"-# ⏱️ Closed {_discord_timestamp(footer_time)} · "
+                f"<@{int(document['creator_id'])}>"
+            )),
+        ])
 
     return [Container(
         accent_color=GOLD_ACCENT if active else BLUE_ACCENT,
@@ -673,7 +692,7 @@ class ViewPoll(
     description="View recent polls or the named voters for one poll",
 ):
     poll_id = lightbulb.string(
-        "poll-id", "Poll ID shown on the poll message", default=None, max_length=32,
+        "poll-id", "Poll ID from /poll view or /poll active", default=None, max_length=32,
     )
 
     @lightbulb.invoke
