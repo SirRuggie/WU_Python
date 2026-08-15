@@ -29,8 +29,17 @@ A poll has:
 
 - a title or question;
 - two required options and one optional third option;
-- one duration selected from **1, 2, 4, 8, 12, 24, or 48 hours**; and
+- one duration written as a positive whole number plus `m`, `h`, or `d`, from
+  **5 minutes through 7 days**; and
 - at most one optional role ping.
+
+The duration option is free text with advisory autocomplete suggestions for
+`1h`, `2h`, `4h`, `8h`, `12h`, `1d`, and `2d`; those suggestions are not fixed
+choices. Administrators may submit any valid in-range value such as `45m`,
+`90m`, `3h`, `6h`, or `7d`. Input is case-insensitive and surrounding whitespace
+is ignored. Compound or natural-language values such as `1h30m` and `90 minutes`
+are rejected. The duration begins when the approved five-field creation modal is
+submitted.
 
 The role selection belongs to that one poll. It does not grant the creator a
 general announcement or mention capability.
@@ -44,12 +53,14 @@ Each member has one current vote. Choosing another option replaces the previous
 choice instead of adding a second vote. Voting stops once the persisted deadline
 passes or an administrator closes the poll.
 
-An active poll uses a gold Components V2 container with the question as its
-headline and optional details immediately below it. Every option uses the same
-two-line layout: its numbered label appears first, followed by a plain 20-cell
-`█`/`░` bar with an integer half-up percentage and compact vote count. Voting
-buttons use the same option numbers, while the total vote count, change-vote
-hint, closing time, and creator stay in a quiet footer.
+An active poll uses a gold Components V2 container with the custom
+`<:poll_graph:1537995208845824051>` icon beside the question headline and
+optional details immediately below it. Every option uses the same two-line
+layout: its numbered label appears first, followed by a plain 20-cell `█`/`░`
+bar with an integer half-up percentage and compact vote count. Voting buttons
+use the same option numbers. The existing `assets/Gold_Footer.png` Media Gallery
+treatment separates those controls from the quiet total-vote, closing-time, and
+creator footer.
 
 The public poll message shows option totals and percentages but never names the
 voters. Named votes are deliberately restricted to administrator-only

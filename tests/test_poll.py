@@ -94,6 +94,73 @@ def _vote_rows(view):
     return rows
 
 
+@pytest.mark.parametrize(
+    ("raw", "minutes"),
+    [
+        ("5m", 5),
+        ("15m", 15),
+        ("30m", 30),
+        ("45m", 45),
+        ("90m", 90),
+        ("1h", 60),
+        ("2h", 120),
+        ("3h", 180),
+        ("4h", 240),
+        ("6h", 360),
+        ("8h", 480),
+        ("12h", 720),
+        ("1d", 1440),
+        ("2d", 2880),
+        ("3d", 4320),
+        ("7d", 10080),
+        ("5M", 5),
+        (" 2H ", 120),
+    ],
+)
+def test_poll_duration_parser_accepts_units_case_whitespace_and_bounds(
+    raw, minutes,
+):
+    assert poll_command._parse_poll_duration(raw) == minutes
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "", "0m", "1m", "4m", "-5m", "8d", "1.5h", "1h30m",
+        "30x", "abc", "tomorrow", "90 minutes",
+    ],
+)
+def test_poll_duration_parser_rejects_invalid_or_out_of_range_values(raw):
+    assert poll_command._parse_poll_duration(raw) is None
+
+
+class _AutocompleteContext:
+    def __init__(self, value):
+        self.focused = SimpleNamespace(value=value)
+        self.responses = []
+
+    async def respond(self, choices):
+        self.responses.append(choices)
+
+
+def test_poll_duration_autocomplete_returns_common_values_but_is_advisory():
+    common = _AutocompleteContext("")
+    custom = _AutocompleteContext("3h")
+
+    asyncio.run(poll_command.poll_duration_autocomplete(common))
+    asyncio.run(poll_command.poll_duration_autocomplete(custom))
+
+    assert [value for _label, value in common.responses[0]] == [
+        "1h", "2h", "4h", "8h", "12h", "1d", "2d",
+    ]
+    assert all(
+        poll_command._parse_poll_duration(value) is not None
+        for _label, value in common.responses[0]
+    )
+    assert custom.responses == [[]]
+    assert poll_command._parse_poll_duration("3h") == 180
+
+
 @pytest.mark.parametrize("option_count", [2, 3])
 def test_public_poll_renders_one_numbered_vote_button_per_option(option_count):
     document = _poll(option_count=option_count)
@@ -197,7 +264,7 @@ def test_public_poll_renderer_matches_the_approved_mobile_hierarchy():
     ]
 
     view = poll_command.build_poll_components(document)
-    container = _built_payload(view[0])
+    container, attachments = view[0].build()
     children = container["components"]
     text_children = [
         child["content"] for child in children if "content" in child
@@ -211,7 +278,7 @@ def test_public_poll_renderer_matches_the_approved_mobile_hierarchy():
     ]) == 14
     assert text_children == [
         (
-            "# 📊 Is this thing on\n"
+            "# <:poll_graph:1537995208845824051> Is this thing on\n"
             "Testing 1, 2, 3\nPoppa Slay Slay can you hear me?"
         ),
         (
@@ -226,16 +293,23 @@ def test_public_poll_renderer_matches_the_approved_mobile_hierarchy():
             f"<@{document['creator_id']}>"
         ),
     ]
-    assert [children[index]["type"] for index in (1, 3, 6)] == [
-        hikari.ComponentType.SEPARATOR,
+    assert [children[index]["type"] for index in (1, 3)] == [
         hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
     ]
-    assert all(children[index]["divider"] is True for index in (1, 3, 6))
+    assert all(children[index]["divider"] is True for index in (1, 3))
     assert all(
         children[index]["spacing"] == hikari.SpacingType.SMALL
-        for index in (1, 3, 6)
+        for index in (1, 3)
     )
+    assert children[6]["type"] == hikari.ComponentType.MEDIA_GALLERY
+    assert children[6]["items"] == [{
+        "media": {"url": "attachment://Gold_Footer.png"},
+        "spoiler": False,
+    }]
+    assert [attachment.filename for attachment in attachments] == [
+        "Gold_Footer.png",
+    ]
 
     vote_rows = _vote_rows(view)
     assert len(vote_rows) == 1
@@ -261,7 +335,9 @@ def test_public_poll_renderer_matches_the_approved_mobile_hierarchy():
     without_details = dict(document, description="")
     assert _container_children(
         poll_command.build_poll_components(without_details)
-    )[0]["content"] == "# 📊 Is this thing on"
+    )[0]["content"] == (
+        "# <:poll_graph:1537995208845824051> Is this thing on"
+    )
 
 
 def test_public_poll_uses_exact_plain_twenty_cell_half_up_result_rows():
@@ -317,6 +393,17 @@ def test_public_poll_quiet_total_footer_uses_singular_plural_grammar(
     assert footer.splitlines()[0] == expected
 
 
+def test_minute_duration_footer_uses_the_exact_persisted_close_time():
+    ends_at = NOW + timedelta(minutes=45)
+    footer = _container_children(
+        poll_command.build_poll_components(_poll(ends_at=ends_at))
+    )[-1]["content"]
+
+    assert footer.splitlines()[-1] == (
+        f"-# ⏱️ Closes {poll_command._discord_timestamp(ends_at)} · <@999>"
+    )
+
+
 def test_closed_poll_keeps_results_admin_details_and_quiet_footer_only():
     document = _poll(
         option_count=2,
@@ -328,8 +415,12 @@ def test_closed_poll_keeps_results_admin_details_and_quiet_footer_only():
     view = poll_command.build_poll_components(document)
     text = _payload_text(view)
     custom_ids = _custom_ids(view)
-    children = _container_children(view)
+    container, attachments = view[0].build()
+    children = container["components"]
 
+    assert children[0]["content"].startswith(
+        "# <:poll_graph:1537995208845824051> "
+    )
     assert "**100% · 2**" in text
     assert "**Poll closed.** Winner: **Goblin Machine** with **2** votes." in text
     assert "You can change your vote" not in text
@@ -337,6 +428,8 @@ def test_closed_poll_keeps_results_admin_details_and_quiet_footer_only():
     assert not any(custom_id.startswith("poll_end:") for custom_id in custom_ids)
     assert f"poll_details:{document['_id']}" in custom_ids
     assert document["_id"] not in text
+    assert children[-2]["type"] == hikari.ComponentType.SEPARATOR
+    assert attachments == []
     assert children[-1]["content"] == (
         f"-# ⏱️ Closed {poll_command._discord_timestamp(NOW)} · "
         f"<@{document['creator_id']}>"
@@ -441,8 +534,121 @@ class _InteractionContext:
         self.responses.append((args, kwargs))
 
 
+class _CreateContext(_InteractionContext):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.modals = []
+
+    async def respond_with_modal(self, **kwargs):
+        self.modals.append(kwargs)
+
+
+def test_duration_option_is_string_autocomplete_without_fixed_choices():
+    option = poll_command.CreatePoll._command_data.options["duration"]
+
+    assert option.type == hikari.OptionType.STRING
+    assert option.description == (
+        "Duration from 5m to 7d, like 30m, 2h, or 1d"
+    )
+    assert option.autocomplete is True
+    assert not option.choices
+
+
+def test_custom_duration_opens_the_approved_exact_five_field_modal(monkeypatch):
+    inserted = []
+
+    async def insert_state(_mongo, document, *, ttl):
+        inserted.append((document, ttl))
+
+    monkeypatch.setattr(poll_command, "insert_state", insert_state)
+    ctx = _CreateContext(admin=True)
+    command = SimpleNamespace(duration="45m", ping_role=None)
+
+    asyncio.run(poll_command.CreatePoll.invoke._func(
+        command, ctx, mongo=object(),
+    ))
+
+    assert len(inserted) == 1
+    assert inserted[0][0]["duration_minutes"] == 45
+    assert inserted[0][1] == poll_command.POLL_MODAL_TTL
+    assert len(ctx.modals) == 1
+    modal = ctx.modals[0]
+    assert modal["title"] == "Create a timed poll"
+    assert modal["custom_id"].startswith("poll_create_submit:")
+    inputs = [
+        node
+        for node in _walk_payload([
+            component.build() for component in modal["components"]
+        ])
+        if node.get("type") == hikari.ComponentType.TEXT_INPUT
+    ]
+    assert [node["custom_id"] for node in inputs] == [
+        "title", "description", "option_1", "option_2", "option_3",
+    ]
+    assert [node["label"] for node in inputs] == [
+        "Question", "Details (optional)", "Option 1", "Option 2",
+        "Option 3 (optional)",
+    ]
+    assert [node["required"] for node in inputs] == [
+        True, False, True, True, False,
+    ]
+    assert inputs[0]["placeholder"] == "Which option should we choose?"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "", "0m", "1m", "-5m", "1.5h", "1h30m", "8d", "30x",
+        "abc", "tomorrow", "90 minutes",
+    ],
+)
+def test_invalid_duration_opens_no_modal_and_has_no_poll_side_effects(
+    monkeypatch, raw,
+):
+    inserted = []
+    stored = []
+    scheduled = []
+
+    async def insert_state(*args, **kwargs):
+        inserted.append((args, kwargs))
+
+    async def create_poll(*args, **kwargs):
+        stored.append((args, kwargs))
+
+    monkeypatch.setattr(poll_command, "insert_state", insert_state)
+    monkeypatch.setattr(poll_command.poll_store, "create_poll", create_poll)
+    monkeypatch.setattr(
+        poll_command, "_schedule_poll", lambda document: scheduled.append(document),
+    )
+    ctx = _CreateContext(admin=True)
+    command = SimpleNamespace(duration=raw, ping_role=None)
+
+    asyncio.run(poll_command.CreatePoll.invoke._func(
+        command, ctx, mongo=object(),
+    ))
+
+    assert inserted == []
+    assert stored == []
+    assert scheduled == []
+    assert ctx.modals == []
+    assert len(ctx.responses) == 1
+    assert ctx.responses[0][1]["ephemeral"] is True
+    assert "Use a duration from 5m to 7d" in _payload_text(
+        ctx.responses[0][1]["components"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("duration_kwargs", "expected_minutes"),
+    [
+        ({"duration_minutes": 5}, 5),
+        ({"duration_minutes": 90}, 90),
+        ({"duration_minutes": 10080}, 10080),
+        ({"duration_hours": 24}, 1440),
+    ],
+)
 def test_modal_submission_posts_one_role_whitelist_and_persists_before_scheduling(
-    monkeypatch,
+    monkeypatch, duration_kwargs, expected_minutes,
 ):
     ctx = _InteractionContext(
         admin=True,
@@ -470,6 +676,7 @@ def test_modal_submission_posts_one_role_whitelist_and_persists_before_schedulin
 
     monkeypatch.setattr(poll_command, "delete_state", delete_state)
     monkeypatch.setattr(poll_command.poll_store, "create_poll", create_poll)
+    monkeypatch.setattr(poll_command, "_utcnow", lambda: NOW)
     monkeypatch.setattr(
         poll_command, "_schedule_poll", lambda document: calls.append(("schedule", document)),
     )
@@ -480,10 +687,10 @@ def test_modal_submission_posts_one_role_whitelist_and_persists_before_schedulin
         user_id=123,
         guild_id=7,
         channel_id=70,
-        duration_hours=24,
         ping_role_id=555,
         mongo=object(),
         bot=SimpleNamespace(rest=Rest()),
+        **duration_kwargs,
     ))
 
     message_kwargs = next(call[1] for call in calls if call[0] == "message")
@@ -494,6 +701,9 @@ def test_modal_submission_posts_one_role_whitelist_and_persists_before_schedulin
     assert message_kwargs["mentions_reply"] is False
     assert stored["guild_id"] == 7
     assert stored["message_id"] == 700
+    assert stored["created_at"] == NOW
+    assert stored["duration_minutes"] == expected_minutes
+    assert stored["ends_at"] == NOW + timedelta(minutes=expected_minutes)
     assert [option["text"] for option in stored["options"]] == [
         "Goblin Machine", "Mother Witch",
     ]
@@ -502,6 +712,56 @@ def test_modal_submission_posts_one_role_whitelist_and_persists_before_schedulin
     ].index("schedule")
     assert ctx.deferred == [{"ephemeral": True}]
     assert ctx.responses[-1][1]["ephemeral"] is True
+
+
+@pytest.mark.parametrize("duration_minutes", [4, 10081])
+def test_invalid_saved_duration_posts_no_message_record_or_schedule(
+    monkeypatch, duration_minutes,
+):
+    ctx = _InteractionContext(
+        admin=True,
+        modal_values={
+            "title": "Choose the next card",
+            "option_1": "Goblin Machine",
+            "option_2": "Mother Witch",
+        },
+    )
+    calls = []
+
+    class Rest:
+        async def create_message(self, **kwargs):
+            calls.append(("message", kwargs))
+
+    async def delete_state(_mongo, state_id):
+        calls.append(("delete_state", state_id))
+
+    async def create_poll(*args, **kwargs):
+        calls.append(("store", args, kwargs))
+
+    monkeypatch.setattr(poll_command, "delete_state", delete_state)
+    monkeypatch.setattr(poll_command.poll_store, "create_poll", create_poll)
+    monkeypatch.setattr(
+        poll_command, "_schedule_poll", lambda document: calls.append(("schedule", document)),
+    )
+
+    asyncio.run(poll_command.poll_create_submit(
+        ctx=ctx,
+        action_id="modal-state",
+        user_id=123,
+        guild_id=7,
+        channel_id=70,
+        ping_role_id=None,
+        duration_minutes=duration_minutes,
+        mongo=object(),
+        bot=SimpleNamespace(rest=Rest()),
+    ))
+
+    assert calls == [("delete_state", "modal-state")]
+    assert ctx.deferred == [{"ephemeral": True}]
+    assert len(ctx.responses) == 1
+    assert "Use a duration from 5m to 7d" in _payload_text(
+        ctx.responses[0][1]["components"]
+    )
 
 
 def test_public_vote_is_guild_scoped_and_records_the_clicker(monkeypatch):
@@ -678,6 +938,55 @@ def test_schedule_poll_uses_stable_replacing_deadline_job(monkeypatch):
     )
     for key, value in poll_command.POLL_JOB_OPTIONS.items():
         assert kwargs[key] == value
+
+
+def test_restart_recovery_reschedules_the_exact_minute_deadline(monkeypatch):
+    mongo = object()
+    bot = object()
+    scheduler = _Scheduler(running=False)
+    created_at = datetime.now(timezone.utc)
+    ends_at = created_at + timedelta(minutes=90)
+    open_poll = _poll("minute-deadline", guild_id=3, ends_at=ends_at)
+    open_poll["created_at"] = created_at
+    open_poll["duration_minutes"] = 90
+
+    async def no_due(received_mongo, *, limit):
+        assert received_mongo is mongo
+        assert limit == 100
+        return []
+
+    async def no_pending(received_mongo, *, limit):
+        assert received_mongo is mongo
+        assert limit is None
+        return []
+
+    async def list_open(received_mongo, *, limit):
+        assert received_mongo is mongo
+        assert limit is None
+        return [open_poll]
+
+    async def ensure_indexes(received_mongo):
+        assert received_mongo is mongo
+
+    monkeypatch.setattr(poll_command, "_mongo", mongo)
+    monkeypatch.setattr(poll_command, "_bot", bot)
+    monkeypatch.setattr(poll_command, "_scheduler", scheduler)
+    monkeypatch.setattr(poll_command.poll_store, "list_due_polls", no_due)
+    monkeypatch.setattr(
+        poll_command.poll_store, "list_pending_message_sync", no_pending,
+    )
+    monkeypatch.setattr(poll_command.poll_store, "list_open_polls", list_open)
+    monkeypatch.setattr(poll_command.poll_store, "ensure_indexes", ensure_indexes)
+
+    asyncio.run(poll_command._reconcile_poll_startup())
+
+    assert scheduler.started == 1
+    assert len(scheduler.added) == 1
+    function, kwargs = scheduler.added[0]
+    assert function is poll_command._expire_poll
+    assert kwargs["id"] == poll_command._job_id(open_poll["_id"])
+    assert kwargs["args"] == [3, "minute-deadline"]
+    assert kwargs["trigger"].run_date == ends_at
 
 
 def test_public_message_edits_disable_every_kind_of_mention():

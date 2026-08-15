@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -22,6 +23,8 @@ from utils.startup_reconciler import StartupReconciler
 from hikari.impl import (
     ContainerComponentBuilder as Container,
     InteractiveButtonBuilder as Button,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
     MessageActionRowBuilder as ActionRow,
     ModalActionRowBuilder as ModalActionRow,
     SeparatorComponentBuilder as Separator,
@@ -43,16 +46,19 @@ _mongo: MongoClient | None = None
 _startup_reconciler: StartupReconciler | None = None
 _poll_locks: dict[str, asyncio.Lock] = {}
 
-POLL_DURATION_CHOICES = (
-    lightbulb.Choice("1 hour", 1),
-    lightbulb.Choice("2 hours", 2),
-    lightbulb.Choice("4 hours", 4),
-    lightbulb.Choice("8 hours", 8),
-    lightbulb.Choice("12 hours", 12),
-    lightbulb.Choice("1 day", 24),
-    lightbulb.Choice("2 days", 48),
+POLL_DURATION_SUGGESTIONS = (
+    ("1h — 1 hour", "1h"),
+    ("2h — 2 hours", "2h"),
+    ("4h — 4 hours", "4h"),
+    ("8h — 8 hours", "8h"),
+    ("12h — 12 hours", "12h"),
+    ("1d — 1 day", "1d"),
+    ("2d — 2 days", "2d"),
 )
-POLL_DURATION_HOURS = frozenset(choice.value for choice in POLL_DURATION_CHOICES)
+POLL_DURATION_PATTERN = re.compile(r"([1-9]\d*)([mhd])", re.IGNORECASE)
+POLL_DURATION_UNIT_MINUTES = {"m": 1, "h": 60, "d": 24 * 60}
+POLL_MIN_DURATION_MINUTES = 5
+POLL_MAX_DURATION_MINUTES = 7 * 24 * 60
 POLL_MODAL_TTL = timedelta(minutes=10)
 POLL_JOB_PREFIX = "discord_poll_end:"
 POLL_SYNC_JOB_PREFIX = "discord_poll_sync:"
@@ -66,6 +72,35 @@ POLL_JOB_OPTIONS = {
 MAX_RECENT_POLLS = 15
 MAX_NAMED_VOTERS_PER_OPTION = 50
 POLL_BAR_WIDTH = 20
+
+
+def _parse_poll_duration(value: object) -> int | None:
+    """Return whole minutes for one strict ``<integer><m|h|d>`` value."""
+    normalized = str(value or "").strip().lower()
+    match = POLL_DURATION_PATTERN.fullmatch(normalized)
+    if match is None:
+        return None
+    try:
+        amount = int(match.group(1))
+    except ValueError:
+        return None
+    minutes = amount * POLL_DURATION_UNIT_MINUTES[match.group(2).lower()]
+    if not POLL_MIN_DURATION_MINUTES <= minutes <= POLL_MAX_DURATION_MINUTES:
+        return None
+    return minutes
+
+
+async def poll_duration_autocomplete(
+    ctx: lightbulb.AutocompleteContext[str],
+) -> None:
+    """Offer common durations without restricting custom submitted values."""
+    query = str(ctx.focused.value or "").strip().casefold()
+    suggestions = [
+        (label, value)
+        for label, value in POLL_DURATION_SUGGESTIONS
+        if not query or value.startswith(query) or query in label.casefold()
+    ]
+    await ctx.respond(suggestions[:25])
 
 
 def _utcnow() -> datetime:
@@ -213,7 +248,7 @@ def build_poll_components(document: dict) -> list[Container]:
     body: list = []
     if document.get("ping_role_id") is not None:
         body.append(Text(content=f"<@&{int(document['ping_role_id'])}>"))
-    heading = f"# 📊 {title}"
+    heading = f"# <:poll_graph:1537995208845824051> {title}"
     if description:
         heading += f"\n{description}"
     body.append(Text(content=heading))
@@ -251,7 +286,7 @@ def build_poll_components(document: dict) -> list[Container]:
             ),
         ]))
         body.extend([
-            Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+            Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
             Text(content=(
                 f"-# {total} vote{'s' if total != 1 else ''} · "
                 "You can change your vote.\n"
@@ -619,10 +654,11 @@ class CreatePoll(
     name="create",
     description="Create a timed poll",
 ):
-    duration = lightbulb.integer(
+    duration = lightbulb.string(
         "duration",
-        "How long voting remains open",
-        choices=list(POLL_DURATION_CHOICES),
+        "Duration from 5m to 7d, like 30m, 2h, or 1d",
+        autocomplete=poll_duration_autocomplete,
+        max_length=16,
     )
     ping_role = lightbulb.role(
         "ping-role",
@@ -639,9 +675,13 @@ class CreatePoll(
     ) -> None:
         if not await _require_admin(ctx):
             return
-        if int(self.duration) not in POLL_DURATION_HOURS:
+        duration_minutes = _parse_poll_duration(self.duration)
+        if duration_minutes is None:
             await ctx.respond(
-                components=_notice("Invalid duration", "Choose a duration from 1 hour to 2 days."),
+                components=_notice(
+                    "Invalid duration",
+                    "Use a duration from 5m to 7d, like 30m, 2h, or 1d.",
+                ),
                 ephemeral=True,
             )
             return
@@ -659,7 +699,7 @@ class CreatePoll(
             "user_id": int(ctx.user.id),
             "guild_id": _guild_id(ctx),
             "channel_id": int(ctx.channel_id),
-            "duration_hours": int(self.duration),
+            "duration_minutes": duration_minutes,
             "ping_role_id": int(self.ping_role.id) if self.ping_role is not None else None,
         }, ttl=POLL_MODAL_TTL)
 
@@ -774,10 +814,11 @@ async def poll_create_submit(
     user_id: int,
     guild_id: int,
     channel_id: int,
-    duration_hours: int,
     ping_role_id: int | None,
     mongo: MongoClient = lightbulb.di.INJECTED,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    duration_minutes: int | None = None,
+    duration_hours: int | None = None,
     **_kwargs,
 ) -> None:
     if _guild_id(ctx) != int(guild_id) or int(ctx.user.id) != int(user_id):
@@ -816,9 +857,20 @@ async def poll_create_submit(
             ephemeral=True,
         )
         return
-    if int(duration_hours) not in POLL_DURATION_HOURS:
+    try:
+        if duration_minutes is None and duration_hours is not None:
+            # Compatibility for creation modals opened just before this change.
+            duration_minutes = int(duration_hours) * 60
+        else:
+            duration_minutes = int(duration_minutes)
+    except (TypeError, ValueError):
+        duration_minutes = 0
+    if not POLL_MIN_DURATION_MINUTES <= duration_minutes <= POLL_MAX_DURATION_MINUTES:
         await ctx.respond(
-            components=_notice("Poll not created", "The saved duration is no longer valid. Run `/poll create` again."),
+            components=_notice(
+                "Poll not created",
+                "Use a duration from 5m to 7d, like 30m, 2h, or 1d.",
+            ),
             ephemeral=True,
         )
         return
@@ -831,8 +883,8 @@ async def poll_create_submit(
         "channel_id": int(channel_id),
         "creator_id": int(user_id),
         "created_at": now,
-        "ends_at": now + timedelta(hours=int(duration_hours)),
-        "duration_hours": int(duration_hours),
+        "ends_at": now + timedelta(minutes=duration_minutes),
+        "duration_minutes": duration_minutes,
         "ping_role_id": int(ping_role_id) if ping_role_id is not None else None,
         "title": title,
         "description": description,
