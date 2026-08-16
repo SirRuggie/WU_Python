@@ -6983,21 +6983,21 @@ async def _post_trade_channel(bot: hikari.GatewayBot, mongo: MongoClient, trade:
 
 
 def _standing_post_image_ref(trade: dict) -> str | None:
-    """How an edit keeps the already-uploaded strip, without re-uploading.
+    """Whether an edited standing post carries the strip. It does not.
 
-    Discord keeps a message's attachments when an edit omits the attachments
-    field (hikari sends UNDEFINED, so ours always do), and a media gallery
-    references a retained file as `attachment://filename`. Re-rendering and
-    re-uploading the strip on every status change is not cheap, so edits
-    re-reference the stored filename instead. If live verification ever shows
-    Discord refusing the reference on edit, returning None here is the whole
-    rollback: the edited post simply drops its image. Terminal statuses use
-    the compact closed form, which never carries one.
+    The original theory: Discord keeps a message's attachments when an edit
+    omits the attachments field, so a gallery could re-reference the retained
+    file as `attachment://filename` without re-uploading. Live verification
+    on 2026-08-16 disproved it - the first real acceptance posted its note
+    but the standing-post edit failed silently, exactly the failure mode
+    predicted for this reference. `attachment://` names a file uploaded IN
+    THE SAME REQUEST; a retained upload cannot be re-referenced that way on
+    an edit. So edits drop the image: every edit moves the trade PAST the
+    proposal stage, where the two players already know the cards and the
+    words carry the state. The image lives on in the creation-time post
+    history and in both DMs.
     """
-    if str(trade.get("status") or "") in TRADE_POST_TERMINAL_STATUSES:
-        return None
-    filename = trade.get("channel_post_image")
-    return f"attachment://{filename}" if filename else None
+    return None
 
 
 async def _update_trade_channel(bot: hikari.GatewayBot, trade: dict) -> bool:
@@ -7048,16 +7048,17 @@ def _trade_post_controls(trade: dict) -> list:
     if str(trade.get("status") or "pending") != "pending":
         return []
     trade_id = str(trade.get("_id") or "")
-    holder_first = (
-        str(trade.get("holder_name") or "").strip().split() or ["the holder"]
-    )[0]
+    taken = CARD_BY_ID[trade["given_card_id"]].name
     return [ActionRow(components=[
         Button(
             style=hikari.ButtonStyle.SUCCESS,
             custom_id=f"cards_pub_accept:{trade_id}",
-            # The holder's name on the button is what stops everyone else
-            # tapping it; the refusal works, the label prevents the taps.
-            label=f"Accept · {holder_first}"[:80],
+            # The card, not the holder's name: this family's names are full
+            # of decorated unicode, and the first live label truncated one to
+            # "Accept · ŦH̶Ɇ". The DM button already says take-the-card, so
+            # both surfaces now match, and the footer plus the handler's own
+            # participant check keep wrong tappers out.
+            label=f"Accept · take {taken}"[:80],
         ),
         Button(
             style=hikari.ButtonStyle.DANGER,
@@ -7108,16 +7109,63 @@ def _trade_post(trade: dict, *, attachment_ref=None) -> list[Container]:
             f"-# {requester} (`{trade['requester_tag']}`) offered **{given}** "
             f"for {holder}'s (`{trade['holder_tag']}`) **{wanted}**."
         ))])]
+    if status == "needs_review":
+        # Not a happy path and not a public conversation: the details of what
+        # went wrong arrive by DM, so the post says only that the swap is on
+        # hold and where the two players sort it out.
+        return [_panel(_trade_post_accent(status), [
+            Text(content=f"## {label}"),
+            Text(content=(
+                f"<@{requester_id}> and <@{holder_id}> — this swap needs a "
+                "check. Please open `/cards` → **My trades** and check your "
+                "cards."
+            )),
+        ])]
+    if status not in {"pending", "reserving"}:
+        # ACCEPTED. The proposal detail has done its job - both players know
+        # the cards - so the post becomes the coordination point: who trades
+        # with whom, and the next tap. Short sentences, because the family
+        # reads this in a dozen languages, and mentions without pings (the
+        # transport's edit path cannot notify anyone).
+        same_clan = _normalize_tag(
+            trade.get("requester_clan_tag")
+        ) == _normalize_tag(trade.get("holder_clan_tag"))
+        steps = (
+            "**1.** Talk here and pick a time.\n"
+            + (
+                ""
+                if same_clan
+                else "**2.** One of you moves to the other clan.\n"
+            )
+            + f"**{2 if same_clan else 3}.** Trade in game.\n"
+            + f"**{3 if same_clan else 4}.** Tap **I sent my card** in "
+            "`/cards` → **My trades**."
+        )
+        return [_panel(_trade_post_accent(status), [
+            Text(content=f"## {label}"),
+            Text(content=(
+                f"<@{requester_id}> gives **{given}**\n"
+                f"<@{holder_id}> gives **{wanted}**"
+            )),
+            Separator(divider=True),
+            Text(content=steps),
+            Separator(divider=True),
+            Text(content=f"-# 📍 {_trade_location_line(trade)}"),
+        ])]
+    # PENDING: the proposal itself. Blocks are kept short and separated -
+    # the first live post rendered as one dense clump next to the airier DM,
+    # and a wall of text is exactly what a channel skimmer skips.
     components: list = [
         Text(content=f"## {label}"),
         Text(content=(
-            f"<@{holder_id}> — **{requester} needs your duplicate "
-            f"{wanted}.**\n"
-            f"**Proposed:** {requester} (`{trade['requester_tag']}`) gives "
-            f"**{given}** to {holder} (`{trade['holder_tag']}`) for "
-            f"**{wanted}**.\n"
-            f"<@{requester_id}> has **{_trade_offer_names(trade)}** "
-            "duplicates that you need."
+            f"<@{holder_id}> — **{requester}** needs your duplicate "
+            f"**{wanted}**."
+        )),
+        Separator(divider=True),
+        Text(content=(
+            f"**They give:** {given}\n"
+            f"**You give:** {wanted}\n"
+            f"-# You could also take: {_trade_offer_names(trade)}"
         )),
         Separator(divider=True),
         Text(content=(
@@ -7133,7 +7181,7 @@ def _trade_post(trade: dict, *, attachment_ref=None) -> list[Container]:
                 trade.get("holder_town_hall"), trade.get("holder_clan_name"),
                 trade.get("holder_clan_emoji"),
             )
-            + f"\n📍 {_trade_location_line(trade)}"
+            + f"\n-# 📍 {_trade_location_line(trade)}"
         )),
     ]
     if attachment_ref is not None:
@@ -7144,14 +7192,11 @@ def _trade_post(trade: dict, *, attachment_ref=None) -> list[Container]:
     if controls:
         components.append(Separator(divider=True))
         components.extend(controls)
-    footer = (
-        f"Only <@{holder_id}> can accept or decline; "
+    components.append(Text(content=(
+        f"-# Only <@{holder_id}> can accept or decline; "
         f"<@{requester_id}> can cancel. Anyone in the trade can also use "
         "`/cards` → **My trades**."
-        if status == "pending"
-        else "The two players manage this swap in `/cards` → **My trades**."
-    )
-    components.append(Text(content=f"-# {footer}"))
+    )))
     return [_panel(_trade_post_accent(status), components)]
 
 

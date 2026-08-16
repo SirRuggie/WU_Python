@@ -1293,9 +1293,11 @@ def _standing_post_trade(**overrides):
 def test_the_standing_post_carries_controls_only_while_pending():
     """The V2 standing post: three live controls while pending, none after.
 
-    The accept button wears the holder's name and the body says who may
-    accept - the refusal already works for everybody else, the label is what
-    stops the taps.
+    The accept button names the card the holder takes - the same words as
+    the DM's accept. It wore the holder's name at first, but this family's
+    names are decorated unicode and the first live label truncated one to
+    "Accept · ŦH̶Ɇ"; the footer and the handler's participant check are what
+    keep wrong tappers out.
     """
     trade = _standing_post_trade()
     view = cards_command._trade_post(
@@ -1311,11 +1313,13 @@ def test_the_standing_post_carries_controls_only_while_pending():
     for custom_id in ids:
         assert custom_id.count(":") == 1, "one colon per custom_id"
     labels = _view_labels(view)
-    assert "Accept · Holder" in labels, "the holder's first name on Accept"
+    assert "Accept · take Wizard" in labels, (
+        "the card on Accept, matching the DM's wording"
+    )
     assert "Cancel · requester" in labels
     text = _view_text(view)
     assert "Only <@222> can accept" in text
-    assert "Shaun needs your duplicate Root Rider" in text
+    assert "**Shaun** needs your duplicate **Root Rider**" in text
     assert "Wizard, Dragon" in text
     # The channel post names both clans and calls neither side "you".
     assert "Morning Woods" in text and "Edrag Rush" in text
@@ -1556,30 +1560,53 @@ def test_a_legacy_post_keeps_the_plain_content_edit_path(monkeypatch):
     assert "components" in rest.edits[1]
 
 
-def test_an_edited_post_rereferences_the_upload_instead_of_reuploading():
-    """Edits point the gallery at attachment://<stored filename>.
+def test_an_accepted_post_becomes_the_coordination_point():
+    """After acceptance the post stops re-stating the proposal and tells the
+    two players what to do next, in short numbered steps - the live feedback
+    was that the family needs the next tap, not the history. Different clans
+    adds the move step; the same clan does not."""
+    trade = _standing_post_trade(
+        status="ready", channel_post_v2=True, holder_clan_tag="#HOME",
+    )
+    text = _view_text(cards_command._trade_post(trade))
+    assert "<@111> gives **Wizard**" in text
+    assert "<@222> gives **Root Rider**" in text
+    assert "Talk here" in text
+    assert "I sent my card" in text
+    assert "needs your duplicate" not in text, "the proposal detail is done"
+    same_clan_steps = text.count("**1.**") + text.count("**2.**") + text.count("**3.**")
 
-    The filename is remembered from posting time because given_card_id can
-    change on acceptance; recomputing it would reference a file the message
-    does not carry and the whole edit would be refused.
+    moved = cards_command._trade_post(dict(
+        trade, status="move_needed", holder_clan_tag="#AWAY",
+    ))
+    moved_text = _view_text(moved)
+    assert "moves to the other clan" in moved_text
+    assert "**4.**" in moved_text, "the move adds a step"
+    assert "**4.**" not in text, "same clan has no move step"
+    assert same_clan_steps == 3
+
+
+def test_an_edited_post_never_references_the_original_upload():
+    """Edits drop the strip - live-verified on 2026-08-16.
+
+    The `attachment://<filename>` re-reference theory failed on the first
+    real acceptance: the reply-note posted but the standing-post edit was
+    refused, exactly the audit's predicted failure mode. `attachment://`
+    only names a file uploaded in the same request, so an edit that carries
+    no upload must carry no reference either - otherwise the WHOLE edit
+    fails and the post freezes at "pending" with live buttons after the
+    trade has moved on.
     """
     trade = _standing_post_trade(
         status="move_needed",
         channel_post_v2=True,
         channel_post_image="card-trade-root_rider-wizard.png",
-        given_card_id="dragon",  # the accepter took a different spare
+        given_card_id="dragon",
     )
-    assert cards_command._standing_post_image_ref(trade) == (
-        "attachment://card-trade-root_rider-wizard.png"
-    )
-    # Terminal states use the compact form, which drops the image.
-    assert cards_command._standing_post_image_ref(
-        dict(trade, status="completed")
-    ) is None
-    # A legacy or imageless post has nothing to reference.
-    assert cards_command._standing_post_image_ref(
-        dict(trade, channel_post_image=None)
-    ) is None
+    for status in ("move_needed", "ready", "accepted", "completed"):
+        assert cards_command._standing_post_image_ref(
+            dict(trade, status=status)
+        ) is None, status
 
 
 def test_deliver_soon_returns_the_result_and_survives_a_slow_post(monkeypatch):
