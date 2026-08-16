@@ -32,16 +32,19 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
+from utils import cards_config
 from utils.constants import BLUE_ACCENT
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
 
-# The channel the notice lives in. Swapping this to the cards channel is a
-# one-line change; the stored message id is keyed by channel, so the old notice
-# in the previous channel is cleaned up on the next cycle.
-STICKY_CHANNEL_ID = 1533915865441894430
+# The channel the notice lives in, which is now also the trade board's channel.
+# Resolved from utils/cards_config.py so the notice telling members how to
+# trade can never end up in a different channel from the trades themselves.
+# The stored message id is keyed by channel, so if this resolves somewhere new
+# the old notice is cleaned up on the next cycle.
+STICKY_CHANNEL_ID = cards_config.cards_channel_id()
 # The shortest gap between two reposts. Not how often the loop looks: it wakes
 # every minute so that it can post soon after a conversation ends rather than
 # on the next multiple of ten.

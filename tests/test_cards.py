@@ -1095,6 +1095,157 @@ def test_trade_channel_posts_in_configured_guild_and_mentions_holder_only(monkey
     assert wrong_rest.messages == []
 
 
+class _RecordingRest:
+    """A rest client that records what the transport asked Discord to do."""
+
+    def __init__(self, guild_id=1):
+        self.guild_id = guild_id
+        self.messages = []
+        self.edits = []
+
+    async def fetch_channel(self, channel_id):
+        return SimpleNamespace(guild_id=self.guild_id)
+
+    async def create_message(self, **kwargs):
+        self.messages.append(kwargs)
+        return SimpleNamespace(id=777)
+
+    async def edit_message(self, **kwargs):
+        self.edits.append(kwargs)
+        return SimpleNamespace(id=kwargs.get("message"))
+
+
+def test_no_cards_channel_message_can_mention_everyone_or_a_role(monkeypatch):
+    """The transport decides mentions, so no caller can get this wrong.
+
+    Player names are the only user-controlled text in these posts. They are
+    escaped on the way in, but the allowlist is what makes a miss harmless
+    rather than an @everyone in a channel the whole family reads.
+    """
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    rest = _RecordingRest()
+    bot = SimpleNamespace(rest=rest)
+
+    # Every shape a caller can post in: plain content, V2 components, a reply.
+    asyncio.run(cards_command._channel_post(bot, content="@everyone hello"))
+    asyncio.run(cards_command._channel_post(bot, components=[], ping=[222]))
+    asyncio.run(cards_command._channel_post(bot, content="x", reply_to=5))
+
+    assert len(rest.messages) == 3
+    for sent in rest.messages:
+        assert sent["mentions_everyone"] is False
+        assert sent["role_mentions"] is False
+        assert isinstance(sent["user_mentions"], list), (
+            "never True and never undefined - an explicit list only"
+        )
+
+    asyncio.run(cards_command._channel_edit(
+        bot, channel_id=999, message_id=777, content="updated"
+    ))
+    assert rest.edits[0]["mentions_everyone"] is False
+    assert rest.edits[0]["role_mentions"] is False
+    assert rest.edits[0]["user_mentions"] is False
+
+
+def test_a_ping_list_is_bounded_deduplicated_and_survives_junk():
+    """A ping list comes from a query, and a query can return surprises."""
+    assert cards_command._mention_allowlist([]) == []
+    assert cards_command._mention_allowlist(None) == []
+    assert cards_command._mention_allowlist([5, 5, 6]) == [5, 6], "deduplicated"
+    assert cards_command._mention_allowlist(["7", 8]) == [7, 8], "coerced"
+    assert cards_command._mention_allowlist([None, "nope", 9]) == [9], (
+        "an unusable id is skipped rather than raising mid-delivery"
+    )
+    crowd = list(range(100))
+    capped = cards_command._mention_allowlist(crowd)
+    assert len(capped) == cards_command.MAX_PING_PER_MESSAGE
+    assert capped == crowd[:cards_command.MAX_PING_PER_MESSAGE], (
+        "the first ids win, so the caller's ordering is its priority"
+    )
+
+
+def test_a_reply_never_pings_the_author_on_top_of_the_allowlist(monkeypatch):
+    """Discord pings a reply's author by default. The policy picks who pings."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    rest = _RecordingRest()
+
+    asyncio.run(cards_command._channel_post(
+        SimpleNamespace(rest=rest), content="x", reply_to=42, ping=[222]
+    ))
+
+    assert rest.messages[0]["reply"] == 42
+    assert rest.messages[0]["mentions_reply"] is False
+    assert rest.messages[0]["user_mentions"] == [222]
+
+
+def test_channel_delivery_failures_are_reported_not_raised(monkeypatch):
+    """A trade is saved before it is announced, so delivery must not unwind it."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+
+    class Broken:
+        async def fetch_channel(self, channel_id):
+            raise RuntimeError("discord is having a day")
+
+        async def edit_message(self, **kwargs):
+            raise RuntimeError("discord is having a day")
+
+    bot = SimpleNamespace(rest=Broken())
+    assert asyncio.run(cards_command._channel_post(bot, content="x")) is None
+    assert asyncio.run(cards_command._channel_edit(
+        bot, channel_id=999, message_id=777, content="x"
+    )) is False
+
+
+def test_an_unconfigured_channel_refuses_to_post_rather_than_guessing(monkeypatch):
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", None)
+    rest = _RecordingRest()
+
+    posted = asyncio.run(cards_command._channel_post(
+        SimpleNamespace(rest=rest), content="x"
+    ))
+
+    assert posted is None
+    assert rest.messages == []
+
+
+def test_the_sticky_notice_and_the_trade_board_share_one_channel():
+    """The notice explaining how to trade cannot sit away from the trades.
+
+    They were two settings - an env var and a hardcoded snowflake - and
+    nothing stopped them disagreeing.
+    """
+    from extensions.tasks import cards_sticky
+    from utils import cards_config
+
+    assert cards_sticky.STICKY_CHANNEL_ID == cards_config.cards_channel_id()
+    assert cards_command.CARDS_CHANNEL_ID == cards_config.cards_channel_id()
+
+
+def test_an_unset_channel_variable_falls_back_instead_of_disabling_posting(monkeypatch):
+    """An unset CARDS_CHANNEL_ID used to mean "no trade board" silently."""
+    from utils import cards_config
+
+    monkeypatch.delenv("CARDS_CHANNEL_ID", raising=False)
+    assert cards_config.cards_channel_id() == cards_config.CARDS_CHANNEL_FALLBACK
+
+    monkeypatch.setenv("CARDS_CHANNEL_ID", "12345")
+    assert cards_config.cards_channel_id() == 12345
+
+    monkeypatch.setenv("CARDS_CHANNEL_ID", "not-a-snowflake")
+    assert cards_config.cards_channel_id() == cards_config.CARDS_CHANNEL_FALLBACK, (
+        "a malformed id falls back rather than disabling the board"
+    )
+
+    # The guild id has no fallback: it is the authority boundary, so an unset
+    # value must disable the feature rather than guess at a server.
+    monkeypatch.delenv("CARDS_GUILD_ID", raising=False)
+    assert cards_config.cards_guild_id() is None
+
+
 class _FakeInventoryCollection:
     def __init__(self, documents, *, lose_reservation_before_card_write=()):
         self.documents = {document["_id"]: document for document in documents}

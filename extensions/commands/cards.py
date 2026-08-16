@@ -70,6 +70,7 @@ from utils.cards import (
     normalize_status,
     reciprocal_trade_error,
 )
+from utils import cards_config
 from utils.component_state import delete_state, get_state, insert_state, update_state
 from utils import troop_emoji
 from utils.emoji import EmojiType, emojis
@@ -146,17 +147,18 @@ GLOBAL_CHAT_LINK = (
     "chatId=P592bad3209a4408a9ba356469caaaa81"
 )
 
-def _parse_snowflake_env(name: str) -> int | None:
-    raw = os.getenv(name, "").strip()
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return None
-    return value if 1 <= value < 2**64 else None
+# Kept as a module-level name because it was one, and a helper that moved to
+# utils is still the same function. utils/cards_config.py owns the parsing now
+# so the sticky task can resolve the same channel without importing this
+# 14k-line module.
+_parse_snowflake_env = cards_config.parse_snowflake_env
 
-
-CARDS_GUILD_ID = _parse_snowflake_env("CARDS_GUILD_ID")
-CARDS_CHANNEL_ID = _parse_snowflake_env("CARDS_CHANNEL_ID")
+# Read once, into module globals, because that is what the tests patch:
+# tests/test_cards.py sets `cards_command.CARDS_GUILD_ID` directly in ~20
+# places. Calling cards_config on every access would quietly ignore all of
+# them.
+CARDS_GUILD_ID = cards_config.cards_guild_id()
+CARDS_CHANNEL_ID = cards_config.cards_channel_id()
 
 # The four category emoji uploaded to the bot. `CardCategory.emoji` keeps its
 # plain unicode, which is still what select placeholders and the rendered board
@@ -328,7 +330,13 @@ def _configured_cards_guild_id() -> int | None:
 
 
 def _configured_cards_channel_id() -> int | None:
-    """Return the shared family trade-board channel, when configured."""
+    """Return the shared family trade-board channel.
+
+    Still typed optional, and every caller still guards for None. The env var
+    now falls back to the sticky notice's channel so an unset variable no
+    longer means "no trade board", but a test can patch the global to None and
+    every path must survive that.
+    """
     return CARDS_CHANNEL_ID
 
 
@@ -6521,70 +6529,178 @@ def _trade_channel_content(trade: dict) -> str:
     )
 
 
-async def _post_trade_channel(bot: hikari.GatewayBot, mongo: MongoClient, trade: dict) -> bool:
+# The most people one message may mention. A ping list is built from a query,
+# and a query can return more rows than anyone expected; truncating in the
+# transport means no policy mistake upstream can produce a twenty-mention post.
+MAX_PING_PER_MESSAGE = 5
+
+
+async def _channel_post(
+    bot: hikari.GatewayBot,
+    *,
+    content: str | None = None,
+    components: list | None = None,
+    ping: object = (),
+    attachment=None,
+    reply_to: int | None = None,
+    key: object = None,
+) -> int | None:
+    """Post to the family trade board. Returns the message id, or None.
+
+    Every mention decision lives here and nowhere else. `mentions_everyone` and
+    `role_mentions` are hardcoded off, and `user_mentions` is always an explicit
+    list of ids - never True, never left undefined. That makes a stray
+    `@everyone` in a player's name inert by construction rather than by every
+    caller remembering, and it is why a body can name both players while
+    pinging only the one who has to act.
+
+    Never raises. A trade is saved before it is announced, so a delivery
+    failure must not unwind the trade - the caller reports where it landed.
+    """
     channel_id = _configured_cards_channel_id()
     if channel_id is None:
-        return False
+        return None
     try:
         channel = await bot.rest.fetch_channel(channel_id)
         if int(getattr(channel, "guild_id", 0) or 0) != int(
             _configured_cards_guild_id() or 0
         ):
+            # A misconfigured environment must not spray family trade data into
+            # an unrelated server. This check is the reason it cannot.
             _log.error(
                 "card trade channel is outside configured guild channel=%s",
                 channel_id,
             )
-            return False
-        outgoing = {
+            return None
+        outgoing: dict = {
             "channel": channel_id,
-            "content": _trade_channel_content(trade),
             "mentions_everyone": False,
             "role_mentions": False,
-            "user_mentions": [int(trade["holder_discord_id"])],
+            "user_mentions": _mention_allowlist(ping),
         }
-        attachment = await asyncio.to_thread(_trade_strip_attachment, trade)
+        if content is not None:
+            outgoing["content"] = content
+        if components is not None:
+            # Components V2 is a creation-time flag. A message posted without
+            # it can never be edited into one, so this has to be right here.
+            outgoing["components"] = components
+            outgoing["flags"] = hikari.MessageFlag.IS_COMPONENTS_V2
         if attachment is not None:
             outgoing["attachment"] = attachment
+        if reply_to is not None:
+            outgoing["reply"] = int(reply_to)
+            # A reply that pings the author on top of the explicit allowlist
+            # would double-notify, and worse, notify somebody the policy did
+            # not choose.
+            outgoing["mentions_reply"] = False
         message = await bot.rest.create_message(**outgoing)
-        trade["channel_id"] = int(channel_id)
-        trade["channel_message_id"] = int(message.id)
+        return int(message.id)
+    except Exception as exc:
+        _log.info(
+            "card channel post failed key=%s error=%s", key, type(exc).__name__,
+        )
+        return None
+
+
+def _mention_allowlist(ping: object) -> list[int]:
+    """The ids this message is allowed to notify, bounded and de-duplicated.
+
+    Returns a list, never True and never undefined: an empty list is a
+    genuinely silent post, which is a thing the policy asks for.
+    """
+    allowed: list[int] = []
+    for value in ping or ():
+        try:
+            user_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if user_id not in allowed:
+            allowed.append(user_id)
+    return allowed[:MAX_PING_PER_MESSAGE]
+
+
+async def _channel_edit(
+    bot: hikari.GatewayBot,
+    *,
+    channel_id: object,
+    message_id: object,
+    content: str | None = None,
+    components: list | None = None,
+    key: object = None,
+) -> bool:
+    """Refresh a standing post in place. Never raises, and never notifies.
+
+    All three mention controls are off and there is no parameter to turn them
+    on, because an edit does not notify anybody in the first place - Discord
+    only fires a notification on create. Making that structural stops a future
+    caller from passing a ping here and quietly getting silence.
+    """
+    if channel_id is None or message_id is None:
+        return False
+    try:
+        outgoing: dict = {
+            "channel": int(channel_id),
+            "message": int(message_id),
+            "mentions_everyone": False,
+            "role_mentions": False,
+            "user_mentions": False,
+        }
+        if content is not None:
+            outgoing["content"] = content
+        if components is not None:
+            outgoing["components"] = components
+        await bot.rest.edit_message(**outgoing)
+        return True
+    except Exception as exc:
+        _log.info(
+            "card channel edit failed key=%s error=%s", key, type(exc).__name__,
+        )
+        return False
+
+
+async def _post_trade_channel(bot: hikari.GatewayBot, mongo: MongoClient, trade: dict) -> bool:
+    channel_id = _configured_cards_channel_id()
+    if channel_id is None:
+        return False
+    attachment = await asyncio.to_thread(_trade_strip_attachment, trade)
+    message_id = await _channel_post(
+        bot,
+        content=_trade_channel_content(trade),
+        ping=[trade["holder_discord_id"]],
+        attachment=attachment,
+        key=trade.get("_id"),
+    )
+    if message_id is None:
+        return False
+    trade["channel_id"] = int(channel_id)
+    trade["channel_message_id"] = message_id
+    try:
         await mongo.card_trades.update_one(
             {"_id": trade["_id"], "kind": "trade"},
             {"$set": {
                 "channel_id": int(channel_id),
-                "channel_message_id": int(message.id),
+                "channel_message_id": message_id,
             }},
         )
-        return True
     except Exception as exc:
+        # The post is already up and the ids are on the in-memory trade, so the
+        # caller's feedback is still correct. Only later status edits are lost,
+        # and they fall back to the configured channel id anyway.
         _log.info(
-            "card trade channel post failed trade=%s error=%s",
+            "card trade channel id write failed trade=%s error=%s",
             trade.get("_id"), type(exc).__name__,
         )
-        return False
+    return True
 
 
 async def _update_trade_channel(bot: hikari.GatewayBot, trade: dict) -> bool:
-    channel_id = trade.get("channel_id") or _configured_cards_channel_id()
-    message_id = trade.get("channel_message_id")
-    if channel_id is None or message_id is None:
-        return False
-    try:
-        await bot.rest.edit_message(
-            channel=int(channel_id),
-            message=int(message_id),
-            content=_trade_channel_content(trade),
-            mentions_everyone=False,
-            role_mentions=False,
-            user_mentions=False,
-        )
-        return True
-    except Exception as exc:
-        _log.info(
-            "card trade channel update failed trade=%s error=%s",
-            trade.get("_id"), type(exc).__name__,
-        )
-        return False
+    return await _channel_edit(
+        bot,
+        channel_id=trade.get("channel_id") or _configured_cards_channel_id(),
+        message_id=trade.get("channel_message_id"),
+        content=_trade_channel_content(trade),
+        key=trade.get("_id"),
+    )
 
 
 def _trade_proposal_dm(
@@ -9300,10 +9416,16 @@ async def prepare_card_inventory_storage(
         _log.critical(
             "Card Hub disabled: CARDS_GUILD_ID must be a valid Discord server ID"
         )
-    if _configured_cards_channel_id() is None:
+    channel_id = _configured_cards_channel_id()
+    if channel_id is None:
         _log.warning(
             "Card Hub trade-board posting disabled: CARDS_CHANNEL_ID is not configured"
         )
+    else:
+        # Named rather than merely present, because the channel is now shared
+        # with the sticky notice and a wrong one is the kind of mistake that is
+        # only visible in the wrong channel.
+        _log.info("Card Hub trade board and sticky notice: #%s", channel_id)
     try:
         await mongo.component_state.create_index(
             [("type", 1), ("user_id", 1), ("created_at", -1)],

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(utils/card_scan.py)",
+      "Edit(utils/card_scan_reference.py)",
+      "Edit(utils/card_board.py)",
+      "Edit(utils/cards.py)",
+      "Edit(extensions/components.py)",
+      "Write(utils/card_scan.py)",
+      "Write(utils/card_scan_reference.py)",
+      "Write(utils/card_board.py)",
+      "Write(utils/cards.py)",
+      "Write(extensions/components.py)",
+      "Bash(sed -i:*)",
+      "Bash(perl -pi:*)",
+      "Bash(perl -i:*)"
+    ]
+  }
+}
