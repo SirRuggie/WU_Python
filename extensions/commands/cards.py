@@ -4085,12 +4085,17 @@ def _match_list_view(
     pages: int,
     accent: object,
     pickers: list | None = None,
+    extra_controls: list | None = None,
 ) -> list[Container]:
     """One paginated list, shared by the favour and demand screens.
 
     Both are the same shape - a heading, grouped bullets and page controls -
     so they are one function. Sixty cards would not fit a single message and
-    a family of any size can push either list past that.
+    a family of any size can push either list past that. `extra_controls`
+    is a screen's own action row, mounted above the shared back row -
+    passed in rather than inserted afterwards, because the container
+    builder's `components` property hands back a copy and an insert into it
+    is a silent no-op.
     """
     tag = _normalize_tag(account.tag)
     body: list = [
@@ -4128,23 +4133,23 @@ def _match_list_view(
                 ),
             ]),
         ])
-    body.extend([
-        Separator(divider=True),
-        ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_matches:{tag}",
-                label="Back to Find trades",
-                emoji=RETURN_EMOJI,
-            ),
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"cards_dashboard:{tag}",
-                label="Back to collection",
-                emoji=HOME_EMOJI,
-            ),
-        ]),
-    ])
+    body.append(Separator(divider=True))
+    if extra_controls:
+        body.extend(extra_controls)
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_matches:{tag}",
+            label="Back to Find trades",
+            emoji=RETURN_EMOJI,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_dashboard:{tag}",
+            label="Back to collection",
+            emoji=HOME_EMOJI,
+        ),
+    ]))
     return [_panel(accent, body)]
 
 
@@ -4223,6 +4228,20 @@ def _demand_view(
             )
         blocks.append("\n".join(lines))
 
+    # The one screen that is already about your spares, so the button to
+    # publish them lives here rather than crowding Find trades past its
+    # five-control ceiling. Members were posting in-game TRADE OFFER
+    # screenshots by hand; this posts the same fact from recorded data.
+    share_row = (
+        [ActionRow(components=[Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_spares_share:{_normalize_tag(account.tag)}",
+            label="Share my spares in the channel",
+            emoji=SWAP_EMOJI,
+        )])]
+        if _shareable_spares(inventory)
+        else None
+    )
     return _match_list_view(
         account,
         title=f"# {emojis.card_hot} Your spares others want",
@@ -4233,6 +4252,7 @@ def _demand_view(
         pages=pages,
         # A list to read, not something waiting on the player: no accent.
         accent=None,
+        extra_controls=share_row,
     )
 
 
@@ -6951,6 +6971,26 @@ async def _channel_edit(
         return False
 
 
+async def _channel_delete(
+    bot: hikari.GatewayBot, *, channel_id: object, message_id: object,
+    key: object = None,
+) -> bool:
+    """Remove a superseded post. Never raises; already-gone is success."""
+    if channel_id is None or message_id is None:
+        return True
+    try:
+        await bot.rest.delete_message(int(channel_id), int(message_id))
+        return True
+    except hikari.NotFoundError:
+        return True
+    except Exception as exc:
+        _log.info(
+            "card channel delete failed key=%s error=%s",
+            key, type(exc).__name__,
+        )
+        return False
+
+
 async def _post_trade_channel(bot: hikari.GatewayBot, mongo: MongoClient, trade: dict) -> bool:
     channel_id = _configured_cards_channel_id()
     if channel_id is None:
@@ -7401,6 +7441,128 @@ async def _post_open_request_channel(
     return True
 
 
+def _shareable_spares(inventory: dict) -> dict[str, list]:
+    """category id -> spare cards, from reviewed categories only.
+
+    The same rule as `family_supply`: an untouched category has told us
+    nothing, and advertising a spare out of missing data would invite trades
+    that cannot complete.
+    """
+    values = normalize_cards(_without_reserved_cards(inventory).get("cards"))
+    complete = {str(v) for v in inventory.get("complete_categories") or ()}
+    spares: dict[str, list] = {}
+    for category in CATEGORIES:
+        if category.id not in complete:
+            continue
+        cards_with_spares = [
+            card for card in CATEGORY_CARDS[category.id]
+            if values.get(card.id, OWNED) >= DUPLICATE
+        ]
+        if cards_with_spares:
+            spares[category.id] = cards_with_spares
+    return spares
+
+
+def _spares_post(inventory: dict, *, board_media=None) -> list[Container]:
+    """One member's spare board, shared to the channel by their own tap.
+
+    Members were posting in-game TRADE OFFER screenshots by hand - stale the
+    day after they trade. This is the same fact from recorded data, so
+    re-sharing replaces the old post and the channel never keeps two
+    versions. No controls: a reader acts through /cards, where every guard
+    already lives.
+    """
+    name = _escape_markdown(inventory.get("player_name"), limit=60)
+    tag = _normalize_tag(inventory.get("_id"))
+    lines: list[str] = []
+    for category_id, cards_with_spares in _shareable_spares(inventory).items():
+        category = CATEGORY_BY_ID[category_id]
+        lines.append(f"**{category.short_name}**")
+        lines.extend(
+            f"- {troop_emoji.markup(card.id)} {card.name}".replace("  ", " ")
+            for card in cards_with_spares
+        )
+    components: list = [
+        Text(content=f"## {emojis.card_hot} Spares — {name}"),
+        Text(content=(
+            _player_line(
+                "Player", inventory.get("player_name"), tag,
+                inventory.get("town_hall"), inventory.get("clan_name"),
+                inventory.get("clan_emoji"),
+            )
+            + f"\n-# Updated {_relative_timestamp(inventory.get('confirmed_at'))}"
+        )),
+    ]
+    if board_media is not None:
+        components.extend([Separator(divider=True), board_media])
+    components.extend([
+        Separator(divider=True),
+        Text(content="\n".join(lines)),
+        Separator(divider=True),
+        Text(content=(
+            f"-# Want one? Open `/cards` → **Find trades** and ask **{name}** "
+            "to swap. Nothing is reserved by this post."
+        )),
+    ])
+    return [_panel(GOLD_ACCENT, components)]
+
+
+async def _post_spares_channel(
+    bot: hikari.GatewayBot, mongo: MongoClient, inventory: dict
+) -> bool:
+    """Post (or re-post) one member's spare board. Pings nobody.
+
+    One standing share per account: the previous post is deleted first, so
+    sharing twice moves the board to the bottom instead of duplicating it.
+    """
+    channel_id = _configured_cards_channel_id()
+    if channel_id is None:
+        return False
+    tag = _normalize_tag(inventory.get("_id"))
+    await _channel_delete(
+        bot,
+        channel_id=inventory.get("spares_post_channel_id"),
+        message_id=inventory.get("spares_post_message_id"),
+        key=f"spares {tag}",
+    )
+    try:
+        board = await asyncio.to_thread(
+            render_inventory_card_board,
+            _inventory_board_values(inventory),
+            player_name=str(inventory.get("player_name") or "Player"),
+        )
+        board_media = Media(items=[MediaItem(
+            media=hikari.Bytes(board.png_bytes, board.filename, "image/png"),
+            description=board.alt_text,
+        )])
+    except Exception:
+        # The words carry the same facts; delivery never depends on a render.
+        _log.exception("spares board render failed tag=%s", tag)
+        board_media = None
+    message_id = await _channel_post(
+        bot,
+        components=_spares_post(inventory, board_media=board_media),
+        ping=(),
+        key=f"spares {tag}",
+    )
+    if message_id is None:
+        return False
+    inventory["spares_post_channel_id"] = int(channel_id)
+    inventory["spares_post_message_id"] = message_id
+    try:
+        await mongo.card_inventories.update_one(
+            {"_id": tag},
+            {"$set": {
+                "spares_post_channel_id": int(channel_id),
+                "spares_post_message_id": message_id,
+                "spares_shared_at": datetime.now(timezone.utc),
+            }},
+        )
+    except Exception:
+        _log.info("spares post id write failed tag=%s", tag)
+    return True
+
+
 # Statuses whose gem-ask post collapses to the compact closed form: the audit
 # line stays visible, nothing on it is clickable any more.
 GEM_ASK_TERMINAL_STATUSES = frozenset({"accepted", "declined"})
@@ -7543,6 +7705,12 @@ TRADE_DELIVERY: dict[str, _EventPolicy] = {
     "open_request_posted": _EventPolicy(
         posts=True, pings=None, edits=False, dm="never"
     ),
+    # A member sharing their own spare board. Advertising, not a trade
+    # event: pings nobody, DMs nobody, and re-sharing replaces the previous
+    # post rather than adding one.
+    "spares_shared": _EventPolicy(
+        posts=True, pings=None, edits=False, dm="never"
+    ),
     # A claimed want-ad reuses its own message as the resulting trade's
     # standing post (edits=True refreshes it into `_trade_post`); the short
     # reply-note underneath is the post that pings. The document delivered
@@ -7669,6 +7837,11 @@ async def _deliver(
             # policy resolved above).
             if await _post_gem_ask_channel(bot, mongo, trade):
                 message_id = trade.get("channel_message_id")
+        elif event == "spares_shared":
+            # `trade` here is the member's INVENTORY document; the share
+            # replaces their previous one and pings nobody.
+            if await _post_spares_channel(bot, mongo, trade):
+                message_id = trade.get("spares_post_message_id")
         elif event == "open_request_claimed":
             # The claim reply-note, threaded under the want-ad's message -
             # which the edits step below refreshes into the trade's own
@@ -15150,6 +15323,115 @@ def _open_request_picker_view(account, card_ids: list[str]) -> list[Container]:
             emoji=RETURN_EMOJI,
         )]),
     ])]
+
+
+@register_action("cards_spares_share")
+@lightbulb.di.with_di
+async def cards_spares_share(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Consent screen before a member's spare board goes public."""
+    account, inventory, problem = await _load_target(
+        ctx, action_id, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not inventory_is_matchable(inventory):
+        return _stale_collection_notice()
+    spares = _shareable_spares(inventory)
+    if not spares:
+        return _notice(
+            "No spares to share yet",
+            "Only spares from finished categories go on the board. Mark a "
+            "category **Ready to trade** in **Update collection** first.",
+            back_tag=_normalize_tag(account.tag),
+        )
+    total = sum(len(cards_list) for cards_list in spares.values())
+    tag = _normalize_tag(account.tag)
+    channel_id = _configured_cards_channel_id()
+    replacing = bool(inventory.get("spares_post_message_id"))
+    return [_panel(GOLD_ACCENT, [
+        Text(content=f"## {emojis.card_hot} Share your spares?"),
+        Text(content=(
+            f"Your board and all **{total}** spare"
+            f"{'s' if total != 1 else ''} will be posted in "
+            f"<#{channel_id}> **for everyone to see**, with your player "
+            "name, tag and clan on it.\n"
+            "Nobody is pinged."
+            + (
+                "\nYour previous share is replaced."
+                if replacing
+                else ""
+            )
+        )),
+        Separator(divider=True),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=f"cards_spares_post:{tag}",
+                label="Post it",
+                emoji=emojis.yes.partial_emoji,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_matches:{tag}",
+                label="Cancel",
+                emoji=CANCEL_EMOJI,
+            ),
+        ]),
+    ])]
+
+
+@register_action("cards_spares_post")
+@lightbulb.di.with_di
+async def cards_spares_post(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Post the spare board, replacing any previous share."""
+    account, inventory, problem = await _load_target(
+        ctx, action_id, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not inventory_is_matchable(inventory):
+        return _stale_collection_notice()
+    if not _shareable_spares(inventory):
+        return _notice(
+            "No spares to share yet",
+            "Only spares from finished categories go on the board.",
+            back_tag=_normalize_tag(account.tag),
+        )
+    delivery = await _deliver_soon(
+        bot, mongo, inventory, event="spares_shared"
+    )
+    channel_id = _configured_cards_channel_id()
+    if delivery is not None and delivery.channel_message_id is None:
+        return _notice(
+            "Could not post your spares",
+            f"Posting in <#{channel_id}> failed, so nothing was shared. "
+            "Try again in a moment.",
+            back_tag=_normalize_tag(account.tag),
+        )
+    detail = (
+        f"Your spare board is up in <#{channel_id}>."
+        if delivery is not None
+        else f"I am posting your spare board in <#{channel_id}> now."
+    )
+    return _trade_feedback(
+        "Spares shared",
+        detail + "\n-# Share again any time - the old post is replaced, "
+        "never duplicated.",
+        account.tag,
+    )
 
 
 @register_action("cards_req_pick")

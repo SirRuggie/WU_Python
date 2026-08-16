@@ -1124,6 +1124,7 @@ class _RecordingRest:
         self.guild_id = guild_id
         self.messages = []
         self.edits = []
+        self.deletes = []
 
     async def fetch_channel(self, channel_id):
         return SimpleNamespace(guild_id=self.guild_id)
@@ -1131,6 +1132,9 @@ class _RecordingRest:
     async def create_message(self, **kwargs):
         self.messages.append(kwargs)
         return SimpleNamespace(id=777)
+
+    async def delete_message(self, channel_id, message_id):
+        self.deletes.append((int(channel_id), int(message_id)))
 
     async def edit_message(self, **kwargs):
         self.edits.append(kwargs)
@@ -1372,7 +1376,7 @@ def test_the_standing_post_stays_far_below_the_component_ceiling():
 
 
 def test_only_listed_events_may_post_and_ping():
-    """THE noise guard: exactly five events create a channel message.
+    """THE noise guard: exactly six events create a channel message.
 
     Widening delivery is a deliberate one-row change to TRADE_DELIVERY,
     never an accident at a call site - this test is what enforces that.
@@ -1381,8 +1385,14 @@ def test_only_listed_events_may_post_and_ping():
     posting = {event for event, policy in table.items() if policy.posts}
     assert posting == {
         "proposal_created", "proposal_accepted", "open_request_posted",
-        "open_request_claimed", "gem_ask_posted",
+        "open_request_claimed", "gem_ask_posted", "spares_shared",
     }
+    # A member sharing their own board: advertising, not a trade event.
+    # Pings nobody, DMs nobody, and the posting path replaces the member's
+    # previous share rather than stacking a new one.
+    assert table["spares_shared"] == cards_command._EventPolicy(
+        posts=True, pings=None, edits=False, dm="never"
+    )
     assert table["proposal_created"].pings == "holder"
     assert table["proposal_accepted"].pings == "requester"
     # The owner's decision: a want-ad pings NOBODY, edits nothing (it IS the
@@ -1558,6 +1568,122 @@ def test_a_legacy_post_keeps_the_plain_content_edit_path(monkeypatch):
     assert asyncio.run(cards_command._update_trade_channel(bot, modern)) is True
     assert "content" not in rest.edits[1]
     assert "components" in rest.edits[1]
+
+
+class _FakeInventoryUpdates:
+    """Just enough of card_inventories for the spares share path."""
+
+    def __init__(self, documents=()):
+        self.docs = {d["_id"]: dict(d) for d in documents}
+        self.updates = []
+
+    async def update_one(self, query, update):
+        self.updates.append((query, update))
+        doc = self.docs.get(query.get("_id"))
+        if doc is not None:
+            doc.update(update.get("$set") or {})
+        return SimpleNamespace(modified_count=1 if doc else 0)
+
+
+def test_a_shared_spares_board_replaces_the_previous_one_and_pings_nobody(
+    monkeypatch,
+):
+    """The screenshot habit, served from recorded data.
+
+    Members were posting in-game TRADE OFFER screenshots by hand - stale the
+    day after a trade. The bot's share is one standing post per account: the
+    old one is deleted first, nobody is notified, and nothing on it is
+    clickable - a reader acts through /cards where every guard lives.
+    """
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    inventory = _complete_inventory()
+    inventory["player_name"] = "Balaji"
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+    inventory["spares_post_channel_id"] = 999
+    inventory["spares_post_message_id"] = 424242
+    rest = _RecordingRest()
+    mongo = SimpleNamespace(
+        card_inventories=_FakeInventoryUpdates([inventory]),
+    )
+
+    posted = asyncio.run(cards_command._post_spares_channel(
+        SimpleNamespace(rest=rest), mongo, inventory
+    ))
+
+    assert posted is True
+    assert rest.deletes == [(999, 424242)], "the old share is removed first"
+    assert len(rest.messages) == 1
+    sent = rest.messages[0]
+    assert sent["user_mentions"] == [], "advertising pings nobody"
+    view = sent["components"]
+    _assert_discord_payload(view)
+    assert not [
+        n for n in _view_nodes(view) if "custom_id" in n
+    ], "nothing on a share is clickable"
+    text = _view_text(view)
+    assert "Balaji" in text
+    assert "Wizard" in text, "the spare is listed by name"
+    assert "Nothing is reserved" in text
+    assert inventory["spares_post_message_id"] == 777, "the new id is stored"
+
+
+def test_the_spares_share_consent_screen_states_the_stakes(monkeypatch):
+    """Name, tag and clan go public - the member says so first."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+
+    async def load(_ctx, _tag, **_kwargs):
+        account = Account(
+            tag="#ME", name="Member", clan_tag="#HOME",
+            clan_name="Home Clan", town_hall=18,
+        )
+        return account, inventory, None
+
+    monkeypatch.setattr(cards_command, "_load_target", load)
+    view = asyncio.run(cards_command.cards_spares_share(
+        _quantity_ctx(), "#ME",
+        coc_client=SimpleNamespace(), mongo=SimpleNamespace(),
+    ))
+    text = _view_text(view)
+    assert "<#999>" in text and "for everyone to see" in text
+    assert "Nobody is pinged" in text
+    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    assert "cards_spares_post:#ME" in ids, "consent before publication"
+
+    # Without a shareable spare there is nothing to publish.
+    bare = _complete_inventory()
+    inventory_backup = dict(inventory)
+    inventory.clear()
+    inventory.update(bare)
+    refused = asyncio.run(cards_command.cards_spares_share(
+        _quantity_ctx(), "#ME",
+        coc_client=SimpleNamespace(), mongo=SimpleNamespace(),
+    ))
+    assert "No spares to share" in _view_text(refused)
+    inventory.clear()
+    inventory.update(inventory_backup)
+
+
+def test_the_demand_screen_offers_the_share_button(monkeypatch):
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+    supply = {
+        "wizard": cards.CardSupply(
+            card_id="wizard", holders=(), seekers=("#A", "#B"), reporting=2,
+        ),
+    }
+    view = cards_command._demand_view(account, inventory, supply)
+    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    assert "cards_spares_share:#ME" in ids, (
+        "the screen about your spares is where sharing them lives"
+    )
 
 
 def test_an_accepted_post_becomes_the_coordination_point():
