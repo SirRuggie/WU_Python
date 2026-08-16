@@ -2728,7 +2728,8 @@ def test_the_claimed_note_pings_the_poster_and_escapes_the_name():
     text = _view_text(note)
     assert text.startswith("✅ <@111>"), "addressed to the poster, who pings"
     assert "has your **Root Rider**" in text
-    assert "You give **Wizard**, you get **Root Rider**." in text
+    assert "You give: **Wizard**" in text
+    assert "You get: **Root Rider**" in text
     assert "`/cards` → **My trades**" in text
     assert "Weird\\*\\_Name" in text, "the claimer's name is escaped"
     assert not [n for n in _view_nodes(note) if "custom_id" in n], (
