@@ -7214,10 +7214,15 @@ def _accepted_channel_note(trade: dict) -> list[Container]:
     wanted = CARD_BY_ID[trade["wanted_card_id"]].name
     given = CARD_BY_ID[trade["given_card_id"]].name
     holder = _escape_markdown(trade.get("holder_name"), limit=40)
+    # Stacked short lines, not one sentence: the first live note read as a
+    # cramped run-on on a phone. Each fact gets its own line.
     return [_panel(GREEN_ACCENT, [Text(content=(
-        f"✅ <@{int(trade['requester_discord_id'])}> — **{holder}** accepted. "
-        f"You give **{given}**, you get **{wanted}**. "
-        "Next steps in `/cards` → **My trades**."
+        f"✅ <@{int(trade['requester_discord_id'])}> — **{holder}** "
+        "accepted!\n"
+        f"You give: **{given}**\n"
+        f"You get: **{wanted}**\n"
+        "-# Next steps are on the post above, or in `/cards` → "
+        "**My trades**."
     ))])]
 
 
@@ -7235,10 +7240,14 @@ def _claimed_channel_note(trade: dict) -> list[Container]:
     wanted = CARD_BY_ID[trade["wanted_card_id"]].name
     given = CARD_BY_ID[trade["given_card_id"]].name
     holder = _escape_markdown(trade.get("holder_name"), limit=40)
+    # Same stacked shape as _accepted_channel_note, for the same reason.
     return [_panel(GREEN_ACCENT, [Text(content=(
-        f"✅ <@{int(trade['requester_discord_id'])}> — **{holder}** has your "
-        f"{wanted}. You give **{given}**, you get **{wanted}**. "
-        "Next steps in `/cards` → **My trades**."
+        f"✅ <@{int(trade['requester_discord_id'])}> — **{holder}** has "
+        f"your **{wanted}**!\n"
+        f"You give: **{given}**\n"
+        f"You get: **{wanted}**\n"
+        "-# Next steps are on the post above, or in `/cards` → "
+        "**My trades**."
     ))])]
 
 
