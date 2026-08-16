@@ -1569,8 +1569,11 @@ def test_an_accepted_post_becomes_the_coordination_point():
         status="ready", channel_post_v2=True, holder_clan_tag="#HOME",
     )
     text = _view_text(cards_command._trade_post(trade))
-    assert "<@111> gives **Wizard**" in text
-    assert "<@222> gives **Root Rider**" in text
+    # Mention plus account name: one Discord user can hold both sides with
+    # two linked accounts, and mentions alone rendered as the same person
+    # giving both cards.
+    assert "<@111> — **Shaun** gives **Wizard**" in text
+    assert "<@222> — **Holder Person** gives **Root Rider**" in text
     assert "Talk here" in text
     assert "I sent my card" in text
     assert "needs your duplicate" not in text, "the proposal detail is done"

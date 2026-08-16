@@ -7143,9 +7143,14 @@ def _trade_post(trade: dict, *, attachment_ref=None) -> list[Container]:
         )
         return [_panel(_trade_post_accent(status), [
             Text(content=f"## {label}"),
+            # Mention AND account name on each line. A mention shows the
+            # Discord user, and one user can hold both sides of a swap with
+            # two linked accounts - the first live acceptance rendered as the
+            # same person giving both cards. The account name is what tells
+            # the two lines apart.
             Text(content=(
-                f"<@{requester_id}> gives **{given}**\n"
-                f"<@{holder_id}> gives **{wanted}**"
+                f"<@{requester_id}> — **{requester}** gives **{given}**\n"
+                f"<@{holder_id}> — **{holder}** gives **{wanted}**"
             )),
             Separator(divider=True),
             Text(content=steps),
