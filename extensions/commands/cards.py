@@ -2588,15 +2588,29 @@ def _dashboard(
             f"{headline} · updated {_relative_timestamp(stamp)}"
         )),
     ]
+    # Directly under the name, because both act on the account rather than
+    # the cards. Hide my cards is the standing opt-out: one DANGER tap and
+    # nobody can send this account requests. It was only reachable from the
+    # check-in DM, which meant the members who wanted out quietly had to be
+    # nagged twice before they were offered the door. One tap is safe here
+    # because the paused screen it lands on leads with "start trading again".
+    account_row: list = []
     if account_count > 1:
-        # Directly under the name, because that is what it changes. It used to
-        # sit in the row of collection controls, which act on the cards.
-        body.append(ActionRow(components=[Button(
+        account_row.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"cards_account_page:0|{tag}",
             label="Switch account",
             emoji=SWITCH_EMOJI,
-        )]))
+        ))
+    if not inventory.get("trading_paused"):
+        account_row.append(Button(
+            style=hikari.ButtonStyle.DANGER,
+            custom_id=f"cards_trading_off:{tag}",
+            label="Hide my cards",
+            emoji=CANCEL_EMOJI,
+        ))
+    if account_row:
+        body.append(ActionRow(components=account_row))
 
     notes = []
     if unverified_duplicates and untrusted:

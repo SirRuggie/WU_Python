@@ -4811,9 +4811,20 @@ def test_dashboard_leads_with_the_board_and_carries_every_action():
         # Not setup-only: your cards keep changing after every category has
         # been reviewed, and marking one ready cannot be undone.
         "cards_advanced:#ME",
+        # The standing opt-out. It was only reachable from the check-in DM,
+        # so opting out quietly required being nagged twice first.
+        "cards_trading_off:#ME",
     }
     # The junk-drawer router is gone entirely.
     assert "cards_more:#ME" not in custom_ids
+    # A paused account is offered the way back in, never a second way out.
+    paused = cards_command._dashboard(
+        account, dict(inventory, trading_paused=True), account_count=1,
+    )
+    assert not any(
+        str(n.get("custom_id", "")).startswith("cards_trading_off:")
+        for n in _view_nodes(paused)
+    )
 
 
 def test_dashboard_without_any_recorded_cards_still_shows_the_board():
