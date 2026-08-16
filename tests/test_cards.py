@@ -277,6 +277,13 @@ class _FakeTradeCollection:
             self.docs.pop(key)
         return SimpleNamespace(deleted_count=len(doomed))
 
+    async def delete_one(self, query):
+        for key, value in list(self.docs.items()):
+            if _matches_query(value, query):
+                self.docs.pop(key)
+                return SimpleNamespace(deleted_count=1)
+        return SimpleNamespace(deleted_count=0)
+
     async def find_one(self, query):
         return next(
             (document for document in self.docs.values()
@@ -346,7 +353,11 @@ def _matches_value(actual, expected):
             return False
         elif operator == "$in" and actual not in operand:
             return False
-        elif operator not in {"$exists", "$gt", "$gte", "$lt", "$lte", "$in"}:
+        elif operator == "$ne" and actual == operand:
+            return False
+        elif operator not in {
+            "$exists", "$gt", "$gte", "$lt", "$lte", "$in", "$ne",
+        }:
             raise AssertionError(f"unsupported fake query operator: {operator}")
     return True
 
@@ -1082,10 +1093,21 @@ def test_trade_channel_posts_in_configured_guild_and_mentions_holder_only(monkey
     assert sent["user_mentions"] == [222]
     assert sent["mentions_everyone"] is False
     assert sent["role_mentions"] is False
-    assert sent["attachment"].filename == "card-trade-root_rider-wizard.png"
-    assert sent["attachment"].mimetype == "image/png"
+    # The standing post is Components V2 now: the strip is mounted inside the
+    # message's own gallery (a bare attachment would silently not render).
+    assert sent["flags"] & hikari.MessageFlag.IS_COMPONENTS_V2
+    assert "attachment" not in sent
+    media = _view_media(sent["components"])
+    assert "card-trade-root_rider-wizard.png" in str(media)
     assert trades.docs[trade["_id"]]["channel_id"] == 999
     assert trades.docs[trade["_id"]]["channel_message_id"] == 777
+    # The V2 marker is what routes later edits down the components branch,
+    # and the filename is remembered so edits can re-reference the upload
+    # even after the accepter changes given_card_id.
+    assert trades.docs[trade["_id"]]["channel_post_v2"] is True
+    assert trades.docs[trade["_id"]]["channel_post_image"] == (
+        "card-trade-root_rider-wizard.png"
+    )
 
     wrong_rest = Rest(guild_id=2)
     rejected = asyncio.run(cards_command._post_trade_channel(
@@ -1244,6 +1266,1627 @@ def test_an_unset_channel_variable_falls_back_instead_of_disabling_posting(monke
     # value must disable the feature rather than guess at a server.
     monkeypatch.delenv("CARDS_GUILD_ID", raising=False)
     assert cards_config.cards_guild_id() is None
+
+
+def _standing_post_trade(**overrides):
+    """A trade with everything the standing post renders."""
+    trade = _trade_document()
+    trade.update({
+        "kind": "trade",
+        "status": "pending",
+        "requester_name": "Shaun",
+        "requester_discord_id": 111,
+        "holder_name": "Holder Person",
+        "holder_discord_id": 222,
+        "requester_clan_tag": "#HOME",
+        "requester_clan_name": "Morning Woods",
+        "requester_town_hall": 17,
+        "holder_clan_tag": "#AWAY",
+        "holder_clan_name": "Edrag Rush",
+        "holder_town_hall": 18,
+        "compatible_card_ids": ["wizard", "dragon"],
+    })
+    trade.update(overrides)
+    return trade
+
+
+def test_the_standing_post_carries_controls_only_while_pending():
+    """The V2 standing post: three live controls while pending, none after.
+
+    The accept button wears the holder's name and the body says who may
+    accept - the refusal already works for everybody else, the label is what
+    stops the taps.
+    """
+    trade = _standing_post_trade()
+    view = cards_command._trade_post(
+        trade, attachment_ref="attachment://card-trade-root_rider-wizard.png"
+    )
+    _assert_discord_payload(view)
+    ids = [str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n]
+    assert ids == [
+        "cards_pub_accept:trade-a",
+        "cards_pub_decline:trade-a",
+        "cards_pub_cancel:trade-a",
+    ]
+    for custom_id in ids:
+        assert custom_id.count(":") == 1, "one colon per custom_id"
+    labels = _view_labels(view)
+    assert "Accept · Holder" in labels, "the holder's first name on Accept"
+    assert "Cancel · requester" in labels
+    text = _view_text(view)
+    assert "Only <@222> can accept" in text
+    assert "Shaun needs your duplicate Root Rider" in text
+    assert "Wizard, Dragon" in text
+    # The channel post names both clans and calls neither side "you".
+    assert "Morning Woods" in text and "Edrag Rush" in text
+    assert "you are in" not in text
+    media = _view_media(view)
+    assert "attachment://card-trade-root_rider-wizard.png" in str(media)
+
+    # An accepted-ish trade keeps the full body but loses every control:
+    # from here it belongs to My trades, not to the channel.
+    for status in ("reserving", "move_needed", "ready", "accepted",
+                   "completing", "needs_review"):
+        working = cards_command._trade_post(dict(trade, status=status))
+        assert not [
+            n for n in _view_nodes(working) if "custom_id" in n
+        ], status
+
+    # Terminal statuses collapse to the compact closed form: zero
+    # interactive components, no image, but the audit line survives.
+    for status in sorted(cards_command.TRADE_POST_TERMINAL_STATUSES):
+        closed = cards_command._trade_post(
+            dict(trade, status=status),
+            attachment_ref="attachment://card-trade-root_rider-wizard.png",
+        )
+        _assert_discord_payload(closed)
+        assert not [n for n in _view_nodes(closed) if "custom_id" in n], status
+        assert _view_media(closed) is None, status
+        closed_text = _view_text(closed)
+        assert "Root Rider" in closed_text and "Wizard" in closed_text, (
+            "the closed form still records what the trade was"
+        )
+
+
+def test_the_standing_post_stays_far_below_the_component_ceiling():
+    """Discord rejects the WHOLE message past 40 components.
+
+    Worst case: pending (controls present), an image mounted, long names,
+    and a maximal spare list - headroom, not just "fits".
+    """
+    trade = _standing_post_trade(
+        requester_name="R" * 90,
+        holder_name="H" * 90,
+        compatible_card_ids=[card.id for card in cards.CARDS[:30]],
+    )
+    view = cards_command._trade_post(
+        trade, attachment_ref="attachment://card-trade-root_rider-wizard.png"
+    )
+    used = len([n for n in _view_nodes(view) if "type" in n])
+    assert used <= 36, f"standing post is at {used}/40"
+    _assert_discord_payload(view)
+
+
+def test_only_listed_events_may_post_and_ping():
+    """THE noise guard: exactly five events create a channel message.
+
+    Widening delivery is a deliberate one-row change to TRADE_DELIVERY,
+    never an accident at a call site - this test is what enforces that.
+    """
+    table = cards_command.TRADE_DELIVERY
+    posting = {event for event, policy in table.items() if policy.posts}
+    assert posting == {
+        "proposal_created", "proposal_accepted", "open_request_posted",
+        "open_request_claimed", "gem_ask_posted",
+    }
+    assert table["proposal_created"].pings == "holder"
+    assert table["proposal_accepted"].pings == "requester"
+    # The owner's decision: a want-ad pings NOBODY, edits nothing (it IS the
+    # standing post) and never falls back to a DM - there is no recipient.
+    assert table["open_request_posted"] == cards_command._EventPolicy(
+        posts=True, pings=None, edits=False, dm="never"
+    )
+    # A claim delivers the CONVERTED kind:"trade" doc, so "requester" is the
+    # want-ad's poster; the edit refreshes the reused want-ad message into
+    # the trade's standing post. dm="always" for the live-verification
+    # window, like the other two pinging events - the end state is
+    # "fallback", one table entry away.
+    assert table["open_request_claimed"] == cards_command._EventPolicy(
+        posts=True, pings="requester", edits=True, dm="always"
+    )
+    # Nothing else may ping: a ping without a post cannot exist anyway
+    # (edits are structurally silent), and the table says so.
+    for event, policy in table.items():
+        if not policy.posts:
+            assert policy.pings is None, event
+    # The silent set edits the standing post and sends nothing at all.
+    for event in ("declined", "cancelled", "ready", "card_arrived",
+                  "completed", "expired"):
+        assert table[event] == cards_command._EventPolicy(
+            posts=False, pings=None, edits=True, dm="never"
+        ), event
+    # The gem ask IS its standing post and pings the one holder asked; the
+    # DM is strictly a fallback for a failed post - the old DM-only
+    # fragility (and its delete-on-DM-failure branch) is gone.
+    assert table["gem_ask_posted"] == cards_command._EventPolicy(
+        posts=True, pings="holder", edits=False, dm="fallback"
+    )
+    # The answer never posts or pings - the ping budget is proposal +
+    # acceptance ONLY (the owner's decision overrides the plan table's
+    # sketch). It silently edits the ask's post and always DMs the asker.
+    assert table["gem_ask_answered"] == cards_command._EventPolicy(
+        posts=False, pings=None, edits=True, dm="always"
+    )
+    # Review stays private: no post, but both DMs still go.
+    assert table["needs_review"].dm == "always"
+    assert table["needs_review"].edits is True
+
+
+class _DmRecorder:
+    """Stands in for _send_trade_dm and records who got what."""
+
+    def __init__(self, fail_for=()):
+        self.sent = []
+        self.fail_for = set(fail_for)
+
+    async def __call__(self, _bot, discord_id, components, **_kwargs):
+        self.sent.append((int(discord_id), components))
+        return int(discord_id) not in self.fail_for
+
+
+def _delivery_fixture(monkeypatch, *, fail_dm_for=()):
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    dms = _DmRecorder(fail_for=fail_dm_for)
+    monkeypatch.setattr(cards_command, "_send_trade_dm", dms)
+    rest = _RecordingRest()
+    trades = _FakeTradeCollection()
+    mongo = SimpleNamespace(card_trades=trades)
+    return SimpleNamespace(rest=rest), mongo, rest, dms
+
+
+def test_acceptance_posts_one_reply_pinging_exactly_the_requester(monkeypatch):
+    bot, mongo, rest, dms = _delivery_fixture(monkeypatch)
+    trade = _standing_post_trade(
+        status="move_needed",
+        channel_id=999,
+        channel_message_id=555,
+        channel_post_v2=True,
+        channel_post_image="card-trade-root_rider-wizard.png",
+    )
+    mongo.card_trades.docs[trade["_id"]] = dict(trade)
+
+    delivery = asyncio.run(cards_command._deliver(
+        bot, mongo, trade, event="proposal_accepted"
+    ))
+
+    assert len(rest.messages) == 1, "exactly ONE new channel message"
+    sent = rest.messages[0]
+    assert sent["user_mentions"] == [111], "exactly the requester"
+    assert sent["reply"] == 555, "threaded under the standing post"
+    assert sent["mentions_reply"] is False
+    note_text = _view_text(sent["components"])
+    assert "<@111>" in note_text and "accepted" in note_text
+    assert "My trades" in note_text
+    # The standing post itself is refreshed in place, as V2.
+    assert len(rest.edits) == 1
+    assert "components" in rest.edits[0] and "content" not in rest.edits[0]
+    # dm="always" during the live-verification window: the requester's DM
+    # still goes on top of the ping.
+    assert [recipient for recipient, _ in dms.sent] == [111]
+    assert delivery.channel_message_id == 777
+    assert delivery.pinged == (111,)
+    assert delivery.dm_sent == (111,)
+
+
+def test_silent_events_edit_the_post_and_send_nothing(monkeypatch):
+    """decline / cancel / ready / card-arrived / completed / expired:
+    zero new posts, zero pings, zero DMs - only the silent edit."""
+    for event in ("declined", "cancelled", "ready", "card_arrived",
+                  "completed", "expired"):
+        bot, mongo, rest, dms = _delivery_fixture(monkeypatch)
+        status = {
+            "declined": "declined", "cancelled": "cancelled",
+            "ready": "ready", "card_arrived": "ready",
+            "completed": "completed", "expired": "expired",
+        }[event]
+        trade = _standing_post_trade(
+            status=status,
+            channel_id=999,
+            channel_message_id=555,
+            channel_post_v2=True,
+        )
+
+        delivery = asyncio.run(cards_command._deliver(
+            bot, mongo, trade, event=event
+        ))
+
+        assert rest.messages == [], event
+        assert dms.sent == [], event
+        assert len(rest.edits) == 1, event
+        assert delivery.pinged == (), event
+        assert delivery.channel_message_id is None, event
+
+
+def test_needs_review_still_dms_both_participants(monkeypatch):
+    bot, mongo, rest, dms = _delivery_fixture(monkeypatch)
+    trade = _standing_post_trade(
+        status="needs_review",
+        channel_id=999,
+        channel_message_id=555,
+        channel_post_v2=True,
+    )
+
+    delivery = asyncio.run(cards_command._deliver(
+        bot, mongo, trade, event="needs_review",
+        dm_components_by_recipient=cards_command._notify_review_participants(
+            trade, "Recheck both categories."
+        ),
+    ))
+
+    assert rest.messages == [], "review never posts publicly"
+    assert sorted(recipient for recipient, _ in dms.sent) == [111, 222]
+    for _recipient, components in dms.sent:
+        assert "Card swap needs review" in _view_text(components)
+    assert len(rest.edits) == 1
+    assert delivery.dm_sent == (111, 222) or set(delivery.dm_sent) == {111, 222}
+
+
+def test_a_legacy_post_keeps_the_plain_content_edit_path(monkeypatch):
+    """A message created with content= can never become V2 by an edit, so
+    trades without the creation-time marker keep today's path verbatim."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    rest = _RecordingRest()
+    bot = SimpleNamespace(rest=rest)
+    legacy = _standing_post_trade(
+        status="declined", channel_id=999, channel_message_id=555,
+    )
+    assert "channel_post_v2" not in legacy
+
+    assert asyncio.run(cards_command._update_trade_channel(bot, legacy)) is True
+    assert rest.edits[0]["content"] == cards_command._trade_channel_content(
+        legacy
+    )
+    assert "components" not in rest.edits[0]
+
+    modern = dict(legacy, channel_post_v2=True)
+    assert asyncio.run(cards_command._update_trade_channel(bot, modern)) is True
+    assert "content" not in rest.edits[1]
+    assert "components" in rest.edits[1]
+
+
+def test_an_edited_post_rereferences_the_upload_instead_of_reuploading():
+    """Edits point the gallery at attachment://<stored filename>.
+
+    The filename is remembered from posting time because given_card_id can
+    change on acceptance; recomputing it would reference a file the message
+    does not carry and the whole edit would be refused.
+    """
+    trade = _standing_post_trade(
+        status="move_needed",
+        channel_post_v2=True,
+        channel_post_image="card-trade-root_rider-wizard.png",
+        given_card_id="dragon",  # the accepter took a different spare
+    )
+    assert cards_command._standing_post_image_ref(trade) == (
+        "attachment://card-trade-root_rider-wizard.png"
+    )
+    # Terminal states use the compact form, which drops the image.
+    assert cards_command._standing_post_image_ref(
+        dict(trade, status="completed")
+    ) is None
+    # A legacy or imageless post has nothing to reference.
+    assert cards_command._standing_post_image_ref(
+        dict(trade, channel_post_image=None)
+    ) is None
+
+
+def test_deliver_soon_returns_the_result_and_survives_a_slow_post(monkeypatch):
+    """The interactive wrapper: a fast delivery reports, a slow one keeps
+    running past the 3-second patience window instead of being cancelled."""
+    finished = asyncio.Event()
+
+    async def slow_deliver(*_args, **_kwargs):
+        await asyncio.sleep(0.05)
+        finished.set()
+        return cards_command._Delivery(channel_message_id=777, pinged=(222,))
+
+    monkeypatch.setattr(cards_command, "_deliver", slow_deliver)
+
+    async def fast_path():
+        return await cards_command._deliver_soon(
+            SimpleNamespace(), SimpleNamespace(), {"_id": "t"},
+            event="proposal_created",
+        )
+
+    delivery = asyncio.run(fast_path())
+    assert delivery is not None and delivery.channel_message_id == 777
+
+    async def never_deliver(*_args, **_kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(cards_command, "_deliver", never_deliver)
+    monkeypatch.setattr(cards_command.asyncio, "wait", _instant_timeout_wait)
+
+    async def slow_path():
+        cards_command._DELIVERY_TASKS.clear()
+        result = await cards_command._deliver_soon(
+            SimpleNamespace(), SimpleNamespace(), {"_id": "t"},
+            event="proposal_created",
+        )
+        task = next(iter(cards_command._DELIVERY_TASKS))
+        still_running = not task.done()
+        task.cancel()
+        return result, still_running
+
+    result, still_running = asyncio.run(slow_path())
+    assert result is None, "the handler answers without the delivery"
+    assert still_running, "asyncio.wait does not cancel; the post still lands"
+
+
+async def _instant_timeout_wait(tasks, timeout=None):
+    """asyncio.wait with the clock removed: nothing is done yet."""
+    del timeout
+    return set(), set(tasks)
+
+
+def test_the_delivery_note_reports_what_actually_happened():
+    note = cards_command._delivery_note
+    pinged = cards_command._Delivery(
+        channel_message_id=1, pinged=(222,), dm_sent=(222,)
+    )
+    assert "pinged them in" in note(pinged, recipient_id=222)
+    assert "They also got a DM." in note(pinged, recipient_id=222)
+    dm_only = cards_command._Delivery(channel_message_id=None, dm_sent=(222,))
+    assert note(dm_only, recipient_id=222) == "I sent them a DM."
+    nothing = cards_command._Delivery(channel_message_id=None)
+    assert "could not reach <@222>" in note(nothing, recipient_id=222)
+    # None means still in flight - not a failure, so no false alarm.
+    assert note(None, recipient_id=222) == "I am telling them now."
+
+
+def test_public_reply_uses_an_ephemeral_followup_never_the_dispatcher_reply():
+    """One missed flag would replace the public post with a private panel;
+    _public_reply answers only through interaction.execute."""
+    calls = []
+
+    class Interaction:
+        async def execute(self, **kwargs):
+            calls.append(kwargs)
+
+    # No .respond attribute at all: touching it would raise immediately.
+    ctx = SimpleNamespace(
+        interaction=Interaction(), user=SimpleNamespace(id=1)
+    )
+    asyncio.run(cards_command._public_reply(ctx, ["PRIVATE-PANEL"]))
+    assert calls[0]["components"] == ["PRIVATE-PANEL"]
+    assert calls[0]["flags"] & hikari.MessageFlag.EPHEMERAL
+    assert calls[0]["flags"] & hikari.MessageFlag.IS_COMPONENTS_V2
+
+    class Broken:
+        async def execute(self, **_kwargs):
+            raise RuntimeError("token expired")
+
+    # A dead token is logged, never raised into the dispatcher.
+    asyncio.run(cards_command._public_reply(
+        SimpleNamespace(interaction=Broken(), user=SimpleNamespace(id=1)),
+        ["X"],
+    ))
+
+
+def test_a_wrong_member_public_click_gets_a_private_refusal(monkeypatch):
+    """The shared bodies already gate on participants; the public adapter
+    must deliver that refusal ephemerally and change nothing publicly."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 123)
+    trade = _standing_post_trade()
+
+    class Trades:
+        async def find_one(self, _query):
+            return dict(trade)
+
+    async def _unchanged(_mongo, doc, **_kwargs):
+        return dict(doc)
+
+    monkeypatch.setattr(cards_command, "_expire_trade_if_needed", _unchanged)
+    followups = []
+
+    class Interaction:
+        values = []
+
+        async def execute(self, **kwargs):
+            followups.append(kwargs)
+
+    stranger = SimpleNamespace(
+        guild_id=123, user=SimpleNamespace(id=999), interaction=Interaction(),
+    )
+    asyncio.run(cards_command.cards_pub_cancel(
+        stranger, trade["_id"],
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(card_trades=Trades()),
+        bot=SimpleNamespace(),
+    ))
+
+    assert len(followups) == 1
+    assert followups[0]["flags"] & hikari.MessageFlag.EPHEMERAL
+    assert "not yours" in _view_text(followups[0]["components"]).lower()
+
+
+def _gem_ask_doc(**overrides):
+    """A gem ask with everything the public post and the DMs render."""
+    ask = {
+        "_id": "gem:#ME:#H:balloon", "kind": "gem_ask", "status": "pending",
+        "guild_id": 1, "card_id": "balloon", "gem_cost": 50,
+        "asker_tag": "#ME", "asker_name": "Asker", "asker_discord_id": 111,
+        "holder_tag": "#H", "holder_name": "Holder", "holder_discord_id": 222,
+        "generation": 1000,
+    }
+    ask.update(overrides)
+    return ask
+
+
+def test_the_gem_ask_post_carries_the_answer_pair_only_while_pending():
+    """The public V2 gem ask: yes/no while pending, one closed line after.
+
+    The custom_ids embed the ask id, which itself contains colons - the
+    dispatcher partitions on the FIRST colon only, exactly as the legacy
+    cards_gem_yes DM buttons already rely on.
+    """
+    ask = _gem_ask_doc()
+    view = cards_command._gem_ask_post(ask)
+    ids = [str(n["custom_id"]) for n in _view_nodes(view) if "custom_id" in n]
+    assert ids == [
+        "cards_pub_gem_yes:gem:#ME:#H:balloon|1000",
+        "cards_pub_gem_no:gem:#ME:#H:balloon|1000",
+    ]
+    name, _, action_id = ids[0].partition(":")
+    assert name == "cards_pub_gem_yes", "first-colon routing reaches the pair"
+    assert action_id == "gem:#ME:#H:balloon|1000"
+    labels = _view_labels(view)
+    assert "Yes, I will post it" in labels and "No thanks" in labels
+    text = _view_text(view)
+    assert "<@222>" in text, "the holder is addressed by mention"
+    assert "Only <@222> can answer" in text
+    assert "**Asker** is missing" in text
+    assert "50 gems" in text and "you keep all your cards" in text
+    assert "If you say yes" in text, "the same instructions as the DM"
+
+    # Answered asks collapse to the compact closed form: the audit line
+    # survives, nothing is clickable any more.
+    for status in sorted(cards_command.GEM_ASK_TERMINAL_STATUSES):
+        closed = cards_command._gem_ask_post(dict(ask, status=status))
+        assert not [n for n in _view_nodes(closed) if "custom_id" in n], status
+        closed_text = _view_text(closed)
+        assert "answered" in closed_text, status
+        expected = "yes" if status == "accepted" else "no"
+        assert f"answered — {expected}" in closed_text, status
+        assert "Asker" in closed_text and "Holder" in closed_text, (
+            "the closed form still records who asked whom"
+        )
+
+
+def test_the_gem_ask_post_stays_far_below_the_component_ceiling():
+    """Worst case: pending (both buttons), maximal names - headroom, not
+    just "fits". (No _assert_discord_payload here: its one-colon pin does
+    not apply to gem ids, which route on the first colon by design.)"""
+    ask = _gem_ask_doc(asker_name="A" * 90, holder_name="H" * 90)
+    payload = [component.build() for component in cards_command._gem_ask_post(ask)]
+    nodes = list(_walk_payload(payload))
+    used = len([n for n in nodes if "type" in n])
+    assert used <= 12, f"gem ask post is at {used}/40"
+    for node in nodes:
+        if "custom_id" in node:
+            assert len(str(node["custom_id"])) <= 100
+        if "label" in node:
+            assert len(str(node["label"])) <= 100
+
+
+def test_a_gem_ask_posts_once_pinging_exactly_the_holder(monkeypatch):
+    bot, mongo, rest, dms = _delivery_fixture(monkeypatch)
+    ask = _gem_ask_doc()
+    mongo.card_trades.docs[ask["_id"]] = dict(ask)
+
+    delivery = asyncio.run(cards_command._deliver(
+        bot, mongo, ask, event="gem_ask_posted"
+    ))
+
+    assert len(rest.messages) == 1, "exactly ONE new channel message"
+    sent = rest.messages[0]
+    assert sent["user_mentions"] == [222], "exactly the holder"
+    assert "components" in sent, "the ask posts as V2"
+    assert rest.edits == []
+    assert dms.sent == [], "the DM is a fallback, never a copy"
+    assert delivery.channel_message_id == 777
+    assert delivery.pinged == (222,)
+    # The stored ask remembers where its post lives so the answer can edit it.
+    stored = mongo.card_trades.docs[ask["_id"]]
+    assert stored["channel_message_id"] == 777
+    assert stored["channel_post_v2"] is True
+
+
+def test_a_failed_gem_ask_post_falls_back_to_the_unchanged_dm(monkeypatch):
+    """dm="fallback": the old DM goes ONLY when the channel post failed,
+    and its payload is the existing `_gem_ask_dm` builder, byte-identical."""
+    bot, mongo, rest, dms = _delivery_fixture(monkeypatch)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", None)
+    ask = _gem_ask_doc()
+    mongo.card_trades.docs[ask["_id"]] = dict(ask)
+
+    delivery = asyncio.run(cards_command._deliver(
+        bot, mongo, ask, event="gem_ask_posted"
+    ))
+
+    assert rest.messages == []
+    assert [recipient for recipient, _ in dms.sent] == [222]
+    assert _view_text(dms.sent[0][1]) == _view_text(
+        cards_command._gem_ask_dm(ask)
+    )
+    legacy_ids = [
+        str(n["custom_id"]) for n in _view_nodes(dms.sent[0][1])
+        if "custom_id" in n
+    ]
+    assert legacy_ids == [
+        "cards_gem_yes:gem:#ME:#H:balloon|1000",
+        "cards_gem_no:gem:#ME:#H:balloon|1000",
+    ], "the fallback DM still carries the legacy pair, which stays registered"
+    assert delivery.channel_message_id is None
+    assert delivery.pinged == ()
+    assert delivery.dm_sent == (222,)
+
+
+def _open_requester_inventory(**overrides):
+    """A complete, fresh #ME collection missing Root Rider with a spare
+    Wizard - the smallest inventory an open request accepts."""
+    inventory = _complete_inventory()
+    inventory.update({
+        "guild_id": 1, "discord_id": 111, "player_name": "Shaun",
+        "town_hall": 17,
+    })
+    inventory["cards"]["root_rider"] = cards.MISSING
+    inventory["cards"]["wizard"] = cards.DUPLICATE
+    inventory.update(overrides)
+    return inventory
+
+
+def _open_request_document(**overrides):
+    """A stored open request with everything the want-ad post renders."""
+    created = datetime(2026, 8, 15, 12, tzinfo=timezone.utc)
+    base = {
+        "_id": "req-a",
+        "kind": "open_request",
+        "status": "open",
+        "generation": 1_755_000_000,
+        "guild_id": 1,
+        "category": "elixir",
+        "wanted_card_id": "root_rider",
+        "offer_card_ids": ["wizard", "dragon"],
+        "requester_tag": "#ME",
+        "requester_name": "Shaun",
+        "requester_discord_id": 111,
+        "requester_town_hall": 17,
+        "requester_clan_tag": "#HOME",
+        "requester_clan_name": "Morning Woods",
+        "requester_clan_emoji": "",
+        "channel_id": None,
+        "channel_message_id": None,
+        "claim_token": None,
+        "claim_until": None,
+        "claimed_by_discord_id": None,
+        "claimed_by_tag": None,
+        "claimed_at": None,
+        "trade_id": None,
+        "created_at": created,
+        "updated_at": created,
+        "expires_at": created + cards_command.OPEN_REQUEST_FOR,
+        "open_request_key": "1:#ME:root_rider",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_open_request_saves_the_spec_document_and_its_unique_key():
+    trades = _FakeTradeCollection()
+
+    request, error = asyncio.run(cards_command._create_open_request(
+        SimpleNamespace(card_trades=trades),
+        requester_inventory=_open_requester_inventory(),
+        wanted_card_id="root_rider",
+        guild_id=1,
+    ))
+
+    assert error is None
+    saved = trades.docs[request["_id"]]
+    assert saved["kind"] == "open_request"
+    assert saved["status"] == "open"
+    assert isinstance(saved["generation"], int)
+    assert saved["guild_id"] == 1
+    assert saved["category"] == "elixir"
+    assert saved["wanted_card_id"] == "root_rider"
+    assert saved["offer_card_ids"] == ["wizard"]
+    assert saved["requester_tag"] == "#ME"
+    assert saved["requester_name"] == "Shaun"
+    assert saved["requester_discord_id"] == 111
+    assert saved["requester_town_hall"] == 17
+    # Copied at creation: a channel post must never depend on a later query.
+    assert saved["requester_clan_tag"] == "#HOME"
+    assert saved["requester_clan_name"] == "Home Clan"
+    assert saved["requester_clan_emoji"] == ""
+    assert saved["open_request_key"] == "1:#ME:root_rider"
+    assert saved["expires_at"] == (
+        saved["created_at"] + cards_command.OPEN_REQUEST_FOR
+    )
+    # Claim fields exist from birth so the claim CAS never needs $exists.
+    for field in ("channel_id", "channel_message_id", "claim_token",
+                  "claim_until", "claimed_by_discord_id", "claimed_by_tag",
+                  "claimed_at", "trade_id"):
+        assert saved[field] is None, field
+
+
+def test_open_request_without_a_spare_is_refused_toward_ask_for_help():
+    """The game's rule: no duplicate to give back, no trade from this side."""
+    inventory = _open_requester_inventory()
+    inventory["cards"]["wizard"] = cards.OWNED     # no elixir spare left
+    trades = _FakeTradeCollection()
+
+    request, error = asyncio.run(cards_command._create_open_request(
+        SimpleNamespace(card_trades=trades),
+        requester_inventory=inventory,
+        wanted_card_id="root_rider",
+        guild_id=1,
+    ))
+
+    assert request is None
+    assert "Ask for help" in error, "the refusal names the working route"
+    assert trades.docs == {}
+
+
+def test_open_request_refuses_not_missing_incomplete_and_stale():
+    mongo = SimpleNamespace(card_trades=_FakeTradeCollection())
+
+    owned = _open_requester_inventory()
+    owned["cards"]["root_rider"] = cards.OWNED
+    _request, error = asyncio.run(cards_command._create_open_request(
+        mongo, requester_inventory=owned,
+        wanted_card_id="root_rider", guild_id=1,
+    ))
+    assert "not missing" in error
+
+    unfinished = _open_requester_inventory()
+    unfinished["complete_categories"] = [
+        category.id for category in cards.CATEGORIES
+        if category.id != "elixir"
+    ]
+    _request, error = asyncio.run(cards_command._create_open_request(
+        mongo, requester_inventory=unfinished,
+        wanted_card_id="root_rider", guild_id=1,
+    ))
+    assert "Finish entering" in error
+
+    # Unmatchable (trading paused counts, same as the matcher itself).
+    paused = _open_requester_inventory(trading_paused=True)
+    _request, error = asyncio.run(cards_command._create_open_request(
+        mongo, requester_inventory=paused,
+        wanted_card_id="root_rider", guild_id=1,
+    ))
+    assert "fresh" in error.lower()
+    assert mongo.card_trades.docs == {}
+
+
+def test_open_requests_cap_at_three_per_account():
+    trades = _FakeTradeCollection()
+    for index in range(cards_command.MAX_OPEN_REQUESTS_PER_ACCOUNT):
+        trades.docs[f"req-{index}"] = {
+            "_id": f"req-{index}",
+            "kind": "open_request",
+            "guild_id": 1,
+            "status": "open",
+            "requester_tag": "#ME",
+            "wanted_card_id": "balloon",
+        }
+
+    request, error = asyncio.run(cards_command._create_open_request(
+        SimpleNamespace(card_trades=trades),
+        requester_inventory=_open_requester_inventory(),
+        wanted_card_id="root_rider",
+        guild_id=1,
+    ))
+
+    assert request is None
+    assert "3 open" in error
+    assert len(trades.docs) == cards_command.MAX_OPEN_REQUESTS_PER_ACCOUNT
+
+
+class _UniqueOpenRequestKeys(_FakeTradeCollection):
+    """The sparse-unique open_request_key index, as the fake sees it."""
+
+    async def insert_one(self, document):
+        key = document.get("open_request_key")
+        if key is not None and any(
+            other.get("open_request_key") == key
+            for other in self.docs.values()
+        ):
+            raise DuplicateKeyError("uniq_open_card_request")
+        return await super().insert_one(document)
+
+
+def test_second_open_request_for_the_same_card_is_a_clean_refusal():
+    trades = _UniqueOpenRequestKeys()
+    mongo = SimpleNamespace(card_trades=trades)
+    first, error = asyncio.run(cards_command._create_open_request(
+        mongo, requester_inventory=_open_requester_inventory(),
+        wanted_card_id="root_rider", guild_id=1,
+    ))
+    assert error is None and first is not None
+
+    second, error = asyncio.run(cards_command._create_open_request(
+        mongo, requester_inventory=_open_requester_inventory(),
+        wanted_card_id="root_rider", guild_id=1,
+    ))
+
+    assert second is None
+    assert "already have an open request" in error
+    assert "Root Rider" in error
+    assert "My trades" in error
+    assert len(trades.docs) == 1, "the loser wrote nothing"
+
+
+def test_a_want_ad_posts_once_pings_nobody_and_stores_its_ids(monkeypatch):
+    bot, mongo, rest, dms = _delivery_fixture(monkeypatch)
+    request = _open_request_document()
+    mongo.card_trades.docs[request["_id"]] = dict(request)
+
+    delivery = asyncio.run(cards_command._deliver(
+        bot, mongo, request, event="open_request_posted"
+    ))
+
+    assert len(rest.messages) == 1, "the want-ad IS the standing post"
+    sent = rest.messages[0]
+    assert sent["user_mentions"] == [], "a want-ad pings NOBODY"
+    assert sent["mentions_everyone"] is False
+    assert sent["role_mentions"] is False
+    assert sent["flags"] & hikari.MessageFlag.IS_COMPONENTS_V2
+    assert rest.edits == [], "nothing to edit - this event creates the post"
+    assert dms.sent == [], "never a DM: there is no recipient"
+    assert delivery.pinged == ()
+    assert delivery.channel_message_id == 777
+    saved = mongo.card_trades.docs[request["_id"]]
+    assert saved["channel_id"] == 999
+    assert saved["channel_message_id"] == 777
+    assert saved["channel_post_v2"] is True
+    ids = [
+        n["custom_id"] for n in _view_nodes(sent["components"])
+        if "custom_id" in n
+    ]
+    assert ids == [f"cards_pub_claim:req-a|{request['generation']}"]
+
+
+def test_the_want_ad_carries_one_claim_button_open_and_none_closed():
+    request = _open_request_document()
+    view = cards_command._open_request_post(request)
+    _assert_discord_payload(view)
+    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    assert ids == ["cards_pub_claim:req-a|1755000000"]
+    for custom_id in ids:
+        assert custom_id.count(":") == 1, "one colon per custom_id"
+    assert "I have this card" in _view_labels(view)
+    text = _view_text(view)
+    assert "Root Rider" in text
+    assert "Wizard" in text and "Dragon" in text, "the give-back list shows"
+    assert "My trades" in text, "the footer names the owner's close route"
+
+    # Terminal statuses collapse to the compact closed form: zero
+    # interactive components, but the audit line survives.
+    for status in sorted(cards_command.OPEN_REQUEST_TERMINAL_STATUSES):
+        closed = cards_command._open_request_post(dict(request, status=status))
+        _assert_discord_payload(closed)
+        assert not [
+            n for n in _view_nodes(closed) if "custom_id" in n
+        ], status
+        assert "Root Rider" in _view_text(closed), status
+
+
+def test_the_want_ad_stays_far_below_the_component_ceiling():
+    """Worst case: a maximal give-back list and long names - headroom,
+    not just "fits"."""
+    request = _open_request_document(
+        requester_name="R" * 90,
+        requester_clan_name="C" * 60,
+        offer_card_ids=[card.id for card in cards.CATEGORY_CARDS["elixir"]],
+    )
+    view = cards_command._open_request_post(request)
+    used = len([n for n in _view_nodes(view) if "type" in n])
+    assert used <= 12, f"want-ad post is at {used}/40"
+    _assert_discord_payload(view)
+
+
+def test_closing_a_want_ad_is_owner_only_and_cas(monkeypatch):
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    request = _open_request_document(
+        channel_id=999, channel_message_id=555, channel_post_v2=True,
+    )
+    trades = _FakeTradeCollection()
+    trades.docs[request["_id"]] = dict(request)
+    mongo = SimpleNamespace(card_trades=trades)
+    rest = _RecordingRest()
+    bot = SimpleNamespace(rest=rest)
+
+    stranger = asyncio.run(cards_command.cards_req_close(
+        _quantity_ctx(user_id=999), "req-a", mongo=mongo, bot=bot,
+    ))
+    assert "not yours" in _view_text(stranger).lower()
+    assert trades.docs["req-a"]["status"] == "open", "a stranger changes nothing"
+    assert rest.edits == []
+
+    closed = asyncio.run(cards_command.cards_req_close(
+        _quantity_ctx(user_id=111), "req-a", mongo=mongo, bot=bot,
+    ))
+    saved = trades.docs["req-a"]
+    assert saved["status"] == "cancelled"
+    assert "open_request_key" not in saved, "$unset frees the card for later"
+    assert saved["claim_token"] is None, "claim fields untouched"
+    assert saved["claimed_by_discord_id"] is None
+    assert len(rest.edits) == 1, "the public post flips to the closed form"
+    edited = rest.edits[0]
+    assert edited["message"] == 555
+    assert edited["user_mentions"] is False, "an edit cannot ping"
+    assert not [
+        n for n in _view_nodes(edited["components"]) if "custom_id" in n
+    ], "the closed form is not clickable"
+    assert "Request closed" in _view_text(closed)
+
+    again = asyncio.run(cards_command.cards_req_close(
+        _quantity_ctx(user_id=111), "req-a", mongo=mongo, bot=bot,
+    ))
+    assert "already" in _view_text(again).lower(), "second close: CAS lost"
+    assert len(rest.edits) == 1, "and it edits nothing"
+
+
+def test_my_trades_lists_open_requests_with_a_close_button():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    view = cards_command._trades_view(
+        account, [], open_requests=[_open_request_document()]
+    )
+    _assert_discord_payload(view)
+    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    assert "cards_req_close:req-a" in ids
+    text = _view_text(view)
+    assert "Open request" in text
+    assert "Root Rider" in text
+    assert "No open trades" not in text, "a request is an open item"
+
+
+def test_my_trades_pages_requests_and_trades_inside_one_budget():
+    """Requests ride in the same paged list, so a full page of both can
+    never exceed what the 5-trade page already proved fits."""
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    requests = [
+        _open_request_document(_id=f"req-{index}")
+        for index in range(cards_command.MAX_OPEN_REQUESTS_PER_ACCOUNT)
+    ]
+    trades = [
+        {
+            "_id": f"trade{index}",
+            "status": "pending",
+            "requester_tag": f"#OTHER{index}",
+            "requester_name": f"Other {index}",
+            "holder_tag": "#ME",
+            "holder_name": "Member",
+            "wanted_card_id": "root_rider",
+            "given_card_id": "wizard",
+        }
+        for index in range(cards_command.TRADE_VIEW_LIMIT)
+    ]
+    first = cards_command._trades_view(
+        account, trades, page=0, open_requests=requests
+    )
+    second = cards_command._trades_view(
+        account, trades, page=1, open_requests=requests
+    )
+    for view in (first, second):
+        _assert_discord_payload(view)
+    first_ids = [
+        n["custom_id"] for n in _view_nodes(first) if "custom_id" in n
+    ]
+    assert "cards_req_close:req-0" in first_ids
+    assert any(i.startswith("cards_trades:#ME|") for i in first_ids), (
+        "eight items must page"
+    )
+    second_ids = [
+        n["custom_id"] for n in _view_nodes(second) if "custom_id" in n
+    ]
+    assert not any(
+        i.startswith("cards_req_close:") for i in second_ids
+    ), "requests render first, so page two is trades only"
+
+
+def _claimer_inventory(*, tag="#CL", discord_id=222, name="Claimer Person",
+                       missing=("wizard",), **overrides):
+    """A complete, fresh collection holding a spare Root Rider - the
+    smallest inventory that can claim the fixture want-ad."""
+    inventory = _complete_inventory(tag=tag, clan_tag="#AWAY")
+    inventory.update({
+        "guild_id": 1, "discord_id": discord_id, "player_name": name,
+        "town_hall": 18, "clan_name": "Edrag Rush",
+    })
+    inventory["cards"]["root_rider"] = cards.DUPLICATE
+    for card_id in missing:
+        inventory["cards"][card_id] = cards.MISSING
+    inventory.update(overrides)
+    return inventory
+
+
+def _claim_account(tag="#CL", name="Claimer Person"):
+    return Account(
+        tag=tag, name=name, clan_tag="#AWAY",
+        clan_name="Edrag Rush", town_hall=18,
+    )
+
+
+def _fake_linked_accounts(monkeypatch, accounts_by_user):
+    """load_accounts as the claim path sees it, keyed by discord id.
+
+    Yields once before returning, so two concurrent claimers both pass the
+    status:"open" read before either reaches the claiming CAS - the exact
+    interleaving the first-come-first-served fence exists for.
+    """
+    async def fake_load_accounts(_coc_client, discord_id, **_kwargs):
+        await asyncio.sleep(0)
+        return cards_command.AccountsData(entries=tuple(
+            cards_command.AccountEntry(
+                cards_command._normalize_tag(account.tag),
+                cards_command.STATUS_LOADED,
+                account,
+            )
+            for account in accounts_by_user.get(int(discord_id), ())
+        ))
+
+    monkeypatch.setattr(cards_command, "load_accounts", fake_load_accounts)
+
+
+def _claim_env(monkeypatch, *, offers=("wizard", "dragon"), poster=None,
+               claimers=None, accounts_by_user=None,
+               live_clans=("#HOME", "#HOME")):
+    """A posted want-ad plus (by default) one eligible claimer, on fakes."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    dms = _DmRecorder()
+    monkeypatch.setattr(cards_command, "_send_trade_dm", dms)
+
+    async def live(_mongo, _coc_client, _left, _right):
+        return live_clans
+
+    monkeypatch.setattr(cards_command, "_live_family_clans", live)
+    _fake_linked_accounts(
+        monkeypatch,
+        accounts_by_user
+        if accounts_by_user is not None
+        else {222: [_claim_account()]},
+    )
+    request = _open_request_document(
+        offer_card_ids=list(offers),
+        channel_id=999, channel_message_id=555, channel_post_v2=True,
+    )
+    trades = _FakeTradeCollection()
+    trades.docs[request["_id"]] = dict(request)
+    inventories = _FakeInventoryCollection([
+        poster if poster is not None else _open_requester_inventory(),
+        *(claimers if claimers is not None else [_claimer_inventory()]),
+    ])
+    mongo = SimpleNamespace(card_trades=trades, card_inventories=inventories)
+    rest = _RecordingRest()
+    return SimpleNamespace(
+        request=request, trades=trades, inventories=inventories, mongo=mongo,
+        rest=rest, bot=SimpleNamespace(rest=rest), dms=dms,
+    )
+
+
+def _claim(env, *, user_id=222, generation=None, claim_tag=None,
+           taken_card_id=None):
+    return asyncio.run(cards_command._perform_open_request_claim(
+        _quantity_ctx(user_id=user_id),
+        request_id=env.request["_id"],
+        generation=str(
+            env.request["generation"] if generation is None else generation
+        ),
+        claim_tag=claim_tag,
+        taken_card_id=taken_card_id,
+        coc_client=SimpleNamespace(),
+        mongo=env.mongo,
+        bot=env.bot,
+    ))
+
+
+def test_two_concurrent_claims_have_exactly_one_winner(monkeypatch):
+    """THE claim guarantee. Both coroutines read the request while it is
+    still "open" (the fake account loader yields between the read and the
+    CAS), so the only thing separating them is the claiming CAS fenced on
+    (status:"open", generation) - which the fake collection honors exactly
+    like Mongo does. One winner, always."""
+    env = _claim_env(
+        monkeypatch,
+        claimers=[
+            _claimer_inventory(),
+            _claimer_inventory(tag="#CL2", discord_id=333, name="Second"),
+        ],
+        accounts_by_user={
+            222: [_claim_account()],
+            333: [_claim_account(tag="#CL2", name="Second")],
+        },
+    )
+
+    async def both():
+        return await asyncio.gather(*(
+            cards_command._perform_open_request_claim(
+                _quantity_ctx(user_id=user_id),
+                request_id="req-a",
+                generation=str(env.request["generation"]),
+                coc_client=SimpleNamespace(), mongo=env.mongo, bot=env.bot,
+            )
+            for user_id in (222, 333)
+        ))
+
+    texts = [_view_text(view) for view in asyncio.run(both())]
+    wins = [t for t in texts if "Trade accepted" in t]
+    losses = [t for t in texts if "Somebody else just took this one" in t]
+    assert len(wins) == 1, "exactly one winner"
+    assert len(losses) == 1, "the loser hears it plainly"
+    saved = env.trades.docs["req-a"]
+    assert saved["status"] == "claimed"
+    assert saved["claimed_by_discord_id"] in (222, 333)
+    converted = [
+        d for d in env.trades.docs.values() if d.get("kind") == "trade"
+    ]
+    assert len(converted) == 1, "one trade, never two"
+    assert saved["trade_id"] == converted[0]["_id"]
+
+
+def test_stale_wrong_guild_and_self_claims_are_refused(monkeypatch):
+    env = _claim_env(monkeypatch)
+
+    stale = _claim(env, generation="123")
+    assert "no longer open" in _view_text(stale)
+
+    own = _claim(env, user_id=111)
+    own_text = _view_text(own)
+    assert "your own request" in own_text.lower()
+    assert "My trades" in own_text
+
+    wrong_guild = asyncio.run(cards_command._perform_open_request_claim(
+        SimpleNamespace(
+            user=SimpleNamespace(id=222), guild_id=2,
+            interaction=SimpleNamespace(values=[]),
+        ),
+        request_id="req-a", generation=str(env.request["generation"]),
+        coc_client=SimpleNamespace(), mongo=env.mongo, bot=env.bot,
+    ))
+    assert "no longer open" in _view_text(wrong_guild)
+
+    assert env.trades.docs["req-a"]["status"] == "open", (
+        "refusals change nothing"
+    )
+    env.trades.docs["req-a"]["status"] = "claiming"
+    raced = _claim(env)
+    assert "already claimed" in _view_text(raced).lower()
+    assert env.rest.messages == [] and env.rest.edits == [], (
+        "a refused tap never alters the public post"
+    )
+
+
+def test_an_ineligible_claimer_hears_the_named_reason(monkeypatch):
+    no_spare = _claimer_inventory()
+    no_spare["cards"]["root_rider"] = cards.OWNED
+    env = _claim_env(monkeypatch, claimers=[no_spare])
+    text = _view_text(_claim(env))
+    assert "no spare" in text and "Root Rider" in text
+    assert "#CL" in text, "the refusal names the account"
+
+    paused = _claim_env(
+        monkeypatch, claimers=[_claimer_inventory(trading_paused=True)]
+    )
+    assert "trading paused" in _view_text(_claim(paused))
+
+    unfinished = _claimer_inventory()
+    unfinished["complete_categories"] = [
+        category.id for category in cards.CATEGORIES
+        if category.id != "elixir"
+    ]
+    behind = _claim_env(monkeypatch, claimers=[unfinished])
+    assert "not finished" in _view_text(_claim(behind))
+
+    elsewhere = _claim_env(
+        monkeypatch, claimers=[_claimer_inventory(guild_id=2)]
+    )
+    assert "no card collection in this family" in _view_text(_claim(elsewhere))
+    for env in (paused, behind, elsewhere):
+        assert env.trades.docs["req-a"]["status"] == "open"
+        assert env.rest.messages == [] and env.rest.edits == []
+
+
+def test_a_failed_conversion_rolls_the_want_ad_back_open(monkeypatch):
+    env = _claim_env(monkeypatch)
+
+    async def refuse(_mongo, **_kwargs):
+        return None, "That exact proposal is already open in My trades."
+
+    monkeypatch.setattr(cards_command, "_create_trade_request", refuse)
+    text = _view_text(_claim(env))
+    assert "Could not start this trade" in text
+    assert "already open in My trades" in text, "the exact error is shown"
+    saved = env.trades.docs["req-a"]
+    assert saved["status"] == "open", "the want-ad survives"
+    for field in ("claim_token", "claim_until", "claimed_by_discord_id",
+                  "claimed_by_tag", "claimed_at"):
+        assert field not in saved, field
+    # The key was never unset during "claiming", so the round trip could not
+    # lose it: the one-request-per-card guard is intact.
+    assert saved["open_request_key"] == "1:#ME:root_rider"
+    assert env.rest.messages == [] and env.rest.edits == [], (
+        "the public post is untouched; the want-ad simply stays up"
+    )
+    assert [
+        d for d in env.trades.docs.values() if d.get("kind") == "trade"
+    ] == []
+
+
+def test_unverifiable_family_clans_roll_the_claim_back(monkeypatch):
+    env = _claim_env(monkeypatch, live_clans=None)
+    text = _view_text(_claim(env))
+    assert "family clans" in text
+    assert "stays open" in text
+    saved = env.trades.docs["req-a"]
+    assert saved["status"] == "open"
+    assert "claim_token" not in saved
+    assert saved["open_request_key"] == "1:#ME:root_rider"
+    assert env.rest.messages == [] and env.rest.edits == []
+
+
+def test_a_reservation_conflict_leaves_a_saved_pending_proposal(monkeypatch):
+    env = _claim_env(monkeypatch)
+
+    async def conflict(_mongo, _trade, **_kwargs):
+        return "conflict", "pending"
+
+    monkeypatch.setattr(cards_command, "_accept_trade_reservation", conflict)
+    text = _view_text(_claim(env))
+    assert "saved" in text.lower() and "My trades" in text
+    assert "Accept" in text, "the claimer is told how to retry"
+    saved = env.trades.docs["req-a"]
+    assert saved["status"] == "claimed", "the request is spent either way"
+    converted = [
+        d for d in env.trades.docs.values() if d.get("kind") == "trade"
+    ]
+    assert len(converted) == 1
+    trade = converted[0]
+    assert trade["status"] == "pending", "NO rollback of the trade"
+    assert saved["trade_id"] == trade["_id"]
+    # The reused post is edited into the PENDING trade post, whose Accept
+    # button is how the claimer retries the reservation later.
+    assert len(env.rest.edits) == 1
+    edited_ids = [
+        n["custom_id"]
+        for n in _view_nodes(env.rest.edits[0]["components"])
+        if "custom_id" in n
+    ]
+    assert f"cards_pub_accept:{trade['_id']}" in edited_ids
+    # The reply-note still pings the poster - its wording fits a claim that
+    # is not yet reserved - but the accepted-trade DM is suppressed: it
+    # would announce an acceptance that has not happened yet.
+    assert len(env.rest.messages) == 1
+    assert env.rest.messages[0]["user_mentions"] == [111]
+    assert env.dms.sent == []
+
+
+def test_a_successful_claim_converts_reuses_the_post_and_pings_the_poster(
+    monkeypatch,
+):
+    env = _claim_env(monkeypatch)
+    text = _view_text(_claim(env))
+    assert "Trade accepted" in text, "the holder-accept screen, verbatim"
+
+    saved = env.trades.docs["req-a"]
+    assert saved["status"] == "claimed"
+    assert saved["claimed_by_discord_id"] == 222
+    assert saved["claimed_by_tag"] == "#CL"
+    assert isinstance(saved["claimed_at"], datetime)
+    for field in ("open_request_key", "claim_token", "claim_until"):
+        assert field not in saved, field
+
+    converted = [
+        d for d in env.trades.docs.values() if d.get("kind") == "trade"
+    ]
+    assert len(converted) == 1
+    trade = converted[0]
+    assert saved["trade_id"] == trade["_id"]
+    assert trade["requester_tag"] == "#ME", "poster = requester"
+    assert trade["holder_tag"] == "#CL", "claimer = holder"
+    assert trade["wanted_card_id"] == "root_rider"
+    assert trade["given_card_id"] == "wizard"
+    assert trade["status"] == "ready", "same live clan: one tap = accepted"
+    # The want-ad's message becomes the trade's standing post.
+    assert trade["channel_id"] == 999
+    assert trade["channel_message_id"] == 555
+    assert trade["channel_post_v2"] is True
+    assert "channel_post_image" not in trade, "no strip was ever uploaded"
+
+    # Exactly ONE new channel message - the reply-note - pinging exactly the
+    # poster, threaded under the reused standing post.
+    assert len(env.rest.messages) == 1
+    sent = env.rest.messages[0]
+    assert sent["user_mentions"] == [111]
+    assert sent["reply"] == 555
+    note_text = _view_text(sent["components"])
+    assert "<@111>" in note_text and "My trades" in note_text
+    # The standing post itself is edited in place into the trade post.
+    assert len(env.rest.edits) == 1
+    assert env.rest.edits[0]["message"] == 555
+    assert "Root Rider" in _view_text(env.rest.edits[0]["components"])
+    # dm="always" during the live-verification window: the poster's DM.
+    assert [recipient for recipient, _ in env.dms.sent] == [111]
+
+
+def test_a_lost_finalize_fence_never_reuses_the_want_ad_message(monkeypatch):
+    """The audit's split-brain case: the claim stalls past its 2-minute
+    lease, the recovery sweeper reopens the want-ad, and THEN the claim's
+    finalize runs. The trade is real either way - but stamping the want-ad's
+    message ids onto it anyway would make one channel message serve two live
+    documents: the reopened request loses its board post, and the 48-hour
+    expiry job would eventually paint "expired" over a live trade's post.
+    A lost fence now means no reuse: the trade simply has no standing post
+    yet, and the reply-note lands as an ordinary message."""
+    env = _claim_env(monkeypatch)
+    real_reserve = cards_command._accept_trade_reservation
+
+    async def reserve_then_sweeper_reclaims(mongo, trade, **kwargs):
+        outcome = await real_reserve(mongo, trade, **kwargs)
+        # What _recover_stalled_claims does to a stale "claiming" doc,
+        # landing in the gap before this claim's finalize.
+        reclaimed = env.trades.docs["req-a"]
+        reclaimed["status"] = "open"
+        for field in (
+            "claim_token", "claim_until", "claimed_by_discord_id",
+            "claimed_by_tag", "claimed_at",
+        ):
+            reclaimed.pop(field, None)
+        return outcome
+
+    monkeypatch.setattr(
+        cards_command, "_accept_trade_reservation",
+        reserve_then_sweeper_reclaims,
+    )
+    text = _view_text(_claim(env))
+    assert "Trade accepted" in text, "the claimer's trade is still real"
+
+    assert env.trades.docs["req-a"]["status"] == "open", (
+        "whoever holds the fence owns the want-ad - it stays reopened"
+    )
+    trade = next(
+        d for d in env.trades.docs.values() if d.get("kind") == "trade"
+    )
+    for field in ("channel_id", "channel_message_id", "channel_post_v2"):
+        assert field not in trade, (
+            f"{field}: the reopened want-ad's message must not be reused"
+        )
+    assert env.rest.edits == [], "the want-ad's post is left untouched"
+    assert len(env.rest.messages) == 1, "the reply-note still lands"
+    assert env.rest.messages[0]["user_mentions"] == [111]
+    assert env.rest.messages[0].get("reply") is None, (
+        "no standing post to thread under"
+    )
+
+
+def test_a_multi_account_claim_gets_a_sections_picker_then_proceeds(
+    monkeypatch,
+):
+    # The picker itself is an EPHEMERAL followup. Its buttons follow the
+    # frozen public pattern: cards_pub_claim_as is registered no_return=True
+    # too (pinned by test_every_public_cards_action_is_no_return) and
+    # answers with a fresh followup of its own - the dispatcher must never
+    # edit a message on behalf of a cards_pub_* click.
+    env = _claim_env(
+        monkeypatch,
+        claimers=[
+            _claimer_inventory(),
+            _claimer_inventory(tag="#CL2", discord_id=222, name="Second Way"),
+        ],
+        accounts_by_user={222: [
+            _claim_account(),
+            _claim_account(tag="#CL2", name="Second Way"),
+        ]},
+    )
+    picker = _claim(env)
+    _assert_discord_payload(picker)
+    nodes = _view_nodes(picker)
+    ids = [n["custom_id"] for n in nodes if "custom_id" in n]
+    generation = env.request["generation"]
+    assert ids == [
+        f"cards_pub_claim_as:req-a|{generation}|#CL",
+        f"cards_pub_claim_as:req-a|{generation}|#CL2",
+    ]
+    for custom_id in ids:
+        assert custom_id.count(":") == 1, "one colon per custom_id"
+    sections = [
+        n for n in nodes
+        if n.get("type") == int(hikari.ComponentType.SECTION)
+    ]
+    assert len(sections) == 2, "a row of things is Sections, not a select"
+    assert env.trades.docs["req-a"]["status"] == "open", (
+        "a picker screen never holds the lock"
+    )
+
+    done = _claim(env, claim_tag="#CL2")
+    assert "Trade accepted" in _view_text(done)
+    assert env.trades.docs["req-a"]["claimed_by_tag"] == "#CL2"
+
+
+def test_a_forged_or_stale_picker_tag_is_refused_with_the_reason(monkeypatch):
+    env = _claim_env(monkeypatch)
+    stranger = _claim(env, claim_tag="#SOMEBODY")
+    assert "no longer claim" in _view_text(stranger).lower()
+    assert env.trades.docs["req-a"]["status"] == "open"
+
+
+def test_a_multi_card_claim_gets_a_chooser_then_takes_that_card(monkeypatch):
+    poster = _open_requester_inventory()
+    poster["cards"]["dragon"] = cards.DUPLICATE
+    env = _claim_env(
+        monkeypatch,
+        poster=poster,
+        claimers=[_claimer_inventory(missing=("wizard", "dragon"))],
+    )
+    chooser = _claim(env)
+    _assert_discord_payload(chooser)
+    menus = [n for n in _view_nodes(chooser) if "options" in n]
+    assert len(menus) == 1
+    generation = env.request["generation"]
+    assert menus[0]["custom_id"] == f"cards_pub_take:req-a|{generation}|#CL"
+    assert [
+        str(option["value"]) for option in menus[0]["options"]
+    ] == ["wizard", "dragon"], "the values ARE the card ids"
+    assert env.trades.docs["req-a"]["status"] == "open", (
+        "the chooser never holds the lock either"
+    )
+
+    # Answer through the real adapter, the way the select fires it: the
+    # card id rides in the interaction values, and the reply is an
+    # ephemeral followup (cards_pub_take is no_return=True like the rest).
+    followups = []
+
+    class Interaction:
+        values = ["dragon"]
+
+        async def execute(self, **kwargs):
+            followups.append(kwargs)
+
+    asyncio.run(cards_command.cards_pub_take(
+        SimpleNamespace(
+            guild_id=1, user=SimpleNamespace(id=222),
+            interaction=Interaction(),
+        ),
+        f"req-a|{generation}|#CL",
+        coc_client=SimpleNamespace(), mongo=env.mongo, bot=env.bot,
+    ))
+    assert len(followups) == 1
+    assert followups[0]["flags"] & hikari.MessageFlag.EPHEMERAL
+    assert "Trade accepted" in _view_text(followups[0]["components"])
+    trade = next(
+        d for d in env.trades.docs.values() if d.get("kind") == "trade"
+    )
+    assert trade["given_card_id"] == "dragon", "the poster gives that card"
+
+
+def test_an_emptied_give_back_list_refuses_the_claim(monkeypatch):
+    # The poster's only listed spare is gone, so there is nothing to take.
+    poster = _open_requester_inventory()
+    poster["cards"]["wizard"] = cards.OWNED
+    env = _claim_env(monkeypatch, poster=poster)
+    text = _view_text(_claim(env))
+    assert "Their spares changed; nothing to take." in text
+    assert env.trades.docs["req-a"]["status"] == "open"
+
+
+def test_the_claimed_note_pings_the_poster_and_escapes_the_name():
+    trade = _standing_post_trade(holder_name="Weird*_Name person")
+    note = cards_command._claimed_channel_note(trade)
+    _assert_discord_payload(note)
+    text = _view_text(note)
+    assert text.startswith("✅ <@111>"), "addressed to the poster, who pings"
+    assert "has your Root Rider" in text
+    assert "You give **Wizard**, you get **Root Rider**." in text
+    assert "`/cards` → **My trades**" in text
+    assert "Weird\\*\\_Name" in text, "the claimer's name is escaped"
+    assert not [n for n in _view_nodes(note) if "custom_id" in n], (
+        "the note carries no controls; the standing post above it does"
+    )
+
+
+def test_holders_view_offers_post_a_request_only_with_a_spare():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    # The headline case: nobody holds the card at all.
+    view = cards_command._holders_view(
+        account, "root_rider", [], can_request=True
+    )
+    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    assert "cards_req_new:#ME|root_rider" in ids
+    assert "Post a request" in _view_labels(view)
+    without = cards_command._holders_view(account, "root_rider", [])
+    assert not any(
+        i.startswith("cards_req_new:")
+        for n in [None]
+        for i in [
+            str(node["custom_id"])
+            for node in _view_nodes(without)
+            if "custom_id" in node
+        ]
+    ), "no spare, no button - the request would only be refused"
+
+    # The gem branch: holders exist but none can be asked. The same button
+    # rides beside the existing guidance, same precondition.
+    inventory = _complete_inventory()
+    inventory["cards"]["balloon"] = cards.MISSING
+    holder = _complete_inventory(tag="#H", clan_tag="#HOME")
+    holder["cards"]["balloon"] = cards.DUPLICATE
+    holder["discord_id"] = 9
+    holders = cards.holders_for_card(inventory, [holder], "balloon")
+    gem_view = cards_command._holders_view(
+        account, "balloon", holders, can_request=True
+    )
+    gem_text = _view_text(gem_view)
+    gem_ids = [
+        n["custom_id"] for n in _view_nodes(gem_view) if "custom_id" in n
+    ]
+    assert "What to do now" in gem_text
+    assert "cards_req_new:#ME|balloon" in gem_ids
+    plain = cards_command._holders_view(account, "balloon", holders)
+    assert not any(
+        str(n.get("custom_id", "")).startswith("cards_req_new:")
+        for n in _view_nodes(plain)
+    )
+
+
+def test_matches_view_offers_the_request_picker_only_with_a_spare():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    with_spare = _complete_inventory()
+    with_spare["cards"]["root_rider"] = cards.MISSING
+    with_spare["cards"]["wizard"] = cards.DUPLICATE
+    view = cards_command._matches_view(account, with_spare, [])
+    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    assert "cards_req_pick:#ME" in ids
+
+    no_spare = _complete_inventory()
+    no_spare["cards"]["root_rider"] = cards.MISSING
+    bare = cards_command._matches_view(account, no_spare, [])
+    assert not any(
+        str(n.get("custom_id", "")).startswith("cards_req_pick:")
+        for n in _view_nodes(bare)
+    ), "without a spare the picker would be empty and the post refused"
+
+
+def test_the_request_picker_draws_one_menu_per_requestable_category():
+    account = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["cards"].update({
+        "root_rider": cards.MISSING,   # elixir: missing with a spare
+        "wizard": cards.DUPLICATE,
+        "hog_rider": cards.MISSING,    # dark elixir: missing, NO spare
+    })
+    requestable = cards_command._requestable_card_ids(inventory)
+    assert "root_rider" in requestable
+    assert "hog_rider" not in requestable, "no dark-elixir spare to give back"
+
+    view = cards_command._open_request_picker_view(account, requestable)
+    _assert_discord_payload(view)
+    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    assert "cards_req_new:#ME|elixir" in ids
+    assert "cards_req_new:#ME|dark_elixir" not in ids
+
+
+def test_a_picker_choice_opens_the_consent_screen_for_that_card(monkeypatch):
+    account = Account(
+        tag="#ME", name="Shaun", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=17,
+    )
+    box = {"inventory": _open_requester_inventory()}
+
+    async def load_target(_ctx, tag, **_kwargs):
+        assert cards_command._normalize_tag(tag) == "#ME"
+        return account, box["inventory"], None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+
+    # The select form: the category rides in the id, the card in the values.
+    view = asyncio.run(cards_command.cards_req_new(
+        _quantity_ctx(user_id=111, values=["root_rider"]), "#ME|elixir",
+        coc_client=SimpleNamespace(), mongo=SimpleNamespace(),
+    ))
+    text = _view_text(view)
+    assert "Root Rider" in text
+    assert "for everyone to see" in text, "consent before publication"
+    assert "48 hours" in text
+    assert "Wizard" in text, "the full give-back list is stated"
+    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    assert "cards_req_post:#ME|root_rider" in ids
+
+    # The button form carries the card directly.
+    button_view = asyncio.run(cards_command.cards_req_new(
+        _quantity_ctx(user_id=111), "#ME|root_rider",
+        coc_client=SimpleNamespace(), mongo=SimpleNamespace(),
+    ))
+    assert "cards_req_post:#ME|root_rider" in [
+        n["custom_id"] for n in _view_nodes(button_view) if "custom_id" in n
+    ]
+
+    # The art-bearing header option is a no-op, not an error.
+    assert asyncio.run(cards_command.cards_req_new(
+        _quantity_ctx(
+            user_id=111, values=[cards_command.CATEGORY_HEADER_VALUE]
+        ),
+        "#ME|elixir",
+        coc_client=SimpleNamespace(), mongo=SimpleNamespace(),
+    )) is None
+
+    # A spare-less member is routed to the gem ask instead.
+    box["inventory"] = _open_requester_inventory()
+    box["inventory"]["cards"]["wizard"] = cards.OWNED
+    refusal = asyncio.run(cards_command.cards_req_new(
+        _quantity_ctx(user_id=111), "#ME|root_rider",
+        coc_client=SimpleNamespace(), mongo=SimpleNamespace(),
+    ))
+    assert "Ask for help" in _view_text(refusal)
+
+
+def test_posting_a_request_delivers_through_the_funnel(monkeypatch):
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    account = Account(
+        tag="#ME", name="Shaun", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=17,
+    )
+
+    async def load_target(_ctx, tag, **_kwargs):
+        assert cards_command._normalize_tag(tag) == "#ME"
+        return account, _open_requester_inventory(), None
+
+    monkeypatch.setattr(cards_command, "_load_target", load_target)
+    delivered = []
+
+    async def deliver_soon(_bot, _mongo, document, *, event, **_kwargs):
+        delivered.append((document["_id"], event))
+        return cards_command._Delivery(channel_message_id=777)
+
+    monkeypatch.setattr(cards_command, "_deliver_soon", deliver_soon)
+    trades = _FakeTradeCollection()
+
+    view = asyncio.run(cards_command.cards_req_post(
+        _quantity_ctx(user_id=111), "#ME|root_rider",
+        coc_client=SimpleNamespace(),
+        mongo=SimpleNamespace(card_trades=trades),
+        bot=SimpleNamespace(),
+    ))
+
+    assert delivered and delivered[0][1] == "open_request_posted", (
+        "one funnel decides delivery, and this is its event name"
+    )
+    saved = trades.docs[delivered[0][0]]
+    assert saved["kind"] == "open_request"
+    text = _view_text(view)
+    assert "<#999>" in text, "the feedback names the channel"
+    assert "Nobody is pinged" in text
 
 
 class _FakeInventoryCollection:
@@ -7067,6 +8710,37 @@ def test_who_has_tells_you_what_to_do_when_you_cannot_ask():
     assert any(i.startswith("cards_gem_ask:") for i in ids)
 
 
+def test_the_what_to_do_heading_tells_the_truth_about_your_spares():
+    """The heading said "You have no spare" even when the member held one
+    that no listed holder needed. The wording now follows `can_request`,
+    which is exactly "holds a same-category spare"."""
+    account = Account(
+        tag="#ME", name="Sir Ruggie", clan_tag="#MW",
+        clan_name="Morning Woods", town_hall=18,
+    )
+    inventory = _complete_inventory()
+    inventory["clan_tag"] = "#MW"
+    inventory["cards"]["balloon"] = cards.MISSING
+    holder = _complete_inventory(tag="#H", clan_tag="#MW")
+    holder["cards"]["balloon"] = cards.DUPLICATE
+    holder["player_name"] = "Holder"
+    holder["discord_id"] = 9
+    holders = cards.holders_for_card(inventory, [holder], "balloon")
+
+    spareless = _view_text(cards_command._holders_view(
+        account, "balloon", holders
+    ))
+    assert "You have no spare" in spareless
+    assert "None of these players need" not in spareless
+
+    with_spare = _view_text(cards_command._holders_view(
+        account, "balloon", holders, can_request=True
+    ))
+    assert "None of these players need your spare" in with_spare
+    assert "You have no spare" not in with_spare
+    assert "cannot start this trade. They start it for you." in with_spare
+
+
 def test_a_spare_everyone_owns_is_still_a_spare_you_can_offer():
     """Two Barbarians is a real card to trade, and it was ignored.
 
@@ -7273,6 +8947,11 @@ def test_gem_send_revalidates_a_stale_confirmation_before_dm(
 ):
     """Final send repeats trust and family checks after the price screen."""
     _account, requester, holder, mongo = _gem_handler_env(monkeypatch)
+
+    async def no_delivery(*_args, **_kwargs):
+        raise AssertionError("a refused send must deliver nothing")
+
+    monkeypatch.setattr(cards_command, "_deliver_soon", no_delivery)
     confirmation = asyncio.run(cards_command.cards_gem_ask(
         _quantity_ctx(), "#ME|balloon|#H",
         coc_client=SimpleNamespace(), mongo=mongo,
@@ -7313,19 +8992,21 @@ def test_gem_send_uses_live_eligibility_and_replayed_stale_button_fails_closed(
     monkeypatch,
 ):
     _account, _requester, holder, mongo = _gem_handler_env(monkeypatch)
-    dms = []
+    delivered = []
 
-    async def fake_dm(_bot, recipient_id, _components, **_kwargs):
-        dms.append(recipient_id)
-        return True
+    async def deliver_soon(_bot, _mongo, document, *, event, **_kwargs):
+        delivered.append((document["_id"], event))
+        return cards_command._Delivery(channel_message_id=777, pinged=(222,))
 
-    monkeypatch.setattr(cards_command, "_send_trade_dm", fake_dm)
+    monkeypatch.setattr(cards_command, "_deliver_soon", deliver_soon)
     first = asyncio.run(cards_command.cards_gem_send(
         _quantity_ctx(), "#ME|balloon|#H",
         coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
     ))
-    assert "Asked" in _view_text(first)
-    assert dms == [222]
+    text = _view_text(first)
+    assert "Asked" in text
+    assert "pinged **Holder**" in text, "feedback states the real delivery"
+    assert delivered == [("gem:#ME:#H:balloon", "gem_ask_posted")]
     assert set(mongo.card_trades.docs) == {"gem:#ME:#H:balloon"}
 
     # The same indefinitely clickable button must not send again once the
@@ -7336,7 +9017,150 @@ def test_gem_send_uses_live_eligibility_and_replayed_stale_button_fails_closed(
         coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
     ))
     assert "no longer available" in _view_text(replay)
-    assert dms == [222]
+    assert delivered == [("gem:#ME:#H:balloon", "gem_ask_posted")]
+
+
+def test_gem_send_deletes_the_ask_only_on_total_delivery_failure(monkeypatch):
+    """The old branch deleted on ANY DM failure; the honest version deletes
+    only when the channel post AND the fallback DM both failed - a DM
+    failure alone no longer unwinds an ask the channel already carries."""
+    _account, _requester, _holder, mongo = _gem_handler_env(monkeypatch)
+
+    async def total_failure(_bot, _mongo, _document, *, event, **_kwargs):
+        assert event == "gem_ask_posted"
+        return cards_command._Delivery(
+            channel_message_id=None, dm_failed=(222,)
+        )
+
+    monkeypatch.setattr(cards_command, "_deliver_soon", total_failure)
+    result = asyncio.run(cards_command.cards_gem_send(
+        _quantity_ctx(), "#ME|balloon|#H",
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+
+    text = _view_text(result)
+    assert "nothing was asked" in text, "the notice is honest"
+    assert mongo.card_trades.docs == {}, "no orphaned ask survives"
+
+
+def test_gem_send_keeps_the_ask_when_only_the_post_failed(monkeypatch):
+    """Channel post failed but the fallback DM landed: the ask is alive."""
+    _account, _requester, _holder, mongo = _gem_handler_env(monkeypatch)
+
+    async def dm_fallback(_bot, _mongo, _document, *, event, **_kwargs):
+        return cards_command._Delivery(
+            channel_message_id=None, dm_sent=(222,)
+        )
+
+    monkeypatch.setattr(cards_command, "_deliver_soon", dm_fallback)
+    result = asyncio.run(cards_command.cards_gem_send(
+        _quantity_ctx(), "#ME|balloon|#H",
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+
+    text = _view_text(result)
+    assert "Asked" in text
+    assert "DM instead" in text
+    assert set(mongo.card_trades.docs) == {"gem:#ME:#H:balloon"}
+
+
+def test_gem_send_timeout_keeps_the_ask_and_does_not_claim_success(monkeypatch):
+    """None from _deliver_soon means still in flight - the post still lands,
+    so the ask is kept and the feedback says posting, not posted."""
+    _account, _requester, _holder, mongo = _gem_handler_env(monkeypatch)
+
+    async def timed_out(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(cards_command, "_deliver_soon", timed_out)
+    result = asyncio.run(cards_command.cards_gem_send(
+        _quantity_ctx(), "#ME|balloon|#H",
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+
+    text = _view_text(result)
+    assert "I am posting the ask" in text
+    assert "pinged" not in text, "no success claim without a delivery result"
+    assert set(mongo.card_trades.docs) == {"gem:#ME:#H:balloon"}
+
+
+def test_gem_send_reaps_a_total_failure_that_outlives_the_patience_window(monkeypatch):
+    """The audit's orphan window: a delivery that fails BOTH surfaces after
+    the 3-second patience ran out used to leave the ask pending forever -
+    delivered nowhere, yet blocking every repeat ask for that pair and card.
+    The reaper rides inside the delivery task, so it tracks the real outcome
+    rather than the caller's view of it."""
+    _account, _requester, _holder, mongo = _gem_handler_env(monkeypatch)
+
+    release = asyncio.Event()
+
+    async def slow_total_failure(_bot, _mongo, _document, *, event, **_kwargs):
+        await release.wait()
+        return cards_command._Delivery(
+            channel_message_id=None, dm_failed=(222,)
+        )
+
+    monkeypatch.setattr(cards_command, "_deliver", slow_total_failure)
+
+    async def scenario():
+        # Zero patience stands in for a delivery that outlives the window.
+        real = cards_command._deliver_soon
+
+        async def impatient(*args, **kwargs):
+            kwargs.setdefault("timeout", 0)
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(cards_command, "_deliver_soon", impatient)
+        result = await cards_command.cards_gem_send(
+            _quantity_ctx(), "#ME|balloon|#H",
+            coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+        )
+        assert "I am posting the ask" in _view_text(result), (
+            "the member is answered before the outcome is known"
+        )
+        assert set(mongo.card_trades.docs) == {"gem:#ME:#H:balloon"}, (
+            "the ask is still alive while delivery is in flight"
+        )
+        release.set()
+        await asyncio.gather(*cards_command._DELIVERY_TASKS)
+        assert mongo.card_trades.docs == {}, (
+            "the late total failure still deletes the undelivered ask"
+        )
+
+    asyncio.run(scenario())
+
+
+def test_gem_takeover_clears_the_previous_asks_channel_post_ids(monkeypatch):
+    """A re-ask must not inherit its answered predecessor's channel post.
+
+    Left in place, those ids meant that if the NEW ask's post failed, the
+    eventual answer's edit would rewrite the OLD terminal post - publicly
+    flipping an already-answered ask to a different, later answer."""
+    _account, _requester, _holder, mongo = _gem_handler_env(monkeypatch)
+    mongo.card_trades.docs["gem:#ME:#H:balloon"] = {
+        "_id": "gem:#ME:#H:balloon",
+        "kind": "gem_ask",
+        "status": "declined",
+        "channel_id": 999,
+        "channel_message_id": 424242,
+        "channel_post_v2": True,
+    }
+
+    async def posted(_bot, _mongo, _document, *, event, **_kwargs):
+        return cards_command._Delivery(channel_message_id=555)
+
+    monkeypatch.setattr(cards_command, "_deliver_soon", posted)
+    asyncio.run(cards_command.cards_gem_send(
+        _quantity_ctx(), "#ME|balloon|#H",
+        coc_client=SimpleNamespace(), mongo=mongo, bot=SimpleNamespace(),
+    ))
+
+    taken_over = mongo.card_trades.docs["gem:#ME:#H:balloon"]
+    assert taken_over["status"] == "pending", "the takeover happened"
+    for stale in ("channel_id", "channel_message_id", "channel_post_v2"):
+        assert stale not in taken_over, (
+            f"{stale} must not survive onto the fresh ask"
+        )
 
 
 def test_the_gem_ask_states_the_price_before_anything_is_sent():
@@ -7519,8 +9343,13 @@ def test_my_trades_exact_move_needed_state_exposes_canonical_sent_action(monkeyp
         assert tag == "#ME" and guild_id == 1
         return [trade]
 
+    async def no_open_requests(_mongo, *, tag, guild_id):
+        assert tag == "#ME" and guild_id == 1
+        return []
+
     monkeypatch.setattr(cards_command, "_load_target", load_target)
     monkeypatch.setattr(cards_command, "_active_trades", active_trades)
+    monkeypatch.setattr(cards_command, "_open_requests_for", no_open_requests)
     view = asyncio.run(cards_command.cards_trades(
         _quantity_ctx(user_id=111),
         "#ME",
@@ -11137,8 +12966,136 @@ def test_a_failed_answer_dm_is_not_reported_as_delivered(monkeypatch):
         holder, mongo, SimpleNamespace(), ask["_id"], agreed=False
     ))
     text = _view_text(result)
-    assert "could not send them a DM" in text
-    assert "they have been told" not in text.lower()
+    assert "could not reach <@111>" in text, "built from the real _Delivery"
+    assert "I sent them a DM" not in text
+
+
+def _posted_gem_ask_env(monkeypatch, **overrides):
+    """A pending gem ask whose public post is already up in the channel."""
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(cards_command, "CARDS_CHANNEL_ID", 999)
+    ask = _gem_ask_doc(
+        channel_id=999, channel_message_id=555, channel_post_v2=True,
+        **overrides,
+    )
+    trades = _FakeTradeCollection()
+    trades.docs[ask["_id"]] = dict(ask)
+    rest = _RecordingRest()
+    dms = _DmRecorder()
+    monkeypatch.setattr(cards_command, "_send_trade_dm", dms)
+    return ask, trades, SimpleNamespace(rest=rest), rest, dms
+
+
+def _public_gem_ctx(user_id, followups):
+    class Interaction:
+        values = []
+
+        async def execute(self, **kwargs):
+            followups.append(kwargs)
+
+    return SimpleNamespace(
+        guild_id=1, user=SimpleNamespace(id=user_id),
+        interaction=Interaction(),
+    )
+
+
+def test_a_public_gem_yes_closes_the_post_silently_and_dms_the_asker(
+    monkeypatch,
+):
+    """The answer edits the standing post to its terminal form (an edit
+    cannot ping), DMs the asker exactly as informatively as before, and
+    creates NO new channel message. A raced second answer changes nothing."""
+    ask, trades, bot, rest, dms = _posted_gem_ask_env(monkeypatch)
+    followups = []
+    ctx = _public_gem_ctx(222, followups)
+
+    asyncio.run(cards_command.cards_pub_gem_yes(
+        ctx, f"{ask['_id']}|1000",
+        mongo=SimpleNamespace(card_trades=trades), bot=bot,
+    ))
+
+    assert trades.docs[ask["_id"]]["status"] == "accepted"
+    assert rest.messages == [], "no new channel post - answers never ping"
+    assert len(rest.edits) == 1
+    edited = rest.edits[0]
+    assert edited["message"] == 555
+    assert edited["user_mentions"] is False, "structurally silent"
+    closed_text = _view_text(edited["components"])
+    assert "answered — yes" in closed_text
+    assert not any(
+        "custom_id" in n for n in _view_nodes(edited["components"])
+    ), "the terminal post has zero interactive components"
+    assert [recipient for recipient, _ in dms.sent] == [111]
+    assert "They said yes" in _view_text(dms.sent[0][1])
+    assert len(followups) == 1
+    assert followups[0]["flags"] & hikari.MessageFlag.EPHEMERAL
+    reply_text = _view_text(followups[0]["components"])
+    assert "Thanks for helping" in reply_text
+    assert "I sent them a DM." in reply_text
+
+    # The CAS refuses a second answer: nothing flips, nothing is re-sent.
+    followups.clear()
+    asyncio.run(cards_command.cards_pub_gem_no(
+        _public_gem_ctx(222, followups), f"{ask['_id']}|1000",
+        mongo=SimpleNamespace(card_trades=trades), bot=bot,
+    ))
+    assert "Already answered" in _view_text(followups[0]["components"])
+    assert trades.docs[ask["_id"]]["status"] == "accepted"
+    assert len(rest.edits) == 1 and rest.messages == []
+    assert [recipient for recipient, _ in dms.sent] == [111]
+
+
+def test_a_wrong_member_public_gem_answer_changes_nothing_publicly(
+    monkeypatch,
+):
+    """Holder-only, and the refusal goes through the ephemeral followup:
+    the public post and the stored ask are untouched."""
+    ask, trades, bot, rest, dms = _posted_gem_ask_env(monkeypatch)
+    followups = []
+
+    asyncio.run(cards_command.cards_pub_gem_yes(
+        _public_gem_ctx(999, followups), f"{ask['_id']}|1000",
+        mongo=SimpleNamespace(card_trades=trades), bot=bot,
+    ))
+
+    assert len(followups) == 1
+    assert followups[0]["flags"] & hikari.MessageFlag.EPHEMERAL
+    assert "not yours" in _view_text(followups[0]["components"])
+    assert trades.docs[ask["_id"]]["status"] == "pending"
+    assert rest.messages == [] and rest.edits == []
+    assert dms.sent == []
+
+    # A stale generation from an earlier ask for the same card is refused
+    # the same way - the guard carried over from the DM pair unchanged.
+    followups.clear()
+    asyncio.run(cards_command.cards_pub_gem_yes(
+        _public_gem_ctx(222, followups), f"{ask['_id']}|999",
+        mongo=SimpleNamespace(card_trades=trades), bot=bot,
+    ))
+    assert "no longer open" in _view_text(followups[0]["components"])
+    assert trades.docs[ask["_id"]]["status"] == "pending"
+    assert rest.messages == [] and rest.edits == []
+    assert dms.sent == []
+
+
+def test_a_legacy_dm_gem_answer_also_closes_the_public_post(monkeypatch):
+    """cards_gem_yes/no stay registered forever for DMs already sent; they
+    route through the same rewired body, so an answer from an old DM edits
+    the public post to its terminal form too."""
+    ask, trades, bot, rest, dms = _posted_gem_ask_env(monkeypatch)
+
+    result = asyncio.run(cards_command.cards_gem_no(
+        _quantity_ctx(user_id=222), f"{ask['_id']}|1000",
+        mongo=SimpleNamespace(card_trades=trades), bot=bot,
+    ))
+
+    assert "Declined" in _view_text(result)
+    assert trades.docs[ask["_id"]]["status"] == "declined"
+    assert rest.messages == []
+    assert len(rest.edits) == 1
+    assert "answered — no" in _view_text(rest.edits[0]["components"])
+    assert [recipient for recipient, _ in dms.sent] == [111]
+    assert "They said no" in _view_text(dms.sent[0][1])
 
 
 def test_player_lookup_refuses_when_the_family_boundary_is_unavailable(monkeypatch):

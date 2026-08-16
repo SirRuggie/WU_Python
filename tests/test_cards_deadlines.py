@@ -122,6 +122,8 @@ def _matches(doc, query) -> bool:
 class _Rest:
     def __init__(self):
         self.dms = []
+        self.edits = []
+        self.fetched = []
 
     async def create_dm_channel(self, discord_id):
         return f"dm-{discord_id}"
@@ -129,6 +131,16 @@ class _Rest:
     async def create_message(self, **kwargs):
         self.dms.append(kwargs)
         return SimpleNamespace(id=1)
+
+    async def edit_message(self, **kwargs):
+        self.edits.append(kwargs)
+        return SimpleNamespace(id=kwargs.get("message"))
+
+    async def fetch_channel(self, channel_id):
+        # Only a NEW channel post fetches the channel first; recording the
+        # fetch lets a test pin that a job never even tried to post.
+        self.fetched.append(int(channel_id))
+        return SimpleNamespace(guild_id=0)
 
 
 def _install(monkeypatch, trades, inventories):
@@ -173,8 +185,10 @@ def test_an_unanswered_proposal_expires_and_counts_against_the_holder(monkeypatc
 
     assert trades.docs["t1"]["status"] == "expired"
     assert inventories.docs["#HOLDER"]["ignored_requests"] == 1
-    # Both sides are told, so neither is left waiting on a dead proposal.
-    assert len(rest.dms) == 2
+    # The "expired" policy row: nobody is DMed about a proposal neither
+    # player touched for 12 hours - the standing post (when one exists) is
+    # the only surface that changes.
+    assert rest.dms == []
 
 
 def test_a_proposal_inside_its_window_is_left_alone(monkeypatch):
@@ -380,3 +394,229 @@ def test_a_no_spare_auto_settle_tells_the_owed_player_too(monkeypatch):
     text = " ".join(str(dm) for dm in rest.dms)
     assert "nothing was changed" in text
     assert "was not added" in text, "the owed player is told as well"
+
+
+def _open_request(request_id, *, overdue: bool, message_id=901):
+    now = datetime.now(timezone.utc)
+    return {
+        "_id": request_id, "kind": "open_request", "status": "open",
+        "guild_id": 1, "generation": 1723800000,
+        "category": "elixir",
+        "wanted_card_id": "balloon",
+        "offer_card_ids": ["electro_dragon"],
+        "requester_tag": "#ME", "requester_name": "Requester",
+        "requester_discord_id": 111, "requester_town_hall": 17,
+        "channel_id": 555, "channel_message_id": message_id,
+        "channel_post_v2": True,
+        "claim_token": None, "claim_until": None,
+        "claimed_by_discord_id": None, "claimed_by_tag": None,
+        "claimed_at": None, "trade_id": None,
+        "open_request_key": f"1:#ME:balloon:{request_id}",
+        "expires_at": now - timedelta(hours=1) if overdue
+        else now + timedelta(hours=1),
+    }
+
+
+def _claiming(request_id, *, stalled: bool):
+    now = datetime.now(timezone.utc)
+    doc = _open_request(request_id, overdue=False)
+    doc.update(
+        status="claiming",
+        claim_token="tok",
+        claim_until=(
+            now - timedelta(seconds=30) if stalled
+            else now + timedelta(seconds=90)
+        ),
+        claimed_by_discord_id=222,
+        claimed_by_tag="#CLAIMER",
+    )
+    return doc
+
+
+def test_an_expired_open_request_closes_silently(monkeypatch):
+    """State + key unset + terminal edit - and NOBODY is told.
+
+    A want-ad expiring after 48 quiet hours is the definition of
+    nobody-needs-to-know: no DM, no ping, no new post.
+    """
+    trades = _Trades([_open_request("r1", overdue=True)])
+    rest = _install(monkeypatch, trades, _Inventories([]))
+
+    asyncio.run(sweeper.sweep_once())
+
+    doc = trades.docs["r1"]
+    assert doc["status"] == "expired"
+    assert "open_request_key" not in doc, "$unset frees the card for later"
+    assert rest.dms == []
+    assert rest.fetched == [], "expiry may never create a channel message"
+    assert len(rest.edits) == 1
+    assert rest.edits[0]["message"] == 901
+    assert "Expired" in str(rest.edits[0]["components"])
+
+
+def test_an_open_request_inside_its_window_is_left_alone(monkeypatch):
+    trades = _Trades([_open_request("r1", overdue=False)])
+    rest = _install(monkeypatch, trades, _Inventories([]))
+
+    asyncio.run(sweeper.sweep_once())
+
+    assert trades.docs["r1"]["status"] == "open"
+    assert "open_request_key" in trades.docs["r1"]
+    assert rest.edits == []
+
+
+def test_a_stalled_claim_returns_to_the_board(monkeypatch):
+    trades = _Trades([_claiming("r2", stalled=True)])
+    rest = _install(monkeypatch, trades, _Inventories([]))
+
+    asyncio.run(sweeper.sweep_once())
+
+    doc = trades.docs["r2"]
+    assert doc["status"] == "open"
+    for field in (
+        "claim_token", "claim_until", "claimed_by_discord_id",
+        "claimed_by_tag", "claimed_at",
+    ):
+        assert field not in doc, f"{field} must be unset by the recovery"
+    # The one-request-per-card key was never unset during claiming, so the
+    # round trip leaves the duplicate guard intact.
+    assert doc["open_request_key"] == "1:#ME:balloon:r2"
+    # The public post never changed during claiming: no edit, no DM.
+    assert rest.edits == []
+    assert rest.dms == []
+
+
+def test_a_fresh_claim_survives_the_recovery_sweep(monkeypatch):
+    trades = _Trades([_claiming("r3", stalled=False)])
+    _install(monkeypatch, trades, _Inventories([]))
+
+    asyncio.run(sweeper.sweep_once())
+
+    assert trades.docs["r3"]["status"] == "claiming"
+    assert trades.docs["r3"]["claim_token"] == "tok"
+
+
+def test_a_claim_refreshed_between_read_and_write_survives():
+    """The recovery CAS is fenced on the stale deadline, not just status.
+
+    The sweeper's query saw a stale claim, but by the time it writes, a
+    second member has re-claimed with a fresh claim_until. The write must
+    miss - only the deadline it read as expired may be reverted.
+    """
+    past = datetime.now(timezone.utc) - timedelta(seconds=30)
+
+    class _StaleRead(_Trades):
+        def find(self, _query):
+            return _Cursor([
+                dict(doc, claim_until=past) for doc in self.docs.values()
+            ])
+
+    trades = _StaleRead([_claiming("r4", stalled=False)])
+
+    asyncio.run(sweeper._recover_stalled_claims(
+        SimpleNamespace(card_trades=trades), None,
+        now=datetime.now(timezone.utc),
+    ))
+
+    assert trades.docs["r4"]["status"] == "claiming"
+    assert trades.docs["r4"]["claim_token"] == "tok"
+
+
+def test_proposal_expiry_edits_the_post_and_dms_nobody(monkeypatch):
+    """Expiry routes through the delivery policy: the standing post
+    collapses to its closed form, with zero DMs and zero new messages."""
+    trade = _pending("t1", overdue=True)
+    trade.update(channel_id=555, channel_message_id=901, channel_post_v2=True)
+    trades = _Trades([trade])
+    inventories = _Inventories([{"_id": "#HOLDER", "player_name": "Holder"}])
+    rest = _install(monkeypatch, trades, inventories)
+
+    asyncio.run(sweeper.sweep_once())
+
+    assert trades.docs["t1"]["status"] == "expired"
+    assert rest.dms == []
+    assert rest.fetched == [], "expiry may never create a channel message"
+    assert len(rest.edits) == 1
+    assert rest.edits[0]["message"] == 901
+    assert "Closed" in str(rest.edits[0]["components"])
+
+
+def test_expiry_still_sends_the_checkin_when_the_threshold_hits(monkeypatch):
+    """The check-in DM is the deliberate exception to silent expiry."""
+    trade = _pending("t1", overdue=True)
+    trade.update(channel_id=555, channel_message_id=901, channel_post_v2=True)
+    trades = _Trades([trade])
+    inventories = _Inventories([
+        {"_id": "#HOLDER", "player_name": "Holder", "ignored_requests": 1},
+    ])
+    rest = _install(monkeypatch, trades, inventories)
+
+    asyncio.run(sweeper.sweep_once())
+
+    assert len(rest.edits) == 1, "the silent post edit still happens"
+    text = " ".join(str(dm) for dm in rest.dms)
+    assert "still trading" in text.lower(), "the check-in DM is preserved"
+
+
+def test_over_budget_edits_still_change_state_and_drain_next_pass(monkeypatch):
+    """A CAS is never deferred for a cosmetic edit; the edit rides later."""
+    monkeypatch.setattr(sweeper, "SWEEP_CHANNEL_EDIT_BUDGET", 1)
+    trades = _Trades([
+        _open_request("r1", overdue=True, message_id=901),
+        _open_request("r2", overdue=True, message_id=902),
+    ])
+    rest = _install(monkeypatch, trades, _Inventories([]))
+
+    asyncio.run(sweeper.sweep_once())
+
+    # Both state transitions landed in the SAME pass.
+    assert trades.docs["r1"]["status"] == "expired"
+    assert trades.docs["r2"]["status"] == "expired"
+    assert len(rest.edits) == 1
+    pending = [
+        doc for doc in trades.docs.values()
+        if doc.get("channel_edit_pending")
+    ]
+    assert len(pending) == 1, "the over-budget doc is marked, not lost"
+
+    asyncio.run(sweeper.sweep_once())
+
+    # The deferred edit drains on the next pass and the marker comes off.
+    assert {edit["message"] for edit in rest.edits} == {901, 902}
+    assert not any(
+        doc.get("channel_edit_pending") for doc in trades.docs.values()
+    )
+
+
+def test_sweep_once_wires_every_job_through_one_shared_budget(monkeypatch):
+    calls = []
+
+    def _record(name):
+        async def _job(*_a, **kwargs):
+            calls.append((name, kwargs.get("edit_budget")))
+            return 0
+        return _job
+
+    jobs = (
+        "_drain_pending_channel_edits", "_expire_unanswered_proposals",
+        "_pause_silent_members", "_recover_interrupted_completions",
+        "_finish_one_sided_swaps", "_close_abandoned_swaps",
+        "_expire_open_requests", "_recover_stalled_claims",
+    )
+    for name in jobs:
+        monkeypatch.setattr(sweeper, name, _record(name))
+    monkeypatch.setattr(sweeper, "bot_instance", SimpleNamespace())
+    monkeypatch.setattr(sweeper, "mongo_client", SimpleNamespace())
+
+    asyncio.run(sweeper.sweep_once())
+
+    assert [name for name, _budget in calls] == list(jobs)
+    budgets = {
+        id(budget) for _name, budget in calls if budget is not None
+    }
+    assert len(budgets) == 1, "one budget must bound the whole pass"
+    assert [name for name, budget in calls if budget is not None] == [
+        "_drain_pending_channel_edits",
+        "_expire_unanswered_proposals",
+        "_expire_open_requests",
+    ], "exactly the jobs that edit standing posts share the cap"

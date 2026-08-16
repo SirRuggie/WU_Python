@@ -269,12 +269,39 @@ def test_holder_accept_feedback_shares_grammar_and_inline_warning():
         assert label in text
     assert "> ### ⚠️ FWA — Wait for war" in text
     assert "My trades" in text and "I sent my card" in text
-    assert "I told them by DM." in text
+    # Transport-neutral: the legacy dm_sent flag still reads as a DM...
+    assert "I sent them a DM." in text
     assert "Your account" not in text, (
         "the holder acted from this panel; their account needs no line"
     )
     labels = _labels(view)
     assert "My trades" in labels and "Collection" in labels
+
+    # ...while a real _Delivery drives the line from what actually happened:
+    # the channel ping leads, and the DM copy is mentioned only if it went.
+    pinged = cards_command._holder_accept_feedback(
+        _trade(status="ready"),
+        taken_card_id="electro_titan",
+        status="ready",
+        delivery=cards_command._Delivery(
+            channel_message_id=777, pinged=(111,), dm_sent=(111,),
+        ),
+        fwa_relevant=False,
+        tag="#HOLD",
+    )
+    pinged_text = _text(pinged)
+    assert "I pinged them in" in pinged_text
+    assert "They also got a DM." in pinged_text
+
+    unreachable = cards_command._holder_accept_feedback(
+        _trade(status="ready"),
+        taken_card_id="electro_titan",
+        status="ready",
+        delivery=cards_command._Delivery(channel_message_id=None),
+        fwa_relevant=False,
+        tag="#HOLD",
+    )
+    assert "I could not reach <@111>" in _text(unreachable)
 
 
 def test_status_dm_is_slim_and_names_only_the_reader():
@@ -434,6 +461,102 @@ def test_trades_view_empty_offers_find_trades():
 
     busy = cards_command._trades_view(account, [_trade(status="pending")])
     assert "Find trades" not in _labels(busy)
+
+
+def _open_request():
+    created = datetime.now(timezone.utc)
+    return {
+        "_id": "ux-req",
+        "kind": "open_request",
+        "status": "open",
+        "generation": 1_755_000_000,
+        "guild_id": 1,
+        "category": "elixir",
+        "wanted_card_id": "root_rider",
+        "offer_card_ids": ["wizard"],
+        "requester_tag": "#ME",
+        "requester_name": "Member",
+        "requester_discord_id": 111,
+        "requester_town_hall": 17,
+        "requester_clan_tag": "#HOME",
+        "requester_clan_name": "Home Clan",
+        "requester_clan_emoji": "",
+        "created_at": created,
+        "expires_at": created + cards_command.OPEN_REQUEST_FOR,
+    }
+
+
+def test_want_ad_post_is_one_gold_container_open_and_plain_closed():
+    """The want-ad follows the standing-post canon: one main Container,
+    gold while an answer is possible, accent-free once it is history."""
+    from utils.constants import GOLD_ACCENT
+
+    request = _open_request()
+    view = cards_command._open_request_post(request)
+    assert len(_containers(view)) == 1
+    assert _built(view[0])["accent_color"] == int(GOLD_ACCENT)
+
+    closed = cards_command._open_request_post(dict(request, status="cancelled"))
+    assert len(_containers(closed)) == 1
+    payload = _built(closed[0])
+    assert payload.get("accent_color") in (None, hikari.UNDEFINED) or (
+        "accent_color" not in payload
+    ), "a closed want-ad carries no accent"
+    assert _custom_ids(closed) == []
+
+
+def test_request_consent_screen_is_gold_and_states_the_stakes():
+    """Consent before publication: the card, the full give-back list, the
+    channel, the 48-hour clock - all said before anything goes public."""
+    from utils.constants import GOLD_ACCENT
+
+    account = _account()
+    card = cards.CARD_BY_ID["root_rider"]
+    view = cards_command._open_request_confirm_view(
+        account, card, ["wizard", "dragon"]
+    )
+    assert len(_containers(view)) == 1
+    assert _built(view[0])["accent_color"] == int(GOLD_ACCENT)
+    text = _text(view)
+    assert "for everyone to see" in text
+    assert "48 hours" in text
+    assert "Nobody is pinged" in text
+    assert "Wizard" in text and "Dragon" in text
+    ids = _custom_ids(view)
+    assert "cards_req_post:#ME|root_rider" in ids
+    assert "cards_matches:#ME" in ids, "a consent screen needs a way out"
+
+
+def test_claim_pickers_are_single_gold_containers():
+    """Both claim screens follow the panel canon: one Container, gold while
+    a decision is being asked. The account picker is Sections with a SUCCESS
+    button each (a row of things); the take chooser is a select whose values
+    are the card ids (a choice among known cards)."""
+    from utils.constants import GOLD_ACCENT
+
+    request = _open_request()
+    account = Account(
+        tag="#CL", name="Claimer Person", clan_tag="#AWAY",
+        clan_name="Away Clan", town_hall=18,
+    )
+    picker = cards_command._claim_account_picker(
+        request, [(account, {"_id": "#CL"})]
+    )
+    assert len(_containers(picker)) == 1
+    assert _built(picker[0])["accent_color"] == int(GOLD_ACCENT)
+    assert "Which account claims Root Rider?" in _text(picker)
+    assert _custom_ids(picker) == [
+        "cards_pub_claim_as:ux-req|1755000000|#CL",
+    ]
+    assert "Claim · Claimer" in _labels(picker)
+
+    chooser = cards_command._claim_take_picker(request, ["wizard"], tag="#CL")
+    assert len(_containers(chooser)) == 1
+    assert _built(chooser[0])["accent_color"] == int(GOLD_ACCENT)
+    assert _custom_ids(chooser) == ["cards_pub_take:ux-req|1755000000|#CL"]
+    menu = next(n for n in _nodes(chooser) if "options" in n)
+    assert [str(option["value"]) for option in menu["options"]] == ["wizard"]
+    assert "one you are missing" in _text(chooser)
 
 
 def test_nested_fwa_experiment_is_preview_only_and_single_container():

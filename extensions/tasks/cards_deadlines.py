@@ -5,16 +5,26 @@ held in memory. That is deliberate: a restart resumes exactly where it left
 off, and a bot that was down for two days processes everything overdue on its
 first pass rather than losing it.
 
-Five jobs, in the order a trade meets them:
+Seven jobs, in the order a trade meets them:
 
 1. A proposal nobody answers within 12 hours closes itself, and the holder's
-   consecutive ignored-request count goes up.
+   consecutive ignored-request count goes up. Its standing post on the trade
+   board collapses to the closed form; nobody is DMed about it.
 2. Two ignored in a row asks the holder whether they are still trading.
 3. No answer to that within 24 hours hides their cards. Silence is a no.
 4. Once one player confirms they sent their card, the other has 7 days before
    theirs is deducted for them.
 5. A swap NEITHER player ever confirms is closed after 7 days, because nothing
    else would ever release those two cards.
+6. An open request (want-ad) nobody claims within 48 hours expires. Its post
+   collapses to the closed form; no DM, no ping, no new message.
+7. A claim that crashed mid-flight - stuck in "claiming" past its two-minute
+   claim window - is returned to the board, fenced so a fresh claim survives.
+
+Standing-post edits across one pass are capped by SWEEP_CHANNEL_EDIT_BUDGET.
+A state transition is never deferred for a cosmetic edit: an over-budget doc
+still changes state and carries a channel_edit_pending marker that the next
+pass drains first, under the same cap.
 """
 
 import asyncio
@@ -34,6 +44,11 @@ SWEEP_INTERVAL_SECONDS = 5 * 60
 # A bot that was down for a week could have thousands due at once; a bounded
 # batch keeps one pass short and the rest are picked up next time.
 BATCH = 200
+# The most standing-post edits one pass may make. A backlog of hundreds of
+# expiries must not turn into hundreds of REST edits in one burst - the state
+# transitions all land immediately, and over-budget posts are corrected on
+# following passes via the channel_edit_pending marker.
+SWEEP_CHANNEL_EDIT_BUDGET = 25
 
 sweep_task = None
 bot_instance = None
@@ -41,6 +56,12 @@ mongo_client = None
 
 # Shared with the owner preview command, so the wording it sends is the
 # wording members receive - never a second copy that can drift.
+#
+# PROPOSAL_EXPIRED_* is no longer sent by anything: proposal expiry now
+# routes through the delivery policy ("expired" = silent standing-post edit,
+# no DM). The constants stay because tests pin the 12-hour wording against
+# SWAP_ACCEPT_FOR; delete them together with that pin if the retired DM is
+# ever fully excised.
 PROPOSAL_EXPIRED_TITLE = "Card proposal expired"
 PROPOSAL_EXPIRED_DETAIL = (
     "Nobody answered within 12 hours, so it closed. Nothing changed."
@@ -64,7 +85,40 @@ SWAP_CLOSED_OWED_DETAIL = (
 )
 
 
-async def _expire_unanswered_proposals(mongo, bot, *, now) -> int:
+class _EditBudget:
+    """The per-pass cap on standing-post edits, shared by every job.
+
+    One instance travels through a whole sweep pass, so the cap bounds the
+    pass, not each job. A compare-and-swap state change is never deferred
+    for a cosmetic edit: when the cap is spent the doc still transitions and
+    is marked channel_edit_pending, which `_drain_pending_channel_edits`
+    clears on a following pass under the same cap.
+    """
+
+    def __init__(self, limit: int) -> None:
+        self.remaining = int(limit)
+
+    def take(self) -> bool:
+        """Reserve one edit; False once the pass has spent its cap."""
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
+
+
+async def _mark_channel_edit_pending(mongo, doc_id) -> None:
+    """Defer a standing-post edit to the next pass's drain job."""
+    try:
+        await mongo.card_trades.update_one(
+            {"_id": doc_id},
+            {"$set": {"channel_edit_pending": True}},
+        )
+    except Exception as exc:
+        print(f"[Cards Deadlines] edit deferral failed doc={doc_id}: "
+              f"{type(exc).__name__}: {exc}")
+
+
+async def _expire_unanswered_proposals(mongo, bot, *, now, edit_budget) -> int:
     """Job 1 and 2: close ignored proposals, then ask if they are still here."""
     try:
         due = await mongo.card_trades.find({
@@ -110,14 +164,23 @@ async def _expire_unanswered_proposals(mongo, bot, *, now) -> int:
         except Exception:
             pass
 
-        for recipient in ("requester", "holder"):
-            discord_id = trade.get(f"{recipient}_discord_id")
-            if discord_id:
-                await cards_command._notify_trade_status(
-                    bot, trade, recipient_id=int(discord_id),
-                    title=PROPOSAL_EXPIRED_TITLE,
-                    detail=PROPOSAL_EXPIRED_DETAIL,
-                )
+        # The "expired" policy row: the standing post silently collapses to
+        # its closed form and NOBODY is DMed - before this, the post kept
+        # looking open forever while both players got a DM about a proposal
+        # neither had touched in 12 hours. The check-in below is the one
+        # deliberate exception and keeps its DM.
+        expired_trade = dict(trade)
+        expired_trade.update(
+            status="expired", expired_at=now, updated_at=now
+        )
+        if trade.get("channel_message_id") and not edit_budget.take():
+            # Over budget: the state change above already landed; only the
+            # cosmetic edit waits for the next pass's drain.
+            await _mark_channel_edit_pending(mongo, trade["_id"])
+        else:
+            await cards_command._deliver(
+                bot, mongo, expired_trade, event="expired"
+            )
 
         if ignored >= cards_command.IGNORED_BEFORE_CHECKIN:
             await _send_checkin(mongo, bot, trade, holder_tag, now=now)
@@ -342,21 +405,190 @@ async def _close_abandoned_swaps(mongo, bot, *, now) -> int:
     return closed
 
 
+async def _expire_open_requests(mongo, bot, *, now, edit_budget) -> int:
+    """Job 6: a want-ad nobody claimed within 48 hours closes itself.
+
+    NO DM, NO ping, NO new post - a want-ad expiring after 48 quiet hours is
+    the definition of nobody-needs-to-know. The public post silently
+    collapses to its compact closed form, exactly as cards_req_close flips
+    it, minus the task wrapper: sweepers await.
+    """
+    try:
+        due = await mongo.card_trades.find({
+            "kind": "open_request",
+            "status": "open",
+            "expires_at": {"$lte": now},
+        }).to_list(length=BATCH)
+    except Exception as exc:
+        print(f"[Cards Deadlines] open request query failed: "
+              f"{type(exc).__name__}: {exc}")
+        return 0
+
+    expired = 0
+    for request in due:
+        result = await mongo.card_trades.update_one(
+            {"_id": request["_id"], "kind": "open_request", "status": "open"},
+            {
+                "$set": {
+                    "status": "expired",
+                    "expired_at": now,
+                    "updated_at": now,
+                },
+                # Terminal transitions free the one-request-per-card key.
+                "$unset": {"open_request_key": ""},
+            },
+        )
+        if not getattr(result, "modified_count", 0):
+            continue      # claimed or closed between the read and the write
+        expired += 1
+        if not request.get("channel_message_id"):
+            continue      # never reached the board; nothing to edit
+        if not edit_budget.take():
+            await _mark_channel_edit_pending(mongo, request["_id"])
+            continue
+        # The request is not trade-shaped, so the kind-aware trade edit
+        # cannot render it; flip the post directly to its terminal form.
+        await cards_command._channel_edit(
+            bot,
+            channel_id=(
+                request.get("channel_id")
+                or cards_command._configured_cards_channel_id()
+            ),
+            message_id=request.get("channel_message_id"),
+            components=cards_command._open_request_post(
+                dict(request, status="expired")
+            ),
+            key=request.get("_id"),
+        )
+    return expired
+
+
+async def _recover_stalled_claims(mongo, bot, *, now) -> int:
+    """Job 7: return a claim that crashed mid-flight to the board.
+
+    `_perform_open_request_claim` writes claim_until at the claiming CAS for
+    exactly this recovery: a crash between "claiming" and either "claimed"
+    or its rollback would otherwise park the want-ad forever. The CAS here
+    is fenced on BOTH status:"claiming" and the expired claim_until, so a
+    fresh claim written between the read and this write - carrying a future
+    claim_until - survives untouched. The public post never changed during
+    claiming, so there is nothing to edit.
+    """
+    try:
+        due = await mongo.card_trades.find({
+            "kind": "open_request",
+            "status": "claiming",
+            "claim_until": {"$lte": now},
+        }).to_list(length=BATCH)
+    except Exception as exc:
+        print(f"[Cards Deadlines] stalled claim query failed: "
+              f"{type(exc).__name__}: {exc}")
+        return 0
+
+    recovered = 0
+    for request in due:
+        result = await mongo.card_trades.update_one(
+            {
+                "_id": request["_id"],
+                "kind": "open_request",
+                "status": "claiming",
+                "claim_until": {"$lte": now},
+            },
+            {
+                "$set": {"status": "open", "updated_at": now},
+                "$unset": {
+                    "claim_token": "",
+                    "claim_until": "",
+                    "claimed_by_discord_id": "",
+                    "claimed_by_tag": "",
+                    "claimed_at": "",
+                },
+            },
+        )
+        if getattr(result, "modified_count", 0):
+            recovered += 1
+    return recovered
+
+
+async def _drain_pending_channel_edits(mongo, bot, *, edit_budget) -> int:
+    """Flush standing-post edits an over-budget earlier pass deferred.
+
+    Runs FIRST in the pass, so last pass's leftovers get the budget before
+    this pass spends it - otherwise a sustained backlog could starve them
+    forever. The marker comes off whether or not the edit lands:
+    `_channel_edit` already fails soft, a deleted message must not be
+    retried every pass for eternity, and any later status change re-renders
+    the post anyway.
+    """
+    if edit_budget.remaining <= 0:
+        return 0
+    try:
+        due = await mongo.card_trades.find({
+            "channel_edit_pending": True,
+        }).to_list(length=min(BATCH, edit_budget.remaining))
+    except Exception as exc:
+        print(f"[Cards Deadlines] pending edit query failed: "
+              f"{type(exc).__name__}: {exc}")
+        return 0
+
+    drained = 0
+    for doc in due:
+        if not edit_budget.take():
+            break
+        result = await mongo.card_trades.update_one(
+            {"_id": doc["_id"], "channel_edit_pending": True},
+            {"$unset": {"channel_edit_pending": ""}},
+        )
+        if not getattr(result, "modified_count", 0):
+            continue      # another pass drained it first
+        drained += 1
+        if str(doc.get("kind") or "") == "open_request":
+            # Not trade-shaped; render its own standing post directly.
+            await cards_command._channel_edit(
+                bot,
+                channel_id=(
+                    doc.get("channel_id")
+                    or cards_command._configured_cards_channel_id()
+                ),
+                message_id=doc.get("channel_message_id"),
+                components=cards_command._open_request_post(doc),
+                key=doc.get("_id"),
+            )
+        else:
+            # Kind-aware: trade V2, legacy content, or gem ask.
+            await cards_command._update_trade_channel(bot, doc)
+    return drained
+
+
 async def sweep_once() -> None:
     if not bot_instance or not mongo_client:
         return
     now = datetime.now(timezone.utc)
-    expired = await _expire_unanswered_proposals(mongo_client, bot_instance, now=now)
+    edit_budget = _EditBudget(SWEEP_CHANNEL_EDIT_BUDGET)
+    drained = await _drain_pending_channel_edits(
+        mongo_client, bot_instance, edit_budget=edit_budget
+    )
+    expired = await _expire_unanswered_proposals(
+        mongo_client, bot_instance, now=now, edit_budget=edit_budget
+    )
     paused = await _pause_silent_members(mongo_client, bot_instance, now=now)
     recovered = await _recover_interrupted_completions(
         mongo_client, bot_instance, now=now
     )
     settled = await _finish_one_sided_swaps(mongo_client, bot_instance, now=now)
     closed = await _close_abandoned_swaps(mongo_client, bot_instance, now=now)
-    if expired or paused or recovered or settled or closed:
+    requests_expired = await _expire_open_requests(
+        mongo_client, bot_instance, now=now, edit_budget=edit_budget
+    )
+    reclaimed = await _recover_stalled_claims(
+        mongo_client, bot_instance, now=now
+    )
+    if (expired or paused or recovered or settled or closed
+            or requests_expired or reclaimed or drained):
         print(f"[Cards Deadlines] expired={expired} paused={paused} "
               f"review_recovered={recovered} auto_confirmed={settled} "
-              f"abandoned={closed}")
+              f"abandoned={closed} requests_expired={requests_expired} "
+              f"claims_reclaimed={reclaimed} edits_drained={drained}")
 
 
 async def sweep_loop() -> None:

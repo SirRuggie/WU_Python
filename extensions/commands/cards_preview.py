@@ -5,6 +5,11 @@ synthetic trade document, so what arrives is exactly what a member gets -
 never a second copy of the wording that can drift from it. Nothing is written
 to Mongo and no card is reserved.
 
+The PUBLIC channel surfaces - the V2 standing posts, the acceptance and
+claim notes, the open-request and gem-ask posts - are rendered through the
+same production builders and delivered to the owner's DM, which is fine for
+judging layout: the message body is identical, only the destination differs.
+
 Controls that do not have handlers yet are rendered disabled rather than
 omitted, so the layout can be judged before the logic exists.
 """
@@ -172,6 +177,31 @@ def _labelled(label: str, components: list) -> list:
     return [Text(content=f"-# {label}"), *components]
 
 
+def _preview_open_request(discord_id: int) -> dict:
+    """An open-request document shaped like the real thing, never persisted."""
+    now = datetime.now(timezone.utc)
+    return {
+        "_id": "previewreq",
+        "kind": "open_request",
+        "status": "open",
+        "generation": int(now.timestamp()),
+        "guild_id": 0,
+        "category": cards.CARD_BY_ID[WANTED_CARD].category,
+        "wanted_card_id": WANTED_CARD,
+        "offer_card_ids": [GIVEN_CARD, *ALTERNATIVES],
+        "requester_tag": "#YURL2QVJJ",
+        "requester_name": "brilliant31508",
+        "requester_discord_id": int(discord_id),
+        "requester_town_hall": 17,
+        "requester_clan_tag": "#HOME",
+        "requester_clan_name": "Morning Woods",
+        "requester_clan_emoji": "",
+        "created_at": now,
+        "updated_at": now,
+        "expires_at": now + cards_command.OPEN_REQUEST_FOR,
+    }
+
+
 def _preview_gem_ask(discord_id: int) -> dict:
     now = datetime.now(timezone.utc)
     card = cards.CARD_BY_ID[WANTED_CARD]
@@ -321,7 +351,7 @@ class CardsDmPreview(
             lightbulb.Choice("7 · You answered Yes", "confirm_yes"),
             lightbulb.Choice("8 · They confirmed, card added", "other_confirmed"),
             lightbulb.Choice("9 · Cancelled", "cancelled"),
-            lightbulb.Choice("10 · Proposal expired after 12h", "expired"),
+            lightbulb.Choice("10 · Channel board posts", "channel_posts"),
             lightbulb.Choice("11 · Card deducted after 7 days", "auto_deduct"),
             lightbulb.Choice("12 · Closed after 7 days, no spare", "auto_no_spare"),
             lightbulb.Choice("13 · Accepted with FWA warning", "accepted_fwa"),
@@ -472,14 +502,50 @@ async def _send_previews(
                 ),
             ),
         )
-        await notify(
-            "expired", "10 · Proposal expired after 12h",
-            cards_command._notify_trade_status(
-                bot, one, recipient_id=me,
-                title=cards_deadlines.PROPOSAL_EXPIRED_TITLE,
-                detail=cards_deadlines.PROPOSAL_EXPIRED_DETAIL,
-            ),
-        )
+        # 10. The PUBLIC channel surfaces, through the production builders.
+        # This slot used to preview the proposal-expired DM; expiry now
+        # silently edits the standing post and DMs nobody, so there is no
+        # DM left to preview - and the choice list sits at Discord's
+        # 25-choice cap, so the retired slot is reused rather than added to.
+        if wanted in ("channel_posts", "all"):
+            open_request = _preview_open_request(me)
+            gem_post = _preview_gem_ask(me)
+            await panel(
+                "channel_posts", "10a · Standing post, pending + controls",
+                cards_command._trade_post(dict(one, status="pending")),
+            )
+            await panel(
+                "channel_posts", "10b · Standing post, closed form",
+                cards_command._trade_post(dict(one, status="expired")),
+            )
+            await panel(
+                "channel_posts", "10c · Acceptance note, pings requester",
+                cards_command._accepted_channel_note(one),
+            )
+            await panel(
+                "channel_posts", "10d · Claim note, pings the poster",
+                cards_command._claimed_channel_note(one),
+            )
+            await panel(
+                "channel_posts", "10e · Open request, open",
+                cards_command._open_request_post(open_request),
+            )
+            await panel(
+                "channel_posts", "10f · Open request, closed by requester",
+                cards_command._open_request_post(
+                    dict(open_request, status="cancelled")
+                ),
+            )
+            await panel(
+                "channel_posts", "10g · Gem ask post, pending",
+                cards_command._gem_ask_post(gem_post),
+            )
+            await panel(
+                "channel_posts", "10h · Gem ask post, answered",
+                cards_command._gem_ask_post(
+                    dict(gem_post, status="accepted")
+                ),
+            )
         await notify(
             "auto_deduct", "11 · Card deducted after 7 days",
             cards_command._notify_trade_status(

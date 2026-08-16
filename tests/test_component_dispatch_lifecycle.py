@@ -117,6 +117,78 @@ def test_a_dead_token_still_delivers_by_editing_the_message(monkeypatch):
         cleanup()
 
 
+def test_a_public_button_answers_privately_and_its_followup_stays_clickable(monkeypatch):
+    """The public-surface pattern, pinned at the dispatch boundary.
+
+    A button on a channel post must never let the dispatcher's normal reply
+    run: that reply is an EDIT of the clicked message, which on a public post
+    would replace it with the clicker's private panel for the whole channel.
+    The escape is `no_return=True` plus an ephemeral followup - the sticky's
+    "I am lost" button has run this exact shape in production since it
+    shipped. What that button never carried is a control OF ITS OWN on the
+    followup, so this test pins the second half: a click arriving from the
+    followup message routes like any other component and edits the followup,
+    leaving the public post untouched both times.
+    """
+    followup_sends = []
+
+    async def public_probe(ctx=None, action_id=None, **_kwargs):
+        # The handler answers through the interaction, not the dispatcher:
+        # a followup is a NEW message, so the public post is never targeted.
+        await ctx.interaction.execute(
+            components=["PRIVATE-PANEL"],
+            flags=(
+                hikari.MessageFlag.IS_COMPONENTS_V2
+                | hikari.MessageFlag.EPHEMERAL
+            ),
+        )
+
+    async def followup_probe(ctx=None, action_id=None, **_kwargs):
+        return ["NEXT-SCREEN"]
+
+    components.register_action("pub_probe", no_return=True)(public_probe)
+    components.register_action("pub_probe_next")(followup_probe)
+    try:
+        # Click 1: the button on the public channel post.
+        public_ctx = _RecorderCtx("pub_probe:trade-1")
+        public_ctx.interaction.execute = (
+            lambda **kwargs: _record_execute(followup_sends, kwargs)
+        )
+        _install_state(monkeypatch, {})
+        asyncio.run(components._dispatch(public_ctx, mongo=SimpleNamespace()))
+
+        assert ("defer", True) in public_ctx.events, (
+            "the public click is still acknowledged within the window"
+        )
+        assert not any(e[0] == "respond" for e in public_ctx.events), (
+            "no_return means the dispatcher must never edit the public post"
+        )
+        assert len(followup_sends) == 1
+        assert followup_sends[0]["components"] == ["PRIVATE-PANEL"]
+        assert followup_sends[0]["flags"] & hikari.MessageFlag.EPHEMERAL, (
+            "the reply belongs to the clicker, not the channel"
+        )
+
+        # Click 2: a button the followup itself carries. Discord delivers it
+        # as an ordinary component interaction on the followup message with a
+        # fresh token; the dispatcher neither knows nor cares that the message
+        # was a followup, and its edit lands on that message.
+        followup_ctx = _RecorderCtx("pub_probe_next:trade-1")
+        asyncio.run(components._dispatch(followup_ctx, mongo=SimpleNamespace()))
+
+        assert followup_ctx.events[0] == ("defer", True)
+        assert followup_ctx.events[-1] == ("respond", True, ["NEXT-SCREEN"]), (
+            "the followup's own button edits the followup, nothing else"
+        )
+    finally:
+        components.registered_functions.pop("pub_probe", None)
+        components.registered_functions.pop("pub_probe_next", None)
+
+
+async def _record_execute(sink, kwargs):
+    sink.append(kwargs)
+
+
 def test_save_confirmed_cards_survives_a_dead_token(monkeypatch):
     """The exact live P0, end to end through the real registration."""
     sentinel = ["PARTIAL-SAVE-VIEW"]

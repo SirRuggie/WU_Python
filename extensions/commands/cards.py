@@ -10,6 +10,7 @@ revision are rechecked at explicit confirmation.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import difflib
 import logging
 import math
@@ -17,6 +18,7 @@ import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 
 import coc
 import hikari
@@ -107,6 +109,15 @@ HOLDER_RESULT_LIMIT = 5
 TRADE_VIEW_LIMIT = 5
 PLAYER_LOOKUP_TEXT_LIMIT = 4_000
 MAX_OPEN_PROPOSALS_PER_ACCOUNT = 25
+# A want-ad reserves nothing, so the 25-slot proposal machinery would be the
+# wrong bound for it - but every open request costs a public channel post, so
+# it needs a much tighter cap.
+MAX_OPEN_REQUESTS_PER_ACCOUNT = 3
+OPEN_REQUEST_FOR = timedelta(hours=48)
+# How long one member's claim may hold an open request's "claiming" fence
+# before a sweeper returns it to open. Defined beside its siblings; the claim
+# flow is what consumes it.
+OPEN_REQUEST_CLAIM_FOR = timedelta(minutes=2)
 COMMITTED_TRADE_FETCH_LIMIT = 100
 PROPOSAL_TRADE_FETCH_LIMIT = 250
 REVIEW_TRADE_FETCH_LIMIT = 250
@@ -4865,6 +4876,17 @@ def _matches_view(
     # they tripled the height of the screen, and neither is what a member came
     # here to do: even swaps are the trades that actually complete.
     secondary: list = []
+    if not per_card and _requestable_card_ids(inventory):
+        # Nothing to trade for, but the member holds a spare in a finished
+        # category where they are missing cards: a public want-ad in the
+        # channel reaches the collections the matcher cannot see. Without a
+        # spare the button would lead straight to a refusal, so it is not
+        # drawn.
+        secondary.append(Button(
+            style=hikari.ButtonStyle.PRIMARY,
+            custom_id=f"cards_req_pick:{tag}",
+            label="Post a request",
+        ))
     if oneway_ids:
         secondary.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -4947,6 +4969,7 @@ def _holders_view(
     *,
     page: int = 0,
     clan_emoji: dict | None = None,
+    can_request: bool = False,
 ) -> list[Container]:
     card = CARD_BY_ID[card_id]
     category = CATEGORY_BY_ID[card.category]
@@ -5031,6 +5054,19 @@ def _holders_view(
             f"Nobody currently lists a duplicate **{card.name}**. "
             "Check again later as more family members finish setup."
         ))]
+        if can_request:
+            # The headline case for the public want-ad: the matcher found
+            # nobody, but the matcher only sees recorded collections. A post
+            # in the channel reaches everyone it cannot. Only offered when
+            # the member holds a same-category spare - the game will not open
+            # a trade without one to give back.
+            holder_components.append(ActionRow(components=[Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=(
+                    f"cards_req_new:{_normalize_tag(account.tag)}|{card.id}"
+                ),
+                label="Post a request",
+            )]))
     # What you get is the same for everyone on this screen, so it is said
     # once at the top instead of once per holder.
     same_clan_total = sum(1 for match in holders if match.same_clan)
@@ -5064,12 +5100,21 @@ def _holders_view(
         # you post a request without a duplicate to offer, so the trade has to
         # start from their side and the instructions have to say so.
         cost = TRADE_GEM_COST.get(card.category, 0)
+        # `can_request` is whether the member holds a same-category spare.
+        # The old copy said "You have no spare" in both cases, which was a
+        # lie whenever the member DOES hold one that no listed holder needs.
+        why_not = (
+            f"None of these players need your spare "
+            f"**{category.short_name}** cards, so you "
+            if can_request
+            else f"You have no spare **{category.short_name}** card, so you "
+        )
         components.extend([
             Separator(divider=True),
             Text(content=(
                 f"## {emojis.card_give} What to do now\n"
-                f"You have no spare **{category.short_name}** card, so you "
-                "cannot start this trade. They start it for you.\n\n"
+                + why_not
+                + "cannot start this trade. They start it for you.\n\n"
                 # Names the button on this screen rather than telling anybody
                 # to go and write a message. One verb, one button, the same
                 # words as the label - which is what a reader translating in
@@ -5082,6 +5127,17 @@ def _holders_view(
                 "-# You both need to be in the same clan to trade."
             )),
         ])
+        if can_request:
+            # The listed holders cannot be asked, but the matcher's blind
+            # spots (paused, stale, unscanned collections) are exactly who a
+            # public want-ad reaches. Same spare precondition as above.
+            components.append(ActionRow(components=[Button(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=(
+                    f"cards_req_new:{_normalize_tag(account.tag)}|{card.id}"
+                ),
+                label="Post a request",
+            )]))
     if pages > 1:
         components.extend([
             Separator(divider=True),
@@ -6273,6 +6329,203 @@ async def _create_trade_request(
     return trade, None
 
 
+def _open_request_offer_ids(inventory: dict, card) -> list[str]:
+    """Every same-category card this member could give back: spares only.
+
+    The game will not open a trade without a duplicate offered in return, so
+    an empty list here refuses the whole open-request flow - that member's
+    route is the gem **Ask for help** instead. Reserved cards are masked the
+    same way `_create_trade_request` masks them, so a spare promised to an
+    accepted trade cannot be promised to the channel too.
+    """
+    values = normalize_cards(_without_reserved_cards(inventory).get("cards"))
+    return [
+        item.id
+        for item in CATEGORY_CARDS[card.category]
+        if values.get(item.id, OWNED) >= DUPLICATE
+    ]
+
+
+def _requestable_card_ids(inventory: dict) -> list[str]:
+    """The missing cards a want-ad may name for this member.
+
+    Restricted to finished categories where they also hold a spare to give
+    back - the two preconditions `_create_open_request` enforces - so the
+    picker can never offer a card whose request would then be refused.
+    """
+    values = normalize_cards(_without_reserved_cards(inventory).get("cards"))
+    complete = {str(v) for v in inventory.get("complete_categories") or ()}
+    spare_categories = {
+        CARD_BY_ID[card_id].category
+        for card_id, count in values.items()
+        if card_id in CARD_BY_ID and count >= DUPLICATE
+    }
+    return [
+        card.id
+        for card in CARDS
+        if card.category in complete
+        and card.category in spare_categories
+        and values.get(card.id, OWNED) == MISSING
+    ]
+
+
+async def _create_open_request(
+    mongo: MongoClient,
+    *,
+    requester_inventory: dict,
+    wanted_card_id: str,
+    guild_id: int,
+) -> tuple[dict | None, str | None]:
+    """Save one open request, or say exactly why not.
+
+    Mirrors `_create_trade_request`'s contract: (document, None) on success,
+    (None, member-facing error) on refusal. The sparse-unique
+    `open_request_key` index is the one-open-request-per-card guard; every
+    terminal transition must `$unset` it so the member can ask again later.
+    """
+    now = datetime.now(timezone.utc)
+    card = CARD_BY_ID.get(str(wanted_card_id))
+    if card is None:
+        return None, "That card is not in the catalog."
+    tag = _normalize_tag(requester_inventory.get("_id"))
+    try:
+        same_family = int(requester_inventory.get("guild_id")) == int(guild_id)
+    except (TypeError, ValueError):
+        same_family = False
+    if not same_family:
+        return None, "The collection must belong to this Discord family."
+    if not inventory_is_matchable(requester_inventory):
+        return None, (
+            "Your collection needs a fresh update before anything goes on "
+            "the family board. Open **Update collection** first."
+        )
+    category = CATEGORY_BY_ID[card.category]
+    complete = {
+        str(v) for v in requester_inventory.get("complete_categories") or ()
+    }
+    if card.category not in complete:
+        return None, (
+            f"Finish entering your **{category.short_name}** category first, "
+            "then post the request."
+        )
+    values = normalize_cards(
+        _without_reserved_cards(requester_inventory).get("cards")
+    )
+    if values.get(card.id, OWNED) != MISSING:
+        return None, (
+            f"You are not missing **{card.name}**, so there is nothing to "
+            "request."
+        )
+    offer_ids = _open_request_offer_ids(requester_inventory, card)
+    if not offer_ids:
+        # The game's rule, not ours: no duplicate to give back means the trade
+        # cannot start from this side at all (see the holders screen's "What
+        # to do now"). The gem ask is the route built for exactly this case.
+        return None, (
+            f"You have no spare **{category.short_name}** card to give back, "
+            "so the game will not let this trade start from your side. Use "
+            "**Ask for help** next to a holder instead - they start the "
+            "trade and you pay gems."
+        )
+    try:
+        requester_discord_id = int(requester_inventory.get("discord_id"))
+    except (TypeError, ValueError):
+        return None, (
+            "The collection must be linked to a current Discord member."
+        )
+    open_requests = await mongo.card_trades.find({
+        "kind": "open_request",
+        "guild_id": int(guild_id),
+        "status": "open",
+        "requester_tag": tag,
+    }).to_list(length=MAX_OPEN_REQUESTS_PER_ACCOUNT)
+    if len(open_requests) >= MAX_OPEN_REQUESTS_PER_ACCOUNT:
+        return None, (
+            f"`{tag}` already has {MAX_OPEN_REQUESTS_PER_ACCOUNT} open "
+            "requests. Close one in **My trades** before posting another."
+        )
+    # The clan's own emoji, copied onto the request so a channel post never
+    # depends on a query that could fail later - same policy as
+    # `_create_trade_request`.
+    clan_tag = _normalize_tag(requester_inventory.get("clan_tag"))
+    clan_emoji = ""
+    if clan_tag:
+        try:
+            row = await mongo.clans.find_one({"tag": clan_tag}, {"emoji": 1})
+            clan_emoji = str((row or {}).get("emoji") or "")
+        except Exception:
+            _log.info(
+                "open request clan emoji lookup failed clan=%s", clan_tag
+            )
+    request = {
+        "_id": secrets.token_hex(8),
+        "kind": "open_request",
+        "status": "open",
+        # The gem-ask staleness pattern: a button from a reused or stale post
+        # carries an old generation and is refused instead of acted on.
+        "generation": int(now.timestamp()),
+        "guild_id": int(guild_id),
+        "category": card.category,
+        "wanted_card_id": card.id,
+        "offer_card_ids": list(offer_ids),
+        # Copied at creation like `_create_trade_request` does: a notification
+        # must never depend on a later query that could fail.
+        "requester_tag": tag,
+        "requester_name": str(
+            requester_inventory.get("player_name") or "Unknown player"
+        ),
+        "requester_discord_id": requester_discord_id,
+        "requester_town_hall": requester_inventory.get("town_hall") or 0,
+        "requester_clan_tag": requester_inventory.get("clan_tag"),
+        "requester_clan_name": requester_inventory.get("clan_name"),
+        "requester_clan_emoji": clan_emoji,
+        "channel_id": None,
+        "channel_message_id": None,
+        # Claim fields, present from birth so the claim CAS and its sweeper
+        # never have to reason about $exists.
+        "claim_token": None,
+        "claim_until": None,
+        "claimed_by_discord_id": None,
+        "claimed_by_tag": None,
+        "claimed_at": None,
+        "trade_id": None,
+        "created_at": now,
+        "updated_at": now,
+        # Read by the deadline sweeper. Absolute, so a restart resumes.
+        "expires_at": now + OPEN_REQUEST_FOR,
+        # Sparse-unique: one open request per card per account per family.
+        # Every terminal transition $unsets it.
+        "open_request_key": f"{int(guild_id)}:{tag}:{card.id}",
+    }
+    try:
+        await mongo.card_trades.insert_one(request)
+    except DuplicateKeyError:
+        return None, (
+            f"You already have an open request for **{card.name}**. Close "
+            "it in **My trades** first."
+        )
+    return request, None
+
+
+async def _open_requests_for(
+    mongo: MongoClient, *, tag: str, guild_id: int
+) -> list[dict]:
+    """The member's own open want-ads, newest first, for My trades.
+
+    The expires_at guard matches the deadline sweeper's cutoff: between a
+    request's deadline and the sweep pass that closes it, the document still
+    says status:"open", and without the guard My trades would render it as
+    open right up until the sweeper caught up.
+    """
+    return await mongo.card_trades.find({
+        "kind": "open_request",
+        "guild_id": int(guild_id),
+        "status": "open",
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+        "requester_tag": _normalize_tag(tag),
+    }).sort("created_at", -1).to_list(length=MAX_OPEN_REQUESTS_PER_ACCOUNT)
+
+
 async def _live_clan_tag(coc_client: coc.Client, tag: str) -> str | None:
     try:
         player = await coc_client.get_player(_normalize_tag(tag))
@@ -6493,21 +6746,39 @@ def _trade_location_line(trade: dict, *, role: str | None = None) -> str:
     )
 
 
+# One wording per status, shared by the V2 standing post and the legacy
+# plain-content post so the two renderings can never disagree about what a
+# status is called.
+TRADE_STATUS_LABELS = {
+    "pending": "🃏 New card proposal",
+    "reserving": "🟡 Proposal being accepted",
+    "move_needed": "🟡 Accepted — family move needed",
+    "ready": "🟢 Ready in the same clan",
+    "accepted": "🟢 Ready in the same clan",
+    "completing": "🟡 Saving completion",
+    "completed": "✅ Completed",
+    "declined": "⚪ Declined",
+    "cancelled": "⚪ Cancelled",
+    "needs_review": "⚠️ Needs review",
+    "expired": "⌛ Closed",
+}
+
+# Statuses whose standing post collapses to the compact closed form: the
+# audit line stays visible, but nothing on it is clickable any more.
+TRADE_POST_TERMINAL_STATUSES = frozenset(
+    {"completed", "declined", "cancelled", "expired"}
+)
+
+
+def _trade_status_label(status: str) -> str:
+    return TRADE_STATUS_LABELS.get(
+        status, status.replace("_", " ").title()
+    )
+
+
 def _trade_channel_content(trade: dict) -> str:
     status = str(trade.get("status") or "pending")
-    labels = {
-        "pending": "🃏 New card proposal",
-        "reserving": "🟡 Proposal being accepted",
-        "move_needed": "🟡 Accepted — family move needed",
-        "ready": "🟢 Ready in the same clan",
-        "accepted": "🟢 Ready in the same clan",
-        "completing": "🟡 Saving completion",
-        "completed": "✅ Completed",
-        "declined": "⚪ Declined",
-        "cancelled": "⚪ Cancelled",
-        "needs_review": "⚠️ Needs review",
-        "expired": "⌛ Closed",
-    }
+    labels = TRADE_STATUS_LABELS
     wanted = CARD_BY_ID[trade["wanted_card_id"]].name
     given = CARD_BY_ID[trade["given_card_id"]].name
     requester = _escape_markdown(trade.get("requester_name"), limit=60)
@@ -6665,21 +6936,39 @@ async def _post_trade_channel(bot: hikari.GatewayBot, mongo: MongoClient, trade:
     attachment = await asyncio.to_thread(_trade_strip_attachment, trade)
     message_id = await _channel_post(
         bot,
-        content=_trade_channel_content(trade),
+        # The standing post is Components V2 so it can carry live controls.
+        # The strip rides inside the message's own gallery (mounted in
+        # `_trade_post`), which is the only way a V2 message shows an image.
+        components=_trade_post(trade, attachment_ref=attachment),
         ping=[trade["holder_discord_id"]],
-        attachment=attachment,
         key=trade.get("_id"),
     )
     if message_id is None:
         return False
     trade["channel_id"] = int(channel_id)
     trade["channel_message_id"] = message_id
+    # V2 is a creation-time property: a legacy plain-content post can never be
+    # edited into components, so the branch in `_update_trade_channel` keys on
+    # this marker rather than on age or status. Absent-tolerant by design.
+    trade["channel_post_v2"] = True
+    if attachment is not None:
+        # `given_card_id` can change when the accepter takes a different
+        # spare, so the uploaded strip's filename is remembered rather than
+        # recomputed - an edit that referenced a filename the message does
+        # not carry would be refused whole.
+        trade["channel_post_image"] = getattr(attachment, "filename", None)
     try:
         await mongo.card_trades.update_one(
             {"_id": trade["_id"], "kind": "trade"},
             {"$set": {
                 "channel_id": int(channel_id),
                 "channel_message_id": message_id,
+                "channel_post_v2": True,
+                **(
+                    {"channel_post_image": trade["channel_post_image"]}
+                    if trade.get("channel_post_image")
+                    else {}
+                ),
             }},
         )
     except Exception as exc:
@@ -6693,14 +6982,747 @@ async def _post_trade_channel(bot: hikari.GatewayBot, mongo: MongoClient, trade:
     return True
 
 
+def _standing_post_image_ref(trade: dict) -> str | None:
+    """How an edit keeps the already-uploaded strip, without re-uploading.
+
+    Discord keeps a message's attachments when an edit omits the attachments
+    field (hikari sends UNDEFINED, so ours always do), and a media gallery
+    references a retained file as `attachment://filename`. Re-rendering and
+    re-uploading the strip on every status change is not cheap, so edits
+    re-reference the stored filename instead. If live verification ever shows
+    Discord refusing the reference on edit, returning None here is the whole
+    rollback: the edited post simply drops its image. Terminal statuses use
+    the compact closed form, which never carries one.
+    """
+    if str(trade.get("status") or "") in TRADE_POST_TERMINAL_STATUSES:
+        return None
+    filename = trade.get("channel_post_image")
+    return f"attachment://{filename}" if filename else None
+
+
 async def _update_trade_channel(bot: hikari.GatewayBot, trade: dict) -> bool:
+    if str(trade.get("kind") or "") == "gem_ask":
+        # Kind-aware, and checked FIRST: everything below assumes a
+        # trade-shaped document (wanted/given/requester_*), which a gem ask
+        # does not have. An ask without a channel post (a legacy DM-only one
+        # still in flight) has no message id, and `_channel_edit` refuses
+        # that quietly.
+        return await _channel_edit(
+            bot,
+            channel_id=trade.get("channel_id") or _configured_cards_channel_id(),
+            message_id=trade.get("channel_message_id"),
+            components=_gem_ask_post(trade),
+            key=trade.get("_id"),
+        )
+    if not trade.get("channel_post_v2"):
+        # Legacy path, kept verbatim: a message created with `content=` can
+        # never be edited into Components V2 (IS_COMPONENTS_V2 is a
+        # creation-time flag), so in-flight trades posted before the V2
+        # standing post keep their plain-content refresh until they drain.
+        return await _channel_edit(
+            bot,
+            channel_id=trade.get("channel_id") or _configured_cards_channel_id(),
+            message_id=trade.get("channel_message_id"),
+            content=_trade_channel_content(trade),
+            key=trade.get("_id"),
+        )
     return await _channel_edit(
         bot,
         channel_id=trade.get("channel_id") or _configured_cards_channel_id(),
         message_id=trade.get("channel_message_id"),
-        content=_trade_channel_content(trade),
+        components=_trade_post(
+            trade, attachment_ref=_standing_post_image_ref(trade)
+        ),
         key=trade.get("_id"),
     )
+
+
+def _trade_post_controls(trade: dict) -> list:
+    """The standing post's live controls - present only while pending.
+
+    Every other status has nothing a channel reader may do to it: an
+    accepted swap is managed from **My trades** by its two participants, and
+    a closed one is history. One colon per custom_id; the trade id is the
+    whole action id.
+    """
+    if str(trade.get("status") or "pending") != "pending":
+        return []
+    trade_id = str(trade.get("_id") or "")
+    holder_first = (
+        str(trade.get("holder_name") or "").strip().split() or ["the holder"]
+    )[0]
+    return [ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            custom_id=f"cards_pub_accept:{trade_id}",
+            # The holder's name on the button is what stops everyone else
+            # tapping it; the refusal works, the label prevents the taps.
+            label=f"Accept · {holder_first}"[:80],
+        ),
+        Button(
+            style=hikari.ButtonStyle.DANGER,
+            custom_id=f"cards_pub_decline:{trade_id}",
+            label="Decline",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_pub_cancel:{trade_id}",
+            label="Cancel · requester",
+        ),
+    ])]
+
+
+def _trade_post_accent(status: str):
+    """GOLD while an answer is owed, GREEN once agreed, RED when a human
+    must intervene, and no accent at all once the trade is history."""
+    if status in {"pending", "reserving"}:
+        return GOLD_ACCENT
+    if status in {"move_needed", "ready", "accepted", "completing"}:
+        return GREEN_ACCENT
+    if status == "needs_review":
+        return RED_ACCENT
+    return None
+
+
+def _trade_post(trade: dict, *, attachment_ref=None) -> list[Container]:
+    """The V2 standing post for one trade, read by the whole channel.
+
+    `attachment_ref` mounts the trade strip: a fresh `hikari.Bytes` when the
+    post is created, an `attachment://` string when an edit re-references the
+    already-uploaded file, or None for no image. In a V2 message an
+    attachment must be mounted in a gallery or it silently does not appear.
+    """
+    status = str(trade.get("status") or "pending")
+    label = _trade_status_label(status)
+    wanted = CARD_BY_ID[trade["wanted_card_id"]].name
+    given = CARD_BY_ID[trade["given_card_id"]].name
+    requester = _escape_markdown(trade.get("requester_name"), limit=60)
+    holder = _escape_markdown(trade.get("holder_name"), limit=60)
+    requester_id = int(trade["requester_discord_id"])
+    holder_id = int(trade["holder_discord_id"])
+    if status in TRADE_POST_TERMINAL_STATUSES:
+        # Compact closed form: the audit line survives, nothing is clickable,
+        # and the image is dropped rather than re-referenced.
+        return [_panel(None, [Text(content=(
+            f"**{label}**\n"
+            f"-# {requester} (`{trade['requester_tag']}`) offered **{given}** "
+            f"for {holder}'s (`{trade['holder_tag']}`) **{wanted}**."
+        ))])]
+    components: list = [
+        Text(content=f"## {label}"),
+        Text(content=(
+            f"<@{holder_id}> — **{requester} needs your duplicate "
+            f"{wanted}.**\n"
+            f"**Proposed:** {requester} (`{trade['requester_tag']}`) gives "
+            f"**{given}** to {holder} (`{trade['holder_tag']}`) for "
+            f"**{wanted}**.\n"
+            f"<@{requester_id}> has **{_trade_offer_names(trade)}** "
+            "duplicates that you need."
+        )),
+        Separator(divider=True),
+        Text(content=(
+            _player_line(
+                "Asking", trade.get("requester_name"),
+                trade.get("requester_tag"), trade.get("requester_town_hall"),
+                trade.get("requester_clan_name"),
+                trade.get("requester_clan_emoji"),
+            )
+            + "\n"
+            + _player_line(
+                "Holding", trade.get("holder_name"), trade.get("holder_tag"),
+                trade.get("holder_town_hall"), trade.get("holder_clan_name"),
+                trade.get("holder_clan_emoji"),
+            )
+            + f"\n📍 {_trade_location_line(trade)}"
+        )),
+    ]
+    if attachment_ref is not None:
+        components.extend([Separator(divider=True), Media(items=[
+            MediaItem(media=attachment_ref),
+        ])])
+    controls = _trade_post_controls(trade)
+    if controls:
+        components.append(Separator(divider=True))
+        components.extend(controls)
+    footer = (
+        f"Only <@{holder_id}> can accept or decline; "
+        f"<@{requester_id}> can cancel. Anyone in the trade can also use "
+        "`/cards` → **My trades**."
+        if status == "pending"
+        else "The two players manage this swap in `/cards` → **My trades**."
+    )
+    components.append(Text(content=f"-# {footer}"))
+    return [_panel(_trade_post_accent(status), components)]
+
+
+def _accepted_channel_note(trade: dict) -> list[Container]:
+    """The short acceptance reply under the standing post.
+
+    Addressed to the requester - they are the one being pinged - and small on
+    purpose: the standing post right above it carries the full detail.
+    """
+    wanted = CARD_BY_ID[trade["wanted_card_id"]].name
+    given = CARD_BY_ID[trade["given_card_id"]].name
+    holder = _escape_markdown(trade.get("holder_name"), limit=40)
+    return [_panel(GREEN_ACCENT, [Text(content=(
+        f"✅ <@{int(trade['requester_discord_id'])}> — **{holder}** accepted. "
+        f"You give **{given}**, you get **{wanted}**. "
+        "Next steps in `/cards` → **My trades**."
+    ))])]
+
+
+def _claimed_channel_note(trade: dict) -> list[Container]:
+    """The short claim reply under the reused want-ad post.
+
+    `trade` is the CONVERTED kind:"trade" document (poster = requester,
+    claimer = holder), so the requester mention here reaches the member who
+    posted the want-ad. Small on purpose, like `_accepted_channel_note`: the
+    standing post right above it - the want-ad's own message, just edited
+    into `_trade_post` - carries the full detail. "has your {wanted}" rather
+    than "accepted" is deliberate: the wording stays true even when the
+    reservation could not land and the trade waits as a pending proposal.
+    """
+    wanted = CARD_BY_ID[trade["wanted_card_id"]].name
+    given = CARD_BY_ID[trade["given_card_id"]].name
+    holder = _escape_markdown(trade.get("holder_name"), limit=40)
+    return [_panel(GREEN_ACCENT, [Text(content=(
+        f"✅ <@{int(trade['requester_discord_id'])}> — **{holder}** has your "
+        f"{wanted}. You give **{given}**, you get **{wanted}**. "
+        "Next steps in `/cards` → **My trades**."
+    ))])]
+
+
+# One wording per status for the want-ad's standing post, mirroring
+# TRADE_STATUS_LABELS so the two boards speak one language.
+OPEN_REQUEST_STATUS_LABELS = {
+    "open": "🃏 Card wanted",
+    "claiming": "🟡 Being claimed",
+    "claimed": "✅ Claimed",
+    "cancelled": "⚪ Closed by the requester",
+    "expired": "⌛ Expired",
+}
+
+# Statuses whose want-ad post collapses to the compact closed form: the audit
+# line stays visible, nothing on it is clickable any more.
+OPEN_REQUEST_TERMINAL_STATUSES = frozenset({"claimed", "cancelled", "expired"})
+
+
+def _open_request_status_label(status: str) -> str:
+    return OPEN_REQUEST_STATUS_LABELS.get(
+        status, status.replace("_", " ").title()
+    )
+
+
+def _open_request_post(request: dict) -> list[Container]:
+    """The V2 standing post for one open request, read by the whole channel.
+
+    Small on purpose: one claim button while open, the compact closed form
+    with zero interactive components once the request is over. The claim
+    button's custom_id carries the generation, the gem-ask staleness pattern,
+    so a stale panel refuses instead of acting.
+    """
+    status = str(request.get("status") or "open")
+    label = _open_request_status_label(status)
+    card = CARD_BY_ID.get(str(request.get("wanted_card_id")))
+    card_name = card.name if card else "Unknown card"
+    requester = _escape_markdown(request.get("requester_name"), limit=60)
+    if status in OPEN_REQUEST_TERMINAL_STATUSES:
+        return [_panel(None, [Text(content=(
+            f"**{label}**\n"
+            f"-# {requester} (`{request.get('requester_tag')}`) asked the "
+            f"family for **{card_name}**."
+        ))])]
+    components: list = [
+        Text(content=f"## {label}"),
+        Text(content=(
+            f"**{requester}** (`{request.get('requester_tag')}`) is missing "
+            f"{_card_label(card) if card else f'**{card_name}**'}.\n"
+            "**Can give back one of:** "
+            f"{_card_names(request.get('offer_card_ids') or (), limit=8)}"
+        )),
+        Separator(divider=True),
+        Text(content=(
+            _player_line(
+                "Asking", request.get("requester_name"),
+                request.get("requester_tag"),
+                request.get("requester_town_hall"),
+                request.get("requester_clan_name"),
+                request.get("requester_clan_emoji"),
+            )
+            + "\n⏳ Open until "
+            + _relative_timestamp(request.get("expires_at"))
+        )),
+    ]
+    if status == "open":
+        components.extend([
+            Separator(divider=True),
+            ActionRow(components=[Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=(
+                    f"cards_pub_claim:{request.get('_id')}|"
+                    f"{int(request.get('generation') or 0)}"
+                ),
+                label="I have this card",
+            )]),
+        ])
+    components.append(Text(content=(
+        f"-# Have a spare **{card_name}**? Tap **I have this card** and you "
+        f"get one of {requester}'s duplicates back. {requester} can close "
+        "this in `/cards` → **My trades**."
+    )))
+    return [_panel(GOLD_ACCENT if status == "open" else None, components)]
+
+
+async def _post_open_request_channel(
+    bot: hikari.GatewayBot, mongo: MongoClient, request: dict
+) -> bool:
+    """Post the want-ad as its own V2 standing post. Pings nobody.
+
+    Same shape as `_post_trade_channel`: the message ids land on both the
+    in-memory document and the stored one, so the feedback string and every
+    later edit know where the post lives.
+    """
+    channel_id = _configured_cards_channel_id()
+    if channel_id is None:
+        return False
+    message_id = await _channel_post(
+        bot,
+        components=_open_request_post(request),
+        # The policy row says a want-ad pings nobody; the empty allowlist is
+        # what makes that structural rather than remembered.
+        ping=(),
+        key=request.get("_id"),
+    )
+    if message_id is None:
+        return False
+    request["channel_id"] = int(channel_id)
+    request["channel_message_id"] = message_id
+    request["channel_post_v2"] = True
+    try:
+        await mongo.card_trades.update_one(
+            {"_id": request["_id"], "kind": "open_request"},
+            {"$set": {
+                "channel_id": int(channel_id),
+                "channel_message_id": message_id,
+                "channel_post_v2": True,
+            }},
+        )
+    except Exception as exc:
+        # The post is already up and the ids are on the in-memory document,
+        # so the caller's feedback stays correct; only later edits are lost.
+        _log.info(
+            "open request channel id write failed request=%s error=%s",
+            request.get("_id"), type(exc).__name__,
+        )
+    return True
+
+
+# Statuses whose gem-ask post collapses to the compact closed form: the audit
+# line stays visible, nothing on it is clickable any more.
+GEM_ASK_TERMINAL_STATUSES = frozenset({"accepted", "declined"})
+
+
+def _gem_ask_post(ask: dict) -> list[Container]:
+    """The V2 standing post for one gem ask, read by the whole channel.
+
+    Modeled on `_gem_ask_dm` - which stays byte-identical as the fallback
+    payload - but channel-appropriate: the holder is addressed by mention,
+    both players are named for everyone else reading, and the buttons carry
+    the ask id + generation exactly like the DM pair so the same staleness
+    guard applies. Small on purpose; an answered ask collapses to one line.
+    """
+    status = str(ask.get("status") or "pending")
+    card = CARD_BY_ID[ask["card_id"]]
+    category = CATEGORY_BY_ID[card.category]
+    asker = _escape_markdown(ask.get("asker_name"), limit=60)
+    holder = _escape_markdown(ask.get("holder_name"), limit=60)
+    if status in GEM_ASK_TERMINAL_STATUSES:
+        answer = "yes" if status == "accepted" else "no"
+        return [_panel(None, [Text(content=(
+            f"**💎 Gem ask answered — {answer}**\n"
+            f"-# {asker} asked {holder} for **{card.name}**."
+        ))])]
+    holder_id = int(ask["holder_discord_id"])
+    generation = int(ask.get("generation") or 0)
+    return [_panel(GOLD_ACCENT, [
+        Text(content=f"## 💎 Help wanted — {card.name}"),
+        Text(content=(
+            f"<@{holder_id}> — **{asker}** is missing {_card_label(card)} "
+            f"and has no **{category.short_name}** spare to give back. "
+            f"They pay **{ask.get('gem_cost')} gems** {emojis.gems} — you "
+            "keep all your cards."
+        )),
+        Separator(divider=True),
+        Text(content=(
+            "**If you say yes**\n"
+            "Post the trade in game.\n"
+            f"Offer your {_card_label(card)}. Ask for any "
+            f"**{category.short_name}** card."
+        )),
+        Separator(divider=True),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                # The ask id itself contains colons; the dispatcher partitions
+                # on the FIRST colon only, exactly as the cards_gem_yes DM
+                # pair already relies on, so this routes fine.
+                custom_id=f"cards_pub_gem_yes:{ask['_id']}|{generation}",
+                label="Yes, I will post it",
+                emoji=emojis.yes.partial_emoji,
+            ),
+            Button(
+                style=hikari.ButtonStyle.DANGER,
+                custom_id=f"cards_pub_gem_no:{ask['_id']}|{generation}",
+                label="No thanks", emoji=CANCEL_EMOJI,
+            ),
+        ]),
+        Text(content=(
+            f"-# Only <@{holder_id}> can answer. Nothing changes in anyone's "
+            "collection until they trade in game."
+        )),
+    ])]
+
+
+async def _post_gem_ask_channel(
+    bot: hikari.GatewayBot, mongo: MongoClient, ask: dict
+) -> bool:
+    """Post the gem ask as its own V2 standing post, pinging the holder.
+
+    Same shape as `_post_trade_channel`: the message ids land on both the
+    in-memory document and the stored one, so the feedback string and the
+    later answer edit know where the post lives.
+    """
+    channel_id = _configured_cards_channel_id()
+    if channel_id is None:
+        return False
+    message_id = await _channel_post(
+        bot,
+        components=_gem_ask_post(ask),
+        ping=[ask["holder_discord_id"]],
+        key=ask.get("_id"),
+    )
+    if message_id is None:
+        return False
+    ask["channel_id"] = int(channel_id)
+    ask["channel_message_id"] = message_id
+    ask["channel_post_v2"] = True
+    try:
+        await mongo.card_trades.update_one(
+            {"_id": ask["_id"], "kind": "gem_ask"},
+            {"$set": {
+                "channel_id": int(channel_id),
+                "channel_message_id": message_id,
+                "channel_post_v2": True,
+            }},
+        )
+    except Exception as exc:
+        # The post is already up and the ids are on the in-memory document,
+        # so the caller's feedback stays correct; only later edits are lost.
+        _log.info(
+            "gem ask channel id write failed ask=%s error=%s",
+            ask.get("_id"), type(exc).__name__,
+        )
+    return True
+
+
+class _EventPolicy(NamedTuple):
+    """What one lifecycle event is allowed to do to people's attention."""
+
+    posts: bool          # a NEW channel message (the only thing that pings)
+    pings: str | None    # "holder" | "requester" | None
+    edits: bool          # refresh the standing post in place (never notifies)
+    dm: str              # "never" | "fallback" | "always"
+
+
+# THE delivery policy. Every trade event routes through `_deliver`, which
+# consults this table and nothing else - call sites no longer decide who gets
+# posted at, pinged, or DMed. Exactly two events may create a channel message,
+# and `test_only_listed_events_may_post_and_ping` pins that set: widening it
+# is a deliberate one-row change here, never an accident at a call site.
+#
+# The two posting events ship with dm="always" for the first live-verification
+# window (both parties still get their familiar DM while the pings are
+# confirmed to land). The planned end state is dm="fallback" - a DM only when
+# the channel post fails - and flipping one table entry here is the whole
+# rollback lever, no code path changes.
+TRADE_DELIVERY: dict[str, _EventPolicy] = {
+    "proposal_created": _EventPolicy(
+        posts=True, pings="holder", edits=False, dm="always"
+    ),
+    "proposal_accepted": _EventPolicy(
+        posts=True, pings="requester", edits=True, dm="always"
+    ),
+    # A want-ad IS its standing post and pings NOBODY - by construction it is
+    # posted because the matcher found no holder, so there is nobody to aim
+    # at. The sticky drives eyes to the channel instead. Never a DM: there is
+    # no recipient.
+    "open_request_posted": _EventPolicy(
+        posts=True, pings=None, edits=False, dm="never"
+    ),
+    # A claimed want-ad reuses its own message as the resulting trade's
+    # standing post (edits=True refreshes it into `_trade_post`); the short
+    # reply-note underneath is the post that pings. The document delivered
+    # for this event is the CONVERTED kind:"trade" doc, so pings="requester"
+    # reaches the original poster. dm="always" for the same first
+    # live-verification window as the other two pinging events - the planned
+    # end state is dm="fallback", and flipping this one table entry is the
+    # whole rollback lever, no code path changes.
+    "open_request_claimed": _EventPolicy(
+        posts=True, pings="requester", edits=True, dm="always"
+    ),
+    # The gem ask IS its standing post and pings the one holder being asked;
+    # the DM is a silent fallback fired only when the channel post fails
+    # (removing the old delete-on-DM-failure fragility: the DM stops being the
+    # single point of delivery).
+    "gem_ask_posted": _EventPolicy(
+        posts=True, pings="holder", edits=False, dm="fallback"
+    ),
+    # The answer edits the ask's post to its terminal form silently and DMs
+    # the asker the yes/no, exactly as informative as before. The plan table
+    # sketched a pinging reply here, but the owner's later decision governs:
+    # the ping budget is proposal + acceptance ONLY, and a gem answer is
+    # neither - so no new pinging post for this event.
+    "gem_ask_answered": _EventPolicy(
+        posts=False, pings=None, edits=True, dm="always"
+    ),
+    "declined": _EventPolicy(posts=False, pings=None, edits=True, dm="never"),
+    "cancelled": _EventPolicy(posts=False, pings=None, edits=True, dm="never"),
+    "ready": _EventPolicy(posts=False, pings=None, edits=True, dm="never"),
+    "card_arrived": _EventPolicy(
+        posts=False, pings=None, edits=True, dm="never"
+    ),
+    "completed": _EventPolicy(posts=False, pings=None, edits=True, dm="never"),
+    "expired": _EventPolicy(posts=False, pings=None, edits=True, dm="never"),
+    # A public nag is worse than a DM: review keeps its private delivery.
+    # (Check-in and auto-deduct notices are DM-only paths that live in
+    # extensions/tasks/cards_deadlines.py and never route through here.)
+    "needs_review": _EventPolicy(
+        posts=False, pings=None, edits=True, dm="always"
+    ),
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class _Delivery:
+    """What actually happened, so feedback strings never have to guess."""
+
+    channel_message_id: int | None = None
+    pinged: tuple = ()
+    dm_sent: tuple = ()
+    dm_failed: tuple = ()
+
+
+async def _default_dm_components(
+    mongo, trade: dict, *, event: str
+) -> dict[int, list]:
+    """The DM each event sends when the caller supplies nothing bespoke."""
+    if event == "proposal_created":
+        attachment = await asyncio.to_thread(_trade_strip_attachment, trade)
+        return {int(trade["holder_discord_id"]): _trade_proposal_dm(
+            trade, attachment=attachment, controls=True
+        )}
+    if event in ("proposal_accepted", "open_request_claimed"):
+        # One builder for both: a claimed want-ad IS an acceptance, and both
+        # events aim the news at the trade's requester (for a claim, the
+        # member who posted the want-ad). The claim path suppresses this DM
+        # when the reservation stayed pending - "Trade accepted" would be
+        # ahead of the truth there - by passing an empty recipients dict.
+        fwa_relevant = await _trade_involves_fwa(mongo, trade)
+        return {int(trade["requester_discord_id"]): _accepted_trade_dm(
+            trade, fwa_relevant=fwa_relevant
+        )}
+    if event == "gem_ask_posted":
+        # The fallback payload is the existing DM, unchanged: the channel
+        # post is the primary surface, and this is what the holder gets only
+        # when that post failed.
+        return {int(trade["holder_discord_id"]): _gem_ask_dm(trade)}
+    if event == "gem_ask_answered":
+        if not trade.get("asker_discord_id"):
+            return {}
+        return {int(trade["asker_discord_id"]): _gem_answer_dm(trade)}
+    return {}
+
+
+async def _deliver(
+    bot: hikari.GatewayBot,
+    mongo,
+    trade: dict,
+    *,
+    event: str,
+    dm_components_by_recipient: dict[int, list] | None = None,
+) -> _Delivery:
+    """The one funnel between a trade event and anyone's attention.
+
+    Consults TRADE_DELIVERY and performs, in order: the new channel post
+    (the only step that can ping), the silent standing-post edit, then any
+    DMs the policy asks for. Never raises for delivery reasons - every
+    transport underneath already fails soft - so a caller may await it
+    directly (sweepers do) or through `_deliver_soon` (interactive handlers).
+    """
+    policy = TRADE_DELIVERY[event]
+    message_id = None
+    pinged: tuple = ()
+    ping_id = None
+    if policy.pings:
+        try:
+            ping_id = int(trade.get(f"{policy.pings}_discord_id") or 0) or None
+        except (TypeError, ValueError):
+            ping_id = None
+    if policy.posts:
+        if event == "proposal_created":
+            # The proposal IS the standing post; everything later refers back
+            # to it.
+            if await _post_trade_channel(bot, mongo, trade):
+                message_id = trade.get("channel_message_id")
+        elif event == "open_request_posted":
+            # The want-ad is its own standing post, and its policy row pings
+            # nobody - the ping_id above is already None.
+            if await _post_open_request_channel(bot, mongo, trade):
+                message_id = trade.get("channel_message_id")
+        elif event == "gem_ask_posted":
+            # The gem ask is its own standing post, pinging the one holder
+            # being asked (the transport's allowlist carries the same id the
+            # policy resolved above).
+            if await _post_gem_ask_channel(bot, mongo, trade):
+                message_id = trade.get("channel_message_id")
+        elif event == "open_request_claimed":
+            # The claim reply-note, threaded under the want-ad's message -
+            # which the edits step below refreshes into the trade's own
+            # standing post. `trade` is the converted kind:"trade" doc, so
+            # the requester ping lands on the want-ad's poster.
+            message_id = await _channel_post(
+                bot,
+                components=_claimed_channel_note(trade),
+                ping=[ping_id] if ping_id is not None else [],
+                reply_to=trade.get("channel_message_id"),
+                key=f"{trade.get('_id')} {event}",
+            )
+        else:
+            # A short follow-up, threaded under the standing post when one
+            # exists so the channel reads as one conversation per trade.
+            message_id = await _channel_post(
+                bot,
+                components=_accepted_channel_note(trade),
+                ping=[ping_id] if ping_id is not None else [],
+                reply_to=trade.get("channel_message_id"),
+                key=f"{trade.get('_id')} {event}",
+            )
+        if message_id is not None and ping_id is not None:
+            pinged = (ping_id,)
+    if policy.edits:
+        await _update_trade_channel(bot, trade)
+    dm_sent: list[int] = []
+    dm_failed: list[int] = []
+    dm_wanted = policy.dm == "always" or (
+        policy.dm == "fallback" and policy.posts and message_id is None
+    )
+    if policy.dm != "never" and dm_wanted:
+        recipients = dm_components_by_recipient
+        if recipients is None:
+            recipients = await _default_dm_components(
+                mongo, trade, event=event
+            )
+        for recipient_id, components in (recipients or {}).items():
+            ok = await _send_trade_dm(
+                bot, int(recipient_id), components,
+                trade_id=str(trade.get("_id")),
+            )
+            (dm_sent if ok else dm_failed).append(int(recipient_id))
+    return _Delivery(
+        channel_message_id=(
+            int(message_id) if message_id is not None else None
+        ),
+        pinged=pinged,
+        dm_sent=tuple(dm_sent),
+        dm_failed=tuple(dm_failed),
+    )
+
+
+# Keeps in-flight delivery tasks reachable: asyncio holds tasks weakly, so a
+# fire-and-forget task with no other reference can be garbage-collected
+# mid-delivery. done_callback removes each one the moment it finishes.
+_DELIVERY_TASKS: set = set()
+
+
+async def _deliver_soon(
+    bot: hikari.GatewayBot,
+    mongo,
+    trade: dict,
+    *,
+    event: str,
+    dm_components_by_recipient: dict[int, list] | None = None,
+    on_complete=None,
+    timeout: float = 3.0,
+) -> _Delivery | None:
+    """`_deliver` with a patience limit, for interactive handlers only.
+
+    main.py sets max_rate_limit=120.0, so hikari can silently sleep minutes
+    inside a rate-limited REST call. Awaiting delivery inline would turn that
+    into a user-visible hang inside an interaction, so the handler waits up
+    to 3 seconds and then answers anyway; `asyncio.wait` does not cancel, so
+    a slow post still lands afterwards. Returns the _Delivery when it
+    finished in time, else None ("still posting"). Background and sweeper
+    callers await `_deliver` directly instead.
+
+    `on_complete` is an async callback awaited with the finished _Delivery
+    INSIDE the background task - so it runs even when the caller's 3-second
+    patience ran out first. It exists for cleanup that must track the real
+    outcome, not the caller's view of it: the gem ask's no-orphan deletion
+    was silently skipped whenever the delivery outlived the window.
+    """
+    async def _run() -> _Delivery:
+        delivery = await _deliver(
+            bot, mongo, trade, event=event,
+            dm_components_by_recipient=dm_components_by_recipient,
+        )
+        if on_complete is not None:
+            try:
+                await on_complete(delivery)
+            except Exception:
+                _log.exception(
+                    "delivery on_complete failed doc=%s event=%s",
+                    trade.get("_id"), event,
+                )
+        return delivery
+
+    task = asyncio.create_task(_run())
+    _DELIVERY_TASKS.add(task)
+    task.add_done_callback(_DELIVERY_TASKS.discard)
+    done, _pending = await asyncio.wait({task}, timeout=timeout)
+    if task not in done:
+        return None
+    try:
+        return task.result()
+    except Exception:
+        _log.exception(
+            "card delivery failed trade=%s event=%s", trade.get("_id"), event
+        )
+        return None
+
+
+def _delivery_note(delivery: _Delivery | None, *, recipient_id) -> str:
+    """One sentence about how the other player heard, built from what
+    actually happened - never a guess."""
+    try:
+        rid = int(recipient_id)
+    except (TypeError, ValueError):
+        return ""
+    if delivery is None:
+        # Still in flight (the `_deliver_soon` timeout). Not a failure.
+        return "I am telling them now."
+    if rid in delivery.pinged:
+        channel_id = _configured_cards_channel_id()
+        note = (
+            f"I pinged them in <#{channel_id}>."
+            if channel_id
+            else "I pinged them on the trade board."
+        )
+        if rid in delivery.dm_sent:
+            note += " They also got a DM."
+        return note
+    if rid in delivery.dm_sent:
+        return "I sent them a DM."
+    return f"I could not reach <@{rid}>; please ping them."
 
 
 def _trade_proposal_dm(
@@ -6948,12 +7970,18 @@ def _accepted_trade_dm(
     return [Container(accent_color=GREEN_ACCENT, components=body)]
 
 
+# Sentinel: distinguishes "no _Delivery was computed" (the preview command
+# still passes the legacy dm_sent flag) from a real timed-out delivery (None).
+_NO_DELIVERY_INFO = object()
+
+
 def _holder_accept_feedback(
     trade: dict,
     *,
     taken_card_id: str,
     status: str,
-    dm_sent: bool,
+    dm_sent: bool = False,
+    delivery: object = _NO_DELIVERY_INFO,
     fwa_relevant: bool,
     tag: str,
 ) -> list:
@@ -6963,6 +7991,10 @@ def _holder_accept_feedback(
     acted from, so context already binds the account. Same settled shape as
     the requester DM: one main Container of short blocks, with the FWA
     warning as the inline blockquote-heading callout when relevant.
+
+    `delivery` (a `_Delivery`, or None while one is still in flight) drives
+    the how-they-heard line; `dm_sent` remains for callers that predate the
+    delivery funnel (the preview command).
     """
     gives = _card_label(CARD_BY_ID[trade["wanted_card_id"]])
     receives = _card_label(CARD_BY_ID[str(taken_card_id)])
@@ -6989,12 +8021,17 @@ def _holder_accept_feedback(
             "Send your card in game.\n"
             "Then tap **I sent my card** in **My trades**."
         )
-    delivery = (
-        "I told them by DM."
-        if dm_sent
-        else f"I could not DM <@{int(trade['requester_discord_id'])}>. "
-        "Please ping them."
-    )
+    if delivery is _NO_DELIVERY_INFO:
+        heard = (
+            "I sent them a DM."
+            if dm_sent
+            else f"I could not reach <@{int(trade['requester_discord_id'])}>. "
+            "Please ping them."
+        )
+    else:
+        heard = _delivery_note(
+            delivery, recipient_id=trade["requester_discord_id"]
+        )
     normalized = _normalize_tag(tag)
     body: list = [
         Text(content=f"# {emojis.yes} Trade accepted"),
@@ -7012,7 +8049,7 @@ def _holder_accept_feedback(
     body.extend([
         Separator(divider=False),
         Text(content=(
-            f"-# The exact cards are reserved. {delivery}"
+            f"-# The exact cards are reserved. {heard}"
         )),
         Separator(divider=True),
         ActionRow(components=[
@@ -7098,15 +8135,14 @@ def _reader_account_line(trade: dict, recipient_id: int) -> str:
     return ""
 
 
-async def _notify_trade_status(
-    bot: hikari.GatewayBot,
+def _status_dm(
     trade: dict,
     *,
     recipient_id: int,
     title: str,
     detail: str,
     accent: object = None,
-) -> bool:
+) -> list:
     """One slim status DM: title, the swap, what happened, whose account.
 
     Terminal notices deliberately carry no accent, no separators and no
@@ -7127,47 +8163,69 @@ async def _notify_trade_status(
     account_line = _reader_account_line(trade, recipient_id)
     if account_line:
         components.append(Text(content=account_line))
+    return [_panel(accent, components)]
+
+
+async def _notify_trade_status(
+    bot: hikari.GatewayBot,
+    trade: dict,
+    *,
+    recipient_id: int,
+    title: str,
+    detail: str,
+    accent: object = None,
+) -> bool:
+    """Send one `_status_dm`. Kept exactly this shape: the deadline sweeper
+    (extensions/tasks/cards_deadlines.py) calls it directly for its DM-only
+    notices, which never route through the `_deliver` policy table."""
     return await _send_trade_dm(
         bot,
         int(recipient_id),
-        [_panel(accent, components)],
+        _status_dm(
+            trade, recipient_id=recipient_id, title=title, detail=detail,
+            accent=accent,
+        ),
         trade_id=str(trade["_id"]),
     )
 
 
 def _dm_fallback_note(sent: bool, recipient_id: int) -> str:
+    # Transport-neutral on purpose (the name stays for its many call sites):
+    # depending on the event, "reach" may have meant a channel ping or a DM.
     return (
         ""
         if sent
-        else f" I could not DM <@{int(recipient_id)}>; please ping them directly."
+        else f" I could not reach <@{int(recipient_id)}>; please ping them directly."
     )
 
 
-async def _notify_review_participants(
-    bot: hikari.GatewayBot,
+def _notify_review_participants(
     trade: dict,
     detail: str,
-) -> None:
-    recipients: set[int] = set()
+) -> dict[int, list]:
+    """The needs_review DM set: both participants, the same red notice.
+
+    This used to send directly; it is now the dm-components builder for
+    `_deliver(event="needs_review", dm_components_by_recipient=...)`, so the
+    review DMs go through the same policy funnel as everything else.
+    """
+    recipients: dict[int, list] = {}
     for value in (
         trade.get("requester_discord_id"),
         trade.get("holder_discord_id"),
     ):
         try:
-            recipients.add(int(value))
+            recipient = int(value)
         except (TypeError, ValueError):
             continue
-    await asyncio.gather(*(
-        _notify_trade_status(
-            bot,
+        recipients[recipient] = _status_dm(
             trade,
             recipient_id=recipient,
             title="Card swap needs review",
             detail=detail,
             accent=RED_ACCENT,
         )
-        for recipient in recipients
-    ))
+    return recipients
 
 
 async def _active_trades(
@@ -7232,14 +8290,13 @@ async def _active_trades(
             )
             if bot is not None:
                 trade["status"] = "needs_review"
-                await asyncio.gather(
-                    _notify_review_participants(
-                        bot,
+                await _deliver(
+                    bot, mongo, trade, event="needs_review",
+                    dm_components_by_recipient=_notify_review_participants(
                         trade,
                         "Completion expired before it could be confirmed. Recheck "
                         "and correct both affected categories.",
                     ),
-                    _update_trade_channel(bot, trade),
                 )
 
     committed = await mongo.card_trades.find({
@@ -7437,9 +8494,37 @@ def _trade_summary(trade: dict, *, role: str) -> str:
     )
 
 
-def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Container]:
+def _open_request_summary(request: dict) -> str:
+    """One compact My-trades row for the member's own want-ad."""
+    card = CARD_BY_ID.get(str(request.get("wanted_card_id")))
+    label = _card_label(card) if card else "**Unknown card**"
+    return (
+        f"**Open request on the family board**\n"
+        f"**You asked for:** {label}\n"
+        f"-# Posted {_relative_timestamp(request.get('created_at'))} · closes "
+        f"{_relative_timestamp(request.get('expires_at'))}. Anyone with a "
+        "spare can answer it from the channel post."
+    )
+
+
+def _trades_view(
+    account,
+    trades: list[dict],
+    *,
+    page: int = 0,
+    open_requests: list[dict] | None = None,
+) -> list[Container]:
     tag = _normalize_tag(account.tag)
-    pages = max(1, math.ceil(len(trades) / TRADE_VIEW_LIMIT))
+    # Open requests ride in the same paged list as trades rather than in a
+    # block of their own: a request row costs fewer components than a trade
+    # row, so the page's worst case cannot grow past what the 5-trade page
+    # already proved fits. They cap at MAX_OPEN_REQUESTS_PER_ACCOUNT anyway.
+    requests = list(open_requests or ())[:MAX_OPEN_REQUESTS_PER_ACCOUNT]
+    items: list[tuple[str, dict]] = [
+        *(("request", request) for request in requests),
+        *(("trade", trade) for trade in trades),
+    ]
+    pages = max(1, math.ceil(len(items) / TRADE_VIEW_LIMIT))
     page = min(max(0, page), pages - 1)
     start = page * TRADE_VIEW_LIMIT
     body: list = [
@@ -7447,10 +8532,20 @@ def _trades_view(account, trades: list[dict], *, page: int = 0) -> list[Containe
         Text(content=f"**{_escape_markdown(account.name)}** · `{tag}`"),
         Separator(divider=True),
     ]
-    shown = trades[start:start + TRADE_VIEW_LIMIT]
+    shown = items[start:start + TRADE_VIEW_LIMIT]
     if not shown:
         body.append(Text(content="No open trades for this account."))
-    for trade in shown:
+    for kind, trade in shown:
+        if kind == "request":
+            body.append(Text(content=_open_request_summary(trade)))
+            body.append(ActionRow(components=[Button(
+                style=hikari.ButtonStyle.DANGER,
+                custom_id=f"cards_req_close:{trade.get('_id')}",
+                label="Close request",
+                emoji=CANCEL_EMOJI,
+            )]))
+            body.append(Separator(divider=False))
+            continue
         role = "requester" if _normalize_tag(trade.get("requester_tag")) == tag else "holder"
         status = trade.get("status")
         body.append(Text(content=_trade_summary(trade, role=role)))
@@ -8244,14 +9339,13 @@ async def _expire_trade_if_needed(
         )
         if bot is not None:
             trade["status"] = "needs_review"
-            await asyncio.gather(
-                _notify_review_participants(
-                    bot,
+            await _deliver(
+                bot, mongo, trade, event="needs_review",
+                dm_components_by_recipient=_notify_review_participants(
                     trade,
                     "Completion expired before it could be confirmed. Recheck "
                     "and correct both affected categories.",
                 ),
-                _update_trade_channel(bot, trade),
             )
     return await mongo.card_trades.find_one({"_id": trade["_id"]}) or trade
 
@@ -9459,6 +10553,16 @@ async def prepare_card_inventory_storage(
             unique=True,
             sparse=True,
             name="uniq_open_card_proposal",
+        )
+        await mongo.card_trades.create_index(
+            [("kind", 1), ("guild_id", 1), ("status", 1), ("expires_at", 1)],
+            name="idx_card_trades_open_requests",
+        )
+        await mongo.card_trades.create_index(
+            "open_request_key",
+            unique=True,
+            sparse=True,
+            name="uniq_open_card_request",
         )
         await mongo.card_trades.create_index(
             [("kind", 1), ("status", 1), ("reservation_until", 1)],
@@ -13012,6 +14116,32 @@ def _gem_ask_dm(ask: dict, *, preview: bool = False) -> list[Container]:
     )
 
 
+def _gem_answer_dm(ask: dict) -> list[Container]:
+    """The asker's yes/no answer, one copy for every surface that sends it.
+
+    Extracted verbatim from `_answer_gem_ask`'s old inline DM. The wording is
+    derived from the ask's recorded status, so the DM and any future surface
+    that shows the answer cannot drift apart.
+    """
+    agreed = str(ask.get("status") or "") == "accepted"
+    card = CARD_BY_ID[ask["card_id"]]
+    return _trade_dm_container(
+        f"{emojis.yes} They said yes" if agreed
+        else f"{emojis.no} They said no",
+        (
+            f"**{_escape_markdown(ask.get('holder_name'), limit=40)}** "
+            f"will post the offer for {_card_label(card)} in game. "
+            "Watch clan chat, tap **Trade**, then **Use Gems** — "
+            f"**{ask.get('gem_cost')} gems** {emojis.gems}."
+            if agreed else
+            f"**{_escape_markdown(ask.get('holder_name'), limit=40)}** "
+            f"cannot help with {_card_label(card)} right now. Open "
+            "`/cards` and ask somebody else who holds it."
+        ),
+        accent=GREEN_ACCENT if agreed else RED_ACCENT,
+    )
+
+
 @register_action("cards_gem_ask")
 @lightbulb.di.with_di
 async def cards_gem_ask(
@@ -13138,7 +14268,19 @@ async def cards_gem_send(
         # document over as a fresh pending ask instead of blocking for ever.
         takeover = await mongo.card_trades.update_one(
             {"_id": ask["_id"], "kind": "gem_ask", "status": {"$ne": "pending"}},
-            {"$set": {**{k: v for k, v in ask.items() if k != "_id"}}},
+            {
+                "$set": {**{k: v for k, v in ask.items() if k != "_id"}},
+                # The predecessor's channel post is settled history. Left in
+                # place, its ids would ride along on this fresh ask - and if
+                # the new post then failed, the eventual answer's edit would
+                # rewrite the OLD terminal post, publicly flipping an
+                # already-answered ask to a different answer.
+                "$unset": {
+                    "channel_id": "",
+                    "channel_message_id": "",
+                    "channel_post_v2": "",
+                },
+            },
         )
         if not getattr(takeover, "modified_count", 0):
             return _notice(
@@ -13147,25 +14289,72 @@ async def cards_gem_send(
                 "chance to answer before asking again.",
                 back_tag=tag,
             )
-    sent = await _send_trade_dm(
-        bot, int(holder_discord_id), _gem_ask_dm(ask), trade_id=str(ask["_id"])
+    # Channel-first delivery: the ask posts publicly and pings the holder;
+    # the old DM is only the fallback when that post fails (the policy row).
+    async def _reap_if_undelivered(delivery: _Delivery) -> None:
+        # No-orphan cleanup that tracks the REAL outcome. It runs inside the
+        # delivery task, so a total failure that finishes after the 3-second
+        # patience window below still deletes the ask - otherwise the doc
+        # would sit pending forever, delivered nowhere, blocking every
+        # repeat ask for this pair and card. Fenced on pending so a raced
+        # answer can never be deleted.
+        if (
+            delivery.channel_message_id is None
+            and holder_discord_id in delivery.dm_failed
+        ):
+            try:
+                await mongo.card_trades.delete_one({
+                    "_id": ask["_id"], "kind": "gem_ask", "status": "pending",
+                })
+            except Exception:
+                _log.exception(
+                    "undelivered gem ask cleanup failed ask=%s", ask["_id"]
+                )
+
+    delivery = await _deliver_soon(
+        bot, mongo, ask, event="gem_ask_posted",
+        on_complete=_reap_if_undelivered,
     )
-    if not sent:
+    if (
+        delivery is not None
+        and delivery.channel_message_id is None
+        and holder_discord_id in delivery.dm_failed
+    ):
+        # TOTAL failure within the window: neither the channel post nor the
+        # fallback DM reached anyone. The reaper above already deleted the
+        # ask (this delete is its idempotent twin for monkeypatched funnels);
+        # keep the old no-orphan semantics and say so honestly. (The old
+        # delete-on-DM-failure is gone: a DM failure alone no longer unwinds
+        # an ask the channel already carries.)
         await mongo.card_trades.delete_one({"_id": ask["_id"]})
-        # The send can fail for reasons besides closed DMs (rate limit,
-        # network); do not report the recipient made a choice they may not
-        # have made.
         return _notice(
-            "Could not DM them",
-            "I could not send them a DM, so nothing was asked. Ping them in "
-            "the server, or try again later.",
+            "Could not reach them",
+            "The channel post and the fallback DM both failed, so nothing "
+            "was asked. Ping them in the server, or try again later.",
             back_tag=tag,
+        )
+    holder_label = _escape_markdown(ask["holder_name"], limit=40)
+    channel_id = _configured_cards_channel_id()
+    if delivery is None:
+        # Still in flight (the `_deliver_soon` timeout). The ask is saved and
+        # the post still lands - not a failure, so no deletion and no alarm.
+        asked_line = (
+            f"I am posting the ask for **{holder_label}** in "
+            f"<#{channel_id}> now."
+        )
+    elif delivery.channel_message_id is not None:
+        asked_line = f"Posted in <#{channel_id}> and pinged **{holder_label}**."
+    else:
+        # The channel post failed but the fallback DM landed.
+        asked_line = (
+            f"I could not post in <#{channel_id}>, so I sent "
+            f"**{holder_label}** a DM instead."
         )
     return [Container(accent_color=GREEN_ACCENT, components=[
         Text(content=f"## {emojis.yes} Asked"),
         Text(content=(
-            f"**{_escape_markdown(ask['holder_name'], limit=40)}** has been "
-            f"asked for {_card_label(card)}. I will DM you their answer.\n\n"
+            f"**{holder_label}** has been asked for {_card_label(card)}. "
+            f"{asked_line} I will DM you their answer.\n\n"
             "-# If they accept, watch clan chat: they post the offer and you "
             f"tap Trade, then **Use Gems** ({ask['gem_cost']})."
         )),
@@ -13214,32 +14403,14 @@ async def _answer_gem_ask(ctx, mongo, bot, action_id: str, *, agreed: bool):
         )
     card = CARD_BY_ID[ask["card_id"]]
     category = CATEGORY_BY_ID[card.category]
-    sent = False
-    if ask.get("asker_discord_id"):
-        sent = await _send_trade_dm(
-            bot, int(ask["asker_discord_id"]),
-            _trade_dm_container(
-                f"{emojis.yes} They said yes" if agreed
-                else f"{emojis.no} They said no",
-                (
-                    f"**{_escape_markdown(ask.get('holder_name'), limit=40)}** "
-                    f"will post the offer for {_card_label(card)} in game. "
-                    "Watch clan chat, tap **Trade**, then **Use Gems** — "
-                    f"**{ask.get('gem_cost')} gems** {emojis.gems}."
-                    if agreed else
-                    f"**{_escape_markdown(ask.get('holder_name'), limit=40)}** "
-                    f"cannot help with {_card_label(card)} right now. Open "
-                    "`/cards` and ask somebody else who holds it."
-                ),
-                accent=GREEN_ACCENT if agreed else RED_ACCENT,
-            ),
-            trade_id=str(ask["_id"]),
-        )
-    told = (
-        "They have been told."
-        if sent
-        else "I could not send them a DM. Please tell them your answer."
-    )
+    # The in-memory ask mirrors the CAS write above, so the delivery renders
+    # the answered state: the standing post (when one exists) is silently
+    # edited to its terminal form, and the asker gets the answer DM - exactly
+    # as informative as before. No new channel post: the ping budget is
+    # proposal + acceptance only, and a gem answer is neither.
+    ask["status"] = "accepted" if agreed else "declined"
+    delivery = await _deliver(bot, mongo, ask, event="gem_ask_answered")
+    told = _delivery_note(delivery, recipient_id=ask.get("asker_discord_id"))
     if not agreed:
         return _notice(
             "Declined", f"Thanks for answering. {told}", accent=None
@@ -13255,6 +14426,12 @@ async def _answer_gem_ask(ctx, mongo, bot, action_id: str, *, agreed: bool):
     ])]
 
 
+# cards_gem_yes / cards_gem_no stay registered FOREVER with their current
+# semantics: fallback DMs already sent carry these ids, and editing the DM in
+# place is right there - the same reasoning as cards_dm_accept. Aliasing onto
+# the public pair is the wrong tool: the two need opposite no_return values
+# and one Action cannot hold both. They route through the same rewired
+# `_answer_gem_ask`, so an answer from an old DM also closes the public post.
 @register_action("cards_gem_yes")
 @lightbulb.di.with_di
 async def cards_gem_yes(
@@ -13550,6 +14727,7 @@ async def cards_open_card(
     return _holders_view(
         account, card_id, holders,
         clan_emoji=await _clan_emoji_map(mongo, holders),
+        can_request=bool(_open_request_offer_ids(inventory, card)),
     )
 
 
@@ -13585,6 +14763,7 @@ async def cards_holder_page(
     return _holders_view(
         account, card_id, holders, page=page,
         clan_emoji=await _clan_emoji_map(mongo, holders),
+        can_request=bool(_open_request_offer_ids(inventory, card)),
     )
 
 
@@ -13613,7 +14792,12 @@ async def cards_trades(
     trades = await _active_trades(
         mongo, tag=account.tag, guild_id=guild_id, bot=bot
     )
-    return _trades_view(account, trades, page=page)
+    open_requests = await _open_requests_for(
+        mongo, tag=account.tag, guild_id=guild_id
+    )
+    return _trades_view(
+        account, trades, page=page, open_requests=open_requests
+    )
 
 
 @register_action("cards_trade_holder")
@@ -13751,25 +14935,36 @@ async def cards_trade_request(
     )
     if error:
         return _notice("Could not post this proposal", error)
-    channel_sent, dm_sent = await asyncio.gather(
-        _post_trade_channel(bot, mongo, trade),
-        _notify_trade_holder(bot, trade),
-    )
+    # One funnel decides who hears and how; the handler only reports back.
+    # `_deliver_soon` because this is an interactive handler: a rate-limited
+    # channel post must not hang the interaction.
+    delivery = await _deliver_soon(bot, mongo, trade, event="proposal_created")
     # Lead with where it went. "Proposal posted" left people asking where,
     # because the delivery was the last clause of a sentence about reserving.
     holder_name = _escape_markdown(trade.get("holder_name"), limit=40)
-    if dm_sent:
+    holder_id = int(trade["holder_discord_id"])
+    channel_id = trade.get("channel_id") or _configured_cards_channel_id()
+    board = f"<#{channel_id}>" if channel_id else "the trade channel"
+    if delivery is not None and delivery.channel_message_id is not None:
+        landed = f"Posted in {board} and pinged **{holder_name}**."
+        if holder_id in delivery.dm_sent:
+            landed += " They also got a DM copy."
+    elif delivery is None:
+        # Still posting (slow Discord); the task keeps running to completion.
         landed = (
-            f"**{holder_name}** got a DM with your offer. They can accept or "
-            "decline right there."
+            f"Posting it now in {board} — **{holder_name}** gets pinged "
+            "there."
+        )
+    elif holder_id in delivery.dm_sent:
+        landed = (
+            f"The channel post failed, but **{holder_name}** got a DM with "
+            "your offer. They can accept or decline right there."
         )
     else:
         landed = (
-            f"I could not send <@{trade['holder_discord_id']}> a DM. "
-            "Ping them so they open `/cards` and check **My trades**."
+            f"I could not reach <@{holder_id}>. Ping them so they open "
+            "`/cards` and check **My trades**."
         )
-    if channel_sent:
-        landed += " I also posted it in the trade channel."
     return _trade_feedback(
         "Offer sent",
         f"{landed}\n\n"
@@ -13780,6 +14975,863 @@ async def cards_trade_request(
         "elsewhere.\n"
         "-# Changed your mind? Open **My trades** and cancel it.",
         account.tag,
+    )
+
+
+def _open_request_confirm_view(account, card, offer_ids: list[str]) -> list[Container]:
+    """Consent before publication: what goes public, where, for how long."""
+    tag = _normalize_tag(account.tag)
+    channel_id = _configured_cards_channel_id()
+    where = f"<#{channel_id}>" if channel_id else "the family trade channel"
+    hours = int(OPEN_REQUEST_FOR.total_seconds() // 3600)
+    return [Container(accent_color=GOLD_ACCENT, components=[
+        Text(content=f"## 🃏 Post a request for {card.name}?"),
+        Text(content=(
+            f"**You get:** {_card_label(card)}\n"
+            "**You give back one of:** "
+            # The FULL give-back list: whoever answers picks from it, so the
+            # member must see everything they are putting on the table.
+            f"{_card_names(offer_ids, limit=max(len(offer_ids), 1))}\n"
+            "-# Whoever answers picks which one they take."
+        )),
+        Separator(divider=True),
+        Text(content=(
+            f"This will be posted in {where} **for everyone to see**, with "
+            "your player name, tag and clan on it. Nobody is pinged. It "
+            f"closes on its own after **{hours} hours**, and you can close "
+            "it any time in **My trades**."
+        )),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=f"cards_req_post:{tag}|{card.id}",
+                label="Post it",
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"cards_matches:{tag}",
+                label="Cancel",
+                emoji=CANCEL_EMOJI,
+            ),
+        ]),
+    ])]
+
+
+def _open_request_picker_view(account, card_ids: list[str]) -> list[Container]:
+    """One menu per category of requestable cards, the four-menu shape.
+
+    Same construction as `_category_card_pickers`: every category fits one
+    25-option select, so there is no paging to build or maintain.
+    """
+    tag = _normalize_tag(account.tag)
+    rows: list = []
+    for category in CATEGORIES:
+        in_category = [
+            card_id for card_id in card_ids
+            if CARD_BY_ID[card_id].category == category.id
+        ]
+        if not in_category:
+            continue
+        options = [
+            SelectOption(
+                label=CARD_BY_ID[card_id].name,
+                value=card_id,
+                description="you hold a spare to give back",
+                emoji=troop_emoji.partial(card_id),
+            )
+            for card_id in in_category[:24]
+        ]
+        detail = f"{len(options)} to request"
+        rows.append(ActionRow(components=[TextSelectMenu(
+            custom_id=f"cards_req_new:{tag}|{category.id}",
+            placeholder=f"{category.name} · {detail}"[:150],
+            max_values=1,
+            options=[_category_header_option(category, detail), *options],
+        )]))
+    return [_panel(GOLD_ACCENT, [
+        Text(content="# 🃏 Post a request"),
+        Text(content=(
+            "Pick the card you need. It goes on the family trade board as "
+            "an open request anyone with a spare can answer.\n"
+            "-# Only cards from finished categories where you hold a spare "
+            "to give back are listed."
+        )),
+        Separator(divider=True),
+        *rows,
+        Separator(divider=True),
+        ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_matches:{tag}",
+            label="Back to Find trades",
+            emoji=RETURN_EMOJI,
+        )]),
+    ])]
+
+
+@register_action("cards_req_pick")
+@lightbulb.di.with_di
+async def cards_req_pick(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Choose which missing card to put on the family board."""
+    account, inventory, problem = await _load_target(
+        ctx, action_id, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not inventory_is_matchable(inventory):
+        return _stale_collection_notice()
+    requestable = _requestable_card_ids(inventory)
+    if not requestable:
+        return _notice(
+            "Nothing to request right now",
+            "An open request needs a card you are missing in a finished "
+            "category where you also hold a spare to give back. Use **Ask "
+            "for help** from a card's holder list instead.",
+            back_tag=_normalize_tag(account.tag),
+        )
+    return _open_request_picker_view(account, requestable)
+
+
+@register_action("cards_req_new")
+@lightbulb.di.with_di
+async def cards_req_new(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """The confirm screen for one want-ad, before anything goes public.
+
+    Reached two ways, like `cards_open_card`: a button carries
+    `{tag}|{card_id}`, a picker select carries `{tag}|{category_id}` with the
+    card riding in the interaction values.
+    """
+    parts = str(action_id or "").split("|")
+    tag = _normalize_tag(parts[0] if parts else "")
+    second = parts[1] if len(parts) > 1 else ""
+    values = list(getattr(ctx.interaction, "values", ()) or ())
+    if values and values[0] == CATEGORY_HEADER_VALUE:
+        # The art-bearing header option; picking it is a no-op, not an error.
+        return None
+    if second in CARD_BY_ID:
+        card_id = second
+    else:
+        card_id = str(values[0]) if values else ""
+        picked = CARD_BY_ID.get(card_id)
+        if picked is not None and second and picked.category != second:
+            # A pick that does not belong to the menu it came from.
+            return _notice(
+                "Unknown card", "Open `/cards` again for a fresh list."
+            )
+    card = CARD_BY_ID.get(card_id)
+    if not tag or card is None:
+        return _notice("Unknown card", "Open `/cards` again for a fresh list.")
+    account, inventory, problem = await _load_target(
+        ctx, tag, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    if not inventory_is_matchable(inventory):
+        return _stale_collection_notice()
+    offer_ids = _open_request_offer_ids(inventory, card)
+    if not offer_ids:
+        # The refusal names the working alternative: without a spare the game
+        # only lets the trade start from the holder's side, which is the gem
+        # Ask for help flow.
+        return _notice(
+            "No spare to give back",
+            f"You have no spare "
+            f"**{CATEGORY_BY_ID[card.category].short_name}** card, so the "
+            "game will not let this trade start from your side. Use **Ask "
+            "for help** next to a holder instead.",
+            back_tag=_normalize_tag(account.tag),
+        )
+    return _open_request_confirm_view(account, card, offer_ids)
+
+
+@register_action("cards_req_post")
+@lightbulb.di.with_di
+async def cards_req_post(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Create the open request and post the want-ad, after the confirm."""
+    tag_part, _, card_id = str(action_id or "").partition("|")
+    card = CARD_BY_ID.get(card_id)
+    if not _normalize_tag(tag_part) or card is None:
+        return _notice(
+            "Unknown request", "Open `/cards` again and start over."
+        )
+    account, inventory, problem = await _load_target(
+        ctx, tag_part, coc_client=coc_client, mongo=mongo
+    )
+    if problem:
+        return problem
+    guild_id = _trade_guild_id(ctx)
+    if guild_id is None:
+        return _notice(
+            "Card Hub is not set up",
+            "An operator must configure the family server before trades work.",
+        )
+    request, error = await _create_open_request(
+        mongo,
+        requester_inventory=inventory,
+        wanted_card_id=card.id,
+        guild_id=guild_id,
+    )
+    if error:
+        return _notice("Could not post this request", error)
+    # One funnel decides delivery; `_deliver_soon` because this is an
+    # interactive handler and a rate-limited post must not hang it.
+    delivery = await _deliver_soon(
+        bot, mongo, request, event="open_request_posted"
+    )
+    channel_id = request.get("channel_id") or _configured_cards_channel_id()
+    board = f"<#{channel_id}>" if channel_id else "the trade channel"
+    if delivery is not None and delivery.channel_message_id is not None:
+        landed = (
+            f"Posted in {board}. Nobody is pinged — anyone with a spare "
+            f"**{card.name}** can tap **I have this card** there."
+        )
+    elif delivery is None:
+        # Still posting (slow Discord); the task runs to completion.
+        landed = f"Posting it now in {board}."
+    else:
+        landed = (
+            "The channel post failed, but the request is saved — it still "
+            "counts against your open requests and can be closed in "
+            "**My trades**."
+        )
+    return _trade_feedback(
+        "Request posted",
+        f"{landed}\n\n"
+        f"**You get:** {_card_label(card)}\n"
+        "**You give back:** one of "
+        f"{_card_names(request['offer_card_ids'], limit=8)}\n\n"
+        "-# Nothing is reserved. It closes on its own in "
+        f"**{int(OPEN_REQUEST_FOR.total_seconds() // 3600)} hours**, or any "
+        "time from **My trades**.",
+        account.tag,
+    )
+
+
+@register_action("cards_req_close")
+@lightbulb.di.with_di
+async def cards_req_close(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Close the member's own want-ad: owner-only, CAS on status:"open"."""
+    scope_error = _guild_scope_error(ctx)
+    if scope_error:
+        return _notice("Open Card Hub in its family server", scope_error)
+    request = await mongo.card_trades.find_one({
+        "_id": str(action_id or ""),
+        "kind": "open_request",
+        "guild_id": _trade_guild_id(ctx),
+    })
+    if not request:
+        return _notice("Request not found", "Reopen **My trades**.")
+    if int(ctx.user.id) != int(request.get("requester_discord_id") or -1):
+        return _notice(
+            "That request is not yours",
+            "Only the member who posted a request can close it.",
+        )
+    now = datetime.now(timezone.utc)
+    # CAS fenced on status:"open": a claim that lands first wins and this
+    # close reports "already closed" instead of clobbering it. The claim
+    # fields are deliberately left untouched.
+    result = await mongo.card_trades.update_one(
+        {"_id": request["_id"], "kind": "open_request", "status": "open"},
+        {
+            "$set": {
+                "status": "cancelled",
+                "cancelled_at": now,
+                "cancelled_by": int(ctx.user.id),
+                "updated_at": now,
+            },
+            "$unset": {"open_request_key": ""},
+        },
+    )
+    if not getattr(result, "modified_count", 0):
+        return _notice(
+            "Request already closed",
+            # "or being claimed": a claim in flight also holds the fence,
+            # and it may yet roll back to open - so this cannot promise the
+            # request is gone, only that this tap changed nothing.
+            "It was already claimed, closed or expired - or somebody is "
+            "accepting it right now. Reopen **My trades** for the latest "
+            "state.",
+        )
+    request["status"] = "cancelled"
+    # Flip the public post to its compact closed form. The `_deliver_soon`
+    # patience pattern, because a rate-limited edit must not hang the
+    # interaction; `asyncio.wait` does not cancel, so a slow edit still lands.
+    task = asyncio.create_task(_channel_edit(
+        bot,
+        channel_id=request.get("channel_id") or _configured_cards_channel_id(),
+        message_id=request.get("channel_message_id"),
+        components=_open_request_post(request),
+        key=request.get("_id"),
+    ))
+    _DELIVERY_TASKS.add(task)
+    task.add_done_callback(_DELIVERY_TASKS.discard)
+    await asyncio.wait({task}, timeout=3.0)
+    card = CARD_BY_ID.get(str(request.get("wanted_card_id")))
+    return _trade_feedback(
+        "Request closed",
+        f"Your open request for **{card.name if card else 'that card'}** is "
+        "closed and nothing was traded. The channel post now shows it as "
+        "closed.",
+        request.get("requester_tag") or "",
+        accent=None,
+    )
+
+
+async def _eligible_claim_accounts(
+    ctx, request: dict, *, coc_client, mongo: MongoClient
+) -> tuple[list[tuple[object, dict]], list[str]]:
+    """Which of the clicker's linked accounts can fill this want-ad.
+
+    Returns (eligible, reasons): eligible as (account, inventory) pairs, and
+    one line per rejected account naming its best failure - no collection
+    here, trading paused, needs an update, category unfinished, no spare.
+    A bare "you can't" is what makes people think the bot is broken, so a
+    refusal built from `reasons` always says why.
+    """
+    card = CARD_BY_ID.get(str(request.get("wanted_card_id")))
+    category = CATEGORY_BY_ID.get(str(request.get("category")))
+    data = await load_accounts(coc_client, int(ctx.user.id))
+    if data.problem == LINK_FAILURE:
+        return [], [
+            "I could not check which Clash accounts are linked to you, so "
+            "nothing was claimed. This is a service problem, not an unlink "
+            "- try again shortly."
+        ]
+    eligible: list[tuple[object, dict]] = []
+    reasons: list[str] = []
+    for entry in _loaded_entries(data):
+        tag = _normalize_tag(entry.tag)
+        label = (
+            f"**{_escape_markdown(entry.account.name, limit=40)}** (`{tag}`)"
+        )
+        try:
+            inventory = await mongo.card_inventories.find_one({
+                "_id": tag, "guild_id": int(request["guild_id"]),
+            })
+        except Exception:
+            _log.exception("claim eligibility lookup failed tag=%s", tag)
+            inventory = None
+        if inventory is None:
+            reasons.append(
+                f"{label} has no card collection in this family yet - open "
+                "`/cards` to set one up."
+            )
+            continue
+        if inventory.get("trading_paused"):
+            reasons.append(
+                f"{label} has trading paused - turn it back on in `/cards`."
+            )
+            continue
+        if not inventory_is_matchable(inventory):
+            reasons.append(
+                f"{label} needs a collection update first - open "
+                "**Update collection** in `/cards`."
+            )
+            continue
+        complete = {str(v) for v in inventory.get("complete_categories") or ()}
+        if str(request.get("category")) not in complete:
+            reasons.append(
+                f"{label} has not finished entering the "
+                f"**{category.short_name if category else 'card'}** "
+                "category yet."
+            )
+            continue
+        values = normalize_cards(
+            _without_reserved_cards(inventory).get("cards")
+        )
+        if values.get(str(request.get("wanted_card_id")), OWNED) < DUPLICATE:
+            reasons.append(
+                f"{label} has no spare "
+                f"**{card.name if card else 'copy of that card'}** to give."
+            )
+            continue
+        eligible.append((entry.account, inventory))
+    if not eligible and not reasons:
+        reasons.append(
+            "None of your Clash accounts are linked here. Link one with "
+            "ClashKing's `/link` command, then open `/cards` to set up its "
+            "collection."
+        )
+    return eligible, reasons
+
+
+def _claim_account_picker(request: dict, eligible: list) -> list[Container]:
+    """Which account claims: one Section per eligible account, each with its
+    own SUCCESS button - the house rule that a row of things is Sections,
+    not a select (docs/clash-of-cards.md, "Screen construction rules").
+
+    This picker is an EPHEMERAL followup, and its buttons keep the frozen
+    public pattern: cards_pub_claim_as is registered no_return=True too and
+    answers with a fresh followup of its own - a component click on a
+    followup is an ordinary interaction, and the dispatcher must never edit
+    the public post on its behalf.
+    """
+    card = CARD_BY_ID.get(str(request.get("wanted_card_id")))
+    card_name = card.name if card else "this card"
+    request_id = str(request.get("_id") or "")
+    generation = int(request.get("generation") or 0)
+    rows: list = []
+    # Eight Sections stay far under the 40-component ceiling. A member with
+    # more eligible accounts than that can still claim - with the first
+    # eight in the account list's own order.
+    for account, _inventory in eligible[:8]:
+        if rows:
+            rows.append(Separator(divider=True))
+        town_hall = getattr(account, "town_hall", None)
+        detail = " · ".join(part for part in (
+            f"TH{town_hall}" if town_hall else "",
+            str(getattr(account, "clan_name", "") or ""),
+        ) if part)
+        first = (
+            str(getattr(account, "name", "") or "").strip().split()
+            or ["this one"]
+        )[0]
+        rows.append(Section(
+            components=[Text(content=(
+                f"**{_escape_markdown(account.name, limit=40)}** · "
+                f"`{_normalize_tag(account.tag)}`"
+                + (f"\n-# {_plain(detail)}" if detail else "")
+            ))],
+            accessory=Button(
+                style=hikari.ButtonStyle.SUCCESS,
+                custom_id=(
+                    f"cards_pub_claim_as:{request_id}|{generation}|"
+                    f"{_normalize_tag(account.tag)}"
+                ),
+                label=f"Claim · {first}"[:80],
+            ),
+        ))
+    return [_panel(GOLD_ACCENT, [
+        Text(content=f"## Which account claims {card_name}?"),
+        Text(content=(
+            "More than one of your accounts holds a spare "
+            f"**{card_name}**. The one you pick gives that spare and takes "
+            "one of the poster's duplicates back."
+        )),
+        Separator(divider=True),
+        *rows,
+    ])]
+
+
+def _claim_take_picker(
+    request: dict, takeable: list[str], *, tag: str
+) -> list[Container]:
+    """Which of the poster's spares the claimer takes back.
+
+    A select, not Sections: a choice among known cards where the name is
+    enough to choose by (the house select rule). The values are card ids;
+    the custom_id carries request, generation and the claiming account so
+    the handler re-runs the whole shared body with the answer. Like the
+    account picker, this lives on an ephemeral followup and its handler
+    (cards_pub_take) is no_return=True, answering with a fresh followup.
+    """
+    card = CARD_BY_ID.get(str(request.get("wanted_card_id")))
+    poster = _escape_markdown(request.get("requester_name"), limit=40)
+    return [_panel(GOLD_ACCENT, [
+        Text(content="## Pick the card you take back"),
+        Text(content=(
+            f"You give your spare **{card.name if card else 'card'}** to "
+            f"**{poster}** and take one of their duplicates. Every card "
+            "listed is one you are missing."
+        )),
+        Separator(divider=True),
+        ActionRow(components=[TextSelectMenu(
+            custom_id=(
+                f"cards_pub_take:{request.get('_id')}|"
+                f"{int(request.get('generation') or 0)}|{_normalize_tag(tag)}"
+            ),
+            placeholder="Pick the card you take",
+            min_values=1,
+            max_values=1,
+            options=[
+                SelectOption(
+                    label=CARD_BY_ID[card_id].name,
+                    value=card_id,
+                    emoji=troop_emoji.partial(card_id),
+                )
+                for card_id in takeable[:25]
+            ],
+        )]),
+    ])]
+
+
+async def _rollback_open_request_claim(
+    mongo: MongoClient, request: dict, *, claim_token: str
+) -> None:
+    """Return a half-claimed want-ad to the board.
+
+    Fenced on OUR claim_token, so only our own claim is ever undone - a
+    claim the sweeper already recovered, or somebody else's newer one, does
+    not match the filter. `open_request_key` was never unset during
+    claiming, so the one-request-per-card guard survives the round trip
+    untouched and the public post needs no edit: the want-ad simply stays
+    up. If this write itself fails, the request sits in "claiming" with its
+    claim_until deadline and the stale-claiming recovery sweeper returns it
+    to "open" on that same fence.
+    """
+    now = datetime.now(timezone.utc)
+    try:
+        await mongo.card_trades.update_one(
+            {
+                "_id": request["_id"],
+                "kind": "open_request",
+                "status": "claiming",
+                "claim_token": claim_token,
+            },
+            {
+                "$set": {"status": "open", "updated_at": now},
+                "$unset": {
+                    "claim_token": "",
+                    "claim_until": "",
+                    "claimed_by_discord_id": "",
+                    "claimed_by_tag": "",
+                    "claimed_at": "",
+                },
+            },
+        )
+    except Exception:
+        _log.exception(
+            "open request claim rollback failed request=%s",
+            request.get("_id"),
+        )
+
+
+async def _perform_open_request_claim(
+    ctx,
+    *,
+    request_id: str,
+    generation: str,
+    claim_tag: str | None = None,
+    taken_card_id: str | None = None,
+    coc_client,
+    mongo: MongoClient,
+    bot,
+) -> list[Container]:
+    """The whole claim, shared by all three cards_pub_claim* adapters.
+
+    The screens - the account picker and the take chooser - are resolved
+    BEFORE the claiming CAS, so an open picker never holds the lock. The
+    CAS is the single-winner gate; everything after it either finishes the
+    claim or rolls it back on our own claim_token. Refusals here are plain
+    return values: the adapters send them through `_public_reply`, so a
+    wrong-member, stale or raced tap never alters the public post.
+    """
+    scope_error = _guild_scope_error(ctx)
+    if scope_error:
+        return _notice("Open Card Hub in its family server", scope_error)
+    request = await mongo.card_trades.find_one({
+        "_id": str(request_id or ""),
+        "kind": "open_request",
+        "guild_id": _trade_guild_id(ctx),
+    })
+    if request is None:
+        return _notice("Out of date", "That request is no longer open.")
+    request_status = str(request.get("status") or "")
+    if request_status in {"claiming", "claimed"}:
+        return _notice(
+            "Request already claimed",
+            "Somebody got there first. Watch the board for the next one.",
+        )
+    if request_status != "open":
+        return _notice("Out of date", "That request is no longer open.")
+    # A button from a reused or stale post carries an old generation and is
+    # refused instead of acted on - the gem-ask staleness pattern.
+    if str(int(request.get("generation") or 0)) != str(generation or ""):
+        return _notice("Out of date", "That request is no longer open.")
+    if int(request.get("requester_discord_id") or -1) == int(ctx.user.id):
+        return _notice(
+            "That is your own request",
+            "Close it in **My trades** if you no longer need the card.",
+        )
+    eligible, reasons = await _eligible_claim_accounts(
+        ctx, request, coc_client=coc_client, mongo=mongo
+    )
+    if claim_tag:
+        # A picker button carries the tag; re-verify it still belongs to the
+        # clicker AND still qualifies - eligibility is recomputed above from
+        # the clicker's own links, so a forged or stale tag simply misses.
+        wanted_tag = _normalize_tag(claim_tag)
+        chosen = next(
+            (
+                pair for pair in eligible
+                if _normalize_tag(pair[1].get("_id")) == wanted_tag
+            ),
+            None,
+        )
+        if chosen is None:
+            # The backticked form, so `#CL` can never match a `#CL2` line.
+            named = [line for line in reasons if f"`{wanted_tag}`" in line]
+            return _notice(
+                "That account can no longer claim this",
+                "\n".join(named) or (
+                    "It is not one of your linked accounts any more, or it "
+                    "stopped qualifying. Tap **I have this card** on the "
+                    "request again."
+                ),
+            )
+        _account, claimer = chosen
+    elif not eligible:
+        return _notice("You cannot fill this request", "\n".join(reasons))
+    elif len(eligible) > 1:
+        return _claim_account_picker(request, eligible)
+    else:
+        _account, claimer = eligible[0]
+    claimer_tag = _normalize_tag(claimer.get("_id"))
+    poster = await mongo.card_inventories.find_one({
+        "_id": _normalize_tag(request["requester_tag"]),
+        "guild_id": int(request["guild_id"]),
+    })
+    if poster is None:
+        return _notice(
+            "Poster collection unavailable",
+            "Their collection could not be loaded, so nothing was claimed. "
+            "Try again in a moment.",
+        )
+    # What the claimer may take: still consented to (it is on the ad), still
+    # actually spare for the poster, and missing from the claimer's own
+    # collection - offer_card_ids was computed at posting time and can be
+    # stale by now.
+    poster_values = normalize_cards(
+        _without_reserved_cards(poster).get("cards")
+    )
+    claimer_values = normalize_cards(
+        _without_reserved_cards(claimer).get("cards")
+    )
+    takeable = [
+        str(card_id)
+        for card_id in request.get("offer_card_ids") or ()
+        if str(card_id) in CARD_BY_ID
+        and poster_values.get(str(card_id), OWNED) >= DUPLICATE
+        and claimer_values.get(str(card_id), OWNED) == MISSING
+    ]
+    if not takeable:
+        return _notice(
+            "Nothing to take back",
+            "Their spares changed; nothing to take. The give-back list no "
+            "longer holds a card that is both still spare for them and "
+            "missing for you.",
+        )
+    if taken_card_id is not None:
+        taken = str(taken_card_id)
+        if taken not in takeable:
+            return _notice(
+                "That card is no longer available",
+                "Their spares changed. Tap **I have this card** on the "
+                "request again for the current list.",
+            )
+    elif len(takeable) > 1:
+        return _claim_take_picker(request, takeable, tag=claimer_tag)
+    else:
+        taken = takeable[0]
+
+    # FIRST-COME-FIRST-SERVED. The one CAS every concurrent claimer races:
+    # fenced on (status:"open", generation) so exactly one tap can move the
+    # request to "claiming" - and it runs only now, with every picker
+    # resolved, so a picker screen never holds the lock. claim_until is
+    # written here so the stale-"claiming" recovery sweeper can fence on it.
+    now = datetime.now(timezone.utc)
+    claim_token = secrets.token_hex(8)
+    won = await mongo.card_trades.update_one(
+        {
+            "_id": request["_id"],
+            "kind": "open_request",
+            "status": "open",
+            "generation": int(request.get("generation") or 0),
+        },
+        {"$set": {
+            "status": "claiming",
+            "claim_token": claim_token,
+            "claim_until": now + OPEN_REQUEST_CLAIM_FOR,
+            "claimed_by_discord_id": int(ctx.user.id),
+            "claimed_by_tag": claimer_tag,
+            "updated_at": now,
+        }},
+    )
+    if not getattr(won, "modified_count", 0):
+        return _notice(
+            "Somebody else just took this one",
+            "Two of you tapped at nearly the same time and they were first. "
+            "Watch the board for the next request.",
+        )
+    live_clans = await _live_family_clans(
+        mongo, coc_client, request["requester_tag"], claimer_tag
+    )
+    if live_clans is None:
+        await _rollback_open_request_claim(
+            mongo, request, claim_token=claim_token
+        )
+        return _notice(
+            "Both accounts must be in family clans",
+            "I could not verify both accounts inside the configured clan "
+            "family, so nothing was claimed - the request stays open. Try "
+            "again once you are back in a family clan.",
+        )
+    # Convert to an ordinary kind:"trade". The role mapping is fixed: the
+    # poster is the requester (they want the card and give one back), the
+    # claimer is the holder. Dict-copies with the LIVE clan tags, exactly
+    # like cards_trade_request, so the trade records where both accounts
+    # actually are.
+    poster = dict(poster)
+    claimer_doc = dict(claimer)
+    poster["clan_tag"], claimer_doc["clan_tag"] = live_clans
+    trade, error = await _create_trade_request(
+        mongo,
+        requester=poster,
+        holder=claimer_doc,
+        wanted_card_id=str(request["wanted_card_id"]),
+        given_card_id=taken,
+        guild_id=int(request["guild_id"]),
+    )
+    if trade is None:
+        # Slots exhausted, a duplicate proposal, reciprocity now failing -
+        # whatever it was, the claim is undone on our token and the want-ad
+        # survives untouched. Nothing is lost.
+        await _rollback_open_request_claim(
+            mongo, request, claim_token=claim_token
+        )
+        return _notice(
+            "Could not start this trade",
+            error or "Please try again in a moment.",
+        )
+    # One tap means accepted: run the same fenced reservation the holder's
+    # Accept runs. A non-accepted outcome is FINE - the trade stays pending
+    # and degrades into an ordinary proposal the claimer can accept from
+    # My trades once the conflict clears. Never roll the trade back.
+    outcome, status = await _accept_trade_reservation(
+        mongo,
+        trade,
+        user_id=int(ctx.user.id),
+        live_clans=live_clans,
+        now=now,
+        chosen_card_id=taken,
+    )
+    finalized = await mongo.card_trades.update_one(
+        {
+            "_id": request["_id"],
+            "kind": "open_request",
+            "status": "claiming",
+            "claim_token": claim_token,
+        },
+        {
+            "$set": {
+                "status": "claimed",
+                "claimed_at": now,
+                "trade_id": trade["_id"],
+                "updated_at": now,
+            },
+            "$unset": {
+                "open_request_key": "",
+                "claim_token": "",
+                "claim_until": "",
+            },
+        },
+    )
+    finalize_won = bool(getattr(finalized, "modified_count", 0))
+    if not finalize_won:
+        # The recovery sweeper reclaimed our stale "claiming" mid-flight.
+        # The trade is real either way; only the want-ad bookkeeping moved,
+        # and whoever holds the fence now owns it.
+        _log.warning(
+            "open request finalize lost its fence request=%s trade=%s",
+            request.get("_id"), trade.get("_id"),
+        )
+    refreshed = await mongo.card_trades.find_one(
+        {"_id": trade["_id"], "kind": "trade"}
+    ) or dict(trade)
+    if outcome == "accepted":
+        refreshed["status"] = status
+    # REUSE the want-ad's message as the trade's standing post: the policy
+    # row's edit refreshes it into `_trade_post(trade)`, and the reply-note
+    # underneath pings the poster. When the reservation stayed pending that
+    # edit renders the pending post with its normal Accept/Decline controls
+    # - correct: the claimer's own Accept retries the reservation. No
+    # channel_post_image is set - the want-ad never uploaded a strip, so
+    # there is nothing to re-reference.
+    #
+    # ONLY when the finalize kept its fence. A lost fence means the want-ad
+    # is open again and its message still belongs to it: stamping the ids
+    # anyway would make one channel message serve two live documents - the
+    # reopened request's next claimer would reuse it again, and the 48-hour
+    # expiry job would eventually paint "expired" over a live trade's post.
+    # Without the reuse, the trade simply has no standing post yet; the
+    # reply-note below still lands as an ordinary message.
+    if finalize_won and request.get("channel_message_id"):
+        post_ids = {
+            "channel_id": int(
+                request.get("channel_id")
+                or _configured_cards_channel_id()
+                or 0
+            ) or None,
+            "channel_message_id": int(request["channel_message_id"]),
+            "channel_post_v2": True,
+        }
+        refreshed.update(post_ids)
+        try:
+            await mongo.card_trades.update_one(
+                {"_id": trade["_id"], "kind": "trade"},
+                {"$set": post_ids},
+            )
+        except Exception:
+            _log.info(
+                "claimed trade channel id write failed trade=%s",
+                trade.get("_id"),
+            )
+    delivery = await _deliver_soon(
+        bot, mongo, refreshed, event="open_request_claimed",
+        # When the reservation did not land, the default DM would announce
+        # an acceptance that has not happened yet; the reply-note (whose
+        # wording fits both outcomes) and the edited standing post carry
+        # the news instead. An empty dict means "no DM", None means "the
+        # policy default".
+        dm_components_by_recipient=None if outcome == "accepted" else {},
+    )
+    if outcome == "accepted":
+        # The exact screen a holder gets after accepting, because that is
+        # what the claimer just did.
+        return _holder_accept_feedback(
+            refreshed,
+            taken_card_id=taken,
+            status=status,
+            delivery=delivery,
+            fwa_relevant=await _trade_involves_fwa(mongo, refreshed),
+            tag=claimer_tag,
+        )
+    blocked = {
+        "conflict": (
+            "one of these exact cards is already committed to another swap"
+        ),
+        "invalid": "one of the collections changed in the meantime",
+    }.get(outcome, "the trade changed before the cards could be reserved")
+    return _notice(
+        "Claimed — saved as a proposal",
+        f"You claimed it first, but {blocked}, so nothing is reserved yet. "
+        "The proposal is saved for both of you: open `/cards` → "
+        "**My trades** and tap **Accept** once it clears.",
+        accent=GOLD_ACCENT,
     )
 
 
@@ -13894,15 +15946,17 @@ async def _perform_trade_accept(
         return _notice("Trade changed before acceptance", "Reopen **My trades** and check its status.")
     accepted_trade = await mongo.card_trades.find_one({"_id": trade["_id"]}) or dict(trade)
     accepted_trade["status"] = status
-    dm_sent, _channel_updated = await asyncio.gather(
-        _notify_trade_accepted(bot, accepted_trade, mongo=mongo),
-        _update_trade_channel(bot, accepted_trade),
+    # One funnel: the short acceptance reply pinging the requester, the
+    # silent standing-post refresh, and the requester's DM (dm="always"
+    # during the live-verification window) all come from the policy table.
+    delivery = await _deliver_soon(
+        bot, mongo, accepted_trade, event="proposal_accepted"
     )
     return _holder_accept_feedback(
         accepted_trade,
         taken_card_id=taken,
         status=status,
-        dm_sent=dm_sent,
+        delivery=delivery,
         fwa_relevant=await _trade_involves_fwa(mongo, accepted_trade),
         tag=account.tag,
     )
@@ -13999,10 +16053,11 @@ async def cards_swap_sent(
             "One collection update could not be confirmed. Both affected "
             "cards are hidden from matching until the counts are checked."
         )
-        await asyncio.gather(
-            _notify_review_participants(bot, review, detail),
-            _update_trade_channel(bot, review),
-            return_exceptions=True,
+        await _deliver_soon(
+            bot, mongo, review, event="needs_review",
+            dm_components_by_recipient=_notify_review_participants(
+                review, detail
+            ),
         )
         return _trade_feedback(
             "Trade needs review",
@@ -14022,15 +16077,9 @@ async def cards_swap_sent(
             "set your real count, then try again.",
         )
     other = "holder" if role == "requester" else "requester"
-    other_id = int(trade.get(f"{other}_discord_id") or 0)
-    if other_id:
-        _, receiver_card = _swap_leg(trade, role=role)[1:]
-        await _notify_trade_status(
-            bot, updated, recipient_id=other_id,
-            title=SWAP_ARRIVED_TITLE,
-            detail=_swap_arrived_detail(trade.get(f"{role}_name")),
-            accent=GREEN_ACCENT,
-        )
+    # Per the delivery table, a card arriving is a silent standing-post
+    # refresh: no new post, no ping, and the arrival DM stopped.
+    await _deliver_soon(bot, mongo, updated, event="card_arrived")
     return _swap_sent_view(
         updated, role=role, remaining=remaining,
         other_confirmed=bool(updated.get(f"{other}_confirmed_at")),
@@ -14194,6 +16243,13 @@ async def _set_trading_paused(
     return account, inventory, None
 
 
+# cards_dm_accept / cards_dm_decline stay registered FOREVER, unchanged and
+# with no_return=False, even though the public cards_pub_* actions below do
+# the same job: DMs already sent carry these custom_ids, custom_ids never
+# expire, and editing the DM in place is exactly right there. Aliasing onto
+# the public names is the wrong tool - the DM pair needs the dispatcher's
+# normal edit reply while the public pair needs no_return=True, and one
+# Action cannot hold both flags. Do not "clean this up".
 @register_action("cards_dm_accept")
 @lightbulb.di.with_di
 async def cards_dm_accept(
@@ -14215,6 +16271,8 @@ async def cards_dm_accept(
     )
 
 
+# See the comment above cards_dm_accept: this stays registered forever with
+# no_return=False; cards_pub_decline is not a rename of it and cannot be.
 @register_action("cards_dm_decline")
 @lightbulb.di.with_di
 async def cards_dm_decline(
@@ -14230,6 +16288,208 @@ async def cards_dm_decline(
         ctx, str(action_id or "").partition("|")[0],
         coc_client=coc_client, mongo=mongo, bot=bot,
     )
+
+
+async def _public_reply(ctx, components: list) -> None:
+    """Answer a click on a PUBLIC channel post, privately.
+
+    Every cards_pub_* handler replies through here and only here. The
+    dispatcher's normal reply is an EDIT of the clicked message - on a public
+    post that would replace the post with the clicker's private panel for the
+    whole channel - so the public actions register with no_return=True and
+    this followup is the sole reply channel. Same shape as cards_help
+    (extensions/tasks/cards_sticky.py), the pattern that has run in
+    production since the sticky shipped; the followup's own buttons keep
+    working because a component click on it is an ordinary interaction that
+    edits the followup (pinned by
+    test_a_public_button_answers_privately_and_its_followup_stays_clickable).
+    """
+    try:
+        await ctx.interaction.execute(
+            components=components,
+            flags=(
+                hikari.MessageFlag.IS_COMPONENTS_V2
+                | hikari.MessageFlag.EPHEMERAL
+            ),
+        )
+    except Exception as exc:
+        _log.warning(
+            "cards public reply failed user=%s error=%s",
+            getattr(getattr(ctx, "user", None), "id", None),
+            type(exc).__name__,
+        )
+
+
+# The public adapters are thin: the shared bodies already enforce that the
+# clicker is a participant (`_load_trade_actor` / the cancel role check) and
+# scope the lookup to the configured guild, so a wrong member's tap gets the
+# existing ephemeral refusal notice - through _public_reply, never a public
+# change. New names, deliberately without aliases: nothing ever pointed at
+# them before.
+@register_action("cards_pub_accept", no_return=True)
+@lightbulb.di.with_di
+async def cards_pub_accept(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Accept from the standing post. Multi-card proposals get the chooser."""
+    result = await _perform_trade_accept(
+        ctx, str(action_id or ""), chosen_card_id=None,
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+    await _public_reply(ctx, result)
+
+
+@register_action("cards_pub_decline", no_return=True)
+@lightbulb.di.with_di
+async def cards_pub_decline(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Decline from the standing post, via the one shared decline body."""
+    result = await cards_trade_decline(
+        ctx, str(action_id or ""),
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+    await _public_reply(ctx, result)
+
+
+@register_action("cards_pub_cancel", no_return=True)
+@lightbulb.di.with_di
+async def cards_pub_cancel(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Cancel from the standing post, via the one shared cancel body."""
+    result = await cards_trade_cancel(
+        ctx, str(action_id or ""),
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+    await _public_reply(ctx, result)
+
+
+# The claim trio shares one body (_perform_open_request_claim); each adapter
+# only parses its custom_id shape. All three reply ONLY through
+# _public_reply: cards_pub_claim is clicked on the PUBLIC want-ad, and
+# cards_pub_claim_as / cards_pub_take are clicked on the ephemeral followups
+# it answers with - a component click on a followup is a fresh interaction,
+# so each handler is also no_return=True and answers with a fresh followup
+# of its own (test_component_action_names.py pins the flag on all three).
+# Wrong-member, stale and raced taps therefore never alter the public post.
+@register_action("cards_pub_claim", no_return=True)
+@lightbulb.di.with_di
+async def cards_pub_claim(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Entry from the want-ad's public button: {request_id}|{generation}."""
+    request_id, _, generation = str(action_id or "").partition("|")
+    result = await _perform_open_request_claim(
+        ctx, request_id=request_id, generation=generation,
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+    await _public_reply(ctx, result)
+
+
+@register_action("cards_pub_claim_as", no_return=True)
+@lightbulb.di.with_di
+async def cards_pub_claim_as(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Multi-account disambiguation: {request_id}|{generation}|{tag}."""
+    parts = str(action_id or "").split("|")
+    result = await _perform_open_request_claim(
+        ctx,
+        request_id=parts[0] if parts else "",
+        generation=parts[1] if len(parts) > 1 else "",
+        claim_tag=(parts[2] if len(parts) > 2 else "") or None,
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+    await _public_reply(ctx, result)
+
+
+@register_action("cards_pub_take", no_return=True)
+@lightbulb.di.with_di
+async def cards_pub_take(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Which offered card the claimer takes.
+
+    {request_id}|{generation}|{tag} with the card id in the select's values;
+    a 4th pipe part is accepted as a button form for the single-option case.
+    """
+    parts = str(action_id or "").split("|")
+    values = list(getattr(ctx.interaction, "values", ()) or ())
+    taken = str(values[0]) if values else (
+        parts[3] if len(parts) > 3 else ""
+    )
+    result = await _perform_open_request_claim(
+        ctx,
+        request_id=parts[0] if parts else "",
+        generation=parts[1] if len(parts) > 1 else "",
+        claim_tag=(parts[2] if len(parts) > 2 else "") or None,
+        taken_card_id=taken or None,
+        coc_client=coc_client, mongo=mongo, bot=bot,
+    )
+    await _public_reply(ctx, result)
+
+
+# The gem-ask pair on the public post. Same shared body as the legacy DM pair
+# (holder-only, generation and pending-CAS guards all live inside
+# `_answer_gem_ask`), so a wrong member's tap gets the existing ephemeral
+# refusal - through _public_reply, never a public change.
+@register_action("cards_pub_gem_yes", no_return=True)
+@lightbulb.di.with_di
+async def cards_pub_gem_yes(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Yes from the public gem-ask post: {ask_id}|{generation}."""
+    result = await _answer_gem_ask(ctx, mongo, bot, action_id, agreed=True)
+    await _public_reply(ctx, result)
+
+
+@register_action("cards_pub_gem_no", no_return=True)
+@lightbulb.di.with_di
+async def cards_pub_gem_no(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """No from the public gem-ask post: {ask_id}|{generation}."""
+    result = await _answer_gem_ask(ctx, mongo, bot, action_id, agreed=False)
+    await _public_reply(ctx, result)
 
 
 @register_action("cards_trade_decline")
@@ -14271,24 +16531,13 @@ async def cards_trade_decline(
     await _release_proposal_slots(mongo, trade)
     await _answered_a_request(mongo, trade.get("holder_tag"))
     trade["status"] = "declined"
-    dm_sent, _channel_updated = await asyncio.gather(
-        _notify_trade_status(
-            bot,
-            trade,
-            recipient_id=int(trade["requester_discord_id"]),
-            title="Card proposal declined",
-            detail="The holder declined it. No cards had been reserved.",
-        ),
-        _update_trade_channel(bot, trade),
-    )
-    delivery = (
-        "The requester was notified by DM."
-        if dm_sent
-        else f"I could not DM <@{trade['requester_discord_id']}>; please ping them."
-    )
+    # Per the delivery table a decline is silent: the standing post updates
+    # in place and nobody is pinged or DMed about it.
+    await _deliver_soon(bot, mongo, trade, event="declined")
     return _trade_feedback(
         "Proposal declined",
-        f"The proposal is closed; no cards were reserved. {delivery}",
+        "The proposal is closed; no cards were reserved. "
+        "The channel post now shows it as declined.",
         account.tag,
     )
 
@@ -14359,35 +16608,19 @@ async def cards_trade_cancel(
         mongo, trade, owner=_reservation_owner(trade)
     )
     trade["status"] = "cancelled"
-    other = "holder" if role == "requester" else "requester"
-    other_id = int(trade[f"{other}_discord_id"])
-    dm_sent, _channel_updated = await asyncio.gather(
-        _notify_trade_status(
-            bot,
-            trade,
-            recipient_id=other_id,
-            title=CANCELLED_DM_TITLE,
-            detail=_cancelled_dm_detail(
-                trade, reader_role=other, released=released
-            ),
-        ),
-        _update_trade_channel(bot, trade),
-    )
-    delivery = (
-        "The other player was notified by DM."
-        if dm_sent
-        else f"I could not DM <@{other_id}>; please ping them."
-    )
+    # Per the delivery table a cancellation is silent: the standing post
+    # updates in place and the cancelled-DM stopped.
+    await _deliver_soon(bot, mongo, trade, event="cancelled")
     note = _swap_cancel_note(trade, role)
     return _trade_feedback(
         "Trade cancelled",
         (
             f"{note} The remaining exact-card reservations were "
-            f"released. {delivery}"
+            "released. The channel post now shows it as cancelled."
             if released
             else f"{note} Releasing the reserved cards is still "
-            f"finishing — open **Find trades** in a moment and it will "
-            f"complete. {delivery}"
+            "finishing — open **Find trades** in a moment and it will "
+            "complete. The channel post now shows it as cancelled."
         ),
         account.tag,
         accent=None,
@@ -14490,22 +16723,29 @@ async def cards_trade_complete(
                 mongo, trade, owner=_reservation_owner(trade)
             )
             trade["status"] = "needs_review"
-            await _update_trade_channel(bot, trade)
-            dm_sent = await _notify_trade_status(
-                bot,
-                trade,
-                recipient_id=other_id,
-                title="Card swap needs review",
-                detail=(
-                    "A reservation expired before completion. No automatic "
-                    "inventory update was attempted."
-                ),
-                accent=RED_ACCENT,
+            # needs_review keeps its DM (a public nag is worse); here only
+            # the other player needs one - the actor is reading this panel.
+            delivery = await _deliver_soon(
+                bot, mongo, trade, event="needs_review",
+                dm_components_by_recipient={other_id: _status_dm(
+                    trade,
+                    recipient_id=other_id,
+                    title="Card swap needs review",
+                    detail=(
+                        "A reservation expired before completion. No automatic "
+                        "inventory update was attempted."
+                    ),
+                    accent=RED_ACCENT,
+                )},
             )
             return _notice(
                 "Trade needs manual review",
                 "A reservation expired; no automatic inventory update was attempted."
-                + _dm_fallback_note(dm_sent, other_id),
+                # A None delivery is still in flight, which is not a failure,
+                # so it earns no "could not reach" warning.
+                + ("" if delivery is None else _dm_fallback_note(
+                    other_id in delivery.dm_sent, other_id
+                )),
             )
         return _notice(
             "Trade changed while completion started",
@@ -14555,20 +16795,19 @@ async def cards_trade_complete(
             "correct both affected categories before another swap."
         )
         trade["status"] = "needs_review"
-        dm_sent, _channel_updated = await asyncio.gather(
-            _notify_trade_status(
-                bot,
-                trade,
-                recipient_id=other_id,
-                title="Card swap needs review",
-                detail=detail,
+        delivery = await _deliver_soon(
+            bot, mongo, trade, event="needs_review",
+            dm_components_by_recipient={other_id: _status_dm(
+                trade, recipient_id=other_id,
+                title="Card swap needs review", detail=detail,
                 accent=RED_ACCENT,
-            ),
-            _update_trade_channel(bot, trade),
+            )},
         )
         return _trade_feedback(
             "Trade needs review",
-            detail + _dm_fallback_note(dm_sent, other_id),
+            detail + ("" if delivery is None else _dm_fallback_note(
+                other_id in delivery.dm_sent, other_id
+            )),
             account.tag,
             accent=RED_ACCENT,
         )
@@ -14599,20 +16838,19 @@ async def cards_trade_complete(
             else "Neither inventory was changed because at least one collection no longer matched the accepted swap."
         )
         trade["status"] = "needs_review"
-        dm_sent, _channel_updated = await asyncio.gather(
-            _notify_trade_status(
-                bot,
-                trade,
-                recipient_id=other_id,
-                title="Card swap needs review",
-                detail=detail,
+        delivery = await _deliver_soon(
+            bot, mongo, trade, event="needs_review",
+            dm_components_by_recipient={other_id: _status_dm(
+                trade, recipient_id=other_id,
+                title="Card swap needs review", detail=detail,
                 accent=RED_ACCENT,
-            ),
-            _update_trade_channel(bot, trade),
+            )},
         )
         return _trade_feedback(
             "Trade needs review",
-            detail + _dm_fallback_note(dm_sent, other_id),
+            detail + ("" if delivery is None else _dm_fallback_note(
+                other_id in delivery.dm_sent, other_id
+            )),
             account.tag,
             accent=RED_ACCENT,
         )
@@ -14670,22 +16908,21 @@ async def cards_trade_complete(
             "be finalized. Recheck both collections before another swap."
         )
         trade["status"] = "needs_review"
-        dm_sent, _channel_updated = await asyncio.gather(
-            _notify_trade_status(
-                bot,
-                trade,
-                recipient_id=other_id,
-                title="Card swap needs review",
-                detail=review_detail,
+        delivery = await _deliver_soon(
+            bot, mongo, trade, event="needs_review",
+            dm_components_by_recipient={other_id: _status_dm(
+                trade, recipient_id=other_id,
+                title="Card swap needs review", detail=review_detail,
                 accent=RED_ACCENT,
-            ),
-            _update_trade_channel(bot, trade),
+            )},
         )
         return _trade_feedback(
             "Trade needs review",
             "Both collections changed, but the audit record could not be finalized. "
             "Review both collections before making another request."
-            + _dm_fallback_note(dm_sent, other_id),
+            + ("" if delivery is None else _dm_fallback_note(
+                other_id in delivery.dm_sent, other_id
+            )),
             account.tag,
             accent=RED_ACCENT,
         )
@@ -14693,22 +16930,13 @@ async def cards_trade_complete(
         mongo, trade, owner=_reservation_owner(trade)
     )
     trade["status"] = "completed"
-    dm_sent, _channel_updated = await asyncio.gather(
-        _notify_trade_status(
-            bot,
-            trade,
-            recipient_id=other_id,
-            title="Card swap completed",
-            detail="Both tracked collections were updated conservatively.",
-            accent=GREEN_ACCENT,
-        ),
-        _update_trade_channel(bot, trade),
-    )
+    # Per the delivery table completion is silent: the standing post collapses
+    # to its compact closed form and the completed-DM stopped.
+    await _deliver_soon(bot, mongo, trade, event="completed")
     return _trade_feedback(
         "Trade completed",
         "Both inventories were updated conservatively: each missing card is now owned "
-        "and each offered duplicate dropped by one copy. Mark another spare if you still have one."
-        + _dm_fallback_note(dm_sent, other_id),
+        "and each offered duplicate dropped by one copy. Mark another spare if you still have one.",
         account.tag,
     )
 

@@ -170,12 +170,16 @@ def _sticky_components() -> list[Container]:
                 "you need\n"
                 "You will see who has a spare and which clan they are in"
             )),
+            Text(content=(
+                "-# Nobody has it? Tap **Post a request** and it waits here "
+                "in this channel."
+            )),
             Separator(divider=False),
             Text(content=(
                 f"**3 · Send the offer**\n"
                 f"{emojis.card_swap} Tap **Ask to swap**, then choose the card "
                 "you give\n"
-                f"{emojis.yes} They get a DM and tap **Accept**"
+                f"{emojis.yes} They get pinged here and tap **Accept**"
             )),
             Separator(divider=False),
             # This was a footnote hanging off step 3, which left the numbered
@@ -241,7 +245,11 @@ def _walkthrough() -> list[Container]:
                 "You will see who has a spare, and which clan they are in\n\n"
                 "**5.** Tap **Ask to swap** next to the person you want\n\n"
                 "**6.** Choose which of your spare cards to give\n\n"
-                f"**7.** They get a DM and tap **Accept** {emojis.yes}"
+                f"**7.** They get pinged here in this channel and tap "
+                f"**Accept** {emojis.yes}\n"
+                "-# If nobody has the card: tap **Post a request**. Your "
+                "request waits here in this channel. When a member who has a "
+                "spare taps **Accept**, you get pinged."
             )),
             Separator(divider=False),
             Text(content=(

@@ -379,18 +379,26 @@ the profiles again at acceptance and before completion. A proposal records
 the requested card, the proposed card to give, and the other compatible
 duplicates the requester has that the holder needs.
 
-The proposal is published to the configured `CARDS_CHANNEL_ID` trade-board
-channel and sent to the holder by best-effort DM. Both initial deliveries carry
-a compact visual strip with the wanted card, offered card, and up to three
-other compatible offers; the full text remains the accessible fallback. A
-typical alert is: “Shaun
-needs your duplicate Root Rider. Shaun has Wizard and Dragon duplicates that
-you need. You are currently in different family clans.” The alert directs both
-players to **My trades** for the durable status and actions. Every follow-up DM
-includes both player names and tags so a multi-account owner knows which
-collection needs attention. A blocked DM or channel-delivery failure never
-changes the saved proposal or grants access outside the configured guild and
-family-clan scope.
+The proposal is posted to the configured `CARDS_CHANNEL_ID` trade board as a
+standing post with live **Accept**/**Decline**/**Cancel** buttons, pinging the
+holder. The board is the same channel the `/cards` sticky notice lives in: the
+notice already pulls eyes there, so the explainer and the trades it explains
+are one place rather than two. The post carries a compact visual strip with
+the wanted card, offered card, and up to three other compatible offers; the
+full text remains the accessible fallback. The Accept button is labeled with
+the holder's name and the footer says who may act, because a public button
+invites wrong-person taps — the handler refuses anyone but the holder
+regardless, but the label is what prevents the attempts. Acceptance posts a
+short reply under the standing post that pings the requester. Every other
+status change — declined, cancelled, ready, card arrived, completed, expired —
+silently edits the standing post in place; an edit cannot notify anyone, and
+the transport makes that structural rather than a convention each caller must
+remember. DMs remain for the genuinely private notices (the still-trading
+check-in, needs-review, auto-deduct), and during the live verification window
+the two pinging events also DM; the planned end state is DM only as a
+fallback when the channel post fails, which is a one-entry policy change. A
+blocked DM or channel-delivery failure never changes the saved proposal or
+grants access outside the configured guild and family-clan scope.
 
 An account may have multiple open proposals, up to 25 at once. Each pending or
 currently accepting proposal atomically occupies one of 25 lightweight slots
@@ -442,14 +450,63 @@ silently roll back a confirmed one-sided update.
 
 Reservation records are separate from completed trade audit rows. **My trades**
 provides accept, decline, cancel, check-clan, complete, and refresh actions
-without adding another slash command. The trade-board post and participant DMs
-are updated on important state changes where delivery is available. Decline,
-cancellation, successful completion, and review-required outcomes each make a
-best-effort terminal notification to the other participant where applicable. A
+without adding another slash command. The standing post is refreshed on every
+state change where delivery is available; terminal states collapse it to a
+compact closed line rather than deleting it, so the channel keeps a readable
+record of what happened. Decline, cancellation, completion, and expiry send no
+DM — the edited post is the notification, and it names both players. An
+unanswered proposal that expires also closes its post this way; it previously
+stayed open-looking in the channel forever. Review-required outcomes keep
+their best-effort DM, because a public nag is worse than a private one. A
 blocked or failed notification never changes the saved trade outcome. Active
 and review-required agreements remain in **My trades**; terminal rows leave
 that compact panel while their audit records and the resulting collection state
 remain stored.
+
+## Open requests
+
+When the matcher finds nobody holding a wanted card, a member can post an open
+request — a public want-ad on the trade board — instead of waiting for a
+holder to appear. The event's own rule shapes it: a request cannot be posted
+without a same-category duplicate to give back, because the in-game trade has
+to start from the other side. A member with no spare is routed to the gem ask
+below instead; one **Post a request** button serves both lanes, branching on
+whether a spare exists, so the member never has to know which lane they are
+in.
+
+An open request pings nobody. By construction it exists because the matcher
+found no eligible holder, so there is nobody to aim a ping at; the sticky
+notice drives eyes to the channel instead. Each account may hold at most
+three open requests at once — a want-ad reserves no cards, but it costs a
+public post, so it is bounded tighter than the 25-slot proposal machinery —
+and only one per card. A request expires after 48 hours, silently: the post
+collapses to its compact closed form and nobody is DMed, because a want-ad
+that sat 48 quiet hours is news to no one. The poster can close their own
+request from **My trades** at any time, and a request past its deadline stops
+rendering as open there even before the sweeper has closed it.
+
+Anyone who can fill the request taps **I have this card**. First tap wins: a
+single conditional write moves the request into a short claiming hold, so two
+simultaneous claimers always produce exactly one winner and a clear "somebody
+got there first" for the other. The claim then converts into an ordinary
+managed trade — the poster as requester, the claimer as holder — reusing
+every validation, slot, and reservation rule above, and the want-ad's own
+message becomes the new trade's standing post, with a short pinging reply for
+the poster underneath. If the conversion fails, the claim rolls back and the
+want-ad survives untouched. A claim interrupted mid-flight — a crash between
+the hold and the conversion — is returned to the board by the deadline
+sweeper once its two-minute hold expires, fenced so a newer claim is never
+clobbered.
+
+The gem **Ask for help** flow — for the member with no same-category spare to
+give back — also lands on the trade board, pinging the one holder being
+asked, with the yes/no buttons on the public post. The answer silently
+collapses the post and DMs the asker the outcome. Delivery used to be DM-only
+and hard-failed: any DM failure deleted the saved ask outright. With the
+channel post as the primary surface and the DM demoted to a fallback there is
+no single point of delivery left to fail, so that deletion path is gone — a
+failed post now leaves a valid saved ask the member can still see in **My
+trades**.
 
 ## Image scanning boundaries
 

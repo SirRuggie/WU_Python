@@ -310,6 +310,35 @@ def test_notice_names_the_command_the_dm_and_the_manual_route():
     assert "offer" in text.lower() or "message" in text.lower()
 
 
+def test_accepting_happens_in_the_channel_but_scanning_stays_a_dm():
+    """Trading moved into this channel; the screenshot upload did not.
+
+    The composer is the only upload surface, so scanning stays a DM for ever.
+    The copy has to keep the two apart: step 3 promising a DM would send the
+    holder to an inbox where nothing arrives, and step 1 dropping its DM line
+    would leave people posting screenshots into the channel.
+    """
+    steps = {
+        node.content.splitlines()[0]: node.content
+        for container in sticky._sticky_components()
+        for node in container.components
+        if hasattr(node, "content") and node.content.startswith("**")
+    }
+
+    assert "DM" in steps["**1 · Add your cards**"]
+    assert "DM" not in steps["**3 · Send the offer**"]
+    assert "pinged here" in steps["**3 · Send the offer**"]
+
+    # And when the matcher comes up empty, the notice names the way out.
+    notice = " ".join(
+        node.content
+        for container in sticky._sticky_components()
+        for node in container.components
+        if hasattr(node, "content")
+    )
+    assert "Post a request" in notice
+
+
 def test_notice_avoids_shortenings_that_travel_badly():
     """Half the family reads this as a second language."""
     text = " ".join(
