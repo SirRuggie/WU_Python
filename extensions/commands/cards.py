@@ -7316,7 +7316,10 @@ def _open_request_post(request: dict) -> list[Container]:
                 request.get("requester_clan_name"),
                 request.get("requester_clan_emoji"),
             )
-            + "\n⏳ Open until "
+            # "Closes", not "Open until": the relative timestamp renders as
+            # "in 2 days", and "Open until in 2 days" read as broken English
+            # on the first live post.
+            + "\n⏳ Closes "
             + _relative_timestamp(request.get("expires_at"))
         )),
     ]
