@@ -2784,7 +2784,12 @@ def test_holders_view_offers_post_a_request_only_with_a_spare():
     )
 
 
-def test_matches_view_offers_the_request_picker_only_with_a_spare():
+def test_matches_view_offers_the_request_picker_whenever_a_spare_exists():
+    """Post a request is always on the board, not only when the matcher
+    comes up empty - the owner wants a want-ad possible without naming a
+    person. PRIMARY only when there is nothing else to do; beside live
+    matches it goes grey, because the swap picker is the one primary thing.
+    """
     account = Account(
         tag="#ME", name="Member", clan_tag="#HOME",
         clan_name="Home Clan", town_hall=18,
@@ -2793,8 +2798,34 @@ def test_matches_view_offers_the_request_picker_only_with_a_spare():
     with_spare["cards"]["root_rider"] = cards.MISSING
     with_spare["cards"]["wizard"] = cards.DUPLICATE
     view = cards_command._matches_view(account, with_spare, [])
-    ids = [n["custom_id"] for n in _view_nodes(view) if "custom_id" in n]
+    nodes = _view_nodes(view)
+    ids = [n["custom_id"] for n in nodes if "custom_id" in n]
     assert "cards_req_pick:#ME" in ids
+    empty_style = next(
+        n["style"] for n in nodes
+        if n.get("custom_id") == "cards_req_pick:#ME"
+    )
+    assert empty_style == hikari.ButtonStyle.PRIMARY
+
+    match = cards.CardMatch(
+        holder_tag="#HOLDER", holder_name="Holder",
+        holder_discord_id=222, holder_clan_tag="#HOME",
+        holder_clan_name="Home Clan",
+        exchanges=(cards.CategoryExchange(
+            "elixir", ("root_rider",), ("wizard",),
+        ),),
+        same_clan=True,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    busy = cards_command._matches_view(account, with_spare, [match])
+    busy_nodes = _view_nodes(busy)
+    busy_style = next(
+        n["style"] for n in busy_nodes
+        if n.get("custom_id") == "cards_req_pick:#ME"
+    )
+    assert busy_style == hikari.ButtonStyle.SECONDARY, (
+        "beside live matches the want-ad is the quieter option"
+    )
 
     no_spare = _complete_inventory()
     no_spare["cards"]["root_rider"] = cards.MISSING

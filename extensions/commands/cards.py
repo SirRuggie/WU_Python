@@ -4876,16 +4876,24 @@ def _matches_view(
     # they tripled the height of the screen, and neither is what a member came
     # here to do: even swaps are the trades that actually complete.
     secondary: list = []
-    if not per_card and _requestable_card_ids(inventory):
-        # Nothing to trade for, but the member holds a spare in a finished
-        # category where they are missing cards: a public want-ad in the
-        # channel reaches the collections the matcher cannot see. Without a
+    if _requestable_card_ids(inventory):
+        # Always offered, not only when the matcher comes up empty: the owner
+        # wants a member to be able to put a want-ad on the board without
+        # picking a specific person, even when direct swaps exist. A public
+        # want-ad also reaches the collections the matcher cannot see.
+        # PRIMARY only when there is nothing else to do here - with matches
+        # on screen the swap picker is the one primary thing. Without a
         # spare the button would lead straight to a refusal, so it is not
         # drawn.
         secondary.append(Button(
-            style=hikari.ButtonStyle.PRIMARY,
+            style=(
+                hikari.ButtonStyle.PRIMARY
+                if not per_card
+                else hikari.ButtonStyle.SECONDARY
+            ),
             custom_id=f"cards_req_pick:{tag}",
             label="Post a request",
+            emoji=TRADES_EMOJI,
         ))
     if oneway_ids:
         secondary.append(Button(
