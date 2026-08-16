@@ -6987,13 +6987,13 @@ def _standing_post_image_ref(trade: dict) -> str | None:
 
     The original theory: Discord keeps a message's attachments when an edit
     omits the attachments field, so a gallery could re-reference the retained
-    file as `attachment://filename` without re-uploading. Live verification
-    on 2026-08-16 disproved it - the first real acceptance posted its note
-    but the standing-post edit failed silently, exactly the failure mode
-    predicted for this reference. `attachment://` names a file uploaded IN
-    THE SAME REQUEST; a retained upload cannot be re-referenced that way on
-    an edit. So edits drop the image: every edit moves the trade PAST the
-    proposal stage, where the two players already know the cards and the
+    file as `attachment://filename` without re-uploading. The first live
+    acceptance (2026-08-16) killed it one layer earlier than predicted:
+    hikari 2.3.5 resolves a string media value as a local file path, so the
+    edit died client-side with `FileNotFoundError` for a path literally
+    named "attachment://card-trade-....png" - the request never reached
+    Discord at all. So edits drop the image: every edit moves the trade PAST
+    the proposal stage, where the two players already know the cards and the
     words carry the state. The image lives on in the creation-time post
     history and in both DMs.
     """
