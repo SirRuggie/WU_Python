@@ -8669,10 +8669,12 @@ async def _active_trades(
                 {"status": "reserving"},
                 {"$and": [
                     {"status": {"$in": list(SWAP_LIVE_STATUSES)}},
-                    # A role confirmation is recorded only after that card's
-                    # debit and receiver credit are acknowledged. The other
-                    # account still sees the same live trade and can finish
-                    # its own leg.
+                    # A role confirmation is recorded only after that side's
+                    # whole account settled - debit, incoming credit, and
+                    # both released markers - so a confirmed side has
+                    # legitimately nothing left here. The other account
+                    # still sees the same live trade and settles its own
+                    # side.
                     unfinished_participant,
                 ]},
                 {"status": "completing", "expires_at": {"$gt": now}},
@@ -8845,6 +8847,13 @@ def _trade_summary(trade: dict, *, role: str) -> str:
                 "\n-# You already marked your card sent. Waiting for "
                 f"**{_escape_markdown(counterpart, limit=50)}** to confirm theirs."
             )
+        )
+    elif raw_status in SWAP_LIVE_STATUSES and other_confirmed:
+        # The owner's nudge for the one side a half-confirmed swap is still
+        # waiting on. Bold, not small: this row exists to be acted on.
+        detail += (
+            "\n**They already confirmed and have been waiting.** "
+            "Tap **I sent my card**."
         )
     return (
         f"**{status} with {_escape_markdown(counterpart, limit=50)}** "
@@ -9033,7 +9042,13 @@ SWAP_LIVE_STATUSES = ("move_needed", "ready", "accepted")
 
 
 class _SwapReceiverCreditError(RuntimeError):
-    """The giver debit succeeded but the receiver credit is not trustworthy."""
+    """The confirmer's debit is settled but their incoming credit is not
+    trustworthy. `giver_debited` records whether the debit actually moved,
+    because the no-spare settle path credits without a debit."""
+
+    def __init__(self, message: str, *, giver_debited: bool = True):
+        super().__init__(message)
+        self.giver_debited = giver_debited
 
 
 class _SwapLegNeedsReview(RuntimeError):
@@ -9077,105 +9092,188 @@ def _trade_role_for(trade: dict, tag: str) -> str | None:
 
 
 async def _confirm_swap_leg(
-    mongo: MongoClient, trade: dict, *, role: str, now: datetime
+    mongo: MongoClient,
+    trade: dict,
+    *,
+    role: str,
+    now: datetime,
+    settle_without_spare: bool = False,
 ) -> tuple[bool, int]:
-    """Move one card, because one player says they sent it.
+    """Settle one player's WHOLE side, because that player says they sent it.
 
-    Deliberately one-sided: it never waits for the other player to agree.
-    Waiting was the whole problem - a card sat reserved indefinitely because
-    somebody went quiet - so each side's answer only ever moves the card that
-    side promised, and the other card moves when they answer for themselves.
+    Deliberately per-side: a tap touches only the tapper's own inventory -
+    their sent card goes out, their incoming card comes in, and both of this
+    trade's reservation markers on their document are released. The other
+    player's inventory is never written; they settle their own side with
+    their own answer. Waiting was the whole problem - a member who did
+    everything right stared at a reserved card for days because the partner
+    went quiet - so after your tap NOTHING of yours is still locked.
 
-    Returns (did anything move, copies the giver has left).
+    `settle_without_spare` is the deadline path: even when no spare is left
+    to debit, the side still receives its incoming credit and its locks are
+    released, because the trade is being closed for them either way.
+
+    Returns (did the debit move a copy, copies of the sent card left).
     """
-    giver, receiver, card_id = _swap_leg(trade, role=role)
+    giver, _receiver, sent_card_id = _swap_leg(trade, role=role)
+    received_card_id = str(
+        trade["wanted_card_id"] if role == "requester"
+        else trade["given_card_id"]
+    )
     guild_id = int(trade["guild_id"])
     owner = _reservation_owner(trade)
-    fence = [
-        {f"card_trade_reservations.{card_id}": owner},
-        {f"card_trade_reservations.{card_id}.owner": owner},
-    ]
+    sent_path = f"card_trade_reservations.{sent_card_id}"
+    received_path = f"card_trade_reservations.{received_card_id}"
 
     given = await mongo.card_inventories.update_one(
         {
             "_id": giver,
             "guild_id": guild_id,
-            "$or": fence,
-            f"cards.{card_id}": {"$gte": DUPLICATE},
+            "$or": [{sent_path: owner}, {f"{sent_path}.owner": owner}],
+            f"cards.{sent_card_id}": {"$gte": DUPLICATE},
         },
         {
             "$set": {"updated_at": now, "update_source": "confirmed_trade"},
             # One copy, not the whole stack.
-            "$inc": {f"cards.{card_id}": -1, "inventory_revision": 1},
-            "$unset": {f"card_trade_reservations.{card_id}": ""},
+            "$inc": {f"cards.{sent_card_id}": -1, "inventory_revision": 1},
+            "$unset": {sent_path: ""},
         },
     )
     moved = bool(getattr(given, "modified_count", 0))
 
-    if moved:
+    if moved or settle_without_spare:
         try:
+            # The incoming credit writes the SAME document as the debit, but
+            # its guard is its own: only raise a count that is still below
+            # OWNED. An old-style confirmation by the partner (from before
+            # per-side settlement) may already have delivered this card - a
+            # no-op credit is legitimate and still releases the marker below.
+            # The filter deliberately carries no reservation fence: recovery
+            # may have released the marker, and refusing the credit then
+            # would lose a card the member is owed.
             credited = await mongo.card_inventories.update_one(
-                {"_id": receiver, "guild_id": guild_id, "$or": fence},
+                {
+                    "_id": giver,
+                    "guild_id": guild_id,
+                    f"cards.{received_card_id}": {"$lt": OWNED},
+                },
                 {
                     "$set": {
-                        f"cards.{card_id}": OWNED,
+                        f"cards.{received_card_id}": OWNED,
                         "updated_at": now,
                         "update_source": "confirmed_trade",
                     },
                     "$inc": {"inventory_revision": 1},
-                    "$unset": {f"card_trade_reservations.{card_id}": ""},
+                    "$unset": {received_path: ""},
                 },
             )
             if not getattr(credited, "modified_count", 0):
-                # The giver's copy is already gone, so failing to credit the
-                # receiver silently would lose the card. The fence can
-                # legitimately be missing here (released by recovery); credit
-                # anyway, but only while the receiver is still missing it.
-                fallback = await mongo.card_inventories.update_one(
-                    {
-                        "_id": receiver,
-                        "guild_id": guild_id,
-                        f"cards.{card_id}": {"$lt": OWNED},
-                    },
-                    {
-                        "$set": {
-                            f"cards.{card_id}": OWNED,
-                            "updated_at": now,
-                            "update_source": "confirmed_trade",
-                        },
-                        "$inc": {"inventory_revision": 1},
-                    },
-                )
-                if not getattr(fallback, "modified_count", 0):
-                    receiver_document = await mongo.card_inventories.find_one({
-                        "_id": receiver,
-                        "guild_id": guild_id,
-                    })
-                    receiver_count = (
-                        normalize_cards(receiver_document.get("cards")).get(
-                            card_id, OWNED
-                        )
-                        if receiver_document is not None
-                        else MISSING
+                # A miss must be PROVEN benign: verify the count really is
+                # at or above OWNED before treating this as already-credited.
+                document = await mongo.card_inventories.find_one({
+                    "_id": giver,
+                    "guild_id": guild_id,
+                })
+                count = (
+                    normalize_cards(document.get("cards")).get(
+                        received_card_id, OWNED
                     )
-                    if receiver_count < OWNED:
-                        raise RuntimeError("receiver credit was not applied")
+                    if document is not None
+                    else MISSING
+                )
+                if count < OWNED:
+                    raise RuntimeError("incoming credit was not applied")
+            # A no-op credit still releases this trade's marker, so nothing
+            # of this side stays locked. Owner-fenced: never drop a marker a
+            # different trade now holds.
+            release = [received_path]
+            if not moved:
+                # The no-spare settle never matched the debit write, so the
+                # sent card's marker is still standing; release it too.
+                release.append(sent_path)
+            for path in release:
                 await mongo.card_inventories.update_one(
-                    {"_id": receiver},
-                    {"$unset": {f"card_trade_reservations.{card_id}": ""}},
+                    {
+                        "_id": giver,
+                        "$or": [{path: owner}, {f"{path}.owner": owner}],
+                    },
+                    {"$unset": {path: ""}},
                 )
         except Exception as exc:
-            # The giver debit was acknowledged. A receiver exception may be a
-            # before-commit failure or a lost acknowledgement after commit, so
-            # never guess. The claimed saga records the receiver as unknown and
-            # projects both affected inventories fail closed.
-            raise _SwapReceiverCreditError(str(exc)) from exc
+            # The debit outcome is known, but the credit write may have
+            # failed before commit or lost its acknowledgement after commit,
+            # so never guess. The claimed saga records the credit as unknown
+            # and both affected inventories fail closed.
+            raise _SwapReceiverCreditError(str(exc), giver_debited=moved) from exc
 
     remaining = 0
     document = await mongo.card_inventories.find_one({"_id": giver})
     if document:
-        remaining = int(normalize_cards(document.get("cards")).get(card_id, 0))
+        remaining = int(
+            normalize_cards(document.get("cards")).get(sent_card_id, 0)
+        )
     return moved, remaining
+
+
+async def _settle_stuck_confirmed_side(
+    mongo: MongoClient, trade: dict, *, role: str, now: datetime
+) -> bool:
+    """Deliver the incoming credit an already-confirmed side is still owed.
+
+    Old-style confirmations (from before per-side settlement) moved the SENT
+    card on both accounts and left the confirmer's incoming card reserved
+    until the partner answered. Under per-side settlement the partner's tap
+    no longer touches the confirmer, so nothing else ever delivers that
+    credit. This settles the stuck side: credit the incoming card while this
+    trade's own fence still guards it, then drop both of this side's markers.
+    Fenced on the marker + owner and guarded below OWNED, so replays and
+    already-settled sides are no-ops. Returns True when a credit landed.
+    """
+    tag = _normalize_tag(trade[f"{role}_tag"])
+    incoming = str(
+        trade["wanted_card_id"] if role == "requester"
+        else trade["given_card_id"]
+    )
+    sent = str(
+        trade["given_card_id"] if role == "requester"
+        else trade["wanted_card_id"]
+    )
+    owner = _reservation_owner(trade)
+    guild_id = int(trade["guild_id"])
+    incoming_path = f"card_trade_reservations.{incoming}"
+    result = await mongo.card_inventories.update_one(
+        {
+            "_id": tag,
+            "guild_id": guild_id,
+            "$or": [
+                {incoming_path: owner},
+                {f"{incoming_path}.owner": owner},
+            ],
+            f"cards.{incoming}": {"$lt": OWNED},
+        },
+        {
+            "$set": {
+                f"cards.{incoming}": OWNED,
+                "updated_at": now,
+                "update_source": "confirmed_trade",
+            },
+            "$inc": {"inventory_revision": 1},
+            "$unset": {incoming_path: ""},
+        },
+    )
+    credited = bool(getattr(result, "modified_count", 0))
+    # An already-delivered credit can still hold the marker; release it and
+    # this side's sent-card marker without touching any count. Owner-fenced,
+    # so a marker now held by a different trade survives.
+    for path in (incoming_path, f"card_trade_reservations.{sent}"):
+        await mongo.card_inventories.update_one(
+            {
+                "_id": tag,
+                "$or": [{path: owner}, {f"{path}.owner": owner}],
+            },
+            {"$unset": {path: ""}},
+        )
+    return credited
 
 
 async def _record_swap_confirmation(
@@ -9375,9 +9473,10 @@ def _swap_confirm_view(
 ) -> list[Container]:
     """Ask the giver whether they actually sent their card.
 
-    Only the giver is asked, and answering only ever moves the giver's own
-    card. That is what stops a card sitting in limbo because the other player
-    went quiet: nobody is waiting on anybody to agree with them.
+    Only the giver is asked, and answering settles the giver's whole side:
+    their card goes out, the card they were promised comes in, and nothing of
+    theirs stays reserved. That is what stops a card sitting in limbo because
+    the other player went quiet: nobody is waiting on anybody to agree.
     """
     given, received = _swap_legs(trade, role=role)
     other, other_tag = _swap_counterpart(trade, role=role)
@@ -9417,8 +9516,10 @@ def _swap_confirm_view(
                 ),
             ]),
             Text(content=(
-                "-# **Yes** removes one copy of your card straight away. "
-                "**Not yet** asks again next time you open `/cards`."
+                "-# **Yes** updates your whole side straight away: your card "
+                "goes out, their card comes in. They confirm their side the "
+                "same way. **Not yet** asks again next time you open "
+                "`/cards`."
             )),
         ],
     )]
@@ -9433,10 +9534,10 @@ def _swap_cancel_check_view(
     role_action_id = f"{trade_id}|{role}"
     other = "holder" if role == "requester" else "requester"
     # "Frees both cards" is only true while neither side has confirmed. Once
-    # the other player sent theirs, that card already moved and stays.
+    # the other player answered, their own side is already settled and stays.
     cancel_note = (
-        "**Cancelled** closes the swap. The card they sent stays in your "
-        "collection. Your card is not removed."
+        "**Cancelled** closes the swap. Their side stays settled. "
+        "Nothing in your collection changes."
         if trade.get(f"{other}_confirmed_at")
         else "**Cancelled** closes the swap and frees both cards."
     )
@@ -9486,22 +9587,25 @@ def _swap_sent_view(
         trade["requester_tag"] if role == "requester" else trade["holder_tag"]
     )
     waiting = (
-        f"**{_escape_markdown(other, limit=50)}** has confirmed too, so "
-        f"{_card_label(received)} is already in your collection."
+        f"**{_escape_markdown(other, limit=50)}** confirmed their side too, "
+        "so this swap is complete."
         if other_confirmed
         else (
-            f"Waiting for **{_escape_markdown(other, limit=50)}** to confirm "
-            f"they sent {_card_label(received)}. If they do not confirm "
-            "within 7 days it is added for you automatically."
+            "Nothing of yours is waiting on "
+            f"**{_escape_markdown(other, limit=50)}**. They confirm their "
+            "own side the same way; if they stay quiet for 7 days it is "
+            "settled for them automatically."
         )
     )
     return [Container(
         accent_color=GREEN_ACCENT,
         components=[
-            Text(content=f"## {emojis.yes} Card sent"),
+            Text(content=f"## {emojis.yes} Your side is done"),
             Text(content=(
-                f"Removed one {_card_label(given)}. You have "
-                f"**{remaining}** left.\n\n{waiting}"
+                f"Removed one {_card_label(given)} — you have "
+                f"**{remaining}** left.\n"
+                f"Added {_card_label(received)} to your collection.\n\n"
+                f"{waiting}"
             )),
             Separator(divider=True),
             ActionRow(components=[
@@ -9531,8 +9635,12 @@ def _swap_legs(trade: dict, *, role: str):
     return (given, wanted) if role == "requester" else (wanted, given)
 
 
-# Shared with the owner preview command, so what it sends is exactly what a
-# member receives rather than a second copy of the wording that can drift.
+# RETIRED from live delivery: the arrival DM described the partner's confirm
+# crediting the reader, and under per-side settlement your own tap credits
+# you (no news needed) while the partner's tap no longer touches you. Nothing
+# in this module sends these any more; they stay only because the owner
+# preview command (extensions/commands/cards_preview.py) still imports them.
+# Delete them together with that preview state.
 SWAP_ARRIVED_TITLE = "Your card arrived"
 
 
@@ -9550,14 +9658,14 @@ def _swap_cancel_note(trade: dict, reader_role: str) -> str:
     other_sent = bool(trade.get(f"{other_role}_confirmed_at"))
     if reader_sent:
         return (
-            "You already confirmed you sent your card, so one copy stays "
-            "removed from your collection. The card you were waiting for "
-            "was not added."
+            "You already confirmed, so your side stays settled: one copy of "
+            "your card stays removed and the card you received stays in "
+            "your collection."
         )
     if other_sent:
         return (
-            "The other player already sent their card. It stays in your "
-            "collection. Your card was not removed."
+            "The other player already settled their own side. Nothing in "
+            "your collection was changed."
         )
     return "No tracked inventory changed."
 
@@ -14350,6 +14458,14 @@ async def _mark_swap_leg_needs_review(
     return current
 
 
+# Both members answering at the same time is legitimate, and the per-trade
+# claim serializes them on the trade document. The loser's tap must LAND once
+# the winner's side is recorded rather than bounce with an error, so the
+# claim is retried briefly while the other role's claim is in flight.
+SWAP_LEG_CLAIM_RETRIES = 10
+SWAP_LEG_CLAIM_RETRY_DELAY = 0.2
+
+
 async def _run_swap_leg_confirmation(
     mongo: MongoClient,
     trade: dict,
@@ -14359,13 +14475,29 @@ async def _run_swap_leg_confirmation(
     record_no_spare: bool,
 ) -> tuple[str, int, dict]:
     """Claim, apply, and audit one side without an untracked write window."""
-    claimed = await _claim_swap_leg(mongo, trade, role=role, now=now)
-    if claimed is None:
+    claimed = None
+    for attempt in range(SWAP_LEG_CLAIM_RETRIES + 1):
+        claimed = await _claim_swap_leg(mongo, trade, role=role, now=now)
+        if claimed is not None:
+            break
         current = await mongo.card_trades.find_one({"_id": trade["_id"]}) or trade
-        return "changed", 0, current
+        progress = _swap_leg_progress(current)
+        other_leg_running = (
+            current.get("status") == "completing"
+            and current.get("completion_kind") == "swap_leg"
+            and progress.get("role") not in (None, role)
+            and not current.get(f"{role}_confirmed_at")
+        )
+        if not other_leg_running or attempt >= SWAP_LEG_CLAIM_RETRIES:
+            return "changed", 0, current
+        # The other side's claim clears within one confirmation round trip;
+        # wait it out and claim from the freshest document.
+        await asyncio.sleep(SWAP_LEG_CLAIM_RETRY_DELAY)
+        trade = current
     try:
         moved, remaining = await _confirm_swap_leg(
-            mongo, claimed, role=role, now=now
+            mongo, claimed, role=role, now=now,
+            settle_without_spare=record_no_spare,
         )
     except _SwapReceiverCreditError as exc:
         review = await _mark_swap_leg_needs_review(
@@ -14375,7 +14507,7 @@ async def _run_swap_leg_confirmation(
             now=datetime.now(timezone.utc),
             phase="receiver_credit_unknown",
             failure_type=type(exc.__cause__ or exc).__name__,
-            giver_debited=True,
+            giver_debited=exc.giver_debited,
             receiver_credit="unknown",
         )
         raise _SwapLegNeedsReview(review) from exc
@@ -14412,6 +14544,25 @@ async def _run_swap_leg_confirmation(
             )
             raise _SwapLegNeedsReview(review) from exc
         return "no_spare", remaining, restored
+
+    other = "holder" if role == "requester" else "requester"
+    if claimed.get(f"{other}_confirmed_at"):
+        # Migration safety: the other side may have confirmed under the OLD
+        # semantics, which left their incoming card reserved and uncredited.
+        # Recording this side will complete the trade and cleanup would then
+        # release their fence WITHOUT the credit, so deliver it now. A side
+        # confirmed under per-side settlement carries no marker: no-op.
+        try:
+            await _settle_stuck_confirmed_side(
+                mongo, claimed, role=other, now=now
+            )
+        except Exception:
+            # Fail soft: the sweeper retries any still-live trade, and a
+            # confirmed tap must not bounce for the partner's residue.
+            _log.exception(
+                "stuck confirmed side settle failed trade=%s role=%s",
+                claimed.get("_id"), other,
+            )
 
     updated = await _record_swap_confirmation(
         mongo, claimed, role=role, now=now
@@ -16545,13 +16696,13 @@ async def cards_swap_sent(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    """Yes, I sent my card. Moves only this side's card."""
+    """Yes, I sent my card. Settles only this side's own account."""
     loaded, problem = await _load_swap_for_confirm(ctx, action_id, mongo=mongo)
     if problem:
         return problem
     trade, role = loaded
-    # The trade stores who the participants were at acceptance. This is the
-    # one action that mutates two inventories, so recheck against the live
+    # The trade stores who the participants were at acceptance. This action
+    # settles the tapper's whole inventory side, so recheck against the live
     # links that the clicking user still owns this tag - the same recheck
     # cancel, decline, and accept already run. Fails closed on link outage.
     account, _inventory, target_problem = await _load_target(
@@ -16601,8 +16752,10 @@ async def cards_swap_sent(
             "set your real count, then try again.",
         )
     other = "holder" if role == "requester" else "requester"
-    # Per the delivery table, a card arriving is a silent standing-post
-    # refresh: no new post, no ping, and the arrival DM stopped.
+    # Per the delivery table, "card_arrived" is a silent standing-post
+    # refresh: no new post, no ping, no DM. Under per-side settlement the
+    # card that arrived is the tapper's own incoming credit, so the post
+    # updates and nobody is told anything they did not just do themselves.
     await _deliver_soon(bot, mongo, updated, event="card_arrived")
     return _swap_sent_view(
         updated, role=role, remaining=remaining,

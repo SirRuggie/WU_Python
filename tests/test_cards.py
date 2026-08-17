@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import math
 import pathlib
 import re
@@ -8381,8 +8382,11 @@ class _ConfirmInventories:
             if not key.startswith("cards."):
                 continue
             have = document.get("cards", {}).get(key.split(".")[1], 1)
-            if isinstance(want, dict) and have < want.get("$gte", 0):
-                return SimpleNamespace(modified_count=0)
+            if isinstance(want, dict):
+                if "$gte" in want and have < want["$gte"]:
+                    return SimpleNamespace(modified_count=0)
+                if "$lt" in want and not have < want["$lt"]:
+                    return SimpleNamespace(modified_count=0)
         for key, value in (update.get("$set") or {}).items():
             if key.startswith("cards."):
                 document.setdefault("cards", {})[key.split(".")[1]] = value
@@ -8409,8 +8413,14 @@ def _agreed_trade():
     return trade
 
 
-def test_confirming_moves_only_your_own_card():
-    """Nobody waits for the other player; that was the whole point."""
+def test_confirming_settles_only_your_own_account():
+    """Your tap settles YOUR whole side and touches nobody else's document.
+
+    Nobody waits for the other player; that was the whole point. The sent
+    card goes out, the promised card comes in, and both of this trade's
+    markers on the tapper's inventory are released - so nothing of theirs
+    is locked while the partner stays quiet.
+    """
     trade = _agreed_trade()
     owner = cards_command._reservation_owner(trade)
     given, wanted = trade["given_card_id"], trade["wanted_card_id"]
@@ -8424,6 +8434,7 @@ def test_confirming_moves_only_your_own_card():
          "trusted_card_ids": trusted, "complete_categories": ready,
          "card_trade_reservations": {given: owner, wanted: owner}},
     ])
+    holder_before = copy.deepcopy(inventories.documents["#HOLDER"])
     mongo = SimpleNamespace(card_inventories=inventories)
 
     moved, remaining = asyncio.run(cards_command._confirm_swap_leg(
@@ -8432,21 +8443,17 @@ def test_confirming_moves_only_your_own_card():
 
     assert moved is True
     assert remaining == 2, "one copy left, not the whole stack"
-    # The card they sent moved to the other side.
-    assert inventories.documents["#HOLDER"]["cards"][given] == cards.OWNED
-    # And the holder's own card has NOT moved: they have not answered yet.
-    assert inventories.documents["#HOLDER"]["cards"][wanted] == 2
-    assert inventories.documents["#ME"]["cards"][wanted] == 0
-    assert inventories.documents["#ME"]["trusted_card_ids"] == trusted
-    assert inventories.documents["#HOLDER"]["trusted_card_ids"] == trusted
-    assert inventories.documents["#ME"]["complete_categories"] == ready
-    assert inventories.documents["#HOLDER"]["complete_categories"] == ready
-    # Only the transferred card is unreserved, on both inventory documents.
-    # The other participant's promised card remains fenced until their leg.
-    for tag in ("#ME", "#HOLDER"):
-        reservations = inventories.documents[tag]["card_trade_reservations"]
-        assert given not in reservations
-        assert wanted in reservations
+    me = inventories.documents["#ME"]
+    # The sent card went out and the promised card came in - on MY document.
+    assert me["cards"][given] == 2
+    assert me["cards"][wanted] == cards.OWNED
+    assert me["trusted_card_ids"] == trusted
+    assert me["complete_categories"] == ready
+    # Nothing of mine stays locked: both of this trade's markers are gone.
+    assert me["card_trade_reservations"] == {}
+    # The partner's document is byte-identical: their side is theirs to
+    # settle, with their own tap.
+    assert inventories.documents["#HOLDER"] == holder_before
 
 
 def test_real_first_leg_hides_only_the_completed_same_owner_account():
@@ -8497,12 +8504,16 @@ def test_real_first_leg_hides_only_the_completed_same_owner_account():
     assert saved["status"] == "ready"
     assert saved["requester_confirmed_at"] == now
     assert "holder_confirmed_at" not in saved
+    # The requester's whole side settled on their own document...
     assert inventories.documents["#ME"]["cards"][given] == cards.OWNED
-    assert inventories.documents["#ME"]["cards"][wanted] == cards.MISSING
-    assert inventories.documents["#HOLDER"]["cards"][given] == cards.OWNED
+    assert inventories.documents["#ME"]["cards"][wanted] == cards.OWNED
+    assert inventories.documents["#ME"]["card_trade_reservations"] == {}
+    # ...and the holder's document was not touched at all.
+    assert inventories.documents["#HOLDER"]["cards"][given] == cards.MISSING
     assert inventories.documents["#HOLDER"]["cards"][wanted] == cards.DUPLICATE
-    for inventory in inventories.documents.values():
-        assert set(inventory["card_trade_reservations"]) == {wanted}
+    assert set(
+        inventories.documents["#HOLDER"]["card_trade_reservations"]
+    ) == {given, wanted}
     assert len([
         row for row in trades.docs.values() if row.get("kind") == "lease"
     ]) == 4, "terminal cleanup must not release the other leg's leases"
@@ -8535,12 +8546,18 @@ def test_real_first_leg_hides_only_the_completed_same_owner_account():
 
 
 def test_confirming_a_card_you_no_longer_hold_moves_nothing():
+    """The interactive no-spare path settles nothing and keeps the locks.
+
+    The member is asked to fix their count and try again, so their side
+    must stay exactly as reserved as before the tap: no debit, no incoming
+    credit, both markers still standing.
+    """
     trade = _agreed_trade()
     owner = cards_command._reservation_owner(trade)
-    given = trade["given_card_id"]
+    given, wanted = trade["given_card_id"], trade["wanted_card_id"]
     inventories = _ConfirmInventories([
-        {"_id": "#ME", "cards": {given: 1},
-         "card_trade_reservations": {given: owner}},
+        {"_id": "#ME", "cards": {given: 1, wanted: 0},
+         "card_trade_reservations": {given: owner, wanted: owner}},
         {"_id": "#HOLDER", "cards": {given: 0},
          "card_trade_reservations": {given: owner}},
     ])
@@ -8551,6 +8568,11 @@ def test_confirming_a_card_you_no_longer_hold_moves_nothing():
     ))
 
     assert moved is False
+    me = inventories.documents["#ME"]
+    assert me["cards"] == {given: 1, wanted: 0}, "nothing settled"
+    assert set(me["card_trade_reservations"]) == {given, wanted}, (
+        "the locks stay for the retry the member was asked to make"
+    )
     assert inventories.documents["#HOLDER"]["cards"][given] == 0
 
 
@@ -8615,6 +8637,176 @@ def test_the_first_confirmation_starts_the_other_sides_clock():
     assert updated["status"] == "ready", "one answer does not finish a swap"
     deadline = writes[0]["$set"]["confirm_deadline_at"]
     assert deadline == now + cards_command.SWAP_CONFIRM_FOR
+
+
+def _per_side_swap_env(*, me_cards, holder_cards, me_marks, holder_marks,
+                       trade_fields=()):
+    now = datetime.now(timezone.utc)
+    trade = _agreed_trade()
+    trade.update({"kind": "trade", "updated_at": now, **dict(trade_fields)})
+    owner = cards_command._reservation_owner(trade)
+    trades = _FakeTradeCollection()
+    trades.docs[trade["_id"]] = dict(trade)
+    trades.docs.update(_lease_documents(trade))
+    inventories = _FakeInventoryCollection([
+        {"_id": "#ME", "guild_id": 1, "cards": dict(me_cards),
+         "card_trade_reservations": {c: owner for c in me_marks}},
+        {"_id": "#HOLDER", "guild_id": 1, "cards": dict(holder_cards),
+         "card_trade_reservations": {c: owner for c in holder_marks}},
+    ])
+    mongo = SimpleNamespace(card_trades=trades, card_inventories=inventories)
+    return trade, trades, inventories, mongo, now
+
+
+def test_both_taps_settle_their_own_sides_and_close_the_swap():
+    """Each tap settles its own account; together they complete the trade.
+
+    Across both accounts exactly one copy of each card moved: the giver of
+    each card lost one, its receiver gained one, no card twice.
+    """
+    trade = _agreed_trade()
+    given, wanted = trade["given_card_id"], trade["wanted_card_id"]
+    trade, trades, inventories, mongo, now = _per_side_swap_env(
+        me_cards={given: cards.DUPLICATE, wanted: cards.MISSING},
+        holder_cards={given: cards.MISSING, wanted: cards.DUPLICATE},
+        me_marks=(given, wanted),
+        holder_marks=(given, wanted),
+    )
+
+    first, _r1, after_first = asyncio.run(
+        cards_command._run_swap_leg_confirmation(
+            mongo, dict(trades.docs[trade["_id"]]), role="requester",
+            now=now, record_no_spare=False,
+        )
+    )
+    # Snapshot now: the fake hands out live documents, and the second tap
+    # will advance this same trade to completed.
+    first_status = after_first["status"]
+    second, _r2, after_second = asyncio.run(
+        cards_command._run_swap_leg_confirmation(
+            mongo, dict(trades.docs[trade["_id"]]), role="holder",
+            now=now, record_no_spare=False,
+        )
+    )
+
+    assert (first, second) == ("moved", "moved")
+    assert first_status == "ready", "one answer does not finish a swap"
+    assert after_second["status"] == "completed"
+    me = inventories.documents["#ME"]
+    holder = inventories.documents["#HOLDER"]
+    assert me["cards"] == {given: cards.OWNED, wanted: cards.OWNED}
+    assert holder["cards"] == {given: cards.OWNED, wanted: cards.OWNED}
+    # Exactly one copy of each card moved across the two accounts.
+    assert me["cards"][given] + holder["cards"][given] == cards.DUPLICATE
+    assert me["cards"][wanted] + holder["cards"][wanted] == cards.DUPLICATE
+    assert me["card_trade_reservations"] == {}
+    assert holder["card_trade_reservations"] == {}
+    # Completion ran the real cleanup: the four leases are gone.
+    assert not [
+        row for row in trades.docs.values() if row.get("kind") == "lease"
+    ]
+
+
+def test_a_new_style_tap_settles_an_old_style_half_confirmed_trade():
+    """Migration: no re-credit for the partner, no stranded credit for the
+    old-style confirmer.
+
+    The requester confirmed under the OLD semantics: their sent card moved
+    on BOTH accounts back then, their incoming card is still reserved and
+    uncredited on their own inventory. The holder's new-style tap must
+    no-op-credit the card the old confirm already delivered, and the trade
+    completing must deliver the requester's stuck credit rather than let
+    cleanup release its fence uncredited.
+    """
+    base = _agreed_trade()
+    given, wanted = base["given_card_id"], base["wanted_card_id"]
+    trade, trades, inventories, mongo, now = _per_side_swap_env(
+        me_cards={given: cards.DUPLICATE, wanted: cards.MISSING},
+        # The old-style credit put `given` at OWNED; the member later
+        # hand-corrected the count to 3, which must survive untouched.
+        holder_cards={given: 3, wanted: cards.DUPLICATE},
+        me_marks=(wanted,),
+        holder_marks=(wanted,),
+        trade_fields={
+            "requester_confirmed_at": (
+                datetime.now(timezone.utc) - timedelta(days=1)
+            ),
+        },
+    )
+
+    outcome, _remaining, updated = asyncio.run(
+        cards_command._run_swap_leg_confirmation(
+            mongo, dict(trades.docs[trade["_id"]]), role="holder",
+            now=now, record_no_spare=False,
+        )
+    )
+
+    assert outcome == "moved"
+    assert updated["status"] == "completed"
+    holder = inventories.documents["#HOLDER"]
+    me = inventories.documents["#ME"]
+    # The holder's own side settled, and the already-delivered credit was
+    # a no-op: the hand-set count is untouched.
+    assert holder["cards"] == {given: 3, wanted: cards.OWNED}
+    assert holder["card_trade_reservations"] == {}
+    # The old-style confirmer's stuck incoming credit was delivered before
+    # completion cleanup could release its fence.
+    assert me["cards"][wanted] == cards.OWNED
+    assert me["cards"][given] == cards.DUPLICATE, (
+        "the old-style side's debit already happened; never twice"
+    )
+    assert me["card_trade_reservations"] == {}
+
+
+def test_simultaneous_taps_serialize_and_both_land(monkeypatch):
+    """Two members answering at once: the claim serializes on the trade
+    document, and the second tap retries until it lands rather than
+    bouncing with an error."""
+    monkeypatch.setattr(cards_command, "SWAP_LEG_CLAIM_RETRY_DELAY", 0.02)
+    base = _agreed_trade()
+    given, wanted = base["given_card_id"], base["wanted_card_id"]
+    trade, trades, inventories, mongo, now = _per_side_swap_env(
+        me_cards={given: cards.DUPLICATE, wanted: cards.MISSING},
+        holder_cards={given: cards.MISSING, wanted: cards.DUPLICATE},
+        me_marks=(given, wanted),
+        holder_marks=(given, wanted),
+    )
+
+    async def scenario():
+        claimed = await cards_command._claim_swap_leg(
+            mongo, dict(trades.docs[trade["_id"]]), role="requester", now=now
+        )
+        assert claimed is not None
+        holder_task = asyncio.ensure_future(
+            cards_command._run_swap_leg_confirmation(
+                mongo, dict(trades.docs[trade["_id"]]), role="holder",
+                now=now, record_no_spare=False,
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert not holder_task.done(), (
+            "the second tap must wait out the first claim, not bounce"
+        )
+        moved, _remaining = await cards_command._confirm_swap_leg(
+            mongo, claimed, role="requester", now=now
+        )
+        assert moved is True
+        await cards_command._record_swap_confirmation(
+            mongo, claimed, role="requester", now=now
+        )
+        return await holder_task
+
+    outcome, _remaining, updated = asyncio.run(scenario())
+
+    assert outcome == "moved", "the retried claim landed as a real move"
+    assert updated["status"] == "completed"
+    me = inventories.documents["#ME"]
+    holder = inventories.documents["#HOLDER"]
+    # No interference: each side settled its own account exactly once.
+    assert me["cards"] == {given: cards.OWNED, wanted: cards.OWNED}
+    assert holder["cards"] == {given: cards.OWNED, wanted: cards.OWNED}
+    assert me["card_trade_reservations"] == {}
+    assert holder["card_trade_reservations"] == {}
 
 
 def test_the_two_back_buttons_do_not_wear_the_same_mark():
@@ -9653,6 +9845,44 @@ def test_my_trades_other_confirmation_does_not_hide_my_pending_action():
     }
 
     assert "cards_swap_sent:trade-a|requester" in ids
+
+
+NUDGE = "They already confirmed and have been waiting."
+
+
+def test_my_trades_nudges_only_the_unconfirmed_side():
+    """The owner's prompt: the one side a half-confirmed swap still waits
+    on gets a bold nudge; the confirmed side and fresh swaps get none."""
+    me = Account(
+        tag="#ME", name="Member", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    holder = Account(
+        tag="#HOLDER", name="Holder", clan_tag="#HOME",
+        clan_name="Home Clan", town_hall=18,
+    )
+    trade = _trade_document()
+    trade.update({
+        "status": "ready",
+        "requester_discord_id": 111,
+        "holder_discord_id": 222,
+    })
+
+    # Nobody confirmed yet: no nudge for either side.
+    assert NUDGE not in _view_text(cards_command._trades_view(me, [trade]))
+    assert NUDGE not in _view_text(cards_command._trades_view(holder, [trade]))
+
+    trade["holder_confirmed_at"] = datetime.now(timezone.utc)
+    waiting_view = cards_command._trades_view(me, [trade])
+    waiting_text = _view_text(waiting_view)
+    assert f"**{NUDGE}**" in waiting_text, "bold - this row exists to be acted on"
+    assert "Tap **I sent my card**" in waiting_text
+    assert any(
+        str(node.get("custom_id")) == "cards_swap_sent:trade-a|requester"
+        for node in _view_nodes(waiting_view)
+    ), "the nudge sits next to the button it names"
+    # The side that already confirmed is never nudged about itself.
+    assert NUDGE not in _view_text(cards_command._trades_view(holder, [trade]))
 
 
 @pytest.mark.parametrize(
@@ -12828,20 +13058,21 @@ def test_writing_the_same_number_still_confirms_the_count(monkeypatch):
     assert "wizard" in updated["count_confirmed_card_ids"]
 
 
-def test_the_receiver_is_credited_even_when_their_fence_is_gone():
-    """moved=True must mean both legs, not just the giver's decrement.
+def test_the_incoming_credit_lands_even_when_its_fence_is_gone():
+    """moved=True must mean the whole side, not just the decrement.
 
-    The receiver update was fire-and-forget: a lost receiver fence meant the
-    giver lost a copy, the bot said "it is now in your collection", and the
-    receiver never got the card.
+    A recovery pass can legitimately release the incoming card's marker
+    before the member taps. Refusing the credit then would lose the card
+    they are owed, so the credit is guarded on the count alone.
     """
     trade = _agreed_trade()
     owner = cards_command._reservation_owner(trade)
-    given = trade["given_card_id"]
+    given, wanted = trade["given_card_id"], trade["wanted_card_id"]
     inventories = _FakeInventoryCollection([
-        {"_id": "#ME", "guild_id": 1, "cards": {given: 3},
+        # The incoming card's fence is already gone and the card is missing.
+        {"_id": "#ME", "guild_id": 1,
+         "cards": {given: 3, wanted: cards.MISSING},
          "card_trade_reservations": {given: owner}},
-        # The receiver's fence is already gone and the card is missing.
         {"_id": "#HOLDER", "guild_id": 1, "cards": {given: cards.MISSING},
          "card_trade_reservations": {}},
     ])
@@ -12853,28 +13084,38 @@ def test_the_receiver_is_credited_even_when_their_fence_is_gone():
 
     assert moved is True
     assert remaining == 2
-    assert inventories.documents["#HOLDER"]["cards"][given] == cards.OWNED
+    assert inventories.documents["#ME"]["cards"][wanted] == cards.OWNED
+    assert inventories.documents["#HOLDER"]["cards"][given] == cards.MISSING, (
+        "the partner's account is never written by somebody else's tap"
+    )
 
 
-def test_the_receiver_fallback_never_downgrades_a_hand_set_count():
-    """If the receiver already recorded copies, the credit must not shrink them."""
+def test_an_already_owned_incoming_card_is_not_credited_twice():
+    """The migration guard: an old-style partner confirm already delivered
+    the incoming card. The no-op credit must not shrink a hand-set count,
+    and it still releases this trade's marker so nothing stays locked."""
     trade = _agreed_trade()
     owner = cards_command._reservation_owner(trade)
-    given = trade["given_card_id"]
+    given, wanted = trade["given_card_id"], trade["wanted_card_id"]
     inventories = _FakeInventoryCollection([
-        {"_id": "#ME", "guild_id": 1, "cards": {given: 3},
-         "card_trade_reservations": {given: owner}},
-        {"_id": "#HOLDER", "guild_id": 1, "cards": {given: 4},
+        {"_id": "#ME", "guild_id": 1, "cards": {given: 3, wanted: 4},
+         "card_trade_reservations": {given: owner, wanted: owner}},
+        {"_id": "#HOLDER", "guild_id": 1, "cards": {},
          "card_trade_reservations": {}},
     ])
     mongo = SimpleNamespace(card_inventories=inventories)
 
-    moved, _remaining = asyncio.run(cards_command._confirm_swap_leg(
+    moved, remaining = asyncio.run(cards_command._confirm_swap_leg(
         mongo, trade, role="requester", now=datetime.now(timezone.utc)
     ))
 
     assert moved is True
-    assert inventories.documents["#HOLDER"]["cards"][given] == 4
+    assert remaining == 2
+    me = inventories.documents["#ME"]
+    assert me["cards"][wanted] == 4, "a no-op credit never downgrades"
+    assert me["card_trade_reservations"] == {}, (
+        "the no-op credit still releases the marker"
+    )
 
 
 def _fully_trusted_swap_inventory(tag, *, owner, given, wanted, values):
@@ -12898,40 +13139,57 @@ def _fully_trusted_swap_inventory(tag, *, owner, given, wanted, values):
 
 
 class _ReceiverCreditFailureInventories(_FakeInventoryCollection):
-    """Fail once before the receiver credit while recording cleanup order."""
+    """Fail once at the incoming-credit write while recording cleanup order.
 
-    def __init__(self, documents, *, giver, receiver, card_id, other_card_id):
+    Under per-side settlement the credit writes the SAME document as the
+    debit (the confirmer's own), so the injected failure targets the write
+    that sets the confirmer's incoming card.
+    """
+
+    def __init__(self, documents, *, giver, receiver, card_id, other_card_id,
+                 expect_debited=True):
         super().__init__(documents)
         self.giver = giver
         self.receiver = receiver
         self.card_id = card_id
         self.other_card_id = other_card_id
+        self.expect_debited = expect_debited
         self.failed_credit = False
         self.giver_debits = 0
         self.events = []
 
     async def update_one(self, query, update, upsert=False):
-        receiver_credit = (
-            query.get("_id") == self.receiver
-            and f"cards.{self.card_id}" in (update.get("$set") or {})
-            and bool(query.get("$or"))
+        incoming_credit = (
+            query.get("_id") == self.giver
+            and f"cards.{self.other_card_id}" in (update.get("$set") or {})
         )
-        if receiver_credit and not self.failed_credit:
+        if incoming_credit and not self.failed_credit:
             self.failed_credit = True
-            self.events.append("receiver_credit_failed")
+            self.events.append("incoming_credit_failed")
             # The exception is injected at the exact blocker boundary: the
-            # giver write committed, but the receiver write did not.
-            assert self.documents[self.giver]["cards"][self.card_id] == 2
-            assert self.card_id not in self.documents[self.giver][
-                "card_trade_reservations"
-            ]
+            # debit's outcome is known, but the same-document credit write's
+            # is not.
+            if self.expect_debited:
+                assert self.documents[self.giver]["cards"][self.card_id] == 2
+                assert self.card_id not in self.documents[self.giver][
+                    "card_trade_reservations"
+                ]
+            else:
+                # The no-spare settle: the guarded debit refused, so the
+                # count and its marker are untouched when the credit runs.
+                assert self.documents[self.giver]["cards"][self.card_id] == (
+                    cards.OWNED
+                )
+                assert self.card_id in self.documents[self.giver][
+                    "card_trade_reservations"
+                ]
             assert self.other_card_id in self.documents[self.giver][
                 "card_trade_reservations"
             ]
             assert set(self.documents[self.receiver]["card_trade_reservations"]) == {
                 self.card_id, self.other_card_id,
             }
-            raise RuntimeError("injected receiver write failure")
+            raise RuntimeError("injected credit write failure")
 
         result = await super().update_one(query, update, upsert=upsert)
         if not getattr(result, "modified_count", 0):
@@ -12949,7 +13207,9 @@ class _ReceiverCreditFailureInventories(_FakeInventoryCollection):
         return result
 
 
-def _review_failure_swap_fixture(*, trade_id="trade-review-failure"):
+def _review_failure_swap_fixture(
+    *, trade_id="trade-review-failure", giver_spares=3, expect_debited=True
+):
     trade = _agreed_trade()
     trade.update({
         "_id": trade_id,
@@ -12962,7 +13222,7 @@ def _review_failure_swap_fixture(*, trade_id="trade-review-failure"):
         [
             _fully_trusted_swap_inventory(
                 "#ME", owner=owner, given=given, wanted=wanted,
-                values={given: 3, wanted: cards.MISSING},
+                values={given: giver_spares, wanted: cards.MISSING},
             ),
             _fully_trusted_swap_inventory(
                 "#HOLDER", owner=owner, given=given, wanted=wanted,
@@ -12973,6 +13233,7 @@ def _review_failure_swap_fixture(*, trade_id="trade-review-failure"):
         receiver="#HOLDER",
         card_id=given,
         other_card_id=wanted,
+        expect_debited=expect_debited,
     )
     trades = _FakeTradeCollection()
     trades.docs[trade["_id"]] = dict(trade)
@@ -12983,7 +13244,13 @@ def _review_failure_swap_fixture(*, trade_id="trade-review-failure"):
 
 
 def test_receiver_exception_enters_durable_review_without_a_second_debit():
-    """The one-sided write blocker is fenced, auditable, and fail closed."""
+    """The per-side write blocker is fenced, auditable, and fail closed.
+
+    The debit landed but the same-document incoming-credit write's outcome
+    is unknown - a before-commit failure and a lost acknowledgement look
+    identical - so the leg nets to needs_review and both inventories fail
+    closed, exactly as before per-side settlement.
+    """
     from extensions.tasks import cards_deadlines as sweeper
 
     trade, mongo = _review_failure_swap_fixture()
@@ -13012,8 +13279,11 @@ def test_receiver_exception_enters_durable_review_without_a_second_debit():
     requester = mongo.card_inventories.documents["#ME"]
     holder = mongo.card_inventories.documents["#HOLDER"]
     assert requester["cards"][given] == 2
+    assert requester["cards"][wanted] == cards.MISSING, (
+        "an exception before the credit write must not invent a credit"
+    )
     assert holder["cards"][given] == cards.MISSING, (
-        "an exception before the receiver write must not invent a credit"
+        "the partner's document is never written by somebody else's tap"
     )
     assert mongo.card_inventories.giver_debits == 1
 
@@ -13063,6 +13333,40 @@ def test_receiver_exception_enters_durable_review_without_a_second_debit():
     ))
     assert closed == 0
     assert saved["status"] == "needs_review"
+
+
+def test_a_no_spare_settle_with_unknown_credit_fails_closed():
+    """The deadline settle's credit is the trailing write; an unknown
+    outcome nets to needs_review recording that NOTHING was debited."""
+    trade, mongo = _review_failure_swap_fixture(
+        trade_id="trade-no-spare-credit",
+        # The guarded debit refuses before the credit write explodes.
+        giver_spares=cards.OWNED,
+        expect_debited=False,
+    )
+    given = trade["given_card_id"]
+
+    with pytest.raises(cards_command._SwapLegNeedsReview):
+        asyncio.run(cards_command._run_swap_leg_confirmation(
+            mongo,
+            trade,
+            role="requester",
+            now=datetime.now(timezone.utc),
+            record_no_spare=True,
+        ))
+
+    saved = mongo.card_trades.docs[trade["_id"]]
+    assert saved["status"] == "needs_review"
+    assert saved["swap_leg_progress"]["phase"] == "receiver_credit_unknown"
+    assert saved["swap_leg_progress"]["giver_debited"] is False, (
+        "the audit must not claim a debit the spare guard refused"
+    )
+    assert saved["swap_leg_progress"]["receiver_credit"] == "unknown"
+    assert "requester_confirmed_at" not in saved
+    assert mongo.card_inventories.documents["#ME"]["cards"][given] == (
+        cards.OWNED
+    )
+    assert mongo.card_inventories.giver_debits == 0
 
 
 def test_expired_claimed_swap_leg_recovers_to_review_not_ordinary_expiry():
@@ -13166,8 +13470,8 @@ def test_i_sent_it_rechecks_that_the_account_is_still_yours(monkeypatch):
     assert result is problem
 
 
-def test_cancelling_after_one_leg_moved_tells_the_truth():
-    """"No tracked inventory changed" is false once one card moved."""
+def test_cancelling_after_one_side_settled_tells_the_truth():
+    """"No tracked inventory changed" is false once one side settled."""
     trade = _agreed_trade()
     assert cards_command._swap_cancel_note(trade, "requester") == (
         "No tracked inventory changed."
@@ -13176,10 +13480,12 @@ def test_cancelling_after_one_leg_moved_tells_the_truth():
     trade["requester_confirmed_at"] = datetime.now(timezone.utc)
     mine = cards_command._swap_cancel_note(trade, "requester")
     theirs = cards_command._swap_cancel_note(trade, "holder")
-    assert "stays removed from your collection" in mine
-    assert "was not added" in mine
-    assert "stays in your collection" in theirs
-    assert "Your card was not removed" in theirs
+    # The confirmed reader's whole side settled: debit AND incoming credit.
+    assert "your side stays settled" in mine
+    assert "stays removed" in mine
+    assert "stays in your collection" in mine
+    # The unconfirmed reader was never touched by the partner's tap.
+    assert "Nothing in your collection was changed" in theirs
     assert "No tracked inventory changed" not in mine
     assert "No tracked inventory changed" not in theirs
 
@@ -13187,7 +13493,8 @@ def test_cancelling_after_one_leg_moved_tells_the_truth():
     view = cards_command._swap_cancel_check_view(trade, role="holder")
     text = _view_text(view)
     assert "frees both cards" not in text
-    assert "stays in your collection" in text
+    assert "Their side stays settled" in text
+    assert "Nothing in your collection changes" in text
 
 
 def test_a_gem_answer_cannot_flip_or_be_replayed(monkeypatch):
@@ -13613,6 +13920,13 @@ def test_swap_sent_view_promises_seven_days_not_twenty_four_hours():
     text = _view_text(view)
     assert "7 days" in text
     assert "24 hours" not in text
+    # Per-side settlement: the tap already delivered the incoming card, so
+    # the view says so and no longer promises a future automatic add.
+    assert "Added" in text and "to your collection" in text
+    assert "Nothing of yours is waiting" in text
+    assert "added for you automatically" not in text, (
+        "the old wait-for-them promise is retired"
+    )
 
 
 # --- 2026-08-14 live smoke-test follow-up -----------------------------------

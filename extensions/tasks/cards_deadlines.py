@@ -5,20 +5,25 @@ held in memory. That is deliberate: a restart resumes exactly where it left
 off, and a bot that was down for two days processes everything overdue on its
 first pass rather than losing it.
 
-Seven jobs, in the order a trade meets them:
+Eight jobs, in the order a trade meets them:
 
 1. A proposal nobody answers within 12 hours closes itself, and the holder's
    consecutive ignored-request count goes up. Its standing post on the trade
    board collapses to the closed form; nobody is DMed about it.
 2. Two ignored in a row asks the holder whether they are still trading.
 3. No answer to that within 24 hours hides their cards. Silence is a no.
-4. Once one player confirms they sent their card, the other has 7 days before
-   theirs is deducted for them.
-5. A swap NEITHER player ever confirms is closed after 7 days, because nothing
+4. A confirmed side still owed its incoming credit is settled silently:
+   the one-time migration for trades that were mid-flight when per-side
+   settlement shipped, and the standing safety net for any future
+   half-settled side. Runs every pass; fenced and idempotent.
+5. Once one player confirms they sent their card, the other has 7 days
+   before their whole side is settled for them: their card is deducted if a
+   spare remains, their incoming card is credited, their locks are released.
+6. A swap NEITHER player ever confirms is closed after 7 days, because nothing
    else would ever release those two cards.
-6. An open request (want-ad) nobody claims within 48 hours expires. Its post
+7. An open request (want-ad) nobody claims within 48 hours expires. Its post
    collapses to the closed form; no DM, no ping, no new message.
-7. A claim that crashed mid-flight - stuck in "claiming" past its two-minute
+8. A claim that crashed mid-flight - stuck in "claiming" past its two-minute
    claim window - is returned to the board, fenced so a fresh claim survives.
 
 Standing-post edits across one pass are capped by SWEEP_CHANNEL_EDIT_BUDGET.
@@ -69,13 +74,21 @@ PROPOSAL_EXPIRED_DETAIL = (
 AUTO_DEDUCT_TITLE = "Your card was deducted automatically"
 AUTO_DEDUCT_DETAIL_MOVED = (
     "The other player confirmed over 7 days ago. You did not answer.\n"
-    "One copy of your card was removed.\n"
-    "If this is wrong: set your real count in **Update collection**."
+    "One copy of your card was removed. The card you agreed to receive "
+    "was added.\n"
+    "If this is wrong: set your real counts in **Update collection**."
 )
 AUTO_DEDUCT_DETAIL_NO_SPARE = (
     "The other player confirmed over 7 days ago.\n"
-    "Your collection no longer showed a spare, so nothing was changed."
+    "Your collection showed no spare, so your card was not removed. The "
+    "card you agreed to receive was added.\n"
+    "If this is wrong: set your real counts in **Update collection**."
 )
+# RETIRED from live sends: under per-side settlement the waiting player's
+# incoming card is credited by their OWN confirmation, so the silent side
+# running out of spares no longer changes anything for them and there is
+# nothing to break the news about. The constants stay only because the owner
+# preview command still imports them; delete them together.
 SWAP_CLOSED_OWED_TITLE = "Card swap closed"
 SWAP_CLOSED_OWED_DETAIL = (
     "The other player never confirmed.\n"
@@ -271,8 +284,63 @@ async def _recover_interrupted_completions(mongo, bot, *, now) -> int:
     return recovered
 
 
+async def _settle_confirmed_sides(mongo, bot, *, now) -> int:
+    """Job 4: a confirmed side still owed its incoming credit is settled.
+
+    Old-style confirmations (from before per-side settlement) left the
+    confirmer's incoming card reserved on their own inventory until the
+    partner answered - the exact "in a trade · 0 for a week" report this
+    change exists for. The partner's tap no longer touches the confirmer, so
+    this pass delivers the stuck credit instead: for every live trade with a
+    confirmed role whose inventory still carries this trade's marker on
+    their incoming card, credit below OWNED (fenced on the marker + owner)
+    and drop both of that side's markers. Idempotent - a second pass matches
+    nothing - and doubling as the standing safety net for any future
+    half-settled side, which self-heals within one sweep interval.
+
+    Silent by policy: zero DMs, zero posts. The member's own tap already
+    told them everything, and the credit is the bot catching up with it.
+    """
+    del bot
+    try:
+        due = await mongo.card_trades.find({
+            "kind": "trade",
+            "status": {"$in": list(cards_command.SWAP_LIVE_STATUSES)},
+            "$or": [
+                {"requester_confirmed_at": {"$exists": True}},
+                {"holder_confirmed_at": {"$exists": True}},
+            ],
+        }).to_list(length=BATCH)
+    except Exception as exc:
+        print(f"[Cards Deadlines] confirmed-side query failed: "
+              f"{type(exc).__name__}: {exc}")
+        return 0
+
+    settled = 0
+    for trade in due:
+        for role in ("requester", "holder"):
+            if not trade.get(f"{role}_confirmed_at"):
+                continue
+            try:
+                if await cards_command._settle_stuck_confirmed_side(
+                    mongo, trade, role=role, now=now
+                ):
+                    settled += 1
+            except Exception as exc:
+                print(f"[Cards Deadlines] confirmed-side settle failed "
+                      f"trade={trade.get('_id')} role={role}: "
+                      f"{type(exc).__name__}: {exc}")
+    return settled
+
+
 async def _finish_one_sided_swaps(mongo, bot, *, now) -> int:
-    """Job 4: one player confirmed, the other never did."""
+    """Job 5: one player confirmed, the other never did.
+
+    The silent side's whole account is settled FOR them: their sent card is
+    deducted only if a spare still exists, their incoming card is credited
+    if still below OWNED, and their locks are released either way. The trade
+    then completes exactly like a tapped confirmation would.
+    """
     cutoff = now - cards_command.SWAP_CONFIRM_FOR
     try:
         due = await mongo.card_trades.find({
@@ -333,18 +401,10 @@ async def _finish_one_sided_swaps(mongo, bot, *, now) -> int:
                             cards_command.GOLD_ACCENT if moved else None
                         ),
                     )
-                if not moved:
-                    # The player who confirmed was promised the other card
-                    # would be added automatically. It could not be, and
-                    # staying silent about that breaks the promise.
-                    other = "holder" if role == "requester" else "requester"
-                    other_id = trade.get(f"{other}_discord_id")
-                    if other_id:
-                        await cards_command._notify_trade_status(
-                            bot, updated, recipient_id=int(other_id),
-                            title=SWAP_CLOSED_OWED_TITLE,
-                            detail=SWAP_CLOSED_OWED_DETAIL,
-                        )
+                # The old "owed player" DM is gone: under per-side
+                # settlement the waiting player's incoming card was credited
+                # by their OWN confirmation, so the silent side having no
+                # spare changes nothing for them.
         except Exception as exc:
             print(f"[Cards Deadlines] confirm settle failed trade="
                   f"{trade.get('_id')}: {type(exc).__name__}: {exc}")
@@ -352,7 +412,7 @@ async def _finish_one_sided_swaps(mongo, bot, *, now) -> int:
 
 
 async def _close_abandoned_swaps(mongo, bot, *, now) -> int:
-    """Job 5: neither player ever confirmed, so nothing else can free these."""
+    """Job 6: neither player ever confirmed, so nothing else can free these."""
     try:
         due = await mongo.card_trades.find({
             "kind": "trade",
@@ -406,7 +466,7 @@ async def _close_abandoned_swaps(mongo, bot, *, now) -> int:
 
 
 async def _expire_open_requests(mongo, bot, *, now, edit_budget) -> int:
-    """Job 6: a want-ad nobody claimed within 48 hours closes itself.
+    """Job 7: a want-ad nobody claimed within 48 hours closes itself.
 
     NO DM, NO ping, NO new post - a want-ad expiring after 48 quiet hours is
     the definition of nobody-needs-to-know. The public post silently
@@ -464,7 +524,7 @@ async def _expire_open_requests(mongo, bot, *, now, edit_budget) -> int:
 
 
 async def _recover_stalled_claims(mongo, bot, *, now) -> int:
-    """Job 7: return a claim that crashed mid-flight to the board.
+    """Job 8: return a claim that crashed mid-flight to the board.
 
     `_perform_open_request_claim` writes claim_until at the claiming CAS for
     exactly this recovery: a crash between "claiming" and either "claimed"
@@ -575,6 +635,9 @@ async def sweep_once() -> None:
     recovered = await _recover_interrupted_completions(
         mongo_client, bot_instance, now=now
     )
+    sides_settled = await _settle_confirmed_sides(
+        mongo_client, bot_instance, now=now
+    )
     settled = await _finish_one_sided_swaps(mongo_client, bot_instance, now=now)
     closed = await _close_abandoned_swaps(mongo_client, bot_instance, now=now)
     requests_expired = await _expire_open_requests(
@@ -583,10 +646,11 @@ async def sweep_once() -> None:
     reclaimed = await _recover_stalled_claims(
         mongo_client, bot_instance, now=now
     )
-    if (expired or paused or recovered or settled or closed
+    if (expired or paused or recovered or sides_settled or settled or closed
             or requests_expired or reclaimed or drained):
         print(f"[Cards Deadlines] expired={expired} paused={paused} "
-              f"review_recovered={recovered} auto_confirmed={settled} "
+              f"review_recovered={recovered} sides_settled={sides_settled} "
+              f"auto_confirmed={settled} "
               f"abandoned={closed} requests_expired={requests_expired} "
               f"claims_reclaimed={reclaimed} edits_drained={drained}")
 

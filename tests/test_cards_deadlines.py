@@ -98,7 +98,13 @@ def _write(doc, path, value):
 
 def _matches(doc, query) -> bool:
     for key, want in query.items():
-        if key in ("$or", "$and"):
+        if key == "$or":
+            if not any(_matches(doc, branch) for branch in want):
+                return False
+            continue
+        if key == "$and":
+            if not all(_matches(doc, branch) for branch in want):
+                return False
             continue
         have = doc
         for part in key.split("."):
@@ -107,6 +113,8 @@ def _matches(doc, query) -> bool:
             if "$lte" in want and not (have is not None and have <= want["$lte"]):
                 return False
             if "$gte" in want and not (have is not None and have >= want["$gte"]):
+                return False
+            if "$lt" in want and not (have is not None and have < want["$lt"]):
                 return False
             if "$in" in want and have not in want["$in"]:
                 return False
@@ -289,10 +297,19 @@ def test_a_quiet_side_is_auto_confirmed_after_seven_days(monkeypatch):
 
     asyncio.run(sweeper.sweep_once())
 
-    # The holder never answered, so their card moved for them.
+    # The holder never answered, so their WHOLE side settled for them:
+    # their card was deducted and the card they agreed to receive came in.
     assert inventories.docs["#HOLDER"]["cards"]["balloon"] == 2
+    assert inventories.docs["#HOLDER"]["cards"]["electro_dragon"] == (
+        cards_command.OWNED
+    )
+    assert inventories.docs["#HOLDER"]["card_trade_reservations"] == {}
+    # The requester's stuck old-style incoming credit was delivered by the
+    # confirmed-side sweeper, and their lock released with it.
     assert inventories.docs["#ME"]["cards"]["balloon"] == cards_command.OWNED
+    assert inventories.docs["#ME"]["card_trade_reservations"] == {}
     assert trades.docs["t9"]["holder_confirmed_at"] is not None
+    assert trades.docs["t9"]["status"] == "completed"
     text = " ".join(str(dm) for dm in rest.dms)
     assert "deducted automatically" in text
 
@@ -349,12 +366,17 @@ def test_the_confirm_window_is_seven_days_not_one():
     assert cards_command.IGNORED_BEFORE_CHECKIN == 2
 
 
-def test_a_no_spare_auto_settle_tells_the_owed_player_too(monkeypatch):
-    """Closing without the card is the design; silence about it was the bug.
+def test_a_no_spare_auto_settle_still_settles_the_side_and_stays_quiet(
+    monkeypatch,
+):
+    """No spare on the silent side no longer touches the waiting player.
 
-    The waiting player was promised the card would be added automatically.
-    When the silent side no longer shows a spare nothing can move, so the
-    close must say so to BOTH players and record which leg never moved.
+    The silent side's debit is refused by the spare guard, but their side
+    still settles: their incoming card is credited, their locks release, and
+    the trade completes recording the unmoved leg. The waiting player's own
+    confirmation is what credits THEIR card (delivered by the confirmed-side
+    sweeper for old-style confirms), so the old "was not added" DM to them
+    is retired - there is nothing left to break the news about.
     """
     now = datetime.now(timezone.utc)
     owner = "t10:tok"
@@ -384,16 +406,124 @@ def test_a_no_spare_auto_settle_tells_the_owed_player_too(monkeypatch):
 
     asyncio.run(sweeper.sweep_once())
 
-    # Nothing moved in either collection.
+    # The refused debit: the holder's last copy stays theirs.
     assert inventories.docs["#HOLDER"]["cards"]["balloon"] == 1
-    assert inventories.docs["#ME"]["cards"]["balloon"] == 0
+    # But their side still settles: incoming credit and released locks.
+    assert inventories.docs["#HOLDER"]["cards"]["electro_dragon"] == (
+        cards_command.OWNED
+    )
+    assert inventories.docs["#HOLDER"]["card_trade_reservations"] == {}
+    # The waiting player's card came from their own confirmation, not from
+    # the silent side's spare situation.
+    assert inventories.docs["#ME"]["cards"]["balloon"] == cards_command.OWNED
+    assert inventories.docs["#ME"]["card_trade_reservations"] == {}
     # The trade still closes - that is the documented design - but the
     # document records that this leg never moved.
     assert trades.docs["t10"]["status"] == "completed"
     assert trades.docs["t10"]["holder_auto_settled"] == "no_spare"
     text = " ".join(str(dm) for dm in rest.dms)
-    assert "nothing was changed" in text
-    assert "was not added" in text, "the owed player is told as well"
+    assert "your card was not removed" in text, "the silent side is told"
+    assert "was not added" not in text, "the owed-player DM is retired"
+    assert all(dm.get("channel") == "dm-222" for dm in rest.dms), (
+        "only the auto-settled side is DMed"
+    )
+
+
+def _half_confirmed_old_style(trade_id="t11"):
+    """A live trade whose requester confirmed under the OLD semantics.
+
+    Their sent card already moved on both accounts back then, so both
+    electro_dragon markers are gone - but their incoming card (balloon) is
+    still reserved on their inventory and was never credited. This is the
+    exact mid-flight shape the migration sweeper exists for.
+    """
+    now = datetime.now(timezone.utc)
+    owner = f"{trade_id}:tok"
+    trades = _Trades([{
+        "_id": trade_id, "kind": "trade", "status": "ready", "guild_id": 1,
+        "reservation_token": "tok",
+        "wanted_card_id": "balloon", "given_card_id": "electro_dragon",
+        "requester_tag": "#ME", "requester_name": "Requester",
+        "requester_discord_id": 111,
+        "holder_tag": "#HOLDER", "holder_name": "Holder",
+        "holder_discord_id": 222,
+        "requester_confirmed_at": now - timedelta(hours=2),
+        # The partner still has days: only the migration job may act.
+        "confirm_deadline_at": now + timedelta(days=6),
+    }])
+    inventories = _Inventories([
+        {"_id": "#ME", "guild_id": 1,
+         "cards": {"electro_dragon": 2, "balloon": 0},
+         "card_trade_reservations": {"balloon": owner}},
+        {"_id": "#HOLDER", "guild_id": 1,
+         "cards": {"balloon": 3, "electro_dragon": 1},
+         "card_trade_reservations": {"balloon": owner}},
+    ])
+    return trades, inventories
+
+
+def test_a_stuck_old_style_credit_is_delivered_silently(monkeypatch):
+    """The migration sweeper frees the member who did everything right.
+
+    The live report: a member confirmed, their sent card moved, and their
+    incoming card sat at "in a trade · 0" for days because the partner went
+    quiet. The sweeper credits it (fenced on the marker + owner, guarded
+    below OWNED), releases their locks, and tells nobody - their own tap
+    already said everything.
+    """
+    trades, inventories = _half_confirmed_old_style()
+    rest = _install(monkeypatch, trades, inventories)
+
+    asyncio.run(sweeper.sweep_once())
+
+    me = inventories.docs["#ME"]
+    assert me["cards"]["balloon"] == cards_command.OWNED
+    assert me["card_trade_reservations"] == {}
+    assert me["inventory_revision"] == 1
+    # The quiet partner is untouched: their deadline has not passed.
+    assert inventories.docs["#HOLDER"]["cards"]["balloon"] == 3
+    assert inventories.docs["#HOLDER"]["cards"]["electro_dragon"] == 1
+    assert "balloon" in inventories.docs["#HOLDER"]["card_trade_reservations"]
+    assert trades.docs["t11"]["status"] == "ready"
+    # Zero DMs, zero posts: the silent policy.
+    assert rest.dms == []
+    assert rest.edits == []
+    assert rest.fetched == []
+
+
+def test_the_confirmed_side_settle_is_idempotent(monkeypatch):
+    """Running the sweeper twice changes nothing the second time."""
+    trades, inventories = _half_confirmed_old_style()
+    _install(monkeypatch, trades, inventories)
+
+    asyncio.run(sweeper.sweep_once())
+    first_me = dict(inventories.docs["#ME"])
+    first_holder = dict(inventories.docs["#HOLDER"])
+
+    asyncio.run(sweeper.sweep_once())
+
+    assert inventories.docs["#ME"] == first_me
+    assert inventories.docs["#HOLDER"] == first_holder
+    assert inventories.docs["#ME"]["inventory_revision"] == 1, (
+        "the guarded credit must not re-apply"
+    )
+
+
+def test_a_new_style_confirmed_side_is_left_alone(monkeypatch):
+    """A side settled by its own tap carries no marker; the sweeper no-ops."""
+    trades, inventories = _half_confirmed_old_style(trade_id="t12")
+    # Per-side settlement already ran for the requester: credit delivered,
+    # markers gone.
+    inventories.docs["#ME"]["cards"]["balloon"] = cards_command.OWNED
+    inventories.docs["#ME"]["card_trade_reservations"] = {}
+    _install(monkeypatch, trades, inventories)
+
+    asyncio.run(sweeper.sweep_once())
+
+    assert inventories.docs["#ME"]["cards"]["balloon"] == cards_command.OWNED
+    assert "inventory_revision" not in inventories.docs["#ME"], (
+        "no write may land on an already-settled side"
+    )
 
 
 def _open_request(request_id, *, overdue: bool, message_id=901):
@@ -600,6 +730,9 @@ def test_sweep_once_wires_every_job_through_one_shared_budget(monkeypatch):
     jobs = (
         "_drain_pending_channel_edits", "_expire_unanswered_proposals",
         "_pause_silent_members", "_recover_interrupted_completions",
+        # Stuck credits deliver BEFORE the seven-day settle can complete and
+        # clean up the same trades.
+        "_settle_confirmed_sides",
         "_finish_one_sided_swaps", "_close_abandoned_swaps",
         "_expire_open_requests", "_recover_stalled_claims",
     )

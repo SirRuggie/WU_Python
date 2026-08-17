@@ -502,6 +502,29 @@ def test_the_walkthrough_names_every_button_in_order():
     assert "Did you send your card?" in text
 
 
+def test_the_walkthrough_promises_per_side_settlement():
+    """The tap copy must match the write: an answer settles the whole side.
+
+    The old line promised "Only your own card moves when you answer", which
+    per-side settlement made false - your card goes out AND their card comes
+    in, all on your own account. The walkthrough is length-free, so the new
+    promise lives here rather than in the word-capped sticky.
+    """
+    text = " ".join(
+        node.content
+        for container in sticky._walkthrough()
+        for node in container.components
+        if hasattr(node, "content")
+    )
+
+    assert "Your whole side updates when you answer" in text
+    assert "your card goes out, their card comes in" in text
+    assert "They confirm their side the same way" in text
+    assert "Only your own card moves" not in text, (
+        "the retired one-card promise survived"
+    )
+
+
 def test_every_sticky_button_is_registered_with_the_dispatcher():
     """An unregistered custom_id is refused before any listener sees it.
 

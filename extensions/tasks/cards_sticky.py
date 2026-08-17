@@ -262,8 +262,9 @@ def _walkthrough() -> list[Container]:
                 "other in game — the same way you send any card\n\n"
                 f"**9.** Open {cards_mention()}. I ask *Did you send your card?* "
                 f"Tap **Yes, I sent it** {emojis.yes}\n"
-                "-# Only your own card moves when you answer. They confirm "
-                "theirs the same way. Nothing is lost if one of you is slow."
+                "-# Your whole side updates when you answer: your card goes "
+                "out, their card comes in. They confirm their side the same "
+                "way. Nothing is lost if one of you is slow."
             )),
             Separator(divider=False),
             Text(content=(
