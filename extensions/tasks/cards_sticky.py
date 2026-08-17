@@ -47,12 +47,17 @@ loader = lightbulb.Loader()
 STICKY_CHANNEL_ID = cards_config.cards_channel_id()
 # The shortest gap between two reposts. Not how often the loop looks: it wakes
 # every minute so that it can post soon after a conversation ends rather than
-# on the next multiple of ten.
-REPOST_INTERVAL_MINUTES = 10
+# on the next interval boundary. Raised from 10 on 2026-08-17: the channel now
+# also carries every trade post, want-ad and spare board, so a notice that
+# reappeared every ten minutes was competing with the traffic it exists to
+# explain.
+REPOST_INTERVAL_MINUTES = 30
 # How long the channel has to be silent first. Reposting into a live
-# conversation pushed the notice between people mid-sentence every ten minutes,
-# which is the single most irritating thing this task did.
-QUIET_PERIOD_MINUTES = 5
+# conversation pushed the notice between people mid-sentence, which is the
+# single most irritating thing this task ever did. Raised from 5 alongside
+# the interval: with trades flowing through the same channel, five quiet
+# minutes no longer meant the conversation was over.
+QUIET_PERIOD_MINUTES = 10
 CHECK_INTERVAL_SECONDS = 60
 CONFIG_ID = "cards_sticky_message"
 
