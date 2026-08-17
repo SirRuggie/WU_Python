@@ -4757,6 +4757,18 @@ def _admin_view(
                 + "\n".join(lines) + more
             )[:4000]),
         ])
+    body.extend([
+        Separator(divider=True),
+        # A native user picker rather than a select of names: the family has
+        # more collections than a text select's 25-option cap, and Discord's
+        # own picker searches by display name for free.
+        Text(content="-# Pick a member to see every card they recorded."),
+        ActionRow(components=[hikari.impl.SelectMenuBuilder(
+            type=hikari.ComponentType.USER_SELECT_MENU,
+            custom_id=f"cards_admin_peek:{_normalize_tag(tag)}",
+            placeholder="See a member's cards",
+        )]),
+    ])
     body.append(ActionRow(components=[
         Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -4765,6 +4777,67 @@ def _admin_view(
             emoji=RETURN_EMOJI,
         ),
     ]))
+    return [Container(components=body)]
+
+
+def _admin_member_cards_view(
+    inventories: list[dict], *, member_id: int, tag: str
+) -> list[Container]:
+    """Every card one member recorded, flat, for whoever runs the family.
+
+    One bullet per owned card with the count in a code span - deliberately
+    not grouped by category, because the admin asking "what does this person
+    actually have" is scanning for a name, not browsing a shop. Missing
+    cards are left out: the list answers what they have. "2+" keeps its
+    usual meaning - a scanner-proven spare with no exact count.
+    """
+    body: list = [
+        Text(content=f"# {emojis.magnifier} Cards · <@{int(member_id)}>"),
+    ]
+    if not inventories:
+        body.append(Text(content=(
+            "No cards recorded on any account yet."
+        )))
+    for inventory in inventories:
+        values = normalize_cards(inventory.get("cards"))
+        confirmed = _confirmed_count_ids(inventory)
+        owned = [
+            (card, values.get(card.id, OWNED))
+            for card in CARDS
+            if values.get(card.id, OWNED) >= OWNED
+        ]
+        summary = inventory_summary(
+            inventory.get("cards"), inventory.get("complete_categories") or ()
+        )
+        lines = [
+            f"- {_escape_markdown(card.name)} "
+            f"`{'2+' if state == DUPLICATE and card.id not in confirmed else state}`"
+            for card, state in owned
+        ]
+        body.extend([
+            Separator(divider=True),
+            Text(content=(
+                f"**{_escape_markdown(inventory.get('player_name'), limit=60)}** · "
+                f"`{_normalize_tag(inventory.get('_id'))}`\n"
+                f"-# {summary.collected} collected · {summary.missing} "
+                f"missing · {summary.duplicates} spares · updated "
+                f"{_relative_timestamp(inventory.get('confirmed_at'))}"
+            )),
+            Text(content=(
+                "\n".join(lines)[:4000]
+                if lines
+                else "-# Nothing owned yet."
+            )),
+        ])
+    body.extend([
+        Separator(divider=True),
+        ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_admin:{_normalize_tag(tag)}",
+            label="Back to admin",
+            emoji=RETURN_EMOJI,
+        )]),
+    ])
     return [Container(components=body)]
 
 
@@ -14748,6 +14821,60 @@ async def cards_admin(
             guild_id=int(guild_id),
         ),
         tag=tag,
+    )
+
+
+@register_action("cards_admin_peek")
+@lightbulb.di.with_di
+async def cards_admin_peek(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """One member's full card list, from the admin panel's user picker."""
+    tag = _parse_target(str(action_id or ""))[0]
+    # Same re-check as cards_admin: a custom_id is just a string, and anyone
+    # who saw the panel could send this one back with any user id in it.
+    if not _is_cards_admin(ctx, bot=bot):
+        return _notice(
+            "Admins only",
+            "This panel is for server administrators.",
+            back_tag=tag,
+        )
+    guild_id = _trade_guild_id(ctx)
+    if guild_id is None:
+        return _notice(
+            "Not set up yet",
+            "The Card Hub is not configured for this family yet.",
+            back_tag=tag,
+        )
+    values = list(getattr(ctx.interaction, "values", ()) or ())
+    try:
+        member_id = int(values[0]) if values else 0
+    except (TypeError, ValueError):
+        member_id = 0
+    if not member_id:
+        return _notice(
+            "Pick a member",
+            "Open the admin panel and choose someone from the picker.",
+            back_tag=tag,
+        )
+    try:
+        inventories = await mongo.card_inventories.find({
+            "guild_id": int(guild_id),
+            "discord_id": int(member_id),
+        }).to_list(length=ACCOUNT_PAGE_SIZE)
+    except Exception:
+        _log.exception("admin peek query failed member=%s", member_id)
+        return _notice(
+            "Could not load that member",
+            "Try again in a moment.",
+            back_tag=tag,
+        )
+    return _admin_member_cards_view(
+        inventories, member_id=member_id, tag=tag
     )
 
 

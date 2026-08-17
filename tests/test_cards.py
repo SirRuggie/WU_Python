@@ -10394,6 +10394,64 @@ def test_admin_view_always_offers_a_way_back():
     assert "cards_dashboard:#ME" in ids
 
 
+def test_admin_view_carries_the_member_picker():
+    """A native user picker, because the family outgrew a 25-option select."""
+    view = cards_command._admin_view(
+        {
+            "opened": 0, "entered": 0, "finished": 0, "hidden": 0,
+            "active": 0, "proposed": 0, "completed": 0, "expired": 0,
+            "live": 0, "stalled": [], "stalled_total": 0,
+        },
+        names={},
+        tag="#ME",
+    )
+    pickers = [
+        n for n in _view_nodes(view)
+        if n.get("type") == int(hikari.ComponentType.USER_SELECT_MENU)
+    ]
+    assert len(pickers) == 1
+    assert pickers[0]["custom_id"] == "cards_admin_peek:#ME"
+
+
+def test_the_admin_peek_lists_every_owned_card_flat_with_its_count():
+    """The admin scanning "what does this person have" wants one flat list -
+    a bullet per owned card, the count in a code span, no category walls.
+    Missing cards are left out, and 2+ keeps its scanner-floor meaning."""
+    inventory = _complete_inventory()
+    inventory["player_name"] = "Balaji"
+    inventory["cards"]["wizard"] = 3
+    inventory["cards"]["dragon"] = cards.DUPLICATE   # scanner floor
+    inventory["cards"]["root_rider"] = cards.MISSING
+    inventory["count_confirmed_card_ids"] = ["wizard"]
+
+    view = cards_command._admin_member_cards_view(
+        [inventory], member_id=55, tag="#ME"
+    )
+    text = _view_text(view)
+
+    assert "<@55>" in text
+    assert "- Wizard `3`" in text
+    assert "- Dragon `2+`" in text, "unconfirmed spare keeps the floor token"
+    assert "Root Rider" not in text, "missing cards are not listed"
+    ids = [str(n.get("custom_id")) for n in _view_nodes(view) if n.get("type") == 2]
+    assert "cards_admin:#ME" in ids, "a way back to the panel"
+    _assert_discord_payload(view)
+
+    empty = cards_command._admin_member_cards_view([], member_id=55, tag="#ME")
+    assert "No cards recorded" in _view_text(empty)
+
+
+def test_the_admin_peek_is_admin_only(monkeypatch):
+    monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
+    monkeypatch.setattr(
+        cards_command, "_is_cards_admin", lambda _ctx, bot=None: False
+    )
+    view = asyncio.run(cards_command.cards_admin_peek(
+        _quantity_ctx(), "#ME", mongo=SimpleNamespace(), bot=SimpleNamespace(),
+    ))
+    assert "Admins only" in _view_text(view)
+
+
 def test_admin_view_says_when_the_nudge_list_is_truncated():
     """Fifty stalled people must not silently render as ten."""
     view = cards_command._admin_view(
