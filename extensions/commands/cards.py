@@ -4791,6 +4791,36 @@ def _admin_member_cards_view(
     cards are left out: the list answers what they have. "2+" keeps its
     usual meaning - a scanner-proven spare with no exact count.
     """
+    def card_lines(inventory: dict, *, with_emoji: bool) -> list[str]:
+        values = normalize_cards(inventory.get("cards"))
+        confirmed = _confirmed_count_ids(inventory)
+        lines = []
+        for card in CARDS:
+            state = values.get(card.id, OWNED)
+            if state < OWNED:
+                continue
+            lead = troop_emoji.markup(card.id) if with_emoji else ""
+            count = (
+                "2+"
+                if state == DUPLICATE and card.id not in confirmed
+                else state
+            )
+            lines.append(
+                f"- {lead + ' ' if lead else ''}"
+                f"{_escape_markdown(card.name)} `{count}`"
+            )
+        return lines
+
+    # Emoji cost no components - they ride inside the text - but a custom
+    # emoji is ~30 hidden characters, and Discord caps a V2 message at 4000
+    # text characters TOTAL. One account fits with art; a multi-account
+    # member may not, so the art is dropped as a set rather than truncating
+    # someone's list mid-alphabet.
+    with_emoji = sum(
+        len(line)
+        for inventory in inventories
+        for line in card_lines(inventory, with_emoji=True)
+    ) <= 3_500
     body: list = [
         Text(content=f"# {emojis.magnifier} Cards · <@{int(member_id)}>"),
     ]
@@ -4799,21 +4829,10 @@ def _admin_member_cards_view(
             "No cards recorded on any account yet."
         )))
     for inventory in inventories:
-        values = normalize_cards(inventory.get("cards"))
-        confirmed = _confirmed_count_ids(inventory)
-        owned = [
-            (card, values.get(card.id, OWNED))
-            for card in CARDS
-            if values.get(card.id, OWNED) >= OWNED
-        ]
         summary = inventory_summary(
             inventory.get("cards"), inventory.get("complete_categories") or ()
         )
-        lines = [
-            f"- {_escape_markdown(card.name)} "
-            f"`{'2+' if state == DUPLICATE and card.id not in confirmed else state}`"
-            for card, state in owned
-        ]
+        lines = card_lines(inventory, with_emoji=with_emoji)
         body.extend([
             Separator(divider=True),
             Text(content=(
@@ -4824,7 +4843,7 @@ def _admin_member_cards_view(
                 f"{_relative_timestamp(inventory.get('confirmed_at'))}"
             )),
             Text(content=(
-                "\n".join(lines)[:4000]
+                "\n".join(lines)[:3800]
                 if lines
                 else "-# Nothing owned yet."
             )),

@@ -10441,6 +10441,36 @@ def test_the_admin_peek_lists_every_owned_card_flat_with_its_count():
     assert "No cards recorded" in _view_text(empty)
 
 
+def test_the_admin_peek_keeps_troop_art_only_while_the_text_budget_holds(
+    monkeypatch,
+):
+    """Emoji cost no components but ~30 hidden characters each, and a V2
+    message caps at 4000 text characters TOTAL. One account keeps the art;
+    when linked accounts push past the budget the art is dropped as a set,
+    never truncating someone's list mid-alphabet."""
+    monkeypatch.setattr(
+        cards_command.troop_emoji, "markup",
+        lambda _slug, default="": "<:Troop:123456789012345678>",
+    )
+    inventory = _complete_inventory()
+    inventory["player_name"] = "Balaji"
+
+    single = cards_command._admin_member_cards_view(
+        [inventory], member_id=55, tag="#ME"
+    )
+    assert "<:Troop:" in _view_text(single), "one account affords the art"
+    _assert_discord_payload(single)
+
+    crowd = [dict(inventory, _id=f"#ALT{i}") for i in range(3)]
+    stacked = cards_command._admin_member_cards_view(
+        crowd, member_id=55, tag="#ME"
+    )
+    assert "<:Troop:" not in _view_text(stacked), (
+        "three full accounts cannot afford it - plain names instead"
+    )
+    _assert_discord_payload(stacked)
+
+
 def test_the_admin_peek_is_admin_only(monkeypatch):
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
     monkeypatch.setattr(
