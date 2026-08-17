@@ -1402,11 +1402,10 @@ def test_only_listed_events_may_post_and_ping():
     )
     # A claim delivers the CONVERTED kind:"trade" doc, so "requester" is the
     # want-ad's poster; the edit refreshes the reused want-ad message into
-    # the trade's standing post. dm="always" for the live-verification
-    # window, like the other two pinging events - the end state is
-    # "fallback", one table entry away.
+    # the trade's standing post. Post-verification end state: the DM only
+    # backs up a failed post.
     assert table["open_request_claimed"] == cards_command._EventPolicy(
-        posts=True, pings="requester", edits=True, dm="always"
+        posts=True, pings="requester", edits=True, dm="fallback"
     )
     # Nothing else may ping: a ping without a post cannot exist anyway
     # (edits are structurally silent), and the table says so.
@@ -1485,12 +1484,12 @@ def test_acceptance_posts_one_reply_pinging_exactly_the_requester(monkeypatch):
     # The standing post itself is refreshed in place, as V2.
     assert len(rest.edits) == 1
     assert "components" in rest.edits[0] and "content" not in rest.edits[0]
-    # dm="always" during the live-verification window: the requester's DM
-    # still goes on top of the ping.
-    assert [recipient for recipient, _ in dms.sent] == [111]
+    # Post-verification end state: the ping IS the notification, and the DM
+    # exists only to back up a failed post. The post landed, so no DM.
+    assert dms.sent == []
     assert delivery.channel_message_id == 777
     assert delivery.pinged == (111,)
-    assert delivery.dm_sent == (111,)
+    assert delivery.dm_sent == ()
 
 
 def test_silent_events_edit_the_post_and_send_nothing(monkeypatch):
@@ -2683,8 +2682,9 @@ def test_a_successful_claim_converts_reuses_the_post_and_pings_the_poster(
     assert len(env.rest.edits) == 1
     assert env.rest.edits[0]["message"] == 555
     assert "Root Rider" in _view_text(env.rest.edits[0]["components"])
-    # dm="always" during the live-verification window: the poster's DM.
-    assert [recipient for recipient, _ in env.dms.sent] == [111]
+    # Post-verification end state: the reply-note's ping carries the news,
+    # and the DM exists only to back up a failed post. The post landed.
+    assert env.dms.sent == []
 
 
 def test_a_lost_finalize_fence_never_reuses_the_want_ad_message(monkeypatch):

@@ -7778,17 +7778,17 @@ class _EventPolicy(NamedTuple):
 # and `test_only_listed_events_may_post_and_ping` pins that set: widening it
 # is a deliberate one-row change here, never an accident at a call site.
 #
-# The two posting events ship with dm="always" for the first live-verification
-# window (both parties still get their familiar DM while the pings are
-# confirmed to land). The planned end state is dm="fallback" - a DM only when
-# the channel post fails - and flipping one table entry here is the whole
-# rollback lever, no code path changes.
+# The pinging events ran their live-verification window with dm="always" -
+# both parties kept their familiar DM while the pings were confirmed to land.
+# Verified over a live day (2026-08-17), so they now sit at the planned end
+# state: dm="fallback", a DM only when the channel post itself fails. Turning
+# the duplicate DMs back on is the same one-row flip in reverse.
 TRADE_DELIVERY: dict[str, _EventPolicy] = {
     "proposal_created": _EventPolicy(
-        posts=True, pings="holder", edits=False, dm="always"
+        posts=True, pings="holder", edits=False, dm="fallback"
     ),
     "proposal_accepted": _EventPolicy(
-        posts=True, pings="requester", edits=True, dm="always"
+        posts=True, pings="requester", edits=True, dm="fallback"
     ),
     # A want-ad IS its standing post and pings NOBODY - by construction it is
     # posted because the matcher found no holder, so there is nobody to aim
@@ -7807,12 +7807,10 @@ TRADE_DELIVERY: dict[str, _EventPolicy] = {
     # standing post (edits=True refreshes it into `_trade_post`); the short
     # reply-note underneath is the post that pings. The document delivered
     # for this event is the CONVERTED kind:"trade" doc, so pings="requester"
-    # reaches the original poster. dm="always" for the same first
-    # live-verification window as the other two pinging events - the planned
-    # end state is dm="fallback", and flipping this one table entry is the
-    # whole rollback lever, no code path changes.
+    # reaches the original poster. Same post-verification end state as the
+    # other pinging events: the DM only backs up a failed post.
     "open_request_claimed": _EventPolicy(
-        posts=True, pings="requester", edits=True, dm="always"
+        posts=True, pings="requester", edits=True, dm="fallback"
     ),
     # The gem ask IS its standing post and pings the one holder being asked;
     # the DM is a silent fallback fired only when the channel post fails
