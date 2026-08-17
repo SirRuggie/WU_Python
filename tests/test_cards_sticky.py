@@ -337,6 +337,17 @@ def test_accepting_happens_in_the_channel_but_scanning_stays_a_dm():
         if hasattr(node, "content")
     )
     assert "Post a request" in notice
+    # And the members posting hand-made screenshot lists of their spares get
+    # told the bot does it for them - with the exact button path.
+    assert "Share my spares" in notice
+    walkthrough = " ".join(
+        node.content
+        for container in sticky._walkthrough()
+        for node in container.components
+        if hasattr(node, "content")
+    )
+    assert "Share my spares" in walkthrough
+    assert "replaces your old post" in walkthrough
 
 
 def test_notice_avoids_shortenings_that_travel_badly():

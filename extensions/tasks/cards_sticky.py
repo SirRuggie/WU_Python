@@ -190,6 +190,10 @@ def _sticky_components() -> list[Container]:
                 f"{emojis.card_give} Same clan, then trade in game\n"
                 f"{emojis.yes} Then tap **Yes, I sent it**"
             )),
+            Text(content=(
+                "-# Want to show all your spares here? Tap **Find trades**, "
+                "then **Share my spares**."
+            )),
             Separator(divider=True),
             ActionRow(components=[
                 Button(
@@ -260,6 +264,13 @@ def _walkthrough() -> list[Container]:
                 f"Tap **Yes, I sent it** {emojis.yes}\n"
                 "-# Only your own card moves when you answer. They confirm "
                 "theirs the same way. Nothing is lost if one of you is slow."
+            )),
+            Separator(divider=False),
+            Text(content=(
+                "### Show everyone your spares\n"
+                f"Tap **Find trades**, then **Share my spares**. Your board "
+                "and your full spare list are posted in this channel. Nobody "
+                "is pinged. Sharing again replaces your old post."
             )),
             Separator(divider=True),
             Text(content=(

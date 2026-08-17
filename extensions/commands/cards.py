@@ -5035,6 +5035,20 @@ def _matches_view(
             label=f"Spares others want ({len(wanted_from_me)})",
             emoji=HOT_EMOJI,
         ))
+    if _shareable_spares(inventory):
+        # Top level, not only inside Spares others want: that screen's entry
+        # button disappears when no recorded collection needs your spares -
+        # which is exactly when a public share matters most (the person who
+        # needs one may simply not have recorded their collection). The
+        # owner went looking for this feature and could not find it; that
+        # verdict outranks the five-control ceiling this screen used to
+        # keep, which moved to six.
+        secondary.append(Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"cards_spares_share:{tag}",
+            label="Share my spares",
+            emoji=SWAP_EMOJI,
+        ))
     if secondary:
         body.extend([Separator(divider=True), ActionRow(components=secondary)])
 

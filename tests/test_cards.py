@@ -8756,7 +8756,15 @@ def test_a_long_list_splits_by_category_but_still_names_cards():
 
 
 def test_find_trades_keeps_the_control_count_low():
-    """Eight controls with no instruction is what lost people."""
+    """Eight controls with no instruction is what lost people.
+
+    The ceiling was five; Share my spares raised it to six by owner
+    decision - the feature was invisible behind Spares others want, whose
+    entry button disappears exactly when a public share matters most
+    (nobody has recorded a need yet). Six labeled controls with the
+    instruction line at the top is still not the eight-button wall this
+    test exists to prevent.
+    """
     account, inventory, _holders, matches = _two_way_and_one_way()
     view = cards_command._matches_view(
         account, inventory, matches,
@@ -8767,7 +8775,7 @@ def test_find_trades_keeps_the_control_count_low():
         if node.get("type") in (2, 3)
     ]
 
-    assert len(controls) <= 5, [n.get("label") or n.get("placeholder") for n in controls]
+    assert len(controls) <= 6, [n.get("label") or n.get("placeholder") for n in controls]
     # And the screen says what to do, before it says anything else.
     text = _view_text(view)
     assert "Pick a card from the menu below" in text
