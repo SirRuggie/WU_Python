@@ -43,6 +43,19 @@ the hard way. The standing instruction that governs this folder is in
   jobstore, Mongo-backed restore), the select-all + partial-failure pattern to
   copy, and four unguarded 25-option menus that are clear only at current scale.
 
+- [ticket-console.md](ticket-console.md) — the ticket console, as decided
+  (2026-08-17). Not yet built. Architecture, search, the binary flag system,
+  ticket-history auto-detect, the permanence model, the chart's palette and
+  layout, and two corrections against a mockup that briefly assumed things
+  this codebase can't do. **Reference artifacts live in
+  `docs/ticket-console/`** (`render_overview.py`, the clickable mockup) with
+  the five chart icons in `assets/tickets/`.
+
+- [legacy-ticket-migration.md](legacy-ticket-migration.md) — designed, not
+  built. Cloning old channel-based tickets into searchable threads via
+  webhook impersonation: single target server, staff-thread parity,
+  archive-immediately (thread-cap math), and the pilot-first rollout plan.
+
 ## Proposals
 
 - [todo-dashboard-proposal.md](todo-dashboard-proposal.md) — the pre-build
@@ -52,7 +65,9 @@ the hard way. The standing instruction that governs this folder is in
 
 - [thread-ticketing-proposal.md](thread-ticketing-proposal.md) — research and
   design for thread-based ticketing + the console dashboard (2026-08-02).
-  Findings, dashboard design, migration plan, risks. **Not yet decided.**
+  Findings, migration plan, risks — still current. Dashboard design (Part 2)
+  is superseded by [ticket-console.md](ticket-console.md) (2026-08-17); kept
+  for the component-budget reasoning.
 
 ## Architecture
 

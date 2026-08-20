@@ -149,8 +149,20 @@ surfaces the case where an update matched nothing. This exists because status
 writes were previously failing silently — added in `ad2e980` (2026-08-02).
 Keep that pattern on any new status writer.
 
+## The console never renders `closed`
+
+[ticket-console.md](ticket-console.md) (2026-08-17) intentionally has no
+"closed" concept — its `STATUS` map only has `open` / `approved` / `denied`,
+matching the three values anything still writes. This means the one live
+`closed` document (above) is currently outside every status the console
+knows how to draw. If it's ever returned by a search, the renderer needs a
+defensive fallback rather than indexing into `STATUS` with an unknown key —
+flagged as a small gap, not yet handled anywhere.
+
 ## Related
 
 - [ticket-data-model.md](ticket-data-model.md) — where these documents live.
 - [ticket-channel-naming.md](ticket-channel-naming.md) — why channel name
   prefixes are a misleading proxy for status.
+- [ticket-console.md](ticket-console.md) — the console that renders these
+  values.

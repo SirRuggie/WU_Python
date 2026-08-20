@@ -4,6 +4,23 @@ Research deliverable, 2026-08-02. Seven parallel research workstreams, findings
 adjudicated against primary sources. **No code was written and no existing
 behaviour was changed.**
 
+**Part 2 (dashboard design) is superseded as of 2026-08-17 by
+[ticket-console.md](ticket-console.md)** — the decided design, worked out
+against an interactive mockup and re-checked against the live codebase. It
+caught two mistakes — **both introduced by the mockup, not by Part 2**: a
+"Find a ticket" modal carrying select menus alongside its text field (not
+buildable on this hikari version — §1.5 already established why, and §2.4
+had it right, specifying "single text input (all hikari permits)"), and an
+FWA-ban panel rendering a parsed verdict when the real command is a link-out.
+Part 2 below is kept for the budget-math and component-cost reasoning, which
+is still correct; treat [ticket-console.md](ticket-console.md) as the source
+of truth for what actually gets built.
+
+**Parts 1, 3 and 4 stand except where annotated.** Part 3's phasing table
+(§3.6) and decision 5 in §4.2 were both written before the chart was pulled
+forward into v1, and §4.2 decision 3 (`abandoned`) is contradicted by §4.3
+question 3 — each is annotated in place.
+
 Durable API facts extracted from this research live in their own files —
 [components-v2-in-hikari.md](components-v2-in-hikari.md),
 [hikari-lightbulb-versions.md](hikari-lightbulb-versions.md),
@@ -260,6 +277,14 @@ page-jump select reaches all 15 in a click.
 
 ## 2.4 Pragmatic version — recommended
 
+> **Superseded.** The decided build is max-flash, not pragmatic, and the
+> filter row below (Status/Type/Recruiter as three selects on the shared
+> console) was relocated to the ephemeral results panel and dropped to two
+> axes (no recruiter/claim filter). See
+> [ticket-console.md](ticket-console.md) §2–§4. Kept here for the component
+> budget accounting, which is still the right way to think about the cost of
+> any row you add.
+
 ```
 ╭─ Container (accent = RED_ACCENT) ─────────────────────────────╮
 │ ┌ Section ─────────────────────────── [Thumbnail: guild icon] │
@@ -298,6 +323,11 @@ results panel in Archive mode, unrestricted by status.
 
 ## 2.5 Maximum-flash version, and what it costs
 
+> **This is the one that got built.** Decision reversed from the 2.6
+> recommendation below — see [ticket-console.md](ticket-console.md) §3. The
+> chart replaces the stat Section rather than sitting alongside it, which is
+> cheaper in components than either version anticipated.
+
 Everything above, plus:
 
 | Addition | Cost / risk |
@@ -315,10 +345,12 @@ dashboard reads, and it is also the only one that adds a real dependency and a
 latency risk. Everything else in the flash column is either free (accent colour,
 spoiler, relative timestamps — take all three now) or a trade against density.
 
-**Recommendation: ship pragmatic + the three free flash items. Add the chart as
-a phase-4 enhancement once the queue is proven.** Do not build the ANSI table —
-undocumented, mobile-hostile, and it competes with the select-as-list for the
-same screen space.
+**Original recommendation (2026-08-02): ship pragmatic + the three free flash
+items, add the chart later once the queue is proven. Reversed 2026-08-17** —
+the chart ships in the first build, as the header, replacing the stat Section
+rather than adding to it (see [ticket-console.md](ticket-console.md) §3). Do
+not build the ANSI table — undocumented, mobile-hostile, and it competes with
+the select-as-list for the same screen space. That part didn't change.
 
 ## 2.6 Handling 361+ without hitting limits
 
@@ -432,11 +464,21 @@ executed **on every guild message**, quietly the hottest query in the codebase.
 | Questionnaire | `GuildChannelCreateEvent` → monitor | posted inline at creation (threads fire `GuildThreadCreateEvent`, not the channel event) |
 | Status | channel rename ✅/❌ | **Mongo only** — never rename |
 | Approve/Deny | `$set` | `find_one_and_update` with `status: "open"` precondition |
-| Close | rename, leave forever | `archived: true, locked: true` in one PATCH |
+| *(no "close")* | rename, leave forever | `archived: true, locked: true` in one PATCH, background-only — see below |
 
 `locked` matters: archive alone means any stray message silently reopens a
 resolved ticket and re-consumes an active slot. Locked returns error `160005`
 instead.
+
+> **2026-08-17: there is no "close."** Decided in console review — tickets
+> are permanently `approved` or `denied`, never a status meaning gone, and
+> the console never renders "closed." The `archived`/`locked` PATCH above
+> still happens, but it is now invisible background plumbing against the
+> ~1000-active-thread ceiling (risk #8 below), not a user-facing lifecycle
+> step: auto-archive old resolved tickets, auto-unarchive on jump-click,
+> never let it touch `status` or any copy. Full reasoning in
+> [ticket-console.md](ticket-console.md) §7 — flagged there as a judgment
+> call, not a confirmed decision.
 
 ## 3.4 The feature flag
 
@@ -515,20 +557,42 @@ Keep the single `closed` document as-is. It is the sole survivor of the deleted
 `/ticket close` command and records a real historical decision — normalising it
 to `denied` is the one genuinely irreversible act available in this migration.
 
+> **Not to be confused with the legacy-ticket clone.** This section is a
+> **Mongo-only** migration of this server's own 361 documents — it writes
+> nothing to Discord and recreates no messages. Rebuilding old *channel*
+> tickets as threads (including from other recruitment servers being
+> consolidated) is a separate, later, manual job — see
+> [legacy-ticket-migration.md](legacy-ticket-migration.md) (recorded as
+> decision 21 in §4.2b below).
+
 ## 3.6 Phasing
 
 | Phase | Ships | Status |
 |---|---|---|
-| **0** | Dispatcher fix. Reconciliation commands gated on venue. | **Partly live** — routing guards + error boundary deployed and proven. Commits 3 & 4 (`component_state`, log-only expiry) **unwritten**. |
+| **0** | Dispatcher fix. Reconciliation commands gated on venue. | **Live** — routing guards, error boundary, `component_state` and venue gating all deployed. ✅ Updated 2026-08-20, see below. |
 | **1** | `tickets` collection + backfill + indexes + dual-write | **Live, soaking** since 2026-08-02 |
 | **2** | Approve/deny conditional writes; override path; claiming | **Live, soaking** since 2026-08-02 |
 | **3** | Thread ticketing behind `ticket_mode`, off by default | Not started |
-| **4** | Console dashboard (pragmatic + free flash) | Not started |
-| **5** | Attachment re-hosting; chart rendering; hikari 2.5.0 + lightbulb 3.2.5 | Not started |
+| **4** | Console dashboard — **max-flash, chart included** (see note) | Not started |
+| **5** | Attachment re-hosting; hikari 2.5.0 + lightbulb 3.2.5 | Not started |
+| **6** | Legacy-ticket clone into threads ([legacy-ticket-migration.md](legacy-ticket-migration.md)) | Not started — manual, operator-paced, after phase 4 |
+
+> ⚠️ **Two corrections to this table, 2026-08-20.**
+>
+> **Phase 0 is done, not "partly live."** This row previously said commits 3 & 4
+> (`component_state`, log-only expiry) were **unwritten**. They shipped:
+> `utils/component_state.py` is tracked and 270 lines, declares its TTL index
+> (`expireAfterSeconds=0`), and is imported by `extensions/components.py:18`.
+> [ticket-data-model.md](ticket-data-model.md) has said so since 2026-08-04.
+>
+> **Chart rendering moved from phase 5 to phase 4.** §4.2 decision 5 ("charts
+> skipped for now, revisit at phase 5") is **reversed** by §4.2b decision 7 —
+> the console ships max-flash with the chart as its header, not as a later
+> addition. See [ticket-console.md](ticket-console.md) §3.
 
 **Outstanding before phase 3:** dual-write removal (date-gated, 2026-08-09 at the
-earliest), the `back_to_clan_edit` duplicate (delete the *loser* — see
-[component-dispatcher.md](component-dispatcher.md)), and phase 0 commits 3 & 4.
+earliest) and the `back_to_clan_edit` duplicate (delete the *loser* — see
+[component-dispatcher.md](component-dispatcher.md)).
 
 Phases 0–2 improve the **existing** system and are worth shipping even if thread
 ticketing is abandoned. That is deliberate: nothing before phase 3 is a bet on
@@ -544,12 +608,12 @@ the migration.
 |---|---|---|
 | 1 | **`/ticket cleanup-ghosts` mass-denies live thread tickets.** `fetch_guild_channels` excludes threads. | Gate on `venue` **before** the flag can be flipped. Phase 0. |
 | 2 | **A dashboard handler deletes a ticket record** via a `ticket_*` action_id + the house `delete_one` convention. | Dedicated `component_state` collection. Phase 0. |
-| 3 | **Losing the recruiter back-channel.** Two commercial bots lost it in this exact migration. | Parallel staff thread in a recruiters-only channel. Decide before phase 3. |
+| 3 | **Losing the recruiter back-channel.** Two commercial bots lost it in this exact migration. | Parallel staff thread in a recruiters-only channel. Decide before phase 3. — Settled: yes, this is where the flag alerts and ticket-history panel from [ticket-console.md](ticket-console.md) §5–§6 render. |
 | 4 | **Tickets become inoperable when archived** — slash commands fail, and the archive event may not fire. | Mongo is authority for open/closed; "ensure unarchived" wrapper; nightly reconciliation sweep. |
 | 5 | **Silent status overwrite** — approve clobbers deny. Live today; a dashboard makes it routine. | `find_one_and_update` with precondition. Phase 2. |
 | 6 | **Archive rots** — Discord CDN URLs expire ~24h. | Re-host attachment bytes at close. Phase 5. |
 | 7 | **Recruiter role exceeds 100 members** → role-mention auto-add silently stops. | Monitor; or grant `MANAGE_THREADS` instead. |
-| 8 | **~1000 active-thread cap is undocumented** and Discord shortens auto-archive as you approach it. | Lock+archive on close; alarm well below 1000. |
+| 8 | **~1000 active-thread cap is undocumented** and Discord shortens auto-archive as you approach it. | No "close" event to hang this on any more (see §3.3, 2026-08-17) — lock+archive old resolved tickets on a background sweep instead, invisibly, with auto-unarchive on jump-click; alarm well below 1000. |
 | 9 | **System-message spam** on every thread member add. Undeletable. | Set membership once at creation; never use add/remove for claiming. |
 | 10 | **`SEND_MESSAGES` does nothing in threads** — candidates need `SEND_MESSAGES_IN_THREADS`. | Add to `/ticket diagnostics`. The #1 support ticket every thread-mode bot gets. |
 | 11 | Thread renames fail *silently* at ~2/10min. | Never rename. Status in Mongo. |
@@ -561,13 +625,35 @@ the migration.
 |---|---|---|
 | 1 | **Parallel staff thread** in a recruiters-only channel, bot-linked via `location.staff_space_id` | Two Discord objects per ticket; dashboard surfaces both |
 | 2 | **FWA 50/50 fixed independently** (second category + repoint `fwa_category`) | Migration is **purely a UX project, no urgency**. Take phases in order. |
-| 3 | **`abandoned` becomes a real state.** Backfill rule: open + 30d no activity. ~21 of the 23 open tickets qualify | Must not fold into `denied` — that corrupts the denial metric. ⚠️ See wrinkle below. |
+| 3 | **`abandoned` becomes a real state.** Backfill rule: open + 30d no activity. ~21 of the 23 open tickets qualify | Must not fold into `denied` — that corrupts the denial metric. ⚠️ See wrinkle below — and note this decision **was never implemented and is contradicted by §4.3 question 3**; `abandoned` still does not exist. Treat it as intent, not as settled. |
 | 4 | **Advisory claiming accepted** | Social convention at this size; Discord cannot enforce it regardless |
-| 5 | **Charts skipped for now**, revisit at phase 5 | Removes the only new dependency from the dashboard build |
+| 5 | ~~**Charts skipped for now**, revisit at phase 5~~ **REVERSED 2026-08-17** by decision 7 | The chart ships in v1 as the console header. Pillow is already a dependency and the image is a message attachment, so it added nothing new after all. |
 | 6 | **hikari+lightbulb upgrade is a separate track, after phase 2** | Coupled move (2.5.0 + 3.2.5); must not ride along with ticketing |
 
 **Explicitly rejected:** a read-only dashboard over existing channel tickets to
 get discoverability early. It is work that gets thrown away at phase 3.
+
+## 4.2b DECISIONS — console review, settled 2026-08-17
+
+Full detail and reasoning in [ticket-console.md](ticket-console.md). Summary:
+
+| # | Decision | Consequence |
+|---|---|---|
+| 7 | **Max-flash, not pragmatic.** No two-tier build. | Chart ships in v1, replaces the stat Section rather than adding to it. |
+| 8 | **One console, no Main/FWA split.** Rejected explicitly. | Single shared message; type filtering lives in search, not in a second console. |
+| 9 | **No "Open Console" gateway.** The shared message's picker and Find-a-ticket button are the entry points directly. | One fewer click; structural rule (state on the message, not the viewer) still holds. |
+| 10 | **Manual refresh button dropped.** | `refresh_hub()` already runs on create/approve/deny; a button had no state left to fix. |
+| 11 | **Search: Discord ID / player tag / username, nothing else.** Recruiter-claim filter dropped entirely. | Simpler modal, matches decision 12. |
+| 12 | **No claiming surfaced in the console.** "We don't care what the recruiter claimed." | Backend `claimed_by`/`claimed_at` (decision 4) untouched for now — open question, §4.3 item 4. |
+| 13 | **Blacklist is binary, no "maybe" tier.** Two more flags added as non-blocking cautions: denied-before, not-loyal-to-WU. | New small `ticket_flags`-style collection, not designed before now — see [ticket-console.md](ticket-console.md), Related. |
+| 14 | **Status/Type filters cannot live inside the "Find a ticket" modal** — hikari has no Label builder, so Discord's Aug-2025 modal-select support is unreachable (the wall established in §1.5). Relocated to the ephemeral results panel as two message selects. | Corrects a mockup mistake before it became a build mistake. |
+| 15 | **`/fwa chocolate` is a link-out, not a lookup** — confirmed against `extensions/commands/fwa/chocolate.py`. A human reads the ban status and records it as a flag. | Corrects a second mockup mistake; the flag record's shape (`addedBy`, `checkedAt`, `source`) was already right for this. |
+| 16 | **Nothing is ever "closed."** Tickets are permanently `approved`/`denied`; the thread is never renamed to imply done, never deleted. | Discord's `archived` flag survives only as invisible capacity plumbing against risk #8, decoupled from ticket status. Flagged as a judgment call, not fully confirmed — see [ticket-console.md](ticket-console.md) §7. |
+| 17 | **Ticket-history auto-detect** — any repeat Discord ID/player tag gets a staff-thread panel with jump links, independent of the flag system. Fires for everyone with history, not just flagged people. | New behavior, not in the original proposal at all. |
+| 18 | **The flag is labelled "Blacklisted," not "On blacklist."** | Copy change only; applied to console copy, the chart pill and the mockup. |
+| 19 | **Chart palette is vibrant, and colorblind/CVD validation is explicitly NOT a requirement.** The earlier `dataviz` six-check palette (`#43a25a`/`#7b83f0`/`#e0656a`) is rescinded. Flag colors are sampled from the supplied artwork. | Reverses a self-imposed constraint that was never asked for. The only standing audience requirement is plain-English copy. See [ticket-console.md](ticket-console.md) §3.2. |
+| 20 | **Chart iconography is supplied PNG artwork or hand-drawn PIL shapes — never emoji rendered through a font.** Five assets committed to `assets/tickets/`. | Color-emoji support is unreliable across Pillow/server font setups; a glyph that renders locally can be a box on the deploy box. See [ticket-console.md](ticket-console.md) §3.4. |
+| 21 | **Legacy channel tickets get cloned into threads** via webhook impersonation — single target server, staff-thread parity, archive-immediately, pilot first. ~1,500 tickets. | Distinct from §3.5, which migrates *this* server's Mongo documents only and writes nothing to Discord. Full design in [legacy-ticket-migration.md](legacy-ticket-migration.md). |
 
 ### ⚠️ Wrinkle on decision 3 — "no activity" is not derivable today
 
@@ -589,21 +675,31 @@ that gets the existing 21 right.
 
 ## 4.3 Original open questions (superseded above)
 
-1. **The back-channel.** Parallel staff thread in a recruiters-only channel
-   (recommended), DB-backed notes surfaced via `/ticket notes`, or accept the
-   loss? This shapes phase 3.
+1. ~~**The back-channel.**~~ **Settled 2026-08-17**: parallel staff thread,
+   recommended option. It's also where the flag alerts and history panel
+   from [ticket-console.md](ticket-console.md) render.
 2. **Is the FWA 50/50 category being fixed independently?** If yes, the
    migration is purely a UX project and can move at its own pace. If the
    migration *is* the fix, phase 3 becomes urgent and I'd want to reorder.
 3. **`abandoned` status** — it does not exist today; the only values ever
    written are `open`/`approved`/`denied`. Introduce it as a real state with a
    backfill rule (e.g. open + no activity 30d), or drop it from the filter list?
-4. **Advisory claiming** — acceptable? Discord cannot enforce it.
-5. **Chart rendering** in phase 5, or not at all?
+   **Still open as of 2026-08-17** — not discussed in console review, not in
+   the console's `STATUS` map. See [ticket-console.md](ticket-console.md) §9.
+4. ~~**Advisory claiming** — acceptable?~~ **Partly settled**: backend
+   claiming stays advisory (unchanged). **New sub-question as of
+   2026-08-17**: the console no longer surfaces claim state at all — does
+   `/ticket claim`/`/ticket release` get deprecated, or just stop being
+   rendered? See [ticket-console.md](ticket-console.md) §9.
+5. ~~**Chart rendering** in phase 5, or not at all?~~ **Settled 2026-08-17**:
+   phase 1 (first build), not phase 5. See decision 7 above.
 6. **The hikari/lightbulb upgrade** — separate track now, later, or never? Not
    needed for capability; four upstream fixes target the July 29 failure mode.
+   Re-confirmed 2026-08-17 that 2.5.0 would not have unblocked the
+   modal-select pattern anyway (decision 14) — no new urgency from this
+   review.
 
-## 4.3 What I could not determine
+## 4.4 What I could not determine
 
 - **Whether inactivity auto-archive fires `THREAD_UPDATE`.** Discord's docs never
   say. Two issues suggest lazy/asymmetric behaviour. **Settled by:** creating a

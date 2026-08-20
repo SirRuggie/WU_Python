@@ -194,3 +194,10 @@ state.
   values mean and why `closed` is 1.
 - [component-dispatcher.md](component-dispatcher.md) — the other consumer of
   this collection.
+- [ticket-console.md](ticket-console.md) — the console that reads these
+  documents. Its flag system needs a **new small collection** (blacklist /
+  denied-before / not-loyal) that is specified there and **not yet designed
+  in this file**.
+- [legacy-ticket-migration.md](legacy-ticket-migration.md) — backfilled
+  legacy tickets need a minimal lookup record in this collection (§5 there)
+  or the console's search cannot find them.
