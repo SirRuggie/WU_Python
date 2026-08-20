@@ -18,7 +18,8 @@ from hikari.impl import (
 )
 
 from utils.constants import RED_ACCENT, GOLDENROD_ACCENT
-from extensions.commands.tickets import loader, ticket
+from extensions.commands.tickets import loader, perms, ticket
+from utils.mongo import MongoClient
 
 
 def create_ticket_embed() -> List[Container]:
@@ -32,9 +33,9 @@ def create_ticket_embed() -> List[Container]:
                 Text(content=(
                     "Now that you've read what we're all about, don't hesitate to create "
                     "an entry ticket from one of the categories below.\n\n"
-                    "Once you have created one, please wait patiently for on of our "
+                    "Once you have created one, please wait patiently for one of our "
                     "Recruiters to respond.\n\n"
-                    "We want you to have the best experience possible here! within "
+                    "We want you to have the best experience possible here within "
                     "the Warriors United Family!"
                 )),
                 Media(items=[MediaItem(media="assets/Red_Footer.png")]),
@@ -74,6 +75,7 @@ class Setup(
             self,
             ctx: lightbulb.Context,
             bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+            mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         """Send the ticket creation embed"""
 
@@ -81,9 +83,9 @@ class Setup(
         await ctx.defer(ephemeral=True)
 
         # Check permissions
-        if not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
+        if not await perms.is_target_admin(ctx.member, mongo):
             await ctx.respond(
-                "❌ You need Administrator permissions to use this command!"
+                "❌ Administrator permission is required in the configured ticket guild."
             )
             return
 
@@ -91,7 +93,10 @@ class Setup(
             # Send the embed to the channel (not as a reply)
             await bot.rest.create_message(
                 channel=ctx.channel_id,
-                components=create_ticket_embed()
+                components=create_ticket_embed(),
+                mentions_everyone=False,
+                user_mentions=False,
+                role_mentions=False,
             )
 
             # Send success feedback

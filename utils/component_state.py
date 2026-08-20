@@ -37,6 +37,15 @@ _GENERIC_STATE_KEYS = {
     "channel_id",
     "remove_roles_page",
 }
+_LEGACY_PROJECTION_DISCRIMINATORS = {
+    "_id",
+    "type",
+    "challenge_type",
+    "command",
+    "origin",
+    "base_only",
+    "recruiter_id",
+}
 
 
 def utcnow() -> datetime:
@@ -134,13 +143,76 @@ async def update_state(
     return result
 
 
-def _apply_projection(document: dict, projection: dict | None) -> dict:
+def _projection_mode(projection: dict | None) -> str | None:
+    """Return Mongo's inclusion/exclusion mode for simple field projections."""
     if not projection:
+        return None
+    included = {
+        field for field, value in projection.items()
+        if field != "_id" and bool(value)
+    }
+    excluded = {
+        field for field, value in projection.items()
+        if field != "_id" and not bool(value)
+    }
+    if included and excluded:
+        raise ValueError("cannot mix inclusion and exclusion in a component-state projection")
+    if included:
+        return "include"
+    if excluded:
+        return "exclude"
+    return "include" if bool(projection.get("_id")) else "exclude"
+
+
+def _read_projection(
+    projection: dict | None,
+    *,
+    internal_fields: set[str],
+) -> dict | None:
+    """Add required internal reads without widening the caller-visible result."""
+    mode = _projection_mode(projection)
+    if mode is None:
+        return None
+    read = copy.deepcopy(projection)
+    if mode == "include":
+        for field in internal_fields:
+            read[field] = 1
+    else:
+        for field in internal_fields:
+            read.pop(field, None)
+    return read
+
+
+def _apply_projection(document: dict, projection: dict | None) -> dict:
+    """Apply Mongo-compatible top-level inclusion or exclusion semantics."""
+    mode = _projection_mode(projection)
+    if mode is None:
         return document
-    result = dict(document)
-    if projection.get("_id") == 0:
-        result.pop("_id", None)
-    return result
+    if mode == "include":
+        result = {
+            field: value
+            for field, value in document.items()
+            if field in projection and bool(projection[field])
+        }
+        if projection.get("_id", 1) and "_id" in document:
+            result["_id"] = document["_id"]
+        return result
+    return {
+        field: value
+        for field, value in document.items()
+        if bool(projection.get(field, 1))
+    }
+
+
+def _projected_legacy_state_is_recognized(document: dict) -> bool:
+    """Classify a partial legacy row only from positive, explicit markers."""
+    if _legacy_is_protected(document):
+        return False
+    if document.get("type") in _STATE_TYPES:
+        return True
+    if "command" in document or document.get("origin") == "role_command":
+        return True
+    return "base_only" in document or "recruiter_id" in document
 
 
 async def _copy_legacy_state(
@@ -181,7 +253,16 @@ async def get_state(
     projection: dict | None = None,
 ) -> dict | None:
     """Read current state, migrating a positively classified legacy row on use."""
-    document = await mongo.component_state.find_one({"_id": state_id})
+    projection_mode = _projection_mode(projection)
+    component_projection = _read_projection(
+        projection, internal_fields={"expires_at"}
+    )
+    component_filter = {"_id": state_id}
+    document = (
+        await mongo.component_state.find_one(component_filter, component_projection)
+        if component_projection is not None
+        else await mongo.component_state.find_one(component_filter)
+    )
     if document is not None:
         expires_at = document.get("expires_at")
         if isinstance(expires_at, datetime):
@@ -192,13 +273,27 @@ async def get_state(
                 return None
         return _apply_projection(document, projection)
 
-    legacy = await mongo.button_store.find_one({
+    legacy_filter = {
         "_id": state_id,
         "type": {"$ne": "ticket"},
         "challenge_type": {"$ne": "goblin_ping"},
-    })
+    }
+    legacy_projection = _read_projection(
+        projection,
+        internal_fields=_LEGACY_PROJECTION_DISCRIMINATORS,
+    )
+    legacy = (
+        await mongo.button_store.find_one(legacy_filter, legacy_projection)
+        if legacy_projection is not None
+        else await mongo.button_store.find_one(legacy_filter)
+    )
     if legacy is None or _legacy_is_protected(legacy):
         return None
+
+    if projection_mode == "include":
+        if not _projected_legacy_state_is_recognized(legacy):
+            return None
+        return _apply_projection(legacy, projection)
 
     if legacy_state_kind(legacy) == "state":
         await _copy_legacy_state(mongo, legacy, now=utcnow())

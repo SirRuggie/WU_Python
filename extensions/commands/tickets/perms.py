@@ -12,22 +12,51 @@ import hikari
 from utils.mongo import MongoClient
 
 
+def _as_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 async def recruiter_role_ids(mongo: MongoClient) -> tuple[int | None, int | None]:
     """(main, fwa) recruiter roles from the ticket config document."""
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-    return config.get("main_recruiter_role"), config.get("fwa_recruiter_role")
+    return (
+        _as_int(config.get("main_recruiter_role")) or None,
+        _as_int(config.get("fwa_recruiter_role")) or None,
+    )
+
+
+async def is_target_admin(member: hikari.Member | None, mongo: MongoClient) -> bool:
+    """Administrator acting inside the one guild bound to global ticket data."""
+    if member is None:
+        return False
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    return bool(
+        _as_int(config.get("ticket_target_guild_id"))
+        and _as_int(getattr(member, "guild_id", 0))
+        == _as_int(config.get("ticket_target_guild_id"))
+        and member.permissions & hikari.Permissions.ADMINISTRATOR
+    )
 
 
 async def is_recruiter(member: hikari.Member | None, mongo: MongoClient) -> bool:
-    """Recruiter role, or Administrator.
+    """Recruiter role, or Administrator, in the one bound ticket guild.
 
-    Mirrors the inline check in close.py verbatim so authorisation does not
-    quietly differ between commands.
+    Ticket data is global and private. An administrator in any other bot guild
+    must not inherit access to the target guild's applicant history or actions.
     """
     if member is None:
         return False  # DM or uncached member; nothing to authorise against
-    main_role, fwa_role = await recruiter_role_ids(mongo)
-    role_ids = member.role_ids
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    target_guild_id = _as_int(config.get("ticket_target_guild_id"))
+    member_guild_id = _as_int(getattr(member, "guild_id", 0))
+    if not target_guild_id or member_guild_id != target_guild_id:
+        return False
+    main_role = _as_int(config.get("main_recruiter_role"))
+    fwa_role = _as_int(config.get("fwa_recruiter_role"))
+    role_ids = {_as_int(value) for value in member.role_ids}
     return bool(
         (main_role and main_role in role_ids)
         or (fwa_role and fwa_role in role_ids)

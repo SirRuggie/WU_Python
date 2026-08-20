@@ -53,6 +53,7 @@ class Action:
     ephemeral: bool  # legacy metadata; message edits cannot change visibility
     opens_modal: bool
     requires_state: bool
+    preload_state: bool
     group: str | None
     declared_at: str  # "file:line" of the @register_action, for duplicate reporting
 
@@ -121,6 +122,7 @@ def register_action(
         group: str | None = None,
         aliases: tuple[str, ...] = (),
         requires_state: bool = False,
+        preload_state: bool = True,
 ):
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         sig = inspect.signature(func)
@@ -168,6 +170,7 @@ def register_action(
             ephemeral=ephemeral,
             opens_modal=opens_modal,
             requires_state=requires_state,
+            preload_state=preload_state,
             group=group,
             declared_at=declared_at,
         )
@@ -290,12 +293,19 @@ async def _dispatch(
                 raw, ctx.user.id,
             )
 
-    kw = await get_state(mongo, action_id, {"_id": 0})
-    if kw is None and action.requires_state:
-        _log.info("expired component state action=%s id=%s", action.name, action_id)
-        await _refuse(ctx, MSG_STALE_PANEL)
-        return
-    kw = kw or {}
+    if action.preload_state:
+        kw = await get_state(mongo, action_id, {"_id": 0})
+        if kw is None and action.requires_state:
+            _log.info("expired component state action=%s id=%s", action.name, action_id)
+            await _refuse(ctx, MSG_STALE_PANEL)
+            return
+        kw = kw or {}
+    else:
+        # Modal submissions cannot be deferred by the dispatcher in the
+        # general case: several legacy handlers answer by updating the source
+        # message, while others create a private response. Opted-in handlers
+        # acknowledge first, then load and validate their own state.
+        kw = {}
     kw = kw | {"color" : RED_ACCENT, "action_id" : action_id, "ctx": ctx}
     components = await action.fn(**kw)
 

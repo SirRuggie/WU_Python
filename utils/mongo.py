@@ -18,6 +18,12 @@ class MongoClient(AsyncMongoClient):
         # ephemeral component state; see extensions/commands/tickets/store.py.
         # NO TTL INDEX ON THIS COLLECTION - ticket history is permanent.
         self.tickets = self.__settings.get_collection("tickets")
+        # Durable staff-authored applicant flags used by the ticket console.
+        # No TTL: inactive records remain as an audit trail.
+        self.ticket_flags = self.__settings.get_collection("ticket_flags")
+        # Durable checkpoints for resumable source-channel -> thread cloning.
+        # Source Discord content is never stored here; only progress and IDs.
+        self.ticket_migrations = self.__settings.get_collection("ticket_migrations")
         # Short-lived idempotency leases for cross-system ticket creation.
         # Durable ticket history remains in tickets; handlers.py owns this TTL.
         self.ticket_creation_state = self.__settings.get_collection("ticket_creation_state")

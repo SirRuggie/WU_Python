@@ -5,16 +5,12 @@ Ticket deny/approve functionality
 
 import hikari
 import lightbulb
-from datetime import datetime, timezone
-import asyncio
 
 from utils.mongo import MongoClient
 from utils.component_state import delete_state, get_state, insert_state
-from extensions.commands.tickets import loader, ticket
-from extensions.commands.tickets import resolve, store
+from extensions.commands.tickets import ticket
+from extensions.commands.tickets import perms, resolve, store
 from extensions.components import register_action
-from utils.constants import RED_ACCENT
-import re
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -23,29 +19,22 @@ from hikari.impl import (
 )
 
 
-def _status_write_warning(result, doc_id) -> str:
-    """Return a recruiter-facing warning when a status update matched nothing.
-
-    Mongo reports success on a zero-match update_one, so a write against a missing
-    document silently no-ops while the channel rename further down still runs. That
-    divergence is how live channels ended up carrying a ✅/❌ emoji with their ticket
-    document still reading "open". The rename is deliberately still performed - the
-    emoji is the signal recruiters actually read - but the mismatch is surfaced
-    instead of being reported as success.
-    """
-    if getattr(result, "matched_count", 0):
-        return ""
-    return (
-        f"\n\n⚠️ **Status was not recorded** — no ticket document matched `{doc_id}`. "
-        f"The channel was still renamed; please report this to an admin."
-    )
+async def _validate_denial_actor(ctx, mongo: MongoClient, data: dict) -> bool:
+    """Fail closed unless the initiating recruiter is still acting."""
+    if int(data.get("denier_id") or 0) != int(ctx.user.id):
+        await ctx.respond("This denial session belongs to another recruiter.", ephemeral=True)
+        return False
+    if not await perms.is_recruiter(ctx.member, mongo):
+        await ctx.respond("You are no longer authorized to deny tickets.", ephemeral=True)
+        return False
+    return True
 
 
 @ticket.register()
 class Deny(
     lightbulb.SlashCommand,
     name="deny",
-    description="Deny the ticket in current channel (Admin/Recruiter only)"
+    description="Deny the ticket in this channel (Admin/Recruiter only)"
 ):
     @lightbulb.invoke
     @lightbulb.di.with_di
@@ -60,22 +49,9 @@ class Deny(
         # Defer the response immediately to avoid timeout
         await ctx.defer(ephemeral=True)
 
-        # Get config to check roles
-        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-        main_role = config.get("main_recruiter_role")
-        fwa_role = config.get("fwa_recruiter_role")
-
-        # Check if user is a recruiter or admin
-        user_roles = ctx.member.role_ids
-        is_authorized = (
-                (main_role and main_role in user_roles) or
-                (fwa_role and fwa_role in user_roles) or
-                ctx.member.permissions & hikari.Permissions.ADMINISTRATOR
-        )
-
-        if not is_authorized:
+        if not await perms.is_recruiter(ctx.member, mongo):
             await ctx.respond(
-                "❌ You must be a recruiter or administrator to deny tickets!"
+                "❌ Only recruiters and administrators can deny tickets."
             )
             return
 
@@ -83,33 +59,18 @@ class Deny(
         current_channel_id = ctx.channel_id
 
         # Find ticket for this channel
-        ticket = await store.find_one(mongo, {
-            "type": "ticket",
-            "channel_id": current_channel_id
-        })
+        ticket = await store.find_by_location(mongo, current_channel_id)
 
         if not ticket:
             await ctx.respond(
-                "❌ This channel is not a ticket!"
+                "❌ No ticket is linked to this channel."
             )
             return
 
-        # Get user_id from ticket_automation_state
-        user_id = None
-        try:
-            automation_doc = await mongo.ticket_automation_state.find_one({"_id": str(current_channel_id)})
-            if automation_doc and automation_doc.get("user_id"):
-                user_id = automation_doc["user_id"]
-        except Exception:
-            pass
-        
-        # If not found in automation state, try to get from ticket
-        if not user_id:
-            user_id = ticket.get("user_id")
-        
+        user_id = ticket.get("user_id")
         if not user_id:
             await ctx.respond(
-                "❌ Could not find the user associated with this ticket!"
+                "❌ This ticket has no applicant Discord ID. Nothing was changed."
             )
             return
 
@@ -119,6 +80,7 @@ class Deny(
             "_id": action_id,
             "type": "deny_action",
             "ticket_id": ticket["_id"],
+            "guild_id": int(ctx.guild_id or 0),
             "channel_id": current_channel_id,
             "user_id": user_id,
             "denier_id": ctx.user.id,
@@ -131,17 +93,17 @@ class Deny(
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"deny_fwa_default:{action_id}",
-                    label="FWA Default Deny"
+                    label="Use FWA default"
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"deny_main_default:{action_id}",
-                    label="Main Default Deny"
+                    label="Use Main default"
                 ),
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
                     custom_id=f"deny_custom:{action_id}",
-                    label="Custom Deny"
+                    label="Write custom reason"
                 )
             ]
         )
@@ -157,7 +119,7 @@ class Deny(
 class Approve(
     lightbulb.SlashCommand,
     name="approve",
-    description="Approve the ticket in current channel (Admin/Recruiter only)"
+    description="Approve the ticket in this channel (Admin/Recruiter only)"
 ):
     @lightbulb.invoke
     @lightbulb.di.with_di
@@ -172,22 +134,9 @@ class Approve(
         # Defer the response immediately to avoid timeout
         await ctx.defer(ephemeral=True)
 
-        # Get config to check roles
-        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-        main_role = config.get("main_recruiter_role")
-        fwa_role = config.get("fwa_recruiter_role")
-
-        # Check if user is a recruiter or admin
-        user_roles = ctx.member.role_ids
-        is_authorized = (
-                (main_role and main_role in user_roles) or
-                (fwa_role and fwa_role in user_roles) or
-                ctx.member.permissions & hikari.Permissions.ADMINISTRATOR
-        )
-
-        if not is_authorized:
+        if not await perms.is_recruiter(ctx.member, mongo):
             await ctx.respond(
-                "❌ You must be a recruiter or administrator to approve tickets!"
+                "❌ Only recruiters and administrators can approve tickets."
             )
             return
 
@@ -195,29 +144,28 @@ class Approve(
         current_channel_id = ctx.channel_id
 
         # Find ticket for this channel
-        ticket = await store.find_one(mongo, {
-            "type": "ticket",
-            "channel_id": current_channel_id
-        })
+        ticket = await store.find_by_location(mongo, current_channel_id)
 
         if not ticket:
             await ctx.respond(
-                "❌ This channel is not a ticket!"
+                "❌ No ticket is linked to this channel."
             )
             return
 
-        # Conditional: only transitions a ticket that is still open. See
-        # store.transition - side effects run ONLY on a won outcome.
-        result = await store.transition(
+        result = await resolve.approve_ticket(
+            bot,
             mongo,
-            ticket["_id"],
-            to_status="approved",
-            actor_id=ctx.user.id,
+            ticket_id=ticket["_id"],
+            member=ctx.member,
             actor_name=ctx.user.username,
-            extra={"approved_at": store.utcnow(), "approved_by": ctx.user.id},
         )
 
         if result.outcome == store.LOST:
+            if (result.doc or {}).get("status") == "open":
+                await ctx.respond(
+                    "The ticket changed before approval finished. Run `/ticket approve` again."
+                )
+                return
             content, rows = await resolve.offer_override(
                 ctx, mongo,
                 kind=resolve.KIND_APPROVE,
@@ -229,109 +177,26 @@ class Approve(
             await ctx.respond(content, components=rows)
             return
 
-        # A missing document is a data error, not a race, and is handled exactly
-        # as before: the channel is still marked, because the emoji is the signal
-        # recruiters actually read, and the mismatch is surfaced instead.
-        status_warning = "" if result.won else _status_write_warning(None, ticket["_id"])
-
-        await resolve.apply_approval(
-            bot, mongo, channel_id=ticket["channel_id"], actor_name=ctx.user.username
-        )
+        if result.outcome == store.MISSING:
+            await ctx.respond("❌ The ticket record is missing. Nothing was changed.")
+            return
+        if result.outcome == store.BLOCKED:
+            if result.blocker:
+                await ctx.respond("⛔ Approval blocked: this applicant is blacklisted.")
+            else:
+                reason = result.reason or "Applicant identity is being updated; try again."
+                await ctx.respond(f"⏳ Approval not completed: {reason}")
+            return
+        if result.outcome == store.UNAUTHORIZED:
+            await ctx.respond("❌ You are no longer authorized to approve tickets.")
+            return
+        if result.outcome == store.EFFECT_FAILED:
+            await ctx.respond(f"⚠️ {resolve.RESOLUTION_EFFECT_RETRY_MESSAGE}")
+            return
         await ctx.respond(
-            f"✅ Ticket approved for <@{ticket['user_id']}>!{status_warning}"
-            f"{resolve.claim_note(result.doc, ctx.user.id)}"
+            f"✅ Ticket approved for <@{ticket['user_id']}>!"
         )
         return
-
-
-# # DISABLED - Orphaned ticket cleanup causing rate limit issues with hundreds of channels
-# # This was checking all open tickets on startup, but with hundreds of channels it causes
-# # excessive API calls and rate limit warnings. Tickets should be closed properly through commands.
-# @loader.listener(hikari.StartedEvent)
-# @lightbulb.di.with_di
-# async def cleanup_orphaned_tickets(
-#         event: hikari.StartedEvent,
-#         mongo: MongoClient = lightbulb.di.INJECTED,
-#         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-# ) -> None:
-#     """Check for tickets where the channel no longer exists and mark them as denied"""
-#
-#     # Wait a bit for bot to be fully ready
-#     await asyncio.sleep(10)  # Increased from 5 to 10 seconds
-#
-#     print(f"[Tickets] Starting orphaned ticket cleanup...")
-#
-#     # Find all open tickets
-#     open_tickets = await mongo.button_store.find({
-#         "type": "ticket",
-#         "status": "open"
-#     }).to_list(length=None)
-#
-#     print(f"[Tickets] Found {len(open_tickets)} open tickets to check")
-#
-#     closed_count = 0
-#     checked_count = 0
-#
-#     for i, ticket in enumerate(open_tickets):
-#         # Add longer delay every 5 tickets to avoid rate limits
-#         if i > 0 and i % 5 == 0:
-#             print(f"[Tickets] Checked {i}/{len(open_tickets)} tickets, pausing 5s to avoid rate limits...")
-#             await asyncio.sleep(5)
-#         
-#         checked_count += 1
-#         
-#         try:
-#             # Try to fetch the channel
-#             channel = await bot.rest.fetch_channel(ticket["channel_id"])
-#
-#             # Increase delay between checks from 0.5 to 2 seconds
-#             await asyncio.sleep(2)
-#
-#             # If channel exists but starts with ❌, mark ticket as denied
-#             if channel.name.startswith("❌"):
-#                 await mongo.button_store.update_one(
-#                     {"_id": ticket["_id"]},
-#                     {
-#                         "$set": {
-#                             "status": "denied",
-#                             "denied_at": datetime.now(timezone.utc),
-#                             "denied_reason": "channel_marked_denied"
-#                         }
-#                     }
-#                 )
-#                 closed_count += 1
-#             # If channel exists but starts with ✅, mark ticket as approved
-#             elif channel.name.startswith("✅"):
-#                 await mongo.button_store.update_one(
-#                     {"_id": ticket["_id"]},
-#                     {
-#                         "$set": {
-#                             "status": "approved",
-#                             "approved_at": datetime.now(timezone.utc),
-#                             "approved_reason": "channel_marked_approved"
-#                         }
-#                     }
-#                 )
-#                 closed_count += 1
-#
-#         except hikari.NotFoundError:
-#             # Channel doesn't exist, mark ticket as denied
-#             await mongo.button_store.update_one(
-#                 {"_id": ticket["_id"]},
-#                 {
-#                     "$set": {
-#                         "status": "denied",
-#                         "denied_at": datetime.now(timezone.utc),
-#                         "denied_reason": "channel_deleted"
-#                     }
-#                 }
-#             )
-#             closed_count += 1
-#         except Exception:
-#             # Other errors, skip
-#             pass
-#
-#     print(f"[Tickets] Cleanup complete: checked {checked_count} tickets, cleaned up {closed_count} orphaned tickets")
 
 
 # Denial action handlers
@@ -350,24 +215,28 @@ async def deny_fwa_default_handler(
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
+    if not await _validate_denial_actor(ctx, mongo, data):
+        return
     
-    # Status FIRST, applicant message second. The message used to be sent before
-    # this write, so two recruiters denying the same ticket in the same second
-    # both succeeded and the applicant received two denials.
-    result = await store.transition(
+    result = await resolve.deny_ticket(
+        bot,
         mongo,
-        data['ticket_id'],
-        to_status="denied",
-        actor_id=data['denier_id'],
-        actor_name=data['denier_name'],
-        extra={
-            "denied_at": store.utcnow(),
-            "denied_by": data['denier_id'],
-            "denial_type": "fwa_default",
-        },
+        ticket_id=data['ticket_id'],
+        member=ctx.member,
+        actor_name=ctx.user.username,
+        kind=resolve.KIND_DENY_FWA,
     )
 
     if result.outcome == store.LOST:
+        if (result.doc or {}).get("status") == "open":
+            await delete_state(mongo, action_id)
+            await ctx.interaction.edit_initial_response(
+                content=(
+                    "The ticket changed before denial finished. Run `/ticket deny` again."
+                ),
+                components=[],
+            )
+            return
         content, rows = await resolve.offer_override(
             ctx, mongo,
             kind=resolve.KIND_DENY_FWA,
@@ -379,21 +248,24 @@ async def deny_fwa_default_handler(
         await delete_state(mongo, action_id)
         await ctx.interaction.edit_initial_response(content=content, components=rows)
         return
-
-    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
-
-    await resolve.apply_denial(
-        bot, mongo,
-        kind=resolve.KIND_DENY_FWA,
-        channel_id=data['channel_id'],
-        user_id=data['user_id'],
-        actor_name=data['denier_name'],
-    )
+    if result.outcome in {store.MISSING, store.UNAUTHORIZED}:
+        await delete_state(mongo, action_id)
+        await ctx.interaction.edit_initial_response(
+            content="❌ Nothing changed: the ticket is missing or you are no longer authorized.",
+            components=[],
+        )
+        return
+    if result.outcome == store.EFFECT_FAILED:
+        await delete_state(mongo, action_id)
+        await ctx.interaction.edit_initial_response(
+            content=f"⚠️ {resolve.RESOLUTION_EFFECT_RETRY_MESSAGE}",
+            components=[],
+        )
+        return
     await delete_state(mongo, action_id)
 
     await ctx.interaction.edit_initial_response(
-        content=f"✅ FWA default denial sent!{status_warning}"
-                f"{resolve.claim_note(result.doc, ctx.user.id)}",
+        content="✅ Ticket denied with the FWA default message.",
         component=None
     )
 
@@ -413,22 +285,28 @@ async def deny_main_default_handler(
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
+    if not await _validate_denial_actor(ctx, mongo, data):
+        return
     
-    # Status FIRST, applicant message second - see deny_fwa_default_handler.
-    result = await store.transition(
+    result = await resolve.deny_ticket(
+        bot,
         mongo,
-        data['ticket_id'],
-        to_status="denied",
-        actor_id=data['denier_id'],
-        actor_name=data['denier_name'],
-        extra={
-            "denied_at": store.utcnow(),
-            "denied_by": data['denier_id'],
-            "denial_type": "main_default",
-        },
+        ticket_id=data['ticket_id'],
+        member=ctx.member,
+        actor_name=ctx.user.username,
+        kind=resolve.KIND_DENY_MAIN,
     )
 
     if result.outcome == store.LOST:
+        if (result.doc or {}).get("status") == "open":
+            await delete_state(mongo, action_id)
+            await ctx.interaction.edit_initial_response(
+                content=(
+                    "The ticket changed before denial finished. Run `/ticket deny` again."
+                ),
+                components=[],
+            )
+            return
         content, rows = await resolve.offer_override(
             ctx, mongo,
             kind=resolve.KIND_DENY_MAIN,
@@ -440,35 +318,39 @@ async def deny_main_default_handler(
         await delete_state(mongo, action_id)
         await ctx.interaction.edit_initial_response(content=content, components=rows)
         return
-
-    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
-
-    await resolve.apply_denial(
-        bot, mongo,
-        kind=resolve.KIND_DENY_MAIN,
-        channel_id=data['channel_id'],
-        user_id=data['user_id'],
-        actor_name=data['denier_name'],
-    )
+    if result.outcome in {store.MISSING, store.UNAUTHORIZED}:
+        await delete_state(mongo, action_id)
+        await ctx.interaction.edit_initial_response(
+            content="❌ Nothing changed: the ticket is missing or you are no longer authorized.",
+            components=[],
+        )
+        return
+    if result.outcome == store.EFFECT_FAILED:
+        await delete_state(mongo, action_id)
+        await ctx.interaction.edit_initial_response(
+            content=f"⚠️ {resolve.RESOLUTION_EFFECT_RETRY_MESSAGE}",
+            components=[],
+        )
+        return
     await delete_state(mongo, action_id)
 
     await ctx.interaction.edit_initial_response(
-        content=f"✅ Main default denial sent!{status_warning}"
-                f"{resolve.claim_note(result.doc, ctx.user.id)}",
+        content="✅ Ticket denied with the Main default message.",
         component=None
     )
 
 
-@register_action("deny_custom", no_return=True, opens_modal=True, requires_state=True)
+@register_action(
+    "deny_custom", no_return=True, opens_modal=True,
+    requires_state=True, preload_state=False,
+)
 @lightbulb.di.with_di
 async def deny_custom_handler(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    **kwargs
+    **_kwargs,
 ):
     """Open modal for custom denial reason"""
-    # Create modal for denial reason
     reason_input = ModalActionRow().add_text_input(
         "denial_reason",
         "Denial Reason",
@@ -486,7 +368,9 @@ async def deny_custom_handler(
     )
 
 
-@register_action("process_custom_denial", no_return=True, is_modal=True, requires_state=True)
+@register_action(
+    "process_custom_denial", no_return=True, is_modal=True, preload_state=False,
+)
 @lightbulb.di.with_di
 async def process_custom_denial_handler(
     ctx: lightbulb.components.ModalContext,
@@ -496,10 +380,41 @@ async def process_custom_denial_handler(
     **kwargs
 ):
     """Process custom denial modal"""
+    # Modal submissions have their own three-second response deadline. This
+    # action deliberately does not ask the dispatcher to load state first.
+    await ctx.defer(ephemeral=True)
     # Get stored data
+    envelope = await get_state(mongo, action_id, {
+        "type": 1,
+        "denier_id": 1,
+        "guild_id": 1,
+    })
+    if not envelope or envelope.get("type") != "deny_action":
+        await ctx.interaction.edit_initial_response(content="❌ Session expired")
+        return
+    denier_id = int(envelope.get("denier_id") or 0)
+    if denier_id != int(ctx.user.id):
+        await ctx.interaction.edit_initial_response(
+            content="This denial session belongs to another recruiter."
+        )
+        return
+    guild_id = int(envelope.get("guild_id") or 0)
+    if not guild_id or int(getattr(ctx, "guild_id", 0) or 0) != guild_id:
+        await ctx.interaction.edit_initial_response(content="❌ Session expired")
+        return
+    if not await perms.is_recruiter(ctx.member, mongo):
+        await ctx.interaction.edit_initial_response(
+            content="You are no longer authorized to deny tickets."
+        )
+        return
     data = await get_state(mongo, action_id)
-    if not data:
-        await ctx.respond("❌ Session expired", ephemeral=True)
+    if (
+        not data
+        or data.get("type") != "deny_action"
+        or int(data.get("denier_id") or 0) != denier_id
+        or int(data.get("guild_id") or 0) != guild_id
+    ):
+        await ctx.interaction.edit_initial_response(content="❌ Session expired")
         return
     
     # Get denial reason from modal
@@ -510,22 +425,25 @@ async def process_custom_denial_handler(
                 reason = comp.value.strip()
                 break
     
-    # Status FIRST, applicant message second - see deny_fwa_default_handler.
-    result = await store.transition(
+    result = await resolve.deny_ticket(
+        bot,
         mongo,
-        data['ticket_id'],
-        to_status="denied",
-        actor_id=data['denier_id'],
-        actor_name=data['denier_name'],
-        extra={
-            "denied_at": store.utcnow(),
-            "denied_by": data['denier_id'],
-            "denial_type": "custom",
-            "denial_reason": reason,
-        },
+        ticket_id=data['ticket_id'],
+        member=ctx.member,
+        actor_name=ctx.user.username,
+        kind=resolve.KIND_DENY_CUSTOM,
+        reason=reason,
     )
 
     if result.outcome == store.LOST:
+        if (result.doc or {}).get("status") == "open":
+            await delete_state(mongo, action_id)
+            await ctx.interaction.edit_initial_response(
+                content=(
+                    "The ticket changed before denial finished. Run `/ticket deny` again."
+                )
+            )
+            return
         content, rows = await resolve.offer_override(
             ctx, mongo,
             kind=resolve.KIND_DENY_CUSTOM,
@@ -536,23 +454,23 @@ async def process_custom_denial_handler(
             reason=reason,
         )
         await delete_state(mongo, action_id)
-        await ctx.respond(content, components=rows, ephemeral=True)
+        await ctx.interaction.edit_initial_response(content=content, components=rows)
         return
-
-    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
-
-    await resolve.apply_denial(
-        bot, mongo,
-        kind=resolve.KIND_DENY_CUSTOM,
-        channel_id=data['channel_id'],
-        user_id=data['user_id'],
-        actor_name=data['denier_name'],
-        reason=reason,
-    )
+    if result.outcome in {store.MISSING, store.UNAUTHORIZED, store.BLOCKED}:
+        await delete_state(mongo, action_id)
+        await ctx.interaction.edit_initial_response(
+            content=(
+                result.reason
+                or "❌ Nothing changed: the ticket is missing or unauthorized."
+            ),
+        )
+        return
+    if result.outcome == store.EFFECT_FAILED:
+        await delete_state(mongo, action_id)
+        await ctx.interaction.edit_initial_response(
+            content=f"⚠️ {resolve.RESOLUTION_EFFECT_RETRY_MESSAGE}",
+        )
+        return
     await delete_state(mongo, action_id)
 
-    await ctx.respond(
-        f"✅ Custom denial sent!{status_warning}"
-        f"{resolve.claim_note(result.doc, ctx.user.id)}",
-        ephemeral=True
-    )
+    await ctx.interaction.edit_initial_response(content="✅ Ticket denied with the custom message.")
