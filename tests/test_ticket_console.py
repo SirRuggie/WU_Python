@@ -1923,6 +1923,135 @@ def test_console_channel_validation_is_private_typed_and_permission_complete(mon
         ))
 
 
+@pytest.mark.parametrize(
+    ("failure", "selected_channel_id", "message"),
+    [
+        (
+            "missing",
+            999,
+            "saved console channel ID 444 is missing.*relocation is disabled",
+        ),
+        (
+            "inaccessible",
+            999,
+            "saved console channel ID 444 is inaccessible.*relocation is disabled",
+        ),
+        (
+            "missing",
+            444,
+            "saved console channel ID 444 is missing.*relocation is disabled",
+        ),
+        (
+            "inaccessible",
+            444,
+            "saved console channel ID 444 is inaccessible.*relocation is disabled",
+        ),
+    ],
+)
+def test_saved_console_channel_failure_is_explicit_and_never_rebinds(
+    monkeypatch,
+    failure,
+    selected_channel_id,
+    message,
+):
+    class MissingChannel(Exception):
+        pass
+
+    class InaccessibleChannel(Exception):
+        pass
+
+    class Collection:
+        def __init__(self):
+            self.document = {
+                "_id": console.HUB_STATE_ID,
+                "guild_id": 321,
+                "channel_id": 444,
+                "message_id": 555,
+            }
+            self.updates = []
+
+        async def find_one(self, _query):
+            return copy.deepcopy(self.document)
+
+        async def update_one(self, *args, **kwargs):
+            self.updates.append((args, kwargs))
+
+    class Rest:
+        async def fetch_channel(self, channel_id):
+            assert channel_id == 444
+            if failure == "missing":
+                raise MissingChannel
+            raise InaccessibleChannel
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("an unavailable saved channel reached configuration")
+
+    monkeypatch.setattr(console.hikari, "NotFoundError", MissingChannel)
+    monkeypatch.setattr(console.hikari, "ForbiddenError", InaccessibleChannel)
+    monkeypatch.setattr(console, "validate_console_channel", forbidden)
+    monkeypatch.setattr(console, "refresh_hub_now", forbidden)
+    collection = Collection()
+    before = copy.deepcopy(collection.document)
+
+    with pytest.raises(console.ConsoleConfigurationError, match=message):
+        asyncio.run(console.configure_hub_here(
+            SimpleNamespace(rest=Rest()),
+            SimpleNamespace(ticket_setup=collection),
+            guild_id=321,
+            channel_id=selected_channel_id,
+        ))
+
+    assert collection.document == before
+    assert collection.updates == []
+
+
+def test_existing_saved_console_keeps_one_console_rejection_without_rebinding(
+    monkeypatch,
+):
+    class Collection:
+        def __init__(self):
+            self.document = {
+                "_id": console.HUB_STATE_ID,
+                "guild_id": 321,
+                "channel_id": 444,
+                "message_id": 555,
+            }
+            self.updates = []
+
+        async def find_one(self, _query):
+            return copy.deepcopy(self.document)
+
+        async def update_one(self, *args, **kwargs):
+            self.updates.append((args, kwargs))
+
+    class Rest:
+        async def fetch_channel(self, channel_id):
+            assert channel_id == 444
+            return SimpleNamespace(id=channel_id)
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("a different channel reached configuration")
+
+    monkeypatch.setattr(console, "validate_console_channel", forbidden)
+    monkeypatch.setattr(console, "refresh_hub_now", forbidden)
+    collection = Collection()
+    before = copy.deepcopy(collection.document)
+
+    with pytest.raises(
+        console.ConsoleConfigurationError,
+        match="one console is already configured in another channel",
+    ):
+        asyncio.run(console.configure_hub_here(
+            SimpleNamespace(rest=Rest()),
+            SimpleNamespace(ticket_setup=collection),
+            guild_id=321,
+            channel_id=999,
+        ))
+
+    assert collection.document == before
+    assert collection.updates == []
+
+
 def test_deleted_hub_message_is_recreated_and_new_id_is_saved(monkeypatch):
     class MissingMessage(Exception):
         pass

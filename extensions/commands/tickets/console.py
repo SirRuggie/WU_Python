@@ -1016,19 +1016,45 @@ async def configure_hub_here(
 ) -> dict:
     """Set the location once, then repair/reuse the one durable message."""
 
+    state = await _hub_state(mongo)
+    existing_channel_id = _int(state.get("channel_id"))
+    if existing_channel_id:
+        try:
+            await bot.rest.fetch_channel(existing_channel_id)
+        except hikari.NotFoundError as exc:
+            raise ConsoleConfigurationError(
+                f"saved console channel ID {existing_channel_id} is missing; "
+                "relocation is disabled, so the saved binding must be repaired first"
+            ) from exc
+        except hikari.ForbiddenError as exc:
+            raise ConsoleConfigurationError(
+                f"saved console channel ID {existing_channel_id} is inaccessible "
+                "to the bot; restore access before retrying because relocation is disabled"
+            ) from exc
+        except Exception as exc:
+            raise ConsoleConfigurationError(
+                f"saved console channel ID {existing_channel_id} could not be "
+                "inspected; retry later because relocation is disabled"
+            ) from exc
+        if existing_channel_id != int(channel_id):
+            raise ConsoleConfigurationError(
+                "one console is already configured in another channel"
+            )
+
     await validate_console_channel(
         bot,
         mongo,
         guild_id=int(guild_id),
         channel_id=int(channel_id),
     )
-    await _ensure_hub_state(mongo)
-    state = await _hub_state(mongo)
-    existing_channel_id = _int(state.get("channel_id"))
-    if existing_channel_id and existing_channel_id != int(channel_id):
-        raise ConsoleConfigurationError(
-            "one console is already configured in another channel"
-        )
+    if not state:
+        await _ensure_hub_state(mongo)
+        state = await _hub_state(mongo)
+        existing_channel_id = _int(state.get("channel_id"))
+        if existing_channel_id and existing_channel_id != int(channel_id):
+            raise ConsoleConfigurationError(
+                "one console is already configured in another channel"
+            )
     if not _int(state.get("channel_id")):
         await mongo.ticket_setup.update_one(
             {"_id": HUB_STATE_ID, "$or": [
