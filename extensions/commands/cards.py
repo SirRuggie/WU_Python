@@ -6070,7 +6070,7 @@ async def _accept_trade_reservation(
     trade: dict,
     *,
     user_id: int,
-    live_clans: tuple[str, str],
+    live_clans: tuple[_LiveClan, _LiveClan],
     now: datetime,
     chosen_card_id: str | None = None,
 ) -> tuple[str, str]:
@@ -6261,7 +6261,12 @@ async def _accept_trade_reservation(
         return "conflict", "pending"
 
     requester_clan, holder_clan = live_clans
-    status = "ready" if requester_clan == holder_clan else "move_needed"
+    # Guarded on a real tag: two clanless accounts share a None, not a clan.
+    status = (
+        "ready"
+        if requester_clan.tag and requester_clan.tag == holder_clan.tag
+        else "move_needed"
+    )
     result = await mongo.card_trades.update_one(
         {
             "_id": trade["_id"],
@@ -6270,9 +6275,13 @@ async def _accept_trade_reservation(
         },
         {"$set": {
             "status": status,
-            "requester_clan_tag": requester_clan,
-            "holder_clan_tag": holder_clan,
-            "clan_tag": requester_clan if status == "ready" else None,
+            "requester_clan_tag": requester_clan.tag,
+            "requester_clan_name": requester_clan.name,
+            "requester_is_leader": requester_clan.is_leader,
+            "holder_clan_tag": holder_clan.tag,
+            "holder_clan_name": holder_clan.name,
+            "holder_is_leader": holder_clan.is_leader,
+            "clan_tag": requester_clan.tag if status == "ready" else None,
             "ready_at": now if status == "ready" else None,
             "updated_at": now,
         }, "$unset": {"reservation_until": ""}},
@@ -6674,40 +6683,71 @@ async def _open_requests_for(
     }).sort("created_at", -1).to_list(length=MAX_OPEN_REQUESTS_PER_ACCOUNT)
 
 
-async def _live_clan_tag(coc_client: coc.Client, tag: str) -> str | None:
+class _LiveClan(NamedTuple):
+    """One account's clan at lookup time, as guidance for the two players.
+
+    Location stopped being a gate: an account outside the family - or an API
+    that will not answer - must never block a swap both players want (the
+    server leader hit exactly that wall). What the players DO need is enough
+    truth to plan the meet-up, and `is_leader` is the load-bearing part: a
+    clan Leader cannot leave their clan, so when one side leads, the other
+    side is the one who has to move.
+    """
+
+    tag: str | None
+    name: str | None
+    is_leader: bool
+
+
+def _stored_clan(source: dict, prefix: str = "") -> _LiveClan:
+    """The clan a trade or inventory document last recorded for one side.
+
+    The fallback when the live lookup fails: stale beats blocked, because the
+    clans only steer messaging (ready vs move_needed) and the players confirm
+    the actual in-game exchange themselves.
+    """
+    key = f"{prefix}_" if prefix else ""
+    return _LiveClan(
+        tag=_normalize_tag(source.get(f"{key}clan_tag")) or None,
+        name=str(source.get(f"{key}clan_name") or "").strip() or None,
+        is_leader=bool(source.get(f"{key}is_leader")),
+    )
+
+
+async def _live_player_clan(
+    coc_client: coc.Client, tag: str
+) -> _LiveClan | None:
+    """One account's live clan snapshot, or None when the API fails."""
     try:
         player = await coc_client.get_player(_normalize_tag(tag))
     except Exception:
         _log.exception("card trade could not refresh player clan tag=%s", tag)
         return None
     clan = getattr(player, "clan", None)
-    return _normalize_tag(getattr(clan, "tag", None)) if clan else None
+    role = getattr(player, "role", None)
+    return _LiveClan(
+        tag=(_normalize_tag(getattr(clan, "tag", None)) or None)
+        if clan
+        else None,
+        name=(str(getattr(clan, "name", "") or "").strip() or None)
+        if clan
+        else None,
+        # Compared by string: coc.Role.__str__ is the in-game name, and the
+        # fakes in tests supply plain strings.
+        is_leader=str(role or "").strip().lower() == "leader",
+    )
 
 
-async def _live_family_clans(
-    mongo: MongoClient,
+async def _live_trade_clans(
     coc_client: coc.Client,
     left_tag: str,
     right_tag: str,
-) -> tuple[str, str] | None:
-    """Return both live clan tags only when both are configured family clans."""
+) -> tuple[_LiveClan | None, _LiveClan | None]:
+    """Both live clan snapshots; a side is None when its lookup failed."""
     left_clan, right_clan = await asyncio.gather(
-        _live_clan_tag(coc_client, left_tag),
-        _live_clan_tag(coc_client, right_tag),
+        _live_player_clan(coc_client, left_tag),
+        _live_player_clan(coc_client, right_tag),
     )
-    if not left_clan or not right_clan:
-        return None
-    try:
-        family_tags = {
-            _normalize_tag(tag)
-            for tag in await mongo.clans.distinct("tag")
-            if _normalize_tag(tag)
-        }
-    except Exception:
-        _log.exception("card trade could not verify family clan membership")
-        return None
-    if left_clan not in family_tags or right_clan not in family_tags:
-        return None
     return left_clan, right_clan
 
 
@@ -6894,13 +6934,47 @@ def _trade_location_line(trade: dict, *, role: str | None = None) -> str:
     )
 
 
+def _move_instruction(trade: dict) -> str:
+    """One sentence naming who moves where, readable by both players.
+
+    Leader-aware: a clan Leader cannot leave their clan, so when one side
+    leads, the sentence names the other side as the one who joins them -
+    "one of you moves" reads as an accusation to a Leader who literally
+    cannot. Both names are always spelled out because the channel post and
+    both private panels share this line, and "you" means someone different
+    on each of those screens.
+    """
+    requester_leads = bool(trade.get("requester_is_leader"))
+    holder_leads = bool(trade.get("holder_is_leader"))
+    requester = _escape_markdown(trade.get("requester_name"), limit=40)
+    holder = _escape_markdown(trade.get("holder_name"), limit=40)
+    if requester_leads and holder_leads:
+        return (
+            f"**{requester}** and **{holder}** both lead their clans — "
+            "agree together where to meet."
+        )
+    if requester_leads or holder_leads:
+        leader, mover = (
+            (requester, holder) if requester_leads else (holder, requester)
+        )
+        prefix = "requester" if requester_leads else "holder"
+        clan = _clan_label(
+            trade.get(f"{prefix}_clan_name"), trade.get(f"{prefix}_clan_tag")
+        )
+        return (
+            f"**{leader}** leads {clan} and cannot move — "
+            f"**{mover}** joins them there."
+        )
+    return "One of you moves to the other clan."
+
+
 # One wording per status, shared by the V2 standing post and the legacy
 # plain-content post so the two renderings can never disagree about what a
 # status is called.
 TRADE_STATUS_LABELS = {
     "pending": "🃏 New card proposal",
     "reserving": "🟡 Proposal being accepted",
-    "move_needed": "🟡 Accepted — family move needed",
+    "move_needed": "🟡 Accepted — clan move needed",
     "ready": "🟢 Ready in the same clan",
     "accepted": "🟢 Ready in the same clan",
     "completing": "🟡 Saving completion",
@@ -7303,7 +7377,7 @@ def _trade_post(trade: dict, *, attachment_ref=None) -> list[Container]:
             + (
                 ""
                 if same_clan
-                else "**2.** One of you moves to the other clan.\n"
+                else f"**2.** {_move_instruction(trade)}\n"
             )
             + f"**{2 if same_clan else 3}.** Trade in game.\n"
             + f"**{3 if same_clan else 4}.** Tap **I sent my card** in "
@@ -8286,7 +8360,7 @@ def _accepted_trade_dm(
     if move_needed:
         next_lines = (
             "**Next**\n"
-            "One of you moves to the other clan.\n"
+            f"{_move_instruction(trade)}\n"
             "Send the cards in game.\n"
             "Then tap **I sent my card** in /cards."
         )
@@ -8372,7 +8446,7 @@ def _holder_accept_feedback(
     if status == "move_needed":
         next_lines = (
             "**Next**\n"
-            "One of you moves to the other clan.\n"
+            f"{_move_instruction(trade)}\n"
             "Send your card in game.\n"
             "Then tap **I sent my card** in **My trades**."
         )
@@ -8812,7 +8886,7 @@ def _trade_summary(trade: dict, *, role: str) -> str:
         )
     elif raw_status == "move_needed":
         detail = (
-            "\n-# Different family clans: "
+            "\n-# Different clans: "
             + _clan_label(
                 trade.get("requester_clan_name"), trade.get("requester_clan_tag")
             )
@@ -8826,10 +8900,14 @@ def _trade_summary(trade: dict, *, role: str) -> str:
                 else ". Exact cards are reserved."
             )
         )
+        if trade.get("requester_is_leader") or trade.get("holder_is_leader"):
+            # The one case where "one of you moves" is misdirection: name
+            # who is pinned and who travels.
+            detail += f" {_move_instruction(trade)}"
     elif raw_status in {"ready", "accepted"}:
         if not own_confirmed:
             detail = (
-                "\n-# Same family clan. Send your card in game, then tap "
+                "\n-# Same clan. Send your card in game, then tap "
                 "**I sent my card**."
             )
     elif raw_status == "completing":
@@ -15480,17 +15558,22 @@ async def cards_trade_request(
     )
     if error:
         return _notice("That swap is no longer available", error)
-    live_clans = await _live_family_clans(
-        mongo, coc_client, requester_tag, holder_tag
+    # Clan location is guidance, never a gate: the proposal is posted with
+    # the freshest clans the API will give, falling back to the stored
+    # inventory clans when it will not answer.
+    live_requester, live_holder = await _live_trade_clans(
+        coc_client, requester_tag, holder_tag
     )
-    if live_clans is None:
-        return _notice(
-            "Both accounts must be in family clans",
-            "I could not verify both accounts inside the configured clan family, so no proposal was posted.",
-        )
     requester = dict(requester)
     holder = dict(holder)
-    requester["clan_tag"], holder["clan_tag"] = live_clans
+    requester_clan = live_requester or _stored_clan(requester)
+    holder_clan = live_holder or _stored_clan(holder)
+    requester["clan_tag"], requester["clan_name"] = (
+        requester_clan.tag, requester_clan.name,
+    )
+    holder["clan_tag"], holder["clan_name"] = (
+        holder_clan.tag, holder_clan.name,
+    )
     trade, error = await _create_trade_request(
         mongo,
         requester=requester,
@@ -16352,19 +16435,16 @@ async def _perform_open_request_claim(
             "Two of you tapped at nearly the same time and they were first. "
             "Watch the board for the next request.",
         )
-    live_clans = await _live_family_clans(
-        mongo, coc_client, request["requester_tag"], claimer_tag
+    # Clan location is guidance, never a gate (same stance as the Accept
+    # path): a failed lookup or an out-of-family account lands the swap in
+    # move_needed instead of refusing the claim.
+    live_poster, live_claimer = await _live_trade_clans(
+        coc_client, request["requester_tag"], claimer_tag
     )
-    if live_clans is None:
-        await _rollback_open_request_claim(
-            mongo, request, claim_token=claim_token
-        )
-        return _notice(
-            "Both accounts must be in family clans",
-            "I could not verify both accounts inside the configured clan "
-            "family, so nothing was claimed - the request stays open. Try "
-            "again once you are back in a family clan.",
-        )
+    live_clans = (
+        live_poster or _stored_clan(poster),
+        live_claimer or _stored_clan(claimer),
+    )
     # Convert to an ordinary kind:"trade". The role mapping is fixed: the
     # poster is the requester (they want the card and give one back), the
     # claimer is the holder. Dict-copies with the LIVE clan tags, exactly
@@ -16372,7 +16452,12 @@ async def _perform_open_request_claim(
     # actually are.
     poster = dict(poster)
     claimer_doc = dict(claimer)
-    poster["clan_tag"], claimer_doc["clan_tag"] = live_clans
+    poster["clan_tag"], poster["clan_name"] = (
+        live_clans[0].tag, live_clans[0].name,
+    )
+    claimer_doc["clan_tag"], claimer_doc["clan_name"] = (
+        live_clans[1].tag, live_clans[1].name,
+    )
     trade, error = await _create_trade_request(
         mongo,
         requester=poster,
@@ -16590,14 +16675,18 @@ async def _perform_trade_accept(
     )
     if error:
         return _notice("Trade can no longer be accepted", error)
-    live_clans = await _live_family_clans(
-        mongo, coc_client, trade["requester_tag"], trade["holder_tag"]
+    # Clan location is guidance, never a gate: whatever the lookup says, the
+    # acceptance proceeds and at worst lands in move_needed. The old hard
+    # refusal ("both accounts must be in family clans") blocked real swaps -
+    # a clan Leader cannot move, and an API blip looked identical to a
+    # missing account.
+    live_requester, live_holder = await _live_trade_clans(
+        coc_client, trade["requester_tag"], trade["holder_tag"]
     )
-    if live_clans is None:
-        return _notice(
-            "Both accounts must be in family clans",
-            "I could not verify both accounts inside the configured clan family. Try again after they are back in family clans.",
-        )
+    live_clans = (
+        live_requester or _stored_clan(trade, "requester"),
+        live_holder or _stored_clan(trade, "holder"),
+    )
     now = datetime.now(timezone.utc)
     outcome, status = await _accept_trade_reservation(
         mongo,
@@ -17344,37 +17433,45 @@ async def cards_trade_complete(
     )
     now = datetime.now(timezone.utc)
     if trade.get("status") not in {"ready", "accepted"}:
-        return _notice("Trade is not ready to complete", "It must be accepted and both accounts must be in the same family clan.")
-    live_clans = await _live_family_clans(
-        mongo, coc_client, trade["requester_tag"], trade["holder_tag"]
+        return _notice("Trade is not ready to complete", "It must be accepted and both accounts must be in the same clan.")
+    # Best-effort, like the confirm buttons: a lookup outage never blocks a
+    # completion both players want. Only a POSITIVE sighting of the accounts
+    # in different clans demotes the swap back to move_needed.
+    live_requester, live_holder = await _live_trade_clans(
+        coc_client, trade["requester_tag"], trade["holder_tag"]
     )
-    if live_clans is None:
-        return _trade_feedback(
-            "Could not verify both family clans",
-            "The exact cards remain reserved. Retry when both accounts are inside configured family clans, or cancel the swap.",
-            account.tag,
-            accent=RED_ACCENT,
-        )
-    if live_clans[0] != live_clans[1]:
+    if (
+        live_requester is not None
+        and live_holder is not None
+        and live_requester.tag != live_holder.tag
+    ):
         demoted = await mongo.card_trades.update_one(
             {"_id": trade["_id"], "status": {"$in": ["ready", "accepted"]}},
             {"$set": {
                 "status": "move_needed",
-                "requester_clan_tag": live_clans[0],
-                "holder_clan_tag": live_clans[1],
+                "requester_clan_tag": live_requester.tag,
+                "requester_clan_name": live_requester.name,
+                "requester_is_leader": live_requester.is_leader,
+                "holder_clan_tag": live_holder.tag,
+                "holder_clan_name": live_holder.name,
+                "holder_is_leader": live_holder.is_leader,
                 "updated_at": now,
             }},
         )
         if getattr(demoted, "modified_count", 0):
             trade.update({
                 "status": "move_needed",
-                "requester_clan_tag": live_clans[0],
-                "holder_clan_tag": live_clans[1],
+                "requester_clan_tag": live_requester.tag,
+                "requester_clan_name": live_requester.name,
+                "requester_is_leader": live_requester.is_leader,
+                "holder_clan_tag": live_holder.tag,
+                "holder_clan_name": live_holder.name,
+                "holder_is_leader": live_holder.is_leader,
             })
             await _update_trade_channel(bot, trade)
         return _trade_feedback(
             "The accounts moved apart",
-            "The exact cards remain reserved. Move into the same family clan. "
+            f"The exact cards remain reserved. {_move_instruction(trade)} "
             "After you send your card in game, open **My trades** and tap "
             "**I sent my card**.",
             account.tag,

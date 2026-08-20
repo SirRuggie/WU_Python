@@ -411,24 +411,33 @@ reserves no cards, does not lock either collection, and does not prevent either
 player from considering other matches. There is no 30-minute acceptance
 deadline. Declining or cancelling closes only that proposal.
 
-Acceptance revalidates both inventories and confirms that both accounts are
-still in configured family clans. Only then does the bot reserve the exact card
+Acceptance revalidates both inventories and then reserves the exact card
 states used by the accepted exchange. It does not reserve either whole account,
 so the same account may participate in other accepted trades that use different
 cards. A particular duplicate cannot be committed to two accepted trades at
 once. Accepted agreements do not have the former one-hour member completion
 window.
 
-When the accounts are in different family clans, acceptance moves the agreement
-to **move needed**. The bot shows both current clans and tells the players to
-coordinate a temporary move inside the family; it never kicks, invites, or
-moves an account. After they are in the same configured family clan, either
-participant can use **Check clans** to mark the agreement **ready in game**.
-Only a ready agreement can proceed to in-game execution and completion.
+Acceptance also refreshes where both accounts currently are, including whether
+either one is its clan's Leader — but location is guidance, never a gate. An
+account outside the family, a clanless account, or an API lookup that fails
+never blocks an acceptance both players want; the swap simply starts as
+**move needed** using the freshest clans available (falling back to the last
+stored ones when the API does not answer).
+
+When the accounts are in different clans, acceptance moves the agreement to
+**move needed**. The bot shows both current clans and tells the players who
+moves where; it never kicks, invites, or moves an account. Because a clan
+Leader cannot leave their clan, when one side is a Leader the instruction
+names the other player as the one who joins the Leader's clan — "one of you
+moves" is never aimed at an account that cannot. Once they are in the same
+clan the swap reads **ready in game**.
 
 The players still perform both card requests inside Clash of Clans; the bot
-does not automate the game client. Immediately before completion, it rechecks
-that both accounts remain in the same configured family clan. After both
+does not automate the game client. Immediately before a legacy completion
+click, it rechecks best-effort that both accounts are still in the same
+clan — only a positive sighting of them apart demotes the swap back to
+**move needed**; a failed lookup never blocks completion. After both
 in-game sides finish, either participant can choose **Trade completed**. A
 single conditional state transition owns completion, preventing concurrent
 clicks from applying twice. The bot then reloads both inventory documents and
