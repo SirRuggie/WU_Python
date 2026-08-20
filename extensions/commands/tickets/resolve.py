@@ -19,10 +19,12 @@ run identical code rather than two drifting copies.
 
 import hikari
 import lightbulb
+import coc
 import asyncio
 import logging
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Mapping
 from utils.component_state import delete_state, get_state, insert_state
 
 from hikari.impl import (
@@ -36,7 +38,14 @@ from hikari.impl import (
     ThumbnailComponentBuilder as Thumbnail,
 )
 
-from extensions.commands.tickets import flag_store, loader, perms, store, thread_service
+from extensions.commands.tickets import (
+    account_sync,
+    flag_store,
+    loader,
+    perms,
+    store,
+    thread_service,
+)
 from extensions.components import register_action
 from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
@@ -52,6 +61,14 @@ RESOLUTION_EFFECT_RETRY_MESSAGE = (
 OVERRIDE_EFFECT_PENDING_MESSAGE = (
     "The earlier decision is still finishing its applicant and archive updates. "
     "Nothing was changed. Try this override again in a moment."
+)
+FWA_IDENTITY_REVIEW_MESSAGE = (
+    "New linked account(s) were found. Review the refreshed Chocolate links in "
+    "the staff thread, then click Approve again."
+)
+FWA_IDENTITY_REFRESH_PENDING_MESSAGE = (
+    "The staff account and Chocolate checklist is still refreshing. Review it "
+    "when the update appears, then click Approve again."
 )
 
 KIND_APPROVE = "approve"
@@ -290,6 +307,7 @@ async def _finalize_effects(mongo: MongoClient, ticket_id, marker: str) -> bool:
             {
                 "$set": {
                     "resolution_effects.notification": {"state": "delivered", "at": now},
+                    "resolution_effects.staff_context": {"state": "delivered", "at": now},
                     "resolution_effects.archive": {"state": "archived", "at": now},
                     "resolution_effects.hub": {"state": "requested", "at": now},
                     "resolution_effects.complete": True,
@@ -421,6 +439,7 @@ async def _process_resolution_effects_owned(
     location_id = int((ticket.get("location") or {}).get("id") or 0)
     pending: list[tuple[str, Exception]] = []
     notification_write_needed = False
+    staff_context_ready = True
 
     try:
         delivered = (effects.get("notification") or {}).get("state") == "delivered"
@@ -454,22 +473,70 @@ async def _process_resolution_effects_owned(
         pending.append(("applicant notification", exc))
 
     try:
-        # Reconcile physical state on every attempt. A notification retry may
-        # have temporarily reopened the candidate after an earlier archive
-        # checkpoint, and terminal threads must never be left active.
-        await thread_service.archive_ticket_pair(bot.rest, ticket)
-        if (
-            (effects.get("archive") or {}).get("state") != "archived"
-            or notification_write_needed
-        ):
+        if (effects.get("staff_context") or {}).get("state") != "delivered":
+            # Decisions committed before linked-account snapshots existed have
+            # nothing new to render; checkpoint them for upgrade-safe recovery.
+            if (ticket.get("linked_accounts") or {}).get("version"):
+                from extensions.commands.tickets import console
+
+                await console.deliver_staff_identity_context(
+                    bot,
+                    mongo,
+                    ticket,
+                    reopen_terminal_thread=True,
+                )
+                state_id = f"ticket_staff_context:{ticket['_id']}"
+                context_state = await mongo.ticket_automation_state.find_one({
+                    "_id": state_id,
+                    "kind": "ticket_staff_context",
+                }) or {}
+                delivered_at = context_state.get("delivered_at")
+                requested_at = context_state.get("refresh_requested_at")
+                if (
+                    context_state.get("delivery_state") != "delivered"
+                    or context_state.get("lease_owner")
+                    or not isinstance(delivered_at, datetime)
+                    or not isinstance(requested_at, datetime)
+                    or delivered_at < requested_at
+                ):
+                    raise RuntimeError("latest staff context refresh remains pending")
             await _checkpoint_effect(
-                mongo, ticket["_id"], marker, step="archive", state="archived"
+                mongo,
+                ticket["_id"],
+                marker,
+                step="staff_context",
+                state="delivered",
             )
     except Exception as exc:
+        staff_context_ready = False
         await _checkpoint_effect(
-            mongo, ticket["_id"], marker, step="archive", state="failed", error=exc
+            mongo,
+            ticket["_id"],
+            marker,
+            step="staff_context",
+            state="failed",
+            error=exc,
         )
-        pending.append(("thread archive", exc))
+        pending.append(("staff account context", exc))
+
+    if staff_context_ready:
+        try:
+            # Reconcile physical state on every attempt. A notification retry may
+            # have temporarily reopened the candidate after an earlier archive
+            # checkpoint, and terminal threads must never be left active.
+            await thread_service.archive_ticket_pair(bot.rest, ticket)
+            if (
+                (effects.get("archive") or {}).get("state") != "archived"
+                or notification_write_needed
+            ):
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step="archive", state="archived"
+                )
+        except Exception as exc:
+            await _checkpoint_effect(
+                mongo, ticket["_id"], marker, step="archive", state="failed", error=exc
+            )
+            pending.append(("thread archive", exc))
 
     try:
         if (effects.get("hub") or {}).get("state") != "requested":
@@ -592,10 +659,51 @@ async def reconcile_pending_resolution_effects(
 _resolution_reconciler_task: asyncio.Task | None = None
 
 
+async def _recover_live_account_syncs(
+        mongo: MongoClient,
+        *,
+        bot: hikari.GatewayBot | None = None,
+) -> dict[str, int]:
+    """Sweep durable account failures while the process remains online."""
+
+    coc_client = account_sync.configured_coc_client()
+    if coc_client is None:
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def queue_context(ticket: dict) -> str | None:
+        from extensions.commands.tickets import console
+
+        return await console.queue_staff_identity_context(mongo, ticket)
+
+    counts = await account_sync.recover_pending_account_syncs(
+        mongo,
+        coc_client,
+        after_sync=queue_context,
+    )
+    if bot is not None:
+        from extensions.commands.tickets import console
+
+        context = await console.recover_pending_staff_identity_contexts(
+            bot=bot,
+            mongo=mongo,
+        )
+        counts["context_processed"] = int(context.get("processed", 0))
+        counts["context_failed"] = int(context.get("failed", 0))
+    return counts
+
+
 async def _resolution_reconciler(bot: hikari.GatewayBot, mongo: MongoClient) -> None:
     while True:
         try:
             counts = await reconcile_pending_resolution_effects(bot, mongo)
+            account_counts = await _recover_live_account_syncs(mongo, bot=bot)
+            if (
+                account_counts.get("failed")
+                or account_counts.get("context_failed")
+                or account_counts.get("processed", 0) >= 25
+                or account_counts.get("context_processed", 0) >= 25
+            ):
+                counts["pending"] = 1
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -635,6 +743,86 @@ async def stop_resolution_reconciler() -> None:
         )
 
 
+def _pending_fwa_identity_review(ticket: Mapping) -> Mapping | None:
+    linked = ticket.get("linked_accounts") or {}
+    review = linked.get("approval_review") if isinstance(linked, Mapping) else None
+    if not isinstance(review, Mapping) or review.get("state") != "pending":
+        return None
+    return review
+
+
+async def _staff_context_is_fresh_for_review(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    ticket: Mapping,
+    review: Mapping,
+) -> bool:
+    requested_review_at = review.get("requested_at")
+    if not isinstance(requested_review_at, datetime):
+        return False
+    state = await mongo.ticket_automation_state.find_one({
+        "_id": f"ticket_staff_context:{ticket.get('_id')}",
+        "kind": "ticket_staff_context",
+    }) or {}
+    refresh_requested_at = state.get("refresh_requested_at")
+    delivered_at = state.get("delivered_at")
+    durable_fresh = bool(
+        state.get("delivery_state") == "delivered"
+        and not state.get("lease_owner")
+        and isinstance(refresh_requested_at, datetime)
+        and isinstance(delivered_at, datetime)
+        and refresh_requested_at >= requested_review_at
+        and delivered_at >= refresh_requested_at
+    )
+    if not durable_fresh:
+        return False
+    from extensions.commands.tickets import console
+
+    return await console.staff_chocolate_context_is_current(
+        bot, mongo, ticket
+    )
+
+
+async def _queue_and_deliver_latest_staff_context(
+        bot: hikari.GatewayBot,
+        mongo: MongoClient,
+        ticket: dict,
+        snapshot: account_sync.AccountSnapshot,
+) -> bool:
+    """Transfer an account obligation to the outbox, then attempt it now."""
+
+    from extensions.commands.tickets import console
+
+    try:
+        if account_sync.staff_context_refresh_required(ticket):
+            state_id = await console.queue_staff_identity_context(mongo, ticket)
+            if not state_id:
+                return False
+            if not await account_sync.confirm_staff_context_queued(
+                mongo,
+                ticket["_id"],
+                account_revision=snapshot.revision,
+            ):
+                return False
+        terminal = str(ticket.get("status") or "") in {"approved", "denied"}
+        await console.deliver_staff_identity_context(
+            bot,
+            mongo,
+            ticket,
+            reopen_terminal_thread=terminal,
+            open_only_refresh=not terminal,
+        )
+        return True
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        _log.exception(
+            "ticket staff identity refresh could not be queued ticket=%s",
+            ticket.get("_id"),
+        )
+        return False
+
+
 async def _resolve_ticket(
         bot: hikari.GatewayBot,
         mongo: MongoClient,
@@ -649,8 +837,11 @@ async def _resolve_ticket(
         override: dict | None = None,
         prior_effect_marker: str | None = None,
         prior_effects_legacy_baseline: bool = False,
+        coc_client: coc.Client | None = None,
 ) -> store.Transition:
     """Authorize, enforce flags, CAS status, then run effects exactly once."""
+    if coc_client is None:
+        coc_client = account_sync.configured_coc_client()
     if not await perms.is_recruiter(member, mongo):
         return store.Transition(store.UNAUTHORIZED, None, "recruiter permission required")
     if kind not in {KIND_APPROVE, *DENIAL_TYPE}:
@@ -680,8 +871,159 @@ async def _resolve_ticket(
                 ticket,
                 OVERRIDE_EFFECT_PENDING_MESSAGE,
             )
+    sync_retry: dict | None = None
+    snapshot = account_sync.snapshot_from_ticket(ticket)
+    sync_source = (
+        account_sync.SOURCE_FINAL_APPROVE
+        if kind == KIND_APPROVE
+        else account_sync.SOURCE_FINAL_DENY
+    )
+    if coc_client is None:
+        if kind == KIND_APPROVE:
+            try:
+                failed = await account_sync.record_ticket_account_failure(
+                    mongo,
+                    ticket_id,
+                    source=sync_source,
+                    error="ClashClientUnavailable",
+                )
+            except account_sync.AccountSyncError:
+                failed = None
+            if failed is not None and failed.ticket is not None:
+                ticket = failed.ticket
+                snapshot = failed.snapshot
+            else:
+                snapshot = account_sync.AccountSnapshot(
+                    state=account_sync.STATE_FAILED,
+                    current_accounts=snapshot.current_accounts,
+                    current_tags=snapshot.current_tags,
+                    observed_tags=snapshot.observed_tags,
+                    retry_required=True,
+                    source=sync_source,
+                    last_attempt_at=store.utcnow(),
+                    last_success_at=snapshot.last_success_at,
+                    error="ClashClientUnavailable",
+                    revision=snapshot.revision,
+                )
+        else:
+            sync_retry = {
+                "source": sync_source,
+                "error": "ClashClientUnavailable",
+            }
+            snapshot = account_sync.AccountSnapshot(
+                state=account_sync.STATE_FAILED,
+                current_accounts=snapshot.current_accounts,
+                current_tags=snapshot.current_tags,
+                observed_tags=snapshot.observed_tags,
+                retry_required=True,
+                source=sync_source,
+                last_attempt_at=store.utcnow(),
+                last_success_at=snapshot.last_success_at,
+                error=sync_retry["error"],
+                revision=snapshot.revision + 1,
+            )
+    else:
+        try:
+            synced = await account_sync.sync_ticket_accounts(
+                mongo,
+                coc_client,
+                ticket_id,
+                source=sync_source,
+            )
+        except account_sync.AccountSyncError:
+            latest = await store.find_one(
+                mongo, {"_id": ticket_id, **store.RUNTIME_FILTER}
+            )
+            if latest is None:
+                return store.Transition(store.MISSING, None)
+            ticket = latest
+            snapshot = account_sync.snapshot_from_ticket(ticket)
+            sync_retry = {
+                "source": sync_source,
+                "error": "AccountSyncCASFailed",
+            }
+            snapshot = account_sync.AccountSnapshot(
+                state=account_sync.STATE_FAILED,
+                current_accounts=snapshot.current_accounts,
+                current_tags=snapshot.current_tags,
+                observed_tags=snapshot.observed_tags,
+                retry_required=True,
+                source=sync_source,
+                last_attempt_at=store.utcnow(),
+                last_success_at=snapshot.last_success_at,
+                error=sync_retry["error"],
+                revision=snapshot.revision + 1,
+            )
+        else:
+            if synced.ticket is None:
+                return store.Transition(store.MISSING, None)
+            ticket = synced.ticket
+            snapshot = synced.snapshot
+    context_refreshed_this_attempt = False
+    if kind == KIND_APPROVE and account_sync.staff_context_refresh_required(ticket):
+        queued = await _queue_and_deliver_latest_staff_context(
+            bot, mongo, ticket, snapshot
+        )
+        if not queued:
+            return store.Transition(
+                store.BLOCKED,
+                ticket,
+                "staff account context could not be queued; approval is blocked",
+            )
+        context_refreshed_this_attempt = True
+    review = (
+        _pending_fwa_identity_review(ticket)
+        if kind == KIND_APPROVE
+        and str(ticket.get("ticket_type") or "").lower() == "fwa"
+        else None
+    )
+    review_acknowledged = False
+    if review is not None:
+        review_revision = max(0, int(review.get("account_revision") or 0))
+        context_fresh = await _staff_context_is_fresh_for_review(
+            bot, mongo, ticket, review
+        )
+        if review_revision == snapshot.revision or context_refreshed_this_attempt:
+            return store.Transition(
+                store.BLOCKED,
+                ticket,
+                (
+                    FWA_IDENTITY_REVIEW_MESSAGE
+                    if context_fresh
+                    else FWA_IDENTITY_REFRESH_PENDING_MESSAGE
+                ),
+            )
+        if not context_fresh:
+            await _queue_and_deliver_latest_staff_context(
+                bot, mongo, ticket, snapshot
+            )
+            return store.Transition(
+                store.BLOCKED,
+                ticket,
+                FWA_IDENTITY_REFRESH_PENDING_MESSAGE,
+            )
+        review_acknowledged = True
+    if kind == KIND_APPROVE and not snapshot.has_linked_accounts:
+        reason = (
+            "linked-account lookup failed; approval is blocked until it succeeds"
+            if snapshot.state == account_sync.STATE_FAILED
+            else "approval requires at least one linked Clash account"
+        )
+        return store.Transition(store.BLOCKED, ticket, reason)
+    if kind == KIND_APPROVE and account_sync.flag_identity_refresh_required(ticket):
+        return store.Transition(
+            store.BLOCKED,
+            ticket,
+            "linked-account flag identities are still refreshing; approval is blocked",
+        )
     target = "approved" if kind == KIND_APPROVE else "denied"
     extra = {}
+    if review_acknowledged:
+        extra.update({
+            "linked_accounts.approval_review.state": "acknowledged",
+            "linked_accounts.approval_review.acknowledged_at": store.utcnow(),
+            "linked_accounts.approval_review.acknowledged_by": member.id,
+        })
     if kind != KIND_APPROVE:
         extra["denial_type"] = DENIAL_TYPE[kind]
         if reason:
@@ -701,6 +1043,16 @@ async def _resolve_ticket(
         "effect_kind": kind,
         "prior_effect_marker": prior_effect_marker,
         "prior_effects_legacy_baseline": prior_effects_legacy_baseline,
+        "linked_account_snapshot": {
+            "state": snapshot.state,
+            "revision": snapshot.revision,
+            "current_tags": snapshot.current_tags,
+            "retry_required": snapshot.retry_required,
+        },
+        "linked_account_retry": sync_retry,
+        "expected_linked_account_revision": account_sync.snapshot_from_ticket(
+            ticket
+        ).revision,
     }
     if kind == KIND_APPROVE:
         try:
@@ -721,10 +1073,21 @@ async def _resolve_ticket(
                         "applicant is blacklisted",
                         blocker=blocker,
                     )
+                # The lookup and blacklist check can take long enough for a
+                # recruiter role change to arrive.  Authorization is required
+                # at the write boundary, not only when the action began.
+                if not await perms.is_recruiter(member, mongo):
+                    return store.Transition(
+                        store.UNAUTHORIZED, None, "recruiter permission required"
+                    )
                 result = await store.transition(mongo, ticket_id, **transition_kwargs)
         except flag_store.IdentityLockBusy as exc:
             return store.Transition(store.BLOCKED, ticket, str(exc))
     else:
+        if not await perms.is_recruiter(member, mongo):
+            return store.Transition(
+                store.UNAUTHORIZED, None, "recruiter permission required"
+            )
         result = await store.transition(mongo, ticket_id, **transition_kwargs)
     if not result.won:
         return result
@@ -743,6 +1106,7 @@ async def approve_ticket(
         override: dict | None = None,
         prior_effect_marker: str | None = None,
         prior_effects_legacy_baseline: bool = False,
+        coc_client: coc.Client | None = None,
 ) -> store.Transition:
     return await _resolve_ticket(
         bot, mongo, ticket_id=ticket_id, member=member, actor_name=actor_name,
@@ -750,6 +1114,7 @@ async def approve_ticket(
         expected_rev=expected_rev, override=override,
         prior_effect_marker=prior_effect_marker,
         prior_effects_legacy_baseline=prior_effects_legacy_baseline,
+        coc_client=coc_client,
     )
 
 
@@ -767,6 +1132,7 @@ async def deny_ticket(
         override: dict | None = None,
         prior_effect_marker: str | None = None,
         prior_effects_legacy_baseline: bool = False,
+        coc_client: coc.Client | None = None,
 ) -> store.Transition:
     if kind not in DENIAL_TYPE:
         raise ValueError("kind must be deny_fwa, deny_main, or deny_custom")
@@ -776,6 +1142,7 @@ async def deny_ticket(
         expected_rev=expected_rev, override=override,
         prior_effect_marker=prior_effect_marker,
         prior_effects_legacy_baseline=prior_effects_legacy_baseline,
+        coc_client=coc_client,
     )
 
 

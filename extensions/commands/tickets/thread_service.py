@@ -18,10 +18,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Sequence
 
 import hikari
+import coc
 from hikari.impl import (
     ContainerComponentBuilder as Container,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
+    SeparatorComponentBuilder as Separator,
     SectionComponentBuilder as Section,
     TextDisplayComponentBuilder as Text,
     ThumbnailComponentBuilder as Thumbnail,
@@ -29,7 +31,7 @@ from hikari.impl import (
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from extensions.commands.tickets import store
+from extensions.commands.tickets import account_sync, store
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
 
@@ -102,6 +104,16 @@ def _as_int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _safe_markdown(value: Any, *, limit: int = 80) -> str:
+    """Render applicant-controlled text as inert Discord markdown."""
+
+    text = str(value or "").replace("\x00", "").strip()[:limit]
+    text = text.replace("@", "@\u200b")
+    for character in ("\\", "`", "*", "_", "~", "|", ">", "[", "]", "(", ")"):
+        text = text.replace(character, "\\" + character)
+    return text or "unknown"
 
 
 def _creation_id(_guild_id: int, user_id: int, ticket_type: str) -> str:
@@ -914,7 +926,17 @@ async def _ensure_live_thread_pair(
 
 async def _message_marker_exists(rest: hikari.api.RESTClient, channel_id: int, marker: str) -> bool:
     messages = await _collect_rest_iterator(rest.fetch_messages(channel_id))
-    return any(marker in (getattr(message, "content", "") or "") for message in messages)
+
+    def contains(component: Any) -> bool:
+        if marker in str(getattr(component, "content", "") or ""):
+            return True
+        return any(contains(child) for child in getattr(component, "components", ()) or ())
+
+    return any(
+        marker in (getattr(message, "content", "") or "")
+        or any(contains(component) for component in getattr(message, "components", ()) or ())
+        for message in messages
+    )
 
 
 async def _send_once(
@@ -937,7 +959,128 @@ async def _send_once(
     )
 
 
-def _questionnaire_components(ticket_type: str, guild_icon_url: str | None) -> list:
+async def _send_components_once(
+    rest: hikari.api.RESTClient,
+    channel_id: int,
+    marker: str,
+    components: Sequence,
+    *,
+    user_mentions: bool | Sequence[int] = False,
+    role_mentions: bool | Sequence[int] = False,
+) -> None:
+    """Deliver one recoverable Components V2 opening card."""
+
+    if await _message_marker_exists(rest, channel_id, marker):
+        return
+    await rest.create_message(
+        channel_id,
+        components=[*components, Text(content=f"-# {marker}")],
+        flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+        mentions_everyone=False,
+        user_mentions=user_mentions,
+        role_mentions=role_mentions,
+    )
+
+
+def _ticket_account_snapshot(ticket: Mapping[str, Any] | None):
+    """Thin presentation adapter over the account-sync ticket snapshot."""
+
+    if not ticket:
+        return None
+    from extensions.commands.tickets.account_sync import snapshot_from_ticket
+
+    return snapshot_from_ticket(ticket)
+
+
+def _candidate_account_copy(ticket: Mapping[str, Any] | None) -> str:
+    snapshot = _ticket_account_snapshot(ticket)
+    if snapshot is None or snapshot.state == "pending":
+        return (
+            "### 🔄 Linked Clash accounts\n"
+            "Your linked accounts are being checked automatically. You do not need "
+            "to reopen this ticket."
+        )
+    if snapshot.state == "failed":
+        return (
+            "### ⚠️ Linked Clash accounts\n"
+            "The account service could not be reached. Nothing was treated as "
+            "unlinked; staff will retry the check automatically."
+        )
+    if snapshot.state == "empty":
+        return (
+            "### 🔗 No linked accounts found\n"
+            "Please link your Clash accounts through ClashKing `/link`. Staff can "
+            "also help privately. Your complete account list will be checked again "
+            "before a decision."
+        )
+    count = len(snapshot.current_accounts)
+    noun = "account" if count == 1 else "accounts"
+    return (
+        "### ✅ Linked Clash accounts found\n"
+        f"We found **{count} linked {noun}**. The list will be checked again before "
+        "a decision so newly linked accounts are included automatically."
+    )
+
+
+def _candidate_welcome_components(ticket: Mapping[str, Any]) -> list:
+    ticket_type = str(ticket.get("ticket_type") or "main").upper()
+    user_id = _as_int(ticket.get("user_id"))
+    return [Container(
+        accent_color=GOLDENROD_ACCENT,
+        components=[
+            Text(content=f"## 👋 Welcome to your {ticket_type} interest ticket"),
+            Text(content=(
+                f"<@{user_id}> Thank you for your interest in Warriors United. "
+                "A recruiter will reply soon. Please answer the questions below "
+                "while you wait."
+            )),
+        ],
+    )]
+
+
+def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
+    ticket_type = str(ticket.get("ticket_type") or "main").upper()
+    ticket_number = int(ticket.get("ticket_number") or 0)
+    public_id = _as_int(
+        (ticket.get("location") or {}).get("id") or ticket.get("channel_id")
+    )
+    recruiter_role = _as_int(ticket.get("recruiter_role_id"))
+    raw_username = ticket.get("username") or "unknown"
+    username = _safe_markdown(raw_username, limit=80)
+    display_name = _safe_markdown(
+        ticket.get("display_name") or raw_username, limit=80
+    )
+    user_id = _as_int(ticket.get("user_id"))
+    notification = (
+        f"<@&{recruiter_role}> a new applicant is ready for review."
+        if recruiter_role else
+        "A new applicant is ready for recruiter review."
+    )
+    return [Container(
+        accent_color=hikari.Color.from_hex_code("0066FF"),
+        components=[
+            Text(content=f"## 🔒 {ticket_type} recruiter workspace · #{ticket_number}"),
+            Text(content=notification),
+            Separator(divider=True),
+            Text(content=(
+                f"**Candidate:** {display_name} (`{username}`)\n"
+                f"**Discord ID:** `{user_id}`\n"
+                f"**Candidate thread:** <#{public_id}>"
+            )),
+            Text(content=(
+                "⚠️ **Recruiter-only:** The candidate cannot see this thread. "
+                "Do not mention or add them here."
+            )),
+        ],
+    )]
+
+
+def _questionnaire_components(
+    ticket_type: str,
+    guild_icon_url: str | None,
+    *,
+    ticket: Mapping[str, Any] | None = None,
+) -> list:
     logo = guild_icon_url or (
         "https://res.cloudinary.com/dxmtzuomk/image/upload/"
         "v1752836911/misc_images/WU_Logo.png"
@@ -960,6 +1103,15 @@ def _questionnaire_components(ticket_type: str, guild_icon_url: str | None) -> l
             else ""
         )
     )
+    how_heard = (
+        "Hello there 👋🏻...how you hear about our FWA Operation?"
+        if is_fwa else
+        "Hello there 👋🏻...how you hear about Warriors United?"
+    )
+    hooked = (
+        'What was the hook that reeled you in? The thing that said '
+        '"yeah, I need to check these guys out!!!"'
+    )
     hero = (
         "https://res.cloudinary.com/dxmtzuomk/image/upload/"
         "v1752836857/misc_images/WU_FWA_Ticket.jpg"
@@ -974,6 +1126,18 @@ def _questionnaire_components(ticket_type: str, guild_icon_url: str | None) -> l
                     components=[Text(content=title), Text(content=questions)],
                     accessory=Thumbnail(media=logo),
                 ),
+                Separator(divider=True),
+                Text(content=f"### How did you hear about us?\n{how_heard}"),
+                Text(content=f"### What hooked you?\n{hooked}"),
+                *(
+                    [Text(content=(
+                        "### FWA expectations\n"
+                        "Donations are better with the update allowing loot to be "
+                        "used, but clan chats are and can be sporadic."
+                    ))]
+                    if is_fwa else []
+                ),
+                Text(content=_candidate_account_copy(ticket)),
                 Media(items=[MediaItem(media=hero)]),
                 Text(content="-# A recruiter will reply as soon as possible."),
             ],
@@ -1012,40 +1176,36 @@ async def _deliver_opening_messages(rest: hikari.api.RESTClient, ticket: dict) -
     recruiter_role = _as_int(ticket.get("recruiter_role_id"))
     candidate_marker = f"ticket-setup:{public_id}:candidate"
     staff_marker = f"ticket-setup:{public_id}:staff"
-    role_text = f" <@&{recruiter_role}>" if recruiter_role else ""
-    await _send_once(
+    await _send_components_once(
         rest,
         public_id,
         candidate_marker,
-        (
-            f"<@{user_id}> Welcome, and thank you for your interest. "
-            f"{role_text.strip() or 'A recruiter'} will reply soon. "
-            "Please answer the questions below while you wait."
-        ),
+        _candidate_welcome_components(ticket),
         user_mentions=[user_id],
-        role_mentions=[recruiter_role] if recruiter_role else False,
+        role_mentions=False,
     )
     if not await _questionnaire_exists(rest, public_id, ticket_type):
         guild = await rest.fetch_guild(_as_int(ticket.get("guild_id")))
         icon = getattr(guild, "make_icon_url", lambda: None)()
         await rest.create_message(
             public_id,
-            components=_questionnaire_components(ticket_type, str(icon) if icon else None),
+            components=_questionnaire_components(
+                ticket_type,
+                str(icon) if icon else None,
+                ticket=ticket,
+            ),
+            flags=hikari.MessageFlag.IS_COMPONENTS_V2,
             mentions_everyone=False,
             user_mentions=False,
             role_mentions=False,
         )
-    await _send_once(
+    await _send_components_once(
         rest,
         staff_id,
         staff_marker,
-        (
-            f"Recruiter-only workspace for {ticket_type.upper()} ticket #{ticket_number}.\n"
-            f"Candidate thread: <#{public_id}>\n"
-            "Do not add or mention the candidate in this staff thread."
-        ),
+        _staff_opening_components(ticket),
         user_mentions=False,
-        role_mentions=False,
+        role_mentions=[recruiter_role] if recruiter_role else False,
     )
 
 
@@ -1176,8 +1336,20 @@ async def _reconcile_existing_ticket(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
     ticket: dict,
+    *,
+    coc_client: coc.Client | None = None,
 ) -> CreatedThreadTicket:
     """Heal every post-commit Discord/state step before returning an open ticket."""
+    snapshot = account_sync.snapshot_from_ticket(ticket)
+    if coc_client is not None and snapshot.retry_required:
+        synced = await account_sync.sync_ticket_accounts(
+            mongo,
+            coc_client,
+            ticket["_id"],
+            source=account_sync.SOURCE_OPEN_RETRY,
+        )
+        if synced.ticket is not None:
+            ticket = synced.ticket
     delivery_complete = await _finish_committed_creation(
         bot, mongo, ticket, reconcile_pair=True
     )
@@ -1250,8 +1422,11 @@ async def create_live_thread_ticket(
     display_name: str | None,
     ticket_type: str,
     config: Mapping[str, Any],
+    coc_client: coc.Client | None = None,
 ) -> CreatedThreadTicket:
     """Create or resume one live thread ticket without duplicating resources."""
+    if coc_client is None:
+        coc_client = account_sync.configured_coc_client()
     if ticket_type not in {"main", "fwa"}:
         raise ThreadConfigurationError("ticket type must be main or fwa")
     # This call also installs the canonical ticket uniqueness indexes before
@@ -1262,7 +1437,9 @@ async def create_live_thread_ticket(
         mongo, user_id=int(user_id), ticket_type=ticket_type
     )
     if existing is not None:
-        return await _reconcile_existing_ticket(bot, mongo, existing)
+        return await _reconcile_existing_ticket(
+            bot, mongo, existing, coc_client=coc_client
+        )
 
     me = bot.get_me()
     if me is None:
@@ -1282,7 +1459,9 @@ async def create_live_thread_ticket(
                 mongo, user_id=int(user_id), ticket_type=ticket_type
             )
             if existing is not None:
-                return await _reconcile_existing_ticket(bot, mongo, existing)
+                return await _reconcile_existing_ticket(
+                    bot, mongo, existing, coc_client=coc_client
+                )
 
             bound_ticket = await _committed_ticket_for_creation_state(
                 mongo,
@@ -1292,7 +1471,9 @@ async def create_live_thread_ticket(
             )
             if bound_ticket is not None:
                 if bound_ticket.get("status") == "open":
-                    return await _reconcile_existing_ticket(bot, mongo, bound_ticket)
+                    return await _reconcile_existing_ticket(
+                        bot, mongo, bound_ticket, coc_client=coc_client
+                    )
                 await _mark_committed_creation_complete(mongo, bound_ticket)
 
             owner, state, resumed = await _claim_creation(
@@ -1306,6 +1487,7 @@ async def create_live_thread_ticket(
                 now=utcnow(),
             )
             candidate = staff = None
+            committed_ticket: dict | None = None
             try:
                 candidate, staff, state = await _ensure_live_thread_pair(
                     rest=bot.rest,
@@ -1334,10 +1516,26 @@ async def create_live_thread_ticket(
                     if committed is None:
                         raise
                     ticket = committed
+                committed_ticket = ticket
 
                 if ticket.get("status") != "open":
                     await _mark_committed_creation_complete(mongo, ticket)
                     continue
+
+                # The Discord pair and ticket row are durable before any external
+                # identity lookup. A timeout therefore resumes this exact pair.
+                if coc_client is not None:
+                    synced = await account_sync.sync_ticket_accounts(
+                        mongo,
+                        coc_client,
+                        ticket["_id"],
+                        source=account_sync.SOURCE_OPEN,
+                    )
+                    if synced.ticket is None:
+                        raise ThreadTicketError(
+                            "committed ticket disappeared during linked-account sync"
+                        )
+                    ticket = synced.ticket
 
                 delivery_complete = await _finish_committed_creation(
                     bot, mongo, ticket, reconcile_pair=False
@@ -1351,6 +1549,11 @@ async def create_live_thread_ticket(
                     delivery_pending=not delivery_complete,
                 )
             except asyncio.CancelledError as error:
+                if committed_ticket is not None:
+                    await _set_committed_creation_state(
+                        mongo, committed_ticket, state="delivery_retry", error=error
+                    )
+                    raise
                 await _cleanup_interrupted_creation(
                     rest=bot.rest,
                     mongo=mongo,
@@ -1361,6 +1564,20 @@ async def create_live_thread_ticket(
                 )
                 raise
             except Exception as error:
+                if committed_ticket is not None:
+                    # The row binds this pair permanently.  A post-commit
+                    # lookup/delivery failure is recoverable work, not an
+                    # incomplete creation, so never quarantine the live pair.
+                    try:
+                        await _set_committed_creation_state(
+                            mongo, committed_ticket, state="delivery_retry", error=error
+                        )
+                    except Exception:
+                        _log.exception(
+                            "failed to checkpoint committed ticket retry for %s",
+                            committed_ticket.get("_id"),
+                        )
+                    raise
                 await _cleanup_interrupted_creation(
                     rest=bot.rest,
                     mongo=mongo,
@@ -1429,6 +1646,7 @@ async def recover_pending_thread_ticket_creations(
     *,
     bot: hikari.GatewayBot,
     mongo: MongoClient,
+    coc_client: coc.Client | None = None,
     limit: int = 50,
 ) -> dict[str, int]:
     """Resume expired, operator-authorized live creation attempts at startup."""
@@ -1464,6 +1682,7 @@ async def recover_pending_thread_ticket_creations(
                 display_name=str(state.get("display_name") or "") or None,
                 ticket_type=ticket_type,
                 config=config,
+                coc_client=coc_client,
             )
         except Exception:
             counts["failed"] += 1

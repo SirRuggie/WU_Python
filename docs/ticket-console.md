@@ -1,21 +1,23 @@
-# Ticket console — decided design
+# Ticket console — implemented design
 
 Decided 2026-08-17, in mockup review. **Supersedes Part 2 of
 [thread-ticketing-proposal.md](thread-ticketing-proposal.md)** — that file's
 Part 1 (research), Part 3 (migration/architecture) and Part 4 (risks) still
 stand and are not repeated here. This file is the equivalent of
 [todo-dashboard.md](todo-dashboard.md) for `/todo`: the "as decided"
-description, not the research trail.
+description, not the research trail. For setup, daily operation, and recovery,
+the [ticket console operations guide](ticket-console-operations.md) is the
+operator source of truth.
 
-Reference implementation: an interactive, clickable HTML mockup
-(`ticket-console-mockup.html`, single self-contained file) was built and
-iterated against this exact spec, including full example ticket threads with
-real bot panel copy. It is the fastest way to see the actual behavior below;
-this file is the fastest way to build it.
+Design reference: an interactive, clickable HTML mockup
+([ticket-console-mockup.html](ticket-console/ticket-console-mockup.html), single self-contained file) was built and
+iterated before the runtime shipped, including example ticket threads and bot
+panel copy. It remains a visual reference, but the implemented Discord panels
+and the operations guide take precedence wherever the mockup differs.
 
-**Two corrections against the live codebase are folded in below** — the
-mockup briefly got these wrong, and both are the kind of thing that would
-have been caught the hard way at build time otherwise. See §4 and §5.
+The implementation corrections in §4 and §5 are authoritative. In particular,
+search filters do not live in a modal, and Chocolate is always a human-reviewed
+link-out rather than an automatic verdict.
 
 ---
 
@@ -51,18 +53,12 @@ fresh ephemeral panel rather than mutating the shared one.
 Discord's real ephemeral banner is part of the contract, not decoration:
 "🚫 Only you can see this · Dismiss message" on every drill-down.
 
-**Auto-update, no manual refresh.** The proposal already specified this
-(§2.2: "Text: live counts (bot edits this on state change only)") — it just
-wasn't built out as a full mechanism. It now is: `create_ticket`,
-`store.transition` (approve/deny) each call `refresh_hub()` on their way out
-— recount, redraw the PNG, edit the persistent message. A manual "⟳ Refresh"
-button was in early mockup drafts and was **removed** once this was made
-explicit: there is no state the shared message can be behind on that a click
-would fix, so the button had no job. Debounce rapid bursts (e.g. a wave of
-approvals) inside `refresh_hub()` itself, not with a user-facing control.
-Limitation, unchanged from the original design: this can only ever update
-the *persistent* message. Someone's already-open ephemeral panel is a
-snapshot and does not live-update — expected, not a bug.
+**Auto-update, no manual refresh.** Ticket creation, approve/deny, and flag
+changes request a hub recount, chart redraw, and persistent-message edit. That
+refresh state is durable and retried after a transient Discord failure or bot
+restart. A manual "⟳ Refresh" button was removed because operators do not need
+to drive recovery. Someone's already-open ephemeral panel is still a snapshot
+and does not live-update; reopen the ticket from the hub to read current state.
 
 ## 3. The chart replaces the stat Section
 
@@ -162,30 +158,27 @@ nothing at all on the Hetzner box. Two sanctioned approaches only:
 - **Hand-drawn PIL primitives** for everything else — plain geometry, no
   font dependency, identical on any box. In use: check, plus and × (the
   three status-tile badges), the refresh arc, and the header bar glyph.
-  `icon_ban()` and `icon_shield()` are also defined but currently have no
-  call sites — they predate the supplied artwork that replaced them, and
-  are kept only as a starting point if a fourth flag or status ever needs a
-  drawn glyph.
 
-Both the renderer and these five assets ship alongside this doc — see
-§10.
+The production renderer and these five production assets are listed in §10;
+the similarly named renderer under `docs/ticket-console/` is a standalone
+visual reference only.
 
 ## 4. Search — three input types, and a hikari correction
 
 **Inputs, and only these three:** Discord ID, player tag, or username.
-Nothing else. Validated client-side before submit:
+Nothing else. The bot validates the text after submit:
 
 | Input | Rule | Rejection copy |
 |---|---|---|
 | Discord ID | 17–20 digits, numeric only | "That is not a Discord ID. A Discord ID has 17 to 20 numbers. Ticket numbers do not work here." |
 | Player tag | starts `#`, then 3–9 alphanumerics | "That is not a player tag. A player tag is 3 to 9 letters and numbers after the #." |
 | Username | 2–32 chars, `[\w .-]` | falls through to username, no separate error |
-| anything else | — | "Use a Discord ID, a player tag (start it with #), or a username. Nothing else works." |
+| anything else | — | "Use a Discord ID, a player tag (start it with #), or a username. Enter only one of these values." |
 
 Entry points: the `🔍 Find a ticket` button on the console, and a
 `/ticket find` slash command reachable from anywhere (not just the channel
 the console lives in) — mirrors the original proposal's Archive row (§2.1),
-whose entry points are `/ticket history @user` and `/ticket find`
+whose entry points are `/ticket history member:@user` and `/ticket find`
 (`/ticket console` is the Queue's entry, not the Archive's).
 
 ### ⚠️ Correction: Status/Clan-type cannot live inside the modal
@@ -217,62 +210,98 @@ ticket), status/type filtering still exists, and it is real hikari code, not
 aspirational Discord-platform code.
 
 Budget check on the results panel, worst case (10 results, the existing cap
-from §2.6, unchanged): container 1 + 2 filter-select rows (2 each) 4 +
-separator 1 + 10 result rows (Section + Text + Button accessory, 3 each) 30
-+ footer media 1 = **37 of 40.** Tight, which is exactly why the original
-10-result cap (§2.6: "top 10 with jump links, never a browsable list") has
-to hold — it was already right, for a reason that now matters even more.
+from §2.6, unchanged): container 1 + heading Text 1 + 2 filter-select rows
+(2 each) 4 + separator 1 + 10 result rows (Section + Text + Button accessory,
+3 each) 30 + New-search row 2 + footer Text 1 = **40 of 40.** The original
+10-result cap (§2.6: "top 10 with jump links, never a browsable list") must
+therefore hold.
 
-## 5. Flags — binary blacklist, two cautions, and a second correction
+## 5. Flags and FWA Chocolate — implemented staff flow
 
-Three flag kinds, all staff-authored records, matched against a ticket by
-Discord ID **or** player tag (either match is sufficient; a ban on any
-linked tag bans the whole player record):
+Three flag kinds are staff-authored and match a ticket by Discord ID **or** any
+permanently recorded player tag. Either identity match is sufficient, and only
+one kind blocks approval:
 
 | Kind | Blocks Approve? | Source |
 |---|---|---|
-| Blacklisted | **Yes** | FWA ban, confirmed via FWA Chocolate |
-| Denied before | No — caution only | our own past tickets |
-| Not loyal to WU | No — caution only | recruiter note |
+| Blacklisted | **Yes** | FWA ban verified by a recruiter on FWA Chocolate |
+| Previously denied | No — caution only | Warriors United ticket history |
+| Not loyal to WU | No — caution only | Warriors United recruiter note |
 
-**The label is "Blacklisted," not "On blacklist"** — renamed everywhere
-during review (console copy, chart pill, mockup). Each flag has dedicated
-artwork rather than an emoji; see §3.4.
+The chart uses the shorter label **Denied before** for the
+`Previously denied` count. **Blacklisted**, not “On blacklist,” is the
+authoritative blacklist label. Blacklist state is binary, not tiered; the bot
+never renders a “maybe” verdict.
 
-**Binary, not tiered.** There is no "maybe" state. A ban either is or is not
-on record for that Discord ID / player tag; the console never renders an
-in-between.
+### Manage Flags is the primary authoring path
 
-### ⚠️ Correction: `/fwa chocolate` doesn't return a verdict — a human does
+Every ticket detail has **Manage flags**. A recruiter can add a flag, update its
+reason, or remove an active flag after recording a permanent removal reason.
+The manager binds the latest stored Discord ID and every permanently recorded
+player tag; account names are display-only. Flag changes refresh matching open
+staff panels and the shared console.
 
-The mockup's Chocolate Clash panel shows the bot posting a structured
-result — "FWA status — ⛔ BANNED — this player is blacklisted" — as if the
-bot fetched and parsed that. **It doesn't, and per the existing command it
-can't automatically today.** The real command
-(`extensions/commands/fwa/chocolate.py`) is `/fwa chocolate player-tag:#TAG`
-(or `clan-tag:`), and all it does is post a public link button —
-`https://cc.fwafarm.com/cc_n/member.php?tag=...` — with copy that says
-*"This will open the FWA Chocolate site to show: … Blacklist status (if
-any)."* No parsing happens server-side. This matches an earlier finding in
-this same research effort: `cc.fwafarm.com` is login-gated to automated
-fetches (the service changed hands in Jan 2025), so a scrape-and-parse
-version of this command was never viable, and the shipped command was
-deliberately built as a link-out, not a lookup.
+The recruiter-only slash commands remain fallback and audit tools when the
+ticket-detail panel is unavailable:
 
-**Corrected flow:** recruiter runs `/fwa chocolate player-tag:#TAG` in the
-staff thread → bot posts the real link-button message, unchanged → recruiter
-clicks through, reads the ban status on the actual site with their own eyes
-→ recruiter is the one who then records the finding, which is exactly what
-the flag record already models (`addedBy`, `checkedAt`, `source: "FWA
-Chocolate · FWA ban list"`, `reason`) — that half of the design was already
-right. Only the bot-message copy needs to change: generic link-out, not an
-inline verdict.
+```text
+/ticket flags identity:<Discord ID or #player tag>
+/ticket flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
+/ticket flag-remove flag-id:<exact ID> reason:<reason>
+```
 
-## 6. Ticket history — fires for everyone with history, not just flagged people
+### Automatic Chocolate pages use current accounts only
 
-When a Discord ID or player tag matches an **earlier** ticket (any status),
-the staff thread gets an automatic panel the first time it's opened,
-independent of the flag system entirely:
+When an FWA ticket opens, its staff thread automatically receives Chocolate
+checklist pages containing one review link per **currently linked** account,
+grouped safely across multiple messages when needed. A later successful account
+refresh updates those pages in place and retires extra pages if the current list
+shrinks. Permanently recorded tags that are no longer linked still match search,
+history, and flags, but do not stay on the current-account checklist.
+
+A failed lookup and a successful result with zero accounts are different states
+in the staff copy. Before the first account result is persisted, the candidate
+sees the pending check while staff account and Chocolate panels may be absent.
+Recovery creates or updates the staff panels after a result is stored. On a
+later failure, the last confirmed current snapshot can remain visible while the
+lookup retries. The checklist is staff only; no per-tag `/fwa chocolate`
+command is required for the ticket workflow.
+
+Every Chocolate item is only a link to the external review page. A recruiter
+must open it, read the site, and use **Manage flags** to record a verified
+concern. The bot does not fetch, infer, or save a Chocolate blacklist verdict.
+
+### Newly linked FWA accounts pause approval for review
+
+Approve and deny both force-refresh all linked accounts immediately before the
+decision. Approval fails closed if that lookup fails or if it confirms zero
+currently linked accounts. It also checks active blacklist flags against the
+Discord ID and every permanently recorded tag, including identities discovered
+by that final refresh.
+
+If an FWA approval refresh discovers an account that was not in the preceding
+current snapshot, the ticket remains open. The bot durably queues and attempts a
+staff-context and Chocolate-page refresh, then tells the recruiter to review the
+refreshed links and click **Approve** again. If delivery is not yet current, the
+second attempt remains blocked while recovery retries it. Any still-new account
+found on a later attempt repeats the same gate. This is a human-review gate, not
+an automatic Chocolate verdict.
+
+Denial does not use the approval gate: a failed or zero-account final lookup
+does not prevent denial. A failed lookup is stored with the decision and retried
+automatically so the durable staff context and Chocolate pages can catch up.
+
+## 6. Applicant context and ticket history
+
+The bot delivers an automatic applicant-context panel to the staff thread when
+a ticket opens and refreshes it when account identity or matching flags change.
+It distinguishes the latest current linked-account snapshot from the append-only
+set of permanently observed tags. A failed lookup is never rendered as a
+confirmed zero-account result.
+
+When a Discord ID or any observed player tag matches an **earlier** ticket (any
+status), that same staff context includes prior-ticket links independently of the
+flag system:
 
 > 📜 **This person has opened a ticket before.**
 > One earlier ticket matches this Discord ID or player tag.
@@ -281,11 +310,11 @@ independent of the flag system entirely:
 >
 > The old thread is never deleted. Open it and read before you answer here.
 
-This is deliberately broader than the flag system — it is a plain "have we
-seen this person" check against every prior ticket by ID/tag match, with a
-jump button straight into the old thread. A flagged person also has this
-fire; an unflagged returning applicant still gets it. Nothing about it
-depends on `FLAGS`.
+This history is deliberately broader than flags: an unflagged returning
+applicant still gets it. Delivery and later refreshes are durable retry work,
+including a recovered account snapshot for a ticket already denied. The console
+detail also shows matching flags, recorded tags, and earlier tickets whenever a
+recruiter opens it.
 
 ## 7. Permanence — nothing is ever closed
 
@@ -299,85 +328,59 @@ ticket you deleted.
 Console copy reflects this directly: `❌ Denied · the thread is kept
 forever — find it from the console any time`, never "closed."
 
-### Reconciling this with Part 3.3's `archived: true, locked: true` step
+### Implemented Discord thread lifecycle
 
-Part 3.3 of the proposal has the thread era doing, on close: `archived:
-true, locked: true` in one PATCH, with `locked` there specifically to stop a
-stray message from silently reopening a resolved ticket. Two different
-things were being called "close" and need to be told apart:
+Two different concepts must not be called “closed”:
 
 - **Ticket status** — `open` / `approved` / `denied`. This is the one that
-  must never mean "gone." It lives in Mongo, it's what the console renders,
-  and it's terminal-but-permanent for approved/denied, same as today.
+  never means “gone.” It lives in Mongo, is what the console renders, and is
+  terminal but permanent for approved/denied.
 - **Discord's `archived` flag on the thread object** — a dormancy flag, not
-  a deletion. An archived thread's messages are 100% intact and the thread
-  is still reachable by ID; it just needs one unarchive PATCH before a
-  jump-link click lands the recruiter inside it, because archived threads
-  reject interactions (Part 1.3).
+  a deletion. The messages and thread ID remain intact.
 
-These don't have to be the same decision. **Recommended, not yet confirmed
-by you:** keep using Discord's `archived` flag purely as invisible plumbing
-against the real, undocumented ~1000-active-thread ceiling (Part 4.1, risk
-#8) — auto-archive old resolved tickets in the background, auto-unarchive on
-jump-click, and never let either action touch the Mongo `status` field or
-any user-facing copy. To a recruiter this is indistinguishable from "never
-archived": nothing is deleted, nothing reads as closed, every old ticket is
-still one click away. The alternative — literally never archiving anything,
-ever — is simpler to reason about but reintroduces risk #8 with no
-mitigation once tickets genuinely never leave the active-thread count. **I
-went with the plumbing interpretation because it's the only one that
-satisfies both "never closed" and "don't silently hit an undocumented
-Discord cap" — flag if you meant the stricter, literal version instead.**
+After approve or deny, the runtime locks and archives both the candidate and
+staff threads. If a Discord update fails after the decision is recorded, durable
+recovery keeps retrying it. Console jump links open terminal threads read-only;
+they remain archived and locked. The runtime does not auto-unarchive them on a
+view and has no close or reopen workflow.
 
 ## 8. Copy standard
 
-Everything a candidate or a recruiter reads on the console or in a ticket
-thread is written for a non-native English speaker: short sentences, common
-words, no idioms, no jargon left unexplained. This is not a nice-to-have —
-most of the recruiting audience is exactly that. The FWA capital gold
-question is the canonical example of getting this precise as well as
-simple: members raid **with their own clan only** and **donate** Capital
-Gold to family clans that still need it — they never raid in another
-family clan. Any copy that says "raid the other clans" is wrong and reads
-as a rules violation to anyone who takes it literally.
+New console, linked-account, Chocolate, flag, and decision guidance is written
+for a non-native English speaker: short sentences, common words, no unexplained
+jargon, and no new idioms. Some intentionally preserved legacy questionnaire
+prompts predate this standard and are not templates for new copy. The FWA
+capital gold question is the canonical example of getting new guidance precise
+as well as simple: members raid **with their own clan only** and **donate**
+Capital Gold to family clans that still need it — they never raid in another
+family clan. Any new copy that says "raid the other clans" is wrong and reads as
+a rules violation to anyone who takes it literally.
 
-## 9. Open items — not decided here
+## 9. Implemented boundaries
 
-- **Backend claiming's scope.** The console no longer surfaces or uses
-  `claimed_by`/`claimed_at` anywhere — "we don't care what the recruiter
-  claimed" was explicit. What's *not* decided: whether `/ticket claim` /
-  `/ticket release` (already live, Part 4.2 decision #4) get deprecated
-  entirely, or just stop being rendered. Cheapest correct move is probably
-  "stop rendering it, leave the backend alone" — the console change doesn't
-  require touching already-shipped code — but that's a call, not a default
-  I made for you.
-- **The `abandoned` status** (Part 4.2, decision #3, settled 2026-08-02,
-  before this review) was never discussed in the console review and isn't
-  in the console's `STATUS` map (`open` / `approved` / `denied` only). If
-  it's still wanted, it needs a fourth glyph/color in the console and in
-  `render_overview.py`'s stat tiles, and it doesn't conflict with §7 —
-  "abandoned" would just be another permanent, findable-forever state, same
-  as the other three. Flagging because it's a real gap, not resolving it.
-- **The legacy `closed` status** (one document, nothing writes it anymore —
-  [ticket-status-lifecycle.md](ticket-status-lifecycle.md)) isn't in the
-  console's `STATUS` map either. If that one document is ever surfaced by a
-  search, the renderer needs a defensive fallback so it doesn't crash on an
-  unknown key. Small, but worth catching before it's a bug report.
+- Recruiter workflow does not use claim, release, close, or reopen. The shared
+  console exposes ticket detail, flags, approve, deny, search, and history.
+- The canonical runtime stores only `open`, `approved`, or `denied`; there is no
+  `abandoned` runtime state. `closed` is legacy input only and must be explicitly
+  classified as approved or denied during store migration.
+- One console channel is bound once. Re-running `/ticket console` repairs or
+  reuses that hub in its saved channel; it does not relocate it.
 
 ## 10. Where the reference artifacts live
 
-Stored alongside this doc so the design isn't only prose:
+The shipped runtime and its visual references are separate:
 
 | Path | What it is |
 |---|---|
-| `docs/ticket-console/render_overview.py` | The chart renderer, standalone and runnable. Pillow only, no Cloudinary, no network. Run it from the repo root (`python3 docs/ticket-console/render_overview.py`) and it writes `ticket_overview.png`. This is the thing `refresh_hub()` folds in at build time; the module-level demo counts get replaced by real ones. |
-| `docs/ticket-console/ticket-console-mockup.html` | The clickable mockup — one self-contained file, open it in a browser. Includes full example ticket threads with real bot panel copy, and embeds the rendered chart as a data URI. ~400 KB, mostly that embedded PNG. |
+| `extensions/commands/tickets/console.py` | Shipped console, ticket-detail, Manage Flags, staff-context, and automatic Chocolate flows. |
+| `extensions/commands/tickets/console_render.py` | Shipped Pillow chart renderer used by the persistent hub. |
+| `docs/ticket-console/render_overview.py` | Standalone visual reference renderer. It is not imported by the runtime. |
+| `docs/ticket-console/ticket-console-mockup.html` | Clickable pre-implementation visual reference. It is not runtime authority. |
 | `assets/tickets/*.png` | The five icon assets from §3.4, at source resolution with real alpha. Production assets — the renderer loads them at these paths. |
 
-The renderer and the mockup are a **reference implementation, not shipped
-code** — nothing imports them and no command calls them yet. They're kept
-in-repo because the alternative is a design doc describing a chart that no
-longer exists anywhere.
+Only the two files under `docs/ticket-console/` are reference artifacts. The
+production console imports its shipped renderer and loads the production icon
+assets.
 
 The mockup is a browser artifact and is **not** bound by §3.4's
 no-emoji rule — that rule is specific to the Pillow-rendered PNG, where
@@ -392,9 +395,6 @@ own HTML render fine and are used deliberately.
   backfill design for cloning old channel-based tickets (this server or
   others being consolidated) into searchable threads.
 - [ticket-data-model.md](ticket-data-model.md) / [ticket-status-lifecycle.md](ticket-status-lifecycle.md)
-  — the underlying `tickets` collection. A new flag record (blacklist /
-  denied-before / not-loyal) needs its own small collection — kind,
-  `discordIds[]`, `playerTags[]`, `source`, `addedBy`, `checkedAt`, `reason`,
-  `active` — matched at render time against a ticket's own ID/tag. Not
-  designed in [ticket-data-model.md](ticket-data-model.md) yet; this file is
-  the first place it's specified.
+  — the underlying ticket lifecycle references. The implemented flag store is
+  durable, audited, and matched at render and approval time by Discord ID or
+  recorded player tag.

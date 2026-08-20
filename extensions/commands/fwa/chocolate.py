@@ -2,6 +2,11 @@ import lightbulb
 import hikari
 
 from extensions.commands.fwa import loader, fwa
+from extensions.commands.fwa.chocolate_links import (
+    chocolate_url,
+    is_valid_tag,
+    normalize_tag,
+)
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.emoji import emojis
 
@@ -15,18 +20,6 @@ from hikari.impl import (
     SectionComponentBuilder as Section,
     MessageActionRowBuilder as ActionRow,
 )
-
-
-def normalize_tag(tag: str) -> str:
-    """Normalize a clan/player tag by removing # and converting to uppercase."""
-    return tag.upper().replace("#", "").strip()
-
-
-def is_valid_tag(tag: str) -> bool:
-    """Check if a tag has basic valid format."""
-    normalized = normalize_tag(tag)
-    # Just check for reasonable length and that it's not empty
-    return 2 <= len(normalized) <= 15
 
 
 @fwa.register()
@@ -117,10 +110,7 @@ class ChocolateCommand(
             return
 
         # Build the URL
-        if tag_type == "player":
-            url = f"https://cc.fwafarm.com/cc_n/member.php?tag={normalized_tag}"
-        else:
-            url = f"https://cc.fwafarm.com/cc_n/clan.php?tag={normalized_tag}"
+        url = chocolate_url(normalized_tag, tag_type=tag_type)
 
         # Build type-specific information text
         if tag_type == "player":

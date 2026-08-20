@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 
 import hikari
 import lightbulb
+import coc
 
 from utils.mongo import MongoClient
 from utils.startup_reconciler import StartupReconciler
@@ -23,6 +24,7 @@ _staff_context_sweep_complete = False
 CREATION_RECOVERY_LIMIT = 50
 MIGRATION_RECOVERY_LIMIT = 5
 STAFF_CONTEXT_RECOVERY_LIMIT = 25
+ACCOUNT_SYNC_RECOVERY_LIMIT = 25
 
 
 async def prepare_ticket_runtime(mongo: MongoClient) -> dict[str, str]:
@@ -50,17 +52,41 @@ async def prepare_ticket_runtime(mongo: MongoClient) -> dict[str, str]:
 async def recover_ticket_workflows(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
+    coc_client: coc.Client | None = None,
 ) -> None:
     """Resume only durable, previously authorized ticket work."""
     global _staff_context_sweep_after, _staff_context_sweep_complete
 
     await store.ensure_indexes(mongo)
+    creation_kwargs = {
+        "bot": bot,
+        "mongo": mongo,
+        "limit": CREATION_RECOVERY_LIMIT,
+    }
+    if coc_client is not None:
+        creation_kwargs["coc_client"] = coc_client
     creation = await thread_service.recover_pending_thread_ticket_creations(
-        bot=bot, mongo=mongo, limit=CREATION_RECOVERY_LIMIT
+        **creation_kwargs
     )
     migration = await legacy_migration.recover_pending_legacy_migrations(
         bot=bot, mongo=mongo, limit=MIGRATION_RECOVERY_LIMIT
     )
+    async def queue_context_after_account_sync(ticket_doc: dict) -> str | None:
+        return await console.queue_staff_identity_context(mongo, ticket_doc)
+
+    account_identities = (
+        await account_sync.recover_pending_account_syncs(
+            mongo,
+            coc_client,
+            limit=ACCOUNT_SYNC_RECOVERY_LIMIT,
+            after_sync=queue_context_after_account_sync,
+        )
+        if coc_client is not None
+        else {"processed": 0, "completed": 0, "failed": 0}
+    )
+    # Account recovery can change the staff account/Chocolate panels, including
+    # for terminal denials. Queue those changes first, then drain the durable
+    # staff-context outbox in the same recovery pass.
     staff_context = await console.recover_pending_staff_identity_contexts(
         bot=bot, mongo=mongo, limit=STAFF_CONTEXT_RECOVERY_LIMIT
     )
@@ -84,7 +110,13 @@ async def recover_ticket_workflows(
         _staff_context_sweep_complete = bool(open_context.get("exhausted"))
     failed = sum(
         int(result.get("failed", 0))
-        for result in (creation, migration, staff_context, open_context)
+        for result in (
+            creation,
+            migration,
+            staff_context,
+            account_identities,
+            open_context,
+        )
     )
     print(
         "[Tickets] startup_workflow_recovery "
@@ -92,6 +124,8 @@ async def recover_ticket_workflows(
         f"migration={migration.get('completed', 0)}/{migration.get('processed', 0)} "
         f"staff_context={staff_context.get('completed', 0)}/"
         f"{staff_context.get('processed', 0)} "
+        f"account_identities={account_identities.get('completed', 0)}/"
+        f"{account_identities.get('processed', 0)} "
         f"open_context={open_context.get('completed', 0)}/"
         f"{open_context.get('processed', 0)} "
         f"failed={failed}"
@@ -102,6 +136,7 @@ async def recover_ticket_workflows(
         int(creation.get("processed", 0)) >= CREATION_RECOVERY_LIMIT
         or int(migration.get("processed", 0)) >= MIGRATION_RECOVERY_LIMIT
         or int(staff_context.get("processed", 0)) >= STAFF_CONTEXT_RECOVERY_LIMIT
+        or int(account_identities.get("processed", 0)) >= ACCOUNT_SYNC_RECOVERY_LIMIT
         or not _staff_context_sweep_complete
     ):
         # A full bounded batch cannot prove that no later eligible rows remain.
@@ -113,6 +148,7 @@ async def recover_ticket_workflows(
 async def _recover_ticket_runtime(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
+    coc_client: coc.Client | None = None,
 ) -> None:
     """Prepare the thread runtime, then resume its durable workflows."""
     global ticket_config, startup_index_errors, _startup_complete
@@ -137,19 +173,25 @@ async def _recover_ticket_runtime(
             "index_errors=0"
         )
 
-    await recover_ticket_workflows(bot, mongo)
+    if coc_client is None:
+        await recover_ticket_workflows(bot, mongo)
+    else:
+        await recover_ticket_workflows(bot, mongo, coc_client)
 
 
 def start_ticket_workflow_recovery(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
+    coc_client: coc.Client | None = None,
 ) -> StartupReconciler:
     """Start one self-healing background recovery task."""
     global _workflow_recovery
+    if coc_client is None:
+        coc_client = account_sync.configured_coc_client()
     if _workflow_recovery is None:
         _workflow_recovery = StartupReconciler(
             "ticket-workflows",
-            lambda: _recover_ticket_runtime(bot, mongo),
+            lambda: _recover_ticket_runtime(bot, mongo, coc_client),
         )
     _workflow_recovery.start()
     return _workflow_recovery
@@ -187,6 +229,7 @@ async def on_stopping(_: hikari.StoppingEvent) -> None:
 from . import schema
 from . import store
 from . import flag_store
+from . import account_sync
 from . import thread_service
 
 # User and interaction surfaces.

@@ -39,7 +39,9 @@ from hikari.impl import (
     TextSelectMenuBuilder as TextSelectMenu,
 )
 
+from extensions.commands.fwa.chocolate_links import chocolate_url
 from extensions.commands.tickets import (
+    account_sync,
     flag_store,
     loader,
     perms,
@@ -101,6 +103,8 @@ FLAG_META = {
     flag_store.FLAG_DENIED_BEFORE: ("Previously denied", "⚠️", False),
     flag_store.FLAG_NOT_LOYAL: ("Not loyal to WU", "⚠️", False),
 }
+FLAG_SOURCES = flag_store.FLAG_SOURCES
+MAX_FLAG_MANAGER_OPTIONS = 25
 
 DISCORD_ID_RE = re.compile(r"^\d{17,20}$")
 PLAYER_TAG_RE = re.compile(r"^#[A-Za-z0-9]{3,9}$")
@@ -231,6 +235,9 @@ def _ticket_id(ticket_doc: Mapping) -> str:
 
 
 def _player_tags(ticket_doc: Mapping) -> tuple[str, ...]:
+    snapshot = account_sync.snapshot_from_ticket(ticket_doc)
+    if snapshot.observed_tags:
+        return tuple(snapshot.observed_tags)
     raw = ticket_doc.get("player_tags") or ticket_doc.get("playerTags") or ()
     if isinstance(raw, str):
         raw = (raw,)
@@ -1521,7 +1528,9 @@ def build_ticket_detail(
         )
         reason = _clean(flag.get("reason"), limit=300)
         rule = " · blocks approve" if blocks else " · caution only"
-        flag_id = _clean(flag.get("_id"), limit=80)
+        # IDs are shown in code spans specifically so staff can copy the exact
+        # value into /ticket flag-remove. Escaping underscores changes that ID.
+        flag_id = str(flag.get("_id") or "")[:80] or "Unknown"
         flag_lines.append(f"{glyph} **{label}**{rule} · `{flag_id}`\n{reason}")
 
     tag_prefix = "**Player tags:** "
@@ -1601,6 +1610,13 @@ def build_ticket_detail(
     if jump_buttons:
         components.append(ActionRow(components=jump_buttons))
 
+    components.append(ActionRow(components=[Button(
+        style=hikari.ButtonStyle.SECONDARY,
+        custom_id=f"ticket_console_manage_flags:{action_id}",
+        label="Manage flags",
+        emoji="🚩",
+    )]))
+
     if status == "open":
         if blacklist_warning:
             components.append(Text(content=blacklist_warning))
@@ -1665,6 +1681,318 @@ async def _ticket_detail_panel(
     )
 
 
+def _flag_manager_content(
+    flags: Sequence[Mapping],
+    *,
+    limit: int = DISCORD_MESSAGE_TEXT_LIMIT,
+) -> str:
+    content = "### Active staff flags"
+    if not flags:
+        return content + "\nNo active flags match this applicant."
+    for index, flag in enumerate(flags):
+        label, glyph, blocks = FLAG_META.get(
+            _flag_kind(flag), ("Unknown flag", "⚠️", False)
+        )
+        rule = "blocks approve" if blocks else "caution only"
+        flag_id = str(flag.get("_id") or "")[:80] or "Unknown"
+        source = _clean(flag.get("source"), limit=180)
+        reason = _clean(flag.get("reason"), limit=500)
+        addition = (
+            f"\n\n{glyph} **{label}** · {rule}\n"
+            f"`{flag_id}`\n**Source:** {source}\n**Reason:** {reason}"
+        )
+        if len(content) + len(addition) <= limit:
+            content += addition
+            continue
+        omitted = len(flags) - index
+        suffix = (
+            f"\n\n-# {omitted} additional active flag"
+            f"{'s' if omitted != 1 else ''} not shown."
+        )
+        return content[:limit - len(suffix)].rstrip() + suffix
+    return content
+
+
+def _flag_manager_kind_snapshot(flags: Sequence[Mapping]) -> dict[str, list[dict]]:
+    snapshot = {kind: [] for kind in FLAG_META}
+    for flag in flags:
+        kind = _flag_kind(flag)
+        flag_id = str(flag.get("_id") or "")
+        if kind in snapshot and flag_id:
+            snapshot[kind].append({
+                "flag_id": flag_id,
+                "rev": max(0, _int(flag.get("rev"))),
+            })
+    return snapshot
+
+
+def build_flag_manager(
+    ticket_doc: Mapping,
+    *,
+    action_id: str,
+    flags: Sequence[Mapping],
+) -> list[Container]:
+    """Build one owner-bound flag editor without placing identity in controls."""
+
+    active_flags = _active_flags(flags)
+    tags = _player_tags(ticket_doc)
+    user_id = _int(ticket_doc.get("user_id"))
+    title = f"## 🚩 Manage flags · {_ticket_label(ticket_doc, username=True)}"
+    identity_prefix = (
+        f"**Discord ID:** `{user_id}`\n**Stored player tags ({len(tags)}):** "
+        if user_id else
+        f"**Discord ID:** unavailable\n**Stored player tags ({len(tags)}):** "
+    )
+    footer = (
+        "-# Changes bind the latest stored Discord ID and every recorded player tag. "
+        "Names are display-only."
+    )
+    guidance = (
+        "Choose a flag type to add it or update its reason. "
+        "To remove a flag, choose it below and record why."
+    )
+    tag_copy = _bounded_tag_display(tags, limit=DISCORD_MESSAGE_TEXT_LIMIT) if tags else "none"
+    flag_copy = _flag_manager_content(active_flags)
+    tag_budget, flag_budget = _allocate_message_text(
+        [len(tag_copy), len(flag_copy)],
+        fixed_texts=[title, identity_prefix, guidance, footer],
+        minimum_lengths=[
+            min(len(tag_copy), len(_tag_omission_suffix(len(tags)))) if tags else len(tag_copy),
+            min(len(flag_copy), len("### Active staff flags\nNo active flags match this applicant.")),
+        ],
+    )
+    identity = identity_prefix + (
+        _bounded_tag_display(tags, limit=tag_budget) if tags else "none"
+    )
+    has_identity = bool(user_id or tags)
+    components: list = [
+        Text(content=title),
+        Text(content=identity),
+        Text(content=guidance),
+        Separator(divider=True),
+        Text(content=_flag_manager_content(active_flags, limit=flag_budget)),
+        ActionRow(components=[
+            Button(
+                style=(
+                    hikari.ButtonStyle.DANGER
+                    if kind == flag_store.FLAG_BLACKLISTED else
+                    hikari.ButtonStyle.SECONDARY
+                ),
+                custom_id=f"ticket_flag_set:{action_id}|{kind}",
+                label=label,
+                emoji=glyph,
+                is_disabled=not has_identity,
+            )
+            for kind, (label, glyph, _blocks) in FLAG_META.items()
+        ]),
+    ]
+    removable = active_flags[:MAX_FLAG_MANAGER_OPTIONS]
+    if removable:
+        components.append(ActionRow(components=[TextSelectMenu(
+            custom_id=f"ticket_flag_remove:{action_id}",
+            placeholder="Remove an active flag…",
+            min_values=1,
+            max_values=1,
+            options=[SelectOption(
+                label=(
+                    f"{FLAG_META.get(_flag_kind(flag), ('Unknown flag', '⚠️', False))[1]} "
+                    f"{FLAG_META.get(_flag_kind(flag), ('Unknown flag', '⚠️', False))[0]}"
+                )[:100],
+                value=str(index),
+                description=_clean(flag.get("reason"), limit=100),
+            ) for index, flag in enumerate(removable)],
+        )]))
+    components.append(ActionRow(components=[Button(
+        style=hikari.ButtonStyle.PRIMARY,
+        custom_id=f"ticket_flag_back:{action_id}",
+        label="Back to ticket details",
+        emoji="←️",
+    )]))
+    components.append(Text(content=footer))
+    return [Container(accent_color=ACCENT_RED if any(
+        _flag_kind(flag) == flag_store.FLAG_BLACKLISTED for flag in active_flags
+    ) else ACCENT_BLUE, components=components)]
+
+
+async def _flag_manager_panel(
+    mongo: MongoClient,
+    ticket_doc: Mapping,
+    *,
+    owner_id: int,
+    guild_id: int,
+) -> list[Container]:
+    tags = _player_tags(ticket_doc)
+    user_id = _int(ticket_doc.get("user_id")) or None
+    flags = await flag_store.list_for_identity(
+        mongo,
+        discord_ids=user_id,
+        player_tags=tags,
+    )
+    active_flags = _active_flags(flags)
+    action_id = uuid.uuid4().hex
+    await insert_state(mongo, {
+        "_id": action_id,
+        "type": "ticket_console_flag_manager",
+        "owner_id": int(owner_id),
+        "guild_id": int(guild_id),
+        "ticket_id": _ticket_id(ticket_doc),
+        "flag_kinds": _flag_manager_kind_snapshot(active_flags),
+        "flag_slots": [{
+            "flag_id": str(flag.get("_id") or ""),
+            "rev": max(0, _int(flag.get("rev"))),
+        } for flag in active_flags[:MAX_FLAG_MANAGER_OPTIONS]],
+    })
+    return build_flag_manager(
+        ticket_doc,
+        action_id=action_id,
+        flags=active_flags,
+    )
+
+
+def _staff_account_summary(ticket_doc: Mapping) -> str:
+    """Render the durable linked-account snapshot without triggering a lookup."""
+
+    snapshot = account_sync.snapshot_from_ticket(ticket_doc)
+    if snapshot.state == account_sync.STATE_PENDING:
+        return (
+            "### 🔄 Linked Clash accounts\n"
+            "The opening account check is pending. No zero-account conclusion has "
+            "been recorded; an automatic retry is required."
+        )
+    if snapshot.state == account_sync.STATE_FAILED:
+        retained = len(snapshot.observed_tags)
+        retained_copy = (
+            f" **{retained} previously recorded account"
+            f"{'s remain' if retained != 1 else ' remains'} attached to this ticket.**"
+            if retained else ""
+        )
+        return (
+            "### ⚠️ Linked Clash accounts\n"
+            "The latest account lookup failed, so the current linked count is "
+            f"unknown.{retained_copy} Retry before making the final decision."
+        )
+    if snapshot.state == account_sync.STATE_EMPTY:
+        retained = len(snapshot.observed_tags)
+        retained_copy = (
+            f" {retained} previously recorded account"
+            f"{'s are' if retained != 1 else ' is'} retained for identity history."
+            if retained else ""
+        )
+        return (
+            "### 🔗 Linking required\n"
+            "No Clash accounts are currently linked to this Discord ID."
+            f"{retained_copy} Complete linking privately if needed; the final "
+            "decision rechecks automatically."
+        )
+    current = len(snapshot.current_tags)
+    observed = len(snapshot.observed_tags)
+    noun = "account" if current == 1 else "accounts"
+    observed_copy = (
+        f" · **{observed} permanently recorded**"
+        if observed != current else ""
+    )
+    return (
+        "### ✅ Linked Clash accounts\n"
+        f"**{current} currently linked {noun}**{observed_copy}. The final decision "
+        "rechecks the complete list automatically."
+    )
+
+
+def _chocolate_accounts(ticket_doc: Mapping) -> tuple[tuple[str, str | None], ...]:
+    """Return only the current linked snapshot, sorted for stable grouping."""
+
+    snapshot = account_sync.snapshot_from_ticket(ticket_doc)
+    current = {account.tag: account.name for account in snapshot.current_accounts}
+    return tuple((tag, current.get(tag)) for tag in sorted(snapshot.current_tags))
+
+
+def _chocolate_link_label(name: object) -> str:
+    """Keep a linked-account name inert inside Chocolate Markdown links."""
+
+    label = " ".join(str(name or "").replace("\x00", "").split())[:80]
+    label = label.replace("@", "@\u200b")
+    for character in ("\\", "`", "*", "_", "~", "|", ">", "[", "]", "(", ")"):
+        label = label.replace(character, "\\" + character)
+    return label or "Player"
+
+
+def build_staff_chocolate_checklist(
+    ticket_doc: Mapping,
+) -> list[tuple[str, list[Container]]]:
+    """Build staff-only FWA Chocolate links in deterministic 20-account groups."""
+
+    if _ticket_type(ticket_doc) != "fwa" or not isinstance(
+        ticket_doc.get("linked_accounts"), Mapping
+    ):
+        return []
+    ticket_id = _ticket_id(ticket_doc)
+    snapshot = account_sync.snapshot_from_ticket(ticket_doc)
+    accounts = _chocolate_accounts(ticket_doc)
+    state_copy = {
+        account_sync.STATE_PENDING: (
+            "The linked-account check is pending. No blacklist result was inferred."
+        ),
+        account_sync.STATE_FAILED: (
+            "The latest linked-account refresh failed. The last confirmed current "
+            "snapshot remains below and the lookup must be retried."
+        ),
+        account_sync.STATE_EMPTY: (
+            "No accounts are currently linked. Complete linking privately if needed."
+        ),
+        account_sync.STATE_READY: (
+            "Open each link to review the account on FWA Chocolate."
+        ),
+    }[snapshot.state]
+    disclaimer = (
+        "-# These are review links only. No Chocolate blacklist verdict was checked "
+        "automatically; record a verified concern through Manage Flags."
+    )
+    if not accounts:
+        marker = f"ticket-chocolate:{ticket_id}:1"
+        return [(marker, [Container(
+            accent_color=ACCENT_YELLOW,
+            components=[
+                Text(content="## 🍫 FWA Chocolate checklist"),
+                Text(content=state_copy),
+                Text(content=disclaimer),
+            ],
+        )])]
+
+    panels: list[tuple[str, list[Container]]] = []
+    total = len(accounts)
+    for start in range(0, total, 20):
+        group = accounts[start:start + 20]
+        end = start + len(group)
+        marker = f"ticket-chocolate:{ticket_id}:{start // 20 + 1}"
+        lines = []
+        for tag, name in group:
+            label_name = _chocolate_link_label(name)
+            lines.append(f"- [{label_name} · `{tag}`]({chocolate_url(tag)})")
+        title = f"## 🍫 FWA Chocolate checklist · {start + 1}–{end} of {total}"
+        body = "\n".join(lines)
+        # Delivery appends this durable marker. Reserve its text budget here so
+        # every Components V2 message stays within Discord's 4,000-character
+        # aggregate Text Display limit.
+        marker_budget = len(f"-# {marker}")
+        message_budget = DISCORD_MESSAGE_TEXT_LIMIT - marker_budget
+        # Keep each group independently safe even with maximum Clash names.
+        if sum(map(len, (title, state_copy, body, disclaimer))) > message_budget:
+            body = "\n".join(
+                f"- [`{tag}`]({chocolate_url(tag)})"
+                for tag, _name in group
+            )
+        panels.append((marker, [Container(
+            accent_color=ACCENT_YELLOW,
+            components=[
+                Text(content=title),
+                *([Text(content=state_copy)] if start == 0 else []),
+                Text(content=body),
+                Text(content=disclaimer),
+            ],
+        )]))
+    return panels
+
+
 def build_history_panel(user_id: int, history: Sequence[Mapping]) -> list[Container]:
     heading = "## Ticket history"
     summary = f"Discord ID `{int(user_id)}` · newest {MAX_HISTORY_RESULTS} tickets"
@@ -1702,7 +2030,7 @@ async def build_staff_identity_context(
     mongo: MongoClient,
     ticket_doc: Mapping,
 ) -> list[Container] | None:
-    """Build the automatic staff-thread warning/history panel for creation."""
+    """Build the automatic staff identity, account, flag, and history panel."""
 
     tags = _player_tags(ticket_doc)
     user_id = _int(ticket_doc.get("user_id")) or None
@@ -1717,12 +2045,15 @@ async def build_staff_identity_context(
         ),
     )
     flags = _active_flags(flags)[:8]
-    if not flags and not history:
+    has_account_snapshot = isinstance(ticket_doc.get("linked_accounts"), Mapping)
+    if not flags and not history and not has_account_snapshot:
         return None
     blacklisted = any(
         _flag_kind(flag) == flag_store.FLAG_BLACKLISTED for flag in flags
     )
     heading = "## Applicant context"
+    account_copy = _staff_account_summary(ticket_doc) if has_account_snapshot else None
+    account_state = account_sync.snapshot_from_ticket(ticket_doc).state
     marker_copy = f"-# {_staff_context_marker(_ticket_id(ticket_doc))}"
     history_heading = (
         "### This person has opened a ticket before.\n"
@@ -1746,6 +2077,7 @@ async def build_staff_identity_context(
 
     fixed_texts = [
         heading,
+        *([account_copy] if account_copy else []),
         marker_copy,
         *history_copy,
         *(prefix for prefix, _reason in flag_copy),
@@ -1758,7 +2090,10 @@ async def build_staff_identity_context(
         minimum_lengths=[1] * len(flag_copy),
     )
 
-    components: list = [Text(content=heading)]
+    components: list = [
+        Text(content=heading),
+        *([Text(content=account_copy)] if account_copy else []),
+    ]
     for (prefix, reason), reason_budget in zip(flag_copy, reason_budgets):
         components.append(Text(content=(
             prefix + _truncate_text(reason, reason_budget)
@@ -1770,7 +2105,15 @@ async def build_staff_identity_context(
             *_history_sections(history),
         ])
     return [Container(
-        accent_color=ACCENT_RED if blacklisted else ACCENT_YELLOW,
+        accent_color=(
+            ACCENT_RED
+            if blacklisted else
+            ACCENT_YELLOW
+            if flags or history or (
+                has_account_snapshot and account_state != account_sync.STATE_READY
+            ) else
+            ACCENT_BLUE
+        ),
         components=components,
     )]
 
@@ -1821,6 +2164,103 @@ async def _find_staff_context_message(
     return max(matches, key=lambda item: int(item.id), default=None)
 
 
+def _component_markers_with_prefix(component, prefix: str) -> set[str]:
+    """Collect staff-context markers stored in a component tree."""
+
+    content = str(getattr(component, "content", "") or "").strip()
+    marker = content.removeprefix("-# ").strip()
+    result = {marker} if marker.startswith(prefix) else set()
+    for child in getattr(component, "components", ()) or ():
+        result.update(_component_markers_with_prefix(child, prefix))
+    return result
+
+
+async def _find_staff_context_messages_with_prefix(
+    bot: hikari.GatewayBot,
+    staff_id: int,
+    prefix: str,
+) -> dict[str, object]:
+    """Find the newest bot-authored message for each durable marker prefix."""
+
+    get_me = getattr(bot, "get_me", None)
+    if not callable(get_me):
+        return {}
+    me = get_me()
+    if me is None:
+        raise RuntimeError("bot identity is unavailable")
+    matches: dict[str, object] = {}
+    for message in await _message_history(bot.rest, staff_id):
+        if _int(getattr(getattr(message, "author", None), "id", 0)) != int(me.id):
+            continue
+        for component in getattr(message, "components", ()) or ():
+            for marker in _component_markers_with_prefix(component, prefix):
+                prior = matches.get(marker)
+                if prior is None or _int(getattr(message, "id", 0)) > _int(
+                    getattr(prior, "id", 0)
+                ):
+                    matches[marker] = message
+    return matches
+
+
+async def staff_chocolate_context_is_current(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    ticket_doc: Mapping,
+) -> bool:
+    """Verify the latest FWA checklist is durably checkpointed and visible."""
+
+    if _ticket_type(ticket_doc) != "fwa":
+        return True
+    ticket_id = _ticket_id(ticket_doc)
+    staff_id = _location_id(ticket_doc, staff=True)
+    if not ticket_id or not staff_id:
+        return False
+    source = build_staff_chocolate_checklist(ticket_doc)
+    if not source:
+        return False
+    state = await mongo.ticket_automation_state.find_one({
+        "_id": f"ticket_staff_context:{ticket_id}",
+        "kind": "ticket_staff_context",
+    }) or {}
+    delivered_at = state.get("delivered_at")
+    requested_at = state.get("refresh_requested_at")
+    if (
+        state.get("delivery_state") != "delivered"
+        or state.get("lease_owner")
+        or not isinstance(delivered_at, datetime)
+        or not isinstance(requested_at, datetime)
+        or delivered_at < requested_at
+    ):
+        return False
+    expected = [
+        (
+            marker,
+            _context_fingerprint([
+                *components,
+                Text(content=f"-# {marker}"),
+            ]),
+        )
+        for marker, components in source
+    ]
+    stored_ids = [_int(value) for value in state.get("chocolate_message_ids") or ()]
+    stored_fingerprints = [
+        str(value) for value in state.get("chocolate_fingerprints") or ()
+    ]
+    if len(stored_ids) != len(expected) or len(stored_fingerprints) != len(expected):
+        return False
+    recovered = await _find_staff_context_messages_with_prefix(
+        bot,
+        staff_id,
+        f"ticket-chocolate:{ticket_id}:",
+    )
+    return all(
+        stored_ids[index]
+        and stored_fingerprints[index] == fingerprint
+        and _int(getattr(recovered.get(marker), "id", 0)) == stored_ids[index]
+        for index, (marker, fingerprint) in enumerate(expected)
+    )
+
+
 async def _finish_staff_context_lease(
     mongo: MongoClient,
     state_id: str,
@@ -1829,6 +2269,8 @@ async def _finish_staff_context_lease(
     refresh_generation: int,
     message_id: int | None = None,
     fingerprint: str | None = None,
+    chocolate_message_ids: Sequence[int] | None = None,
+    chocolate_fingerprints: Sequence[str] | None = None,
     error: Exception | None = None,
     pending: bool = False,
 ) -> bool:
@@ -1845,6 +2287,13 @@ async def _finish_staff_context_lease(
             "delivered_at": now,
             "delivery_error": None,
         })
+        if chocolate_message_ids is not None:
+            update["$set"].update({
+                "chocolate_message_ids": [int(value) for value in chocolate_message_ids],
+                "chocolate_fingerprints": [
+                    str(value) for value in (chocolate_fingerprints or ())
+                ],
+            })
         update["$unset"]["delivery_failed_at"] = ""
     elif error is not None:
         update["$set"].update({
@@ -2025,6 +2474,103 @@ async def queue_staff_identity_context(
     return state_id
 
 
+async def _upsert_marked_staff_message(
+    bot: hikari.GatewayBot,
+    *,
+    staff_id: int,
+    marker: str,
+    components: Sequence,
+    message_id: int,
+) -> int:
+    """Edit one durable marked message, recovering its ID before recreating it."""
+
+    if message_id:
+        try:
+            await bot.rest.edit_message(
+                channel=staff_id,
+                message=message_id,
+                components=components,
+                user_mentions=False,
+                role_mentions=False,
+                mentions_everyone=False,
+            )
+            return message_id
+        except hikari.NotFoundError:
+            message_id = 0
+            recovered = await _find_staff_context_message(bot, staff_id, marker)
+            message_id = _int(getattr(recovered, "id", 0))
+            if message_id:
+                await bot.rest.edit_message(
+                    channel=staff_id,
+                    message=message_id,
+                    components=components,
+                    user_mentions=False,
+                    role_mentions=False,
+                    mentions_everyone=False,
+                )
+                return message_id
+    message = await bot.rest.create_message(
+        channel=staff_id,
+        components=components,
+        flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+        user_mentions=False,
+        role_mentions=False,
+        mentions_everyone=False,
+    )
+    return int(message.id)
+
+
+async def _retire_chocolate_message(
+    bot: hikari.GatewayBot,
+    *,
+    staff_id: int,
+    marker: str,
+    message_id: int,
+) -> None:
+    """Remove stale current-account links without deleting the audit message."""
+
+    if not message_id:
+        return
+    retired_marker = marker.replace(
+        "ticket-chocolate:", "ticket-chocolate-retired:", 1
+    )
+    components = [
+        Container(
+            accent_color=ACCENT_GREY,
+            components=[
+                Text(content="## 🍫 FWA Chocolate checklist · page retired"),
+                Text(content=(
+                    "Accounts formerly shown on this page are no longer in the "
+                    "current linked-account snapshot. Their tags remain in durable "
+                    "ticket identity history for search and flags."
+                )),
+            ],
+        ),
+        Text(content=f"-# {retired_marker}"),
+    ]
+    try:
+        await bot.rest.edit_message(
+            channel=staff_id,
+            message=message_id,
+            components=components,
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
+        )
+    except hikari.NotFoundError:
+        recovered = await _find_staff_context_message(bot, staff_id, marker)
+        recovered_id = _int(getattr(recovered, "id", 0))
+        if recovered_id:
+            await bot.rest.edit_message(
+                channel=staff_id,
+                message=recovered_id,
+                components=components,
+                user_mentions=False,
+                role_mentions=False,
+                mentions_everyone=False,
+            )
+
+
 async def deliver_staff_identity_context(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
@@ -2033,10 +2579,11 @@ async def deliver_staff_identity_context(
     reopen_terminal_thread: bool = False,
     open_only_refresh: bool = False,
 ) -> int | None:
-    """Create or update exactly one durable flag/history panel per ticket.
+    """Create or update durable staff context and FWA Chocolate panels.
 
     Safe to call after creation and again after every candidate activity. A
-    later player tag can therefore surface a tag-only flag/history match.
+    later account or player tag updates the existing messages rather than
+    posting duplicates.
     """
 
     ticket_id = _ticket_id(ticket_doc)
@@ -2108,7 +2655,8 @@ async def deliver_staff_identity_context(
         if not existing_message_id:
             recovered = await _find_staff_context_message(bot, staff_id, marker)
             existing_message_id = _int(getattr(recovered, "id", 0))
-        if components is None and not existing_message_id:
+        chocolate_source = build_staff_chocolate_checklist(ticket_doc)
+        if components is None and not existing_message_id and not chocolate_source:
             if reopen_terminal_thread:
                 await _converge_terminal_staff_thread(
                     bot.rest,
@@ -2131,7 +2679,71 @@ async def deliver_staff_identity_context(
             )
         components = [*components, Text(content=f"-# {marker}")]
         fingerprint = _context_fingerprint(components)
-        if existing_message_id and fingerprint == str(state.get("fingerprint") or ""):
+
+        prepared_chocolate: list[tuple[str, list, str]] = []
+        for chocolate_marker, chocolate_components in chocolate_source:
+            marked = [
+                *chocolate_components,
+                Text(content=f"-# {chocolate_marker}"),
+            ]
+            prepared_chocolate.append((
+                chocolate_marker,
+                marked,
+                _context_fingerprint(marked),
+            ))
+        stored_chocolate_ids = state.get("chocolate_message_ids") or ()
+        stored_chocolate_fingerprints = state.get("chocolate_fingerprints") or ()
+        chocolate_prefix = f"ticket-chocolate:{ticket_id}:"
+        recovered_chocolate = (
+            await _find_staff_context_messages_with_prefix(
+                bot, staff_id, chocolate_prefix
+            )
+            if chocolate_source or stored_chocolate_ids
+            else {}
+        )
+        stale_chocolate_messages: dict[str, int] = {
+            f"{chocolate_prefix}{index + 1}": _int(value)
+            for index, value in enumerate(stored_chocolate_ids)
+            if index >= len(prepared_chocolate) and _int(value)
+        }
+        for recovered_marker, recovered_message in recovered_chocolate.items():
+            try:
+                page = int(recovered_marker.rsplit(":", 1)[-1])
+            except ValueError:
+                continue
+            if page > len(prepared_chocolate):
+                stale_chocolate_messages[recovered_marker] = _int(
+                    getattr(recovered_message, "id", 0)
+                )
+        chocolate_ids = [
+            _int(stored_chocolate_ids[index])
+            if index < len(stored_chocolate_ids) else 0
+            for index in range(len(prepared_chocolate))
+        ]
+        for index, (chocolate_marker, _panel, _fingerprint) in enumerate(
+            prepared_chocolate
+        ):
+            if chocolate_ids[index]:
+                continue
+            recovered = recovered_chocolate.get(chocolate_marker)
+            chocolate_ids[index] = _int(getattr(recovered, "id", 0))
+
+        context_current = (
+            existing_message_id
+            and fingerprint == str(state.get("fingerprint") or "")
+        )
+        chocolate_current = not stale_chocolate_messages and all(
+            chocolate_ids[index]
+            and index < len(stored_chocolate_fingerprints)
+            and panel_fingerprint == str(stored_chocolate_fingerprints[index])
+            and _int(getattr(
+                recovered_chocolate.get(panel_marker), "id", 0
+            )) == chocolate_ids[index]
+            for index, (panel_marker, _panel, panel_fingerprint) in enumerate(
+                prepared_chocolate
+            )
+        )
+        if context_current and chocolate_current:
             if reopen_terminal_thread:
                 await _converge_terminal_staff_thread(
                     bot.rest,
@@ -2146,6 +2758,11 @@ async def deliver_staff_identity_context(
                 refresh_generation=refresh_generation,
                 message_id=existing_message_id,
                 fingerprint=fingerprint,
+                chocolate_message_ids=chocolate_ids,
+                chocolate_fingerprints=[
+                    panel_fingerprint
+                    for _panel_marker, _panel, panel_fingerprint in prepared_chocolate
+                ],
             )
             return existing_message_id
 
@@ -2157,39 +2774,44 @@ async def deliver_staff_identity_context(
             expected_owner_id=expected_owner_id,
         ):
             message_id = existing_message_id
-            if message_id:
-                try:
-                    await bot.rest.edit_message(
-                        channel=staff_id,
-                        message=message_id,
-                        components=components,
-                        user_mentions=False,
-                        role_mentions=False,
-                        mentions_everyone=False,
-                    )
-                except hikari.NotFoundError:
-                    message_id = 0
-                    recovered = await _find_staff_context_message(bot, staff_id, marker)
-                    message_id = _int(getattr(recovered, "id", 0))
-                    if message_id:
-                        await bot.rest.edit_message(
-                            channel=staff_id,
-                            message=message_id,
-                            components=components,
-                            user_mentions=False,
-                            role_mentions=False,
-                            mentions_everyone=False,
-                        )
-            if not message_id:
-                message = await bot.rest.create_message(
-                    channel=staff_id,
+            if not context_current:
+                message_id = await _upsert_marked_staff_message(
+                    bot,
+                    staff_id=staff_id,
+                    marker=marker,
                     components=components,
-                    flags=hikari.MessageFlag.IS_COMPONENTS_V2,
-                    user_mentions=False,
-                    role_mentions=False,
-                    mentions_everyone=False,
+                    message_id=message_id,
                 )
-                message_id = int(message.id)
+            for index, (
+                chocolate_marker,
+                chocolate_components,
+                chocolate_fingerprint,
+            ) in enumerate(prepared_chocolate):
+                panel_current = (
+                    chocolate_ids[index]
+                    and index < len(stored_chocolate_fingerprints)
+                    and chocolate_fingerprint
+                    == str(stored_chocolate_fingerprints[index])
+                    and _int(getattr(
+                        recovered_chocolate.get(chocolate_marker), "id", 0
+                    )) == chocolate_ids[index]
+                )
+                if panel_current:
+                    continue
+                chocolate_ids[index] = await _upsert_marked_staff_message(
+                    bot,
+                    staff_id=staff_id,
+                    marker=chocolate_marker,
+                    components=chocolate_components,
+                    message_id=chocolate_ids[index],
+                )
+            for stale_marker, stale_message_id in stale_chocolate_messages.items():
+                await _retire_chocolate_message(
+                    bot,
+                    staff_id=staff_id,
+                    marker=stale_marker,
+                    message_id=stale_message_id,
+                )
         await _finish_staff_context_lease(
             mongo,
             state_id,
@@ -2197,6 +2819,11 @@ async def deliver_staff_identity_context(
             refresh_generation=refresh_generation,
             message_id=message_id,
             fingerprint=fingerprint,
+            chocolate_message_ids=chocolate_ids,
+            chocolate_fingerprints=[
+                panel_fingerprint
+                for _panel_marker, _panel, panel_fingerprint in prepared_chocolate
+            ],
         )
         return message_id
     except asyncio.CancelledError:
@@ -2730,6 +3357,470 @@ async def ticket_console_view(
         owner_id=owner_id,
         guild_id=guild_id,
     )
+
+
+async def _latest_flag_ticket(
+    mongo: MongoClient,
+    *,
+    ticket_id: str,
+    guild_id: int,
+) -> dict | None:
+    ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
+    if ticket_doc is None or _int(ticket_doc.get("guild_id")) != int(guild_id):
+        return None
+    return ticket_doc
+
+
+def _flag_action_parts(action_id: str) -> tuple[str, str]:
+    manager_id, separator, operand = str(action_id or "").partition("|")
+    if not separator:
+        return manager_id, ""
+    return manager_id, operand
+
+
+async def _authorized_flag_manager_state(
+    ctx,
+    mongo: MongoClient,
+    manager_id: str,
+) -> tuple[dict | None, list[Container] | None]:
+    envelope = await get_state(mongo, manager_id, {
+        "type": 1,
+        "owner_id": 1,
+        "guild_id": 1,
+    })
+    if not envelope or envelope.get("type") != "ticket_console_flag_manager":
+        return None, _notice(
+            "Flag panel expired",
+            "Open the ticket and choose **Manage flags** again.",
+            accent=ACCENT_RED,
+        )
+    owner_id = _int(envelope.get("owner_id"))
+    if _int(getattr(ctx.user, "id", 0)) != owner_id:
+        return None, _notice(
+            "Private panel",
+            "Open your own ticket panel from the shared console.",
+            accent=ACCENT_RED,
+        )
+    guild_id = _int(envelope.get("guild_id"))
+    if not guild_id or _int(getattr(ctx, "guild_id", 0)) != guild_id:
+        return None, _notice(
+            "Flag panel expired",
+            "Open the ticket again from this server's console.",
+            accent=ACCENT_RED,
+        )
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        return None, _notice(
+            "Recruiter access required",
+            "Only recruiters can manage applicant flags.",
+            accent=ACCENT_RED,
+        )
+    data = await get_state(mongo, manager_id)
+    if (
+        not data
+        or data.get("type") != "ticket_console_flag_manager"
+        or _int(data.get("owner_id")) != owner_id
+        or _int(data.get("guild_id")) != guild_id
+    ):
+        return None, _notice(
+            "Flag panel expired",
+            "Open the ticket and choose **Manage flags** again.",
+            accent=ACCENT_RED,
+        )
+    return data, None
+
+
+async def _ack_flag_modal(ctx) -> None:
+    if getattr(ctx.interaction, "message", None) is not None:
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+        )
+    else:
+        await ctx.defer(ephemeral=True)
+
+
+async def _edit_flag_modal(ctx, components: Sequence) -> None:
+    await ctx.interaction.edit_initial_response(
+        components=list(components),
+        user_mentions=False,
+        role_mentions=False,
+        mentions_everyone=False,
+    )
+
+
+async def _refresh_after_flag_mutation(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    flag_doc: Mapping,
+) -> None:
+    await refresh_open_staff_contexts_for_flag_best_effort(bot, mongo, flag_doc)
+    await request_hub_refresh_best_effort(bot, mongo, reason="flag changed")
+
+
+@register_action("ticket_console_manage_flags", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_manage_flags(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    ticket_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    if _int(ctx.user.id) != _int(owner_id):
+        return _notice(
+            "Private panel",
+            "Open your own ticket panel from the shared console.",
+            accent=ACCENT_RED,
+        )
+    if not guild_id or _int(getattr(ctx, "guild_id", 0)) != _int(guild_id):
+        return _notice(
+            "Ticket panel expired",
+            "Open the ticket again from this server's console.",
+            accent=ACCENT_RED,
+        )
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        return _notice(
+            "Recruiter access required",
+            "Only recruiters can manage applicant flags.",
+            accent=ACCENT_RED,
+        )
+    ticket_doc = await _latest_flag_ticket(
+        mongo,
+        ticket_id=str(ticket_id or ""),
+        guild_id=_int(guild_id),
+    )
+    if ticket_doc is None:
+        return _notice(
+            "Ticket not found",
+            "The ticket record is unavailable in this server. Nothing was changed.",
+            accent=ACCENT_RED,
+        )
+    return await _flag_manager_panel(
+        mongo,
+        ticket_doc,
+        owner_id=_int(owner_id),
+        guild_id=_int(guild_id),
+    )
+
+
+@register_action("ticket_flag_back", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_flag_back(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    ticket_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    if _int(ctx.user.id) != _int(owner_id):
+        return _notice(
+            "Private panel",
+            "Open your own ticket panel from the shared console.",
+            accent=ACCENT_RED,
+        )
+    if not guild_id or _int(getattr(ctx, "guild_id", 0)) != _int(guild_id):
+        return _notice(
+            "Flag panel expired",
+            "Open the ticket again from this server's console.",
+            accent=ACCENT_RED,
+        )
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        return _notice(
+            "Recruiter access required",
+            "Only recruiters can use the ticket console.",
+            accent=ACCENT_RED,
+        )
+    ticket_doc = await _latest_flag_ticket(
+        mongo,
+        ticket_id=str(ticket_id or ""),
+        guild_id=_int(guild_id),
+    )
+    if ticket_doc is None:
+        return _notice(
+            "Ticket not found",
+            "The ticket record is unavailable in this server.",
+            accent=ACCENT_RED,
+        )
+    return await _ticket_detail_panel(
+        mongo,
+        ticket_doc,
+        owner_id=_int(owner_id),
+        guild_id=_int(guild_id),
+    )
+
+
+@register_action(
+    "ticket_flag_set", opens_modal=True, no_return=True, preload_state=False,
+)
+@lightbulb.di.with_di
+async def ticket_flag_set(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    **_kwargs,
+) -> None:
+    manager_id, kind = _flag_action_parts(action_id)
+    label = FLAG_META.get(kind, ("Applicant flag", "🚩", False))[0]
+    await ctx.respond_with_modal(
+        title=f"Add or update {label}"[:45],
+        custom_id=f"ticket_flag_set_submit:{manager_id}|{kind}",
+        components=[ModalActionRow().add_text_input(
+            "reason",
+            "Why this flag applies",
+            placeholder="Record the staff-verifiable reason",
+            required=True,
+            style=hikari.TextInputStyle.PARAGRAPH,
+            min_length=2,
+            max_length=500,
+        )],
+    )
+
+
+@register_action(
+    "ticket_flag_remove", opens_modal=True, no_return=True, preload_state=False,
+)
+@lightbulb.di.with_di
+async def ticket_flag_remove(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    **_kwargs,
+) -> None:
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    slot = str(values[0]) if values else ""
+    await ctx.respond_with_modal(
+        title="Remove applicant flag",
+        custom_id=f"ticket_flag_remove_submit:{action_id}|{slot}",
+        components=[ModalActionRow().add_text_input(
+            "reason",
+            "Why this flag no longer applies",
+            placeholder="This reason is kept in the permanent audit history",
+            required=True,
+            style=hikari.TextInputStyle.PARAGRAPH,
+            min_length=2,
+            max_length=500,
+        )],
+    )
+
+
+@register_action(
+    "ticket_flag_set_submit", is_modal=True, no_return=True, preload_state=False,
+)
+@lightbulb.di.with_di
+async def ticket_flag_set_submit(
+    ctx: lightbulb.components.ModalContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    await _ack_flag_modal(ctx)
+    manager_id, kind = _flag_action_parts(action_id)
+    if kind not in FLAG_META:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not saved",
+            "That flag control is invalid. Open **Manage flags** again.",
+            accent=ACCENT_RED,
+        ))
+        return
+    data, error = await _authorized_flag_manager_state(ctx, mongo, manager_id)
+    if error is not None or data is None:
+        await _edit_flag_modal(ctx, error or _notice(
+            "Flag panel expired", "Open **Manage flags** again.", accent=ACCENT_RED,
+        ))
+        return
+    ticket_doc = await _latest_flag_ticket(
+        mongo,
+        ticket_id=str(data.get("ticket_id") or ""),
+        guild_id=_int(data.get("guild_id")),
+    )
+    if ticket_doc is None:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not saved",
+            "The ticket record is unavailable in this server. Nothing was changed.",
+            accent=ACCENT_RED,
+        ))
+        return
+    reason = _modal_value(ctx, "reason")
+    if len(reason) < 2:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not saved",
+            "Write a reason with at least 2 characters.",
+            accent=ACCENT_RED,
+        ))
+        return
+    kind_rows = (data.get("flag_kinds") or {}).get(kind)
+    if not isinstance(kind_rows, list) or len(kind_rows) > 1:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag panel changed",
+            "The matching flags changed. Open **Manage flags** again before saving.",
+            accent=ACCENT_YELLOW,
+        ))
+        return
+    expected = kind_rows[0] if kind_rows else {}
+    user_id = _int(ticket_doc.get("user_id")) or None
+    tags = _player_tags(ticket_doc)
+    if user_id is None and not tags:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not saved",
+            "This ticket has no durable Discord ID or player tag.",
+            accent=ACCENT_RED,
+        ))
+        return
+    try:
+        result = await flag_store.set_flag_if_current_authorized(
+            mongo,
+            member=ctx.member,
+            actor_name=ctx.user.username,
+            kind=kind,
+            discord_ids=user_id,
+            player_tags=tags,
+            source=FLAG_SOURCES[kind],
+            reason=reason,
+            expected_flag_id=str(expected.get("flag_id") or "") or None,
+            expected_rev=(
+                max(0, _int(expected.get("rev"))) if expected else None
+            ),
+        )
+    except (ValueError, flag_store.FlagConflictError) as exc:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not saved", str(exc), accent=ACCENT_RED,
+        ))
+        return
+    if result.outcome == store.UNAUTHORIZED:
+        await _edit_flag_modal(ctx, _notice(
+            "Recruiter access required",
+            "Your recruiter permission changed before this action finished.",
+            accent=ACCENT_RED,
+        ))
+        return
+    if not result.won:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag panel changed",
+            result.reason or "The flag changed before this action finished.",
+            accent=ACCENT_YELLOW,
+        ))
+        return
+    await _refresh_after_flag_mutation(bot, mongo, result.doc or {})
+    await _edit_flag_modal(ctx, await _flag_manager_panel(
+        mongo,
+        ticket_doc,
+        owner_id=_int(data.get("owner_id")),
+        guild_id=_int(data.get("guild_id")),
+    ))
+
+
+@register_action(
+    "ticket_flag_remove_submit", is_modal=True, no_return=True,
+    preload_state=False,
+)
+@lightbulb.di.with_di
+async def ticket_flag_remove_submit(
+    ctx: lightbulb.components.ModalContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    await _ack_flag_modal(ctx)
+    manager_id, raw_slot = _flag_action_parts(action_id)
+    data, error = await _authorized_flag_manager_state(ctx, mongo, manager_id)
+    if error is not None or data is None:
+        await _edit_flag_modal(ctx, error or _notice(
+            "Flag panel expired", "Open **Manage flags** again.", accent=ACCENT_RED,
+        ))
+        return
+    try:
+        slot = int(raw_slot)
+        selected = (data.get("flag_slots") or [])[slot]
+        if slot < 0 or not isinstance(selected, Mapping):
+            raise IndexError()
+        flag_id = str(selected.get("flag_id") or "")
+        expected_rev = max(0, _int(selected.get("rev")))
+        if not flag_id:
+            raise IndexError()
+    except (TypeError, ValueError, IndexError):
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not removed",
+            "That flag selection is invalid. Open **Manage flags** again.",
+            accent=ACCENT_RED,
+        ))
+        return
+    ticket_doc = await _latest_flag_ticket(
+        mongo,
+        ticket_id=str(data.get("ticket_id") or ""),
+        guild_id=_int(data.get("guild_id")),
+    )
+    if ticket_doc is None:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not removed",
+            "The ticket record is unavailable in this server. Nothing was changed.",
+            accent=ACCENT_RED,
+        ))
+        return
+    reason = _modal_value(ctx, "reason")
+    if len(reason) < 2:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not removed",
+            "Write a removal reason with at least 2 characters.",
+            accent=ACCENT_RED,
+        ))
+        return
+    matching = await flag_store.list_for_identity(
+        mongo,
+        discord_ids=_int(ticket_doc.get("user_id")) or None,
+        player_tags=_player_tags(ticket_doc),
+    )
+    if flag_id not in {str(flag.get("_id") or "") for flag in matching}:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag panel changed",
+            "That flag no longer matches this ticket. Open **Manage flags** again.",
+            accent=ACCENT_YELLOW,
+        ))
+        return
+    try:
+        result = await flag_store.deactivate_flag_authorized(
+            mongo,
+            flag_id,
+            member=ctx.member,
+            actor_name=ctx.user.username,
+            reason=reason,
+            expected_rev=expected_rev,
+        )
+    except flag_store.FlagConflictError as exc:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not removed", str(exc), accent=ACCENT_RED,
+        ))
+        return
+    if result.outcome == store.UNAUTHORIZED:
+        await _edit_flag_modal(ctx, _notice(
+            "Recruiter access required",
+            "Your recruiter permission changed before this action finished.",
+            accent=ACCENT_RED,
+        ))
+        return
+    if result.outcome in {store.MISSING, store.LOST}:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag panel changed",
+            result.reason or "That flag changed before this action finished.",
+            accent=ACCENT_YELLOW,
+        ))
+        return
+    if not result.won:
+        await _edit_flag_modal(ctx, _notice(
+            "Flag not removed",
+            result.reason or "The flag could not be removed.",
+            accent=ACCENT_RED,
+        ))
+        return
+    await _refresh_after_flag_mutation(bot, mongo, result.doc or {})
+    await _edit_flag_modal(ctx, await _flag_manager_panel(
+        mongo,
+        ticket_doc,
+        owner_id=_int(data.get("owner_id")),
+        guild_id=_int(data.get("guild_id")),
+    ))
 
 
 @register_action(

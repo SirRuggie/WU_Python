@@ -7,7 +7,14 @@ import hikari
 import pytest
 from pymongo.errors import DuplicateKeyError
 
-from extensions.commands.tickets import close, flag_store, resolve, store, thread_service
+from extensions.commands.tickets import (
+    account_sync,
+    close,
+    flag_store,
+    resolve,
+    store,
+    thread_service,
+)
 
 
 def _matches(document, query):
@@ -101,11 +108,26 @@ def _patch_approval(monkeypatch, collection, *, blacklisted, transitions):
     async def effects(_bot, _mongo, document):
         return store.Transition(store.WON, document)
 
+    async def sync(*_args, **_kwargs):
+        return account_sync.AccountSyncResult(
+            ticket,
+            account_sync.AccountSnapshot(
+                state=account_sync.STATE_READY,
+                current_accounts=(account_sync.LinkedAccount("#ABC123"),),
+                current_tags=("#ABC123",),
+                observed_tags=("#ABC123",),
+                retry_required=False,
+                revision=1,
+            ),
+        )
+
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
     monkeypatch.setattr(resolve.store, "find_one", find_ticket)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", active_blacklist)
     monkeypatch.setattr(resolve.store, "transition", transition)
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+    monkeypatch.setattr(resolve.account_sync, "configured_coc_client", lambda: object())
+    monkeypatch.setattr(resolve.account_sync, "sync_ticket_accounts", sync)
     return SimpleNamespace(ticket_flags=collection), ticket
 
 
@@ -241,10 +263,25 @@ def test_approval_pins_ticket_revision_at_blacklist_decision_boundary(monkeypatc
         observed.append(kwargs["expected_rev"])
         return store.Transition(store.LOST, ticket, "ticket changed")
 
+    async def sync(*_args, **_kwargs):
+        return account_sync.AccountSyncResult(
+            ticket,
+            account_sync.AccountSnapshot(
+                state=account_sync.STATE_READY,
+                current_accounts=(account_sync.LinkedAccount("#ABC123"),),
+                current_tags=("#ABC123",),
+                observed_tags=("#ABC123",),
+                retry_required=False,
+                revision=1,
+            ),
+        )
+
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
     monkeypatch.setattr(resolve.store, "find_one", find)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", no_blacklist)
     monkeypatch.setattr(resolve.store, "transition", transition)
+    monkeypatch.setattr(resolve.account_sync, "configured_coc_client", lambda: object())
+    monkeypatch.setattr(resolve.account_sync, "sync_ticket_accounts", sync)
     result = asyncio.run(resolve.approve_ticket(
         object(),
         mongo,

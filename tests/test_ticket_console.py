@@ -416,6 +416,300 @@ def test_detail_shares_one_text_budget_across_all_worst_case_sections():
     _assert_component_limits(view)
 
 
+def test_ticket_detail_manage_flags_panel_binds_37_tags_without_manual_ids():
+    ticket = _ticket(
+        21,
+        player_tags=[f"#T{index:07d}" for index in range(37)],
+    )
+    detail = console.build_ticket_detail(
+        ticket,
+        action_id="m" * 32,
+        flags=[],
+        history=[],
+    )
+    manage = next(
+        node for node in _nodes(detail)
+        if node.get("label") == "Manage flags"
+    )
+    assert manage["custom_id"] == f"ticket_console_manage_flags:{'m' * 32}"
+
+    flags = [{
+        "_id": "flag_blacklist",
+        "kind": console.flag_store.FLAG_BLACKLISTED,
+        "active": True,
+        "rev": 4,
+        "source": "FWA Chocolate · FWA ban list",
+        "reason": "Verified ban-list match",
+    }]
+    panel = console.build_flag_manager(
+        ticket,
+        action_id="f" * 32,
+        flags=flags,
+    )
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(panel) if "content" in node
+    )
+    assert "Stored player tags (37)" in content
+    assert "flag_blacklist" in content
+    assert "Verified ban-list match" in content
+    assert "FWA Chocolate" in content
+    remove = next(
+        node for node in _nodes(panel)
+        if str(node.get("custom_id", "")).startswith("ticket_flag_remove:")
+    )
+    assert remove["options"][0]["value"] == "0"
+    assert "flag_blacklist" not in remove["options"][0]["value"]
+    _assert_component_limits(detail)
+    _assert_component_limits(panel)
+
+
+def test_flag_modal_openers_acknowledge_with_modal_before_state_or_permission(
+    monkeypatch,
+):
+    opened = []
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+        guild_id = 33
+
+        def __init__(self, custom_id, values=()):
+            self.interaction = SimpleNamespace(custom_id=custom_id, values=values)
+
+        async def defer(self, **_kwargs):
+            raise AssertionError("a flag modal opener was deferred")
+
+        async def respond_with_modal(self, **kwargs):
+            opened.append(kwargs["custom_id"])
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("a flag modal opener performed prerequisite work")
+
+    monkeypatch.setattr(dispatcher, "get_state", forbidden)
+    monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
+
+    asyncio.run(dispatcher._dispatch(Context(
+        f"ticket_flag_set:{'a' * 32}|blacklisted"
+    ), object()))
+    asyncio.run(dispatcher._dispatch(Context(
+        f"ticket_flag_remove:{'a' * 32}", values=("0",)
+    ), object()))
+
+    assert opened == [
+        f"ticket_flag_set_submit:{'a' * 32}|blacklisted",
+        f"ticket_flag_remove_submit:{'a' * 32}|0",
+    ]
+
+
+def test_flag_set_submit_uses_latest_ticket_discord_id_and_all_37_tags(
+    monkeypatch,
+):
+    events = []
+    ticket = _ticket(
+        22,
+        player_tags=[f"#A{index:07d}" for index in range(37)],
+    )
+    state = {
+        "type": "ticket_console_flag_manager",
+        "owner_id": 22,
+        "guild_id": ticket["guild_id"],
+        "ticket_id": ticket["_id"],
+        "flag_kinds": {
+            kind: [] for kind in console.FLAG_META
+        },
+        "flag_slots": [],
+    }
+
+    class Interaction:
+        message = None
+        components = [[SimpleNamespace(
+            custom_id="reason", value="Verified recruiter evidence",
+        )]]
+
+        async def edit_initial_response(self, **kwargs):
+            events.append(("edit", kwargs))
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22, username="Recruiter")
+        member = SimpleNamespace(id=22)
+        guild_id = ticket["guild_id"]
+
+        async def defer(self, **kwargs):
+            events.append(("defer", kwargs))
+
+    async def get(_mongo, _action_id, projection=None):
+        events.append(("envelope" if projection else "state", projection))
+        if projection:
+            return {key: state[key] for key in ("type", "owner_id", "guild_id")}
+        return copy.deepcopy(state)
+
+    async def allowed(_member, _mongo):
+        events.append(("permission", None))
+        return True
+
+    async def latest(_mongo, _query):
+        events.append(("ticket", None))
+        return copy.deepcopy(ticket)
+
+    async def save(*_args, **kwargs):
+        events.append(("save", kwargs))
+        return console.flag_store.FlagMutation(console.store.WON, {
+            "_id": "flag_saved",
+            "kind": kwargs["kind"],
+            "discord_ids": [kwargs["discord_ids"]],
+            "player_tags": list(kwargs["player_tags"]),
+        })
+
+    async def refresh(*_args, **_kwargs):
+        events.append(("refresh", None))
+
+    async def panel(*_args, **_kwargs):
+        events.append(("panel", None))
+        return ["UPDATED"]
+
+    monkeypatch.setattr(console, "get_state", get)
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.store, "find_one", latest)
+    monkeypatch.setattr(
+        console.flag_store, "set_flag_if_current_authorized", save
+    )
+    monkeypatch.setattr(console, "_refresh_after_flag_mutation", refresh)
+    monkeypatch.setattr(console, "_flag_manager_panel", panel)
+
+    asyncio.run(console.ticket_flag_set_submit(
+        Context(),
+        f"manager|{console.flag_store.FLAG_NOT_LOYAL}",
+        mongo=object(),
+        bot=object(),
+    ))
+
+    assert events[0] == ("defer", {"ephemeral": True})
+    saved = next(value for name, value in events if name == "save")
+    assert saved["discord_ids"] == ticket["user_id"]
+    assert tuple(saved["player_tags"]) == tuple(ticket["player_tags"])
+    assert len(saved["player_tags"]) == 37
+    assert saved["expected_flag_id"] is None
+    assert saved["expected_rev"] is None
+    assert events[-1][0] == "edit"
+    assert events[-1][1]["components"] == ["UPDATED"]
+
+
+def test_flag_remove_submit_resolves_selection_slot_and_audits_reason(monkeypatch):
+    events = []
+    ticket = _ticket(23)
+    state = {
+        "type": "ticket_console_flag_manager",
+        "owner_id": 22,
+        "guild_id": ticket["guild_id"],
+        "ticket_id": ticket["_id"],
+        "flag_kinds": {},
+        "flag_slots": [{"flag_id": "flag_selected", "rev": 7}],
+    }
+
+    class Interaction:
+        message = None
+        components = [[SimpleNamespace(
+            custom_id="reason", value="Staff verified this no longer applies",
+        )]]
+
+        async def edit_initial_response(self, **kwargs):
+            events.append(("edit", kwargs))
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22, username="Recruiter")
+        member = SimpleNamespace(id=22)
+        guild_id = ticket["guild_id"]
+
+        async def defer(self, **kwargs):
+            events.append(("defer", kwargs))
+
+    async def get(_mongo, _action_id, projection=None):
+        if projection:
+            return {key: state[key] for key in ("type", "owner_id", "guild_id")}
+        return copy.deepcopy(state)
+
+    async def allowed(*_args):
+        return True
+
+    async def latest(*_args, **_kwargs):
+        return copy.deepcopy(ticket)
+
+    async def matching(*_args, **_kwargs):
+        return [{"_id": "flag_selected", "active": True}]
+
+    async def remove(*_args, **kwargs):
+        events.append(("remove", (_args, kwargs)))
+        return console.flag_store.FlagMutation(console.store.WON, {
+            "_id": "flag_selected",
+            "active": False,
+        })
+
+    async def refresh(*_args, **_kwargs):
+        return None
+
+    async def panel(*_args, **_kwargs):
+        return ["UPDATED"]
+
+    monkeypatch.setattr(console, "get_state", get)
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.store, "find_one", latest)
+    monkeypatch.setattr(console.flag_store, "list_for_identity", matching)
+    monkeypatch.setattr(console.flag_store, "deactivate_flag_authorized", remove)
+    monkeypatch.setattr(console, "_refresh_after_flag_mutation", refresh)
+    monkeypatch.setattr(console, "_flag_manager_panel", panel)
+
+    asyncio.run(console.ticket_flag_remove_submit(
+        Context(), "manager|0", mongo=object(), bot=object(),
+    ))
+
+    _args, kwargs = next(value for name, value in events if name == "remove")
+    assert _args[1] == "flag_selected"
+    assert kwargs["expected_rev"] == 7
+    assert kwargs["reason"] == "Staff verified this no longer applies"
+    assert events[0] == ("defer", {"ephemeral": True})
+    assert events[-1][1]["components"] == ["UPDATED"]
+
+
+@pytest.mark.parametrize(
+    ("owner_id", "state_guild", "ctx_guild", "allowed", "expected"),
+    [
+        (99, 33, 33, True, "Private panel"),
+        (22, 44, 33, True, "Flag panel expired"),
+        (22, 33, 33, False, "Recruiter access required"),
+    ],
+)
+def test_flag_manager_state_denies_wrong_owner_guild_or_recruiter(
+    monkeypatch, owner_id, state_guild, ctx_guild, allowed, expected,
+):
+    envelope = {
+        "type": "ticket_console_flag_manager",
+        "owner_id": owner_id,
+        "guild_id": state_guild,
+    }
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+        guild_id = ctx_guild
+
+    async def get(*_args, **_kwargs):
+        return copy.deepcopy(envelope)
+
+    async def permission(*_args, **_kwargs):
+        return allowed
+
+    monkeypatch.setattr(console, "get_state", get)
+    monkeypatch.setattr(console.perms, "is_recruiter", permission)
+    data, error = asyncio.run(console._authorized_flag_manager_state(
+        Context(), object(), "manager",
+    ))
+
+    assert data is None
+    assert expected in str(error[0].build())
+
+
 def test_history_panel_keeps_newest_entries_within_one_message_text_budget():
     history = [
         _ticket(

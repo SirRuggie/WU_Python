@@ -24,17 +24,14 @@ from utils.mongo import MongoClient
 ACCENT_BLUE = 0x4A90F5
 ACCENT_GREEN = 0x4BCE7A
 ACCENT_RED = 0xF0555A
+DISCORD_MESSAGE_TEXT_LIMIT = 4000
 
 FLAG_LABELS = {
     flag_store.FLAG_BLACKLISTED: "Blacklisted",
     flag_store.FLAG_DENIED_BEFORE: "Previously denied",
     flag_store.FLAG_NOT_LOYAL: "Not loyal to WU",
 }
-FLAG_SOURCES = {
-    flag_store.FLAG_BLACKLISTED: "FWA Chocolate · FWA ban list",
-    flag_store.FLAG_DENIED_BEFORE: "Warriors United ticket history",
-    flag_store.FLAG_NOT_LOYAL: "Warriors United recruiter note",
-}
+FLAG_SOURCES = flag_store.FLAG_SOURCES
 DISCORD_ID_RE = re.compile(r"^\d{17,20}$")
 
 
@@ -72,9 +69,17 @@ def _safe(value, limit=500) -> str:
 
 
 def _panel(title: str, body: str, *, accent: int) -> list[Container]:
+    heading = f"## {title}"
+    # Components V2 caps the aggregate Text Display content in a message, not
+    # each field independently. Reserve the heading before truncating the body.
+    body_budget = max(1, DISCORD_MESSAGE_TEXT_LIMIT - len(heading))
     return [Container(
         accent_color=accent,
-        components=[Text(content=f"## {title}"), Separator(divider=True), Text(content=body[:4000])],
+        components=[
+            Text(content=heading),
+            Separator(divider=True),
+            Text(content=str(body)[:body_budget] or " "),
+        ],
     )]
 
 

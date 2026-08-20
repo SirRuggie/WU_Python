@@ -26,6 +26,11 @@ FLAG_BLACKLISTED = "blacklisted"
 FLAG_DENIED_BEFORE = "denied_before"
 FLAG_NOT_LOYAL = "not_loyal"
 FLAG_KINDS = frozenset({FLAG_BLACKLISTED, FLAG_DENIED_BEFORE, FLAG_NOT_LOYAL})
+FLAG_SOURCES = {
+    FLAG_BLACKLISTED: "FWA Chocolate · FWA ban list",
+    FLAG_DENIED_BEFORE: "Warriors United ticket history",
+    FLAG_NOT_LOYAL: "Warriors United recruiter note",
+}
 IDENTITY_LOCK_LEASE = timedelta(minutes=3)
 IDENTITY_LOCK_WAIT_SECONDS = 5.0
 IDENTITY_LOCK_POLL_SECONDS = 0.05
@@ -261,6 +266,67 @@ async def active_blacklist(
     })
 
 
+async def extend_matching_flags(
+    mongo: MongoClient,
+    *,
+    discord_ids: Iterable | int | str | None = None,
+    player_tags: Iterable[str] | str = (),
+    source: str,
+) -> list[dict]:
+    """Attach every observed ticket identity to flags already matching it.
+
+    Linked-account discovery may reveal a new tag after a recruiter has flagged
+    the applicant by Discord ID (or by an older tag).  Keep that flag bound to
+    the whole observed identity set so later account changes cannot evade it.
+    """
+
+    ids = _discord_ids(discord_ids)
+    tags = schema.player_tags(player_tags)
+    clauses = _identity_query(ids, tags)
+    if not clauses:
+        return []
+    now = datetime.now(timezone.utc)
+    updated_documents: list[dict] = []
+    async with identity_guard(mongo, discord_ids=ids, player_tags=tags):
+        matches = await mongo.ticket_flags.find({
+            "active": True,
+            "$or": clauses,
+        }).to_list(length=None)
+        for current in matches:
+            if (
+                set(ids).issubset(set(_discord_ids(current.get("discord_ids"))))
+                and set(tags).issubset(set(schema.player_tags(
+                    current.get("player_tags") or ()
+                )))
+            ):
+                updated_documents.append(current)
+                continue
+            rev = max(0, int(current.get("rev") or 0))
+            updated = await mongo.ticket_flags.find_one_and_update(
+                {"_id": current["_id"], "active": True, "rev": store._rev_filter(rev)},
+                {
+                    "$addToSet": {
+                        "discord_ids": {"$each": ids},
+                        "player_tags": {"$each": tags},
+                    },
+                    "$inc": {"rev": 1},
+                    "$set": {"updated_at": now},
+                    "$push": {"audit": {
+                        "event": "flag_identity_expanded",
+                        "at": now,
+                        "source": str(source)[:80],
+                        "discord_ids": ids,
+                        "player_tags": tags,
+                    }},
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+            if updated is None:
+                raise FlagConflictError("flag changed while linked identities expanded")
+            updated_documents.append(updated)
+    return updated_documents
+
+
 async def count_active(mongo: MongoClient) -> dict[str, int]:
     """Return all chart flag kinds, including zero-count kinds."""
     cursor = await mongo.ticket_flags.aggregate([
@@ -449,6 +515,76 @@ async def set_flag_authorized(
         reason=reason,
         checked_at=checked_at,
     )
+    return FlagMutation(store.WON, document)
+
+
+async def set_flag_if_current_authorized(
+    mongo: MongoClient,
+    *,
+    member,
+    actor_name: str,
+    kind: str,
+    discord_ids: Iterable | int | str | None = None,
+    player_tags: Iterable[str] | str = (),
+    source: str,
+    reason: str = "",
+    expected_flag_id: str | None,
+    expected_rev: int | None,
+    checked_at: datetime | None = None,
+) -> FlagMutation:
+    """Set a flag only while a ticket-detail snapshot is still current.
+
+    The expectation check and mutation share the same applicant-identity locks
+    used by approval and every other flag write. A stale personal panel can
+    therefore never overwrite a newer recruiter decision.
+    """
+
+    if not await perms.is_recruiter(member, mongo):
+        return FlagMutation(store.UNAUTHORIZED, None, "recruiter permission required")
+    flag_kind = normalize_kind(kind)
+    ids = _discord_ids(discord_ids)
+    tags = schema.player_tags(player_tags)
+    async with identity_guard(mongo, discord_ids=ids, player_tags=tags):
+        existing = await mongo.ticket_flags.find({
+            "kind": flag_kind,
+            "active": True,
+            "$or": _identity_query(ids, tags),
+        }).limit(2).to_list(length=2)
+        if len(existing) > 1:
+            return FlagMutation(
+                store.LOST,
+                existing[0],
+                "matching identities now overlap multiple active flags",
+            )
+        current = existing[0] if existing else None
+        if expected_flag_id is None:
+            if current is not None:
+                return FlagMutation(
+                    store.LOST,
+                    current,
+                    "this flag changed after the management panel opened",
+                )
+        elif (
+            current is None
+            or str(current.get("_id") or "") != str(expected_flag_id)
+            or max(0, int(current.get("rev") or 0)) != int(expected_rev or 0)
+        ):
+            return FlagMutation(
+                store.LOST,
+                current,
+                "this flag changed after the management panel opened",
+            )
+        document = await _set_flag_unlocked(
+            mongo,
+            kind=flag_kind,
+            discord_ids=ids,
+            player_tags=tags,
+            source=source,
+            added_by=member.id,
+            added_by_name=actor_name,
+            reason=reason,
+            checked_at=checked_at,
+        )
     return FlagMutation(store.WON, document)
 
 

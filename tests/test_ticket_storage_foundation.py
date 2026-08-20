@@ -10,6 +10,7 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions import components as dispatcher
 from extensions.commands.tickets import (
+    account_sync,
     close,
     console,
     flag_store,
@@ -19,6 +20,12 @@ from extensions.commands.tickets import (
     schema,
     store,
 )
+from extensions.commands.accounts import (
+    AccountEntry,
+    AccountsData,
+    STATUS_LOADED,
+)
+from utils.todo_data import Account
 
 
 NOW = datetime(2026, 8, 20, 6, 0, tzinfo=timezone.utc)
@@ -223,6 +230,7 @@ def _mongo(*documents):
         button_store=Collection(),
         ticket_setup=SetupCollection(),
         ticket_flags=Collection(),
+        ticket_automation_state=Collection(),
     )
 
 
@@ -242,6 +250,719 @@ def _ticket(*, public=101, staff=102, number=1, status="open", source=None, user
         status=status,
         source=source,
     )
+
+
+def _linked_account(tag: str, *, name: str | None = None) -> AccountEntry:
+    normalized = schema.player_tag(tag)
+    assert normalized is not None
+    return AccountEntry(
+        normalized,
+        STATUS_LOADED,
+        Account(
+            tag=normalized,
+            name=name or f"Player {normalized[-3:]}",
+            clan_tag=None,
+            clan_name=None,
+            town_hall=17,
+        ),
+    )
+
+
+@pytest.mark.parametrize("count", [1, 15, 37])
+def test_linked_account_sync_persists_complete_snapshot_and_identity_audit(
+    monkeypatch,
+    count,
+):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+    entries = tuple(
+        _linked_account(f"#A{index:07d}", name=f"Account {index}")
+        for index in range(count)
+    )
+
+    async def load(_client, discord_id, *, force):
+        assert discord_id == ticket["user_id"]
+        assert force is True
+        return AccountsData(entries=entries)
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    result = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo,
+        object(),
+        ticket["_id"],
+        source=account_sync.SOURCE_OPEN,
+        now=NOW,
+    ))
+
+    assert result.snapshot.state == account_sync.STATE_READY
+    assert len(result.snapshot.current_accounts) == count
+    assert len(result.snapshot.current_tags) == count
+    assert len(result.added_tags) == count
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert len(durable["linked_account_identities"]) == count
+    assert durable["account_identity_audit"][-1]["source"] == "ticket_open"
+    assert durable["player_tags"][0] == "#ABC123"
+
+
+def test_linked_account_resync_adds_only_new_and_never_silently_forgets(
+    monkeypatch,
+):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+    responses = [
+        AccountsData(entries=tuple(_linked_account(f"#B{index:07d}") for index in range(15))),
+        AccountsData(entries=tuple(_linked_account(f"#B{index:07d}") for index in range(16))),
+        AccountsData(entries=tuple(_linked_account(f"#B{index:07d}") for index in range(1, 16))),
+    ]
+
+    async def load(*_args, **_kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    first = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_OPEN, now=NOW
+    ))
+    second = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_RECRUITER_REFRESH, now=NOW
+    ))
+    third = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_FINAL_DENY, now=NOW
+    ))
+
+    assert len(first.added_tags) == 15
+    assert second.added_tags == ("#B0000015",)
+    assert third.added_tags == ()
+    assert third.no_longer_linked_tags == ("#B0000000",)
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert len(durable["linked_account_identities"]) == 16
+    assert len({item["tag"] for item in durable["linked_account_identities"]}) == 16
+    assert "#B0000000" in durable["player_tags"]
+    assert "#B0000000" not in third.snapshot.current_tags
+
+
+def test_linked_account_sync_retries_cas_without_duplicate_identity(monkeypatch):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+    original = store.compare_and_swap_linked_accounts
+    attempts = 0
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#CAS123"),))
+
+    async def lose_once(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            current = await store.find_one(
+                mongo, {"_id": ticket["_id"], **store.RUNTIME_FILTER}
+            )
+            return store.Transition(store.LOST, current)
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(store, "compare_and_swap_linked_accounts", lose_once)
+    result = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_OPEN, now=NOW
+    ))
+
+    assert result.snapshot.current_tags == ("#CAS123",)
+    assert attempts == 2
+    identities = mongo.tickets.documents[ticket["_id"]]["linked_account_identities"]
+    assert [item["tag"] for item in identities] == ["#CAS123"]
+
+
+def test_flag_identity_propagation_survives_post_snapshot_failure(monkeypatch):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+    loads = 0
+    expansions = 0
+
+    async def load(*_args, **_kwargs):
+        nonlocal loads
+        loads += 1
+        return AccountsData(entries=(_linked_account("#NEW123"),))
+
+    async def expand(*_args, **_kwargs):
+        nonlocal expansions
+        expansions += 1
+        if expansions == 1:
+            raise TimeoutError("flag store unavailable after ticket CAS")
+        return []
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(flag_store, "extend_matching_flags", expand)
+
+    result = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo,
+        object(),
+        ticket["_id"],
+        source=account_sync.SOURCE_OPEN,
+    ))
+
+    assert result.snapshot.current_tags == ("#NEW123",)
+    linked = mongo.tickets.documents[ticket["_id"]]["linked_accounts"]
+    assert linked["current_tags"] == ["#NEW123"]
+    assert linked["flag_refresh_required"] is True
+
+    recovered = asyncio.run(account_sync.recover_pending_account_syncs(
+        mongo, object()
+    ))
+    assert recovered == {"processed": 1, "completed": 1, "failed": 0}
+    assert loads == 1
+    assert expansions == 2
+    assert mongo.tickets.documents[ticket["_id"]]["linked_accounts"][
+        "flag_refresh_required"
+    ] is False
+
+
+def test_linked_account_discovery_expands_matching_flag_identities(monkeypatch):
+    ticket = _ticket()
+    flag = {
+        "_id": "flag_blacklist",
+        "kind": flag_store.FLAG_BLACKLISTED,
+        "active": True,
+        "discord_ids": [ticket["user_id"]],
+        "player_tags": ["#ABC123"],
+        "rev": 0,
+        "audit": [],
+    }
+    mongo = _mongo(ticket)
+    mongo.ticket_flags = Collection([flag])
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#NEW123"),))
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_OPEN, now=NOW
+    ))
+
+    durable = mongo.ticket_flags.documents[flag["_id"]]
+    assert durable["discord_ids"] == [ticket["user_id"]]
+    assert set(durable["player_tags"]) == {"#ABC123", "#NEW123"}
+    assert durable["audit"][-1]["event"] == "flag_identity_expanded"
+
+
+@pytest.mark.parametrize(
+    ("data", "state", "retry"),
+    [
+        (AccountsData(), account_sync.STATE_EMPTY, False),
+        (AccountsData(problem="link_service"), account_sync.STATE_FAILED, True),
+    ],
+)
+def test_linked_account_sync_distinguishes_empty_from_failure(
+    monkeypatch,
+    data,
+    state,
+    retry,
+):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+
+    async def load(*_args, **_kwargs):
+        return data
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    result = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_OPEN, now=NOW
+    ))
+
+    assert result.snapshot.state == state
+    assert result.snapshot.retry_required is retry
+    assert mongo.tickets.documents[ticket["_id"]]["player_tags"] == ["#ABC123"]
+
+
+@pytest.mark.parametrize("failure", ["client_unavailable", "cas_error"])
+def test_denial_proceeds_with_atomic_account_sync_retry(monkeypatch, failure):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def effects(_bot, _mongo, resolved):
+        return store.Transition(store.WON, resolved)
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+    if failure == "client_unavailable":
+        monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
+        client = None
+    else:
+        async def broken(*_args, **_kwargs):
+            raise account_sync.AccountSyncError("CAS exhausted")
+
+        monkeypatch.setattr(account_sync, "sync_ticket_accounts", broken)
+        client = object()
+
+    result = asyncio.run(resolve.deny_ticket(
+        object(),
+        mongo,
+        ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99),
+        actor_name="Recruiter",
+        kind=resolve.KIND_DENY_CUSTOM,
+        reason="Clear denial reason",
+        coc_client=client,
+    ))
+
+    assert result.outcome == store.WON
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert durable["status"] == "denied"
+    assert durable["linked_accounts"]["state"] == account_sync.STATE_FAILED
+    assert durable["linked_accounts"]["retry_required"] is True
+    assert durable["account_identity_audit"][-1]["retry_queued_with_decision"] is True
+    assert durable["audit"][-1]["linked_accounts"]["state"] == account_sync.STATE_FAILED
+
+
+def test_automatic_retry_recovers_terminal_denial_account_snapshot(monkeypatch):
+    ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket["linked_accounts"] = {
+        "version": 1,
+        "state": account_sync.STATE_FAILED,
+        "current": [],
+        "current_tags": [],
+        "retry_required": True,
+        "last_attempt_at": NOW,
+        "revision": 1,
+    }
+    mongo = _mongo(ticket)
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#LATE123"),))
+
+    async def queue(_ticket):
+        return f"ticket_staff_context:{_ticket['_id']}"
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    result = asyncio.run(account_sync.recover_pending_account_syncs(
+        mongo, object(), limit=25, after_sync=queue
+    ))
+
+    assert result == {"processed": 1, "completed": 1, "failed": 0}
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert durable["status"] == "denied"
+    assert durable["linked_accounts"]["current_tags"] == ["#LATE123"]
+    assert durable["linked_accounts"]["retry_required"] is False
+    assert durable["linked_accounts"]["context_refresh_required"] is False
+
+
+def test_terminal_retry_context_obligation_survives_callback_failure_and_resync(
+    monkeypatch,
+):
+    ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket["linked_accounts"] = {
+        "version": 1,
+        "state": account_sync.STATE_FAILED,
+        "current": [],
+        "current_tags": [],
+        "retry_required": True,
+        "last_attempt_at": NOW,
+        "revision": 1,
+    }
+    mongo = _mongo(ticket)
+    loads = 0
+    queues = 0
+
+    async def load(*_args, **_kwargs):
+        nonlocal loads
+        loads += 1
+        return AccountsData(entries=(_linked_account("#LATE123"),))
+
+    async def crash_after_snapshot(_ticket):
+        nonlocal queues
+        queues += 1
+        raise TimeoutError("outbox unavailable")
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    first = asyncio.run(account_sync.recover_pending_account_syncs(
+        mongo, object(), after_sync=crash_after_snapshot
+    ))
+    assert first == {"processed": 1, "completed": 0, "failed": 1}
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert durable["linked_accounts"]["retry_required"] is False
+    assert durable["linked_accounts"]["context_refresh_required"] is True
+    first_revision = durable["linked_accounts"]["revision"]
+
+    # A same-content sync must carry the outstanding obligation to its newer
+    # account revision instead of making queue confirmation impossible.
+    asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_RECOVERY
+    ))
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert durable["linked_accounts"]["revision"] == first_revision + 1
+    assert durable["linked_accounts"]["context_refresh_revision"] == first_revision + 1
+
+    async def queue(_ticket):
+        nonlocal queues
+        queues += 1
+        return f"ticket_staff_context:{_ticket['_id']}"
+
+    second = asyncio.run(account_sync.recover_pending_account_syncs(
+        mongo, object(), after_sync=queue
+    ))
+    assert second == {"processed": 1, "completed": 1, "failed": 0}
+    assert loads == 2  # recovery does not repeat the lookup after it succeeded
+    assert queues == 2
+    assert mongo.tickets.documents[ticket["_id"]]["linked_accounts"][
+        "context_refresh_required"
+    ] is False
+
+
+def test_record_account_failure_wraps_store_errors(monkeypatch):
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("mongo unavailable")
+
+    monkeypatch.setattr(account_sync, "_persist_sync_result", broken)
+    with pytest.raises(account_sync.AccountSyncError, match="could not be persisted"):
+        asyncio.run(account_sync.record_ticket_account_failure(
+            object(),
+            "ticket_101",
+            source=account_sync.SOURCE_FINAL_APPROVE,
+            error="ClashClientUnavailable",
+        ))
+
+
+def test_approval_without_client_persists_retry_and_automatic_recovery(monkeypatch):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def deliver(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
+    monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
+    blocked = asyncio.run(resolve.approve_ticket(
+        object(),
+        mongo,
+        ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99),
+        actor_name="Recruiter",
+    ))
+
+    assert blocked.outcome == store.BLOCKED
+    failed = mongo.tickets.documents[ticket["_id"]]["linked_accounts"]
+    assert failed["state"] == account_sync.STATE_FAILED
+    assert failed["retry_required"] is True
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#RECOVER"),))
+
+    async def queue(_ticket):
+        return f"ticket_staff_context:{_ticket['_id']}"
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    recovered = asyncio.run(account_sync.recover_pending_account_syncs(
+        mongo, object(), after_sync=queue
+    ))
+    assert recovered == {"processed": 1, "completed": 1, "failed": 0}
+    linked = mongo.tickets.documents[ticket["_id"]]["linked_accounts"]
+    assert linked["current_tags"] == ["#RECOVER"]
+    assert linked["retry_required"] is False
+
+
+@pytest.mark.parametrize(
+    "data",
+    [AccountsData(), AccountsData(problem="link_service")],
+)
+def test_approval_blocks_when_final_account_sync_is_empty_or_failed(
+    monkeypatch,
+    data,
+):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def load(*_args, **_kwargs):
+        return data
+
+    refreshed = []
+
+    async def deliver(_bot, _mongo, updated, **_kwargs):
+        snapshot = account_sync.snapshot_from_ticket(updated)
+        refreshed.append((snapshot.state, snapshot.current_tags))
+        return None
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
+    result = asyncio.run(resolve.approve_ticket(
+        object(),
+        mongo,
+        ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99),
+        actor_name="Recruiter",
+        coc_client=object(),
+    ))
+
+    assert result.outcome == store.BLOCKED
+    assert mongo.tickets.documents[ticket["_id"]]["status"] == "open"
+    expected_state = (
+        account_sync.STATE_FAILED if data.problem else account_sync.STATE_EMPTY
+    )
+    assert refreshed == [(expected_state, ())]
+
+
+def test_blocked_approval_refreshes_shrunken_snapshot_before_blacklist_result(
+    monkeypatch,
+):
+    ticket = _ticket()
+    current = [
+        {
+            "tag": tag,
+            "name": tag,
+            "town_hall": 17,
+            "profile_status": "loaded",
+        }
+        for tag in ("#KEEP123", "#GONE123")
+    ]
+    ticket["linked_accounts"] = {
+        "version": 1,
+        "state": account_sync.STATE_READY,
+        "current": current,
+        "current_tags": ["#KEEP123", "#GONE123"],
+        "retry_required": False,
+        "revision": 1,
+    }
+    ticket["player_tags"].extend(("#KEEP123", "#GONE123"))
+    mongo = _mongo(ticket)
+    refreshed = []
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#KEEP123"),))
+
+    async def deliver(_bot, _mongo, updated, **_kwargs):
+        refreshed.append(account_sync.snapshot_from_ticket(updated).current_tags)
+        return None
+
+    async def blacklist(*_args, **_kwargs):
+        return {"_id": "blocked"}
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
+    monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
+    result = asyncio.run(resolve.approve_ticket(
+        object(), mongo, ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99), actor_name="Recruiter",
+        coc_client=object(),
+    ))
+
+    assert result.outcome == store.BLOCKED
+    assert result.blocker == {"_id": "blocked"}
+    assert refreshed == [("#KEEP123",)]
+
+
+@pytest.mark.parametrize("opening_failed", [True, False])
+def test_fwa_approval_requires_review_after_final_sync_discovers_accounts(
+    monkeypatch,
+    opening_failed,
+):
+    ticket = _ticket()
+    ticket["ticket_type"] = "fwa"
+    old = {
+        "tag": "#OLD123",
+        "name": "Old Account",
+        "town_hall": 17,
+        "profile_status": "loaded",
+    }
+    ticket["linked_accounts"] = {
+        "version": 1,
+        "state": (
+            account_sync.STATE_FAILED if opening_failed else account_sync.STATE_READY
+        ),
+        "current": [] if opening_failed else [old],
+        "current_tags": [] if opening_failed else ["#OLD123"],
+        "retry_required": opening_failed,
+        "revision": 1,
+    }
+    if not opening_failed:
+        ticket["linked_account_identities"] = [{"tag": "#OLD123"}]
+        ticket["player_tags"].append("#OLD123")
+    mongo = _mongo(ticket)
+    delivered = []
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def load(*_args, **_kwargs):
+        entries = [_linked_account("#NEW123")]
+        if not opening_failed:
+            entries.insert(0, _linked_account("#OLD123"))
+        return AccountsData(entries=tuple(entries))
+
+    async def deliver(_bot, _mongo, updated, **kwargs):
+        assert kwargs == {
+            "reopen_terminal_thread": False,
+            "open_only_refresh": True,
+        }
+        delivered.append(tuple(updated["linked_accounts"]["current_tags"]))
+        state_id = f"ticket_staff_context:{updated['_id']}"
+        state = await mongo.ticket_automation_state.find_one({"_id": state_id})
+        requested = state["refresh_requested_at"]
+        await mongo.ticket_automation_state.update_one(
+            {"_id": state_id},
+            {"$set": {
+                "delivery_state": "delivered",
+                "delivered_at": requested,
+            }, "$unset": {"lease_owner": "", "lease_until": ""}},
+        )
+        return 900
+
+    async def effects(_bot, _mongo, resolved):
+        return store.Transition(store.WON, resolved)
+
+    async def chocolate_current(*_args, **_kwargs):
+        return bool(delivered)
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
+    monkeypatch.setattr(
+        console, "staff_chocolate_context_is_current", chocolate_current
+    )
+    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+
+    first = asyncio.run(resolve.approve_ticket(
+        object(), mongo, ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99), actor_name="Recruiter",
+        coc_client=object(),
+    ))
+    assert first.outcome == store.BLOCKED
+    assert first.reason == resolve.FWA_IDENTITY_REVIEW_MESSAGE
+    expected = ("#NEW123",) if opening_failed else ("#OLD123", "#NEW123")
+    assert delivered == [expected]
+    assert mongo.tickets.documents[ticket["_id"]]["status"] == "open"
+
+    second = asyncio.run(resolve.approve_ticket(
+        object(), mongo, ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99), actor_name="Recruiter",
+        coc_client=object(),
+    ))
+    assert second.outcome == store.WON
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert durable["status"] == "approved"
+    assert durable["linked_accounts"]["approval_review"]["state"] == "acknowledged"
+    assert delivered == [expected]
+
+
+def test_terminal_fwa_override_refreshes_new_tags_before_review_block(monkeypatch):
+    ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket["ticket_type"] = "fwa"
+    ticket["rev"] = 1
+    marker = f"ticket-resolution:{ticket['_id']}:1:denied"
+    ticket["resolution_effects"] = {"marker": marker, "complete": True}
+    ticket["linked_accounts"] = {
+        "version": 1,
+        "state": account_sync.STATE_FAILED,
+        "current": [],
+        "current_tags": [],
+        "retry_required": True,
+        "revision": 1,
+    }
+    mongo = _mongo(ticket)
+    deliveries = []
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#OVR123"),))
+
+    async def deliver(_bot, _mongo, updated, **kwargs):
+        assert kwargs == {
+            "reopen_terminal_thread": True,
+            "open_only_refresh": False,
+        }
+        deliveries.append(tuple(updated["linked_accounts"]["current_tags"]))
+        state_id = f"ticket_staff_context:{updated['_id']}"
+        state = await mongo.ticket_automation_state.find_one({"_id": state_id})
+        requested = state["refresh_requested_at"]
+        await mongo.ticket_automation_state.update_one(
+            {"_id": state_id},
+            {"$set": {
+                "delivery_state": "delivered",
+                "delivered_at": requested,
+            }},
+        )
+        return 900
+
+    async def effects(_bot, _mongo, resolved):
+        return store.Transition(store.WON, resolved)
+
+    async def chocolate_current(*_args, **_kwargs):
+        return bool(deliveries)
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
+    monkeypatch.setattr(
+        console, "staff_chocolate_context_is_current", chocolate_current
+    )
+    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+    override = {"status": "denied", "rev": 1, "by": 9, "at": NOW}
+
+    first = asyncio.run(resolve.approve_ticket(
+        object(), mongo, ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99), actor_name="Recruiter",
+        expected_status="denied", expected_rev=1, override=override,
+        prior_effect_marker=marker, coc_client=object(),
+    ))
+    assert first.outcome == store.BLOCKED
+    assert first.reason == resolve.FWA_IDENTITY_REVIEW_MESSAGE
+    assert deliveries == [("#OVR123",)]
+
+    second = asyncio.run(resolve.approve_ticket(
+        object(), mongo, ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99), actor_name="Recruiter",
+        expected_status="denied", expected_rev=1, override=override,
+        prior_effect_marker=marker, coc_client=object(),
+    ))
+    assert second.outcome == store.WON
+    assert mongo.tickets.documents[ticket["_id"]]["status"] == "approved"
+    assert deliveries == [("#OVR123",)]
+
+
+def test_final_account_sync_exposes_new_identity_to_blacklist_gate(monkeypatch):
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+    seen = []
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#NEW123"),))
+
+    async def blacklist(_mongo, *, user_id, player_tags):
+        seen.extend(player_tags)
+        return {"_id": "flag_new"} if "#NEW123" in player_tags else None
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
+    result = asyncio.run(resolve.approve_ticket(
+        object(),
+        mongo,
+        ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99),
+        actor_name="Recruiter",
+        coc_client=object(),
+    ))
+
+    assert result.outcome == store.BLOCKED
+    assert result.blocker == {"_id": "flag_new"}
+    assert "#NEW123" in seen
+    assert "#NEW123" in mongo.tickets.documents[ticket["_id"]]["player_tags"]
 
 
 def test_canonical_constructor_normalizes_ids_search_and_creation_audit():
@@ -526,6 +1247,66 @@ def test_index_installation_uses_preflighted_partial_unique_contracts():
     }
 
 
+def test_account_recovery_or_predicates_each_have_a_selective_index():
+    mongo = _mongo(_ticket())
+    names = asyncio.run(store.ensure_indexes(mongo))
+    indexes = {
+        spec[0][0]: options
+        for spec, options in mongo.tickets.indexes
+        if spec
+    }
+    query = account_sync.account_recovery_filter()
+
+    assert query["type"] == "ticket"
+    assert query["venue"] == "thread"
+    assert query["$or"][-1] == {
+        "status": "open",
+        "linked_accounts.version": {"$exists": False},
+    }
+    # The missing-version branch is bounded by the existing status index to the
+    # live open-ticket set; terminal ticket growth cannot expand that scan.
+    assert "status" in indexes
+    for field in store.ACCOUNT_RECOVERY_BOOLEAN_FIELDS:
+        assert field in indexes
+        options = indexes[field]
+        assert options["name"] == "account_recovery_" + field.rsplit(".", 1)[-1]
+        assert options["partialFilterExpression"] == {
+            **store.RUNTIME_FILTER,
+            field: True,
+        }
+        assert options["name"] in names
+
+
+def test_account_recovery_executes_the_frozen_indexed_predicate(monkeypatch):
+    observed = []
+
+    async def find(_mongo, query):
+        observed.append(query)
+        return []
+
+    monkeypatch.setattr(account_sync.store, "find", find)
+    counts = asyncio.run(account_sync.recover_pending_account_syncs(
+        SimpleNamespace(), object()
+    ))
+    assert counts == {"processed": 0, "completed": 0, "failed": 0}
+    assert observed == [account_sync.account_recovery_filter()]
+
+
+def test_recovery_indexes_are_idempotent_and_unique_preflight_still_fails_closed():
+    mongo = _mongo(_ticket())
+    first = asyncio.run(store.ensure_indexes(mongo))
+    second = asyncio.run(store.ensure_indexes(mongo))
+    assert first == second
+
+    duplicate = _mongo(
+        _ticket(),
+        _ticket(public=201, staff=202, number=2, user=30),
+    )
+    with pytest.raises(store.IndexConflictError):
+        asyncio.run(store.ensure_indexes(duplicate))
+    assert duplicate.tickets.indexes == []
+
+
 def test_runtime_lookup_fails_closed_for_legacy_channel_rows():
     legacy = schema.normalize_ticket_document({
         "_id": "legacy", "status": "open", "ticket_type": "main",
@@ -650,6 +1431,152 @@ def test_status_transition_is_cas_audited_and_missing_has_no_write():
     ))
     assert missing.outcome == store.MISSING
     assert mongo.tickets.documents == before
+
+
+def test_terminal_decision_cas_rejects_a_newer_linked_account_snapshot():
+    ticket = _ticket()
+    ticket["linked_accounts"] = {"revision": 2}
+    mongo = _mongo(ticket)
+
+    result = asyncio.run(store.transition(
+        mongo,
+        ticket["_id"],
+        to_status="approved",
+        actor_id=99,
+        actor_name="Recruiter",
+        expected_rev=0,
+        expected_linked_account_revision=1,
+    ))
+
+    assert result.outcome == store.LOST
+    assert mongo.tickets.documents[ticket["_id"]]["status"] == "open"
+
+
+def test_approval_loses_when_account_snapshot_changes_after_blacklist_check_begins(
+    monkeypatch,
+):
+    ticket = _ticket()
+    existing = {
+        "tag": "#ABC123",
+        "name": "Existing",
+        "town_hall": 17,
+        "profile_status": "loaded",
+    }
+    ticket["linked_accounts"] = {
+        "version": 1,
+        "state": account_sync.STATE_READY,
+        "current": [existing],
+        "current_tags": ["#ABC123"],
+        "retry_required": False,
+        "revision": 1,
+    }
+    ticket["linked_account_identities"] = [{"tag": "#ABC123"}]
+    mongo = _mongo(ticket)
+    loads = iter((
+        AccountsData(entries=(_linked_account("#ABC123"),)),
+        AccountsData(entries=(
+            _linked_account("#ABC123"),
+            _linked_account("#RACE123"),
+        )),
+    ))
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def load(*_args, **_kwargs):
+        return next(loads)
+
+    async def blacklist(*_args, **_kwargs):
+        # This refresh lands after the approval's final lookup but before its
+        # decision CAS, invalidating the exact identity view that was checked.
+        await account_sync.sync_ticket_accounts(
+            mongo,
+            object(),
+            ticket["_id"],
+            source=account_sync.SOURCE_RECRUITER_REFRESH,
+        )
+        return None
+
+    async def effects(*_args, **_kwargs):
+        raise AssertionError("a stale approval must not run terminal effects")
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
+    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+    result = asyncio.run(resolve.approve_ticket(
+        object(), mongo, ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99), actor_name="Recruiter",
+        coc_client=object(),
+    ))
+
+    assert result.outcome == store.LOST
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert durable["status"] == "open"
+    assert durable["linked_accounts"]["current_tags"] == ["#ABC123", "#RACE123"]
+
+
+def test_permission_is_rechecked_at_terminal_mutation_boundary(monkeypatch):
+    ticket = _ticket()
+    ticket["linked_accounts"] = {"revision": 0}
+    mongo = _mongo(ticket)
+    authorization = iter((True, False))
+
+    async def recruiter(*_args, **_kwargs):
+        return next(authorization)
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
+    result = asyncio.run(resolve.deny_ticket(
+        object(),
+        mongo,
+        ticket_id=ticket["_id"],
+        member=SimpleNamespace(id=99),
+        actor_name="Recruiter",
+        kind=resolve.KIND_DENY_CUSTOM,
+        reason="Clear denial reason",
+    ))
+
+    assert result.outcome == store.UNAUTHORIZED
+    assert mongo.tickets.documents[ticket["_id"]]["status"] == "open"
+
+
+def test_live_resolution_reconciler_sweeps_durable_account_retries(monkeypatch):
+    ticket = _ticket()
+    seen = []
+
+    async def recover(_mongo, client, *, after_sync, **_kwargs):
+        assert client is not None
+        await after_sync(ticket)
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    async def queue(_mongo, ticket_doc):
+        seen.append(ticket_doc["_id"])
+        return f"ticket_staff_context:{ticket_doc['_id']}"
+
+    async def drain(*, bot, mongo, limit=25):
+        assert bot == "gateway"
+        assert limit == 25
+        seen.append("drained")
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    monkeypatch.setattr(account_sync, "configured_coc_client", lambda: object())
+    monkeypatch.setattr(account_sync, "recover_pending_account_syncs", recover)
+    monkeypatch.setattr(console, "queue_staff_identity_context", queue)
+    monkeypatch.setattr(console, "recover_pending_staff_identity_contexts", drain)
+
+    counts = asyncio.run(resolve._recover_live_account_syncs(
+        _mongo(ticket), bot="gateway"
+    ))
+
+    assert counts == {
+        "processed": 1,
+        "completed": 1,
+        "failed": 0,
+        "context_processed": 1,
+        "context_failed": 0,
+    }
+    assert seen == [ticket["_id"], "drained"]
 
 
 def test_override_requires_observed_terminal_revision_and_records_prior_decision():
@@ -841,6 +1768,20 @@ def test_secure_approval_stops_before_side_effects(monkeypatch, mode):
         calls.append("blacklist")
         return {"_id": "flag"} if mode == "blacklisted" else None
 
+    async def sync(*_args, **_kwargs):
+        calls.append("account_sync")
+        return account_sync.AccountSyncResult(
+            ticket,
+            account_sync.AccountSnapshot(
+                state=account_sync.STATE_READY,
+                current_accounts=(account_sync.LinkedAccount("#ABC123"),),
+                current_tags=("#ABC123",),
+                observed_tags=("#ABC123",),
+                retry_required=False,
+                revision=1,
+            ),
+        )
+
     async def transition(*_args, **_kwargs):
         calls.append("transition")
         return store.Transition(store.LOST, ticket)
@@ -852,12 +1793,13 @@ def test_secure_approval_stops_before_side_effects(monkeypatch, mode):
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
     monkeypatch.setattr(resolve.store, "find_one", find)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
+    monkeypatch.setattr(resolve.account_sync, "sync_ticket_accounts", sync)
     monkeypatch.setattr(resolve.store, "transition", transition)
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
     mongo = SimpleNamespace(ticket_flags=Collection())
     result = asyncio.run(resolve.approve_ticket(
         SimpleNamespace(), mongo, ticket_id=ticket["_id"],
-        member=SimpleNamespace(id=99), actor_name="Recruiter",
+        member=SimpleNamespace(id=99), actor_name="Recruiter", coc_client=object(),
     ))
     expected = {
         "unauthorized": store.UNAUTHORIZED,
@@ -875,6 +1817,66 @@ def test_secure_approval_stops_before_side_effects(monkeypatch, mode):
         assert "transition" not in calls
 
 
+def test_ticket_flag_manager_cas_rejects_stale_reason_then_binds_all_identities(
+    monkeypatch,
+):
+    user_id = 223456789012345678
+    original = {
+        "_id": "flag_existing",
+        "kind": flag_store.FLAG_NOT_LOYAL,
+        "discord_ids": [user_id],
+        "player_tags": ["#OLD123"],
+        "source": "Warriors United recruiter note",
+        "reason": "Current reason",
+        "active": True,
+        "checked_at": NOW,
+        "created_at": NOW,
+        "updated_at": NOW,
+        "rev": 4,
+        "audit": [],
+    }
+    mongo = SimpleNamespace(ticket_flags=Collection([original]))
+    tags = [f"#A{index:07d}" for index in range(37)]
+
+    async def allowed(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(flag_store.perms, "is_recruiter", allowed)
+    member = SimpleNamespace(id=99)
+    stale = asyncio.run(flag_store.set_flag_if_current_authorized(
+        mongo,
+        member=member,
+        actor_name="Recruiter",
+        kind=flag_store.FLAG_NOT_LOYAL,
+        discord_ids=user_id,
+        player_tags=tags,
+        source="Warriors United recruiter note",
+        reason="Stale overwrite",
+        expected_flag_id="flag_existing",
+        expected_rev=3,
+    ))
+    assert stale.outcome == store.LOST
+    assert mongo.ticket_flags.documents["flag_existing"]["reason"] == "Current reason"
+
+    saved = asyncio.run(flag_store.set_flag_if_current_authorized(
+        mongo,
+        member=member,
+        actor_name="Recruiter",
+        kind=flag_store.FLAG_NOT_LOYAL,
+        discord_ids=user_id,
+        player_tags=tags,
+        source="Warriors United recruiter note",
+        reason="Fresh reason",
+        expected_flag_id="flag_existing",
+        expected_rev=4,
+    ))
+    assert saved.won
+    assert saved.doc["reason"] == "Fresh reason"
+    assert set(tags) <= set(saved.doc["player_tags"])
+    assert saved.doc["discord_ids"] == [user_id]
+    assert saved.doc["rev"] == 5
+
+
 def _effect_ticket():
     ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
     ticket.update({
@@ -885,6 +1887,7 @@ def _effect_ticket():
             "marker": "ticket-resolution:ticket_101:1:denied",
             "kind": resolve.KIND_DENY_CUSTOM,
             "notification": {"state": "pending"},
+            "staff_context": {"state": "delivered"},
             "archive": {"state": "pending"},
             "hub": {"state": "pending"},
             "complete": False,
@@ -959,6 +1962,85 @@ def _effect_bot(rest):
     return SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
 
 
+@pytest.mark.parametrize("fresh", [True, False])
+def test_final_account_context_must_be_fresh_before_terminal_archive(
+    monkeypatch,
+    fresh,
+):
+    marker = "ticket-resolution:ticket_101:1:denied"
+    ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "rev": 1,
+        "linked_accounts": {
+            "version": 1,
+            "state": account_sync.STATE_READY,
+            "current": [{
+                "tag": "#NEW123",
+                "name": "New Account",
+                "town_hall": 17,
+                "profile_status": "loaded",
+            }],
+            "current_tags": ["#NEW123"],
+            "retry_required": False,
+            "revision": 1,
+        },
+        "resolution_effects": {
+            "version": 1,
+            "marker": marker,
+            "kind": resolve.KIND_DENY_CUSTOM,
+            "notification": {"state": "delivered"},
+            "staff_context": {"state": "pending"},
+            "archive": {"state": "pending"},
+            "hub": {"state": "pending"},
+            "complete": False,
+        },
+    })
+    mongo = _mongo(ticket)
+    mongo.ticket_automation_state = Collection()
+    order = []
+
+    async def context(_bot, _mongo, updated_ticket, **kwargs):
+        order.append(("context", tuple(
+            (updated_ticket.get("linked_accounts") or {}).get("current_tags") or ()
+        )))
+        assert kwargs == {"reopen_terminal_thread": True}
+        requested = NOW
+        delivered = NOW if fresh else NOW.replace(hour=5)
+        mongo.ticket_automation_state.documents[
+            f"ticket_staff_context:{ticket['_id']}"
+        ] = {
+            "_id": f"ticket_staff_context:{ticket['_id']}",
+            "kind": "ticket_staff_context",
+            "delivery_state": "delivered",
+            "refresh_requested_at": requested,
+            "delivered_at": delivered,
+        }
+        return 555
+
+    async def archive(*_args, **_kwargs):
+        order.append(("archive", ()))
+
+    async def hub(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(console, "deliver_staff_identity_context", context)
+    monkeypatch.setattr(resolve.thread_service, "archive_ticket_pair", archive)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", hub)
+    result = asyncio.run(resolve._process_resolution_effects_owned(
+        _effect_bot(EffectRest()),
+        mongo,
+        ticket,
+    ))
+
+    assert order[0] == ("context", ("#NEW123",))
+    if fresh:
+        assert order[1] == ("archive", ())
+        assert result.outcome == store.WON
+    else:
+        assert all(step != "archive" for step, _details in order)
+        assert result.outcome == store.EFFECT_FAILED
+
+
 def test_override_waits_for_prior_notice_before_sending_replacement(monkeypatch):
     prior_marker = "ticket-resolution:ticket_101:1:approved"
     ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
@@ -971,6 +2053,7 @@ def test_override_waits_for_prior_notice_before_sending_replacement(monkeypatch)
             "marker": prior_marker,
             "kind": resolve.KIND_APPROVE,
             "notification": {"state": "pending"},
+            "staff_context": {"state": "delivered"},
             "archive": {"state": "pending"},
             "hub": {"state": "pending"},
             "complete": False,

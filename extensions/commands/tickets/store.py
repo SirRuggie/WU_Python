@@ -20,6 +20,11 @@ _log = logging.getLogger(__name__)
 
 TICKET_FILTER = {"type": "ticket"}
 RUNTIME_FILTER = {"type": "ticket", "venue": "thread"}
+ACCOUNT_RECOVERY_BOOLEAN_FIELDS = (
+    "linked_accounts.retry_required",
+    "linked_accounts.context_refresh_required",
+    "linked_accounts.flag_refresh_required",
+)
 STORE_BUTTON = "button_store"
 STORE_TICKETS = "tickets"
 CANONICAL_ACTIVATION_VERSION = 3
@@ -392,6 +397,41 @@ async def _conditional(
     return Transition(LOST, current) if current is not None else Transition(MISSING, None)
 
 
+async def compare_and_swap_linked_accounts(
+    mongo: MongoClient,
+    ticket_id,
+    *,
+    expected_revision: int,
+    update: dict,
+) -> Transition:
+    """Atomically persist one linked-account observation without changing decision rev.
+
+    Ticket ``rev`` protects recruiter decisions and the component state rendered from
+    them.  Account refreshes use their own revision so a background refresh cannot
+    invalidate an otherwise current Approve/Deny panel.  The CAS still prevents two
+    workers from replacing each other's complete account snapshots.
+    """
+    revision = max(0, int(expected_revision))
+    revision_filter = (
+        {"$or": [
+            {"linked_accounts.revision": 0},
+            {"linked_accounts.revision": {"$exists": False}},
+        ]}
+        if revision == 0
+        else {"linked_accounts.revision": revision}
+    )
+    return await _conditional(
+        mongo,
+        {
+            "_id": ticket_id,
+            **RUNTIME_FILTER,
+            **revision_filter,
+        },
+        update,
+        ticket_id,
+    )
+
+
 async def transition(
     mongo: MongoClient,
     ticket_id,
@@ -406,6 +446,9 @@ async def transition(
     effect_kind: str | None = None,
     prior_effect_marker: str | None = None,
     prior_effects_legacy_baseline: bool = False,
+    linked_account_snapshot: Mapping | None = None,
+    linked_account_retry: Mapping | None = None,
+    expected_linked_account_revision: int | None = None,
 ) -> Transition:
     """CAS a ticket status using the status and revision the actor observed."""
     target = schema.ticket_status(to_status)
@@ -463,6 +506,15 @@ async def transition(
             "at": overrides.get("at"),
             "rev": expected_rev,
         }
+    if linked_account_snapshot is not None:
+        audit["linked_accounts"] = {
+            "state": str(linked_account_snapshot.get("state") or "failed"),
+            "revision": max(0, int(linked_account_snapshot.get("revision") or 0)),
+            "current_tags": schema.player_tags(
+                linked_account_snapshot.get("current_tags") or ()
+            ),
+            "retry_required": bool(linked_account_snapshot.get("retry_required")),
+        }
 
     protected = {
         "_id", "type", "schema_version", "venue", "location", "guild_id",
@@ -481,6 +533,7 @@ async def transition(
             "marker": marker,
             "kind": str(effect_kind or ("approve" if target == "approved" else "deny_custom")),
             "notification": {"state": "pending"},
+            "staff_context": {"state": "pending"},
             "archive": {"state": "pending"},
             "hub": {"state": "pending"},
             "complete": False,
@@ -488,6 +541,17 @@ async def transition(
         },
         **supplied,
     }
+    if linked_account_retry is not None:
+        retry_source = str(linked_account_retry.get("source") or "final_denial")[:80]
+        retry_error = str(linked_account_retry.get("error") or "AccountSyncError")[:120]
+        set_fields.update({
+            "linked_accounts.version": 1,
+            "linked_accounts.state": "failed",
+            "linked_accounts.retry_required": True,
+            "linked_accounts.source": retry_source,
+            "linked_accounts.last_attempt_at": now,
+            "linked_accounts.error": retry_error,
+        })
     unset_fields = {field: "" for field in schema.CLAIM_FIELDS}
     if target == "approved":
         set_fields.setdefault("approved_at", now)
@@ -512,6 +576,18 @@ async def transition(
         "status": expected_status,
         "rev": _rev_filter(expected_rev),
     }
+    if expected_linked_account_revision is not None:
+        # A terminal decision is based on the just-refreshed account view.  Do
+        # not let a concurrent refresh replace that view between the flag gate
+        # and this write; callers must re-read and make a fresh decision.
+        account_revision = max(0, int(expected_linked_account_revision))
+        if account_revision == 0:
+            transition_filter["$or"] = [
+                {"linked_accounts.revision": 0},
+                {"linked_accounts.revision": {"$exists": False}},
+            ]
+        else:
+            transition_filter["linked_accounts.revision"] = account_revision
     if overrides is not None:
         # A terminal decision's Discord effects are part of the decision being
         # overturned. Keep this in the same atomic predicate as status/rev so a
@@ -538,14 +614,26 @@ async def transition(
                 "resolution_effects.complete": {"$exists": False},
             })
 
+    push_fields: dict = {"audit": audit}
+    increments = {"rev": 1}
+    if linked_account_retry is not None:
+        increments["linked_accounts.revision"] = 1
+        push_fields["account_identity_audit"] = {
+            "event": "linked_accounts_sync_failed",
+            "at": now,
+            "source": set_fields["linked_accounts.source"],
+            "error": set_fields["linked_accounts.error"],
+            "retry_queued_with_decision": True,
+        }
+
     return await _conditional(
         mongo,
         transition_filter,
         {
             "$set": set_fields,
             "$unset": unset_fields,
-            "$inc": {"rev": 1},
-            "$push": {"audit": audit},
+            "$inc": increments,
+            "$push": push_fields,
         },
         ticket_id,
     )
@@ -829,4 +917,10 @@ async def ensure_indexes(mongo: MongoClient) -> list[str]:
             [("username_search", 1), ("created_at", -1)], name="username_created"
         ),
     ]
+    for field in ACCOUNT_RECOVERY_BOOLEAN_FIELDS:
+        specs.append(await collection.create_index(
+            [(field, 1)],
+            partialFilterExpression={**RUNTIME_FILTER, field: True},
+            name="account_recovery_" + field.rsplit(".", 1)[-1],
+        ))
     return [str(name) for name in specs]

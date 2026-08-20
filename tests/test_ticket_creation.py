@@ -7,7 +7,14 @@ import hikari
 import pytest
 
 from extensions import components as dispatcher
-from extensions.commands.tickets import handlers, legacy_migration, schema, store, thread_service
+from extensions.commands.tickets import (
+    account_sync,
+    handlers,
+    legacy_migration,
+    schema,
+    store,
+    thread_service,
+)
 
 
 NOW = datetime(2026, 8, 20, 6, 0, tzinfo=timezone.utc)
@@ -462,19 +469,19 @@ def test_opening_message_mentions_only_candidate_and_recruiter(monkeypatch):
     async def questionnaire_exists(*_args, **_kwargs):
         return True
 
-    monkeypatch.setattr(thread_service, "_send_once", send_once)
+    monkeypatch.setattr(thread_service, "_send_components_once", send_once)
     monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
     ticket_doc = _ticket()
     ticket_doc["recruiter_role_id"] = 40
     asyncio.run(thread_service._deliver_opening_messages(SimpleNamespace(), ticket_doc))
     assert calls[0][1]["user_mentions"] == [30]
-    assert calls[0][1]["role_mentions"] == [40]
-    assert calls[0][0][3] == (
-        "<@30> Welcome, and thank you for your interest. <@&40> will reply soon. "
-        "Please answer the questions below while you wait."
-    )
+    assert calls[0][1]["role_mentions"] is False
+    assert "<@30>" in repr(calls[0][0][3])
+    assert "<@&40>" not in repr(calls[0][0][3])
     assert calls[1][1]["user_mentions"] is False
-    assert calls[1][1]["role_mentions"] is False
+    assert calls[1][1]["role_mentions"] == [40]
+    assert "<@&40>" in repr(calls[1][0][3])
+    assert "<@30>" not in repr(calls[1][0][3])
 
 
 def test_legacy_migration_help_explains_overrides_and_confirmation():
@@ -713,6 +720,139 @@ def test_live_creation_cancellation_releases_retry_state(monkeypatch):
     assert creation_state.document["last_error"] == "CancelledError"
     assert "lease_owner" not in creation_state.document
     assert "lease_until" not in creation_state.document
+
+
+def test_post_commit_account_sync_failure_resumes_without_duplicate_pair(monkeypatch):
+    owner = "creation-owner"
+    creation_state = CreationStateCollection()
+    automation_states = AutomationStateCollection()
+    mongo = SimpleNamespace(
+        ticket_creation_state=creation_state,
+        ticket_automation_state=automation_states,
+    )
+    committed = {"doc": None}
+    calls = {"claim": 0, "pair": 0, "insert": 0, "sync": 0}
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def find_open(*_args, **_kwargs):
+        return dict(committed["doc"]) if committed["doc"] else None
+
+    async def no_bound(*_args, **_kwargs):
+        return None
+
+    async def claim(*_args, **_kwargs):
+        calls["claim"] += 1
+        state = {
+            "_id": "thread:30:main",
+            "lease_owner": owner,
+            "state": "creating",
+            "guild_id": 10,
+            "user_id": 30,
+            "username": "Applicant",
+            "display_name": "Applicant",
+            "ticket_type": "main",
+            "candidate_parent_id": 20,
+            "staff_parent_id": 21,
+            "recruiter_role_id": 40,
+            "ticket_number": 1,
+        }
+        creation_state.document = dict(state)
+        return owner, state, False
+
+    async def pair(*_args, **kwargs):
+        calls["pair"] += 1
+        return SimpleNamespace(id=101), SimpleNamespace(id=102), kwargs["state"]
+
+    async def insert(_mongo, document):
+        calls["insert"] += 1
+        committed["doc"] = dict(document)
+        return dict(document)
+
+    async def sync(_mongo, _client, ticket_id, *, source, **_kwargs):
+        calls["sync"] += 1
+        assert ticket_id == "ticket_101"
+        if calls["sync"] == 1:
+            raise account_sync.AccountSyncError("interrupted after commit")
+        updated = dict(committed["doc"])
+        updated["linked_accounts"] = {
+            "version": 1,
+            "state": account_sync.STATE_READY,
+            "current": [{
+                "tag": "#ABC123",
+                "name": "Applicant",
+                "town_hall": 17,
+                "profile_status": "loaded",
+            }],
+            "current_tags": ["#ABC123"],
+            "retry_required": False,
+            "source": source,
+            "revision": 1,
+        }
+        committed["doc"] = updated
+        return account_sync.AccountSyncResult(
+            updated,
+            account_sync.snapshot_from_ticket(updated),
+            added_tags=("#ABC123",),
+        )
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", no_op)
+    monkeypatch.setattr(thread_service, "validate_thread_parents", no_op)
+    monkeypatch.setattr(thread_service.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(thread_service, "_committed_ticket_for_creation_state", no_bound)
+    monkeypatch.setattr(thread_service, "_claim_creation", claim)
+    monkeypatch.setattr(thread_service, "_ensure_live_thread_pair", pair)
+    monkeypatch.setattr(thread_service.store, "insert_one", insert)
+    monkeypatch.setattr(thread_service.account_sync, "sync_ticket_accounts", sync)
+    monkeypatch.setattr(thread_service, "_deliver_opening_messages", no_op)
+    monkeypatch.setattr(thread_service, "reconcile_ticket_pair", no_op)
+    monkeypatch.setattr(thread_service, "notify_console_after_change", no_op)
+    rest = Rest()
+    bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=99), rest=rest)
+    config = {
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_recruiter_role": 40,
+    }
+
+    with pytest.raises(account_sync.AccountSyncError):
+        asyncio.run(thread_service.create_live_thread_ticket(
+            bot=bot,
+            mongo=mongo,
+            guild_id=10,
+            user_id=30,
+            username="Applicant",
+            display_name="Applicant",
+            ticket_type="main",
+            config=config,
+            coc_client=object(),
+        ))
+    resumed = asyncio.run(thread_service.create_live_thread_ticket(
+        bot=bot,
+        mongo=mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name="Applicant",
+        ticket_type="main",
+        config=config,
+        coc_client=object(),
+    ))
+
+    assert resumed.resumed is True
+    assert resumed.ticket["linked_accounts"]["current_tags"] == ["#ABC123"]
+    assert calls == {"claim": 1, "pair": 1, "insert": 1, "sync": 2}
+    assert rest.edits == []
+    assert creation_state.document["state"] == "complete"
 
 
 def test_foreign_guild_click_is_rejected_before_global_ticket_lookup(monkeypatch):

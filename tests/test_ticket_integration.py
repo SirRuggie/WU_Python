@@ -260,6 +260,91 @@ def test_startup_resumes_confirmed_creation_and_migration_after_indexes(monkeypa
     ]
 
 
+def test_account_retry_queues_terminal_context_before_staff_recovery(monkeypatch):
+    calls = []
+    ticket = {
+        "_id": "ticket_101",
+        "type": "ticket",
+        "venue": "thread",
+        "status": "denied",
+        "location": {"staff_space_id": 102},
+    }
+
+    async def indexes(_mongo):
+        calls.append("indexes")
+
+    async def complete(**_kwargs):
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def account_recovery(_mongo, client, *, limit, after_sync):
+        calls.append(("account", client, limit))
+        assert await after_sync(ticket) == "ticket_staff_context:ticket_101"
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    async def queue_context(_mongo, document):
+        calls.append(("queue_context", document["_id"]))
+        return f"ticket_staff_context:{document['_id']}"
+
+    async def staff_contexts(**_kwargs):
+        calls.append("staff_context")
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    async def open_contexts(**_kwargs):
+        return {
+            "processed": 0,
+            "completed": 0,
+            "failed": 0,
+            "after_ticket_id": None,
+            "exhausted": True,
+        }
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "recover_pending_thread_ticket_creations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "recover_pending_legacy_migrations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.account_sync,
+        "recover_pending_account_syncs",
+        account_recovery,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "queue_staff_identity_context",
+        queue_context,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_pending_staff_identity_contexts",
+        staff_contexts,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_open_staff_identity_contexts",
+        open_contexts,
+    )
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+    coc_client = object()
+
+    asyncio.run(ticket_extension.recover_ticket_workflows(
+        object(), object(), coc_client
+    ))
+
+    assert calls == [
+        "indexes",
+        ("account", coc_client, 25),
+        ("queue_context", "ticket_101"),
+        "staff_context",
+    ]
+
+
 def test_startup_recovery_drains_records_beyond_all_batch_limits(monkeypatch):
     remaining = {
         "creation": 101,

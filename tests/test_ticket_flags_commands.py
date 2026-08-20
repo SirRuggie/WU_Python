@@ -28,6 +28,16 @@ def test_flag_sources_preserve_the_decided_human_authority():
     }
 
 
+def test_flag_reply_panel_reserves_text_budget_for_its_heading():
+    view = flags._panel("Recruiter access required", "x" * 4000, accent=0)
+    contents = [
+        str(component.content)
+        for component in view[0].components
+        if getattr(component, "content", None) is not None
+    ]
+    assert sum(map(len, contents)) == flags.DISCORD_MESSAGE_TEXT_LIMIT
+
+
 def test_flag_commands_use_authorized_store_boundaries():
     source = Path(flags.__file__).read_text(encoding="utf-8")
     assert "flag_store.set_flag_authorized(" in source
