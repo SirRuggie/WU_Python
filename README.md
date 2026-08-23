@@ -4,9 +4,9 @@
 
 **The Discord bot that runs the Warriors United Clash of Clans family.**
 
-Recruiting and onboarding, FWA and CWL coordination, a full ticket desk, a family
-card-trading game, and a per-player to-do dashboard — 80 documented slash commands
-and eight background jobs behind a single bot account.
+Recruiting and onboarding, FWA and CWL coordination, a full ticket desk, and a
+per-player to-do dashboard — 79 documented slash commands and six always-on
+background jobs behind a single bot account.
 
 [![Python 3.12.3+](https://img.shields.io/badge/Python-3.12.3%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![hikari](https://img.shields.io/badge/hikari-2.3.5-5865F2)](https://github.com/hikari-py/hikari)
@@ -43,7 +43,7 @@ sections, and media galleries rather than classic embeds).
 Every public command lives in the in-app guide (`/help`) and is inventoried in
 [`extensions/commands/help_catalog.py`](extensions/commands/help_catalog.py),
 which is updated in the same change as any command it describes. The tables
-below mirror that catalog.
+below are drawn from that catalog.
 
 ### 🧭 Player self-service
 
@@ -53,14 +53,13 @@ owe — war attacks, CWL, raid weekend, and more — and `/family-links` manages
 family roles and open clan links.
 
 <details>
-<summary><strong>Command reference — Start Here (6 commands)</strong></summary>
+<summary><strong>Command reference — Start Here (5 commands)</strong></summary>
 <br>
 
 | Command | Description |
 | --- | --- |
 | `/help` | Open this command guide. |
 | `/accounts` | Show every Clash account linked to your Discord. |
-| `/cards` | Update your card collection and find family trade matches. |
 | `/todo` | Show what your linked Clash accounts still need to do. |
 | `/family-links` | Manage your own family roles and open clan links. |
 | `/slap` | Send a playful slap GIF to another member. |
@@ -69,16 +68,6 @@ Right-click a user → **Apps → Get User ID**, or a message → **Apps → Get
 Message ID**, to copy Discord IDs directly.
 
 </details>
-
-### 🃏 Clash of Cards
-
-A family trading game built into the server: a 60-card collectible catalog,
-per-member collection tracking, automatic trade matching across the family, and
-a live trade board with open want-ads, managed reservations, and reply-note
-coordination. Deadlines (unanswered proposals, unclaimed want-ads, unconfirmed
-swaps) are enforced by a background sweep that survives restarts, and a sticky
-explainer keeps the rules visible at the bottom of the trade channel. See
-[`docs/clash-of-cards.md`](docs/clash-of-cards.md) for the full design.
 
 ### 👥 Recruiting & onboarding
 
@@ -239,15 +228,13 @@ alert and FWA points monitors — no shell access required.
 
 ## Background jobs
 
-Eight always-on tasks in [`extensions/tasks/`](extensions/tasks) do the work
+Six always-on tasks in [`extensions/tasks/`](extensions/tasks) do the work
 nobody should have to remember:
 
 | Job | Module | What it does |
 | --- | --- | --- |
 | BAND post monitor | `band_monitor.py` | Polls the FWA sync BAND group every 10 minutes over the BAND Open API and announces war-sync posts in Discord. |
 | BAND sync alerts | `band_sync_ical.py` | Watches the BAND iCal calendar feeds and DMs configured members when a sync is scheduled, approaching, or rescheduled. Ships disabled; turn on with `/fwasync enable`. |
-| Trade deadlines | `cards_deadlines.py` | Enforces every Clash of Cards deadline from stored timestamps, so a restart resumes exactly where it left off and overdue work is settled on the first pass. |
-| Trade-board sticky | `cards_sticky.py` | Keeps the `/cards` explainer pinned to the bottom of the trade channel without interrupting live conversation. |
 | Clan history tracker | `clan_history_tracker.py` | Discovers cross-clan `/todo` obligations off the interaction path: roster departures, linked-account watches, and live war/CWL rosters. |
 | CWL reminder scheduler | `cwl_reminder.py` | Runs the monthly CWL reminder chain and its follow-ups, restoring pending reminders from MongoDB after a restart. |
 | FWA points monitor | `fwa_points_monitor.py` | Records FWA points verdicts for watched clans. Ships disabled — the upstream site blocks datacenter IPs — so `/fwa points` degrades gracefully to a link. |
@@ -259,7 +246,7 @@ nobody should have to remember:
 | --- | --- | --- |
 | Discord gateway | [hikari](https://github.com/hikari-py/hikari) 2.3.5 | Pinned deliberately — hikari and lightbulb are upgraded only as a coupled pair. See [`docs/hikari-lightbulb-versions.md`](docs/hikari-lightbulb-versions.md). |
 | Command framework | [hikari-lightbulb](https://github.com/tandemdude/hikari-lightbulb) 3.0.3 | Slash commands, dependency injection, and extension loading. |
-| Clash of Clans API | [coc.py](https://github.com/mathsman5133/coc.py) 3.10.0 | Routed through the ClashKing proxy, so no Clash developer key is needed. The pin rationale is documented line by line in [`requirements.txt`](requirements.txt). |
+| Clash of Clans API | [coc.py](https://github.com/mathsman5133/coc.py) 3.10.0 | Routed through a hosted API proxy, so no Clash developer key is needed. The pin rationale is documented line by line in [`requirements.txt`](requirements.txt). |
 | Database | MongoDB via pymongo `AsyncMongoClient` | Native async driver (not motor), remote deployment. Collection handles live in [`utils/mongo.py`](utils/mongo.py). |
 | Scheduling | APScheduler + stored timestamps | Schedules and deadlines are persisted in MongoDB and re-seeded by a startup reconciler rather than held in memory. |
 | Media | Cloudinary + Pillow | Uploaded clan logos, banners, and base images. |
@@ -296,12 +283,12 @@ WU_Python/
 │   ├── autocomplete.py      # Preloaded autocomplete caches
 │   ├── context_menus/       # Right-click apps: Get User ID, Get Message ID
 │   ├── events/              # Channel and message event handlers
-│   └── tasks/               # The eight background jobs
+│   └── tasks/               # The always-on background jobs
 ├── utils/                   # Shared services: Mongo, Clash client, parsers, emoji, …
 ├── tests/                   # 42 pytest modules (~960 tests)
 ├── tools/                   # Read-only diagnosis scripts for live data
 ├── docs/                    # Project knowledge base — start at docs/README.md
-└── assets/                  # Message accent art and the licensed card artwork
+└── assets/                  # Message accent art
 ```
 
 ## Getting started
@@ -338,7 +325,6 @@ Create a `.env` file in the repository root (loaded by `python-dotenv`):
 | `DISCORD_TOKEN` | Yes | Discord bot token. |
 | `MONGODB_URI` | Yes | MongoDB connection string. |
 | `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For image uploads | Cloudinary credentials. |
-| `CARDS_GUILD_ID`, `CARDS_CHANNEL_ID` | For Clash of Cards | Home server ID and trade-board channel ID. The card hub fails closed if the guild ID is missing or wrong; the rest of the bot keeps running. |
 | `BAND_ICAL_SYNC1` … `BAND_ICAL_SYNC3` | For sync alerts | BAND iCal feed URLs. **Treat these as credentials** — see [`docs/band-ical-feeds.md`](docs/band-ical-feeds.md). |
 | `SYNC_DM_USER_IDS`, `SYNC_DM_OFFSETS`, `SYNC_DM_ANNOUNCE_ON_DISCOVERY`, `SYNC_DM_SUMMARY_FILTER` | For sync alerts | Recipients and timing for sync-alert DMs. |
 | `BAND_DEBUG` | No | Verbose BAND monitor logging (`true`/`false`). |
@@ -351,9 +337,9 @@ venv/bin/python main.py
 
 ## Testing
 
-The suite is pure pytest — 42 modules covering the component dispatcher
-lifecycle, schedulers, feed and points parsers, the ticket lifecycle, the card
-game's board, scanning, and deadline sweeps, and more. `conftest.py` puts the
+The suite is pure pytest, covering the component dispatcher lifecycle,
+schedulers, feed and points parsers, the ticket lifecycle, and more.
+`conftest.py` puts the
 repository root on `sys.path`, so it runs from any working directory:
 
 ```bash
@@ -373,8 +359,6 @@ way. Start at the [index](docs/README.md). Highlights:
 - [`todo-dashboard.md`](docs/todo-dashboard.md) — the `/todo` feature as built,
   including a coc.py enum trap that applies to every Clash state comparison in
   the repo.
-- [`clash-of-cards.md`](docs/clash-of-cards.md) — the trading game's catalog,
-  inventory shape, matching, and reservation rules.
 - [`hikari-logging-and-warnings.md`](docs/hikari-logging-and-warnings.md) — why
   `GatewayBot.__init__` silently owns `logging` and warning filters.
 - [`deployment.md`](docs/deployment.md) — the production host, systemd unit,
@@ -409,10 +393,6 @@ A few standing rules keep the codebase healthy:
 
 ## Credits & disclaimer
 
-- **[ClashKing](https://github.com/ClashKingInc)** — the Clash API proxy, the
-  Discord↔Clash account-link API, and the card artwork in
-  [`assets/cards/`](assets/cards), used with credit under GPL-3.0. Sources and
-  checksums are recorded in [`assets/cards/NOTICE.md`](assets/cards/NOTICE.md).
 - **[FWA](https://www.fwafarm.com/)** and **FWA Chocolate** — the war
   communities and tools this bot coordinates with.
 - Built with **hikari**, **hikari-lightbulb**, and **coc.py**.
