@@ -7,6 +7,7 @@ import hikari
 import pytest
 
 from extensions import components as dispatcher
+from extensions.commands import ticket_runtime
 from extensions.commands.tickets import (
     account_sync,
     handlers,
@@ -18,6 +19,36 @@ from extensions.commands.tickets import (
 
 
 NOW = datetime(2026, 8, 20, 6, 0, tzinfo=timezone.utc)
+
+
+def _slot_claim(*, guild_id=10, user_id=30, ticket_type="main"):
+    workflow_id = f"thread:{user_id}:{ticket_type}"
+    return ticket_runtime.SlotClaim(
+        True,
+        "slot-owner",
+        {
+            "_id": f"ticket-open:{user_id}:{ticket_type}",
+            "state": ticket_runtime.SLOT_RESERVED,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": guild_id,
+            "user_id": user_id,
+            "ticket_type": ticket_type,
+            "workflow_id": workflow_id,
+            "rollout_revision": 1,
+        },
+    )
+
+
+@pytest.fixture(autouse=True)
+def _shared_slot_mutations(monkeypatch):
+    async def bind(_mongo, **kwargs):
+        return {"state": ticket_runtime.SLOT_OPEN, **kwargs}
+
+    async def cancel(_mongo, **_kwargs):
+        return True
+
+    monkeypatch.setattr(ticket_runtime, "bind_open_slot", bind)
+    monkeypatch.setattr(ticket_runtime, "cancel_open_slot", cancel)
 
 
 def _ticket(*, public=101, staff=102, number=1, status="open", source=None):
@@ -144,7 +175,7 @@ def test_thread_names_are_stable_and_never_encode_status():
 
 
 def test_create_ticket_owns_acknowledgement_without_dispatcher_state_io():
-    action = dispatcher.registered_functions["create_ticket"]
+    action = dispatcher.registered_functions["ticket_v2_create"]
     assert action.opens_modal is True
     assert action.no_return is True
     assert action.preload_state is False
@@ -182,37 +213,16 @@ def test_bound_target_allows_local_admins_and_rejects_foreign_admins():
     )
 
 
-def test_ticket_number_allocation_seeds_from_canonical_max_and_is_concurrent_safe():
-    class Cursor:
-        def __init__(self, documents):
-            self.documents = list(documents)
+def test_ticket_number_allocation_delegates_to_shared_cross_runtime_counter(monkeypatch):
+    mongo = SimpleNamespace()
+    values = iter((51, 52))
+    calls = []
 
-        def sort(self, _spec):
-            self.documents.sort(
-                key=lambda document: int(document["ticket_number"]), reverse=True
-            )
-            return self
+    async def shared_allocator(received_mongo, ticket_type):
+        calls.append((received_mongo, ticket_type))
+        return next(values)
 
-        def limit(self, amount):
-            self.documents = self.documents[:amount]
-            return self
-
-        async def to_list(self, length=None):
-            return list(self.documents if length is None else self.documents[:length])
-
-    class Tickets:
-        def find(self, query, *_args):
-            assert query["ticket_type"] == "main"
-            return Cursor([
-                {"ticket_number": 8},
-                {"ticket_number": 50},
-                {"ticket_number": 17},
-            ])
-
-    mongo = SimpleNamespace(
-        tickets=Tickets(),
-        ticket_setup=SetupCollection({"main_ticket_counter": 3}),
-    )
+    monkeypatch.setattr(ticket_runtime, "reserve_ticket_number", shared_allocator)
 
     async def allocate_pair():
         return await asyncio.gather(
@@ -222,7 +232,7 @@ def test_ticket_number_allocation_seeds_from_canonical_max_and_is_concurrent_saf
 
     first, second = asyncio.run(allocate_pair())
     assert {first, second} == {51, 52}
-    assert mongo.ticket_setup.document["main_ticket_counter"] == 52
+    assert calls == [(mongo, "main"), (mongo, "main")]
 
 
 def test_thread_configuration_requires_both_parents_and_role():
@@ -534,6 +544,7 @@ def test_creation_reuses_naive_expired_lease(monkeypatch):
         display_name=None,
         ticket_type="main",
         parents=parents,
+        open_slot_claim=_slot_claim(),
         now=NOW,
     ))
 
@@ -559,6 +570,7 @@ def test_creation_rejects_active_lease(monkeypatch):
             display_name=None,
             ticket_type="main",
             parents=thread_service.ThreadParents(10, 20, 21, 40),
+            open_slot_claim=_slot_claim(),
             now=NOW,
         ))
 
@@ -584,8 +596,93 @@ def test_bound_creation_refuses_parent_change(monkeypatch):
             display_name=None,
             ticket_type="main",
             parents=thread_service.ThreadParents(10, 200, 201, 40),
+            open_slot_claim=_slot_claim(),
             now=NOW,
         ))
+
+
+def test_crash_before_insert_recovery_reuses_exact_pair_and_shared_slot(monkeypatch):
+    state = {
+        "_id": "thread:30:main",
+        "kind": "thread_ticket_creation",
+        "state": "creating",
+        "lease_until": NOW - timedelta(minutes=1),
+        "updated_at": NOW - timedelta(minutes=1),
+        "guild_id": 10,
+        "user_id": 30,
+        "username": "Applicant",
+        "display_name": "Applicant",
+        "ticket_type": "main",
+        "candidate_parent_id": 20,
+        "staff_parent_id": 21,
+        "recruiter_role_id": 40,
+        "candidate_thread_id": 101,
+        "staff_thread_id": 102,
+        "open_slot_id": "ticket-open:30:main",
+        "creation_workflow_id": "thread:30:main",
+    }
+    slot = {
+        "_id": state["open_slot_id"],
+        "state": ticket_runtime.SLOT_RESERVED,
+        "route": ticket_runtime.ROUTE_THREAD,
+        "workflow_id": state["creation_workflow_id"],
+    }
+
+    class Cursor:
+        def sort(self, *_args):
+            return self
+
+        def limit(self, _amount):
+            return self
+
+        async def to_list(self, *, length):
+            assert length == 50
+            return [dict(state)]
+
+    class CreationStates:
+        def find(self, query):
+            assert query["kind"] == "thread_ticket_creation"
+            return Cursor()
+
+    class OpenSlots:
+        async def find_one(self, query):
+            assert query == {"_id": slot["_id"]}
+            return dict(slot)
+
+    async def indexes(_mongo):
+        return None
+
+    async def resume(_mongo, **kwargs):
+        assert kwargs["slot_id"] == state["open_slot_id"]
+        assert kwargs["workflow_id"] == state["creation_workflow_id"]
+        assert kwargs["route"] == ticket_runtime.ROUTE_THREAD
+        return _slot_claim()
+
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return thread_service.CreatedThreadTicket(
+            {"_id": "ticket_101"}, resumed=True
+        )
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", indexes)
+    monkeypatch.setattr(ticket_runtime, "resume_open_slot", resume)
+    monkeypatch.setattr(thread_service, "create_live_thread_ticket", create)
+    mongo = SimpleNamespace(
+        ticket_creation_state=CreationStates(),
+        ticket_open_slots=OpenSlots(),
+    )
+
+    result = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+        bot=object(), mongo=mongo
+    ))
+
+    assert result == {"processed": 1, "completed": 1, "failed": 0}
+    assert len(calls) == 1
+    assert calls[0]["open_slot_claim"].slot["_id"] == state["open_slot_id"]
+    assert state["candidate_thread_id"] == 101
+    assert state["staff_thread_id"] == 102
 
 
 def test_partial_live_pair_is_quarantined_when_cancelled(monkeypatch):
@@ -709,6 +806,7 @@ def test_live_creation_cancellation_releases_retry_state(monkeypatch):
                 "main_staff_parent": 21,
                 "main_recruiter_role": 40,
             },
+            open_slot_claim=_slot_claim(),
         ))
 
     assert [channel_id for channel_id, _kwargs in rest.edits] == [101, 102]
@@ -834,6 +932,7 @@ def test_post_commit_account_sync_failure_resumes_without_duplicate_pair(monkeyp
             display_name="Applicant",
             ticket_type="main",
             config=config,
+            open_slot_claim=_slot_claim(),
             coc_client=object(),
         ))
     resumed = asyncio.run(thread_service.create_live_thread_ticket(
@@ -845,6 +944,7 @@ def test_post_commit_account_sync_failure_resumes_without_duplicate_pair(monkeyp
         display_name="Applicant",
         ticket_type="main",
         config=config,
+        open_slot_claim=_slot_claim(),
         coc_client=object(),
     ))
 
@@ -880,6 +980,7 @@ def test_foreign_guild_click_is_rejected_before_global_ticket_lookup(monkeypatch
                 "main_staff_parent": 21,
                 "main_recruiter_role": 40,
             },
+            open_slot_claim=_slot_claim(guild_id=11),
         ))
     assert called is False
 
@@ -980,6 +1081,7 @@ def test_committed_ticket_heals_completion_then_terminal_user_gets_fresh_attempt
         display_name=None,
         ticket_type="main",
         config=config,
+        open_slot_claim=_slot_claim(),
     ))
     assert first.ticket["location"]["id"] == 101
     assert first.delivery_pending is True
@@ -994,6 +1096,7 @@ def test_committed_ticket_heals_completion_then_terminal_user_gets_fresh_attempt
         display_name=None,
         ticket_type="main",
         config=config,
+        open_slot_claim=_slot_claim(),
     ))
     assert recovered.ticket["location"]["id"] == 101
     assert state_collection.document["state"] == "complete"
@@ -1009,6 +1112,7 @@ def test_committed_ticket_heals_completion_then_terminal_user_gets_fresh_attempt
         display_name=None,
         ticket_type="main",
         config=config,
+        open_slot_claim=_slot_claim(),
     ))
     assert later.ticket["location"]["id"] == 201
     assert later.ticket["ticket_number"] == 2
@@ -1108,6 +1212,7 @@ def test_live_creation_queue_failure_resumes_without_duplicate_resources(monkeyp
         display_name="Applicant",
         ticket_type="main",
         config=config,
+        open_slot_claim=_slot_claim(),
     ))
     assert first.delivery_pending is True
     assert creation_states.document["state"] == "delivery_pending"
@@ -1122,6 +1227,7 @@ def test_live_creation_queue_failure_resumes_without_duplicate_resources(monkeyp
         display_name="Applicant",
         ticket_type="main",
         config=config,
+        open_slot_claim=_slot_claim(),
     ))
     assert resumed.ticket["_id"] == first.ticket["_id"] == "ticket_101"
     assert resumed.resumed is True
@@ -2485,22 +2591,25 @@ def test_completed_terminal_migration_reentry_repairs_bound_context_without_deli
         "staff_space_id": 999,
         "delivery_state": "delivered",
     }
-    mongo = SimpleNamespace(ticket_automation_state=states)
+    class Tickets:
+        async def find_one(self, query):
+            assert query == {"_id": ticket["_id"]}
+            return dict(ticket)
+
+    mongo = SimpleNamespace(
+        ticket_automation_state=states,
+        tickets=Tickets(),
+    )
     claims = []
 
     async def completed_claim(_mongo, preview):
         claims.append(preview.request.source_channel_id)
         return "unused-owner", dict(state), True
 
-    async def find_ticket(_mongo, query):
-        assert query == {"_id": ticket["_id"]}
-        return dict(ticket)
-
     async def no_delivery(*_args, **_kwargs):
         raise AssertionError("completed reentry must only bind durable context work")
 
     monkeypatch.setattr(legacy_migration, "_claim_migration", completed_claim)
-    monkeypatch.setattr(legacy_migration.store, "find_one", find_ticket)
     monkeypatch.setattr(
         thread_service, "notify_console_after_change", no_delivery
     )
@@ -2528,7 +2637,9 @@ def test_completed_terminal_migration_reentry_repairs_bound_context_without_deli
     assert context["delivery_state"] == "pending"
 
 
-def test_post_replacement_crash_resumes_same_record_and_completes(monkeypatch):
+def test_source_backed_crash_preserves_legacy_record_and_completes_distinct_ticket(
+    monkeypatch,
+):
     original = {
         "_id": "legacy_ticket",
         "type": "ticket",
@@ -2592,7 +2703,7 @@ def test_post_replacement_crash_resumes_same_record_and_completes(monkeypatch):
         "channel_name": "approved-main-42-applicant",
         "ticket_number": 42,
     }
-    replaced = schema.new_ticket_document(
+    inserted = schema.new_ticket_document(
         ticket_type="main",
         ticket_number=362,
         guild_id=10,
@@ -2607,23 +2718,9 @@ def test_post_replacement_crash_resumes_same_record_and_completes(monkeypatch):
         status="approved",
         source=source,
     )
-    replaced["_id"] = "legacy_ticket"
-    replaced["rev"] = 1
-    replaced["audit"].append({
-        "event": "legacy_location_replaced",
-        "rev_before": 0,
-        "rev_after": 1,
-        "to": {"venue": "thread", "location": replaced["location"]},
-    })
-    resumed_preview = replace(
-        first_preview,
-        source_ticket=replaced,
-        original_ticket_number=legacy_migration._original_ticket_number(
-            replaced, first_preview.source_channel.name
-        ),
-    )
+    resumed_preview = first_preview
     assert resumed_preview.original_ticket_number == 42
-    assert replaced["ticket_number"] == 362
+    assert inserted["ticket_number"] == 362
 
     async def pair(_bot, _mongo, state, _owner):
         return SimpleNamespace(id=101), SimpleNamespace(id=102), state
@@ -2637,16 +2734,25 @@ def test_post_replacement_crash_resumes_same_record_and_completes(monkeypatch):
     async def no_op(*_args, **_kwargs):
         return None
 
-    async def already_replaced(_mongo, ticket_id, _canonical, *, expected_rev):
-        assert ticket_id == "legacy_ticket"
-        assert expected_rev == 1
-        return store.Transition(store.WON, replaced, "already migrated")
+    source_checks = []
+
+    async def source_unchanged(_mongo, state):
+        source_checks.append(state["metadata"]["source_ticket_id"])
+        return original
+
+    async def insert_distinct(_mongo, canonical):
+        assert canonical["_id"] == "ticket_101"
+        assert canonical["_id"] != original["_id"]
+        return inserted
 
     monkeypatch.setattr(legacy_migration, "_ensure_destination_pair", pair)
     monkeypatch.setattr(legacy_migration, "_temporary_webhook", webhook)
     monkeypatch.setattr(legacy_migration, "_copy_space", unchanged)
     monkeypatch.setattr(legacy_migration, "_delete_webhook_safely", no_op)
-    monkeypatch.setattr(legacy_migration.store, "replace_legacy_location", already_replaced)
+    monkeypatch.setattr(
+        legacy_migration, "_require_legacy_source_unchanged", source_unchanged
+    )
+    monkeypatch.setattr(legacy_migration, "_insert_migrated_ticket", insert_distinct)
     monkeypatch.setattr(thread_service, "notify_console_after_change", no_op)
     monkeypatch.setattr(thread_service, "archive_ticket_pair", no_op)
 
@@ -2660,19 +2766,22 @@ def test_post_replacement_crash_resumes_same_record_and_completes(monkeypatch):
     result = asyncio.run(legacy_migration.migrate_legacy_ticket(
         bot=SimpleNamespace(rest=Rest()), mongo=mongo, preview=resumed_preview
     ))
-    assert result.ticket["_id"] == "legacy_ticket"
+    assert result.ticket["_id"] == "ticket_101"
     assert result.ticket["ticket_number"] == 362
     assert result.migration["source"]["ticket_number"] == 42
     assert result.migration["destination"]["ticket_number"] == 362
     assert result.migration["state"] == "complete"
     assert result.migration["metadata"]["source_ticket_rev"] == 0
-    context = automation_states.documents["ticket_staff_context:legacy_ticket"]
-    assert context["ticket_id"] == "legacy_ticket"
+    assert source_checks == ["legacy_ticket"]
+    assert original["venue"] == "channel"
+    assert original["rev"] == 0
+    context = automation_states.documents["ticket_staff_context:ticket_101"]
+    assert context["ticket_id"] == "ticket_101"
     assert context["staff_space_id"] == 102
     assert context["delivery_state"] == "pending"
 
-    unrelated_drift = dict(replaced)
-    unrelated_drift["rev"] = 2
+    unrelated_drift = dict(original)
+    unrelated_drift["rev"] = 1
     with pytest.raises(legacy_migration.LegacyMigrationError, match="different source"):
         asyncio.run(legacy_migration._claim_migration(
             mongo, replace(resumed_preview, source_ticket=unrelated_drift)
@@ -2757,13 +2866,7 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
         source=source,
     )
     assert inserted["_id"] == "ticket_101"
-    resumed_preview = replace(
-        first_preview,
-        source_ticket=inserted,
-        original_ticket_number=legacy_migration._original_ticket_number(
-            inserted, first_preview.source_channel.name
-        ),
-    )
+    resumed_preview = first_preview
     assert resumed_preview.original_ticket_number == 42
     assert inserted["ticket_number"] == 362
 
@@ -2782,19 +2885,27 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
     async def no_op(*_args, **_kwargs):
         return None
 
-    replacements = []
+    insert_calls = []
 
-    async def already_inserted(_mongo, ticket_id, _canonical, *, expected_rev):
-        replacements.append((ticket_id, expected_rev))
-        assert ticket_id == "ticket_101"
-        assert expected_rev == 0
-        return store.Transition(store.WON, inserted, "already migrated")
+    async def source_remains_absent(_mongo, state):
+        assert state["metadata"]["source_ticket_id"] is None
+        return None
+
+    async def insert_idempotently(_mongo, canonical):
+        insert_calls.append(canonical["_id"])
+        assert canonical["_id"] == "ticket_101"
+        return inserted
 
     monkeypatch.setattr(legacy_migration, "_ensure_destination_pair", pair)
     monkeypatch.setattr(legacy_migration, "_temporary_webhook", webhook)
     monkeypatch.setattr(legacy_migration, "_copy_space", unchanged)
     monkeypatch.setattr(legacy_migration, "_delete_webhook_safely", no_op)
-    monkeypatch.setattr(legacy_migration.store, "replace_legacy_location", already_inserted)
+    monkeypatch.setattr(
+        legacy_migration, "_require_legacy_source_unchanged", source_remains_absent
+    )
+    monkeypatch.setattr(
+        legacy_migration, "_insert_migrated_ticket", insert_idempotently
+    )
     monkeypatch.setattr(thread_service, "notify_console_after_change", no_op)
     monkeypatch.setattr(thread_service, "archive_ticket_pair", no_op)
 
@@ -2824,7 +2935,7 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
     result = asyncio.run(legacy_migration.migrate_legacy_ticket(
         bot=bot, mongo=mongo, preview=resumed_preview
     ))
-    assert replacements == [("ticket_101", 0), ("ticket_101", 0)]
+    assert insert_calls == ["ticket_101", "ticket_101"]
     assert pair_calls == [(101, 102), (101, 102)]
     assert result.ticket["_id"] == "ticket_101"
     assert result.ticket["ticket_number"] == 362
@@ -2972,21 +3083,32 @@ def test_legacy_summary_bounds_many_tags_without_changing_preview_metadata():
     assert preview.player_tags == tags
 
 
-def test_canonical_store_guard_blocks_legacy_primary(monkeypatch):
+def test_canonical_store_is_hardbound_to_thread_indexes(monkeypatch):
+    observed = []
+
+    async def indexes(mongo):
+        observed.append(mongo)
+
     async def legacy_store(_mongo):
-        return store.STORE_BUTTON
+        raise AssertionError("v2 readiness must not consult legacy activation")
 
+    monkeypatch.setattr(thread_service.store, "ensure_indexes", indexes)
     monkeypatch.setattr(thread_service.store, "active_store", legacy_store)
-    with pytest.raises(thread_service.ThreadConfigurationError, match="migrate-store"):
-        asyncio.run(thread_service.ensure_canonical_ticket_store(SimpleNamespace()))
+    mongo = SimpleNamespace(tickets=object())
+    asyncio.run(thread_service.ensure_canonical_ticket_store(mongo))
+    assert observed == [mongo]
 
 
-def test_canonical_store_guard_rejects_bare_historical_tickets_flag():
-    mongo = SimpleNamespace(
-        ticket_setup=SetupCollection({"ticket_store": "tickets"}),
-    )
-    with pytest.raises(thread_service.ThreadConfigurationError, match="migrate-store"):
-        asyncio.run(thread_service.ensure_canonical_ticket_store(mongo))
+def test_canonical_store_has_no_ticket_setup_activation_dependency(monkeypatch):
+    observed = []
+
+    async def indexes(mongo):
+        observed.append(mongo)
+
+    monkeypatch.setattr(thread_service.store, "ensure_indexes", indexes)
+    mongo = SimpleNamespace(tickets=object())
+    asyncio.run(thread_service.ensure_canonical_ticket_store(mongo))
+    assert observed == [mongo]
 
 
 def test_explicit_source_staff_thread_must_be_private():

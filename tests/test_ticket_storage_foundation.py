@@ -6,9 +6,10 @@ from types import SimpleNamespace
 import hikari
 import pytest
 from bson import BSON
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from extensions import components as dispatcher
+from extensions.commands import ticket_runtime
 from extensions.commands.tickets import (
     account_sync,
     close,
@@ -235,7 +236,7 @@ def _mongo(*documents):
 
 
 def _ticket(*, public=101, staff=102, number=1, status="open", source=None, user=30):
-    return schema.new_ticket_document(
+    ticket = schema.new_ticket_document(
         ticket_type="main",
         ticket_number=number,
         guild_id=10,
@@ -250,6 +251,8 @@ def _ticket(*, public=101, staff=102, number=1, status="open", source=None, user
         status=status,
         source=source,
     )
+    ticket["runtime"] = ticket_runtime.THREAD_RUNTIME
+    return ticket
 
 
 def _linked_account(tag: str, *, name: str | None = None) -> AccountEntry:
@@ -1188,7 +1191,7 @@ def test_store_activation_rejects_nonexact_destination_without_mutation(mismatch
 
     assert mongo.ticket_setup.documents["config"] == before_config
     assert mongo.tickets.documents == before_tickets
-    assert asyncio.run(store.active_store(mongo)) == store.STORE_BUTTON
+    assert asyncio.run(store.active_store(mongo)) == store.STORE_TICKETS
 
 
 @pytest.mark.parametrize("config", [
@@ -1202,10 +1205,10 @@ def test_store_activation_rejects_nonexact_destination_without_mutation(mismatch
         "ticket_store_activation_version": 2,
     },
 ])
-def test_missing_or_invalid_store_activation_fails_closed_to_legacy(config):
+def test_v2_store_authority_is_fixed_even_with_obsolete_activation_config(config):
     documents = [] if config is None else [config]
     mongo = SimpleNamespace(ticket_setup=Collection(documents))
-    assert asyncio.run(store.active_store(mongo)) == store.STORE_BUTTON
+    assert asyncio.run(store.active_store(mongo)) == store.STORE_TICKETS
 
 
 def test_backfill_normalizes_mixed_ids_adds_audit_and_removes_claim_fields():
@@ -1232,19 +1235,87 @@ def test_index_preflight_allows_repeat_terminal_tickets_but_blocks_two_open():
     assert conflicts["open_applicant"][0]["key"] == (30, "main")
 
 
+def test_index_preflight_ignores_stale_channel_rows_in_thread_collection():
+    live = _ticket()
+    stale = {
+        **deepcopy(live),
+        "_id": "stale-channel-copy",
+        "venue": "channel",
+        "runtime": "legacy_channel",
+    }
+    assert store.index_conflicts_for_documents([live, stale]) == {}
+
+
+def test_index_preflight_ignores_thread_rows_owned_by_another_runtime():
+    live = _ticket()
+    stale = {
+        **deepcopy(live),
+        "_id": "stale-thread-copy",
+        "runtime": "obsolete_thread_runtime",
+    }
+    assert store.index_conflicts_for_documents([live, stale]) == {}
+
+
+def test_open_thread_insert_requires_shared_slot_binding():
+    mongo = _mongo()
+    with pytest.raises(schema.TicketSchemaError, match="open-slot binding"):
+        asyncio.run(store.insert_one(mongo, _ticket()))
+    assert mongo.tickets.documents == {}
+
+
 def test_index_installation_uses_preflighted_partial_unique_contracts():
     mongo = _mongo(_ticket())
     names = asyncio.run(store.ensure_indexes(mongo))
-    assert "one_open_ticket_per_applicant_type" in names
+    assert "thread_v2_one_open_ticket_per_applicant_type" in names
     open_index = next(
         options for _spec, options in mongo.tickets.indexes
-        if options.get("name") == "one_open_ticket_per_applicant_type"
+        if options.get("name") == "thread_v2_one_open_ticket_per_applicant_type"
     )
     assert open_index["unique"] is True
     assert open_index["partialFilterExpression"] == {
-        "type": "ticket", "venue": "thread", "status": "open",
+        **store.RUNTIME_FILTER,
+        "status": "open",
         "user_id": {"$exists": True}, "ticket_type": {"$exists": True},
     }
+
+
+def test_incompatible_existing_index_definition_fails_without_replacement():
+    class IncompatibleIndexCollection(Collection):
+        async def create_index(self, spec, **kwargs):
+            if kwargs.get("name") == "thread_v2_ticket_location_unique":
+                raise OperationFailure(
+                    "Index already exists with a different definition", code=85
+                )
+            return await super().create_index(spec, **kwargs)
+
+    mongo = _mongo()
+    mongo.tickets = IncompatibleIndexCollection([_ticket()])
+    with pytest.raises(OperationFailure) as raised:
+        asyncio.run(store.ensure_indexes(mongo))
+    assert raised.value.code == 85
+    assert mongo.tickets.indexes == []
+
+
+def test_existing_broad_status_index_coexists_with_v2_partial_index():
+    class ExistingBroadIndexCollection(Collection):
+        def __init__(self, documents):
+            super().__init__(documents)
+            self.indexes.append((
+                [("status", 1), ("created_at", -1)],
+                {"name": "status_created"},
+            ))
+
+        async def create_index(self, spec, **kwargs):
+            if kwargs.get("name") == "status_created":
+                raise OperationFailure("legacy index name collision", code=85)
+            return await super().create_index(spec, **kwargs)
+
+    mongo = _mongo()
+    mongo.tickets = ExistingBroadIndexCollection([_ticket()])
+    names = asyncio.run(store.ensure_indexes(mongo))
+    assert "thread_v2_status_created" in names
+    installed = {options.get("name") for _spec, options in mongo.tickets.indexes}
+    assert {"status_created", "thread_v2_status_created"} <= installed
 
 
 def test_account_recovery_or_predicates_each_have_a_selective_index():
@@ -1269,7 +1340,9 @@ def test_account_recovery_or_predicates_each_have_a_selective_index():
     for field in store.ACCOUNT_RECOVERY_BOOLEAN_FIELDS:
         assert field in indexes
         options = indexes[field]
-        assert options["name"] == "account_recovery_" + field.rsplit(".", 1)[-1]
+        assert options["name"] == (
+            "thread_v2_account_recovery_" + field.rsplit(".", 1)[-1]
+        )
         assert options["partialFilterExpression"] == {
             **store.RUNTIME_FILTER,
             field: True,
@@ -1393,7 +1466,7 @@ def test_foreign_guild_admin_cannot_read_or_mutate_private_ticket_data(monkeypat
     assert responses[0][0] == "Only recruiters can use the ticket console."
 
 
-def test_insert_is_idempotent_and_mirror_failure_does_not_undo_primary():
+def test_insert_is_idempotent_and_never_writes_legacy_authority():
     class FailingMirror(Collection):
         async def replace_one(self, *_args, **_kwargs):
             raise TimeoutError("mirror unavailable")
@@ -1401,10 +1474,16 @@ def test_insert_is_idempotent_and_mirror_failure_does_not_undo_primary():
     mongo = _mongo()
     mongo.button_store = FailingMirror()
     ticket = _ticket()
+    ticket.update({
+        "open_slot_id": "ticket-open:30:main",
+        "creation_workflow_id": "thread:30:main",
+    })
     first = asyncio.run(store.insert_one(mongo, ticket))
     second = asyncio.run(store.insert_one(mongo, ticket))
-    assert first == second == ticket
-    assert mongo.tickets.documents[ticket["_id"]] == ticket
+    assert first == second
+    assert first["runtime"] == "thread_v2"
+    assert mongo.tickets.documents[ticket["_id"]] == first
+    assert mongo.button_store.documents == {}
 
 
 def test_status_transition_is_cas_audited_and_missing_has_no_write():
@@ -1425,6 +1504,41 @@ def test_status_transition_is_cas_audited_and_missing_has_no_write():
     ))
     assert lost.outcome == store.LOST
     assert mongo.tickets.documents == before
+
+
+@pytest.mark.parametrize("status", ["approved", "denied"])
+def test_terminal_commit_checkpoints_slot_and_release_failure_is_retryable(
+    monkeypatch, status
+):
+    mongo = _mongo(_ticket())
+    calls = []
+
+    async def mark(_mongo, *, ticket_id, terminal_status):
+        calls.append(("mark", ticket_id, terminal_status))
+        return {"state": "release_pending"}
+
+    async def fail_release(_mongo, *, ticket_id):
+        calls.append(("release", ticket_id))
+        raise TimeoutError("release will reconcile at startup")
+
+    monkeypatch.setattr(ticket_runtime, "mark_slot_release_pending", mark)
+    monkeypatch.setattr(ticket_runtime, "release_open_slot", fail_release)
+    result = asyncio.run(store.transition(
+        mongo,
+        "ticket_101",
+        to_status=status,
+        actor_id=99,
+        actor_name="Recruiter",
+        expected_rev=0,
+    ))
+
+    assert result.won
+    assert result.doc["status"] == status
+    assert calls == [
+        ("mark", "ticket_101", status),
+        ("release", "ticket_101"),
+    ]
+    before = deepcopy(mongo.tickets.documents)
     missing = asyncio.run(store.transition(
         mongo, "ticket_missing", to_status="denied", actor_id=98,
         actor_name="Late",
@@ -2577,7 +2691,7 @@ def test_slash_approval_effect_failure_reports_durable_automatic_retry(monkeypat
 def test_denial_effect_failure_reports_durable_automatic_retry(monkeypatch, handler):
     ticket = _effect_ticket()
     data = {
-        "type": "deny_action",
+        "type": "ticket_v2_deny_action",
         "denier_id": 10,
         "guild_id": 20,
         "ticket_id": ticket["_id"],
@@ -2640,6 +2754,7 @@ def test_override_effect_failure_reports_durable_automatic_retry(monkeypatch):
     ticket["rev"] = 3
     ticket["resolution_effects"]["complete"] = True
     data = {
+        "type": "ticket_v2_override",
         "owner_id": 10,
         "kind": resolve.KIND_APPROVE,
         "ticket_id": ticket["_id"],
@@ -2705,7 +2820,7 @@ def test_denial_followups_reject_a_different_recruiter_before_any_action(monkeyp
 
     async def get(*_args):
         return {
-            "type": "deny_action",
+            "type": "ticket_v2_deny_action",
             "denier_id": 10,
             "guild_id": 20,
             "ticket_id": "ticket_101",
@@ -2759,7 +2874,7 @@ def test_custom_denial_opener_sends_modal_without_state_or_permission_work(monke
         user=SimpleNamespace(id=10),
         defer=no_defer,
         interaction=SimpleNamespace(
-            custom_id="deny_custom:state",
+            custom_id="ticket_v2_deny_custom:state",
             create_modal_response=create_modal_response,
         ),
     )
@@ -2767,8 +2882,8 @@ def test_custom_denial_opener_sends_modal_without_state_or_permission_work(monke
     asyncio.run(dispatcher._dispatch(ctx, SimpleNamespace()))
 
     assert len(modals) == 1
-    assert modals[0]["custom_id"] == "process_custom_denial:state"
-    action = dispatcher.registered_functions["deny_custom"]
+    assert modals[0]["custom_id"] == "ticket_v2_process_custom_denial:state"
+    action = dispatcher.registered_functions["ticket_v2_deny_custom"]
     assert action.opens_modal is True
     assert action.preload_state is False
 
@@ -2787,7 +2902,7 @@ def test_custom_denial_modal_defers_before_state_or_permission_work(monkeypatch)
         }
         events.append(("state", {}))
         return {
-            "type": "deny_action",
+            "type": "ticket_v2_deny_action",
             "denier_id": 10,
             "guild_id": 20,
             "ticket_id": "ticket_101",
@@ -2825,7 +2940,11 @@ def test_override_state_is_owner_bound_before_permission_or_transition(monkeypat
     responses = []
 
     async def get(*_args):
-        return {"owner_id": 10, "kind": resolve.KIND_APPROVE}
+        return {
+            "type": "ticket_v2_override",
+            "owner_id": 10,
+            "kind": resolve.KIND_APPROVE,
+        }
 
     async def forbidden(*_args, **_kwargs):
         raise AssertionError("permission or transition ran after owner mismatch")

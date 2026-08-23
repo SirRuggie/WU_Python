@@ -1,13 +1,21 @@
 # Ticket console — implemented design
 
 Decided 2026-08-17, in mockup review. **Supersedes Part 2 of
-[thread-ticketing-proposal.md](thread-ticketing-proposal.md)** — that file's
-Part 1 (research), Part 3 (migration/architecture) and Part 4 (risks) still
-stand and are not repeated here. This file is the equivalent of
+[thread-ticketing-proposal.md](thread-ticketing-proposal.md)**. That proposal
+is retained as research; its rollout and migration instructions are no longer
+operator guidance. This file is the equivalent of
 [todo-dashboard.md](todo-dashboard.md) for `/todo`: the "as decided"
 description, not the research trail. For setup, daily operation, and recovery,
 the [ticket console operations guide](ticket-console-operations.md) is the
 operator source of truth.
+
+During coexistence, `/ticket` and `button_store` remain the legacy authority;
+the console and `/ticket-pilot` use the v2 `tickets` authority. Rollout changes
+new intake routing without converting existing tickets.
+
+The console queries only thread-v2 and completed-clone rows in `tickets`. It
+does not count or search un-cloned legacy channel rows in `button_store`; use
+the legacy `/ticket` workflow for those tickets.
 
 Design reference: an interactive, clickable HTML mockup
 ([ticket-console-mockup.html](ticket-console/ticket-console-mockup.html), single self-contained file) was built and
@@ -176,10 +184,11 @@ Nothing else. The bot validates the text after submit:
 | anything else | — | "Use a Discord ID, a player tag (start it with #), or a username. Enter only one of these values." |
 
 Entry points: the `🔍 Find a ticket` button on the console, and a
-`/ticket find` slash command reachable from anywhere (not just the channel
+`/ticket-pilot find` slash command reachable from anywhere (not just the channel
 the console lives in) — mirrors the original proposal's Archive row (§2.1),
-whose entry points are `/ticket history member:@user` and `/ticket find`
-(`/ticket console` is the Queue's entry, not the Archive's).
+whose entry points are `/ticket-pilot history member:@user` and
+`/ticket-pilot find` (`/ticket-pilot console` is the Queue's entry, not the
+Archive's).
 
 ### ⚠️ Correction: Status/Clan-type cannot live inside the modal
 
@@ -245,9 +254,9 @@ The recruiter-only slash commands remain fallback and audit tools when the
 ticket-detail panel is unavailable:
 
 ```text
-/ticket flags identity:<Discord ID or #player tag>
-/ticket flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
-/ticket flag-remove flag-id:<exact ID> reason:<reason>
+/ticket-pilot flags identity:<Discord ID or #player tag>
+/ticket-pilot flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
+/ticket-pilot flag-remove flag-id:<exact ID> reason:<reason>
 ```
 
 ### Automatic Chocolate pages use current accounts only
@@ -299,9 +308,10 @@ It distinguishes the latest current linked-account snapshot from the append-only
 set of permanently observed tags. A failed lookup is never rendered as a
 confirmed zero-account result.
 
-When a Discord ID or any observed player tag matches an **earlier** ticket (any
-status), that same staff context includes prior-ticket links independently of the
-flag system:
+When a Discord ID or any observed player tag matches an **earlier thread-v2 or
+completed-clone** ticket in `tickets` (any status), that same staff context
+includes prior-ticket links independently of the flag system. Un-cloned legacy
+rows remain outside this console:
 
 > 📜 **This person has opened a ticket before.**
 > One earlier ticket matches this Discord ID or player tag.
@@ -360,10 +370,10 @@ a rules violation to anyone who takes it literally.
 
 - Recruiter workflow does not use claim, release, close, or reopen. The shared
   console exposes ticket detail, flags, approve, deny, search, and history.
-- The canonical runtime stores only `open`, `approved`, or `denied`; there is no
-  `abandoned` runtime state. `closed` is legacy input only and must be explicitly
-  classified as approved or denied during store migration.
-- One console channel is bound once. Re-running `/ticket console` repairs or
+- The v2 `tickets` authority stores only `open`, `approved`, or `denied`; there
+  is no `abandoned` runtime state. The legacy `button_store` authority remains
+  separate during rollout rather than being converted into v2.
+- One console channel is bound once. Re-running `/ticket-pilot console` repairs or
   reuses that hub in its saved channel; it does not relocate it.
 
 ## 10. Where the reference artifacts live
@@ -389,12 +399,9 @@ own HTML render fine and are used deliberately.
 
 ## Related
 
-- [thread-ticketing-proposal.md](thread-ticketing-proposal.md) — the
-  research and migration plan this design sits on top of.
-- [legacy-ticket-migration.md](legacy-ticket-migration.md) — the separate
-  backfill design for cloning old channel-based tickets (this server or
-  others being consolidated) into searchable threads.
-- [ticket-data-model.md](ticket-data-model.md) / [ticket-status-lifecycle.md](ticket-status-lifecycle.md)
-  — the underlying ticket lifecycle references. The implemented flag store is
-  durable, audited, and matched at render and approval time by Discord ID or
-  recorded player tag.
+- [thread-ticketing-proposal.md](thread-ticketing-proposal.md) — the historical
+  research this design sits on top of; its rollout plan is superseded.
+- [legacy-ticket-migration.md](legacy-ticket-migration.md) — the separate,
+  implemented terminal-ticket clone into searchable threads.
+- [ticket-console-operations.md](ticket-console-operations.md) — the deployed
+  authority, account, flag, decision, recovery, and thread-lifecycle contract.

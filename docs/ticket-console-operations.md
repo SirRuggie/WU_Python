@@ -1,260 +1,355 @@
-# Thread ticket console operations
+# Ticket pilot and console operations
 
-This is the operator source of truth for the implemented ticket runtime. It
-supersedes unresolved operational notes in the [console design](ticket-console.md),
+This is the operator source of truth for the shipped thread-ticket runtime. It
+supersedes rollout and operating notes in the
+[console design](ticket-console.md),
 [thread proposal](thread-ticketing-proposal.md), and
 [legacy migration design](legacy-ticket-migration.md).
 
-## Runtime contract
+## Coexistence contract
 
-- Use one configured target guild and one shared, private recruiter console.
-- Store only `open`, `approved`, or `denied`; the console labels `open` as
-  **New / open**.
-- Create one private candidate thread and one recruiter staff thread per ticket.
-- Allow a new ticket after approval or denial, but only one open ticket per
-  applicant and type.
-- Approve or deny from the console; do not claim, release, close, or reopen.
-- Keep terminal and migrated thread pairs locked and archived. Console links
-  open them read-only without unarchiving them.
+- `/ticket` is the legacy channel-ticket runtime. Its authority remains
+  `button_store`.
+- `/ticket-pilot` is the thread-ticket v2 runtime. Its authority is `tickets`.
+- Do not copy, merge, or repoint those stores. Existing legacy tickets remain
+  live under `/ticket` while v2 is prepared, piloted, promoted, or rolled back.
+- Legacy recruiter claim/release remains only for completing channel tickets
+  during coexistence. Thread v2 has no recruiter claim, release, close, or
+  reopen action; its only terminal decisions are approved and denied.
+- The runtimes share one-open-ticket slots and ticket-number counters. An
+  applicant cannot bypass the guard, and the two runtimes cannot allocate the
+  same number, by racing the other intake path.
+- A missing or invalid rollout configuration fails safely to legacy intake.
+- Rollout changes only where a **new** ticket opens. It never converts, closes,
+  or deletes an existing ticket.
 
-## Configure and activate
+## Recommended channel layout
 
-Run every command in the intended target guild as an Administrator.
+The recommended long-lived layout uses three channels total:
 
-**Pre-deployment resolution gate:** while the current legacy deployment still
-owns channel tickets, approve or deny every open legacy channel ticket. Do this
-before activating the thread feature; do not carry an open channel ticket into
-the new runtime. Both dry-run and confirmed `/ticket migrate-store` refuse to
-continue while any legacy channel ticket remains `open`.
+1. The existing public intake channel, which also serves as the candidate
+   thread parent. Keep its existing ticket-panel message.
+2. A new private staff thread parent. It must differ from the candidate parent.
+3. A new private recruiter console channel, separate from both parents.
 
-1. Prepare at least two parent text channels: one candidate parent and one
-   staff parent. Main and FWA may use the same candidate parent and may use the
-   same staff parent; four parent channels are optional, not required. A
-   candidate parent and a staff parent must always be different channels. Deny
-   public access to every staff parent. Give the bot and recruiter role the
-   permissions reported by command validation. Legacy cloning additionally
-   requires the bot to manage webhooks and attach files in both destination
-   parents.
-2. Bind and validate each type. The bot owner, who must also be an Administrator
-   in the intended target guild, must run the first command that establishes the
-   global target binding:
+Main and FWA may share the same candidate parent and the same staff parent;
+four parents are not required. Create a separate candidate parent only when
+that separation is intentionally desired; doing so raises the long-lived total
+to four. Deny public access to the staff parent and console, and grant the bot
+and recruiter role every permission reported by command validation.
 
-   ```text
-   /ticket configure-threads type:Main candidate-parent:<channel> staff-parent:<channel> recruiter-role:<role>
-   /ticket configure-threads type:FWA candidate-parent:<channel> staff-parent:<channel> recruiter-role:<role>
-   /ticket thread-config
-   ```
+The restricted pilot panel must be in a channel other than the public intake
+channel. It is not another thread parent. It can share the private console
+channel only when every tester is already a recruiter, server owner, or
+Administrator and console privacy validation still passes. Otherwise use a
+temporary, restricted tester channel.
 
-   Reusing the same candidate-parent selection for both commands and the same
-   staff-parent selection for both commands is valid. Each command rejects a
-   pair whose candidate and staff selections are the same channel.
+## Rollout phases
 
-   After the first save, any Administrator in the bound target guild may
-   configure the other type or repair its settings. A different target guild is
-   rejected.
-3. Take a database snapshot before the confirmed storage transition.
-4. Preflight the canonical store:
+| Phase | New public-panel clicks | Restricted pilot panel |
+|---|---|---|
+| `legacy_only` | Legacy `/ticket` runtime | Disabled |
+| `prepared` | Legacy `/ticket` runtime | Disabled; validation has passed |
+| `pilot` | Legacy `/ticket` runtime | V2 for an exact allowlisted user or role |
+| `thread_default` | V2 `/ticket-pilot` runtime | Retired |
+| `rollback_legacy` | Legacy `/ticket` runtime | Disabled; existing v2 tickets remain manageable |
+| `thread_only` | V2 `/ticket-pilot` runtime | Retired; legacy drain is complete |
 
-   ```text
-   /ticket migrate-store confirm:false
-   ```
+The pilot route is bound to one exact guild, channel, and message. A copied or
+stale panel is rejected. In `thread_default` and `thread_only`, the existing
+public panel routes to v2 without being reposted.
 
-   Require zero open legacy channel tickets, understood live source counts, and
-   no unique-index conflicts; the destination can be empty before the copy. If
-   a `closed` row is reported, determine its real outcome from source evidence,
-   then repeat the dry run with both fields:
+## Safe rollout sequence
 
-   ```text
-   /ticket migrate-store confirm:false closed-ticket-id:<exact ID> closed-status:<Approved|Denied>
-   ```
+Run these commands in the target guild as an Administrator. The bot owner must
+establish the target-guild binding with the first `configure-threads` command.
 
-   Never guess or bulk-map `closed`.
-5. Repeat the passing command with `confirm:true`. Require verified counts and
-   no reported divergence. This idempotently upserts the canonical collection,
-   installs indexes, audits any explicit classification, verifies the copy, and
-   activates canonical storage. It never deletes `button_store`.
-   Do not set `ticket_store` manually.
-6. Re-run `/ticket thread-config`, then inspect `/ticket config`.
-7. Configure the one console in a recruiter text channel that denies
-   `View Channel` to `@everyone`. A separate private console channel is
-   recommended so the persistent hub is not mixed into either thread parent:
+### 1. Configure and inspect the thread parents
 
-   ```text
-   /ticket console channel:<private recruiter channel>
-   ```
+```text
+/ticket-pilot configure-threads type:Main candidate-parent:<channel> staff-parent:<channel> recruiter-role:<role>
+/ticket-pilot configure-threads type:FWA candidate-parent:<channel> staff-parent:<channel> recruiter-role:<role>
+/ticket-pilot thread-config
+/ticket-pilot config
+```
 
-   Verify the returned message link, chart, open-ticket picker, and Find action.
-   The console cannot be moved to another channel by re-running the command. If
-   the saved channel was deleted, `/ticket console` reports its exact saved ID
-   as missing and refuses relocation. Record that ID and repair the saved
-   binding through the approved maintenance path before retrying; do not try to
-   create a second console elsewhere. If the channel still exists but is
-   inaccessible, restore the bot's access and retry in the bound channel.
-8. In the intended intake channel, run `/ticket setup` once. Each run posts a
-   new entry panel, so do not repeat it unless another panel is wanted.
+Reusing the Main parents for FWA is valid. Each candidate/staff pair must use
+different channels.
+
+### 2. Create the private console
+
+```text
+/ticket-pilot console channel:<private recruiter channel>
+```
+
+Verify the returned message link, chart, open-ticket picker, and **Find** action.
+One console channel is durably bound. Re-running the command repairs or reuses
+that hub; it does not relocate it. If the saved channel is missing, the command
+reports its exact channel ID. A deleted channel cannot be restored by this
+command; use the approved maintenance path to repair the saved binding before
+retrying. If the channel still exists but the bot cannot access it, restore the
+bot's access and retry there. Do not create a second console elsewhere.
+
+### 3. Bind the existing public panel and post the pilot panel
+
+Run setup **in the restricted pilot-panel channel**:
+
+```text
+/ticket-pilot setup public-channel:<existing public channel> public-message-id:<existing panel message ID> tester:<user>
+```
+
+Use `tester-role:<role>` instead of, or in addition to, `tester:<user>`. First
+setup requires the public channel and message ID plus at least one allowlisted
+user or role. Initial setup verifies the legacy panel, posts the separate pilot
+panel, and seeds the rollout in `legacy_only`.
+
+Use `replace:true` only when the bound pilot panel was deleted or must move.
+Public-panel rebinding is allowed only in a legacy-safe phase.
+
+Manage the allowlist and inspect all bindings with:
+
+```text
+/ticket-pilot pilot-user action:Allow member:<user>
+/ticket-pilot pilot-user action:Remove member:<user>
+/ticket-pilot pilot-role action:Allow role:<role>
+/ticket-pilot pilot-role action:Remove role:<role>
+/ticket-pilot rollout-status
+```
+
+### 4. Prepare without changing intake
+
+```text
+/ticket-pilot rollout-prepare confirm:false
+/ticket-pilot rollout-prepare confirm:true
+```
+
+The first command validates startup readiness, the non-empty allowlist, public
+and pilot bindings, both thread-parent configurations, and runtime indexes. Fix
+every reported problem before confirming. The confirmed command enters
+`prepared`; public intake is still legacy-only.
+
+### 5. Enable the parallel pilot
+
+```text
+/ticket-pilot rollout-pilot confirm:false
+/ticket-pilot rollout-pilot confirm:true
+```
+
+In `pilot`, allowlisted testers use the restricted panel for v2. Everyone using
+the existing public panel still receives a legacy channel ticket. Verify at
+least the following before promotion:
+
+- An allowlisted click creates the correct candidate and staff threads.
+- A non-allowlisted or copied-panel click is rejected.
+- The existing public panel still creates a legacy ticket.
+- The shared open-ticket guard blocks a duplicate across the two runtimes.
+- The console, search, account context, flags, Chocolate links, approve, deny,
+  and terminal thread archive all work as expected.
+
+### 6. Promote v2 on the existing public panel
+
+```text
+/ticket-pilot rollout-promote confirm:false
+/ticket-pilot rollout-promote confirm:true
+```
+
+Promotion requires `pilot`. The dry run repeats readiness checks. Confirmation
+enters `thread_default`, so new clicks on the existing public panel route to v2.
+Do not replace the public message. Existing legacy tickets remain active and
+must still be completed with `/ticket`.
+
+### 7. Roll back new intake when needed
+
+```text
+/ticket-pilot rollout-rollback confirm:true
+```
+
+Rollback returns **new** public intake to legacy. From `prepared` it returns to
+`legacy_only`; from a live v2 phase it enters `rollback_legacy`. It does not
+change existing thread tickets, which remain manageable through the v2 console
+and `/ticket-pilot` commands. To retry rollout, prepare, pilot, and promote
+again through the same validation gates.
+
+### 8. Drain legacy only after promotion
+
+Resolve all remaining legacy tickets with `/ticket`. Preserve pending rows and
+Discord artifacts so startup recovery can finish them safely. Inspect the drain
+at any time with:
+
+```text
+/ticket-pilot rollout-status
+/ticket-pilot rollout-drain confirm:false
+```
+
+The drain reports every blocker that must clear:
+
+1. **Open legacy tickets** — approve or deny each authoritative `button_store`
+   ticket with `/ticket`.
+2. **Active legacy slots** — startup reconciliation releases a slot only after
+   it proves the bound authoritative ticket is terminal. Do not delete a slot
+   merely because its lease expired or its authority is temporarily missing.
+3. **Pending legacy creation workflows** — keep the workflow row and any Discord
+   resources; restart or allow recovery to resume the same workflow instead of
+   starting another ticket.
+4. **Pending legacy initial deliveries** — delivery checkpoints retry durably at
+   startup, including takeover of an expired processing lease. `rollout-status`
+   shows the pending count and reported delivery IDs. Preserve those rows and
+   fix the underlying Discord access or delivery error.
+5. **Unresolved shared open-ticket conflicts** — these are quarantined slots
+   where more than one authoritative ticket was open. `rollout-status` shows the
+   count and reported slot IDs. Review every referenced ticket and resolve the
+   duplicate authority; reconciliation binds the sole remaining open ticket or
+   releases the slot only after every recorded ticket is terminal.
+
+The displayed pending-workflow total includes pending initial deliveries; the
+dedicated delivery count is that actionable subset, so do not add the two
+figures together. Pending deliveries and unresolved conflicts fail closed at
+startup and prevent unsafe thread intake or promotion. Keep their IDs for the
+incident record, correct the underlying condition, restart recovery, and repeat
+both status commands. Never force the rollout phase or delete durable state to
+make a count disappear.
+
+Only from `thread_default`, and only when open tickets, active slots, creation
+workflows, initial deliveries, and conflicts are all cleared, enter the fully
+drained phase:
+
+```text
+/ticket-pilot rollout-drain confirm:true
+```
 
 ## Daily recruiter workflow
 
+Use `/ticket` for tickets that opened in the legacy runtime. Use the private
+console and `/ticket-pilot` for v2 tickets. The v2 console does not list
+un-cloned `button_store` tickets. Useful v2 fallbacks are:
+
+```text
+/ticket-pilot find query:<Discord ID, #player tag, or username>
+/ticket-pilot history member:<user>
+/ticket-pilot approve
+/ticket-pilot deny
+```
+
 ### Understand account identity
 
-- When a ticket opens, the bot force-refreshes every Clash account linked to the
-  applicant's Discord ID. The candidate panel can show that the first check is
-  pending. Until the first success or failure is persisted, the staff account
-  and Chocolate panels may be absent. After that first result, staff copy
-  distinguishes a failed lookup from a successful result with zero accounts. A
-  failed lookup never means that the applicant has no accounts; it is durable
-  retry work.
-- **Currently linked** means the latest successful link-service snapshot. It
-  drives the account count and the automatic FWA Chocolate checklist.
-- **Permanently recorded** or **observed** tags are the append-only identity
-  history: tags disclosed in candidate messages, including questionnaire
-  answers, plus every linked tag seen in any successful snapshot. Search,
-  prior-ticket matching, and flags use this history. A tag remains attached to
-  the ticket after the applicant unlinks it, but it no longer appears in the
-  current-account Chocolate checklist.
-- Approve and deny both force-refresh the complete linked-account list again
-  immediately before attempting the decision.
+- At open, the bot force-refreshes every Clash account linked to the
+  applicant's Discord ID. Pending, failed, and confirmed-zero results are
+  distinct states; a failed lookup never means that the applicant has no
+  accounts.
+- **Currently linked** is the latest successful link-service snapshot. It
+  drives the current account count and automatic FWA Chocolate checklist.
+- **Observed** tags are permanent identity history: applicant-disclosed tags
+  plus every linked tag seen in a successful snapshot. Search, prior-ticket
+  matching, and flags use that history even after an account is unlinked.
+- Approve and deny force-refresh all linked accounts immediately before the
+  decision.
 
-### Review FWA Chocolate and manage flags
+### Review Chocolate and manage flags
 
-- Every FWA staff thread receives automatic, staff-only Chocolate checklist
-  pages with one link for each currently linked account. The bot updates those
-  pages when the current snapshot changes and retires pages that are no longer
-  needed. Pending, failed, and confirmed-zero link states are labeled
-  separately.
-- Open each Chocolate link and read the site yourself. The bot provides links
-  only; it does not fetch, infer, or record a Chocolate blacklist verdict.
-- In the console, open the ticket detail and choose **Manage flags**. This is
-  the primary way to add or update **Blacklisted**, **Previously denied**, or
-  **Not loyal to WU**, and to remove an active flag with a permanent removal
-  reason. A change binds the applicant's Discord ID and every recorded player
-  tag. Only **Blacklisted** blocks approval; the other two are cautions.
-- Use the recruiter-only slash commands only as a fallback when the ticket
-  detail flow is unavailable:
+Each live FWA staff thread receives staff-only Chocolate pages after its linked-
+account snapshot, with one link for each currently linked account. The bot
+updates those pages when the current snapshot changes. Open each link and review
+the site yourself: the bot does not fetch, infer, or record a Chocolate verdict.
 
-  ```text
-  /ticket flags identity:<Discord ID or #player tag>
-  /ticket flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
-  /ticket flag-remove flag-id:<exact ID> reason:<reason>
-  ```
+In ticket detail, use **Manage flags** to add, update, or remove
+**Blacklisted**, **Previously denied**, or **Not loyal to WU**. Only
+**Blacklisted** blocks approval. Use these recruiter-only commands only when the
+ticket-detail flow is unavailable:
 
-  `flag-add` needs at least one Discord ID or player tag. Copy an exact flag ID
-  from the ticket detail or `/ticket flags` before using `flag-remove`.
+```text
+/ticket-pilot flags identity:<Discord ID or #player tag>
+/ticket-pilot flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
+/ticket-pilot flag-remove flag-id:<exact ID> reason:<reason>
+```
+
+`flag-add` needs at least one Discord ID or player tag. Copy the exact flag ID
+from ticket detail or `flags` before removing it.
 
 ### Approve or deny
 
-1. Open a ticket from the shared console and read its staff account context,
-   matching flags, earlier-ticket links, and, for FWA, every current-account
-   Chocolate link.
-2. Choose **Approve** or **Deny** in the private ticket detail. The bot performs
-   the final linked-account refresh before it writes the decision.
-3. Approval remains blocked and the ticket stays open when the final lookup
-   fails, when zero Clash accounts are currently linked, or when an active
-   blacklist flag matches the Discord ID or any recorded player tag. Restore
-   the account service, complete linking, or resolve the verified flag as
-   appropriate, then reopen the latest ticket detail and try again.
-4. If an FWA approval refresh finds a newly linked account, approval stays open
-   and the bot refreshes the staff Chocolate checklist. Review the refreshed
-   links, then choose **Approve** again. If checklist delivery is still pending,
-   the bot says so and keeps retrying; wait for the update and try again. A
-   later refresh that finds another new account repeats the same review gate.
-5. Denial is allowed even when the final linked-account lookup fails or returns
-   zero accounts. A lookup failure is stored with the denial and retried
-   automatically, so a later successful snapshot can still update the durable
-   staff context and FWA Chocolate pages.
-6. After either decision is recorded, applicant notification, staff context,
-   thread archiving, and console refresh are durable follow-up work. A yellow
-   **Decision recorded; updates retrying** result means the decision is safe;
-   wait for recovery and ask an administrator to inspect only if it persists.
-   The terminal candidate and staff threads remain locked, archived, and
-   available read-only from the console.
+1. Read the staff account context, matching flags, earlier-ticket links, and,
+   for FWA, every current-account Chocolate link.
+2. Choose **Approve** or **Deny** in private ticket detail. The final linked
+   account refresh runs before the decision write.
+3. Approval stays blocked when the lookup fails, zero accounts are currently
+   linked, or an active blacklist matches the Discord ID or an observed tag.
+4. If an FWA approval refresh finds a newly linked account, the ticket remains
+   open while the Chocolate pages update. Review the new link and approve
+   again. Pending checklist delivery also keeps approval blocked and retries.
+5. Denial is allowed after a failed or zero-account lookup. A failed denial
+   lookup is recorded and retried so staff context and Chocolate pages can
+   converge later.
+6. The decision commits only if the expected status, ticket revision, and
+   linked-account revision still match. A stale or missing attempt does not
+   notify the applicant or apply terminal thread effects. Any offered override
+   is owner-bound, rechecks recruiter access, waits for the prior effects to
+   complete, and re-runs current approval gates before another conditional
+   write.
+7. Applicant notification, staff updates, archive, and console refresh are
+   durable follow-up work. **Decision recorded; updates retrying** means the
+   terminal decision is safe and the remaining work will retry.
 
-## Legacy pilot: one ticket at a time
+Terminal candidate and staff threads remain locked, archived, and available
+read-only from the console.
 
-Select one to five terminal source tickets. The operator must be an
-Administrator in the target and owner or Administrator in the source; the bot
-must be able to read both source histories. For each ticket:
+## Clone terminal legacy tickets
 
-1. Run a read-only preview. Choose the configured destination parents for the
-   inferred ticket type.
+Legacy cloning is optional and is separate from rollout. It is available only
+in `pilot`, `thread_default`, or `thread_only`. It accepts one terminal
+approved/denied source ticket at a time and never alters or deletes the source
+channel, source staff thread, messages, roles, or attachments.
 
-   ```text
-   /ticket migrate-legacy source-guild:<server> source-channel:<ticket channel> target-guild:<configured server> candidate-parent:<channel> staff-parent:<channel> type:Auto status:Auto confirm:false
-   ```
-
-   Select `source-staff-thread` when auto-detection is ambiguous. An explicit
-   `type` or terminal `status` is an authoritative correction: it replaces
-   the corresponding stored or inferred value. It cannot make a source proven
-   `open` or `new` eligible. Use `user-id` or `username` only when identity
-   cannot be inferred safely. A non-empty `player-tags` override replaces all
-   stored and applicant-authored tag inference; it does not add to it.
-2. Confirm only when the preview shows the correct terminal outcome, ticket
-   type, applicant, histories, tags, and attachment audit. If the preview reports
-   attachment risk, accept it only by copying that preview's exact `LOSS-...`
-   value into `attachment-ack` on the confirmed rerun. Omit `attachment-ack`
-   when the preview reports no risk. An open source ticket must be approved or
-   denied first.
-3. Re-run the exact selections with `confirm:true`. The command creates or
-   resumes one destination pair, clones candidate and recruiter history, records
-   a canonical ticket, then locks and archives both threads.
-4. Verify before selecting the next source:
-
-   - Compare message order, visible original timestamps, staff history, and
-     attachments or loss notes.
-   - Confirm both destination threads are locked and archived.
-   - Find the ticket by Discord ID and username with `/ticket find`; also use a
-     player tag when one is present.
-   - Open both console links while they remain archived.
-   - Confirm the source channel and source staff thread are unchanged.
-
-Stop after the selected one-to-five-ticket pilot. Only after every selected
-migration is complete and verified, unlock further migrations with:
+Run a read-only preview in the destination guild:
 
 ```text
-/ticket approve-migration-pilot confirm:true
+/ticket-pilot migrate-legacy source-guild:<server> source-channel:<ticket channel> target-guild:<destination server> candidate-parent:<channel> staff-parent:<channel> type:Auto status:Auto confirm:false
 ```
 
-## Resume and recovery
+Choose `source-staff-thread` when detection is ambiguous. Use `type:Main` or
+`type:FWA`, `status:Approved` or `status:Denied`, `user-id`, `username`, or
+`player-tags` only as reviewed corrections. An override cannot make a source
+proven `open` or `new` eligible; a stored `closed` value needs an explicit
+approved or denied outcome. If the preview reports attachment risk, copy its
+exact `LOSS-...` token into `attachment-ack` on the confirmed rerun.
 
-### Live ticket workflows
+When the preview is correct, rerun the same selections with `confirm:true`.
+The command creates or resumes the same destination thread pair, copies both
+histories, records the v2 ticket, and locks and archives the pair. Check message
+order, visible original timestamps, attachments or loss notes, identity,
+outcome, console search, and both archived links. Confirm again that every
+source object is unchanged.
 
-- A committed ticket keeps its canonical row and thread pair if opening setup
-  delivery is interrupted. Startup recovery resumes the same pair and retries
-  its setup messages without creating duplicates.
-- Pending or failed linked-account snapshots, staff applicant context,
-  automatic FWA Chocolate pages, applicant decision notices, terminal archive
-  convergence, and persistent-console refreshes retry automatically. These
-  workflows use durable state and message markers across process restarts.
-- Preserve both ticket threads, bot-authored marker messages, and ticket
-  automation-state rows while recovery is pending. Do not delete and recreate
-  them to force a retry.
-- Recovery may temporarily make a terminal thread writable so the bot can add
-  or repair its own pending message. It then relocks and rearchives the thread;
-  this does not reopen the ticket status.
+Select and verify between one and five pilot migrations. Further migrations
+stay locked until every selected item is complete and an Administrator runs:
 
-### Legacy migration
+```text
+/ticket-pilot approve-migration-pilot confirm:true
+```
 
-- Re-run the same `/ticket migrate-legacy` selections with `confirm:true`, or
-  allow startup recovery to resume an already-confirmed item.
-- Resume uses independent candidate/staff `last_source_message_id` checkpoints
-  and durable per-message markers. The source guild/channel identity, thread
-  pair, ticket number, and canonical record are reused; duplicate pairs,
-  messages, records, and IDs are rejected or reconciled.
-- Keep migration state, destination threads, and message markers intact. Do not
-  change destination selections for an existing source identity.
-- Interrupted destination threads are locked and archived until recovery can
-  safely continue.
+Migration is resumable. Re-run the same `migrate-legacy` selections with
+`confirm:true`, or allow startup recovery to resume the durable checkpoints.
+Keep partial destination threads, migration rows, and bot-authored markers;
+deleting them can defeat safe recovery.
 
-## Write and rollback boundaries
+## Recovery boundaries
 
-| Operation | Writes | Recovery boundary |
+| Operation | What it changes | Safe recovery |
 |---|---|---|
-| `migrate-store confirm:false` | None | Correct the reported data and repeat. |
-| `migrate-store confirm:true` | Canonical rows/indexes/config; the explicitly classified `button_store` row | Before activation, keep partial upserts and repeat the same idempotent command. After activation and new thread writes, recover forward; this release has no legacy-channel runtime fallback. |
-| `migrate-legacy confirm:false` | No Discord or Mongo writes; attachment URLs are read | Correct selections/metadata and repeat. |
-| `migrate-legacy confirm:true` | Destination threads/messages, migration checkpoints, canonical ticket | Do not delete partial artifacts. Repeat the same command or let startup recovery resume. |
+| Prepare, pilot, or promote with `confirm:false` | No phase or intake-routing change; readiness may idempotently ensure shared-runtime indexes | Correct the reported issue and repeat. |
+| Rollback or drain with `confirm:false` | No phase or intake-routing change; drain reads open tickets, slots, creation workflows, initial deliveries, and conflicts | Preserve reported IDs, recover every blocker, and repeat the dry run. |
+| Confirmed prepare, pilot, promote, rollback, or drain | Rollout phase, revision, and history; prepare, pilot, and promote may also idempotently ensure shared-runtime indexes | Inspect `rollout-status`; existing tickets stay with their original runtime. Drain confirmation fails closed unless every legacy blocker is clear. |
+| `migrate-legacy confirm:false` | Nothing; attachment URLs may be read | Correct the selections or metadata and repeat. |
+| `migrate-legacy confirm:true` | Destination threads/messages, ticket-number counter, migration checkpoints/markers, v2 ticket, pilot slot/index, staff-context outbox, and console-refresh state | Keep partial artifacts and repeat the same command or allow recovery to resume. Source Discord objects remain read-only. |
 
-Legacy Discord sources are strictly read-only: the migration fetches source
-guild, channel, private staff thread, messages, roles, and attachments, but
-never edits, archives, renames, or deletes them. Temporary webhooks and all
-thread edits exist only in the destination. There is no source cleanup tool.
+For interrupted live v2 work, preserve both ticket threads, bot-authored marker
+messages, and automation-state rows. Startup recovery resumes setup messages,
+account snapshots, Chocolate pages, decision notices, archive convergence, and
+console refresh without creating a second ticket pair. Recovery may temporarily
+make a terminal thread writable to repair pending bot-owned work; it then
+relocks and rearchives the thread without reopening the ticket status.
+
+Startup also retries pending legacy initial deliveries before enabling v2
+intake and reconciles shared open-ticket slots. If delivery or conflict IDs
+remain in `rollout-status`, intake stays fail-closed: preserve the named rows,
+repair the source condition, and let the next startup recovery pass prove that
+the blocker is safe to clear.

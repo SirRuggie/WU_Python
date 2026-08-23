@@ -2,28 +2,34 @@
 
 ## The headline
 
-Ticket documents historically lived in `button_store`, interleaved with
-ephemeral interaction state. They now also live in the dedicated `tickets`
-collection and production reads use that collection, but the legacy
-`button_store` mirror remains during the reversible migration soak.
+Ticketing has two fixed authorities during the parallel rollout:
+
+- Legacy channel tickets opened and managed through `/ticket` live in
+  `button_store`.
+- Thread-v2 tickets opened and managed through `/ticket-pilot` live in
+  `tickets`. Completed terminal legacy clones also live there.
+
+Ticket rows are not mirrored or dual-written between those collections, and
+there is no configurable primary-store switch. Shared runtime slots and
+counters coordinate duplicate-open prevention and ticket numbers without
+moving ticket rows between authorities.
 
 As of 2026-08-04, new interactive state no longer enters `button_store` at all.
 It lives in `component_state`, where `expires_at` has a TTL index. Ticket history
 never enters that TTL-backed collection.
 
-`utils/mongo.py` declares the durable `tickets` collection, the transitional
-`button_store` mirror, `ticket_automation_state`, and the short-lived
-`ticket_creation_state` idempotency leases.
+`utils/mongo.py` declares both durable authorities, `ticket_automation_state`,
+and the short-lived `ticket_creation_state` idempotency leases.
 
-The write site calls `tickets/store.py`, which commits to the configured primary
-collection and then best-effort mirrors the same document.
+The namespaced legacy repository writes only to `button_store`; the thread-v2
+repository in `tickets/store.py` writes only to `tickets`.
 Component state reads go through `utils/component_state.py`. The dispatcher
 checks `component_state` first and uses a guarded, non-ticket `button_store`
-fallback only for panels rendered before the migration.
+fallback only for older panels.
 
-## The ticket document
+## The legacy channel-ticket document
 
-Created at `handlers.py:357-369`:
+Legacy `/ticket` creation stores this core shape in `button_store`:
 
 ```python
 {
@@ -42,24 +48,27 @@ Created at `handlers.py:357-369`:
 }
 ```
 
-Later writes add, depending on outcome:
+Legacy terminal writes add, depending on outcome:
 
-- approve (`close.py:230-238`): `approved_at`, `approved_by`
-- deny (`close.py:437`, `529`, `653`): `denied_at`, `denied_by`, `denial_type`
+- approve: `approved_at`, `approved_by`
+- deny: `denied_at`, `denied_by`, `denial_type`
 
 ## How ticket documents and component state are told apart
 
-Two mechanisms, both incidental but effective:
+The runtime markers and type discriminator separate durable ticket rows:
 
-1. **`_id` prefix** — tickets are `ticket_{channel_id}`; component state is keyed
-   by the `action_id` half of a `command_name:action_id` custom_id.
-2. **`type: "ticket"`** — queries that mean tickets filter on it, e.g.
-   `manage.py:413`, `manage.py:535`: `{"type": "ticket", "status": "open"}`.
+1. **Legacy:** `type: "ticket"`, with `venue: "channel"` and
+   `runtime: "legacy_channel"` on new rows. The legacy repository also accepts
+   older channel rows that predate those markers.
+2. **Thread v2:** `type: "ticket"`, `venue: "thread"`, and
+   `runtime: "thread_v2"` in `tickets`.
+3. **Component state:** new interactive state lives in `component_state`, not
+   either ticket authority. Older component rows may still use the guarded
+   `button_store` fallback.
 
-Note the asymmetry: **ticket queries are namespaced, dispatcher reads are not.**
-`components.py:86` looks up a bare `_id` with no `type` filter, so it is the
-dispatcher that would load a ticket document if an id ever collided — not the
-other way round. The `ticket_` prefix is what prevents this.
+Legacy ticket IDs retain the `ticket_{channel_id}` prefix. Thread-v2 queries
+also require the v2 runtime markers, so neither repository can claim the other
+runtime's rows.
 
 ## Consequences worth knowing
 
@@ -94,78 +103,54 @@ other way round. The `ticket_` prefix is what prevents this.
 All 23 open have live channels; 0 ghost rows, 0 orphaned channels.
 Guild at 125/500 channels, 13 categories, the FWA category stranded at 50/50.
 
-## Phase 1 status — LIVE as of 2026-08-02
+## Current authority and migration boundary
 
-`ticket_store` is flipped to **`"tickets"`**. Reads come from the new collection.
-Both indexes built, no `channel_id` collisions found.
+The two repositories are fixed rather than selected by configuration:
 
-**Dual-write is still on, and must stay on until at least 2026-08-09.** It is the
-only thing making the flag reversible: flip `ticket_store` back to
-`"button_store"` and the legacy collection is still current. Remove dual-write
-and that stops being true, permanently, with no warning at the moment it matters.
+- `extensions/commands/tickets_legacy/store.py` constrains legacy `/ticket`
+  reads and writes to channel-ticket rows in `button_store`.
+- `extensions/commands/tickets/store.py` constrains `/ticket-pilot` reads and
+  writes to `venue: "thread"`, `runtime: "thread_v2"` rows in `tickets`.
 
-Phase 2 raised the stakes rather than lowering them. The mirror is now exercised
-by `store.transition`'s conditional writes — **new code on the write path** — so
-the soak is checking more than it was. Divergence held at none through the phase
-2 verification run, but that is one session, not a week.
+Rollout phases route **new intake only**. Promotion or rollback never copies,
+repoints, or deletes an existing row; each ticket remains with the runtime that
+created it.
 
-Verified end to end with the flag on — an update (denying an existing open
-ticket) and an insert (a ticket created from the panel, then denied). Both landed
-in both collections.
+The only supported legacy-to-v2 migration is the operator-paced terminal clone:
 
-| | Total | approved | closed | denied | open |
-|---|---|---|---|---|---|
-| Baseline at plan time | 361 | 64 | 1 | 273 | 23 |
-| Backfill (362 upserted) | 362 | 64 | 1 | 273 | 24 |
-| After live write tests | **363** | 64 | 1 | 275 | 23 |
+```text
+/ticket-pilot migrate-legacy ... confirm:false
+/ticket-pilot migrate-legacy ... confirm:true
+```
 
-Identical in both collections, divergence none. The 361→362 gap is one real
-ticket opened between the baseline reconciliation and the backfill — the drift
-the command displays rather than blocks on, working as intended.
+It accepts one approved or denied source ticket at a time during `pilot`,
+`thread_default`, or `thread_only`. The dry run previews the source. A confirmed
+run creates or resumes an archived destination thread pair and a full v2 ticket
+row in `tickets`; the source `button_store` row and source Discord objects remain
+unchanged. The initial pilot permits 1–5 selected terminal tickets before
+explicit pilot approval with:
 
-**The `BASELINE_*` constants in `migrate.py` are deliberately NOT updated.** They
-record what was true when the migration was planned, and the drift line is what
-makes that useful. Editing them to match today would delete the record.
+```text
+/ticket-pilot approve-migration-pilot confirm:true
+```
 
-## Phase 1: the `tickets` collection
+### Thread-v2 and shared-runtime indexes
 
-Ticket documents now live in their own `tickets` collection. Every read and write
-goes through `extensions/commands/tickets/store.py` — that module is the only
-place that knows which collection is authoritative.
+Thread-v2 indexes are partial to `venue: "thread"`, `runtime: "thread_v2"` rows:
 
-**The read switch is a config value, not a deploy.** `ticket_setup._id="config"`
-carries `ticket_store: "button_store" | "tickets"`, defaulting to
-`"button_store"`. The flag is read fresh on every call, never cached, so a flip
-takes effect immediately with no restart. This is deliberate: it means the
-backfill and the code repoint cannot land in the wrong order, and the moment of
-risk is a Mongo write that reverses in a second rather than a deploy.
-
-**Writes always target both collections** while the transition is live, ordered
-so the collection currently being *read* from is written first. That primary
-write is the creation commit point. A mirror insert failure is logged and shows
-up as divergence in `/ticket diagnostics`; it does not make the caller retry a
-ticket that already exists.
-
-Migration is `/ticket migrate-store` — dry run by default, `confirm: true` to
-write. Idempotent (upsert on the unchanged `_id`), and **nothing is ever deleted
-from `button_store`**, so rollback is a flag flip, not a data restore.
-
-The transform is purely additive: `schema_version: 2`, `venue: "channel"`, and
-`channel_id` coerced to int. The inverse is a `$unset` of two keys.
-
-### Indexes
-
-| Index | Why |
+| Index family | Why |
 |---|---|
-| `channel_unique` — `{channel_id: 1}` unique | `close.py:107` and `:219` run this lookup on every approve/deny and it was a collection scan. Also a correctness constraint: one ticket per channel. |
-| `status_created` — `{status: 1, created_at: -1}` | `/ticket list`, cleanup-ghosts, fix-mismatched, and the future queue view |
+| Unique candidate and staff locations | One v2 ticket per Discord thread pair. |
+| Unique ticket type and number | Prevent duplicate Main or FWA ticket numbers in v2. |
+| Unique open applicant and type | Prevent two open v2 rows for one applicant/type; shared runtime slots enforce the same rule across both authorities. |
+| Unique source guild and channel | Prevent two terminal clones of the same legacy source. |
+| Status, type, date, user, player-tag, and username indexes | Back the console queue, history, and identity search. |
+| Account-recovery flags | Find durable linked-account and staff-context retry work. |
 
-The unique index is the step most likely to surface a real problem. Because ids
-have been stored as both `int` and `str` historically, two documents can coerce
-to the same `channel_id`. `/ticket migrate-store` checks for that **in the dry
-run, before writing anything**, and stops if it fires. **Do not drop the
-uniqueness to get past a collision** — two documents pointing at one channel
-means one of them is wrong, and burying it makes it permanent.
+Rollout readiness idempotently ensures these indexes plus the shared slot and
+rollout indexes; shared counters use atomic records. Readiness preflights
+conflicts and refuses to continue rather than dropping or weakening a
+uniqueness constraint.
 
 ### ⚠️ No TTL index on `tickets` or `button_store`. Ever.
 
@@ -175,18 +160,17 @@ consistency" with whatever eventually prunes the ephemeral collection.
 TTL indexes exist on ephemeral state only: `component_state.expires_at` and
 `ticket_creation_state.expires_at`. The latter holds at most one current
 creation lease per guild/user/ticket-type combination and retains it for no more
-than 30 days. Durable `tickets` and the `button_store` mirror never receive an
-expiry.
+than 30 days. Durable v2 rows in `tickets` and legacy ticket rows in
+`button_store` never receive an expiry.
 
 `utils/component_state.py` owns the 24-hour fixed lifetime, immediate rejection
 of expired rows (without waiting for Mongo's roughly minute-scale TTL sweep),
-the seven-day legacy grace, and the migration marker. Index creation happens
-before any legacy copy or deletion; if index creation fails, cleanup does not
-run.
+the seven-day legacy grace, and the component-state migration marker. Its index
+creation happens before any older component-state copy or deletion; if index
+creation fails, cleanup does not run.
 
-The extraction still stands on its own: the unique index, the hot-path scan on
-`close.py:107`/`:219`, and not interleaving durable records with throwaway UI
-state.
+Separating component state still stands on its own: durable ticket history must
+not be interleaved with TTL-backed UI state.
 
 ## Related
 
@@ -194,10 +178,7 @@ state.
   values mean and why `closed` is 1.
 - [component-dispatcher.md](component-dispatcher.md) — the other consumer of
   this collection.
-- [ticket-console.md](ticket-console.md) — the console that reads these
-  documents. Its flag system needs a **new small collection** (blacklist /
-  denied-before / not-loyal) that is specified there and **not yet designed
-  in this file**.
-- [legacy-ticket-migration.md](legacy-ticket-migration.md) — backfilled
-  legacy tickets need a minimal lookup record in this collection (§5 there)
-  or the console's search cannot find them.
+- [ticket-console.md](ticket-console.md) — the v2 console reads thread-v2 and
+  completed-clone rows in `tickets`, not live legacy rows in `button_store`.
+- [legacy-ticket-migration.md](legacy-ticket-migration.md) — terminal cloning
+  creates a full v2 destination row while leaving the legacy source unchanged.

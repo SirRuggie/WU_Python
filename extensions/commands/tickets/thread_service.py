@@ -31,6 +31,7 @@ from hikari.impl import (
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from extensions.commands import ticket_runtime
 from extensions.commands.tickets import account_sync, store
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
@@ -121,6 +122,33 @@ def _creation_id(_guild_id: int, user_id: int, ticket_type: str) -> str:
     # The durable lease must use the same key or two guilds could create two
     # Discord pairs before Mongo's open-ticket index rejects the second record.
     return f"thread:{int(user_id)}:{ticket_type}"
+
+
+def _validated_open_slot_claim(
+    claim: ticket_runtime.SlotClaim,
+    *,
+    guild_id: int,
+    user_id: int,
+    ticket_type: str,
+) -> Mapping[str, Any]:
+    """Fail before Discord work unless the router supplied the won sticky slot."""
+
+    if not isinstance(claim, ticket_runtime.SlotClaim) or not claim.won:
+        raise ThreadConfigurationError("a won shared ticket slot is required")
+    slot = claim.slot
+    workflow_id = _creation_id(guild_id, user_id, ticket_type)
+    if (
+        not claim.owner_token
+        or slot.get("state") != ticket_runtime.SLOT_RESERVED
+        or slot.get("route") != ticket_runtime.ROUTE_THREAD
+        or _as_int(slot.get("guild_id")) != int(guild_id)
+        or _as_int(slot.get("user_id")) != int(user_id)
+        or str(slot.get("ticket_type") or "") != ticket_type
+        or str(slot.get("workflow_id") or "") != workflow_id
+        or _as_int(slot.get("rollout_revision")) <= 0
+    ):
+        raise ThreadConfigurationError("the shared ticket slot binding is invalid")
+    return slot
 
 
 def _slug(value: str, *, fallback: str = "candidate", limit: int = 42) -> str:
@@ -270,11 +298,11 @@ async def validate_thread_parents(
         raise ThreadConfigurationError("configured recruiter role is not in the target guild")
     if (
         not bool(getattr(recruiter_role, "is_mentionable", False))
-        and not bot_parent_permissions["candidate"]
+        and not bot_parent_permissions["staff"]
         & hikari.Permissions.MENTION_ROLES
     ):
         raise ThreadConfigurationError(
-            "recruiter role must be mentionable or bot needs Mention Everyone in the candidate parent"
+            "recruiter role must be mentionable or bot needs Mention Roles in the staff parent"
         )
     required_recruiter = (
         hikari.Permissions.VIEW_CHANNEL
@@ -455,70 +483,15 @@ async def ensure_creation_indexes(mongo: MongoClient) -> None:
 
 
 async def ensure_canonical_ticket_store(mongo: MongoClient) -> None:
-    """Fail closed while the legacy collection is still the active writer."""
-    active = await store.active_store(mongo)
-    if active != store.STORE_TICKETS:
-        raise ThreadConfigurationError(
-            "ticket storage is not ready; an administrator must run `/ticket migrate-store`"
-        )
+    """Install indexes on the thread runtime's fixed authoritative store."""
     await store.ensure_indexes(mongo)
 
 
 async def reserve_ticket_number(mongo: MongoClient, ticket_type: str) -> int:
-    """Allocate above both the durable counter and canonical stored numbers."""
+    """Use the cross-runtime allocator shared with the legacy runtime."""
     if ticket_type not in {"main", "fwa"}:
         raise ThreadConfigurationError("ticket type must be main or fwa")
-    field = f"{ticket_type}_ticket_counter"
-    for _attempt in range(5):
-        cursor = mongo.tickets.find(
-            {
-                "type": "ticket",
-                "ticket_type": ticket_type,
-                "ticket_number": {"$exists": True},
-            },
-            {"ticket_number": 1},
-        )
-        rows = await cursor.sort([("ticket_number", -1)]).limit(1).to_list(length=1)
-        canonical_max = max(
-            (_as_int(row.get("ticket_number")) for row in rows),
-            default=0,
-        )
-        # Both operations are atomic on the shared config document. Concurrent
-        # workers may interleave here, but $max can only raise the floor and
-        # find_one_and_update gives every worker a distinct increment.
-        await mongo.ticket_setup.update_one(
-            {"_id": "config"},
-            {"$max": {field: canonical_max}},
-            upsert=True,
-        )
-        config = await mongo.ticket_setup.find_one_and_update(
-            {"_id": "config"},
-            {"$inc": {field: 1}},
-            upsert=True,
-            return_document=ReturnDocument.AFTER,
-        )
-        allocated = int(config[field])
-
-        # Close the cross-collection race where a canonical import lands after
-        # the first maximum read but before this allocation is returned.
-        newest = mongo.tickets.find(
-            {
-                "type": "ticket",
-                "ticket_type": ticket_type,
-                "ticket_number": {"$exists": True},
-            },
-            {"ticket_number": 1},
-        )
-        latest = await newest.sort([("ticket_number", -1)]).limit(1).to_list(length=1)
-        latest_number = max(
-            (_as_int(row.get("ticket_number")) for row in latest),
-            default=0,
-        )
-        if allocated > latest_number:
-            return allocated
-    raise ThreadTicketError(
-        "a ticket number could not be allocated while imports were running"
-    )
+    return await ticket_runtime.reserve_ticket_number(mongo, ticket_type)
 
 
 async def _claim_creation(
@@ -530,12 +503,19 @@ async def _claim_creation(
     display_name: str | None,
     ticket_type: str,
     parents: ThreadParents,
+    open_slot_claim: ticket_runtime.SlotClaim,
     now: datetime,
 ) -> tuple[str, dict, bool]:
     """Acquire or resume a reusable applicant lease."""
     await ensure_creation_indexes(mongo)
     collection = mongo.ticket_creation_state
     creation_id = _creation_id(guild_id, user_id, ticket_type)
+    slot = _validated_open_slot_claim(
+        open_slot_claim,
+        guild_id=guild_id,
+        user_id=user_id,
+        ticket_type=ticket_type,
+    )
     owner = uuid.uuid4().hex
     base = {
         "schema_version": 2,
@@ -548,6 +528,11 @@ async def _claim_creation(
         "candidate_parent_id": parents.candidate_parent_id,
         "staff_parent_id": parents.staff_parent_id,
         "recruiter_role_id": parents.recruiter_role_id,
+        "route": ticket_runtime.ROUTE_THREAD,
+        "runtime": ticket_runtime.THREAD_RUNTIME,
+        "open_slot_id": str(slot["_id"]),
+        "creation_workflow_id": str(slot["workflow_id"]),
+        "rollout_revision": int(slot["rollout_revision"]),
         "state": "creating",
         "lease_owner": owner,
         "lease_until": now + CREATION_LEASE,
@@ -608,6 +593,16 @@ async def _claim_creation(
                 raise ThreadConfigurationError(
                     "an unfinished ticket is bound to its original validated thread parents"
                 )
+        stored_slot = current.get("open_slot_id")
+        stored_workflow = current.get("creation_workflow_id")
+        if (
+            (stored_slot and str(stored_slot) != str(slot["_id"]))
+            or (stored_workflow and str(stored_workflow) != str(slot["workflow_id"]))
+            or current.get("route") not in {None, ticket_runtime.ROUTE_THREAD}
+        ):
+            raise ThreadConfigurationError(
+                "an unfinished ticket is bound to a different shared slot"
+            )
 
         lease_until = _aware(current.get("lease_until"))
         if lease_until is not None and lease_until > now:
@@ -1422,34 +1417,56 @@ async def create_live_thread_ticket(
     display_name: str | None,
     ticket_type: str,
     config: Mapping[str, Any],
+    open_slot_claim: ticket_runtime.SlotClaim,
     coc_client: coc.Client | None = None,
 ) -> CreatedThreadTicket:
     """Create or resume one live thread ticket without duplicating resources."""
-    if coc_client is None:
-        coc_client = account_sync.configured_coc_client()
     if ticket_type not in {"main", "fwa"}:
         raise ThreadConfigurationError("ticket type must be main or fwa")
-    # This call also installs the canonical ticket uniqueness indexes before
-    # any destination thread can be created.
-    await ensure_creation_indexes(mongo)
-    parents = parents_from_config(config, guild_id, ticket_type)
-    existing = await store.find_open_for_applicant(
-        mongo, user_id=int(user_id), ticket_type=ticket_type
+    slot = _validated_open_slot_claim(
+        open_slot_claim,
+        guild_id=guild_id,
+        user_id=user_id,
+        ticket_type=ticket_type,
     )
-    if existing is not None:
-        return await _reconcile_existing_ticket(
-            bot, mongo, existing, coc_client=coc_client
+    # Everything through parent validation is pre-side-effect and therefore
+    # safe to cancel if configuration/readiness fails.
+    try:
+        if coc_client is None:
+            coc_client = account_sync.configured_coc_client()
+        await ensure_creation_indexes(mongo)
+        parents = parents_from_config(config, guild_id, ticket_type)
+        existing = await store.find_open_for_applicant(
+            mongo, user_id=int(user_id), ticket_type=ticket_type
         )
+        if existing is not None:
+            await ticket_runtime.cancel_open_slot(
+                mongo,
+                slot_id=str(slot["_id"]),
+                owner_token=str(open_slot_claim.owner_token),
+                workflow_id=str(slot["workflow_id"]),
+            )
+            return await _reconcile_existing_ticket(
+                bot, mongo, existing, coc_client=coc_client
+            )
 
-    me = bot.get_me()
-    if me is None:
-        raise ThreadTicketError("bot identity is not available")
-    await validate_thread_parents(
-        bot.rest,
-        parents,
-        bot_user_id=int(me.id),
-        applicant_user_id=int(user_id),
-    )
+        me = bot.get_me()
+        if me is None:
+            raise ThreadTicketError("bot identity is not available")
+        await validate_thread_parents(
+            bot.rest,
+            parents,
+            bot_user_id=int(me.id),
+            applicant_user_id=int(user_id),
+        )
+    except Exception:
+        await ticket_runtime.cancel_open_slot(
+            mongo,
+            slot_id=str(slot["_id"]),
+            owner_token=str(open_slot_claim.owner_token),
+            workflow_id=str(slot["workflow_id"]),
+        )
+        raise
 
     async with _creation_lock:
         # At most one iteration retires a terminal committed pair; the next
@@ -1459,6 +1476,12 @@ async def create_live_thread_ticket(
                 mongo, user_id=int(user_id), ticket_type=ticket_type
             )
             if existing is not None:
+                await ticket_runtime.cancel_open_slot(
+                    mongo,
+                    slot_id=str(slot["_id"]),
+                    owner_token=str(open_slot_claim.owner_token),
+                    workflow_id=str(slot["workflow_id"]),
+                )
                 return await _reconcile_existing_ticket(
                     bot, mongo, existing, coc_client=coc_client
                 )
@@ -1476,16 +1499,32 @@ async def create_live_thread_ticket(
                     )
                 await _mark_committed_creation_complete(mongo, bound_ticket)
 
-            owner, state, resumed = await _claim_creation(
-                mongo,
-                guild_id=guild_id,
-                user_id=user_id,
-                username=username,
-                display_name=display_name,
-                ticket_type=ticket_type,
-                parents=parents,
-                now=utcnow(),
-            )
+            try:
+                owner, state, resumed = await _claim_creation(
+                    mongo,
+                    guild_id=guild_id,
+                    user_id=user_id,
+                    username=username,
+                    display_name=display_name,
+                    ticket_type=ticket_type,
+                    parents=parents,
+                    open_slot_claim=open_slot_claim,
+                    now=utcnow(),
+                )
+            except Exception:
+                # A durable workflow row may already represent Discord work in
+                # flight, so only cancel when creation never became durable.
+                durable = await mongo.ticket_creation_state.find_one(
+                    {"_id": str(slot["workflow_id"])}
+                )
+                if durable is None:
+                    await ticket_runtime.cancel_open_slot(
+                        mongo,
+                        slot_id=str(slot["_id"]),
+                        owner_token=str(open_slot_claim.owner_token),
+                        workflow_id=str(slot["workflow_id"]),
+                    )
+                raise
             candidate = staff = None
             committed_ticket: dict | None = None
             try:
@@ -1509,6 +1548,7 @@ async def create_live_thread_ticket(
                     display_name=display_name,
                 )
                 ticket["recruiter_role_id"] = parents.recruiter_role_id
+                ticket.update(ticket_runtime.thread_ticket_fields(slot))
                 try:
                     ticket = await store.insert_one(mongo, ticket)
                 except Exception:
@@ -1517,6 +1557,23 @@ async def create_live_thread_ticket(
                         raise
                     ticket = committed
                 committed_ticket = ticket
+                try:
+                    await ticket_runtime.bind_open_slot(
+                        mongo,
+                        slot_id=str(slot["_id"]),
+                        owner_token=str(open_slot_claim.owner_token),
+                        ticket_id=ticket["_id"],
+                        location_id=int(candidate.id),
+                    )
+                except ticket_runtime.SlotConflict:
+                    bound_slot = await mongo.ticket_open_slots.find_one(
+                        {"_id": str(slot["_id"])}
+                    ) or {}
+                    if not (
+                        bound_slot.get("state") == ticket_runtime.SLOT_OPEN
+                        and str(bound_slot.get("ticket_id")) == str(ticket["_id"])
+                    ):
+                        raise
 
                 if ticket.get("status") != "open":
                     await _mark_committed_creation_complete(mongo, ticket)
@@ -1673,17 +1730,57 @@ async def recover_pending_thread_ticket_creations(
             f"{ticket_type}_recruiter_role": state.get("recruiter_role_id"),
         }
         try:
-            result = await create_live_thread_ticket(
-                bot=bot,
-                mongo=mongo,
-                guild_id=_as_int(state.get("guild_id")),
-                user_id=_as_int(state.get("user_id")),
-                username=str(state.get("username") or "candidate"),
-                display_name=str(state.get("display_name") or "") or None,
-                ticket_type=ticket_type,
-                config=config,
-                coc_client=coc_client,
-            )
+            slot_id = str(state.get("open_slot_id") or "")
+            workflow_id = str(state.get("creation_workflow_id") or "")
+            if not slot_id or workflow_id != str(state.get("_id") or ""):
+                raise ThreadConfigurationError(
+                    "pending creation is missing its exact shared slot binding"
+                )
+            slot = await mongo.ticket_open_slots.find_one({"_id": slot_id}) or {}
+            if (
+                slot.get("state") == ticket_runtime.SLOT_OPEN
+                and str(slot.get("workflow_id") or "") == workflow_id
+                and slot.get("route") == ticket_runtime.ROUTE_THREAD
+            ):
+                committed = await _committed_ticket_for_creation_state(
+                    mongo,
+                    guild_id=_as_int(state.get("guild_id")),
+                    user_id=_as_int(state.get("user_id")),
+                    ticket_type=ticket_type,
+                )
+                if committed is None or str(slot.get("ticket_id")) != str(
+                    committed.get("_id")
+                ):
+                    raise ThreadConfigurationError(
+                        "open slot is not bound to the pending creation ticket"
+                    )
+                result = await _reconcile_existing_ticket(
+                    bot, mongo, committed, coc_client=coc_client
+                )
+            else:
+                slot_claim = await ticket_runtime.resume_open_slot(
+                    mongo,
+                    slot_id=slot_id,
+                    workflow_id=workflow_id,
+                    route=ticket_runtime.ROUTE_THREAD,
+                    now=now,
+                )
+                if not slot_claim.won:
+                    raise ThreadCreationBusy(
+                        "pending creation's sticky shared slot is not resumable"
+                    )
+                result = await create_live_thread_ticket(
+                    bot=bot,
+                    mongo=mongo,
+                    guild_id=_as_int(state.get("guild_id")),
+                    user_id=_as_int(state.get("user_id")),
+                    username=str(state.get("username") or "candidate"),
+                    display_name=str(state.get("display_name") or "") or None,
+                    ticket_type=ticket_type,
+                    config=config,
+                    open_slot_claim=slot_claim,
+                    coc_client=coc_client,
+                )
         except Exception:
             counts["failed"] += 1
             _log.exception("startup ticket creation recovery failed for %s", state.get("_id"))

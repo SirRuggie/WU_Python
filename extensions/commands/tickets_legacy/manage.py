@@ -24,8 +24,11 @@ from hikari.impl import (
 from utils.mongo import MongoClient
 from utils.component_state import insert_state
 from utils.constants import BLUE_ACCENT
-from extensions.commands.tickets import store
-from extensions.commands.tickets.store import as_int as _as_int
+from extensions.components import register_action
+from extensions.commands import ticket_runtime
+from extensions.commands.tickets_legacy import loader, ticket
+from extensions.commands.tickets_legacy import perms, store
+from extensions.commands.tickets_legacy.store import as_int as _as_int
 
 # Discord rejects a Components V2 text display whose content is outside 1-4000
 # characters, and BOTH bounds are reachable from a ticket list:
@@ -36,6 +39,23 @@ from extensions.commands.tickets.store import as_int as _as_int
 #     a future filter that returns nothing degrades to a message instead of a 400.
 MAX_TEXT_CONTENT = 4000
 TRUNCATION_HEADROOM = 120  # leaves room for the "N more" note
+
+
+async def _thread_runtime_status_counts(mongo: MongoClient, guild_id: int) -> dict:
+    """Count only rows explicitly owned by the v2 thread runtime."""
+
+    thread_docs = await mongo.tickets.find(
+        {
+            "type": "ticket",
+            "venue": "thread",
+            "runtime": ticket_runtime.THREAD_RUNTIME,
+            "guild_id": int(guild_id),
+        },
+        {"status": 1},
+    ).to_list(length=None)
+    return dict(Counter(
+        document.get("status") or "(missing)" for document in thread_docs
+    ))
 
 
 def safe_text_content(body: str, empty_fallback: str) -> str:
@@ -59,6 +79,7 @@ def safe_text_content(body: str, empty_fallback: str) -> str:
     return "\n".join(kept) + f"\n\n-# …truncated, {hidden} more line(s) not shown."
 
 
+@ticket.register()
 class ListTickets(
     lightbulb.SlashCommand,
     name="list",
@@ -96,6 +117,7 @@ class ListTickets(
         # Fetch all open tickets
         tickets_list = await store.find(mongo, {
             "type": "ticket",
+            "guild_id": int(ctx.guild_id),
             "status": "open"
         })
 
@@ -167,6 +189,7 @@ class ListTickets(
         )
 
 
+@ticket.register()
 class Dashboard(
     lightbulb.SlashCommand,
     name="dashboard",
@@ -200,7 +223,7 @@ class Dashboard(
                     ActionRow(
                         components=[
                             SelectMenu(
-                                custom_id=f"ticket_v2_dashboard_action:{action_id}",
+                                custom_id=f"ticket_dashboard_action:{action_id}",
                                 placeholder="Choose an action...",
                                 options=[
                                     SelectOption(
@@ -270,7 +293,12 @@ LEGACY_OPEN_PREFIX = "✅"
 #      so this is a no-op against the current 361 documents.
 #   2. _active_thread_ids() below is unioned into the live-id set, so a thread
 #      ticket that somehow lacks the venue field still cannot be read as a ghost.
-CHANNEL_ERA_ONLY = {"venue": {"$ne": "thread"}}
+CHANNEL_ERA_ONLY = {
+    "$or": [
+        {"venue": "channel"},
+        {"venue": {"$exists": False}},
+    ]
+}
 
 
 async def _active_thread_ids(bot: hikari.GatewayBot, guild_id: int) -> set[int]:
@@ -284,6 +312,16 @@ async def _active_thread_ids(bot: hikari.GatewayBot, guild_id: int) -> set[int]:
     return {_as_int(t.id) for t in threads}
 
 
+async def _release_terminal_slots(mongo: MongoClient, ticket_ids: list) -> None:
+    """Release repaired legacy rows without guessing through a concurrent write."""
+    for ticket_id in ticket_ids:
+        current = await store.find_one(mongo, {"_id": ticket_id})
+        status = (current or {}).get("status")
+        if status in store.TERMINAL_STATUSES:
+            await store.release_terminal_open_slot(mongo, ticket_id, status)
+
+
+@ticket.register()
 class Diagnostics(
     lightbulb.SlashCommand,
     name="diagnostics",
@@ -303,6 +341,12 @@ class Diagnostics(
             await ctx.respond("❌ You need Administrator permissions to use this command!",
                               ephemeral=True)
             return
+        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
+            await ctx.respond(
+                "❌ Legacy ticket diagnostics are bound to the configured guild.",
+                ephemeral=True,
+            )
+            return
 
         await ctx.defer(ephemeral=True)
 
@@ -310,7 +354,9 @@ class Diagnostics(
         # per-ticket fetch_channel loop - that is what got the startup orphan sweep
         # disabled in close.py for causing rate limits.
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
-        docs = await store.find(mongo, {"type": "ticket", **CHANNEL_ERA_ONLY})
+        docs = await store.find(mongo, {
+            "type": "ticket", "guild_id": int(ctx.guild_id), **CHANNEL_ERA_ONLY,
+        })
 
         live_ids = {_as_int(ch.id) for ch in guild_channels}
         live_ids |= await _active_thread_ids(bot, ctx.guild_id)
@@ -356,17 +402,12 @@ class Diagnostics(
             flag = " ⚠️" if count >= 45 else ""
             lines.append(f"• {name} — {count}/50{flag}")
 
-        # Both sides, always, for the duration of the button_store -> tickets
-        # transition. This is the instrument for verifying every migration step:
-        # the two lines should be identical, and "divergence" is the single word
-        # that says whether the dual-write is holding.
-        bs_counts = await store.status_counts(mongo.button_store)
-        tk_counts = await store.status_counts(mongo.tickets)
-        divergence = [
-            f"`{k}` {bs_counts.get(k, 0)}/{tk_counts.get(k, 0)}"
-            for k in sorted(set(bs_counts) | set(tk_counts))
-            if bs_counts.get(k, 0) != tk_counts.get(k, 0)
-        ]
+        # The two runtimes deliberately have different authorities.  Report both
+        # populations without implying that they should mirror one another.
+        bs_counts = await store.status_counts(
+            mongo.button_store, {"guild_id": int(ctx.guild_id)}
+        )
+        tk_counts = await _thread_runtime_status_counts(mongo, int(ctx.guild_id))
 
         def _fmt(counts: dict) -> str:
             return ", ".join(f"`{k}`={v}" for k, v in sorted(counts.items())) or "(none)"
@@ -374,10 +415,9 @@ class Diagnostics(
         lines += [
             "",
             "**Ticket documents**",
-            f"• `button_store` (type=ticket): **{sum(bs_counts.values())}** — {_fmt(bs_counts)}",
-            f"• `tickets`: **{sum(tk_counts.values())}** — {_fmt(tk_counts)}",
-            "• Divergence: " + ("none ✅" if not divergence else "⚠️ " + ", ".join(divergence)),
-            f"• Reading from: **`{await store.active_store(mongo)}`**",
+            f"• Legacy `button_store`: **{sum(bs_counts.values())}** — {_fmt(bs_counts)}",
+            f"• Thread runtime `tickets`: **{sum(tk_counts.values())}** — {_fmt(tk_counts)}",
+            f"• Legacy authority: **`{await store.active_store(mongo)}`**",
             "",
             "**Reconciled set (channel-era only)**",
             f"• Documents: {len(docs)}",
@@ -412,6 +452,7 @@ class Diagnostics(
         )
 
 
+@ticket.register()
 class CleanupGhosts(
     lightbulb.SlashCommand,
     name="cleanup-ghosts",
@@ -437,6 +478,12 @@ class CleanupGhosts(
             await ctx.respond("❌ You need Administrator permissions to use this command!",
                               ephemeral=True)
             return
+        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
+            await ctx.respond(
+                "❌ Legacy ticket cleanup is bound to the configured guild.",
+                ephemeral=True,
+            )
+            return
 
         await ctx.defer(ephemeral=True)
 
@@ -459,7 +506,10 @@ class CleanupGhosts(
             return
 
         open_docs = await store.find(
-            mongo, {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
+            mongo, {
+                "type": "ticket", "status": "open",
+                "guild_id": int(ctx.guild_id), **CHANNEL_ERA_ONLY,
+            }
         )
 
         ghosts = [d for d in open_docs if _as_int(d.get("channel_id")) not in live_ids]
@@ -512,14 +562,24 @@ class CleanupGhosts(
         # between the read above and this write is not clobbered.
         result = await store.update_many(
             mongo,
-            {"_id": {"$in": [d["_id"] for d in ghosts]}, "status": "open"},
-            {"$set": {
-                "status": "denied",
-                "denied_at": datetime.now(timezone.utc),
-                "denied_reason": "channel_deleted",
-                "denied_by": ctx.user.id,
-            }},
+            {
+                "_id": {"$in": [d["_id"] for d in ghosts]},
+                "status": "open",
+            },
+            {
+                "$set": {
+                    "status": "denied",
+                    "denied_at": datetime.now(timezone.utc),
+                    "denied_reason": "channel_deleted",
+                    "denied_by": ctx.user.id,
+                },
+                # The candidate channel is authoritatively absent, so exact
+                # Discord history reconciliation is impossible. Closing the
+                # row and invalidating any in-flight POST must be one write.
+                "$unset": {"opening_post_intent": ""},
+            },
         )
+        await _release_terminal_slots(mongo, [d["_id"] for d in ghosts])
 
         print(f"[Tickets] cleanup-ghosts by {ctx.user.username}: "
               f"{result.modified_count} row(s) closed as channel_deleted")
@@ -550,6 +610,7 @@ class CleanupGhosts(
         )
 
 
+@ticket.register()
 class FixMismatched(
     lightbulb.SlashCommand,
     name="fix-mismatched",
@@ -575,6 +636,12 @@ class FixMismatched(
             await ctx.respond("❌ You need Administrator permissions to use this command!",
                               ephemeral=True)
             return
+        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
+            await ctx.respond(
+                "❌ Legacy ticket repair is bound to the configured guild.",
+                ephemeral=True,
+            )
+            return
 
         await ctx.defer(ephemeral=True)
 
@@ -583,7 +650,10 @@ class FixMismatched(
         # Thread-era rows are excluded explicitly rather than relying on the
         # `name is None` skip below to drop them by accident.
         open_docs = await store.find(
-            mongo, {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
+            mongo, {
+                "type": "ticket", "status": "open",
+                "guild_id": int(ctx.guild_id), **CHANNEL_ERA_ONLY,
+            }
         )
 
         mismatched, legacy_open = [], 0
@@ -633,7 +703,11 @@ class FixMismatched(
         else:
             result = await store.update_many(
                 mongo,
-                {"_id": {"$in": [doc["_id"] for doc, _ in mismatched]}, "status": "open"},
+                {
+                    "_id": {"$in": [doc["_id"] for doc, _ in mismatched]},
+                    "status": "open",
+                    "opening_post_intent": {"$exists": False},
+                },
                 {"$set": {
                     "status": "denied",
                     "denied_reason": "name_shows_denied",
@@ -644,12 +718,32 @@ class FixMismatched(
                     "corrected_at": datetime.now(timezone.utc),
                 }},
             )
+            remaining = await store.find(mongo, {
+                "_id": {"$in": [doc["_id"] for doc, _ in mismatched]},
+                "status": "open",
+            })
+            remaining_ids = {doc["_id"] for doc in remaining}
+            skipped_count = len(remaining)
+            busy_count = sum(
+                "opening_post_intent" in doc for doc in remaining
+            )
+            await _release_terminal_slots(
+                mongo,
+                [
+                    doc["_id"] for doc, _ in mismatched
+                    if doc["_id"] not in remaining_ids
+                ],
+            )
             print(f"[Tickets] fix-mismatched by {ctx.user.username}: "
-                  f"{result.modified_count} row(s) corrected to denied/name_shows_denied")
+                  f"{result.modified_count} row(s) corrected to denied/name_shows_denied; "
+                  f"{skipped_count} skipped ({busy_count} still busy)")
             body = "\n".join([
                 *preamble,
                 f"✅ **Wrote {result.modified_count} row(s)** "
                 f"(matched {result.matched_count}).",
+                *([f"⏳ **Skipped {skipped_count} row(s) safely**; {busy_count} still "
+                   "show an active opening-message fence. Re-run this command shortly."]
+                  if skipped_count else []),
                 "",
                 *rows,
                 "",
@@ -672,6 +766,7 @@ class FixMismatched(
         )
 
 
+@register_action("ticket_dashboard_action", opens_modal=False, requires_state=True)
 async def handle_dashboard_action(
         ctx: lightbulb.components.MenuContext,
         action_id: str,

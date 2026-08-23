@@ -337,7 +337,6 @@ def _status_counts(documents: list[dict]) -> dict[str, int]:
     return dict(Counter(document.get("status") or "(missing)" for document in documents))
 
 
-@ticket.register()
 class MigrateStore(
     lightbulb.SlashCommand,
     name="migrate-store",

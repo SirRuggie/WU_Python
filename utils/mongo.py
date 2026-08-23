@@ -37,6 +37,11 @@ class MongoClient(AsyncMongoClient):
         #self.clan_bidding = self.__settings.get_collection("clan_bidding")
         #self.new_recruits = self.__settings.get_collection("new_recruits")
         self.ticket_automation_state = self.__settings.get_collection("ticket_automation_state")
+        # Shared, non-TTL durability for legacy/thread ticket coexistence.
+        # ticket_rollout also holds the monotonic counters; neither collection
+        # may ever receive a TTL index.
+        self.ticket_rollout = self.__settings.get_collection("ticket_rollout")
+        self.ticket_open_slots = self.__settings.get_collection("ticket_open_slots")
         self.recruit_onboarding = self.__settings.get_collection("recruit_onboarding")
         # Short-lived message challenges used during recruitment. This stays
         # separate from durable walkthrough records in recruit_onboarding so a

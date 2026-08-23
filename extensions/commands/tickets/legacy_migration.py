@@ -24,6 +24,7 @@ import lightbulb
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from extensions.commands import ticket_runtime
 from extensions.commands.tickets import schema, store, thread_service, ticket
 from utils.mongo import MongoClient
 
@@ -38,6 +39,21 @@ DISCORD_MESSAGE_CONTENT_LIMIT = 2000
 MIGRATION_SUMMARY_LIMIT = 1600
 _migration_index_ready = False
 _log = logging.getLogger(__name__)
+
+_ALLOWED_ROLLOUT_PHASES = frozenset({
+    ticket_runtime.PHASE_PILOT,
+    ticket_runtime.PHASE_THREAD_DEFAULT,
+    ticket_runtime.PHASE_THREAD_ONLY,
+})
+
+
+async def _migration_phase_allowed(mongo: MongoClient) -> tuple[bool, str]:
+    state = await ticket_runtime.get_rollout(mongo)
+    if not state.valid:
+        return False, "ticket rollout is not configured"
+    if state.phase not in _ALLOWED_ROLLOUT_PHASES:
+        return False, f"legacy cloning is disabled during `{state.phase}`"
+    return True, ""
 
 _PLAYER_TAG_RE = re.compile(
     r"(?<![A-Z0-9])#[A-Z0-9]{3,9}(?![A-Z0-9])", re.IGNORECASE
@@ -400,6 +416,41 @@ def _identity_datetime(value: Any) -> datetime | None:
     return aware.replace(microsecond=(aware.microsecond // 1000) * 1000)
 
 
+def _source_ticket_fingerprint(ticket: Mapping[str, Any] | None) -> str:
+    if not ticket:
+        return ""
+    encoded = json.dumps(
+        dict(ticket),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _channel_mirror_identity(ticket: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize only fields added by the retired store-copy command."""
+    identity = dict(ticket)
+    identity.pop("schema_version", None)
+    identity.pop("venue", None)
+    identity.pop("runtime", None)
+    channel_id = _as_int(identity.get("channel_id"))
+    if channel_id:
+        identity["channel_id"] = channel_id
+    return identity
+
+
+def _is_exact_channel_mirror(
+    source: Mapping[str, Any], mirror: Mapping[str, Any]
+) -> bool:
+    """Accept a historical read mirror without granting it source authority."""
+    if mirror.get("venue") not in {None, "channel"}:
+        return False
+    if mirror.get("runtime") not in {None, ticket_runtime.LEGACY_RUNTIME}:
+        return False
+    return _channel_mirror_identity(source) == _channel_mirror_identity(mirror)
+
+
 def _migration_identity(document: Mapping[str, Any]) -> dict[str, Any]:
     """Canonical full identity that a durable migration resume must preserve."""
     source = document.get("source") or {}
@@ -429,6 +480,9 @@ def _migration_identity(document: Mapping[str, Any]) -> dict[str, Any]:
         ),
         "metadata.source_ticket_rev": max(
             0, _as_int(metadata.get("source_ticket_rev"))
+        ),
+        "metadata.source_ticket_fingerprint": str(
+            metadata.get("source_ticket_fingerprint") or ""
         ),
     }
 
@@ -672,28 +726,42 @@ async def _legacy_source_ticket(
             },
         ],
     }
-    ticket_rows, legacy_rows = await asyncio.gather(
-        mongo.tickets.find(query).limit(2).to_list(length=2),
+    direct_query = {
+        "type": "ticket",
+        "$or": [
+            {"channel_id": {"$in": ids}},
+            {"location.id": {"$in": ids}},
+        ],
+    }
+    legacy_rows, ticket_rows = await asyncio.gather(
         mongo.button_store.find(query).limit(2).to_list(length=2),
+        mongo.tickets.find(direct_query).limit(2).to_list(length=2),
     )
-    matches = [*ticket_rows, *legacy_rows]
-    identities = {str(item.get("_id")) for item in matches}
-    if len(identities) > 1:
+    if len(legacy_rows) > 1:
         raise LegacyMigrationError(
-            "conflicting source ticket records exist in canonical and legacy storage"
+            "multiple legacy-authority source rows match this channel in button_store"
         )
-    if not matches:
-        return None
-    active = await store.active_store(mongo)
-    if active != store.STORE_TICKETS:
+    if not legacy_rows:
+        if not ticket_rows:
+            return None
         raise LegacyMigrationError(
-            "ticket storage is not ready; run `/ticket migrate-store` first"
+            "a channel-era ticket row exists only in tickets; source authority is ambiguous"
         )
-    if not ticket_rows and legacy_rows:
+    source = legacy_rows[0]
+    if (
+        source.get("venue") == "thread"
+        or source.get("runtime") == ticket_runtime.THREAD_RUNTIME
+    ):
         raise LegacyMigrationError(
-            "the source ticket exists only in legacy storage; run `/ticket migrate-store` first"
+            "the button_store source is not a legacy-authority ticket row"
         )
-    return ticket_rows[0]
+    if len(ticket_rows) > 1 or (
+        ticket_rows and not _is_exact_channel_mirror(source, ticket_rows[0])
+    ):
+        raise LegacyMigrationError(
+            "a conflicting divergent or thread-runtime source row exists in tickets"
+        )
+    return source
 
 
 async def _discover_staff_thread(
@@ -1028,6 +1096,9 @@ async def _claim_migration(
                 preview.source_ticket.get("_id") if preview.source_ticket else None
             ),
             "source_ticket_rev": int((preview.source_ticket or {}).get("rev") or 0),
+            "source_ticket_fingerprint": _source_ticket_fingerprint(
+                preview.source_ticket
+            ),
         },
     }
     if current:
@@ -1599,6 +1670,74 @@ async def _cleanup_interrupted_migration(
         _log.exception("failed to release interrupted legacy migration %s", state.get("_id"))
 
 
+def _same_migrated_ticket(existing: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
+    """Compare the immutable authority and destination identity of an import."""
+    fields = (
+        "_id",
+        "type",
+        "venue",
+        "runtime",
+        "ticket_type",
+        "ticket_number",
+        "guild_id",
+        "channel_id",
+        "thread_id",
+        "category_id",
+        "user_id",
+        "status",
+        "location",
+        "source",
+    )
+    return all(existing.get(field) == expected.get(field) for field in fields)
+
+
+async def _insert_migrated_ticket(
+    mongo: MongoClient,
+    canonical: Mapping[str, Any],
+) -> dict:
+    collection = ticket_runtime.thread_collection(mongo)
+    payload = dict(canonical)
+    payload["runtime"] = ticket_runtime.THREAD_RUNTIME
+    try:
+        await collection.insert_one(payload)
+        return payload
+    except DuplicateKeyError:
+        existing = await collection.find_one({"_id": payload.get("_id")})
+        if existing is None or not _same_migrated_ticket(existing, payload):
+            raise LegacyMigrationError(
+                "a different thread ticket already owns this migration destination"
+            ) from None
+        return existing
+
+
+async def _require_legacy_source_unchanged(
+    mongo: MongoClient,
+    state: Mapping[str, Any],
+) -> dict | None:
+    current = await _legacy_source_ticket(
+        mongo,
+        int(state["source"]["guild_id"]),
+        int(state["source"]["channel_id"]),
+    )
+    source_ticket_id = state["metadata"].get("source_ticket_id")
+    source_fingerprint = state["metadata"].get("source_ticket_fingerprint")
+    if source_ticket_id is None:
+        if current is not None or source_fingerprint:
+            raise LegacyMigrationError(
+                "legacy source ticket changed during migration; source was not modified"
+            )
+        return None
+    if (
+        current is None
+        or str(current.get("_id")) != str(source_ticket_id)
+        or _source_ticket_fingerprint(current) != source_fingerprint
+    ):
+        raise LegacyMigrationError(
+            "legacy source ticket changed during migration; source was not modified"
+        )
+    return current
+
+
 async def migrate_legacy_ticket(
     *,
     bot: hikari.GatewayBot,
@@ -1608,7 +1747,9 @@ async def migrate_legacy_ticket(
     """Clone one validated terminal source and archive its thread pair."""
     owner, state, resumed = await _claim_migration(mongo, preview)
     if state.get("state") == "complete":
-        ticket_doc = await store.find_one(mongo, {"_id": state["ticket_id"]})
+        ticket_doc = await ticket_runtime.thread_collection(mongo).find_one(
+            {"_id": state["ticket_id"]}
+        )
         if ticket_doc is None:
             raise LegacyMigrationError("completed migration has no ticket record")
         await thread_service._queue_staff_context_outbox(mongo, ticket_doc)
@@ -1707,20 +1848,13 @@ async def migrate_legacy_ticket(
             status=metadata["status"],
             source=source,
         )
-        if preview.source_ticket is not None:
-            transition = await store.replace_legacy_location(
-                mongo,
-                preview.source_ticket["_id"],
-                canonical,
-                expected_rev=int(preview.source_ticket.get("rev") or 0),
+        await _require_legacy_source_unchanged(mongo, state)
+        source_ticket_id = state["metadata"].get("source_ticket_id")
+        if str(canonical.get("_id")) == str(source_ticket_id):
+            raise LegacyMigrationError(
+                "migration destination identity collides with the legacy source"
             )
-            if not transition.won or transition.doc is None:
-                raise LegacyMigrationError(
-                    transition.reason or "source ticket changed during migration"
-                )
-            ticket_doc = transition.doc
-        else:
-            ticket_doc = await store.insert_one(mongo, canonical)
+        ticket_doc = await _insert_migrated_ticket(mongo, canonical)
         # The durable context outbox is a required pre-completion boundary.
         # Delivery remains best-effort while this terminal pair is still active.
         await thread_service._queue_staff_context_outbox(mongo, ticket_doc)
@@ -2175,6 +2309,10 @@ class MigrateLegacyTicket(
             await ctx.respond("❌ Administrator permission is required.", ephemeral=True)
             return
         await ctx.defer(ephemeral=True)
+        allowed, reason = await _migration_phase_allowed(mongo)
+        if not allowed:
+            await ctx.respond(f"🛑 Migration unavailable: {reason}.", ephemeral=True)
+            return
         try:
             request = LegacyMigrationRequest(
                 source_guild_id=int(_numeric(self.source_guild, "source guild")),
@@ -2263,13 +2401,17 @@ class ApproveLegacyMigrationPilot(
         if not ctx.member or not ctx.member.permissions & hikari.Permissions.ADMINISTRATOR:
             await ctx.respond("❌ Administrator permission is required.", ephemeral=True)
             return
+        await ctx.defer(ephemeral=True)
+        allowed, reason = await _migration_phase_allowed(mongo)
+        if not allowed:
+            await ctx.respond(f"🛑 Migration unavailable: {reason}.", ephemeral=True)
+            return
         if not self.confirm:
             await ctx.respond(
                 "🛑 Nothing changed. Verify every pilot ticket, then set `confirm: true`.",
                 ephemeral=True,
             )
             return
-        await ctx.defer(ephemeral=True)
         config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
         bound_target = _as_int(config.get("ticket_target_guild_id"))
         if not bound_target or bound_target != _as_int(ctx.guild_id):

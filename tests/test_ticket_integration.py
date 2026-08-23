@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 
 from extensions import components
+from extensions.commands import ticket_runtime
 from extensions.commands import help_catalog
 from extensions.commands import tickets as ticket_extension
+from extensions.commands import tickets_legacy as legacy_extension
 from extensions.commands.tickets import config, console, resolve
 
 
@@ -24,9 +26,31 @@ EXPECTED_COMMANDS = {
     "flags",
     "history",
     "migrate-legacy",
-    "migrate-store",
+    "pilot-role",
+    "pilot-user",
+    "rollout-drain",
+    "rollout-pilot",
+    "rollout-prepare",
+    "rollout-promote",
+    "rollout-rollback",
+    "rollout-status",
     "setup",
     "thread-config",
+}
+
+EXPECTED_LEGACY_COMMANDS = {
+    "approve",
+    "change-category",
+    "claim",
+    "cleanup-ghosts",
+    "config",
+    "dashboard",
+    "deny",
+    "diagnostics",
+    "fix-mismatched",
+    "list",
+    "release",
+    "setup",
 }
 
 OBSOLETE_COMMANDS = {
@@ -43,34 +67,63 @@ OBSOLETE_COMMANDS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _shared_runtime_recovery(monkeypatch):
+    async def recover(_mongo, **_kwargs):
+        return (
+            ticket_runtime.BackfillResult((), (), (), ()),
+            ticket_runtime.ReconcileResult((), (), (), ()),
+        )
+
+    async def legacy_delivery(_bot, _mongo, **_kwargs):
+        return {"processed": 0, "completed": 0, "failed": 0, "pending": 0}
+
+    async def blockers(_mongo):
+        return ticket_runtime.RuntimeBlockerStatus(0, 0)
+
+    monkeypatch.setattr(ticket_runtime, "recover_ticket_runtime", recover)
+    monkeypatch.setattr(ticket_runtime, "runtime_blocker_status", blockers)
+    monkeypatch.setattr(
+        ticket_extension, "recover_pending_legacy_deliveries", legacy_delivery
+    )
+    monkeypatch.setattr(ticket_extension, "_thread_intake_ready", False)
+
+
 def test_ticket_package_registers_only_thread_runtime_commands():
     registered = set(ticket_extension.ticket._commands)
 
     assert registered == EXPECTED_COMMANDS
     assert not registered & OBSOLETE_COMMANDS
+    assert ticket_extension.ticket.name == "ticket-pilot"
+    assert set(legacy_extension.ticket._commands) == EXPECTED_LEGACY_COMMANDS
+    assert legacy_extension.ticket.name == "ticket"
+    assert len(registered) <= 25
 
 
 def test_ticket_package_registers_console_and_creation_actions():
     required = {
-        "create_ticket",
-        "ticket_console_pick",
-        "ticket_console_find",
-        "ticket_console_view",
-        "ticket_console_approve",
-        "ticket_console_deny",
-        "ticket_console_deny_submit",
-        "ticket_override",
+        "ticket_v2_create",
+        "ticket_v2_console_pick",
+        "ticket_v2_console_find",
+        "ticket_v2_console_view",
+        "ticket_v2_console_approve",
+        "ticket_v2_console_deny",
+        "ticket_v2_console_deny_submit",
+        "ticket_v2_override",
     }
 
     assert required <= set(components.registered_functions)
-    assert "ticket_dashboard_action" not in components.registered_functions
+    assert "ticket_v2_dashboard_action" not in components.registered_functions
 
 
-def test_main_does_not_load_the_legacy_ticket_channel_monitor():
+def test_main_loads_both_ticket_runtimes_and_the_legacy_monitor():
     source = (ROOT / "main.py").read_text(encoding="utf-8")
 
     assert '"extensions.commands.tickets"' in source
-    assert '"extensions.events.channel.ticket_channel_monitor"' not in source
+    assert '"extensions.commands.tickets_legacy"' in source
+    assert '"extensions.events.channel.ticket_channel_monitor"' in source
+    assert "max_retries=0" in source
+    assert "max_retries=1" not in source
 
 
 def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch):
@@ -113,6 +166,7 @@ def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch
         assert console._refresh_tasks == {}
         assert ticket_extension._staff_context_sweep_after is None
         assert ticket_extension._staff_context_sweep_complete is False
+        assert ticket_extension.thread_intake_ready() is False
         assert all(task.done() for task in (resolution_task, console_one, console_two))
         assert sorted(finalized) == ["console-one", "console-two", "resolution"]
 
@@ -128,13 +182,19 @@ def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch
 def test_ticket_help_matches_the_registered_thread_commands():
     paths = help_catalog.command_paths()
     documented = {
-        path.removeprefix("/ticket ")
+        path.removeprefix("/ticket-pilot ")
         for path in paths
-        if path.startswith("/ticket ")
+        if path.startswith("/ticket-pilot ")
     }
 
     assert documented == EXPECTED_COMMANDS
     assert not documented & OBSOLETE_COMMANDS
+    legacy = {
+        path.removeprefix("/ticket ")
+        for path in paths
+        if path.startswith("/ticket ")
+    }
+    assert legacy == EXPECTED_LEGACY_COMMANDS
 
 
 def test_config_summary_has_thread_parents_roles_and_console_only():
@@ -149,7 +209,7 @@ def test_config_summary_has_thread_parents_roles_and_console_only():
         "main_category": 999,
     })
 
-    assert "Thread-only" in summary
+    assert "Thread v2" in summary
     assert "<#101>" in summary
     assert "<@&203>" in summary
     assert "<#301>" in summary
@@ -163,6 +223,7 @@ def test_startup_prepares_all_durable_ticket_indexes(monkeypatch):
     async def record(name):
         calls.append(name)
 
+    monkeypatch.setattr(ticket_runtime, "ensure_indexes", lambda _mongo: record("shared_runtime"))
     monkeypatch.setattr(ticket_extension.store, "ensure_indexes", lambda _mongo: record("tickets"))
     monkeypatch.setattr(ticket_extension.flag_store, "ensure_indexes", lambda _mongo: record("flags"))
     monkeypatch.setattr(
@@ -184,7 +245,9 @@ def test_startup_prepares_all_durable_ticket_indexes(monkeypatch):
     errors = asyncio.run(ticket_extension.prepare_ticket_runtime(object()))
 
     assert errors == {}
-    assert calls == ["tickets", "flags", "creation", "migration", "staff_context"]
+    assert calls == [
+        "shared_runtime", "tickets", "flags", "creation", "migration", "staff_context"
+    ]
 
 
 def test_effect_and_hub_startup_recovery_are_loaded():
@@ -258,6 +321,177 @@ def test_startup_resumes_confirmed_creation_and_migration_after_indexes(monkeypa
         ("staff_context", bot, mongo, 25),
         ("open_context", bot, mongo, None, 25),
     ]
+
+
+def test_shared_blockers_keep_intake_unready_until_startup_retry(monkeypatch):
+    attempts = 0
+
+    async def indexes(_mongo):
+        return None
+
+    async def blockers(_mongo):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return ticket_runtime.RuntimeBlockerStatus(
+                1,
+                0,
+                pending_delivery_ids=("41",),
+            )
+        if attempts == 2:
+            return ticket_runtime.RuntimeBlockerStatus(
+                0,
+                1,
+                conflict_slot_ids=("ticket-open:7:main",),
+            )
+        return ticket_runtime.RuntimeBlockerStatus(0, 0)
+
+    async def complete(**_kwargs):
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def open_context(**_kwargs):
+        return {
+            "processed": 0,
+            "completed": 0,
+            "failed": 0,
+            "after_ticket_id": None,
+            "exhausted": True,
+        }
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(ticket_runtime, "runtime_blocker_status", blockers)
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "recover_pending_thread_ticket_creations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "recover_pending_legacy_migrations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_pending_staff_identity_contexts",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_open_staff_identity_contexts",
+        open_context,
+    )
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+
+    async def scenario():
+        reconciler = ticket_extension.StartupReconciler(
+            "shared-ticket-blocker",
+            lambda: ticket_extension.recover_ticket_workflows(object(), object()),
+            retry_delays=(0,),
+            sleep=no_wait,
+        )
+        task = reconciler.start()
+        await task
+        return reconciler
+
+    reconciler = asyncio.run(scenario())
+
+    assert attempts == 3
+    assert reconciler.health.attempts == 3
+    assert reconciler.health.state == "healthy"
+    assert ticket_extension.thread_intake_ready() is True
+
+
+def test_full_legacy_delivery_batch_forces_another_startup_pass(monkeypatch):
+    legacy_calls = 0
+
+    async def indexes(_mongo):
+        return None
+
+    async def legacy_delivery(_bot, _mongo, **_kwargs):
+        nonlocal legacy_calls
+        legacy_calls += 1
+        if legacy_calls == 1:
+            limit = ticket_extension.LEGACY_DELIVERY_RECOVERY_LIMIT
+            return {
+                "processed": limit,
+                "completed": limit,
+                "cancelled": 0,
+                "failed": 0,
+                "pending": 0,
+                "synthesized": limit,
+            }
+        return {
+            "processed": 0,
+            "completed": 0,
+            "cancelled": 0,
+            "failed": 0,
+            "pending": 0,
+            "synthesized": 0,
+        }
+
+    async def complete(**_kwargs):
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def open_context(**_kwargs):
+        return {
+            "processed": 0,
+            "completed": 0,
+            "failed": 0,
+            "after_ticket_id": None,
+            "exhausted": True,
+        }
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(
+        ticket_extension, "recover_pending_legacy_deliveries", legacy_delivery
+    )
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "recover_pending_thread_ticket_creations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "recover_pending_legacy_migrations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_pending_staff_identity_contexts",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_open_staff_identity_contexts",
+        open_context,
+    )
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+
+    async def scenario():
+        reconciler = ticket_extension.StartupReconciler(
+            "legacy-delivery-batches",
+            lambda: ticket_extension.recover_ticket_workflows(object(), object()),
+            retry_delays=(0,),
+            sleep=no_wait,
+        )
+        task = reconciler.start()
+        await task
+        return reconciler
+
+    reconciler = asyncio.run(scenario())
+
+    assert legacy_calls == 2
+    assert reconciler.health.attempts == 2
+    assert reconciler.health.state == "healthy"
+    assert ticket_extension.thread_intake_ready() is True
 
 
 def test_account_retry_queues_terminal_context_before_staff_recovery(monkeypatch):

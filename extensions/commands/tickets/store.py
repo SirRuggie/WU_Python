@@ -12,14 +12,19 @@ from typing import Iterable, Mapping
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from extensions.commands import ticket_runtime
 from extensions.commands.tickets import schema
 from utils.mongo import MongoClient
 
 
 _log = logging.getLogger(__name__)
 
+RUNTIME_FILTER = {
+    "type": "ticket",
+    "venue": "thread",
+    "runtime": ticket_runtime.THREAD_RUNTIME,
+}
 TICKET_FILTER = {"type": "ticket"}
-RUNTIME_FILTER = {"type": "ticket", "venue": "thread"}
 ACCOUNT_RECOVERY_BOOLEAN_FIELDS = (
     "linked_accounts.retry_required",
     "linked_accounts.context_refresh_required",
@@ -28,10 +33,9 @@ ACCOUNT_RECOVERY_BOOLEAN_FIELDS = (
 STORE_BUTTON = "button_store"
 STORE_TICKETS = "tickets"
 CANONICAL_ACTIVATION_VERSION = 3
-# Missing or invalid rollout state must never make an unverified collection
-# authoritative. `/ticket migrate-store` explicitly activates `tickets` only
-# after the copy and canonical indexes are verified.
-DEFAULT_STORE = STORE_BUTTON
+# Coexistence has two explicit authorities: this v2 repository always owns
+# ``tickets`` and the namespaced legacy repository always owns ``button_store``.
+DEFAULT_STORE = STORE_TICKETS
 
 WON = "won"
 LOST = "lost"
@@ -96,35 +100,21 @@ def is_markerless_legacy_terminal(ticket: Mapping) -> bool:
 
 
 async def active_store(mongo: MongoClient) -> str:
-    config = await mongo.ticket_setup.find_one(
-        {"_id": "config"},
-        {"ticket_store": 1, "ticket_store_activation_version": 1},
-    ) or {}
-    if (
-        config.get("ticket_store") == STORE_TICKETS
-        and config.get("ticket_store_activation_version")
-        == CANONICAL_ACTIVATION_VERSION
-    ):
-        return STORE_TICKETS
-    return DEFAULT_STORE
+    return STORE_TICKETS
 
 
 async def _reader(mongo: MongoClient):
-    return mongo.tickets if await active_store(mongo) == STORE_TICKETS else mongo.button_store
-
-
-async def _both(mongo: MongoClient):
-    if await active_store(mongo) == STORE_TICKETS:
-        return mongo.tickets, mongo.button_store
-    return mongo.button_store, mongo.tickets
+    return mongo.tickets
 
 
 async def find_one(mongo: MongoClient, filt: dict):
-    return await (await _reader(mongo)).find_one(filt)
+    return await (await _reader(mongo)).find_one({**dict(filt), **RUNTIME_FILTER})
 
 
 async def find(mongo: MongoClient, filt: dict) -> list[dict]:
-    return await (await _reader(mongo)).find(filt).to_list(length=None)
+    return await (await _reader(mongo)).find(
+        {**dict(filt), **RUNTIME_FILTER}
+    ).to_list(length=None)
 
 
 def _mixed_id(value) -> list:
@@ -300,21 +290,21 @@ def _identity_fingerprint(doc: Mapping) -> tuple:
     )
 
 
-async def _mirror_to(collection, doc: dict) -> None:
-    try:
-        await collection.replace_one({"_id": doc["_id"]}, dict(doc), upsert=True)
-    except Exception:
-        _log.exception(
-            "ticket mirror failed for %s - primary remains authoritative", doc.get("_id")
-        )
-
-
 async def insert_one(mongo: MongoClient, doc: dict) -> dict:
     """Create once; exact retries return the committed record without replacing it."""
-    normalized = normalize_ticket_document(doc)
+    normalized = normalize_ticket_document(
+        {**dict(doc), "runtime": ticket_runtime.THREAD_RUNTIME}
+    )
     if normalized.get("venue") != "thread":
         raise schema.TicketSchemaError("runtime ticket inserts must be thread tickets")
-    primary, secondary = await _both(mongo)
+    if normalized.get("status") == "open" and (
+        not normalized.get("open_slot_id")
+        or not normalized.get("creation_workflow_id")
+    ):
+        raise schema.TicketSchemaError(
+            "live thread tickets require a shared open-slot binding"
+        )
+    primary = mongo.tickets
     try:
         await primary.update_one(
             {"_id": normalized["_id"]},
@@ -323,7 +313,7 @@ async def insert_one(mongo: MongoClient, doc: dict) -> dict:
         )
     except DuplicateKeyError as exc:
         existing = await primary.find_one({
-            "type": "ticket",
+            **RUNTIME_FILTER,
             "user_id": normalized.get("user_id"),
             "ticket_type": normalized.get("ticket_type"),
             "status": "open",
@@ -332,35 +322,32 @@ async def insert_one(mongo: MongoClient, doc: dict) -> dict:
             raise OpenTicketExistsError(existing) from exc
         raise TicketConflictError("a unique ticket identity is already in use") from exc
 
-    committed = await primary.find_one({"_id": normalized["_id"]})
+    committed = await primary.find_one(
+        {"_id": normalized["_id"], **RUNTIME_FILTER}
+    )
     if committed is None:
+        if await primary.find_one({"_id": normalized["_id"]}) is not None:
+            raise TicketConflictError(
+                f"ticket id {normalized['_id']} belongs to another runtime"
+            )
         raise TicketStoreError("primary ticket write was not readable after commit")
     if _identity_fingerprint(committed) != _identity_fingerprint(normalized):
         raise TicketConflictError(
             f"ticket id {normalized['_id']} already belongs to another ticket"
         )
-    await _mirror_to(secondary, committed)
     return committed
 
 
 async def update_one(mongo: MongoClient, filt: dict, update: dict):
-    primary, secondary = await _both(mongo)
-    result = await primary.update_one(filt, update)
-    try:
-        await secondary.update_one(filt, update)
-    except Exception:
-        _log.exception("ticket update mirror failed for filter %r", filt)
-    return result
+    return await mongo.tickets.update_one(
+        {**dict(filt), **RUNTIME_FILTER}, update
+    )
 
 
 async def update_many(mongo: MongoClient, filt: dict, update: dict):
-    primary, secondary = await _both(mongo)
-    result = await primary.update_many(filt, update)
-    try:
-        await secondary.update_many(filt, update)
-    except Exception:
-        _log.exception("ticket update-many mirror failed for filter %r", filt)
-    return result
+    return await mongo.tickets.update_many(
+        {**dict(filt), **RUNTIME_FILTER}, update
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -386,14 +373,12 @@ async def _conditional(
     update: dict,
     ticket_id,
 ) -> Transition:
-    primary, secondary = await _both(mongo)
-    doc = await primary.find_one_and_update(
+    doc = await mongo.tickets.find_one_and_update(
         filt, update, return_document=ReturnDocument.AFTER
     )
     if doc is not None:
-        await _mirror_to(secondary, doc)
         return Transition(WON, doc)
-    current = await primary.find_one({"_id": ticket_id, **RUNTIME_FILTER})
+    current = await mongo.tickets.find_one({"_id": ticket_id, **RUNTIME_FILTER})
     return Transition(LOST, current) if current is not None else Transition(MISSING, None)
 
 
@@ -457,7 +442,7 @@ async def transition(
     actor = schema.snowflake(actor_id, field="actor_id")
     name = str(actor_name or "").strip() or str(actor)
 
-    primary, _ = await _both(mongo)
+    primary = mongo.tickets
     current = await primary.find_one({"_id": ticket_id, **RUNTIME_FILTER})
     if current is None:
         return Transition(MISSING, None)
@@ -517,7 +502,7 @@ async def transition(
         }
 
     protected = {
-        "_id", "type", "schema_version", "venue", "location", "guild_id",
+        "_id", "type", "schema_version", "venue", "runtime", "location", "guild_id",
         "channel_id", "thread_id", "category_id", "user_id", "ticket_type",
         "ticket_number", "status", "rev", "audit", "created_at",
     }
@@ -571,8 +556,7 @@ async def transition(
 
     transition_filter = {
         "_id": ticket_id,
-        "type": "ticket",
-        "venue": "thread",
+        **RUNTIME_FILTER,
         "status": expected_status,
         "rev": _rev_filter(expected_rev),
     }
@@ -626,7 +610,7 @@ async def transition(
             "retry_queued_with_decision": True,
         }
 
-    return await _conditional(
+    outcome = await _conditional(
         mongo,
         transition_filter,
         {
@@ -637,6 +621,23 @@ async def transition(
         },
         ticket_id,
     )
+    if outcome.won:
+        try:
+            await ticket_runtime.mark_slot_release_pending(
+                mongo,
+                ticket_id=ticket_id,
+                terminal_status=target,
+            )
+        except Exception:
+            # The decision is already authoritative. Startup reconciliation can
+            # observe the terminal row and repair/release its exact bound slot.
+            _log.exception("ticket slot terminal checkpoint failed for %s", ticket_id)
+        else:
+            try:
+                await ticket_runtime.release_open_slot(mongo, ticket_id=ticket_id)
+            except Exception:
+                _log.exception("ticket slot release deferred for %s", ticket_id)
+    return outcome
 
 
 async def replace_legacy_location(
@@ -660,7 +661,7 @@ async def replace_legacy_location(
     if not replacement.get("source"):
         raise schema.TicketSchemaError("a cloned legacy ticket requires source identity")
 
-    primary, secondary = await _both(mongo)
+    primary = mongo.tickets
     current = await primary.find_one({"_id": existing_ticket_id, "type": "ticket"})
     if current is None:
         return Transition(MISSING, None)
@@ -683,7 +684,7 @@ async def replace_legacy_location(
     set_fields = {
         key: replacement[key]
         for key in (
-            "schema_version", "venue", "ticket_type", "ticket_number", "guild_id",
+            "schema_version", "venue", "runtime", "ticket_type", "ticket_number", "guild_id",
             "location", "channel_id", "thread_id", "category_id", "user_id",
             "username", "username_search", "display_name", "player_tags",
             "player_tag", "source",
@@ -691,6 +692,7 @@ async def replace_legacy_location(
         if key in replacement
     }
     set_fields.update({"migrated_at": now, "updated_at": now})
+    set_fields["runtime"] = ticket_runtime.THREAD_RUNTIME
     audit = {
         "event": "legacy_location_replaced",
         "at": now,
@@ -727,7 +729,6 @@ async def replace_legacy_location(
     if updated is None:
         latest = await primary.find_one({"_id": existing_ticket_id, "type": "ticket"})
         return Transition(LOST, latest)
-    await _mirror_to(secondary, updated)
     return Transition(WON, updated)
 
 
@@ -758,7 +759,7 @@ async def append_candidate_activity(
         "content": str(content or "").strip()[:MAX_ANSWER_LENGTH],
         "at": at,
     }
-    primary, secondary = await _both(mongo)
+    primary = mongo.tickets
     update: dict = {
         "$push": {
             "answers": {"$each": [answer], "$slice": -MAX_ANSWER_SNAPSHOTS}
@@ -772,8 +773,7 @@ async def append_candidate_activity(
     updated = await primary.find_one_and_update(
         {
             "_id": ticket_id,
-            "type": "ticket",
-            "venue": "thread",
+            **RUNTIME_FILTER,
             "status": "open",
             "answers.message_id": {"$ne": message},
         },
@@ -787,7 +787,6 @@ async def append_candidate_activity(
         if any(as_int(item.get("message_id")) == message for item in current.get("answers", [])):
             return Transition(WON, current, "already recorded")
         return Transition(LOST, current, "ticket is no longer open")
-    await _mirror_to(secondary, updated)
     return Transition(WON, updated)
 
 
@@ -815,6 +814,8 @@ def index_conflicts_for_documents(docs: Iterable[Mapping]) -> dict[str, list]:
     }
     schema_errors: list[dict] = []
     for raw in docs:
+        if any(raw.get(key) != value for key, value in RUNTIME_FILTER.items()):
+            continue
         try:
             doc = normalize_ticket_document(raw)
         except Exception as exc:
@@ -847,12 +848,17 @@ def index_conflicts_for_documents(docs: Iterable[Mapping]) -> dict[str, list]:
 
 
 async def index_conflicts(collection) -> dict[str, list]:
-    docs = await collection.find(TICKET_FILTER).to_list(length=None)
+    docs = await collection.find(RUNTIME_FILTER).to_list(length=None)
     return index_conflicts_for_documents(docs)
 
 
 async def ensure_indexes(mongo: MongoClient) -> list[str]:
-    """Install production indexes only after a collision-free preflight."""
+    """Install v2-only indexes after preflight.
+
+    Mongo raises an index-options conflict if an old same-named definition is
+    broader. That failure is intentional and blocks intake for operator review;
+    this service never drops or silently replaces production indexes.
+    """
     conflicts = await index_conflicts(mongo.tickets)
     if conflicts:
         raise IndexConflictError(conflicts)
@@ -861,66 +867,82 @@ async def ensure_indexes(mongo: MongoClient) -> list[str]:
         await collection.create_index(
             [("location.id", 1)],
             unique=True,
-            partialFilterExpression={"type": "ticket", "location.id": {"$exists": True}},
-            name="ticket_location_unique",
+            partialFilterExpression={
+                **RUNTIME_FILTER,
+                "location.id": {"$exists": True},
+            },
+            name="thread_v2_ticket_location_unique",
         ),
         await collection.create_index(
             [("location.staff_space_id", 1)],
             unique=True,
             partialFilterExpression={
-                "type": "ticket", "location.staff_space_id": {"$exists": True}
+                **RUNTIME_FILTER,
+                "location.staff_space_id": {"$exists": True},
             },
-            name="ticket_staff_location_unique",
+            name="thread_v2_ticket_staff_location_unique",
         ),
         await collection.create_index(
             [("ticket_type", 1), ("ticket_number", 1)],
             unique=True,
             partialFilterExpression={
-                "type": "ticket", "ticket_type": {"$exists": True},
+                **RUNTIME_FILTER,
+                "ticket_type": {"$exists": True},
                 "ticket_number": {"$exists": True},
             },
-            name="ticket_number_unique",
+            name="thread_v2_ticket_number_unique",
         ),
         await collection.create_index(
             [("user_id", 1), ("ticket_type", 1)],
             unique=True,
             partialFilterExpression={
-                "type": "ticket", "venue": "thread", "status": "open",
+                **RUNTIME_FILTER,
+                "status": "open",
                 "user_id": {"$exists": True},
                 "ticket_type": {"$exists": True},
             },
-            name="one_open_ticket_per_applicant_type",
+            name="thread_v2_one_open_ticket_per_applicant_type",
         ),
         await collection.create_index(
             [("source.guild_id", 1), ("source.channel_id", 1)],
             unique=True,
             partialFilterExpression={
-                "type": "ticket", "source.guild_id": {"$exists": True},
+                **RUNTIME_FILTER,
+                "source.guild_id": {"$exists": True},
                 "source.channel_id": {"$exists": True},
             },
-            name="ticket_source_unique",
+            name="thread_v2_ticket_source_unique",
         ),
         await collection.create_index(
-            [("status", 1), ("created_at", -1)], name="status_created"
+            [("status", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_status_created",
         ),
         await collection.create_index(
             [("ticket_type", 1), ("status", 1), ("created_at", -1)],
-            name="type_status_created",
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_type_status_created",
         ),
         await collection.create_index(
-            [("user_id", 1), ("created_at", -1)], name="user_created"
+            [("user_id", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_user_created",
         ),
         await collection.create_index(
-            [("player_tags", 1), ("created_at", -1)], name="player_tags_created"
+            [("player_tags", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_player_tags_created",
         ),
         await collection.create_index(
-            [("username_search", 1), ("created_at", -1)], name="username_created"
+            [("username_search", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_username_created",
         ),
     ]
     for field in ACCOUNT_RECOVERY_BOOLEAN_FIELDS:
         specs.append(await collection.create_index(
             [(field, 1)],
             partialFilterExpression={**RUNTIME_FILTER, field: True},
-            name="account_recovery_" + field.rsplit(".", 1)[-1],
+            name="thread_v2_account_recovery_" + field.rsplit(".", 1)[-1],
         ))
     return [str(name) for name in specs]

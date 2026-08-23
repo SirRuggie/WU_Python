@@ -67,7 +67,10 @@ HUB_DEBOUNCE_SECONDS = 0.75
 HUB_LEASE = timedelta(minutes=3)
 HUB_RETRY_DELAYS = (0.0, 1.0, 4.0, 12.0)
 HUB_RECONCILE_SECONDS = 60.0
-CONTEXT_LEASE = timedelta(minutes=3)
+# One Discord REST attempt can spend up to 120 seconds waiting on a rate-limit
+# bucket plus the client's request timeout.  Keep each renewed ownership window
+# comfortably beyond that single-attempt ceiling; Hikari retries stay disabled.
+CONTEXT_LEASE = timedelta(minutes=5)
 CONTEXT_RECOVERY_LIMIT = 25
 STAFF_CONTEXT_MARKER_PREFIX = "ticket-staff-context"
 REQUIRED_HUB_BOT_PERMISSIONS = (
@@ -92,6 +95,11 @@ ACCENT_GREEN = 0x4BCE7A
 ACCENT_RED = 0xF0555A
 ACCENT_YELLOW = 0xFFCC00
 ACCENT_GREY = 0x80848E
+
+
+class StaffContextLeaseLost(RuntimeError):
+    """The staff-context worker no longer owns its durable write lease."""
+
 
 STATUS_META = {
     "open": ("New / open", "🆕", ACCENT_BLUE),
@@ -418,7 +426,7 @@ def build_hub_components(open_tickets: Sequence[Mapping], png_bytes: bytes) -> l
                 description="Ticket totals by status and clan type, plus active staff flags.",
             )]),
             ActionRow(components=[TextSelectMenu(
-                custom_id=f"ticket_console_pick:{HUB_ACTION_ID}",
+                custom_id=f"ticket_v2_console_pick:{HUB_ACTION_ID}",
                 placeholder=(
                     "Choose an open ticket"
                     if has_open else "No open tickets"
@@ -430,7 +438,7 @@ def build_hub_components(open_tickets: Sequence[Mapping], png_bytes: bytes) -> l
             )]),
             ActionRow(components=[Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"ticket_console_find:{HUB_ACTION_ID}",
+                custom_id=f"ticket_v2_console_find:{HUB_ACTION_ID}",
                 label="Find a ticket",
                 emoji="🔍",
             )]),
@@ -574,8 +582,8 @@ async def _find_orphaned_hub(bot: hikari.GatewayBot, channel_id: int):
     if me is None:
         raise RuntimeError("bot identity is unavailable")
     required = {
-        f"ticket_console_pick:{HUB_ACTION_ID}",
-        f"ticket_console_find:{HUB_ACTION_ID}",
+        f"ticket_v2_console_pick:{HUB_ACTION_ID}",
+        f"ticket_v2_console_find:{HUB_ACTION_ID}",
     }
     messages = await _message_history(bot.rest, channel_id)
     matches = []
@@ -1105,7 +1113,7 @@ def _filter_selects(
     selected_types = set(ticket_types)
     return [
         ActionRow(components=[TextSelectMenu(
-            custom_id=f"ticket_console_status:{action_id}",
+            custom_id=f"ticket_v2_console_status:{action_id}",
             placeholder="Any status",
             min_values=0,
             max_values=3,
@@ -1117,7 +1125,7 @@ def _filter_selects(
             ) for value, (label, emoji, _accent) in STATUS_META.items()],
         )]),
         ActionRow(components=[TextSelectMenu(
-            custom_id=f"ticket_console_type:{action_id}",
+            custom_id=f"ticket_v2_console_type:{action_id}",
             placeholder="Any clan type",
             min_values=0,
             max_values=2,
@@ -1175,13 +1183,13 @@ def build_search_panel(
             accessory = (
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"ticket_console_view:{view_action_ids[index]}",
+                    custom_id=f"ticket_v2_console_view:{view_action_ids[index]}",
                     label="View",
                 )
                 if index < len(view_action_ids) else
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"ticket_console_unavailable:{action_id}|{index}",
+                    custom_id=f"ticket_v2_console_unavailable:{action_id}|{index}",
                     label="View unavailable",
                     is_disabled=True,
                 )
@@ -1202,7 +1210,7 @@ def build_search_panel(
             ))
     rows.append(ActionRow(components=[Button(
         style=hikari.ButtonStyle.SECONDARY,
-        custom_id=f"ticket_console_search_again:{action_id}",
+        custom_id=f"ticket_v2_console_search_again:{action_id}",
         label="New search",
         emoji="🔍",
     )]))
@@ -1221,7 +1229,7 @@ async def _create_search_result_states(
     await asyncio.gather(*(
         insert_state(mongo, {
             "_id": result_action_id,
-            "type": "ticket_console_search_result",
+            "type": "ticket_v2_console_search_result",
             "owner_id": int(owner_id),
             "guild_id": int(guild_id),
             "ticket_id": _ticket_id(ticket_doc),
@@ -1298,7 +1306,7 @@ def _history_sections(
             if url else
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"ticket_console_unavailable:history|{index}",
+                custom_id=f"ticket_v2_console_unavailable:history|{index}",
                 label="Thread unavailable",
                 is_disabled=True,
             )
@@ -1460,7 +1468,7 @@ def _intake_components(ticket_doc: Mapping, *, limit: int) -> list:
 def _flag_omission_suffix(omitted: int) -> str:
     return (
         f"\n\n-# {omitted} additional matching flag"
-        f"{'s' if omitted != 1 else ''} not shown. Use `/ticket flags` for all details."
+        f"{'s' if omitted != 1 else ''} not shown. Use `/ticket-pilot flags` for all details."
     )
 
 
@@ -1529,7 +1537,7 @@ def build_ticket_detail(
         reason = _clean(flag.get("reason"), limit=300)
         rule = " · blocks approve" if blocks else " · caution only"
         # IDs are shown in code spans specifically so staff can copy the exact
-        # value into /ticket flag-remove. Escaping underscores changes that ID.
+        # value into /ticket-pilot flag-remove. Escaping underscores changes that ID.
         flag_id = str(flag.get("_id") or "")[:80] or "Unknown"
         flag_lines.append(f"{glyph} **{label}**{rule} · `{flag_id}`\n{reason}")
 
@@ -1612,7 +1620,7 @@ def build_ticket_detail(
 
     components.append(ActionRow(components=[Button(
         style=hikari.ButtonStyle.SECONDARY,
-        custom_id=f"ticket_console_manage_flags:{action_id}",
+        custom_id=f"ticket_v2_console_manage_flags:{action_id}",
         label="Manage flags",
         emoji="🚩",
     )]))
@@ -1623,13 +1631,13 @@ def build_ticket_detail(
         components.append(ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"ticket_console_approve:{action_id}",
+                custom_id=f"ticket_v2_console_approve:{action_id}",
                 label="Approve",
                 is_disabled=blacklisted,
             ),
             Button(
                 style=hikari.ButtonStyle.DANGER,
-                custom_id=f"ticket_console_deny:{action_id}",
+                custom_id=f"ticket_v2_console_deny:{action_id}",
                 label="Deny",
             ),
         ]))
@@ -1666,7 +1674,7 @@ async def _ticket_detail_panel(
     )
     await insert_state(mongo, {
         "_id": action_id,
-        "type": "ticket_console_detail",
+        "type": "ticket_v2_console_detail",
         "owner_id": int(owner_id),
         "guild_id": int(guild_id),
         "ticket_id": _ticket_id(ticket_doc),
@@ -1778,7 +1786,7 @@ def build_flag_manager(
                     if kind == flag_store.FLAG_BLACKLISTED else
                     hikari.ButtonStyle.SECONDARY
                 ),
-                custom_id=f"ticket_flag_set:{action_id}|{kind}",
+                custom_id=f"ticket_v2_flag_set:{action_id}|{kind}",
                 label=label,
                 emoji=glyph,
                 is_disabled=not has_identity,
@@ -1789,7 +1797,7 @@ def build_flag_manager(
     removable = active_flags[:MAX_FLAG_MANAGER_OPTIONS]
     if removable:
         components.append(ActionRow(components=[TextSelectMenu(
-            custom_id=f"ticket_flag_remove:{action_id}",
+            custom_id=f"ticket_v2_flag_remove:{action_id}",
             placeholder="Remove an active flag…",
             min_values=1,
             max_values=1,
@@ -1804,7 +1812,7 @@ def build_flag_manager(
         )]))
     components.append(ActionRow(components=[Button(
         style=hikari.ButtonStyle.PRIMARY,
-        custom_id=f"ticket_flag_back:{action_id}",
+        custom_id=f"ticket_v2_flag_back:{action_id}",
         label="Back to ticket details",
         emoji="←️",
     )]))
@@ -1832,7 +1840,7 @@ async def _flag_manager_panel(
     action_id = uuid.uuid4().hex
     await insert_state(mongo, {
         "_id": action_id,
-        "type": "ticket_console_flag_manager",
+        "type": "ticket_v2_console_flag_manager",
         "owner_id": int(owner_id),
         "guild_id": int(guild_id),
         "ticket_id": _ticket_id(ticket_doc),
@@ -2324,6 +2332,34 @@ async def _finish_staff_context_lease(
     return bool(getattr(result, "matched_count", 0))
 
 
+async def _renew_staff_context_lease(
+    mongo: MongoClient,
+    state_id: str,
+    owner: str,
+) -> None:
+    """Renew one exact owner token immediately before a Discord write."""
+
+    now = utcnow()
+    result = await mongo.ticket_automation_state.update_one(
+        {
+            "_id": state_id,
+            "kind": "ticket_staff_context",
+            "lease_owner": owner,
+            "lease_until": {"$gt": now},
+        },
+        {
+            "$set": {
+                "lease_until": now + CONTEXT_LEASE,
+                "updated_at": now,
+            },
+        },
+    )
+    if not getattr(result, "matched_count", 0):
+        raise StaffContextLeaseLost(
+            f"staff context lease lost state={state_id}"
+        )
+
+
 @contextlib.asynccontextmanager
 async def _staff_context_write_window(
     rest,
@@ -2332,6 +2368,7 @@ async def _staff_context_write_window(
     *,
     reopen_terminal_thread: bool,
     expected_owner_id: int | None,
+    renew_lease,
 ):
     """Temporarily reopen one terminal staff thread only when a write is needed."""
     if (
@@ -2352,12 +2389,14 @@ async def _staff_context_write_window(
     delivery_error: BaseException | None = None
     try:
         if was_archived:
+            await renew_lease()
             await rest.edit_channel(
                 staff_id,
                 archived=False,
                 reason="Retrying committed ticket staff context",
             )
         if was_locked:
+            await renew_lease()
             await rest.edit_channel(
                 staff_id,
                 locked=False,
@@ -2369,6 +2408,7 @@ async def _staff_context_write_window(
         raise
     finally:
         try:
+            await renew_lease()
             await rest.edit_channel(
                 staff_id,
                 locked=True,
@@ -2417,6 +2457,7 @@ async def _converge_terminal_staff_thread(
     staff_id: int,
     *,
     expected_owner_id: int | None,
+    renew_lease,
 ) -> None:
     if str(ticket_doc.get("status") or "") not in {"approved", "denied"}:
         return
@@ -2430,6 +2471,7 @@ async def _converge_terminal_staff_thread(
         bool(getattr(thread, "is_archived", False))
         and bool(getattr(thread, "is_locked", False))
     ):
+        await renew_lease()
         await rest.edit_channel(
             staff_id,
             locked=True,
@@ -2481,11 +2523,13 @@ async def _upsert_marked_staff_message(
     marker: str,
     components: Sequence,
     message_id: int,
+    renew_lease,
 ) -> int:
     """Edit one durable marked message, recovering its ID before recreating it."""
 
     if message_id:
         try:
+            await renew_lease()
             await bot.rest.edit_message(
                 channel=staff_id,
                 message=message_id,
@@ -2500,6 +2544,7 @@ async def _upsert_marked_staff_message(
             recovered = await _find_staff_context_message(bot, staff_id, marker)
             message_id = _int(getattr(recovered, "id", 0))
             if message_id:
+                await renew_lease()
                 await bot.rest.edit_message(
                     channel=staff_id,
                     message=message_id,
@@ -2509,6 +2554,7 @@ async def _upsert_marked_staff_message(
                     mentions_everyone=False,
                 )
                 return message_id
+    await renew_lease()
     message = await bot.rest.create_message(
         channel=staff_id,
         components=components,
@@ -2526,6 +2572,7 @@ async def _retire_chocolate_message(
     staff_id: int,
     marker: str,
     message_id: int,
+    renew_lease,
 ) -> None:
     """Remove stale current-account links without deleting the audit message."""
 
@@ -2549,6 +2596,7 @@ async def _retire_chocolate_message(
         Text(content=f"-# {retired_marker}"),
     ]
     try:
+        await renew_lease()
         await bot.rest.edit_message(
             channel=staff_id,
             message=message_id,
@@ -2561,6 +2609,7 @@ async def _retire_chocolate_message(
         recovered = await _find_staff_context_message(bot, staff_id, marker)
         recovered_id = _int(getattr(recovered, "id", 0))
         if recovered_id:
+            await renew_lease()
             await bot.rest.edit_message(
                 channel=staff_id,
                 message=recovered_id,
@@ -2639,6 +2688,10 @@ async def deliver_staff_identity_context(
         }) or {}
         return _int(current.get("message_id")) or None
     refresh_generation = max(0, _int(state.get("refresh_generation")))
+
+    async def renew_lease() -> None:
+        await _renew_staff_context_lease(mongo, state_id, owner)
+
     expected_owner_id = None
     if (
         reopen_terminal_thread
@@ -2663,13 +2716,18 @@ async def deliver_staff_identity_context(
                     ticket_doc,
                     staff_id,
                     expected_owner_id=expected_owner_id,
+                    renew_lease=renew_lease,
                 )
-            await _finish_staff_context_lease(
+            finished = await _finish_staff_context_lease(
                 mongo,
                 state_id,
                 owner,
                 refresh_generation=refresh_generation,
             )
+            if not finished:
+                raise StaffContextLeaseLost(
+                    f"staff context lease lost state={state_id}"
+                )
             return None
         if components is None:
             components = _notice(
@@ -2750,8 +2808,9 @@ async def deliver_staff_identity_context(
                     ticket_doc,
                     staff_id,
                     expected_owner_id=expected_owner_id,
+                    renew_lease=renew_lease,
                 )
-            await _finish_staff_context_lease(
+            finished = await _finish_staff_context_lease(
                 mongo,
                 state_id,
                 owner,
@@ -2764,6 +2823,10 @@ async def deliver_staff_identity_context(
                     for _panel_marker, _panel, panel_fingerprint in prepared_chocolate
                 ],
             )
+            if not finished:
+                raise StaffContextLeaseLost(
+                    f"staff context lease lost state={state_id}"
+                )
             return existing_message_id
 
         async with _staff_context_write_window(
@@ -2772,6 +2835,7 @@ async def deliver_staff_identity_context(
             staff_id,
             reopen_terminal_thread=reopen_terminal_thread,
             expected_owner_id=expected_owner_id,
+            renew_lease=renew_lease,
         ):
             message_id = existing_message_id
             if not context_current:
@@ -2781,6 +2845,7 @@ async def deliver_staff_identity_context(
                     marker=marker,
                     components=components,
                     message_id=message_id,
+                    renew_lease=renew_lease,
                 )
             for index, (
                 chocolate_marker,
@@ -2804,6 +2869,7 @@ async def deliver_staff_identity_context(
                     marker=chocolate_marker,
                     components=chocolate_components,
                     message_id=chocolate_ids[index],
+                    renew_lease=renew_lease,
                 )
             for stale_marker, stale_message_id in stale_chocolate_messages.items():
                 await _retire_chocolate_message(
@@ -2811,8 +2877,9 @@ async def deliver_staff_identity_context(
                     staff_id=staff_id,
                     marker=stale_marker,
                     message_id=stale_message_id,
+                    renew_lease=renew_lease,
                 )
-        await _finish_staff_context_lease(
+        finished = await _finish_staff_context_lease(
             mongo,
             state_id,
             owner,
@@ -2825,6 +2892,10 @@ async def deliver_staff_identity_context(
                 for _panel_marker, _panel, panel_fingerprint in prepared_chocolate
             ],
         )
+        if not finished:
+            raise StaffContextLeaseLost(
+                f"staff context lease lost state={state_id}"
+            )
         return message_id
     except asyncio.CancelledError:
         await _finish_staff_context_lease(
@@ -2835,6 +2906,9 @@ async def deliver_staff_identity_context(
             pending=True,
         )
         raise
+    except StaffContextLeaseLost:
+        _log.info("staff ticket context lease lost ticket=%s", ticket_id)
+        return None
     except Exception as exc:
         _log.exception("staff ticket context delivery failed ticket=%s", ticket_id)
         with contextlib.suppress(Exception):
@@ -3218,7 +3292,7 @@ async def _create_search_state(
     action_id = uuid.uuid4().hex
     await insert_state(mongo, {
         "_id": action_id,
-        "type": "ticket_console_search",
+        "type": "ticket_v2_console_search",
         "owner_id": int(owner_id),
         "guild_id": int(guild_id),
         "query": query,
@@ -3232,7 +3306,7 @@ async def _open_find_modal(
     ctx,
     action_id: str,
     *,
-    submit_action: str = "ticket_console_find_submit",
+    submit_action: str = "ticket_v2_console_find_submit",
 ) -> None:
     await ctx.respond_with_modal(
         title="Find a ticket",
@@ -3247,7 +3321,7 @@ async def _open_find_modal(
     )
 
 
-@register_action("ticket_console_pick", no_return=True)
+@register_action("ticket_v2_console_pick", no_return=True)
 @lightbulb.di.with_di
 async def ticket_console_pick(
     ctx: lightbulb.components.MenuContext,
@@ -3293,7 +3367,7 @@ async def ticket_console_pick(
 
 
 @register_action(
-    "ticket_console_find", opens_modal=True, no_return=True, preload_state=False,
+    "ticket_v2_console_find", opens_modal=True, no_return=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_console_find(
@@ -3304,12 +3378,12 @@ async def ticket_console_find(
     await _open_find_modal(
         ctx,
         str(_int(getattr(ctx, "guild_id", 0))),
-        submit_action="ticket_console_find_root_submit",
+        submit_action="ticket_v2_console_find_root_submit",
     )
 
 
 @register_action(
-    "ticket_console_search_again", opens_modal=True, no_return=True,
+    "ticket_v2_console_search_again", opens_modal=True, no_return=True,
     requires_state=True, preload_state=False,
 )
 @lightbulb.di.with_di
@@ -3321,7 +3395,7 @@ async def ticket_console_search_again(
     await _open_find_modal(ctx, action_id)
 
 
-@register_action("ticket_console_view", requires_state=True)
+@register_action("ticket_v2_console_view", requires_state=True)
 @lightbulb.di.with_di
 async def ticket_console_view(
     ctx: lightbulb.components.MenuContext,
@@ -3388,7 +3462,7 @@ async def _authorized_flag_manager_state(
         "owner_id": 1,
         "guild_id": 1,
     })
-    if not envelope or envelope.get("type") != "ticket_console_flag_manager":
+    if not envelope or envelope.get("type") != "ticket_v2_console_flag_manager":
         return None, _notice(
             "Flag panel expired",
             "Open the ticket and choose **Manage flags** again.",
@@ -3417,7 +3491,7 @@ async def _authorized_flag_manager_state(
     data = await get_state(mongo, manager_id)
     if (
         not data
-        or data.get("type") != "ticket_console_flag_manager"
+        or data.get("type") != "ticket_v2_console_flag_manager"
         or _int(data.get("owner_id")) != owner_id
         or _int(data.get("guild_id")) != guild_id
     ):
@@ -3456,7 +3530,7 @@ async def _refresh_after_flag_mutation(
     await request_hub_refresh_best_effort(bot, mongo, reason="flag changed")
 
 
-@register_action("ticket_console_manage_flags", requires_state=True)
+@register_action("ticket_v2_console_manage_flags", requires_state=True)
 @lightbulb.di.with_di
 async def ticket_console_manage_flags(
     ctx: lightbulb.components.MenuContext,
@@ -3504,7 +3578,7 @@ async def ticket_console_manage_flags(
     )
 
 
-@register_action("ticket_flag_back", requires_state=True)
+@register_action("ticket_v2_flag_back", requires_state=True)
 @lightbulb.di.with_di
 async def ticket_flag_back(
     ctx: lightbulb.components.MenuContext,
@@ -3553,7 +3627,7 @@ async def ticket_flag_back(
 
 
 @register_action(
-    "ticket_flag_set", opens_modal=True, no_return=True, preload_state=False,
+    "ticket_v2_flag_set", opens_modal=True, no_return=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_flag_set(
@@ -3565,7 +3639,7 @@ async def ticket_flag_set(
     label = FLAG_META.get(kind, ("Applicant flag", "🚩", False))[0]
     await ctx.respond_with_modal(
         title=f"Add or update {label}"[:45],
-        custom_id=f"ticket_flag_set_submit:{manager_id}|{kind}",
+        custom_id=f"ticket_v2_flag_set_submit:{manager_id}|{kind}",
         components=[ModalActionRow().add_text_input(
             "reason",
             "Why this flag applies",
@@ -3579,7 +3653,7 @@ async def ticket_flag_set(
 
 
 @register_action(
-    "ticket_flag_remove", opens_modal=True, no_return=True, preload_state=False,
+    "ticket_v2_flag_remove", opens_modal=True, no_return=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_flag_remove(
@@ -3591,7 +3665,7 @@ async def ticket_flag_remove(
     slot = str(values[0]) if values else ""
     await ctx.respond_with_modal(
         title="Remove applicant flag",
-        custom_id=f"ticket_flag_remove_submit:{action_id}|{slot}",
+        custom_id=f"ticket_v2_flag_remove_submit:{action_id}|{slot}",
         components=[ModalActionRow().add_text_input(
             "reason",
             "Why this flag no longer applies",
@@ -3605,7 +3679,7 @@ async def ticket_flag_remove(
 
 
 @register_action(
-    "ticket_flag_set_submit", is_modal=True, no_return=True, preload_state=False,
+    "ticket_v2_flag_set_submit", is_modal=True, no_return=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_flag_set_submit(
@@ -3712,7 +3786,7 @@ async def ticket_flag_set_submit(
 
 
 @register_action(
-    "ticket_flag_remove_submit", is_modal=True, no_return=True,
+    "ticket_v2_flag_remove_submit", is_modal=True, no_return=True,
     preload_state=False,
 )
 @lightbulb.di.with_di
@@ -3824,7 +3898,7 @@ async def ticket_flag_remove_submit(
 
 
 @register_action(
-    "ticket_console_find_submit", is_modal=True, no_return=True, preload_state=False,
+    "ticket_v2_console_find_submit", is_modal=True, no_return=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_console_find_submit(
@@ -3842,7 +3916,7 @@ async def ticket_console_find_submit(
         "owner_id": 1,
         "guild_id": 1,
     })
-    if not data or data.get("type") != "ticket_console_search":
+    if not data or data.get("type") != "ticket_v2_console_search":
         await ctx.interaction.edit_initial_response(
             components=_notice(
                 "Search expired",
@@ -3925,7 +3999,7 @@ async def ticket_console_find_submit(
 
 
 @register_action(
-    "ticket_console_find_root_submit",
+    "ticket_v2_console_find_root_submit",
     is_modal=True,
     no_return=True,
     preload_state=False,
@@ -4033,7 +4107,7 @@ async def _filter_action(
     )
 
 
-@register_action("ticket_console_status", requires_state=True)
+@register_action("ticket_v2_console_status", requires_state=True)
 @lightbulb.di.with_di
 async def ticket_console_status(
     ctx: lightbulb.components.MenuContext,
@@ -4060,7 +4134,7 @@ async def ticket_console_status(
     )
 
 
-@register_action("ticket_console_type", requires_state=True)
+@register_action("ticket_v2_console_type", requires_state=True)
 @lightbulb.di.with_di
 async def ticket_console_type(
     ctx: lightbulb.components.MenuContext,
@@ -4138,7 +4212,7 @@ def _transition_result_panel(result, *, verb: str) -> list[Container]:
     )
 
 
-@register_action("ticket_console_approve", requires_state=True)
+@register_action("ticket_v2_console_approve", requires_state=True)
 @lightbulb.di.with_di
 async def ticket_console_approve(
     ctx: lightbulb.components.MenuContext,
@@ -4172,7 +4246,7 @@ async def ticket_console_approve(
 
 
 @register_action(
-    "ticket_console_deny", opens_modal=True, no_return=True,
+    "ticket_v2_console_deny", opens_modal=True, no_return=True,
     requires_state=True, preload_state=False,
 )
 @lightbulb.di.with_di
@@ -4183,7 +4257,7 @@ async def ticket_console_deny(
 ) -> None:
     await ctx.respond_with_modal(
         title="Deny ticket",
-        custom_id=f"ticket_console_deny_submit:{action_id}",
+        custom_id=f"ticket_v2_console_deny_submit:{action_id}",
         components=[ModalActionRow().add_text_input(
             "reason",
             "Reason shown to the applicant",
@@ -4197,7 +4271,7 @@ async def ticket_console_deny(
 
 
 @register_action(
-    "ticket_console_deny_submit", is_modal=True, no_return=True, preload_state=False,
+    "ticket_v2_console_deny_submit", is_modal=True, no_return=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_console_deny_submit(
@@ -4219,7 +4293,7 @@ async def ticket_console_deny_submit(
         "owner_id": 1,
         "guild_id": 1,
     })
-    if not envelope or envelope.get("type") != "ticket_console_detail":
+    if not envelope or envelope.get("type") != "ticket_v2_console_detail":
         await ctx.interaction.edit_initial_response(components=_notice(
             "Ticket panel expired",
             "Open the ticket again from the console.",
@@ -4252,7 +4326,7 @@ async def ticket_console_deny_submit(
     data = await get_state(mongo, action_id)
     if (
         not data
-        or data.get("type") != "ticket_console_detail"
+        or data.get("type") != "ticket_v2_console_detail"
         or _int(data.get("owner_id")) != owner_id
         or _int(data.get("guild_id")) != guild_id
     ):
@@ -4385,7 +4459,7 @@ class FindCommand(
             await _open_find_modal(
                 ctx,
                 str(_int(ctx.guild_id)),
-                submit_action="ticket_console_find_root_submit",
+                submit_action="ticket_v2_console_find_root_submit",
             )
             return
         await ctx.defer(ephemeral=True)

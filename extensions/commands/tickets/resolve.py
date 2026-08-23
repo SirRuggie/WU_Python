@@ -365,11 +365,10 @@ async def _acquire_resolution_effect_lease(
         mongo: MongoClient,
         ticket_id,
         marker: str,
-        owner: str,
+    owner: str,
 ) -> dict | None:
     now = store.utcnow()
-    primary, _secondary = await store._both(mongo)
-    return await primary.find_one_and_update(
+    return await mongo.tickets.find_one_and_update(
         {
             "_id": ticket_id,
             **store.RUNTIME_FILTER,
@@ -1162,7 +1161,7 @@ def _override_rows(kind: str, action_id: str) -> list:
             if kind == KIND_APPROVE
             else hikari.ButtonStyle.DANGER
         ),
-        custom_id=f"ticket_override:{action_id}",
+        custom_id=f"ticket_v2_override:{action_id}",
         label=_LABEL[kind],
     )])]
 
@@ -1247,7 +1246,7 @@ async def offer_override(
     action_id = str(ctx.interaction.id)
     await insert_state(mongo, {
         "_id": action_id,
-        "type": "ticket_override",
+        "type": "ticket_v2_override",
         "kind": kind,
         "ticket_id": ticket_id,
         "channel_id": channel_id,
@@ -1264,7 +1263,7 @@ async def offer_override(
     return lost_message(kind, current, action_id)
 
 
-@register_action("ticket_override", no_return=True, requires_state=True)
+@register_action("ticket_v2_override", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def ticket_override_handler(
         ctx: lightbulb.components.MenuContext,
@@ -1280,7 +1279,7 @@ async def ticket_override_handler(
     the interaction that rendered it, even an ephemeral one.
     """
     data = await get_state(mongo, action_id)
-    if not data:
+    if not data or data.get("type") != "ticket_v2_override":
         await ctx.interaction.edit_initial_response(
             content="That override has expired. Run the command again.", components=[]
         )

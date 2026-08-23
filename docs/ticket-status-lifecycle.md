@@ -1,20 +1,31 @@
-# Ticket status — the real values, and why the data looks odd
+# Ticket status lifecycle: legacy channels and thread v2
 
-## The status values that actually exist
+The rollout deliberately runs two ticket authorities in parallel. Historical
+legacy notes are retained below, but the current contract is:
 
-Only three are ever written:
+| Runtime | Authority | Writable statuses | Resolution surface |
+|---|---|---|---|
+| Legacy channel tickets | `button_store` | `open`, `approved`, `denied` | `/ticket` |
+| Thread-ticket v2 | `tickets` rows matching `venue: "thread"` and `runtime: "thread_v2"` | `open`, `approved`, `denied` | Private console and `/ticket-pilot` |
 
-| Status | Written by |
+No ticket document is copied, mirrored, merged, or repointed between these
+authorities during coexistence. The runtimes share only rollout state,
+one-open-ticket slots, and ticket-number counters. See the
+[operator source of truth](ticket-console-operations.md).
+
+## The three writable statuses
+
+| Status | Meaning |
 |---|---|
-| `open` | `handlers.py:368`, on creation |
-| `approved` | `close.py:234` — with `approved_at`, `approved_by` |
-| `denied` | `close.py:437`, `close.py:529`, `close.py:653` — with `denied_at`, `denied_by`, `denial_type` |
+| `open` | The ticket is awaiting a recruiter decision. |
+| `approved` | A recruiter approved the applicant. |
+| `denied` | A recruiter denied the applicant. |
 
-There is also a legacy `closed`, which nothing writes any more (see below).
-
-**There is no `abandoned` status.** If a workflow needs one, it has to be
-introduced along with a rule for backfilling existing rows — it cannot be
-filtered on today.
+There is no writable `new`, `closed`, or `abandoned` state. The console may
+label an open ticket as **New / open**, but the stored value remains `open`.
+After an approved or denied ticket releases its shared slot, the applicant may
+open a later ticket; the guard prevents only a second simultaneous open ticket
+of the same type.
 
 ## Why `closed` has exactly one document
 
@@ -23,146 +34,139 @@ filtered on today.
 and improve workflow"*). They were the only writers of `status: "closed"` — and
 `reopen` was the only writer of `reopened_at` / `reopened_by`.
 
-Consequences, all of which are artefacts rather than signal:
+Consequences, all historical artefacts rather than current product states:
 
 - `closed = 1` forever. That single document predates the deletion.
 - With no close path, tickets that were neither approved nor denied simply
   **stayed `open`**, which is why open tickets accumulated over time.
-- A commented-out block survives at `close.py:314-372` from that removal. It is
-  dead code, kept as a fossil; do not treat it as a specification.
+- Old commented-out close/reopen code is not a specification.
+- A legacy clone with `closed` must be reviewed and explicitly classified as
+  approved or denied. Never map it automatically to `denied`.
 
-## Ghost cleanup writes `denied`, not something distinct
+## Historical legacy cleanup and counts
 
-`/ticket` maintenance commands that reconcile documents against reality —
-`manage.py:467` (ghost rows: a document marked open with no live channel) and
-`manage.py:586` (mismatched: a denied-looking channel with an open status) —
-resolve the row by setting `status: "denied"`.
+Legacy maintenance once reconciled an open database row whose channel had gone,
+or an open row whose channel looked denied, by writing `denied`. Those cleanup
+denials lacked `denial_type`; that incidental distinction may still help when
+reviewing historical `button_store` data. Thread v2 does not use that cleanup
+path: its denial writers go through the audited resolution domain flow.
 
-So **`denied` conflates two different things**: a recruiter actually denying a
-candidate, and a janitorial fix-up. If you ever need to tell them apart, note
-that a real denial also sets `denial_type`, and cleanup writes do not. That is
-the only discriminator, and it is incidental.
+As of 2026-08-02, after the legacy cleanup, the historical collection contained
+361 documents: `approved` 64, `denied` 273, `open` 23, and `closed` 1. All 23
+open tickets then had live channels.
 
-## Counts as of 2026-08-02, post-cleanup
+## Historical phase-2 experiment
 
-361 documents total: `approved` 64, `denied` 273, `open` 23, `closed` 1.
-All 23 open tickets have live channels; 0 ghost rows, 0 orphaned channels.
+On 2026-08-02, a pre-v2 experiment exercised legacy approve, deny, override,
+and claim flows. Diagnostics reported two collections at 363 documents, with
+`approved` 64, `closed` 1, `denied` 275, and `open` 23. That experiment used a
+conditional primary write plus an unconditional secondary mirror.
 
-## Phase 2 status — LIVE and soaking as of 2026-08-02
+That result is retained only as legacy history. The current parallel rollout
+supersedes it: `button_store` and `tickets` are intentionally different
+authorities, and matching collection counts are neither expected nor desired.
 
-Verified on the running bot: approve, deny, the override path on both, and
-claiming. `/ticket diagnostics` after the run showed both collections at 363 —
-`approved` 64, `closed` 1, `denied` 275, `open` 23 — divergence none, reading
-from `tickets`.
+## Thread-v2 decision lifecycle
 
-That distribution is **unchanged from the phase 1 final, and that is expected**:
-the override tests were run against tickets already in their target state
-(overriding a denied ticket to denied), which is the natural way to exercise the
-path without disturbing live data. Transitions were confirmed to be moving status
-independently — a ticket denied during the run dropped out of `/ticket list`.
-Noted because identical before/after counts look like a no-op write at a glance,
-and they are not.
+Every v2 approve, deny, and override action uses the same secure domain path:
 
-**That is the thing phase 1 could not prove**: a conditional write against the
-primary plus an unconditional mirror to the secondary keeps the two in sync.
+1. Read the immutable ticket ID through the thread-only runtime filter.
+2. Verify the actor is still a recruiter and refresh the applicant's linked
+   accounts.
+3. Apply the account, staff-context, Chocolate-review, and blacklist gates.
+4. Compare and swap the expected status, decision revision, and linked-account
+   revision in one Mongo write.
+5. Only after that write wins, reconcile the durable decision effects.
 
-**Verified as flows, not as individual cases.** The distinction matters for
-anyone reading this later. Confirmed working end to end: approve, deny, override
-on both, claim. Not separately exercised, and therefore *not* proven:
+The decision write cannot reopen a ticket or target a legacy channel row.
 
-- a non-recruiter clicking an override button (should refuse)
-- the `missing` outcome — a resolution against a deleted ticket document
-- the custom-deny **modal** LOST branch specifically, which is the one path that
-  responds with `ctx.respond` rather than `edit_initial_response`, because modal
-  handlers are never deferred
-- the claim note appearing when resolving someone else's claimed ticket
-
-## Phase 2 — transitions are conditional, and losing is not a dead end
-
-Status changes go through `store.transition`, which re-asserts the status it
-believes it is moving *from* inside the filter. Mongo arbitrates, not the
-network. The pattern is the one already proven in `manage.py`'s cleanup filter.
-
-Three outcomes, and **side effects run only on `won`**:
-
-| Outcome | Meaning | Applicant messaged / channel renamed |
+| Outcome | Meaning | Terminal decision effects |
 |---|---|---|
-| `won` | this caller caused the change | yes |
-| `lost` | someone resolved it first | **no** — see override below |
-| `missing` | no such ticket document | yes, with the existing warning |
+| `won` | This caller committed the decision. | Run or resume from durable checkpoints. |
+| `lost` | Status, decision revision, or account revision changed first. | Do not notify, archive, or publish a terminal refresh for this attempt. |
+| `missing` | No matching thread-v2 ticket exists. | Do nothing; report that the record is gone. |
+| `blocked` | An account, review, blacklist, identity-lock, or effect gate refused the decision. | Keep the current status. |
+| `unauthorized` | The actor is not a recruiter at the authorization boundary. | Keep the current status. |
+| `effect_failed` | The decision committed, but durable follow-up work is incomplete. | Preserve the terminal status and retry the pending checkpoints. |
 
-### Why the ordering changed in the deny handlers
+Account and staff-context refreshes performed before the compare-and-swap may
+remain useful if a race is lost. Applicant notification, terminal archive, and
+terminal console effects never run for `lost` or `missing`.
 
-The three deny paths used to post the applicant-facing denial **before** writing
-the status. Two recruiters denying the same ticket in the same second therefore
-both succeeded, and **the applicant received two denial messages**. The message
-now happens after Mongo has arbitrated, and only for the winner.
+### Approval and denial gates
 
-### `lost` offers an override, it does not block
+Approve and deny both force-refresh linked accounts immediately before the
+decision. Approval fails closed when the lookup fails, no account is currently
+linked, flag identities are still refreshing, staff account context is pending,
+or a new FWA identity still needs Chocolate review.
 
-A mistaken deny, an appeal, or a leader overruling are all normal in recruiting,
-and none of them should require hand-editing Mongo. The loser gets an ephemeral
-naming who resolved it and when, plus a button to overturn it.
+Approval also takes the identity guard, re-reads active blacklist flags against
+the Discord ID and observed player tags, and checks recruiter authorization
+again immediately before the compare-and-swap. An active blacklist blocks the
+write. This prevents a concurrent flag or role change from slipping through a
+stale panel.
 
-- Gated on the **recruiter role** (`main_recruiter_role` / `fwa_recruiter_role`),
-  not on Administrator — recruiters are the people who need it.
-- **Re-checked at click time.** The dispatcher enforces nothing, so a button
-  cannot inherit trust from the interaction that rendered it.
-- Overriding calls `transition(expect=None)` — no precondition, deliberately.
-- The audit entry records `override: true` and what it replaced.
+Denial may proceed after a failed or confirmed-zero account lookup. A failed
+lookup is recorded as durable retry work so staff context can converge later;
+it is never interpreted as zero accounts.
 
-Non-recruiters see the same explanation with no button.
+### Overrides are conditional
 
-⚠️ The override panel is **plain content plus an ActionRow, not a Container**.
-`IS_COMPONENTS_V2` is a one-way latch: once set on a message, `content` is
-rejected forever after, and this panel is edited with text when the override
-completes. See [components-v2-in-hikari.md](components-v2-in-hikari.md).
+A recruiter who loses a race may be offered an override only when the requested
+outcome differs from the current decision. The saved action is bound to that
+recruiter, recruiter authorization is checked again at click time, and approval
+re-runs all current account and blacklist gates.
 
-### The audit array
+The override must still match the prior status, revision, and resolution marker,
+and the prior decision's effects must be complete. Markerless terminal legacy
+imports are eligible only while their audited import provenance remains intact.
+If the ticket changes again, disappears, or still has pending effects, nothing
+is overwritten. An override is another compare-and-swap transition; there is no
+unconditional `expect=None` write.
 
-Every transition pushes `{at, actor, actor_name, from, to, override}` onto
-`audit`, plus `overrode: {status, by, at}` when it overturned someone. This is
-what makes a disputed outcome reconstructible a week later, and it matters more
-now that overrides are possible.
+### Durable effect completion and audit
 
-Small known TOCTOU: `overrode` records the prior resolution the actor was
-**shown**, not a re-read at confirm time. A third write landing in that window
-would not be reflected. Accepted deliberately — the audit records what the human
-was told and acted on, which is the more useful record of a decision.
+A winning transition writes a unique resolution marker and pending checkpoints
+for applicant notification, staff account context, thread-pair archive, and hub
+refresh. The worker leases that exact marker, completes each idempotent step,
+then marks the whole effect set complete.
 
-### Claiming is advisory
+Startup and the periodic reconciler retry terminal tickets whose marker is not
+complete. Notification recovery checks the marker before posting, so retrying
+does not intentionally send the applicant a duplicate. Archive reconciliation
+always returns both terminal threads to locked and archived. A visible
+**Decision recorded; updates retrying** result means the status is authoritative
+and the remaining effects must be allowed to recover; it is not a failed or
+rolled-back decision.
 
-`claimed_by` / `claimed_at`, set by `/ticket claim`, cleared by `/ticket release`
-(admins can `force` someone else's). The claim filter uses
-`{"claimed_by": None}`, which matches missing fields, so it works against every
-pre-existing ticket with no backfill.
+Every winning transition appends a `status_transition` audit entry with the
+actor, old and new status, revisions, effect marker, linked-account snapshot,
+and override provenance when applicable.
 
-**It does not gate approve or deny.** Discord cannot enforce per-user ownership
-inside a thread — Tickets.bot disables claiming entirely in thread mode for this
-reason — so a hard block would be theatre. Resolving a ticket someone else
-claimed adds a note to your own confirmation and nothing more.
+## Claim and close behavior
 
-## Silent-write detection
+Legacy `/ticket claim` and `/ticket release` remain available only to finish
+existing channel tickets during coexistence. They are advisory legacy behavior
+and are not copied into v2.
 
-`close.py` wraps status updates in `_status_write_warning(result, _id)`, which
-surfaces the case where an update matched nothing. This exists because status
-writes were previously failing silently — added in `ad2e980` (2026-08-02).
-Keep that pattern on any new status writer.
+Thread v2 has no recruiter claim, release, close, or reopen action. Its schema
+removes old claim fields, resolution confirmations contain no claim note, and a
+terminal thread remains approved or denied. The `ticket_open_slots` “claim” is
+an internal intake lease enforcing one open ticket; it is not recruiter
+ownership of a ticket.
 
-## The console never renders `closed`
+## The v2 console never renders legacy `closed`
 
-[ticket-console.md](ticket-console.md) (2026-08-17) intentionally has no
-"closed" concept — its `STATUS` map only has `open` / `approved` / `denied`,
-matching the three values anything still writes. This means the one live
-`closed` document (above) is currently outside every status the console
-knows how to draw. If it's ever returned by a search, the renderer needs a
-defensive fallback rather than indexing into `STATUS` with an unknown key —
-flagged as a small gap, not yet handled anywhere.
+Normal v2 list, search, count, detail, and transition queries require the
+thread-v2 runtime filter, so channel rows and the historical `closed` value are
+outside the console. A migration preview must stop for manual approved/denied
+classification instead of inventing a fourth v2 state.
 
 ## Related
 
-- [ticket-data-model.md](ticket-data-model.md) — where these documents live.
-- [ticket-channel-naming.md](ticket-channel-naming.md) — why channel name
-  prefixes are a misleading proxy for status.
-- [ticket-console.md](ticket-console.md) — the console that renders these
-  values.
+- [Ticket pilot and console operations](ticket-console-operations.md) — current
+  rollout, drain, and recovery authority.
+- [Ticket data model](ticket-data-model.md) — historical storage context.
+- [Ticket channel naming](ticket-channel-naming.md) — why a legacy channel name
+  is a misleading proxy for status.
+- [Ticket console](ticket-console.md) — the console design record.

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 
 import lightbulb
 
+from extensions.commands import ticket_runtime
 from extensions.commands.tickets import perms, ticket
 from utils.mongo import MongoClient
 
@@ -18,9 +19,25 @@ def _role(value) -> str:
     return f"<@&{int(value)}>" if value else "Not set"
 
 
-def configuration_summary(config: Mapping) -> str:
-    """Render only settings that affect the thread-only runtime."""
-    rows = ["## Thread ticket configuration", "**Runtime:** Thread-only"]
+def _source(source: ticket_runtime.IntakeSource | None) -> str:
+    if source is None:
+        return "Not bound"
+    return f"<#{source.channel_id}> / `{source.message_id}`"
+
+
+def configuration_summary(
+    config: Mapping,
+    rollout: ticket_runtime.RolloutState | None = None,
+) -> str:
+    """Render only settings that affect the thread v2 runtime."""
+    rows = ["## Thread ticket configuration", "**Runtime:** Thread v2"]
+    if rollout is not None:
+        phase = rollout.phase if rollout.valid else "invalid (legacy-safe)"
+        rows.extend([
+            f"**Rollout phase:** `{phase}`",
+            f"**Public source:** {_source(rollout.legacy_intake)}",
+            f"**Pilot source:** {_source(rollout.pilot_intake)}",
+        ])
     for kind, label in (("main", "Main"), ("fwa", "FWA")):
         rows.extend([
             "",
@@ -37,8 +54,8 @@ def configuration_summary(config: Mapping) -> str:
         "**Shared console**",
         f"Channel: {_channel(console_channel)}",
         "",
-        "Use `/ticket configure-threads` to validate and save a thread pair.",
-        "Use `/ticket console` in the private recruiter channel to post or repair the hub.",
+        "Use `/ticket-pilot configure-threads` to validate and save a thread pair.",
+        "Use `/ticket-pilot console` in the private recruiter channel to post or repair the hub.",
     ])
     return "\n".join(rows)
 
@@ -64,10 +81,11 @@ class Config(
             return
         config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
         console = await mongo.ticket_setup.find_one({"_id": "ticket_console_hub"}) or {}
+        rollout = await ticket_runtime.get_rollout(mongo)
         view = dict(config)
         view["ticket_console_channel_id"] = console.get("channel_id")
         await ctx.interaction.edit_initial_response(
-            configuration_summary(view),
+            configuration_summary(view, rollout),
             user_mentions=False,
             role_mentions=False,
             mentions_everyone=False,

@@ -289,7 +289,7 @@ def test_search_worst_case_uses_exact_safe_budget_and_unknown_status_fallback():
     assert not [node["url"] for node in _nodes(view) if "url" in node]
     view_buttons = [
         node for node in _nodes(view)
-        if str(node.get("custom_id", "")).startswith("ticket_console_view:")
+        if str(node.get("custom_id", "")).startswith("ticket_v2_console_view:")
     ]
     assert len(view_buttons) == 10
     assert any(node.get("label") == "New search" for node in _nodes(view))
@@ -431,7 +431,7 @@ def test_ticket_detail_manage_flags_panel_binds_37_tags_without_manual_ids():
         node for node in _nodes(detail)
         if node.get("label") == "Manage flags"
     )
-    assert manage["custom_id"] == f"ticket_console_manage_flags:{'m' * 32}"
+    assert manage["custom_id"] == f"ticket_v2_console_manage_flags:{'m' * 32}"
 
     flags = [{
         "_id": "flag_blacklist",
@@ -455,7 +455,7 @@ def test_ticket_detail_manage_flags_panel_binds_37_tags_without_manual_ids():
     assert "FWA Chocolate" in content
     remove = next(
         node for node in _nodes(panel)
-        if str(node.get("custom_id", "")).startswith("ticket_flag_remove:")
+        if str(node.get("custom_id", "")).startswith("ticket_v2_flag_remove:")
     )
     assert remove["options"][0]["value"] == "0"
     assert "flag_blacklist" not in remove["options"][0]["value"]
@@ -489,15 +489,15 @@ def test_flag_modal_openers_acknowledge_with_modal_before_state_or_permission(
     monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
 
     asyncio.run(dispatcher._dispatch(Context(
-        f"ticket_flag_set:{'a' * 32}|blacklisted"
+        f"ticket_v2_flag_set:{'a' * 32}|blacklisted"
     ), object()))
     asyncio.run(dispatcher._dispatch(Context(
-        f"ticket_flag_remove:{'a' * 32}", values=("0",)
+        f"ticket_v2_flag_remove:{'a' * 32}", values=("0",)
     ), object()))
 
     assert opened == [
-        f"ticket_flag_set_submit:{'a' * 32}|blacklisted",
-        f"ticket_flag_remove_submit:{'a' * 32}|0",
+        f"ticket_v2_flag_set_submit:{'a' * 32}|blacklisted",
+        f"ticket_v2_flag_remove_submit:{'a' * 32}|0",
     ]
 
 
@@ -510,7 +510,7 @@ def test_flag_set_submit_uses_latest_ticket_discord_id_and_all_37_tags(
         player_tags=[f"#A{index:07d}" for index in range(37)],
     )
     state = {
-        "type": "ticket_console_flag_manager",
+        "type": "ticket_v2_console_flag_manager",
         "owner_id": 22,
         "guild_id": ticket["guild_id"],
         "ticket_id": ticket["_id"],
@@ -599,7 +599,7 @@ def test_flag_remove_submit_resolves_selection_slot_and_audits_reason(monkeypatc
     events = []
     ticket = _ticket(23)
     state = {
-        "type": "ticket_console_flag_manager",
+        "type": "ticket_v2_console_flag_manager",
         "owner_id": 22,
         "guild_id": ticket["guild_id"],
         "ticket_id": ticket["_id"],
@@ -684,7 +684,7 @@ def test_flag_manager_state_denies_wrong_owner_guild_or_recruiter(
     monkeypatch, owner_id, state_guild, ctx_guild, allowed, expected,
 ):
     envelope = {
-        "type": "ticket_console_flag_manager",
+        "type": "ticket_v2_console_flag_manager",
         "owner_id": owner_id,
         "guild_id": state_guild,
     }
@@ -836,22 +836,22 @@ def test_detail_renders_structured_intake_then_canonical_answer_fallback():
 
 
 def test_shared_hub_actions_are_no_return_so_dispatcher_cannot_edit_the_root():
-    pick = dispatcher.registered_functions["ticket_console_pick"]
-    find = dispatcher.registered_functions["ticket_console_find"]
+    pick = dispatcher.registered_functions["ticket_v2_console_pick"]
+    find = dispatcher.registered_functions["ticket_v2_console_find"]
     assert pick.no_return is True
     assert find.no_return is True
     assert find.opens_modal is True
     assert find.preload_state is False
-    assert dispatcher.registered_functions["ticket_console_view"].requires_state is True
-    again = dispatcher.registered_functions["ticket_console_search_again"]
+    assert dispatcher.registered_functions["ticket_v2_console_view"].requires_state is True
+    again = dispatcher.registered_functions["ticket_v2_console_search_again"]
     assert again.opens_modal is True
     assert again.no_return is True
     assert again.preload_state is False
-    deny = dispatcher.registered_functions["ticket_console_deny"]
+    deny = dispatcher.registered_functions["ticket_v2_console_deny"]
     assert deny.opens_modal is True
     assert deny.no_return is True
     assert deny.preload_state is False
-    root_submit = dispatcher.registered_functions["ticket_console_find_root_submit"]
+    root_submit = dispatcher.registered_functions["ticket_v2_console_find_root_submit"]
     assert root_submit.is_modal is True
     assert root_submit.preload_state is False
 
@@ -879,16 +879,16 @@ def test_dispatcher_never_preloads_ticket_modal_openers(monkeypatch):
     monkeypatch.setattr(dispatcher, "get_state", forbidden)
 
     for custom_id in (
-        "ticket_console_find:hub",
-        "ticket_console_search_again:search",
-        "ticket_console_deny:detail",
+        "ticket_v2_console_find:hub",
+        "ticket_v2_console_search_again:search",
+        "ticket_v2_console_deny:detail",
     ):
         asyncio.run(dispatcher._dispatch(Context(custom_id), object()))
 
     assert modals == [
-        "ticket_console_find_root_submit:33",
-        "ticket_console_find_submit:search",
-        "ticket_console_deny_submit:detail",
+        "ticket_v2_console_find_root_submit:33",
+        "ticket_v2_console_find_submit:search",
+        "ticket_v2_console_deny_submit:detail",
     ]
 
 
@@ -921,10 +921,10 @@ def test_ticket_search_and_deny_openers_send_modals_without_prerequisite_work(
     ))
 
     assert calls == [
-        "ticket_console_find_root_submit:33",
-        "ticket_console_find_submit:search",
-        "ticket_console_deny_submit:detail",
-        "ticket_console_find_root_submit:33",
+        "ticket_v2_console_find_root_submit:33",
+        "ticket_v2_console_find_submit:search",
+        "ticket_v2_console_deny_submit:detail",
+        "ticket_v2_console_find_root_submit:33",
     ]
 
 
@@ -1008,7 +1008,7 @@ def test_search_again_submit_defers_before_permission_and_mongo_work(monkeypatch
         }
         events.append(("state-load", {}))
         return {
-            "type": "ticket_console_search",
+            "type": "ticket_v2_console_search",
             "owner_id": 22,
             "guild_id": 33,
         }
@@ -1110,7 +1110,7 @@ def test_console_deny_submit_defers_then_rejects_wrong_guild_before_transition(
     async def get(_mongo, _action_id, _projection):
         events.append(("state", {}))
         return {
-            "type": "ticket_console_detail",
+            "type": "ticket_v2_console_detail",
             "owner_id": 22,
             "guild_id": 44,
             "ticket_id": "ticket_1",
@@ -1132,7 +1132,7 @@ def test_console_deny_submit_defers_then_rejects_wrong_guild_before_transition(
 def test_console_deny_submit_authorizes_before_loading_private_state(monkeypatch):
     events = []
     private = {
-        "type": "ticket_console_detail",
+        "type": "ticket_v2_console_detail",
         "owner_id": 22,
         "guild_id": 33,
         "ticket_id": "ticket_1",
@@ -2406,8 +2406,8 @@ def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
         id=777,
         author=SimpleNamespace(id=7),
         components=[SimpleNamespace(components=[
-            SimpleNamespace(custom_id="ticket_console_pick:hub"),
-            SimpleNamespace(custom_id="ticket_console_find:hub"),
+            SimpleNamespace(custom_id="ticket_v2_console_pick:hub"),
+            SimpleNamespace(custom_id="ticket_v2_console_find:hub"),
         ])],
     )
 

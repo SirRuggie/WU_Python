@@ -15,9 +15,10 @@ import lightbulb
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from extensions.commands.tickets import loader, ticket
+from extensions.commands.tickets import loader, thread_intake_ready, ticket
 from extensions.commands.tickets import store
 from extensions.commands.tickets import thread_service
+from extensions.commands import ticket_runtime
 from extensions.components import register_action
 from utils.mongo import MongoClient
 
@@ -49,6 +50,18 @@ def cleanup_expired_cooldowns() -> None:
 def _ticket_location(ticket: dict) -> int:
     location = ticket.get("location") or {}
     return int(location.get("id") or ticket.get("channel_id"))
+
+
+async def _cancel_untouched_slot(
+    mongo: MongoClient,
+    claim: ticket_runtime.SlotClaim,
+) -> bool:
+    return await ticket_runtime.cancel_open_slot(
+        mongo,
+        slot_id=str(claim.slot["_id"]),
+        owner_token=str(claim.owner_token),
+        workflow_id=str(claim.slot["workflow_id"]),
+    )
 
 
 def _can_configure_thread_target(*, actor_id: int, guild_id: int, config: dict) -> bool:
@@ -108,7 +121,7 @@ async def capture_candidate_thread_activity(
 
 
 @register_action(
-    "create_ticket", opens_modal=True, no_return=True, preload_state=False,
+    "ticket_v2_create", opens_modal=True, no_return=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def handle_create_ticket(
@@ -120,14 +133,65 @@ async def handle_create_ticket(
 ) -> None:
     """Create or safely resume a private candidate/public staff thread pair."""
     await ctx.defer(ephemeral=True)
-    cleanup_expired_cooldowns()
 
-    ticket_type = action_id
+    if not thread_intake_ready():
+        await ctx.interaction.edit_initial_response(
+            content=(
+                "❌ Thread ticketing is still completing its safety checks. "
+                "Nothing was created; try again shortly."
+            )
+        )
+        return
+
+    surface, separator, ticket_type = action_id.partition(":")
+    if separator != ":" or surface != "pilot":
+        await ctx.interaction.edit_initial_response(
+            content="❌ This ticket panel is unavailable. Ask staff for the current panel."
+        )
+        return
     if ticket_type not in {"main", "fwa"}:
         await ctx.interaction.edit_initial_response(
             content="❌ That ticket type is not available."
         )
         return
+
+    interaction_message = getattr(ctx.interaction, "message", None)
+    message_id = store.as_int(getattr(interaction_message, "id", 0))
+    member_roles = tuple(
+        int(role_id)
+        for role_id in (getattr(getattr(ctx, "member", None), "role_ids", ()) or ())
+    )
+    try:
+        route = await ticket_runtime.route_public_intake(
+            mongo,
+            requested_route=ticket_runtime.ROUTE_THREAD,
+            guild_id=store.as_int(ctx.guild_id),
+            channel_id=store.as_int(ctx.channel_id),
+            message_id=message_id,
+            user_id=int(ctx.user.id),
+            member_role_ids=member_roles,
+            ticket_type=ticket_type,
+        )
+    except Exception as error:
+        print(
+            "[Tickets] pilot_gate_failed "
+            f"guild={ctx.guild_id} channel={ctx.channel_id} "
+            f"message={message_id} error={type(error).__name__}"
+        )
+        await ctx.interaction.edit_initial_response(
+            content="❌ Pilot ticketing is temporarily unavailable. Nothing was created."
+        )
+        return
+    if not route.allowed or route.route != ticket_runtime.ROUTE_THREAD:
+        await ctx.interaction.edit_initial_response(
+            content=(
+                "❌ This pilot panel is not active for you here. "
+                "Use the current public ticket panel or contact a recruiter."
+            )
+        )
+        return
+
+    cleanup_expired_cooldowns()
 
     now = datetime.now(timezone.utc)
     user_id = int(ctx.user.id)
@@ -139,10 +203,75 @@ async def handle_create_ticket(
                 content=f"⏳ Please wait {int(COOLDOWN_DURATION - elapsed)} seconds before trying again."
             )
             return
-    user_cooldowns[user_id] = now
-
     await ctx.interaction.edit_initial_response(content="🎫 Creating your ticket…")
-    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    workflow_id = f"thread:{user_id}:{ticket_type}"
+    try:
+        slot_claim = await ticket_runtime.claim_open_slot(
+            mongo,
+            user_id=user_id,
+            ticket_type=ticket_type,
+            route=ticket_runtime.ROUTE_THREAD,
+            guild_id=int(ctx.guild_id),
+            workflow_id=workflow_id,
+            rollout_revision=int(route.revision),
+            now=now,
+            lease_seconds=600,
+        )
+        if (
+            not slot_claim.won
+            and slot_claim.slot.get("state") == ticket_runtime.SLOT_RESERVED
+            and slot_claim.slot.get("route") == ticket_runtime.ROUTE_THREAD
+            and str(slot_claim.slot.get("workflow_id") or "") == workflow_id
+        ):
+            slot_claim = await ticket_runtime.resume_open_slot(
+                mongo,
+                slot_id=str(slot_claim.slot["_id"]),
+                workflow_id=workflow_id,
+                route=ticket_runtime.ROUTE_THREAD,
+                now=now,
+                lease_seconds=600,
+            )
+    except Exception as error:
+        print(
+            "[Tickets] pilot_slot_claim_failed "
+            f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
+            f"error={type(error).__name__}"
+        )
+        await ctx.interaction.edit_initial_response(
+            content="❌ Pilot ticketing is temporarily unavailable. Nothing was created."
+        )
+        return
+    if not slot_claim.won:
+        location_id = store.as_int(slot_claim.slot.get("location_id"))
+        if location_id:
+            message = f"✅ You already have an open {ticket_type.upper()} ticket: <#{location_id}>"
+        elif slot_claim.slot.get("state") == ticket_runtime.SLOT_CLEANUP_REQUIRED:
+            message = "⚠️ A previous ticket needs staff cleanup before another can be created."
+        else:
+            message = "⏳ Your ticket is already being created. Please try again shortly."
+        await ctx.interaction.edit_initial_response(content=message)
+        return
+    user_cooldowns[user_id] = now
+    try:
+        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    except Exception as error:
+        user_cooldowns.pop(user_id, None)
+        try:
+            await _cancel_untouched_slot(mongo, slot_claim)
+        except Exception:
+            print(
+                "[Tickets] pilot_slot_cancel_failed "
+                f"guild={ctx.guild_id} user={user_id} type={ticket_type}"
+            )
+        print(
+            "[Tickets] pilot_config_read_failed "
+            f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
+            f"error={type(error).__name__}"
+        )
+        await ctx.interaction.edit_initial_response(
+            content="❌ Pilot ticketing is temporarily unavailable. Nothing was created."
+        )
+        return
     display_name = getattr(ctx.member, "display_name", None) if getattr(ctx, "member", None) else None
     try:
         result = await thread_service.create_live_thread_ticket(
@@ -154,13 +283,16 @@ async def handle_create_ticket(
             display_name=display_name,
             ticket_type=ticket_type,
             config=config,
+            open_slot_claim=slot_claim,
         )
     except thread_service.ThreadCreationBusy:
+        user_cooldowns.pop(user_id, None)
         await ctx.interaction.edit_initial_response(
             content="⏳ Your ticket is already being created. Please try again in a moment."
         )
         return
     except thread_service.ThreadConfigurationError as error:
+        user_cooldowns.pop(user_id, None)
         await ctx.interaction.edit_initial_response(
             content=f"❌ Thread ticketing is not ready: {error}. Please contact an administrator."
         )

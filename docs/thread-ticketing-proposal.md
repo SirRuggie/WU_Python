@@ -1,8 +1,10 @@
 # Thread-based ticketing + console dashboard — research & proposal
 
 Research deliverable, 2026-08-02. Seven parallel research workstreams, findings
-adjudicated against primary sources. **No code was written and no existing
-behaviour was changed.**
+adjudicated against primary sources. It predates the shipped parallel runtime
+and is retained for design reasoning, not operator procedure. Use the
+[ticket console operations guide](ticket-console-operations.md) for current
+commands, authority boundaries, rollout, rollback, drain, and migration.
 
 **Part 2 (dashboard design) is superseded as of 2026-08-17 by
 [ticket-console.md](ticket-console.md)** — the decided design, worked out
@@ -14,18 +16,19 @@ had it right, specifying "single text input (all hikari permits)"), and an
 FWA-ban panel rendering a parsed verdict when the real command is a link-out.
 Part 2 below is kept for the budget-math and component-cost reasoning, which
 is still correct; treat [ticket-console.md](ticket-console.md) as the source
-of truth for what actually gets built.
+of truth for what shipped.
 
-**Parts 1, 3 and 4 stand except where annotated.** Part 3's phasing table
-(§3.6) and decision 5 in §4.2 were both written before the chart was pulled
-forward into v1, and §4.2 decision 3 (`abandoned`) is contradicted by §4.3
-question 3 — each is annotated in place.
+Part 1 remains useful research. Part 3's one-collection cutover,
+`ticket_mode` flag, dual-write plan, and numbered build phases are superseded
+by the implemented `/ticket` + `/ticket-pilot` coexistence model. Part 4 is
+historical risk analysis except where a later note records the implemented
+resolution.
 
-Durable API facts extracted from this research live in their own files —
+Supporting API research lives in its own files —
 [components-v2-in-hikari.md](components-v2-in-hikari.md),
 [hikari-lightbulb-versions.md](hikari-lightbulb-versions.md),
-[component-dispatcher.md](component-dispatcher.md),
-[ticket-data-model.md](ticket-data-model.md). This file is the proposal.
+[component-dispatcher.md](component-dispatcher.md). This file is the proposal;
+none of those references replaces the operations guide for rollout.
 
 ---
 
@@ -171,12 +174,10 @@ idempotency keys, no locking. Every `PATCH` is unconditional last-write-wins.
 Discord's own docs disclaim consistency and instruct apps to be idempotent while
 providing no mechanism to help.
 
-**All conflict handling is ours.** `find_one_and_update` with a status
-precondition; the loser gets an ephemeral naming who won and when. The correct
-pattern already exists in this repo at `manage.py:465` — it was simply never
-applied to approve/deny, which today are unconditional `$set` (`close.py:230`).
-An approve silently overwrites a deny. A dashboard with adjacent buttons turns
-that from rare into routine.
+**All conflict handling is ours.** This was a defect at proposal time and is now
+resolved: both runtimes use a conditional open-to-terminal transition in their
+own authority. A losing concurrent action cannot silently overwrite the
+winner.
 
 **Claiming can only ever be advisory.** Tickets.bot states flatly that *"Discord
 does not allow threads to be claimed"*; Ticket Tool disables claiming on thread
@@ -196,12 +197,12 @@ available to bots in the [19 March 2026 changelog](https://docs.discord.com/deve
 needs `MESSAGE_CONTENT`, async indexing (error `110000`), no tag filter. Useful
 as a human convenience; **not a system of record.**
 
-## 1.8 The archive rots unless we intervene
+## 1.8 Attachment durability
 
-Discord CDN attachment URLs have been signed and expiring (~24h) since late
-2023. Any transcript that stores Discord URLs is already decaying. For CoC
-recruitment — base screenshots, war logs — **attachment bytes must be
-re-hosted at ticket close**, not linked. Cloudinary is already a dependency.
+Attachment durability remains an open live-ticket risk. Terminal legacy
+cloning separately audits source attachments and requires the exact
+`LOSS-...` acknowledgement for unavailable files. The shipped runtime has no
+close command or re-host-at-close workflow.
 
 ## 1.9 Our own foundations
 
@@ -214,8 +215,9 @@ never expire. The `if not kw: return` expiry guard is dead code. Full list in
 [component-dispatcher.md](component-dispatcher.md), including a **live inert
 button in production** (`manage_fwa_data:main`).
 
-**Ticket documents live in `button_store`** alongside ephemeral component state,
-unindexed, unpruned. See [ticket-data-model.md](ticket-data-model.md).
+At proposal time, legacy ticket documents lived in `button_store` beside
+ephemeral state. Shipped coexistence keeps legacy ticket rows in
+`button_store`; thread-v2 tickets and completed clones live in `tickets`.
 
 ---
 
@@ -227,7 +229,7 @@ unindexed, unpruned. See [ticket-data-model.md](ticket-data-model.md).
 |---|---|---|
 | Question | "What needs me now?" | "What happened with X?" |
 | Default scope | `status: open` only (23 today) | everything, forever (361+) |
-| Entry | `/ticket console` | `/ticket history @user`, `/ticket find` |
+| Entry | `/ticket-pilot console` | `/ticket-pilot history member:@user`, `/ticket-pilot find` |
 | Feel | Dense, actionable, live | Sparse, precise, read-only |
 | Backed by | One indexed Mongo query | Indexed query + optional Discord message search |
 
@@ -363,107 +365,43 @@ the select-as-list for the same screen space. That part didn't change.
 
 ---
 
-# PART 3 — MIGRATION & ARCHITECTURE
+# PART 3 — HISTORICAL MIGRATION & ARCHITECTURE
 
-## 3.1 Sequencing — this is the part with a hard constraint
+> **Superseded operator design.** The shipped system keeps legacy `/ticket`
+> rows in `button_store` and thread-v2 `/ticket-pilot` rows in `tickets`.
+> Shared slot and counter records coordinate uniqueness; ticket rows are not
+> copied or dual-written between authorities. See the
+> [operations guide](ticket-console-operations.md) before changing rollout.
 
-```
-1. Fix the dispatcher          ← blocks everything
-2. Extract tickets from button_store  ← blocks the flag
-3. Build thread ticketing behind a flag
-4. Build the dashboard
-5. (separate track) hikari+lightbulb upgrade
-```
+## 3.1 Implemented sequencing and authority boundary
 
-**Why 1 blocks everything.** The natural custom_id for a ticket action is
-`ticket_view:ticket_{channel_id}`. Write that and `components.py:86` loads the
-*ticket document* as handler kwargs — silently, no error, every handler takes
-`**kwargs`. And the house convention ends handlers with
-`delete_one({"_id": action_id})` (`close.py:471`, `:563`, `:688`). One handler
-in the established style permanently deletes a ticket record. This is the most
-obvious way to write the feature.
+The parallel runtime removes the proposal's extraction prerequisite. Configure
+the v2 parents and console, bind a restricted pilot beside the unchanged public
+legacy panel, then move through the guarded rollout phases in §3.4. Legacy
+tickets remain in `button_store`; thread-v2 tickets remain in `tickets`.
+Shared slot and counter records coordinate duplicate-open prevention and ticket
+numbers without copying ticket rows between the two authorities.
 
-The fix is ~50 lines inside `components.py`, **zero changes to the ~120 existing
-call sites**, roughly a day: error boundary with ephemeral followup + a
-correlation ref; unknown-action guard with a `deprecated_alias_of` escape hatch;
-real expiry detection via signature introspection; group routing on the routing
-key; a dedicated `component_state` collection with a `button_store` fallback;
-declarative `allowed_roles` / `owner_field` defaulting to today's open
-behaviour.
+## 3.2 V2 data model scope
 
-One constraint rules out the naive version: about a third of live custom_ids
-carry a semantic `action_id` that was never a state key (`create_ticket:main`,
-`clan_database:`, `edit_clan:role_id_#TAG`). A blanket "state missing → refuse"
-breaks live ticket creation on day one. Signature introspection distinguishes
-the cases without editing decorators. **Ship the expiry check in log-only mode
-for a week first.**
-
-**Why 2 blocks the flag.** You cannot TTL-prune `button_store` while tickets
-live in it — the only date field on ephemeral docs is `created_at`, which is
-also the ticket's creation date. A TTL index deletes ticket history. Extraction
-converts an unfixable problem into a one-line index. Doing it *before* the
-thread work keeps coexistence at **one collection × two venues** instead of a
-2×2 matrix of collection × era.
-
-## 3.2 The unified data model
-
-One `tickets` collection serving both eras. `_id` preserved verbatim
-(`ticket_{channel_id}`) so every sync is an idempotent upsert and rollback is a
-code deploy, not a data restore.
-
-```javascript
-{
-  _id: "ticket_1395400463897202738",   // UNCHANGED from today
-  schema_version: 2,
-  venue: "channel" | "thread",          // the era discriminator
-  location: {
-    id:        <the ticket container>,  // channel OR thread — the jump target
-    parent_id: <category OR parent channel>,
-    staff_space_id: <private thread OR staff thread in recruiter channel>,
-  },
-  channel_id, thread_id, category_id,   // legacy mirrors, kept during coexistence
-  ticket_type: "main" | "fwa",
-  ticket_number: <int>,
-  user_id, username, username_lower, display_name,
-  guild_id,                             // NOT stored today; needed for jump links
-  status: "open" | "approved" | "denied" | "closed",
-  created_at, resolved_at,
-  claimed_by, claimed_at,               // NEW — advisory claiming
-  handled_by, handled_by_name,          // NEW — unified terminal actor
-  rev: 0,                               // optimistic concurrency
-  audit: [],
-  // all original approve/deny fields preserved unchanged
-}
-```
-
-`location.id` is the key insight: the jump link is
-`discord.com/channels/{guild_id}/{location.id}` for **both** eras, identical
-code path. `venue` is rendered as a badge only. One index
-`{"location.id": 1, unique: true}` serves both.
-
-**Backfill is additive-only** — every original field keeps its name and value;
-the inverse is a `$unset` of the new keys. Note `manage.py:263` documents that
-IDs have been stored as both `int` and `str` historically, so the backfill must
-coerce before any unique index.
-
-**Indexes:** `{status:1, created_at:-1}`, `{ticket_type:1, status:1,
-created_at:-1}`, `{username_lower:1}`, `{user_id:1, created_at:-1}`,
-`{claimed_by:1, status:1}`, `{channel_id:1}` (unique), `{"location.id":1}`
-(unique). Also, separately: `{challenge_type:1, channel_id:1, status:1}` on
-`button_store` — the goblin-challenge lookup is an unindexed collection scan
-executed **on every guild message**, quietly the hottest query in the codebase.
+The `tickets` collection contains only thread-v2 tickets and completed terminal
+clones. It uses `location.id` and `location.staff_space_id` for the candidate
+and staff thread pair. Live legacy channel rows stay outside this model and
+outside the v2 console. The [operations guide](ticket-console-operations.md)
+owns the deployed authority contract.
 
 ## 3.3 Thread ticketing end to end
 
-| Step | Channel era (unchanged) | Thread era |
+| Step | Legacy `/ticket` | Thread v2 `/ticket-pilot` |
 |---|---|---|
+| Authority | `button_store` | `tickets` |
 | Create | `create_guild_text_channel` + overwrites | `create_thread(GUILD_PRIVATE_THREAD)` in a ticket parent channel |
 | Candidate access | permission overwrite | `add_thread_member` |
-| Recruiter access | role overwrite | role mention (auto-adds, <100 members) **or** `MANAGE_THREADS` on the recruiter role |
-| Staff back-channel | private thread under the channel | **parallel thread in `#recruiter-workroom`**, cross-linked in Mongo |
+| Recruiter access | role overwrite | Recruiter role requires `VIEW_CHANNEL`, `READ_MESSAGE_HISTORY`, `SEND_MESSAGES_IN_THREADS`, and `MANAGE_THREADS`; creation also mentions the role |
+| Staff back-channel | private thread under the channel | Parallel thread beneath the configured private recruiter-only staff parent, cross-linked in Mongo |
 | Questionnaire | `GuildChannelCreateEvent` → monitor | posted inline at creation (threads fire `GuildThreadCreateEvent`, not the channel event) |
 | Status | channel rename ✅/❌ | **Mongo only** — never rename |
-| Approve/Deny | `$set` | `find_one_and_update` with `status: "open"` precondition |
+| Approve/Deny | Conditional terminal transition in the legacy authority | Conditional terminal transition in the v2 authority |
 | *(no "close")* | rename, leave forever | `archived: true, locked: true` in one PATCH, background-only — see below |
 
 `locked` matters: archive alone means any stray message silently reopens a
@@ -472,131 +410,47 @@ instead.
 
 > **2026-08-17: there is no "close."** Decided in console review — tickets
 > are permanently `approved` or `denied`, never a status meaning gone, and
-> the console never renders "closed." The `archived`/`locked` PATCH above
-> still happens, but it is now invisible background plumbing against the
-> ~1000-active-thread ceiling (risk #8 below), not a user-facing lifecycle
-> step: auto-archive old resolved tickets, auto-unarchive on jump-click,
-> never let it touch `status` or any copy. Full reasoning in
-> [ticket-console.md](ticket-console.md) §7 — flagged there as a judgment
-> call, not a confirmed decision.
+> the console never renders "closed." The implemented runtime locks and
+> archives both terminal threads. Console jump links open them read-only; they
+> remain locked and archived and are not automatically unarchived. Full
+> reasoning is in [ticket-console.md](ticket-console.md) §7.
 
-## 3.4 The feature flag
+## 3.4 Implemented phase routing
 
-**Lives in `mongo.ticket_setup._id: "config"`** as `ticket_mode: "channel" |
-"thread"`, defaulting to `"channel"`. The config doc is re-read on every
-invocation (`handlers.py:185`) — never cached — so a flip takes effect
-immediately with no restart. The `ticket_config` global loaded at
-`__init__.py:29` is **read by nothing anywhere in the repo**; it is dead and
-should be deleted rather than wired into this.
+The shipped runtime does not use `ticket_mode`. It loads two command groups and
+keeps their authorities separate: `/ticket` for legacy channel tickets and
+`/ticket-pilot` for thread-v2 tickets. A guarded rollout record routes only new
+intake:
 
-**Exactly one existing file needs a functional edit.** A 3-line branch after the
-config read at `handlers.py:185`:
+| Phase | New intake |
+|---|---|
+| `legacy_only` | Existing public panel routes to legacy; pilot is disabled. |
+| `prepared` | Legacy-only; bindings and parents have passed validation. |
+| `pilot` | Public panel stays legacy; the exact allowlisted pilot panel routes to v2. |
+| `thread_default` | Existing public panel routes to v2; legacy tickets remain operable. |
+| `rollback_legacy` | New public intake returns to legacy; existing v2 tickets remain operable. |
+| `thread_only` | Public intake routes to v2 after every legacy drain blocker reaches zero. |
 
-```python
-if config.get("ticket_mode", "channel") == "thread":
-    return await create_thread_ticket(ctx, action_id, config, bot, mongo)
-```
+Promotion and rollback are commands, not manual Mongo writes. Use
+`/ticket-pilot rollout-promote` and `/ticket-pilot rollout-rollback` as
+documented in the [operations guide](ticket-console-operations.md).
 
-Everything below stays untouched. The shared cooldown / cleanup / defer block
-above it runs for both paths, which is what you want. Plus one import line in
-`__init__.py`. Everything else is new files.
+## 3.5 Fixed store authorities
 
-**Do not change the custom_ids in `setup.py`.** The entry embed is a persistent
-message posted months ago; branching inside the handler is the only option that
-doesn't require re-posting it, and users clicking the old message still route
-correctly.
+There is no bulk Mongo cutover during coexistence. Open and terminal legacy
+rows remain authoritative in `button_store`; v2 writes only to `tickets`. A
+selected terminal legacy ticket may be cloned individually with
+`/ticket-pilot migrate-legacy`, creating a destination v2 row and archived
+thread pair without modifying or replacing the source.
 
-### What the flag controls, what it doesn't
+## 3.6 Implemented rollout progression
 
-It controls **which system handles a NEW ticket**. It does not migrate anything.
-Tickets created under channel mode stay channels and remain fully operable —
-`/ticket approve` and `/ticket deny` look up by `{"type":"ticket", "channel_id":
-ctx.channel_id}` (`close.py:106`, `:218`), and **inside a thread `ctx.channel_id`
-IS the thread id**, so both eras resolve through the same code path with zero
-changes. The channel-rename step throws harmlessly on threads and is already
-wrapped.
-
-This matches industry practice: Tickets.bot documents that *"Tickets created in
-channel mode remain as channels… Only new tickets will use the currently active
-mode."*
-
-### Rollback
-
-Flip `ticket_mode` back to `"channel"` — one Mongo write. Live thread tickets
-stay resolvable because approve/deny key off the document, not the mode. No data
-migration in either direction. Nothing is stranded.
-
-### ⚠️ The one thing that must be gated before the flag is ever flipped
-
-**`/ticket cleanup-ghosts` becomes a data-destroying command.**
-`manage.py:410-416` builds `live_ids` from `fetch_guild_channels`, **which does
-not return threads**, then marks every open ticket not in that set as
-`denied` / `channel_deleted` (`manage.py:464`). Flip the flag, run
-cleanup-ghosts, and **every live thread ticket is silently denied.** Same defect
-in `/ticket diagnostics` and `/ticket fix-mismatched`.
-
-Gate all three on `venue`, or have them union `fetch_active_threads`. This is
-not optional and it is not a phase-4 item.
-
-## 3.5 The 361 existing documents
-
-**338 of 361 are terminal** (273 denied, 64 approved, 1 closed) and no code path
-writes to a non-open ticket — verified: every mutation filters `status: "open"`.
-They can be copied at any time with zero coordination and zero drift risk.
-
-**23 are open**, all with live channels, 0 ghost rows, 0 orphaned channels. That
-is the entire drift surface, and it is small enough to enumerate by hand.
-
-**Plan:** mongodump first. Copy all 361 into `tickets` non-destructively —
-**nothing is deleted from `button_store`**. Verify counts (361 total; 64/1/273/23
-by status) before repointing any code. Dual-write for one deploy cycle, then
-read `tickets` only. Delete the `button_store` originals months later, after the
-flag is gone.
-
-Keep the single `closed` document as-is. It is the sole survivor of the deleted
-`/ticket close` command and records a real historical decision — normalising it
-to `denied` is the one genuinely irreversible act available in this migration.
-
-> **Not to be confused with the legacy-ticket clone.** This section is a
-> **Mongo-only** migration of this server's own 361 documents — it writes
-> nothing to Discord and recreates no messages. Rebuilding old *channel*
-> tickets as threads (including from other recruitment servers being
-> consolidated) is a separate, later, manual job — see
-> [legacy-ticket-migration.md](legacy-ticket-migration.md) (recorded as
-> decision 21 in §4.2b below).
-
-## 3.6 Phasing
-
-| Phase | Ships | Status |
-|---|---|---|
-| **0** | Dispatcher fix. Reconciliation commands gated on venue. | **Live** — routing guards, error boundary, `component_state` and venue gating all deployed. ✅ Updated 2026-08-20, see below. |
-| **1** | `tickets` collection + backfill + indexes + dual-write | **Live, soaking** since 2026-08-02 |
-| **2** | Approve/deny conditional writes; override path; claiming | **Live, soaking** since 2026-08-02 |
-| **3** | Thread ticketing behind `ticket_mode`, off by default | Not started |
-| **4** | Console dashboard — **max-flash, chart included** (see note) | Not started |
-| **5** | Attachment re-hosting; hikari 2.5.0 + lightbulb 3.2.5 | Not started |
-| **6** | Legacy-ticket clone into threads ([legacy-ticket-migration.md](legacy-ticket-migration.md)) | Not started — manual, operator-paced, after phase 4 |
-
-> ⚠️ **Two corrections to this table, 2026-08-20.**
->
-> **Phase 0 is done, not "partly live."** This row previously said commits 3 & 4
-> (`component_state`, log-only expiry) were **unwritten**. They shipped:
-> `utils/component_state.py` is tracked and 270 lines, declares its TTL index
-> (`expireAfterSeconds=0`), and is imported by `extensions/components.py:18`.
-> [ticket-data-model.md](ticket-data-model.md) has said so since 2026-08-04.
->
-> **Chart rendering moved from phase 5 to phase 4.** §4.2 decision 5 ("charts
-> skipped for now, revisit at phase 5") is **reversed** by §4.2b decision 7 —
-> the console ships max-flash with the chart as its header, not as a later
-> addition. See [ticket-console.md](ticket-console.md) §3.
-
-**Outstanding before phase 3:** dual-write removal (date-gated, 2026-08-09 at the
-earliest) and the `back_to_clan_edit` duplicate (delete the *loser* — see
-[component-dispatcher.md](component-dispatcher.md)).
-
-Phases 0–2 improve the **existing** system and are worth shipping even if thread
-ticketing is abandoned. That is deliberate: nothing before phase 3 is a bet on
-the migration.
+The executable progression is `legacy_only` → `prepared` → `pilot` →
+`thread_default` → `thread_only`. A confirmed rollback from `prepared` returns
+to `legacy_only`; a rollback from a live v2 phase enters `rollback_legacy`.
+Returning from rollback repeats prepare, pilot, and promote. Entering
+`thread_only` additionally requires zero open legacy tickets, active legacy
+slots, and pending legacy workflows.
 
 ---
 
@@ -606,16 +460,16 @@ the migration.
 
 | # | Risk | Mitigation |
 |---|---|---|
-| 1 | **`/ticket cleanup-ghosts` mass-denies live thread tickets.** `fetch_guild_channels` excludes threads. | Gate on `venue` **before** the flag can be flipped. Phase 0. |
-| 2 | **A dashboard handler deletes a ticket record** via a `ticket_*` action_id + the house `delete_one` convention. | Dedicated `component_state` collection. Phase 0. |
-| 3 | **Losing the recruiter back-channel.** Two commercial bots lost it in this exact migration. | Parallel staff thread in a recruiters-only channel. Decide before phase 3. — Settled: yes, this is where the flag alerts and ticket-history panel from [ticket-console.md](ticket-console.md) §5–§6 render. |
-| 4 | **Tickets become inoperable when archived** — slash commands fail, and the archive event may not fire. | Mongo is authority for open/closed; "ensure unarchived" wrapper; nightly reconciliation sweep. |
-| 5 | **Silent status overwrite** — approve clobbers deny. Live today; a dashboard makes it routine. | `find_one_and_update` with precondition. Phase 2. |
-| 6 | **Archive rots** — Discord CDN URLs expire ~24h. | Re-host attachment bytes at close. Phase 5. |
-| 7 | **Recruiter role exceeds 100 members** → role-mention auto-add silently stops. | Monitor; or grant `MANAGE_THREADS` instead. |
-| 8 | **~1000 active-thread cap is undocumented** and Discord shortens auto-archive as you approach it. | No "close" event to hang this on any more (see §3.3, 2026-08-17) — lock+archive old resolved tickets on a background sweep instead, invisibly, with auto-unarchive on jump-click; alarm well below 1000. |
+| 1 | **Legacy reconciliation could mistake threads for missing channels.** | Resolved by separate legacy/v2 repositories and command surfaces; legacy reconciliation does not own v2 rows. |
+| 2 | **A dashboard handler could delete a ticket record through the old shared-state convention.** | Resolved with dedicated component state and v2 action namespacing. |
+| 3 | **Losing the recruiter back-channel.** Two commercial bots lost it in this exact migration. | Resolved: every v2 ticket receives a parallel staff thread in the configured private staff parent. |
+| 4 | **Tickets become inoperable when archived** — an original-design concern. | The shipped v2 flow acts before terminal archive, then keeps terminal pairs locked, archived, and available read-only. Durable recovery temporarily repairs only pending bot-owned work. |
+| 5 | **Silent status overwrite** — approve could clobber deny. | Resolved: both runtimes use conditional terminal transitions; only one decision wins. |
+| 6 | **A legacy clone cannot fetch a source attachment.** | The read-only preview audits attachment loss; confirmation requires the exact reported `LOSS-...` token. The source remains unchanged. |
+| 7 | **A large recruiter role cannot rely on role-mention auto-add.** | Resolved by requiring `MANAGE_THREADS` on the configured recruiter role; parent validation enforces it. |
+| 8 | **~1000 active-thread cap is undocumented** and Discord shortens auto-archive as you approach it. | The shipped runtime locks and archives each terminal pair. Console links keep it read-only and do not auto-unarchive it. |
 | 9 | **System-message spam** on every thread member add. Undeletable. | Set membership once at creation; never use add/remove for claiming. |
-| 10 | **`SEND_MESSAGES` does nothing in threads** — candidates need `SEND_MESSAGES_IN_THREADS`. | Add to `/ticket diagnostics`. The #1 support ticket every thread-mode bot gets. |
+| 10 | **`SEND_MESSAGES` does nothing in threads** — candidates need `SEND_MESSAGES_IN_THREADS`. | `/ticket-pilot configure-threads` validates configured parent and recruiter permissions, `/ticket-pilot thread-config` revalidates them, and intake validates the applicant before creating threads. |
 | 11 | Thread renames fail *silently* at ~2/10min. | Never rename. Status in Mongo. |
 | 12 | Parent channel deletion likely destroys all child threads, irreversibly. | Treat the ticket parent channel as protected infrastructure. |
 
@@ -625,13 +479,14 @@ the migration.
 |---|---|---|
 | 1 | **Parallel staff thread** in a recruiters-only channel, bot-linked via `location.staff_space_id` | Two Discord objects per ticket; dashboard surfaces both |
 | 2 | **FWA 50/50 fixed independently** (second category + repoint `fwa_category`) | Migration is **purely a UX project, no urgency**. Take phases in order. |
-| 3 | **`abandoned` becomes a real state.** Backfill rule: open + 30d no activity. ~21 of the 23 open tickets qualify | Must not fold into `denied` — that corrupts the denial metric. ⚠️ See wrinkle below — and note this decision **was never implemented and is contradicted by §4.3 question 3**; `abandoned` still does not exist. Treat it as intent, not as settled. |
+| 3 | **`abandoned` was proposed as a real state.** | Not implemented. Thread v2 stores only `open`, `approved`, or `denied`; rollout does not backfill or reclassify legacy rows. |
 | 4 | **Advisory claiming accepted** | Social convention at this size; Discord cannot enforce it regardless |
 | 5 | ~~**Charts skipped for now**, revisit at phase 5~~ **REVERSED 2026-08-17** by decision 7 | The chart ships in v1 as the console header. Pillow is already a dependency and the image is a message attachment, so it added nothing new after all. |
 | 6 | **hikari+lightbulb upgrade is a separate track, after phase 2** | Coupled move (2.5.0 + 3.2.5); must not ride along with ticketing |
 
-**Explicitly rejected:** a read-only dashboard over existing channel tickets to
-get discoverability early. It is work that gets thrown away at phase 3.
+The original proposal rejected a read-only dashboard over legacy channel
+tickets. The shipped v2 console likewise queries `tickets`, not live
+`button_store` rows.
 
 ## 4.2b DECISIONS — console review, settled 2026-08-17
 
@@ -648,30 +503,12 @@ Full detail and reasoning in [ticket-console.md](ticket-console.md). Summary:
 | 13 | **Blacklist is binary, no "maybe" tier.** Two more flags added as non-blocking cautions: denied-before, not-loyal-to-WU. | New small `ticket_flags`-style collection, not designed before now — see [ticket-console.md](ticket-console.md), Related. |
 | 14 | **Status/Type filters cannot live inside the "Find a ticket" modal** — hikari has no Label builder, so Discord's Aug-2025 modal-select support is unreachable (the wall established in §1.5). Relocated to the ephemeral results panel as two message selects. | Corrects a mockup mistake before it became a build mistake. |
 | 15 | **`/fwa chocolate` is a link-out, not a lookup** — confirmed against `extensions/commands/fwa/chocolate.py`. A human reads the ban status and records it as a flag. | Corrects a second mockup mistake; the flag record's shape (`addedBy`, `checkedAt`, `source`) was already right for this. |
-| 16 | **Nothing is ever "closed."** Tickets are permanently `approved`/`denied`; the thread is never renamed to imply done, never deleted. | Discord's `archived` flag survives only as invisible capacity plumbing against risk #8, decoupled from ticket status. Flagged as a judgment call, not fully confirmed — see [ticket-console.md](ticket-console.md) §7. |
+| 16 | **Nothing is ever "closed."** Tickets are permanently `approved`/`denied`; the thread is never renamed to imply done, never deleted. | Implemented: the runtime locks and archives both terminal threads, while console links keep them available read-only. See [ticket-console.md](ticket-console.md) §7. |
 | 17 | **Ticket-history auto-detect** — any repeat Discord ID/player tag gets a staff-thread panel with jump links, independent of the flag system. Fires for everyone with history, not just flagged people. | New behavior, not in the original proposal at all. |
 | 18 | **The flag is labelled "Blacklisted," not "On blacklist."** | Copy change only; applied to console copy, the chart pill and the mockup. |
 | 19 | **Chart palette is vibrant, and colorblind/CVD validation is explicitly NOT a requirement.** The earlier `dataviz` six-check palette (`#43a25a`/`#7b83f0`/`#e0656a`) is rescinded. Flag colors are sampled from the supplied artwork. | Reverses a self-imposed constraint that was never asked for. The only standing audience requirement is plain-English copy. See [ticket-console.md](ticket-console.md) §3.2. |
 | 20 | **Chart iconography is supplied PNG artwork or hand-drawn PIL shapes — never emoji rendered through a font.** Five assets committed to `assets/tickets/`. | Color-emoji support is unreliable across Pillow/server font setups; a glyph that renders locally can be a box on the deploy box. See [ticket-console.md](ticket-console.md) §3.4. |
-| 21 | **Legacy channel tickets get cloned into threads** via webhook impersonation — single target server, staff-thread parity, archive-immediately, pilot first. ~1,500 tickets. | Distinct from §3.5, which migrates *this* server's Mongo documents only and writes nothing to Discord. Full design in [legacy-ticket-migration.md](legacy-ticket-migration.md). |
-
-### ⚠️ Wrinkle on decision 3 — "no activity" is not derivable today
-
-Ticket documents carry `created_at` and nothing else temporal (`handlers.py:367`).
-There is **no `last_activity_at`**, so "open + 30d no activity" cannot be
-evaluated from Mongo alone. Three options, to settle at phase 1:
-
-- **`created_at` as proxy** — "created 30d+ ago and still open". Wrong for a
-  ticket that was active last week, but free and needs no API calls.
-- **One-off fetch of the 23 open channels' `last_message_id`** for the backfill,
-  then record `last_activity_at` going forward. Accurate. 23 fetches is safe —
-  this is not the per-ticket loop that got the startup sweep disabled, which ran
-  over every channel in the guild.
-- **Start recording only, no backfill** — the ~21 get classified by proxy once,
-  new tickets get real data.
-
-Recommendation: option 2. It is a bounded one-time cost and it is the only one
-that gets the existing 21 right.
+| 21 | **Terminal legacy channel tickets can be cloned into threads** via webhook impersonation — single target server, staff-thread parity, archive immediately. | Implemented as a source-read-only, resumable `/ticket-pilot migrate-legacy` flow, hard-capped at 1–5 selected tickets before pilot approval. There is no §3.5 bulk store conversion. |
 
 ## 4.3 Original open questions (superseded above)
 
@@ -681,16 +518,13 @@ that gets the existing 21 right.
 2. **Is the FWA 50/50 category being fixed independently?** If yes, the
    migration is purely a UX project and can move at its own pace. If the
    migration *is* the fix, phase 3 becomes urgent and I'd want to reorder.
-3. **`abandoned` status** — it does not exist today; the only values ever
-   written are `open`/`approved`/`denied`. Introduce it as a real state with a
-   backfill rule (e.g. open + no activity 30d), or drop it from the filter list?
-   **Still open as of 2026-08-17** — not discussed in console review, not in
-   the console's `STATUS` map. See [ticket-console.md](ticket-console.md) §9.
-4. ~~**Advisory claiming** — acceptable?~~ **Partly settled**: backend
-   claiming stays advisory (unchanged). **New sub-question as of
-   2026-08-17**: the console no longer surfaces claim state at all — does
-   `/ticket claim`/`/ticket release` get deprecated, or just stop being
-   rendered? See [ticket-console.md](ticket-console.md) §9.
+3. ~~**`abandoned` status.**~~ **Settled by implementation:** v2 uses only
+   `open`/`approved`/`denied`; there is no abandoned-state backfill or filter.
+   See [ticket-console.md](ticket-console.md) §9.
+4. ~~**Advisory claiming.**~~ **Settled by the runtime split:** the v2 console
+   and `/ticket-pilot` have no claim/release workflow. `/ticket claim` and
+   `/ticket release` remain legacy-only commands. See
+   [ticket-console.md](ticket-console.md) §9.
 5. ~~**Chart rendering** in phase 5, or not at all?~~ **Settled 2026-08-17**:
    phase 1 (first build), not phase 5. See decision 7 above.
 6. **The hikari/lightbulb upgrade** — separate track now, later, or never? Not

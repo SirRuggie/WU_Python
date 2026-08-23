@@ -187,7 +187,7 @@ class FlagRemoveCommand(
 ):
     flag_id = lightbulb.string(
         "flag-id",
-        "Exact flag ID shown by /ticket flags or ticket detail",
+        "Exact flag ID shown by /ticket-pilot flags or ticket detail",
         min_length=6,
         max_length=80,
     )

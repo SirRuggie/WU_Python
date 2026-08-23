@@ -3,10 +3,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# These files own durable ticket mirrors or the separately bounded Goblin
-# challenge and are intentionally allowed to touch the legacy collection.
+# These files own an explicit legacy authority, shared cross-runtime durability,
+# read-only migration conflict detection, or a separately bounded feature.
 ALLOWED_DIRECT_BUTTON_STORE = {
-    Path("extensions/commands/tickets/store.py"),
+    Path("extensions/commands/ticket_runtime.py"),
+    Path("extensions/commands/tickets_legacy/store.py"),
+    # Owns durable legacy resolution effects in button_store; every authority
+    # CAS is constrained through store._legacy_filter.
+    Path("extensions/commands/tickets_legacy/resolution_delivery.py"),
     Path("extensions/commands/tickets/migrate.py"),
     # Read-only conflict detection prevents a canonical migration from cloning
     # a legacy-only or mismatched source ticket.

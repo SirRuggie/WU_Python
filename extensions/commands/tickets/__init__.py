@@ -8,16 +8,18 @@ import hikari
 import lightbulb
 import coc
 
+from extensions.commands import ticket_runtime
 from utils.mongo import MongoClient
 from utils.startup_reconciler import StartupReconciler
 
 
 loader = lightbulb.Loader()
-ticket = lightbulb.Group("ticket", "Warriors United thread ticket commands")
+ticket = lightbulb.Group("ticket-pilot", "Warriors United thread ticket pilot commands")
 
 ticket_config: dict | None = None
 startup_index_errors: dict[str, str] = {}
 _startup_complete = False
+_thread_intake_ready = False
 _workflow_recovery: StartupReconciler | None = None
 _staff_context_sweep_after: str | None = None
 _staff_context_sweep_complete = False
@@ -25,11 +27,13 @@ CREATION_RECOVERY_LIMIT = 50
 MIGRATION_RECOVERY_LIMIT = 5
 STAFF_CONTEXT_RECOVERY_LIMIT = 25
 ACCOUNT_SYNC_RECOVERY_LIMIT = 25
+LEGACY_DELIVERY_RECOVERY_LIMIT = 25
 
 
 async def prepare_ticket_runtime(mongo: MongoClient) -> dict[str, str]:
     """Install every durable index independently and report fail-closed errors."""
     operations: tuple[tuple[str, Callable[[], Awaitable[object]]], ...] = (
+        ("shared_runtime", lambda: ticket_runtime.ensure_indexes(mongo)),
         ("tickets", lambda: store.ensure_indexes(mongo)),
         ("flags", lambda: flag_store.ensure_indexes(mongo)),
         ("creation", lambda: thread_service.ensure_creation_indexes(mongo)),
@@ -49,6 +53,21 @@ async def prepare_ticket_runtime(mongo: MongoClient) -> dict[str, str]:
     return errors
 
 
+async def recover_pending_legacy_deliveries(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    *,
+    limit: int = LEGACY_DELIVERY_RECOVERY_LIMIT,
+) -> dict[str, int]:
+    """Resume legacy monitor work inside the existing startup retry loop."""
+
+    from extensions.events.channel import ticket_channel_monitor
+
+    return await ticket_channel_monitor.recover_pending_automation_deliveries(
+        bot=bot, mongo=mongo, limit=limit
+    )
+
+
 async def recover_ticket_workflows(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
@@ -56,8 +75,28 @@ async def recover_ticket_workflows(
 ) -> None:
     """Resume only durable, previously authorized ticket work."""
     global _staff_context_sweep_after, _staff_context_sweep_complete
+    global _thread_intake_ready
+
+    _thread_intake_ready = False
 
     await store.ensure_indexes(mongo)
+    _slot_backfill, _slot_reconcile = await ticket_runtime.recover_ticket_runtime(mongo)
+    legacy_delivery = await recover_pending_legacy_deliveries(
+        bot, mongo, limit=LEGACY_DELIVERY_RECOVERY_LIMIT
+    )
+    blockers = await ticket_runtime.runtime_blocker_status(mongo)
+    if blockers.blocked:
+        details: list[str] = []
+        if blockers.pending_delivery_ids:
+            details.append(
+                "legacy deliveries=" + ",".join(blockers.pending_delivery_ids)
+            )
+        if blockers.conflict_slot_ids:
+            details.append(
+                "open-ticket conflicts=" + ",".join(blockers.conflict_slot_ids)
+            )
+        suffix = f" ({'; '.join(details)})" if details else ""
+        raise RuntimeError(f"shared ticket recovery remains blocked{suffix}")
     creation_kwargs = {
         "bot": bot,
         "mongo": mongo,
@@ -116,10 +155,13 @@ async def recover_ticket_workflows(
             staff_context,
             account_identities,
             open_context,
+            legacy_delivery,
         )
     )
     print(
         "[Tickets] startup_workflow_recovery "
+        f"legacy_delivery={legacy_delivery.get('completed', 0)}/"
+        f"{legacy_delivery.get('processed', 0)} "
         f"creation={creation.get('completed', 0)}/{creation.get('processed', 0)} "
         f"migration={migration.get('completed', 0)}/{migration.get('processed', 0)} "
         f"staff_context={staff_context.get('completed', 0)}/"
@@ -133,7 +175,11 @@ async def recover_ticket_workflows(
     if failed:
         raise RuntimeError(f"{failed} ticket workflow recovery item(s) remain pending")
     if (
-        int(creation.get("processed", 0)) >= CREATION_RECOVERY_LIMIT
+        int(legacy_delivery.get("processed", 0))
+        >= LEGACY_DELIVERY_RECOVERY_LIMIT
+        or int(legacy_delivery.get("synthesized", 0))
+        >= LEGACY_DELIVERY_RECOVERY_LIMIT
+        or int(creation.get("processed", 0)) >= CREATION_RECOVERY_LIMIT
         or int(migration.get("processed", 0)) >= MIGRATION_RECOVERY_LIMIT
         or int(staff_context.get("processed", 0)) >= STAFF_CONTEXT_RECOVERY_LIMIT
         or int(account_identities.get("processed", 0)) >= ACCOUNT_SYNC_RECOVERY_LIMIT
@@ -143,6 +189,12 @@ async def recover_ticket_workflows(
         # Let StartupReconciler schedule another background pass; the final
         # exact-size batch conservatively causes one harmless empty pass.
         raise RuntimeError("ticket workflow recovery has another bounded batch pending")
+    _thread_intake_ready = True
+
+
+def thread_intake_ready() -> bool:
+    """Whether shared durability and all thread workflow recovery completed."""
+    return _thread_intake_ready
 
 
 async def _recover_ticket_runtime(
@@ -212,6 +264,7 @@ async def on_started(
 async def on_stopping(_: hikari.StoppingEvent) -> None:
     """Await every ticket-owned worker before shared REST/Mongo shutdown."""
     global _startup_complete, _staff_context_sweep_after, _staff_context_sweep_complete
+    global _thread_intake_ready
     try:
         if _workflow_recovery is not None:
             await _workflow_recovery.stop()
@@ -219,6 +272,7 @@ async def on_stopping(_: hikari.StoppingEvent) -> None:
         _startup_complete = False
         _staff_context_sweep_after = None
         _staff_context_sweep_complete = False
+        _thread_intake_ready = False
         try:
             await resolve.stop_resolution_reconciler()
         finally:
@@ -242,6 +296,7 @@ from . import migrate
 from . import console
 from . import flags
 from . import legacy_migration
+from . import rollout
 
 
 loader.command(ticket)
@@ -252,6 +307,8 @@ __all__ = [
     "ticket_config",
     "startup_index_errors",
     "prepare_ticket_runtime",
+    "recover_pending_legacy_deliveries",
     "recover_ticket_workflows",
     "start_ticket_workflow_recovery",
+    "thread_intake_ready",
 ]

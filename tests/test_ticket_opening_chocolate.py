@@ -1,9 +1,13 @@
 import asyncio
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+import os
 from types import SimpleNamespace
+import uuid
 
 import hikari
 import pytest
+from pymongo import AsyncMongoClient, ReturnDocument
 
 from extensions.commands.fwa.chocolate_links import chocolate_url, is_valid_tag
 from extensions.commands.tickets import console, thread_service
@@ -204,6 +208,7 @@ def test_chocolate_link_labels_neutralize_hostile_account_names():
 class _StateCollection:
     def __init__(self):
         self.document = None
+        self.renewals = 0
 
     async def update_one(self, query, update, **kwargs):
         if self.document is None and kwargs.get("upsert"):
@@ -216,6 +221,11 @@ class _StateCollection:
         expected_generation = query.get("refresh_generation")
         if isinstance(expected_generation, int) and self.document.get("refresh_generation") != expected_generation:
             return SimpleNamespace(matched_count=0)
+        if (
+            "lease_owner" in query
+            and "lease_until" in update.get("$set", {})
+        ):
+            self.renewals += 1
         self.document.update(deepcopy(update.get("$set", {})))
         for field, amount in update.get("$inc", {}).items():
             self.document[field] = int(self.document.get(field) or 0) + int(amount)
@@ -332,6 +342,141 @@ def test_chocolate_delivery_is_durable_duplicate_safe_and_updates_in_place(monke
     assert len(states.document["chocolate_message_ids"]) == 2
 
 
+def test_multi_page_delivery_renews_before_every_rest_write(monkeypatch):
+    async def none(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(console.flag_store, "list_for_identity", none)
+    monkeypatch.setattr(console.store, "history_for", none)
+    states = _StateCollection()
+    rest = _Rest()
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+    mongo = SimpleNamespace(ticket_automation_state=states)
+
+    asyncio.run(console.deliver_staff_identity_context(
+        bot, mongo, _ticket(count=37)
+    ))
+
+    assert rest.creates == 3
+    assert states.renewals == rest.creates
+    assert console.CONTEXT_LEASE > timedelta(seconds=150)
+
+
+def test_multi_page_delivery_stops_after_takeover_during_slow_rest_call(monkeypatch):
+    async def none(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(console.flag_store, "list_for_identity", none)
+    monkeypatch.setattr(console.store, "history_for", none)
+
+    async def scenario():
+        states = _StateCollection()
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class SlowRest(_Rest):
+            async def create_message(self, **kwargs):
+                if self.creates == 1:
+                    started.set()
+                    await release.wait()
+                return await super().create_message(**kwargs)
+
+        rest = SlowRest()
+        bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+        mongo = SimpleNamespace(ticket_automation_state=states)
+        delivery = asyncio.create_task(console.deliver_staff_identity_context(
+            bot, mongo, _ticket(count=37)
+        ))
+        await started.wait()
+        states.document["lease_owner"] = "takeover-owner"
+        states.document["lease_until"] = (
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        )
+        release.set()
+
+        assert await delivery is None
+        assert rest.creates == 2
+        assert states.document["lease_owner"] == "takeover-owner"
+        assert states.document["delivery_state"] == "pending"
+
+    asyncio.run(scenario())
+
+
+def test_real_mongo_slow_page_takeover_fences_remaining_rest_writes(monkeypatch):
+    uri = os.getenv("TICKET_TEST_MONGODB_URI")
+    if not uri:
+        pytest.skip("TICKET_TEST_MONGODB_URI is required for the real-Mongo regression")
+
+    async def none(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(console.flag_store, "list_for_identity", none)
+    monkeypatch.setattr(console.store, "history_for", none)
+
+    async def scenario():
+        client = AsyncMongoClient(uri, serverSelectionTimeoutMS=5_000)
+        database_name = f"wu_staff_context_lease_{uuid.uuid4().hex}"
+        database = client.get_database(database_name)
+        mongo = SimpleNamespace(
+            ticket_automation_state=database.ticket_automation_state,
+        )
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class SlowRest(_Rest):
+            async def create_message(self, **kwargs):
+                if self.creates == 1:
+                    started.set()
+                    await release.wait()
+                return await super().create_message(**kwargs)
+
+        rest = SlowRest()
+        bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+        state_id = "ticket_staff_context:ticket_501"
+        try:
+            await client.admin.command("ping")
+            delivery = asyncio.create_task(console.deliver_staff_identity_context(
+                bot, mongo, _ticket(count=37)
+            ))
+            await started.wait()
+            active = await database.ticket_automation_state.find_one({"_id": state_id})
+            stale_owner = active["lease_owner"]
+            expired = datetime.now(timezone.utc) - timedelta(seconds=1)
+            result = await database.ticket_automation_state.update_one(
+                {"_id": state_id, "lease_owner": stale_owner},
+                {"$set": {"lease_until": expired}},
+            )
+            assert result.matched_count == 1
+            takeover_at = datetime.now(timezone.utc)
+            winner = await database.ticket_automation_state.find_one_and_update(
+                {
+                    "_id": state_id,
+                    "kind": "ticket_staff_context",
+                    "lease_until": {"$lte": takeover_at},
+                },
+                {"$set": {
+                    "lease_owner": "takeover-owner",
+                    "lease_until": takeover_at + console.CONTEXT_LEASE,
+                }},
+                return_document=ReturnDocument.AFTER,
+            )
+            assert winner["lease_owner"] == "takeover-owner"
+            release.set()
+
+            assert await delivery is None
+            assert rest.creates == 2
+            durable = await database.ticket_automation_state.find_one({"_id": state_id})
+            assert durable["lease_owner"] == "takeover-owner"
+            assert durable["delivery_state"] == "pending"
+            assert "delivered_at" not in durable
+        finally:
+            release.set()
+            await client.drop_database(database_name)
+            await client.close()
+
+    asyncio.run(scenario())
+
+
 def test_recovered_terminal_accounts_update_archived_checklist_without_duplicates(
     monkeypatch,
 ):
@@ -400,6 +545,64 @@ def test_recovered_terminal_accounts_update_archived_checklist_without_duplicate
         content for message in rest.messages for content in _contents(message.components)
     )
     assert copy.count("cc.fwafarm.com") == 30
+
+
+def test_terminal_reopen_unlock_and_archive_each_require_a_fresh_lease():
+    renewals = 0
+    effects = []
+    ticket = _ticket(count=1)
+    ticket["status"] = "denied"
+    ticket["location"].update({"guild_id": 10, "staff_parent_id": 21})
+
+    async def renew():
+        nonlocal renewals
+        renewals += 1
+
+    class Rest:
+        async def fetch_channel(self, channel_id):
+            return SimpleNamespace(
+                id=channel_id,
+                guild_id=10,
+                parent_id=21,
+                name=thread_service.thread_names("fwa", 501, "Applicant")[1],
+                type=hikari.ChannelType.GUILD_PUBLIC_THREAD,
+                owner_id=7,
+                is_archived=True,
+                is_locked=True,
+            )
+
+        async def edit_channel(self, channel_id, **kwargs):
+            assert renewals == len(effects) + 1
+            effects.append((channel_id, kwargs))
+
+    async def scenario():
+        async with console._staff_context_write_window(
+            Rest(),
+            ticket,
+            102,
+            reopen_terminal_thread=True,
+            expected_owner_id=7,
+            renew_lease=renew,
+        ):
+            pass
+
+    asyncio.run(scenario())
+    assert renewals == 3
+    assert [kwargs for _channel_id, kwargs in effects] == [
+        {
+            "archived": False,
+            "reason": "Retrying committed ticket staff context",
+        },
+        {
+            "locked": False,
+            "reason": "Retrying committed ticket staff context",
+        },
+        {
+            "locked": True,
+            "archived": True,
+            "reason": "Restoring resolved ticket staff thread",
+        },
+    ]
 
 
 def test_chocolate_delivery_retires_pages_after_current_links_shrink(monkeypatch):

@@ -78,7 +78,7 @@ class Deny(
         action_id = str(ctx.interaction.id)
         await insert_state(mongo, {
             "_id": action_id,
-            "type": "deny_action",
+            "type": "ticket_v2_deny_action",
             "ticket_id": ticket["_id"],
             "guild_id": int(ctx.guild_id or 0),
             "channel_id": current_channel_id,
@@ -92,17 +92,17 @@ class Deny(
             components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"deny_fwa_default:{action_id}",
+                    custom_id=f"ticket_v2_deny_fwa_default:{action_id}",
                     label="Use FWA default"
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"deny_main_default:{action_id}",
+                    custom_id=f"ticket_v2_deny_main_default:{action_id}",
                     label="Use Main default"
                 ),
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
-                    custom_id=f"deny_custom:{action_id}",
+                    custom_id=f"ticket_v2_deny_custom:{action_id}",
                     label="Write custom reason"
                 )
             ]
@@ -163,7 +163,7 @@ class Approve(
         if result.outcome == store.LOST:
             if (result.doc or {}).get("status") == "open":
                 await ctx.respond(
-                    "The ticket changed before approval finished. Run `/ticket approve` again."
+                    "The ticket changed before approval finished. Run `/ticket-pilot approve` again."
                 )
                 return
             content, rows = await resolve.offer_override(
@@ -200,7 +200,7 @@ class Approve(
 
 
 # Denial action handlers
-@register_action("deny_fwa_default", no_return=True, requires_state=True)
+@register_action("ticket_v2_deny_fwa_default", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def deny_fwa_default_handler(
     ctx: lightbulb.components.MenuContext,
@@ -232,7 +232,7 @@ async def deny_fwa_default_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/ticket deny` again."
+                    "The ticket changed before denial finished. Run `/ticket-pilot deny` again."
                 ),
                 components=[],
             )
@@ -270,7 +270,7 @@ async def deny_fwa_default_handler(
     )
 
 
-@register_action("deny_main_default", no_return=True, requires_state=True)
+@register_action("ticket_v2_deny_main_default", no_return=True, requires_state=True)
 @lightbulb.di.with_di
 async def deny_main_default_handler(
     ctx: lightbulb.components.MenuContext,
@@ -302,7 +302,7 @@ async def deny_main_default_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/ticket deny` again."
+                    "The ticket changed before denial finished. Run `/ticket-pilot deny` again."
                 ),
                 components=[],
             )
@@ -341,7 +341,7 @@ async def deny_main_default_handler(
 
 
 @register_action(
-    "deny_custom", no_return=True, opens_modal=True,
+    "ticket_v2_deny_custom", no_return=True, opens_modal=True,
     requires_state=True, preload_state=False,
 )
 @lightbulb.di.with_di
@@ -363,13 +363,13 @@ async def deny_custom_handler(
     
     await ctx.interaction.create_modal_response(
         title="Custom Denial Reason",
-        custom_id=f"process_custom_denial:{action_id}",
+        custom_id=f"ticket_v2_process_custom_denial:{action_id}",
         components=[reason_input]
     )
 
 
 @register_action(
-    "process_custom_denial", no_return=True, is_modal=True, preload_state=False,
+    "ticket_v2_process_custom_denial", no_return=True, is_modal=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def process_custom_denial_handler(
@@ -389,7 +389,7 @@ async def process_custom_denial_handler(
         "denier_id": 1,
         "guild_id": 1,
     })
-    if not envelope or envelope.get("type") != "deny_action":
+    if not envelope or envelope.get("type") != "ticket_v2_deny_action":
         await ctx.interaction.edit_initial_response(content="❌ Session expired")
         return
     denier_id = int(envelope.get("denier_id") or 0)
@@ -410,7 +410,7 @@ async def process_custom_denial_handler(
     data = await get_state(mongo, action_id)
     if (
         not data
-        or data.get("type") != "deny_action"
+        or data.get("type") != "ticket_v2_deny_action"
         or int(data.get("denier_id") or 0) != denier_id
         or int(data.get("guild_id") or 0) != guild_id
     ):
@@ -440,7 +440,7 @@ async def process_custom_denial_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/ticket deny` again."
+                    "The ticket changed before denial finished. Run `/ticket-pilot deny` again."
                 )
             )
             return
