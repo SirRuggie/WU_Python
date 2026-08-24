@@ -1,10 +1,21 @@
 # Ticket pilot and console operations
 
-This is the operator source of truth for the shipped thread-ticket runtime. It
+This is the operator source of truth for the implemented thread-ticket runtime. It
 supersedes rollout and operating notes in the
 [console design](ticket-console.md),
 [thread proposal](thread-ticketing-proposal.md), and
 [legacy migration design](legacy-ticket-migration.md).
+
+For a plain-English explanation of every registered new-system command, use
+the [thread ticket command README](ticket-console/README.md).
+
+## Current delivery status
+
+As of 2026-08-23, the cross-server implementation is pushed on the feature
+branch but is **not deployed or configured live**. Production remains on the
+existing legacy runtime. Deploying the code does not switch intake by itself:
+the old panel stays authoritative until setup, preparation, pilot testing, and
+an explicit confirmed promotion are completed.
 
 ## Coexistence contract
 
@@ -13,7 +24,7 @@ supersedes rollout and operating notes in the
 - `/ticket-pilot` is the thread-ticket v2 runtime. Its authority is `tickets`.
 - Do not copy, merge, or repoint those stores. Existing legacy tickets remain
   live under `/ticket` while v2 is prepared, piloted, promoted, or rolled back.
-- Legacy recruiter claim/release remains only for completing channel tickets
+- Legacy recruiter claim/release remains only for operating channel tickets
   during coexistence. Thread v2 has no recruiter claim, release, close, or
   reopen action; its only terminal decisions are approved and denied.
 - The runtimes share one-open-ticket slots and ticket-number counters. An
@@ -25,6 +36,19 @@ supersedes rollout and operating notes in the
 - A missing or invalid rollout configuration fails safely to legacy intake.
 - Rollout changes only where a **new** ticket opens. It never converts, closes,
   or deletes an existing ticket.
+
+The command ownership is permanent during coexistence:
+
+| Command group | Runtime | Storage | Purpose |
+|---|---|---|---|
+| `/ticket` | Legacy channel tickets | `button_store` | Existing tickets and old-server intake |
+| `/ticket-pilot` | V2 thread tickets | `tickets` | Target-server setup, pilot, console, decisions, flags, and migration |
+
+Applicants create tickets from panel buttons, not slash commands. The v2 group
+has exactly 22 registered commands; the command README lists every one. V2 has
+no claim, release, close, reopen, or candidate-history command. Legacy
+claim/release remains registered only so legacy tickets keep their
+current operating behavior during coexistence.
 
 ## Required two-server layout
 
@@ -42,6 +66,11 @@ Main and FWA must share the public-v2 candidate parent and the recruiter-only
 staff parent. Separate Main/FWA candidate parents are invalid. Deny public access
 to the staff parent and console, and grant the bot and target-server
 thread-recruiter role every permission reported by command validation.
+
+Shared staff-parent use and console separation are operational release
+requirements, but current readiness code enforces only shared candidate-parent
+use. Manually compare both saved staff-parent IDs and verify console separation
+before pilot and again before promotion.
 
 The rollout binds three distinct intake messages: the old-server legacy panel,
 the target-server private pilot panel, and the target-server public-v2 panel.
@@ -262,6 +291,75 @@ drained phase:
 /ticket-pilot rollout-drain confirm:true
 ```
 
+## After legacy is disabled: remove the `-pilot` suffix
+
+For this project, "remove the pilot key" means remove the user-visible
+`-pilot` suffix so the new command group becomes `/ticket`. It does **not** mean
+deleting Mongo's `ticket_rollout.pilot` field.
+
+`rollout-drain confirm:true` enters `thread_only`, but it does not unload the
+legacy extension, delete a panel, or rename a Discord command. Perform the
+rename only in a separate atomic retirement release after the drain is proven
+complete:
+
+1. Before entering `thread_only`, ship a prerequisite safety change that adds
+   pending embedded legacy `resolution_delivery` work to
+   `legacy_drain_status`/`rollout-drain`, rejects every legacy approve, deny,
+   and override mutation after `thread_only`, and keeps the legacy resolution
+   recovery worker active until that count reaches zero. The current drain does
+   not yet provide this final retirement fence.
+2. Deploy that prerequisite change, then run and save the clean results from:
+
+   ```text
+   /ticket-pilot rollout-status
+   /ticket-pilot rollout-drain confirm:false
+   /ticket-pilot rollout-drain confirm:true
+   /ticket-pilot rollout-status
+   ```
+
+3. Stop and fully drain the bot process for the retirement maintenance window.
+   The final proof must run while no legacy command, worker, or other bot
+   process can write.
+4. Confirm every legacy resolution-delivery record is `complete` or
+   `cancelled`. This read-only database check must return `0`:
+
+   ```javascript
+   db.button_store.countDocuments({
+     type: "ticket",
+     resolution_delivery: { $exists: true },
+     "resolution_delivery.state": { $nin: ["complete", "cancelled"] }
+   })
+   ```
+
+   If it is nonzero, restart the prerequisite build—not the retirement build—
+   let recovery finish, re-run `rollout-status` and
+   `rollout-drain confirm:false`, then fully stop and repeat the final proof.
+   Do not rerun confirmed drain after `thread_only`. Permit no writer between
+   the zero result and retirement deployment.
+5. Build one retirement release that stops loading the legacy `/ticket`
+   extension and legacy channel monitor, renames the v2 group from
+   `/ticket-pilot` to `/ticket`, makes `thread_only` unable to roll back to an
+   unloaded legacy runtime, and updates every command reference, help entry,
+   registration test, and operations example together.
+6. Replace or unregister the now-obsolete cross-server `setup`, tester-access,
+   and rollout controls. Preserve `migrate-legacy` and
+   `approve-migration-pilot` while historical cloning is still needed. Add a
+   production-safe public-panel repair command because the current setup
+   command cannot replace that panel in `thread_only`.
+7. Deploy once, restart/synchronize Discord commands, and verify that `/ticket`
+   contains only the intended v2 commands, `/ticket-pilot` is gone, the public
+   panel creates a v2 ticket, and the console still finds existing v2 tickets.
+8. After verification, delete only the inactive private pilot-panel message if
+   desired. Keep the target public panel, console, candidate/staff threads,
+   source channels, both ticket collections, audit history, open-slot state,
+   component IDs, and migration checkpoints.
+
+Do not remove the final tester with `pilot-user`/`pilot-role`, unset
+`ticket_rollout.pilot`, unset `legacy_intake`, or unset
+`legacy_ticket_guild_id` before that retirement release. The current parser
+requires the stored pilot structure even in `thread_only`; deleting it makes
+the rollout invalid and rejects public v2 intake.
+
 ## Daily recruiter workflow
 
 Use `/ticket` for tickets that opened in the legacy runtime. Use the private
@@ -336,6 +434,34 @@ from ticket detail or `flags` before removing it.
 
 Terminal candidate and staff threads remain locked, archived, and available
 read-only from the console.
+
+## Candidate return and follow-up status
+
+Candidate follow-up is **not implemented**. A candidate cannot currently use
+the console, find their archived ticket, or post into the locked candidate
+thread a month later. Staff can open its details and archived links through the
+private console, `/ticket-pilot find`, or `/ticket-pilot history`.
+
+After approval or denial releases the shared open-ticket slot, the applicant
+may create a later **new** ticket and receive a new thread pair. That is repeat
+intake, not reopening or continuing the archived conversation.
+
+The researched recommendation, pending explicit product approval and a future
+implementation, is a candidate-facing **My Tickets / Ask Follow-Up** action on
+the target public intake panel:
+
+1. Authenticate the click by Discord ID and show only that applicant's eligible
+   tickets.
+2. Let the applicant select the original ticket and submit the question in a
+   private modal.
+3. Durably unlock and unarchive the same candidate/staff thread pair, restore
+   candidate membership, post an attributed question, and alert recruiters
+   once.
+4. Preserve the original `approved` or `denied` decision, track the follow-up
+   lifecycle separately, and relock/rearchive the pair after inactivity.
+
+Do not tell candidates this exists and do not substitute a new ticket for the
+same-ticket follow-up until that design is approved and implemented.
 
 ## Clone terminal legacy tickets
 

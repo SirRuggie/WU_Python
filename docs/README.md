@@ -8,8 +8,8 @@ Durable project knowledge. One file per subject.
 > verification greps are there.
 
 Written because it is fundamental, non-obvious, by-design, or was discovered
-the hard way. The standing instruction that governs this folder is in
-[`../CLAUDE.md`](../CLAUDE.md).
+the hard way. Read this index and [editing-this-repo.md](editing-this-repo.md)
+before changing durable documentation.
 
 ## Stack & environment
 
@@ -43,10 +43,14 @@ the hard way. The standing instruction that governs this folder is in
   jobstore, Mongo-backed restore), the select-all + partial-failure pattern to
   copy, and four unguarded 25-option menus that are clear only at current scale.
 
-- [ticket-console-operations.md](ticket-console-operations.md) — the shipped
-  ticket operator source of truth: safe `/ticket` + `/ticket-pilot`
+- [ticket-console-operations.md](ticket-console-operations.md) — the implemented
+  (not yet deployed) ticket operator source of truth: safe `/ticket` + `/ticket-pilot`
   coexistence, channel setup, pilot, promotion, rollback, drain, daily
-  recruiting, and terminal legacy cloning.
+  recruiting, terminal legacy cloning, and post-legacy command rename.
+
+- [ticket-console/README.md](ticket-console/README.md) — plain-English reference
+  for all 22 registered v2 commands, permissions, examples, applicant actions,
+  unbuilt candidate follow-up, and removal of the temporary `-pilot` suffix.
 
 - [ticket-console.md](ticket-console.md) — the implemented v2 console design.
   Architecture, search, the binary flag system, ticket-history auto-detect,
@@ -81,7 +85,7 @@ the hard way. The standing instruction that governs this folder is in
 - [component-dispatcher.md](component-dispatcher.md) — how every button, select
   and modal is routed, plus the dispatcher's known defects.
 - [ticket-data-model.md](ticket-data-model.md) — historical pre-pilot store
-  notes. For the deployed split (`button_store` legacy, `tickets` v2), use the
+  notes. For the implemented split (`button_store` legacy, `tickets` v2), use the
   ticket console operations guide.
 - [ticket-status-lifecycle.md](ticket-status-lifecycle.md) — the real status
   values, and why `closed` has one document and open tickets accumulated.

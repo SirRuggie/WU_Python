@@ -19,7 +19,7 @@ the legacy `/ticket` workflow for those tickets.
 
 Design reference: an interactive, clickable HTML mockup
 ([ticket-console-mockup.html](ticket-console/ticket-console-mockup.html), single self-contained file) was built and
-iterated before the runtime shipped, including example ticket threads and bot
+iterated during implementation, including example ticket threads and bot
 panel copy. It remains a visual reference, but the implemented Discord panels
 and the operations guide take precedence wherever the mockup differs.
 
@@ -66,7 +66,8 @@ changes request a hub recount, chart redraw, and persistent-message edit. That
 refresh state is durable and retried after a transient Discord failure or bot
 restart. A manual "⟳ Refresh" button was removed because operators do not need
 to drive recovery. Someone's already-open ephemeral panel is still a snapshot
-and does not live-update; reopen the ticket from the hub to read current state.
+and does not live-update; open the ticket details again from the hub to read
+current state.
 
 ## 3. The chart replaces the stat Section
 
@@ -378,19 +379,20 @@ a rules violation to anyone who takes it literally.
 
 ## 10. Where the reference artifacts live
 
-The shipped runtime and its visual references are separate:
+The implemented runtime and its visual references are separate:
 
 | Path | What it is |
 |---|---|
-| `extensions/commands/tickets/console.py` | Shipped console, ticket-detail, Manage Flags, staff-context, and automatic Chocolate flows. |
-| `extensions/commands/tickets/console_render.py` | Shipped Pillow chart renderer used by the persistent hub. |
+| `extensions/commands/tickets/console.py` | Implemented console, ticket-detail, Manage Flags, staff-context, and automatic Chocolate flows. |
+| `extensions/commands/tickets/console_render.py` | Implemented Pillow chart renderer used by the persistent hub. |
+| `docs/ticket-console/README.md` | Registered-command reference and post-legacy naming plan. |
 | `docs/ticket-console/render_overview.py` | Standalone visual reference renderer. It is not imported by the runtime. |
 | `docs/ticket-console/ticket-console-mockup.html` | Clickable pre-implementation visual reference. It is not runtime authority. |
 | `assets/tickets/*.png` | The five icon assets from §3.4, at source resolution with real alpha. Production assets — the renderer loads them at these paths. |
 
-Only the two files under `docs/ticket-console/` are reference artifacts. The
-production console imports its shipped renderer and loads the production icon
-assets.
+The README under `docs/ticket-console/` is the command reference; the HTML and
+standalone renderer there are reference artifacts. The runtime console imports
+its implemented renderer and loads the production icon assets.
 
 The mockup is a browser artifact and is **not** bound by §3.4's
 no-emoji rule — that rule is specific to the Pillow-rendered PNG, where
@@ -403,5 +405,5 @@ own HTML render fine and are used deliberately.
   research this design sits on top of; its rollout plan is superseded.
 - [legacy-ticket-migration.md](legacy-ticket-migration.md) — the separate,
   implemented terminal-ticket clone into searchable threads.
-- [ticket-console-operations.md](ticket-console-operations.md) — the deployed
+- [ticket-console-operations.md](ticket-console-operations.md) — the operator
   authority, account, flag, decision, recovery, and thread-lifecycle contract.
