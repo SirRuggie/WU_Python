@@ -1393,8 +1393,8 @@ def test_ticket_authorization_is_bound_to_the_configured_target_guild():
     mongo = SimpleNamespace(ticket_setup=Collection([{
         "_id": "config",
         "ticket_target_guild_id": 10,
-        "main_recruiter_role": "101",
-        "fwa_recruiter_role": 102,
+        "main_thread_recruiter_role": "101",
+        "fwa_thread_recruiter_role": 102,
     }]))
     target_recruiter = SimpleNamespace(
         guild_id=10,
@@ -1418,12 +1418,20 @@ def test_ticket_authorization_is_bound_to_the_configured_target_guild():
     assert asyncio.run(perms.is_target_admin(target_admin, mongo)) is True
     assert asyncio.run(perms.is_target_admin(foreign_admin, mongo)) is False
 
+    legacy_only = SimpleNamespace(ticket_setup=Collection([{
+        "_id": "config",
+        "ticket_target_guild_id": 10,
+        "main_recruiter_role": 101,
+        "fwa_recruiter_role": 102,
+    }]))
+    assert asyncio.run(perms.is_recruiter(target_recruiter, legacy_only)) is False
+
 
 def test_foreign_guild_admin_cannot_read_or_mutate_private_ticket_data(monkeypatch):
     mongo = SimpleNamespace(ticket_setup=Collection([{
         "_id": "config",
         "ticket_target_guild_id": 10,
-        "main_recruiter_role": 101,
+        "main_thread_recruiter_role": 101,
     }]))
     foreign_admin = SimpleNamespace(
         id=99,

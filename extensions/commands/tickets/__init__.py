@@ -218,7 +218,11 @@ async def _recover_ticket_runtime(
         configured = sum(
             bool(ticket_config.get(f"{kind}_{field}"))
             for kind in ("main", "fwa")
-            for field in ("candidate_parent", "staff_parent", "recruiter_role")
+            for field in (
+                "candidate_parent",
+                "staff_parent",
+                "thread_recruiter_role",
+            )
         )
         print(
             f"[Tickets] thread_runtime_ready configured_fields={configured}/6 "

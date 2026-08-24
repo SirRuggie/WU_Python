@@ -375,10 +375,11 @@ the select-as-list for the same screen space. That part didn't change.
 
 ## 3.1 Implemented sequencing and authority boundary
 
-The parallel runtime removes the proposal's extraction prerequisite. Configure
-the v2 parents and console, bind a restricted pilot beside the unchanged public
-legacy panel, then move through the guarded rollout phases in §3.4. Legacy
-tickets remain in `button_store`; thread-v2 tickets remain in `tickets`.
+The parallel runtime removes the proposal's extraction prerequisite. Keep the
+legacy public panel in the old server, configure the v2 parents and console in
+the target server, and bind distinct target private-pilot and public-v2 panels
+before moving through the guarded rollout phases in §3.4. Legacy tickets remain
+in `button_store`; thread-v2 tickets remain in `tickets`.
 Shared slot and counter records coordinate duplicate-open prevention and ticket
 numbers without copying ticket rows between the two authorities.
 
@@ -424,12 +425,12 @@ intake:
 
 | Phase | New intake |
 |---|---|
-| `legacy_only` | Existing public panel routes to legacy; pilot is disabled. |
-| `prepared` | Legacy-only; bindings and parents have passed validation. |
-| `pilot` | Public panel stays legacy; the exact allowlisted pilot panel routes to v2. |
-| `thread_default` | Existing public panel routes to v2; legacy tickets remain operable. |
-| `rollback_legacy` | New public intake returns to legacy; existing v2 tickets remain operable. |
-| `thread_only` | Public intake routes to v2 after every legacy drain blocker reaches zero. |
+| `legacy_only` | Exact old-server panel routes to legacy; both target panels are disabled. |
+| `prepared` | Old-server legacy-only; all cross-server bindings and target parents passed validation. |
+| `pilot` | Old-server panel stays legacy; the exact allowlisted target pilot panel routes to v2; target public-v2 remains disabled. |
+| `thread_default` | Exact target public-v2 panel is active; old legacy and pilot intake are retired; existing tickets remain operable in their original runtime. |
+| `rollback_legacy` | Target intake is disabled and the exact old-server legacy panel accepts new tickets again; existing v2 tickets remain operable. |
+| `thread_only` | Exact target public-v2 panel remains active after every legacy drain blocker reaches zero. |
 
 Promotion and rollback are commands, not manual Mongo writes. Use
 `/ticket-pilot rollout-promote` and `/ticket-pilot rollout-rollback` as

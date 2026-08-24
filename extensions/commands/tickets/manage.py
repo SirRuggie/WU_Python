@@ -75,8 +75,8 @@ class ListTickets(
 
         # Get config to check roles
         config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-        main_role = config.get("main_recruiter_role")
-        fwa_role = config.get("fwa_recruiter_role")
+        main_role = config.get("main_thread_recruiter_role")
+        fwa_role = config.get("fwa_thread_recruiter_role")
 
         # Check if user is a recruiter
         user_roles = ctx.member.role_ids

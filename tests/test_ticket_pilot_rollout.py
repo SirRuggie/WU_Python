@@ -2,11 +2,19 @@ import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
 
+import hikari
 import pytest
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import ticket_runtime
-from extensions.commands.tickets import handlers, legacy_migration, rollout, setup, surface
+from extensions.commands.tickets import (
+    handlers,
+    legacy_migration,
+    perms,
+    rollout,
+    setup,
+    surface,
+)
 
 
 def _component(custom_id=None, *children):
@@ -15,18 +23,20 @@ def _component(custom_id=None, *children):
 
 def _message(*custom_ids):
     return SimpleNamespace(
+        author=SimpleNamespace(id=7),
         components=[_component(None, *(_component(value) for value in custom_ids))]
     )
 
 
 def _rollout_state(phase=ticket_runtime.PHASE_PILOT):
-    public = ticket_runtime.IntakeSource(10, 20, 30)
-    pilot = ticket_runtime.IntakeSource(10, 21, 31)
+    legacy = ticket_runtime.IntakeSource(10, 20, 30)
+    public = ticket_runtime.IntakeSource(11, 21, 31)
+    pilot = ticket_runtime.IntakeSource(11, 22, 32)
     return ticket_runtime.RolloutState(
         phase=phase,
         revision=4,
         valid=True,
-        legacy_intake=public,
+        legacy_intake=legacy,
         thread_intake=public,
         pilot_intake=pilot,
         pilot_user_ids=(50,),
@@ -36,6 +46,11 @@ def _rollout_state(phase=ticket_runtime.PHASE_PILOT):
 
 
 def test_panel_action_validation_walks_nested_components_and_fails_closed():
+    surface.require_panel_actions(
+        _message(*surface.THREAD_PUBLIC_PANEL_ACTIONS),
+        surface.THREAD_PUBLIC_PANEL_ACTIONS,
+        label="target public v2 panel",
+    )
     surface.require_panel_actions(
         _message(*surface.PILOT_PANEL_ACTIONS),
         surface.PILOT_PANEL_ACTIONS,
@@ -47,6 +62,18 @@ def test_panel_action_validation_walks_nested_components_and_fails_closed():
             surface.PILOT_PANEL_ACTIONS,
             label="pilot ticket panel",
         )
+
+
+def test_v2_permissions_read_only_namespaced_thread_roles():
+    config = SimpleNamespace(find_one=lambda *_args, **_kwargs: _async_result({
+        "main_recruiter_role": 101,
+        "fwa_recruiter_role": 102,
+        "main_thread_recruiter_role": 201,
+        "fwa_thread_recruiter_role": 202,
+    }))
+    assert asyncio.run(perms.recruiter_role_ids(
+        SimpleNamespace(ticket_setup=config)
+    )) == (201, 202)
 
 
 @pytest.mark.parametrize(
@@ -65,7 +92,7 @@ def test_public_panel_rebinding_is_limited_to_safe_phases(phase, allowed):
     replacement = ticket_runtime.IntakeSource(10, 99, 100)
 
     assert setup.public_binding_change_allowed(state, replacement) is allowed
-    assert setup.public_binding_change_allowed(state, state.legacy_intake) is True
+    assert setup.public_binding_change_allowed(state, state.thread_intake) is True
 
 
 @pytest.mark.parametrize(
@@ -103,6 +130,8 @@ def test_rollout_readiness_checks_runtime_and_exact_discord_controls(monkeypatch
             fetched.append((channel_id, message_id))
             if (channel_id, message_id) == (20, 30):
                 return _message(*surface.LEGACY_PANEL_ACTIONS)
+            if (channel_id, message_id) == (21, 31):
+                return _message(*surface.THREAD_PUBLIC_PANEL_ACTIONS)
             return _message(*surface.PILOT_PANEL_ACTIONS)
 
     async def validate(_rest, parents, *, bot_user_id):
@@ -121,14 +150,19 @@ def test_rollout_readiness_checks_runtime_and_exact_discord_controls(monkeypatch
     monkeypatch.setattr(rollout.ticket_runtime, "ensure_indexes", indexes)
     mongo = SimpleNamespace(
         ticket_setup=SimpleNamespace(
-            find_one=lambda *_args, **_kwargs: _async_result({"configured": True})
+            find_one=lambda *_args, **_kwargs: _async_result({
+                "legacy_ticket_guild_id": 10,
+                "ticket_target_guild_id": 11,
+                "main_candidate_parent": 21,
+                "fwa_candidate_parent": 21,
+            })
         )
     )
     bot = SimpleNamespace(rest=Rest(), get_me=lambda: SimpleNamespace(id=7))
 
     asyncio.run(rollout._validate_rollout_readiness(bot, mongo, state))
 
-    assert fetched == [(20, 30), (21, 31)]
+    assert fetched == [(20, 30), (21, 31), (22, 32)]
     assert validated == [("main", 7), ("fwa", 7)]
 
     monkeypatch.setattr(rollout, "thread_intake_ready", lambda: False)
@@ -150,16 +184,68 @@ def test_rollout_readiness_rejects_wrong_public_or_pilot_controls(monkeypatch):
             expected = (
                 surface.LEGACY_PANEL_ACTIONS
                 if identity == (20, 30)
-                else surface.PILOT_PANEL_ACTIONS
+                else (
+                    surface.THREAD_PUBLIC_PANEL_ACTIONS
+                    if identity == (21, 31)
+                    else surface.PILOT_PANEL_ACTIONS
+                )
             )
             return _message(*expected)
 
     monkeypatch.setattr(rollout, "thread_intake_ready", lambda: True)
-    mongo = SimpleNamespace()
-    for identity in ((20, 30), (21, 31)):
+    mongo = SimpleNamespace(ticket_setup=SimpleNamespace(
+        find_one=lambda *_args, **_kwargs: _async_result({
+            "legacy_ticket_guild_id": 10,
+            "ticket_target_guild_id": 11,
+            "main_candidate_parent": 21,
+            "fwa_candidate_parent": 21,
+        })
+    ))
+    for identity in ((20, 30), (21, 31), (22, 32)):
         bot = SimpleNamespace(rest=Rest(identity), get_me=lambda: SimpleNamespace(id=7))
         with pytest.raises(ValueError, match="missing expected controls"):
             asyncio.run(rollout._validate_rollout_readiness(bot, mongo, state))
+
+
+def test_rollout_readiness_requires_public_v2_as_shared_candidate_parent(monkeypatch):
+    monkeypatch.setattr(rollout, "thread_intake_ready", lambda: True)
+    mongo = SimpleNamespace(ticket_setup=SimpleNamespace(
+        find_one=lambda *_args, **_kwargs: _async_result({
+            "legacy_ticket_guild_id": 10,
+            "ticket_target_guild_id": 11,
+            "main_candidate_parent": 21,
+            "fwa_candidate_parent": 99,
+        })
+    ))
+    with pytest.raises(ticket_runtime.TicketRuntimeError, match="shared Main/FWA"):
+        asyncio.run(rollout._validate_rollout_readiness(
+            SimpleNamespace(rest=SimpleNamespace(), get_me=lambda: SimpleNamespace(id=7)),
+            mongo,
+            _rollout_state(),
+        ))
+
+
+def test_rollout_controls_run_only_in_bound_target_guild(monkeypatch):
+    state = _rollout_state()
+
+    async def get_rollout(_mongo):
+        return state
+
+    monkeypatch.setattr(rollout.ticket_runtime, "get_rollout", get_rollout)
+    mongo = SimpleNamespace(ticket_setup=SimpleNamespace(
+        find_one=lambda *_args, **_kwargs: _async_result({
+            "legacy_ticket_guild_id": 10,
+            "ticket_target_guild_id": 11,
+        })
+    ))
+
+    async def respond(*_args, **_kwargs):
+        return None
+
+    old_ctx = SimpleNamespace(guild_id=10, respond=respond)
+    target_ctx = SimpleNamespace(guild_id=11, respond=respond)
+    assert asyncio.run(rollout._rollout_for_guild(old_ctx, mongo)) is None
+    assert asyncio.run(rollout._rollout_for_guild(target_ctx, mongo)) == state
 
 
 def _async_result(value):
@@ -167,6 +253,475 @@ def _async_result(value):
         return value
 
     return result()
+
+
+class _SetupConfig:
+    def __init__(self, document):
+        self.document = deepcopy(document)
+        self.write_calls = 0
+
+    async def find_one(self, _query):
+        return deepcopy(self.document)
+
+    async def find_one_and_update(self, _query, update, **_kwargs):
+        self.write_calls += 1
+        self.document.update(update.get("$set", {}))
+        for key in update.get("$unset", {}):
+            self.document.pop(key, None)
+        return deepcopy(self.document)
+
+
+class _CrossServerSetupRest:
+    def __init__(self):
+        self.created = []
+        self.deleted = []
+
+    async def fetch_channel(self, channel_id):
+        guild_id = 10 if int(channel_id) == 20 else 11
+        return SimpleNamespace(
+            id=int(channel_id), guild_id=guild_id, type=hikari.ChannelType.GUILD_TEXT
+        )
+
+    async def fetch_message(self, channel_id, message_id):
+        assert (int(channel_id), int(message_id)) == (20, 30)
+        return _message(*surface.LEGACY_PANEL_ACTIONS)
+
+    async def create_message(self, *, channel, components, **_kwargs):
+        message_id = 31 if int(channel) == 21 else 32
+        self.created.append((int(channel), message_id, components))
+        return SimpleNamespace(id=message_id)
+
+    async def delete_message(self, channel_id, message_id):
+        self.deleted.append((int(channel_id), int(message_id)))
+
+
+def _setup_context():
+    responses = []
+
+    async def defer(**_kwargs):
+        return None
+
+    async def respond(content, **_kwargs):
+        responses.append(content)
+
+    return SimpleNamespace(
+        guild_id=11,
+        channel_id=22,
+        user=SimpleNamespace(id=7),
+        member=SimpleNamespace(permissions=hikari.Permissions.ADMINISTRATOR),
+        defer=defer,
+        respond=respond,
+        responses=responses,
+    )
+
+
+def _setup_command():
+    command = setup.Setup()
+    command.legacy_panel = "10/20/30"
+    command.public_channel = SimpleNamespace(id=21, guild_id=11)
+    command.tester = SimpleNamespace(id=50)
+    command.tester_role = None
+    command.replace = False
+    return command
+
+
+def test_cross_server_setup_verifies_both_admins_and_binds_two_owned_panels(monkeypatch):
+    state = ticket_runtime.RolloutState(
+        ticket_runtime.PHASE_LEGACY_ONLY, 0, False
+    )
+    admin_checks = []
+    seeded = []
+
+    async def get_rollout(_mongo):
+        return state
+
+    async def old_admin(_rest, guild_id, user_id):
+        admin_checks.append((guild_id, user_id))
+        return True
+
+    async def seed(_mongo, **kwargs):
+        seeded.append(kwargs)
+        pilot_source = ticket_runtime.IntakeSource(**kwargs["pilot"]["intake"])
+        return ticket_runtime.RolloutState(
+            phase=ticket_runtime.PHASE_LEGACY_ONLY,
+            revision=1,
+            valid=True,
+            legacy_intake=kwargs["legacy_intake"],
+            thread_intake=kwargs["thread_intake"],
+            pilot_intake=pilot_source,
+            pilot_user_ids=(50,),
+        )
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup.ticket_runtime, "seed_rollout", seed)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = _CrossServerSetupRest()
+    config = _SetupConfig({
+        "_id": "config",
+        "ticket_target_guild_id": 10,
+        "main_recruiter_role": 900,
+    })
+    ctx = _setup_context()
+
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert admin_checks == [(10, 7)]
+    assert config.document["legacy_ticket_guild_id"] == 10
+    assert config.document["ticket_target_guild_id"] == 11
+    assert config.document["main_recruiter_role"] == 900
+    assert seeded[0]["legacy_intake"] == ticket_runtime.IntakeSource(10, 20, 30)
+    assert seeded[0]["thread_intake"] == ticket_runtime.IntakeSource(11, 21, 31)
+    assert surface.message_action_ids(SimpleNamespace(components=rest.created[0][2])) == (
+        surface.THREAD_PUBLIC_PANEL_ACTIONS
+    )
+    assert surface.message_action_ids(SimpleNamespace(components=rest.created[1][2])) == (
+        surface.PILOT_PANEL_ACTIONS
+    )
+    assert rest.deleted == []
+    assert ctx.responses[-1].startswith("✅ Cross-server intake bound")
+
+
+def test_safe_phase_target_panel_relocation_precedes_parent_reconfiguration(
+    monkeypatch,
+):
+    state = _rollout_state(ticket_runtime.PHASE_PREPARED)
+    configured = []
+
+    async def get_rollout(_mongo):
+        return state
+
+    async def old_admin(*_args):
+        return True
+
+    async def configure(_mongo, **kwargs):
+        configured.append(kwargs)
+        return ticket_runtime.RolloutState(
+            phase=state.phase,
+            revision=state.revision + 1,
+            valid=True,
+            legacy_intake=state.legacy_intake,
+            thread_intake=kwargs["thread_intake"],
+            pilot_intake=ticket_runtime.IntakeSource(**kwargs["pilot"]["intake"]),
+            pilot_user_ids=state.pilot_user_ids,
+            pilot_role_ids=state.pilot_role_ids,
+            pilot_ticket_types=state.pilot_ticket_types,
+        )
+
+    class Rest(_CrossServerSetupRest):
+        async def create_message(self, *, channel, components, **_kwargs):
+            message_id = 51 if int(channel) == 41 else 52
+            self.created.append((int(channel), message_id, components))
+            return SimpleNamespace(id=message_id)
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup.ticket_runtime, "configure_rollout", configure)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = Rest()
+    config = _SetupConfig({
+        "_id": "config",
+        "legacy_ticket_guild_id": 10,
+        "ticket_target_guild_id": 11,
+        "main_candidate_parent": 21,
+        "fwa_candidate_parent": 21,
+    })
+    ctx = _setup_context()
+    command = _setup_command()
+    command.public_channel = SimpleNamespace(id=41, guild_id=11)
+    command.replace = True
+
+    asyncio.run(command.invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert configured[0]["thread_intake"] == ticket_runtime.IntakeSource(11, 41, 51)
+    assert config.document["main_candidate_parent"] == 21
+    assert config.document["fwa_candidate_parent"] == 21
+    assert ctx.responses[-1].startswith("✅ Cross-server intake bound")
+
+    relocated = ticket_runtime.RolloutState(
+        phase=state.phase,
+        revision=state.revision + 1,
+        valid=True,
+        legacy_intake=state.legacy_intake,
+        thread_intake=ticket_runtime.IntakeSource(11, 41, 51),
+        pilot_intake=ticket_runtime.IntakeSource(11, 22, 52),
+        pilot_user_ids=state.pilot_user_ids,
+        pilot_role_ids=state.pilot_role_ids,
+        pilot_ticket_types=state.pilot_ticket_types,
+    )
+    monkeypatch.setattr(rollout, "thread_intake_ready", lambda: True)
+    with pytest.raises(ticket_runtime.TicketRuntimeError, match="shared Main/FWA"):
+        asyncio.run(rollout._validate_rollout_readiness(
+            SimpleNamespace(rest=SimpleNamespace(), get_me=lambda: SimpleNamespace(id=7)),
+            SimpleNamespace(ticket_setup=config),
+            relocated,
+        ))
+
+
+def test_target_panel_relocation_rejects_unsafe_phase_before_post_or_write(
+    monkeypatch,
+):
+    state = _rollout_state(ticket_runtime.PHASE_PILOT)
+
+    async def get_rollout(_mongo):
+        return state
+
+    async def old_admin(*_args):
+        raise AssertionError("unsafe relocation must stop before cross-guild auth")
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = _CrossServerSetupRest()
+    config = _SetupConfig({
+        "_id": "config",
+        "legacy_ticket_guild_id": 10,
+        "ticket_target_guild_id": 11,
+        "main_candidate_parent": 21,
+        "fwa_candidate_parent": 21,
+    })
+    ctx = _setup_context()
+    command = _setup_command()
+    command.public_channel = SimpleNamespace(id=41, guild_id=11)
+    command.replace = True
+
+    asyncio.run(command.invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert rest.created == []
+    assert config.write_calls == 0
+    assert "blocked during `pilot`" in ctx.responses[-1]
+
+
+def test_cross_server_setup_restores_config_and_compensates_when_rollout_fails(
+    monkeypatch,
+):
+    state = ticket_runtime.RolloutState(
+        ticket_runtime.PHASE_LEGACY_ONLY, 0, False
+    )
+
+    async def get_rollout(_mongo):
+        return state
+
+    async def old_admin(*_args):
+        return True
+
+    async def seed(*_args, **_kwargs):
+        raise ticket_runtime.RolloutConflict("seed failed")
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup.ticket_runtime, "seed_rollout", seed)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = _CrossServerSetupRest()
+    original = {
+        "_id": "config",
+        "ticket_target_guild_id": 10,
+        "main_recruiter_role": 900,
+    }
+    config = _SetupConfig(original)
+    ctx = _setup_context()
+
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert config.document == original
+    assert rest.deleted == [(22, 32), (21, 31)]
+    assert "prior guild binding was restored" in ctx.responses[-1]
+
+
+def test_cross_server_setup_requires_old_server_admin_before_any_post(monkeypatch):
+    async def get_rollout(_mongo):
+        return ticket_runtime.RolloutState(
+            ticket_runtime.PHASE_LEGACY_ONLY, 0, False
+        )
+
+    async def old_admin(*_args):
+        return False
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = _CrossServerSetupRest()
+    config = _SetupConfig({"_id": "config", "ticket_target_guild_id": 10})
+    ctx = _setup_context()
+
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert rest.created == []
+    assert config.document == {"_id": "config", "ticket_target_guild_id": 10}
+    assert "both the old and target servers" in ctx.responses[-1]
+
+
+def test_cross_server_setup_rejects_legacy_guild_before_post_or_config_write(
+    monkeypatch,
+):
+    async def get_rollout(_mongo):
+        return ticket_runtime.RolloutState(
+            ticket_runtime.PHASE_LEGACY_ONLY, 0, False
+        )
+
+    async def old_admin(*_args):
+        raise AssertionError("same-guild setup must stop before cross-guild auth")
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = _CrossServerSetupRest()
+    config = _SetupConfig({
+        "_id": "config",
+        "main_recruiter_role": 900,
+    })
+    ctx = _setup_context()
+    ctx.guild_id = 10
+
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert rest.created == []
+    assert config.write_calls == 0
+    assert config.document == {"_id": "config", "main_recruiter_role": 900}
+    assert "different server" in ctx.responses[-1]
+
+
+def test_cross_server_setup_rejects_non_bot_old_panel_before_post(monkeypatch):
+    async def get_rollout(_mongo):
+        return ticket_runtime.RolloutState(
+            ticket_runtime.PHASE_LEGACY_ONLY, 0, False
+        )
+
+    async def old_admin(*_args):
+        return True
+
+    class Rest(_CrossServerSetupRest):
+        async def fetch_message(self, channel_id, message_id):
+            message = await super().fetch_message(channel_id, message_id)
+            message.author.id = 999
+            return message
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = Rest()
+    ctx = _setup_context()
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=_SetupConfig({
+            "_id": "config", "ticket_target_guild_id": 10,
+        })),
+    ))
+
+    assert rest.created == []
+    assert "not authored by this bot" in ctx.responses[-1]
+
+
+def _rollout_command_context():
+    responses = []
+
+    async def defer(**_kwargs):
+        return None
+
+    async def respond(content, **_kwargs):
+        responses.append(content)
+
+    return SimpleNamespace(
+        guild_id=11,
+        user=SimpleNamespace(id=7),
+        member=SimpleNamespace(permissions=hikari.Permissions.ADMINISTRATOR),
+        defer=defer,
+        respond=respond,
+        responses=responses,
+    )
+
+
+def test_cross_server_promotion_is_one_phase_cas(monkeypatch):
+    state = _rollout_state(ticket_runtime.PHASE_PILOT)
+    calls = []
+
+    async def allowed(*_args):
+        return True
+
+    async def rollout_state(*_args):
+        return state
+
+    async def ready(*_args):
+        return None
+
+    async def transition(_mongo, **kwargs):
+        calls.append(kwargs)
+        return ticket_runtime.RolloutState(
+            **{
+                **{field: getattr(state, field) for field in (
+                    "revision", "valid", "legacy_intake", "thread_intake",
+                    "pilot_intake", "pilot_user_ids", "pilot_role_ids",
+                    "pilot_ticket_types",
+                )},
+                "phase": ticket_runtime.PHASE_THREAD_DEFAULT,
+            }
+        )
+
+    monkeypatch.setattr(rollout, "_require_admin", allowed)
+    monkeypatch.setattr(rollout, "_rollout_for_guild", rollout_state)
+    monkeypatch.setattr(rollout, "_validate_rollout_readiness", ready)
+    monkeypatch.setattr(rollout.ticket_runtime, "transition_rollout", transition)
+    command = rollout.RolloutPromote()
+    command.confirm = True
+    ctx = _rollout_command_context()
+    asyncio.run(command.invoke(
+        ctx, bot=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+
+    assert len(calls) == 1
+    assert calls[0]["expected_phase"] == ticket_runtime.PHASE_PILOT
+    assert calls[0]["expected_revision"] == state.revision
+    assert calls[0]["to_phase"] == ticket_runtime.PHASE_THREAD_DEFAULT
+
+
+def test_cross_server_rollback_requires_live_exact_old_panel_before_cas(monkeypatch):
+    state = _rollout_state(ticket_runtime.PHASE_THREAD_DEFAULT)
+    transitions = []
+
+    async def allowed(*_args):
+        return True
+
+    async def rollout_state(*_args):
+        return state
+
+    async def missing(*_args):
+        raise ValueError("legacy controls missing")
+
+    async def transition(*_args, **_kwargs):
+        transitions.append(kwargs)
+
+    monkeypatch.setattr(rollout, "_require_admin", allowed)
+    monkeypatch.setattr(rollout, "_rollout_for_guild", rollout_state)
+    monkeypatch.setattr(rollout, "_validate_legacy_intake", missing)
+    monkeypatch.setattr(rollout.ticket_runtime, "transition_rollout", transition)
+    command = rollout.RolloutRollback()
+    command.confirm = True
+    ctx = _rollout_command_context()
+    asyncio.run(command.invoke(
+        ctx, bot=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+
+    assert transitions == []
+    assert "Rollback readiness failed" in ctx.responses[-1]
+    assert "Nothing changed" in ctx.responses[-1]
 
 
 def _pilot_context(edits):
@@ -177,13 +732,13 @@ def _pilot_context(edits):
         edits.append(kwargs)
 
     return SimpleNamespace(
-        guild_id=10,
-        channel_id=21,
+        guild_id=11,
+        channel_id=22,
         user=SimpleNamespace(id=50, username="Tester"),
         member=SimpleNamespace(role_ids=(), display_name="Tester"),
         defer=defer,
         interaction=SimpleNamespace(
-            message=SimpleNamespace(id=31),
+            message=SimpleNamespace(id=32),
             edit_initial_response=edit_initial_response,
         ),
     )
@@ -222,6 +777,51 @@ def test_copied_or_stale_pilot_panel_fails_before_slot_claim(monkeypatch):
 
     assert calls == []
     assert "not active for you here" in edits[-1]["content"]
+    assert handlers.user_cooldowns == {}
+
+
+def test_target_public_v2_surface_routes_and_claims_in_target_guild(monkeypatch):
+    edits = []
+    routed = []
+    claimed = []
+
+    async def route(*_args, **kwargs):
+        routed.append(kwargs)
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_THREAD,
+            True,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            8,
+            "thread_default",
+        )
+
+    async def claim(*_args, **kwargs):
+        claimed.append(kwargs)
+        return ticket_runtime.SlotClaim(False, None, {
+            "_id": "ticket-open:50:main",
+            "state": ticket_runtime.SLOT_CLEANUP_REQUIRED,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": 11,
+            "workflow_id": "thread:50:main",
+        })
+
+    monkeypatch.setattr(handlers, "thread_intake_ready", lambda: True)
+    monkeypatch.setattr(handlers.ticket_runtime, "route_public_intake", route)
+    monkeypatch.setattr(handlers.ticket_runtime, "claim_open_slot", claim)
+    handlers.user_cooldowns.clear()
+    ctx = _pilot_context(edits)
+    ctx.channel_id = 21
+    ctx.interaction.message.id = 31
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx, "public:main", bot=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+
+    assert routed[0]["guild_id"] == 11
+    assert routed[0]["channel_id"] == 21
+    assert routed[0]["message_id"] == 31
+    assert routed[0]["requested_route"] == ticket_runtime.ROUTE_THREAD
+    assert claimed[0]["guild_id"] == 11
     assert handlers.user_cooldowns == {}
 
 

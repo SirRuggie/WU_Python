@@ -192,7 +192,9 @@ def _configured_destination(
 ) -> thread_service.ThreadParents:
     candidate_parent_id = _as_int(config.get(f"{ticket_type}_candidate_parent"))
     staff_parent_id = _as_int(config.get(f"{ticket_type}_staff_parent"))
-    recruiter_role_id = _as_int(config.get(f"{ticket_type}_recruiter_role"))
+    recruiter_role_id = _as_int(
+        config.get(f"{ticket_type}_thread_recruiter_role")
+    )
     if not candidate_parent_id or not staff_parent_id or not recruiter_role_id:
         raise LegacyMigrationError(
             f"target {ticket_type.upper()} thread parents and recruiter role are not configured"

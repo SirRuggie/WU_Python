@@ -240,6 +240,24 @@ def test_thread_configuration_requires_both_parents_and_role():
         thread_service.parents_from_config({"ticket_target_guild_id": 10}, 10, "main")
 
 
+def test_thread_configuration_never_uses_the_legacy_recruiter_role():
+    config = {
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_recruiter_role": 30,
+    }
+    with pytest.raises(
+        thread_service.ThreadConfigurationError,
+        match="main_thread_recruiter_role",
+    ):
+        thread_service.parents_from_config(config, 10, "main")
+
+    config["main_thread_recruiter_role"] = 40
+    parents = thread_service.parents_from_config(config, 10, "main")
+    assert parents.recruiter_role_id == 40
+
+
 def test_staff_parent_must_be_distinct():
     parents = thread_service.ThreadParents(10, 20, 20, 30)
     with pytest.raises(thread_service.ThreadConfigurationError, match="different"):
@@ -625,6 +643,7 @@ def test_crash_before_insert_recovery_reuses_exact_pair_and_shared_slot(monkeypa
         "_id": state["open_slot_id"],
         "state": ticket_runtime.SLOT_RESERVED,
         "route": ticket_runtime.ROUTE_THREAD,
+        "guild_id": state["guild_id"],
         "workflow_id": state["creation_workflow_id"],
     }
 
@@ -656,6 +675,7 @@ def test_crash_before_insert_recovery_reuses_exact_pair_and_shared_slot(monkeypa
         assert kwargs["slot_id"] == state["open_slot_id"]
         assert kwargs["workflow_id"] == state["creation_workflow_id"]
         assert kwargs["route"] == ticket_runtime.ROUTE_THREAD
+        assert kwargs["guild_id"] == state["guild_id"]
         return _slot_claim()
 
     calls = []
@@ -681,8 +701,87 @@ def test_crash_before_insert_recovery_reuses_exact_pair_and_shared_slot(monkeypa
     assert result == {"processed": 1, "completed": 1, "failed": 0}
     assert len(calls) == 1
     assert calls[0]["open_slot_claim"].slot["_id"] == state["open_slot_id"]
+    assert calls[0]["config"]["main_thread_recruiter_role"] == 40
+    assert "main_recruiter_role" not in calls[0]["config"]
     assert state["candidate_thread_id"] == 101
     assert state["staff_thread_id"] == 102
+
+
+def test_startup_recovery_rejects_a_cross_guild_stale_open_slot(monkeypatch):
+    state = {
+        "_id": "thread:30:main",
+        "kind": "thread_ticket_creation",
+        "state": "creating",
+        "lease_until": NOW - timedelta(minutes=1),
+        "updated_at": NOW - timedelta(minutes=1),
+        "guild_id": 10,
+        "user_id": 30,
+        "username": "Applicant",
+        "ticket_type": "main",
+        "candidate_parent_id": 20,
+        "staff_parent_id": 21,
+        "recruiter_role_id": 40,
+        "open_slot_id": "ticket-open:30:main",
+        "creation_workflow_id": "thread:30:main",
+    }
+    stale_slot = {
+        "_id": state["open_slot_id"],
+        "state": ticket_runtime.SLOT_OPEN,
+        "route": ticket_runtime.ROUTE_THREAD,
+        "guild_id": 99,
+        "workflow_id": state["creation_workflow_id"],
+        "ticket_id": "ticket_101",
+    }
+
+    class Cursor:
+        def sort(self, *_args):
+            return self
+
+        def limit(self, _amount):
+            return self
+
+        async def to_list(self, *, length):
+            return [dict(state)]
+
+    class CreationStates:
+        def find(self, _query):
+            return Cursor()
+
+    class OpenSlots:
+        async def find_one(self, query):
+            assert query == {"_id": stale_slot["_id"]}
+            return dict(stale_slot)
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    calls = []
+
+    async def committed(*_args, **_kwargs):
+        calls.append(("committed", _kwargs.get("guild_id")))
+        return {"_id": "ticket_101"}
+
+    async def resume(_mongo, **kwargs):
+        calls.append(("resume", kwargs.get("guild_id")))
+        return ticket_runtime.SlotClaim(False, None, stale_slot)
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", no_op)
+    monkeypatch.setattr(
+        thread_service, "_committed_ticket_for_creation_state", committed
+    )
+    monkeypatch.setattr(ticket_runtime, "resume_open_slot", resume)
+    monkeypatch.setattr(thread_service._log, "exception", lambda *_args: None)
+    mongo = SimpleNamespace(
+        ticket_creation_state=CreationStates(),
+        ticket_open_slots=OpenSlots(),
+    )
+
+    result = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+        bot=object(), mongo=mongo
+    ))
+
+    assert result == {"processed": 1, "completed": 0, "failed": 1}
+    assert calls == [("resume", 10)]
 
 
 def test_partial_live_pair_is_quarantined_when_cancelled(monkeypatch):
@@ -804,7 +903,7 @@ def test_live_creation_cancellation_releases_retry_state(monkeypatch):
                 "ticket_target_guild_id": 10,
                 "main_candidate_parent": 20,
                 "main_staff_parent": 21,
-                "main_recruiter_role": 40,
+                "main_thread_recruiter_role": 40,
             },
             open_slot_claim=_slot_claim(),
         ))
@@ -919,7 +1018,7 @@ def test_post_commit_account_sync_failure_resumes_without_duplicate_pair(monkeyp
         "ticket_target_guild_id": 10,
         "main_candidate_parent": 20,
         "main_staff_parent": 21,
-        "main_recruiter_role": 40,
+        "main_thread_recruiter_role": 40,
     }
 
     with pytest.raises(account_sync.AccountSyncError):
@@ -978,7 +1077,7 @@ def test_foreign_guild_click_is_rejected_before_global_ticket_lookup(monkeypatch
                 "ticket_target_guild_id": 10,
                 "main_candidate_parent": 20,
                 "main_staff_parent": 21,
-                "main_recruiter_role": 40,
+                "main_thread_recruiter_role": 40,
             },
             open_slot_claim=_slot_claim(guild_id=11),
         ))
@@ -1069,7 +1168,7 @@ def test_committed_ticket_heals_completion_then_terminal_user_gets_fresh_attempt
         "ticket_target_guild_id": 10,
         "main_candidate_parent": 20,
         "main_staff_parent": 21,
-        "main_recruiter_role": 40,
+        "main_thread_recruiter_role": 40,
     }
 
     first = asyncio.run(thread_service.create_live_thread_ticket(
@@ -1200,7 +1299,7 @@ def test_live_creation_queue_failure_resumes_without_duplicate_resources(monkeyp
         "ticket_target_guild_id": 10,
         "main_candidate_parent": 20,
         "main_staff_parent": 21,
-        "main_recruiter_role": 40,
+        "main_thread_recruiter_role": 40,
     }
 
     first = asyncio.run(thread_service.create_live_thread_ticket(
@@ -1365,7 +1464,7 @@ def test_legacy_migration_rejects_any_unconfigured_parent_pair(
     config = {
         "main_candidate_parent": 20,
         "main_staff_parent": 21,
-        "main_recruiter_role": 40,
+        "main_thread_recruiter_role": 40,
     }
     with pytest.raises(legacy_migration.LegacyMigrationError, match="configured MAIN"):
         legacy_migration._configured_destination(config, request, "main")
@@ -1382,9 +1481,29 @@ def test_legacy_migration_accepts_only_the_configured_parent_pair():
     parents = legacy_migration._configured_destination({
         "main_candidate_parent": 20,
         "main_staff_parent": 21,
-        "main_recruiter_role": 40,
+        "main_thread_recruiter_role": 40,
     }, request, "main")
     assert (parents.candidate_parent_id, parents.staff_parent_id) == (20, 21)
+    assert parents.recruiter_role_id == 40
+
+
+def test_legacy_migration_never_uses_the_legacy_recruiter_role():
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1,
+        source_channel_id=2,
+        target_guild_id=10,
+        candidate_parent_id=20,
+        staff_parent_id=21,
+    )
+    with pytest.raises(
+        legacy_migration.LegacyMigrationError,
+        match="recruiter role",
+    ):
+        legacy_migration._configured_destination({
+            "main_candidate_parent": 20,
+            "main_staff_parent": 21,
+            "main_recruiter_role": 99,
+        }, request, "main")
 
 
 def test_parent_autocomplete_offers_only_configured_channels(monkeypatch):

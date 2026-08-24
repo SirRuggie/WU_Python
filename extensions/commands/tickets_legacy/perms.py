@@ -53,10 +53,11 @@ async def is_legacy_control_guild(mongo: MongoClient, guild_id: int | None) -> b
         config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
     except Exception:
         return False
-    target_guild_id = config.get("ticket_target_guild_id")
-    if target_guild_id:
-        try:
-            return int(target_guild_id) == int(guild_id)
-        except (TypeError, ValueError):
-            return False
-    return True
+    if "legacy_ticket_guild_id" not in config:
+        # Pre-cross-server deployments had no guild authority marker. Preserve
+        # their legacy controls until setup writes the explicit legacy binding.
+        return True
+    try:
+        return int(config.get("legacy_ticket_guild_id")) == int(guild_id)
+    except (TypeError, ValueError):
+        return False

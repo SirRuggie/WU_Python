@@ -454,13 +454,13 @@ def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: s
         raise ThreadConfigurationError("thread ticketing is configured for a different guild")
     candidate_parent = _as_int(config.get(f"{prefix}_candidate_parent"))
     staff_parent = _as_int(config.get(f"{prefix}_staff_parent"))
-    recruiter_role = _as_int(config.get(f"{prefix}_recruiter_role"))
+    recruiter_role = _as_int(config.get(f"{prefix}_thread_recruiter_role"))
     missing = [
         label
         for label, value in (
             (f"{prefix}_candidate_parent", candidate_parent),
             (f"{prefix}_staff_parent", staff_parent),
-            (f"{prefix}_recruiter_role", recruiter_role),
+            (f"{prefix}_thread_recruiter_role", recruiter_role),
         )
         if not value
     ]
@@ -1723,13 +1723,18 @@ async def recover_pending_thread_ticket_creations(
     for state in pending:
         counts["processed"] += 1
         ticket_type = str(state.get("ticket_type") or "")
+        state_guild_id = _as_int(state.get("guild_id"))
         config = {
-            "ticket_target_guild_id": state.get("guild_id"),
+            "ticket_target_guild_id": state_guild_id,
             f"{ticket_type}_candidate_parent": state.get("candidate_parent_id"),
             f"{ticket_type}_staff_parent": state.get("staff_parent_id"),
-            f"{ticket_type}_recruiter_role": state.get("recruiter_role_id"),
+            f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
         }
         try:
+            if not state_guild_id:
+                raise ThreadConfigurationError(
+                    "pending creation is missing its exact target guild binding"
+                )
             slot_id = str(state.get("open_slot_id") or "")
             workflow_id = str(state.get("creation_workflow_id") or "")
             if not slot_id or workflow_id != str(state.get("_id") or ""):
@@ -1741,10 +1746,11 @@ async def recover_pending_thread_ticket_creations(
                 slot.get("state") == ticket_runtime.SLOT_OPEN
                 and str(slot.get("workflow_id") or "") == workflow_id
                 and slot.get("route") == ticket_runtime.ROUTE_THREAD
+                and _as_int(slot.get("guild_id")) == state_guild_id
             ):
                 committed = await _committed_ticket_for_creation_state(
                     mongo,
-                    guild_id=_as_int(state.get("guild_id")),
+                    guild_id=state_guild_id,
                     user_id=_as_int(state.get("user_id")),
                     ticket_type=ticket_type,
                 )
@@ -1763,6 +1769,7 @@ async def recover_pending_thread_ticket_creations(
                     slot_id=slot_id,
                     workflow_id=workflow_id,
                     route=ticket_runtime.ROUTE_THREAD,
+                    guild_id=state_guild_id,
                     now=now,
                 )
                 if not slot_claim.won:
@@ -1772,7 +1779,7 @@ async def recover_pending_thread_ticket_creations(
                 result = await create_live_thread_ticket(
                     bot=bot,
                     mongo=mongo,
-                    guild_id=_as_int(state.get("guild_id")),
+                    guild_id=state_guild_id,
                     user_id=_as_int(state.get("user_id")),
                     username=str(state.get("username") or "candidate"),
                     display_name=str(state.get("display_name") or "") or None,

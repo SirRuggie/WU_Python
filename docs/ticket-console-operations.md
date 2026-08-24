@@ -19,64 +19,120 @@ supersedes rollout and operating notes in the
 - The runtimes share one-open-ticket slots and ticket-number counters. An
   applicant cannot bypass the guard, and the two runtimes cannot allocate the
   same number, by racing the other intake path.
+- Legacy recruiter-role settings remain old-server-only. The target server has
+  separate Main and FWA thread-recruiter settings; neither runtime falls back to
+  the other server's role IDs.
 - A missing or invalid rollout configuration fails safely to legacy intake.
 - Rollout changes only where a **new** ticket opens. It never converts, closes,
   or deletes an existing ticket.
 
-## Recommended channel layout
+## Required two-server layout
 
-The recommended long-lived layout uses three channels total:
+Keep the existing legacy intake channel and exact panel message in the old
+server. Do not move, replace, or delete either during setup or pilot.
 
-1. The existing public intake channel, which also serves as the candidate
-   thread parent. Keep its existing ticket-panel message.
-2. A new private staff thread parent. It must differ from the candidate parent.
-3. A new private recruiter console channel, separate from both parents.
+The target server uses three long-lived channels:
 
-Main and FWA may share the same candidate parent and the same staff parent;
-four parents are not required. Create a separate candidate parent only when
-that separation is intentionally desired; doing so raises the long-lived total
-to four. Deny public access to the staff parent and console, and grant the bot
-and recruiter role every permission reported by command validation.
+1. A public candidate thread parent containing the separate public-v2 panel.
+2. A private recruiter-only staff thread parent. It must differ from the
+   candidate parent.
+3. A private recruiter console channel, separate from both parents.
 
-The restricted pilot panel must be in a channel other than the public intake
-channel. It is not another thread parent. It can share the private console
-channel only when every tester is already a recruiter, server owner, or
-Administrator and console privacy validation still passes. Otherwise use a
-temporary, restricted tester channel.
+Main and FWA must share the public-v2 candidate parent and the recruiter-only
+staff parent. Separate Main/FWA candidate parents are invalid. Deny public access
+to the staff parent and console, and grant the bot and target-server
+thread-recruiter role every permission reported by command validation.
+
+The rollout binds three distinct intake messages: the old-server legacy panel,
+the target-server private pilot panel, and the target-server public-v2 panel.
+The pilot panel may share the private console channel only when every tester is
+already a recruiter, server owner, or Administrator and console privacy
+validation still passes. Otherwise use a temporary restricted target-server
+channel. The pilot channel is not a thread parent.
 
 ## Rollout phases
 
-| Phase | New public-panel clicks | Restricted pilot panel |
-|---|---|---|
-| `legacy_only` | Legacy `/ticket` runtime | Disabled |
-| `prepared` | Legacy `/ticket` runtime | Disabled; validation has passed |
-| `pilot` | Legacy `/ticket` runtime | V2 for an exact allowlisted user or role |
-| `thread_default` | V2 `/ticket-pilot` runtime | Retired |
-| `rollback_legacy` | Legacy `/ticket` runtime | Disabled; existing v2 tickets remain manageable |
-| `thread_only` | V2 `/ticket-pilot` runtime | Retired; legacy drain is complete |
+| Phase | Old-server legacy panel | Target public-v2 panel | Target private pilot panel |
+|---|---|---|---|
+| `legacy_only` | Legacy intake active | Disabled | Disabled |
+| `prepared` | Legacy intake active | Disabled | Disabled; validation has passed |
+| `pilot` | Legacy intake active | Disabled | V2 for an exact allowlisted user or role |
+| `thread_default` | Retired | V2 public intake active | Retired |
+| `rollback_legacy` | Legacy intake active | Disabled | Disabled; existing v2 tickets remain manageable |
+| `thread_only` | Retired | V2 public intake active | Retired; legacy drain is complete |
 
-The pilot route is bound to one exact guild, channel, and message. A copied or
-stale panel is rejected. In `thread_default` and `thread_only`, the existing
-public panel routes to v2 without being reposted.
+Every route is bound to an exact guild, channel, and message. Copied, stale, and
+wrong-server panels are rejected. Promotion and rollback change only which
+exact panel accepts new tickets; they do not move or convert existing tickets.
 
 ## Safe rollout sequence
 
-Run these commands in the target guild as an Administrator. The bot owner must
-establish the target-guild binding with the first `configure-threads` command.
+Run `/ticket-pilot` commands in the target guild as an Administrator. Initial
+setup establishes the target-guild binding and also verifies that the operator
+owns or is an Administrator in the old legacy guild.
 
-### 1. Configure and inspect the thread parents
+### 1. Bind all three exact intake panels
+
+Run setup **in the restricted target pilot-panel channel**. Select the target
+public-v2 channel that will also become the shared Main/FWA candidate parent:
 
 ```text
-/ticket-pilot configure-threads type:Main candidate-parent:<channel> staff-parent:<channel> recruiter-role:<role>
-/ticket-pilot configure-threads type:FWA candidate-parent:<channel> staff-parent:<channel> recruiter-role:<role>
+/ticket-pilot setup legacy-panel:<old message link or guild/channel/message IDs> public-channel:<target shared candidate-parent channel> tester:<user>
+```
+
+Use `tester-role:<role>` instead of, or in addition to, `tester:<user>`. First
+setup requires `legacy-panel`, `public-channel`, and at least one allowlisted
+user or role. It verifies the exact old-server legacy message, posts the
+public-v2 panel in `public-channel`, posts the private pilot panel in the
+invocation channel, and seeds the rollout in `legacy_only`. The operator and bot
+must have the required access in both servers.
+
+Target-panel movement is prohibited during `pilot`, `thread_default`, and
+`thread_only`. In `legacy_only`, `prepared`, or `rollback_legacy`, move both
+target panels in this order:
+
+1. From the private pilot/control channel, replace the target public and pilot
+   messages together:
+
+   ```text
+   /ticket-pilot setup replace:true public-channel:<new shared candidate-parent channel>
+   ```
+
+2. Reconfigure both types with that exact new public channel and the shared
+   recruiter-only staff parent:
+
+   ```text
+   /ticket-pilot configure-threads type:Main candidate-parent:<new shared candidate-parent channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+   /ticket-pilot configure-threads type:FWA candidate-parent:<new shared candidate-parent channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+   ```
+
+3. Re-run `rollout-prepare` readiness before enabling pilot or promotion:
+
+   ```text
+   /ticket-pilot rollout-prepare confirm:false
+   /ticket-pilot rollout-prepare confirm:true
+   ```
+
+Target intake remains disabled in these safe phases, and readiness remains
+blocked while either candidate-parent setting still points at the old channel.
+Replacement never rebinds the old legacy panel or modifies legacy ticket data;
+`/ticket setup` in the old server owns an intentional legacy-panel replacement.
+
+### 2. Configure and inspect the thread parents
+
+```text
+/ticket-pilot configure-threads type:Main candidate-parent:<same bound public-v2 channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+/ticket-pilot configure-threads type:FWA candidate-parent:<same bound public-v2 channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
 /ticket-pilot thread-config
 /ticket-pilot config
 ```
 
-Reusing the Main parents for FWA is valid. Each candidate/staff pair must use
-different channels.
+Both Main and FWA must use the exact `public-channel` bound by setup as their
+shared candidate parent and the same recruiter-only staff parent. The staff
+parent must differ from the candidate channel. These commands save target-server
+thread-recruiter roles and never overwrite old-server legacy recruiter roles.
 
-### 2. Create the private console
+### 3. Create the private console
 
 ```text
 /ticket-pilot console channel:<private recruiter channel>
@@ -89,22 +145,6 @@ reports its exact channel ID. A deleted channel cannot be restored by this
 command; use the approved maintenance path to repair the saved binding before
 retrying. If the channel still exists but the bot cannot access it, restore the
 bot's access and retry there. Do not create a second console elsewhere.
-
-### 3. Bind the existing public panel and post the pilot panel
-
-Run setup **in the restricted pilot-panel channel**:
-
-```text
-/ticket-pilot setup public-channel:<existing public channel> public-message-id:<existing panel message ID> tester:<user>
-```
-
-Use `tester-role:<role>` instead of, or in addition to, `tester:<user>`. First
-setup requires the public channel and message ID plus at least one allowlisted
-user or role. Initial setup verifies the legacy panel, posts the separate pilot
-panel, and seeds the rollout in `legacy_only`.
-
-Use `replace:true` only when the bound pilot panel was deleted or must move.
-Public-panel rebinding is allowed only in a legacy-safe phase.
 
 Manage the allowlist and inspect all bindings with:
 
@@ -123,10 +163,11 @@ Manage the allowlist and inspect all bindings with:
 /ticket-pilot rollout-prepare confirm:true
 ```
 
-The first command validates startup readiness, the non-empty allowlist, public
-and pilot bindings, both thread-parent configurations, and runtime indexes. Fix
-every reported problem before confirming. The confirmed command enters
-`prepared`; public intake is still legacy-only.
+The first command validates startup readiness, the non-empty allowlist, all
+three exact panel bindings, both target thread-parent configurations, separate
+target recruiter roles, and runtime indexes. Fix every reported problem before
+confirming. The confirmed command enters `prepared`; only the old-server legacy
+panel accepts new tickets.
 
 ### 5. Enable the parallel pilot
 
@@ -135,18 +176,20 @@ every reported problem before confirming. The confirmed command enters
 /ticket-pilot rollout-pilot confirm:true
 ```
 
-In `pilot`, allowlisted testers use the restricted panel for v2. Everyone using
-the existing public panel still receives a legacy channel ticket. Verify at
-least the following before promotion:
+In `pilot`, allowlisted testers use the restricted target-server panel for v2.
+Everyone using the old-server public panel still receives a legacy channel
+ticket. The target public-v2 panel remains disabled. Verify at least the
+following before promotion:
 
 - An allowlisted click creates the correct candidate and staff threads.
 - A non-allowlisted or copied-panel click is rejected.
-- The existing public panel still creates a legacy ticket.
+- The exact old-server public panel still creates a legacy ticket.
+- The target public-v2 panel remains disabled.
 - The shared open-ticket guard blocks a duplicate across the two runtimes.
 - The console, search, account context, flags, Chocolate links, approve, deny,
   and terminal thread archive all work as expected.
 
-### 6. Promote v2 on the existing public panel
+### 6. Promote the target public-v2 panel
 
 ```text
 /ticket-pilot rollout-promote confirm:false
@@ -154,9 +197,10 @@ least the following before promotion:
 ```
 
 Promotion requires `pilot`. The dry run repeats readiness checks. Confirmation
-enters `thread_default`, so new clicks on the existing public panel route to v2.
-Do not replace the public message. Existing legacy tickets remain active and
-must still be completed with `/ticket`.
+enters `thread_default`, disables new intake from the old legacy and private
+pilot panels, and enables the exact target public-v2 panel. Existing legacy
+tickets remain authoritative and must still be completed in the old server with
+`/ticket`.
 
 ### 7. Roll back new intake when needed
 
@@ -164,11 +208,12 @@ must still be completed with `/ticket`.
 /ticket-pilot rollout-rollback confirm:true
 ```
 
-Rollback returns **new** public intake to legacy. From `prepared` it returns to
+Rollback disables the target public-v2 and pilot panels and re-enables the exact
+old-server legacy panel for **new** tickets. From `prepared` it returns to
 `legacy_only`; from a live v2 phase it enters `rollback_legacy`. It does not
-change existing thread tickets, which remain manageable through the v2 console
-and `/ticket-pilot` commands. To retry rollout, prepare, pilot, and promote
-again through the same validation gates.
+change existing thread tickets, which remain manageable through the target
+console and `/ticket-pilot` commands. Retry only through prepare, pilot, and
+promote with the same validation gates.
 
 ### 8. Drain legacy only after promotion
 
@@ -294,10 +339,11 @@ read-only from the console.
 
 ## Clone terminal legacy tickets
 
-Legacy cloning is optional and is separate from rollout. It is available only
-in `pilot`, `thread_default`, or `thread_only`. It accepts one terminal
-approved/denied source ticket at a time and never alters or deletes the source
-channel, source staff thread, messages, roles, or attachments.
+Legacy cloning is optional and is separate from rollout. Resolve an old-server
+ticket there first; only terminal approved/denied tickets are eligible. Cloning
+is available only in `pilot`, `thread_default`, or `thread_only`, processes one
+source ticket at a time, and never alters or deletes the source channel, source
+staff thread, messages, roles, or attachments.
 
 Run a read-only preview in the destination guild:
 

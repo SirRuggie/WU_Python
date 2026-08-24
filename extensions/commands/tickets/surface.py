@@ -6,6 +6,10 @@ from collections.abc import Iterable
 
 
 LEGACY_PANEL_ACTIONS = frozenset({"create_ticket:main", "create_ticket:fwa"})
+THREAD_PUBLIC_PANEL_ACTIONS = frozenset({
+    "ticket_v2_create:public:main",
+    "ticket_v2_create:public:fwa",
+})
 PILOT_PANEL_ACTIONS = frozenset({
     "ticket_v2_create:pilot:main",
     "ticket_v2_create:pilot:fwa",
@@ -36,6 +40,7 @@ def require_panel_actions(message, expected: Iterable[str], *, label: str) -> No
 
 __all__ = [
     "LEGACY_PANEL_ACTIONS",
+    "THREAD_PUBLIC_PANEL_ACTIONS",
     "PILOT_PANEL_ACTIONS",
     "message_action_ids",
     "require_panel_actions",

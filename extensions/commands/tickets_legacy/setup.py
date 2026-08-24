@@ -6,6 +6,8 @@ Ticket system setup command - posts the ticket creation embed
 import hikari
 import lightbulb
 from typing import List
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -71,6 +73,12 @@ class Setup(
     name="setup",
     description="Set up the ticket system embed (Admin only)"
 ):
+    standby = lightbulb.boolean(
+        "standby",
+        "Rebind an inactive old-server panel for rollback readiness",
+        default=False,
+    )
+
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(
@@ -103,12 +111,40 @@ class Setup(
                 "❌ Could not verify the ticket rollout phase. Nothing was posted."
             )
             return
+        standby_requested = self.standby is True
         if rollout.valid and rollout.phase in {
             ticket_runtime.PHASE_THREAD_DEFAULT,
             ticket_runtime.PHASE_THREAD_ONLY,
-        }:
+        } and not standby_requested:
             await ctx.respond(
-                "❌ Legacy intake is retired in the current rollout phase. Nothing was posted."
+                "❌ Legacy intake is retired. Use `standby: true` only to prepare a "
+                "rollback panel. Nothing was posted."
+            )
+            return
+
+        try:
+            saved_config = await mongo.ticket_setup.find_one_and_update(
+                {
+                    "_id": "config",
+                    "$or": [
+                        {"legacy_ticket_guild_id": {"$exists": False}},
+                        {"legacy_ticket_guild_id": int(ctx.guild_id)},
+                    ],
+                },
+                {"$set": {"legacy_ticket_guild_id": int(ctx.guild_id)}},
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            saved_config = None
+        except Exception:
+            await ctx.respond(
+                "❌ Could not bind the legacy ticket guild. Nothing was posted."
+            )
+            return
+        if saved_config is None:
+            await ctx.respond(
+                "❌ Legacy ticketing is bound to another guild. Nothing was posted."
             )
             return
 
@@ -126,37 +162,67 @@ class Setup(
                     raise RuntimeError(
                         "ticket rollout intake configuration is incomplete"
                     )
-                await ticket_runtime.configure_rollout(
-                    mongo,
-                    expected_revision=rollout.revision,
-                    actor_id=int(ctx.user.id),
-                    legacy_intake={
-                        "guild_id": int(ctx.guild_id),
-                        "channel_id": int(ctx.channel_id),
-                        "message_id": int(message.id),
-                    },
-                    thread_intake={
-                        "guild_id": int(ctx.guild_id),
-                        "channel_id": int(ctx.channel_id),
-                        "message_id": int(message.id),
-                    },
-                    pilot={
-                        "intake": {
-                            "guild_id": rollout.pilot_intake.guild_id,
-                            "channel_id": rollout.pilot_intake.channel_id,
-                            "message_id": rollout.pilot_intake.message_id,
-                        },
-                        "user_ids": rollout.pilot_user_ids,
-                        "role_ids": rollout.pilot_role_ids,
-                        "ticket_types": rollout.pilot_ticket_types,
-                    },
+                legacy_source = ticket_runtime.IntakeSource(
+                    int(ctx.guild_id), int(ctx.channel_id), int(message.id)
                 )
+                try:
+                    updated = await ticket_runtime.configure_rollout(
+                        mongo,
+                        expected_revision=rollout.revision,
+                        actor_id=int(ctx.user.id),
+                        legacy_intake={
+                            "guild_id": legacy_source.guild_id,
+                            "channel_id": legacy_source.channel_id,
+                            "message_id": legacy_source.message_id,
+                        },
+                        thread_intake={
+                            "guild_id": rollout.thread_intake.guild_id,
+                            "channel_id": rollout.thread_intake.channel_id,
+                            "message_id": rollout.thread_intake.message_id,
+                        },
+                        pilot={
+                            "intake": {
+                                "guild_id": rollout.pilot_intake.guild_id,
+                                "channel_id": rollout.pilot_intake.channel_id,
+                                "message_id": rollout.pilot_intake.message_id,
+                            },
+                            "user_ids": rollout.pilot_user_ids,
+                            "role_ids": rollout.pilot_role_ids,
+                            "ticket_types": rollout.pilot_ticket_types,
+                        },
+                    )
+                except Exception:
+                    try:
+                        updated = await ticket_runtime.get_rollout(mongo)
+                    except Exception:
+                        panel_active = True
+                        await ctx.respond(
+                            "❌ Legacy panel binding outcome is uncertain. The panel was "
+                            "preserved; check rollout status before retrying."
+                        )
+                        return
+                if (
+                    not updated.valid
+                    or updated.legacy_intake != legacy_source
+                    or updated.thread_intake != rollout.thread_intake
+                    or updated.pilot_intake != rollout.pilot_intake
+                ):
+                    raise ticket_runtime.RolloutConflict(
+                        "legacy panel binding was not committed"
+                    )
 
             panel_active = True
 
             # Send success feedback
             await ctx.respond(
-                "✅ Ticket system embed has been posted!"
+                (
+                    "✅ Legacy standby panel has been posted and bound for rollback."
+                    if rollout.valid and rollout.phase in {
+                        ticket_runtime.PHASE_THREAD_DEFAULT,
+                        ticket_runtime.PHASE_THREAD_ONLY,
+                    }
+                    else "✅ Ticket system embed has been posted!"
+                )
             )
 
         except Exception as e:

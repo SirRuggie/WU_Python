@@ -250,6 +250,9 @@ def _parse_rollout(document: Mapping[str, Any] | None) -> RolloutState:
         legacy_intake is None
         or thread_intake is None
         or pilot_intake is None
+        or legacy_intake.guild_id == thread_intake.guild_id
+        or thread_intake.guild_id != pilot_intake.guild_id
+        or thread_intake.channel_id == pilot_intake.channel_id
         or not normalized_types
         or (not pilot_user_ids and not pilot_role_ids)
     ):
@@ -340,14 +343,23 @@ async def seed_rollout(
     """Insert the initial fail-safe rollout document without overwriting one."""
 
     moment = now or utcnow()
+    legacy_document = _source_document(legacy_intake)
+    thread_document = _source_document(thread_intake)
+    pilot_document = _pilot_document(pilot)
+    if legacy_document["guild_id"] == thread_document["guild_id"]:
+        raise ValueError("legacy and thread intake must use different guilds")
+    if thread_document["guild_id"] != pilot_document["intake"]["guild_id"]:
+        raise ValueError("thread public and pilot intake must use the same target guild")
+    if thread_document["channel_id"] == pilot_document["intake"]["channel_id"]:
+        raise ValueError("thread public and pilot intake must use separate channels")
     document = {
         "_id": ROLLOUT_ID,
         "schema_version": ROLLOUT_SCHEMA_VERSION,
         "phase": PHASE_LEGACY_ONLY,
         "revision": 1,
-        "legacy_intake": _source_document(legacy_intake),
-        "thread_intake": _source_document(thread_intake),
-        "pilot": _pilot_document(pilot),
+        "legacy_intake": legacy_document,
+        "thread_intake": thread_document,
+        "pilot": pilot_document,
         "created_at": moment,
         "created_by": int(actor_id),
         "updated_at": moment,
@@ -376,6 +388,15 @@ async def configure_rollout(
     """CAS-update source and allowlist configuration without changing phase."""
 
     moment = now or utcnow()
+    legacy_document = _source_document(legacy_intake)
+    thread_document = _source_document(thread_intake)
+    pilot_document = _pilot_document(pilot)
+    if legacy_document["guild_id"] == thread_document["guild_id"]:
+        raise ValueError("legacy and thread intake must use different guilds")
+    if thread_document["guild_id"] != pilot_document["intake"]["guild_id"]:
+        raise ValueError("thread public and pilot intake must use the same target guild")
+    if thread_document["channel_id"] == pilot_document["intake"]["channel_id"]:
+        raise ValueError("thread public and pilot intake must use separate channels")
     updated = await mongo.ticket_rollout.find_one_and_update(
         {
             "_id": ROLLOUT_ID,
@@ -385,9 +406,9 @@ async def configure_rollout(
         },
         {
             "$set": {
-                "legacy_intake": _source_document(legacy_intake),
-                "thread_intake": _source_document(thread_intake),
-                "pilot": _pilot_document(pilot),
+                "legacy_intake": legacy_document,
+                "thread_intake": thread_document,
+                "pilot": pilot_document,
                 "updated_at": moment,
                 "updated_by": int(actor_id),
             },
@@ -669,8 +690,9 @@ async def route_public_intake(
 ) -> RouteDecision:
     """Resolve a public intake click without silently crossing runtimes.
 
-    Missing or malformed configuration preserves the legacy public route.  A
-    copied/stale thread panel never falls through into legacy ticket creation.
+    Before cross-server setup, legacy intake keeps its production behavior.
+    Once ``legacy_ticket_guild_id`` exists, that explicit binding is enforced.
+    A copied/stale configured panel never falls through into either runtime.
     """
 
     state = await get_rollout(mongo)
@@ -683,19 +705,29 @@ async def route_public_intake(
     if not state.valid:
         if requested == ROUTE_LEGACY:
             setup = await mongo.ticket_setup.find_one(
-                {"_id": "config"}, {"ticket_target_guild_id": 1}
+                {"_id": "config"},
+                {"legacy_ticket_guild_id": 1},
             ) or {}
-            target_guild = _positive_int(setup.get("ticket_target_guild_id"))
-            if target_guild is not None and target_guild != int(guild_id):
-                return RouteDecision(
-                    ROUTE_REJECT,
-                    False,
-                    state.phase,
-                    state.revision,
-                    "wrong_target_guild",
-                )
+            if "legacy_ticket_guild_id" in setup:
+                legacy_guild = _positive_int(setup.get("legacy_ticket_guild_id"))
+                if legacy_guild is None or legacy_guild != int(guild_id):
+                    return RouteDecision(
+                        ROUTE_REJECT,
+                        False,
+                        state.phase,
+                        state.revision,
+                        "wrong_legacy_guild",
+                    )
             return RouteDecision(
-                ROUTE_LEGACY, True, state.phase, state.revision, "safe_legacy_default"
+                ROUTE_LEGACY,
+                True,
+                state.phase,
+                state.revision,
+                (
+                    "safe_legacy_default"
+                    if "legacy_ticket_guild_id" in setup
+                    else "pre_setup_legacy_compatibility"
+                ),
             )
         return RouteDecision(
             ROUTE_REJECT, False, state.phase, state.revision, "rollout_not_configured"
@@ -707,12 +739,14 @@ async def route_public_intake(
             guild_id=guild_id, channel_id=channel_id, message_id=message_id
         )
     )
+    thread_source_matches = bool(
+        state.thread_intake
+        and state.thread_intake.matches(
+            guild_id=guild_id, channel_id=channel_id, message_id=message_id
+        )
+    )
     if state.phase in {PHASE_LEGACY_ONLY, PHASE_PREPARED, PHASE_ROLLBACK_LEGACY}:
-        if (
-            requested == ROUTE_LEGACY
-            and state.legacy_intake is not None
-            and state.legacy_intake.guild_id == int(guild_id)
-        ):
+        if requested == ROUTE_LEGACY and legacy_source_matches:
             return RouteDecision(
                 ROUTE_LEGACY, True, state.phase, state.revision, "legacy_is_default"
             )
@@ -722,18 +756,14 @@ async def route_public_intake(
             state.phase,
             state.revision,
             (
-                "wrong_target_guild"
+                "wrong_legacy_intake_source"
                 if requested == ROUTE_LEGACY
                 else "thread_intake_disabled"
             ),
         )
 
     if state.phase == PHASE_PILOT:
-        if (
-            requested == ROUTE_LEGACY
-            and state.legacy_intake is not None
-            and state.legacy_intake.guild_id == int(guild_id)
-        ):
+        if requested == ROUTE_LEGACY and legacy_source_matches:
             return RouteDecision(
                 ROUTE_LEGACY, True, state.phase, state.revision, "legacy_is_default"
             )
@@ -743,7 +773,7 @@ async def route_public_intake(
                 False,
                 state.phase,
                 state.revision,
-                "wrong_target_guild",
+                "wrong_legacy_intake_source",
             )
         allowed = pilot_access_allowed(
             state,
@@ -762,19 +792,17 @@ async def route_public_intake(
             "pilot_allowed" if allowed else "pilot_denied",
         )
 
-    # The legacy public custom ID is the stable public entrypoint. Promotion
-    # changes the selected runtime; it does not require replacing that panel.
-    if requested != ROUTE_LEGACY:
+    if requested != ROUTE_THREAD:
         return RouteDecision(
-            ROUTE_REJECT, False, state.phase, state.revision, "pilot_intake_retired"
+            ROUTE_REJECT, False, state.phase, state.revision, "legacy_intake_retired"
         )
-    allowed = legacy_source_matches
+    allowed = thread_source_matches
     return RouteDecision(
         ROUTE_THREAD if allowed else ROUTE_REJECT,
         allowed,
         state.phase,
         state.revision,
-        "thread_default" if allowed else "wrong_legacy_intake_source",
+        "thread_default" if allowed else "wrong_thread_intake_source",
     )
 
 
@@ -859,6 +887,7 @@ async def _resume_open_slot(
     slot_id: str,
     workflow_id: str,
     route: str,
+    guild_id: int | None = None,
     owner_token: str | None = None,
     now: datetime | None = None,
     lease_seconds: int = _DEFAULT_LEASE_SECONDS,
@@ -876,6 +905,10 @@ async def _resume_open_slot(
         existing.get("state") != SLOT_RESERVED
         or existing.get("route") != route
         or str(existing.get("workflow_id") or "") != str(workflow_id)
+        or (
+            guild_id is not None
+            and _positive_int(existing.get("guild_id")) != _positive_int(guild_id)
+        )
     ):
         return SlotClaim(False, None, existing)
     same_owner = bool(owner_token and existing.get("owner_token") == owner_token)
@@ -897,14 +930,17 @@ async def _resume_open_slot(
     ]
     if owner_token:
         lease_match.append({"owner_token": owner_token})
-    resumed = await mongo.ticket_open_slots.find_one_and_update(
-        {
+    resume_filter: dict[str, Any] = {
             "_id": str(slot_id),
             "workflow_id": str(workflow_id),
             "route": route,
             "state": SLOT_RESERVED,
             "$or": lease_match,
-        },
+    }
+    if guild_id is not None:
+        resume_filter["guild_id"] = int(guild_id)
+    resumed = await mongo.ticket_open_slots.find_one_and_update(
+        resume_filter,
         {
             "$set": {
                 "owner_token": token,
@@ -929,6 +965,7 @@ async def resume_open_slot(
     slot_id: str,
     workflow_id: str,
     route: str,
+    guild_id: int | None = None,
     owner_token: str | None = None,
     now: datetime | None = None,
     lease_seconds: int = _DEFAULT_LEASE_SECONDS,
@@ -941,6 +978,7 @@ async def resume_open_slot(
             slot_id=slot_id,
             workflow_id=workflow_id,
             route=route,
+            guild_id=guild_id,
             owner_token=owner_token,
             now=now,
             lease_seconds=lease_seconds,
@@ -1502,18 +1540,28 @@ async def backfill_open_slots(
     )
 
 
-def _route_allowed_for_claim(state: RolloutState, route: str) -> bool:
+def _route_allowed_for_claim(
+    state: RolloutState,
+    route: str,
+    guild_id: int,
+) -> bool:
     if not state.valid:
         return route == ROUTE_LEGACY
+    legacy_guild_id = state.legacy_intake.guild_id if state.legacy_intake else None
+    thread_guild_id = state.thread_intake.guild_id if state.thread_intake else None
     if state.phase in {
         PHASE_LEGACY_ONLY,
         PHASE_PREPARED,
         PHASE_ROLLBACK_LEGACY,
     }:
-        return route == ROUTE_LEGACY
+        return route == ROUTE_LEGACY and int(guild_id) == legacy_guild_id
     if state.phase == PHASE_PILOT:
-        return route in VALID_ROUTES
-    return route == ROUTE_THREAD
+        return (
+            route == ROUTE_LEGACY and int(guild_id) == legacy_guild_id
+        ) or (
+            route == ROUTE_THREAD and int(guild_id) == thread_guild_id
+        )
+    return route == ROUTE_THREAD and int(guild_id) == thread_guild_id
 
 
 async def claim_open_slot(
@@ -1538,7 +1586,18 @@ async def claim_open_slot(
         state = await get_rollout(mongo)
         if state.revision != int(rollout_revision):
             raise RolloutConflict("rollout changed before the ticket slot was claimed")
-        if not _route_allowed_for_claim(state, route):
+        if not state.valid and route == ROUTE_LEGACY:
+            setup = await mongo.ticket_setup.find_one(
+                {"_id": "config"},
+                {"legacy_ticket_guild_id": 1},
+            ) or {}
+            if "legacy_ticket_guild_id" in setup:
+                legacy_guild_id = _positive_int(setup.get("legacy_ticket_guild_id"))
+                if legacy_guild_id is None or legacy_guild_id != int(guild_id):
+                    raise RolloutConflict(
+                        "the requested runtime is disabled in this ticket guild"
+                    )
+        if not _route_allowed_for_claim(state, route, guild_id):
             raise RolloutConflict("the requested runtime is disabled in this rollout phase")
         authoritative = await _open_authoritative_tickets(
             mongo,

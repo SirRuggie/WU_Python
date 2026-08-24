@@ -143,8 +143,8 @@ async def handle_create_ticket(
         )
         return
 
-    surface, separator, ticket_type = action_id.partition(":")
-    if separator != ":" or surface != "pilot":
+    intake_surface, separator, ticket_type = action_id.partition(":")
+    if separator != ":" or intake_surface not in {"pilot", "public"}:
         await ctx.interaction.edit_initial_response(
             content="❌ This ticket panel is unavailable. Ask staff for the current panel."
         )
@@ -174,21 +174,22 @@ async def handle_create_ticket(
         )
     except Exception as error:
         print(
-            "[Tickets] pilot_gate_failed "
+            "[Tickets] v2_intake_gate_failed "
             f"guild={ctx.guild_id} channel={ctx.channel_id} "
             f"message={message_id} error={type(error).__name__}"
         )
         await ctx.interaction.edit_initial_response(
-            content="❌ Pilot ticketing is temporarily unavailable. Nothing was created."
+            content="❌ Thread ticketing is temporarily unavailable. Nothing was created."
         )
         return
     if not route.allowed or route.route != ticket_runtime.ROUTE_THREAD:
-        await ctx.interaction.edit_initial_response(
-            content=(
-                "❌ This pilot panel is not active for you here. "
-                "Use the current public ticket panel or contact a recruiter."
-            )
+        message = (
+            "❌ This pilot panel is not active for you here. "
+            "Use the current public ticket panel or contact a recruiter."
+            if intake_surface == "pilot"
+            else "❌ This public ticket panel is not active. Use the current panel or contact a recruiter."
         )
+        await ctx.interaction.edit_initial_response(content=message)
         return
 
     cleanup_expired_cooldowns()
@@ -221,6 +222,7 @@ async def handle_create_ticket(
             not slot_claim.won
             and slot_claim.slot.get("state") == ticket_runtime.SLOT_RESERVED
             and slot_claim.slot.get("route") == ticket_runtime.ROUTE_THREAD
+            and store.as_int(slot_claim.slot.get("guild_id")) == int(ctx.guild_id)
             and str(slot_claim.slot.get("workflow_id") or "") == workflow_id
         ):
             slot_claim = await ticket_runtime.resume_open_slot(
@@ -228,17 +230,18 @@ async def handle_create_ticket(
                 slot_id=str(slot_claim.slot["_id"]),
                 workflow_id=workflow_id,
                 route=ticket_runtime.ROUTE_THREAD,
+                guild_id=int(ctx.guild_id),
                 now=now,
                 lease_seconds=600,
             )
     except Exception as error:
         print(
-            "[Tickets] pilot_slot_claim_failed "
+            "[Tickets] v2_slot_claim_failed "
             f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
             f"error={type(error).__name__}"
         )
         await ctx.interaction.edit_initial_response(
-            content="❌ Pilot ticketing is temporarily unavailable. Nothing was created."
+            content="❌ Thread ticketing is temporarily unavailable. Nothing was created."
         )
         return
     if not slot_claim.won:
@@ -383,6 +386,22 @@ class ConfigureThreadParents(
             )
             await ctx.respond(message, ephemeral=True)
             return
+        rollout_state = await ticket_runtime.get_rollout(mongo)
+        if (
+            rollout_state.valid
+            and rollout_state.thread_intake is not None
+            and (
+                rollout_state.thread_intake.guild_id != int(ctx.guild_id)
+                or rollout_state.thread_intake.channel_id
+                != int(self.candidate_parent.id)
+            )
+        ):
+            await ctx.respond(
+                "🛑 Candidate threads must use the bound target public-v2 channel; "
+                "nothing was saved.",
+                ephemeral=True,
+            )
+            return
         parents = thread_service.ThreadParents(
             guild_id=int(ctx.guild_id),
             candidate_parent_id=int(self.candidate_parent.id),
@@ -414,7 +433,7 @@ class ConfigureThreadParents(
                     "ticket_target_guild_id": int(ctx.guild_id),
                     f"{prefix}_candidate_parent": parents.candidate_parent_id,
                     f"{prefix}_staff_parent": parents.staff_parent_id,
-                    f"{prefix}_recruiter_role": parents.recruiter_role_id,
+                    f"{prefix}_thread_recruiter_role": parents.recruiter_role_id,
                 }},
                 upsert=True,
                 return_document=ReturnDocument.AFTER,

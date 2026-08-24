@@ -198,20 +198,41 @@ def test_ticket_help_matches_the_registered_thread_commands():
 
 
 def test_config_summary_has_thread_parents_roles_and_console_only():
+    rollout = ticket_runtime.RolloutState(
+        phase=ticket_runtime.PHASE_PILOT,
+        revision=4,
+        valid=True,
+        legacy_intake=ticket_runtime.IntakeSource(10, 11, 12),
+        thread_intake=ticket_runtime.IntakeSource(20, 21, 22),
+        pilot_intake=ticket_runtime.IntakeSource(20, 31, 32),
+        pilot_user_ids=(50,),
+    )
     summary = config.configuration_summary({
+        "legacy_ticket_guild_id": 10,
+        "ticket_target_guild_id": 20,
         "main_candidate_parent": 101,
         "main_staff_parent": 102,
-        "main_recruiter_role": 103,
+        "main_thread_recruiter_role": 103,
+        "main_recruiter_role": 901,
         "fwa_candidate_parent": 201,
         "fwa_staff_parent": 202,
-        "fwa_recruiter_role": 203,
+        "fwa_thread_recruiter_role": 203,
+        "fwa_recruiter_role": 902,
         "ticket_console_channel_id": 301,
         "main_category": 999,
-    })
+    }, rollout)
 
     assert "Thread v2" in summary
+    assert "**Legacy guild:** `10`" in summary
+    assert "**Target guild:** `20`" in summary
+    assert "https://discord.com/channels/10/11/12" in summary
+    assert "https://discord.com/channels/20/21/22" in summary
+    assert "https://discord.com/channels/20/31/32" in summary
     assert "<#101>" in summary
+    assert "<@&103>" in summary
     assert "<@&203>" in summary
+    assert "<@&901>" not in summary
+    assert "<@&902>" not in summary
     assert "<#301>" in summary
     assert "category" not in summary.casefold()
     assert "claim" not in summary.casefold()

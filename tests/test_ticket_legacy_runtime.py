@@ -1,5 +1,6 @@
 import asyncio
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
@@ -44,8 +45,17 @@ class _TicketSetup:
         assert query == {"_id": "config"}
         return self.config
 
+    async def find_one_and_update(self, _query, update, **_kwargs):
+        self.config = deepcopy(self.config or {"_id": "config"})
+        requested = update.get("$set", {}).get("legacy_ticket_guild_id")
+        existing = self.config.get("legacy_ticket_guild_id")
+        if existing is not None and requested is not None and existing != requested:
+            return None
+        self.config.update(update.get("$set", {}))
+        return deepcopy(self.config)
 
-def test_legacy_control_guild_uses_rollout_then_target_fallback(monkeypatch):
+
+def test_legacy_control_guild_uses_rollout_then_legacy_fallback(monkeypatch):
     async def valid_rollout(_mongo):
         return ticket_runtime.RolloutState(
             phase=ticket_runtime.PHASE_PILOT,
@@ -55,7 +65,7 @@ def test_legacy_control_guild_uses_rollout_then_target_fallback(monkeypatch):
         )
 
     monkeypatch.setattr(ticket_runtime, "get_rollout", valid_rollout)
-    mongo = SimpleNamespace(ticket_setup=_TicketSetup({"ticket_target_guild_id": 222}))
+    mongo = SimpleNamespace(ticket_setup=_TicketSetup({"legacy_ticket_guild_id": 222}))
     assert asyncio.run(perms.is_legacy_control_guild(mongo, 111))
     assert not asyncio.run(perms.is_legacy_control_guild(mongo, 222))
 
@@ -70,8 +80,23 @@ def test_legacy_control_guild_uses_rollout_then_target_fallback(monkeypatch):
     assert asyncio.run(perms.is_legacy_control_guild(mongo, 222))
     assert not asyncio.run(perms.is_legacy_control_guild(mongo, 111))
 
-    unbound = SimpleNamespace(ticket_setup=_TicketSetup({}))
+    unbound = SimpleNamespace(ticket_setup=_TicketSetup({
+        "main_recruiter_role": 700,
+        "main_category": 800,
+    }))
     assert asyncio.run(perms.is_legacy_control_guild(unbound, 333))
+    pre_split = SimpleNamespace(
+        ticket_setup=_TicketSetup({"ticket_target_guild_id": 444})
+    )
+    assert asyncio.run(perms.is_legacy_control_guild(pre_split, 444))
+    assert asyncio.run(perms.is_legacy_control_guild(pre_split, 445))
+
+    malformed_explicit = SimpleNamespace(
+        ticket_setup=_TicketSetup({"legacy_ticket_guild_id": "invalid"})
+    )
+    assert not asyncio.run(
+        perms.is_legacy_control_guild(malformed_explicit, 333)
+    )
 
 
 @pytest.mark.parametrize(
@@ -117,18 +142,32 @@ def test_legacy_setup_refuses_retired_phases_before_posting(monkeypatch, phase):
     ))
 
     assert ctx.responses == [
-        "❌ Legacy intake is retired in the current rollout phase. Nothing was posted."
+        "❌ Legacy intake is retired. Use `standby: true` only to prepare a "
+        "rollback panel. Nothing was posted."
     ]
 
 
-def test_legacy_setup_atomically_rebinds_both_public_sources(monkeypatch):
+@pytest.mark.parametrize(
+    ("phase", "standby", "success"),
+    [
+        (ticket_runtime.PHASE_PILOT, False, "✅ Ticket system embed has been posted!"),
+        (
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            True,
+            "✅ Legacy standby panel has been posted and bound for rollback.",
+        ),
+    ],
+)
+def test_legacy_setup_rebinds_only_old_public_source(
+    monkeypatch, phase, standby, success,
+):
     rollout = ticket_runtime.RolloutState(
-        phase=ticket_runtime.PHASE_PILOT,
+        phase=phase,
         revision=7,
         valid=True,
         legacy_intake=ticket_runtime.IntakeSource(111, 12, 13),
-        thread_intake=ticket_runtime.IntakeSource(111, 22, 23),
-        pilot_intake=ticket_runtime.IntakeSource(111, 32, 33),
+        thread_intake=ticket_runtime.IntakeSource(222, 22, 23),
+        pilot_intake=ticket_runtime.IntakeSource(222, 32, 33),
         pilot_user_ids=(7,),
         pilot_ticket_types=("main",),
     )
@@ -139,7 +178,11 @@ def test_legacy_setup_atomically_rebinds_both_public_sources(monkeypatch):
 
     async def configure(_mongo, **kwargs):
         configured.append(kwargs)
-        return rollout
+        return replace(
+            rollout,
+            revision=rollout.revision + 1,
+            legacy_intake=ticket_runtime.IntakeSource(111, 44, 55),
+        )
 
     class _Context:
         guild_id = 111
@@ -167,7 +210,9 @@ def test_legacy_setup_atomically_rebinds_both_public_sources(monkeypatch):
     monkeypatch.setattr(ticket_runtime, "get_rollout", get_rollout)
     monkeypatch.setattr(ticket_runtime, "configure_rollout", configure)
     ctx = _Context()
-    asyncio.run(legacy_setup.Setup().invoke(
+    command = legacy_setup.Setup()
+    command.standby = standby
+    asyncio.run(command.invoke(
         ctx,
         bot=SimpleNamespace(rest=_Rest()),
         mongo=SimpleNamespace(ticket_setup=_TicketSetup({})),
@@ -175,10 +220,77 @@ def test_legacy_setup_atomically_rebinds_both_public_sources(monkeypatch):
 
     public = {"guild_id": 111, "channel_id": 44, "message_id": 55}
     assert configured[0]["legacy_intake"] == public
-    assert configured[0]["thread_intake"] == public
-    assert configured[0]["pilot"]["intake"] == {
-        "guild_id": 111, "channel_id": 32, "message_id": 33,
+    assert configured[0]["thread_intake"] == {
+        "guild_id": 222, "channel_id": 22, "message_id": 23,
     }
+    assert configured[0]["pilot"]["intake"] == {
+        "guild_id": 222, "channel_id": 32, "message_id": 33,
+    }
+    assert ctx.responses == [success]
+
+
+def test_legacy_setup_preserves_panel_when_rollout_write_response_is_lost(
+    monkeypatch,
+):
+    initial = ticket_runtime.RolloutState(
+        phase=ticket_runtime.PHASE_PILOT,
+        revision=7,
+        valid=True,
+        legacy_intake=ticket_runtime.IntakeSource(111, 12, 13),
+        thread_intake=ticket_runtime.IntakeSource(222, 22, 23),
+        pilot_intake=ticket_runtime.IntakeSource(222, 32, 33),
+        pilot_user_ids=(7,),
+        pilot_ticket_types=("main",),
+    )
+    committed = ticket_runtime.RolloutState(
+        phase=initial.phase,
+        revision=8,
+        valid=True,
+        legacy_intake=ticket_runtime.IntakeSource(111, 44, 55),
+        thread_intake=initial.thread_intake,
+        pilot_intake=initial.pilot_intake,
+        pilot_user_ids=initial.pilot_user_ids,
+        pilot_ticket_types=initial.pilot_ticket_types,
+    )
+    reads = iter((initial, initial, committed))
+
+    async def get_rollout(_mongo):
+        return next(reads)
+
+    async def configure(_mongo, **_kwargs):
+        raise ConnectionError("write response lost")
+
+    class _Context:
+        guild_id = 111
+        channel_id = 44
+        member = SimpleNamespace(permissions=hikari.Permissions.ADMINISTRATOR)
+        user = SimpleNamespace(id=7)
+
+        def __init__(self):
+            self.responses = []
+
+        async def defer(self, **_kwargs):
+            return None
+
+        async def respond(self, content, **_kwargs):
+            self.responses.append(content)
+
+    class _Rest:
+        async def create_message(self, **_kwargs):
+            return SimpleNamespace(id=55)
+
+        async def delete_message(self, *_args, **_kwargs):
+            raise AssertionError("a confirmed bound panel must be preserved")
+
+    monkeypatch.setattr(ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(ticket_runtime, "configure_rollout", configure)
+    ctx = _Context()
+    asyncio.run(legacy_setup.Setup().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=_Rest()),
+        mongo=SimpleNamespace(ticket_setup=_TicketSetup({})),
+    ))
+
     assert ctx.responses == ["✅ Ticket system embed has been posted!"]
 
 
@@ -660,18 +772,16 @@ def test_open_or_incomplete_legacy_attempt_still_blocks(monkeypatch, attempt_sta
     assert collection.update_calls == []
 
 
-@pytest.mark.parametrize("sticky", [False, True])
-def test_thread_recovery_outage_claims_nothing_and_preserves_sticky_slot(
-    monkeypatch, sticky,
-):
+def test_old_intake_preserves_foreign_target_sticky_slot(monkeypatch):
     edits = []
-    existing_slot = ({
+    existing_slot = {
         "_id": "ticket-open:7:main",
         "state": ticket_runtime.SLOT_RESERVED,
         "route": ticket_runtime.ROUTE_THREAD,
+        "guild_id": 222,
         "workflow_id": "thread:7:main",
         "owner_token": "prior-owner",
-    } if sticky else None)
+    }
     original_slot = deepcopy(existing_slot)
 
     class _Slots:
@@ -687,17 +797,9 @@ def test_thread_recovery_outage_claims_nothing_and_preserves_sticky_slot(
 
     async def route(*_args, **_kwargs):
         return ticket_runtime.RouteDecision(
-            (
-                ticket_runtime.ROUTE_LEGACY
-                if sticky
-                else ticket_runtime.ROUTE_THREAD
-            ),
+            ticket_runtime.ROUTE_LEGACY,
             True,
-            (
-                ticket_runtime.PHASE_ROLLBACK_LEGACY
-                if sticky
-                else ticket_runtime.PHASE_THREAD_DEFAULT
-            ),
+            ticket_runtime.PHASE_ROLLBACK_LEGACY,
             8,
             "sticky_test",
         )
@@ -744,11 +846,52 @@ def test_thread_recovery_outage_claims_nothing_and_preserves_sticky_slot(
         "_id": "ticket-open:7:main",
         "state": {"$in": sorted(ticket_runtime.ACTIVE_SLOT_STATES)},
     }]
-    assert "still starting" in edits[-1]["content"]
-    if sticky:
-        assert "prior ticket attempt remains saved" in edits[-1]["content"]
-    else:
-        assert "Nothing was created" in edits[-1]["content"]
+    assert "prior ticket attempt remains saved" in edits[-1]["content"]
+    assert "original ticket system" in edits[-1]["content"]
+
+
+def test_promoted_old_panel_stops_before_ticket_or_slot_work(monkeypatch):
+    edits = []
+
+    async def rejected(*_args, **_kwargs):
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_REJECT,
+            False,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            9,
+            "legacy_intake_retired",
+        )
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("retired old intake reached ticket or slot work")
+
+    async def defer(**_kwargs):
+        return None
+
+    async def edit_initial_response(**kwargs):
+        edits.append(kwargs)
+
+    ctx = SimpleNamespace(
+        guild_id=111,
+        channel_id=44,
+        user=SimpleNamespace(id=7, username="candidate"),
+        member=SimpleNamespace(role_ids=(), display_name="Candidate"),
+        defer=defer,
+        interaction=SimpleNamespace(
+            message=SimpleNamespace(id=55),
+            edit_initial_response=edit_initial_response,
+        ),
+    )
+    monkeypatch.setattr(ticket_runtime, "route_public_intake", rejected)
+    monkeypatch.setattr(handlers, "find_open_ticket", forbidden)
+    handlers.user_cooldowns.clear()
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx, "main", bot=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+
+    assert handlers.user_cooldowns == {}
+    assert "panel has been retired" in edits[-1]["content"]
 
 
 def test_legacy_commands_and_persistent_actions_are_preserved():
@@ -1520,11 +1663,12 @@ def test_override_busy_reports_no_decision_and_runs_no_side_effect(monkeypatch):
     }]
 
 
-def test_public_slot_resume_honors_sticky_runtime(monkeypatch):
+def test_public_slot_resume_requires_exact_legacy_route_guild_and_workflow(monkeypatch):
     existing = {
         "_id": "ticket-open:7:main",
-        "route": ticket_runtime.ROUTE_THREAD,
-        "workflow_id": "thread:7:main",
+        "route": ticket_runtime.ROUTE_LEGACY,
+        "guild_id": 1,
+        "workflow_id": "legacy:1:7:main",
         "state": ticket_runtime.SLOT_RESERVED,
         "owner_token": "prior-owner",
     }
@@ -1551,10 +1695,11 @@ def test_public_slot_resume_honors_sticky_runtime(monkeypatch):
     ))
 
     assert result.won
-    assert result.slot["route"] == ticket_runtime.ROUTE_THREAD
+    assert result.slot["route"] == ticket_runtime.ROUTE_LEGACY
     assert calls[0] == ("claim", ticket_runtime.ROUTE_LEGACY)
-    assert calls[1][1]["workflow_id"] == "thread:7:main"
-    assert calls[1][1]["route"] == ticket_runtime.ROUTE_THREAD
+    assert calls[1][1]["workflow_id"] == "legacy:1:7:main"
+    assert calls[1][1]["route"] == ticket_runtime.ROUTE_LEGACY
+    assert calls[1][1]["guild_id"] == 1
     assert calls[1][1].get("owner_token") is None
 
 

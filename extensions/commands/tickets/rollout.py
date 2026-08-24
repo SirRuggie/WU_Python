@@ -79,10 +79,24 @@ async def _rollout_for_guild(ctx, mongo: MongoClient) -> ticket_runtime.RolloutS
         )
         return None
     guild_id = store.as_int(getattr(ctx, "guild_id", 0))
-    sources = (state.legacy_intake, state.thread_intake, state.pilot_intake)
-    if not guild_id or any(source is None or source.guild_id != guild_id for source in sources):
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    target_guild_id = store.as_int(config.get("ticket_target_guild_id"))
+    legacy_guild_id = store.as_int(config.get("legacy_ticket_guild_id"))
+    if (
+        not guild_id
+        or not target_guild_id
+        or guild_id != target_guild_id
+        or state.thread_intake is None
+        or state.pilot_intake is None
+        or state.legacy_intake is None
+        or state.thread_intake.guild_id != target_guild_id
+        or state.pilot_intake.guild_id != target_guild_id
+        or not legacy_guild_id
+        or state.legacy_intake.guild_id != legacy_guild_id
+    ):
         await ctx.respond(
-            "🛑 Rollout controls must run in the configured ticket server.",
+            "🛑 Rollout controls must run in the configured target server with "
+            "matching cross-server bindings.",
             ephemeral=True,
         )
         return None
@@ -128,39 +142,69 @@ async def _validate_rollout_readiness(
         raise ticket_runtime.TicketRuntimeError("the public intake source is missing")
     if state.pilot_intake is None:
         raise ticket_runtime.TicketRuntimeError("the pilot intake source is missing")
-    checked_public: set[tuple[int, int]] = set()
-    for public_source in (state.legacy_intake, state.thread_intake):
-        identity = (public_source.channel_id, public_source.message_id)
-        if identity in checked_public:
-            continue
-        public_message = await bot.rest.fetch_message(*identity)
-        surface.require_panel_actions(
-            public_message,
-            surface.LEGACY_PANEL_ACTIONS,
-            label="public ticket panel",
-        )
-        checked_public.add(identity)
-    pilot_message = await bot.rest.fetch_message(
-        state.pilot_intake.channel_id,
-        state.pilot_intake.message_id,
-    )
-    surface.require_panel_actions(
-        pilot_message,
-        surface.PILOT_PANEL_ACTIONS,
-        label="pilot ticket panel",
-    )
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    target_guild_id = store.as_int(config.get("ticket_target_guild_id"))
+    legacy_guild_id = store.as_int(config.get("legacy_ticket_guild_id"))
+    if (
+        not target_guild_id
+        or not legacy_guild_id
+        or state.thread_intake.guild_id != target_guild_id
+        or state.pilot_intake.guild_id != target_guild_id
+        or state.legacy_intake.guild_id != legacy_guild_id
+        or state.thread_intake == state.pilot_intake
+    ):
+        raise ticket_runtime.TicketRuntimeError(
+            "cross-server intake bindings do not match ticket configuration"
+        )
+    candidate_parent_ids = {
+        store.as_int(config.get("main_candidate_parent")),
+        store.as_int(config.get("fwa_candidate_parent")),
+    }
+    if candidate_parent_ids != {state.thread_intake.channel_id}:
+        raise ticket_runtime.TicketRuntimeError(
+            "target public v2 panel must use the shared Main/FWA candidate-thread parent"
+        )
     me = bot.get_me()
     if me is None:
         raise ticket_runtime.TicketRuntimeError("bot identity is unavailable")
+    panel_checks = (
+        (state.legacy_intake, surface.LEGACY_PANEL_ACTIONS, "legacy ticket panel"),
+        (
+            state.thread_intake,
+            surface.THREAD_PUBLIC_PANEL_ACTIONS,
+            "target public v2 panel",
+        ),
+        (state.pilot_intake, surface.PILOT_PANEL_ACTIONS, "pilot ticket panel"),
+    )
+    for source, actions, label in panel_checks:
+        message = await bot.rest.fetch_message(source.channel_id, source.message_id)
+        if int(getattr(getattr(message, "author", None), "id", 0) or 0) != int(me.id):
+            raise ticket_runtime.TicketRuntimeError(f"{label} is not bot-authored")
+        surface.require_panel_actions(message, actions, label=label)
     for ticket_type in ("main", "fwa"):
         parents = thread_service.parents_from_config(
-            config, state.legacy_intake.guild_id, ticket_type
+            config, target_guild_id, ticket_type
         )
         await thread_service.validate_thread_parents(
             bot.rest, parents, bot_user_id=int(me.id)
         )
     await ticket_runtime.ensure_indexes(mongo)
+
+
+async def _validate_legacy_intake(
+    bot: hikari.GatewayBot,
+    state: ticket_runtime.RolloutState,
+) -> None:
+    source = state.legacy_intake
+    me = bot.get_me()
+    if source is None or me is None:
+        raise ticket_runtime.TicketRuntimeError("legacy intake identity is unavailable")
+    message = await bot.rest.fetch_message(source.channel_id, source.message_id)
+    if int(getattr(getattr(message, "author", None), "id", 0) or 0) != int(me.id):
+        raise ticket_runtime.TicketRuntimeError("legacy ticket panel is not bot-authored")
+    surface.require_panel_actions(
+        message, surface.LEGACY_PANEL_ACTIONS, label="legacy ticket panel"
+    )
 
 
 async def migration_allowed(mongo: MongoClient) -> tuple[bool, str]:
@@ -293,7 +337,8 @@ class RolloutStatus(
         await ctx.respond(
             "\n".join([
                 f"**Phase:** `{state.phase}` ({validity}, revision `{state.revision}`)",
-                f"**Public panel:** {_source_label(state.legacy_intake)}",
+                f"**Old legacy panel:** {_source_label(state.legacy_intake)}",
+                f"**Target public v2 panel:** {_source_label(state.thread_intake)}",
                 f"**Pilot panel:** {_source_label(state.pilot_intake)}",
                 f"**Pilot access:** {len(state.pilot_user_ids)} user(s), "
                 f"{len(state.pilot_role_ids)} role(s)",
@@ -441,7 +486,7 @@ class RolloutPromote(
     description="Make thread tickets the public intake default (Admin only)",
 ):
     confirm = lightbulb.boolean(
-        "confirm", "Switch the existing public panel to thread intake", default=False
+        "confirm", "Retire old intake and enable the target public v2 panel", default=False
     )
 
     @lightbulb.invoke
@@ -490,7 +535,7 @@ class RolloutPromote(
             await ctx.respond(f"🛑 Promotion failed safely: {error}.", ephemeral=True)
             return
         await ctx.respond(
-            f"✅ Thread intake is now public at revision `{state.revision}`. "
+            f"✅ Target-server thread intake is now public at revision `{state.revision}`. "
             "Existing legacy tickets remain active.",
             ephemeral=True,
         )
@@ -511,6 +556,7 @@ class RolloutRollback(
     async def invoke(
         self,
         ctx: lightbulb.Context,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
@@ -536,6 +582,14 @@ class RolloutRollback(
             if state.phase == ticket_runtime.PHASE_PREPARED
             else ticket_runtime.PHASE_ROLLBACK_LEGACY
         )
+        try:
+            await _validate_legacy_intake(bot, state)
+        except Exception as error:
+            await ctx.respond(
+                f"🛑 Rollback readiness failed: {error}. Nothing changed.",
+                ephemeral=True,
+            )
+            return
         try:
             state = await ticket_runtime.transition_rollout(
                 mongo,

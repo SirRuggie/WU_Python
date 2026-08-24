@@ -190,17 +190,16 @@ async def claim_public_open_slot(
             sticky_route = slot.get("route")
             sticky_workflow = slot.get("workflow_id")
             if (
-                sticky_route in {
-                    ticket_runtime.ROUTE_LEGACY,
-                    ticket_runtime.ROUTE_THREAD,
-                }
-                and sticky_workflow
+                sticky_route == route
+                and store.as_int(slot.get("guild_id")) == int(guild_id)
+                and str(sticky_workflow or "") == workflow_id
             ):
                 return await ticket_runtime.resume_open_slot(
                     mongo,
                     slot_id=str(slot["_id"]),
                     workflow_id=str(sticky_workflow),
                     route=str(sticky_route),
+                    guild_id=int(guild_id),
                     lease_seconds=600,
                 )
         return claimed
@@ -406,6 +405,7 @@ async def _bind_recovered_open_slot(
         slot_id=slot_id,
         workflow_id=workflow_id,
         route=ticket_runtime.ROUTE_LEGACY,
+        guild_id=store.as_int(ticket.get("guild_id")),
         owner_token=owner_token,
         lease_seconds=600,
     )
@@ -1621,7 +1621,7 @@ async def handle_create_ticket(
             content="❌ Ticketing is temporarily unavailable. Nothing was created."
         )
         return
-    if not route.allowed:
+    if not route.allowed or route.route != ticket_runtime.ROUTE_LEGACY:
         await ctx.interaction.edit_initial_response(
             content=(
                 "❌ This ticket panel has been retired. "
@@ -1665,9 +1665,26 @@ async def handle_create_ticket(
             content="❌ Ticketing is temporarily unavailable. Nothing was created."
         )
         return
+    expected_workflow = _public_workflow_id(
+        route.route, int(ctx.guild_id), user_id, ticket_type
+    )
+    sticky_matches_current_intake = bool(
+        sticky_slot is not None
+        and sticky_slot.get("route") == route.route
+        and store.as_int(sticky_slot.get("guild_id")) == int(ctx.guild_id)
+        and str(sticky_slot.get("workflow_id") or "") == expected_workflow
+    )
+    if sticky_slot is not None and not sticky_matches_current_intake:
+        await ctx.interaction.edit_initial_response(
+            content=(
+                "⏳ Your prior ticket attempt remains saved in its original ticket "
+                "system. Use the current panel there or contact a recruiter."
+            )
+        )
+        return
     effective_route = (
-        sticky_slot.get("route")
-        if sticky_slot is not None
+        str(sticky_slot.get("route"))
+        if sticky_matches_current_intake and sticky_slot is not None
         else route.route
     )
 
@@ -1744,15 +1761,12 @@ async def handle_create_ticket(
         return
 
     sticky_route = str(slot_claim.slot.get("route") or "")
-    if sticky_route == ticket_runtime.ROUTE_THREAD:
-        await _create_thread_runtime_ticket(
-            ctx, bot, mongo, ticket_type, current_time, slot_claim
-        )
-        return
     if sticky_route != ticket_runtime.ROUTE_LEGACY:
-        await cancel_claimed_open_slot(mongo, slot_claim)
         await ctx.interaction.edit_initial_response(
-            content="❌ This ticket panel cannot determine the active ticket system."
+            content=(
+                "⏳ A ticket attempt owned by the other ticket system is still saved. "
+                "Please use its current panel or contact a recruiter."
+            )
         )
         return
 

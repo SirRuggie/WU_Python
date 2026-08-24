@@ -31,6 +31,8 @@ The operator must:
 - Own or be an Administrator in the source guild.
 - Select the configured candidate and staff parents for the resolved Main or
   FWA type.
+- Use the configured target-server thread-recruiter role. Legacy recruiter-role
+  IDs are never accepted as destination configuration.
 - Give the bot source-history access and the destination permissions validated
   by the command, including webhook and attachment permissions.
 

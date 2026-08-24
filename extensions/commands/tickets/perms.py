@@ -23,8 +23,8 @@ async def recruiter_role_ids(mongo: MongoClient) -> tuple[int | None, int | None
     """(main, fwa) recruiter roles from the ticket config document."""
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
     return (
-        _as_int(config.get("main_recruiter_role")) or None,
-        _as_int(config.get("fwa_recruiter_role")) or None,
+        _as_int(config.get("main_thread_recruiter_role")) or None,
+        _as_int(config.get("fwa_thread_recruiter_role")) or None,
     )
 
 
@@ -54,8 +54,8 @@ async def is_recruiter(member: hikari.Member | None, mongo: MongoClient) -> bool
     member_guild_id = _as_int(getattr(member, "guild_id", 0))
     if not target_guild_id or member_guild_id != target_guild_id:
         return False
-    main_role = _as_int(config.get("main_recruiter_role"))
-    fwa_role = _as_int(config.get("fwa_recruiter_role"))
+    main_role = _as_int(config.get("main_thread_recruiter_role"))
+    fwa_role = _as_int(config.get("fwa_thread_recruiter_role"))
     role_ids = {_as_int(value) for value in member.role_ids}
     return bool(
         (main_role and main_role in role_ids)

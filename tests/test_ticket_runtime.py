@@ -249,8 +249,8 @@ def _mongo(
     )
 
 
-def _source(message=30):
-    return {"guild_id": 10, "channel_id": 20, "message_id": message}
+def _source(message=30, *, guild=10, channel=20):
+    return {"guild_id": guild, "channel_id": channel, "message_id": message}
 
 
 def _rollout(phase=runtime.PHASE_PILOT, revision=4):
@@ -260,9 +260,30 @@ def _rollout(phase=runtime.PHASE_PILOT, revision=4):
         "phase": phase,
         "revision": revision,
         "legacy_intake": _source(30),
-        "thread_intake": _source(31),
+        "thread_intake": _source(31, guild=11, channel=21),
         "pilot": {
-            "intake": _source(40),
+            "intake": _source(40, guild=11, channel=22),
+            "user_ids": [50],
+            "role_ids": [60],
+            "ticket_types": ["main", "fwa"],
+        },
+    }
+
+
+def _cross_rollout(phase=runtime.PHASE_PILOT, revision=4):
+    return {
+        "_id": runtime.ROLLOUT_ID,
+        "schema_version": runtime.ROLLOUT_SCHEMA_VERSION,
+        "phase": phase,
+        "revision": revision,
+        "legacy_intake": {
+            "guild_id": 10, "channel_id": 20, "message_id": 30,
+        },
+        "thread_intake": {
+            "guild_id": 11, "channel_id": 21, "message_id": 31,
+        },
+        "pilot": {
+            "intake": {"guild_id": 11, "channel_id": 22, "message_id": 40},
             "user_ids": [50],
             "role_ids": [60],
             "ticket_types": ["main", "fwa"],
@@ -293,7 +314,7 @@ def _ticket(identifier, *, user, route, status="open", number=1, location=100):
     return document
 
 
-def test_routing_is_legacy_safe_exact_for_pilot_and_switches_stable_public_panel():
+def test_cross_server_routing_uses_exact_phase_source_matrix():
     async def scenario():
         missing = _mongo()
         safe = await runtime.route_public_intake(
@@ -305,8 +326,34 @@ def test_routing_is_legacy_safe_exact_for_pilot_and_switches_stable_public_panel
             user_id=50,
             ticket_type="main",
         )
+        assert safe.allowed and safe.reason == "pre_setup_legacy_compatibility"
+        missing.ticket_setup.documents["config"].update({
+            "main_recruiter_role": 700,
+            "main_category": 800,
+            "ticket_target_guild_id": 444,
+        })
+        pre_split = await runtime.route_public_intake(
+            missing,
+            requested_route=runtime.ROUTE_LEGACY,
+            guild_id=999,
+            channel_id=999,
+            message_id=999,
+            user_id=50,
+            ticket_type="main",
+        )
+        assert pre_split.allowed
+        assert pre_split.reason == "pre_setup_legacy_compatibility"
+        missing.ticket_setup.documents["config"]["legacy_ticket_guild_id"] = 10
+        safe = await runtime.route_public_intake(
+            missing,
+            requested_route=runtime.ROUTE_LEGACY,
+            guild_id=10,
+            channel_id=999,
+            message_id=999,
+            user_id=50,
+            ticket_type="main",
+        )
         assert safe.allowed and safe.route == runtime.ROUTE_LEGACY
-        missing.ticket_setup.documents["config"]["ticket_target_guild_id"] = 10
         bound_elsewhere = await runtime.route_public_intake(
             missing,
             requested_route=runtime.ROUTE_LEGACY,
@@ -318,79 +365,62 @@ def test_routing_is_legacy_safe_exact_for_pilot_and_switches_stable_public_panel
         )
         assert not bound_elsewhere.allowed
 
-        mongo = _mongo(rollout=[_rollout()])
-        old_panel = await runtime.route_public_intake(
-            mongo,
-            requested_route=runtime.ROUTE_LEGACY,
-            guild_id=10,
-            channel_id=999,
-            message_id=999,
-            user_id=50,
-            ticket_type="main",
-        )
-        assert old_panel.allowed and old_panel.route == runtime.ROUTE_LEGACY
-        cross_guild = await runtime.route_public_intake(
-            mongo,
-            requested_route=runtime.ROUTE_LEGACY,
-            guild_id=11,
-            channel_id=999,
-            message_id=999,
-            user_id=50,
-            ticket_type="main",
-        )
-        assert not cross_guild.allowed
-        pilot = await runtime.route_public_intake(
-            mongo,
-            requested_route=runtime.ROUTE_THREAD,
-            guild_id=10,
-            channel_id=20,
-            message_id=40,
-            user_id=999,
-            member_role_ids=[60],
-            ticket_type="fwa",
-        )
-        assert pilot.allowed and pilot.route == runtime.ROUTE_THREAD
-        wrong = await runtime.route_public_intake(
-            mongo,
-            requested_route=runtime.ROUTE_THREAD,
-            guild_id=10,
-            channel_id=20,
-            message_id=41,
-            user_id=50,
-            ticket_type="main",
-        )
-        assert not wrong.allowed
+        expected = {
+            runtime.PHASE_LEGACY_ONLY: (True, False, False),
+            runtime.PHASE_PREPARED: (True, False, False),
+            runtime.PHASE_PILOT: (True, False, True),
+            runtime.PHASE_THREAD_DEFAULT: (False, True, False),
+            runtime.PHASE_ROLLBACK_LEGACY: (True, False, False),
+            runtime.PHASE_THREAD_ONLY: (False, True, False),
+        }
+        for phase, outcomes in expected.items():
+            mongo = _mongo(rollout=[_cross_rollout(phase)])
+            old = await runtime.route_public_intake(
+                mongo,
+                requested_route=runtime.ROUTE_LEGACY,
+                guild_id=10,
+                channel_id=20,
+                message_id=30,
+                user_id=50,
+                ticket_type="main",
+            )
+            public = await runtime.route_public_intake(
+                mongo,
+                requested_route=runtime.ROUTE_THREAD,
+                guild_id=11,
+                channel_id=21,
+                message_id=31,
+                user_id=50,
+                ticket_type="main",
+            )
+            pilot = await runtime.route_public_intake(
+                mongo,
+                requested_route=runtime.ROUTE_THREAD,
+                guild_id=11,
+                channel_id=22,
+                message_id=40,
+                user_id=50,
+                ticket_type="main",
+            )
+            assert (old.allowed, public.allowed, pilot.allowed) == outcomes
 
-        mongo.ticket_rollout.documents[runtime.ROLLOUT_ID]["phase"] = (
-            runtime.PHASE_THREAD_DEFAULT
-        )
-        promoted = await runtime.route_public_intake(
-            mongo,
-            requested_route=runtime.ROUTE_LEGACY,
-            guild_id=10,
-            channel_id=20,
-            message_id=30,
-            user_id=999,
-            ticket_type="main",
-        )
-        assert promoted.allowed and promoted.route == runtime.ROUTE_THREAD
-        stale = await runtime.route_public_intake(
-            mongo,
-            requested_route=runtime.ROUTE_LEGACY,
-            guild_id=10,
-            channel_id=20,
-            message_id=29,
-            user_id=999,
-            ticket_type="main",
-        )
-        assert not stale.allowed
+            copied = await runtime.route_public_intake(
+                mongo,
+                requested_route=runtime.ROUTE_THREAD,
+                guild_id=11,
+                channel_id=21,
+                message_id=999,
+                user_id=50,
+                ticket_type="main",
+            )
+            assert not copied.allowed
 
     asyncio.run(scenario())
 
 
 def test_concurrent_legacy_and_pilot_claims_have_one_winner_and_sticky_route():
     async def scenario():
-        mongo = _mongo(rollout=[_rollout()])
+        mongo = _mongo(rollout=[_cross_rollout()])
         legacy, thread = await asyncio.gather(
             runtime.claim_open_slot(
                 mongo,
@@ -407,7 +437,7 @@ def test_concurrent_legacy_and_pilot_claims_have_one_winner_and_sticky_route():
                 user_id=70,
                 ticket_type="main",
                 route=runtime.ROUTE_THREAD,
-                guild_id=10,
+                guild_id=11,
                 workflow_id="thread:70:main",
                 rollout_revision=4,
                 now=NOW,
@@ -417,6 +447,184 @@ def test_concurrent_legacy_and_pilot_claims_have_one_winner_and_sticky_route():
         slot = mongo.ticket_open_slots.documents["ticket-open:70:main"]
         assert slot["route"] in {runtime.ROUTE_LEGACY, runtime.ROUTE_THREAD}
         assert {legacy.slot["route"], thread.slot["route"]} == {slot["route"]}
+
+    asyncio.run(scenario())
+
+
+def test_cross_server_claim_and_resume_are_guild_fenced_before_mutation():
+    async def scenario():
+        mongo = _mongo(rollout=[_cross_rollout()])
+        with pytest.raises(runtime.RolloutConflict):
+            await runtime.claim_open_slot(
+                mongo,
+                user_id=71,
+                ticket_type="main",
+                route=runtime.ROUTE_THREAD,
+                guild_id=10,
+                workflow_id="thread:71:main",
+                rollout_revision=4,
+                now=NOW,
+            )
+        assert "ticket-open:71:main" not in mongo.ticket_open_slots.documents
+
+        reserved = {
+            "_id": "ticket-open:72:main",
+            "workflow_id": "thread:72:main",
+            "route": runtime.ROUTE_THREAD,
+            "guild_id": 11,
+            "state": runtime.SLOT_RESERVED,
+            "lease_until": NOW - timedelta(seconds=1),
+        }
+        mongo.ticket_open_slots.documents[reserved["_id"]] = deepcopy(reserved)
+        wrong = await runtime.resume_open_slot(
+            mongo,
+            slot_id=reserved["_id"],
+            workflow_id=reserved["workflow_id"],
+            route=runtime.ROUTE_THREAD,
+            guild_id=10,
+            now=NOW,
+        )
+        assert not wrong.won
+        right = await runtime.resume_open_slot(
+            mongo,
+            slot_id=reserved["_id"],
+            workflow_id=reserved["workflow_id"],
+            route=runtime.ROUTE_THREAD,
+            guild_id=11,
+            now=NOW,
+        )
+        assert right.won
+
+    asyncio.run(scenario())
+
+
+def test_pre_setup_invalid_rollout_claim_ignores_target_until_legacy_is_bound():
+    async def scenario():
+        mongo = _mongo()
+        mongo.ticket_setup.documents["config"].update({
+            "main_recruiter_role": 700,
+            "main_category": 800,
+            "ticket_target_guild_id": 999,
+        })
+        allowed = await runtime.claim_open_slot(
+            mongo,
+            user_id=73,
+            ticket_type="main",
+            route=runtime.ROUTE_LEGACY,
+            guild_id=10,
+            workflow_id="legacy:10:73:main",
+            rollout_revision=0,
+            now=NOW,
+        )
+        assert allowed.won
+        target_only_ignored = await runtime.claim_open_slot(
+            mongo,
+            user_id=74,
+            ticket_type="main",
+            route=runtime.ROUTE_LEGACY,
+            guild_id=11,
+            workflow_id="legacy:11:74:main",
+            rollout_revision=0,
+            now=NOW,
+        )
+        assert target_only_ignored.won
+
+        mongo.ticket_setup.documents["config"]["legacy_ticket_guild_id"] = 10
+        with pytest.raises(runtime.RolloutConflict):
+            await runtime.claim_open_slot(
+                mongo,
+                user_id=75,
+                ticket_type="main",
+                route=runtime.ROUTE_LEGACY,
+                guild_id=11,
+                workflow_id="legacy:11:75:main",
+                rollout_revision=0,
+                now=NOW,
+            )
+        assert "ticket-open:75:main" not in mongo.ticket_open_slots.documents
+
+    asyncio.run(scenario())
+
+
+def test_mismatched_target_panel_guilds_are_rejected_before_rollout_write():
+    async def scenario():
+        malformed_document = _cross_rollout()
+        malformed_document["thread_intake"]["guild_id"] = 10
+        malformed_document["pilot"]["intake"]["guild_id"] = 10
+        malformed = await runtime.get_rollout(
+            _mongo(rollout=[malformed_document])
+        )
+        assert not malformed.valid
+
+        mongo = _mongo(rollout=[_cross_rollout()])
+        before = deepcopy(mongo.ticket_rollout.documents[runtime.ROLLOUT_ID])
+        same_guild_thread = {
+            **before["thread_intake"],
+            "guild_id": before["legacy_intake"]["guild_id"],
+        }
+        same_guild_pilot = {
+            **before["pilot"],
+            "intake": {
+                **before["pilot"]["intake"],
+                "guild_id": before["legacy_intake"]["guild_id"],
+            },
+        }
+        with pytest.raises(ValueError, match="different guilds"):
+            await runtime.configure_rollout(
+                mongo,
+                expected_revision=4,
+                actor_id=1,
+                legacy_intake=before["legacy_intake"],
+                thread_intake=same_guild_thread,
+                pilot=same_guild_pilot,
+                now=NOW,
+            )
+        assert mongo.ticket_rollout.documents[runtime.ROLLOUT_ID] == before
+
+        empty = _mongo()
+        with pytest.raises(ValueError, match="different guilds"):
+            await runtime.seed_rollout(
+                empty,
+                actor_id=1,
+                legacy_intake=before["legacy_intake"],
+                thread_intake=same_guild_thread,
+                pilot=same_guild_pilot,
+                now=NOW,
+            )
+        assert runtime.ROLLOUT_ID not in empty.ticket_rollout.documents
+
+        with pytest.raises(ValueError, match="same target guild"):
+            await runtime.configure_rollout(
+                mongo,
+                expected_revision=4,
+                actor_id=1,
+                legacy_intake=before["legacy_intake"],
+                thread_intake=before["thread_intake"],
+                pilot={
+                    **before["pilot"],
+                    "intake": {
+                        "guild_id": 12, "channel_id": 22, "message_id": 40,
+                    },
+                },
+                now=NOW,
+            )
+        assert mongo.ticket_rollout.documents[runtime.ROLLOUT_ID] == before
+        with pytest.raises(ValueError, match="separate channels"):
+            await runtime.configure_rollout(
+                mongo,
+                expected_revision=4,
+                actor_id=1,
+                legacy_intake=before["legacy_intake"],
+                thread_intake=before["thread_intake"],
+                pilot={
+                    **before["pilot"],
+                    "intake": {
+                        "guild_id": 11, "channel_id": 21, "message_id": 40,
+                    },
+                },
+                now=NOW,
+            )
+        assert mongo.ticket_rollout.documents[runtime.ROLLOUT_ID] == before
 
     asyncio.run(scenario())
 
@@ -515,13 +723,13 @@ def test_backfill_resumes_late_legacy_commit_from_preserved_slot():
 def test_claim_cross_checks_preexisting_open_ticket_before_winning():
     async def scenario():
         ticket = _ticket("legacy-open", user="91", route=runtime.ROUTE_LEGACY, location=911)
-        mongo = _mongo(rollout=[_rollout()], legacy=[ticket])
+        mongo = _mongo(rollout=[_cross_rollout()], legacy=[ticket])
         claim = await runtime.claim_open_slot(
             mongo,
             user_id=91,
             ticket_type="main",
             route=runtime.ROUTE_THREAD,
-            guild_id=10,
+            guild_id=11,
             workflow_id="thread:91:main",
             rollout_revision=4,
             now=NOW,
@@ -565,7 +773,7 @@ def test_next_claim_repairs_exact_terminal_slot_when_release_checkpoint_failed()
             user_id=92,
             ticket_type="main",
             route=runtime.ROUTE_THREAD,
-            guild_id=10,
+            guild_id=11,
             workflow_id="thread:92:main",
             rollout_revision=4,
             now=NOW,
@@ -970,9 +1178,9 @@ def test_rollout_cas_and_thread_only_drain_barrier():
             mongo,
             actor_id=1,
             legacy_intake=_source(30),
-            thread_intake=_source(31),
+            thread_intake=_source(31, guild=11, channel=21),
             pilot={
-                "intake": _source(40),
+                "intake": _source(40, guild=11, channel=22),
                 "user_ids": [50],
                 "role_ids": [],
                 "ticket_types": ["main"],
@@ -1017,9 +1225,9 @@ def test_rollout_cas_and_thread_only_drain_barrier():
                 expected_revision=1,
                 actor_id=1,
                 legacy_intake=_source(30),
-                thread_intake=_source(31),
+                thread_intake=_source(31, guild=11, channel=21),
                 pilot={
-                    "intake": _source(40),
+                    "intake": _source(40, guild=11, channel=22),
                     "user_ids": [50],
                     "ticket_types": ["main"],
                 },
