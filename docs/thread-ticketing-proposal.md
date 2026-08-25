@@ -1,8 +1,10 @@
 # Thread-based ticketing + console dashboard — research & proposal
 
 Research deliverable, 2026-08-02. Seven parallel research workstreams, findings
-adjudicated against primary sources. It predates the shipped parallel runtime
-and is retained for design reasoning, not operator procedure. Use the
+adjudicated against primary sources. It predates the implemented parallel
+runtime and is retained for design reasoning, not operator procedure. As of
+2026-08-24, that runtime is committed on the feature branch but not deployed or
+configured live. Use the
 [ticket console operations guide](ticket-console-operations.md) for current
 commands, authority boundaries, rollout, rollback, drain, and migration.
 
@@ -16,7 +18,7 @@ had it right, specifying "single text input (all hikari permits)"), and an
 FWA-ban panel rendering a parsed verdict when the real command is a link-out.
 Part 2 below is kept for the budget-math and component-cost reasoning, which
 is still correct; treat [ticket-console.md](ticket-console.md) as the source
-of truth for what shipped.
+of truth for what is implemented.
 
 Part 1 remains useful research. Part 3's one-collection cutover,
 `ticket_mode` flag, dual-write plan, and numbered build phases are superseded
@@ -181,8 +183,9 @@ winner.
 
 **Claiming can only ever be advisory.** Tickets.bot states flatly that *"Discord
 does not allow threads to be claimed"*; Ticket Tool disables claiming on thread
-tickets. We can record and display a claim; we cannot stop a second recruiter
-typing.
+tickets. The implemented v2 runtime therefore omits recruiter claiming
+entirely. Only the legacy `/ticket claim` and `/ticket release` commands retain
+that advisory behavior during coexistence.
 
 ## 1.7 Search: Discord cannot find our history
 
@@ -201,22 +204,22 @@ as a human convenience; **not a system of record.**
 
 Attachment durability remains an open live-ticket risk. Terminal legacy
 cloning separately audits source attachments and requires the exact
-`LOSS-...` acknowledgement for unavailable files. The shipped runtime has no
+`LOSS-...` acknowledgement for unavailable files. The implemented runtime has no
 close command or re-host-at-close workflow.
 
 ## 1.9 Our own foundations
 
-**The dispatcher has no failure semantics.** `user_only` is declared and used
-zero times — there is no authorization mechanism at all. No error boundary: a
-raising handler after `defer(edit=True)` leaves the user with a button that
-un-presses and does nothing, forever, with no error. No unknown-action guard: a
-renamed action crashes every existing message referencing it, and components
-never expire. The `if not kw: return` expiry guard is dead code. Full list in
-[component-dispatcher.md](component-dispatcher.md), including a **live inert
-button in production** (`manage_fwa_data:main`).
+**At proposal time, the dispatcher had no failure semantics.** The implemented
+foundation now has an exception boundary with a correlation reference,
+unknown-action refusal, explicit state requirements, expiry enforcement, and a
+TTL-backed component-state store. Declarative `user_only` is still not an
+authorization mechanism, so every ticket handler re-checks its recruiter,
+Administrator, owner, and guild boundary before reading private data or
+committing a mutation. See [component-dispatcher.md](component-dispatcher.md)
+for the historical defects and current contract.
 
 At proposal time, legacy ticket documents lived in `button_store` beside
-ephemeral state. Shipped coexistence keeps legacy ticket rows in
+ephemeral state. Implemented coexistence keeps legacy ticket rows in
 `button_store`; thread-v2 tickets and completed clones live in `tickets`.
 
 ---
@@ -367,7 +370,7 @@ the select-as-list for the same screen space. That part didn't change.
 
 # PART 3 — HISTORICAL MIGRATION & ARCHITECTURE
 
-> **Superseded operator design.** The shipped system keeps legacy `/ticket`
+> **Superseded operator design.** The implemented system keeps legacy `/ticket`
 > rows in `button_store` and thread-v2 `/ticket-pilot` rows in `tickets`.
 > Shared slot and counter records coordinate uniqueness; ticket rows are not
 > copied or dual-written between authorities. See the
@@ -389,7 +392,7 @@ The `tickets` collection contains only thread-v2 tickets and completed terminal
 clones. It uses `location.id` and `location.staff_space_id` for the candidate
 and staff thread pair. Live legacy channel rows stay outside this model and
 outside the v2 console. The [operations guide](ticket-console-operations.md)
-owns the deployed authority contract.
+owns the implemented authority contract.
 
 ## 3.3 Thread ticketing end to end
 
@@ -418,7 +421,7 @@ instead.
 
 ## 3.4 Implemented phase routing
 
-The shipped runtime does not use `ticket_mode`. It loads two command groups and
+The implemented runtime does not use `ticket_mode`. It loads two command groups and
 keeps their authorities separate: `/ticket` for legacy channel tickets and
 `/ticket-pilot` for thread-v2 tickets. A guarded rollout record routes only new
 intake:
@@ -464,11 +467,11 @@ slots, and pending legacy workflows.
 | 1 | **Legacy reconciliation could mistake threads for missing channels.** | Resolved by separate legacy/v2 repositories and command surfaces; legacy reconciliation does not own v2 rows. |
 | 2 | **A dashboard handler could delete a ticket record through the old shared-state convention.** | Resolved with dedicated component state and v2 action namespacing. |
 | 3 | **Losing the recruiter back-channel.** Two commercial bots lost it in this exact migration. | Resolved: every v2 ticket receives a parallel staff thread in the configured private staff parent. |
-| 4 | **Tickets become inoperable when archived** — an original-design concern. | The shipped v2 flow acts before terminal archive, then keeps terminal pairs locked, archived, and available read-only. Durable recovery temporarily repairs only pending bot-owned work. |
+| 4 | **Tickets become inoperable when archived** — an original-design concern. | The implemented v2 flow acts before terminal archive, then keeps terminal pairs locked, archived, and available read-only. Durable recovery temporarily repairs only pending bot-owned work. |
 | 5 | **Silent status overwrite** — approve could clobber deny. | Resolved: both runtimes use conditional terminal transitions; only one decision wins. |
 | 6 | **A legacy clone cannot fetch a source attachment.** | The read-only preview audits attachment loss; confirmation requires the exact reported `LOSS-...` token. The source remains unchanged. |
 | 7 | **A large recruiter role cannot rely on role-mention auto-add.** | Resolved by requiring `MANAGE_THREADS` on the configured recruiter role; parent validation enforces it. |
-| 8 | **~1000 active-thread cap is undocumented** and Discord shortens auto-archive as you approach it. | The shipped runtime locks and archives each terminal pair. Console links keep it read-only and do not auto-unarchive it. |
+| 8 | **~1000 active-thread cap is undocumented** and Discord shortens auto-archive as you approach it. | The implemented runtime locks and archives each terminal pair. Console links keep it read-only and do not auto-unarchive it. |
 | 9 | **System-message spam** on every thread member add. Undeletable. | Set membership once at creation; never use add/remove for claiming. |
 | 10 | **`SEND_MESSAGES` does nothing in threads** — candidates need `SEND_MESSAGES_IN_THREADS`. | `/ticket-pilot configure-threads` validates configured parent and recruiter permissions, `/ticket-pilot thread-config` revalidates them, and intake validates the applicant before creating threads. |
 | 11 | Thread renames fail *silently* at ~2/10min. | Never rename. Status in Mongo. |
@@ -481,12 +484,12 @@ slots, and pending legacy workflows.
 | 1 | **Parallel staff thread** in a recruiters-only channel, bot-linked via `location.staff_space_id` | Two Discord objects per ticket; dashboard surfaces both |
 | 2 | **FWA 50/50 fixed independently** (second category + repoint `fwa_category`) | Migration is **purely a UX project, no urgency**. Take phases in order. |
 | 3 | **`abandoned` was proposed as a real state.** | Not implemented. Thread v2 stores only `open`, `approved`, or `denied`; rollout does not backfill or reclassify legacy rows. |
-| 4 | **Advisory claiming accepted** | Social convention at this size; Discord cannot enforce it regardless |
-| 5 | ~~**Charts skipped for now**, revisit at phase 5~~ **REVERSED 2026-08-17** by decision 7 | The chart ships in v1 as the console header. Pillow is already a dependency and the image is a message attachment, so it added nothing new after all. |
+| 4 | ~~**Advisory claiming accepted**~~ **SUPERSEDED by implementation** | Thread v2 has no claim/release workflow or claim fields. Advisory claiming remains legacy-only during coexistence. |
+| 5 | ~~**Charts skipped for now**, revisit at phase 5~~ **REVERSED 2026-08-17** by decision 7 | The chart is implemented as the console header. Pillow was already a dependency and the image is a message attachment. |
 | 6 | **hikari+lightbulb upgrade is a separate track, after phase 2** | Coupled move (2.5.0 + 3.2.5); must not ride along with ticketing |
 
 The original proposal rejected a read-only dashboard over legacy channel
-tickets. The shipped v2 console likewise queries `tickets`, not live
+tickets. The implemented v2 console likewise queries `tickets`, not live
 `button_store` rows.
 
 ## 4.2b DECISIONS — console review, settled 2026-08-17
@@ -500,8 +503,8 @@ Full detail and reasoning in [ticket-console.md](ticket-console.md). Summary:
 | 9 | **No "Open Console" gateway.** The shared message's picker and Find-a-ticket button are the entry points directly. | One fewer click; structural rule (state on the message, not the viewer) still holds. |
 | 10 | **Manual refresh button dropped.** | `refresh_hub()` already runs on create/approve/deny; a button had no state left to fix. |
 | 11 | **Search: Discord ID / player tag / username, nothing else.** Recruiter-claim filter dropped entirely. | Simpler modal, matches decision 12. |
-| 12 | **No claiming surfaced in the console.** "We don't care what the recruiter claimed." | Backend `claimed_by`/`claimed_at` (decision 4) untouched for now — open question, §4.3 item 4. |
-| 13 | **Blacklist is binary, no "maybe" tier.** Two more flags added as non-blocking cautions: denied-before, not-loyal-to-WU. | New small `ticket_flags`-style collection, not designed before now — see [ticket-console.md](ticket-console.md), Related. |
+| 12 | **No claiming surfaced in the console.** "We don't care what the recruiter claimed." | Implemented v2 schema and actions omit recruiter claim fields entirely; legacy claim data stays legacy-only. |
+| 13 | **Blacklist is binary, no "maybe" tier.** Two more flags added as non-blocking cautions: denied-before, not-loyal-to-WU. | Implemented in the audited `ticket_flags` collection; only Blacklisted blocks approval. See [ticket-console.md](ticket-console.md), Related. |
 | 14 | **Status/Type filters cannot live inside the "Find a ticket" modal** — hikari has no Label builder, so Discord's Aug-2025 modal-select support is unreachable (the wall established in §1.5). Relocated to the ephemeral results panel as two message selects. | Corrects a mockup mistake before it became a build mistake. |
 | 15 | **`/fwa chocolate` is a link-out, not a lookup** — confirmed against `extensions/commands/fwa/chocolate.py`. A human reads the ban status and records it as a flag. | Corrects a second mockup mistake; the flag record's shape (`addedBy`, `checkedAt`, `source`) was already right for this. |
 | 16 | **Nothing is ever "closed."** Tickets are permanently `approved`/`denied`; the thread is never renamed to imply done, never deleted. | Implemented: the runtime locks and archives both terminal threads, while console links keep them available read-only. See [ticket-console.md](ticket-console.md) §7. |

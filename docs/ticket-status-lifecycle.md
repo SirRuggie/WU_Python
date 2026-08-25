@@ -8,9 +8,12 @@ legacy notes are retained below, but the current contract is:
 | Legacy channel tickets | `button_store` | `open`, `approved`, `denied` | `/ticket` |
 | Thread-ticket v2 | `tickets` rows matching `venue: "thread"` and `runtime: "thread_v2"` | `open`, `approved`, `denied` | Private console and `/ticket-pilot` |
 
-No ticket document is copied, mirrored, merged, or repointed between these
-authorities during coexistence. The runtimes share only rollout state,
-one-open-ticket slots, and ticket-number counters. See the
+Normal ticket creation and resolution never copy, mirror, merge, or repoint a
+document between these authorities. The explicit terminal-only
+`/ticket-pilot migrate-legacy` workflow is the sole exception: it creates a
+separate v2 clone while leaving the source legacy document and Discord objects
+unchanged. The runtimes otherwise share only rollout state, one-open-ticket
+slots, and ticket-number counters. See the
 [operator source of truth](ticket-console-operations.md).
 
 ## The three writable statuses
@@ -145,9 +148,9 @@ and override provenance when applicable.
 
 ## Claim and close behavior
 
-Legacy `/ticket claim` and `/ticket release` remain available only to finish
-existing channel tickets during coexistence. They are advisory legacy behavior
-and are not copied into v2.
+Legacy `/ticket claim` and `/ticket release` remain available only to operate
+channel tickets during coexistence. They are advisory legacy behavior and are
+not copied into v2.
 
 Thread v2 has no recruiter claim, release, close, or reopen action. Its schema
 removes old claim fields, resolution confirmations contain no claim note, and a

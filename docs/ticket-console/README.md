@@ -5,7 +5,7 @@ thread ticket system. Use the
 [operator runbook](../ticket-console-operations.md) for the exact setup,
 pilot, promotion, rollback, drain, and migration order.
 
-As of 2026-08-23, this implementation is pushed on the feature branch but is
+As of 2026-08-24, this implementation is pushed on the feature branch but is
 **not deployed or configured live**. Production remains unchanged.
 
 ## Read this first

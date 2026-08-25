@@ -11,7 +11,7 @@ the [thread ticket command README](ticket-console/README.md).
 
 ## Current delivery status
 
-As of 2026-08-23, the cross-server implementation is pushed on the feature
+As of 2026-08-24, the cross-server implementation is pushed on the feature
 branch but is **not deployed or configured live**. Production remains on the
 existing legacy runtime. Deploying the code does not switch intake by itself:
 the old panel stays authoritative until setup, preparation, pilot testing, and
