@@ -1,5 +1,12 @@
 # The Discord ↔ Clash account link API
 
+> **2026-09-01 update:** production code now uses authenticated
+> `POST /v2/links/shared` with `{ "discord_ids": [...], "player_tags": [...] }`.
+> It returns an `items` array of visible `{player_tag, user_id, is_verified}`
+> pairs, accepts at most 100 combined identifiers per request, and omits hidden
+> links. The unauthenticated `/discord_links` behavior documented below is
+> retained only as historical context.
+
 wu-bot resolves Discord accounts to Clash player tags through **one endpoint**,
 and it works in **both directions**. There is no local link table, no `/link`
 command, and nothing to build.

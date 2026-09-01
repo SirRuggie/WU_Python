@@ -7,7 +7,6 @@ Train ⇨ Join ⇨ Attack ⇨ Return (15-30min tops)
 
 import asyncio
 import uuid
-import aiohttp
 import hikari
 import lightbulb
 import coc
@@ -25,6 +24,7 @@ from utils.startup_reconciler import StartupReconciler
 from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT
 from utils.emoji import emojis
 from utils.classes import Clan
+from utils.clash_links import resolve_discord_ids
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -177,26 +177,7 @@ async def get_discord_ids(player_tags: List[str]) -> Optional[Dict[str, Optional
     if not player_tags:
         return {}
 
-    # Remove # prefix for API call
-    clean_tags = [tag.lstrip('#') for tag in player_tags]
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://api.clashk.ing/discord_links",
-                json=clean_tags,
-                headers={'Content-Type': 'application/json'}
-            ) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    # API returns with # prefix
-                    return result
-                else:
-                    print(f"ClashKing API error {response.status}: {await response.text()}")
-                    return None
-    except Exception as e:
-        print(f"ClashKing API request failed: {e}")
-        return None
+    return await resolve_discord_ids(player_tags)
 
 
 async def create_clan_selector_components(fwa_clans: List[Dict], action_prefix: str, action_id: str) -> List[Container]:

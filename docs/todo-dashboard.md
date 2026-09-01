@@ -111,7 +111,7 @@ mean that player owes all five attacks.
 
 | What | Source | Auth |
 |---|---|---|
-| Discord ID → player tags | `POST https://api.clashk.ing/discord_links` | none |
+| Discord ID ↔ player tags | `POST https://api.clashk.ing/v2/links/shared` | developer bearer token |
 | Player, clan, war, CWL, raid log | coc.py via `proxy.clashk.ing` | proxy handles it |
 | Recent player → clan candidates | Mongo `player_clan_candidates` | bot-owned, 30-day TTL |
 | Clan logos | Mongo `clans` collection, field `logo` | existing client |

@@ -84,7 +84,15 @@ MONGODB_URI
 BAND_DEBUG
 CLOUDINARY_API_KEY
 CLOUDINARY_API_SECRET
+CLASHKING_API_TOKEN
 ```
+
+`CLASHKING_API_TOKEN` is the ClashKing developer bearer token used by `/todo`,
+`/accounts`, Clash of Cards, LazyCWL, and clan-history expansion through
+`POST /v2/links/shared`. The endpoint accepts up to 100 Discord IDs and player
+tags per request, omits hidden links, and applies per-application usage tracking
+and rate limits. Add the dashboard-issued token to `.env`, then restart the
+service.
 
 The Clash of Cards hub uses `CARDS_GUILD_ID`, set to the decimal Discord server
 ID for Warriors United, and `CARDS_CHANNEL_ID`, set to the decimal Discord
