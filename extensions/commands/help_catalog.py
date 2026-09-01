@@ -13,6 +13,7 @@ HELP_CATEGORIES = {
         "description": "Everyday commands and self-service tools",
         "commands": [
             ("/help", "Open this command guide."),
+            ("/ping", "Check whether the bot is online and responding."),
             ("/accounts", "Show every Clash account linked to your Discord."),
             ("/cards", "Update your card collection and find family trade matches."),
             ("/todo", "Show what your linked Clash accounts still need to do."),

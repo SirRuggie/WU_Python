@@ -54,10 +54,11 @@ class FakeCollection:
 def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     paths = command_paths()
 
-    assert len(paths) == 80
-    assert sum(len(category["commands"]) for category in HELP_CATEGORIES.values()) == 80
+    assert len(paths) == 81
+    assert sum(len(category["commands"]) for category in HELP_CATEGORIES.values()) == 81
     assert "/accounts" in paths
     assert "/cards" in paths
+    assert "/ping" in paths
     assert {"/role add", "/role remove", "/role manage"} <= paths
     assert {"/poll create", "/poll view", "/poll active"} <= paths
     assert "/cwl-reminder list" in paths
