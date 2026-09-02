@@ -58,7 +58,8 @@ the hard way. The standing instruction that governs this folder is in
   Cloudinary's free bandwidth (hikari 2.3.5 downloads every image URL on every
   render; full-size originals used as thumbnails), the free-hosting
   comparison — Discord-native, Cloudflare R2, object stores, Cloudinary-likes —
-  and the recommended migration (2026-09-02). **Not yet decided.**
+  and the migration (2026-09-02). **Decided: Cloudflare R2, implemented;
+  the hikari double-fetch fix is still open.**
 
 ## Architecture
 

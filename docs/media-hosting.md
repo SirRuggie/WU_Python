@@ -1,10 +1,20 @@
 # Media hosting: the Cloudinary bandwidth incident, and where the images should live
 
-Research and proposal, 2026-09-02. **Nothing here is implemented**, and a
-separate change is fixing `/todo` itself. Vendor numbers were checked against
-official documentation on that date; anything that could not be verified is
-marked *unverified*. The hikari behaviour in section 2 was reproduced in a
-scratch venv against the exact pinned version and is not in doubt.
+Research, 2026-09-02. Vendor numbers were checked against official
+documentation on that date; anything that could not be verified is marked
+*unverified*. The hikari behaviour in section 2 was reproduced in a scratch
+venv against the exact pinned version and is not in doubt.
+
+> **Status.** Decided the same day: **Cloudflare R2**, because the family's
+> domain is already on Cloudflare. Main had already shipped the static art
+> into `assets/branding/` and the render-time size cap
+> (`utils/cloudinary_urls.optimized`, commit `74efd85`, which also put
+> August's usage at 116 GB). The R2 move is built on top of that:
+> `utils/media_store.py` uploads, `utils/media_urls.py` builds delivery URLs
+> for both hosts while rows migrate, and `tools/migrate_media_to_r2.py`
+> moves the Mongo rows. Setup and the runbook are in
+> [deployment.md](deployment.md#cloudflare-r2-image-uploads). **Still open:**
+> the hikari double-fetch in section 2.2, by shim or by upgrade.
 
 ## TL;DR
 

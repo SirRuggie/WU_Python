@@ -8810,7 +8810,7 @@ def _clan_emoji_markup(value: object) -> str:
     `utils.classes.Clan` validates it - by parsing rather than pattern
     matching - so this agrees with the rest of the bot about what is usable.
 
-    Not the `logo`: that is a full-size Cloudinary image meant for a thumbnail,
+    Not the `logo`: that is a full-size hosted image meant for a thumbnail,
     which is far too big to sit inside a line of text.
     """
     raw = str(value or "").strip()

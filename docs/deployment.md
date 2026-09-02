@@ -87,6 +87,10 @@ CLOUDINARY_API_SECRET
 CLASHKING_API_TOKEN
 ```
 
+The two `CLOUDINARY_*` names are retired: since the September 2026 move to
+Cloudflare R2 nothing reads them, and image uploads need the `R2_*` names in
+[Cloudflare R2 (image uploads)](#cloudflare-r2-image-uploads) instead.
+
 `CLASHKING_API_TOKEN` is the ClashKing developer bearer token used by `/todo`,
 `/accounts`, Clash of Cards, LazyCWL, and clan-history expansion through
 `POST /v2/links/shared`. The endpoint accepts up to 100 Discord IDs and player
@@ -121,6 +125,68 @@ printing its value into chat or logs.
 Some values in `.env` are credentials in a non-obvious way — the BAND iCal feed
 URLs grant unauthenticated read access to the calendars. See
 [band-ical-feeds.md](band-ical-feeds.md).
+
+## Cloudflare R2 (image uploads)
+
+Since September 2026 uploaded clan logos, banners and FWA base images live in
+a Cloudflare R2 bucket instead of Cloudinary (why: [media-hosting.md](media-hosting.md)).
+The bot needs five variables in `.env`. When any is missing, uploads fail
+closed with a reply naming them and the rest of the bot runs as normal; the
+boot log says `[WARN] R2 is not configured`.
+
+```text
+R2_ACCOUNT_ID=<Cloudflare account id>
+R2_ACCESS_KEY_ID=<R2 API token access key>
+R2_SECRET_ACCESS_KEY=<R2 API token secret>
+R2_BUCKET=<bucket name>
+R2_PUBLIC_BASE_URL=https://img.<your-domain>
+R2_IMAGE_TRANSFORMS=true        # optional, step 4 below
+```
+
+One-time setup in the Cloudflare dashboard:
+
+1. **R2 > Create bucket.** Any name; that name is `R2_BUCKET`.
+2. **R2 > Manage API tokens > Create API token** with *Object Read & Write*
+   scoped to that bucket. The access key and secret it shows once are
+   `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`; the account id is on the R2
+   overview page.
+3. **Bucket > Settings > Custom Domains > Connect domain**, for example
+   `img.<your-domain>` on the zone already on Cloudflare. That hostname,
+   with scheme and without a trailing slash, is `R2_PUBLIC_BASE_URL`. The
+   managed `r2.dev` URL also works but is rate-limited and uncached;
+   Cloudflare documents it as non-production.
+4. Optional, recommended: **Images > Transformations > enable for the
+   zone**, then set `R2_IMAGE_TRANSFORMS=true`. Every render then asks for a
+   width-capped rendition (`/cdn-cgi/image/width=256,fit=scale-down,format=auto/…`)
+   instead of the original. 5,000 unique transformations a month are free
+   and this bot uses a few hundred. Leave the flag off until the zone toggle
+   is on: with the flag on and transformations disabled, every image breaks.
+   On an `r2.dev` base the flag is ignored automatically.
+
+Objects are stored under content-hashed keys
+(`clan_logos/Warriors_United/<Name>.<hash>.png`) with a one-year immutable
+Cache-Control, so a replaced image always gets a new URL and no cache,
+Cloudflare's or Discord's, can serve a stale one. Mongo holds the raw public
+URL; `utils/media_urls.optimized()` builds the delivery URL at render time.
+
+### Migrating the existing Cloudinary images
+
+Rows still pointing at Cloudinary keep working: the bot rewrites those to
+Cloudinary's size-capped renditions until they are moved. To move them, with
+the `R2_*` values in `.env`:
+
+```bash
+cd /home/wubot/wu-bot
+/home/wubot/wu-bot/venv/bin/python tools/migrate_media_to_r2.py --dry-run
+/home/wubot/wu-bot/venv/bin/python tools/migrate_media_to_r2.py
+```
+
+The script downloads each original from Cloudinary, uploads it to the bucket
+under the same folder and name, and `$set`s the new URL. It is idempotent,
+skips rows already moved, and touches nothing on Cloudinary. Restart the
+service afterwards so the FWA base maps reload from Mongo. Once `migrated=`
+covers every row and the panels look right, the Cloudinary account can go and
+`utils/cloudinary_urls.py` can be deleted (see its docstring).
 
 ## Database
 

@@ -1,5 +1,10 @@
 """Delivery-side optimization for Cloudinary URLs.
 
+LEGACY. Uploads moved to Cloudflare R2 in September 2026 (utils/media_store.py);
+utils/media_urls.py routes only URLs still on res.cloudinary.com here. Once
+tools/migrate_media_to_r2.py has moved every Mongo row, delete this module,
+its tests and the Cloudinary branch of media_urls together.
+
 Every image this bot stores on Cloudinary is uploaded as a full-size
 original, and until September 2026 it was also DELIVERED full-size: a
 multi-megabyte clan logo squeezed into an 80px thumbnail slot cost the

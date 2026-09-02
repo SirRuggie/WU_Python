@@ -67,8 +67,9 @@ requests
 # Async version of requests (works with async code)
 aiohttp
 
-# Uploads and manages media on Cloudinary
-cloudinary
+# S3-compatible client for Cloudflare R2, where uploaded clan logos, banners
+# and FWA base images live (utils/media_store.py, docs/media-hosting.md).
+boto3
 
 # Async Reddit API wrapper (used for bots interacting with Reddit)
 asyncpraw

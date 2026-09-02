@@ -249,13 +249,13 @@ nobody should have to remember:
 | Clash of Clans API | [coc.py](https://github.com/mathsman5133/coc.py) 3.10.0 | Routed through a hosted API proxy, so no Clash developer key is needed. The pin rationale is documented line by line in [`requirements.txt`](requirements.txt). |
 | Database | MongoDB via pymongo `AsyncMongoClient` | Native async driver (not motor), remote deployment. Collection handles live in [`utils/mongo.py`](utils/mongo.py). |
 | Scheduling | APScheduler + stored timestamps | Schedules and deadlines are persisted in MongoDB and re-seeded by a startup reconciler rather than held in memory. |
-| Media | Cloudinary + Pillow | Uploaded clan logos, banners, and base images. |
+| Media | Cloudflare R2 + Pillow | Uploaded clan logos, banners, and base images, served size-capped through Cloudflare image transformations. Static art ships in [`assets/branding`](assets/branding). Why and how: [`docs/media-hosting.md`](docs/media-hosting.md). |
 | UI | Discord Components V2 | Containers, sections, separators, and media galleries throughout. See [`docs/components-v2-in-hikari.md`](docs/components-v2-in-hikari.md). |
 
 Design decisions worth knowing before reading the code:
 
 - **One entry point.** [`main.py`](main.py) builds the gateway bot, wires
-  MongoDB, Cloudinary, and the Clash client into lightbulb's DI registry, then
+  MongoDB, the R2 media store, and the Clash client into lightbulb's DI registry, then
   loads an explicit extension list plus everything
   [`utils/startup.py`](utils/startup.py) discovers. Discovery is AST-based: a
   module is only treated as an extension if it actually binds a lightbulb
@@ -305,7 +305,8 @@ WU_Python/
 - A MongoDB deployment and its connection string
 - A Discord application with the **Server Members** and **Message Content**
   privileged intents enabled
-- A [Cloudinary](https://cloudinary.com/) account for image-upload features
+- A [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket with public
+  access for image-upload features (setup in [`docs/deployment.md`](docs/deployment.md))
 
 **Install**
 
@@ -324,7 +325,8 @@ Create a `.env` file in the repository root (loaded by `python-dotenv`):
 | --- | --- | --- |
 | `DISCORD_TOKEN` | Yes | Discord bot token. |
 | `MONGODB_URI` | Yes | MongoDB connection string. |
-| `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For image uploads | Cloudinary credentials. |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL` | For image uploads | Cloudflare R2 bucket credentials and its public URL. |
+| `R2_IMAGE_TRANSFORMS` | No | `true` once Cloudflare image transformations are enabled on the zone serving `R2_PUBLIC_BASE_URL`; images are then delivered size-capped. |
 | `BAND_ICAL_SYNC1` … `BAND_ICAL_SYNC3` | For sync alerts | BAND iCal feed URLs. **Treat these as credentials** — see [`docs/band-ical-feeds.md`](docs/band-ical-feeds.md). |
 | `SYNC_DM_USER_IDS`, `SYNC_DM_OFFSETS`, `SYNC_DM_ANNOUNCE_ON_DISCOVERY`, `SYNC_DM_SUMMARY_FILTER` | For sync alerts | Recipients and timing for sync-alert DMs. |
 | `BAND_DEBUG` | No | Verbose BAND monitor logging (`true`/`false`). |

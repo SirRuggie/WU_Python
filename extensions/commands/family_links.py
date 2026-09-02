@@ -9,7 +9,7 @@ from typing import List, Optional
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.constants import BLUE_ACCENT, GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, GOLDENROD_ACCENT
-from utils.cloudinary_urls import GALLERY, optimized
+from utils.media_urls import GALLERY, optimized
 from utils.emoji import emojis
 
 from hikari.impl import (

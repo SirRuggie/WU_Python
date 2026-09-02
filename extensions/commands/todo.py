@@ -85,7 +85,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils import clan_history, coc_maintenance, todo_data, todo_sessions
 from utils.clash_links import resolve_tags
-from utils.cloudinary_urls import THUMBNAIL, optimized
+from utils.media_urls import THUMBNAIL, optimized
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
 from utils.emoji import emojis
 from utils.mongo import MongoClient
@@ -635,7 +635,7 @@ def _nav_select(view: str, counts: dict, *,
 def _clan_logos() -> dict:
     """{clan_tag: logo_url} for family clans, from the clan_data collection.
 
-    These are OUR Cloudinary logos, uploaded via /clan upload and rendered the
+    These are OUR uploaded logos (Cloudflare R2, via /clan upload), rendered the
     same way at update_clan_info.py:465. The Clash API badge is the generic
     war-league shield - every clan in a league looks identical - so it is only
     a fallback for clans outside the family.
@@ -650,10 +650,10 @@ def _thumbnail_for(row):
     """Our logo if the clan is one of ours, else the Clash badge, else nothing.
 
     The logo is a full-size upload rendered into an ~80px slot, and this
-    is the one Cloudinary URL the bot re-serves on an automated loop
+    is the one hosted image URL the bot re-serves on an automated loop
     (every auto-refresh edit, every panel, all day). Serving it unshrunk
     is what spent 116 GB of Cloudinary bandwidth in August 2026 - always
-    keep the optimized() wrapper here.
+    keep the optimized() wrapper here, whatever host is behind it.
     """
     logo = _clan_logos().get(row.clan_tag)
     if logo and isinstance(logo, str) and logo.startswith("http"):
