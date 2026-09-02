@@ -33,8 +33,8 @@ class Info(
         # Defer the response as ephemeral (this creates the "thinking" message)
         await ctx.defer(ephemeral=True)
 
-        # Cloudinary URL for the Our_Clans banner
-        banner_url = "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/our_clans.png"
+        # Local Our_Clans banner, attached to the message
+        banner_url = "assets/branding/our_clans.png"
 
         components = [
             Container(

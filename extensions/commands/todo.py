@@ -85,6 +85,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils import clan_history, coc_maintenance, todo_data, todo_sessions
 from utils.clash_links import resolve_tags
+from utils.cloudinary_urls import THUMBNAIL, optimized
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
 from utils.emoji import emojis
 from utils.mongo import MongoClient
@@ -646,10 +647,17 @@ def _clan_logos() -> dict:
 
 
 def _thumbnail_for(row):
-    """Our logo if the clan is one of ours, else the Clash badge, else nothing."""
+    """Our logo if the clan is one of ours, else the Clash badge, else nothing.
+
+    The logo is a full-size upload rendered into an ~80px slot, and this
+    is the one Cloudinary URL the bot re-serves on an automated loop
+    (every auto-refresh edit, every panel, all day). Serving it unshrunk
+    is what spent 116 GB of Cloudinary bandwidth in August 2026 - always
+    keep the optimized() wrapper here.
+    """
     logo = _clan_logos().get(row.clan_tag)
     if logo and isinstance(logo, str) and logo.startswith("http"):
-        return logo
+        return optimized(logo, width=THUMBNAIL)
     return row.clan_badge
 
 

@@ -10,6 +10,7 @@ import lightbulb
 
 from extensions.commands.fwa import loader, fwa
 from utils.cloudinary_client import CloudinaryClient
+from utils.cloudinary_urls import DETAIL, optimized
 from utils.mongo import MongoClient
 from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 
@@ -120,8 +121,10 @@ class UploadImages(
                     public_id=war_public_id
                 )
 
-                # Update the constant in memory
-                FWA_WAR_BASE[self.th_level] = war_result["secure_url"]
+                # Update the constant in memory (delivery-optimized; Mongo
+                # below keeps the raw URL, matching the startup load)
+                FWA_WAR_BASE[self.th_level] = optimized(
+                    war_result["secure_url"], width=DETAIL)
 
                 # Update in database - same document as base links
                 await mongo.fwa_data.update_one(
@@ -148,8 +151,10 @@ class UploadImages(
                     public_id=active_public_id
                 )
 
-                # Update the constant in memory
-                FWA_ACTIVE_WAR_BASE[self.th_level] = active_result["secure_url"]
+                # Update the constant in memory (delivery-optimized; Mongo
+                # below keeps the raw URL, matching the startup load)
+                FWA_ACTIVE_WAR_BASE[self.th_level] = optimized(
+                    active_result["secure_url"], width=DETAIL)
 
                 # Update in database - same document as base links
                 await mongo.fwa_data.update_one(

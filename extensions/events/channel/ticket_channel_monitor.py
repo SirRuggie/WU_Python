@@ -399,14 +399,14 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                             )),
                         ],
                         accessory=Thumbnail(
-                            media=guild_icon_url or "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836911/misc_images/WU_Logo.png"
+                            media=guild_icon_url or "assets/branding/WU_Logo.png"
                         )
                     ),
                     # Main image
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836857/misc_images/WU_FWA_Ticket.jpg")
+                                media="assets/branding/WU_FWA_Ticket.jpg")
                         ]
                     ),
                     Text(content="-# Patience is key! A Recruiter will be with you soon.")
@@ -483,14 +483,14 @@ async def on_channel_create(event: hikari.GuildChannelCreateEvent) -> None:
                             )),
                         ],
                         accessory=Thumbnail(
-                            media=guild_icon_url or "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836911/misc_images/WU_Logo.png"
+                            media=guild_icon_url or "assets/branding/WU_Logo.png"
                         )
                     ),
                     # Main image
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836911/misc_images/WU_Logo.png")
+                                media="assets/branding/WU_Logo.png")
                         ]
                     ),
                     Text(content="-# Patience is key! A Recruiter will be with you soon.")

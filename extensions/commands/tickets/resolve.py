@@ -39,7 +39,7 @@ from extensions.components import register_action
 from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
 
-DENIED_THUMB = "https://res.cloudinary.com/dxmtzuomk/image/upload/v1753271403/misc_images/Denied.png"
+DENIED_THUMB = "assets/branding/Denied.png"
 
 KIND_APPROVE = "approve"
 KIND_DENY_FWA = "deny_fwa"

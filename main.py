@@ -148,15 +148,24 @@ async def on_bot_start(event: hikari.StartedEvent):
 
     if fwa_data:
         from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
+        from utils.cloudinary_urls import DETAIL, optimized
 
+        # Mongo keeps the raw upload URLs; the in-memory dicts hold
+        # delivery-optimized ones, so every render site is covered at once.
         # Load war base images
         if "war_base_images" in fwa_data:
-            FWA_WAR_BASE.update(fwa_data["war_base_images"])
+            FWA_WAR_BASE.update({
+                th: optimized(url, width=DETAIL)
+                for th, url in fwa_data["war_base_images"].items()
+            })
             print(f"[INFO] Loaded {len(fwa_data['war_base_images'])} FWA war base URLs")
 
         # Load active base images
         if "active_base_images" in fwa_data:
-            FWA_ACTIVE_WAR_BASE.update(fwa_data["active_base_images"])
+            FWA_ACTIVE_WAR_BASE.update({
+                th: optimized(url, width=DETAIL)
+                for th, url in fwa_data["active_base_images"].items()
+            })
             print(f"[INFO] Loaded {len(fwa_data['active_base_images'])} FWA active base URLs")
 
     # Check for reboot notification

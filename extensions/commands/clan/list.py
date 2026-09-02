@@ -8,6 +8,7 @@ from extensions.components      import register_action
 from utils.mongo                import MongoClient
 from utils.classes              import Clan
 from utils.constants            import RED_ACCENT
+from utils.cloudinary_urls      import GALLERY, THUMBNAIL, optimized
 from utils.emoji                import emojis
 
 from hikari.impl import (
@@ -161,9 +162,10 @@ async def on_clan_chosen(
             components=[
                 Section(
                     components=[Text(content="\n".join(lines))],
-                    accessory=Thumbnail(media=api_clan.badge.large if api_clan else db_clan.logo),
+                    accessory=Thumbnail(media=api_clan.badge.large if api_clan
+                                        else optimized(db_clan.logo, width=THUMBNAIL)),
                 ),
-                Media(items=[MediaItem(media=db_clan.banner)]),
+                Media(items=[MediaItem(media=optimized(db_clan.banner, width=GALLERY))]),
                 ActionRow(
                     components=[
                         LinkButton(

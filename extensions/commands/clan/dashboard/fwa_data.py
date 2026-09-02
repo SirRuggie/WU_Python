@@ -13,6 +13,7 @@ import asyncio
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.cloudinary_client import CloudinaryClient
+from utils.cloudinary_urls import DETAIL, optimized
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 from utils.emoji import emojis
 from extensions.commands.clan.dashboard.dashboard import dashboard_page
@@ -715,8 +716,9 @@ async def fwa_images_submit(
             )
             war_cloudinary_url = result["secure_url"]
 
-            # Update the constant in memory (for this session)
-            FWA_WAR_BASE[th_level] = war_cloudinary_url
+            # Update the constant in memory (for this session),
+            # delivery-optimized; Mongo below keeps the raw URL
+            FWA_WAR_BASE[th_level] = optimized(war_cloudinary_url, width=DETAIL)
 
             # Update in database
             await mongo.fwa_data.update_one(
@@ -738,8 +740,10 @@ async def fwa_images_submit(
             )
             active_cloudinary_url = result["secure_url"]
 
-            # Update the constant in memory (for this session)
-            FWA_ACTIVE_WAR_BASE[th_level] = active_cloudinary_url
+            # Update the constant in memory (for this session),
+            # delivery-optimized; Mongo below keeps the raw URL
+            FWA_ACTIVE_WAR_BASE[th_level] = optimized(
+                active_cloudinary_url, width=DETAIL)
 
             # Update in database
             await mongo.fwa_data.update_one(

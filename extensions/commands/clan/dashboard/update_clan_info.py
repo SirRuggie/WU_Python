@@ -30,6 +30,7 @@ from PIL import Image
 
 from utils.constants import RED_ACCENT
 from utils.classes import Clan
+from utils.cloudinary_urls import THUMBNAIL, optimized
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 from utils.url_safety import is_safe_public_url, MAX_IMAGE_BYTES
@@ -462,7 +463,7 @@ async def clan_edit_menu(
                         )
                     ),
                 ],
-                accessory=Thumbnail(media=db_clan.logo)
+                accessory=Thumbnail(media=optimized(db_clan.logo, width=THUMBNAIL))
             )
         )
     else:

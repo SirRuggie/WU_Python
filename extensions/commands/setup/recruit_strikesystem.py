@@ -49,7 +49,7 @@ class RecruitStrikeSystem(
             Media(
                 items=[
                     MediaItem(
-                        media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753908971/misc_images/WU_Strikes.gif"
+                        media="assets/branding/WU_Strikes.gif"
                     )
                 ]
             ),
@@ -116,7 +116,7 @@ class RecruitStrikeSystem(
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753909119/misc_images/WU_Main_Strikes.jpg"
+                                media="assets/branding/WU_Main_Strikes.jpg"
                             )
                         ]
                     ),
@@ -133,7 +133,7 @@ class RecruitStrikeSystem(
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753909164/misc_images/WU_FWA_Strikes.jpg"
+                                media="assets/branding/WU_FWA_Strikes.jpg"
                             )
                         ]
                     ),

@@ -49,7 +49,7 @@ class RecruitFamilyParticulars(
             Media(
                 items=[
                     MediaItem(
-                        media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753909843/misc_images/WU_FamilyParticulars.gif"
+                        media="assets/branding/WU_FamilyParticulars.gif"
                     )
                 ]
             ),
@@ -151,7 +151,7 @@ class RecruitFamilyParticulars(
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753909969/misc_images/warriors_united_.gif"
+                                media="assets/branding/warriors_united_.gif"
                             )
                         ]
                     ),
