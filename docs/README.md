@@ -54,6 +54,12 @@ the hard way. The standing instruction that governs this folder is in
   design for thread-based ticketing + the console dashboard (2026-08-02).
   Findings, dashboard design, migration plan, risks. **Not yet decided.**
 
+- [media-hosting.md](media-hosting.md) — why `/todo` burned through
+  Cloudinary's free bandwidth (hikari 2.3.5 downloads every image URL on every
+  render; full-size originals used as thumbnails), the free-hosting
+  comparison — Discord-native, Cloudflare R2, object stores, Cloudinary-likes —
+  and the recommended migration (2026-09-02). **Not yet decided.**
+
 ## Architecture
 
 - [components-v2-in-hikari.md](components-v2-in-hikari.md) — what hikari can
