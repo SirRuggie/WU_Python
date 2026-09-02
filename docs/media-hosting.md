@@ -364,6 +364,47 @@ different store). Update `tests/test_component_error_responses.py` and the
   reads are unmetered, but it decides how much the Cloudinary-side fix alone
   would have bought.
 
+## 9. What is actually on Cloudinary (read-only inventory, 2026-09-02)
+
+178 image assets, 184 MB, no videos or raw files. What the migration has to
+know:
+
+| Group on Cloudinary | Assets | Bytes | Migrate? |
+|---|---|---|---|
+| `clan_logos/Warriors_United` | 17 logos, 0.15 to 3.3 MB each | 17.1 MB | yes, driven by the Mongo rows |
+| `clan_banners/Warriors_United` | 10 banners, 0.27 to 1.1 MB each | 5.0 MB | yes, driven by the Mongo rows |
+| `FWA_Images/Warriors_United/war_bases` | 10 war bases, TH9 to TH18, 1.1 to 6.2 MB each | 37.4 MB | yes, driven by the Mongo rows |
+| `FWA_Images/Warriors_United/active_bases` | 9 active bases; **TH10 has none** | 11.8 MB | yes, driven by the Mongo rows |
+| `misc_images`, `server_banners`, root statics | 39 | 41 MB | no: the repo's `assets/branding/` copies feed `branding/` and the `*/static/` folders |
+| legacy: `old_clan_*` (a prior 22-clan roster), `FWA_Images/Kings War Bases`, the `fwa/` tree, `clan_recruitment/disboard_reviews`, personal folders | 88 | 50 MB | no |
+
+- **The account is over its limit.** Free plan, 45.8 of 25 credits used in
+  the current period (183 %), all of it bandwidth: 49 GB. Cloudinary
+  disables accounts that stay over after repeated notices, with 30 days
+  before assets are deleted, so the migration is time-sensitive.
+- 17 clans have a logo and 10 of those a banner. Whether all 17 are still
+  family clans is Mongo's call, so per-clan folders come from Mongo during
+  migration, not from this list.
+- `server_banners` holds a newer 1397x466 set from 2025-11-15 (Criteria,
+  Rules, Casual, Zen, FWA, AboutUs, OurClans, TrialClans, Competitive) that
+  nothing in the code uses; the repo carries the older 1118x373 set.
+- The repo's GIF copies are 3 to 4 times smaller than the Cloudinary
+  originals (for example `WU_Strikes.gif`: 1.3 MB against 5.3 MB), so the
+  repo, not Cloudinary, is the source for the static folders.
+- Cloudinary is in dynamic-folder mode: 132 assets carry public_ids that
+  no longer match their folder (`_archive/`, `old_clan_*` prefixes). The
+  migration downloads the URLs Mongo holds, which embed the public_id, so
+  folders are irrelevant; a public_id change on an active asset would
+  break its URL, and the dry run surfaces that as a download failure.
+- Sixteen byte-identical duplicates sit in the legacy folders; none are
+  in scope.
+
+The bucket `wu-media` now holds the agreed layout as empty placeholders:
+`branding/logo/`, `branding/banners/`, `clans/`, `fwa/bases/<th>/` for the
+thirteen Town Hall levels, `fwa/static/`, `recruit/static/`,
+`recruit/strikes/`, `tickets/static/`. The code still writes the old
+Cloudinary-shaped paths and is the next thing to update.
+
 ## Sources
 
 hikari: [CHANGELOG 2.6.0](https://github.com/hikari-py/hikari/blob/master/CHANGELOG.md),
