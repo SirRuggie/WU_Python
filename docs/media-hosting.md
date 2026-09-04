@@ -341,9 +341,11 @@ it in `main.py` where `CloudinaryClient` is registered, and migrate the
 callers: `extensions/commands/clan/upload.py`,
 `extensions/commands/fwa/upload_images.py`,
 `extensions/commands/clan/dashboard/fwa_data.py`, and the dashboard emoji
-path, which only needs a public URL. A migration script copies every URL
-referenced in `clan_data` and `fwa_config` to R2 and rewrites the documents;
-Cloudinary stays read-only for a week as a fallback.
+path, which only needs a public URL. Objects land under the agreed layout
+(`clans/<Name>/logo` and `banner`, `fwa/bases/<th>/war` and `active`), not
+Cloudinary's old paths. A migration script copies every URL referenced in
+`clan_data` and `fwa_config` to R2 and rewrites the documents; Cloudinary
+stays read-only for a week as a fallback.
 
 **Phase 3, cleanup.** Remove `cloudinary` from `requirements.txt`, the two
 `.env` keys, the "Cloudinary Issues" advice in `clan/upload.py`, the
@@ -399,11 +401,12 @@ know:
 - Sixteen byte-identical duplicates sit in the legacy folders; none are
   in scope.
 
-The bucket `wu-media` now holds the agreed layout as empty placeholders:
-`branding/logo/`, `branding/banners/`, `clans/`, `fwa/bases/<th>/` for the
-thirteen Town Hall levels, `fwa/static/`, `recruit/static/`,
-`recruit/strikes/`, `tickets/static/`. The code still writes the old
-Cloudinary-shaped paths and is the next thing to update.
+The bucket `wu-media` holds the agreed layout: `branding/logo/`,
+`branding/banners/`, `clans/<Name>/`, `fwa/bases/<th>/` for the thirteen Town
+Hall levels, `fwa/static/`, `recruit/static/`, `recruit/strikes/`,
+`tickets/static/`. The upload commands, the FWA dashboard, and
+`tools/migrate_media_to_r2.py` now write to this layout, and the repo's own
+`assets/` tree mirrors it for the static art.
 
 ## Sources
 

@@ -14,13 +14,6 @@ from utils.media_urls import DETAIL, optimized
 from utils.mongo import MongoClient
 from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 
-SERVER_FAMILY = "Warriors_United"
-
-# Bucket folders: the paths Cloudinary used, so migrated and new uploads
-# sit side by side
-WAR_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/war_bases"
-ACTIVE_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/active_bases"
-
 # TH levels we support
 FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th16_new", "th17", "th17_new", "th18", "th18_new"]
 
@@ -113,13 +106,10 @@ class UploadImages(
             if self.war_base:
                 war_data = await self.war_base.read()
 
-                # Create public_id with new naming convention
-                war_public_id = f"TH{th_num}_WarBase"
-
                 war_url = await media.upload_bytes(
                     war_data,
-                    folder=WAR_BASE_FOLDER,
-                    name=war_public_id
+                    folder=f"fwa/bases/{self.th_level}",
+                    name="war"
                 )
 
                 # Update the constant in memory (delivery-optimized; Mongo
@@ -142,13 +132,10 @@ class UploadImages(
             if self.active_base:
                 active_data = await self.active_base.read()
 
-                # Create public_id with new naming convention
-                active_public_id = f"TH{th_num}_Active_WarBase"
-
                 active_url = await media.upload_bytes(
                     active_data,
-                    folder=ACTIVE_BASE_FOLDER,
-                    name=active_public_id
+                    folder=f"fwa/bases/{self.th_level}",
+                    name="active"
                 )
 
                 # Update the constant in memory (delivery-optimized; Mongo

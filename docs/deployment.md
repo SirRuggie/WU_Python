@@ -138,8 +138,8 @@ boot log says `[WARN] R2 is not configured`.
 R2_ACCOUNT_ID=<Cloudflare account id>
 R2_ACCESS_KEY_ID=<R2 API token access key>
 R2_SECRET_ACCESS_KEY=<R2 API token secret>
-R2_BUCKET=<bucket name>
-R2_PUBLIC_BASE_URL=https://img.<your-domain>
+R2_BUCKET=wu-media
+R2_PUBLIC_BASE_URL=https://wu-media.ruggie.zone
 R2_IMAGE_TRANSFORMS=true        # optional, step 4 below
 ```
 
@@ -164,7 +164,7 @@ One-time setup in the Cloudflare dashboard:
    On an `r2.dev` base the flag is ignored automatically.
 
 Objects are stored under content-hashed keys
-(`clan_logos/Warriors_United/<Name>.<hash>.png`) with a one-year immutable
+(`clans/<Name>/logo.<hash>.png`) with a one-year immutable
 Cache-Control, so a replaced image always gets a new URL and no cache,
 Cloudflare's or Discord's, can serve a stale one. Mongo holds the raw public
 URL; `utils/media_urls.optimized()` builds the delivery URL at render time.

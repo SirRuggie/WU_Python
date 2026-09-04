@@ -39,7 +39,7 @@ from extensions.components import register_action
 from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
 
-DENIED_THUMB = "assets/branding/Denied.png"
+DENIED_THUMB = "assets/tickets/static/Denied.png"
 
 KIND_APPROVE = "approve"
 KIND_DENY_FWA = "deny_fwa"

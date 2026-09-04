@@ -13,11 +13,12 @@ What it touches:
     `active_base_images`, one entry per Town Hall level
 
 For every value hosted on res.cloudinary.com it downloads the ORIGINAL (the
-raw URL Mongo holds, never a transformation), uploads it to R2 under the same
-folder and name Cloudinary used, and `$set`s the new public URL. Values not
-on Cloudinary are skipped, so re-running only touches rows still to move,
-and a failure on one row never blocks the rest. Cloudinary itself is not
-modified: it stays a read-only fallback until you delete the account.
+raw URL Mongo holds, never a transformation) and uploads it to R2 under the
+agreed bucket layout -- `clans/<Name>/logo` or `banner`, `fwa/bases/<th>/war`
+or `active` -- then `$set`s the new public URL. Values not on Cloudinary are
+skipped, so re-running only touches rows still to move, and a failure on one
+row never blocks the rest. Cloudinary itself is not modified: it stays a
+read-only fallback until you delete the account.
 
 Exit status is 1 when any row failed, so a cron or a shell `&&` notices.
 """
@@ -27,7 +28,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from urllib.parse import unquote, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -38,32 +38,25 @@ from utils.image_fetch import download_image_blocking  # noqa: E402
 from utils.media_store import MediaStore, MediaStoreError  # noqa: E402
 from utils.text_utils import sanitize_filename  # noqa: E402
 
-SERVER_FAMILY = "Warriors_United"
 CLOUDINARY_HOST = "res.cloudinary.com"
 
 # Same folders the slash commands write to, so migrated and new uploads sit
-# side by side in the bucket.
+# side by side in the bucket. The clan folder is computed per-clan in
+# migrate_clans; the FWA folder is computed per-TH in migrate_fwa.
 CLAN_FIELDS = (
-    # field, folder, name suffix
-    ("logo", f"clan_logos/{SERVER_FAMILY}", ""),
-    ("banner", f"clan_banners/{SERVER_FAMILY}", "_Banner"),
+    # field, name
+    ("logo", "logo"),
+    ("banner", "banner"),
 )
 FWA_MAPS = (
-    # map, folder
-    ("war_base_images", f"FWA_Images/{SERVER_FAMILY}/war_bases"),
-    ("active_base_images", f"FWA_Images/{SERVER_FAMILY}/active_bases"),
+    # map, name
+    ("war_base_images", "war"),
+    ("active_base_images", "active"),
 )
 
 
 def is_cloudinary(value: object) -> bool:
     return isinstance(value, str) and CLOUDINARY_HOST in value
-
-
-def cloudinary_basename(url: str) -> str:
-    """`TH16_WarBase` from `.../war_bases/TH16_WarBase.png`: the public_id."""
-    last = unquote(urlparse(url).path.rsplit("/", 1)[-1])
-    stem = last.rsplit(".", 1)[0] if "." in last else last
-    return sanitize_filename(stem) or "image"
 
 
 class Tally:
@@ -98,13 +91,14 @@ def migrate_clans(db, store: MediaStore, *, dry_run: bool, tally: Tally) -> None
     projection = {"tag": 1, "name": 1, "logo": 1, "banner": 1}
     for doc in db.clan_data.find(query, projection):
         clan_name = sanitize_filename(str(doc.get("name") or doc.get("tag") or "clan"))
+        folder = f"clans/{clan_name}"
         print(f"clan {doc.get('name')} ({doc.get('tag')})")
-        for field, folder, suffix in CLAN_FIELDS:
+        for field, name in CLAN_FIELDS:
             url = doc.get(field)
             if not is_cloudinary(url):
                 tally.skipped += 1
                 continue
-            new_url = copy_to_r2(store, url, folder, clan_name + suffix,
+            new_url = copy_to_r2(store, url, folder, name,
                                  dry_run=dry_run, tally=tally, label=field)
             if new_url:
                 db.clan_data.update_one({"_id": doc["_id"]}, {"$set": {field: new_url}})
@@ -115,14 +109,15 @@ def migrate_fwa(db, store: MediaStore, *, dry_run: bool, tally: Tally) -> None:
     if not doc:
         print("fwa_config: no document, nothing to do")
         return
-    for map_name, folder in FWA_MAPS:
+    for map_name, name in FWA_MAPS:
         entries = doc.get(map_name) or {}
         print(f"fwa_config.{map_name}: {len(entries)} entries")
         for th_level, url in entries.items():
             if not is_cloudinary(url):
                 tally.skipped += 1
                 continue
-            new_url = copy_to_r2(store, url, folder, cloudinary_basename(url),
+            folder = f"fwa/bases/{th_level}"
+            new_url = copy_to_r2(store, url, folder, name,
                                  dry_run=dry_run, tally=tally, label=th_level)
             if new_url:
                 db.fwa_data.update_one(

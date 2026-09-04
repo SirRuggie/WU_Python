@@ -39,11 +39,11 @@ LEAGUE_ORDER = [
 ]
 
 BANNERS = {
-    "Competitive": "assets/branding/main_clans.png",
-    "Casual": "assets/branding/feeder_clans.png",
-    "Zen": "assets/branding/zen_clans.png",
-    "FWA": "assets/branding/fwa_clans.png",
-    "Trial": "assets/branding/trial_clans.png"
+    "Competitive": "assets/branding/banners/main_clans.png",
+    "Casual": "assets/branding/banners/feeder_clans.png",
+    "Zen": "assets/branding/banners/zen_clans.png",
+    "FWA": "assets/branding/banners/fwa_clans.png",
+    "Trial": "assets/branding/banners/trial_clans.png"
 }
 
 

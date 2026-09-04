@@ -49,7 +49,7 @@ class RecruitAboutUs(
             Media(
                 items=[
                     MediaItem(
-                        media="assets/branding/Warriors_United.gif"
+                        media="assets/branding/banners/Warriors_United.gif"
                     )
                 ]
             ),

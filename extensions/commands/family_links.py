@@ -140,7 +140,7 @@ async def build_family_links_panel(
     
     # Get server icon
     guild_icon_url = guild.make_icon_url() if guild else None
-    server_logo = str(guild_icon_url) if guild_icon_url else "assets/branding/WU_Logo.png"
+    server_logo = str(guild_icon_url) if guild_icon_url else "assets/branding/logo/WU_Logo.png"
     
     # Build TH dropdown options
     th_options = []
@@ -243,7 +243,7 @@ async def build_family_links_panel(
                 Media(
                     items=[
                         MediaItem(
-                            media="assets/branding/Warriors_United.gif"
+                            media="assets/branding/banners/Warriors_United.gif"
                         )
                     ]
                 )

@@ -49,7 +49,7 @@ class RecruitFamilyParticulars(
             Media(
                 items=[
                     MediaItem(
-                        media="assets/branding/WU_FamilyParticulars.gif"
+                        media="assets/recruit/static/WU_FamilyParticulars.gif"
                     )
                 ]
             ),
@@ -151,7 +151,7 @@ class RecruitFamilyParticulars(
                     Media(
                         items=[
                             MediaItem(
-                                media="assets/branding/warriors_united_.gif"
+                                media="assets/branding/banners/warriors_united_.gif"
                             )
                         ]
                     ),

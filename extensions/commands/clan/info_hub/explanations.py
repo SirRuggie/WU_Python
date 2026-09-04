@@ -175,7 +175,7 @@ async def show_what_is_fwa(
                 Media(
                     items=[
                         MediaItem(
-                            media="assets/branding/Default_FWA_Base.jpg")
+                            media="assets/fwa/static/Default_FWA_Base.jpg")
                     ]),
                 ActionRow(
                     components=[

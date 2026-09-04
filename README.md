@@ -249,7 +249,7 @@ nobody should have to remember:
 | Clash of Clans API | [coc.py](https://github.com/mathsman5133/coc.py) 3.10.0 | Routed through a hosted API proxy, so no Clash developer key is needed. The pin rationale is documented line by line in [`requirements.txt`](requirements.txt). |
 | Database | MongoDB via pymongo `AsyncMongoClient` | Native async driver (not motor), remote deployment. Collection handles live in [`utils/mongo.py`](utils/mongo.py). |
 | Scheduling | APScheduler + stored timestamps | Schedules and deadlines are persisted in MongoDB and re-seeded by a startup reconciler rather than held in memory. |
-| Media | Cloudflare R2 + Pillow | Uploaded clan logos, banners, and base images, served size-capped through Cloudflare image transformations. Static art ships in [`assets/branding`](assets/branding). Why and how: [`docs/media-hosting.md`](docs/media-hosting.md). |
+| Media | Cloudflare R2 + Pillow | Uploaded clan logos, banners, and base images, served size-capped through Cloudflare image transformations. Static art ships under [`assets/`](assets), mirroring the bucket layout. Why and how: [`docs/media-hosting.md`](docs/media-hosting.md). |
 | UI | Discord Components V2 | Containers, sections, separators, and media galleries throughout. See [`docs/components-v2-in-hikari.md`](docs/components-v2-in-hikari.md). |
 
 Design decisions worth knowing before reading the code:

@@ -16,8 +16,6 @@ from utils.media_store import MediaStore, MediaStoreError
 from utils.text_utils import sanitize_filename
 
 
-SERVER_FAMILY = "Warriors_United"
-
 @clan.register()
 class UploadImages(
     lightbulb.SlashCommand,
@@ -126,18 +124,14 @@ class UploadImages(
                 # This downloads the file from Discord's servers
                 logo_data = await self.logo.read()
 
-                # Create a descriptive public ID using the clan name
-                # For "Arcane Angels", this becomes "Arcane_Angels"
-                logo_public_id = clean_clan_name
-
                 # Upload to R2 with proper organization
-                # This will create: clan_logos/Warriors_United/Arcane_Angels.<hash>.png
+                # This will create: clans/Arcane_Angels/logo.<hash>.png
                 # The public URL the store returns is what gets saved in
                 # your database
                 update_data["logo"] = await media.upload_bytes(
                     logo_data,
-                    folder=f"clan_logos/{SERVER_FAMILY}",  # Warriors_United subfolder
-                    name=logo_public_id  # Sets the filename
+                    folder=f"clans/{clean_clan_name}",  # Per-clan subfolder
+                    name="logo"  # Sets the filename
                 )
 
                 # Create a user-friendly summary of what was uploaded
@@ -151,17 +145,13 @@ class UploadImages(
                 # Read the banner attachment data
                 banner_data = await self.banner.read()
 
-                # Create a descriptive public ID with _Banner suffix
-                # For "Arcane Angels", this becomes "Arcane_Angels_Banner"
-                banner_public_id = f"{clean_clan_name}_Banner"
-
                 # Upload to R2 with proper organization
-                # This will create: clan_banners/Warriors_United/Arcane_Angels_Banner.<hash>.png
+                # This will create: clans/Arcane_Angels/banner.<hash>.png
                 # Store the URL for database update
                 update_data["banner"] = await media.upload_bytes(
                     banner_data,
-                    folder=f"clan_banners/{SERVER_FAMILY}",  # Warriors_United subfolder
-                    name=banner_public_id
+                    folder=f"clans/{clean_clan_name}",  # Per-clan subfolder
+                    name="banner"
                 )
 
                 # Add to the summary

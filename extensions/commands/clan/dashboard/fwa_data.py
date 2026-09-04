@@ -38,33 +38,6 @@ FWA_REP_ROLE_ID = 993015846442127420
 # TH levels we support for FWA (ordered from highest to lowest)
 FWA_TH_LEVELS = ["th18_new", "th18", "th17_new", "th17", "th16_new", "th16", "th15", "th14", "th13", "th12", "th11", "th10", "th9"]
 
-SERVER_FAMILY = "Warriors_United"
-
-# Bucket folder structure: unchanged from the Cloudinary days, so migrated
-# and new uploads sit side by side
-WAR_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/war_bases"
-ACTIVE_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/active_bases"
-
-
-# Helper function to generate public IDs
-def get_fwa_public_id(th_level: str, base_type: str) -> str:
-    """Generate consistent public ID for FWA images
-
-    Args:
-        th_level: e.g., "th15" or "TH15"
-        base_type: "war" or "active"
-
-    Returns:
-        str: e.g., "TH15_WarBase" or "TH15_Active_WarBase"
-    """
-    th_num = th_level.upper().replace("TH", "")
-
-    if base_type == "war":
-        return f"TH{th_num}_WarBase"
-    else:
-        return f"TH{th_num}_Active_WarBase"
-
-
 def get_th_emoji(th_level: str):
     """Get the appropriate TH emoji object"""
     # Handle _new variants by removing the suffix
@@ -708,12 +681,10 @@ async def fwa_images_submit(
 
         # Upload war base image
         if war_url:
-            war_public_id = get_fwa_public_id(th_level, "war")
-
             war_stored_url = await media.upload_from_url(
                 war_url,
-                folder=WAR_BASE_FOLDER,
-                name=war_public_id
+                folder=f"fwa/bases/{th_level}",
+                name="war"
             )
 
             # Update the constant in memory (for this session),
@@ -731,12 +702,10 @@ async def fwa_images_submit(
 
         # Upload active base image
         if active_url:
-            active_public_id = get_fwa_public_id(th_level, "active")
-
             active_stored_url = await media.upload_from_url(
                 active_url,
-                folder=ACTIVE_BASE_FOLDER,
-                name=active_public_id
+                folder=f"fwa/bases/{th_level}",
+                name="active"
             )
 
             # Update the constant in memory (for this session),
