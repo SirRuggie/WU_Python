@@ -188,6 +188,24 @@ service afterwards so the FWA base maps reload from Mongo. Once `migrated=`
 covers every row and the panels look right, the Cloudinary account can go and
 `utils/cloudinary_urls.py` can be deleted (see its docstring).
 
+### Static art
+
+The repo's `assets/` tree (`branding`, `fwa/static`, `recruit`, `tickets` --
+not `assets/cards` or the `*_Footer.png` files) mirrors the bucket layout, so
+after changing any of those images run:
+
+```bash
+cd /home/wubot/wu-bot
+/home/wubot/wu-bot/venv/bin/python tools/upload_static_media.py --dry-run
+/home/wubot/wu-bot/venv/bin/python tools/upload_static_media.py
+```
+
+to see what would move, then upload it. Re-running only touches files whose
+sha256 differs from the object's stored metadata, so an unchanged file is
+reported as unchanged and left alone. These objects are served under plain
+names with a one-day `Cache-Control`, unlike the migrated uploads above,
+which are content-hashed and immutable.
+
 ## Database
 
 **MongoDB is remote.** `mongod` is inactive on the box. Driver is pymongo

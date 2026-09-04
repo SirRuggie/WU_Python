@@ -15,6 +15,7 @@ from PIL import Image
 from utils import media_store
 from utils.media_store import (
     CACHE_CONTROL,
+    STATIC_CACHE_CONTROL,
     MediaStore,
     MediaStoreConfig,
     MediaStoreError,
@@ -39,11 +40,22 @@ def image_bytes(fmt: str, color=(255, 0, 0)) -> bytes:
     return buf.getvalue()
 
 
+class FakeClientError(Exception):
+    """Shaped like botocore's ClientError, without needing botocore."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.response = {"Error": {"Code": code}}
+
+
 class FakeS3:
-    def __init__(self, fail=None):
+    def __init__(self, fail=None, head_response=None, head_fail=None):
         self.puts = []
         self.deletes = []
+        self.head_calls = []
         self.fail = fail
+        self.head_response = head_response
+        self.head_fail = head_fail
 
     def put_object(self, **kwargs):
         if self.fail:
@@ -54,6 +66,12 @@ class FakeS3:
         if self.fail:
             raise self.fail
         self.deletes.append(kwargs)
+
+    def head_object(self, **kwargs):
+        self.head_calls.append(kwargs)
+        if self.head_fail:
+            raise self.head_fail
+        return self.head_response or {}
 
 
 def store_with(fake=None) -> tuple[MediaStore, FakeS3]:
@@ -170,6 +188,85 @@ def test_upload_from_url_reports_the_fetch_refusal(monkeypatch):
     with pytest.raises(MediaStoreError, match="non-public address"):
         asyncio.run(store.upload_from_url("http://10.0.0.1/x.png", folder="f", name="n"))
     assert fake.puts == []
+
+
+# -- static art -------------------------------------------------------------
+
+def test_object_sha256_returns_the_stored_metadata_value():
+    store, fake = store_with(FakeS3(head_response={"Metadata": {"sha256": "abc123"}}))
+    assert store.object_sha256("branding/logo/WU_Logo.png") == "abc123"
+    assert fake.head_calls == [{"Bucket": "wu-media", "Key": "branding/logo/WU_Logo.png"}]
+
+
+@pytest.mark.parametrize("code", ["404", "NoSuchKey"])
+def test_object_sha256_returns_none_when_the_object_is_missing(code):
+    store, _ = store_with(FakeS3(head_fail=FakeClientError(code)))
+    assert store.object_sha256("branding/logo/WU_Logo.png") is None
+
+
+def test_object_sha256_raises_media_store_error_for_other_failures():
+    store, _ = store_with(FakeS3(head_fail=FakeClientError("AccessDenied")))
+    with pytest.raises(MediaStoreError, match="Lookup in R2 failed"):
+        store.object_sha256("branding/logo/WU_Logo.png")
+
+
+class ResponselessError(Exception):
+    """Shaped like botocore's HTTPClientError family, which sets .response
+    to None (not a dict) on a transient network failure."""
+    response = None
+
+
+def test_object_sha256_raises_media_store_error_when_response_is_not_a_dict():
+    store, _ = store_with(FakeS3(head_fail=ResponselessError("connection reset")))
+    with pytest.raises(MediaStoreError, match="Lookup in R2 failed"):
+        store.object_sha256("branding/logo/WU_Logo.png")
+
+
+def test_object_sha256_strips_a_leading_slash_from_the_key():
+    store, fake = store_with(FakeS3(head_response={"Metadata": {"sha256": "abc123"}}))
+    assert store.object_sha256("/branding/logo/WU_Logo.png") == "abc123"
+    assert fake.head_calls == [{"Bucket": "wu-media", "Key": "branding/logo/WU_Logo.png"}]
+
+
+def test_object_sha256_raises_not_configured_when_unconfigured():
+    store = MediaStore(None)
+    with pytest.raises(MediaStoreNotConfigured):
+        store.object_sha256("branding/logo/WU_Logo.png")
+
+
+def test_upload_static_blocking_puts_a_plain_key_and_returns_its_url():
+    store, fake = store_with()
+    data = image_bytes("PNG")
+    url = store.upload_static_blocking(data, key="branding/logo/WU_Logo.png")
+    assert fake.puts == [{
+        "Bucket": "wu-media",
+        "Key": "branding/logo/WU_Logo.png",
+        "Body": data,
+        "ContentType": "image/png",
+        "CacheControl": STATIC_CACHE_CONTROL,
+        "Metadata": {"sha256": hashlib.sha256(data).hexdigest()},
+    }]
+    assert url == "https://img.example.com/branding/logo/WU_Logo.png"
+
+
+def test_upload_static_blocking_rejects_a_mismatched_extension():
+    store, fake = store_with()
+    with pytest.raises(MediaStoreError, match="do not match its extension"):
+        store.upload_static_blocking(image_bytes("PNG"), key="branding/logo/WU_Logo.jpg")
+    assert fake.puts == []
+
+
+def test_upload_static_blocking_accepts_jpeg_bytes_under_a_jpeg_key():
+    store, fake = store_with()
+    url = store.upload_static_blocking(image_bytes("JPEG"), key="fwa/static/Default_FWA_Base.jpeg")
+    assert fake.puts[0]["ContentType"] == "image/jpeg"
+    assert url.endswith(".jpeg")
+
+
+def test_upload_static_blocking_raises_not_configured_when_unconfigured():
+    store = MediaStore(None)
+    with pytest.raises(MediaStoreNotConfigured):
+        store.upload_static_blocking(image_bytes("PNG"), key="branding/logo/WU_Logo.png")
 
 
 # -- deletes ---------------------------------------------------------------

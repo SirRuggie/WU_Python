@@ -16,6 +16,13 @@ What this module does:
   * `MediaStore.upload_from_url(url, ...)` fetches a URL a person pasted
     (public hosts only, 10 MB cap, no redirects) and uploads the bytes.
   * `MediaStore.delete_url(url)` removes an object behind one of OUR URLs.
+  * `MediaStore.upload_static_blocking(data, key=...)` and `object_sha256(key)`
+    put/inspect the repo's static art (logos, banners, base placeholders)
+    under a PLAIN key instead of a content-addressed one, so a caller can
+    compare a local file's sha256 against the object's stored metadata and
+    skip re-uploading anything unchanged. `check_static_bytes(data, key)`
+    runs the same validation without uploading, for a `--dry-run` pass.
+    See `tools/upload_static_media.py`.
 
 Keys are CONTENT-ADDRESSED: `<folder>/<name>.<sha256[:10]>.<ext>`. Re-uploading
 a changed logo produces a new key and therefore a new URL, which is what
@@ -57,6 +64,9 @@ REQUIRED_ENV = (
 
 # Content-addressed keys never change meaning, so caches may keep them forever.
 CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+# Static art keeps a plain name, so caches must revalidate it daily.
+STATIC_CACHE_CONTROL = "public, max-age=86400"
 
 # Pillow format name -> (key extension, Content-Type). The extension matters
 # twice: Discord's proxy and utils/url_safety.py both judge a URL by it.
@@ -131,6 +141,32 @@ def object_key(folder: str, name: str, data: bytes, ext: str) -> str:
     folder = folder.strip("/")
     name = name.strip("/") or "image"
     return f"{folder}/{name}.{digest}.{ext}"
+
+
+def check_static_bytes(data: bytes, key: str) -> tuple[str, str]:
+    """`(ext, content_type)` for static art bytes, or MediaStoreError.
+
+    The same empty/oversize/format/extension checks `upload_static_blocking`
+    applies before it puts the object, factored out so
+    `tools/upload_static_media.py`'s `--dry-run` path can reject exactly the
+    files the real run would, without touching the network.
+    """
+    if not data:
+        raise MediaStoreError("The file is empty.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise MediaStoreError(
+            f"Images must be under {MAX_IMAGE_BYTES // (1024 * 1024)} MB."
+        )
+    ext, content_type = detect_image(data)
+    key = key.strip("/")
+    suffix = key.rsplit(".", 1)[-1].lower() if "." in key else ""
+    if suffix == "jpeg":
+        suffix = "jpg"
+    if suffix != ext:
+        raise MediaStoreError(
+            f"The file's bytes ({ext}) do not match its extension ({key})."
+        )
+    return ext, content_type
 
 
 class MediaStore:
@@ -213,6 +249,54 @@ class MediaStore:
                 Body=data,
                 ContentType=content_type,
                 CacheControl=CACHE_CONTROL,
+            )
+        except Exception as exc:
+            raise MediaStoreError(f"Upload to R2 failed: {exc}") from exc
+        return self.public_url(key)
+
+    # -- static art ------------------------------------------------------------
+
+    def object_sha256(self, key: str) -> str | None:
+        """The `sha256` metadata stored on `key`, or None when it is missing.
+
+        Lets a caller skip re-uploading a static file whose bytes have not
+        changed since the last run. S3 returns user metadata keys lower-cased.
+        """
+        config = self._require_config()
+        key = key.strip("/")
+        try:
+            response = self._s3().head_object(Bucket=config.bucket, Key=key)
+        except Exception as exc:
+            # botocore's HTTPClientError (and its ConnectionClosedError /
+            # ResponseStreamingError subclasses) sets .response to None on a
+            # transient network failure, and urllib3's InvalidChunkLength
+            # sets it to an HTTPResponse -- neither is a dict, so guard the
+            # type before calling .get() on it.
+            resp = getattr(exc, "response", None)
+            code = resp.get("Error", {}).get("Code") if isinstance(resp, dict) else None
+            if code in ("404", "NoSuchKey", "NotFound"):
+                return None
+            raise MediaStoreError(f"Lookup in R2 failed: {exc}") from exc
+        return response.get("Metadata", {}).get("sha256")
+
+    def upload_static_blocking(self, data: bytes, *, key: str) -> str:
+        """Store static art under a PLAIN key; returns the public URL.
+
+        Unlike `upload_bytes_blocking`, the key is not content-addressed —
+        the caller (`tools/upload_static_media.py`) picks it to mirror the
+        repo's `assets/` layout, and re-uploads simply overwrite it.
+        """
+        config = self._require_config()
+        ext, content_type = check_static_bytes(data, key)
+        key = key.strip("/")
+        try:
+            self._s3().put_object(
+                Bucket=config.bucket,
+                Key=key,
+                Body=data,
+                ContentType=content_type,
+                CacheControl=STATIC_CACHE_CONTROL,
+                Metadata={"sha256": hashlib.sha256(data).hexdigest()},
             )
         except Exception as exc:
             raise MediaStoreError(f"Upload to R2 failed: {exc}") from exc
