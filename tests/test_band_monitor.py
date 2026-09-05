@@ -209,6 +209,13 @@ def test_poll_failures_are_visible_throttled_and_log_recovery(monkeypatch, capsy
     async def fetch():
         return next(results)
 
+    async def resolve_must_not_run():
+        raise AssertionError("check_band_once must not resolve the key over the network")
+
+    # The poll re-resolves the key over HTTPS when BAND_KEY is unset; keep
+    # this test hermetic by seeding the key and refusing any resolver call.
+    monkeypatch.setattr(band_monitor, "BAND_KEY", "test-key")
+    monkeypatch.setattr(band_monitor, "resolve_band_key", resolve_must_not_run)
     monkeypatch.setattr(band_monitor, "fetch_band_posts", fetch)
     monkeypatch.setattr(band_monitor, "poll_health", band_monitor.BandPollHealth())
 
