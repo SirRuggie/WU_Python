@@ -114,11 +114,11 @@ async def build_fwa_management_screen(
     war_images = fwa_data.get("war_base_images", {})
     active_images = fwa_data.get("active_base_images", {})
 
-    # Update the constants with stored URLs
+    # Mongo keeps the raw URLs; the in-memory dicts hold delivery-optimized ones, as main.py seeds them at startup.
     if war_images:
-        FWA_WAR_BASE.update(war_images)
+        FWA_WAR_BASE.update({th: optimized(u, width=DETAIL) for th, u in war_images.items()})
     if active_images:
-        FWA_ACTIVE_WAR_BASE.update(active_images)
+        FWA_ACTIVE_WAR_BASE.update({th: optimized(u, width=DETAIL) for th, u in active_images.items()})
 
     # Build overview of all TH levels
     overview_lines = []
