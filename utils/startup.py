@@ -20,6 +20,14 @@ DISABLED_PREVIEW_EXTENSIONS = frozenset({
     "poll_bar_preview",
 })
 
+# Features switched off but kept in the tree. The Clash of Cards event
+# ended in September 2026; remove its three entries here to run it again.
+RETIRED_EXTENSIONS = frozenset({
+    "extensions.commands.cards",
+    "extensions.tasks.cards_sticky",
+    "extensions.tasks.cards_deadlines",
+})
+
 
 def _binds_loader(module_path: Path) -> bool:
     """Return whether a module exposes a top-level name named ``loader``.
@@ -62,11 +70,15 @@ def load_cogs(disallowed: set[str], disallowed_folders: set[str] | None = None) 
             or full_path.stem in DISABLED_PREVIEW_EXTENSIONS
         ):
             continue
+
+        module_parts = (*COMMANDS_ROOT.parts, *relative.with_suffix("").parts)
+        module_name = ".".join(module_parts)
+        if module_name in RETIRED_EXTENSIONS:
+            continue
         if not _binds_loader(full_path):
             continue
 
-        module_parts = (*COMMANDS_ROOT.parts, *relative.with_suffix("").parts)
-        file_list.append(".".join(module_parts))
+        file_list.append(module_name)
 
     return file_list
 
@@ -74,6 +86,17 @@ def load_cogs(disallowed: set[str], disallowed_folders: set[str] | None = None) 
 def unique_extensions(*groups: Iterable[str]) -> list[str]:
     """Merge extension groups without changing first-load order."""
     return list(dict.fromkeys(extension for group in groups for extension in group))
+
+
+def active_extensions(extensions: Iterable[str]) -> list[str]:
+    """Return ``extensions`` in order, minus anything in ``RETIRED_EXTENSIONS``.
+
+    ``RETIRED_EXTENSIONS`` is the single switch for a retired feature: its
+    modules stay in the explicit extension lists so the code documents what
+    exists; ``load_cogs`` skips them at discovery and this filter is the last
+    guard before ``load_extensions``.
+    """
+    return [extension for extension in extensions if extension not in RETIRED_EXTENSIONS]
 
 
 def create_clash_client(*, loop: asyncio.AbstractEventLoop | None = None) -> coc.Client:

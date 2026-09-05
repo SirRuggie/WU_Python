@@ -1,5 +1,15 @@
 # Clash of Cards tracker
 
+## Status
+
+Retired since 2026-09-05 because the event ended. The feature is switched off
+by `RETIRED_EXTENSIONS` in `utils/startup.py`: the `/cards` command, the sticky
+explainer task, and the deadline sweeper are no longer loaded, and the `/cards`
+row is hidden from `/help`. The code, tests, and assets described below stay in
+the tree. To run the next event, delete the three entries from
+`RETIRED_EXTENSIONS` and revert the retirement assertions in
+`tests/test_startup.py` and `tests/test_role_permissions.py`.
+
 ## Why `/cards` owns the data
 
 The August 2026 Clash of Cards event inventory is not present in Supercell's

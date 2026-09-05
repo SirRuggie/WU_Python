@@ -41,7 +41,7 @@ import lightbulb
 from dotenv import load_dotenv
 from utils.mongo import MongoClient
 import coc
-from utils.startup import create_clash_client, load_cogs, unique_extensions
+from utils.startup import active_extensions, create_clash_client, load_cogs, unique_extensions
 from utils.media_store import MediaStore
 from extensions.autocomplete import preload_autocomplete_cache
 from utils import bot_data
@@ -134,6 +134,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
             disallowed_folders={"clan", "fwa", "recruit", "setup", "tickets"},
         ),
     )
+    all_extensions = active_extensions(all_extensions)
 
     await client.load_extensions(*all_extensions)
     await client.start()
