@@ -34,7 +34,7 @@ class Info(
         await ctx.defer(ephemeral=True)
 
         # Local Our_Clans banner, attached to the message
-        banner_url = "assets/branding/our_clans.png"
+        banner_url = "assets/branding/banners/our_clans.png"
 
         components = [
             Container(

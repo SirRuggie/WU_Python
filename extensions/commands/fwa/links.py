@@ -59,7 +59,7 @@ class Links(
                     Media(
                         items=[
                             MediaItem(
-                                media="assets/branding/FWA.png"
+                                media="assets/fwa/static/FWA.png"
                             ),
                         ]
                     ),

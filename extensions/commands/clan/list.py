@@ -8,7 +8,7 @@ from extensions.components      import register_action
 from utils.mongo                import MongoClient
 from utils.classes              import Clan
 from utils.constants            import RED_ACCENT
-from utils.cloudinary_urls      import GALLERY, THUMBNAIL, optimized
+from utils.media_urls           import GALLERY, THUMBNAIL, optimized
 from utils.emoji                import emojis
 
 from hikari.impl import (

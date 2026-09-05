@@ -25,6 +25,14 @@ the hard way. The standing instruction that governs this folder is in
   `Context` in 3.0.3, what does not, and the usage-count rule that came out of
   getting this wrong.
 
+## Working with Claude
+
+- [agent-orchestration.md](agent-orchestration.md) — the main session
+  orchestrates and delegates to the agents in `.claude/agents/` (scout on
+  Haiku, researcher and builder on Sonnet, refuter and debugger on Opus).
+  Pricing, task-to-model reasoning, and the Claude Code mechanics behind the
+  always-loaded rule in `.claude/rules/orchestration.md`.
+
 ## Features
 
 - [accounts.md](accounts.md) — `/accounts`, the private linked-player inventory:
@@ -53,6 +61,13 @@ the hard way. The standing instruction that governs this folder is in
 - [thread-ticketing-proposal.md](thread-ticketing-proposal.md) — research and
   design for thread-based ticketing + the console dashboard (2026-08-02).
   Findings, dashboard design, migration plan, risks. **Not yet decided.**
+
+- [media-hosting.md](media-hosting.md) — why `/todo` burned through
+  Cloudinary's free bandwidth (hikari 2.3.5 downloads every image URL on every
+  render; full-size originals used as thumbnails), the free-hosting
+  comparison — Discord-native, Cloudflare R2, object stores, Cloudinary-likes —
+  and the migration (2026-09-02). **Decided: Cloudflare R2, implemented;
+  the hikari double-fetch fix is still open.**
 
 ## Architecture
 

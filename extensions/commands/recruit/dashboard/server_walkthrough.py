@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from extensions.components import register_action
 from utils.component_state import get_state
-from utils.cloudinary_urls import GALLERY, optimized
+from utils.media_urls import GALLERY, optimized
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT
 

@@ -61,10 +61,10 @@ def test_clan_list_missing_selection_edits_deferred_response():
         ({"tag": "#NOLOGO", "name": "No Logo", "emoji": ""}, "No Logo Found"),
     ],
 )
-def test_cloudinary_emoji_errors_edit_deferred_response(document, message):
+def test_logo_emoji_errors_edit_deferred_response(document, message):
     ctx = _Context("#NOLOGO")
 
-    result = asyncio.run(update_clan_info.emoji_from_cloudinary(
+    result = asyncio.run(update_clan_info.emoji_from_logo(
         ctx=ctx, action_id="#NOLOGO", mongo=_Mongo(document), bot=object()
     ))
 
@@ -76,7 +76,7 @@ def test_cloudinary_emoji_errors_edit_deferred_response(document, message):
 
 def test_handlers_still_own_success_responses():
     assert components.registered_functions["clan_select_menu"].no_return is True
-    assert components.registered_functions["emoji_from_cloudinary"].no_return is True
+    assert components.registered_functions["emoji_from_logo"].no_return is True
 
 
 async def _async_value(value):

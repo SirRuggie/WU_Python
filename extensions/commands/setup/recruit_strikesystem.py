@@ -49,7 +49,7 @@ class RecruitStrikeSystem(
             Media(
                 items=[
                     MediaItem(
-                        media="assets/branding/WU_Strikes.gif"
+                        media="assets/recruit/strikes/WU_Strikes.gif"
                     )
                 ]
             ),
@@ -116,7 +116,7 @@ class RecruitStrikeSystem(
                     Media(
                         items=[
                             MediaItem(
-                                media="assets/branding/WU_Main_Strikes.jpg"
+                                media="assets/recruit/strikes/WU_Main_Strikes.jpg"
                             )
                         ]
                     ),
@@ -133,7 +133,7 @@ class RecruitStrikeSystem(
                     Media(
                         items=[
                             MediaItem(
-                                media="assets/branding/WU_FWA_Strikes.jpg"
+                                media="assets/recruit/strikes/WU_FWA_Strikes.jpg"
                             )
                         ]
                     ),

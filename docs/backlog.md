@@ -21,8 +21,8 @@ the commit message when the item is completed so the fix remains traceable.
   paths can change that member's nickname, Town Hall roles, and clan roles or
   post onboarding messages. Add both command visibility permissions and a
   runtime recruiter/admin check shared by every mutating component.
-- **`AUTH-002` — Restrict `/clan upload-images`.** It can replace Clan
-  Cloudinary assets and MongoDB references. Require the clan-management role at
+- **`AUTH-002` — Restrict `/clan upload-images`.** It can replace clan
+  images in the R2 bucket and MongoDB references. Require the clan-management role at
   invocation time.
 - **`AUTH-003` — Restrict `/fwa upload-images`.** It can replace shared FWA base
   images and MongoDB references. Require the FWA-management role at invocation
@@ -117,8 +117,8 @@ deleted by this code change.
 
 **Status:** Implemented and tested locally on 2026-08-06; deployment pending.
 
-The clan-list missing-clan path and the Cloudinary emoji missing-clan/no-logo
-paths now explicitly edit their deferred responses. Their handlers retain
+The clan-list missing-clan path and the logo-emoji (`emoji_from_logo`, formerly
+`emoji_from_cloudinary`) missing-clan/no-logo paths now explicitly edit their deferred responses. Their handlers retain
 `no_return=True` because the successful paths already own their Discord
 responses; changing dispatcher ownership would cause a second response after a
 successful action. Regression tests cover all three silent error paths and
