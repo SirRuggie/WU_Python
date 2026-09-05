@@ -12,7 +12,7 @@ import asyncio
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
-from utils.media_store import MediaStore
+from utils.media_store import FWA_ACTIVE_BASE_NAME, FWA_WAR_BASE_NAME, MediaStore, fwa_base_folder
 from utils.media_urls import DETAIL, optimized
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 from utils.emoji import emojis
@@ -683,8 +683,8 @@ async def fwa_images_submit(
         if war_url:
             war_stored_url = await media.upload_from_url(
                 war_url,
-                folder=f"fwa/bases/{th_level}",
-                name="war"
+                folder=fwa_base_folder(th_level),
+                name=FWA_WAR_BASE_NAME
             )
 
             # Update the constant in memory (for this session),
@@ -704,8 +704,8 @@ async def fwa_images_submit(
         if active_url:
             active_stored_url = await media.upload_from_url(
                 active_url,
-                folder=f"fwa/bases/{th_level}",
-                name="active"
+                folder=fwa_base_folder(th_level),
+                name=FWA_ACTIVE_BASE_NAME
             )
 
             # Update the constant in memory (for this session),

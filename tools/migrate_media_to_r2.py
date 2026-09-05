@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from urllib.parse import urlparse
 
@@ -36,23 +37,32 @@ from dotenv import load_dotenv  # noqa: E402
 from pymongo import MongoClient  # noqa: E402
 
 from utils.image_fetch import download_image_blocking  # noqa: E402
-from utils.media_store import MediaStore, MediaStoreError  # noqa: E402
-from utils.text_utils import sanitize_filename  # noqa: E402
+from utils.media_store import (  # noqa: E402
+    CLAN_BANNER,
+    CLAN_LOGO,
+    FWA_ACTIVE_BASE_NAME,
+    FWA_WAR_BASE_NAME,
+    MediaStore,
+    MediaStoreError,
+    clan_folder,
+    fwa_base_folder,
+)
 
 CLOUDINARY_HOST = "res.cloudinary.com"
 
-# Same folders the slash commands write to, so migrated and new uploads sit
-# side by side in the bucket. The clan folder is computed per-clan in
+# The bucket layout itself lives in utils/media_store.py (clan_folder,
+# fwa_base_folder and these name constants), so migrated and new uploads
+# sit side by side in the bucket. The clan folder is computed per-clan in
 # migrate_clans; the FWA folder is computed per-TH in migrate_fwa.
 CLAN_FIELDS = (
     # field, name
-    ("logo", "logo"),
-    ("banner", "banner"),
+    ("logo", CLAN_LOGO),
+    ("banner", CLAN_BANNER),
 )
 FWA_MAPS = (
     # map, name
-    ("war_base_images", "war"),
-    ("active_base_images", "active"),
+    ("war_base_images", FWA_WAR_BASE_NAME),
+    ("active_base_images", FWA_ACTIVE_BASE_NAME),
 )
 
 
@@ -93,12 +103,14 @@ def copy_to_r2(store: MediaStore, url: str, folder: str, name: str,
 
 
 def migrate_clans(db, store: MediaStore, *, dry_run: bool, tally: Tally) -> None:
-    query = {"$or": [{"logo": {"$regex": CLOUDINARY_HOST}},
-                     {"banner": {"$regex": CLOUDINARY_HOST}}]}
+    # Case-insensitive and dots escaped, so this agrees with is_cloudinary,
+    # which already accepts an upper-case host.
+    host = re.escape(CLOUDINARY_HOST)
+    query = {"$or": [{"logo": {"$regex": host, "$options": "i"}},
+                     {"banner": {"$regex": host, "$options": "i"}}]}
     projection = {"tag": 1, "name": 1, "logo": 1, "banner": 1}
     for doc in db.clan_data.find(query, projection):
-        clan_name = sanitize_filename(str(doc.get("name") or doc.get("tag") or "clan"))
-        folder = f"clans/{clan_name}"
+        folder = clan_folder(str(doc.get("name") or doc.get("tag") or "clan"))
         print(f"clan {doc.get('name')} ({doc.get('tag')})")
         for field, name in CLAN_FIELDS:
             url = doc.get(field)
@@ -123,7 +135,7 @@ def migrate_fwa(db, store: MediaStore, *, dry_run: bool, tally: Tally) -> None:
             if not is_cloudinary(url):
                 tally.skipped += 1
                 continue
-            folder = f"fwa/bases/{th_level}"
+            folder = fwa_base_folder(th_level)
             new_url = copy_to_r2(store, url, folder, name,
                                  dry_run=dry_run, tally=tally, label=th_level)
             if new_url:

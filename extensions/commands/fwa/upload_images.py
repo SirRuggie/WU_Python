@@ -9,7 +9,13 @@ import hikari
 import lightbulb
 
 from extensions.commands.fwa import loader, fwa
-from utils.media_store import MediaStore, MediaStoreError
+from utils.media_store import (
+    FWA_ACTIVE_BASE_NAME,
+    FWA_WAR_BASE_NAME,
+    MediaStore,
+    MediaStoreError,
+    fwa_base_folder,
+)
 from utils.media_urls import DETAIL, optimized
 from utils.mongo import MongoClient
 from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
@@ -108,8 +114,8 @@ class UploadImages(
 
                 war_url = await media.upload_bytes(
                     war_data,
-                    folder=f"fwa/bases/{self.th_level}",
-                    name="war"
+                    folder=fwa_base_folder(self.th_level),
+                    name=FWA_WAR_BASE_NAME
                 )
 
                 # Update the constant in memory (delivery-optimized; Mongo
@@ -134,8 +140,8 @@ class UploadImages(
 
                 active_url = await media.upload_bytes(
                     active_data,
-                    folder=f"fwa/bases/{self.th_level}",
-                    name="active"
+                    folder=fwa_base_folder(self.th_level),
+                    name=FWA_ACTIVE_BASE_NAME
                 )
 
                 # Update the constant in memory (delivery-optimized; Mongo

@@ -15,12 +15,18 @@ from PIL import Image
 from utils import media_store
 from utils.media_store import (
     CACHE_CONTROL,
+    CLAN_BANNER,
+    CLAN_LOGO,
+    FWA_ACTIVE_BASE_NAME,
+    FWA_WAR_BASE_NAME,
     STATIC_CACHE_CONTROL,
     MediaStore,
     MediaStoreConfig,
     MediaStoreError,
     MediaStoreNotConfigured,
+    clan_folder,
     detect_image,
+    fwa_base_folder,
     object_key,
 )
 from utils.url_safety import MAX_IMAGE_BYTES
@@ -111,6 +117,17 @@ def test_object_key_is_content_addressed():
     assert object_key("clan_logos/Warriors_United", "Arcane_Angels", data, "png") == key
     other = object_key("clan_logos/Warriors_United", "Arcane_Angels", image_bytes("PNG", (0, 0, 255)), "png")
     assert other != key
+
+
+def test_bucket_layout_helpers_and_name_constants():
+    # Pins the layout the bucket and Mongo already hold, so a rename here is
+    # a deliberate migration, not an accident.
+    assert clan_folder("Arcane Angels!") == "clans/Arcane_Angels"
+    assert clan_folder("Воины") == "clans/unnamed"
+    assert fwa_base_folder("th16_new") == "fwa/bases/th16_new"
+    assert (CLAN_LOGO, CLAN_BANNER, FWA_WAR_BASE_NAME, FWA_ACTIVE_BASE_NAME) == (
+        "logo", "banner", "war", "active",
+    )
 
 
 def test_key_for_url_only_matches_our_own_base():

@@ -23,6 +23,8 @@ What this module does:
     skip re-uploading anything unchanged. `check_static_bytes(data, key)`
     runs the same validation without uploading, for a `--dry-run` pass.
     See `tools/upload_static_media.py`.
+  * `clan_folder(clan_name)` and `fwa_base_folder(th_level)` are the one
+    place the bucket layout is written down; see the section below.
 
 Keys are CONTENT-ADDRESSED: `<folder>/<name>.<sha256[:10]>.<ext>`. Re-uploading
 a changed logo produces a new key and therefore a new URL, which is what
@@ -52,6 +54,7 @@ from urllib.parse import quote, unquote, urlparse
 from PIL import Image, UnidentifiedImageError
 
 from utils.image_fetch import fetch_public_image
+from utils.text_utils import sanitize_filename
 from utils.url_safety import MAX_IMAGE_BYTES
 
 REQUIRED_ENV = (
@@ -141,6 +144,25 @@ def object_key(folder: str, name: str, data: bytes, ext: str) -> str:
     folder = folder.strip("/")
     name = name.strip("/") or "image"
     return f"{folder}/{name}.{digest}.{ext}"
+
+
+# This is the one statement of where uploads live (docs/media-hosting.md).
+# The slash commands, the FWA dashboard and tools/migrate_media_to_r2.py all
+# build their folders and names through these so they cannot drift apart.
+CLAN_LOGO = "logo"
+CLAN_BANNER = "banner"
+FWA_WAR_BASE_NAME = "war"
+FWA_ACTIVE_BASE_NAME = "active"
+
+
+def clan_folder(clan_name: str) -> str:
+    """clans/<Name>: the folder holding a clan's logo and banner (name sanitized)."""
+    return f"clans/{sanitize_filename(clan_name)}"
+
+
+def fwa_base_folder(th_level: str) -> str:
+    """fwa/bases/<th>: the folder holding a Town Hall's war and active base images."""
+    return f"fwa/bases/{th_level}"
 
 
 def check_static_bytes(data: bytes, key: str) -> tuple[str, str]:

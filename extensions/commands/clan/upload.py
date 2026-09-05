@@ -12,8 +12,7 @@ import lightbulb
 from extensions.commands.clan import loader, clan
 from extensions.autocomplete import clans
 from utils.mongo import MongoClient
-from utils.media_store import MediaStore, MediaStoreError
-from utils.text_utils import sanitize_filename
+from utils.media_store import CLAN_BANNER, CLAN_LOGO, MediaStore, MediaStoreError, clan_folder
 
 
 @clan.register()
@@ -109,10 +108,6 @@ class UploadImages(
                 )
                 return
 
-        # Get the sanitized clan name for use in filenames
-        # This converts "Arcane Angels" to "Arcane_Angels", removing special characters
-        clean_clan_name = sanitize_filename(clan_data['name'])
-
         # Prepare variables to track what we're updating
         update_data = {}  # Will store the URLs to save in the database
         upload_summary = []  # Will store success messages for user feedback
@@ -130,8 +125,8 @@ class UploadImages(
                 # your database
                 update_data["logo"] = await media.upload_bytes(
                     logo_data,
-                    folder=f"clans/{clean_clan_name}",  # Per-clan subfolder
-                    name="logo"  # Sets the filename
+                    folder=clan_folder(clan_data['name']),  # Per-clan subfolder
+                    name=CLAN_LOGO  # Sets the filename
                 )
 
                 # Create a user-friendly summary of what was uploaded
@@ -150,8 +145,8 @@ class UploadImages(
                 # Store the URL for database update
                 update_data["banner"] = await media.upload_bytes(
                     banner_data,
-                    folder=f"clans/{clean_clan_name}",  # Per-clan subfolder
-                    name="banner"
+                    folder=clan_folder(clan_data['name']),  # Per-clan subfolder
+                    name=CLAN_BANNER
                 )
 
                 # Add to the summary

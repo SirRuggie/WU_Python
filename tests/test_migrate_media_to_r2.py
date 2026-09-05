@@ -30,8 +30,10 @@ class FakeCollection:
         self._find_docs = find_docs if find_docs is not None else []
         self._find_one_doc = find_one_doc
         self.updates = []
+        self.find_queries = []
 
     def find(self, query, projection):
+        self.find_queries.append(query)
         return self._find_docs
 
     def find_one(self, query):
@@ -74,6 +76,21 @@ def test_is_cloudinary(value, expected):
 
 
 # -- migrate_clans --------------------------------------------------------------
+
+def test_migrate_clans_query_is_case_insensitive_and_escapes_the_host(store_and_fake):
+    store, fake = store_and_fake
+    db = FakeDB(clan_docs=[])
+    tally = mig.Tally()
+
+    mig.migrate_clans(db, store, dry_run=False, tally=tally)
+
+    assert len(db.clan_data.find_queries) == 1
+    clauses = db.clan_data.find_queries[0]["$or"]
+    assert len(clauses) == 2
+    for field, clause in zip(("logo", "banner"), clauses):
+        assert clause[field]["$options"] == "i"
+        assert clause[field]["$regex"] == re.escape("res.cloudinary.com")
+
 
 def test_migrate_clans_uploads_under_the_agreed_bucket_layout(store_and_fake):
     store, fake = store_and_fake
