@@ -93,6 +93,9 @@ Either way the outcome is the same and the constraint above is what governs.
 - Any upgrade needs the rate-limit behaviour re-checked, because that is what
   2.4.x changed and rate limiting has bitten this bot before — see
   [incident-2026-07-29-channel-rate-limit.md](incident-2026-07-29-channel-rate-limit.md).
+- When moving to hikari 2.6.0, remove `utils/hikari_shims.py` and its test
+  (`tests/test_hikari_shims.py`) — the double-fetch shim it installs becomes
+  redundant, see [media-hosting.md](media-hosting.md) section 3.
 
 ## coc.py — pinned at 3.10.0
 
