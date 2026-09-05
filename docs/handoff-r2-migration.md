@@ -5,6 +5,10 @@ Cloudinary's image host, MongoDB or the new bucket hostname. Everything
 below is what a local session needs to finish the job. Delete this file in
 the cleanup step at the end.
 
+Updated 2026-09-04 by the local session that did steps 1 and 2 (the tool,
+not the run): see "Where things stand" and the status notes in "Next
+steps".
+
 ## Read first
 
 - `.claude/rules/orchestration.md` loads automatically: the main session
@@ -29,14 +33,28 @@ the R2 move (`utils/media_store.py`, `utils/media_urls.py`,
 `cloudinary` package removed, `boto3` added); the orchestration rule and
 agents; the inventory; the layout update (upload commands and the migration
 script write `clans/<Name>/logo|banner` and `fwa/bases/<th>/war|active`,
-and `assets/` mirrors the bucket). Tests: 1208 pass; the one failure,
+and `assets/` mirrors the bucket); this handoff (`c6ea2cf`); then, added
+locally on 2026-09-04: the static upload tool (`915d1a7`) and the three
+refuter-pass fixes (`29ce5e8`, `ffaed49`, `4812f86`). Check `git status -sb`
+for whether those four have been pushed. Tests: 1250 pass, plus
 `tests/test_band_monitor.py::test_poll_failures_are_visible_throttled_and_log_recovery`,
-fails identically on main and is unrelated.
+which calls the real BAND API and passes only when it answers (it did on
+the first run here and timed out on the last), unrelated to this work.
 
-**The layout commit has had no refuter pass yet.** The builder's own
-verification and a second independent run of the greps, the asset-path
-check, compile and the test suite all came back clean, but nobody has read
-the diff adversarially. Do that first.
+**The layout commit has had its refuter pass** (2026-09-04: five lenses,
+24 raw findings, each sent to three independent refuters, 4 confirmed).
+Fixed on the branch: the FWA dashboard overwrote the size-capped in-memory
+base URLs with raw ones (`29ce5e8`, pre-existing, the exact overage
+pattern); the migration's `is_cloudinary` was a substring test
+(`ffaed49`); the deploy runbook still described Cloudinary's folder and
+name (`ffaed49`). A mutation check showed no test pinned the new layout,
+so it now lives once in `utils/media_store.py` (`clan_folder`,
+`fwa_base_folder`, the four name constants), every writer imports it, and
+tests pin the migration's keys (`4812f86`). Judged real but left alone:
+two clans whose names sanitize to the same string share one
+`clans/<Name>/` folder (content-hashed keys keep the objects apart);
+`/fwa upload-images` and the dashboard never delete a replaced object
+(orphans, free at this scale).
 
 **R2**: account `d2b2bdb589030d8ddd698e2f62af5dc5`, bucket `wu-media`,
 default jurisdiction (the plain `r2.cloudflarestorage.com` endpoint, not
@@ -60,7 +78,10 @@ below; the owner has its Access Key ID and Secret. It must be revoked when
 the uploads are done, and the bot gets its own token.
 
 **Cloudinary**: cloud `dxmtzuomk`, free plan, at 183 % of its credits (49 GB
-bandwidth) so the account may be disabled by Cloudinary at any time. The
+bandwidth) so the account may be disabled by Cloudinary at any time. Checked
+2026-09-04 through the connector: still answering, 181 % (45.25 of 25
+credits), and the four in-scope folders still hold 17, 10, 10 and 9
+assets. The
 Cloudinary MCP connector is available in a local session; use it read-only.
 Inventory: 17 clan logos, 10 clan banners, 10 war bases, 9 active bases (TH10
 missing) are the only assets the bot references; 127 others are static art
@@ -87,17 +108,20 @@ already in the repo or legacy content that must not move.
    `R2_IMAGE_TRANSFORMS=true` only once the zone toggle is confirmed, and
    `MONGODB_URI` with the same value the server uses. Create a venv and
    `pip install -r requirements.txt -r requirements-dev.txt` (boto3 is new).
-1. **Refuter** over the layout commit (`git show HEAD` at the branch tip
-   before this handoff was added). Fix anything it finds via the builder.
-2. **Upload the static art** with the temporary token. Have the builder
-   write `tools/upload_static_media.py`: walk `assets/branding`,
-   `assets/fwa/static`, `assets/recruit`, `assets/tickets`; the key is the
-   repo path without the `assets/` prefix (`branding/logo/WU_Logo.png`);
-   plain names; `ContentType` from `utils.media_store.detect_image`;
-   `Cache-Control: public, max-age=86400`; skip unchanged files (compare the
-   local sha256 with object metadata); `--dry-run` flag; reuse
-   `MediaStore` config loading. Run it. The code does not reference these
-   URLs yet; they matter once the hikari double-fetch is fixed.
+   Status 2026-09-04: not done. The local `.env` holds only
+   `CLASHKING_API_TOKEN`, so the run in step 2, and steps 3 and 4, wait
+   on it. The `.venv` already matches the pins and has boto3.
+1. **Refuter** over the layout commit: done 2026-09-04, see "Where things
+   stand". Every confirmed finding is fixed on the branch.
+2. **Upload the static art** with the temporary token.
+   `tools/upload_static_media.py` exists (`915d1a7`, refuter-reviewed; the
+   dry-run lists the 20 files): run
+   `python tools/upload_static_media.py --dry-run`, then without the flag.
+   Keys are the repo path without `assets/`, plain names, one-day
+   Cache-Control, the sha256 in object metadata so re-runs skip unchanged
+   files; exit 2 means R2 is not configured, exit 1 that a file failed
+   (the line names it). The code does not reference these URLs yet; they
+   matter once the hikari double-fetch is fixed.
 3. **Deploy before migrating**, so the server renders R2 URLs size-capped
    from the first minute: merge the branch into `main`, then hand the owner
    the runbook in `docs/deployment.md` (bot token into the server `.env`
@@ -140,3 +164,11 @@ already in the repo or legacy content that must not move.
   nothing because the old URL is Cloudinary's.
 - The cloud session's scratch files are gone; everything needed is in the
   repo and in this file.
+- Project agents in `.claude/agents/` are registered when a session
+  starts. A session started on `main`, which lacks them, cannot use
+  `refuter` or `builder` by name after checking out this branch: start
+  the session on the branch, or inline the role text from the agent file
+  into the prompt.
+- `tests/test_band_monitor.py::test_poll_failures_are_visible_throttled_and_log_recovery`
+  needs outbound network (a real BAND API call); offline it fails and
+  that is not a regression.
