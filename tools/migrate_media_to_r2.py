@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -56,7 +57,13 @@ FWA_MAPS = (
 
 
 def is_cloudinary(value: object) -> bool:
-    return isinstance(value, str) and CLOUDINARY_HOST in value
+    """True only when `value` is a URL whose host is Cloudinary's."""
+    if not isinstance(value, str):
+        return False
+    try:
+        return urlparse(value).hostname == CLOUDINARY_HOST
+    except ValueError:  # malformed bracket host, e.g. "https://[x/y.png"
+        return False
 
 
 class Tally:

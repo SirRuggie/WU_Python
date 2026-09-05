@@ -377,7 +377,7 @@ know:
 | `clan_banners/Warriors_United` | 10 banners, 0.27 to 1.1 MB each | 5.0 MB | yes, driven by the Mongo rows |
 | `FWA_Images/Warriors_United/war_bases` | 10 war bases, TH9 to TH18, 1.1 to 6.2 MB each | 37.4 MB | yes, driven by the Mongo rows |
 | `FWA_Images/Warriors_United/active_bases` | 9 active bases; **TH10 has none** | 11.8 MB | yes, driven by the Mongo rows |
-| `misc_images`, `server_banners`, root statics | 39 | 41 MB | no: the repo's `assets/branding/` copies feed `branding/` and the `*/static/` folders |
+| `misc_images`, `server_banners`, root statics | 39 | 41 MB | no: the repo's `assets/` copies, which mirror the bucket, feed `branding/`, `fwa/static/`, `recruit/` and `tickets/` |
 | legacy: `old_clan_*` (a prior 22-clan roster), `FWA_Images/Kings War Bases`, the `fwa/` tree, `clan_recruitment/disboard_reviews`, personal folders | 88 | 50 MB | no |
 
 - **The account is over its limit.** Free plan, 45.8 of 25 credits used in

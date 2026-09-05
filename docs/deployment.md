@@ -181,10 +181,11 @@ cd /home/wubot/wu-bot
 /home/wubot/wu-bot/venv/bin/python tools/migrate_media_to_r2.py
 ```
 
-The script downloads each original from Cloudinary, uploads it to the bucket
-under the same folder and name, and `$set`s the new URL. It is idempotent,
-skips rows already moved, and touches nothing on Cloudinary. Restart the
-service afterwards so the FWA base maps reload from Mongo. Once `migrated=`
+The script downloads each original from Cloudinary, uploads it under the
+agreed bucket layout (`clans/<Name>/logo` and `banner`, `fwa/bases/<th>/war`
+and `active`, with the content hash appended), and `$set`s the new URL. It is
+idempotent, skips rows already moved, and touches nothing on Cloudinary.
+Restart the service afterwards so the FWA base maps reload from Mongo. Once `migrated=`
 covers every row and the panels look right, the Cloudinary account can go and
 `utils/cloudinary_urls.py` can be deleted (see its docstring).
 
