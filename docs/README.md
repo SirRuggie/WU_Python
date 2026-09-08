@@ -47,6 +47,10 @@ the hard way. The standing instruction that governs this folder is in
   vs inferred. **Contains the `str()`-on-a-coc.py-enum trap — read it before
   touching any Clash state comparison anywhere in this repo.**
 
+- [fwa-points-monitor.md](fwa-points-monitor.md) — the points.fwafarm.com
+  scraper that watches every FWA clan, the watch-list rule, stored record
+  fields, `/fwapoints` commands, and the Hetzner-vs-residential-IP history.
+
 - [lazycwl-autopings.md](lazycwl-autopings.md) — the auto-ping scheduler (no
   jobstore, Mongo-backed restore), the select-all + partial-failure pattern to
   copy, and four unguarded 25-option menus that are clear only at current scale.

@@ -1,7 +1,9 @@
 """Tests for the FWA points page parser, against real captured markup."""
 
 import pytest
-from utils.fwa_points_parser import parse_clan_points, sanitize_tag, is_newer_war, FwaPointsParseError
+from utils.fwa_points_parser import (
+    parse_clan_points, parse_active_fwa, sanitize_tag, is_newer_war, FwaPointsParseError,
+)
 
 FIXTURE = (
     '<!doctype html><html><head><title>FWA Points: Clan Edrag Rush</title></head><body>'
@@ -47,6 +49,99 @@ def test_missing_winner_box_raises():
 ])
 def test_sanitize_tag(raw, expected):
     assert sanitize_tag(raw) == expected
+
+
+LOSE_FIXTURE = (
+    '<p><b>Clan Name</b>: Edrag Rush<br>'
+    '<b>Active FWA</b>: Yes<br></p>'
+    '<p class="winner-box">Win Calculator for <a href="/war?id=200">War #200</a> in Sync #10<br><br>'
+    'Edrag Rush (<a href="/clan?tag=2PPCL2GYP">2PPCL2GYP</a>) vs. Opponent Clan '
+    '(<a href="/clan?tag=OPPTAG01">OPPTAG01</a>):<br><br>'
+    '<b>Opponent Clan</b> should win by points (9 &gt; 5)</p>'
+)
+
+UNKNOWN_FIXTURE = (
+    '<p><b>Clan Name</b>: Edrag Rush<br>'
+    '<b>Active FWA</b>: Yes<br></p>'
+    '<p class="winner-box">Win Calculator for <a href="/war?id=201">War #201</a> in Sync #11<br><br>'
+    'Edrag Rush (<a href="/clan?tag=2PPCL2GYP">2PPCL2GYP</a>) vs. Opponent Clan '
+    '(<a href="/clan?tag=OPPTAG01">OPPTAG01</a>):<br><br>'
+    '<b>Draw</b> - both clans tied (10 = 10)</p>'
+)
+
+
+def test_our_outcome_win_when_our_clan_is_bolded():
+    d = parse_clan_points(FIXTURE, "2PPCL2GYP")
+    assert d["predicted_winner_name"] == "Edrag Rush"
+    assert d["our_outcome"] == "win"
+
+
+def test_our_outcome_lose_when_opponent_is_bolded():
+    d = parse_clan_points(LOSE_FIXTURE, "2PPCL2GYP")
+    assert d["predicted_winner_name"] == "Opponent Clan"
+    assert d["our_outcome"] == "lose"
+
+
+def test_our_outcome_unknown_when_neither_name_matches():
+    d = parse_clan_points(UNKNOWN_FIXTURE, "2PPCL2GYP")
+    assert d["predicted_winner_name"] == "Draw"
+    assert d["our_outcome"] == "unknown"
+
+
+# No Clan Name field at all, and the verdict's <b> tag is empty - both sides of
+# the win/lose comparison would normalize to "" and falsely compare equal
+# unless empties are excluded outright.
+EMPTY_WINNER_NO_CLAN_NAME_FIXTURE = (
+    '<p><b>Active FWA</b>: Yes<br></p>'
+    '<p class="winner-box">Win Calculator for <a href="/war?id=202">War #202</a> in Sync #12<br><br>'
+    'Edrag Rush (<a href="/clan?tag=2PPCL2GYP">2PPCL2GYP</a>) vs. Opponent Clan '
+    '(<a href="/clan?tag=OPPTAG01">OPPTAG01</a>):<br><br>'
+    '<b></b> could not be determined</p>'
+)
+
+
+def test_our_outcome_unknown_when_winner_name_and_clan_name_are_both_empty():
+    d = parse_clan_points(EMPTY_WINNER_NO_CLAN_NAME_FIXTURE, "2PPCL2GYP")
+    assert d["predicted_winner_name"] == ""
+    assert d["clan_name"] is None
+    assert d["our_outcome"] == "unknown"
+
+
+def test_parse_active_fwa_yes():
+    assert parse_active_fwa('<p><b>Active FWA</b>: Yes<br></p>') is True
+
+
+def test_parse_active_fwa_no():
+    assert parse_active_fwa('<p><b>Active FWA</b>: No<br></p>') is False
+
+
+def test_parse_active_fwa_missing_field_returns_none():
+    assert parse_active_fwa('<p><b>Clan Name</b>: Some Clan<br></p>') is None
+
+
+def test_parse_active_fwa_does_not_require_winner_box():
+    # No winner-box anywhere on the page - still readable independently.
+    html = "<html><body><p><b>Active FWA</b>: Yes<br></p></body></html>"
+    assert parse_active_fwa(html) is True
+
+
+@pytest.mark.parametrize("body", [
+    "Clan not found.", "  Clan not found.  ", "CLAN NOT FOUND.", "clan not found.",
+])
+def test_parse_active_fwa_clan_not_found_body_is_false(body):
+    # points.fwafarm.com answers HTTP 200 with exactly this body for a tag it
+    # does not know - that must render as "not FWA", not as "unknown".
+    assert parse_active_fwa(body) is False
+
+
+def test_parse_active_fwa_label_present_without_winner_box_still_true():
+    html = "<p><b>Active FWA</b>: Yes<br></p>"
+    assert parse_active_fwa(html) is True
+
+
+def test_parse_active_fwa_label_present_without_winner_box_still_false():
+    html = "<p><b>Active FWA</b>: No<br></p>"
+    assert parse_active_fwa(html) is False
 
 
 @pytest.mark.parametrize("prev,parsed,expected", [

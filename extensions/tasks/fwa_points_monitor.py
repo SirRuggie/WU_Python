@@ -1,18 +1,23 @@
 # FWA points monitor.
 #
-# SHIPS DISABLED ON PURPOSE (DEFAULT_ENABLED = False below). points.fwafarm.com sits
-# behind Cloudflare, which hard-blocks requests from datacenter IPs. Confirmed from the
-# Hetzner box on 2026-07-11: curl returned HTTP 403 on all three attempts, and because
-# curl has a completely different TLS fingerprint than aiohttp yet was blocked
-# identically, the block is on the datacenter IP, not the client and not the request
-# headers (the exact same headers return HTTP 200 from a non-datacenter IP). The feature
-# works end to end and will populate immediately if that block ever lifts, or if the
-# fetch is ever run from a non-datacenter IP. Until then it stays off; /fwa points
-# degrades to showing the link, which is the pre-existing behavior, so nothing is broken
-# for users. Do not reach for a Cloudflare-bypass library: those defeat TLS/JS
-# challenges, not IP-reputation blocks, so they would not help here.
+# Was shipped DISABLED (DEFAULT_ENABLED = False) while the bot ran on Hetzner:
+# points.fwafarm.com sits behind Cloudflare, which hard-blocks requests from
+# datacenter IPs. Confirmed from the Hetzner box on 2026-07-11: curl returned
+# HTTP 403 on all three attempts, and because curl has a completely different
+# TLS fingerprint than aiohttp yet was blocked identically, the block was on
+# the datacenter IP, not the client and not the request headers (the exact
+# same headers returned HTTP 200 from a non-datacenter IP).
+#
+# Since 2026-09-08 the bot runs on Ruggie's Zone, a residential machine, and
+# the site answers normally with these same headers - so DEFAULT_ENABLED is
+# now True. The Mongo config doc still decides at runtime and is only seeded
+# with the default on first boot, so an existing database that was seeded
+# while this shipped disabled needs `/fwapoints enable` run once. Do not reach
+# for a Cloudflare-bypass library: those defeat TLS/JS challenges, not
+# IP-reputation blocks, so they would not have helped here anyway.
 
 import asyncio
+import random
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -23,7 +28,9 @@ import lightbulb
 
 from utils import coc_maintenance
 from utils.mongo import MongoClient
-from utils.fwa_points_parser import parse_clan_points, sanitize_tag, is_newer_war, FwaPointsParseError
+from utils.fwa_points_parser import (
+    parse_clan_points, parse_active_fwa, sanitize_tag, is_newer_war, FwaPointsParseError,
+)
 from utils.startup_reconciler import StartupReconciler
 
 loader = lightbulb.Loader()
@@ -37,12 +44,19 @@ FAILURE_COOLDOWN_SECONDS = GIVE_UP_SECONDS  # do not launch another retry burst 
 HTTP_TIMEOUT_SECONDS = 20
 LOG_CHANNEL_ID = 947166650321494067
 POINTS_URL = "https://points.fwafarm.com/clan?tag={tag}"
+STAGGER_STEP_SECONDS = 5        # spacing between clans launched in the same detector pass
+STAGGER_JITTER_MAX_SECONDS = 5  # extra random slack added on top of the step
 
-DEFAULT_ENABLED = False
-DEFAULT_WATCH_LIST = [{"tag": "2PPCL2GYP", "name": "Edrag Rush"}]
+DEFAULT_ENABLED = True
+# Extras only. The bulk of the watch list now comes from mongo.clans (every
+# clan of type FWA) - see effective_watch_list(). This stays empty; a clan
+# outside that set is added via /fwapoints watch-add.
+DEFAULT_WATCH_LIST = []
 
 # Cloudflare here rejects non-browser User-Agents (verified: honest UA -> 403,
-# Chrome UA -> 200). We stay polite via event-only fetching and low frequency.
+# Chrome UA -> 200). We stay polite via event-only fetching, low frequency, and
+# staggering each clan's catch-up start (see STAGGER_STEP_SECONDS) so a detector
+# pass that launches several catch-ups does not fire them all in lockstep.
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -77,9 +91,46 @@ async def feature_enabled():
     return bool(doc and doc.get("enabled"))
 
 
+async def effective_watch_list(config=None):
+    """Every clan of type FWA, plus the config doc's watch_list as extras.
+
+    Resolved fresh on every call (never cached alongside config) because clan
+    membership in mongo.clans changes independently of any /fwapoints command.
+    De-duplicated by tag; a clan-type entry wins over an extra with the same
+    tag since it is the source of truth for FWA membership.
+    """
+    if config is None:
+        config = await load_config()
+
+    entries: dict[str, dict] = {}
+    try:
+        fwa_clans = await mongo_client.clans.find({"type": "FWA"}).to_list(length=None)
+    except Exception as e:
+        print(f"[FWA Points] Failed to load FWA clan list: {type(e).__name__}: {e}")
+        fwa_clans = []
+    for doc in fwa_clans:
+        t = sanitize_tag(doc.get("tag", ""))
+        if not t:
+            continue
+        entries[t] = {"tag": t, "name": doc.get("name") or t, "source": "clan_type"}
+
+    for clan in config.get("watch_list", []):
+        t = sanitize_tag(clan.get("tag", ""))
+        if not t or t in entries:
+            continue
+        entries[t] = {"tag": t, "name": clan.get("name") or t, "source": "extra"}
+
+    return list(entries.values())
+
+
 # ---- CoC side (source of truth for the hard gate) ----
 async def get_current_war_info(our_tag):
-    """Return (state, opponent_tag, war_key) or None (no war / private log / API error)."""
+    """Return (state, opponent_tag, war_key, coc_war_end_time) or None.
+
+    None means no war / private log / API error. coc_war_end_time is an ISO
+    string of the war's end_time (same Timestamp object war_key is built
+    from), or None if that field is unreadable.
+    """
     try:
         war = await coc_client.get_clan_war(f"#{our_tag}")
     except coc.PrivateWarLog:
@@ -113,7 +164,12 @@ async def get_current_war_info(our_tag):
         return None
     prep = getattr(war, "preparation_start_time", None)
     war_key = f"{opp_tag}:{getattr(prep, 'raw_time', prep)}"
-    return state, opp_tag, war_key
+
+    end = getattr(war, "end_time", None)
+    end_dt = getattr(end, "time", None)
+    coc_war_end_time = end_dt.isoformat() if end_dt is not None else None
+
+    return state, opp_tag, war_key, coc_war_end_time
 
 
 # ---- Points site ----
@@ -139,7 +195,8 @@ async def fetch_points_html(our_tag):
 
 
 # ---- Mongo writes ----
-async def store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt):
+async def store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt,
+                        opponent_active_fwa=None, coc_war_end_time=None):
     now = datetime.now(timezone.utc).isoformat()
     record = {
         "clan_name": parsed["clan_name"] or name,
@@ -147,13 +204,18 @@ async def store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt
         "scraped_opponent_tag": parsed["opponent_tag"],
         "coc_opponent_tag": coc_opponent_tag,
         "opponent_name_scraped": parsed["opponent_name"],
+        "opponent_name": parsed["opponent_name"],
+        "opponent_active_fwa": opponent_active_fwa,
         "war_number": parsed["war_number"],
         "sync_number": parsed["sync_number"],
         "point_balance": parsed["point_balance"],
         "active_fwa": parsed["active_fwa"],
         "last_war_state": parsed["last_war_state"],
         "raw_verdict": parsed["raw_verdict"],
+        "predicted_winner_name": parsed.get("predicted_winner_name"),
+        "our_outcome": parsed.get("our_outcome"),
         "coc_war_key": war_key,
+        "coc_war_end_time": coc_war_end_time,
         "scraped_at": now,
         "attempts": attempt,
         "status": "caught_up",
@@ -254,10 +316,21 @@ async def log_outcome(line):
 
 
 # ---- Catch-up task (the only thing that touches the points site) ----
-async def run_catchup(clan_entry, coc_opponent_tag, war_key):
+async def run_catchup(clan_entry, coc_opponent_tag, war_key, coc_war_end_time=None, stagger_seconds=0):
+    """`stagger_seconds` is slept before the first fetch, so several clans
+    detected in the same pass do not all hit the points site in the same
+    instant and retry in lockstep. The caller (detector_loop) computes it as
+    ``index * STAGGER_STEP_SECONDS + random.uniform(0, STAGGER_JITTER_MAX_SECONDS)``
+    for this clan's position among the catch-ups launched this pass. The
+    sleep lives here rather than in detector_loop so it delays this clan's own
+    fetches without blocking the detector from starting other clans' tasks.
+    Defaults to 0 so tests (and a lone catch-up) see no delay.
+    """
     our_tag = sanitize_tag(clan_entry.get("tag", ""))
     name = clan_entry.get("name", our_tag)
     try:
+        if stagger_seconds > 0:
+            await asyncio.sleep(stagger_seconds)
         prev_record = await mongo_client.fwa_points.find_one(
             {"_id": our_tag}, {"war_number": 1, "raw_verdict": 1}
         )
@@ -295,7 +368,22 @@ async def run_catchup(clan_entry, coc_opponent_tag, war_key):
                         # The war-number check stops a stale same-opponent page from
                         # writing a previous war's verdict.
                         consecutive_failures = 0
-                        await store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt)
+                        opponent_active_fwa = None
+                        opp_html = await fetch_points_html(coc_opponent_tag)
+                        if opp_html is not None:
+                            try:
+                                opponent_active_fwa = parse_active_fwa(opp_html)
+                            except Exception as e:
+                                print(f"[FWA Points] {name}: opponent Active FWA parse failed: "
+                                      f"{type(e).__name__}: {e}")
+                        else:
+                            print(f"[FWA Points] {name}: could not fetch opponent page for "
+                                  f"Active FWA status, storing as unknown")
+                        await store_record(
+                            our_tag, name, parsed, coc_opponent_tag, war_key, attempt,
+                            opponent_active_fwa=opponent_active_fwa,
+                            coc_war_end_time=coc_war_end_time,
+                        )
                         cname = parsed["clan_name"] or name
                         verdict = parsed["raw_verdict"] or ""
                         short = verdict[len(cname):].strip() if verdict.startswith(cname) else verdict
@@ -339,7 +427,10 @@ async def detector_loop():
         try:
             config = await load_config()
             if config["enabled"]:
-                for clan in config["watch_list"]:
+                # Resolved fresh every tick: mongo.clans membership can change
+                # without anyone touching /fwapoints.
+                launched = 0  # position among catch-ups actually started this pass, for staggering
+                for clan in await effective_watch_list(config):
                     our_tag = sanitize_tag(clan.get("tag", ""))
                     if not our_tag:
                         continue
@@ -349,17 +440,23 @@ async def detector_loop():
                     info = await get_current_war_info(our_tag)
                     if info is None:
                         continue
-                    _state, coc_opp, war_key = info
+                    _state, coc_opp, war_key, coc_war_end_time = info
                     rec = await mongo_client.fwa_points.find_one({"_id": our_tag})
                     if rec and rec.get("status") == "caught_up" and rec.get("coc_war_key") == war_key:
                         continue   # already have this exact war's verdict
                     if retry_is_deferred(rec, war_key):
                         continue   # same failed war is cooling down; a new war key bypasses this
+                    stagger_seconds = (
+                        launched * STAGGER_STEP_SECONDS
+                        + random.uniform(0, STAGGER_JITTER_MAX_SECONDS)
+                    )
                     task = asyncio.create_task(
-                        run_catchup(clan, coc_opp, war_key),
+                        run_catchup(clan, coc_opp, war_key, coc_war_end_time,
+                                    stagger_seconds=stagger_seconds),
                         name=f"fwa-points-catchup:{our_tag}",
                     )
                     active_catchups[our_tag] = task
+                    launched += 1
         except Exception as e:
             print(f"[FWA Points] Detector loop error: {type(e).__name__}: {e}")
         await asyncio.sleep(DETECTOR_INTERVAL_SECONDS)
@@ -522,18 +619,20 @@ class Status(lightbulb.SlashCommand, name="status", description="Show monitor st
             if startup_reconciler is not None
             else "⏹️ Stopped"
         )
+        watch_list = await effective_watch_list(config)
         lines = [f"**Enabled:** {'yes' if config['enabled'] else 'no'}",
                  f"**Detector:** {'✅ Running' if detector_running else '❌ Not running'}",
                  f"**Startup recovery:** {recovery_status}",
-                 f"**Active retries:** {active}", "**Watch list:**"]
-        if not config["watch_list"]:
+                 f"**Active retries:** {active}", "**Watch list (effective):**"]
+        if not watch_list:
             lines.append("_(empty)_")
-        for clan in config["watch_list"]:
+        for clan in watch_list:
             t = sanitize_tag(clan.get("tag", ""))
+            source_tag = "FWA clan" if clan.get("source") == "clan_type" else "extra"
             rec = await mongo.fwa_points.find_one({"_id": t})
             if rec and rec.get("raw_verdict"):
-                lines.append(f"• {clan.get('name')} (`{t}`): {rec['raw_verdict']} "
+                lines.append(f"• {clan.get('name')} (`{t}`) [{source_tag}]: {rec['raw_verdict']} "
                              f"(war #{rec.get('war_number')}, scraped {rec.get('scraped_at', '?')})")
             else:
-                lines.append(f"• {clan.get('name')} (`{t}`): no data yet")
+                lines.append(f"• {clan.get('name')} (`{t}`) [{source_tag}]: no data yet")
         await ctx.respond("\n".join(lines), ephemeral=True)

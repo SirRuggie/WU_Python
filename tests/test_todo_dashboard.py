@@ -302,7 +302,7 @@ def test_initial_delivery_seeds_exact_panel_snapshot(monkeypatch, notice):
             assert kwargs == {"ephemeral": False}
 
     async def fake_load(*args, **kwargs):
-        return (None, problem) if notice else (data, None)
+        return (None, problem, None) if notice else (data, None, None)
 
     async def fake_deliver(*args, **kwargs):
         return SimpleNamespace(id=55), True
@@ -806,7 +806,7 @@ def test_check_now_reactivates_panel_for_exact_claimed_window(monkeypatch):
 
     async def fake_load(*args, **kwargs):
         assert kwargs["force"] is True
-        return data, None
+        return data, None, None
 
     async def takeover(*args, **kwargs):
         assert kwargs["message_id"] == 55
@@ -849,7 +849,7 @@ def test_check_now_on_webhook_fallback_stays_manual(monkeypatch):
             self.responses.append(kwargs)
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def takeover(*args, **kwargs):
         takeovers.append(kwargs)
@@ -946,7 +946,7 @@ def test_rapid_dm_clicks_share_one_snapshot_miss_and_finish_in_order(monkeypatch
         if load_count == 1:
             first_load_entered.set()
             await release_first_load.wait()
-        return data, None
+        return data, None, None
 
     async def read_owner(*args, **kwargs):
         return True, dict(owner)
@@ -1013,7 +1013,7 @@ def test_manual_edit_holds_owner_lock_until_discord_then_auto_uses_new_view(monk
             edit_order.append("automatic")
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def read_owner(*args, **kwargs):
         return True, dict(owner)
@@ -1085,7 +1085,7 @@ def test_auto_edit_holds_owner_lock_until_discord_then_manual_wins(monkeypatch):
             edit_order.append("manual")
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def read_owner(*args, **kwargs):
         return True, dict(owner)
@@ -1189,7 +1189,7 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     marked = []
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def fake_get(_mongo, owner_id, message_id, generation):
         assert owner_id == "dm:77:66"
@@ -1233,7 +1233,7 @@ def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
         return None, todo._notice(
             "Temporary problem", "Try again shortly.", auto_refresh=True,
             refresh_until=kwargs["refresh_until"], checked_at=1_725_000_000,
-        )
+        ), None
 
     async def fake_get(_mongo, _owner_id, _message_id, _generation):
         return True, {
@@ -1270,7 +1270,7 @@ def test_automatic_refresh_reports_failed_when_schedule_cannot_advance(monkeypat
     postponed = []
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def fake_get(_mongo, _owner_id, _message_id, _generation):
         return True, {"view": todo.VIEW_WAR, "page": 0}
@@ -1303,7 +1303,7 @@ def test_automatic_refresh_postpones_mongo_read_failure(monkeypatch):
     postponed = []
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def failed_read(*args, **kwargs):
         return False, None
@@ -1333,7 +1333,7 @@ def test_deployed_legacy_panel_keeps_refreshing_until_its_old_deadline(monkeypat
     marked = []
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def read_owner(*args, **kwargs):
         return True, None
@@ -1437,7 +1437,7 @@ def test_automatic_refresh_removes_missing_message_session(monkeypatch):
             raise MissingMessage
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def fake_get(_mongo, _owner_id, _message_id, _generation):
         return True, {"view": todo.VIEW_WAR, "page": 0}
@@ -1476,7 +1476,7 @@ def test_missing_message_is_postponed_when_mongo_removal_fails(monkeypatch):
             raise MissingMessage
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def fake_get(*args, **kwargs):
         return True, {"view": todo.VIEW_WAR, "page": 0}
@@ -1561,3 +1561,99 @@ def test_auto_refresh_cycle_shares_one_negative_cache_cutoff(monkeypatch):
     expected_min = before - todo.todo_sessions.REFRESH_INTERVAL_SECONDS
     expected_max = after - todo.todo_sessions.REFRESH_INTERVAL_SECONDS
     assert expected_min - 0.01 <= cutoffs[0] <= expected_max + 0.01
+
+
+# ---------------------------------------------------------------------------
+# FWA points suffix on the War view header
+# ---------------------------------------------------------------------------
+
+def _war_row(*, clan_tag="#2PPCL2GYP", clan_name="Edrag Rush", ends_at=1_800_000_000):
+    return todo_data.Row(
+        account="Acct1", tag="#P1",
+        clan_name=clan_name, clan_tag=clan_tag,
+        used=0, limit=2, ends_at=ends_at, state="inWar",
+    )
+
+
+def test_fwa_suffix_rendered_when_war_end_time_matches():
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "sync_number": 558,
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "our_outcome": "win",
+        "raw_verdict": "should never be shown for a win",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "**Edrag Rush** · Sync #558 vs DevilHarvesters (FWA) · win by points" in text
+
+
+def test_fwa_suffix_omitted_when_war_end_time_does_not_match():
+    row = _war_row()
+    record = {
+        # A different war's end time - over an hour off, well past the 60s
+        # tolerance, so this must not be attributed to the current war.
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at + 3600).isoformat(),
+        "sync_number": 558,
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "our_outcome": "win",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "**Edrag Rush**" in text
+    assert "Sync #558" not in text
+    assert "DevilHarvesters" not in text
+
+
+def test_fwa_suffix_omitted_when_no_record_for_the_clan():
+    row = _war_row()
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={},
+    )]
+    text = _payload_text(payload)
+
+    assert "**Edrag Rush**" in text
+    assert "Sync #" not in text
+    assert "win by points" not in text
+
+
+def test_fwa_suffix_escapes_raw_verdict_for_unknown_outcome():
+    # our_outcome == "unknown" falls back to the site's raw (scraped) verdict
+    # text, which must be escaped exactly like the opponent name is - it is
+    # just as untrusted, and was previously inserted into the header raw.
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "sync_number": 558,
+        "our_outcome": "unknown",
+        "raw_verdict": "**@everyone** _x_ [l](http://e)",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "**@everyone** _x_ [l](http://e)" not in text
+    expected_escaped = "\\*\\*@​everyone\\*\\* \\_x\\_ \\[l\\]\\(http://e\\)"
+    assert expected_escaped in text
