@@ -1635,6 +1635,30 @@ def test_fwa_suffix_omitted_when_no_record_for_the_clan():
     assert "WIN War" not in text
 
 
+def test_fwa_suffix_falls_back_to_coc_opponent_name_when_scrape_has_none():
+    # The points-site scrape can fail to yield a name (e.g. an unreadable
+    # "A vs. B" line); the CoC API's own opponent name must still show up
+    # rather than dropping the "vs Opponent" part of the header entirely.
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "sync_number": 558,
+        "opponent_name": None,
+        "coc_opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "our_outcome": "win",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "**Edrag Rush** vs DevilHarvesters (FWA) · WIN War" in text
+
+
 def test_fwa_suffix_escapes_raw_verdict_for_unknown_outcome():
     # our_outcome == "unknown" falls back to the site's raw (scraped) verdict
     # text, which must be escaped exactly like the opponent name is - it is

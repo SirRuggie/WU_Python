@@ -95,8 +95,35 @@ def parse_clan_points(html: str, our_tag: str) -> dict:
     m = re.search(r"Sync #(\d+)", box_text)
     sync_number = int(m.group(1)) if m else None
 
-    m = re.search(r"vs\.\s*(.+?)\s*\(\s*" + re.escape(opponent_tag), box_text, re.IGNORECASE)
-    opponent_name = m.group(1).strip() if m else None
+    # The "A (tagA) vs. B (tagB)" line is not always ours-first (the opponent
+    # can be listed first on the points site), so names are parsed out of the
+    # raw HTML segment rather than assumed to be in a fixed order. That
+    # segment sits between the first "<br><br>" and the second, and is
+    # identifiable - once the box is split on <br> tags - as the segment
+    # ending with "):" . Within it, each clan's name is the text immediately
+    # preceding " (<a href=".../clan?tag=TAG">": the first clan's name is
+    # measured from the segment start, the second's from just after "vs.".
+    box_html = box.decode_contents()
+    br_segments = re.split(r"<br\s*/?>", box_html, flags=re.IGNORECASE)
+    vs_segment = next((s for s in br_segments if s.strip().endswith("):")), None)
+
+    def _name_before_tag_link(fragment: str, tag: str, start: int = 0):
+        found = re.search(
+            r"([^(]*)\(\s*<a\b[^>]*\bhref=\"[^\"]*clan\?tag=" + re.escape(tag) + r"\b",
+            fragment[start:],
+            re.IGNORECASE,
+        )
+        return found.group(1).strip() if found else None
+
+    name_map = {}
+    if vs_segment is not None and len(box_tags) >= 2:
+        name_map[box_tags[0]] = _name_before_tag_link(vs_segment, box_tags[0])
+        vs_kw = re.search(r"vs\.", vs_segment, re.IGNORECASE)
+        vs_pos = vs_kw.end() if vs_kw else 0
+        name_map[box_tags[1]] = _name_before_tag_link(vs_segment, box_tags[1], vs_pos)
+
+    opponent_name = name_map.get(opponent_tag)
+    our_name_in_box = name_map.get(our_tag)
 
     # Verdict = the last line of the box (after the final <br>), tags stripped.
     segments = re.split(r"<br\s*/?>", box.decode_contents(), flags=re.IGNORECASE)
@@ -146,6 +173,7 @@ def parse_clan_points(html: str, our_tag: str) -> dict:
         "sync_number": sync_number,
         "opponent_tag": opponent_tag,
         "opponent_name": opponent_name,
+        "our_name_in_box": our_name_in_box,
         "raw_verdict": raw_verdict,
         "predicted_winner_name": predicted_winner_name,
         "our_outcome": our_outcome,

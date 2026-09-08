@@ -240,6 +240,33 @@ def test_store_record_captures_opponent_active_fwa_and_end_time(monkeypatch):
     assert fields["opponent_name"] == "Opponent Clan"
 
 
+def test_store_record_captures_coc_opponent_name(monkeypatch):
+    points_collection = _PointsCollection(find_result=None)
+    monkeypatch.setattr(monitor, "mongo_client", _Mongo(points_collection))
+    monkeypatch.setattr(monitor, "bot_instance", None)
+
+    async def enabled():
+        return True
+
+    async def fake_fetch(tag):
+        if tag == "2PPCL2GYP":
+            return OUR_PAGE_HTML
+        return None  # opponent page fetch fails, unrelated to this check
+
+    monkeypatch.setattr(monitor, "feature_enabled", enabled)
+    monkeypatch.setattr(monitor, "fetch_points_html", fake_fetch)
+
+    asyncio.run(monitor.run_catchup(
+        {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
+        "OPPONENT",
+        "OPPONENT:WAR-7",
+        coc_opponent_name="Clash Titans",
+    ))
+
+    fields = points_collection.updates[0][1]["$set"]
+    assert fields["coc_opponent_name"] == "Clash Titans"
+
+
 def test_watch_add_pipeline_replaces_in_one_atomic_update():
     pipeline = monitor.watch_list_replacement_pipeline("ABC123", "Replacement")
 

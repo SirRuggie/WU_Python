@@ -125,11 +125,13 @@ async def effective_watch_list(config=None):
 
 # ---- CoC side (source of truth for the hard gate) ----
 async def get_current_war_info(our_tag):
-    """Return (state, opponent_tag, war_key, coc_war_end_time) or None.
+    """Return (state, opponent_tag, war_key, coc_war_end_time, coc_opponent_name) or None.
 
     None means no war / private log / API error. coc_war_end_time is an ISO
     string of the war's end_time (same Timestamp object war_key is built
-    from), or None if that field is unreadable.
+    from), or None if that field is unreadable. coc_opponent_name is the
+    opponent clan's name straight from the CoC API (war.opponent.name), used
+    as a fallback header label when the points site scrape has none.
     """
     try:
         war = await coc_client.get_clan_war(f"#{our_tag}")
@@ -162,6 +164,7 @@ async def get_current_war_info(our_tag):
     opp_tag = sanitize_tag(getattr(opponent, "tag", "") or "")
     if not opp_tag:
         return None
+    coc_opponent_name = getattr(opponent, "name", None)
     prep = getattr(war, "preparation_start_time", None)
     war_key = f"{opp_tag}:{getattr(prep, 'raw_time', prep)}"
 
@@ -169,7 +172,7 @@ async def get_current_war_info(our_tag):
     end_dt = getattr(end, "time", None)
     coc_war_end_time = end_dt.isoformat() if end_dt is not None else None
 
-    return state, opp_tag, war_key, coc_war_end_time
+    return state, opp_tag, war_key, coc_war_end_time, coc_opponent_name
 
 
 # ---- Points site ----
@@ -196,13 +199,15 @@ async def fetch_points_html(our_tag):
 
 # ---- Mongo writes ----
 async def store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt,
-                        opponent_active_fwa=None, coc_war_end_time=None):
+                        opponent_active_fwa=None, coc_war_end_time=None,
+                        coc_opponent_name=None):
     now = datetime.now(timezone.utc).isoformat()
     record = {
         "clan_name": parsed["clan_name"] or name,
         "our_clan_tag": our_tag,
         "scraped_opponent_tag": parsed["opponent_tag"],
         "coc_opponent_tag": coc_opponent_tag,
+        "coc_opponent_name": coc_opponent_name,
         "opponent_name_scraped": parsed["opponent_name"],
         "opponent_name": parsed["opponent_name"],
         "opponent_active_fwa": opponent_active_fwa,
@@ -316,7 +321,8 @@ async def log_outcome(line):
 
 
 # ---- Catch-up task (the only thing that touches the points site) ----
-async def run_catchup(clan_entry, coc_opponent_tag, war_key, coc_war_end_time=None, stagger_seconds=0):
+async def run_catchup(clan_entry, coc_opponent_tag, war_key, coc_war_end_time=None,
+                       stagger_seconds=0, coc_opponent_name=None):
     """`stagger_seconds` is slept before the first fetch, so several clans
     detected in the same pass do not all hit the points site in the same
     instant and retry in lockstep. The caller (detector_loop) computes it as
@@ -383,6 +389,7 @@ async def run_catchup(clan_entry, coc_opponent_tag, war_key, coc_war_end_time=No
                             our_tag, name, parsed, coc_opponent_tag, war_key, attempt,
                             opponent_active_fwa=opponent_active_fwa,
                             coc_war_end_time=coc_war_end_time,
+                            coc_opponent_name=coc_opponent_name,
                         )
                         cname = parsed["clan_name"] or name
                         verdict = parsed["raw_verdict"] or ""
@@ -440,7 +447,7 @@ async def detector_loop():
                     info = await get_current_war_info(our_tag)
                     if info is None:
                         continue
-                    _state, coc_opp, war_key, coc_war_end_time = info
+                    _state, coc_opp, war_key, coc_war_end_time, coc_opponent_name = info
                     rec = await mongo_client.fwa_points.find_one({"_id": our_tag})
                     if rec and rec.get("status") == "caught_up" and rec.get("coc_war_key") == war_key:
                         continue   # already have this exact war's verdict
@@ -452,7 +459,8 @@ async def detector_loop():
                     )
                     task = asyncio.create_task(
                         run_catchup(clan, coc_opp, war_key, coc_war_end_time,
-                                    stagger_seconds=stagger_seconds),
+                                    stagger_seconds=stagger_seconds,
+                                    coc_opponent_name=coc_opponent_name),
                         name=f"fwa-points-catchup:{our_tag}",
                     )
                     active_catchups[our_tag] = task

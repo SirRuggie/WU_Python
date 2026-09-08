@@ -154,3 +154,46 @@ def test_parse_active_fwa_label_present_without_winner_box_still_false():
 ])
 def test_is_newer_war(prev, parsed, expected):
     assert is_newer_war(prev, parsed) is expected
+
+
+# points.fwafarm.com does not always list OUR clan first in the "A vs. B" line
+# - here the opponent (Goal Diggers) is listed first and we (PlaneClashers)
+# are second.
+OPPONENT_FIRST_FIXTURE = (
+    '<p><b>Clan Name</b>: PlaneClashers<br>'
+    '<b>Active FWA</b>: Yes<br></p>'
+    '<p class=winner-box>Win Calculator for <a href="/war?id=124506">War #124506</a> in Sync #558<br><br>'
+    'Goal Diggers (<a href="/clan?tag=2PUJ29GPY">2PUJ29GPY</a>) vs. PlaneClashers '
+    '(<a href="/clan?tag=9UGQ0GL">9UGQ0GL</a>):<br><br>'
+    '<b>PlaneClashers</b> should win by points (9 &lt; 10)</p>'
+)
+
+
+def test_opponent_listed_first_still_finds_both_names():
+    d = parse_clan_points(OPPONENT_FIRST_FIXTURE, "9UGQ0GL")
+    assert d["opponent_tag"] == "2PUJ29GPY"
+    assert d["opponent_name"] == "Goal Diggers"
+    assert d["our_name_in_box"] == "PlaneClashers"
+    assert d["predicted_winner_name"] == "PlaneClashers"
+    assert d["our_outcome"] == "win"
+
+
+# Clan names may contain an apostrophe or non-ASCII characters; only "(" is
+# disallowed by the name-extraction pattern.
+UNICODE_NAME_FIXTURE = (
+    "<p><b>Clan Name</b>: O'Brien's Army<br>"
+    '<b>Active FWA</b>: Yes<br></p>'
+    '<p class="winner-box">Win Calculator for <a href="/war?id=400">War #400</a> in Sync #40<br><br>'
+    "O'Brien's Army (<a href=\"/clan?tag=APOSTAG\">APOSTAG</a>) vs. Ñandú Clan Ω "
+    '(<a href="/clan?tag=UNITAG1">UNITAG1</a>):<br><br>'
+    '<b>Ñandú Clan Ω</b> should win by points (10 &gt; 3)</p>'
+)
+
+
+def test_names_with_apostrophe_and_unicode_are_parsed_intact():
+    d = parse_clan_points(UNICODE_NAME_FIXTURE, "APOSTAG")
+    assert d["opponent_tag"] == "UNITAG1"
+    assert d["opponent_name"] == "Ñandú Clan Ω"
+    assert d["our_name_in_box"] == "O'Brien's Army"
+    assert d["predicted_winner_name"] == "Ñandú Clan Ω"
+    assert d["our_outcome"] == "lose"

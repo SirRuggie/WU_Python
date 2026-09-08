@@ -736,7 +736,7 @@ def _fwa_suffix(first, fwa_records: dict | None) -> str:
         verdict = _escape_markdown(record.get("raw_verdict") or "unknown")
 
     vs_bit = ""
-    opponent_name = record.get("opponent_name")
+    opponent_name = record.get("opponent_name") or record.get("coc_opponent_name")
     if opponent_name:
         vs_bit = f"vs {_escape_markdown(opponent_name)}"
         active = record.get("opponent_active_fwa")
