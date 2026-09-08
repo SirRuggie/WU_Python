@@ -1593,7 +1593,7 @@ def test_fwa_suffix_rendered_when_war_end_time_matches():
     )]
     text = _payload_text(payload)
 
-    assert "**Edrag Rush** · Sync #558 vs DevilHarvesters (FWA) · win by points" in text
+    assert "**Edrag Rush** vs DevilHarvesters (FWA) · WIN War" in text
 
 
 def test_fwa_suffix_omitted_when_war_end_time_does_not_match():
@@ -1616,8 +1616,8 @@ def test_fwa_suffix_omitted_when_war_end_time_does_not_match():
     text = _payload_text(payload)
 
     assert "**Edrag Rush**" in text
-    assert "Sync #558" not in text
     assert "DevilHarvesters" not in text
+    assert "WIN War" not in text
 
 
 def test_fwa_suffix_omitted_when_no_record_for_the_clan():
@@ -1631,8 +1631,8 @@ def test_fwa_suffix_omitted_when_no_record_for_the_clan():
     text = _payload_text(payload)
 
     assert "**Edrag Rush**" in text
-    assert "Sync #" not in text
-    assert "win by points" not in text
+    assert "vs " not in text
+    assert "WIN War" not in text
 
 
 def test_fwa_suffix_escapes_raw_verdict_for_unknown_outcome():

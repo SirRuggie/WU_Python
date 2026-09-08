@@ -267,10 +267,11 @@ were found and add a warning note.
 
 When a clan is watched by the [FWA points monitor](fwa-points-monitor.md), its
 War view clan header can carry a one-line suffix on the **same line** as the
-clan name, e.g. `**Edrag Rush** · Sync #558 vs DevilHarvesters (FWA) · win by
-points`. `/todo` loads the clans' `fwa_points` records with one batched
+clan name, e.g. `**Edrag Rush** vs DevilHarvesters (FWA) · WIN War`. `/todo`
+loads the clans' `fwa_points` records with one batched
 `find({"_id": {"$in": [...]}})` keyed by the distinct clan tags already in the
 War view's rows, and hands the `{clan_tag: record}` mapping into the renderer.
+The Sync number is not shown here.
 
 The suffix is shown **only** when the record's `coc_war_end_time` matches the
 war the rows are actually for — compared against `Row.ends_at`, tolerating up
@@ -278,9 +279,9 @@ to 60 seconds of clock/parsing slack. A mismatch (the site hasn't caught up to
 the current war yet, or the stored record is from an older war against the
 same opponent) renders nothing rather than attaching a stale verdict to the
 wrong war. The opponent label is `(FWA)`, `(not FWA)`, or omitted, from the
-monitor's own scrape of the opponent's page; the verdict text is `win by
-points` / `lose by points` for a readable outcome, or the raw scraped verdict
-line when the outcome could not be determined.
+monitor's own scrape of the opponent's page; the verdict text is `WIN War` /
+`LOSE War` for a readable outcome, or the raw scraped verdict line when the
+outcome could not be determined.
 
 ### Raids: absent ≠ done
 

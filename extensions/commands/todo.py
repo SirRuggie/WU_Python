@@ -703,7 +703,7 @@ def _escape_markdown(value: object, *, limit: int = 100) -> str:
 
 
 def _fwa_suffix(first, fwa_records: dict | None) -> str:
-    """`` · Sync #558 vs DevilHarvesters (FWA) · win by points`` or "".
+    """`` vs DevilHarvesters (FWA) · WIN War`` or "".
 
     Only shown when the stored record's war matches the war these rows are
     actually for - compared via coc_war_end_time vs Row.ends_at, tolerating up
@@ -729,9 +729,9 @@ def _fwa_suffix(first, fwa_records: dict | None) -> str:
 
     outcome = record.get("our_outcome")
     if outcome == "win":
-        verdict = "win by points"
+        verdict = "WIN War"
     elif outcome == "lose":
-        verdict = "lose by points"
+        verdict = "LOSE War"
     else:
         verdict = _escape_markdown(record.get("raw_verdict") or "unknown")
 
@@ -745,17 +745,10 @@ def _fwa_suffix(first, fwa_records: dict | None) -> str:
         elif active is False:
             vs_bit += " (not FWA)"
 
-    sync_number = record.get("sync_number")
-    lead = ""
-    if sync_number is not None and vs_bit:
-        lead = f"Sync #{sync_number} {vs_bit}"
-    elif sync_number is not None:
-        lead = f"Sync #{sync_number}"
-    elif vs_bit:
-        lead = vs_bit
-
-    parts = [p for p in (lead, verdict) if p]
-    return " · " + " · ".join(parts) if parts else ""
+    parts = [p for p in (vs_bit, verdict) if p]
+    if not parts:
+        return ""
+    return " " + " · ".join(parts) if vs_bit else " · " + verdict
 
 
 def _render_rows(rows: list, verb: str = "", stamp_of=None, fwa_records: dict | None = None) -> list:
