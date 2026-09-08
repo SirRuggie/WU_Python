@@ -1593,7 +1593,7 @@ def test_fwa_suffix_rendered_when_war_end_time_matches():
     )]
     text = _payload_text(payload)
 
-    assert "**Edrag Rush** vs DevilHarvesters (FWA) · WIN War" in text
+    assert "**Edrag Rush** vs DevilHarvesters (FWA) · <:Yes:1397096942907166831> WIN War" in text
 
 
 def test_fwa_suffix_omitted_when_war_end_time_does_not_match():
@@ -1656,7 +1656,7 @@ def test_fwa_suffix_falls_back_to_coc_opponent_name_when_scrape_has_none():
     )]
     text = _payload_text(payload)
 
-    assert "**Edrag Rush** vs DevilHarvesters (FWA) · WIN War" in text
+    assert "**Edrag Rush** vs DevilHarvesters (FWA) · <:Yes:1397096942907166831> WIN War" in text
 
 
 def test_fwa_suffix_escapes_raw_verdict_for_unknown_outcome():

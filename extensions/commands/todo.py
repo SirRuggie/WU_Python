@@ -729,9 +729,9 @@ def _fwa_suffix(first, fwa_records: dict | None) -> str:
 
     outcome = record.get("our_outcome")
     if outcome == "win":
-        verdict = "WIN War"
+        verdict = f"{emojis.yes} WIN War"
     elif outcome == "lose":
-        verdict = "LOSE War"
+        verdict = f"{emojis.no} LOSE War"
     else:
         verdict = _escape_markdown(record.get("raw_verdict") or "unknown")
 
