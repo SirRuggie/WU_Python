@@ -34,7 +34,7 @@ from utils.media_urls import THUMBNAIL, optimized
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 from utils.url_safety import is_safe_public_url
-from extensions.commands.clan.dashboard import dashboard_page
+from extensions.commands.clan.dashboard.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
 
 CLAN_MANAGEMENT_ROLE_ID = 993015846442127420
