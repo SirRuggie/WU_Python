@@ -59,7 +59,8 @@ pendulum
 coc.py==3.10.0
 
 # Image processing library (resize, convert, etc.)
-Pillow
+# Pillow 12 or newer; tests/test_card_board.py and tests/test_card_scan.py use Image.get_flattened_data (docs/editing-this-repo.md), and a fresh venv must not land on 11.
+Pillow>=12
 
 # HTTP library for sending requests (e.g. API calls)
 requests
