@@ -19,6 +19,8 @@ background jobs behind a single bot account.
 
 <img src="assets/Purple_Footer.png" width="100%" alt="" />
 
+**Legal:** [Terms of Service](docs/terms-of-service.md) · [Privacy Policy](docs/privacy-policy.md)
+
 ## Contents
 
 - [What it does](#what-it-does)

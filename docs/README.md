@@ -25,6 +25,13 @@ the hard way. The standing instruction that governs this folder is in
   `Context` in the pinned lightbulb (3.2.6), what does not, and the
   usage-count rule that came out of getting this wrong.
 
+## Legal
+
+- [terms-of-service.md](terms-of-service.md) — WU Wizard's Terms of Service,
+  published for Discord app verification.
+- [privacy-policy.md](privacy-policy.md) — WU Wizard's Privacy Policy,
+  published for Discord app verification.
+
 ## Working with Claude
 
 - [agent-orchestration.md](agent-orchestration.md) — the main session
