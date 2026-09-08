@@ -278,9 +278,10 @@ same `DISCORD_TOKEN` and every command would answer twice.
 Move the old box's `.env` by file, never by pasting it through chat. As the
 owner's own user on Ruggie's Zone:
 
-The copy lives in the owner's home with mode 600 and never in `/tmp`: this
-is a multi-user box, `/tmp` is world-readable, and the default umask would
-leave the secrets readable by every local user for the duration.
+The copy lives in the owner's home directory, created mode 600 via
+`umask 077`, and is never placed in `/tmp`: this is a multi-user box where
+the default umask (`0002`) leaves files mode `0664` — world-readable — so a
+copy in `/tmp` would be readable by every local user for the duration.
 
 ```bash
 (umask 077; scp wubot@178.156.187.236:/home/wubot/wu-bot/.env ~/wu-bot.env)
