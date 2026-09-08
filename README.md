@@ -116,6 +116,9 @@ can run those pings automatically on a schedule.
 | `/clan list` | Pick a clan to view or assign to a recruit. |
 | `/clan upload-images` | Upload a clan logo and banner. |
 | `/fwa bases` | Select and display an FWA base layout. |
+| `/fwa blacklist list` | Show every clan on the FWA blacklist. |
+| `/fwa blacklist add` | Add a clan to the FWA blacklist. |
+| `/fwa blacklist remove` | Remove a clan from the FWA blacklist. |
 | `/fwa chocolate` | Look up a player or clan on FWA Chocolate. |
 | `/fwa links` | Open FWA verification and war-weight links. |
 | `/fwa new-th-upgrade` | Display FWA Town Hall upgrade notes. |

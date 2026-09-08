@@ -1681,3 +1681,137 @@ def test_fwa_suffix_escapes_raw_verdict_for_unknown_outcome():
     assert "**@everyone** _x_ [l](http://e)" not in text
     expected_escaped = "\\*\\*@​everyone\\*\\* \\_x\\_ \\[l\\]\\(http://e\\)"
     assert expected_escaped in text
+
+
+def test_fwa_suffix_shows_blacklisted_and_hides_fwa_status():
+    # opponent_blacklisted takes over the "(FWA)"/"(not FWA)" spot entirely -
+    # the two facts about the opponent (blacklisted vs Active FWA) are never
+    # shown side by side. The WIN/LOSE verdict half of the line is unchanged.
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "sync_number": 558,
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "opponent_blacklisted": True,
+        "our_outcome": "win",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "vs DevilHarvesters 🚫 BLACKLISTED" in text
+    assert "<:Yes:1397096942907166831> WIN War" in text
+    assert "(FWA)" not in text
+    assert "(not FWA)" not in text
+
+
+# ---------------------------------------------------------------------------
+# _load_fwa_records: blacklist cross-check
+# ---------------------------------------------------------------------------
+
+class _FwaFindResult:
+    def __init__(self, docs):
+        self._docs = list(docs)
+
+    async def to_list(self, length=None):
+        return list(self._docs)
+
+
+class _FwaPointsCollection:
+    def __init__(self, docs):
+        self.docs = list(docs)
+
+    def find(self, query):
+        wanted = set(query["_id"]["$in"])
+        return _FwaFindResult([d for d in self.docs if d["_id"] in wanted])
+
+
+class _FwaBlacklistCollection:
+    def __init__(self, tags):
+        self.tags = set(tags)
+
+    def find(self, query, projection=None):
+        wanted = set(query["_id"]["$in"])
+        return _FwaFindResult([{"_id": t} for t in wanted & self.tags])
+
+
+class _FwaMongo:
+    def __init__(self, fwa_points, fwa_blacklist):
+        self.fwa_points = fwa_points
+        self.fwa_blacklist = fwa_blacklist
+
+
+def test_load_fwa_records_marks_opponent_blacklisted_added_after_scrape():
+    # The scrape happened before staff blacklisted the opponent - the record
+    # itself carries no such field - so this must be caught by re-checking
+    # the blacklist on every load, not by trusting what was scraped.
+    row = _war_row(clan_tag="#2PPCL2GYP")
+    record = {
+        "_id": "2PPCL2GYP",
+        "scraped_opponent_tag": "OPPONENT",
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "our_outcome": "win",
+    }
+    mongo = _FwaMongo(
+        _FwaPointsCollection([record]),
+        _FwaBlacklistCollection(["OPPONENT"]),
+    )
+
+    records = asyncio.run(todo._load_fwa_records(mongo, [row]))
+
+    assert records[row.clan_tag]["opponent_blacklisted"] is True
+
+
+def test_load_fwa_records_leaves_flag_unset_when_opponent_not_blacklisted():
+    row = _war_row(clan_tag="#2PPCL2GYP")
+    record = {
+        "_id": "2PPCL2GYP",
+        "scraped_opponent_tag": "OPPONENT",
+        "opponent_name": "DevilHarvesters",
+    }
+    mongo = _FwaMongo(
+        _FwaPointsCollection([record]),
+        _FwaBlacklistCollection([]),
+    )
+
+    records = asyncio.run(todo._load_fwa_records(mongo, [row]))
+
+    assert records[row.clan_tag]["opponent_blacklisted"] is False
+
+
+def test_load_fwa_records_clears_stale_blacklisted_flag():
+    # The monitor stored opponent_blacklisted=True from an earlier scrape, but
+    # the opponent has since been removed from the blacklist - the re-check on
+    # every load must clear it, not just OR in True.
+    row = _war_row(clan_tag="#2PPCL2GYP")
+    record = {
+        "_id": "2PPCL2GYP",
+        "scraped_opponent_tag": "OPPONENT",
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "opponent_blacklisted": True,
+        "our_outcome": "win",
+    }
+    mongo = _FwaMongo(
+        _FwaPointsCollection([record]),
+        _FwaBlacklistCollection([]),
+    )
+
+    records = asyncio.run(todo._load_fwa_records(mongo, [row]))
+    assert records[row.clan_tag]["opponent_blacklisted"] is False
+
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records=records,
+    )]
+    text = _payload_text(payload)
+
+    assert "BLACKLISTED" not in text

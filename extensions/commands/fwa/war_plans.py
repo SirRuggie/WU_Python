@@ -6,6 +6,7 @@ Handles Win, Lose, Blacklisted, and Mismatch war scenarios.
 
 import hikari
 import lightbulb
+import coc
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -16,6 +17,8 @@ from extensions.autocomplete import fwa_clans
 from utils.mongo import MongoClient
 from utils.classes import Clan
 from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT
+from utils.fwa_blacklist import add_blacklisted
+from utils.fwa_points_parser import sanitize_tag
 from .message_templates import (
     WarMessageTemplates,
     WarCopyTexts,
@@ -38,6 +41,77 @@ FWA_WAR_PLANS_CONFIG = {
     "fwa_clan_rep_role_id": 769130325460254740,
     "max_opponent_name_length": 50,
 }
+
+BLACKLIST_UNREADABLE_NOTE = (
+    "Could not read the current war, so nothing was added to the blacklist; "
+    "use /fwa blacklist add."
+)
+
+
+async def _add_war_opponent_to_blacklist(
+        coc_client: coc.Client,
+        mongo: MongoClient,
+        clan_tag: str,
+        added_by_id,
+        added_by_name: str,
+        typed_opponent_name: str,
+) -> str:
+    """After a Blacklisted war-plan is posted, try to add the CURRENT war's
+    opponent (tag/name straight from the CoC API, not the typed name).
+
+    Only adds when the CoC opponent's name matches `typed_opponent_name` -
+    otherwise a plan posted while the previous war is still running (state
+    still "preparation"/"inWar" for that older opponent) would blacklist that
+    previous opponent instead of the one the rep actually typed.
+
+    Never raises - a private war log, no active war, a name mismatch, or any
+    API error must not fail the war-plans command itself; it only changes the
+    note appended to the ephemeral confirmation.
+    """
+    our_tag = sanitize_tag(clan_tag)
+    try:
+        war = await coc_client.get_clan_war(f"#{our_tag}")
+    except Exception as e:
+        print(f"[FWA War Plans] Could not read war for {our_tag}: {type(e).__name__}: {e}")
+        return BLACKLIST_UNREADABLE_NOTE
+
+    state = getattr(war, "state", None)
+    if state not in ("preparation", "inWar"):
+        return BLACKLIST_UNREADABLE_NOTE
+
+    opponent = getattr(war, "opponent", None)
+    opponent_tag = getattr(opponent, "tag", None)
+    opponent_name = getattr(opponent, "name", None)
+    if not opponent_tag or not opponent_name:
+        return BLACKLIST_UNREADABLE_NOTE
+
+    normalized_coc_name = sanitize_opponent_name(opponent_name).casefold()
+    normalized_typed_name = sanitize_opponent_name(typed_opponent_name).casefold()
+    if normalized_coc_name != normalized_typed_name:
+        return (
+            f"Nothing was added to the blacklist: the current war opponent "
+            f"is \"{opponent_name}\", but \"{typed_opponent_name}\" was typed; "
+            f"use /fwa blacklist add."
+        )
+
+    end = getattr(war, "end_time", None)
+    end_dt = getattr(end, "time", None)
+    war_end_time = end_dt.isoformat() if end_dt is not None else None
+
+    try:
+        added_tag = await add_blacklisted(
+            mongo, opponent_tag, opponent_name, added_by_id, added_by_name,
+            "war-plans", our_clan_tag=our_tag, war_end_time=war_end_time,
+        )
+    except Exception as e:
+        print(f"[FWA War Plans] Failed to store blacklist entry for {opponent_tag}: "
+              f"{type(e).__name__}: {e}")
+        return BLACKLIST_UNREADABLE_NOTE
+
+    if not added_tag:
+        return BLACKLIST_UNREADABLE_NOTE
+
+    return f"Added {opponent_name} (#{added_tag}) to the FWA blacklist."
 
 
 @fwa.register()
@@ -75,6 +149,7 @@ class WarPlans(
             self,
             ctx: lightbulb.Context,
             mongo: MongoClient = lightbulb.di.INJECTED,
+            coc_client: coc.Client = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
 
@@ -172,9 +247,17 @@ class WarPlans(
                 role_mentions=[int(clan_role_id)]
             )
 
+            final_copy_text = copy_text
+            if self.war_result == "blacklisted":
+                blacklist_note = await _add_war_opponent_to_blacklist(
+                    coc_client, mongo, clan_tag,
+                    ctx.user.id, author_name, opponent_name,
+                )
+                final_copy_text = f"{copy_text}\n{blacklist_note}"
+
             # Send ephemeral response with just the copy text as plain text
             await ctx.respond(
-                content=copy_text,
+                content=final_copy_text,
                 ephemeral=True
             )
 

@@ -58,6 +58,11 @@ the hard way. The standing instruction that governs this folder is in
   scraper that watches every FWA clan, the watch-list rule, stored record
   fields, `/fwapoints` commands, and the Hetzner-vs-residential-IP history.
 
+- [fwa-blacklist.md](fwa-blacklist.md) — the staff-maintained FWA opponent
+  blacklist: stored fields, how entries get in (`/fwa war-plans` Blacklisted,
+  `/fwa blacklist add`), and how it shows up on `/todo` and in the points
+  monitor's records.
+
 - [lazycwl-autopings.md](lazycwl-autopings.md) — the auto-ping scheduler (no
   jobstore, Mongo-backed restore), the select-all + partial-failure pattern to
   copy, and four unguarded 25-option menus that are clear only at current scale.

@@ -22,9 +22,20 @@ class _PointsCollection:
 
 
 class _Mongo:
-    def __init__(self, collection, clans=None):
+    def __init__(self, collection, clans=None, fwa_blacklist=None):
         self.fwa_points = collection
         self.clans = clans
+        self.fwa_blacklist = fwa_blacklist
+
+
+class _BlacklistCollection:
+    """Fake mongo.fwa_blacklist - only the find_one({"_id": ...}) shape is used."""
+
+    def __init__(self, blacklisted_tags=()):
+        self.blacklisted_tags = set(blacklisted_tags)
+
+    async def find_one(self, query):
+        return {"_id": query["_id"]} if query["_id"] in self.blacklisted_tags else None
 
 
 class _FindResult:
@@ -265,6 +276,60 @@ def test_store_record_captures_coc_opponent_name(monkeypatch):
 
     fields = points_collection.updates[0][1]["$set"]
     assert fields["coc_opponent_name"] == "Clash Titans"
+
+
+def test_store_record_flags_opponent_blacklisted(monkeypatch):
+    points_collection = _PointsCollection(find_result=None)
+    mongo = _Mongo(points_collection, fwa_blacklist=_BlacklistCollection(["OPPONENT"]))
+    monkeypatch.setattr(monitor, "mongo_client", mongo)
+    monkeypatch.setattr(monitor, "bot_instance", None)
+
+    async def enabled():
+        return True
+
+    async def fake_fetch(tag):
+        if tag == "2PPCL2GYP":
+            return OUR_PAGE_HTML
+        return None  # opponent Active FWA page fetch, unrelated to this check
+
+    monkeypatch.setattr(monitor, "feature_enabled", enabled)
+    monkeypatch.setattr(monitor, "fetch_points_html", fake_fetch)
+
+    asyncio.run(monitor.run_catchup(
+        {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
+        "OPPONENT",
+        "OPPONENT:WAR-9",
+    ))
+
+    fields = points_collection.updates[0][1]["$set"]
+    assert fields["opponent_blacklisted"] is True
+
+
+def test_store_record_opponent_not_blacklisted(monkeypatch):
+    points_collection = _PointsCollection(find_result=None)
+    mongo = _Mongo(points_collection, fwa_blacklist=_BlacklistCollection([]))
+    monkeypatch.setattr(monitor, "mongo_client", mongo)
+    monkeypatch.setattr(monitor, "bot_instance", None)
+
+    async def enabled():
+        return True
+
+    async def fake_fetch(tag):
+        if tag == "2PPCL2GYP":
+            return OUR_PAGE_HTML
+        return None
+
+    monkeypatch.setattr(monitor, "feature_enabled", enabled)
+    monkeypatch.setattr(monitor, "fetch_points_html", fake_fetch)
+
+    asyncio.run(monitor.run_catchup(
+        {"tag": "#2PPCL2GYP", "name": "Edrag Rush"},
+        "OPPONENT",
+        "OPPONENT:WAR-10",
+    ))
+
+    fields = points_collection.updates[0][1]["$set"]
+    assert fields["opponent_blacklisted"] is False
 
 
 def test_watch_add_pipeline_replaces_in_one_atomic_update():

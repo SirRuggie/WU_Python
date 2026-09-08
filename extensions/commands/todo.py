@@ -88,6 +88,7 @@ from utils.clash_links import resolve_tags
 from utils.media_urls import THUMBNAIL, optimized
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
 from utils.emoji import emojis
+from utils.fwa_blacklist import blacklisted_tags
 from utils.fwa_points_parser import sanitize_tag
 from utils.mongo import MongoClient
 
@@ -739,11 +740,18 @@ def _fwa_suffix(first, fwa_records: dict | None) -> str:
     opponent_name = record.get("opponent_name") or record.get("coc_opponent_name")
     if opponent_name:
         vs_bit = f"vs {_escape_markdown(opponent_name)}"
-        active = record.get("opponent_active_fwa")
-        if active is True:
-            vs_bit += " (FWA)"
-        elif active is False:
-            vs_bit += " (not FWA)"
+        if record.get("opponent_blacklisted"):
+            # Deliberately NOT emojis.no - that same "No" glyph already means
+            # LOSE in the verdict half of this same line (see below), and the
+            # two would sit side by side with different meanings. 🚫 is used
+            # nowhere else in this suffix.
+            vs_bit += " 🚫 BLACKLISTED"
+        else:
+            active = record.get("opponent_active_fwa")
+            if active is True:
+                vs_bit += " (FWA)"
+            elif active is False:
+                vs_bit += " (not FWA)"
 
     parts = [p for p in (vs_bit, verdict) if p]
     if not parts:
@@ -1351,11 +1359,31 @@ async def _load_fwa_records(mongo, war_rows: list) -> dict:
     except Exception as exc:  # noqa: BLE001 - a missing suffix must not break the panel
         print(f"[todo] fwa_points lookup failed: {type(exc).__name__}: {exc}")
         return {}
-    return {
+    records = {
         sanitized_to_original[doc["_id"]]: doc
         for doc in docs
         if doc.get("_id") in sanitized_to_original
     }
+
+    # Re-checked against the blacklist on every load (not just what the
+    # scraper saw at the time) so a clan blacklisted after the record was
+    # scraped still shows as blacklisted here.
+    opponent_tags = {
+        sanitize_tag(doc.get("scraped_opponent_tag") or "") for doc in records.values()
+    }
+    opponent_tags.discard("")
+    if opponent_tags:
+        try:
+            blacklisted = await blacklisted_tags(mongo, opponent_tags)
+        except Exception as exc:  # noqa: BLE001 - a missing suffix must not break the panel
+            print(f"[todo] fwa_blacklist lookup failed: {type(exc).__name__}: {exc}")
+            blacklisted = set()
+        for doc in records.values():
+            opp_tag = sanitize_tag(doc.get("scraped_opponent_tag") or "")
+            if opp_tag:
+                doc["opponent_blacklisted"] = opp_tag in blacklisted
+
+    return records
 
 
 async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None,

@@ -31,6 +31,7 @@ from utils.mongo import MongoClient
 from utils.fwa_points_parser import (
     parse_clan_points, parse_active_fwa, sanitize_tag, is_newer_war, FwaPointsParseError,
 )
+from utils.fwa_blacklist import is_blacklisted
 from utils.startup_reconciler import StartupReconciler
 
 loader = lightbulb.Loader()
@@ -202,6 +203,11 @@ async def store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt
                         opponent_active_fwa=None, coc_war_end_time=None,
                         coc_opponent_name=None):
     now = datetime.now(timezone.utc).isoformat()
+    try:
+        opponent_blacklisted = await is_blacklisted(mongo_client, coc_opponent_tag)
+    except Exception as e:
+        print(f"[FWA Points] {name}: blacklist lookup failed: {type(e).__name__}: {e}")
+        opponent_blacklisted = False
     record = {
         "clan_name": parsed["clan_name"] or name,
         "our_clan_tag": our_tag,
@@ -211,6 +217,7 @@ async def store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt
         "opponent_name_scraped": parsed["opponent_name"],
         "opponent_name": parsed["opponent_name"],
         "opponent_active_fwa": opponent_active_fwa,
+        "opponent_blacklisted": opponent_blacklisted,
         "war_number": parsed["war_number"],
         "sync_number": parsed["sync_number"],
         "point_balance": parsed["point_balance"],

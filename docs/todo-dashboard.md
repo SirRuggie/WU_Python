@@ -283,6 +283,11 @@ monitor's own scrape of the opponent's page; the verdict text is the shared Yes 
 the No emoji + `LOSE War` for a readable outcome, or the raw scraped verdict line when the
 outcome could not be determined.
 
+If the opponent is on the [FWA blacklist](fwa-blacklist.md), the label becomes
+` 🚫 BLACKLISTED` instead of `(FWA)`/`(not FWA)` — re-checked on every load
+(via `_load_fwa_records`), not just what the points monitor saw at scrape
+time, so a clan blacklisted after the scrape still shows correctly.
+
 ### Raids: absent ≠ done
 
 A member missing from the raid roster has used **zero** attacks, not all of them.
