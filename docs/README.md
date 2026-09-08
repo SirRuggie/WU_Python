@@ -22,8 +22,8 @@ the hard way. The standing instruction that governs this folder is in
   `GatewayBot.__init__` silently takes over `logging` and `warnings.filters`.
   Any warning filter installed before it is dead. Cost three attempts.
 - [lightbulb-context-api.md](lightbulb-context-api.md) — what exists on
-  `Context` in 3.0.3, what does not, and the usage-count rule that came out of
-  getting this wrong.
+  `Context` in the pinned lightbulb (3.2.6), what does not, and the
+  usage-count rule that came out of getting this wrong.
 
 ## Working with Claude
 
@@ -63,11 +63,12 @@ the hard way. The standing instruction that governs this folder is in
   Findings, dashboard design, migration plan, risks. **Not yet decided.**
 
 - [media-hosting.md](media-hosting.md) — why `/todo` burned through
-  Cloudinary's free bandwidth (hikari 2.3.5 downloads every image URL on every
-  render; full-size originals used as thumbnails), the free-hosting
+  Cloudinary's free bandwidth (hikari 2.3.5 downloaded every image URL on
+  every render; full-size originals used as thumbnails), the free-hosting
   comparison — Discord-native, Cloudflare R2, object stores, Cloudinary-likes —
   and the migration (2026-09-02). **Decided: Cloudflare R2, implemented;
-  the hikari double-fetch fix is still open.**
+  the hikari double-fetch fix is closed by the 2026-09-08 upgrade to
+  hikari 2.6.0.**
 
 ## Architecture
 

@@ -9,8 +9,8 @@ per-player to-do dashboard — 79 documented slash commands and six always-on
 background jobs behind a single bot account.
 
 [![Python 3.12.3+](https://img.shields.io/badge/Python-3.12.3%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![hikari](https://img.shields.io/badge/hikari-2.3.5-5865F2)](https://github.com/hikari-py/hikari)
-[![hikari-lightbulb](https://img.shields.io/badge/lightbulb-3.0.3-FFD43B)](https://github.com/tandemdude/hikari-lightbulb)
+[![hikari](https://img.shields.io/badge/hikari-2.6.0-5865F2)](https://github.com/hikari-py/hikari)
+[![hikari-lightbulb](https://img.shields.io/badge/lightbulb-3.2.6-FFD43B)](https://github.com/tandemdude/hikari-lightbulb)
 [![coc.py](https://img.shields.io/badge/coc.py-3.10.0-E8590C)](https://github.com/mathsman5133/coc.py)
 [![MongoDB](https://img.shields.io/badge/MongoDB-async-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 [![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)](tests/)
@@ -244,8 +244,8 @@ nobody should have to remember:
 
 | Layer | Choice | Notes |
 | --- | --- | --- |
-| Discord gateway | [hikari](https://github.com/hikari-py/hikari) 2.3.5 | Pinned deliberately — hikari and lightbulb are upgraded only as a coupled pair. See [`docs/hikari-lightbulb-versions.md`](docs/hikari-lightbulb-versions.md). |
-| Command framework | [hikari-lightbulb](https://github.com/tandemdude/hikari-lightbulb) 3.0.3 | Slash commands, dependency injection, and extension loading. |
+| Discord gateway | [hikari](https://github.com/hikari-py/hikari) 2.6.0 | Pinned deliberately — hikari and lightbulb are upgraded only as a coupled pair. See [`docs/hikari-lightbulb-versions.md`](docs/hikari-lightbulb-versions.md). |
+| Command framework | [hikari-lightbulb](https://github.com/tandemdude/hikari-lightbulb) 3.2.6 | Slash commands, dependency injection, and extension loading. |
 | Clash of Clans API | [coc.py](https://github.com/mathsman5133/coc.py) 3.10.0 | Routed through a hosted API proxy, so no Clash developer key is needed. The pin rationale is documented line by line in [`requirements.txt`](requirements.txt). |
 | Database | MongoDB via pymongo `AsyncMongoClient` | Native async driver (not motor), remote deployment. Collection handles live in [`utils/mongo.py`](utils/mongo.py). |
 | Scheduling | APScheduler + stored timestamps | Schedules and deadlines are persisted in MongoDB and re-seeded by a startup reconciler rather than held in memory. |

@@ -90,8 +90,8 @@ py -m pytest -q
 The suite is 503 tests and finishes in about 35 seconds. Dependencies are
 installed globally; there is no venv. Two cautions specific to this box:
 
-- Do **not** run a blanket `pip install -r requirements.txt`. It would downgrade
-  the installed hikari and lightbulb to the pinned `2.3.5` / `3.0.3`. See
+- Do **not** run a blanket `pip install -r requirements.txt`. It would replace
+  the globally installed hikari and lightbulb with the pinned pair. See
   [hikari-lightbulb-versions.md](hikari-lightbulb-versions.md).
 - `Pillow` must be **12 or newer**. `utils/card_scan.py` handles older Pillow
   correctly, but `tests/test_card_board.py` and `tests/test_card_scan.py` use

@@ -202,10 +202,10 @@ carries one `File`. The builders are imported per module in about fifty files
 (`from hikari.impl import … ThumbnailComponentBuilder as Thumbnail`), which is
 why a patch of the two classes beats changing imports.
 
-Option B has been installed since 2026-09-05, as `utils/hikari_shims.py`,
-called once at startup from `main.py`. It is guarded by `_needs_shim()` so it
-is a no-op on hikari 2.6.0 or newer, and it must be deleted (along with
-`tests/test_hikari_shims.py`) when the bot makes that upgrade.
+Option B was installed 2026-09-05 through 2026-09-08 as `utils/hikari_shims.py`,
+called once at startup from `main.py`. It was removed on 2026-09-08 when the
+bot moved to hikari 2.6.0 + hikari-lightbulb 3.2.6 (option A), which fixes the
+double-fetch natively and makes the shim redundant.
 
 ## 4. The options
 

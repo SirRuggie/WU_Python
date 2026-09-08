@@ -139,9 +139,9 @@ already in the repo or legacy content that must not move.
    Cloudinary branch in `utils/media_urls.py`; remove the two `CLOUDINARY_*`
    keys from the server `.env`; revoke the temporary R2 token; delete the
    Cloudinary account; delete this file.
-6. **Separate change**: the hikari 2.3.5 double-fetch (`docs/media-hosting.md`
-   section 3), by the validated startup shim or the coupled upgrade to
-   hikari 2.6.0 + lightbulb 3.2.6.
+6. **Done**: the hikari 2.3.5 double-fetch (`docs/media-hosting.md` section 3)
+   was closed 2026-09-08 by the coupled upgrade to hikari 2.6.0 + lightbulb
+   3.2.6.
 
 ## Open decisions for the owner
 

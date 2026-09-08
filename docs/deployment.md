@@ -263,7 +263,7 @@ cd ~/wu-bot && venv/bin/pip install -r requirements.txt
 cd ~/wu-bot && venv/bin/python -c "import hikari, PIL, boto3; print(hikari.__version__, PIL.__version__)"
 ```
 
-Expect `2.3.5 12.x`. Then:
+Expect `2.6.0 12.x`. Then:
 
 ```bash
 exit
@@ -491,8 +491,9 @@ verify every scheduled job.
 
 The original reference captured point-in-time facts that later became stale:
 
-- The repository now pins `hikari==2.3.5` and
-  `hikari-lightbulb==3.0.3`, not 2.3.3/3.0.1.
+- The repository now pins `hikari==2.6.0` and
+  `hikari-lightbulb==3.2.6` (upgraded from 2.3.5/3.0.3 on 2026-09-08), not
+  2.3.3/3.0.1.
 - `utils/mongo.py` uses pymongo's native async `AsyncMongoClient`; Mongo calls
   through it are not the synchronous pymongo calls described in the original
   note.

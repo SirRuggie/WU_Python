@@ -4,8 +4,11 @@ Discord's component surface and hikari's builder surface are **not the same
 set**. Discord shipped a lot in 2025–2026 that hikari has never implemented.
 Design against this file, not against `docs.discord.com`.
 
-Verified against hikari source at tags **2.3.5** (what we run) and **2.5.0**
-(latest), 2026-08-02.
+Verified against hikari source at tags **2.3.5** (what we ran until the
+2026-09-08 upgrade to **2.6.0**) and **2.5.0** (latest as of 2026-08-02); not
+re-verified against 2.6.0, but the hikari 2.6.0 changelog's only Components V2
+item is the WebResource double-fetch fix (see docs/media-hosting.md), not a
+builder surface change.
 
 ## Good news: V2 is fully available at 2.3.5
 

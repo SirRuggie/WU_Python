@@ -548,8 +548,10 @@ and recompression samples should expand that oracle over time without weakening
 the unknown-state checks.
 
 Discord's October 2025 File Upload modal component would also accept up to ten
-files, but the installed hikari 2.3.5 / lightbulb 3.0.3 stack cannot build or
-deserialize the required Label (type 18) and File Upload (type 19) components.
+files, but the hikari 2.3.5 / lightbulb 3.0.3 stack this was written against
+could not build or deserialize the required Label (type 18) and File Upload
+(type 19) components; not re-checked against the current pin (hikari 2.6.0 /
+lightbulb 3.2.6, upgraded 2026-09-08) since this feature is retired.
 The normal DM composer is therefore the supported one-selection upload surface.
 `DM_MESSAGES` is a standard gateway intent and is enabled so the bot receives
 only DMs relevant to an existing short-lived session.

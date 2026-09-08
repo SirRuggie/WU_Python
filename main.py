@@ -45,14 +45,8 @@ from utils.startup import active_extensions, create_clash_client, load_cogs, uni
 from utils.media_store import MediaStore
 from extensions.autocomplete import preload_autocomplete_cache
 from utils import bot_data
-from utils.hikari_shims import install_web_resource_skip
 
 load_dotenv()
-
-# Closes the hikari 2.3.5 Components V2 double-fetch. See
-# docs/media-hosting.md section 3, option B.
-if install_web_resource_skip():
-    print(f"[INFO] hikari web-resource shim installed (hikari {hikari.__version__})")
 
 # Create a GatewayBot instance with intents and custom rate limit settings
 #
