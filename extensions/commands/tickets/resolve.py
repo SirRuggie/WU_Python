@@ -118,6 +118,15 @@ def _thread_identity(ticket: dict) -> tuple[int, int]:
         raise RuntimeError("ticket is missing its thread or applicant identity")
     return channel_id, user_id
 
+# Fixed card text used to identify a decision notification structurally,
+# instead of a hidden marker line. Kept independent of the applicant mention
+# and (for denial) the reason, both of which vary per ticket.
+APPROVAL_CARD_TITLE = "Congratulations on being accepted to Warriors United!"
+DENIAL_CARD_TITLE = (
+    "we regret to inform you that currently your application has been denied."
+)
+
+
 async def apply_denial(
         bot: hikari.GatewayBot,
         mongo: MongoClient,
@@ -126,8 +135,12 @@ async def apply_denial(
         ticket: dict,
         reason: str | None = None,
         marker: str | None = None,
-) -> None:
-    """Message the applicant in the candidate thread. WON transitions only."""
+):
+    """Message the applicant in the candidate thread. WON transitions only.
+
+    Returns the created message -- callers checkpoint its id for durable,
+    marker-free recovery.
+    """
     channel_id, user_id = _thread_identity(ticket)
     body = reason if kind == KIND_DENY_CUSTOM else _DENIAL_BODY[kind]
     components = [
@@ -145,11 +158,10 @@ async def apply_denial(
                     accessory=Thumbnail(media=DENIED_THUMB),
                 ),
                 Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-                *([Text(content=f"-# {marker}")] if marker else []),
             ],
         )
     ]
-    await bot.rest.create_message(
+    return await bot.rest.create_message(
         channel=channel_id,
         components=components,
         mentions_everyone=False,
@@ -164,17 +176,20 @@ async def apply_approval(
         *,
         ticket: dict,
         marker: str | None = None,
-) -> None:
-    """Congratulate the applicant. Thread tickets are never renamed."""
+):
+    """Congratulate the applicant. Thread tickets are never renamed.
+
+    Returns the created message -- callers checkpoint its id for durable,
+    marker-free recovery.
+    """
     channel_id, user_id = _thread_identity(ticket)
-    await bot.rest.create_message(
+    return await bot.rest.create_message(
         channel=channel_id,
         content=(
             f"<@{user_id}> Congratulations on being accepted to Warriors United! "
             f"A recruiter will contact you with your clan invite. This ticket "
             f"is now closed. You can find it again with the My ticket button "
             f"on the panel."
-            + (f"\n-# {marker}" if marker else "")
         ),
         mentions_everyone=False,
         user_mentions=[int(user_id)],
@@ -186,14 +201,18 @@ async def run_side_effects(
         bot, mongo, *, kind: str, ticket: dict,
         reason=None, marker: str | None = None,
 ):
+    """Send the applicant's decision card. Returns the created message.
+
+    ``marker`` is no longer rendered into the card -- it stays only as the
+    resolution-effects idempotency key threaded through Mongo checkpoints.
+    """
     if kind == KIND_APPROVE:
-        await apply_approval(
+        return await apply_approval(
             bot, mongo, ticket=ticket, marker=marker,
         )
-    else:
-        await apply_denial(
-            bot, mongo, kind=kind, ticket=ticket, reason=reason, marker=marker,
-        )
+    return await apply_denial(
+        bot, mongo, kind=kind, ticket=ticket, reason=reason, marker=marker,
+    )
 
 
 def _component_contains_marker(component, marker: str) -> bool:
@@ -206,6 +225,33 @@ def _component_contains_marker(component, marker: str) -> bool:
     return any(
         _component_contains_marker(child, marker)
         for child in (getattr(component, "components", ()) or ())
+    )
+
+
+def _component_contains_text(component, text: str) -> bool:
+    content = str(getattr(component, "content", "") or "")
+    if text in content:
+        return True
+    return any(
+        _component_contains_text(child, text)
+        for child in (getattr(component, "components", ()) or ())
+    )
+
+
+def _is_notification_card(message, kind: str) -> bool:
+    """True if this message is the applicant's own decision card.
+
+    Identified by its fixed card text -- no bookkeeping text is posted to
+    Discord for it -- rather than a hidden marker line.
+    """
+
+    title = APPROVAL_CARD_TITLE if kind == KIND_APPROVE else DENIAL_CARD_TITLE
+    content = str(getattr(message, "content", "") or "")
+    if title in content:
+        return True
+    return any(
+        _component_contains_text(component, title)
+        for component in (getattr(message, "components", ()) or ())
     )
 
 
@@ -226,10 +272,29 @@ async def _notification_exists(
     marker: str,
     *,
     bot_user_id: int,
+    kind: str = "",
+    message_id: int = 0,
 ) -> bool:
-    # This path runs only when the durable delivered checkpoint is absent. Walk
-    # the full thread so a crash followed by heavy activity cannot push the
-    # marker beyond a fixed recent-message window and cause a duplicate notice.
+    """True if the applicant's decision notification was already delivered.
+
+    Checked first by the message id recorded in the resolution-effects
+    checkpoint, when there is one. Otherwise this walks the full candidate
+    thread -- so a crash followed by heavy activity cannot push the
+    notification beyond a fixed recent-message window and cause a duplicate
+    -- matching it structurally by ``kind``'s fixed card text (see
+    `_is_notification_card`). A message from before this change that still
+    carries the old ``-# {marker}`` line is still recognised.
+    """
+
+    if message_id:
+        try:
+            message = await rest.fetch_message(channel_id, message_id)
+        except hikari.NotFoundError:
+            message = None
+        if message is not None and int(
+            getattr(getattr(message, "author", None), "id", 0)
+        ) == int(bot_user_id):
+            return True
     messages = await _all_messages(rest, channel_id)
     for message in messages:
         if int(getattr(getattr(message, "author", None), "id", 0)) != int(bot_user_id):
@@ -245,6 +310,8 @@ async def _notification_exists(
             for component in (getattr(message, "components", ()) or ())
         ):
             return True
+        if kind and _is_notification_card(message, kind):
+            return True
     return False
 
 
@@ -256,9 +323,22 @@ async def _checkpoint_effect(
         step: str,
         state: str,
         error: Exception | None = None,
+        message_id: int | None = None,
 ) -> bool:
-    """Best-effort durable checkpoint; physical effects remain authoritative."""
+    """Best-effort durable checkpoint; physical effects remain authoritative.
+
+    ``message_id``, when given, is the Discord message this step delivered --
+    recorded so a later retry can confirm delivery by id first, instead of
+    scanning the thread (see `_notification_exists`).
+    """
     now = store.utcnow()
+    step_doc = {
+        "state": state,
+        "at": now,
+        "error_type": type(error).__name__ if error else None,
+    }
+    if message_id:
+        step_doc["message_id"] = int(message_id)
     try:
         result = await store.update_one(
             mongo,
@@ -269,11 +349,7 @@ async def _checkpoint_effect(
             },
             {
                 "$set": {
-                    f"resolution_effects.{step}": {
-                        "state": state,
-                        "at": now,
-                        "error_type": type(error).__name__ if error else None,
-                    },
+                    f"resolution_effects.{step}": step_doc,
                     "resolution_effects.updated_at": now,
                     "updated_at": now,
                 },
@@ -295,15 +371,24 @@ async def _checkpoint_effect(
         return False
 
 
-async def _finalize_effects(mongo: MongoClient, ticket_id, marker: str) -> bool:
+async def _finalize_effects(
+    mongo: MongoClient,
+    ticket_id,
+    marker: str,
+    *,
+    notification_message_id: int | None = None,
+) -> bool:
     now = store.utcnow()
+    notification_doc = {"state": "delivered", "at": now}
+    if notification_message_id:
+        notification_doc["message_id"] = int(notification_message_id)
     try:
         result = await store.update_one(
             mongo,
             {"_id": ticket_id, **store.RUNTIME_FILTER, "resolution_effects.marker": marker},
             {
                 "$set": {
-                    "resolution_effects.notification": {"state": "delivered", "at": now},
+                    "resolution_effects.notification": notification_doc,
                     "resolution_effects.staff_context": {"state": "delivered", "at": now},
                     "resolution_effects.hub": {"state": "requested", "at": now},
                     "resolution_effects.complete": True,
@@ -429,8 +514,10 @@ async def _process_resolution_effects_owned(
     candidate_thread_missing = ticket_runtime.thread_missing_has_role(ticket, "candidate")
     staff_thread_missing = ticket_runtime.thread_missing_has_role(ticket, "staff")
 
+    notification = effects.get("notification") or {}
+    notification_message_id = store.as_int(notification.get("message_id"))
     try:
-        notification_state = (effects.get("notification") or {}).get("state")
+        notification_state = notification.get("state")
         if notification_state not in {"delivered", "skipped"}:
             if candidate_thread_missing:
                 await _checkpoint_effect(
@@ -440,14 +527,17 @@ async def _process_resolution_effects_owned(
                 me = bot.get_me()
                 if me is None:
                     raise RuntimeError("bot identity is unavailable")
+                sent_message = None
                 if not await _notification_exists(
                     bot.rest,
                     location_id,
                     marker,
                     bot_user_id=int(me.id),
+                    kind=kind,
+                    message_id=notification_message_id,
                 ):
                     await _ensure_notification_thread_writable(bot.rest, ticket)
-                    await run_side_effects(
+                    sent_message = await run_side_effects(
                         bot,
                         mongo,
                         kind=kind,
@@ -455,8 +545,13 @@ async def _process_resolution_effects_owned(
                         reason=ticket.get("denial_reason"),
                         marker=marker,
                     )
+                notification_message_id = (
+                    store.as_int(getattr(sent_message, "id", 0))
+                    or notification_message_id
+                )
                 await _checkpoint_effect(
-                    mongo, ticket["_id"], marker, step="notification", state="delivered"
+                    mongo, ticket["_id"], marker, step="notification", state="delivered",
+                    message_id=notification_message_id or None,
                 )
     except Exception as exc:
         await _checkpoint_effect(
@@ -548,7 +643,10 @@ async def _process_resolution_effects_owned(
             ),
         )
 
-    finalized = await _finalize_effects(mongo, ticket["_id"], marker)
+    finalized = await _finalize_effects(
+        mongo, ticket["_id"], marker,
+        notification_message_id=notification_message_id or None,
+    )
     latest = await store.find_one(
         mongo, {"_id": ticket["_id"], **store.RUNTIME_FILTER}
     )

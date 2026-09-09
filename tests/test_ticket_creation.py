@@ -553,11 +553,16 @@ def test_opening_message_mentions_only_candidate_and_recruiter(monkeypatch):
     async def questionnaire_exists(*_args, **_kwargs):
         return True
 
+    async def fetch_my_user():
+        return SimpleNamespace(id=7)
+
     monkeypatch.setattr(thread_service, "_send_components_once", send_once)
     monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
     ticket_doc = _ticket()
     ticket_doc["recruiter_role_id"] = 40
-    asyncio.run(thread_service._deliver_opening_messages(SimpleNamespace(), ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(
+        SimpleNamespace(fetch_my_user=fetch_my_user), ticket_doc
+    ))
     assert calls[0][1]["user_mentions"] == [30]
     assert calls[0][1]["role_mentions"] is False
     assert "<@30>" in repr(calls[0][0][3])
@@ -566,6 +571,122 @@ def test_opening_message_mentions_only_candidate_and_recruiter(monkeypatch):
     assert calls[1][1]["role_mentions"] == [40]
     assert "<@&40>" in repr(calls[1][0][3])
     assert "<@30>" not in repr(calls[1][0][3])
+
+
+def test_opening_cards_have_no_marker_text_and_recover_structurally(monkeypatch):
+    """Fresh candidate/staff opening cards carry no bookkeeping marker line;
+    a retried delivery (e.g. an outer recovery pass rerunning this after a
+    crash) must still find both by their visible title and not duplicate."""
+
+    class Rest:
+        def __init__(self):
+            self.channels = {101: [], 102: []}
+            self.creates = 0
+
+        def fetch_messages(self, channel_id):
+            messages = self.channels[channel_id]
+
+            async def to_list():
+                return list(messages)
+
+            return SimpleNamespace(to_list=to_list)
+
+        async def create_message(self, channel_id, **kwargs):
+            self.creates += 1
+            message = SimpleNamespace(
+                id=1000 + self.creates,
+                author=SimpleNamespace(id=7),
+                content=kwargs.get("content", ""),
+                components=kwargs.get("components", []),
+            )
+            self.channels[channel_id].append(message)
+            return message
+
+        async def fetch_my_user(self):
+            return SimpleNamespace(id=7)
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = Rest()
+    ticket_doc = _ticket()
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    assert rest.creates == 2
+    assert len(rest.channels[101]) == 1
+    assert len(rest.channels[102]) == 1
+
+    def _flat_text(message):
+        texts = [str(getattr(message, "content", "") or "")]
+
+        def walk(component):
+            texts.append(str(getattr(component, "content", "") or ""))
+            for child in getattr(component, "components", ()) or ():
+                walk(child)
+
+        for component in getattr(message, "components", ()) or ():
+            walk(component)
+        return "\n".join(texts)
+
+    for message in (*rest.channels[101], *rest.channels[102]):
+        assert "ticket-setup:" not in _flat_text(message)
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    assert rest.creates == 2
+    assert len(rest.channels[101]) == 1
+    assert len(rest.channels[102]) == 1
+
+
+def test_legacy_opening_card_marker_messages_are_still_recognised(monkeypatch):
+    """A candidate/staff opening card posted before this change still
+    carries the old marker line; recovery must keep recognising it so an
+    already-open ticket never gets a duplicate card."""
+
+    candidate_marker = "ticket-setup:101:candidate"
+    staff_marker = "ticket-setup:101:staff"
+    legacy_candidate = SimpleNamespace(
+        id=1,
+        author=SimpleNamespace(id=7),
+        content="",
+        components=[thread_service.Text(content=f"-# {candidate_marker}")],
+    )
+    legacy_staff = SimpleNamespace(
+        id=2,
+        author=SimpleNamespace(id=7),
+        content="",
+        components=[thread_service.Text(content=f"-# {staff_marker}")],
+    )
+
+    class Rest:
+        def __init__(self):
+            self.channels = {101: [legacy_candidate], 102: [legacy_staff]}
+            self.creates = 0
+
+        def fetch_messages(self, channel_id):
+            messages = self.channels[channel_id]
+
+            async def to_list():
+                return list(messages)
+
+            return SimpleNamespace(to_list=to_list)
+
+        async def create_message(self, channel_id, **_kwargs):
+            self.creates += 1
+            return SimpleNamespace(id=999, author=SimpleNamespace(id=7))
+
+        async def fetch_my_user(self):
+            return SimpleNamespace(id=7)
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = Rest()
+    ticket_doc = _ticket()
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    assert rest.creates == 0
 
 
 def test_creation_dm_sends_a_components_v2_container_with_a_link_button():

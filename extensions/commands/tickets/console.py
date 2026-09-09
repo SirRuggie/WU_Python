@@ -78,7 +78,12 @@ HUB_RECONCILE_MAX_SECONDS = 3600.0
 # comfortably beyond that single-attempt ceiling; Hikari retries stay disabled.
 CONTEXT_LEASE = timedelta(minutes=5)
 CONTEXT_RECOVERY_LIMIT = 25
+# Internal bookkeeping key only -- never posted to Discord. The Applicant
+# context panel is identified by its visible title text instead (see
+# `_is_staff_context_component`); this prefix is kept only to recognise
+# already-open tickets whose messages still carry the old marker line.
 STAFF_CONTEXT_MARKER_PREFIX = "ticket-staff-context"
+STAFF_CONTEXT_TITLE_PREFIX = "Applicant context"
 # Internal bookkeeping key only -- never posted to Discord. Chocolate
 # checklist messages are identified by their visible title text instead
 # (see `_chocolate_title_page`); this prefix is kept only to recognise
@@ -2556,10 +2561,9 @@ async def build_staff_identity_context(
     blacklisted = any(
         _flag_kind(flag) == flag_store.FLAG_BLACKLISTED for flag in flags
     )
-    heading = "## Applicant context"
+    heading = f"## {STAFF_CONTEXT_TITLE_PREFIX}"
     account_copy = _staff_account_summary(ticket_doc) if has_account_snapshot else None
     account_state = account_sync.snapshot_from_ticket(ticket_doc).state
-    marker_copy = f"-# {_staff_context_marker(_ticket_id(ticket_doc))}"
     history_heading = (
         "### This person has opened a ticket before.\n"
         "Open the earlier thread and read it before you answer here."
@@ -2583,7 +2587,6 @@ async def build_staff_identity_context(
     fixed_texts = [
         heading,
         *([account_copy] if account_copy else []),
-        marker_copy,
         *history_copy,
         *(prefix for prefix, _reason in flag_copy),
     ]
@@ -2646,11 +2649,43 @@ def _component_contains_marker(component, marker: str) -> bool:
     )
 
 
+def _is_staff_context_component(component) -> bool:
+    """True if this component tree is the Applicant context panel.
+
+    Identified by its visible title text, the same structural approach as
+    the FWA Chocolate checklist (see `_chocolate_title_page`).
+    """
+
+    content = str(getattr(component, "content", "") or "").strip()
+    if content.startswith(f"## {STAFF_CONTEXT_TITLE_PREFIX}"):
+        return True
+    return any(
+        _is_staff_context_component(child)
+        for child in getattr(component, "components", ()) or ()
+    )
+
+
 async def _find_staff_context_message(
     bot: hikari.GatewayBot,
     staff_id: int,
     marker: str,
 ):
+    """Find the newest Applicant context panel message in this ticket's staff thread.
+
+    The panel is identified structurally: authored by the bot, in this
+    ticket's own staff thread (one ticket per thread), titled as the
+    Applicant context panel -- no bookkeeping text is posted to Discord for
+    it. A message from before this change that still carries the old
+    ``-# ticket-staff-context:...`` marker line is still recognised.
+
+    Deliberately unbounded, unlike the FWA Chocolate checklist finder: a
+    staff thread can accumulate arbitrary conversation after the panel is
+    posted, and this message must still be recoverable after a checkpoint
+    loss no matter how much later activity has pushed it back (see
+    ``test_staff_context_reuses_committed_message_after_checkpoint_loss``,
+    which pushes it behind 150 newer messages).
+    """
+
     get_me = getattr(bot, "get_me", None)
     if not callable(get_me):
         return None
@@ -2658,13 +2693,19 @@ async def _find_staff_context_message(
     if me is None:
         raise RuntimeError("bot identity is unavailable")
     matches = []
-    for message in await _message_history(bot.rest, staff_id):
+    history = await _message_history(bot.rest, staff_id)
+    for message in history:
         if _int(getattr(getattr(message, "author", None), "id", 0)) != int(me.id):
             continue
-        if any(
+        components = getattr(message, "components", ()) or ()
+        matched = any(
             _component_contains_marker(component, marker)
-            for component in getattr(message, "components", ()) or ()
-        ):
+            for component in components
+        ) or any(
+            _is_staff_context_component(component)
+            for component in components
+        )
+        if matched:
             matches.append(message)
     return max(matches, key=lambda item: int(item.id), default=None)
 
@@ -3247,7 +3288,6 @@ async def deliver_staff_identity_context(
                 "This applicant has no active staff flags or earlier tickets.",
                 accent=ACCENT_GREEN,
             )
-        components = [*components, Text(content=f"-# {marker}")]
         fingerprint = _context_fingerprint(components)
 
         prepared_chocolate: list[tuple[str, list, str]] = [

@@ -848,7 +848,9 @@ def test_history_panel_keeps_newest_entries_within_one_message_text_budget():
     _assert_component_limits(view)
 
 
-def test_staff_context_reserves_complete_marker_in_worst_case_payload(monkeypatch):
+def test_staff_context_worst_case_payload_has_no_marker_and_stays_within_limit(
+    monkeypatch,
+):
     ticket = _ticket(19)
     flags = [{
         "_id": f"flag_{index}",
@@ -872,15 +874,125 @@ def test_staff_context_reserves_complete_marker_in_worst_case_payload(monkeypatc
 
     view = asyncio.run(console.build_staff_identity_context(object(), ticket))
     assert view is not None
-    marker = f"-# {console._staff_context_marker(ticket['_id'])}"
-    payload = [*view, console.Text(content=marker)]
     contents = [
-        str(node["content"]) for node in _nodes(payload) if "content" in node
+        str(node["content"]) for node in _nodes(view) if "content" in node
     ]
 
-    assert contents[-1] == marker
+    # No hidden marker line is posted; only visible content is present.
+    assert not any("ticket-staff-context:" in content for content in contents)
     assert all("**Why:**" in content for content in contents[1:9])
-    _assert_component_limits(payload)
+    _assert_component_limits(view)
+
+
+def test_staff_context_delivery_recovers_lost_checkpoint_structurally(monkeypatch):
+    """A checkpoint lost after Discord already committed the panel must be
+    re-found by its visible title -- no marker line is posted for it."""
+
+    class Collection:
+        def __init__(self):
+            self.document = None
+
+        async def update_one(self, query, update, **_kwargs):
+            if self.document is None:
+                self.document = {"_id": query["_id"]}
+                self.document.update(update.get("$setOnInsert", {}))
+            self.document.update(update.get("$set", {}))
+            for key in update.get("$unset", {}):
+                self.document.pop(key, None)
+            return SimpleNamespace(matched_count=1)
+
+        async def find_one_and_update(self, _query, update, **_kwargs):
+            self.document.update(update.get("$set", {}))
+            return dict(self.document)
+
+        async def find_one(self, _query):
+            return dict(self.document or {})
+
+    class Messages:
+        def __init__(self, messages):
+            self.messages = messages
+
+        async def to_list(self):
+            return list(self.messages)
+
+    class Rest:
+        def __init__(self):
+            self.creates = 0
+            self.edits = 0
+            self.messages = []
+
+        def fetch_messages(self, _channel_id):
+            return Messages(self.messages)
+
+        async def create_message(self, **kwargs):
+            self.creates += 1
+            message = SimpleNamespace(
+                id=900,
+                author=SimpleNamespace(id=7),
+                components=kwargs["components"],
+            )
+            self.messages.append(message)
+            return message
+
+        async def edit_message(self, **_kwargs):
+            self.edits += 1
+
+    async def context(_mongo, _ticket_doc):
+        return console._notice("Applicant context", "Matched history")
+
+    monkeypatch.setattr(console, "build_staff_identity_context", context)
+    collection = Collection()
+    rest = Rest()
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+    mongo = SimpleNamespace(ticket_automation_state=collection)
+    ticket = _ticket(31)
+
+    first = asyncio.run(console.deliver_staff_identity_context(bot, mongo, ticket))
+    assert first == 900
+    assert rest.creates == 1
+    contents = [
+        str(node["content"])
+        for message in rest.messages
+        for node in _nodes(message.components)
+        if "content" in node
+    ]
+    # No hidden marker line was posted for the fresh panel.
+    assert not any("ticket-staff-context:" in content for content in contents)
+
+    # Lose the durable checkpoint entirely, as a crash right after Discord
+    # committed the message but before Mongo recorded its id would.
+    collection.document.pop("message_id", None)
+    collection.document.pop("fingerprint", None)
+
+    second = asyncio.run(console.deliver_staff_identity_context(bot, mongo, ticket))
+    assert second == 900
+    assert rest.creates == 1
+
+
+def test_legacy_staff_context_marker_message_is_still_recognised():
+    """A panel posted before this change still carries the old marker line;
+    the structural finder must keep recognising it so already-open tickets
+    keep working."""
+
+    ticket = _ticket(32)
+    components = console._notice("Applicant context", "Matched history")
+    marker = console._staff_context_marker(ticket["_id"])
+    legacy_components = [*components, console.Text(content=f"-# {marker}")]
+    message = SimpleNamespace(
+        id=901,
+        author=SimpleNamespace(id=7),
+        components=legacy_components,
+    )
+
+    class Messages:
+        async def to_list(self):
+            return [message]
+
+    rest = SimpleNamespace(fetch_messages=lambda _channel_id: Messages())
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+
+    found = asyncio.run(console._find_staff_context_message(bot, 102, marker))
+    assert found is message
 
 
 def test_lock_contention_panel_does_not_claim_a_blacklist_exists():
@@ -2402,11 +2514,7 @@ def test_current_terminal_staff_context_recovery_leaves_thread_open(monkeypatch)
         "guild_id": ticket["guild_id"],
         "staff_parent_id": 523456789012345678,
     })
-    marker = console._staff_context_marker(ticket["_id"])
-    components = [
-        *console._notice("Applicant context", "Matched history"),
-        console.Text(content=f"-# {marker}"),
-    ]
+    components = console._notice("Applicant context", "Matched history")
     state_id = f"ticket_staff_context:{ticket['_id']}"
     states = _ContextRecoveryStates([{
         "_id": state_id,

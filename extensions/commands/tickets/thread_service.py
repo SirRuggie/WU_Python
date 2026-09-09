@@ -17,7 +17,7 @@ import uuid
 import weakref
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import hikari
 import coc
@@ -979,7 +979,21 @@ async def _ensure_live_thread_pair(
         raise
 
 
-async def _message_marker_exists(rest: hikari.api.RESTClient, channel_id: int, marker: str) -> bool:
+async def _message_marker_exists(
+    rest: hikari.api.RESTClient,
+    channel_id: int,
+    marker: str,
+    *,
+    is_match: Callable[[Any], bool] | None = None,
+) -> bool:
+    """True if a prior delivery for ``marker`` is already in the channel.
+
+    Matched by the legacy ``-# {marker}`` bookkeeping line, kept so an
+    already-open ticket's earlier message is still recognised. ``is_match``
+    adds a structural fallback (e.g. the bot's own fixed card title) for
+    callers that no longer post that line at all.
+    """
+
     messages = await _collect_rest_iterator(rest.fetch_messages(channel_id))
 
     def contains(component: Any) -> bool:
@@ -987,11 +1001,14 @@ async def _message_marker_exists(rest: hikari.api.RESTClient, channel_id: int, m
             return True
         return any(contains(child) for child in getattr(component, "components", ()) or ())
 
-    return any(
-        marker in (getattr(message, "content", "") or "")
-        or any(contains(component) for component in getattr(message, "components", ()) or ())
-        for message in messages
-    )
+    for message in messages:
+        if marker in (getattr(message, "content", "") or ""):
+            return True
+        if any(contains(component) for component in getattr(message, "components", ()) or ()):
+            return True
+        if is_match is not None and is_match(message):
+            return True
+    return False
 
 
 async def _send_once(
@@ -1002,12 +1019,14 @@ async def _send_once(
     *,
     user_mentions: bool | Sequence[int] = False,
     role_mentions: bool | Sequence[int] = False,
+    post_marker: bool = True,
+    is_match: Callable[[Any], bool] | None = None,
 ) -> None:
-    if await _message_marker_exists(rest, channel_id, marker):
+    if await _message_marker_exists(rest, channel_id, marker, is_match=is_match):
         return
     await rest.create_message(
         channel_id,
-        content=f"{content}\n-# {marker}",
+        content=f"{content}\n-# {marker}" if post_marker else content,
         mentions_everyone=False,
         user_mentions=user_mentions,
         role_mentions=role_mentions,
@@ -1022,14 +1041,27 @@ async def _send_components_once(
     *,
     user_mentions: bool | Sequence[int] = False,
     role_mentions: bool | Sequence[int] = False,
+    post_marker: bool = True,
+    is_match: Callable[[Any], bool] | None = None,
 ) -> None:
-    """Deliver one recoverable Components V2 opening card."""
+    """Deliver one recoverable Components V2 opening card.
 
-    if await _message_marker_exists(rest, channel_id, marker):
+    ``post_marker`` controls whether a hidden ``-# {marker}`` bookkeeping
+    line is appended; callers with a structural title to fall back on
+    (``is_match``) pass ``post_marker=False`` so nothing is posted to
+    Discord for bookkeeping. A card posted before this existed still
+    carries the old marker line and is still recognised (see
+    `_message_marker_exists`).
+    """
+
+    if await _message_marker_exists(rest, channel_id, marker, is_match=is_match):
         return
     await rest.create_message(
         channel_id,
-        components=[*components, Text(content=f"-# {marker}")],
+        components=(
+            list(components) if not post_marker
+            else [*components, Text(content=f"-# {marker}")]
+        ),
         flags=hikari.MessageFlag.IS_COMPONENTS_V2,
         mentions_everyone=False,
         user_mentions=user_mentions,
@@ -1074,6 +1106,57 @@ def _candidate_account_copy(ticket: Mapping[str, Any] | None) -> str:
         "### ✅ Linked Clash accounts found\n"
         f"We found **{count} linked {noun}**. The list will be checked again before "
         "a decision so newly linked accounts are included automatically."
+    )
+
+
+# Fixed card text used to identify the opening cards structurally, instead
+# of a hidden marker line. Kept independent of the ticket type interpolated
+# into the middle of each title.
+_CANDIDATE_WELCOME_TITLE_PREFIX = "## 👋 Welcome to your "
+_CANDIDATE_WELCOME_TITLE_SUFFIX = " interest ticket"
+_STAFF_OPENING_TITLE_PREFIX = "## 🔒 "
+_STAFF_OPENING_TITLE_INFIX = " recruiter workspace · #"
+
+
+def _component_title_matches(
+    component: Any, *, prefix: str, suffix: str = "", infix: str = "",
+) -> bool:
+    content = str(getattr(component, "content", "") or "")
+    if (
+        content.startswith(prefix)
+        and (not suffix or content.endswith(suffix))
+        and (not infix or infix in content)
+    ):
+        return True
+    return any(
+        _component_title_matches(child, prefix=prefix, suffix=suffix, infix=infix)
+        for child in getattr(component, "components", ()) or ()
+    )
+
+
+def _is_candidate_welcome_card(message: Any) -> bool:
+    """True if this message is the candidate thread's own welcome card."""
+
+    return any(
+        _component_title_matches(
+            component,
+            prefix=_CANDIDATE_WELCOME_TITLE_PREFIX,
+            suffix=_CANDIDATE_WELCOME_TITLE_SUFFIX,
+        )
+        for component in getattr(message, "components", ()) or ()
+    )
+
+
+def _is_staff_opening_card(message: Any) -> bool:
+    """True if this message is the staff thread's own opening card."""
+
+    return any(
+        _component_title_matches(
+            component,
+            prefix=_STAFF_OPENING_TITLE_PREFIX,
+            infix=_STAFF_OPENING_TITLE_INFIX,
+        )
+        for component in getattr(message, "components", ()) or ()
     )
 
 
@@ -1214,7 +1297,9 @@ async def _questionnaire_exists(
     )
 
 
-async def _deliver_opening_messages(rest: hikari.api.RESTClient, ticket: dict) -> None:
+async def _deliver_opening_messages(
+    rest: hikari.api.RESTClient, ticket: dict, *, bot_id: int | None = None
+) -> None:
     public_id = _as_int(ticket.get("location", {}).get("id") or ticket.get("channel_id"))
     staff_id = _as_int(ticket.get("location", {}).get("staff_space_id") or ticket.get("thread_id"))
     ticket_number = int(ticket["ticket_number"])
@@ -1223,6 +1308,27 @@ async def _deliver_opening_messages(rest: hikari.api.RESTClient, ticket: dict) -
     recruiter_role = _as_int(ticket.get("recruiter_role_id"))
     candidate_marker = f"ticket-setup:{public_id}:candidate"
     staff_marker = f"ticket-setup:{public_id}:staff"
+    # Internal bookkeeping keys only -- never posted to Discord. Both opening
+    # cards are identified by their visible title text instead (see
+    # `_is_candidate_welcome_card` / `_is_staff_opening_card`); a card posted
+    # before this change still carries the old marker line and is still
+    # recognised by `_message_marker_exists`.
+    if bot_id is None:
+        # Callers pass the cached identity; this REST call is the fallback.
+        bot_id = int((await rest.fetch_my_user()).id)
+
+    def candidate_card_match(message: Any) -> bool:
+        return (
+            int(getattr(getattr(message, "author", None), "id", 0)) == bot_id
+            and _is_candidate_welcome_card(message)
+        )
+
+    def staff_card_match(message: Any) -> bool:
+        return (
+            int(getattr(getattr(message, "author", None), "id", 0)) == bot_id
+            and _is_staff_opening_card(message)
+        )
+
     await _send_components_once(
         rest,
         public_id,
@@ -1230,6 +1336,8 @@ async def _deliver_opening_messages(rest: hikari.api.RESTClient, ticket: dict) -
         _candidate_welcome_components(ticket),
         user_mentions=[user_id],
         role_mentions=False,
+        post_marker=False,
+        is_match=candidate_card_match,
     )
     if not await _questionnaire_exists(rest, public_id, ticket_type):
         guild = await rest.fetch_guild(_as_int(ticket.get("guild_id")))
@@ -1253,6 +1361,8 @@ async def _deliver_opening_messages(rest: hikari.api.RESTClient, ticket: dict) -
         _staff_opening_components(ticket),
         user_mentions=False,
         role_mentions=[recruiter_role] if recruiter_role else False,
+        post_marker=False,
+        is_match=staff_card_match,
     )
 
 
@@ -1447,7 +1557,10 @@ async def _finish_committed_creation(
     try:
         if reconcile_pair:
             await reconcile_ticket_pair(bot.rest, ticket)
-        await _deliver_opening_messages(bot.rest, ticket)
+        me = bot.get_me()
+        await _deliver_opening_messages(
+            bot.rest, ticket, bot_id=int(me.id) if me is not None else None
+        )
     except Exception as error:
         try:
             await _set_committed_creation_state(

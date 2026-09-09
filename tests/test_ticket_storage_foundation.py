@@ -3568,6 +3568,118 @@ def test_notification_retry_reopens_only_to_write_and_stays_open(monkeypatch):
     assert rest.edits == edits
 
 
+def test_fresh_denial_card_has_no_marker_text_and_recovers_by_checkpointed_id(
+    monkeypatch,
+):
+    """A fresh denial card carries no bookkeeping marker line; a checkpoint
+    lost right after Discord committed it must still be found -- first by
+    the message id the checkpoint now records, matching this test's own
+    Rest mock (`fetch_message`) -- and never duplicated."""
+
+    ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "handled_by_name": "Recruiter",
+        "denial_type": "custom",
+        "denial_reason": "Not eligible",
+        "resolution_effects": {
+            "marker": f"ticket-resolution:{ticket['_id']}:1:denied",
+            "kind": resolve.KIND_DENY_CUSTOM,
+            "notification": {"state": "pending"},
+            "staff_context": {"state": "delivered"},
+            "hub": {"state": "pending"},
+            "complete": False,
+        },
+    })
+    mongo = _mongo(ticket)
+    rest = EffectRest()
+    created = []
+
+    async def create_message(**kwargs):
+        message = SimpleNamespace(
+            id=900,
+            author=SimpleNamespace(id=7),
+            content=kwargs.get("content", ""),
+            components=kwargs.get("components", []),
+        )
+        created.append(message)
+        rest.messages.append(message)
+        return message
+
+    async def fetch_message(_channel_id, message_id):
+        for message in rest.messages:
+            if int(message.id) == int(message_id):
+                return message
+        raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10008)
+
+    rest.create_message = create_message
+    rest.fetch_message = fetch_message
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    result = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, ticket
+    ))
+    assert result.won
+    assert len(created) == 1
+    assert not any(
+        "ticket-resolution:" in str(getattr(message, "content", "") or "")
+        or any(
+            resolve._component_contains_text(component, "ticket-resolution:")
+            for component in (getattr(message, "components", ()) or ())
+        )
+        for message in created
+    )
+    assert result.doc["resolution_effects"]["notification"]["message_id"] == 900
+
+    # Lose the durable checkpoint's delivered state (but not its message id,
+    # which the checkpoint records precisely so retries can confirm by id
+    # rather than scanning the thread). Read the real post-release document
+    # rather than `result.doc`, which was fetched before the lease release.
+    lost = deepcopy(mongo.tickets.documents[ticket["_id"]])
+    lost["resolution_effects"]["notification"]["state"] = "pending"
+    lost["resolution_effects"]["complete"] = False
+    mongo.tickets.documents[ticket["_id"]] = deepcopy(lost)
+
+    again = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, lost
+    ))
+    assert again.won
+    assert len(created) == 1
+
+
+def test_legacy_resolution_marker_message_is_still_recognised():
+    """A card posted before this change still carries the old marker line;
+    the notification finder must keep recognising it so an already-decided
+    ticket does not get a duplicate applicant message."""
+
+    marker = "ticket-resolution:ticket_101:1:denied"
+    message = SimpleNamespace(
+        id=42,
+        author=SimpleNamespace(id=7),
+        content="",
+        components=[SimpleNamespace(
+            content="",
+            components=[SimpleNamespace(content=f"-# {marker}")],
+        )],
+    )
+    rest = SimpleNamespace(fetch_messages=lambda _channel_id: _MessagesOnce([message]))
+
+    assert asyncio.run(resolve._notification_exists(
+        rest, 101, marker, bot_user_id=7, kind=resolve.KIND_DENY_CUSTOM,
+    )) is True
+
+
+class _MessagesOnce:
+    def __init__(self, messages):
+        self._messages = messages
+
+    async def to_list(self):
+        return list(self._messages)
+
+
 @pytest.mark.parametrize("cancel_stage", ["before", "during", "after"])
 def test_resolution_notification_cancellation_releases_and_resumes_once(
     monkeypatch,
