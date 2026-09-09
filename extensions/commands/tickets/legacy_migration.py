@@ -93,6 +93,9 @@ class LegacyMigrationRequest:
     attachment_ack: str | None = None
     attachment_ack_actor_id: int | None = None
     attachment_ack_actor_name: str | None = None
+    # Set only by a confirmed `/tickets migrate-all` run; lets `_claim_migration`
+    # bypass the five-ticket pilot cap without touching single-ticket callers.
+    bulk_batch_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -894,6 +897,37 @@ def _member_overwrite_ids(channel: Any, *, guild_id: int, bot_user_id: int) -> l
     return sorted(set(ids))
 
 
+_WELCOME_MENTION_RE = re.compile(r"^<@!?(\d+)>")
+
+
+def _welcome_message_applicant_id(
+    messages: Sequence[Any], *, bot_user_id: int
+) -> int | None:
+    """Scan the channel's earliest messages for the legacy welcome ping.
+
+    Covers both the exact welcome line (``<@id> Welcome! Thank you for your
+    interest!``) and any other bot message that opens with a user mention.
+    """
+    for message in messages[:20]:
+        author_id = _as_int(getattr(getattr(message, "author", None), "id", 0))
+        if author_id != bot_user_id:
+            continue
+        content = str(getattr(message, "content", "") or "").strip()
+        match = _WELCOME_MENTION_RE.match(content)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _channel_name_username_fallback(source_channel: Any) -> str:
+    """Best-effort username when the applicant has left the source guild."""
+    name = str(getattr(source_channel, "name", "") or "")
+    match = _TICKET_NUMBER_RE.search(name)
+    remainder = name[match.end():] if match else name
+    remainder = remainder.strip("-_ ")
+    return (remainder or name or "legacy-candidate")[:32]
+
+
 async def _identity(
     rest: hikari.api.RESTClient,
     *,
@@ -901,6 +935,7 @@ async def _identity(
     source_channel: Any,
     request: LegacyMigrationRequest,
     bot_user_id: int,
+    messages: Sequence[Any] = (),
 ) -> tuple[int, str, str]:
     user_id = _as_int(request.user_id_override) or _as_int((source_ticket or {}).get("user_id"))
     if not user_id:
@@ -912,6 +947,8 @@ async def _identity(
         if len(candidates) == 1:
             user_id = candidates[0]
     if not user_id:
+        user_id = _welcome_message_applicant_id(messages, bot_user_id=bot_user_id)
+    if not user_id:
         raise LegacyMigrationError(
             "the candidate Discord ID could not be detected; enter it in `user-id`"
         )
@@ -921,12 +958,23 @@ async def _identity(
     ).strip()
     display_name = str((source_ticket or {}).get("display_name") or "").strip()
     if not username or not display_name:
+        member = None
         try:
             member = await rest.fetch_member(request.source_guild_id, user_id)
         except (hikari.NotFoundError, hikari.ForbiddenError):
-            member = await rest.fetch_user(user_id)
-        username = username or str(getattr(member, "username", ""))
-        display_name = display_name or str(getattr(member, "display_name", "") or username)
+            try:
+                member = await rest.fetch_user(user_id)
+            except hikari.NotFoundError:
+                member = None
+        if member is not None:
+            username = username or str(getattr(member, "username", ""))
+            display_name = display_name or str(getattr(member, "display_name", "") or username)
+        else:
+            # The applicant no longer exists (left/deleted); fall back to the
+            # legacy channel-name suffix rather than refusing the migration.
+            fallback = _channel_name_username_fallback(source_channel)
+            username = username or fallback
+            display_name = display_name or fallback
     if not username:
         raise LegacyMigrationError("candidate username could not be resolved")
     return user_id, username[:32], (display_name or username)[:80]
@@ -1037,6 +1085,7 @@ async def preview_legacy_ticket(
         source_channel=source_channel,
         request=request,
         bot_user_id=int(me.id),
+        messages=public_messages[:20],
     )
     created_at = (source_ticket or {}).get("created_at")
     if not isinstance(created_at, datetime):
@@ -1185,38 +1234,48 @@ async def _claim_migration(
             "legacy migration must use the configured ticket destination server"
         )
     if not config.get("legacy_migration_pilot_approved"):
-        selected = await collection.count_documents({"kind": "legacy_thread_migration"})
-        if selected >= PILOT_LIMIT:
-            raise PilotLimitReached(
-                "five pilot tickets are already selected; finish and verify them before "
-                "enabling more migrations"
+        if request.bulk_batch_id:
+            # A confirmed `/tickets migrate-all` run already passed its own
+            # admin-only confirmation; it is deliberately exempt from the
+            # single-ticket pilot cap.
+            _log.info(
+                "[Tickets] migration_pilot_cap_bypassed batch=%s channel=%s",
+                request.bulk_batch_id,
+                request.source_channel_id,
             )
-        # Bring older deployments forward, then reserve one of five global
-        # pilot slots atomically. A failed insert may consume a slot, which is
-        # deliberately fail-safe and can never permit a sixth pilot source.
-        await mongo.ticket_setup.update_one(
-            {"_id": "config"},
-            {"$max": {"legacy_migration_pilot_slots_reserved": selected}},
-        )
-        reservation = await mongo.ticket_setup.find_one_and_update(
-            {
-                "_id": "config",
-                "legacy_migration_pilot_approved": {"$ne": True},
-                "$or": [
-                    {"legacy_migration_pilot_slots_reserved": {"$lt": PILOT_LIMIT}},
-                    {"legacy_migration_pilot_slots_reserved": {"$exists": False}},
-                ],
-            },
-            {"$inc": {"legacy_migration_pilot_slots_reserved": 1}},
-            return_document=ReturnDocument.AFTER,
-        )
-        if reservation is None:
-            latest = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-            if not latest.get("legacy_migration_pilot_approved"):
+        else:
+            selected = await collection.count_documents({"kind": "legacy_thread_migration"})
+            if selected >= PILOT_LIMIT:
                 raise PilotLimitReached(
                     "five pilot tickets are already selected; finish and verify them before "
                     "enabling more migrations"
                 )
+            # Bring older deployments forward, then reserve one of five global
+            # pilot slots atomically. A failed insert may consume a slot, which is
+            # deliberately fail-safe and can never permit a sixth pilot source.
+            await mongo.ticket_setup.update_one(
+                {"_id": "config"},
+                {"$max": {"legacy_migration_pilot_slots_reserved": selected}},
+            )
+            reservation = await mongo.ticket_setup.find_one_and_update(
+                {
+                    "_id": "config",
+                    "legacy_migration_pilot_approved": {"$ne": True},
+                    "$or": [
+                        {"legacy_migration_pilot_slots_reserved": {"$lt": PILOT_LIMIT}},
+                        {"legacy_migration_pilot_slots_reserved": {"$exists": False}},
+                    ],
+                },
+                {"$inc": {"legacy_migration_pilot_slots_reserved": 1}},
+                return_document=ReturnDocument.AFTER,
+            )
+            if reservation is None:
+                latest = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+                if not latest.get("legacy_migration_pilot_approved"):
+                    raise PilotLimitReached(
+                        "five pilot tickets are already selected; finish and verify them before "
+                        "enabling more migrations"
+                    )
     document = {
         "_id": migration_id,
         **immutable,

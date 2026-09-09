@@ -26,6 +26,7 @@ EXPECTED_COMMANDS = {
     "flag-remove",
     "flags",
     "history",
+    "migrate-all",
     "migrate-legacy",
     "pilot-role",
     "pilot-user",

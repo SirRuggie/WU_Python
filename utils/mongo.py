@@ -28,6 +28,13 @@ class MongoClient(AsyncMongoClient):
         # Durable checkpoints for resumable source-channel -> thread cloning.
         # Source Discord content is never stored here; only progress and IDs.
         self.ticket_migrations = self.__settings.get_collection("ticket_migrations")
+        # Durable plan/progress state for `/tickets migrate-all`, one document
+        # per source guild (`_id="batch:<source_guild_id>"`). Permanent, no TTL:
+        # it is the resumable checkpoint for which legacy channel is next.
+        # Per-ticket side effects still live in ticket_migrations above.
+        self.ticket_migration_batches = self.__settings.get_collection(
+            "ticket_migration_batches"
+        )
         # Short-lived idempotency leases for cross-system ticket creation.
         # Durable ticket history remains in tickets; handlers.py owns this TTL.
         self.ticket_creation_state = self.__settings.get_collection("ticket_creation_state")

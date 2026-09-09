@@ -109,6 +109,7 @@ HELP_CATEGORIES = {
             ("/tickets console", "Post or repair the recruiter console. Admin only."),
             ("/tickets config", "Inspect thread-ticket settings. Admin only."),
             ("/tickets migrate-legacy", "Clone one terminal legacy ticket. Admin only."),
+            ("/tickets migrate-all", "Preview or bulk-copy many legacy tickets from one source server. Admin only."),
             ("/tickets approve-migration-pilot", "Continue after verifying migration samples. Admin only."),
             ("/tickets pilot-user", "Manage pilot user access. Admin only."),
             ("/tickets pilot-role", "Manage pilot role access. Admin only."),

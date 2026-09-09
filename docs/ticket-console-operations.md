@@ -517,6 +517,68 @@ Migration is resumable. Re-run the same `migrate-legacy` selections with
 Keep partial destination threads, migration rows, and bot-authored markers;
 deleting them can defeat safe recovery.
 
+## Bulk legacy migration
+
+`/tickets migrate-all` drives many single-channel migrations from one source
+guild through the exact same `preview_legacy_ticket`/`migrate_legacy_ticket`
+path as `migrate-legacy` above; it only decides which legacy channels are in
+scope and in what order, and tracks progress durably so a restart resumes
+cleanly. Legacy channels stay read-only, same as the single-ticket command.
+
+Before the first bulk migration on any server, run the ticket-numbering reset
+in [deployment.md](deployment.md) ("Reset thread ticket numbering before
+go-live") so fresh numbers start at 1. Imported tickets always take a fresh
+number in import order — oldest legacy channel first — never their original
+legacy channel number.
+
+**Dry run** (`confirm:false`, read-only, nothing written):
+
+```text
+/tickets migrate-all source-guild:<server> category:<optional category> attachments:Copy confirm:false
+```
+
+Lists every `GUILD_TEXT` channel in the source guild (or just the chosen
+category) whose name matches the legacy ticket pattern (`main-<n>` /
+`fwa-<n>`), previews each one oldest-first, and classifies it: `ready`,
+`already_copied` (a completed `ticket_migrations` row already exists — not
+re-previewed), `open` (still-open tickets are refused, same as
+`migrate-legacy`), `no_applicant` (no candidate ID could be detected),
+`ambiguous_type`, or `error:<ExceptionName>`. The plan is saved to
+`ticket_migration_batches` (`_id: "batch:<source_guild_id>"`, capped at 1000
+matching channels per category — narrow the category if it reports more) and
+the reply is a plain-English summary: totals per classification and per
+type, the first 15 problem channels with a reason and a jump link, and the
+exact `confirm:true` command to run.
+
+**Run** (`confirm:true`): requires a plan from the last 24 hours (dry-run
+first if none exists, or if it is stale). Claims a lease on the batch so only
+one run proceeds per source guild at a time; a second admin confirming while
+a run is in progress is refused. Processes only `ready` channels,
+oldest-first, up to `limit` if given: each one is previewed again (cheap,
+catches anything that changed since the dry run) and then migrated exactly
+as `migrate-legacy` would. `attachments:Copy` accepts the preview's
+attachment-risk token automatically so attachments are copied where
+possible; `attachments:Skip` always migrates text-only. A confirmed bulk run
+is exempt from the five-ticket pilot cap that guards `migrate-legacy` (it has
+its own admin confirmation); every bypass logs
+`[Tickets] migration_pilot_cap_bypassed batch=... channel=...`.
+
+One progress message is posted in the ticket console channel at the start of
+a run and edited every five completed tickets and once more at the end:
+`Copying legacy tickets from {guild name}: {done}/{total} done, {failed}
+failed, {skipped} skipped · <relative time>`.
+
+**Resume and pause:** running `/tickets migrate-all confirm:true` again with
+the same `source-guild` resumes the same batch and skips every entry already
+marked `done` — safe to repeat after a restart, a `limit` cutoff, or a lease
+timeout. After ten consecutive per-ticket failures the batch pauses itself
+(`state: "paused"`) rather than continuing to fail; confirming again resumes
+from the same point once the underlying problem (usually a destination
+configuration issue) is fixed. Per-ticket crash recovery still relies on the
+same `ticket_migrations` checkpoints `migrate-legacy` uses — the batch
+document only tracks which channel is next, never Discord/Mongo side effects
+directly.
+
 ## Recovery boundaries
 
 | Operation | What it changes | Safe recovery |
