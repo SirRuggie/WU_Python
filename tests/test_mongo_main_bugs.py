@@ -3,13 +3,52 @@ docs/mongodb-refactor.md, for modules that had no existing test file of
 their own."""
 
 import asyncio
+import base64
 import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands.clan.dashboard import update_clan_info
 import utils.mongo as mongo_module
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# A syntactically valid-looking bot token so hikari.GatewayBot's constructor
+# (which runs before main.py's MONGODB_URI check) does not reject it first --
+# only the first segment (a base64 snowflake) is actually validated.
+_FAKE_DISCORD_TOKEN = (
+    base64.urlsafe_b64encode(b"123456789012345678").decode().rstrip("=")
+    + ".XXXXXXXXXXXXXXXXXXXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
+)
+
+
+def test_main_fails_fast_when_mongodb_uri_is_unset():
+    """docs/mongodb-refactor.md section 4: main.py:80 used to silently fall
+    back to localhost:27017 when MONGODB_URI was unset, so the bot booted
+    "fine" and every query only failed after a 30s selection timeout.
+    Importing main.py must instead raise before main.py's bot.run() at the
+    bottom of the module is ever reached."""
+    env = dict(os.environ)
+    env["DISCORD_TOKEN"] = _FAKE_DISCORD_TOKEN
+    env["MONGODB_URI"] = ""
+    env.pop("R2_ACCOUNT_ID", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import main"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert "RuntimeError: MONGODB_URI is not set" in result.stderr
 
 
 class _FakeCollection:
