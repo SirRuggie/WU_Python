@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import re
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Iterable, Mapping
@@ -71,6 +72,18 @@ class IndexConflictError(TicketStoreError):
     def __init__(self, conflicts: Mapping[str, list]):
         super().__init__("ticket index conflicts must be repaired before index creation")
         self.conflicts = dict(conflicts)
+
+
+# One conflicting row makes `ensure_indexes` fail every time it runs, and it
+# runs on the hot path of ticket creation (`thread_service.ensure_creation_indexes`
+# never caches its own failure). Without a retry window, every interaction
+# repeats the full-collection preflight scan and 13 create_index round trips.
+# Cache the failure like `utils/clan_history.py:ensure_indexes` does and let
+# it retry only after the window (rules 4, 12).
+INDEX_RETRY_SECONDS = 60 * 60
+_indexes_failed = False
+_index_retry_at = 0.0
+_last_index_error: Exception | None = None
 
 
 def utcnow() -> datetime:
@@ -946,7 +959,31 @@ async def ensure_indexes(mongo: MongoClient) -> list[str]:
     Mongo raises an index-options conflict if an old same-named definition is
     broader. That failure is intentional and blocks intake for operator review;
     this service never drops or silently replaces production indexes.
+
+    A failure here (a conflicting row, an incompatible existing index) is
+    cached for ``INDEX_RETRY_SECONDS`` so a caller on the ticket-creation hot
+    path does not repeat the full-collection preflight scan and every
+    create_index round trip on each interaction; it retries automatically
+    once the window passes.
     """
+    global _indexes_failed, _index_retry_at, _last_index_error
+    if _indexes_failed and time.monotonic() < _index_retry_at:
+        assert _last_index_error is not None
+        raise _last_index_error
+
+    try:
+        names = await _install_indexes(mongo)
+    except Exception as exc:
+        _indexes_failed = True
+        _index_retry_at = time.monotonic() + INDEX_RETRY_SECONDS
+        _last_index_error = exc
+        raise
+    _indexes_failed = False
+    _last_index_error = None
+    return names
+
+
+async def _install_indexes(mongo: MongoClient) -> list[str]:
     conflicts = await index_conflicts(mongo.tickets)
     if conflicts:
         raise IndexConflictError(conflicts)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -51,6 +52,17 @@ _IMMEDIATE_RETIRE_DELIVERY_ERRORS = frozenset({"NotFoundError", "ForbiddenError"
 
 _creation_index_ready = False
 _creation_lock = asyncio.Lock()
+
+# `_creation_index_ready` is set only on success, so a conflicting row leaves
+# it False forever and every ticket-creation interaction retries the full
+# index install (`store.ensure_indexes` itself now caches its own failure,
+# but the `ticket_creation_state` TTL index below does not). Cache the
+# failure the same way so this hot path fails fast between retries instead
+# of repeating the work on every interaction (rules 4, 12).
+CREATION_INDEX_RETRY_SECONDS = 60 * 60
+_creation_index_failed = False
+_creation_index_retry_at = 0.0
+_creation_index_last_error: Exception | None = None
 
 _REQUIRED_BOT_PARENT_PERMISSIONS = (
     hikari.Permissions.VIEW_CHANNEL
@@ -476,16 +488,29 @@ def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: s
 
 
 async def ensure_creation_indexes(mongo: MongoClient) -> None:
-    global _creation_index_ready
+    global _creation_index_ready, _creation_index_failed
+    global _creation_index_retry_at, _creation_index_last_error
     if _creation_index_ready:
         return
-    # Install canonical uniqueness before the first Discord side effect. This
-    # is the final guard against duplicate pairs if multiple bot processes run.
-    await ensure_canonical_ticket_store(mongo)
-    await mongo.ticket_creation_state.create_index(
-        "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
-    )
+    if _creation_index_failed and time.monotonic() < _creation_index_retry_at:
+        assert _creation_index_last_error is not None
+        raise _creation_index_last_error
+    try:
+        # Install canonical uniqueness before the first Discord side effect.
+        # This is the final guard against duplicate pairs if multiple bot
+        # processes run.
+        await ensure_canonical_ticket_store(mongo)
+        await mongo.ticket_creation_state.create_index(
+            "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
+        )
+    except Exception as exc:
+        _creation_index_failed = True
+        _creation_index_retry_at = time.monotonic() + CREATION_INDEX_RETRY_SECONDS
+        _creation_index_last_error = exc
+        raise
     _creation_index_ready = True
+    _creation_index_failed = False
+    _creation_index_last_error = None
 
 
 async def ensure_canonical_ticket_store(mongo: MongoClient) -> None:

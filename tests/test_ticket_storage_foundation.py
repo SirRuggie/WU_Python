@@ -1,4 +1,5 @@
 import asyncio
+import time
 from copy import deepcopy
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -20,6 +21,7 @@ from extensions.commands.tickets import (
     resolve,
     schema,
     store,
+    thread_service,
 )
 from extensions.commands.accounts import (
     AccountEntry,
@@ -31,6 +33,26 @@ from utils.todo_data import Account
 
 NOW = datetime(2026, 8, 20, 6, 0, tzinfo=timezone.utc)
 MISSING_VALUE = object()
+
+
+def _clear_index_failure_caches():
+    store._indexes_failed = False
+    store._index_retry_at = 0.0
+    store._last_index_error = None
+    thread_service._creation_index_ready = False
+    thread_service._creation_index_failed = False
+    thread_service._creation_index_retry_at = 0.0
+    thread_service._creation_index_last_error = None
+
+
+@pytest.fixture(autouse=True)
+def _reset_index_failure_cache():
+    """Each test builds its own fake `mongo`; a cached index failure from one
+    test must not leak into the next test's unrelated `ensure_indexes` call.
+    """
+    _clear_index_failure_caches()
+    yield
+    _clear_index_failure_caches()
 
 
 def _values(value, parts):
@@ -1420,6 +1442,66 @@ def test_recovery_indexes_are_idempotent_and_unique_preflight_still_fails_closed
     with pytest.raises(store.IndexConflictError):
         asyncio.run(store.ensure_indexes(duplicate))
     assert duplicate.tickets.indexes == []
+
+
+def test_ensure_indexes_caches_failure_within_a_retry_window(monkeypatch):
+    duplicate = _mongo(
+        _ticket(),
+        _ticket(public=201, staff=202, number=2, user=30),
+    )
+    original_index_conflicts = store.index_conflicts
+    calls = []
+
+    async def counting_index_conflicts(collection):
+        calls.append(1)
+        return await original_index_conflicts(collection)
+
+    monkeypatch.setattr(store, "index_conflicts", counting_index_conflicts)
+
+    with pytest.raises(store.IndexConflictError) as first_raise:
+        asyncio.run(store.ensure_indexes(duplicate))
+    assert len(calls) == 1
+
+    # Still inside the retry window: the cached failure is re-raised without
+    # repeating the full-collection preflight scan.
+    with pytest.raises(store.IndexConflictError) as second_raise:
+        asyncio.run(store.ensure_indexes(duplicate))
+    assert len(calls) == 1
+    assert second_raise.value is first_raise.value
+
+    # Once the window passes, ensure_indexes tries the preflight again.
+    monkeypatch.setattr(store, "_index_retry_at", time.monotonic() - 1)
+    with pytest.raises(store.IndexConflictError):
+        asyncio.run(store.ensure_indexes(duplicate))
+    assert len(calls) == 2
+
+
+def test_ensure_creation_indexes_caches_failure_within_a_retry_window(monkeypatch):
+    calls = []
+
+    async def failing_canonical_store(_mongo):
+        calls.append(1)
+        raise store.IndexConflictError({"location": ["ticket_101"]})
+
+    monkeypatch.setattr(
+        thread_service, "ensure_canonical_ticket_store", failing_canonical_store
+    )
+    mongo = SimpleNamespace()
+
+    with pytest.raises(store.IndexConflictError):
+        asyncio.run(thread_service.ensure_creation_indexes(mongo))
+    assert len(calls) == 1
+
+    with pytest.raises(store.IndexConflictError):
+        asyncio.run(thread_service.ensure_creation_indexes(mongo))
+    assert len(calls) == 1
+
+    monkeypatch.setattr(
+        thread_service, "_creation_index_retry_at", time.monotonic() - 1
+    )
+    with pytest.raises(store.IndexConflictError):
+        asyncio.run(thread_service.ensure_creation_indexes(mongo))
+    assert len(calls) == 2
 
 
 def test_runtime_lookup_fails_closed_for_legacy_channel_rows():
