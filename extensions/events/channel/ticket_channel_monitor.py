@@ -489,11 +489,7 @@ async def send_with_retries(rest, **kwargs) -> None:
 
 
 def _questionnaire_components(ticket_type: str, guild_icon_url: str | None):
-    logo = (
-        guild_icon_url
-        or "https://res.cloudinary.com/dxmtzuomk/image/upload/"
-        "v1752836911/misc_images/WU_Logo.png"
-    )
+    logo = guild_icon_url or "assets/branding/logo/WU_Logo.png"
     is_fwa = ticket_type == "fwa"
     heading = (
         "## **Warriors United FWA Clan Entry Ticket**"
@@ -511,12 +507,7 @@ def _questionnaire_components(ticket_type: str, guild_icon_url: str | None):
         questions.append(
             "6) Are you familiar with LazyCWL and the day to day FWA Process?"
         )
-    image = (
-        "https://res.cloudinary.com/dxmtzuomk/image/upload/"
-        "v1752836857/misc_images/WU_FWA_Ticket.jpg"
-        if is_fwa
-        else logo
-    )
+    image = "assets/tickets/static/WU_FWA_Ticket.jpg" if is_fwa else logo
     return [
         Container(
             accent_color=GOLDENROD_ACCENT,

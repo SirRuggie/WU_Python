@@ -246,10 +246,7 @@ def test_wrong_author_and_wrong_surface_never_checkpoint_exact_signatures():
 def test_questionnaire_builder_matches_discord_deserialized_components():
     hikari = monitor.hikari
     components = hikari.components
-    logo = (
-        "https://res.cloudinary.com/dxmtzuomk/image/upload/"
-        "v1752836911/misc_images/WU_Logo.png"
-    )
+    logo = "assets/branding/logo/WU_Logo.png"
 
     def media():
         return components.MediaResource(

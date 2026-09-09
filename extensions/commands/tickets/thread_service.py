@@ -1076,10 +1076,7 @@ def _questionnaire_components(
     *,
     ticket: Mapping[str, Any] | None = None,
 ) -> list:
-    logo = guild_icon_url or (
-        "https://res.cloudinary.com/dxmtzuomk/image/upload/"
-        "v1752836911/misc_images/WU_Logo.png"
-    )
+    logo = guild_icon_url or "assets/branding/logo/WU_Logo.png"
     is_fwa = ticket_type == "fwa"
     title = (
         "## **Warriors United FWA Clan Entry Ticket**"
@@ -1107,12 +1104,7 @@ def _questionnaire_components(
         'What was the hook that reeled you in? The thing that said '
         '"yeah, I need to check these guys out!!!"'
     )
-    hero = (
-        "https://res.cloudinary.com/dxmtzuomk/image/upload/"
-        "v1752836857/misc_images/WU_FWA_Ticket.jpg"
-        if is_fwa
-        else logo
-    )
+    hero = "assets/tickets/static/WU_FWA_Ticket.jpg" if is_fwa else logo
     return [
         Container(
             accent_color=GOLDENROD_ACCENT,
