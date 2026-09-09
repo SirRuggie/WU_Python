@@ -271,6 +271,48 @@ def _linked_account(tag: str, *, name: str | None = None) -> AccountEntry:
     )
 
 
+def test_find_one_normalizes_stale_schema_version_and_shape():
+    ticket = _ticket()
+    ticket["schema_version"] = 1
+    ticket["player_tags"] = ["abc123"]
+    ticket.pop("player_tag", None)
+    mongo = _mongo(ticket)
+
+    found = asyncio.run(store.find_one(mongo, {"_id": "ticket_101"}))
+
+    assert found["schema_version"] == schema.SCHEMA_VERSION
+    assert found["player_tags"] == ["#ABC123"]
+    assert found["player_tag"] == "#ABC123"
+    assert found["audit"][-1]["event"] == "schema_backfilled"
+
+
+def test_find_normalizes_every_document():
+    first = _ticket(public=101, staff=102, number=1)
+    second = _ticket(public=201, staff=202, number=2)
+    first["schema_version"] = 1
+    second["schema_version"] = 2
+    mongo = _mongo(first, second)
+
+    found = asyncio.run(store.find(mongo, {"status": "open"}))
+
+    assert len(found) == 2
+    assert all(doc["schema_version"] == schema.SCHEMA_VERSION for doc in found)
+
+
+def test_list_open_search_and_history_for_normalize_documents():
+    ticket = _ticket()
+    ticket["schema_version"] = 1
+    mongo = _mongo(ticket)
+
+    opened = asyncio.run(store.list_open(mongo))
+    searched = asyncio.run(store.search(mongo, "Applicant"))
+    history = asyncio.run(store.history_for(mongo, user_id=ticket["user_id"]))
+
+    assert opened[0]["schema_version"] == schema.SCHEMA_VERSION
+    assert searched[0]["schema_version"] == schema.SCHEMA_VERSION
+    assert history[0]["schema_version"] == schema.SCHEMA_VERSION
+
+
 @pytest.mark.parametrize("count", [1, 15, 37])
 def test_linked_account_sync_persists_complete_snapshot_and_identity_audit(
     monkeypatch,

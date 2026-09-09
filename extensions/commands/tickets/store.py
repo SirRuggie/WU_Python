@@ -115,14 +115,33 @@ async def _reader(mongo: MongoClient):
     return mongo.tickets
 
 
+def _normalized(document: Mapping | None) -> dict | None:
+    """Apply the current schema shape to a document read off the wire.
+
+    `schema_version` is written on every insert, but nothing enforced it on
+    read, so callers kept special-casing historical shapes (`_mixed_id`)
+    instead of trusting the canonical one. Normalising here makes every
+    reader see schema-version-3 shape regardless of what is actually stored.
+    """
+    if document is None:
+        return None
+    return normalize_ticket_document(document)
+
+
+def _normalized_many(documents: Iterable[Mapping]) -> list[dict]:
+    return [normalize_ticket_document(document) for document in documents]
+
+
 async def find_one(mongo: MongoClient, filt: dict):
-    return await (await _reader(mongo)).find_one({**dict(filt), **RUNTIME_FILTER})
+    raw = await (await _reader(mongo)).find_one({**dict(filt), **RUNTIME_FILTER})
+    return _normalized(raw)
 
 
 async def find(mongo: MongoClient, filt: dict) -> list[dict]:
-    return await (await _reader(mongo)).find(
+    raw = await (await _reader(mongo)).find(
         {**dict(filt), **RUNTIME_FILTER}
     ).to_list(length=None)
+    return _normalized_many(raw)
 
 
 def _mixed_id(value) -> list:
@@ -164,9 +183,10 @@ async def find_open_for_applicant(
 async def list_open(mongo: MongoClient, *, limit: int = 25) -> list[dict]:
     amount = max(1, min(int(limit), 25))
     cursor = (await _reader(mongo)).find({**RUNTIME_FILTER, "status": "open"})
-    return await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
+    raw = await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
         length=amount
     )
+    return _normalized_many(raw)
 
 
 class SearchQueryError(ValueError):
@@ -222,9 +242,10 @@ async def search(
         }
     amount = max(1, min(int(limit), 10))
     cursor = (await _reader(mongo)).find(filt)
-    return await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
+    raw = await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
         length=amount
     )
+    return _normalized_many(raw)
 
 
 async def history_for(
@@ -253,9 +274,10 @@ async def history_for(
         filt["_id"] = {"$ne": exclude_id}
     amount = max(1, min(int(limit), 10))
     cursor = (await _reader(mongo)).find(filt)
-    return await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
+    raw = await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
         length=amount
     )
+    return _normalized_many(raw)
 
 
 async def console_counts(mongo: MongoClient) -> dict:
