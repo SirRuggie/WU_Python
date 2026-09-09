@@ -1386,3 +1386,171 @@ def test_my_ticket_button_hints_when_nothing_found(monkeypatch):
     ))
 
     assert "no ticket yet" in edits[-1]["content"]
+
+
+def test_thread_delete_event_marks_ticket_thread_missing_and_releases_slot(monkeypatch):
+    ticket_doc = {
+        "_id": "ticket_1",
+        "location": {"id": 999, "staff_space_id": 1000},
+        "guild_id": 11,
+        "status": "open",
+    }
+    marked = []
+    released = []
+
+    async def find_by_location(_mongo, thread_id):
+        assert thread_id == 999
+        return ticket_doc
+
+    async def mark_thread_missing(_mongo, ticket_id, *, thread_role):
+        marked.append((ticket_id, thread_role))
+        return SimpleNamespace(won=True, doc=ticket_doc)
+
+    async def release(_mongo, ticket_id):
+        released.append(ticket_id)
+
+    async def notify(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(handlers.store, "find_by_location", find_by_location)
+    monkeypatch.setattr(handlers.store, "mark_thread_missing", mark_thread_missing)
+    monkeypatch.setattr(handlers, "_release_slot_for_missing_thread", release)
+    monkeypatch.setattr(handlers.thread_service, "notify_console_after_change", notify)
+
+    event = SimpleNamespace(thread_id=999, guild_id=11)
+    asyncio.run(handlers.handle_ticket_thread_deleted(
+        event, bot=SimpleNamespace(), mongo=SimpleNamespace(),
+    ))
+
+    assert marked == [("ticket_1", "candidate")]
+    assert released == ["ticket_1"]
+
+
+def test_thread_delete_event_ignores_a_thread_with_no_known_ticket(monkeypatch):
+    async def find_by_location(_mongo, _thread_id):
+        return None
+
+    marked = []
+
+    async def mark_thread_missing(*_args, **_kwargs):
+        marked.append(True)
+
+    monkeypatch.setattr(handlers.store, "find_by_location", find_by_location)
+    monkeypatch.setattr(handlers.store, "mark_thread_missing", mark_thread_missing)
+
+    event = SimpleNamespace(thread_id=555, guild_id=11)
+    asyncio.run(handlers.handle_ticket_thread_deleted(
+        event, bot=SimpleNamespace(), mongo=SimpleNamespace(),
+    ))
+
+    assert marked == []
+
+
+def test_reclick_with_thread_missing_ticket_releases_slot_and_offers_a_new_one(
+    monkeypatch,
+):
+    async def route(*_args, **_kwargs):
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_THREAD,
+            True,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            8,
+            "thread_default",
+        )
+
+    async def claim(*_args, **_kwargs):
+        return ticket_runtime.SlotClaim(False, None, {
+            "_id": "ticket-open:50:main",
+            "state": ticket_runtime.SLOT_OPEN,
+            "location_id": 999,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": 11,
+            "workflow_id": "thread:50:main",
+        })
+
+    ticket_doc = {
+        "_id": "ticket_1",
+        "location": {"id": 999},
+        "guild_id": 11,
+        "thread_missing": {"thread_role": "candidate"},
+    }
+
+    async def find_by_location(_mongo, _location_id):
+        return ticket_doc
+
+    released = []
+
+    async def release(_mongo, ticket_id):
+        released.append(ticket_id)
+
+    reaccess_calls = []
+
+    async def ensure_access(*_args, **_kwargs):
+        reaccess_calls.append(True)
+        return True
+
+    monkeypatch.setattr(handlers, "thread_intake_ready", lambda: True)
+    monkeypatch.setattr(handlers.ticket_runtime, "route_public_intake", route)
+    monkeypatch.setattr(handlers.ticket_runtime, "claim_open_slot", claim)
+    monkeypatch.setattr(handlers.store, "find_by_location", find_by_location)
+    monkeypatch.setattr(handlers, "_release_slot_for_missing_thread", release)
+    monkeypatch.setattr(
+        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
+    )
+    handlers.user_cooldowns.clear()
+    edits = []
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx,
+        "public:main",
+        bot=SimpleNamespace(rest=SimpleNamespace()),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert released == ["ticket_1"]
+    assert reaccess_calls == []
+    assert "removed" in edits[-1]["content"]
+    assert "<#999>" not in edits[-1]["content"]
+
+
+def test_my_ticket_button_with_thread_missing_ticket_releases_slot(monkeypatch):
+    edits = []
+    ticket_doc = {
+        "_id": "ticket_9",
+        "location": {"id": 777},
+        "guild_id": 11,
+        "user_id": 50,
+        "ticket_type": "main",
+        "thread_missing": {"thread_role": "candidate"},
+    }
+
+    async def find_open(_mongo, *, user_id, ticket_type):
+        return ticket_doc if ticket_type == "main" else None
+
+    released = []
+
+    async def release(_mongo, ticket_id):
+        released.append(ticket_id)
+
+    reaccess_calls = []
+
+    async def ensure_access(*_args, **_kwargs):
+        reaccess_calls.append(True)
+        return True
+
+    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(handlers, "_release_slot_for_missing_thread", release)
+    monkeypatch.setattr(
+        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
+    )
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_my_ticket(
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+    ))
+
+    assert released == ["ticket_9"]
+    assert reaccess_calls == []
+    assert "removed" in edits[-1]["content"]
+    assert "<#777>" not in edits[-1]["content"]

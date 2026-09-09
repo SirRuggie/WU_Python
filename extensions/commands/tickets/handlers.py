@@ -99,6 +99,31 @@ async def _recruiter_role_name(
     return str(name) if name else None
 
 
+async def _release_slot_for_missing_thread(mongo: MongoClient, ticket_id) -> None:
+    """Free a thread_missing ticket's open slot so the applicant can start fresh."""
+    try:
+        await ticket_runtime.mark_slot_release_pending_for_missing_thread(
+            mongo, ticket_id=ticket_id,
+        )
+    except ticket_runtime.SlotConflict:
+        return
+    except Exception as error:
+        print(
+            "[Tickets] v2_thread_missing_slot_mark_failed "
+            f"ticket={ticket_id} error={type(error).__name__}"
+        )
+        return
+    try:
+        await ticket_runtime.release_open_slot_for_missing_thread(
+            mongo, ticket_id=ticket_id,
+        )
+    except Exception as error:
+        print(
+            "[Tickets] v2_thread_missing_slot_release_failed "
+            f"ticket={ticket_id} error={type(error).__name__}"
+        )
+
+
 _PLAYER_TAG_RE = re.compile(r"(?<![A-Z0-9])#[A-Z0-9]{3,9}(?![A-Z0-9])", re.IGNORECASE)
 
 
@@ -150,6 +175,43 @@ async def capture_candidate_thread_activity(
         await thread_service.notify_console_after_change(
             bot, mongo, result.doc, reason="candidate activity"
         )
+
+
+@loader.listener(hikari.GuildThreadDeleteEvent)
+@lightbulb.di.with_di
+async def handle_ticket_thread_deleted(
+    event: hikari.GuildThreadDeleteEvent,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+) -> None:
+    """Record a deleted candidate/staff thread on its ticket.
+
+    `thread_missing` is a field, not a status: the ticket's `status` still
+    reflects the recruiter's decision (or "open"). This only records that
+    one Discord thread of the pair is gone, so re-click/My ticket can free
+    the applicant's slot instead of pointing at a dead thread forever, and
+    resolution effects that need that thread skip instead of retrying.
+    """
+    ticket = await store.find_by_location(mongo, int(event.thread_id))
+    if ticket is None:
+        return
+    location = ticket.get("location") or {}
+    candidate_id = store.as_int(location.get("id") or ticket.get("channel_id"))
+    role = "candidate" if candidate_id == int(event.thread_id) else "staff"
+    try:
+        await store.mark_thread_missing(mongo, ticket["_id"], thread_role=role)
+    except Exception as error:
+        print(
+            "[Tickets] v2_thread_deleted_mark_failed "
+            f"ticket={ticket.get('_id')} thread={event.thread_id} "
+            f"error={type(error).__name__}"
+        )
+        return
+    if role == "candidate" and ticket.get("status") == "open":
+        await _release_slot_for_missing_thread(mongo, ticket["_id"])
+    await thread_service.notify_console_after_change(
+        bot, mongo, ticket, reason="ticket thread removed"
+    )
 
 
 @register_action(
@@ -293,18 +355,25 @@ async def handle_create_ticket(
             message = " ".join(sentences)
         elif location_id:
             existing_ticket = await store.find_by_location(mongo, location_id)
-            if existing_ticket is not None:
-                try:
-                    await thread_service.ensure_candidate_thread_access(
-                        bot.rest, existing_ticket, user_id=user_id,
-                    )
-                except Exception as error:
-                    print(
-                        "[Tickets] v2_reclick_reaccess_failed "
-                        f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
-                        f"error={type(error).__name__}"
-                    )
-            message = f"✅ You already have an open {ticket_type.upper()} ticket: <#{location_id}>"
+            if existing_ticket is not None and existing_ticket.get("thread_missing"):
+                await _release_slot_for_missing_thread(mongo, existing_ticket["_id"])
+                message = (
+                    "⚠️ Your earlier ticket's thread was removed. "
+                    "Press the button again to start a new one."
+                )
+            else:
+                if existing_ticket is not None:
+                    try:
+                        await thread_service.ensure_candidate_thread_access(
+                            bot.rest, existing_ticket, user_id=user_id,
+                        )
+                    except Exception as error:
+                        print(
+                            "[Tickets] v2_reclick_reaccess_failed "
+                            f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
+                            f"error={type(error).__name__}"
+                        )
+                message = f"✅ You already have an open {ticket_type.upper()} ticket: <#{location_id}>"
         else:
             message = "⏳ Your ticket is already being created. Please try again shortly."
         await ctx.interaction.edit_initial_response(content=message)
@@ -440,6 +509,16 @@ async def handle_my_ticket(
         )
         if open_ticket is not None:
             break
+
+    if open_ticket is not None and open_ticket.get("thread_missing"):
+        await _release_slot_for_missing_thread(mongo, open_ticket["_id"])
+        await ctx.interaction.edit_initial_response(
+            content=(
+                "⚠️ Your earlier ticket's thread was removed. "
+                "Press Main or FWA to start a new one."
+            )
+        )
+        return
 
     if open_ticket is not None:
         location_id = _ticket_location(open_ticket)

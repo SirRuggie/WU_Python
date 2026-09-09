@@ -931,6 +931,39 @@ async def append_candidate_activity(
     return Transition(WON, updated)
 
 
+async def mark_thread_missing(
+    mongo: MongoClient,
+    ticket_id,
+    *,
+    thread_role: str,
+) -> Transition:
+    """Record that one thread of a ticket's pair is gone from Discord.
+
+    A field, not a status -- ``status`` still reflects the recruiter's
+    decision (open/approved/denied). This only records that the candidate's
+    or staff's Discord thread itself was deleted, so re-click/My ticket can
+    let the applicant open a new one instead of pointing at a dead thread
+    forever, and resolution effects can skip instead of retrying every 60s.
+    Idempotent: re-marking an already-flagged ticket just refreshes the
+    timestamp, never raises.
+    """
+    role = str(thread_role or "").strip()
+    if role not in {"candidate", "staff"}:
+        raise ValueError("thread_role must be 'candidate' or 'staff'")
+    now = utcnow()
+    updated = await mongo.tickets.find_one_and_update(
+        {"_id": ticket_id, **RUNTIME_FILTER},
+        {"$set": {
+            "thread_missing": {"thread_role": role, "detected_at": now},
+            "updated_at": now,
+        }},
+        return_document=ReturnDocument.AFTER,
+    )
+    if updated is None:
+        return Transition(MISSING, None)
+    return Transition(WON, updated)
+
+
 async def status_counts(collection) -> dict[str, int]:
     docs = await collection.find(TICKET_FILTER, {"status": 1}).to_list(length=None)
     return dict(Counter(doc.get("status") or "(missing)" for doc in docs))

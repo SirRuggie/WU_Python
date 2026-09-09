@@ -2496,6 +2496,31 @@ def test_candidate_activity_is_idempotent_and_merges_normalized_tags():
     assert again.doc["activity_revision"] == 1
 
 
+def test_mark_thread_missing_sets_a_field_not_a_status():
+    mongo = _mongo(_ticket())
+    result = asyncio.run(store.mark_thread_missing(
+        mongo, "ticket_101", thread_role="candidate",
+    ))
+    assert result.won
+    assert result.doc["status"] == "open"
+    assert result.doc["thread_missing"]["thread_role"] == "candidate"
+
+    # Idempotent: re-marking an already-flagged ticket is a no-op, not an error.
+    again = asyncio.run(store.mark_thread_missing(
+        mongo, "ticket_101", thread_role="candidate",
+    ))
+    assert again.won
+    assert again.doc["thread_missing"]["thread_role"] == "candidate"
+
+
+def test_mark_thread_missing_rejects_an_unknown_role():
+    mongo = _mongo(_ticket())
+    with pytest.raises(ValueError, match="thread_role"):
+        asyncio.run(store.mark_thread_missing(
+            mongo, "ticket_101", thread_role="applicant",
+        ))
+
+
 def test_approve_succeeds_after_applicant_activity_between_panel_open_and_click():
     mongo = _mongo(_ticket())
     asyncio.run(store.append_candidate_activity(
@@ -3032,6 +3057,61 @@ def test_notification_failure_still_archives_and_requests_hub(monkeypatch):
     assert effects["archive"]["state"] == "archived"
     assert effects["hub"]["state"] == "requested"
     assert effects["complete"] is False
+
+
+def test_resolution_effects_skip_a_known_missing_thread_instead_of_retrying(monkeypatch):
+    """thread_missing is set by the GuildThreadDeleteEvent listener in
+    handlers.py. Effects that need the gone thread must be marked skipped
+    (with an audit note) and the whole pipeline must still complete --
+    never retried every 60s, per the P1 fix for a deleted candidate thread.
+    """
+    ticket = _effect_ticket()
+    ticket["thread_missing"] = {"thread_role": "candidate"}
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def fetch_channel(self, channel_id):
+            if channel_id == 101:
+                raise hikari.NotFoundError(
+                    url="", headers={}, raw_body=b"", code=10003
+                )
+            return SimpleNamespace(id=channel_id, is_archived=False, is_locked=False)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    rest = Rest()
+    mongo = _mongo(ticket)
+
+    async def acquire(received_mongo, *_args, **_kwargs):
+        return await store.find_one(
+            received_mongo, {"_id": ticket["_id"], **store.RUNTIME_FILTER}
+        )
+
+    async def release(*_args, **_kwargs):
+        return None
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, "_acquire_resolution_effect_lease", acquire)
+    monkeypatch.setattr(resolve, "_release_resolution_effect_lease", release)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    result = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, ticket
+    ))
+
+    assert result.outcome == store.WON
+    assert result.doc["resolution_effects"]["complete"] is True
+    # The staff thread (102) still got archived; only the missing candidate
+    # thread (101) was skipped rather than retried.
+    assert (102, {"locked": True, "archived": True, "reason": "Archiving resolved ticket"}) in rest.edits
+    audit_events = [entry["event"] for entry in result.doc["audit"]]
+    assert "resolution_notification_skipped" in audit_events
+    assert "resolution_archive_skipped" in audit_events
 
 
 def test_notification_retry_reopens_only_to_write_and_rearchives(monkeypatch):

@@ -1526,6 +1526,10 @@ async def create_live_thread_ticket(
         existing = await store.find_open_for_applicant(
             mongo, user_id=int(user_id), ticket_type=ticket_type
         )
+        if existing is not None and existing.get("thread_missing"):
+            # A dead-thread ticket must not block a genuinely new one --
+            # that is the whole point of the applicant's slot being released.
+            existing = None
         if existing is not None:
             await ticket_runtime.cancel_open_slot(
                 mongo,
@@ -1562,6 +1566,8 @@ async def create_live_thread_ticket(
             existing = await store.find_open_for_applicant(
                 mongo, user_id=int(user_id), ticket_type=ticket_type
             )
+            if existing is not None and existing.get("thread_missing"):
+                existing = None
             if existing is not None:
                 await ticket_runtime.cancel_open_slot(
                     mongo,
@@ -1746,7 +1752,15 @@ def _ticket_thread_ids(ticket: Mapping[str, Any]) -> tuple[int, int]:
 
 
 async def archive_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str, Any]) -> None:
-    """Lock and archive both terminal-ticket threads, idempotently."""
+    """Lock and archive both terminal-ticket threads, idempotently.
+
+    Still raises on a 404: `_finish_committed_creation`'s pending-delivery
+    recovery (see `_retry_or_retire_pending_delivery`) depends on that to
+    recognize "the thread itself is gone" and retire the row immediately
+    instead of retrying it. Resolution-effect callers that must not retry a
+    known-missing thread forever check `ticket["thread_missing"]` (set by
+    the `GuildThreadDeleteEvent` listener in handlers.py) before calling in.
+    """
     public_id, staff_id = _ticket_thread_ids(ticket)
     errors: list[Exception] = []
     for thread_id in (public_id, staff_id):
@@ -1769,7 +1783,10 @@ async def archive_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str, 
 
 
 async def reconcile_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str, Any]) -> None:
-    """Make Discord state agree with the ticket's permanent Mongo status."""
+    """Make Discord state agree with the ticket's permanent Mongo status.
+
+    See `archive_ticket_pair` for why a deleted thread (404) still raises.
+    """
     status = ticket.get("status")
     public_id, staff_id = _ticket_thread_ids(ticket)
     if status in {"approved", "denied"}:

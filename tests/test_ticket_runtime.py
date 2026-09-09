@@ -615,6 +615,30 @@ def test_claim_cross_checks_preexisting_open_ticket_before_winning():
     asyncio.run(scenario())
 
 
+def test_claim_ignores_a_preexisting_ticket_whose_thread_is_missing():
+    """thread_missing (set by the GuildThreadDeleteEvent listener) must not
+    keep an unusable open ticket blocking a fresh claim forever -- that is
+    exactly what lets the applicant open a new ticket after Discord deletes
+    their thread."""
+    async def scenario():
+        ticket = _ticket("thread-open", user=91, route=runtime.ROUTE_THREAD, location=911)
+        ticket["thread_missing"] = {"thread_role": "candidate"}
+        mongo = _mongo(rollout=[_cross_rollout()], thread=[ticket])
+        claim = await runtime.claim_open_slot(
+            mongo,
+            user_id=91,
+            ticket_type="main",
+            route=runtime.ROUTE_THREAD,
+            guild_id=11,
+            workflow_id="thread:91:main",
+            rollout_revision=4,
+            now=NOW,
+        )
+        assert claim.won
+
+    asyncio.run(scenario())
+
+
 def test_next_claim_repairs_exact_terminal_slot_when_release_checkpoint_failed():
     async def scenario():
         terminal = _ticket(

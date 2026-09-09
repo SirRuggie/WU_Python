@@ -2810,6 +2810,25 @@ def test_player_tag_in_code_span_has_no_backslash_escape():
     assert "\\#2PP0JCCLU" not in content
 
 
+def test_detail_panel_shows_thread_removed_when_candidate_thread_is_missing():
+    ticket = _ticket(22, thread_missing={"thread_role": "candidate"})
+    view = console.build_ticket_detail(
+        ticket, action_id="i" * 32, flags=[], history=[],
+    )
+    nodes = _nodes(view)
+    removed_button = next(
+        node for node in nodes
+        if isinstance(node, dict)
+        and str(node.get("custom_id", "")).startswith("ticket_v2_console_unavailable:thread|")
+        and str(node.get("custom_id", "")).endswith("|candidate")
+    )
+    assert removed_button["label"] == "Thread removed"
+    assert removed_button["disabled"] is True
+    labels = [node.get("label") for node in nodes if isinstance(node, dict) and "label" in node]
+    assert "Open the thread" not in labels
+    assert "Open staff thread" in labels
+
+
 def test_applicant_intake_text_cannot_inject_headings_or_masked_links():
     injected = "IGN Bob\n## Verified\n[Open](https://x)"
     ticket_doc = _ticket(15, intake_snapshot={"looking_for": injected})

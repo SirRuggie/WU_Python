@@ -1043,6 +1043,79 @@ async def release_open_slot(
     return bool(result.deleted_count)
 
 
+async def mark_slot_release_pending_for_missing_thread(
+    mongo: Any,
+    *,
+    ticket_id: Any,
+    now: datetime | None = None,
+) -> Mapping[str, Any]:
+    """Durably mark a slot for release after its ticket's thread was deleted.
+
+    Mirrors `mark_slot_release_pending`, but for a ticket whose Discord
+    thread is gone while `status` legitimately stays "open" -- thread_missing
+    is a field, not a status (see the GuildThreadDeleteEvent listener in
+    handlers.py), so this checks that field instead of a terminal status.
+    """
+    slot = await mongo.ticket_open_slots.find_one(
+        {"ticket_id": ticket_id, "state": SLOT_OPEN}
+    )
+    if slot is None:
+        raise SlotConflict("no open slot is bound to that ticket")
+    ticket = await _ticket_for_slot(mongo, slot)
+    if not (ticket or {}).get("thread_missing"):
+        raise SlotConflict("ticket thread is not marked missing")
+    moment = now or utcnow()
+    document = await mongo.ticket_open_slots.find_one_and_update(
+        {
+            "_id": slot.get("_id"),
+            "ticket_id": ticket_id,
+            "workflow_id": slot.get("workflow_id"),
+            "state": SLOT_OPEN,
+        },
+        {
+            "$set": {
+                "state": SLOT_RELEASE_PENDING,
+                "terminal_status": "thread_missing",
+                "terminal_committed_at": moment,
+                "updated_at": moment,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if document is None:
+        raise SlotConflict("no open slot is bound to that ticket")
+    return document
+
+
+async def release_open_slot_for_missing_thread(
+    mongo: Any,
+    *,
+    ticket_id: Any,
+    now: datetime | None = None,
+) -> bool:
+    """Release only after re-reading that the exact bound ticket is thread_missing."""
+
+    slot = await mongo.ticket_open_slots.find_one({
+        "ticket_id": ticket_id,
+        "state": SLOT_RELEASE_PENDING,
+        "terminal_status": "thread_missing",
+    })
+    if slot is None:
+        return False
+    ticket = await _ticket_for_slot(mongo, slot)
+    if not (ticket or {}).get("thread_missing"):
+        return False
+    result = await mongo.ticket_open_slots.delete_one(
+        {
+            "_id": slot.get("_id"),
+            "ticket_id": ticket_id,
+            "workflow_id": slot.get("workflow_id"),
+            "state": SLOT_RELEASE_PENDING,
+        }
+    )
+    return bool(result.deleted_count)
+
+
 def _nested_value(document: Mapping[str, Any], path: str) -> Any:
     value: Any = document
     for key in path.split("."):
@@ -1188,6 +1261,14 @@ def _authority_query(
     query: dict[str, Any] = {"type": "ticket"}
     if status is not None:
         query["status"] = str(status)
+        if str(status) == "open":
+            # A thread_missing open ticket (see the GuildThreadDeleteEvent
+            # listener in handlers.py) is not usable and must not keep
+            # re-claiming or re-backfilling its own slot forever -- that is
+            # exactly what let the applicant open a new ticket. It is still
+            # found by every status=None query (conflict reconciliation),
+            # so nothing here hides it from cleanup.
+            query["thread_missing"] = {"$exists": False}
     if route == ROUTE_THREAD:
         query.update({"venue": "thread", "runtime": THREAD_RUNTIME})
     elif route == ROUTE_LEGACY:
@@ -1970,10 +2051,12 @@ __all__ = [
     "legacy_pending_delivery_query",
     "legacy_recoverable_delivery_query",
     "mark_slot_release_pending",
+    "mark_slot_release_pending_for_missing_thread",
     "pilot_access_allowed",
     "reconcile_open_slots",
     "recover_ticket_runtime",
     "release_open_slot",
+    "release_open_slot_for_missing_thread",
     "reserve_ticket_number",
     "resume_open_slot",
     "route_public_intake",

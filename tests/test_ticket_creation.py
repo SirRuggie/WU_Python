@@ -589,6 +589,61 @@ def test_ensure_candidate_thread_access_returns_false_on_deleted_thread():
     assert result is False
 
 
+def test_creation_bypasses_an_existing_ticket_whose_thread_is_missing(monkeypatch):
+    """A thread_missing existing ticket must not shortcut to
+    _reconcile_existing_ticket -- that would keep pointing the applicant at
+    a dead thread forever instead of letting them open a new ticket.
+    """
+    mongo = SimpleNamespace(
+        ticket_creation_state=CreationStateCollection(),
+        ticket_automation_state=AutomationStateCollection(),
+    )
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def find_open(*_args, **_kwargs):
+        ticket = _ticket()
+        ticket["thread_missing"] = {"thread_role": "candidate"}
+        return ticket
+
+    async def no_bound(*_args, **_kwargs):
+        return None
+
+    class _ProceededPastExisting(Exception):
+        pass
+
+    async def claim(*_args, **_kwargs):
+        raise _ProceededPastExisting()
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", no_op)
+    monkeypatch.setattr(thread_service, "validate_thread_parents", no_op)
+    monkeypatch.setattr(thread_service.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(thread_service, "_committed_ticket_for_creation_state", no_bound)
+    monkeypatch.setattr(thread_service, "_claim_creation", claim)
+
+    bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=99), rest=SimpleNamespace())
+    config = {
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_thread_recruiter_role": 40,
+    }
+
+    with pytest.raises(_ProceededPastExisting):
+        asyncio.run(thread_service.create_live_thread_ticket(
+            bot=bot,
+            mongo=mongo,
+            guild_id=10,
+            user_id=30,
+            username="Applicant",
+            display_name="Applicant",
+            ticket_type="main",
+            config=config,
+            open_slot_claim=_slot_claim(),
+        ))
+
+
 def test_legacy_migration_help_explains_overrides_and_confirmation():
     options = legacy_migration.MigrateLegacyTicket._command_data.options
     assert options["type"].description == (

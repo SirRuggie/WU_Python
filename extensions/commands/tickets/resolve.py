@@ -446,32 +446,41 @@ async def _process_resolution_effects_owned(
     pending: list[tuple[str, Exception]] = []
     notification_write_needed = False
     staff_context_ready = True
+    # Set by the GuildThreadDeleteEvent listener in handlers.py. A step that
+    # needs the missing half of the pair is marked skipped (with an audit
+    # note from _checkpoint_effect) instead of retried every 60s forever.
+    missing_role = str((ticket.get("thread_missing") or {}).get("thread_role") or "") or None
 
     try:
-        delivered = (effects.get("notification") or {}).get("state") == "delivered"
-        if not delivered:
-            me = bot.get_me()
-            if me is None:
-                raise RuntimeError("bot identity is unavailable")
-            if not await _notification_exists(
-                bot.rest,
-                location_id,
-                marker,
-                bot_user_id=int(me.id),
-            ):
-                notification_write_needed = True
-                await _ensure_notification_thread_writable(bot.rest, ticket)
-                await run_side_effects(
-                    bot,
-                    mongo,
-                    kind=kind,
-                    ticket=ticket,
-                    reason=ticket.get("denial_reason"),
-                    marker=marker,
+        notification_state = (effects.get("notification") or {}).get("state")
+        if notification_state not in {"delivered", "skipped"}:
+            if missing_role == "candidate":
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step="notification", state="skipped",
                 )
-            await _checkpoint_effect(
-                mongo, ticket["_id"], marker, step="notification", state="delivered"
-            )
+            else:
+                me = bot.get_me()
+                if me is None:
+                    raise RuntimeError("bot identity is unavailable")
+                if not await _notification_exists(
+                    bot.rest,
+                    location_id,
+                    marker,
+                    bot_user_id=int(me.id),
+                ):
+                    notification_write_needed = True
+                    await _ensure_notification_thread_writable(bot.rest, ticket)
+                    await run_side_effects(
+                        bot,
+                        mongo,
+                        kind=kind,
+                        ticket=ticket,
+                        reason=ticket.get("denial_reason"),
+                        marker=marker,
+                    )
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step="notification", state="delivered"
+                )
     except Exception as exc:
         await _checkpoint_effect(
             mongo, ticket["_id"], marker, step="notification", state="failed", error=exc
@@ -479,7 +488,14 @@ async def _process_resolution_effects_owned(
         pending.append(("applicant notification", exc))
 
     try:
-        if (effects.get("staff_context") or {}).get("state") != "delivered":
+        staff_context_state = (effects.get("staff_context") or {}).get("state")
+        if staff_context_state in {"delivered", "skipped"}:
+            pass
+        elif missing_role == "staff":
+            await _checkpoint_effect(
+                mongo, ticket["_id"], marker, step="staff_context", state="skipped",
+            )
+        else:
             # Decisions committed before linked-account snapshots existed have
             # nothing new to render; checkpoint them for upgrade-safe recovery.
             if (ticket.get("linked_accounts") or {}).get("version"):
@@ -539,10 +555,20 @@ async def _process_resolution_effects_owned(
                     mongo, ticket["_id"], marker, step="archive", state="archived"
                 )
         except Exception as exc:
-            await _checkpoint_effect(
-                mongo, ticket["_id"], marker, step="archive", state="failed", error=exc
-            )
-            pending.append(("thread archive", exc))
+            if missing_role:
+                # A thread of the pair is already known gone -- the
+                # GuildThreadDeleteEvent listener recorded it. The other
+                # half may or may not be archived, but retrying this every
+                # 60s cannot fix a thread that no longer exists.
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step="archive", state="skipped",
+                    error=exc,
+                )
+            else:
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step="archive", state="failed", error=exc
+                )
+                pending.append(("thread archive", exc))
 
     try:
         if (effects.get("hub") or {}).get("state") != "requested":
