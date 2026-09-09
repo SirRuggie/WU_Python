@@ -18,7 +18,6 @@ from hikari.impl import (
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT
 from extensions.commands.tickets_legacy import loader, ticket
-from extensions.commands.tickets_legacy import perms
 
 # Default configuration values (same as in handlers.py)
 DEFAULT_MAIN_CATEGORY = 1395400463897202738
@@ -64,12 +63,6 @@ class Config(
             await ctx.respond(
                 "❌ You need Administrator permissions to use this command!",
                 ephemeral=True
-            )
-            return
-        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
-            await ctx.respond(
-                "❌ Legacy ticket configuration is bound to its configured guild.",
-                ephemeral=True,
             )
             return
 
@@ -188,12 +181,6 @@ class ChangeCategory(
                 ephemeral=True
             )
             return
-        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
-            await ctx.respond(
-                "❌ Legacy ticket configuration is bound to its configured guild.",
-                ephemeral=True,
-            )
-            return
 
         try:
             category_id = int(self.new_category)  # Changed from ctx.options.new_category
@@ -251,8 +238,7 @@ class ChangeCategory(
         )
 
 
-# Intentionally not registered during dual-runtime operation.  Ticket numbers
-# are allocated by the monotonic shared counter and may never be moved backward.
+@ticket.register()
 class ResetCounter(
     lightbulb.SlashCommand,
     name="reset-counter",

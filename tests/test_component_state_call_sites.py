@@ -12,6 +12,7 @@ ALLOWED_DIRECT_BUTTON_STORE = {
     # CAS is constrained through store._legacy_filter.
     Path("extensions/commands/tickets_legacy/resolution_delivery.py"),
     Path("extensions/commands/tickets/migrate.py"),
+    Path("extensions/commands/tickets_legacy/migrate.py"),
     # Read-only conflict detection prevents a canonical migration from cloning
     # a legacy-only or mismatched source ticket.
     Path("extensions/commands/tickets/legacy_migration.py"),

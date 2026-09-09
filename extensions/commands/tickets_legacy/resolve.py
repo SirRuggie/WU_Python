@@ -349,10 +349,7 @@ async def offer_override(
     Returns (content, components); the caller delivers them, because the deny
     handlers respond through edit_initial_response and approve responds directly.
     """
-    if (
-        not await perms.is_recruiter(ctx.member, mongo)
-        or not await perms.is_legacy_control_guild(mongo, ctx.guild_id)
-    ):
+    if not await perms.is_recruiter(ctx.member, mongo):
         return lost_message(kind, current, None)
 
     prior = _prior(current)
@@ -362,7 +359,6 @@ async def offer_override(
         "type": "ticket_override",
         "kind": kind,
         "ticket_id": ticket_id,
-        "guild_id": int(ctx.guild_id),
         "channel_id": channel_id,
         "user_id": user_id,
         "reason": reason,
@@ -398,16 +394,6 @@ async def ticket_override_handler(
     if not await perms.is_recruiter(ctx.member, mongo):
         await ctx.interaction.edit_initial_response(
             content="Only recruiters can overturn a resolution.", components=[]
-        )
-        return
-
-    state_guild_id = data.get("guild_id")
-    if (
-        (state_guild_id is not None and int(state_guild_id) != int(ctx.guild_id or 0))
-        or not await perms.is_legacy_control_guild(mongo, ctx.guild_id)
-    ):
-        await ctx.interaction.edit_initial_response(
-            content="This legacy override is not available in this server.", components=[]
         )
         return
 

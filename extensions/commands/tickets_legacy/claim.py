@@ -26,17 +26,13 @@ def _discord_ts(value, style: str = "R") -> str:
         return "some time ago"
 
 
-async def _current_ticket(mongo: MongoClient, guild_id, channel_id):
+async def _current_ticket(mongo: MongoClient, channel_id):
     """The open-or-not ticket document for the channel the command was run in.
 
     Inside a thread ctx.channel_id IS the thread id, so this resolves for both
     the channel era and the thread era with no change.
     """
-    return await store.find_one(mongo, {
-        "type": "ticket",
-        "guild_id": int(guild_id),
-        "channel_id": channel_id,
-    })
+    return await store.find_one(mongo, {"type": "ticket", "channel_id": channel_id})
 
 
 @ticket.register()
@@ -58,11 +54,8 @@ class Claim(
         if not await perms.is_recruiter(ctx.member, mongo):
             await ctx.respond("Only recruiters can claim tickets.")
             return
-        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
-            await ctx.respond("Legacy recruiter actions are bound to the configured guild.")
-            return
 
-        doc = await _current_ticket(mongo, ctx.guild_id, ctx.channel_id)
+        doc = await _current_ticket(mongo, ctx.channel_id)
         if doc is None:
             await ctx.respond("This isn't a ticket channel.")
             return
@@ -130,16 +123,13 @@ class Release(
         if not await perms.is_recruiter(ctx.member, mongo):
             await ctx.respond("Only recruiters can release tickets.")
             return
-        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
-            await ctx.respond("Legacy recruiter actions are bound to the configured guild.")
-            return
 
         forcing = bool(self.force)
         if forcing and not (ctx.member.permissions & hikari.Permissions.ADMINISTRATOR):
             await ctx.respond("Releasing someone else's claim is Administrator-only.")
             return
 
-        doc = await _current_ticket(mongo, ctx.guild_id, ctx.channel_id)
+        doc = await _current_ticket(mongo, ctx.channel_id)
         if doc is None:
             await ctx.respond("This isn't a ticket channel.")
             return

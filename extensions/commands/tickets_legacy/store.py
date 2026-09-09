@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from extensions.commands import ticket_runtime
 from utils.mongo import MongoClient
 
 LEGACY_RUNTIME = "legacy_channel"
@@ -109,8 +108,6 @@ def _normalize_exact_ticket(doc: dict) -> dict:
     normalized = dict(doc)
     if normalized.get("type") != "ticket":
         raise ValueError("legacy ticket type must be 'ticket'")
-    if normalized.get("venue") == "thread" or normalized.get("runtime") == "thread_v2":
-        raise ValueError("legacy ticket repository cannot persist thread tickets")
     normalized.setdefault("venue", "channel")
     normalized.setdefault("runtime", LEGACY_RUNTIME)
     if normalized.get("venue") != "channel" or normalized.get("runtime") != LEGACY_RUNTIME:
@@ -487,50 +484,7 @@ async def transition(
         )
     ):
         return Transition(BUSY, result.doc)
-    if result.won and to_status in TERMINAL_STATUSES:
-        await release_terminal_open_slot(mongo, ticket_id, to_status)
     return result
-
-
-async def release_terminal_open_slot(
-        mongo: MongoClient,
-        ticket_id,
-        terminal_status: str,
-) -> bool:
-    """Best-effort slot release after the legacy terminal row is committed.
-
-    Historical tickets predate global slots and therefore have nothing to
-    release.  A failed deletion remains ``release_pending`` for startup
-    reconciliation; resolution itself is never rolled back after commit.
-    """
-    if terminal_status not in TERMINAL_STATUSES:
-        raise ValueError(f"unsupported terminal status: {terminal_status!r}")
-    if not hasattr(mongo, "ticket_open_slots"):
-        return False
-    try:
-        try:
-            await ticket_runtime.mark_slot_release_pending(
-                mongo,
-                ticket_id=ticket_id,
-                terminal_status=terminal_status,
-            )
-        except ticket_runtime.SlotConflict:
-            slot = await mongo.ticket_open_slots.find_one({"ticket_id": ticket_id})
-            if slot is None:
-                return True
-            if slot.get("state") != ticket_runtime.SLOT_RELEASE_PENDING:
-                print(
-                    "[Tickets:Legacy] slot_release_state_conflict "
-                    f"ticket_id={ticket_id} state={slot.get('state')}"
-                )
-                return False
-        return await ticket_runtime.release_open_slot(mongo, ticket_id=ticket_id)
-    except Exception as error:
-        print(
-            "[Tickets:Legacy] slot_release_deferred "
-            f"ticket_id={ticket_id} error={type(error).__name__}"
-        )
-        return False
 
 
 async def claim(mongo: MongoClient, ticket_id, actor_id: int, actor_name: str) -> Transition:

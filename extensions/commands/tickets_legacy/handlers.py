@@ -10,7 +10,6 @@ from typing import List, Dict
 from datetime import datetime, timedelta, timezone
 import asyncio
 import re
-import uuid
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -24,7 +23,6 @@ from pymongo.errors import DuplicateKeyError
 
 from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GOLD_ACCENT
-from extensions.commands import ticket_runtime
 from extensions.components import register_action
 from extensions.commands.tickets_legacy import loader
 from extensions.commands.tickets_legacy import store
@@ -52,14 +50,6 @@ CREATION_RETENTION = timedelta(days=30)
 UNCERTAIN_CHANNEL_LOOKUP_ATTEMPTS = 3
 UNCERTAIN_CHANNEL_LOOKUP_DELAY_SECONDS = 1
 _creation_index_ready = False
-LEGACY_COMMIT_RECOVERY_LIMIT = 50
-LEGACY_COMMIT_RETRY_DELAYS_SECONDS = (5, 15, 30, 60, 300)
-_legacy_commit_recovery_tasks: dict[str, asyncio.Task] = {}
-_legacy_commit_recovery_stopping = False
-
-
-class CreationLeaseLost(RuntimeError):
-    """The durable creation owner changed before this worker's next write."""
 
 
 def _creation_id(guild_id: int, user_id: int, ticket_type: str) -> str:
@@ -82,14 +72,10 @@ def _error_detail(error: Exception) -> str:
 
 
 async def ensure_creation_index(mongo: MongoClient) -> None:
-    """Expire completed attempts only; unresolved evidence is never TTL data."""
+    """Install the bounded-state TTL before any Discord side effect."""
     global _creation_index_ready
     if _creation_index_ready:
         return
-    await mongo.ticket_creation_state.update_many(
-        {"state": {"$ne": "complete"}, "expires_at": {"$exists": True}},
-        {"$unset": {"expires_at": ""}},
-    )
     await mongo.ticket_creation_state.create_index(
         "expires_at",
         expireAfterSeconds=0,
@@ -99,696 +85,13 @@ async def ensure_creation_index(mongo: MongoClient) -> None:
 
 
 async def find_open_ticket(mongo: MongoClient, user_id: int, ticket_type: str):
-    """Return an open ticket from either runtime before claiming a global slot."""
-    mixed_user_id = [int(user_id), str(int(user_id))]
-    legacy = await store.find_one(mongo, {
+    """Return an existing committed ticket so a retry cannot duplicate it."""
+    return await store.find_one(mongo, {
         "type": "ticket",
         "ticket_type": ticket_type,
-        "user_id": {"$in": mixed_user_id},
+        "user_id": {"$in": [int(user_id), str(int(user_id))]},
         "status": "open",
     })
-    if legacy is not None:
-        return legacy
-    return await mongo.tickets.find_one({
-        "type": "ticket",
-        "venue": "thread",
-        "ticket_type": ticket_type,
-        "user_id": {"$in": mixed_user_id},
-        "status": "open",
-    })
-
-
-def _ticket_location_id(ticket: dict) -> int:
-    location = ticket.get("location") or {}
-    return store.as_int(
-        location.get("id")
-        or ticket.get("public_thread_id")
-        or ticket.get("channel_id")
-        or ticket.get("staff_thread_id")
-        or ticket.get("thread_id")
-    )
-
-
-def _public_workflow_id(
-        route: str,
-        guild_id: int,
-        user_id: int,
-        ticket_type: str,
-) -> str:
-    if route == ticket_runtime.ROUTE_THREAD:
-        return f"thread:{int(user_id)}:{ticket_type}"
-    return f"legacy:{_creation_id(guild_id, user_id, ticket_type)}"
-
-
-async def _existing_public_open_slot(
-        mongo: MongoClient,
-        user_id: int,
-        ticket_type: str,
-):
-    """Read sticky ownership without acquiring or extending its lease."""
-    return await mongo.ticket_open_slots.find_one({
-        "_id": f"ticket-open:{int(user_id)}:{ticket_type}",
-        "state": {"$in": sorted(ticket_runtime.ACTIVE_SLOT_STATES)},
-    })
-
-
-async def claim_public_open_slot(
-        mongo: MongoClient,
-        *,
-        route: str,
-        rollout_revision: int,
-        guild_id: int,
-        user_id: int,
-        ticket_type: str,
-):
-    """Claim a new slot or resume its sticky runtime after a phase change."""
-    workflow_id = _public_workflow_id(
-        route, guild_id, user_id, ticket_type
-    )
-    for attempt in range(2):
-        claimed = await ticket_runtime.claim_open_slot(
-            mongo,
-            user_id=user_id,
-            ticket_type=ticket_type,
-            route=route,
-            guild_id=guild_id,
-            workflow_id=workflow_id,
-            rollout_revision=rollout_revision,
-            lease_seconds=600,
-        )
-        if claimed.won:
-            return claimed
-
-        slot = claimed.slot
-        if (
-            attempt == 0
-            and slot.get("state") == ticket_runtime.SLOT_RELEASE_PENDING
-        ):
-            await ticket_runtime.reconcile_open_slots(mongo)
-            continue
-        if slot.get("state") == ticket_runtime.SLOT_RESERVED:
-            sticky_route = slot.get("route")
-            sticky_workflow = slot.get("workflow_id")
-            if (
-                sticky_route == route
-                and store.as_int(slot.get("guild_id")) == int(guild_id)
-                and str(sticky_workflow or "") == workflow_id
-            ):
-                return await ticket_runtime.resume_open_slot(
-                    mongo,
-                    slot_id=str(slot["_id"]),
-                    workflow_id=str(sticky_workflow),
-                    route=str(sticky_route),
-                    guild_id=int(guild_id),
-                    lease_seconds=600,
-                )
-        return claimed
-    return claimed
-
-
-async def cancel_claimed_open_slot(mongo: MongoClient, slot_claim) -> bool:
-    if not slot_claim.won or not slot_claim.owner_token:
-        return False
-    return await ticket_runtime.cancel_open_slot(
-        mongo,
-        slot_id=str(slot_claim.slot["_id"]),
-        owner_token=str(slot_claim.owner_token),
-        workflow_id=str(slot_claim.slot["workflow_id"]),
-    )
-
-
-async def cancel_slot_if_creation_absent(
-        mongo: MongoClient,
-        slot_claim,
-        creation_id: str,
-) -> bool:
-    """Cancel only after Mongo proves no local creation evidence exists."""
-    try:
-        current = await mongo.ticket_creation_state.find_one({"_id": creation_id})
-    except Exception as error:
-        print(
-            "[Tickets:Legacy] slot_cancel_evidence_check_failed "
-            f"creation_id={creation_id} error={type(error).__name__}"
-        )
-        return False
-    if current is not None:
-        return False
-    return await cancel_claimed_open_slot(mongo, slot_claim)
-
-
-async def _queue_committed_initial_delivery(
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    ticket_data: dict,
-) -> bool:
-    """Best-effort materialize the delivery row after ticket commit."""
-
-    try:
-        from extensions.events.channel import ticket_channel_monitor
-
-        ticket_channel_monitor.schedule_ticket_automation_delivery_retry(
-            bot=bot,
-            mongo=mongo,
-            ticket_data=ticket_data,
-        )
-        await ticket_channel_monitor.ensure_ticket_automation_delivery(
-            mongo, ticket_data
-        )
-        return True
-    except Exception as error:
-        print(
-            "[Tickets:Legacy] initial_delivery_queue_deferred "
-            f"ticket_id={ticket_data['_id']} error={type(error).__name__}"
-        )
-        return False
-
-
-async def _drive_committed_initial_delivery(
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    ticket_data: dict,
-) -> bool:
-    """Best-effort drive the exact queued row without changing commit success."""
-
-    try:
-        from extensions.events.channel import ticket_channel_monitor
-
-        await ticket_channel_monitor.ensure_and_deliver_ticket_automation(
-            bot=bot,
-            mongo=mongo,
-            ticket_data=ticket_data,
-        )
-        return True
-    except Exception as error:
-        ticket_channel_monitor.schedule_ticket_automation_delivery_retry(
-            bot=bot,
-            mongo=mongo,
-            ticket_data=ticket_data,
-        )
-        print(
-            "[Tickets:Legacy] initial_delivery_deferred "
-            f"ticket_id={ticket_data['_id']} error={type(error).__name__}"
-        )
-        return False
-
-
-def _ticket_payload_from_creation(state: dict) -> dict:
-    """Validate the canonical ticket payload against its fenced Discord evidence."""
-
-    payload = state.get("ticket_payload")
-    if not isinstance(payload, dict):
-        raise RuntimeError("legacy commit recovery payload is unavailable")
-    payload = dict(payload)
-    creation_id = str(state.get("_id") or "")
-    channel_id = store.as_int(state.get("channel_id"))
-    thread_id = store.as_int(state.get("thread_id"))
-    ticket_id = str(state.get("ticket_id") or "")
-    expected_creation_id = _creation_id(
-        store.as_int(payload.get("guild_id")),
-        store.as_int(payload.get("user_id")),
-        str(payload.get("ticket_type") or ""),
-    )
-    expected_slot_id = (
-        f"ticket-open:{store.as_int(payload.get('user_id'))}:"
-        f"{payload.get('ticket_type')}"
-    )
-    expected_workflow_id = f"legacy:{expected_creation_id}"
-    if (
-        not channel_id
-        or not thread_id
-        or ticket_id != f"ticket_{channel_id}"
-        or str(payload.get("_id") or "") != ticket_id
-        or payload.get("type") != "ticket"
-        or payload.get("status") != "open"
-        or payload.get("venue") != "channel"
-        or payload.get("runtime") != store.LEGACY_RUNTIME
-        or state.get("route") != ticket_runtime.ROUTE_LEGACY
-        or creation_id != expected_creation_id
-        or str(state.get("open_slot_id") or "") != expected_slot_id
-        or str(payload.get("open_slot_id") or "") != expected_slot_id
-        or str(state.get("creation_workflow_id") or "")
-        != expected_workflow_id
-        or str(payload.get("creation_workflow_id") or "")
-        != expected_workflow_id
-    ):
-        raise RuntimeError("legacy commit recovery identity is invalid")
-    exact_fields = (
-        "guild_id",
-        "user_id",
-        "channel_id",
-        "thread_id",
-        "category_id",
-        "ticket_number",
-        "rollout_revision",
-    )
-    if any(
-        store.as_int(state.get(field)) != store.as_int(payload.get(field))
-        for field in exact_fields
-    ):
-        raise RuntimeError("legacy commit recovery numeric identity mismatch")
-    if (
-        store.as_int(state.get("attempt_generation")) <= 0
-        or store.as_int(state.get("attempt_generation"))
-        != store.as_int(payload.get("creation_generation"))
-    ):
-        raise RuntimeError("legacy commit recovery generation mismatch")
-    for field in (
-        "ticket_type",
-        "open_slot_id",
-        "creation_workflow_id",
-        "runtime",
-    ):
-        if str(state.get(field) or "") != str(payload.get(field) or ""):
-            raise RuntimeError(f"legacy commit recovery identity mismatch: {field}")
-    if not isinstance(payload.get("created_at"), datetime):
-        raise RuntimeError("legacy commit recovery creation time is invalid")
-    return payload
-
-
-def _slot_matches_recovered_ticket(slot: dict, state: dict, ticket: dict) -> bool:
-    return (
-        str(slot.get("_id") or "") == str(state.get("open_slot_id") or "")
-        and slot.get("route") == ticket_runtime.ROUTE_LEGACY
-        and str(slot.get("workflow_id") or "")
-        == str(state.get("creation_workflow_id") or "")
-        and store.as_int(slot.get("guild_id")) == store.as_int(ticket.get("guild_id"))
-        and store.as_int(slot.get("user_id")) == store.as_int(ticket.get("user_id"))
-        and str(slot.get("ticket_type") or "") == str(ticket.get("ticket_type") or "")
-        and store.as_int(slot.get("rollout_revision"))
-        == store.as_int(ticket.get("rollout_revision"))
-    )
-
-
-async def _bind_recovered_open_slot(
-    mongo: MongoClient,
-    state: dict,
-    ticket: dict,
-    *,
-    owner_token: str | None = None,
-) -> None:
-    slot_id = str(state.get("open_slot_id") or "")
-    workflow_id = str(state.get("creation_workflow_id") or "")
-    slot = await mongo.ticket_open_slots.find_one({"_id": slot_id})
-    if slot is None or not _slot_matches_recovered_ticket(slot, state, ticket):
-        raise RuntimeError("legacy commit recovery slot identity mismatch")
-    if slot.get("state") == ticket_runtime.SLOT_OPEN:
-        if (
-            str(slot.get("ticket_id")) != str(ticket["_id"])
-            or store.as_int(slot.get("location_id")) != store.as_int(ticket["channel_id"])
-        ):
-            raise RuntimeError("legacy commit recovery slot belongs to another ticket")
-        return
-    if slot.get("state") != ticket_runtime.SLOT_RESERVED:
-        raise RuntimeError("legacy commit recovery slot is not resumable")
-    claimed = await ticket_runtime.resume_open_slot(
-        mongo,
-        slot_id=slot_id,
-        workflow_id=workflow_id,
-        route=ticket_runtime.ROUTE_LEGACY,
-        guild_id=store.as_int(ticket.get("guild_id")),
-        owner_token=owner_token,
-        lease_seconds=600,
-    )
-    if claimed.won:
-        try:
-            await ticket_runtime.bind_open_slot(
-                mongo,
-                slot_id=slot_id,
-                owner_token=str(claimed.owner_token),
-                ticket_id=ticket["_id"],
-                location_id=store.as_int(ticket["channel_id"]),
-            )
-            return
-        except ticket_runtime.SlotConflict:
-            pass
-    latest = await mongo.ticket_open_slots.find_one({"_id": slot_id})
-    if (
-        latest is None
-        or not _slot_matches_recovered_ticket(latest, state, ticket)
-        or latest.get("state") != ticket_runtime.SLOT_OPEN
-        or str(latest.get("ticket_id")) != str(ticket["_id"])
-        or store.as_int(latest.get("location_id"))
-        != store.as_int(ticket["channel_id"])
-    ):
-        raise RuntimeError("legacy commit recovery slot binding is pending")
-
-
-async def _retire_recovered_terminal_slot(
-    mongo: MongoClient,
-    state: dict,
-    ticket: dict,
-    *,
-    owner_token: str | None = None,
-) -> None:
-    """Converge a terminal late commit without recreating opening delivery."""
-
-    slot_id = str(state.get("open_slot_id") or "")
-    slot = await mongo.ticket_open_slots.find_one({"_id": slot_id})
-    if slot is None:
-        return
-    if not _slot_matches_recovered_ticket(slot, state, ticket):
-        raise RuntimeError("legacy terminal recovery slot identity mismatch")
-    if slot.get("state") == ticket_runtime.SLOT_RESERVED:
-        await _bind_recovered_open_slot(
-            mongo,
-            state,
-            ticket,
-            owner_token=owner_token,
-        )
-    elif slot.get("state") in {
-        ticket_runtime.SLOT_OPEN,
-        ticket_runtime.SLOT_RELEASE_PENDING,
-    }:
-        if (
-            str(slot.get("ticket_id") or "") != str(ticket["_id"])
-            or store.as_int(slot.get("location_id"))
-            != store.as_int(ticket["channel_id"])
-        ):
-            raise RuntimeError("legacy terminal recovery slot ticket mismatch")
-    else:
-        raise RuntimeError("legacy terminal recovery slot is not releasable")
-    if not await store.release_terminal_open_slot(
-        mongo,
-        ticket["_id"],
-        str(ticket["status"]),
-    ):
-        raise RuntimeError("legacy terminal recovery slot release is pending")
-
-
-async def _complete_recovered_creation_state(
-    mongo: MongoClient,
-    state: dict,
-    ticket: dict,
-) -> None:
-    now = datetime.now(timezone.utc)
-    identity = {
-        "_id": str(state["_id"]),
-        "guild_id": store.as_int(ticket["guild_id"]),
-        "user_id": store.as_int(ticket["user_id"]),
-        "ticket_type": str(ticket["ticket_type"]),
-        "ticket_number": store.as_int(ticket["ticket_number"]),
-        "ticket_id": str(ticket["_id"]),
-        "channel_id": store.as_int(ticket["channel_id"]),
-        "thread_id": store.as_int(ticket["thread_id"]),
-        "category_id": store.as_int(ticket["category_id"]),
-        "route": ticket_runtime.ROUTE_LEGACY,
-        "runtime": store.LEGACY_RUNTIME,
-        "rollout_revision": store.as_int(ticket["rollout_revision"]),
-        "attempt_generation": store.as_int(ticket["creation_generation"]),
-        "open_slot_id": str(ticket["open_slot_id"]),
-        "creation_workflow_id": str(ticket["creation_workflow_id"]),
-    }
-    completed = await mongo.ticket_creation_state.find_one_and_update(
-        {
-            **identity,
-            "state": {"$in": ["creating", "cleanup_required"]},
-        },
-        {
-            "$set": {
-                "state": "complete",
-                "completed_at": now,
-                "updated_at": now,
-                "expires_at": now + CREATION_RETENTION,
-            },
-            "$unset": {
-                "lease_owner": "",
-                "lease_until": "",
-                "last_error": "",
-                "cleanup_error": "",
-                "commit_check_error": "",
-            },
-        },
-        return_document=ReturnDocument.AFTER,
-    )
-    if completed is not None:
-        return
-    current = await mongo.ticket_creation_state.find_one({"_id": str(state["_id"])})
-    if current is None or current.get("state") != "complete" or any(
-        str(current.get(field)) != str(expected)
-        for field, expected in identity.items()
-    ):
-        raise RuntimeError("legacy commit recovery completion CAS failed")
-
-
-async def _creation_recovery_fence(mongo: MongoClient, state: dict) -> bool:
-    """Prove this exact commit generation still owns local recovery."""
-
-    query = {
-        "_id": str(state["_id"]),
-        "state": state.get("state"),
-        "ticket_id": str(state.get("ticket_id") or ""),
-        "attempt_generation": store.as_int(state.get("attempt_generation")),
-        "channel_id": store.as_int(state.get("channel_id")),
-        "thread_id": store.as_int(state.get("thread_id")),
-        "open_slot_id": str(state.get("open_slot_id") or ""),
-        "creation_workflow_id": str(state.get("creation_workflow_id") or ""),
-    }
-    return await mongo.ticket_creation_state.find_one(query) is not None
-
-
-async def recover_uncertain_legacy_ticket_creation(
-    *,
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    creation_id: str,
-    slot_owner_token: str | None = None,
-    creation_owner_token: str | None = None,
-    expected_ticket_id: str | None = None,
-    expected_generation: int | None = None,
-) -> bool:
-    """Converge one durable commit intent without deleting Discord evidence."""
-
-    state = await mongo.ticket_creation_state.find_one({"_id": str(creation_id)})
-    if state is None:
-        return True
-    if expected_ticket_id is not None and str(state.get("ticket_id") or "") != str(
-        expected_ticket_id
-    ):
-        return True
-    if expected_generation is not None and store.as_int(
-        state.get("attempt_generation")
-    ) != int(expected_generation):
-        return True
-    if state.get("state") == "complete":
-        return True
-    if state.get("state") not in {"creating", "cleanup_required"}:
-        raise RuntimeError("legacy commit recovery state is not recoverable")
-    if state.get("state") == "creating":
-        lease_until = state.get("lease_until")
-        if isinstance(lease_until, datetime) and lease_until.tzinfo is None:
-            lease_until = lease_until.replace(tzinfo=timezone.utc)
-        lease_owner = str(state.get("lease_owner") or "")
-        caller_owns_lease = bool(
-            creation_owner_token
-            and lease_owner == str(creation_owner_token)
-        )
-        if (
-            not caller_owns_lease
-            and isinstance(lease_until, datetime)
-            and lease_until > datetime.now(timezone.utc)
-        ):
-            raise RuntimeError("legacy commit recovery creation lease is active")
-    ticket = _ticket_payload_from_creation(state)
-    if not await _creation_recovery_fence(mongo, state):
-        return True
-    authoritative = await store.ensure_exact_ticket(
-        mongo,
-        ticket,
-        allow_terminal=True,
-    )
-    if str(authoritative.get("status") or "") in store.TERMINAL_STATUSES:
-        if not await _creation_recovery_fence(mongo, state):
-            return True
-        await _retire_recovered_terminal_slot(
-            mongo,
-            state,
-            authoritative,
-            owner_token=slot_owner_token,
-        )
-        if not await _creation_recovery_fence(mongo, state):
-            return True
-        await _complete_recovered_creation_state(mongo, state, authoritative)
-        return True
-    if not await _creation_recovery_fence(mongo, state):
-        return True
-    await _bind_recovered_open_slot(
-        mongo,
-        state,
-        authoritative,
-        owner_token=slot_owner_token,
-    )
-    if not await _creation_recovery_fence(mongo, state):
-        return True
-    if not await _queue_committed_initial_delivery(bot, mongo, authoritative):
-        raise RuntimeError("legacy commit recovery delivery queue is pending")
-    if not await _creation_recovery_fence(mongo, state):
-        return True
-    await _complete_recovered_creation_state(mongo, state, authoritative)
-    return True
-
-
-async def _retry_uncertain_legacy_ticket_creation(
-    *,
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    creation_id: str,
-    slot_owner_token: str | None = None,
-    creation_owner_token: str | None = None,
-    expected_ticket_id: str | None = None,
-    expected_generation: int | None = None,
-) -> None:
-    attempt = 0
-    while True:
-        try:
-            if await recover_uncertain_legacy_ticket_creation(
-                bot=bot,
-                mongo=mongo,
-                creation_id=creation_id,
-                slot_owner_token=slot_owner_token,
-                creation_owner_token=creation_owner_token,
-                expected_ticket_id=expected_ticket_id,
-                expected_generation=expected_generation,
-            ):
-                return
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            attempt += 1
-            delays = LEGACY_COMMIT_RETRY_DELAYS_SECONDS
-            delay = delays[min(attempt - 1, len(delays) - 1)]
-            if attempt <= len(delays) or (attempt - len(delays)) % 12 == 0:
-                print(
-                    "[Tickets:Legacy] commit_recovery_retry "
-                    f"creation_id={creation_id} attempt={attempt} "
-                    f"delay_seconds={delay} error={type(error).__name__}"
-                )
-            await asyncio.sleep(delay)
-
-
-def schedule_uncertain_legacy_ticket_recovery(
-    *,
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    creation_id: str,
-    slot_owner_token: str | None = None,
-    creation_owner_token: str | None = None,
-    expected_ticket_id: str | None = None,
-    expected_generation: int | None = None,
-) -> asyncio.Task:
-    if _legacy_commit_recovery_stopping:
-        raise RuntimeError("legacy commit recovery scheduling is stopping")
-    key = (
-        f"{creation_id}|{expected_ticket_id or '*'}|"
-        f"{expected_generation if expected_generation is not None else '*'}"
-    )
-    current = _legacy_commit_recovery_tasks.get(key)
-    if current is not None and not current.done():
-        return current
-    task = asyncio.create_task(
-        _retry_uncertain_legacy_ticket_creation(
-            bot=bot,
-            mongo=mongo,
-            creation_id=str(creation_id),
-            # The task key includes the generation, but the durable lookup id
-            # remains the canonical applicant/type creation id.
-            expected_ticket_id=expected_ticket_id,
-            expected_generation=expected_generation,
-            slot_owner_token=slot_owner_token,
-            creation_owner_token=creation_owner_token,
-        ),
-        name=f"legacy-commit-recovery:{creation_id}:{expected_generation}",
-    )
-    _legacy_commit_recovery_tasks[key] = task
-
-    def discard(done: asyncio.Task) -> None:
-        if _legacy_commit_recovery_tasks.get(key) is done:
-            _legacy_commit_recovery_tasks.pop(key, None)
-        if not done.cancelled() and done.exception() is not None:
-            print(
-                "[Tickets:Legacy] commit_recovery_worker_failed "
-                f"creation_id={key} error={type(done.exception()).__name__}"
-            )
-
-    task.add_done_callback(discard)
-    return task
-
-
-async def recover_pending_uncertain_legacy_creations(
-    *,
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    limit: int = LEGACY_COMMIT_RECOVERY_LIMIT,
-) -> dict[str, int]:
-    query = {
-        "state": {"$in": ["creating", "cleanup_required"]},
-        "ticket_id": {"$exists": True},
-        "ticket_payload": {"$exists": True},
-        "commit_started_at": {"$exists": True},
-    }
-    bounded = max(1, int(limit))
-    completed = 0
-    failed = 0
-    processed = 0
-    after_id: str | None = None
-    while True:
-        page_query = dict(query)
-        if after_id is not None:
-            page_query["_id"] = {"$gt": after_id}
-        rows = await mongo.ticket_creation_state.find(page_query).sort(
-            [("_id", 1)]
-        ).limit(bounded).to_list(length=bounded)
-        if not rows:
-            break
-        for state in rows:
-            creation_id = str(state["_id"])
-            try:
-                await recover_uncertain_legacy_ticket_creation(
-                    bot=bot,
-                    mongo=mongo,
-                    creation_id=creation_id,
-                    expected_ticket_id=str(state["ticket_id"]),
-                    expected_generation=store.as_int(
-                        state.get("attempt_generation")
-                    ),
-                )
-                completed += 1
-            except Exception:
-                failed += 1
-                try:
-                    schedule_uncertain_legacy_ticket_recovery(
-                        bot=bot,
-                        mongo=mongo,
-                        creation_id=creation_id,
-                        expected_ticket_id=str(state["ticket_id"]),
-                        expected_generation=store.as_int(
-                            state.get("attempt_generation")
-                        ),
-                    )
-                except RuntimeError:
-                    pass
-            processed += 1
-        after_id = str(rows[-1]["_id"])
-        if len(rows) < bounded:
-            break
-    return {"processed": processed, "completed": completed, "failed": failed}
-
-
-async def stop_uncertain_legacy_ticket_recoveries() -> None:
-    global _legacy_commit_recovery_stopping
-    _legacy_commit_recovery_stopping = True
-    tasks = list(_legacy_commit_recovery_tasks.values())
-    for task in tasks:
-        if not task.done():
-            task.cancel()
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
-    _legacy_commit_recovery_tasks.clear()
-
-
-async def start_uncertain_legacy_ticket_recoveries() -> None:
-    global _legacy_commit_recovery_stopping
-    await stop_uncertain_legacy_ticket_recoveries()
-    _legacy_commit_recovery_stopping = False
 
 
 async def claim_ticket_creation(
@@ -797,8 +100,6 @@ async def claim_ticket_creation(
         user_id: int,
         ticket_type: str,
         *,
-        slot_id: str | None = None,
-        workflow_id: str | None = None,
         now: datetime | None = None,
 ) -> tuple[bool, dict]:
     """Atomically own one user's ticket creation across workers and restarts."""
@@ -807,118 +108,17 @@ async def claim_ticket_creation(
     creation_id = _creation_id(guild_id, user_id, ticket_type)
     collection = mongo.ticket_creation_state
     current = await collection.find_one({"_id": creation_id})
-    owner = uuid.uuid4().hex
 
-    if current:
-        stored_slot = current.get("open_slot_id")
-        stored_workflow = current.get("creation_workflow_id")
-        if (
-            (stored_slot and slot_id and str(stored_slot) != str(slot_id))
-            or (
-                stored_workflow
-                and workflow_id
-                and str(stored_workflow) != str(workflow_id)
-            )
-        ):
-            return False, current
-
-    # A committed attempt may be reused only after its exact authoritative
-    # legacy ticket is terminal. This also heals a crash between ticket commit
-    # and the local `complete` marker. The old ticket/channel remain untouched;
-    # only this creation lease is reset for the applicant's next ticket.
+    # Any state tied to a Discord channel is intentionally sticky. The normal
+    # open-ticket lookup resolves completed work; an incomplete channel requires
+    # compensation or operator cleanup, never a second channel.
     if current and current.get("channel_id"):
-        if (
-            current.get("ticket_id")
-            and store.as_int(current.get("guild_id")) == int(guild_id)
-            and store.as_int(current.get("user_id")) == int(user_id)
-            and current.get("ticket_type") == ticket_type
-        ):
-            exact_terminal = await store.find_one(mongo, {
-                "_id": current["ticket_id"],
-                "guild_id": int(guild_id),
-                "user_id": {"$in": [int(user_id), str(int(user_id))]},
-                "ticket_type": ticket_type,
-                "channel_id": {
-                    "$in": [
-                        store.as_int(current["channel_id"]),
-                        str(store.as_int(current["channel_id"])),
-                    ]
-                },
-                "status": {"$in": sorted(store.TERMINAL_STATUSES)},
-            })
-            if exact_terminal is not None:
-                claim_filter = {
-                    "_id": creation_id,
-                    "state": current.get("state"),
-                    "ticket_id": current["ticket_id"],
-                    "channel_id": current["channel_id"],
-                }
-                if current.get("lease_owner") is not None:
-                    claim_filter["lease_owner"] = current["lease_owner"]
-                elif current.get("state") != "complete":
-                    claim_filter["lease_owner"] = {"$exists": False}
-                claimed = await collection.find_one_and_update(
-                    claim_filter,
-                    {
-                        "$set": {
-                            "guild_id": int(guild_id),
-                            "user_id": int(user_id),
-                            "ticket_type": ticket_type,
-                            "state": "creating",
-                            "lease_owner": owner,
-                            "lease_until": now + CREATION_LEASE,
-                            "updated_at": now,
-                            "attempt_started_at": now,
-                            **({"open_slot_id": str(slot_id)} if slot_id else {}),
-                            **(
-                                {"creation_workflow_id": str(workflow_id)}
-                                if workflow_id
-                                else {}
-                            ),
-                        },
-                        "$unset": {
-                            "ticket_id": "",
-                            "ticket_number": "",
-                            "channel_id": "",
-                            "thread_id": "",
-                            "category_id": "",
-                            "channel_name": "",
-                            "completed_at": "",
-                            "route": "",
-                            "runtime": "",
-                            "rollout_revision": "",
-                            "expires_at": "",
-                            "last_error": "",
-                            "cleanup_error": "",
-                            "channel_check_error": "",
-                            "commit_check_error": "",
-                            "channel_create_started_at": "",
-                            "channel_create_state": "",
-                            "channel_created_at": "",
-                            "thread_create_started_at": "",
-                            "thread_create_state": "",
-                            "thread_created_at": "",
-                            "commit_started_at": "",
-                            "ticket_payload": "",
-                            "rollback_started_at": "",
-                            "configured_category_id": "",
-                        },
-                        "$inc": {"attempt_generation": 1},
-                    },
-                    return_document=ReturnDocument.AFTER,
-                )
-                if claimed is not None:
-                    return True, claimed
-                current = await collection.find_one({"_id": creation_id})
-        return False, (current or {"_id": creation_id, "state": "creating"})
-    if current and current.get("channel_name"):
         return False, current
     if current and current.get("state") == "cleanup_required":
         return False, current
 
     query = {
         "_id": creation_id,
-        "state": {"$ne": "complete"},
         "$or": [
             {"lease_until": {"$lte": now}},
             {"lease_until": {"$exists": False}},
@@ -930,22 +130,14 @@ async def claim_ticket_creation(
             "user_id": int(user_id),
             "ticket_type": ticket_type,
             "created_at": now,
-            "attempt_started_at": now,
         },
         "$set": {
             "state": "creating",
-            "lease_owner": owner,
             "lease_until": now + CREATION_LEASE,
+            "expires_at": now + CREATION_RETENTION,
             "updated_at": now,
-            **({"open_slot_id": str(slot_id)} if slot_id else {}),
-            **(
-                {"creation_workflow_id": str(workflow_id)}
-                if workflow_id
-                else {}
-            ),
         },
-        "$unset": {"last_error": "", "expires_at": ""},
-        "$inc": {"attempt_generation": 1},
+        "$unset": {"last_error": ""},
     }
     try:
         claimed = await collection.find_one_and_update(
@@ -965,52 +157,43 @@ async def claim_ticket_creation(
 
 
 async def reserve_ticket_number(mongo: MongoClient, ticket_type: str) -> int:
-    """Allocate a number from the cross-runtime monotonic counter."""
-    return await ticket_runtime.reserve_ticket_number(mongo, ticket_type=ticket_type)
+    """Allocate a unique number before creating Discord resources."""
+    field = f"{ticket_type}_ticket_counter"
+    config = await mongo.ticket_setup.find_one_and_update(
+        {"_id": "config"},
+        {"$inc": {field: 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return int(config[field])
 
 
 async def update_creation_state(
         mongo: MongoClient,
         creation_id: str,
-        lease_owner: str,
-        *,
-        unset_fields: tuple[str, ...] = (),
         **fields,
-) -> dict:
+) -> None:
     now = datetime.now(timezone.utc)
     fields["updated_at"] = now
     fields["lease_until"] = now + CREATION_LEASE
-    update: dict = {"$set": fields, "$unset": {"expires_at": ""}}
-    update["$unset"].update({field: "" for field in unset_fields})
-    result = await mongo.ticket_creation_state.find_one_and_update(
-        {
-            "_id": creation_id,
-            "state": "creating",
-            "lease_owner": str(lease_owner),
-        },
-        update,
-        return_document=ReturnDocument.AFTER,
+    result = await mongo.ticket_creation_state.update_one(
+        {"_id": creation_id, "state": "creating"},
+        {"$set": fields},
     )
-    if result is None:
-        raise CreationLeaseLost("ticket creation lease was lost")
-    return result
+    if not getattr(result, "matched_count", 0):
+        raise RuntimeError("ticket creation lease was lost")
 
 
 async def complete_creation_state(
         mongo: MongoClient,
         creation_id: str,
-        lease_owner: str,
         channel_id: int,
         thread_id: int,
         ticket_id: str,
 ) -> None:
     now = datetime.now(timezone.utc)
-    result = await mongo.ticket_creation_state.find_one_and_update(
-        {
-            "_id": creation_id,
-            "state": "creating",
-            "lease_owner": str(lease_owner),
-        },
+    await mongo.ticket_creation_state.update_one(
+        {"_id": creation_id},
         {
             "$set": {
                 "state": "complete",
@@ -1021,47 +204,9 @@ async def complete_creation_state(
                 "updated_at": now,
                 "expires_at": now + CREATION_RETENTION,
             },
-            "$unset": {
-                "lease_owner": "",
-                "lease_until": "",
-                "last_error": "",
-            },
+            "$unset": {"lease_until": "", "last_error": ""},
         },
-        return_document=ReturnDocument.AFTER,
     )
-    if result is None:
-        raise CreationLeaseLost("ticket creation lease was lost before completion")
-
-
-async def mark_creation_uncertain(
-        mongo: MongoClient,
-        creation_id: str,
-        lease_owner: str,
-        **fields,
-) -> bool:
-    """Durably retain ambiguous Discord/Mongo evidence without a TTL."""
-    now = datetime.now(timezone.utc)
-    result = await mongo.ticket_creation_state.find_one_and_update(
-        {
-            "_id": creation_id,
-            "state": "creating",
-            "lease_owner": str(lease_owner),
-        },
-        {
-            "$set": {
-                "state": "cleanup_required",
-                "updated_at": now,
-                **fields,
-            },
-            "$unset": {
-                "lease_owner": "",
-                "lease_until": "",
-                "expires_at": "",
-            },
-        },
-        return_document=ReturnDocument.AFTER,
-    )
-    return result is not None
 
 
 async def rollback_ticket_creation(
@@ -1070,28 +215,8 @@ async def rollback_ticket_creation(
         creation_id: str,
         channel_id: int | None,
         error: Exception,
-        *,
-        lease_owner: str,
-        slot_id: str | None = None,
-        slot_owner: str | None = None,
-        workflow_id: str | None = None,
 ) -> bool:
     """Compensate Discord work; retain a blocker if cleanup itself fails."""
-    try:
-        await update_creation_state(
-            mongo,
-            creation_id,
-            lease_owner,
-            rollback_started_at=datetime.now(timezone.utc),
-            last_error=type(error).__name__,
-        )
-    except CreationLeaseLost:
-        print(
-            "[Tickets:Legacy] stale_worker_rollback_blocked "
-            f"creation_id={creation_id}"
-        )
-        return False
-
     if channel_id is not None:
         try:
             await bot.rest.delete_channel(
@@ -1101,14 +226,21 @@ async def rollback_ticket_creation(
         except hikari.NotFoundError:
             pass
         except Exception as cleanup_error:
+            now = datetime.now(timezone.utc)
             try:
-                await mark_creation_uncertain(
-                    mongo,
-                    creation_id,
-                    lease_owner,
-                    channel_id=int(channel_id),
-                    last_error=type(error).__name__,
-                    cleanup_error=type(cleanup_error).__name__,
+                await mongo.ticket_creation_state.update_one(
+                    {"_id": creation_id},
+                    {
+                        "$set": {
+                            "state": "cleanup_required",
+                            "channel_id": int(channel_id),
+                            "last_error": type(error).__name__,
+                            "cleanup_error": type(cleanup_error).__name__,
+                            "updated_at": now,
+                            "expires_at": now + CREATION_RETENTION,
+                        },
+                        "$unset": {"lease_until": ""},
+                    },
                 )
             except Exception as state_error:
                 print(
@@ -1124,44 +256,13 @@ async def rollback_ticket_creation(
             return False
 
     try:
-        released = await mongo.ticket_creation_state.delete_one({
-            "_id": creation_id,
-            "state": "creating",
-            "lease_owner": str(lease_owner),
-        })
+        await mongo.ticket_creation_state.delete_one({"_id": creation_id})
     except Exception as state_error:
-        # The durable state and shared slot remain for reconciliation.
+        # The lease remains and blocks duplicates until it can expire.
         print(
             "[Tickets] WARNING creation_state_release_failed "
             f"creation_id={creation_id} error={type(state_error).__name__}"
         )
-        return False
-    if not getattr(released, "deleted_count", 0):
-        print(
-            "[Tickets:Legacy] stale_worker_state_release_blocked "
-            f"creation_id={creation_id}"
-        )
-        return False
-    if slot_id and slot_owner and workflow_id:
-        try:
-            cancelled = await ticket_runtime.cancel_open_slot(
-                mongo,
-                slot_id=slot_id,
-                owner_token=slot_owner,
-                workflow_id=workflow_id,
-            )
-        except Exception as slot_error:
-            print(
-                "[Tickets:Legacy] slot_cancel_failed "
-                f"slot_id={slot_id} error={type(slot_error).__name__}"
-            )
-            return False
-        if not cancelled:
-            print(
-                "[Tickets:Legacy] slot_cancel_lost "
-                f"slot_id={slot_id}"
-            )
-            return False
     return True
 
 
@@ -1171,25 +272,12 @@ async def release_missing_channel_blocker(
         creation_state: dict,
 ) -> bool:
     """Clear an incomplete claim only when Discord proves its channel is gone."""
-    now = datetime.now(timezone.utc)
-    # A prepared/committed ticket id makes Mongo outcome ambiguous. Only the
-    # exact terminal-ticket path in `claim_ticket_creation` may retire it.
-    if creation_state.get("ticket_id"):
-        return False
-    lease_until = creation_state.get("lease_until")
-    if isinstance(lease_until, datetime):
-        if lease_until.tzinfo is None:
-            lease_until = lease_until.replace(tzinfo=timezone.utc)
-        if creation_state.get("state") == "creating" and lease_until > now:
-            return False
     channel_id = creation_state.get("channel_id")
     channel_name = creation_state.get("channel_name")
     missing = False
-    channel_exists = False
     try:
         if channel_id:
             await bot.rest.fetch_channel(channel_id)
-            channel_exists = True
         elif channel_name:
             channels = await bot.rest.fetch_guild_channels(
                 creation_state["guild_id"]
@@ -1206,23 +294,11 @@ async def release_missing_channel_blocker(
                 channel_id = int(matches[0].id)
                 creation_state["channel_id"] = channel_id
                 await mongo.ticket_creation_state.update_one(
-                    {
-                        "_id": creation_state["_id"],
-                        "state": creation_state.get("state"),
-                        "channel_name": channel_name,
-                    },
-                    {
-                        "$set": {
-                            "channel_id": channel_id,
-                            "state": "cleanup_required",
-                            "updated_at": now,
-                        },
-                        "$unset": {
-                            "lease_owner": "",
-                            "lease_until": "",
-                            "expires_at": "",
-                        },
-                    },
+                    {"_id": creation_state["_id"]},
+                    {"$set": {
+                        "channel_id": channel_id,
+                        "updated_at": datetime.now(timezone.utc),
+                    }},
                 )
                 print(
                     "[Tickets] uncertain_creation_channel_found "
@@ -1246,73 +322,10 @@ async def release_missing_channel_blocker(
         )
         return False
 
-    if channel_exists:
-        owner_filter = (
-            {"$exists": False}
-            if creation_state.get("lease_owner") is None
-            else creation_state["lease_owner"]
-        )
-        await mongo.ticket_creation_state.update_one(
-            {
-                "_id": creation_state["_id"],
-                "state": creation_state.get("state"),
-                "channel_id": channel_id,
-                "lease_owner": owner_filter,
-            },
-            {
-                "$set": {
-                    "state": "cleanup_required",
-                    "updated_at": now,
-                },
-                "$unset": {
-                    "lease_owner": "",
-                    "lease_until": "",
-                    "expires_at": "",
-                },
-            },
-        )
-        return False
-
-    if (
-        missing
-        and creation_state.get("channel_create_state") == "requested"
-    ):
-        owner_filter = (
-            {"$exists": False}
-            if creation_state.get("lease_owner") is None
-            else creation_state["lease_owner"]
-        )
-        await mongo.ticket_creation_state.update_one(
-            {
-                "_id": creation_state["_id"],
-                "state": creation_state.get("state"),
-                "channel_name": channel_name,
-                "lease_owner": owner_filter,
-            },
-            {
-                "$set": {
-                    "state": "cleanup_required",
-                    "updated_at": now,
-                    "channel_check_error": "unconfirmed_create_request",
-                },
-                "$unset": {
-                    "lease_owner": "",
-                    "lease_until": "",
-                    "expires_at": "",
-                },
-            },
-        )
-        return False
-
     if missing:
         delete_filter = {
             "_id": creation_state["_id"],
-            "state": creation_state.get("state"),
         }
-        if creation_state.get("lease_owner") is None:
-            delete_filter["lease_owner"] = {"$exists": False}
-        else:
-            delete_filter["lease_owner"] = creation_state["lease_owner"]
         if channel_id:
             delete_filter["channel_id"] = channel_id
         else:
@@ -1460,119 +473,7 @@ async def check_category_space(bot: hikari.GatewayBot, category_id: int, ticket_
         print(f"[Tickets] Error checking category space: {e}")
         return -1  # Return -1 to indicate error
 
-
-async def _create_thread_runtime_ticket(
-        ctx: lightbulb.components.MenuContext,
-        bot: hikari.GatewayBot,
-        mongo: MongoClient,
-        ticket_type: str,
-        now: datetime,
-        slot_claim,
-) -> None:
-    """Promote the stable public panel into the thread runtime after cutover."""
-    # Local import keeps the two extension loaders independent at startup.
-    from extensions.commands import tickets as thread_tickets
-    from extensions.commands.tickets import thread_service
-
-    if not thread_tickets.thread_intake_ready():
-        await ctx.interaction.edit_initial_response(
-            content=(
-                "❌ Thread ticketing is still starting. Your place is saved; "
-                "please try again in a moment."
-            )
-        )
-        return
-
-    try:
-        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-    except Exception as error:
-        await cancel_claimed_open_slot(mongo, slot_claim)
-        print(
-            "[Tickets:Legacy] promoted_config_load_failed "
-            f"guild={ctx.guild_id} error={type(error).__name__}"
-        )
-        await ctx.interaction.edit_initial_response(
-            content="❌ Ticket configuration could not be loaded. Nothing was created."
-        )
-        return
-    display_name = (
-        getattr(ctx.member, "display_name", None)
-        if getattr(ctx, "member", None)
-        else None
-    )
-    try:
-        result = await thread_service.create_live_thread_ticket(
-            bot=bot,
-            mongo=mongo,
-            guild_id=int(ctx.guild_id),
-            user_id=int(ctx.user.id),
-            username=ctx.user.username,
-            display_name=display_name,
-            ticket_type=ticket_type,
-            config=config,
-            open_slot_claim=slot_claim,
-        )
-    except thread_service.ThreadCreationBusy:
-        await ctx.interaction.edit_initial_response(
-            content="⏳ Your ticket is already being created. Please try again in a moment."
-        )
-        return
-    except thread_service.ThreadConfigurationError as error:
-        await ctx.interaction.edit_initial_response(
-            content=f"❌ Thread ticketing is not ready: {error}. Please contact an administrator."
-        )
-        return
-    except hikari.RateLimitTooLongError:
-        user_cooldowns[int(ctx.user.id)] = now + timedelta(seconds=RATE_LIMIT_BACKOFF)
-        await ctx.interaction.edit_initial_response(
-            content="⏰ Discord is rate-limiting ticket creation. Please try again in a few minutes."
-        )
-        return
-    except Exception as error:
-        print(
-            "[Tickets:Legacy] promoted_thread_creation_failed "
-            f"guild={ctx.guild_id} user={ctx.user.id} "
-            f"type={ticket_type} error={type(error).__name__}"
-        )
-        await ctx.interaction.edit_initial_response(
-            content=(
-                "❌ Your ticket could not be completed safely. The attempt was saved "
-                "and can resume without duplicates. Please try again or contact an administrator."
-            )
-        )
-        return
-
-    ticket = result.ticket
-    location = ticket.get("location") or {}
-    location_id = int(
-        location.get("id")
-        or ticket.get("public_thread_id")
-        or ticket.get("channel_id")
-    )
-    wording = "already open" if result.resumed else "created"
-    delivery_note = (
-        " Setup messages are retrying automatically."
-        if result.delivery_pending
-        else ""
-    )
-    await ctx.interaction.edit_initial_response(
-        content=(
-            f"✅ Your {ticket_type.upper()} ticket is {wording}: <#{location_id}>"
-            f"{delivery_note}"
-        )
-    )
-
-
-def _thread_intake_is_ready() -> bool:
-    """Read v2 startup readiness without coupling the extension loaders."""
-    from extensions.commands import tickets as thread_tickets
-
-    return thread_tickets.thread_intake_ready()
-
-
-@register_action(
-    "create_ticket", opens_modal=True, no_return=True, preload_state=False,
-)
+@register_action("create_ticket", opens_modal=True, no_return=True)
 @lightbulb.di.with_di
 async def handle_create_ticket(
         ctx: lightbulb.components.MenuContext,
@@ -1586,129 +487,13 @@ async def handle_create_ticket(
     # Defer interaction immediately to prevent timeout
     await ctx.defer(ephemeral=True)
 
-    # Determine ticket type from action_id
-    ticket_type = action_id  # Will be "main" or "fwa"
-    if ticket_type not in {"main", "fwa"}:
-        await ctx.interaction.edit_initial_response(
-            content="❌ That ticket type is not available."
-        )
-        return
-
-    interaction_message = getattr(ctx.interaction, "message", None)
-    message_id = store.as_int(getattr(interaction_message, "id", 0))
-    member_roles = tuple(
-        int(role_id)
-        for role_id in (getattr(getattr(ctx, "member", None), "role_ids", ()) or ())
-    )
-    try:
-        route = await ticket_runtime.route_public_intake(
-            mongo,
-            requested_route=ticket_runtime.ROUTE_LEGACY,
-            guild_id=store.as_int(ctx.guild_id),
-            channel_id=store.as_int(ctx.channel_id),
-            message_id=message_id,
-            user_id=int(ctx.user.id),
-            member_role_ids=member_roles,
-            ticket_type=ticket_type,
-        )
-    except Exception as error:
-        print(
-            "[Tickets:Legacy] intake_gate_failed "
-            f"guild={ctx.guild_id} channel={ctx.channel_id} "
-            f"message={message_id} error={type(error).__name__}"
-        )
-        await ctx.interaction.edit_initial_response(
-            content="❌ Ticketing is temporarily unavailable. Nothing was created."
-        )
-        return
-    if not route.allowed or route.route != ticket_runtime.ROUTE_LEGACY:
-        await ctx.interaction.edit_initial_response(
-            content=(
-                "❌ This ticket panel has been retired. "
-                "Use the current ticket panel or contact a recruiter."
-            )
-        )
-        return
-
-    user_id = int(ctx.user.id)
-    try:
-        existing_ticket = await find_open_ticket(mongo, user_id, ticket_type)
-    except Exception as error:
-        print(
-            "[Tickets:Legacy] open_ticket_lookup_failed "
-            f"guild={ctx.guild_id} user={user_id} "
-            f"type={ticket_type} error={type(error).__name__}"
-        )
-        await ctx.interaction.edit_initial_response(
-            content="❌ Ticketing is temporarily unavailable. Nothing was created."
-        )
-        return
-    if existing_ticket is not None:
-        location_id = _ticket_location_id(existing_ticket)
-        location = f" <#{location_id}>" if location_id else ""
-        await ctx.interaction.edit_initial_response(
-            content=(
-                f"✅ You already have an open {ticket_type.upper()} ticket.{location}"
-            )
-        )
-        return
-
-    try:
-        sticky_slot = await _existing_public_open_slot(mongo, user_id, ticket_type)
-    except Exception as error:
-        print(
-            "[Tickets:Legacy] open_slot_lookup_failed "
-            f"guild={ctx.guild_id} user={user_id} "
-            f"type={ticket_type} error={type(error).__name__}"
-        )
-        await ctx.interaction.edit_initial_response(
-            content="❌ Ticketing is temporarily unavailable. Nothing was created."
-        )
-        return
-    expected_workflow = _public_workflow_id(
-        route.route, int(ctx.guild_id), user_id, ticket_type
-    )
-    sticky_matches_current_intake = bool(
-        sticky_slot is not None
-        and sticky_slot.get("route") == route.route
-        and store.as_int(sticky_slot.get("guild_id")) == int(ctx.guild_id)
-        and str(sticky_slot.get("workflow_id") or "") == expected_workflow
-    )
-    if sticky_slot is not None and not sticky_matches_current_intake:
-        await ctx.interaction.edit_initial_response(
-            content=(
-                "⏳ Your prior ticket attempt remains saved in its original ticket "
-                "system. Use the current panel there or contact a recruiter."
-            )
-        )
-        return
-    effective_route = (
-        str(sticky_slot.get("route"))
-        if sticky_matches_current_intake and sticky_slot is not None
-        else route.route
-    )
-
-    # Recovery/readiness is checked before a promoted click creates or resumes
-    # any slot and before it enters the local cooldown. Existing sticky slots are
-    # deliberately left untouched so startup recovery can resume them later.
-    if effective_route == ticket_runtime.ROUTE_THREAD and not _thread_intake_is_ready():
-        if sticky_slot is None:
-            content = (
-                "❌ Thread ticketing is still starting. Nothing was created; "
-                "please try again in a moment."
-            )
-        else:
-            content = (
-                "❌ Thread ticketing is still starting. Your prior ticket attempt "
-                "remains saved; please try again in a moment."
-            )
-        await ctx.interaction.edit_initial_response(
-            content=content
-        )
-        return
-
+    # Periodic cleanup of expired cooldowns
     cleanup_expired_cooldowns()
+
+    # Check cooldown (30 seconds)
+    user_id = ctx.user.id
     current_time = datetime.now(timezone.utc)
+
     if user_id in user_cooldowns:
         time_since_last = (current_time - user_cooldowns[user_id]).total_seconds()
         if time_since_last < COOLDOWN_DURATION:
@@ -1717,72 +502,25 @@ async def handle_create_ticket(
                 content=f"⏳ Please wait {remaining} seconds before creating another ticket."
             )
             return
+
+    # Update cooldown
     user_cooldowns[user_id] = current_time
-    await ctx.interaction.edit_initial_response(content="🎫 Creating your ticket...")
 
-    try:
-        slot_claim = await claim_public_open_slot(
-            mongo,
-            route=route.route,
-            rollout_revision=int(route.revision),
-            guild_id=int(ctx.guild_id),
-            user_id=user_id,
-            ticket_type=ticket_type,
-        )
-    except Exception as error:
-        print(
-            "[Tickets:Legacy] public_slot_claim_failed "
-            f"guild={ctx.guild_id} user={user_id} "
-            f"type={ticket_type} error={type(error).__name__}"
-        )
+    # Send status update
+    await ctx.interaction.edit_initial_response(
+        content="🎫 Creating your ticket..."
+    )
+
+    # Determine ticket type from action_id
+    ticket_type = action_id  # Will be "main" or "fwa"
+    if ticket_type not in {"main", "fwa"}:
         await ctx.interaction.edit_initial_response(
-            content="❌ Ticketing is temporarily unavailable. Nothing was created."
-        )
-        return
-
-    if not slot_claim.won:
-        existing_location = store.as_int(slot_claim.slot.get("location_id"))
-        if existing_location:
-            message = (
-                f"✅ You already have an open {ticket_type.upper()} ticket. "
-                f"Please check <#{existing_location}>"
-            )
-        elif slot_claim.slot.get("state") == ticket_runtime.SLOT_CLEANUP_REQUIRED:
-            message = (
-                "⚠️ A previous ticket attempt needs staff cleanup before another "
-                "can be created. Please contact an administrator."
-            )
-        else:
-            message = (
-                f"⏳ Your {ticket_type.upper()} ticket is already being created. "
-                "Please try again in a moment."
-            )
-        await ctx.interaction.edit_initial_response(content=message)
-        return
-
-    sticky_route = str(slot_claim.slot.get("route") or "")
-    if sticky_route != ticket_runtime.ROUTE_LEGACY:
-        await ctx.interaction.edit_initial_response(
-            content=(
-                "⏳ A ticket attempt owned by the other ticket system is still saved. "
-                "Please use its current panel or contact a recruiter."
-            )
+            content="❌ That ticket type is not available."
         )
         return
 
     # Get current configuration from database
-    try:
-        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-    except Exception as error:
-        await cancel_claimed_open_slot(mongo, slot_claim)
-        print(
-            "[Tickets:Legacy] config_load_failed "
-            f"guild={ctx.guild_id} error={type(error).__name__}"
-        )
-        await ctx.interaction.edit_initial_response(
-            content="❌ Ticket configuration could not be loaded. Nothing was created."
-        )
-        return
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
 
     print(f"[Tickets] Creating {ticket_type} ticket for user {ctx.user.username}")
     print(f"[Tickets] Config loaded: {config}")
@@ -1806,7 +544,6 @@ async def handle_create_ticket(
     try:
         category_id = int(category_id)
     except (TypeError, ValueError):
-        await cancel_claimed_open_slot(mongo, slot_claim)
         print(f"[Tickets] ERROR: {ticket_type} category id is not numeric: {category_id!r}")
         await ctx.interaction.edit_initial_response(
             content=f"❌ The {ticket_title} ticket category is misconfigured.\n"
@@ -1822,7 +559,6 @@ async def handle_create_ticket(
     remaining_slots = await check_category_space(bot, category_id, ticket_type, admin_to_notify, ctx.guild_id)
 
     if remaining_slots < 0:
-        await cancel_claimed_open_slot(mongo, slot_claim)
         # check_category_space returns -1 when the check itself failed. Fail closed:
         # attempting a create we could not validate is how channels get orphaned.
         await ctx.interaction.edit_initial_response(
@@ -1832,7 +568,6 @@ async def handle_create_ticket(
         return
 
     if remaining_slots == 0:
-        await cancel_claimed_open_slot(mongo, slot_claim)
         # Send error response
         await ctx.interaction.edit_initial_response(
             content=f"❌ The {ticket_title} ticket category is full!\nPlease contact an administrator."
@@ -1840,22 +575,13 @@ async def handle_create_ticket(
         return
 
     creation_id = _creation_id(ctx.guild_id, user_id, ticket_type)
-    workflow_id = str(slot_claim.slot["workflow_id"])
-    slot_rollout_revision = int(
-        slot_claim.slot.get("rollout_revision", route.revision)
-    )
     creation_claimed = False
-    slot_id = str(slot_claim.slot["_id"])
-    slot_owner = str(slot_claim.owner_token)
     channel = None
     thread = None
     channel_name = None
     channel_create_started = False
     ticket_data = None
     ticket_persisted = False
-    commit_intent_started = False
-    creation_owner = None
-    creation_state = None
 
     # Use the in-process semaphore to reduce Discord rate pressure. The Mongo
     # lease below is the cross-process/restart idempotency boundary.
@@ -1863,17 +589,10 @@ async def handle_create_ticket(
         try:
             existing_ticket = await find_open_ticket(mongo, user_id, ticket_type)
             if existing_ticket:
-                await ticket_runtime.cancel_open_slot(
-                    mongo,
-                    slot_id=slot_id,
-                    owner_token=slot_owner,
-                    workflow_id=workflow_id,
-                )
-                location_id = _ticket_location_id(existing_ticket)
                 await ctx.interaction.edit_initial_response(
                     content=(
                         f"✅ You already have an open {ticket_title} ticket.\n"
-                        f"Please check <#{location_id}>"
+                        f"Please check <#{existing_ticket['channel_id']}>"
                     )
                 )
                 return
@@ -1883,14 +602,11 @@ async def handle_create_ticket(
                 ctx.guild_id,
                 user_id,
                 ticket_type,
-                slot_id=slot_id,
-                workflow_id=workflow_id,
             )
             if (
                 not creation_claimed
                 and (
                     creation_state.get("channel_id")
-                    or creation_state.get("channel_name")
                     or creation_state.get("state") == "cleanup_required"
                 )
                 and await release_missing_channel_blocker(bot, mongo, creation_state)
@@ -1900,8 +616,6 @@ async def handle_create_ticket(
                     ctx.guild_id,
                     user_id,
                     ticket_type,
-                    slot_id=slot_id,
-                    workflow_id=workflow_id,
                 )
             if not creation_claimed:
                 existing_channel = creation_state.get("channel_id")
@@ -1929,39 +643,12 @@ async def handle_create_ticket(
                     )
                 return
 
-            creation_owner = str(creation_state["lease_owner"])
-
-            stored_category_id = store.as_int(creation_state.get("category_id"))
-            if stored_category_id and stored_category_id != int(category_id):
-                await mark_creation_uncertain(
-                    mongo,
-                    creation_id,
-                    creation_owner,
-                    last_error="category_binding_changed",
-                    configured_category_id=int(category_id),
-                )
-                await ctx.interaction.edit_initial_response(
-                    content=(
-                        "⚠️ A previous ticket attempt could not be reconciled safely.\n"
-                        "Another was not created. Please contact an administrator."
-                    )
-                )
-                return
-
-            ticket_number = store.as_int(creation_state.get("ticket_number"))
-            if not ticket_number:
-                ticket_number = await reserve_ticket_number(mongo, ticket_type)
+            ticket_number = await reserve_ticket_number(mongo, ticket_type)
             await update_creation_state(
                 mongo,
                 creation_id,
-                creation_owner,
                 ticket_number=ticket_number,
                 category_id=category_id,
-                route=ticket_runtime.ROUTE_LEGACY,
-                runtime=store.LEGACY_RUNTIME,
-                open_slot_id=slot_id,
-                creation_workflow_id=workflow_id,
-                rollout_revision=slot_rollout_revision,
             )
             print(
                 f"[Tickets] Reserved {ticket_type} ticket number {ticket_number} "
@@ -2019,10 +706,7 @@ async def handle_create_ticket(
             await update_creation_state(
                 mongo,
                 creation_id,
-                creation_owner,
                 channel_name=channel_name,
-                channel_create_started_at=datetime.now(timezone.utc),
-                channel_create_state="requested",
             )
 
             channel_create_started = True
@@ -2036,20 +720,10 @@ async def handle_create_ticket(
             await update_creation_state(
                 mongo,
                 creation_id,
-                creation_owner,
                 channel_id=int(channel.id),
-                channel_create_state="created",
-                channel_created_at=datetime.now(timezone.utc),
             )
 
             # Create the thread under the ticket channel
-            await update_creation_state(
-                mongo,
-                creation_id,
-                creation_owner,
-                thread_create_started_at=datetime.now(timezone.utc),
-                thread_create_state="requested",
-            )
             thread = await bot.rest.create_thread(
                 channel.id,
                 hikari.ChannelType.GUILD_PRIVATE_THREAD,
@@ -2061,10 +735,7 @@ async def handle_create_ticket(
             await update_creation_state(
                 mongo,
                 creation_id,
-                creation_owner,
                 thread_id=int(thread.id),
-                thread_create_state="created",
-                thread_created_at=datetime.now(timezone.utc),
             )
 
             print(f"[Tickets] Created thread {thread.id} for ticket {channel.id}")
@@ -2090,41 +761,12 @@ async def handle_create_ticket(
                 "username": ctx.user.username,
                 "created_at": datetime.now(timezone.utc),
                 "status": "open",
-                "venue": "channel",
-                "runtime": store.LEGACY_RUNTIME,
-                "open_slot_id": slot_id,
-                "creation_workflow_id": workflow_id,
-                "rollout_revision": slot_rollout_revision,
-                "creation_generation": store.as_int(
-                    creation_state.get("attempt_generation")
-                ),
             }
-            await update_creation_state(
-                mongo,
-                creation_id,
-                creation_owner,
-                ticket_id=ticket_data["_id"],
-                ticket_payload=dict(ticket_data),
-                commit_started_at=datetime.now(timezone.utc),
-            )
-            commit_intent_started = True
             await store.insert_one(mongo, ticket_data)
             ticket_persisted = True
-            # The authoritative ticket is also the durable source for startup
-            # synthesis. Materialize its exact delivery row immediately so a
-            # slow gateway channel event cannot lose the candidate opening.
-            await _queue_committed_initial_delivery(bot, mongo, ticket_data)
-            await ticket_runtime.bind_open_slot(
-                mongo,
-                slot_id=slot_id,
-                owner_token=slot_owner,
-                ticket_id=ticket_data["_id"],
-                location_id=int(channel.id),
-            )
             await complete_creation_state(
                 mongo,
                 creation_id,
-                creation_owner,
                 channel.id,
                 thread.id,
                 ticket_data["_id"],
@@ -2132,7 +774,58 @@ async def handle_create_ticket(
 
             # Everything below is post-commit setup. A message failure must not
             # turn a real, durable ticket into an apparent creation failure.
-            await _drive_committed_initial_delivery(bot, mongo, ticket_data)
+            try:
+                await asyncio.sleep(0.5)
+
+                if recruiter_role:
+                    await bot.rest.create_message(
+                        thread.id,
+                        content=(
+                            f"<@&{recruiter_role}> <@&1078723854316355595> "
+                            "this is a private thread for the candidate. They cannot see this thread, "
+                            "so DO NOT ping them, as it will add them.\n\n"
+                        ),
+                        role_mentions=True
+                    )
+                    print(f"[Tickets] Posted message in thread {thread.id} and pinged role {recruiter_role}")
+                else:
+                    await bot.rest.create_message(
+                        thread.id,
+                        content=(
+                            "⚠️ No recruiter role configured for this ticket type. "
+                            "Please configure roles using `/ticket config`"
+                        )
+                    )
+                    print(f"[Tickets] No recruiter role configured for {ticket_type} tickets")
+
+                first_message = (
+                    "Hello there 👋🏻...how you hear about Warriors United?"
+                    if ticket_type == "main"
+                    else "Hello there 👋🏻...how you hear about our FWA Operation?"
+                )
+                await bot.rest.create_message(thread.id, content=first_message)
+                await bot.rest.create_message(
+                    thread.id,
+                    content=(
+                        "What was the hook that reeled you in? The thing that said "
+                        "\"yeah, I need to check these guys out!!!\""
+                    ),
+                )
+                if ticket_type == "fwa":
+                    await bot.rest.create_message(
+                        thread.id,
+                        content=(
+                            "Donations are better with the update allowing loot to be used "
+                            "but clan chats are and can be sporadic."
+                        ),
+                    )
+                print(f"[Tickets] Posted initial messages in thread {thread.id} for {ticket_type} ticket")
+            except Exception as setup_error:
+                print(
+                    "[Tickets] WARNING ticket_postcommit_setup_failed "
+                    f"ticket_id={ticket_data['_id']} "
+                    f"error={type(setup_error).__name__}"
+                )
 
             # Send success message as response
             await ctx.interaction.edit_initial_response(
@@ -2150,14 +843,6 @@ async def handle_create_ticket(
                     creation_id,
                     int(channel.id) if channel is not None else None,
                     e,
-                    lease_owner=str(creation_owner),
-                    slot_id=slot_id,
-                    slot_owner=slot_owner,
-                    workflow_id=workflow_id,
-                )
-            elif not ticket_persisted and creation_state is None:
-                await cancel_slot_if_creation_absent(
-                    mongo, slot_claim, creation_id
                 )
             print(f"[Tickets] Rate limit exceeded maximum wait time: {e}")
             await ctx.interaction.edit_initial_response(
@@ -2200,22 +885,12 @@ async def handle_create_ticket(
                     committed = None
                     commit_check_failed = check_error
                 if committed is not None:
-                    try:
-                        await store.ensure_exact_ticket(
-                            mongo,
-                            ticket_data,
-                            allow_terminal=True,
-                        )
-                    except Exception as identity_error:
-                        committed = None
-                        commit_check_failed = identity_error
-                    else:
-                        ticket_persisted = True
-                        print(
-                            "[Tickets] creation_commit_confirmed_after_error "
-                            f"ticket_id={ticket_data['_id']} "
-                            f"original_error={type(e).__name__}"
-                        )
+                    ticket_persisted = True
+                    print(
+                        "[Tickets] creation_commit_confirmed_after_error "
+                        f"ticket_id={ticket_data['_id']} "
+                        f"original_error={type(e).__name__}"
+                    )
 
             print(
                 "[Tickets] creation_failed "
@@ -2226,38 +901,6 @@ async def handle_create_ticket(
                 # The primary ticket record is the commit point. Even if the
                 # completion marker or interaction response failed, retry lookup
                 # returns this ticket rather than creating another.
-                try:
-                    await recover_uncertain_legacy_ticket_creation(
-                        bot=bot,
-                        mongo=mongo,
-                        creation_id=creation_id,
-                        slot_owner_token=slot_owner,
-                        creation_owner_token=str(creation_owner),
-                        expected_ticket_id=ticket_data["_id"],
-                        expected_generation=store.as_int(
-                            creation_state.get("attempt_generation")
-                        ),
-                    )
-                except Exception as recovery_error:
-                    print(
-                        "[Tickets:Legacy] confirmed_commit_recovery_deferred "
-                        f"creation_id={creation_id} "
-                        f"error={type(recovery_error).__name__}"
-                    )
-                    try:
-                        schedule_uncertain_legacy_ticket_recovery(
-                            bot=bot,
-                            mongo=mongo,
-                            creation_id=creation_id,
-                            slot_owner_token=slot_owner,
-                            creation_owner_token=str(creation_owner),
-                            expected_ticket_id=ticket_data["_id"],
-                            expected_generation=store.as_int(
-                                creation_state.get("attempt_generation")
-                            ),
-                        )
-                    except RuntimeError:
-                        pass
                 await ctx.interaction.edit_initial_response(
                     content=(
                         f"✅ Your {ticket_title} ticket was created.\n"
@@ -2266,21 +909,23 @@ async def handle_create_ticket(
                 )
                 return
 
-            if channel_create_started and channel is None:
-                check_error = (
-                    type(discord_check_failed).__name__
-                    if discord_check_failed is not None
-                    else "channel_not_confirmed_after_create_error"
-                )
+            if discord_check_failed is not None:
+                now = datetime.now(timezone.utc)
                 try:
-                    await mark_creation_uncertain(
-                        mongo,
-                        creation_id,
-                        str(creation_owner),
-                        channel_name=channel_name,
-                        category_id=category_id,
-                        last_error=type(e).__name__,
-                        channel_check_error=check_error,
+                    await mongo.ticket_creation_state.update_one(
+                        {"_id": creation_id},
+                        {
+                            "$set": {
+                                "state": "cleanup_required",
+                                "channel_name": channel_name,
+                                "category_id": category_id,
+                                "last_error": type(e).__name__,
+                                "channel_check_error": type(discord_check_failed).__name__,
+                                "updated_at": now,
+                                "expires_at": now + CREATION_RETENTION,
+                            },
+                            "$unset": {"lease_until": ""},
+                        },
                     )
                 except Exception as state_error:
                     print(
@@ -2290,7 +935,7 @@ async def handle_create_ticket(
                 print(
                     "[Tickets] ALERT creation_channel_uncertain "
                     f"creation_id={creation_id} "
-                    f"error={check_error}"
+                    f"error={type(discord_check_failed).__name__}"
                 )
                 await ctx.interaction.edit_initial_response(
                     content=(
@@ -2300,28 +945,29 @@ async def handle_create_ticket(
                 )
                 return
 
-            if commit_intent_started:
-                # Once the authoritative write is attempted, one negative read
-                # cannot prove it did not commit or will not finish later. Keep
-                # every Discord/slot identifier for online/startup reconciliation.
-                commit_check_error = (
-                    type(commit_check_failed).__name__
-                    if commit_check_failed is not None
-                    else "authoritative_ticket_not_visible"
-                )
-                retained = False
+            if commit_check_failed is not None and channel is not None:
+                # A timed-out Mongo write can have committed server-side. When
+                # Mongo is also unavailable for confirmation, deleting Discord
+                # would risk leaving a durable record pointing at nothing. Keep
+                # the blocker and require reconciliation instead.
+                now = datetime.now(timezone.utc)
                 try:
-                    retained = await mark_creation_uncertain(
-                        mongo,
-                        creation_id,
-                        str(creation_owner),
-                        channel_id=int(channel.id),
-                        thread_id=(
-                            int(thread.id) if thread is not None else None
-                        ),
-                        ticket_id=ticket_data["_id"],
-                        last_error=type(e).__name__,
-                        commit_check_error=commit_check_error,
+                    await mongo.ticket_creation_state.update_one(
+                        {"_id": creation_id},
+                        {
+                            "$set": {
+                                "state": "cleanup_required",
+                                "channel_id": int(channel.id),
+                                "thread_id": (
+                                    int(thread.id) if thread is not None else None
+                                ),
+                                "last_error": type(e).__name__,
+                                "commit_check_error": type(commit_check_failed).__name__,
+                                "updated_at": now,
+                                "expires_at": now + CREATION_RETENTION,
+                            },
+                            "$unset": {"lease_until": ""},
+                        },
                     )
                 except Exception as state_error:
                     print(
@@ -2329,66 +975,10 @@ async def handle_create_ticket(
                         f"creation_id={creation_id} channel_id={channel.id} "
                         f"error={type(state_error).__name__}"
                     )
-                if retained:
-                    try:
-                        recovered = await recover_uncertain_legacy_ticket_creation(
-                            bot=bot,
-                            mongo=mongo,
-                            creation_id=creation_id,
-                            slot_owner_token=slot_owner,
-                            expected_ticket_id=ticket_data["_id"],
-                            expected_generation=store.as_int(
-                                creation_state.get("attempt_generation")
-                            ),
-                        )
-                    except Exception as recovery_error:
-                        recovered = False
-                        print(
-                            "[Tickets:Legacy] commit_recovery_deferred "
-                            f"creation_id={creation_id} "
-                            f"error={type(recovery_error).__name__}"
-                        )
-                        try:
-                            schedule_uncertain_legacy_ticket_recovery(
-                                bot=bot,
-                                mongo=mongo,
-                                creation_id=creation_id,
-                                slot_owner_token=slot_owner,
-                                creation_owner_token=str(creation_owner),
-                                expected_ticket_id=ticket_data["_id"],
-                                expected_generation=store.as_int(
-                                    creation_state.get("attempt_generation")
-                                ),
-                            )
-                        except RuntimeError:
-                            pass
-                    if recovered:
-                        await ctx.interaction.edit_initial_response(
-                            content=(
-                                f"✅ Your {ticket_title} ticket was created.\n"
-                                f"Please check <#{channel.id}>"
-                            )
-                        )
-                        return
-                elif ticket_data is not None:
-                    try:
-                        schedule_uncertain_legacy_ticket_recovery(
-                            bot=bot,
-                            mongo=mongo,
-                            creation_id=creation_id,
-                            slot_owner_token=slot_owner,
-                            creation_owner_token=str(creation_owner),
-                            expected_ticket_id=ticket_data["_id"],
-                            expected_generation=store.as_int(
-                                creation_state.get("attempt_generation")
-                            ),
-                        )
-                    except RuntimeError:
-                        pass
                 print(
                     "[Tickets] ALERT creation_commit_uncertain "
                     f"creation_id={creation_id} channel_id={channel.id} "
-                    f"error={commit_check_error}"
+                    f"error={type(commit_check_failed).__name__}"
                 )
                 await ctx.interaction.edit_initial_response(
                     content=(
@@ -2406,20 +996,7 @@ async def handle_create_ticket(
                     creation_id,
                     int(channel.id) if channel is not None else None,
                     e,
-                    lease_owner=str(creation_owner),
-                    slot_id=slot_id,
-                    slot_owner=slot_owner,
-                    workflow_id=workflow_id,
                 )
-            elif creation_state is None:
-                cleanup_ok = await cancel_slot_if_creation_absent(
-                    mongo, slot_claim, creation_id
-                )
-            else:
-                # A pre-existing or uncertain local attempt owns this slot's
-                # durable evidence. Never turn an interaction failure into a
-                # slot cancellation that permits a duplicate.
-                cleanup_ok = False
             if cleanup_ok:
                 content = (
                     "❌ Your ticket could not be created. Nothing was left behind.\n"

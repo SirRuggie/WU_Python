@@ -133,8 +133,7 @@ def snapshot_from_ticket(ticket: Mapping[str, Any] | None) -> AccountSnapshot:
     current_tags = tuple(schema.player_tags(
         linked.get("current_tags") or [account.tag for account in accounts]
     ))
-    # Search, history, and flags intentionally use the append-only identity set,
-    # including a tag disclosed in the questionnaire before it was linked.
+    # Search, history, and flags intentionally use the append-only identity set.
     observed_tags = tuple(schema.player_tags(document.get("player_tags") or ()))
     state = str(linked.get("state") or STATE_PENDING)
     if state not in SYNC_STATES:

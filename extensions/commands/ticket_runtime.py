@@ -688,12 +688,7 @@ async def route_public_intake(
     member_role_ids: Iterable[int] = (),
     ticket_type: str,
 ) -> RouteDecision:
-    """Resolve a public intake click without silently crossing runtimes.
-
-    Before cross-server setup, legacy intake keeps its production behavior.
-    Once ``legacy_ticket_guild_id`` exists, that explicit binding is enforced.
-    A copied/stale configured panel never falls through into either runtime.
-    """
+    """Resolve a public intake click without silently crossing runtimes."""
 
     state = await get_rollout(mongo)
     requested = str(requested_route).strip().lower()
@@ -703,42 +698,10 @@ async def route_public_intake(
         )
 
     if not state.valid:
-        if requested == ROUTE_LEGACY:
-            setup = await mongo.ticket_setup.find_one(
-                {"_id": "config"},
-                {"legacy_ticket_guild_id": 1},
-            ) or {}
-            if "legacy_ticket_guild_id" in setup:
-                legacy_guild = _positive_int(setup.get("legacy_ticket_guild_id"))
-                if legacy_guild is None or legacy_guild != int(guild_id):
-                    return RouteDecision(
-                        ROUTE_REJECT,
-                        False,
-                        state.phase,
-                        state.revision,
-                        "wrong_legacy_guild",
-                    )
-            return RouteDecision(
-                ROUTE_LEGACY,
-                True,
-                state.phase,
-                state.revision,
-                (
-                    "safe_legacy_default"
-                    if "legacy_ticket_guild_id" in setup
-                    else "pre_setup_legacy_compatibility"
-                ),
-            )
         return RouteDecision(
             ROUTE_REJECT, False, state.phase, state.revision, "rollout_not_configured"
         )
 
-    legacy_source_matches = bool(
-        state.legacy_intake
-        and state.legacy_intake.matches(
-            guild_id=guild_id, channel_id=channel_id, message_id=message_id
-        )
-    )
     thread_source_matches = bool(
         state.thread_intake
         and state.thread_intake.matches(
@@ -746,35 +709,11 @@ async def route_public_intake(
         )
     )
     if state.phase in {PHASE_LEGACY_ONLY, PHASE_PREPARED, PHASE_ROLLBACK_LEGACY}:
-        if requested == ROUTE_LEGACY and legacy_source_matches:
-            return RouteDecision(
-                ROUTE_LEGACY, True, state.phase, state.revision, "legacy_is_default"
-            )
         return RouteDecision(
-            ROUTE_REJECT,
-            False,
-            state.phase,
-            state.revision,
-            (
-                "wrong_legacy_intake_source"
-                if requested == ROUTE_LEGACY
-                else "thread_intake_disabled"
-            ),
+            ROUTE_REJECT, False, state.phase, state.revision, "thread_intake_disabled"
         )
 
     if state.phase == PHASE_PILOT:
-        if requested == ROUTE_LEGACY and legacy_source_matches:
-            return RouteDecision(
-                ROUTE_LEGACY, True, state.phase, state.revision, "legacy_is_default"
-            )
-        if requested == ROUTE_LEGACY:
-            return RouteDecision(
-                ROUTE_REJECT,
-                False,
-                state.phase,
-                state.revision,
-                "wrong_legacy_intake_source",
-            )
         allowed = pilot_access_allowed(
             state,
             guild_id=guild_id,
@@ -792,10 +731,6 @@ async def route_public_intake(
             "pilot_allowed" if allowed else "pilot_denied",
         )
 
-    if requested != ROUTE_THREAD:
-        return RouteDecision(
-            ROUTE_REJECT, False, state.phase, state.revision, "legacy_intake_retired"
-        )
     allowed = thread_source_matches
     return RouteDecision(
         ROUTE_THREAD if allowed else ROUTE_REJECT,

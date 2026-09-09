@@ -317,73 +317,28 @@ def _ticket(identifier, *, user, route, status="open", number=1, location=100):
 def test_cross_server_routing_uses_exact_phase_source_matrix():
     async def scenario():
         missing = _mongo()
-        safe = await runtime.route_public_intake(
+        unconfigured = await runtime.route_public_intake(
             missing,
-            requested_route=runtime.ROUTE_LEGACY,
+            requested_route=runtime.ROUTE_THREAD,
             guild_id=999,
             channel_id=999,
             message_id=999,
             user_id=50,
             ticket_type="main",
         )
-        assert safe.allowed and safe.reason == "pre_setup_legacy_compatibility"
-        missing.ticket_setup.documents["config"].update({
-            "main_recruiter_role": 700,
-            "main_category": 800,
-            "ticket_target_guild_id": 444,
-        })
-        pre_split = await runtime.route_public_intake(
-            missing,
-            requested_route=runtime.ROUTE_LEGACY,
-            guild_id=999,
-            channel_id=999,
-            message_id=999,
-            user_id=50,
-            ticket_type="main",
-        )
-        assert pre_split.allowed
-        assert pre_split.reason == "pre_setup_legacy_compatibility"
-        missing.ticket_setup.documents["config"]["legacy_ticket_guild_id"] = 10
-        safe = await runtime.route_public_intake(
-            missing,
-            requested_route=runtime.ROUTE_LEGACY,
-            guild_id=10,
-            channel_id=999,
-            message_id=999,
-            user_id=50,
-            ticket_type="main",
-        )
-        assert safe.allowed and safe.route == runtime.ROUTE_LEGACY
-        bound_elsewhere = await runtime.route_public_intake(
-            missing,
-            requested_route=runtime.ROUTE_LEGACY,
-            guild_id=11,
-            channel_id=999,
-            message_id=999,
-            user_id=50,
-            ticket_type="main",
-        )
-        assert not bound_elsewhere.allowed
+        assert not unconfigured.allowed
+        assert unconfigured.reason == "rollout_not_configured"
 
         expected = {
-            runtime.PHASE_LEGACY_ONLY: (True, False, False),
-            runtime.PHASE_PREPARED: (True, False, False),
-            runtime.PHASE_PILOT: (True, False, True),
-            runtime.PHASE_THREAD_DEFAULT: (False, True, False),
-            runtime.PHASE_ROLLBACK_LEGACY: (True, False, False),
-            runtime.PHASE_THREAD_ONLY: (False, True, False),
+            runtime.PHASE_LEGACY_ONLY: (False, False),
+            runtime.PHASE_PREPARED: (False, False),
+            runtime.PHASE_PILOT: (False, True),
+            runtime.PHASE_THREAD_DEFAULT: (True, False),
+            runtime.PHASE_ROLLBACK_LEGACY: (False, False),
+            runtime.PHASE_THREAD_ONLY: (True, False),
         }
         for phase, outcomes in expected.items():
             mongo = _mongo(rollout=[_cross_rollout(phase)])
-            old = await runtime.route_public_intake(
-                mongo,
-                requested_route=runtime.ROUTE_LEGACY,
-                guild_id=10,
-                channel_id=20,
-                message_id=30,
-                user_id=50,
-                ticket_type="main",
-            )
             public = await runtime.route_public_intake(
                 mongo,
                 requested_route=runtime.ROUTE_THREAD,
@@ -402,7 +357,7 @@ def test_cross_server_routing_uses_exact_phase_source_matrix():
                 user_id=50,
                 ticket_type="main",
             )
-            assert (old.allowed, public.allowed, pilot.allowed) == outcomes
+            assert (public.allowed, pilot.allowed) == outcomes
 
             copied = await runtime.route_public_intake(
                 mongo,

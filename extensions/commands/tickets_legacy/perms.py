@@ -9,7 +9,6 @@ inherit trust from the command that rendered it.
 
 import hikari
 
-from extensions.commands import ticket_runtime
 from utils.mongo import MongoClient
 
 
@@ -34,30 +33,3 @@ async def is_recruiter(member: hikari.Member | None, mongo: MongoClient) -> bool
         or (fwa_role and fwa_role in role_ids)
         or member.permissions & hikari.Permissions.ADMINISTRATOR
     )
-
-
-async def is_legacy_control_guild(mongo: MongoClient, guild_id: int | None) -> bool:
-    """Bind global legacy configuration writes after rollout is configured."""
-    if guild_id is None:
-        return False
-    try:
-        rollout = await ticket_runtime.get_rollout(mongo)
-    except Exception:
-        rollout = None
-    if rollout is not None and rollout.valid:
-        return bool(
-            rollout.legacy_intake
-            and rollout.legacy_intake.guild_id == int(guild_id)
-        )
-    try:
-        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-    except Exception:
-        return False
-    if "legacy_ticket_guild_id" not in config:
-        # Pre-cross-server deployments had no guild authority marker. Preserve
-        # their legacy controls until setup writes the explicit legacy binding.
-        return True
-    try:
-        return int(config.get("legacy_ticket_guild_id")) == int(guild_id)
-    except (TypeError, ValueError):
-        return False

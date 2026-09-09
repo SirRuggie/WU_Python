@@ -30,19 +30,9 @@ MISSING_TICKET_MESSAGE = (
 
 
 async def _allow_denial_action(ctx, mongo: MongoClient, data: dict) -> bool:
-    """Re-authorize persisted denial controls in their configured guild."""
+    """Re-authorize persisted denial controls."""
     if not await perms.is_recruiter(ctx.member, mongo):
         await ctx.respond("❌ Only recruiters can use this denial action.", ephemeral=True)
-        return False
-    state_guild_id = data.get("guild_id")
-    if state_guild_id is not None and int(state_guild_id) != int(ctx.guild_id or 0):
-        await ctx.respond("❌ This denial action belongs to another server.", ephemeral=True)
-        return False
-    if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
-        await ctx.respond(
-            "❌ Legacy recruiter actions are bound to the configured guild.",
-            ephemeral=True,
-        )
         return False
     return True
 
@@ -84,9 +74,6 @@ class Deny(
                 "❌ You must be a recruiter or administrator to deny tickets!"
             )
             return
-        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
-            await ctx.respond("❌ Legacy recruiter actions are bound to the configured guild.")
-            return
 
         # Deny ticket in current channel
         current_channel_id = ctx.channel_id
@@ -94,7 +81,6 @@ class Deny(
         # Find ticket for this channel
         ticket = await store.find_one(mongo, {
             "type": "ticket",
-            "guild_id": int(ctx.guild_id),
             "channel_id": current_channel_id
         })
 
@@ -129,7 +115,6 @@ class Deny(
             "_id": action_id,
             "type": "deny_action",
             "ticket_id": ticket["_id"],
-            "guild_id": int(ctx.guild_id),
             "channel_id": current_channel_id,
             "user_id": user_id,
             "denier_id": ctx.user.id,
@@ -201,9 +186,6 @@ class Approve(
                 "❌ You must be a recruiter or administrator to approve tickets!"
             )
             return
-        if not await perms.is_legacy_control_guild(mongo, ctx.guild_id):
-            await ctx.respond("❌ Legacy recruiter actions are bound to the configured guild.")
-            return
 
         # Approve ticket in current channel
         current_channel_id = ctx.channel_id
@@ -211,7 +193,6 @@ class Approve(
         # Find ticket for this channel
         ticket = await store.find_one(mongo, {
             "type": "ticket",
-            "guild_id": int(ctx.guild_id),
             "channel_id": current_channel_id
         })
 

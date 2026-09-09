@@ -49,7 +49,9 @@ EXPECTED_LEGACY_COMMANDS = {
     "diagnostics",
     "fix-mismatched",
     "list",
+    "migrate-store",
     "release",
+    "reset-counter",
     "setup",
 }
 

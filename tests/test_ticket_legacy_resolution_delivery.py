@@ -326,11 +326,6 @@ def test_missing_approval_authority_reports_no_change_and_runs_no_effects(
     monkeypatch.setattr(legacy_close.store, "find_one", find_ticket)
     monkeypatch.setattr(legacy_close.store, "transition", missing_transition)
     monkeypatch.setattr(
-        legacy_close.perms,
-        "is_legacy_control_guild",
-        allowed,
-    )
-    monkeypatch.setattr(
         legacy_close.resolve,
         "deliver_committed_resolution",
         forbidden,
@@ -745,65 +740,6 @@ def test_shutdown_cancels_and_clears_retry_tasks(monkeypatch):
         await delivery.stop_retries()
         assert task.cancelled()
         assert delivery._retry_tasks == {}
-
-    asyncio.run(scenario())
-
-
-def test_online_discovery_recovers_commit_cancelled_before_direct_driver(
-    monkeypatch,
-):
-    async def scenario():
-        await delivery.stop_online_recovery()
-        ticket = _ticket(status="open", kind="deny_custom")
-        ticket.pop("resolution_delivery")
-        mongo = _mongo(ticket)
-        rest = _Rest()
-
-        async def cancel_after_commit(*_args, **_kwargs):
-            raise asyncio.CancelledError
-
-        monkeypatch.setattr(
-            store,
-            "release_terminal_open_slot",
-            cancel_after_commit,
-        )
-        with pytest.raises(asyncio.CancelledError):
-            await store.transition(
-                mongo,
-                "ticket-1",
-                to_status="denied",
-                actor_id=8,
-                actor_name="Recruiter",
-                resolution_effect=_plan("deny_custom"),
-            )
-
-        durable = mongo.button_store.rows["ticket-1"]
-        assert durable["status"] == "denied"
-        assert durable["resolution_delivery"]["state"] == "pending"
-
-        monkeypatch.setattr(delivery, "ONLINE_SCAN_INTERVAL_SECONDS", 0.001)
-        task = delivery.start_online_recovery(
-            bot=_Bot(rest),
-            mongo=mongo,
-        )
-        try:
-            for _ in range(200):
-                if (
-                    mongo.button_store.rows["ticket-1"]
-                    ["resolution_delivery"]["state"]
-                    == "complete"
-                ):
-                    break
-                await asyncio.sleep(0.001)
-            assert (
-                mongo.button_store.rows["ticket-1"]
-                ["resolution_delivery"]["state"]
-                == "complete"
-            )
-            assert rest.notice_calls == 1
-        finally:
-            await delivery.stop_online_recovery()
-        assert task.cancelled()
 
     asyncio.run(scenario())
 
