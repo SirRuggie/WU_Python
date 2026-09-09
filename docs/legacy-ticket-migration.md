@@ -1,6 +1,6 @@
 # Legacy ticket migration — terminal cloning into threads
 
-**Status: implemented as `/ticket-pilot migrate-legacy`.** For the executable
+**Status: implemented as `/tickets migrate-legacy`.** For the executable
 operator sequence, use the
 [ticket console operations guide](ticket-console-operations.md#clone-terminal-legacy-tickets).
 
@@ -42,7 +42,7 @@ same candidate parent and the same staff parent.
 ## Preview before every confirmation
 
 ```text
-/ticket-pilot migrate-legacy source-guild:<server> source-channel:<ticket channel> target-guild:<destination server> candidate-parent:<channel> staff-parent:<channel> type:Auto status:Auto confirm:false
+/tickets migrate-legacy source-guild:<server> source-channel:<ticket channel> target-guild:<destination server> candidate-parent:<channel> staff-parent:<channel> type:Auto status:Auto confirm:false
 ```
 
 The preview makes no Discord or Mongo writes. It reports the inferred ticket
@@ -115,7 +115,7 @@ before selecting the next. Further new selections remain blocked until all
 selected migrations are complete and an Administrator runs:
 
 ```text
-/ticket-pilot approve-migration-pilot confirm:true
+/tickets approve-migration-pilot confirm:true
 ```
 
 Pilot approval fails unless there are 1–5 selected migrations and every one is
@@ -127,7 +127,7 @@ For every selected clone, verify:
 - Candidate and staff message order and visible original timestamps.
 - Attachments or explicit loss notes.
 - Both destination threads are locked and archived.
-- `/ticket-pilot find` locates the clone by Discord ID, username, and a player
+- `/tickets find` locates the clone by Discord ID, username, and a player
   tag when present.
 - Both console jump links open the archived threads read-only; they are not
   automatically unarchived.

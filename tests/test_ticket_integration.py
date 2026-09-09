@@ -95,7 +95,7 @@ def test_ticket_package_registers_only_thread_runtime_commands():
 
     assert registered == EXPECTED_COMMANDS
     assert not registered & OBSOLETE_COMMANDS
-    assert ticket_extension.ticket.name == "ticket-pilot"
+    assert ticket_extension.ticket.name == "tickets"
     assert set(legacy_extension.ticket._commands) == EXPECTED_LEGACY_COMMANDS
     assert legacy_extension.ticket.name == "ticket"
     assert len(registered) <= 25
@@ -186,9 +186,9 @@ def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch
 def test_ticket_help_matches_the_registered_thread_commands():
     paths = help_catalog.command_paths()
     documented = {
-        path.removeprefix("/ticket-pilot ")
+        path.removeprefix("/tickets ")
         for path in paths
-        if path.startswith("/ticket-pilot ")
+        if path.startswith("/tickets ")
     }
 
     assert documented == EXPECTED_COMMANDS

@@ -6,11 +6,11 @@ legacy notes are retained below, but the current contract is:
 | Runtime | Authority | Writable statuses | Resolution surface |
 |---|---|---|---|
 | Legacy channel tickets | `button_store` | `open`, `approved`, `denied` | `/ticket` |
-| Thread-ticket v2 | `tickets` rows matching `venue: "thread"` and `runtime: "thread_v2"` | `open`, `approved`, `denied` | Private console and `/ticket-pilot` |
+| Thread-ticket v2 | `tickets` rows matching `venue: "thread"` and `runtime: "thread_v2"` | `open`, `approved`, `denied` | Private console and `/tickets` |
 
 Normal ticket creation and resolution never copy, mirror, merge, or repoint a
 document between these authorities. The explicit terminal-only
-`/ticket-pilot migrate-legacy` workflow is the sole exception: it creates a
+`/tickets migrate-legacy` workflow is the sole exception: it creates a
 separate v2 clone while leaving the source legacy document and Discord objects
 unchanged. The runtimes otherwise share only rollout state, one-open-ticket
 slots, and ticket-number counters. See the

@@ -175,7 +175,7 @@ class Approve(
         if result.outcome == store.LOST:
             if (result.doc or {}).get("status") == "open":
                 await ctx.respond(
-                    "The ticket changed before approval finished. Run `/ticket-pilot approve` again."
+                    "The ticket changed before approval finished. Run `/tickets approve` again."
                 )
                 return
             await ctx.respond(_already_decided_message(result.doc or {}))
@@ -236,7 +236,7 @@ async def deny_fwa_default_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/ticket-pilot deny` again."
+                    "The ticket changed before denial finished. Run `/tickets deny` again."
                 ),
                 components=[],
             )
@@ -301,7 +301,7 @@ async def deny_main_default_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/ticket-pilot deny` again."
+                    "The ticket changed before denial finished. Run `/tickets deny` again."
                 ),
                 components=[],
             )
@@ -434,7 +434,7 @@ async def process_custom_denial_handler(
             await delete_state(mongo, action_id)
             await ctx.interaction.edit_initial_response(
                 content=(
-                    "The ticket changed before denial finished. Run `/ticket-pilot deny` again."
+                    "The ticket changed before denial finished. Run `/tickets deny` again."
                 )
             )
             return

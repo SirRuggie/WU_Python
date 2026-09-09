@@ -14,7 +14,7 @@ from utils.startup_reconciler import StartupReconciler
 
 
 loader = lightbulb.Loader()
-ticket = lightbulb.Group("ticket-pilot", "Warriors United thread ticket pilot commands")
+ticket = lightbulb.Group("tickets", "Warriors United thread ticket commands")
 
 ticket_config: dict | None = None
 startup_index_errors: dict[str, str] = {}

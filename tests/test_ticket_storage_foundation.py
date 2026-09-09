@@ -3765,7 +3765,7 @@ def test_custom_denial_modal_defers_before_state_or_permission_work(monkeypatch)
 def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
     monkeypatch,
 ):
-    """Commit 2: /ticket-pilot never offers an overturn - only the console does."""
+    """Commit 2: /tickets never offers an overturn - only the console does."""
     ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
     ticket["approved_by_name"] = "Lead Recruiter"
     ticket["approved_at"] = NOW

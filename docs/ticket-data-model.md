@@ -6,7 +6,7 @@ Ticketing has two fixed authorities during the parallel rollout:
 
 - Legacy channel tickets opened and managed through `/ticket` live in
   `button_store`.
-- Thread-v2 tickets opened and managed through `/ticket-pilot` live in
+- Thread-v2 tickets opened and managed through `/tickets` live in
   `tickets`. Completed terminal legacy clones also live there.
 
 Ticket rows are not mirrored or dual-written between those collections, and
@@ -109,7 +109,7 @@ The two repositories are fixed rather than selected by configuration:
 
 - `extensions/commands/tickets_legacy/store.py` constrains legacy `/ticket`
   reads and writes to channel-ticket rows in `button_store`.
-- `extensions/commands/tickets/store.py` constrains `/ticket-pilot` reads and
+- `extensions/commands/tickets/store.py` constrains `/tickets` reads and
   writes to `venue: "thread"`, `runtime: "thread_v2"` rows in `tickets`.
 
 Rollout phases route **new intake only**. Promotion or rollback never copies,
@@ -119,8 +119,8 @@ created it.
 The only supported legacy-to-v2 migration is the operator-paced terminal clone:
 
 ```text
-/ticket-pilot migrate-legacy ... confirm:false
-/ticket-pilot migrate-legacy ... confirm:true
+/tickets migrate-legacy ... confirm:false
+/tickets migrate-legacy ... confirm:true
 ```
 
 It accepts one approved or denied source ticket at a time during `pilot`,
@@ -131,7 +131,7 @@ unchanged. The initial pilot permits 1–5 selected terminal tickets before
 explicit pilot approval with:
 
 ```text
-/ticket-pilot approve-migration-pilot confirm:true
+/tickets approve-migration-pilot confirm:true
 ```
 
 ### Thread-v2 and shared-runtime indexes

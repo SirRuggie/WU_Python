@@ -703,7 +703,7 @@ async def refresh_status(mongo: MongoClient) -> str | None:
 
     ``None`` once a refresh has since succeeded -- ``_release_hub_lease``
     clears ``refresh_error`` on every successful publish. Callers such as
-    ``/ticket-pilot rollout-status`` use this to surface a permanent
+    ``/tickets rollout-status`` use this to surface a permanent
     console-config failure that would otherwise only show up as repeated
     log lines.
     """
@@ -1724,7 +1724,7 @@ def _intake_components(ticket_doc: Mapping, *, limit: int) -> list:
 def _flag_omission_suffix(omitted: int) -> str:
     return (
         f"\n\n-# {omitted} additional matching flag"
-        f"{'s' if omitted != 1 else ''} not shown. Use `/ticket-pilot flags` for all details."
+        f"{'s' if omitted != 1 else ''} not shown. Use `/tickets flags` for all details."
     )
 
 
@@ -1806,7 +1806,7 @@ def build_ticket_detail(
         reason = _clean(flag.get("reason"), limit=300)
         rule = " · blocks approve" if blocks else " · caution only"
         # IDs are shown in code spans specifically so staff can copy the exact
-        # value into /ticket-pilot flag-remove. _clean_code_span truncates but
+        # value into /tickets flag-remove. _clean_code_span truncates but
         # never escapes, since escaping underscores would change that ID.
         flag_id = _clean_code_span(flag.get("_id"), limit=80)
         flag_lines.append(f"{glyph} **{label}**{rule} · `{flag_id}`\n{reason}")

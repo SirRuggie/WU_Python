@@ -575,7 +575,7 @@ class Setup(
                 f"`{legacy_source.guild_id}/{legacy_source.channel_id}/{legacy_source.message_id}`, "
                 f"target public <#{public_source.channel_id}> / `{public_source.message_id}`, "
                 f"pilot <#{pilot_source.channel_id}> / `{pilot_source.message_id}` at "
-                f"revision `{updated.revision}`. Run `/ticket-pilot rollout-prepare` "
+                f"revision `{updated.revision}`. Run `/tickets rollout-prepare` "
                 "when the tester allowlist is ready, then explicitly enable the pilot."
             )
 

@@ -75,7 +75,7 @@ async def _rollout_for_guild(ctx, mongo: MongoClient) -> ticket_runtime.RolloutS
     state = await ticket_runtime.get_rollout(mongo)
     if not state.valid:
         await ctx.respond(
-            "🛑 Rollout is not configured. Run `/ticket-pilot setup` first.",
+            "🛑 Rollout is not configured. Run `/tickets setup` first.",
             ephemeral=True,
         )
         return None
@@ -420,7 +420,7 @@ class RolloutPrepare(
             return
         await ctx.respond(
             f"✅ Pilot staged at revision `{state.revision}`. Intake is still legacy-only. "
-            "Run `/ticket-pilot rollout-pilot confirm: true` to enable testers.",
+            "Run `/tickets rollout-pilot confirm: true` to enable testers.",
             ephemeral=True,
         )
 

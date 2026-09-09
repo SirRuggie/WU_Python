@@ -10,7 +10,7 @@ the [ticket console operations guide](ticket-console-operations.md) is the
 operator source of truth.
 
 During coexistence, `/ticket` and `button_store` remain the legacy authority;
-the console and `/ticket-pilot` use the v2 `tickets` authority. Rollout changes
+the console and `/tickets` use the v2 `tickets` authority. Rollout changes
 new intake routing without converting existing tickets.
 
 The console queries only thread-v2 and completed-clone rows in `tickets`. It
@@ -185,10 +185,10 @@ Nothing else. The bot validates the text after submit:
 | anything else | — | "Use a Discord ID, a player tag (start it with #), or a username. Enter only one of these values." |
 
 Entry points: the `🔍 Find a ticket` button on the console, and a
-`/ticket-pilot find` slash command reachable from anywhere (not just the channel
+`/tickets find` slash command reachable from anywhere (not just the channel
 the console lives in) — mirrors the original proposal's Archive row (§2.1),
-whose entry points are `/ticket-pilot history member:@user` and
-`/ticket-pilot find` (`/ticket-pilot console` is the Queue's entry, not the
+whose entry points are `/tickets history member:@user` and
+`/tickets find` (`/tickets console` is the Queue's entry, not the
 Archive's).
 
 ### ⚠️ Correction: Status/Clan-type cannot live inside the modal
@@ -259,9 +259,9 @@ The recruiter-only slash commands remain fallback and audit tools when the
 ticket-detail panel is unavailable:
 
 ```text
-/ticket-pilot flags identity:<Discord ID or #player tag>
-/ticket-pilot flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
-/ticket-pilot flag-remove flag-id:<exact ID> reason:<reason>
+/tickets flags identity:<Discord ID or #player tag>
+/tickets flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
+/tickets flag-remove flag-id:<exact ID> reason:<reason>
 ```
 
 ### Automatic Chocolate pages use current accounts only
@@ -388,7 +388,7 @@ a rules violation to anyone who takes it literally.
 - The v2 `tickets` authority stores only `open`, `approved`, or `denied`; there
   is no `abandoned` runtime state. The legacy `button_store` authority remains
   separate during rollout rather than being converted into v2.
-- One console channel is bound once. Re-running `/ticket-pilot console` repairs or
+- One console channel is bound once. Re-running `/tickets console` repairs or
   reuses that hub in its saved channel; it does not relocate it.
 
 ## 10. Where the reference artifacts live

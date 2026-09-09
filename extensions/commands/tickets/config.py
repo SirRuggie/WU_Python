@@ -79,8 +79,8 @@ def configuration_summary(
         "**Shared console**",
         f"Channel: {_channel(console_channel)}",
         "",
-        "Use `/ticket-pilot configure-threads` to validate and save a thread pair.",
-        "Use `/ticket-pilot console` in the private recruiter channel to post or repair the hub.",
+        "Use `/tickets configure-threads` to validate and save a thread pair.",
+        "Use `/tickets console` in the private recruiter channel to post or repair the hub.",
     ])
     return "\n".join(rows)
 

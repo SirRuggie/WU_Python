@@ -21,7 +21,7 @@ an explicit confirmed promotion are completed.
 
 - `/ticket` is the legacy channel-ticket runtime. Its authority remains
   `button_store`.
-- `/ticket-pilot` is the thread-ticket v2 runtime. Its authority is `tickets`.
+- `/tickets` is the thread-ticket v2 runtime. Its authority is `tickets`.
 - Do not copy, merge, or repoint those stores. Existing legacy tickets remain
   live under `/ticket` while v2 is prepared, piloted, promoted, or rolled back.
 - Legacy recruiter claim/release remains only for operating channel tickets
@@ -42,7 +42,7 @@ The command ownership is permanent during coexistence:
 | Command group | Runtime | Storage | Purpose |
 |---|---|---|---|
 | `/ticket` | Legacy channel tickets | `button_store` | Existing tickets and old-server intake |
-| `/ticket-pilot` | V2 thread tickets | `tickets` | Target-server setup, pilot, console, decisions, flags, and migration |
+| `/tickets` | V2 thread tickets | `tickets` | Target-server setup, pilot, console, decisions, flags, and migration |
 
 Applicants create tickets from panel buttons, not slash commands. The v2 group
 has exactly 22 registered commands; the command README lists every one. V2 has
@@ -96,7 +96,7 @@ exact panel accepts new tickets; they do not move or convert existing tickets.
 
 ## Safe rollout sequence
 
-Run `/ticket-pilot` commands in the target guild as an Administrator. Initial
+Run `/tickets` commands in the target guild as an Administrator. Initial
 setup establishes the target-guild binding and also verifies that the operator
 owns or is an Administrator in the old legacy guild.
 
@@ -106,7 +106,7 @@ Run setup **in the restricted target pilot-panel channel**. Select the target
 public-v2 channel that will also become the shared Main/FWA candidate parent:
 
 ```text
-/ticket-pilot setup legacy-panel:<old message link or guild/channel/message IDs> public-channel:<target shared candidate-parent channel> tester:<user>
+/tickets setup legacy-panel:<old message link or guild/channel/message IDs> public-channel:<target shared candidate-parent channel> tester:<user>
 ```
 
 Use `tester-role:<role>` instead of, or in addition to, `tester:<user>`. First
@@ -124,22 +124,22 @@ target panels in this order:
    messages together:
 
    ```text
-   /ticket-pilot setup replace:true public-channel:<new shared candidate-parent channel>
+   /tickets setup replace:true public-channel:<new shared candidate-parent channel>
    ```
 
 2. Reconfigure both types with that exact new public channel and the shared
    recruiter-only staff parent:
 
    ```text
-   /ticket-pilot configure-threads type:Main candidate-parent:<new shared candidate-parent channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
-   /ticket-pilot configure-threads type:FWA candidate-parent:<new shared candidate-parent channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+   /tickets configure-threads type:Main candidate-parent:<new shared candidate-parent channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+   /tickets configure-threads type:FWA candidate-parent:<new shared candidate-parent channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
    ```
 
 3. Re-run `rollout-prepare` readiness before enabling pilot or promotion:
 
    ```text
-   /ticket-pilot rollout-prepare confirm:false
-   /ticket-pilot rollout-prepare confirm:true
+   /tickets rollout-prepare confirm:false
+   /tickets rollout-prepare confirm:true
    ```
 
 Target intake remains disabled in these safe phases, and readiness remains
@@ -150,10 +150,10 @@ Replacement never rebinds the old legacy panel or modifies legacy ticket data;
 ### 2. Configure and inspect the thread parents
 
 ```text
-/ticket-pilot configure-threads type:Main candidate-parent:<same bound public-v2 channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
-/ticket-pilot configure-threads type:FWA candidate-parent:<same bound public-v2 channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
-/ticket-pilot thread-config
-/ticket-pilot config
+/tickets configure-threads type:Main candidate-parent:<same bound public-v2 channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+/tickets configure-threads type:FWA candidate-parent:<same bound public-v2 channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+/tickets thread-config
+/tickets config
 ```
 
 Both Main and FWA must use the exact `public-channel` bound by setup as their
@@ -164,7 +164,7 @@ thread-recruiter roles and never overwrite old-server legacy recruiter roles.
 ### 3. Create the private console
 
 ```text
-/ticket-pilot console channel:<private recruiter channel>
+/tickets console channel:<private recruiter channel>
 ```
 
 Verify the returned message link, chart, open-ticket picker, and **Find** action.
@@ -178,18 +178,18 @@ bot's access and retry there. Do not create a second console elsewhere.
 Manage the allowlist and inspect all bindings with:
 
 ```text
-/ticket-pilot pilot-user action:Allow member:<user>
-/ticket-pilot pilot-user action:Remove member:<user>
-/ticket-pilot pilot-role action:Allow role:<role>
-/ticket-pilot pilot-role action:Remove role:<role>
-/ticket-pilot rollout-status
+/tickets pilot-user action:Allow member:<user>
+/tickets pilot-user action:Remove member:<user>
+/tickets pilot-role action:Allow role:<role>
+/tickets pilot-role action:Remove role:<role>
+/tickets rollout-status
 ```
 
 ### 4. Prepare without changing intake
 
 ```text
-/ticket-pilot rollout-prepare confirm:false
-/ticket-pilot rollout-prepare confirm:true
+/tickets rollout-prepare confirm:false
+/tickets rollout-prepare confirm:true
 ```
 
 The first command validates startup readiness, the non-empty allowlist, all
@@ -201,8 +201,8 @@ panel accepts new tickets.
 ### 5. Enable the parallel pilot
 
 ```text
-/ticket-pilot rollout-pilot confirm:false
-/ticket-pilot rollout-pilot confirm:true
+/tickets rollout-pilot confirm:false
+/tickets rollout-pilot confirm:true
 ```
 
 In `pilot`, allowlisted testers use the restricted target-server panel for v2.
@@ -221,8 +221,8 @@ following before promotion:
 ### 6. Promote the target public-v2 panel
 
 ```text
-/ticket-pilot rollout-promote confirm:false
-/ticket-pilot rollout-promote confirm:true
+/tickets rollout-promote confirm:false
+/tickets rollout-promote confirm:true
 ```
 
 Promotion requires `pilot`. The dry run repeats readiness checks. Confirmation
@@ -234,14 +234,14 @@ tickets remain authoritative and must still be completed in the old server with
 ### 7. Roll back new intake when needed
 
 ```text
-/ticket-pilot rollout-rollback confirm:true
+/tickets rollout-rollback confirm:true
 ```
 
 Rollback disables the target public-v2 and pilot panels and re-enables the exact
 old-server legacy panel for **new** tickets. From `prepared` it returns to
 `legacy_only`; from a live v2 phase it enters `rollback_legacy`. It does not
 change existing thread tickets, which remain manageable through the target
-console and `/ticket-pilot` commands. Retry only through prepare, pilot, and
+console and `/tickets` commands. Retry only through prepare, pilot, and
 promote with the same validation gates.
 
 ### 8. Drain legacy only after promotion
@@ -251,8 +251,8 @@ Discord artifacts so startup recovery can finish them safely. Inspect the drain
 at any time with:
 
 ```text
-/ticket-pilot rollout-status
-/ticket-pilot rollout-drain confirm:false
+/tickets rollout-status
+/tickets rollout-drain confirm:false
 ```
 
 The drain reports every blocker that must clear:
@@ -288,89 +288,30 @@ workflows, initial deliveries, and conflicts are all cleared, enter the fully
 drained phase:
 
 ```text
-/ticket-pilot rollout-drain confirm:true
+/tickets rollout-drain confirm:true
 ```
 
-## After legacy is disabled: remove the `-pilot` suffix
+## After legacy retirement
 
-For this project, "remove the pilot key" means remove the user-visible
-`-pilot` suffix so the new command group becomes `/ticket`. It does **not** mean
-deleting Mongo's `ticket_rollout.pilot` field.
-
-`rollout-drain confirm:true` enters `thread_only`, but it does not unload the
-legacy extension, delete a panel, or rename a Discord command. Perform the
-rename only in a separate atomic retirement release after the drain is proven
-complete:
-
-1. Before entering `thread_only`, ship a prerequisite safety change that adds
-   pending embedded legacy `resolution_delivery` work to
-   `legacy_drain_status`/`rollout-drain`, rejects every legacy approve, deny,
-   and override mutation after `thread_only`, and keeps the legacy resolution
-   recovery worker active until that count reaches zero. The current drain does
-   not yet provide this final retirement fence.
-2. Deploy that prerequisite change, then run and save the clean results from:
-
-   ```text
-   /ticket-pilot rollout-status
-   /ticket-pilot rollout-drain confirm:false
-   /ticket-pilot rollout-drain confirm:true
-   /ticket-pilot rollout-status
-   ```
-
-3. Stop and fully drain the bot process for the retirement maintenance window.
-   The final proof must run while no legacy command, worker, or other bot
-   process can write.
-4. Confirm every legacy resolution-delivery record is `complete` or
-   `cancelled`. This read-only database check must return `0`:
-
-   ```javascript
-   db.button_store.countDocuments({
-     type: "ticket",
-     resolution_delivery: { $exists: true },
-     "resolution_delivery.state": { $nin: ["complete", "cancelled"] }
-   })
-   ```
-
-   If it is nonzero, restart the prerequisite build—not the retirement build—
-   let recovery finish, re-run `rollout-status` and
-   `rollout-drain confirm:false`, then fully stop and repeat the final proof.
-   Do not rerun confirmed drain after `thread_only`. Permit no writer between
-   the zero result and retirement deployment.
-5. Build one retirement release that stops loading the legacy `/ticket`
-   extension and legacy channel monitor, renames the v2 group from
-   `/ticket-pilot` to `/ticket`, makes `thread_only` unable to roll back to an
-   unloaded legacy runtime, and updates every command reference, help entry,
-   registration test, and operations example together.
-6. Replace or unregister the now-obsolete cross-server `setup`, tester-access,
-   and rollout controls. Preserve `migrate-legacy` and
-   `approve-migration-pilot` while historical cloning is still needed. Add a
-   production-safe public-panel repair command because the current setup
-   command cannot replace that panel in `thread_only`.
-7. Deploy once, restart/synchronize Discord commands, and verify that `/ticket`
-   contains only the intended v2 commands, `/ticket-pilot` is gone, the public
-   panel creates a v2 ticket, and the console still finds existing v2 tickets.
-8. After verification, delete only the inactive private pilot-panel message if
-   desired. Keep the target public panel, console, candidate/staff threads,
-   source channels, both ticket collections, audit history, open-slot state,
-   component IDs, and migration checkpoints.
-
-Do not remove the final tester with `pilot-user`/`pilot-role`, unset
-`ticket_rollout.pilot`, unset `legacy_intake`, or unset
-`legacy_ticket_guild_id` before that retirement release. The current parser
-requires the stored pilot structure even in `thread_only`; deleting it makes
-the rollout invalid and rejects public v2 intake.
+`/tickets` is permanent and is never renamed to `/ticket`. Retiring legacy
+means deleting the `/ticket` command group, its panels, and its channel
+monitor once `rollout-drain confirm:true` is proven clean — not renaming or
+otherwise touching `/tickets`. Stop loading the legacy `/ticket` extension,
+unregister its setup panels, and remove its Discord command registration in
+one reviewed retirement release; `/tickets` and its data keep running
+unchanged before, during, and after that release.
 
 ## Daily recruiter workflow
 
 Use `/ticket` for tickets that opened in the legacy runtime. Use the private
-console and `/ticket-pilot` for v2 tickets. The v2 console does not list
+console and `/tickets` for v2 tickets. The v2 console does not list
 un-cloned `button_store` tickets. Useful v2 fallbacks are:
 
 ```text
-/ticket-pilot find query:<Discord ID, #player tag, or username>
-/ticket-pilot history member:<user>
-/ticket-pilot approve
-/ticket-pilot deny
+/tickets find query:<Discord ID, #player tag, or username>
+/tickets history member:<user>
+/tickets approve
+/tickets deny
 ```
 
 ### Understand account identity
@@ -404,9 +345,9 @@ In ticket detail, use **Manage flags** to add, update, or remove
 ticket-detail flow is unavailable:
 
 ```text
-/ticket-pilot flags identity:<Discord ID or #player tag>
-/ticket-pilot flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
-/ticket-pilot flag-remove flag-id:<exact ID> reason:<reason>
+/tickets flags identity:<Discord ID or #player tag>
+/tickets flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
+/tickets flag-remove flag-id:<exact ID> reason:<reason>
 ```
 
 `flag-add` needs at least one Discord ID or player tag. Copy the exact flag ID
@@ -443,7 +384,7 @@ from ticket detail or `flags` before removing it.
    normal approve/deny path. Any recruiter may overturn a decision, it always
    runs the full normal effects (including, for deny-after-approve, removing
    any roles the approval granted), and it is logged on the ticket as an
-   overturn. `/ticket-pilot approve`/`deny` never offers an overturn — on a
+   overturn. `/tickets approve`/`deny` never offers an overturn — on a
    decided ticket it just names who decided it and points to the console.
 7. Applicant notification, staff updates, archive, and console refresh are
    durable follow-up work. **Decision recorded; updates retrying** means the
@@ -458,7 +399,7 @@ thread to deliver the new decision card, then re-archives it.
 Candidate follow-up is **not implemented**. A candidate cannot currently use
 the console, find their archived ticket, or post into the locked candidate
 thread a month later. Staff can open its details and archived links through the
-private console, `/ticket-pilot find`, or `/ticket-pilot history`.
+private console, `/tickets find`, or `/tickets history`.
 
 This is separate from a still-**open** ticket's thread going idle: Discord
 auto-archives it after seven days of silence, but it is never locked while
@@ -501,7 +442,7 @@ staff thread, messages, roles, or attachments.
 Run a read-only preview in the destination guild:
 
 ```text
-/ticket-pilot migrate-legacy source-guild:<server> source-channel:<ticket channel> target-guild:<destination server> candidate-parent:<channel> staff-parent:<channel> type:Auto status:Auto confirm:false
+/tickets migrate-legacy source-guild:<server> source-channel:<ticket channel> target-guild:<destination server> candidate-parent:<channel> staff-parent:<channel> type:Auto status:Auto confirm:false
 ```
 
 Choose `source-staff-thread` when detection is ambiguous. Use `type:Main` or
@@ -522,7 +463,7 @@ Select and verify between one and five pilot migrations. Further migrations
 stay locked until every selected item is complete and an Administrator runs:
 
 ```text
-/ticket-pilot approve-migration-pilot confirm:true
+/tickets approve-migration-pilot confirm:true
 ```
 
 Migration is resumable. Re-run the same `migrate-legacy` selections with

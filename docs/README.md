@@ -68,13 +68,13 @@ before changing durable documentation.
   copy, and four unguarded 25-option menus that are clear only at current scale.
 
 - [ticket-console-operations.md](ticket-console-operations.md) — the implemented
-  (not yet deployed) ticket operator source of truth: safe `/ticket` + `/ticket-pilot`
+  (not yet deployed) ticket operator source of truth: safe `/ticket` + `/tickets`
   coexistence, channel setup, pilot, promotion, rollback, drain, daily
-  recruiting, terminal legacy cloning, and post-legacy command rename.
+  recruiting, terminal legacy cloning, and legacy retirement.
 
 - [ticket-console/README.md](ticket-console/README.md) — plain-English reference
   for all 22 registered v2 commands, permissions, examples, applicant actions,
-  unbuilt candidate follow-up, and removal of the temporary `-pilot` suffix.
+  unbuilt candidate follow-up, and what changes when legacy is retired.
 
 - [ticket-console.md](ticket-console.md) — the implemented v2 console design.
   Architecture, search, the binary flag system, ticket-history auto-detect,
