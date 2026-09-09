@@ -1744,15 +1744,69 @@ BROWSE_PERIOD_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("7", "Last 7 days", "🗓️"),
     ("30", "Last 30 days", "🗓️"),
     ("90", "Last 90 days", "🗓️"),
+    ("custom", "Custom range…", "🗓️"),
 )
 BROWSE_PERIOD_DAYS = {"7": 7, "30": 30, "90": 90}
+BROWSE_MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+BROWSE_MONTH_ABBREVIATIONS = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
+BROWSE_MONTH_OPTIONS: tuple[tuple[str, str, str], ...] = tuple(
+    (str(index), name, "🗓️") for index, name in enumerate(BROWSE_MONTH_NAMES, start=1)
+)
 
 
-def _browse_since(period: str) -> datetime | None:
+def _browse_current_year_month() -> tuple[str, str]:
+    now = utcnow()
+    return str(now.year), str(now.month)
+
+
+def _browse_month_bounds(value: str) -> datetime:
+    """First moment (UTC) of the "YYYY-MM" month `value` names."""
+    year_str, _, month_str = str(value or "").partition("-")
+    year = int(year_str)
+    month = max(1, min(12, int(month_str or 1)))
+    return datetime(year, month, 1, tzinfo=timezone.utc)
+
+
+def _browse_next_month(moment: datetime) -> datetime:
+    if moment.month == 12:
+        return moment.replace(year=moment.year + 1, month=1)
+    return moment.replace(month=moment.month + 1)
+
+
+def _format_custom_month(value: str) -> str:
+    year_str, _, month_str = str(value or "").partition("-")
+    index = max(1, min(12, int(month_str or 1))) - 1
+    return f"{BROWSE_MONTH_ABBREVIATIONS[index]} {year_str}"
+
+
+def _browse_period_label(period: str, custom_from: str | None, custom_to: str | None) -> str:
+    if period == "custom" and custom_from and custom_to:
+        return f"Custom: {_format_custom_month(custom_from)} – {_format_custom_month(custom_to)}"
+    return _browse_option_label(BROWSE_PERIOD_OPTIONS, period)
+
+
+def _browse_since(
+    period: str, custom_from: str | None = None, custom_to: str | None = None,
+) -> tuple[datetime | None, datetime | None]:
+    """`(since, until)` for the Browse filter. `until` is `None` for every
+    preset (open-ended) and only set for a Custom range, where it is the
+    first moment of the month *after* `custom_to` -- exclusive, so December
+    rolls into the next January correctly.
+    """
+    if period == "custom" and custom_from and custom_to:
+        since = _browse_month_bounds(custom_from)
+        until = _browse_next_month(_browse_month_bounds(custom_to))
+        return since, until
     days = BROWSE_PERIOD_DAYS.get(period)
     if not days:
-        return None
-    return utcnow() - timedelta(days=days)
+        return None, None
+    return utcnow() - timedelta(days=days), None
 
 
 def _browse_total_pages(total: int, page_size: int = BROWSE_PAGE_SIZE) -> int:
@@ -1796,26 +1850,43 @@ def _browse_picker_options(results: Sequence[Mapping]) -> list[SelectOption]:
     )]
 
 
+def _browse_select_row(
+    name: str,
+    action_id: str,
+    options: Sequence[tuple[str, str, str]],
+    current: str,
+    *,
+    placeholder: str | None = None,
+) -> ActionRow:
+    return ActionRow(components=[TextSelectMenu(
+        custom_id=f"{name}:{action_id}",
+        placeholder=placeholder if placeholder is not None else _browse_option_label(options, current),
+        min_values=1,
+        max_values=1,
+        options=[SelectOption(
+            label=label,
+            value=value,
+            emoji=emoji,
+            is_default=value == current,
+        ) for value, label, emoji in options],
+    )])
+
+
 def _browse_filter_selects(
-    action_id: str, status: str, ticket_type: str, period: str,
+    action_id: str,
+    status: str,
+    ticket_type: str,
+    period: str,
+    custom_from: str | None = None,
+    custom_to: str | None = None,
 ) -> list[ActionRow]:
-    def _row(name: str, options: Sequence[tuple[str, str, str]], current: str) -> ActionRow:
-        return ActionRow(components=[TextSelectMenu(
-            custom_id=f"{name}:{action_id}",
-            placeholder=_browse_option_label(options, current),
-            min_values=1,
-            max_values=1,
-            options=[SelectOption(
-                label=label,
-                value=value,
-                emoji=emoji,
-                is_default=value == current,
-            ) for value, label, emoji in options],
-        )])
     return [
-        _row("ticket_v2_console_browse_status", BROWSE_STATUS_OPTIONS, status),
-        _row("ticket_v2_console_browse_type", BROWSE_TYPE_OPTIONS, ticket_type),
-        _row("ticket_v2_console_browse_period", BROWSE_PERIOD_OPTIONS, period),
+        _browse_select_row("ticket_v2_console_browse_status", action_id, BROWSE_STATUS_OPTIONS, status),
+        _browse_select_row("ticket_v2_console_browse_type", action_id, BROWSE_TYPE_OPTIONS, ticket_type),
+        _browse_select_row(
+            "ticket_v2_console_browse_period", action_id, BROWSE_PERIOD_OPTIONS, period,
+            placeholder=_browse_period_label(period, custom_from, custom_to),
+        ),
     ]
 
 
@@ -1829,11 +1900,13 @@ def build_browse_panel(
     total_pages: int,
     results: Sequence[Mapping],
     total: int,
+    custom_from: str | None = None,
+    custom_to: str | None = None,
 ) -> list[Container]:
     summary = (
         f"{_browse_option_label(BROWSE_STATUS_OPTIONS, status)} · "
         f"{_browse_option_label(BROWSE_TYPE_OPTIONS, ticket_type)} · "
-        f"{_browse_option_label(BROWSE_PERIOD_OPTIONS, period)} · "
+        f"{_browse_period_label(period, custom_from, custom_to)} · "
         f"Page {page} of {total_pages} · "
         f"{total} ticket{'s' if total != 1 else ''}"
     )
@@ -1841,7 +1914,7 @@ def build_browse_panel(
     footer = "-# Archived threads open in read-only mode and stay archived."
     rows: list = [
         Text(content=heading),
-        *_browse_filter_selects(action_id, status, ticket_type, period),
+        *_browse_filter_selects(action_id, status, ticket_type, period, custom_from, custom_to),
         Separator(divider=True),
     ]
     page_results = results[:BROWSE_PAGE_SIZE]
@@ -1879,6 +1952,93 @@ def build_browse_panel(
     return [Container(accent_color=ACCENT_BLUE, components=rows)]
 
 
+def _browse_custom_year_options(
+    start_year: int, end_year: int,
+) -> tuple[tuple[str, str, str], ...]:
+    return tuple((str(year), str(year), "🗓️") for year in range(start_year, end_year + 1))
+
+
+async def _browse_custom_year_range(mongo: MongoClient) -> tuple[int, int]:
+    """Year select bounds: the oldest thread ticket's year through the
+    current year, falling back to just the current year when there is no
+    ticket yet.
+    """
+    current_year = utcnow().year
+    oldest = await store.find(mongo, {}, sort=[("created_at", 1)], limit=1)
+    created_at = oldest[0].get("created_at") if oldest else None
+    start_year = created_at.year if isinstance(created_at, datetime) else current_year
+    return min(start_year, current_year), current_year
+
+
+def build_browse_custom_panel(
+    action_id: str,
+    *,
+    year_options: Sequence[tuple[str, str, str]],
+    from_year: str,
+    from_month: str,
+    to_year: str,
+    to_month: str,
+    error: str | None = None,
+) -> list[Container]:
+    heading = "## Browse tickets · Custom range"
+    rows: list = [Text(content=heading)]
+    if error:
+        rows.append(Text(content=f"⚠️ {error}"))
+    rows.append(_browse_select_row(
+        "ticket_v2_console_browse_custom_from_year", action_id, year_options, from_year,
+        placeholder="From year",
+    ))
+    rows.append(_browse_select_row(
+        "ticket_v2_console_browse_custom_from_month", action_id, BROWSE_MONTH_OPTIONS, from_month,
+        placeholder="From month",
+    ))
+    rows.append(_browse_select_row(
+        "ticket_v2_console_browse_custom_to_year", action_id, year_options, to_year,
+        placeholder="To year",
+    ))
+    rows.append(_browse_select_row(
+        "ticket_v2_console_browse_custom_to_month", action_id, BROWSE_MONTH_OPTIONS, to_month,
+        placeholder="To month",
+    ))
+    rows.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            custom_id=f"ticket_v2_console_browse_custom_apply:{action_id}",
+            label="Apply",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"ticket_v2_console_browse_custom_cancel:{action_id}",
+            label="Cancel",
+        ),
+    ]))
+    accent = ACCENT_RED if error else ACCENT_BLUE
+    return [Container(accent_color=accent, components=rows)]
+
+
+async def _render_browse_custom_panel(
+    mongo: MongoClient,
+    *,
+    action_id: str,
+    from_year: str,
+    from_month: str,
+    to_year: str,
+    to_month: str,
+    error: str | None = None,
+) -> list[Container]:
+    start_year, end_year = await _browse_custom_year_range(mongo)
+    year_options = _browse_custom_year_options(start_year, end_year)
+    return build_browse_custom_panel(
+        action_id,
+        year_options=year_options,
+        from_year=from_year,
+        from_month=from_month,
+        to_year=to_year,
+        to_month=to_month,
+        error=error,
+    )
+
+
 async def _create_browse_state(
     mongo: MongoClient, *, owner_id: int, guild_id: int,
 ) -> str:
@@ -1906,12 +2066,15 @@ async def _render_browse_session(
     ticket_type: str,
     period: str,
     page: int,
+    custom_from: str | None = None,
+    custom_to: str | None = None,
 ) -> list[Container]:
-    since = _browse_since(period)
+    since, until = _browse_since(period, custom_from, custom_to)
     statuses = (status,) if status in schema.TICKET_STATUSES else ()
     ticket_types = (ticket_type,) if ticket_type in schema.TICKET_TYPES else ()
     total = await store.browse_count(
-        mongo, statuses=statuses or None, ticket_types=ticket_types or None, since=since,
+        mongo, statuses=statuses or None, ticket_types=ticket_types or None,
+        since=since, until=until,
     )
     total_pages = _browse_total_pages(total)
     clamped_page = _clamp_browse_page(page, total_pages)
@@ -1920,6 +2083,7 @@ async def _render_browse_session(
         statuses=statuses or None,
         ticket_types=ticket_types or None,
         since=since,
+        until=until,
         page=clamped_page,
         page_size=BROWSE_PAGE_SIZE,
     )
@@ -1934,6 +2098,8 @@ async def _render_browse_session(
         total_pages=total_pages,
         results=results,
         total=total,
+        custom_from=custom_from,
+        custom_to=custom_to,
     )
 
 
@@ -5024,6 +5190,8 @@ async def _browse_filter_action(
     page: int,
     field: str,
     allowed: set[str],
+    custom_from: str | None = None,
+    custom_to: str | None = None,
 ) -> list[Container] | None:
     if int(ctx.user.id) != int(owner_id):
         await ctx.respond("This panel belongs to someone else.", ephemeral=True)
@@ -5041,9 +5209,27 @@ async def _browse_filter_action(
             ticket_type=ticket_type,
             period=period,
             page=page,
+            custom_from=custom_from,
+            custom_to=custom_to,
         )
     values = tuple(getattr(ctx.interaction, "values", ()) or ())
     chosen = str(values[0]) if values and str(values[0]) in allowed else "all"
+    if field == "period" and chosen == "custom":
+        # "Custom range…" doesn't set a value on its own -- it swaps the
+        # panel to the From/To year+month editor. Reuses the registered
+        # entry-point handler directly (a plain coroutine call, not a
+        # dispatch) so the two stay in lockstep.
+        return await ticket_console_browse_custom(
+            ctx,
+            action_id,
+            owner_id=owner_id,
+            guild_id=guild_id,
+            status=status,
+            ticket_type=ticket_type,
+            custom_from=custom_from,
+            custom_to=custom_to,
+            mongo=mongo,
+        )
     await update_state(mongo, action_id, {"$set": {field: chosen, "page": 1}})
     next_status = chosen if field == "status" else status
     next_type = chosen if field == "ticket_type" else ticket_type
@@ -5057,6 +5243,8 @@ async def _browse_filter_action(
         ticket_type=next_type,
         period=next_period,
         page=1,
+        custom_from=custom_from,
+        custom_to=custom_to,
     )
 
 
@@ -5071,6 +5259,8 @@ async def ticket_console_browse_status(
     ticket_type: str = "all",
     period: str = "all",
     page: int = 1,
+    custom_from: str | None = None,
+    custom_to: str | None = None,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
@@ -5086,6 +5276,8 @@ async def ticket_console_browse_status(
         page=page,
         field="status",
         allowed=set(schema.TICKET_STATUSES) | {"all"},
+        custom_from=custom_from,
+        custom_to=custom_to,
     )
 
 
@@ -5100,6 +5292,8 @@ async def ticket_console_browse_type(
     ticket_type: str = "all",
     period: str = "all",
     page: int = 1,
+    custom_from: str | None = None,
+    custom_to: str | None = None,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
@@ -5115,6 +5309,8 @@ async def ticket_console_browse_type(
         page=page,
         field="ticket_type",
         allowed=set(schema.TICKET_TYPES) | {"all"},
+        custom_from=custom_from,
+        custom_to=custom_to,
     )
 
 
@@ -5129,6 +5325,8 @@ async def ticket_console_browse_period(
     ticket_type: str = "all",
     period: str = "all",
     page: int = 1,
+    custom_from: str | None = None,
+    custom_to: str | None = None,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
@@ -5143,7 +5341,309 @@ async def ticket_console_browse_period(
         period=period,
         page=page,
         field="period",
-        allowed=set(BROWSE_PERIOD_DAYS) | {"all"},
+        allowed=set(BROWSE_PERIOD_DAYS) | {"all", "custom"},
+        custom_from=custom_from,
+        custom_to=custom_to,
+    )
+
+
+def _browse_custom_default_year_month(value: str | None) -> tuple[str, str]:
+    """Year/month select values a custom-range editor should open on.
+
+    Reuses an already-applied custom range's bounds if there is one, so
+    reopening the editor to tweak it shows what is live rather than
+    silently resetting to the current month.
+    """
+    if value:
+        year_str, _, month_str = str(value).partition("-")
+        if year_str.isdigit() and month_str.isdigit():
+            return year_str, str(int(month_str))
+    return _browse_current_year_month()
+
+
+@register_action("ticket_v2_console_browse_custom", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_custom(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str = "all",
+    ticket_type: str = "all",
+    custom_from: str | None = None,
+    custom_to: str | None = None,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    if not await _require_recruiter(ctx, mongo):
+        return _notice(
+            "Recruiter access required",
+            "Only recruiters can use the ticket console.",
+            accent=ACCENT_RED,
+        )
+    from_year, from_month = _browse_custom_default_year_month(custom_from)
+    to_year, to_month = _browse_custom_default_year_month(custom_to)
+    await update_state(mongo, action_id, {"$set": {
+        "custom_from_year": from_year,
+        "custom_from_month": from_month,
+        "custom_to_year": to_year,
+        "custom_to_month": to_month,
+    }})
+    return await _render_browse_custom_panel(
+        mongo,
+        action_id=action_id,
+        from_year=from_year,
+        from_month=from_month,
+        to_year=to_year,
+        to_month=to_month,
+    )
+
+
+async def _browse_custom_field_action(
+    ctx,
+    mongo: MongoClient,
+    *,
+    action_id: str,
+    owner_id: int,
+    from_year: str,
+    from_month: str,
+    to_year: str,
+    to_month: str,
+    state_field: str,
+    chosen: str | None,
+) -> list[Container] | None:
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    if not await _require_recruiter(ctx, mongo):
+        return await _render_browse_custom_panel(
+            mongo, action_id=action_id,
+            from_year=from_year, from_month=from_month, to_year=to_year, to_month=to_month,
+        )
+    values = {"from_year": from_year, "from_month": from_month, "to_year": to_year, "to_month": to_month}
+    if chosen is not None:
+        values[state_field] = chosen
+        await update_state(mongo, action_id, {"$set": {f"custom_{state_field}": chosen}})
+    return await _render_browse_custom_panel(mongo, action_id=action_id, **values)
+
+
+@register_action("ticket_v2_console_browse_custom_from_year", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_custom_from_year(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    custom_from_year: str | None = None,
+    custom_from_month: str | None = None,
+    custom_to_year: str | None = None,
+    custom_to_month: str | None = None,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    from_year, from_month = _browse_custom_default_year_month(
+        f"{custom_from_year}-{custom_from_month}" if custom_from_year and custom_from_month else None,
+    )
+    to_year, to_month = _browse_custom_default_year_month(
+        f"{custom_to_year}-{custom_to_month}" if custom_to_year and custom_to_month else None,
+    )
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    chosen = str(values[0]) if values and str(values[0]).isdigit() else None
+    return await _browse_custom_field_action(
+        ctx, mongo, action_id=action_id, owner_id=owner_id,
+        from_year=from_year, from_month=from_month, to_year=to_year, to_month=to_month,
+        state_field="from_year", chosen=chosen,
+    )
+
+
+@register_action("ticket_v2_console_browse_custom_from_month", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_custom_from_month(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    custom_from_year: str | None = None,
+    custom_from_month: str | None = None,
+    custom_to_year: str | None = None,
+    custom_to_month: str | None = None,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    from_year, from_month = _browse_custom_default_year_month(
+        f"{custom_from_year}-{custom_from_month}" if custom_from_year and custom_from_month else None,
+    )
+    to_year, to_month = _browse_custom_default_year_month(
+        f"{custom_to_year}-{custom_to_month}" if custom_to_year and custom_to_month else None,
+    )
+    valid_months = {value for value, _label, _emoji in BROWSE_MONTH_OPTIONS}
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    chosen = str(values[0]) if values and str(values[0]) in valid_months else None
+    return await _browse_custom_field_action(
+        ctx, mongo, action_id=action_id, owner_id=owner_id,
+        from_year=from_year, from_month=from_month, to_year=to_year, to_month=to_month,
+        state_field="from_month", chosen=chosen,
+    )
+
+
+@register_action("ticket_v2_console_browse_custom_to_year", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_custom_to_year(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    custom_from_year: str | None = None,
+    custom_from_month: str | None = None,
+    custom_to_year: str | None = None,
+    custom_to_month: str | None = None,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    from_year, from_month = _browse_custom_default_year_month(
+        f"{custom_from_year}-{custom_from_month}" if custom_from_year and custom_from_month else None,
+    )
+    to_year, to_month = _browse_custom_default_year_month(
+        f"{custom_to_year}-{custom_to_month}" if custom_to_year and custom_to_month else None,
+    )
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    chosen = str(values[0]) if values and str(values[0]).isdigit() else None
+    return await _browse_custom_field_action(
+        ctx, mongo, action_id=action_id, owner_id=owner_id,
+        from_year=from_year, from_month=from_month, to_year=to_year, to_month=to_month,
+        state_field="to_year", chosen=chosen,
+    )
+
+
+@register_action("ticket_v2_console_browse_custom_to_month", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_custom_to_month(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    custom_from_year: str | None = None,
+    custom_from_month: str | None = None,
+    custom_to_year: str | None = None,
+    custom_to_month: str | None = None,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    from_year, from_month = _browse_custom_default_year_month(
+        f"{custom_from_year}-{custom_from_month}" if custom_from_year and custom_from_month else None,
+    )
+    to_year, to_month = _browse_custom_default_year_month(
+        f"{custom_to_year}-{custom_to_month}" if custom_to_year and custom_to_month else None,
+    )
+    valid_months = {value for value, _label, _emoji in BROWSE_MONTH_OPTIONS}
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    chosen = str(values[0]) if values and str(values[0]) in valid_months else None
+    return await _browse_custom_field_action(
+        ctx, mongo, action_id=action_id, owner_id=owner_id,
+        from_year=from_year, from_month=from_month, to_year=to_year, to_month=to_month,
+        state_field="to_month", chosen=chosen,
+    )
+
+
+@register_action("ticket_v2_console_browse_custom_apply", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_custom_apply(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str = "all",
+    ticket_type: str = "all",
+    custom_from_year: str | None = None,
+    custom_from_month: str | None = None,
+    custom_to_year: str | None = None,
+    custom_to_month: str | None = None,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    from_year, from_month = _browse_custom_default_year_month(
+        f"{custom_from_year}-{custom_from_month}" if custom_from_year and custom_from_month else None,
+    )
+    to_year, to_month = _browse_custom_default_year_month(
+        f"{custom_to_year}-{custom_to_month}" if custom_to_year and custom_to_month else None,
+    )
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    if not await _require_recruiter(ctx, mongo):
+        return await _render_browse_custom_panel(
+            mongo, action_id=action_id,
+            from_year=from_year, from_month=from_month, to_year=to_year, to_month=to_month,
+        )
+    custom_from = f"{int(from_year):04d}-{int(from_month):02d}"
+    custom_to = f"{int(to_year):04d}-{int(to_month):02d}"
+    if custom_from > custom_to:
+        return await _render_browse_custom_panel(
+            mongo, action_id=action_id,
+            from_year=from_year, from_month=from_month, to_year=to_year, to_month=to_month,
+            error="The From month must be on or before the To month.",
+        )
+    await update_state(mongo, action_id, {"$set": {
+        "period": "custom", "custom_from": custom_from, "custom_to": custom_to, "page": 1,
+    }})
+    return await _render_browse_session(
+        mongo,
+        action_id=action_id,
+        owner_id=owner_id,
+        guild_id=guild_id,
+        status=status,
+        ticket_type=ticket_type,
+        period="custom",
+        page=1,
+        custom_from=custom_from,
+        custom_to=custom_to,
+    )
+
+
+@register_action("ticket_v2_console_browse_custom_cancel", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_custom_cancel(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str = "all",
+    ticket_type: str = "all",
+    period: str = "all",
+    page: int = 1,
+    custom_from: str | None = None,
+    custom_to: str | None = None,
+    custom_from_year: str | None = None,
+    custom_from_month: str | None = None,
+    custom_to_year: str | None = None,
+    custom_to_month: str | None = None,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    if not await _require_recruiter(ctx, mongo):
+        from_year, from_month = _browse_custom_default_year_month(
+            f"{custom_from_year}-{custom_from_month}" if custom_from_year and custom_from_month else None,
+        )
+        to_year, to_month = _browse_custom_default_year_month(
+            f"{custom_to_year}-{custom_to_month}" if custom_to_year and custom_to_month else None,
+        )
+        return await _render_browse_custom_panel(
+            mongo, action_id=action_id,
+            from_year=from_year, from_month=from_month, to_year=to_year, to_month=to_month,
+        )
+    return await _render_browse_session(
+        mongo,
+        action_id=action_id,
+        owner_id=owner_id,
+        guild_id=guild_id,
+        status=status,
+        ticket_type=ticket_type,
+        period=period,
+        page=page,
+        custom_from=custom_from,
+        custom_to=custom_to,
     )
 
 
@@ -5169,6 +5669,8 @@ async def ticket_console_browse_page(
     ticket_type = str(data.get("ticket_type") or "all")
     period = str(data.get("period") or "all")
     page = _int(data.get("page")) or 1
+    custom_from = data.get("custom_from")
+    custom_to = data.get("custom_to")
     if int(ctx.user.id) != owner_id:
         await ctx.respond("This panel belongs to someone else.", ephemeral=True)
         return None
@@ -5182,6 +5684,8 @@ async def ticket_console_browse_page(
             ticket_type=ticket_type,
             period=period,
             page=page,
+            custom_from=custom_from,
+            custom_to=custom_to,
         )
     delta = 1 if direction == "next" else -1 if direction == "prev" else 0
     next_page = max(1, page + delta)
@@ -5195,6 +5699,8 @@ async def ticket_console_browse_page(
         ticket_type=ticket_type,
         period=period,
         page=next_page,
+        custom_from=custom_from,
+        custom_to=custom_to,
     )
 
 

@@ -361,6 +361,7 @@ def _browse_filter(
     statuses: Iterable[str] | None,
     ticket_types: Iterable[str] | None,
     since,
+    until=None,
 ) -> dict:
     """Build the console Browse filter.
 
@@ -370,6 +371,10 @@ def _browse_filter(
     "All status" browse still implies `thread_v2_created`'s partial filter
     (RUNTIME_FILTER) instead of one it cannot serve a sort from -- see
     `ensure_indexes` for why that distinction has its own index.
+
+    `until` (exclusive, `$lt`) pairs with `since` (inclusive, `$gte`) to
+    express the console's Custom range -- both land in the same `created_at`
+    sub-document so `thread_v2_created`'s sort still applies.
     """
     filt: dict = dict(RUNTIME_FILTER)
     statuses = tuple(statuses or ())
@@ -380,8 +385,13 @@ def _browse_filter(
         filt["ticket_type"] = {
             "$in": [schema.ticket_type(value) for value in ticket_types]
         }
-    if since is not None:
-        filt["created_at"] = {"$gte": since}
+    if since is not None or until is not None:
+        created_at: dict = {}
+        if since is not None:
+            created_at["$gte"] = since
+        if until is not None:
+            created_at["$lt"] = until
+        filt["created_at"] = created_at
     return filt
 
 
@@ -391,11 +401,12 @@ async def browse(
     statuses: Iterable[str] | None = None,
     ticket_types: Iterable[str] | None = None,
     since=None,
+    until=None,
     page: int = 1,
     page_size: int = 10,
 ) -> list[dict]:
     """One page of the console's Browse tickets list, newest first."""
-    filt = _browse_filter(statuses, ticket_types, since)
+    filt = _browse_filter(statuses, ticket_types, since, until)
     amount = max(1, min(int(page_size), 25))
     skip = max(0, int(page) - 1) * amount
     cursor = (await _reader(mongo)).find(filt, BROWSE_PROJECTION)
@@ -411,9 +422,10 @@ async def browse_count(
     statuses: Iterable[str] | None = None,
     ticket_types: Iterable[str] | None = None,
     since=None,
+    until=None,
 ) -> int:
     """How many tickets `browse` matches in total, ignoring page/page_size."""
-    filt = _browse_filter(statuses, ticket_types, since)
+    filt = _browse_filter(statuses, ticket_types, since, until)
     return int(await (await _reader(mongo)).count_documents(filt))
 
 

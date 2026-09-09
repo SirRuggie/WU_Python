@@ -26,6 +26,8 @@ def _matches(document: dict, filt: dict) -> bool:
                 return False
             if "$gte" in expected and not (value is not None and value >= expected["$gte"]):
                 return False
+            if "$lt" in expected and not (value is not None and value < expected["$lt"]):
+                return False
         elif value != expected:
             return False
     return True
@@ -168,6 +170,34 @@ def test_browse_count_ignores_page_and_page_size():
 
     page = asyncio.run(store.browse(mongo, page=1, page_size=3))
     assert len(page) == 3
+
+
+def test_browse_filter_adds_until_as_lt_alongside_since():
+    since = NOW - timedelta(days=60)
+    until = NOW - timedelta(days=30)
+    filt = store._browse_filter(None, None, since, until)
+    assert filt["created_at"] == {"$gte": since, "$lt": until}
+
+
+def test_browse_filter_until_alone_omits_gte():
+    until = NOW - timedelta(days=30)
+    filt = store._browse_filter(None, None, None, until)
+    assert filt["created_at"] == {"$lt": until}
+
+
+def test_browse_and_browse_count_respect_the_until_upper_bound():
+    tickets = [
+        _ticket(1, days_ago=100),
+        _ticket(2, days_ago=50),
+        _ticket(3, days_ago=10),
+    ]
+    mongo = _mongo(*tickets)
+    since = NOW - timedelta(days=70)
+    until = NOW - timedelta(days=20)
+
+    results = asyncio.run(store.browse(mongo, since=since, until=until, page_size=10))
+    assert {doc["ticket_number"] for doc in results} == {2}
+    assert asyncio.run(store.browse_count(mongo, since=since, until=until)) == 1
 
 
 def test_browse_and_browse_count_only_see_thread_runtime_tickets():

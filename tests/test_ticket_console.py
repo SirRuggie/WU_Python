@@ -542,6 +542,8 @@ def test_browse_status_filter_updates_state_and_resets_page(monkeypatch):
         "ticket_type": "fwa",
         "period": "30",
         "page": 1,
+        "custom_from": None,
+        "custom_to": None,
     }
 
 
@@ -567,6 +569,8 @@ def test_browse_filter_re_renders_unchanged_panel_when_not_recruiter(monkeypatch
             "ticket_type": "all",
             "period": "all",
             "page": 2,
+            "custom_from": None,
+            "custom_to": None,
         }
         return ["UNCHANGED"]
 
@@ -744,6 +748,365 @@ def test_browse_actions_are_registered_with_the_right_dispatcher_shape():
 
     pick = dispatcher.registered_functions["ticket_v2_console_browse_pick"]
     assert pick.requires_state is True
+
+    for name in (
+        "ticket_v2_console_browse_custom",
+        "ticket_v2_console_browse_custom_from_year",
+        "ticket_v2_console_browse_custom_from_month",
+        "ticket_v2_console_browse_custom_to_year",
+        "ticket_v2_console_browse_custom_to_month",
+        "ticket_v2_console_browse_custom_apply",
+        "ticket_v2_console_browse_custom_cancel",
+    ):
+        assert dispatcher.registered_functions[name].requires_state is True
+
+
+def test_browse_since_returns_month_bounds_for_a_custom_range():
+    since, until = console._browse_since("custom", "2025-06", "2025-06")
+    assert since == datetime(2025, 6, 1, tzinfo=timezone.utc)
+    assert until == datetime(2025, 7, 1, tzinfo=timezone.utc)
+
+
+def test_browse_since_custom_range_rolls_december_into_next_january():
+    since, until = console._browse_since("custom", "2025-11", "2025-12")
+    assert since == datetime(2025, 11, 1, tzinfo=timezone.utc)
+    assert until == datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def test_browse_since_presets_have_no_until():
+    since, until = console._browse_since("30")
+    assert until is None
+    assert since is not None
+
+    since, until = console._browse_since("all")
+    assert since is None
+    assert until is None
+
+
+def test_browse_period_label_formats_a_custom_range_and_falls_back_otherwise():
+    assert console._browse_period_label("custom", "2025-06", "2025-08") == "Custom: Jun 2025 – Aug 2025"
+    assert console._browse_period_label("custom", None, None) == "Custom range…"
+    assert console._browse_period_label("all", None, None) == "All time"
+
+
+def test_build_browse_custom_panel_renders_four_selects_and_apply_cancel_buttons():
+    view = console.build_browse_custom_panel(
+        "a" * 32,
+        year_options=(("2025", "2025", "🗓️"), ("2026", "2026", "🗓️")),
+        from_year="2025", from_month="6", to_year="2026", to_month="1",
+    )
+    nodes = _nodes(view)
+    contents = [str(node["content"]) for node in nodes if "content" in node]
+    assert contents[0] == "## Browse tickets · Custom range"
+
+    selects = [node for node in nodes if node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU]
+    assert len(selects) == 4
+    placeholders = {str(s["custom_id"]).split(":")[0]: s["placeholder"] for s in selects}
+    assert placeholders["ticket_v2_console_browse_custom_from_year"] == "From year"
+    assert placeholders["ticket_v2_console_browse_custom_from_month"] == "From month"
+    assert placeholders["ticket_v2_console_browse_custom_to_year"] == "To year"
+    assert placeholders["ticket_v2_console_browse_custom_to_month"] == "To month"
+
+    buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
+    assert {b["label"] for b in buttons} == {"Apply", "Cancel"}
+    assert view[0].accent_color == console.ACCENT_BLUE
+    _assert_component_limits(view)
+
+
+def test_build_browse_custom_panel_shows_an_inline_error_with_red_accent():
+    view = console.build_browse_custom_panel(
+        "a" * 32,
+        year_options=(("2025", "2025", "🗓️"),),
+        from_year="2025", from_month="8", to_year="2025", to_month="6",
+        error="The From month must be on or before the To month.",
+    )
+    contents = [str(node["content"]) for node in _nodes(view) if "content" in node]
+    assert any("must be on or before" in text for text in contents)
+    assert view[0].accent_color == console.ACCENT_RED
+    _assert_component_limits(view)
+
+
+def test_browse_period_custom_choice_enters_custom_mode(monkeypatch):
+    events = []
+
+    class Interaction:
+        values = ("custom",)
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def custom_entry(_ctx, action_id, *, owner_id, guild_id, status, ticket_type, custom_from, custom_to, mongo):
+        events.append((action_id, owner_id, guild_id, status, ticket_type, custom_from, custom_to))
+        return ["CUSTOM_PANEL"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "ticket_console_browse_custom", custom_entry)
+
+    result = asyncio.run(console.ticket_console_browse_period(
+        Context(), "abc",
+        owner_id=22, guild_id=33,
+        status="open", ticket_type="fwa", period="all", page=2,
+        mongo=object(),
+    ))
+
+    assert result == ["CUSTOM_PANEL"]
+    assert events == [("abc", 22, 33, "open", "fwa", None, None)]
+
+
+def test_browse_custom_entry_seeds_state_defaults_and_renders_the_editor(monkeypatch):
+    events = []
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def update(_mongo, action_id, update_doc, **_kwargs):
+        events.append(("update", action_id, update_doc))
+
+    async def render_custom(_mongo, **kwargs):
+        events.append(("render", kwargs))
+        return ["EDITOR"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "update_state", update)
+    monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
+    monkeypatch.setattr(console, "utcnow", lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
+
+    result = asyncio.run(console.ticket_console_browse_custom(
+        Context(), "abc", owner_id=22, guild_id=33,
+        status="open", ticket_type="all",
+        mongo=object(),
+    ))
+
+    assert result == ["EDITOR"]
+    assert events[0] == (
+        "update", "abc",
+        {"$set": {
+            "custom_from_year": "2026", "custom_from_month": "9",
+            "custom_to_year": "2026", "custom_to_month": "9",
+        }},
+    )
+    assert events[1][1] == {
+        "action_id": "abc",
+        "from_year": "2026", "from_month": "9",
+        "to_year": "2026", "to_month": "9",
+    }
+
+
+def test_browse_custom_entry_reuses_an_already_applied_range_when_reopened(monkeypatch):
+    events = []
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def update(_mongo, _action_id, update_doc, **_kwargs):
+        events.append(update_doc)
+
+    async def render_custom(_mongo, **_kwargs):
+        return ["EDITOR"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "update_state", update)
+    monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
+
+    asyncio.run(console.ticket_console_browse_custom(
+        Context(), "abc", owner_id=22, guild_id=33,
+        custom_from="2025-06", custom_to="2025-08",
+        mongo=object(),
+    ))
+
+    assert events[0] == {"$set": {
+        "custom_from_year": "2025", "custom_from_month": "6",
+        "custom_to_year": "2025", "custom_to_month": "8",
+    }}
+
+
+def test_browse_custom_from_year_select_updates_one_field_and_stays_in_the_editor(monkeypatch):
+    events = []
+
+    class Interaction:
+        values = ("2024",)
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def update(_mongo, action_id, update_doc, **_kwargs):
+        events.append(("update", action_id, update_doc))
+
+    async def render_custom(_mongo, **kwargs):
+        events.append(("render", kwargs))
+        return ["EDITOR"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "update_state", update)
+    monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
+
+    result = asyncio.run(console.ticket_console_browse_custom_from_year(
+        Context(), "abc", owner_id=22, guild_id=33,
+        custom_from_year="2025", custom_from_month="6",
+        custom_to_year="2025", custom_to_month="8",
+        mongo=object(),
+    ))
+
+    assert result == ["EDITOR"]
+    assert events[0] == ("update", "abc", {"$set": {"custom_from_year": "2024"}})
+    assert events[1][1] == {
+        "action_id": "abc",
+        "from_year": "2024", "from_month": "6", "to_year": "2025", "to_month": "8",
+    }
+
+
+def test_browse_custom_apply_rejects_from_after_to_with_an_inline_error(monkeypatch):
+    update_events = []
+    render_events = []
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def update(_mongo, action_id, update_doc, **_kwargs):
+        update_events.append(update_doc)
+
+    async def render_custom(_mongo, **kwargs):
+        render_events.append(kwargs)
+        return ["ERROR_VIEW"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "update_state", update)
+    monkeypatch.setattr(console, "_render_browse_custom_panel", render_custom)
+
+    result = asyncio.run(console.ticket_console_browse_custom_apply(
+        Context(), "abc", owner_id=22, guild_id=33,
+        status="open", ticket_type="fwa",
+        custom_from_year="2025", custom_from_month="8",
+        custom_to_year="2025", custom_to_month="6",
+        mongo=object(),
+    ))
+
+    assert result == ["ERROR_VIEW"]
+    assert update_events == []  # no state was committed
+    assert render_events[0]["error"] == "The From month must be on or before the To month."
+    assert render_events[0]["from_year"] == "2025"
+    assert render_events[0]["from_month"] == "8"
+    assert render_events[0]["to_year"] == "2025"
+    assert render_events[0]["to_month"] == "6"
+
+
+def test_browse_custom_apply_commits_the_range_resets_page_and_shows_the_placeholder(monkeypatch):
+    events = []
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def update(_mongo, action_id, update_doc, **_kwargs):
+        events.append(update_doc)
+
+    async def browse_count(_mongo, **_kwargs):
+        return 3
+
+    async def browse(_mongo, **_kwargs):
+        return [_ticket(index) for index in range(1, 4)]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "update_state", update)
+    monkeypatch.setattr(console.store, "browse_count", browse_count)
+    monkeypatch.setattr(console.store, "browse", browse)
+
+    result = asyncio.run(console.ticket_console_browse_custom_apply(
+        Context(), "abc", owner_id=22, guild_id=33,
+        status="open", ticket_type="fwa",
+        custom_from_year="2025", custom_from_month="6",
+        custom_to_year="2025", custom_to_month="8",
+        mongo=object(),
+    ))
+
+    assert events[0] == {"$set": {
+        "period": "custom", "custom_from": "2025-06", "custom_to": "2025-08", "page": 1,
+    }}
+    contents = [str(node["content"]) for node in _nodes(result) if "content" in node]
+    assert "Custom: Jun 2025 – Aug 2025" in contents[0]
+
+
+def test_browse_custom_cancel_restores_the_previous_period(monkeypatch):
+    events = []
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def render(_mongo, **kwargs):
+        events.append(kwargs)
+        return ["LIST"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "_render_browse_session", render)
+
+    result = asyncio.run(console.ticket_console_browse_custom_cancel(
+        Context(), "abc", owner_id=22, guild_id=33,
+        status="open", ticket_type="fwa", period="30", page=2,
+        custom_from=None, custom_to=None,
+        custom_from_year="2025", custom_from_month="6",
+        custom_to_year="2025", custom_to_month="8",
+        mongo=object(),
+    ))
+
+    assert result == ["LIST"]
+    assert events[0] == {
+        "action_id": "abc", "owner_id": 22, "guild_id": 33,
+        "status": "open", "ticket_type": "fwa", "period": "30", "page": 2,
+        "custom_from": None, "custom_to": None,
+    }
+
+
+def test_browse_custom_year_range_derives_from_the_oldest_ticket(monkeypatch):
+    async def find(_mongo, _filt, *, sort=None, limit=None):
+        assert sort == [("created_at", 1)]
+        assert limit == 1
+        return [_ticket(1, created_at=datetime(2023, 3, 1, tzinfo=timezone.utc))]
+
+    monkeypatch.setattr(console.store, "find", find)
+    monkeypatch.setattr(console, "utcnow", lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
+
+    start_year, end_year = asyncio.run(console._browse_custom_year_range(object()))
+    assert (start_year, end_year) == (2023, 2026)
+
+
+def test_browse_custom_year_range_falls_back_to_the_current_year_with_no_tickets(monkeypatch):
+    async def find(_mongo, _filt, *, sort=None, limit=None):
+        return []
+
+    monkeypatch.setattr(console.store, "find", find)
+    monkeypatch.setattr(console, "utcnow", lambda: datetime(2026, 9, 9, tzinfo=timezone.utc))
+
+    start_year, end_year = asyncio.run(console._browse_custom_year_range(object()))
+    assert (start_year, end_year) == (2026, 2026)
 
 
 def test_long_notice_reserves_its_heading_inside_the_message_text_budget():

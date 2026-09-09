@@ -264,6 +264,36 @@ than an `$in` over every known status), and a second index,
 `thread_v2_created` (`[("created_at", -1), ("_id", -1)]`, `partialFilterExpression:
 RUNTIME_FILTER`), serves exactly that case.
 
+**Custom range:** the Period select's fifth option, "Custom range…", swaps
+the panel to a small four-select editor — From year, From month, To year,
+To month, plus Apply/Cancel — instead of adding a free-text date field.
+Years run from the oldest thread ticket's `created_at` year (`store.find(mongo,
+{}, sort=[("created_at", 1)], limit=1)` under the default `RUNTIME_FILTER`,
+falling back to the current year with no tickets yet) through the current
+year; months are the 12 names. Apply validates From ≤ To as a "YYYY-MM"
+string compare (zero-padded, so it sorts correctly) and, on failure, stays on
+the editor with a red inline notice rather than losing the in-progress
+selection. On success it commits `period: "custom"`,
+`custom_from`/`custom_to: "YYYY-MM"`, and `page: 1` to the browse state row,
+and returns to the list with the Period select showing `Custom: Jun 2025 –
+Jun 2025` as its placeholder instead of a fixed label. The four in-progress
+selections persist to the state row too, as `custom_from_year`/
+`custom_from_month`/`custom_to_year`/`custom_to_month`, so paging between the
+four selects (and reopening the editor to tweak an already-applied range)
+survives each individual selection.
+
+`_browse_since` returns a `(since, until)` pair: every preset keeps `until`
+`None` (open-ended), while Custom range sets `since` to the first moment
+(UTC) of the From month and `until` to the first moment of the month *after*
+the To month — exclusive, so a December `custom_to` rolls into the following
+January correctly. `store._browse_filter` takes `until` alongside `since` and
+adds it to the same `created_at` sub-document as `$lt`; `store.browse`/
+`store.browse_count` accept and forward it. This still lands on
+`thread_v2_created`: a range on the sort key itself (`$gte`/`$lt` together,
+or either alone) does not require equality the way the status index does, so
+the "All status" Custom range case still sorts from the index rather than
+falling back to memory.
+
 ## 5. Flags and FWA Chocolate — implemented staff flow
 
 Three flag kinds are staff-authored and match a ticket by Discord ID **or** any
