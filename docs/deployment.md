@@ -512,3 +512,17 @@ The original reference captured point-in-time facts that later became stale:
 **Ruggie deploys manually. Do not ssh to the box, do not `git pull` on it, and
 do not restart the service.** Hand over commands to run rather than running
 them.
+
+### One-off steps tied to specific changes
+
+- **First start after `fix/mongo-main-bugs` (CWL reminder collection fix):**
+  run `python tools/migrate_cwl_reminders.py` once, with the bot's `.env`
+  loaded, BEFORE restarting the service. It copies the pending reminders and
+  the schedule document from the stray `database` database into the declared
+  `settings` collections. Skip it and CWL reminders silently stop until the
+  next `/cwl` schedule is set. Run it once only; re-running after the bot has
+  written new data can overwrite newer values with the stale copies.
+- If startup logs `duplicate clan tags exist`, run
+  `python tools/find_duplicate_clans.py` (read-only), delete the extra
+  documents by hand, and restart; the unique index on `clans.tag` builds on
+  the next start.
