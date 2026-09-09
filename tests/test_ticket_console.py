@@ -331,6 +331,35 @@ def test_blacklist_disables_approve_but_keeps_deny_available():
     _assert_component_limits(view)
 
 
+def test_detail_shows_flag_conflict_notice_and_leaves_approve_enabled():
+    """Commit 3: the overlap is surfaced, but only the blacklist gate blocks Approve."""
+    ticket = _ticket(
+        13,
+        status="open",
+        linked_accounts={
+            "flag_conflict": {
+                "flag_ids": ["flag_a", "flag_b"],
+                "at": datetime(2026, 9, 1, tzinfo=timezone.utc),
+            },
+        },
+    )
+    view = console.build_ticket_detail(
+        ticket, action_id="c" * 32, flags=[], history=[],
+    )
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    assert "Two flags overlap" in content
+    assert "flag_a" in content and "flag_b" in content
+    buttons = [
+        node for node in _nodes(view)
+        if int(node.get("type", -1)) == int(hikari.ComponentType.BUTTON)
+    ]
+    approve = next(node for node in buttons if node.get("label") == "Approve")
+    assert approve.get("disabled", False) is False
+    _assert_component_limits(view)
+
+
 def test_detail_bounds_large_flag_sets_without_breaking_component_limits():
     flags = [{
         "_id": f"flag_{index:03d}_" + "x" * 70,

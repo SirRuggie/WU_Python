@@ -1689,6 +1689,18 @@ def build_ticket_detail(
         "You can still deny the ticket."
         if status == "open" and blacklisted else None
     )
+    conflict_flag_ids = [
+        str(flag_id) for flag_id in (
+            (ticket_doc.get("linked_accounts") or {}).get("flag_conflict") or {}
+        ).get("flag_ids") or []
+        if str(flag_id)
+    ]
+    flag_conflict_notice = (
+        "🟡 **Two flags overlap for this applicant:** "
+        + ", ".join(f"`{flag_id}`" for flag_id in conflict_flag_ids)
+        + ". Merge or remove one in Manage flags."
+        if conflict_flag_ids else None
+    )
     history_heading = (
         "### Earlier tickets\nThis person has opened a ticket before."
         if history else None
@@ -1732,6 +1744,8 @@ def build_ticket_detail(
     fixed_texts.append("\n".join(fixed_detail_lines))
     if blacklist_warning:
         fixed_texts.append(blacklist_warning)
+    if flag_conflict_notice:
+        fixed_texts.append(flag_conflict_notice)
     if history_heading:
         fixed_texts.append(history_heading)
 
@@ -1815,6 +1829,9 @@ def build_ticket_detail(
         label="Manage flags",
         emoji="🚩",
     )]))
+
+    if flag_conflict_notice:
+        components.append(Text(content=flag_conflict_notice))
 
     if status == "open":
         if blacklist_warning:

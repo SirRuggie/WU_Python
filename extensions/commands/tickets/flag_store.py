@@ -50,6 +50,14 @@ class IdentityLockBusy(FlagConflictError):
     pass
 
 
+class FlagIdentityConflict(FlagConflictError):
+    """Two active flags of the same kind now claim an overlapping identity."""
+
+    def __init__(self, flag_ids: list[str]):
+        super().__init__("two active flags overlap for this identity")
+        self.flag_ids = flag_ids
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class FlagMutation:
     outcome: str
@@ -302,28 +310,44 @@ async def extend_matching_flags(
                 updated_documents.append(current)
                 continue
             rev = max(0, int(current.get("rev") or 0))
-            updated = await mongo.ticket_flags.find_one_and_update(
-                {"_id": current["_id"], "active": True, "rev": store._rev_filter(rev)},
-                {
-                    "$addToSet": {
-                        "discord_ids": {"$each": ids},
-                        "player_tags": {"$each": tags},
+            try:
+                updated = await mongo.ticket_flags.find_one_and_update(
+                    {"_id": current["_id"], "active": True, "rev": store._rev_filter(rev)},
+                    {
+                        "$addToSet": {
+                            "discord_ids": {"$each": ids},
+                            "player_tags": {"$each": tags},
+                        },
+                        "$inc": {"rev": 1},
+                        "$set": {"updated_at": now},
+                        "$push": {"audit": {
+                            "$each": [{
+                                "event": "flag_identity_expanded",
+                                "at": now,
+                                "source": str(source)[:80],
+                                "discord_ids": ids,
+                                "player_tags": tags,
+                            }],
+                            "$slice": -store.MAX_AUDIT_ENTRIES,
+                        }},
                     },
-                    "$inc": {"rev": 1},
-                    "$set": {"updated_at": now},
-                    "$push": {"audit": {
-                        "$each": [{
-                            "event": "flag_identity_expanded",
-                            "at": now,
-                            "source": str(source)[:80],
-                            "discord_ids": ids,
-                            "player_tags": tags,
-                        }],
-                        "$slice": -store.MAX_AUDIT_ENTRIES,
-                    }},
-                },
-                return_document=ReturnDocument.AFTER,
-            )
+                    return_document=ReturnDocument.AFTER,
+                )
+            except DuplicateKeyError:
+                # This identity now overlaps a different active flag of the
+                # same kind (e.g. one flag on a Discord ID, another on a tag
+                # the applicant later linked). That is an operator conflict
+                # to merge or remove, not a transient race to retry.
+                owners = await mongo.ticket_flags.find({
+                    "kind": current.get("kind"),
+                    "active": True,
+                    "$or": clauses,
+                    "_id": {"$ne": current["_id"]},
+                }).limit(4).to_list(length=4)
+                other_ids = [str(doc["_id"]) for doc in owners]
+                raise FlagIdentityConflict(
+                    sorted({str(current["_id"]), *other_ids})
+                ) from None
             if updated is None:
                 raise FlagConflictError("flag changed while linked identities expanded")
             updated_documents.append(updated)

@@ -498,6 +498,67 @@ def test_flag_identity_propagation_survives_post_snapshot_failure(monkeypatch):
     ] is False
 
 
+def test_extend_matching_flags_raises_a_structured_conflict_on_duplicate_key(
+    monkeypatch,
+):
+    """Commit 3: a DuplicateKeyError from the unique flag indexes becomes an
+    operator-actionable conflict instead of an uncaught driver exception."""
+    flag_a = {
+        "_id": "flag_a", "kind": flag_store.FLAG_BLACKLISTED, "active": True,
+        "discord_ids": [30], "player_tags": [], "rev": 0, "audit": [],
+    }
+    flag_b = {
+        "_id": "flag_b", "kind": flag_store.FLAG_BLACKLISTED, "active": True,
+        "discord_ids": [], "player_tags": ["#NEW123"], "rev": 0, "audit": [],
+    }
+    mongo = _mongo()
+    mongo.ticket_flags = Collection([flag_a, flag_b])
+    original_update = mongo.ticket_flags.find_one_and_update
+
+    async def raise_duplicate(query, *args, **kwargs):
+        # Only the flag-extension write should race; the identity lock this
+        # function also takes out (same collection) must behave normally.
+        if str(query.get("_id") or "") in {"flag_a", "flag_b"}:
+            raise DuplicateKeyError("duplicate key")
+        return await original_update(query, *args, **kwargs)
+
+    monkeypatch.setattr(mongo.ticket_flags, "find_one_and_update", raise_duplicate)
+
+    with pytest.raises(flag_store.FlagIdentityConflict) as excinfo:
+        asyncio.run(flag_store.extend_matching_flags(
+            mongo, discord_ids=30, player_tags=("#NEW123",), source="test",
+        ))
+    assert set(excinfo.value.flag_ids) == {"flag_a", "flag_b"}
+
+
+def test_reconcile_flag_identities_records_overlap_and_clears_refresh_flag(
+    monkeypatch,
+):
+    """Commit 3: the conflict is recorded and the refresh flag is cleared, so
+    approval is never blocked by the overlap itself (only the blacklist gate
+    can still block it)."""
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#NEW123"),))
+
+    async def conflict(*_args, **_kwargs):
+        raise flag_store.FlagIdentityConflict(["flag_a", "flag_b"])
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(flag_store, "extend_matching_flags", conflict)
+
+    result = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_OPEN, now=NOW,
+    ))
+
+    assert result.snapshot.current_tags == ("#NEW123",)
+    linked = mongo.tickets.documents[ticket["_id"]]["linked_accounts"]
+    assert linked["flag_refresh_required"] is False
+    assert linked["flag_conflict"]["flag_ids"] == ["flag_a", "flag_b"]
+
+
 def test_linked_account_discovery_expands_matching_flag_identities(monkeypatch):
     ticket = _ticket()
     flag = {

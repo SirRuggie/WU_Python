@@ -9,6 +9,7 @@ silently sever ticket history or flags.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Mapping
@@ -24,6 +25,8 @@ from extensions.commands.tickets import schema, store
 from utils import bot_data
 from utils.mongo import MongoClient
 
+
+_log = logging.getLogger(__name__)
 
 STATE_PENDING = "pending"
 STATE_READY = "ready"
@@ -540,12 +543,24 @@ async def reconcile_flag_identities(
     from extensions.commands.tickets import flag_store
 
     snapshot = snapshot_from_ticket(ticket)
-    await flag_store.extend_matching_flags(
-        mongo,
-        discord_ids=ticket.get("user_id"),
-        player_tags=ticket.get("player_tags") or (),
-        source=source,
-    )
+    conflict_set: dict = {}
+    try:
+        await flag_store.extend_matching_flags(
+            mongo,
+            discord_ids=ticket.get("user_id"),
+            player_tags=ticket.get("player_tags") or (),
+            source=source,
+        )
+    except flag_store.FlagIdentityConflict as exc:
+        # Two active flags now overlap for this applicant. That is an
+        # operator conflict to resolve in Manage flags, not a reason to
+        # leave approval blocked forever behind flag_refresh_required.
+        _log.warning(
+            "overlapping active flags ticket=%s flags=%s", ticket.get("_id"), exc.flag_ids
+        )
+        conflict_set = {
+            "linked_accounts.flag_conflict": {"flag_ids": exc.flag_ids, "at": utcnow()},
+        }
     result = await store.update_one(
         mongo,
         {
@@ -559,6 +574,7 @@ async def reconcile_flag_identities(
             "$set": {
                 "linked_accounts.flag_refresh_required": False,
                 "linked_accounts.flag_refreshed_at": utcnow(),
+                **conflict_set,
             },
             "$push": {
                 "account_identity_audit": {
