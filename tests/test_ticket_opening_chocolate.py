@@ -7,7 +7,10 @@ import uuid
 
 import hikari
 import pytest
-from hikari.impl import TextDisplayComponentBuilder as Text
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    TextDisplayComponentBuilder as Text,
+)
 from pymongo import AsyncMongoClient, ReturnDocument
 
 from extensions.commands.fwa.chocolate_links import chocolate_url, is_valid_tag
@@ -27,6 +30,11 @@ def _walk(value):
 def _contents(components):
     built = [component.build() for component in components]
     return [str(node["content"]) for node in _walk(built) if "content" in node]
+
+
+def _buttons(components):
+    built = [component.build() for component in components]
+    return [node for node in _walk(built) if "custom_id" in node]
 
 
 def _ticket(*, kind="fwa", count=0, state="ready", observed_extra=()):
@@ -94,41 +102,72 @@ def test_candidate_account_state_never_conflates_failure_with_zero(state, needle
         assert "No linked accounts found" not in copy
 
 
-@pytest.mark.parametrize(
-    ("count", "expected_groups", "expected_group_sizes"),
-    [
-        (1, 1, [1]),
-        (16, 1, [16]),
-        (30, 2, [20, 10]),
-        (37, 2, [20, 17]),
-    ],
-)
-def test_chocolate_checklist_has_one_link_per_current_account_in_safe_groups(
-    count, expected_groups, expected_group_sizes
-):
-    panels = console.build_staff_chocolate_checklist(_ticket(count=count))
-    assert len(panels) == expected_groups
-    assert [marker.rsplit(":", 1)[-1] for marker, _view in panels] == [
-        str(index) for index in range(1, expected_groups + 1)
-    ]
-    for (_marker, view), expected_size in zip(panels, expected_group_sizes):
-        contents = _contents(view)
-        assert sum(map(len, contents)) <= console.DISCORD_MESSAGE_TEXT_LIMIT
-        assert sum(content.count("cc.fwafarm.com") for content in contents) == expected_size
-    all_copy = "\n".join(
-        content for _marker, view in panels for content in _contents(view)
-    )
-    assert all_copy.count("cc.fwafarm.com") == count
-    assert "No Chocolate blacklist verdict was checked automatically" in all_copy
+def test_chocolate_checklist_is_a_single_message_identified_by_its_title():
+    marker, view = console.build_staff_chocolate_checklist(_ticket(count=1))
+    assert marker == "ticket-chocolate:ticket_501"
+    contents = _contents(view)
+    assert sum(map(len, contents)) <= console.DISCORD_MESSAGE_TEXT_LIMIT
+    assert sum(content.count("cc.fwafarm.com") for content in contents) == 1
+    assert "No Chocolate blacklist verdict was checked automatically" in "\n".join(contents)
+
+
+@pytest.mark.parametrize("count", [1, 16, 20])
+def test_chocolate_checklist_under_one_page_has_no_pagination_buttons(count):
+    _marker, view = console.build_staff_chocolate_checklist(_ticket(count=count))
+    assert _buttons(view) == []
+    contents = _contents(view)
+    assert sum(content.count("cc.fwafarm.com") for content in contents) == count
+    assert not any("Page " in content for content in contents)
+
+
+def test_chocolate_checklist_paginates_46_accounts_20_per_page_with_prev_disabled():
+    ticket = _ticket(count=46)
+    marker, view = console.build_staff_chocolate_checklist(ticket, page=1)
+    contents = _contents(view)
+    assert any("· 1–20 of 46" in content for content in contents)
+    assert any("Page 1 of 3" in content for content in contents)
+    assert sum(content.count("cc.fwafarm.com") for content in contents) == 20
+
+    buttons = _buttons(view)
+    assert len(buttons) == 2
+    prev_button, next_button = buttons
+    assert prev_button["disabled"] is True
+    assert next_button["disabled"] is False
+    assert prev_button["custom_id"] == f"ticket_v2_chocolate_page:{ticket['_id']}|0"
+    assert next_button["custom_id"] == f"ticket_v2_chocolate_page:{ticket['_id']}|2"
+    assert marker == f"ticket-chocolate:{ticket['_id']}"
+
+
+def test_chocolate_checklist_next_page_shows_the_next_20_accounts():
+    ticket = _ticket(count=46)
+    _marker, view = console.build_staff_chocolate_checklist(ticket, page=2)
+    contents = _contents(view)
+    assert any("· 21–40 of 46" in content for content in contents)
+    assert any("Page 2 of 3" in content for content in contents)
+    assert sum(content.count("cc.fwafarm.com") for content in contents) == 20
+
+    prev_button, next_button = _buttons(view)
+    assert prev_button["disabled"] is False
+    assert next_button["disabled"] is False
+
+
+def test_chocolate_checklist_last_page_disables_next():
+    ticket = _ticket(count=46)
+    _marker, view = console.build_staff_chocolate_checklist(ticket, page=3)
+    contents = _contents(view)
+    assert any("· 41–46 of 46" in content for content in contents)
+    assert any("Page 3 of 3" in content for content in contents)
+    assert sum(content.count("cc.fwafarm.com") for content in contents) == 6
+
+    prev_button, next_button = _buttons(view)
+    assert prev_button["disabled"] is False
+    assert next_button["disabled"] is True
 
 
 def test_chocolate_excludes_observed_but_no_longer_linked_tag():
     ticket = _ticket(count=1, observed_extra=("#OLDTAG",))
-    copy = "\n".join(
-        content
-        for _marker, view in console.build_staff_chocolate_checklist(ticket)
-        for content in _contents(view)
-    )
+    _marker, view = console.build_staff_chocolate_checklist(ticket)
+    copy = "\n".join(_contents(view))
     assert "#P0000001" in copy
     assert "#OLDTAG" not in copy
 
@@ -142,20 +181,15 @@ def test_chocolate_excludes_observed_but_no_longer_linked_tag():
     ],
 )
 def test_chocolate_zero_and_failure_states_are_truthful(ticket, needle, expected_links):
-    copy = "\n".join(
-        content
-        for _marker, view in console.build_staff_chocolate_checklist(ticket)
-        for content in _contents(view)
-    )
+    _marker, view = console.build_staff_chocolate_checklist(ticket)
+    copy = "\n".join(_contents(view))
     assert needle in copy
     assert copy.count("cc.fwafarm.com") == expected_links
     assert "No Chocolate blacklist verdict was checked automatically" in copy
 
 
 def test_main_ticket_never_builds_chocolate_content():
-    assert console.build_staff_chocolate_checklist(
-        _ticket(kind="main", count=37)
-    ) == []
+    assert console.build_staff_chocolate_checklist(_ticket(kind="main", count=37)) is None
 
 
 def test_shared_chocolate_url_is_used_for_every_player_link():
@@ -203,11 +237,8 @@ def test_chocolate_link_labels_neutralize_hostile_account_names():
     ticket["linked_accounts"]["current"][0]["name"] = (
         "**not bold** [not a link](https://invalid) > quote @everyone"
     )
-    copy = "\n".join(
-        content
-        for _marker, view in console.build_staff_chocolate_checklist(ticket)
-        for content in _contents(view)
-    )
+    _marker, view = console.build_staff_chocolate_checklist(ticket)
+    copy = "\n".join(_contents(view))
 
     assert "\\*\\*not bold\\*\\*" in copy
     assert "\\[not a link\\]\\(https://invalid\\)" in copy
@@ -336,21 +367,24 @@ def test_chocolate_delivery_is_durable_duplicate_safe_and_updates_in_place(monke
     assert first == second == 901
     assert (rest.creates, rest.edits) == (2, 0)
 
+    # 30 accounts need pagination -- the checklist grows buttons and a page
+    # counter, but it stays the same single message, so this is an edit,
+    # never a second create.
     refreshed = _ticket(count=30)
     third = asyncio.run(console.deliver_staff_identity_context(bot, mongo, refreshed))
     assert third == 901
-    assert (rest.creates, rest.edits) == (3, 2)
-    assert len(states.document["chocolate_message_ids"]) == 2
+    assert (rest.creates, rest.edits) == (2, 2)
+    assert len(states.document["chocolate_message_ids"]) == 1
 
-    # Simulate a lost Chocolate ID checkpoint. Recovery must find both
-    # committed messages by their visible title text -- no marker line is
-    # posted to Discord -- and reuse them rather than posting duplicates.
+    # Simulate a lost Chocolate ID checkpoint. Recovery must find the
+    # committed message by its visible title text -- no marker line is
+    # posted to Discord -- and reuse it rather than posting a duplicate.
     states.document.pop("chocolate_message_ids")
     states.document.pop("chocolate_fingerprints")
     before_creates = rest.creates
     asyncio.run(console.deliver_staff_identity_context(bot, mongo, refreshed))
     assert rest.creates == before_creates
-    assert len(states.document["chocolate_message_ids"]) == 2
+    assert len(states.document["chocolate_message_ids"]) == 1
     assert set(states.document["chocolate_message_ids"]) == {
         message.id for message in rest.messages
         if any("cc.fwafarm.com" in content for content in _contents(message.components))
@@ -377,12 +411,12 @@ def test_freshly_posted_checklist_has_no_marker_text(monkeypatch):
 
 
 def test_legacy_marker_message_is_still_recognised():
-    """A page posted before this change still carries the old marker line;
-    the structural finder must keep recognising it so already-open tickets
-    keep working."""
+    """A message posted before this change still carries the old marker
+    line; the structural finder must keep recognising it so already-open
+    tickets keep working."""
 
     ticket = _ticket(count=1)
-    marker, components = console.build_staff_chocolate_checklist(ticket)[0]
+    marker, components = console.build_staff_chocolate_checklist(ticket)
     legacy_components = [*components, Text(content=f"-# {marker}")]
     message = SimpleNamespace(
         id=42,
@@ -396,10 +430,10 @@ def test_legacy_marker_message_is_still_recognised():
     found = asyncio.run(
         console._find_chocolate_messages(bot, 102, ticket["_id"])
     )
-    assert found[marker] is message
+    assert found == [message]
 
 
-def test_multi_page_delivery_renews_before_every_rest_write(monkeypatch):
+def test_chocolate_delivery_renews_lease_before_every_rest_write(monkeypatch):
     async def none(*_args, **_kwargs):
         return []
 
@@ -414,12 +448,15 @@ def test_multi_page_delivery_renews_before_every_rest_write(monkeypatch):
         bot, mongo, _ticket(count=37)
     ))
 
-    assert rest.creates == 3
+    # One create for the Applicant context panel, one for the single
+    # paginated Chocolate checklist message -- regardless of how many
+    # accounts (and therefore pages) it holds.
+    assert rest.creates == 2
     assert states.renewals == rest.creates
     assert console.CONTEXT_LEASE > timedelta(seconds=150)
 
 
-def test_multi_page_delivery_stops_after_takeover_during_slow_rest_call(monkeypatch):
+def test_chocolate_delivery_stops_after_takeover_during_slow_rest_call(monkeypatch):
     async def none(*_args, **_kwargs):
         return []
 
@@ -595,7 +632,9 @@ def test_recovered_terminal_accounts_update_archived_checklist_without_duplicate
         reopen_terminal_thread=True,
     ))
 
-    assert creates_after_recovery == 3
+    # The same single checklist message is edited in place -- 30 accounts
+    # never needs a second created message, only a paginated one.
+    assert creates_after_recovery == 2
     assert rest.creates == creates_after_recovery
     # A decision never re-archives or re-locks the staff thread; it was
     # reopened once to deliver the recovered context and stays open.
@@ -603,7 +642,8 @@ def test_recovered_terminal_accounts_update_archived_checklist_without_duplicate
     copy = "\n".join(
         content for message in rest.messages for content in _contents(message.components)
     )
-    assert copy.count("cc.fwafarm.com") == 30
+    # Only page 1 of the 30-account checklist is delivered/stored.
+    assert copy.count("cc.fwafarm.com") == 20
 
 
 def test_terminal_reopen_and_unlock_each_require_a_fresh_lease():
@@ -659,7 +699,7 @@ def test_terminal_reopen_and_unlock_each_require_a_fresh_lease():
     ]
 
 
-def test_chocolate_delivery_retires_pages_after_current_links_shrink(monkeypatch):
+def test_chocolate_checklist_updates_in_place_when_accounts_shrink_to_zero(monkeypatch):
     async def none(*_args, **_kwargs):
         return []
 
@@ -671,26 +711,34 @@ def test_chocolate_delivery_retires_pages_after_current_links_shrink(monkeypatch
     mongo = SimpleNamespace(ticket_automation_state=states)
     original = _ticket(count=37)
     asyncio.run(console.deliver_staff_identity_context(bot, mongo, original))
-    assert rest.creates == 3
+    assert rest.creates == 2
 
     observed = tuple(original["player_tags"])
     unlinked = _ticket(count=0, state="empty", observed_extra=observed)
     asyncio.run(console.deliver_staff_identity_context(bot, mongo, unlinked))
 
+    # The single checklist message is reused -- losing every linked account
+    # never retires it, it just shows the "no accounts" state instead.
+    assert rest.creates == 2
     assert len(states.document["chocolate_message_ids"]) == 1
     all_copy = "\n".join(
         content for message in rest.messages for content in _contents(message.components)
     )
-    assert "page retired" in all_copy
+    assert "No accounts are currently linked" in all_copy
     assert "cc.fwafarm.com" not in all_copy
-    edits_after_retirement = rest.edits
+    assert "retired" not in all_copy
+
+    edits_after_update = rest.edits
     asyncio.run(console.deliver_staff_identity_context(bot, mongo, unlinked))
-    assert rest.edits == edits_after_retirement
+    assert rest.edits == edits_after_update
 
 
-def test_chocolate_recovery_retires_uncheckpointed_pages_after_accounts_shrink(
-    monkeypatch,
-):
+def test_chocolate_delivery_collapses_a_legacy_three_message_ticket(monkeypatch):
+    """A ticket opened before this change can still have three per-page
+    checklist messages sitting in its staff thread. The very next delivery
+    must keep the oldest as the single paginated message and retire the
+    other two -- never post a duplicate."""
+
     async def none(*_args, **_kwargs):
         return []
 
@@ -700,17 +748,162 @@ def test_chocolate_recovery_retires_uncheckpointed_pages_after_accounts_shrink(
     rest = _Rest()
     bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
     mongo = SimpleNamespace(ticket_automation_state=states)
+    ticket = _ticket(count=46)
 
-    asyncio.run(console.deliver_staff_identity_context(bot, mongo, _ticket(count=37)))
-    states.document.pop("chocolate_message_ids")
-    states.document.pop("chocolate_fingerprints")
-    asyncio.run(console.deliver_staff_identity_context(
-        bot, mongo, _ticket(count=1)
+    def legacy_page(message_id, start, end):
+        return SimpleNamespace(
+            id=message_id,
+            author=SimpleNamespace(id=7),
+            components=[Container(
+                accent_color=console.ACCENT_YELLOW,
+                components=[Text(
+                    content=f"## {console.CHOCOLATE_TITLE_PREFIX} · {start}–{end} of 46"
+                )],
+            )],
+        )
+
+    rest.messages.extend([
+        legacy_page(10, 1, 20),
+        legacy_page(11, 21, 40),
+        legacy_page(12, 41, 46),
+    ])
+
+    asyncio.run(console.deliver_staff_identity_context(bot, mongo, ticket))
+
+    assert states.document["chocolate_message_ids"] == [10]
+    primary = next(message for message in rest.messages if message.id == 10)
+    primary_contents = _contents(primary.components)
+    assert any("· 1–20 of 46" in content for content in primary_contents)
+    assert len(_buttons(primary.components)) == 2
+
+    for stale_id in (11, 12):
+        stale = next(message for message in rest.messages if message.id == stale_id)
+        titles = [
+            content for content in _contents(stale.components)
+            if content.startswith("##")
+        ]
+        assert titles and titles[0].endswith("retired")
+        assert _buttons(stale.components) == []
+
+    # Reusing the primary and retiring the extras never re-creates anything.
+    assert rest.creates == 1  # only the Applicant context panel
+
+
+def test_chocolate_paging_does_not_change_the_delivery_fingerprint(monkeypatch):
+    async def none(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(console.flag_store, "list_for_identity", none)
+    monkeypatch.setattr(console.store, "history_for", none)
+    states = _StateCollection()
+    rest = _Rest()
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+    mongo = SimpleNamespace(ticket_automation_state=states)
+    ticket = _ticket(count=46)
+
+    asyncio.run(console.deliver_staff_identity_context(bot, mongo, ticket))
+    stored_fingerprint = states.document["chocolate_fingerprints"][0]
+    chocolate_message_id = states.document["chocolate_message_ids"][0]
+    edits_before_paging = rest.edits
+
+    # A staff member clicking Next only edits the Discord message directly
+    # (see ticket_console_chocolate_page); it never touches Mongo state.
+    _marker, page2 = console.build_staff_chocolate_checklist(ticket, page=2)
+    asyncio.run(rest.edit_message(
+        channel=102, message=chocolate_message_id, components=page2,
+        user_mentions=False, role_mentions=False, mentions_everyone=False,
     ))
+    assert rest.edits == edits_before_paging + 1
 
-    copy = "\n".join(
-        content for message in rest.messages for content in _contents(message.components)
+    edits_before_redelivery = rest.edits
+    asyncio.run(console.deliver_staff_identity_context(bot, mongo, ticket))
+
+    assert rest.edits == edits_before_redelivery  # unchanged account list, no redelivery
+    assert states.document["chocolate_fingerprints"][0] == stored_fingerprint
+    # The message is left on the page the staff member navigated to.
+    live = next(m for m in rest.messages if m.id == chocolate_message_id)
+    assert any("· 21–40 of 46" in content for content in _contents(live.components))
+
+
+def test_chocolate_account_list_change_resets_to_page_one(monkeypatch):
+    async def none(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(console.flag_store, "list_for_identity", none)
+    monkeypatch.setattr(console.store, "history_for", none)
+    states = _StateCollection()
+    rest = _Rest()
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+    mongo = SimpleNamespace(ticket_automation_state=states)
+    ticket = _ticket(count=46)
+    asyncio.run(console.deliver_staff_identity_context(bot, mongo, ticket))
+
+    changed = _ticket(count=25)
+    asyncio.run(console.deliver_staff_identity_context(bot, mongo, changed))
+
+    chocolate_message = next(
+        message for message in rest.messages
+        if any("cc.fwafarm.com" in content for content in _contents(message.components))
     )
-    assert "page retired" in copy
-    assert copy.count("cc.fwafarm.com") == 1
-    assert len(states.document["chocolate_message_ids"]) == 1
+    contents = _contents(chocolate_message.components)
+    assert any("· 1–20 of 25" in content for content in contents)
+
+
+def test_chocolate_page_button_renders_the_requested_page(monkeypatch):
+    ticket = _ticket(count=46)
+
+    async def find_one(_mongo, filt):
+        assert filt == {"_id": ticket["_id"], "type": "ticket"}
+        return ticket
+
+    async def allowed(_member, _mongo):
+        return True
+
+    monkeypatch.setattr(console.store, "find_one", find_one)
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+
+    class Context:
+        user = SimpleNamespace(id=1)
+        member = object()
+        interaction = SimpleNamespace(message=None)
+
+    view = asyncio.run(console.ticket_console_chocolate_page(
+        Context(), f"{ticket['_id']}|2", mongo=object(),
+    ))
+    contents = _contents(view)
+    assert any("· 21–40 of 46" in content for content in contents)
+
+
+def test_chocolate_page_button_refuses_non_recruiters_and_keeps_the_current_page(
+    monkeypatch,
+):
+    ticket = _ticket(count=46)
+    responses = []
+
+    async def find_one(_mongo, _filt):
+        return ticket
+
+    async def denied(_member, _mongo):
+        return False
+
+    monkeypatch.setattr(console.store, "find_one", find_one)
+    monkeypatch.setattr(console.perms, "is_recruiter", denied)
+
+    _marker, page3 = console.build_staff_chocolate_checklist(ticket, page=3)
+
+    class Context:
+        user = SimpleNamespace(id=1)
+        member = object()
+        interaction = SimpleNamespace(message=SimpleNamespace(components=page3))
+
+        async def respond(self, *args, **kwargs):
+            responses.append((args, kwargs))
+
+    view = asyncio.run(console.ticket_console_chocolate_page(
+        Context(), f"{ticket['_id']}|1", mongo=object(),
+    ))
+    # None means "leave the shared message exactly as it is": the dispatcher
+    # skips the edit, so the refused click cannot blank or move the page.
+    assert view is None
+    assert len(responses) == 1
+    assert "Only recruiters" in responses[0][0][0]

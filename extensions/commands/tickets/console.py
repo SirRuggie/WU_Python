@@ -2667,15 +2667,25 @@ def _chocolate_link_label(name: object) -> str:
     return label or "Player"
 
 
+def _chocolate_page_count(total: int) -> int:
+    return max(1, (total + 19) // 20)
+
+
 def build_staff_chocolate_checklist(
     ticket_doc: Mapping,
-) -> list[tuple[str, list[Container]]]:
-    """Build staff-only FWA Chocolate links in deterministic 20-account groups."""
+    *,
+    page: int = 1,
+) -> tuple[str, list[Container]] | None:
+    """Build the single staff-only FWA Chocolate checklist message.
+
+    One message per ticket, paged 20 accounts at a time with Prev/Next
+    buttons that edit it in place -- see ``ticket_console_chocolate_page``.
+    """
 
     if _ticket_type(ticket_doc) != "fwa" or not isinstance(
         ticket_doc.get("linked_accounts"), Mapping
     ):
-        return []
+        return None
     ticket_id = _ticket_id(ticket_doc)
     snapshot = account_sync.snapshot_from_ticket(ticket_doc)
     accounts = _chocolate_accounts(ticket_doc)
@@ -2698,48 +2708,62 @@ def build_staff_chocolate_checklist(
         "-# These are review links only. No Chocolate blacklist verdict was checked "
         "automatically; record a verified concern through Manage Flags."
     )
+    marker = _chocolate_marker(ticket_id)
     if not accounts:
-        marker = _chocolate_marker(ticket_id, 1)
-        return [(marker, [Container(
+        return (marker, [Container(
             accent_color=ACCENT_YELLOW,
             components=[
                 Text(content=f"## {CHOCOLATE_TITLE_PREFIX}"),
                 Text(content=state_copy),
                 Text(content=disclaimer),
             ],
-        )])]
+        )])
 
-    panels: list[tuple[str, list[Container]]] = []
     total = len(accounts)
-    for start in range(0, total, 20):
-        group = accounts[start:start + 20]
-        end = start + len(group)
-        marker = _chocolate_marker(ticket_id, start // 20 + 1)
-        lines = []
-        for tag, name in group:
-            label_name = _chocolate_link_label(name)
-            lines.append(f"- [{label_name} · `{tag}`]({chocolate_url(tag)})")
-        title = f"## {CHOCOLATE_TITLE_PREFIX} · {start + 1}–{end} of {total}"
-        body = "\n".join(lines)
-        # The visible title carries the page identity now, not a hidden
-        # marker line, so the full aggregate limit is available here.
-        message_budget = DISCORD_MESSAGE_TEXT_LIMIT
-        # Keep each group independently safe even with maximum Clash names.
-        if sum(map(len, (title, state_copy, body, disclaimer))) > message_budget:
-            body = "\n".join(
-                f"- [`{tag}`]({chocolate_url(tag)})"
-                for tag, _name in group
-            )
-        panels.append((marker, [Container(
-            accent_color=ACCENT_YELLOW,
-            components=[
-                Text(content=title),
-                *([Text(content=state_copy)] if start == 0 else []),
-                Text(content=body),
-                Text(content=disclaimer),
-            ],
-        )]))
-    return panels
+    total_pages = _chocolate_page_count(total)
+    page = max(1, min(int(page or 1), total_pages))
+    start = (page - 1) * 20
+    group = accounts[start:start + 20]
+    end = start + len(group)
+    lines = []
+    for tag, name in group:
+        label_name = _chocolate_link_label(name)
+        lines.append(f"- [{label_name} · `{tag}`]({chocolate_url(tag)})")
+    title = f"## {CHOCOLATE_TITLE_PREFIX} · {start + 1}–{end} of {total}"
+    body = "\n".join(lines)
+    page_line = f"-# Page {page} of {total_pages}" if total_pages > 1 else ""
+    # The visible title carries the message identity now, not a hidden
+    # marker line, so the full aggregate limit is available here.
+    message_budget = DISCORD_MESSAGE_TEXT_LIMIT
+    # Keep each page independently safe even with maximum Clash names.
+    if sum(map(len, (title, state_copy, body, page_line, disclaimer))) > message_budget:
+        body = "\n".join(
+            f"- [`{tag}`]({chocolate_url(tag)})"
+            for tag, _name in group
+        )
+    components: list = [
+        Text(content=title),
+        *([Text(content=state_copy)] if page == 1 else []),
+        Text(content=body),
+    ]
+    if total_pages > 1:
+        components.append(Text(content=page_line))
+        components.append(ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"ticket_v2_chocolate_page:{ticket_id}|{page - 1}",
+                label="◀ Prev",
+                is_disabled=page <= 1,
+            ),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"ticket_v2_chocolate_page:{ticket_id}|{page + 1}",
+                label="Next ▶",
+                is_disabled=page >= total_pages,
+            ),
+        ]))
+    components.append(Text(content=disclaimer))
+    return (marker, [Container(accent_color=ACCENT_YELLOW, components=components)])
 
 
 def build_history_panel(user_id: int, history: Sequence[Mapping]) -> list[Container]:
@@ -2960,61 +2984,98 @@ def _component_markers_with_prefix(component, prefix: str) -> set[str]:
     return result
 
 
-def _chocolate_marker(ticket_id: str, page: int) -> str:
+def _chocolate_marker(ticket_id: str) -> str:
     """Internal bookkeeping key only -- never posted to Discord."""
 
-    return f"{CHOCOLATE_MARKER_PREFIX}:{ticket_id}:{page}"
+    return f"{CHOCOLATE_MARKER_PREFIX}:{ticket_id}"
 
 
 _CHOCOLATE_RANGE_RE = re.compile(r"·\s*(\d+)–\d+\s*of\s*\d+\s*$")
 
 
-def _chocolate_title_page(component) -> int | None:
-    """Resolve a checklist container's page number from its visible title.
+def _chocolate_title_is_retired(content: str) -> bool:
+    return content.endswith("retired")
 
-    A retired page's title carries no range and is never matched here --
-    once retired, a page is no longer tracked or re-managed.
+
+def _is_chocolate_checklist_component(component) -> bool:
+    """True for an active (non-retired) checklist container's visible title.
+
+    Once retired, a page is no longer tracked or re-managed.
     """
 
     content = str(getattr(component, "content", "") or "").strip()
     if content.startswith(f"## {CHOCOLATE_TITLE_PREFIX}"):
-        if content.endswith("page retired"):
+        return not _chocolate_title_is_retired(content)
+    return any(
+        _is_chocolate_checklist_component(child)
+        for child in getattr(component, "components", ()) or ()
+    )
+
+
+def _is_retired_chocolate_component(component) -> bool:
+    content = str(getattr(component, "content", "") or "").strip()
+    if content.startswith(f"## {CHOCOLATE_TITLE_PREFIX}"):
+        return _chocolate_title_is_retired(content)
+    return any(
+        _is_retired_chocolate_component(child)
+        for child in getattr(component, "components", ()) or ()
+    )
+
+
+def _chocolate_component_page(component) -> int | None:
+    """Resolve the page number already shown on a rendered checklist container."""
+
+    content = str(getattr(component, "content", "") or "").strip()
+    if content.startswith(f"## {CHOCOLATE_TITLE_PREFIX}"):
+        if _chocolate_title_is_retired(content):
             return None
         match = _CHOCOLATE_RANGE_RE.search(content)
         if match:
             return (int(match.group(1)) - 1) // 20 + 1
-        # Only the bare no-accounts title is page 1; any other unparsed
-        # range must not be misclaimed as page 1.
         return 1 if content == f"## {CHOCOLATE_TITLE_PREFIX}" else None
     for child in getattr(component, "components", ()) or ():
-        page = _chocolate_title_page(child)
+        page = _chocolate_component_page(child)
         if page is not None:
             return page
     return None
+
+
+def _chocolate_message_page(message) -> int:
+    """Best-effort page number already shown on a chocolate checklist message."""
+
+    for component in getattr(message, "components", ()) or ():
+        page = _chocolate_component_page(component)
+        if page is not None:
+            return page
+    return 1
 
 
 async def _find_chocolate_messages(
     bot: hikari.GatewayBot,
     staff_id: int,
     ticket_id: str,
-) -> dict[str, object]:
-    """Find the newest bot-authored FWA Chocolate checklist message per page.
+) -> list:
+    """Find every active bot-authored FWA Chocolate checklist message, oldest first.
 
-    Pages are identified structurally: the ticket's own staff thread (one
-    ticket per thread), authored by the bot, titled as a checklist page --
-    no bookkeeping text is posted to Discord for this. A message from
-    before this change that still carries the old ``-# ticket-chocolate:...``
-    marker line is still recognised, so already-open tickets keep working.
+    A ticket normally has at most one active checklist message, identified
+    structurally by its visible title -- no bookkeeping text is posted to
+    Discord for it. Before this change, a large ticket could have several
+    per-page messages instead; a message from before this change that still
+    carries the old ``-# ticket-chocolate:...`` marker line is still
+    recognised, so already-open tickets keep working and the oldest
+    surviving message can be promoted to the single paginated message (see
+    ``deliver_staff_identity_context``, which retires the rest). A retired
+    message is never returned -- it is no longer tracked or re-managed.
     """
 
     get_me = getattr(bot, "get_me", None)
     if not callable(get_me):
-        return {}
+        return []
     me = get_me()
     if me is None:
         raise RuntimeError("bot identity is unavailable")
     legacy_prefix = f"{CHOCOLATE_MARKER_PREFIX}:{ticket_id}:"
-    matches: dict[str, object] = {}
+    matches: list = []
     history = await _message_history(
         bot.rest, staff_id, limit=_STAFF_CONTEXT_SCAN_LIMIT
     )
@@ -3022,28 +3083,18 @@ async def _find_chocolate_messages(
         if _int(getattr(getattr(message, "author", None), "id", 0)) != int(me.id):
             continue
         components = getattr(message, "components", ()) or ()
-        page: int | None = None
-        for component in components:
-            for legacy_marker in _component_markers_with_prefix(
-                component, legacy_prefix
-            ):
-                try:
-                    page = int(legacy_marker.rsplit(":", 1)[-1])
-                except ValueError:
-                    continue
-        if page is None:
-            for component in components:
-                page = _chocolate_title_page(component)
-                if page is not None:
-                    break
-        if page is None:
+        if any(_is_retired_chocolate_component(component) for component in components):
             continue
-        marker = _chocolate_marker(ticket_id, page)
-        prior = matches.get(marker)
-        if prior is None or _int(getattr(message, "id", 0)) > _int(
-            getattr(prior, "id", 0)
-        ):
-            matches[marker] = message
+        is_legacy_marked = any(
+            _component_markers_with_prefix(component, legacy_prefix)
+            for component in components
+        )
+        is_checklist = is_legacy_marked or any(
+            _is_chocolate_checklist_component(component) for component in components
+        )
+        if is_checklist:
+            matches.append(message)
+    matches.sort(key=lambda item: _int(getattr(item, "id", 0)))
     return matches
 
 
@@ -3051,10 +3102,11 @@ async def _find_chocolate_message(
     bot: hikari.GatewayBot,
     staff_id: int,
     ticket_id: str,
-    page: int,
 ):
+    """The single active checklist message for this ticket, if any."""
+
     found = await _find_chocolate_messages(bot, staff_id, ticket_id)
-    return found.get(_chocolate_marker(ticket_id, page))
+    return found[0] if found else None
 
 
 async def staff_chocolate_context_is_current(
@@ -3087,23 +3139,21 @@ async def staff_chocolate_context_is_current(
         or delivered_at < requested_at
     ):
         return False
-    expected = [
-        (marker, _context_fingerprint(components))
-        for marker, components in source
-    ]
+    _marker, components = source
+    expected_fingerprint = _context_fingerprint(components)
     stored_ids = [_int(value) for value in state.get("chocolate_message_ids") or ()]
     stored_fingerprints = [
         str(value) for value in state.get("chocolate_fingerprints") or ()
     ]
-    if len(stored_ids) != len(expected) or len(stored_fingerprints) != len(expected):
+    # A leftover second entry means an old per-page ticket has not yet been
+    # collapsed to the single paginated message; treat it as not current.
+    if len(stored_ids) != 1 or len(stored_fingerprints) != 1:
         return False
-    recovered = await _find_chocolate_messages(bot, staff_id, ticket_id)
-    return all(
-        stored_ids[index]
-        and stored_fingerprints[index] == fingerprint
-        and _int(getattr(recovered.get(marker), "id", 0)) == stored_ids[index]
-        for index, (marker, fingerprint) in enumerate(expected)
-    )
+    stored_id = stored_ids[0]
+    if not stored_id or stored_fingerprints[0] != expected_fingerprint:
+        return False
+    recovered = await _find_chocolate_message(bot, staff_id, ticket_id)
+    return _int(getattr(recovered, "id", 0)) == stored_id
 
 
 async def _finish_staff_context_lease(
@@ -3368,30 +3418,32 @@ async def _retire_chocolate_message(
     bot: hikari.GatewayBot,
     *,
     staff_id: int,
-    ticket_id: str,
-    marker: str,
     message_id: int,
     renew_lease,
 ) -> None:
-    """Remove stale current-account links without deleting the audit message."""
+    """Remove stale current-account links without deleting the audit message.
+
+    Best-effort: a stale message can only be an ID this call already knows
+    (from durable state or a structural recovery scan), so a 404 here means
+    the message is genuinely gone and there is nothing left to retire.
+    """
 
     if not message_id:
         return
-    page_text = marker.rsplit(":", 1)[-1]
     components = [
         Container(
             accent_color=ACCENT_GREY,
             components=[
-                Text(content=f"## {CHOCOLATE_TITLE_PREFIX} · page retired"),
+                Text(content=f"## {CHOCOLATE_TITLE_PREFIX} · retired"),
                 Text(content=(
-                    "Accounts formerly shown on this page are no longer in the "
-                    "current linked-account snapshot. Their tags remain in durable "
-                    "ticket identity history for search and flags."
+                    "Accounts formerly shown on this checklist are no longer in "
+                    "the current linked-account snapshot. Their tags remain in "
+                    "durable ticket identity history for search and flags."
                 )),
             ],
         ),
     ]
-    try:
+    with contextlib.suppress(hikari.NotFoundError):
         await renew_lease()
         await bot.rest.edit_message(
             channel=staff_id,
@@ -3401,23 +3453,6 @@ async def _retire_chocolate_message(
             role_mentions=False,
             mentions_everyone=False,
         )
-    except hikari.NotFoundError:
-        recovered = None
-        if page_text.isdigit():
-            recovered = await _find_chocolate_message(
-                bot, staff_id, ticket_id, int(page_text)
-            )
-        recovered_id = _int(getattr(recovered, "id", 0))
-        if recovered_id:
-            await renew_lease()
-            await bot.rest.edit_message(
-                channel=staff_id,
-                message=recovered_id,
-                components=components,
-                user_mentions=False,
-                role_mentions=False,
-                mentions_everyone=False,
-            )
 
 
 async def deliver_staff_identity_context(
@@ -3508,8 +3543,8 @@ async def deliver_staff_identity_context(
         if not existing_message_id:
             recovered = await _find_staff_context_message(bot, staff_id, marker)
             existing_message_id = _int(getattr(recovered, "id", 0))
-        chocolate_source = build_staff_chocolate_checklist(ticket_doc)
-        if components is None and not existing_message_id and not chocolate_source:
+        chocolate_result = build_staff_chocolate_checklist(ticket_doc)
+        if components is None and not existing_message_id and chocolate_result is None:
             finished = await _finish_staff_context_lease(
                 mongo,
                 state_id,
@@ -3529,74 +3564,63 @@ async def deliver_staff_identity_context(
             )
         fingerprint = _context_fingerprint(components)
 
-        prepared_chocolate: list[tuple[str, list, str]] = [
-            (
-                chocolate_marker,
-                chocolate_components,
-                _context_fingerprint(chocolate_components),
-            )
-            for chocolate_marker, chocolate_components in chocolate_source
-        ]
-        stored_chocolate_ids = state.get("chocolate_message_ids") or ()
-        stored_chocolate_fingerprints = state.get("chocolate_fingerprints") or ()
-        chocolate_prefix = f"{CHOCOLATE_MARKER_PREFIX}:{ticket_id}:"
-        chocolate_checkpoint_complete = (
-            len(stored_chocolate_ids) >= len(prepared_chocolate)
-            and all(
-                _int(value)
-                for value in stored_chocolate_ids[:len(prepared_chocolate)]
-            )
+        chocolate_marker, chocolate_components = (
+            chocolate_result if chocolate_result is not None else (None, None)
         )
-        recovered_chocolate = (
-            {}
-            if chocolate_checkpoint_complete
-            else await _find_chocolate_messages(bot, staff_id, ticket_id)
-            if chocolate_source or stored_chocolate_ids
-            else {}
+        chocolate_fingerprint = (
+            _context_fingerprint(chocolate_components)
+            if chocolate_components is not None else None
         )
-        stale_chocolate_messages: dict[str, int] = {
-            f"{chocolate_prefix}{index + 1}": _int(value)
-            for index, value in enumerate(stored_chocolate_ids)
-            if index >= len(prepared_chocolate) and _int(value)
-        }
-        for recovered_marker, recovered_message in recovered_chocolate.items():
-            try:
-                page = int(recovered_marker.rsplit(":", 1)[-1])
-            except ValueError:
-                continue
-            if page > len(prepared_chocolate):
-                stale_chocolate_messages[recovered_marker] = _int(
-                    getattr(recovered_message, "id", 0)
-                )
-        chocolate_ids = [
-            _int(stored_chocolate_ids[index])
-            if index < len(stored_chocolate_ids) else 0
-            for index in range(len(prepared_chocolate))
+        stored_chocolate_ids = [
+            _int(value) for value in state.get("chocolate_message_ids") or ()
         ]
-        for index, (chocolate_marker, _panel, _fingerprint) in enumerate(
-            prepared_chocolate
-        ):
-            if chocolate_ids[index]:
-                continue
-            recovered = recovered_chocolate.get(chocolate_marker)
-            chocolate_ids[index] = _int(getattr(recovered, "id", 0))
+        stored_chocolate_fingerprints = [
+            str(value) for value in state.get("chocolate_fingerprints") or ()
+        ]
+        # A leftover second (or later) entry only ever comes from a ticket
+        # opened before this change, when the checklist was several
+        # per-page messages instead of one. The first entry is kept as the
+        # single paginated message; the rest are retired below.
+        primary_stored_id = stored_chocolate_ids[0] if stored_chocolate_ids else 0
+        legacy_extra_ids = [value for value in stored_chocolate_ids[1:] if value]
+        stored_chocolate_fingerprint = (
+            stored_chocolate_fingerprints[0] if stored_chocolate_fingerprints else ""
+        )
+        chocolate_checkpoint_complete = bool(primary_stored_id)
+        recovered_chocolate: list = (
+            await _find_chocolate_messages(bot, staff_id, ticket_id)
+            if not chocolate_checkpoint_complete
+            and (chocolate_components is not None or stored_chocolate_ids)
+            else []
+        )
+
+        chocolate_id = primary_stored_id or (
+            _int(getattr(recovered_chocolate[0], "id", 0))
+            if recovered_chocolate else 0
+        )
+        stale_chocolate_ids: set[int] = {value for value in legacy_extra_ids}
+        stale_chocolate_ids.update(
+            _int(getattr(message, "id", 0)) for message in recovered_chocolate[1:]
+        )
+        if chocolate_components is None and chocolate_id:
+            # This ticket no longer needs a checklist at all; retire what
+            # was there instead of keeping it around.
+            stale_chocolate_ids.add(chocolate_id)
+            chocolate_id = 0
+        stale_chocolate_ids.discard(chocolate_id)
+        stale_chocolate_ids.discard(0)
 
         context_current = (
             existing_message_id
             and fingerprint == str(state.get("fingerprint") or "")
         )
-        chocolate_current = not stale_chocolate_messages and all(
-            chocolate_ids[index]
-            and index < len(stored_chocolate_fingerprints)
-            and panel_fingerprint == str(stored_chocolate_fingerprints[index])
-            and (
-                chocolate_checkpoint_complete
-                or _int(getattr(
-                    recovered_chocolate.get(panel_marker), "id", 0
-                )) == chocolate_ids[index]
-            )
-            for index, (panel_marker, _panel, panel_fingerprint) in enumerate(
-                prepared_chocolate
+        chocolate_current = not stale_chocolate_ids and (
+            (chocolate_components is None and not chocolate_id)
+            or (
+                chocolate_components is not None
+                and chocolate_id
+                and chocolate_fingerprint == stored_chocolate_fingerprint
+                and (chocolate_checkpoint_complete or bool(recovered_chocolate))
             )
         )
         if context_current and chocolate_current:
@@ -3607,11 +3631,10 @@ async def deliver_staff_identity_context(
                 refresh_generation=refresh_generation,
                 message_id=existing_message_id,
                 fingerprint=fingerprint,
-                chocolate_message_ids=chocolate_ids,
-                chocolate_fingerprints=[
-                    panel_fingerprint
-                    for _panel_marker, _panel, panel_fingerprint in prepared_chocolate
-                ],
+                chocolate_message_ids=[chocolate_id] if chocolate_id else [],
+                chocolate_fingerprints=(
+                    [chocolate_fingerprint] if chocolate_id else []
+                ),
             )
             if not finished:
                 raise StaffContextLeaseLost(
@@ -3637,43 +3660,27 @@ async def deliver_staff_identity_context(
                     message_id=message_id,
                     renew_lease=renew_lease,
                 )
-            for index, (
-                chocolate_marker,
-                chocolate_components,
-                chocolate_fingerprint,
-            ) in enumerate(prepared_chocolate):
-                panel_current = (
-                    chocolate_ids[index]
-                    and index < len(stored_chocolate_fingerprints)
-                    and chocolate_fingerprint
-                    == str(stored_chocolate_fingerprints[index])
-                    and (
-                        chocolate_checkpoint_complete
-                        or _int(getattr(
-                            recovered_chocolate.get(chocolate_marker), "id", 0
-                        )) == chocolate_ids[index]
-                    )
-                )
-                if panel_current:
-                    continue
-                chocolate_ids[index] = await _upsert_marked_staff_message(
+            chocolate_panel_current = (
+                chocolate_components is not None
+                and chocolate_id
+                and chocolate_fingerprint == stored_chocolate_fingerprint
+                and (chocolate_checkpoint_complete or bool(recovered_chocolate))
+            )
+            if chocolate_components is not None and not chocolate_panel_current:
+                chocolate_id = await _upsert_marked_staff_message(
                     bot,
                     staff_id=staff_id,
                     marker=chocolate_marker,
                     components=chocolate_components,
-                    message_id=chocolate_ids[index],
+                    message_id=chocolate_id,
                     renew_lease=renew_lease,
-                    finder=lambda page=index + 1: _find_chocolate_message(
-                        bot, staff_id, ticket_id, page
-                    ),
+                    finder=lambda: _find_chocolate_message(bot, staff_id, ticket_id),
                 )
-            for stale_marker, stale_message_id in stale_chocolate_messages.items():
+            for stale_id in stale_chocolate_ids:
                 await _retire_chocolate_message(
                     bot,
                     staff_id=staff_id,
-                    ticket_id=ticket_id,
-                    marker=stale_marker,
-                    message_id=stale_message_id,
+                    message_id=stale_id,
                     renew_lease=renew_lease,
                 )
         finished = await _finish_staff_context_lease(
@@ -3683,11 +3690,10 @@ async def deliver_staff_identity_context(
             refresh_generation=refresh_generation,
             message_id=message_id,
             fingerprint=fingerprint,
-            chocolate_message_ids=chocolate_ids,
-            chocolate_fingerprints=[
-                panel_fingerprint
-                for _panel_marker, _panel, panel_fingerprint in prepared_chocolate
-            ],
+            chocolate_message_ids=[chocolate_id] if chocolate_id else [],
+            chocolate_fingerprints=(
+                [chocolate_fingerprint] if chocolate_id else []
+            ),
         )
         if not finished:
             raise StaffContextLeaseLost(
@@ -5190,6 +5196,40 @@ async def ticket_console_browse_page(
         period=period,
         page=next_page,
     )
+
+
+@register_action("ticket_v2_chocolate_page", preload_state=False)
+@lightbulb.di.with_di
+async def ticket_console_chocolate_page(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    """Page the durable staff-thread FWA Chocolate checklist in place.
+
+    Stateless: the target page travels in the custom_id, and the message
+    being edited is the only "session" this needs. Gated the same way as
+    other staff-thread controls (e.g. Manage Flags) -- only recruiters may
+    change the page a shared, durable message shows.
+    """
+
+    ticket_id, _, page_text = str(action_id or "").partition("|")
+    # Gate BEFORE any lookup: the dispatcher edits the shared, durable
+    # checklist message with whatever this returns, so nothing below may run
+    # for a non-recruiter. Returning None leaves the message untouched.
+    if not await _require_recruiter(ctx, mongo):
+        return None
+    ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
+    if ticket_doc is None:
+        # Never replace the durable checklist with a notice: a notice would
+        # no longer be recognised by the structural finder and a later
+        # delivery could post a duplicate. Leave the message as it is.
+        return None
+    result = build_staff_chocolate_checklist(ticket_doc, page=_int(page_text) or 1)
+    if result is None:
+        return None
+    return result[1]
 
 
 @register_action("ticket_v2_console_browse_pick", requires_state=True)

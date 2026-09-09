@@ -302,14 +302,21 @@ ticket-detail panel is unavailable:
 /tickets flag-remove flag-id:<exact ID> reason:<reason>
 ```
 
-### Automatic Chocolate pages use current accounts only
+### Automatic Chocolate checklist uses current accounts only
 
-When an FWA ticket opens, its staff thread automatically receives Chocolate
-checklist pages containing one review link per **currently linked** account,
-grouped safely across multiple messages when needed. A later successful account
-refresh updates those pages in place and retires extra pages if the current list
-shrinks. Permanently recorded tags that are no longer linked still match search,
-history, and flags, but do not stay on the current-account checklist.
+When an FWA ticket opens, its staff thread automatically receives a single
+Chocolate checklist message containing one review link per **currently
+linked** account, 20 accounts per page. Past 20 accounts, the message grows
+**◀ Prev** / **Next ▶** buttons and a `Page X of Y` line that page it in
+place — no new messages are posted, and any recruiter can click through the
+list. A later successful account refresh updates that one message in place
+and resets it to page 1 when the first page's contents changed; paging
+through it does not count as a change and never triggers a redelivery.
+Permanently recorded tags that are no longer linked still match search,
+history, and flags, but do not stay on the current-account checklist. A
+ticket opened before this pagination existed can still have several older
+per-page messages in its thread; the next delivery keeps the oldest as the
+single paginated message and retires the rest in place.
 
 A failed lookup and a successful result with zero accounts are different states
 in the staff copy. Before the first account result is persisted, the candidate

@@ -344,7 +344,12 @@ async def _dispatch(
             # An edit preserves the existing message's visibility. Passing
             # ephemeral= here is ignored by Discord/lightbulb and suggests a
             # guarantee the dispatcher cannot make.
-            await ctx.respond(components=components, edit=True)
+            # components=None would strip every component from the source
+            # message (hikari documents None as "remove all"), which on a
+            # components-v2 message is a 400. A handler returning None means
+            # "leave the message exactly as it is".
+            if components is not None:
+                await ctx.respond(components=components, edit=True)
 
 
 @loader.listener(hikari.StartedEvent)
