@@ -2295,6 +2295,12 @@ def _numeric(value: str | None, field: str, *, optional: bool = False) -> int | 
     value = str(value or "").strip()
     if optional and not value:
         return None
+    if not value.isdecimal():
+        # Discord can hand back the autocomplete LABEL ("Name — 1234...")
+        # instead of the value; accept the trailing snowflake in it.
+        found = re.findall(r"\d{17,20}", value)
+        if found:
+            value = found[-1]
     if not value.isdecimal() or not 17 <= len(value) <= 20:
         raise LegacyMigrationError(f"{field} must be a valid Discord ID")
     return int(value)
