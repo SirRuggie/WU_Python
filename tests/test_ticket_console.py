@@ -261,6 +261,12 @@ def test_shared_hub_has_only_chart_picker_and_find_and_uploads_a_fresh_png():
     select = container["components"][1]["components"][0]
     assert len(select["options"]) == 25
     assert all(option["value"].startswith("ticket_") for option in select["options"])
+    buttons = container["components"][2]["components"]
+    assert [button["custom_id"] for button in buttons] == [
+        "ticket_v2_console_find:hub",
+        "ticket_v2_console_browse:hub",
+    ]
+    assert buttons[1]["label"] == "Browse tickets"
     _assert_component_limits(view)
 
 
@@ -361,6 +367,383 @@ def test_search_heading_shows_the_actual_number_rendered():
     assert _summary(few) == "All tickets · 3 matches"
     assert _summary(exact) == "All tickets · 10 matches"
     assert _summary(truncated) == "All tickets · newest 10 of 27 matches"
+
+
+def test_browse_panel_renders_ten_rows_status_type_period_selects_and_open_picker():
+    results = [_ticket(index) for index in range(1, 11)]
+    view = console.build_browse_panel(
+        "a" * 32,
+        status="all",
+        ticket_type="all",
+        period="all",
+        page=1,
+        total_pages=3,
+        results=results,
+        total=27,
+    )
+    nodes = _nodes(view)
+    contents = [str(node["content"]) for node in nodes if "content" in node]
+    assert "Page 1 of 3 · 27 tickets" in contents[0]
+
+    list_text = next(text for text in contents if text.count("\n") == 9)
+    assert list_text.count("\n") == 9  # 10 rows joined by 9 newlines
+    for ticket_doc in results:
+        assert console._ticket_label(ticket_doc) in list_text
+
+    selects = [node for node in nodes if node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU]
+    # status, type, period, and the "Open a ticket" picker
+    assert len(selects) == 4
+    picker = next(
+        select for select in selects
+        if str(select["custom_id"]).startswith("ticket_v2_console_browse_pick:")
+    )
+    assert len(picker["options"]) == 10
+    assert all(option["value"].startswith("ticket_") for option in picker["options"])
+
+    buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
+    prev_button = next(b for b in buttons if str(b["custom_id"]).endswith("|prev"))
+    next_button = next(b for b in buttons if str(b["custom_id"]).endswith("|next"))
+    assert prev_button["disabled"] is True
+    assert next_button["disabled"] is False
+    _assert_component_limits(view)
+
+
+def test_browse_panel_disables_next_on_last_page_and_prev_stays_enabled():
+    view = console.build_browse_panel(
+        "a" * 32,
+        status="open",
+        ticket_type="main",
+        period="7",
+        page=3,
+        total_pages=3,
+        results=[_ticket(1)],
+        total=21,
+    )
+    nodes = _nodes(view)
+    buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
+    prev_button = next(b for b in buttons if str(b["custom_id"]).endswith("|prev"))
+    next_button = next(b for b in buttons if str(b["custom_id"]).endswith("|next"))
+    assert prev_button["disabled"] is False
+    assert next_button["disabled"] is True
+
+
+def test_browse_panel_with_no_results_disables_the_open_picker():
+    view = console.build_browse_panel(
+        "a" * 32,
+        status="denied",
+        ticket_type="all",
+        period="all",
+        page=1,
+        total_pages=1,
+        results=[],
+        total=0,
+    )
+    nodes = _nodes(view)
+    contents = [str(node["content"]) for node in nodes if "content" in node]
+    assert "No tickets match those filters." in contents
+    picker = next(
+        node for node in nodes
+        if node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU
+        and str(node["custom_id"]).startswith("ticket_v2_console_browse_pick:")
+    )
+    assert picker["disabled"] is True
+    assert picker["options"][0]["value"] == "no-browse-tickets"
+    _assert_component_limits(view)
+
+
+def test_browse_total_pages_and_clamp_page_are_pure_pagination_math():
+    assert console._browse_total_pages(0, 10) == 1
+    assert console._browse_total_pages(10, 10) == 1
+    assert console._browse_total_pages(11, 10) == 2
+    assert console._browse_total_pages(27, 10) == 3
+
+    assert console._clamp_browse_page(1, 3) == 1
+    assert console._clamp_browse_page(0, 3) == 1
+    assert console._clamp_browse_page(-5, 3) == 1
+    assert console._clamp_browse_page(3, 3) == 3
+    assert console._clamp_browse_page(9, 3) == 3
+
+
+def test_render_browse_session_clamps_page_and_persists_it(monkeypatch):
+    events = []
+
+    async def browse_count(_mongo, **kwargs):
+        events.append(("count", kwargs))
+        return 5  # only 1 page at page_size=10
+
+    async def browse(_mongo, **kwargs):
+        events.append(("browse", kwargs))
+        return [_ticket(index) for index in range(1, 6)]
+
+    async def update(_mongo, action_id, update_doc, **_kwargs):
+        events.append(("update", action_id, update_doc))
+
+    monkeypatch.setattr(console.store, "browse_count", browse_count)
+    monkeypatch.setattr(console.store, "browse", browse)
+    monkeypatch.setattr(console, "update_state", update)
+
+    view = asyncio.run(console._render_browse_session(
+        object(),
+        action_id="abc",
+        owner_id=22,
+        guild_id=33,
+        status="all",
+        ticket_type="all",
+        period="all",
+        page=9,  # far beyond the single available page
+    ))
+
+    kinds = [event[0] for event in events]
+    assert kinds == ["count", "browse", "update"]
+    assert events[2][1:] == ("abc", {"$set": {"page": 1}})
+    contents = [str(node["content"]) for node in _nodes(view) if "content" in node]
+    assert "Page 1 of 1 · 5 tickets" in contents[0]
+
+
+def test_browse_status_filter_updates_state_and_resets_page(monkeypatch):
+    events = []
+
+    class Interaction:
+        values = ("open",)
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def update(_mongo, action_id, update_doc, **_kwargs):
+        events.append(("update", action_id, update_doc))
+
+    async def render(_mongo, **kwargs):
+        events.append(("render", kwargs))
+        return ["RENDERED"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "update_state", update)
+    monkeypatch.setattr(console, "_render_browse_session", render)
+
+    result = asyncio.run(console.ticket_console_browse_status(
+        Context(), "abc",
+        owner_id=22, guild_id=33,
+        status="all", ticket_type="fwa", period="30", page=2,
+        mongo=object(),
+    ))
+
+    assert result == ["RENDERED"]
+    assert events[0] == ("update", "abc", {"$set": {"status": "open", "page": 1}})
+    assert events[1][1] == {
+        "action_id": "abc",
+        "owner_id": 22,
+        "guild_id": 33,
+        "status": "open",
+        "ticket_type": "fwa",
+        "period": "30",
+        "page": 1,
+    }
+
+
+def test_browse_filter_re_renders_unchanged_panel_when_not_recruiter(monkeypatch):
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+
+        async def respond(self, *args, **kwargs):
+            responses.append((args, kwargs))
+
+    responses = []
+
+    async def denied(_member, _mongo):
+        return False
+
+    async def render(_mongo, **kwargs):
+        assert kwargs == {
+            "action_id": "abc",
+            "owner_id": 22,
+            "guild_id": 33,
+            "status": "open",
+            "ticket_type": "all",
+            "period": "all",
+            "page": 2,
+        }
+        return ["UNCHANGED"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console, "_render_browse_session", render)
+
+    result = asyncio.run(console.ticket_console_browse_type(
+        Context(), "abc",
+        owner_id=22, guild_id=33,
+        status="open", ticket_type="all", period="all", page=2,
+        mongo=object(),
+    ))
+    assert result == ["UNCHANGED"]
+    assert len(responses) == 1
+    assert "Only recruiters" in responses[0][0][0]
+
+
+def test_browse_page_button_advances_and_retreats_with_a_floor_of_one(monkeypatch):
+    events = []
+    state = {
+        "type": "ticket_v2_console_browse",
+        "owner_id": 22,
+        "guild_id": 33,
+        "status": "all",
+        "ticket_type": "all",
+        "period": "all",
+        "page": 1,
+    }
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def get(_mongo, action_id, _projection):
+        events.append(("get", action_id))
+        return dict(state)
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def update(_mongo, action_id, update_doc, **_kwargs):
+        events.append(("update", action_id, update_doc))
+
+    async def render(_mongo, **kwargs):
+        events.append(("render", kwargs["page"]))
+        return ["RENDERED"]
+
+    monkeypatch.setattr(console, "get_state", get)
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "update_state", update)
+    monkeypatch.setattr(console, "_render_browse_session", render)
+
+    # Prev on page 1 must not go below 1.
+    asyncio.run(console.ticket_console_browse_page(Context(), "abc|prev", mongo=object()))
+    assert events[1] == ("update", "abc", {"$set": {"page": 1}})
+    assert events[2] == ("render", 1)
+
+    events.clear()
+    asyncio.run(console.ticket_console_browse_page(Context(), "abc|next", mongo=object()))
+    assert events[1] == ("update", "abc", {"$set": {"page": 2}})
+    assert events[2] == ("render", 2)
+
+
+def test_browse_page_button_reports_expired_when_state_is_gone(monkeypatch):
+    async def get(_mongo, _action_id, _projection):
+        return None
+
+    monkeypatch.setattr(console, "get_state", get)
+
+    view = asyncio.run(console.ticket_console_browse_page(
+        SimpleNamespace(user=SimpleNamespace(id=22)), "abc|next", mongo=object(),
+    ))
+    contents = [str(node["content"]) for node in _nodes(view) if "content" in node]
+    assert contents[0] == "## Browse expired"
+
+
+def test_browse_pick_opens_the_ticket_detail_panel(monkeypatch):
+    ticket = _ticket(3)
+
+    class Interaction:
+        values = (ticket["_id"],)
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def find_one(_mongo, query):
+        assert query == {"_id": ticket["_id"], "type": "ticket"}
+        return ticket
+
+    async def detail(_mongo, ticket_doc, **kwargs):
+        assert ticket_doc is ticket
+        assert kwargs == {"owner_id": 22, "guild_id": 33}
+        return ["DETAIL"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.store, "find_one", find_one)
+    monkeypatch.setattr(console, "_ticket_detail_panel", detail)
+
+    result = asyncio.run(console.ticket_console_browse_pick(
+        Context(), "abc", owner_id=22, guild_id=33, mongo=object(),
+    ))
+    assert result == ["DETAIL"]
+
+
+def test_browse_pick_rejects_a_panel_that_belongs_to_someone_else():
+    result = asyncio.run(console.ticket_console_browse_pick(
+        SimpleNamespace(user=SimpleNamespace(id=99)),
+        "abc", owner_id=22, guild_id=33, mongo=object(),
+    ))
+    contents = [str(node["content"]) for node in _nodes(result) if "content" in node]
+    assert contents[0] == "## Private panel"
+
+
+def test_browse_button_opens_a_fresh_ephemeral_panel(monkeypatch):
+    followups = []
+
+    class Interaction:
+        async def execute(self, **kwargs):
+            followups.append(kwargs)
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22)
+        member = object()
+        guild_id = 33
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def create_state(_mongo, *, owner_id, guild_id):
+        assert (owner_id, guild_id) == (22, 33)
+        return "browse-1"
+
+    async def render(_mongo, **kwargs):
+        assert kwargs == {
+            "action_id": "browse-1",
+            "owner_id": 22,
+            "guild_id": 33,
+            "status": "all",
+            "ticket_type": "all",
+            "period": "all",
+            "page": 1,
+        }
+        return ["PANEL"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "_create_browse_state", create_state)
+    monkeypatch.setattr(console, "_render_browse_session", render)
+
+    asyncio.run(console.ticket_console_browse(Context(), "hub", mongo=object()))
+
+    assert len(followups) == 1
+    assert followups[0]["components"] == ["PANEL"]
+    assert followups[0]["flags"] & hikari.MessageFlag.EPHEMERAL
+
+
+def test_browse_actions_are_registered_with_the_right_dispatcher_shape():
+    browse = dispatcher.registered_functions["ticket_v2_console_browse"]
+    assert browse.no_return is True
+
+    status = dispatcher.registered_functions["ticket_v2_console_browse_status"]
+    assert status.requires_state is True
+    type_action = dispatcher.registered_functions["ticket_v2_console_browse_type"]
+    assert type_action.requires_state is True
+    period = dispatcher.registered_functions["ticket_v2_console_browse_period"]
+    assert period.requires_state is True
+
+    page = dispatcher.registered_functions["ticket_v2_console_browse_page"]
+    assert page.preload_state is False
+
+    pick = dispatcher.registered_functions["ticket_v2_console_browse_pick"]
+    assert pick.requires_state is True
 
 
 def test_long_notice_reserves_its_heading_inside_the_message_text_budget():

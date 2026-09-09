@@ -348,6 +348,75 @@ async def search_count(
     return int(await (await _reader(mongo)).count_documents(filt))
 
 
+# Browse rows render number, applicant, status and age only; never pull the
+# audit array or other large fields for a list page (rule 12).
+BROWSE_PROJECTION = {
+    "_id": 1, "type": 1, "venue": 1, "runtime": 1, "ticket_type": 1,
+    "ticket_number": 1, "user_id": 1, "username": 1, "status": 1,
+    "created_at": 1, "guild_id": 1, "location": 1, "schema_version": 1,
+}
+
+
+def _browse_filter(
+    statuses: Iterable[str] | None,
+    ticket_types: Iterable[str] | None,
+    since,
+) -> dict:
+    """Build the console Browse filter.
+
+    `status`/`ticket_type` are only added when the caller actually restricts
+    them; an empty/`None` value leaves the key out entirely (the console's
+    "All" option) rather than an `$in` over every known value, so a bare
+    "All status" browse still implies `thread_v2_created`'s partial filter
+    (RUNTIME_FILTER) instead of one it cannot serve a sort from -- see
+    `ensure_indexes` for why that distinction has its own index.
+    """
+    filt: dict = dict(RUNTIME_FILTER)
+    statuses = tuple(statuses or ())
+    ticket_types = tuple(ticket_types or ())
+    if statuses:
+        filt["status"] = {"$in": [schema.ticket_status(value) for value in statuses]}
+    if ticket_types:
+        filt["ticket_type"] = {
+            "$in": [schema.ticket_type(value) for value in ticket_types]
+        }
+    if since is not None:
+        filt["created_at"] = {"$gte": since}
+    return filt
+
+
+async def browse(
+    mongo: MongoClient,
+    *,
+    statuses: Iterable[str] | None = None,
+    ticket_types: Iterable[str] | None = None,
+    since=None,
+    page: int = 1,
+    page_size: int = 10,
+) -> list[dict]:
+    """One page of the console's Browse tickets list, newest first."""
+    filt = _browse_filter(statuses, ticket_types, since)
+    amount = max(1, min(int(page_size), 25))
+    skip = max(0, int(page) - 1) * amount
+    cursor = (await _reader(mongo)).find(filt, BROWSE_PROJECTION)
+    raw = await cursor.sort([("created_at", -1), ("_id", -1)]).skip(skip).limit(
+        amount
+    ).to_list(length=amount)
+    return _normalized_many(raw)
+
+
+async def browse_count(
+    mongo: MongoClient,
+    *,
+    statuses: Iterable[str] | None = None,
+    ticket_types: Iterable[str] | None = None,
+    since=None,
+) -> int:
+    """How many tickets `browse` matches in total, ignoring page/page_size."""
+    filt = _browse_filter(statuses, ticket_types, since)
+    return int(await (await _reader(mongo)).count_documents(filt))
+
+
 async def history_for(
     mongo: MongoClient,
     *,
@@ -1207,6 +1276,22 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
             [("status", 1), ("created_at", -1)],
             partialFilterExpression=RUNTIME_FILTER,
             name="thread_v2_status_created",
+        ),
+        # thread_v2_status_created's own partialFilterExpression is just
+        # RUNTIME_FILTER, not a specific status, so a browse query for one
+        # status still implies it and can use it -- but ESR needs equality on
+        # the index's leading field for the trailing `created_at` sort to be
+        # usable, and a bare "All status" browse (console.py's Browse
+        # tickets panel) has no equality on `status` at all, only the sort.
+        # Without a dedicated index, that query would fall back to an
+        # in-memory sort over the whole thread-ticket collection. This
+        # single-field index serves exactly that case (rule 12).
+        await collection.create_index(
+            # Key pattern must match browse()'s sort exactly (created_at, _id)
+            # or Mongo cannot serve the sort from the index.
+            [("created_at", -1), ("_id", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_created",
         ),
         await collection.create_index(
             [("ticket_type", 1), ("status", 1), ("created_at", -1)],

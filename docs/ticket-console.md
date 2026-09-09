@@ -226,6 +226,44 @@ from §2.6, unchanged): container 1 + heading Text 1 + 2 filter-select rows
 10-result cap (§2.6: "top 10 with jump links, never a browsable list") must
 therefore hold.
 
+## 4.1 Browse tickets — a paged list, no query
+
+**Browse tickets** sits next to **Find a ticket** on the shared console. It
+answers a different question than Search: not "find this one applicant" but
+"show me what's queued" — so instead of a free-text query it is three single-
+choice filters (Status, Type, Period) plus Prev/Next paging, 10 tickets per
+page, newest first.
+
+Entry point: the `📋 Browse tickets` button opens a fresh ephemeral panel with
+every filter defaulted to "All" and page 1, the same `_execute_private_panel`
+mechanism Find already uses. From there, the three selects
+(`min_values: 1`, always one value chosen — never the clearable
+`min_values: 0` selects Search uses, since Browse always shows *some* list)
+each re-render the panel in place and reset to page 1; Prev/Next re-render
+one page over, clamped at the ends. Choosing a ticket from the **Open a
+ticket** select opens the same ticket detail panel Search's View buttons and
+the hub picker already open (`_ticket_detail_panel`).
+
+Each row: `{TYPE} #{number} · {mention} · {status emoji + word} · <t:created:R>`,
+one page per Text block (not a Section per row — Browse has no per-row
+button, so it does not need one, and packing 10 rows into a single Text
+keeps the panel to 9 components total against the 40 limit, well under
+Search's worst case above).
+
+**Index:** `store.browse`/`store.browse_count` build on `RUNTIME_FILTER`
+(thread tickets only) the same way `store.search` does. A status-filtered
+browse uses `thread_v2_status_created` — its `partialFilterExpression` is
+just `RUNTIME_FILTER`, not a specific status, so any thread-ticket query
+implies it regardless of which status is chosen. But ESR (§2 of
+`docs/mongodb-refactor.md`) needs equality on that index's leading field
+(`status`) for the trailing `created_at` sort to be servable from the index;
+a bare "All status" browse has no equality on `status` at all, so it cannot
+use that index for the sort without an in-memory fallback. `store.browse`
+therefore omits the `status` key from the query entirely for "All" (rather
+than an `$in` over every known status), and a second index,
+`thread_v2_created` (`[("created_at", -1), ("_id", -1)]`, `partialFilterExpression:
+RUNTIME_FILTER`), serves exactly that case.
+
 ## 5. Flags and FWA Chocolate — implemented staff flow
 
 Three flag kinds are staff-authored and match a ticket by Discord ID **or** any

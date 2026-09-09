@@ -681,12 +681,20 @@ def build_hub_components(
                 is_disabled=not has_open,
                 options=_open_picker_options(open_tickets),
             )]),
-            ActionRow(components=[Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"ticket_v2_console_find:{HUB_ACTION_ID}",
-                label="Find a ticket",
-                emoji="🔍",
-            )]),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"ticket_v2_console_find:{HUB_ACTION_ID}",
+                    label="Find a ticket",
+                    emoji="🔍",
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"ticket_v2_console_browse:{HUB_ACTION_ID}",
+                    label="Browse tickets",
+                    emoji="📋",
+                ),
+            ]),
         ],
     )]
 
@@ -730,6 +738,12 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
     )
 
 
+# Bump whenever the hub's fixed layout (buttons, headings) changes so a
+# running hub redraws once after deploy instead of waiting for the next
+# ticket event.
+HUB_LAYOUT_VERSION = 2
+
+
 async def _chart_signature(mongo: MongoClient) -> str:
     """A stable fingerprint of the hub chart's own inputs: console_counts
     plus flag counts.
@@ -746,7 +760,10 @@ async def _chart_signature(mongo: MongoClient) -> str:
     statuses, by_type = _coerce_counts(raw_counts)
     flags = flag_counts if isinstance(flag_counts, Mapping) else {}
     return json.dumps(
-        {"statuses": statuses, "by_type": by_type, "flags": flags},
+        {
+            "layout": HUB_LAYOUT_VERSION,
+            "statuses": statuses, "by_type": by_type, "flags": flags,
+        },
         sort_keys=True, separators=(",", ":"),
     )
 
@@ -1700,6 +1717,222 @@ async def _render_search_session(
         ticket_types,
         results,
         view_action_ids=view_action_ids,
+        total=total,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Browse tickets -- an ephemeral, paged, filterable list. Unlike Find/Search
+# (free-text query, up-to-3 statuses, per-row View buttons), Browse has no
+# text query, one status/type/period at a time, and a single "Open a ticket"
+# select instead of a button per row, so it is its own small state machine
+# next to the search one above.
+BROWSE_PAGE_SIZE = 10
+BROWSE_STATUS_OPTIONS: tuple[tuple[str, str, str], ...] = (
+    ("all", "All statuses", "📋"),
+    ("open", "Open", STATUS_META["open"][1]),
+    ("approved", "Approved", STATUS_META["approved"][1]),
+    ("denied", "Denied", STATUS_META["denied"][1]),
+)
+BROWSE_TYPE_OPTIONS: tuple[tuple[str, str, str], ...] = (
+    ("all", "All clan types", "📋"),
+    ("main", "Main clan", "🏆"),
+    ("fwa", "FWA clan", "💎"),
+)
+BROWSE_PERIOD_OPTIONS: tuple[tuple[str, str, str], ...] = (
+    ("all", "All time", "📋"),
+    ("7", "Last 7 days", "🗓️"),
+    ("30", "Last 30 days", "🗓️"),
+    ("90", "Last 90 days", "🗓️"),
+)
+BROWSE_PERIOD_DAYS = {"7": 7, "30": 30, "90": 90}
+
+
+def _browse_since(period: str) -> datetime | None:
+    days = BROWSE_PERIOD_DAYS.get(period)
+    if not days:
+        return None
+    return utcnow() - timedelta(days=days)
+
+
+def _browse_total_pages(total: int, page_size: int = BROWSE_PAGE_SIZE) -> int:
+    amount = max(1, int(page_size))
+    return max(1, -(-max(0, int(total)) // amount))
+
+
+def _clamp_browse_page(page: int, total_pages: int) -> int:
+    return max(1, min(int(page), max(1, int(total_pages))))
+
+
+def _browse_option_label(options: Sequence[tuple[str, str, str]], value: str) -> str:
+    return next((label for key, label, _emoji in options if key == value), options[0][1])
+
+
+def _browse_row_line(ticket_doc: Mapping) -> str:
+    status_label, status_emoji, _accent = _status_meta(ticket_doc.get("status"))
+    return (
+        f"{_ticket_label(ticket_doc)} · {_mention(ticket_doc.get('user_id'))} · "
+        f"{status_emoji} {status_label} · {_timestamp(ticket_doc.get('created_at'))}"
+    )
+
+
+def _browse_picker_options(results: Sequence[Mapping]) -> list[SelectOption]:
+    options: list[SelectOption] = []
+    for ticket_doc in results[:BROWSE_PAGE_SIZE]:
+        ticket_id = _ticket_id(ticket_doc)
+        if not ticket_id or len(ticket_id) > 100:
+            continue
+        options.append(SelectOption(
+            label=_ticket_label(ticket_doc, username=True, markdown=False),
+            value=ticket_id,
+            emoji="💎" if _ticket_type(ticket_doc) == "fwa" else "🏆",
+        ))
+    if options:
+        return options
+    return [SelectOption(
+        label="No tickets to open",
+        value="no-browse-tickets",
+        description="No tickets match those filters.",
+    )]
+
+
+def _browse_filter_selects(
+    action_id: str, status: str, ticket_type: str, period: str,
+) -> list[ActionRow]:
+    def _row(name: str, options: Sequence[tuple[str, str, str]], current: str) -> ActionRow:
+        return ActionRow(components=[TextSelectMenu(
+            custom_id=f"{name}:{action_id}",
+            placeholder=_browse_option_label(options, current),
+            min_values=1,
+            max_values=1,
+            options=[SelectOption(
+                label=label,
+                value=value,
+                emoji=emoji,
+                is_default=value == current,
+            ) for value, label, emoji in options],
+        )])
+    return [
+        _row("ticket_v2_console_browse_status", BROWSE_STATUS_OPTIONS, status),
+        _row("ticket_v2_console_browse_type", BROWSE_TYPE_OPTIONS, ticket_type),
+        _row("ticket_v2_console_browse_period", BROWSE_PERIOD_OPTIONS, period),
+    ]
+
+
+def build_browse_panel(
+    action_id: str,
+    *,
+    status: str,
+    ticket_type: str,
+    period: str,
+    page: int,
+    total_pages: int,
+    results: Sequence[Mapping],
+    total: int,
+) -> list[Container]:
+    summary = (
+        f"{_browse_option_label(BROWSE_STATUS_OPTIONS, status)} · "
+        f"{_browse_option_label(BROWSE_TYPE_OPTIONS, ticket_type)} · "
+        f"{_browse_option_label(BROWSE_PERIOD_OPTIONS, period)} · "
+        f"Page {page} of {total_pages} · "
+        f"{total} ticket{'s' if total != 1 else ''}"
+    )
+    heading = f"## Browse tickets\n{summary}"
+    footer = "-# Archived threads open in read-only mode and stay archived."
+    rows: list = [
+        Text(content=heading),
+        *_browse_filter_selects(action_id, status, ticket_type, period),
+        Separator(divider=True),
+    ]
+    page_results = results[:BROWSE_PAGE_SIZE]
+    if not page_results:
+        rows.append(Text(content="No tickets match those filters."))
+    else:
+        lines = "\n".join(_browse_row_line(ticket_doc) for ticket_doc in page_results)
+        (list_budget,) = _allocate_message_text(
+            [len(lines)], fixed_texts=[heading, footer], minimum_lengths=[min(1, len(lines))],
+        )
+        rows.append(Text(content=_truncate_text(lines, list_budget)))
+    rows.append(ActionRow(components=[TextSelectMenu(
+        custom_id=f"ticket_v2_console_browse_pick:{action_id}",
+        placeholder="Open a ticket" if page_results else "No tickets to open",
+        min_values=1,
+        max_values=1,
+        is_disabled=not page_results,
+        options=_browse_picker_options(page_results),
+    )]))
+    rows.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"ticket_v2_console_browse_page:{action_id}|prev",
+            label="Prev",
+            is_disabled=page <= 1,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"ticket_v2_console_browse_page:{action_id}|next",
+            label="Next",
+            is_disabled=page >= total_pages,
+        ),
+    ]))
+    rows.append(Text(content=footer))
+    return [Container(accent_color=ACCENT_BLUE, components=rows)]
+
+
+async def _create_browse_state(
+    mongo: MongoClient, *, owner_id: int, guild_id: int,
+) -> str:
+    action_id = uuid.uuid4().hex
+    await insert_state(mongo, {
+        "_id": action_id,
+        "type": "ticket_v2_console_browse",
+        "owner_id": int(owner_id),
+        "guild_id": int(guild_id),
+        "status": "all",
+        "ticket_type": "all",
+        "period": "all",
+        "page": 1,
+    })
+    return action_id
+
+
+async def _render_browse_session(
+    mongo: MongoClient,
+    *,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str,
+    ticket_type: str,
+    period: str,
+    page: int,
+) -> list[Container]:
+    since = _browse_since(period)
+    statuses = (status,) if status in schema.TICKET_STATUSES else ()
+    ticket_types = (ticket_type,) if ticket_type in schema.TICKET_TYPES else ()
+    total = await store.browse_count(
+        mongo, statuses=statuses or None, ticket_types=ticket_types or None, since=since,
+    )
+    total_pages = _browse_total_pages(total)
+    clamped_page = _clamp_browse_page(page, total_pages)
+    results = await store.browse(
+        mongo,
+        statuses=statuses or None,
+        ticket_types=ticket_types or None,
+        since=since,
+        page=clamped_page,
+        page_size=BROWSE_PAGE_SIZE,
+    )
+    if clamped_page != int(page):
+        await update_state(mongo, action_id, {"$set": {"page": clamped_page}})
+    return build_browse_panel(
+        action_id,
+        status=status,
+        ticket_type=ticket_type,
+        period=period,
+        page=clamped_page,
+        total_pages=total_pages,
+        results=results,
         total=total,
     )
 
@@ -4735,6 +4968,271 @@ async def ticket_console_type(
         ticket_types=ticket_types,
         field="ticket_types",
         allowed={"main", "fwa"},
+    )
+
+
+@register_action("ticket_v2_console_browse", no_return=True)
+@lightbulb.di.with_di
+async def ticket_console_browse(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        await _execute_private_panel(
+            ctx,
+            _notice(
+                "Recruiter access required",
+                "Only recruiters can use the ticket console.",
+                accent=ACCENT_RED,
+            ),
+        )
+        return
+    owner_id = int(ctx.user.id)
+    guild_id = _int(getattr(ctx, "guild_id", 0))
+    browse_id = await _create_browse_state(mongo, owner_id=owner_id, guild_id=guild_id)
+    components = await _render_browse_session(
+        mongo,
+        action_id=browse_id,
+        owner_id=owner_id,
+        guild_id=guild_id,
+        status="all",
+        ticket_type="all",
+        period="all",
+        page=1,
+    )
+    await _execute_private_panel(ctx, components)
+
+
+async def _browse_filter_action(
+    ctx,
+    mongo: MongoClient,
+    *,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str,
+    ticket_type: str,
+    period: str,
+    page: int,
+    field: str,
+    allowed: set[str],
+) -> list[Container] | None:
+    if int(ctx.user.id) != int(owner_id):
+        await ctx.respond("This panel belongs to someone else.", ephemeral=True)
+        return None
+    if not await _require_recruiter(ctx, mongo):
+        # Same reasoning as `_filter_action`: the dispatcher already deferred
+        # this interaction as a message edit, so returning None here would
+        # blank a panel that still legitimately belongs to this owner.
+        return await _render_browse_session(
+            mongo,
+            action_id=action_id,
+            owner_id=owner_id,
+            guild_id=guild_id,
+            status=status,
+            ticket_type=ticket_type,
+            period=period,
+            page=page,
+        )
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    chosen = str(values[0]) if values and str(values[0]) in allowed else "all"
+    await update_state(mongo, action_id, {"$set": {field: chosen, "page": 1}})
+    next_status = chosen if field == "status" else status
+    next_type = chosen if field == "ticket_type" else ticket_type
+    next_period = chosen if field == "period" else period
+    return await _render_browse_session(
+        mongo,
+        action_id=action_id,
+        owner_id=owner_id,
+        guild_id=guild_id,
+        status=next_status,
+        ticket_type=next_type,
+        period=next_period,
+        page=1,
+    )
+
+
+@register_action("ticket_v2_console_browse_status", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_status(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str = "all",
+    ticket_type: str = "all",
+    period: str = "all",
+    page: int = 1,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _browse_filter_action(
+        ctx,
+        mongo,
+        action_id=action_id,
+        owner_id=owner_id,
+        guild_id=guild_id,
+        status=status,
+        ticket_type=ticket_type,
+        period=period,
+        page=page,
+        field="status",
+        allowed=set(schema.TICKET_STATUSES) | {"all"},
+    )
+
+
+@register_action("ticket_v2_console_browse_type", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_type(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str = "all",
+    ticket_type: str = "all",
+    period: str = "all",
+    page: int = 1,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _browse_filter_action(
+        ctx,
+        mongo,
+        action_id=action_id,
+        owner_id=owner_id,
+        guild_id=guild_id,
+        status=status,
+        ticket_type=ticket_type,
+        period=period,
+        page=page,
+        field="ticket_type",
+        allowed=set(schema.TICKET_TYPES) | {"all"},
+    )
+
+
+@register_action("ticket_v2_console_browse_period", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_period(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str = "all",
+    ticket_type: str = "all",
+    period: str = "all",
+    page: int = 1,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _browse_filter_action(
+        ctx,
+        mongo,
+        action_id=action_id,
+        owner_id=owner_id,
+        guild_id=guild_id,
+        status=status,
+        ticket_type=ticket_type,
+        period=period,
+        page=page,
+        field="period",
+        allowed=set(BROWSE_PERIOD_DAYS) | {"all"},
+    )
+
+
+@register_action("ticket_v2_console_browse_page", preload_state=False)
+@lightbulb.di.with_di
+async def ticket_console_browse_page(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> list[Container] | None:
+    browse_id, _, direction = str(action_id or "").partition("|")
+    data = await get_state(mongo, browse_id, {"_id": 0})
+    if not data or data.get("type") != "ticket_v2_console_browse":
+        return _notice(
+            "Browse expired",
+            "Use **Browse tickets** on the console to start again.",
+            accent=ACCENT_RED,
+        )
+    owner_id = _int(data.get("owner_id"))
+    guild_id = _int(data.get("guild_id"))
+    status = str(data.get("status") or "all")
+    ticket_type = str(data.get("ticket_type") or "all")
+    period = str(data.get("period") or "all")
+    page = _int(data.get("page")) or 1
+    if int(ctx.user.id) != owner_id:
+        await ctx.respond("This panel belongs to someone else.", ephemeral=True)
+        return None
+    if not await _require_recruiter(ctx, mongo):
+        return await _render_browse_session(
+            mongo,
+            action_id=browse_id,
+            owner_id=owner_id,
+            guild_id=guild_id,
+            status=status,
+            ticket_type=ticket_type,
+            period=period,
+            page=page,
+        )
+    delta = 1 if direction == "next" else -1 if direction == "prev" else 0
+    next_page = max(1, page + delta)
+    await update_state(mongo, browse_id, {"$set": {"page": next_page}})
+    return await _render_browse_session(
+        mongo,
+        action_id=browse_id,
+        owner_id=owner_id,
+        guild_id=guild_id,
+        status=status,
+        ticket_type=ticket_type,
+        period=period,
+        page=next_page,
+    )
+
+
+@register_action("ticket_v2_console_browse_pick", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_pick(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    if int(ctx.user.id) != int(owner_id):
+        return _notice(
+            "Private panel",
+            "Run your own browse to open this ticket.",
+            accent=ACCENT_RED,
+        )
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        return _notice(
+            "Recruiter access required",
+            "Only recruiters can use the ticket console.",
+            accent=ACCENT_RED,
+        )
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    ticket_id = str(values[0]) if values else ""
+    if ticket_id == "no-browse-tickets" or not ticket_id:
+        return _notice(
+            "No tickets",
+            "No tickets match those filters.",
+        )
+    ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
+    if ticket_doc is None:
+        return _notice(
+            "Ticket not found",
+            "The ticket record is no longer available.",
+            accent=ACCENT_RED,
+        )
+    return await _ticket_detail_panel(
+        mongo,
+        ticket_doc,
+        owner_id=owner_id,
+        guild_id=guild_id,
     )
 
 
