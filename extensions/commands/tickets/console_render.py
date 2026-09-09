@@ -36,7 +36,8 @@ NOT_LOYAL = "#f17511"
 
 _ROOT = Path(__file__).resolve().parents[3]
 _ASSETS = _ROOT / "assets" / "tickets"
-_FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
+_VENDORED_FONT_DIR = _ROOT / "assets" / "fonts" / "dejavu"
+_SYSTEM_FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,14 +74,15 @@ def _font(size: int, *, bold: bool = False, mono: bool = False):
         else "DejaVuSans-Bold.ttf" if bold
         else "DejaVuSans.ttf"
     )
-    path = _FONT_DIR / name
-    try:
-        return ImageFont.truetype(str(path), size * SCALE)
-    except OSError:
-        # Pillow normally ships DejaVu under this family name even when the
-        # Linux package path differs.  Let this second lookup be the portable
-        # fallback instead of silently changing the chart to bitmap text.
-        return ImageFont.truetype(name, size * SCALE)
+    vendored = _VENDORED_FONT_DIR / name
+    if vendored.exists():
+        return ImageFont.truetype(str(vendored), size * SCALE)
+    system = _SYSTEM_FONT_DIR / name
+    if system.exists():
+        return ImageFont.truetype(str(system), size * SCALE)
+    raise OSError(
+        f"DejaVu font {name!r} not found in {_VENDORED_FONT_DIR} or {_SYSTEM_FONT_DIR}"
+    )
 
 
 def _age_copy(value: datetime | None) -> str:

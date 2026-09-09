@@ -15,6 +15,8 @@ Not Loyal to WU (assets/tickets/flag_*.png, real alpha transparency, confirmed).
 Everything else is hand-drawn with plain PIL shapes (no emoji font) so it
 renders identically on any box, no color-emoji-font dependency at deploy.
 """
+import os
+
 from PIL import Image, ImageDraw, ImageFont
 
 S = 2  # supersample for crisp text
@@ -30,9 +32,14 @@ def paste_icon(path, cx, cy, size):
     img.paste(icon, (int(cx*S-size*S/2), int(cy*S-size*S/2)), icon)
 
 def F(size, bold=False, mono=False):
-    p = "/usr/share/fonts/truetype/dejavu/"
-    f = p + ("DejaVuSansMono.ttf" if mono else "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")
-    return ImageFont.truetype(f, size*S)
+    name = "DejaVuSansMono.ttf" if mono else "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    vendored = "assets/fonts/dejavu/" + name
+    system = "/usr/share/fonts/truetype/dejavu/" + name
+    if os.path.exists(vendored):
+        return ImageFont.truetype(vendored, size*S)
+    if os.path.exists(system):
+        return ImageFont.truetype(system, size*S)
+    raise OSError(f"DejaVu font {name!r} not found in assets/fonts/dejavu/ or {system}")
 
 def rr(xy, r, fill=None, outline=None, width=1):
     d.rounded_rectangle([c*S for c in xy], radius=r*S, fill=fill, outline=outline, width=width*S)

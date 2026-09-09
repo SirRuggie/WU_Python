@@ -1,6 +1,8 @@
 import asyncio
 import io
+from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from extensions.commands.tickets import console_render
@@ -53,3 +55,22 @@ def test_async_renderer_moves_pillow_off_the_event_loop(monkeypatch):
 
     assert result == b"png"
     assert calls == [(console_render.render_overview_sync, (_counts(),))]
+
+
+def test_overview_renders_from_vendored_fonts_without_the_system_directory(monkeypatch):
+    monkeypatch.setattr(console_render, "_SYSTEM_FONT_DIR", Path("/nonexistent/dejavu"))
+    assert console_render._VENDORED_FONT_DIR.is_dir()
+
+    payload = console_render.render_overview_sync(_counts())
+
+    assert payload.startswith(b"\x89PNG\r\n\x1a\n")
+    with Image.open(io.BytesIO(payload)) as image:
+        assert image.size == (1400, 740)
+
+
+def test_missing_font_raises_a_clear_error_naming_the_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(console_render, "_VENDORED_FONT_DIR", tmp_path)
+    monkeypatch.setattr(console_render, "_SYSTEM_FONT_DIR", tmp_path / "also-missing")
+
+    with pytest.raises(OSError, match="DejaVuSans.ttf"):
+        console_render._font(16)
