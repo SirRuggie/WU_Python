@@ -124,6 +124,19 @@ def register_action(
         requires_state: bool = False,
         preload_state: bool = True,
 ):
+    if requires_state and not preload_state:
+        # _dispatch only checks requires_state inside the `if action.preload_state`
+        # branch (see the `else: kw = {}` right below it) -- with preload_state=False
+        # that check never runs, so requires_state=True is a silent no-op: an
+        # expired/missing state row is never refused, it is just handed to the
+        # handler as an empty dict. Fail at registration instead of at runtime.
+        raise ValueError(
+            f"register_action({name!r}): requires_state=True has no effect when "
+            "preload_state=False -- state is never loaded to check. Drop "
+            "requires_state, or drop preload_state=False if the handler does "
+            "need preloaded state before it runs."
+        )
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         sig = inspect.signature(func)
         hints = get_type_hints(func)

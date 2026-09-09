@@ -3856,7 +3856,7 @@ async def ticket_console_find(
 
 @register_action(
     "ticket_v2_console_search_again", opens_modal=True, no_return=True,
-    requires_state=True, preload_state=False,
+    preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_console_search_again(
@@ -4868,7 +4868,7 @@ async def ticket_console_overturn_approve_go(
 
 @register_action(
     "ticket_v2_overturn_deny_open", opens_modal=True, no_return=True,
-    requires_state=True, preload_state=False,
+    preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_overturn_deny_open(
@@ -4986,7 +4986,7 @@ async def ticket_overturn_deny_submit(
 
 @register_action(
     "ticket_v2_console_deny", opens_modal=True, no_return=True,
-    requires_state=True, preload_state=False,
+    preload_state=False,
 )
 @lightbulb.di.with_di
 async def ticket_console_deny(

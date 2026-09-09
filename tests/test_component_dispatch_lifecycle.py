@@ -18,6 +18,7 @@ import asyncio
 from types import SimpleNamespace
 
 import hikari
+import pytest
 
 from extensions import components
 from extensions.commands import cards as cards_command
@@ -214,3 +215,22 @@ def test_save_confirmed_cards_survives_a_dead_token(monkeypatch):
         "Save confirmed cards must reach the player even when the "
         "interaction token expired before the defer"
     )
+
+
+def test_requires_state_without_preload_raises_at_registration():
+    """`_dispatch` only checks `requires_state` inside `if action.preload_state:`
+    -- with `preload_state=False` that branch never runs, so `requires_state=True`
+    used to be silently ignored: an expired/missing state row was never
+    refused, it was just handed to the handler as an empty dict. The invalid
+    combination must fail fast at registration instead of silently at
+    runtime."""
+    async def handler(**_kwargs):
+        return None
+
+    with pytest.raises(ValueError, match="requires_state=True has no effect"):
+        components.register_action(
+            "test_probe_requires_state_no_preload",
+            requires_state=True, preload_state=False,
+        )(handler)
+
+    assert "test_probe_requires_state_no_preload" not in components.registered_functions

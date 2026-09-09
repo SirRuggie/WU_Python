@@ -336,7 +336,7 @@ async def deny_main_default_handler(
 
 @register_action(
     "ticket_v2_deny_custom", no_return=True, opens_modal=True,
-    requires_state=True, preload_state=False,
+    preload_state=False,
 )
 @lightbulb.di.with_di
 async def deny_custom_handler(
