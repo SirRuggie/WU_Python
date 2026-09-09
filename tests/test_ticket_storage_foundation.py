@@ -1494,6 +1494,36 @@ def test_insert_is_idempotent_and_never_writes_legacy_authority():
     assert mongo.button_store.documents == {}
 
 
+@pytest.mark.parametrize("field", [
+    "location", "location.id", "guild_id", "channel_id", "thread_id",
+    "player_tag", "player_tags",
+])
+def test_update_one_rejects_guarded_identity_field_writes(field):
+    mongo = _mongo(_ticket())
+    with pytest.raises(store.GuardedFieldWriteError):
+        asyncio.run(store.update_one(
+            mongo, {"_id": "ticket_101"}, {"$set": {field: "anything"}},
+        ))
+    assert mongo.tickets.documents["ticket_101"]["channel_id"] == 101
+
+
+def test_update_many_rejects_guarded_identity_field_writes():
+    mongo = _mongo(_ticket())
+    with pytest.raises(store.GuardedFieldWriteError):
+        asyncio.run(store.update_many(
+            mongo, {"status": "open"}, {"$set": {"guild_id": 999}},
+        ))
+
+
+def test_update_one_allows_unrelated_field_writes():
+    mongo = _mongo(_ticket())
+    result = asyncio.run(store.update_one(
+        mongo, {"_id": "ticket_101"}, {"$set": {"handled_by_name": "Recruiter"}},
+    ))
+    assert result.matched_count == 1
+    assert mongo.tickets.documents["ticket_101"]["handled_by_name"] == "Recruiter"
+
+
 def test_status_transition_is_cas_audited_and_missing_has_no_write():
     mongo = _mongo(_ticket())
     won = asyncio.run(store.transition(

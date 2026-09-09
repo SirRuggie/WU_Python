@@ -57,6 +57,10 @@ class TicketConflictError(TicketStoreError):
     """An idempotency key already belongs to a different ticket."""
 
 
+class GuardedFieldWriteError(TicketStoreError):
+    """A generic update tried to set one half of a duplicated identity field."""
+
+
 class OpenTicketExistsError(TicketConflictError):
     def __init__(self, existing: dict | None = None):
         super().__init__("an open ticket already exists for this applicant and type")
@@ -347,13 +351,41 @@ async def insert_one(mongo: MongoClient, doc: dict) -> dict:
     return committed
 
 
+# location.id/channel_id, location.staff_space_id/thread_id,
+# location.guild_id/guild_id, and player_tags[0]/player_tag are each stored
+# twice (rule 5/6). `transition()` keeps its own writes off these by
+# stripping them out of `extra`; the generic `update_one`/`update_many`
+# passthrough has no such filter, so it is rejected here instead — a caller
+# that genuinely needs to change one of these goes through transition(),
+# compare_and_swap_linked_accounts(), or another dedicated setter that
+# writes both halves together under the `rev` CAS.
+GUARDED_IDENTITY_FIELDS = frozenset({
+    "location", "guild_id", "channel_id", "thread_id",
+    "player_tag", "player_tags",
+})
+
+
+def _reject_guarded_identity_writes(update: Mapping) -> None:
+    for operator, fields in update.items():
+        if not str(operator).startswith("$") or not isinstance(fields, Mapping):
+            continue
+        for key in fields:
+            if str(key).split(".", 1)[0] in GUARDED_IDENTITY_FIELDS:
+                raise GuardedFieldWriteError(
+                    f"update_one/update_many cannot write duplicated identity "
+                    f"field '{key}'; use transition() or a dedicated setter"
+                )
+
+
 async def update_one(mongo: MongoClient, filt: dict, update: dict):
+    _reject_guarded_identity_writes(update)
     return await mongo.tickets.update_one(
         {**dict(filt), **RUNTIME_FILTER}, update
     )
 
 
 async def update_many(mongo: MongoClient, filt: dict, update: dict):
+    _reject_guarded_identity_writes(update)
     return await mongo.tickets.update_many(
         {**dict(filt), **RUNTIME_FILTER}, update
     )
