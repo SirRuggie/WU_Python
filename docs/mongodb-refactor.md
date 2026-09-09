@@ -106,6 +106,26 @@ Findings that belong to it are recorded here so nobody re-discovers them:
   unique index on `tag` and update every read/write that keys on `_id`
   (`update_clan_info.py` lines 300/442/589/681/702/919/993/1268/1539). Do it
   as its own commit when this module is refactored, not before (rule 7).
+- [ ] Shape verdict (2026-09-08): one flat document per clan with bot config
+  embedded is correct; keep it. Fix the hygiene below, not the shape.
+- [ ] Dead fields: `status` and `th_attribute` are read
+  (`clan/info_hub/helpers.py:75`, `info_hub/handlers.py:120,261,322`) but
+  never written anywhere; `profile` and `thread_message_id` are insert-only
+  defaults (`update_clan_info.py:236,239`) never used. Remove them or give
+  them a writer (rule 5).
+- [ ] `name` is copied from the Clash API at insert (`update_clan_info.py:235`)
+  and never re-synced. Refresh it on the existing scheduler or on
+  `/clan info` reads (rule 8).
+- [ ] Every clan loaded per interaction: `clan/list.py:48`,
+  `clan/dashboard/dashboard.py:36`, `info_hub/helpers.py:12,75`,
+  `fwa/links.py:114,168`, `family_links.py:442-608`, four `recruit/dashboard`
+  sites. Use one shared cached loader; `autocomplete.py:59-121` already has a
+  300 s cache to extend (rule 12).
+- [ ] `fwa_points` `config.watch_list` (`tasks/fwa_points_monitor.py:292-296`)
+  duplicates tag+name from `clans`; derive it from `clans` where `type` is
+  FWA (rule 8).
+- [ ] Add `schema_version` and a `normalize_clan_document` on read, as
+  `extensions/commands/tickets/schema.py` does (rule 5).
 - [ ] `update_clan_info.py:1440` creates the Discord emoji before `clans.update_one`, and deletes the emoji before `delete_one` — either failure leaves a clan row pointing at a nonexistent emoji. Persist the mention first, delete after (rule 13).
 
 **recruit** (`extensions/commands/recruit/`, `extensions/tasks/recruit_role_cleanup.py`)
