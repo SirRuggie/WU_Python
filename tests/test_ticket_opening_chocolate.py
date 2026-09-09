@@ -7,6 +7,7 @@ import uuid
 
 import hikari
 import pytest
+from hikari.impl import TextDisplayComponentBuilder as Text
 from pymongo import AsyncMongoClient, ReturnDocument
 
 from extensions.commands.fwa.chocolate_links import chocolate_url, is_valid_tag
@@ -341,14 +342,61 @@ def test_chocolate_delivery_is_durable_duplicate_safe_and_updates_in_place(monke
     assert (rest.creates, rest.edits) == (3, 2)
     assert len(states.document["chocolate_message_ids"]) == 2
 
-    # Simulate a lost Chocolate ID checkpoint. Marker recovery must reuse both
-    # committed messages rather than posting duplicates after restart.
+    # Simulate a lost Chocolate ID checkpoint. Recovery must find both
+    # committed messages by their visible title text -- no marker line is
+    # posted to Discord -- and reuse them rather than posting duplicates.
     states.document.pop("chocolate_message_ids")
     states.document.pop("chocolate_fingerprints")
     before_creates = rest.creates
     asyncio.run(console.deliver_staff_identity_context(bot, mongo, refreshed))
     assert rest.creates == before_creates
     assert len(states.document["chocolate_message_ids"]) == 2
+    assert set(states.document["chocolate_message_ids"]) == {
+        message.id for message in rest.messages
+        if any("cc.fwafarm.com" in content for content in _contents(message.components))
+    }
+
+
+def test_freshly_posted_checklist_has_no_marker_text(monkeypatch):
+    async def none(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(console.flag_store, "list_for_identity", none)
+    monkeypatch.setattr(console.store, "history_for", none)
+    states = _StateCollection()
+    rest = _Rest()
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+    mongo = SimpleNamespace(ticket_automation_state=states)
+
+    asyncio.run(console.deliver_staff_identity_context(bot, mongo, _ticket(count=37)))
+
+    assert rest.messages
+    for message in rest.messages:
+        for content in _contents(message.components):
+            assert "ticket-chocolate:" not in content
+
+
+def test_legacy_marker_message_is_still_recognised():
+    """A page posted before this change still carries the old marker line;
+    the structural finder must keep recognising it so already-open tickets
+    keep working."""
+
+    ticket = _ticket(count=1)
+    marker, components = console.build_staff_chocolate_checklist(ticket)[0]
+    legacy_components = [*components, Text(content=f"-# {marker}")]
+    message = SimpleNamespace(
+        id=42,
+        author=SimpleNamespace(id=7),
+        components=legacy_components,
+    )
+    rest = _Rest()
+    rest.messages.append(message)
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+
+    found = asyncio.run(
+        console._find_chocolate_messages(bot, 102, ticket["_id"])
+    )
+    assert found[marker] is message
 
 
 def test_multi_page_delivery_renews_before_every_rest_write(monkeypatch):

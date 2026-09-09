@@ -79,6 +79,12 @@ HUB_RECONCILE_MAX_SECONDS = 3600.0
 CONTEXT_LEASE = timedelta(minutes=5)
 CONTEXT_RECOVERY_LIMIT = 25
 STAFF_CONTEXT_MARKER_PREFIX = "ticket-staff-context"
+# Internal bookkeeping key only -- never posted to Discord. Chocolate
+# checklist messages are identified by their visible title text instead
+# (see `_chocolate_title_page`); this prefix is kept only to recognise
+# already-open tickets whose messages still carry the old marker line.
+CHOCOLATE_MARKER_PREFIX = "ticket-chocolate"
+CHOCOLATE_TITLE_PREFIX = "🍫 FWA Chocolate checklist"
 REQUIRED_HUB_BOT_PERMISSIONS = (
     hikari.Permissions.VIEW_CHANNEL
     | hikari.Permissions.SEND_MESSAGES
@@ -2449,11 +2455,11 @@ def build_staff_chocolate_checklist(
         "automatically; record a verified concern through Manage Flags."
     )
     if not accounts:
-        marker = f"ticket-chocolate:{ticket_id}:1"
+        marker = _chocolate_marker(ticket_id, 1)
         return [(marker, [Container(
             accent_color=ACCENT_YELLOW,
             components=[
-                Text(content="## 🍫 FWA Chocolate checklist"),
+                Text(content=f"## {CHOCOLATE_TITLE_PREFIX}"),
                 Text(content=state_copy),
                 Text(content=disclaimer),
             ],
@@ -2464,18 +2470,16 @@ def build_staff_chocolate_checklist(
     for start in range(0, total, 20):
         group = accounts[start:start + 20]
         end = start + len(group)
-        marker = f"ticket-chocolate:{ticket_id}:{start // 20 + 1}"
+        marker = _chocolate_marker(ticket_id, start // 20 + 1)
         lines = []
         for tag, name in group:
             label_name = _chocolate_link_label(name)
             lines.append(f"- [{label_name} · `{tag}`]({chocolate_url(tag)})")
-        title = f"## 🍫 FWA Chocolate checklist · {start + 1}–{end} of {total}"
+        title = f"## {CHOCOLATE_TITLE_PREFIX} · {start + 1}–{end} of {total}"
         body = "\n".join(lines)
-        # Delivery appends this durable marker. Reserve its text budget here so
-        # every Components V2 message stays within Discord's 4,000-character
-        # aggregate Text Display limit.
-        marker_budget = len(f"-# {marker}")
-        message_budget = DISCORD_MESSAGE_TEXT_LIMIT - marker_budget
+        # The visible title carries the page identity now, not a hidden
+        # marker line, so the full aggregate limit is available here.
+        message_budget = DISCORD_MESSAGE_TEXT_LIMIT
         # Keep each group independently safe even with maximum Clash names.
         if sum(map(len, (title, state_copy, body, disclaimer))) > message_budget:
             body = "\n".join(
@@ -2676,12 +2680,52 @@ def _component_markers_with_prefix(component, prefix: str) -> set[str]:
     return result
 
 
-async def _find_staff_context_messages_with_prefix(
+def _chocolate_marker(ticket_id: str, page: int) -> str:
+    """Internal bookkeeping key only -- never posted to Discord."""
+
+    return f"{CHOCOLATE_MARKER_PREFIX}:{ticket_id}:{page}"
+
+
+_CHOCOLATE_RANGE_RE = re.compile(r"·\s*(\d+)–\d+\s*of\s*\d+\s*$")
+
+
+def _chocolate_title_page(component) -> int | None:
+    """Resolve a checklist container's page number from its visible title.
+
+    A retired page's title carries no range and is never matched here --
+    once retired, a page is no longer tracked or re-managed.
+    """
+
+    content = str(getattr(component, "content", "") or "").strip()
+    if content.startswith(f"## {CHOCOLATE_TITLE_PREFIX}"):
+        if content.endswith("page retired"):
+            return None
+        match = _CHOCOLATE_RANGE_RE.search(content)
+        if match:
+            return (int(match.group(1)) - 1) // 20 + 1
+        # Only the bare no-accounts title is page 1; any other unparsed
+        # range must not be misclaimed as page 1.
+        return 1 if content == f"## {CHOCOLATE_TITLE_PREFIX}" else None
+    for child in getattr(component, "components", ()) or ():
+        page = _chocolate_title_page(child)
+        if page is not None:
+            return page
+    return None
+
+
+async def _find_chocolate_messages(
     bot: hikari.GatewayBot,
     staff_id: int,
-    prefix: str,
+    ticket_id: str,
 ) -> dict[str, object]:
-    """Find the newest bot-authored message for each durable marker prefix."""
+    """Find the newest bot-authored FWA Chocolate checklist message per page.
+
+    Pages are identified structurally: the ticket's own staff thread (one
+    ticket per thread), authored by the bot, titled as a checklist page --
+    no bookkeeping text is posted to Discord for this. A message from
+    before this change that still carries the old ``-# ticket-chocolate:...``
+    marker line is still recognised, so already-open tickets keep working.
+    """
 
     get_me = getattr(bot, "get_me", None)
     if not callable(get_me):
@@ -2689,6 +2733,7 @@ async def _find_staff_context_messages_with_prefix(
     me = get_me()
     if me is None:
         raise RuntimeError("bot identity is unavailable")
+    legacy_prefix = f"{CHOCOLATE_MARKER_PREFIX}:{ticket_id}:"
     matches: dict[str, object] = {}
     history = await _message_history(
         bot.rest, staff_id, limit=_STAFF_CONTEXT_SCAN_LIMIT
@@ -2696,14 +2741,40 @@ async def _find_staff_context_messages_with_prefix(
     for message in history:
         if _int(getattr(getattr(message, "author", None), "id", 0)) != int(me.id):
             continue
-        for component in getattr(message, "components", ()) or ():
-            for marker in _component_markers_with_prefix(component, prefix):
-                prior = matches.get(marker)
-                if prior is None or _int(getattr(message, "id", 0)) > _int(
-                    getattr(prior, "id", 0)
-                ):
-                    matches[marker] = message
+        components = getattr(message, "components", ()) or ()
+        page: int | None = None
+        for component in components:
+            for legacy_marker in _component_markers_with_prefix(
+                component, legacy_prefix
+            ):
+                try:
+                    page = int(legacy_marker.rsplit(":", 1)[-1])
+                except ValueError:
+                    continue
+        if page is None:
+            for component in components:
+                page = _chocolate_title_page(component)
+                if page is not None:
+                    break
+        if page is None:
+            continue
+        marker = _chocolate_marker(ticket_id, page)
+        prior = matches.get(marker)
+        if prior is None or _int(getattr(message, "id", 0)) > _int(
+            getattr(prior, "id", 0)
+        ):
+            matches[marker] = message
     return matches
+
+
+async def _find_chocolate_message(
+    bot: hikari.GatewayBot,
+    staff_id: int,
+    ticket_id: str,
+    page: int,
+):
+    found = await _find_chocolate_messages(bot, staff_id, ticket_id)
+    return found.get(_chocolate_marker(ticket_id, page))
 
 
 async def staff_chocolate_context_is_current(
@@ -2737,13 +2808,7 @@ async def staff_chocolate_context_is_current(
     ):
         return False
     expected = [
-        (
-            marker,
-            _context_fingerprint([
-                *components,
-                Text(content=f"-# {marker}"),
-            ]),
-        )
+        (marker, _context_fingerprint(components))
         for marker, components in source
     ]
     stored_ids = [_int(value) for value in state.get("chocolate_message_ids") or ()]
@@ -2752,11 +2817,7 @@ async def staff_chocolate_context_is_current(
     ]
     if len(stored_ids) != len(expected) or len(stored_fingerprints) != len(expected):
         return False
-    recovered = await _find_staff_context_messages_with_prefix(
-        bot,
-        staff_id,
-        f"ticket-chocolate:{ticket_id}:",
-    )
+    recovered = await _find_chocolate_messages(bot, staff_id, ticket_id)
     return all(
         stored_ids[index]
         and stored_fingerprints[index] == fingerprint
@@ -2970,8 +3031,19 @@ async def _upsert_marked_staff_message(
     components: Sequence,
     message_id: int,
     renew_lease,
+    finder=None,
 ) -> int:
-    """Edit one durable marked message, recovering its ID before recreating it."""
+    """Edit one durable marked message, recovering its ID before recreating it.
+
+    ``finder`` overrides how a lost message ID is recovered; it defaults to
+    scanning for the durable marker line. FWA Chocolate checklist pages pass
+    a structural, title-based finder instead since they post no marker line.
+    """
+
+    async def _default_finder():
+        return await _find_staff_context_message(bot, staff_id, marker)
+
+    locate = finder or _default_finder
 
     if message_id:
         try:
@@ -2987,7 +3059,7 @@ async def _upsert_marked_staff_message(
             return message_id
         except hikari.NotFoundError:
             message_id = 0
-            recovered = await _find_staff_context_message(bot, staff_id, marker)
+            recovered = await locate()
             message_id = _int(getattr(recovered, "id", 0))
             if message_id:
                 await renew_lease()
@@ -3016,6 +3088,7 @@ async def _retire_chocolate_message(
     bot: hikari.GatewayBot,
     *,
     staff_id: int,
+    ticket_id: str,
     marker: str,
     message_id: int,
     renew_lease,
@@ -3024,14 +3097,12 @@ async def _retire_chocolate_message(
 
     if not message_id:
         return
-    retired_marker = marker.replace(
-        "ticket-chocolate:", "ticket-chocolate-retired:", 1
-    )
+    page_text = marker.rsplit(":", 1)[-1]
     components = [
         Container(
             accent_color=ACCENT_GREY,
             components=[
-                Text(content="## 🍫 FWA Chocolate checklist · page retired"),
+                Text(content=f"## {CHOCOLATE_TITLE_PREFIX} · page retired"),
                 Text(content=(
                     "Accounts formerly shown on this page are no longer in the "
                     "current linked-account snapshot. Their tags remain in durable "
@@ -3039,7 +3110,6 @@ async def _retire_chocolate_message(
                 )),
             ],
         ),
-        Text(content=f"-# {retired_marker}"),
     ]
     try:
         await renew_lease()
@@ -3052,7 +3122,11 @@ async def _retire_chocolate_message(
             mentions_everyone=False,
         )
     except hikari.NotFoundError:
-        recovered = await _find_staff_context_message(bot, staff_id, marker)
+        recovered = None
+        if page_text.isdigit():
+            recovered = await _find_chocolate_message(
+                bot, staff_id, ticket_id, int(page_text)
+            )
         recovered_id = _int(getattr(recovered, "id", 0))
         if recovered_id:
             await renew_lease()
@@ -3176,20 +3250,17 @@ async def deliver_staff_identity_context(
         components = [*components, Text(content=f"-# {marker}")]
         fingerprint = _context_fingerprint(components)
 
-        prepared_chocolate: list[tuple[str, list, str]] = []
-        for chocolate_marker, chocolate_components in chocolate_source:
-            marked = [
-                *chocolate_components,
-                Text(content=f"-# {chocolate_marker}"),
-            ]
-            prepared_chocolate.append((
+        prepared_chocolate: list[tuple[str, list, str]] = [
+            (
                 chocolate_marker,
-                marked,
-                _context_fingerprint(marked),
-            ))
+                chocolate_components,
+                _context_fingerprint(chocolate_components),
+            )
+            for chocolate_marker, chocolate_components in chocolate_source
+        ]
         stored_chocolate_ids = state.get("chocolate_message_ids") or ()
         stored_chocolate_fingerprints = state.get("chocolate_fingerprints") or ()
-        chocolate_prefix = f"ticket-chocolate:{ticket_id}:"
+        chocolate_prefix = f"{CHOCOLATE_MARKER_PREFIX}:{ticket_id}:"
         chocolate_checkpoint_complete = (
             len(stored_chocolate_ids) >= len(prepared_chocolate)
             and all(
@@ -3200,9 +3271,7 @@ async def deliver_staff_identity_context(
         recovered_chocolate = (
             {}
             if chocolate_checkpoint_complete
-            else await _find_staff_context_messages_with_prefix(
-                bot, staff_id, chocolate_prefix
-            )
+            else await _find_chocolate_messages(bot, staff_id, ticket_id)
             if chocolate_source or stored_chocolate_ids
             else {}
         )
@@ -3315,11 +3384,15 @@ async def deliver_staff_identity_context(
                     components=chocolate_components,
                     message_id=chocolate_ids[index],
                     renew_lease=renew_lease,
+                    finder=lambda page=index + 1: _find_chocolate_message(
+                        bot, staff_id, ticket_id, page
+                    ),
                 )
             for stale_marker, stale_message_id in stale_chocolate_messages.items():
                 await _retire_chocolate_message(
                     bot,
                     staff_id=staff_id,
+                    ticket_id=ticket_id,
                     marker=stale_marker,
                     message_id=stale_message_id,
                     renew_lease=renew_lease,
