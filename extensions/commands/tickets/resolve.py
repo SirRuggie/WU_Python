@@ -50,10 +50,7 @@ from utils.constants import GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
 DENIED_THUMB = "assets/tickets/static/Denied.png"
-# No dedicated "approved"/"accepted" image exists yet in
-# assets/tickets/static/ (only Denied.png does) -- the club logo stands in
-# for it until one is added.
-APPROVAL_THUMB = "assets/branding/logo/WU_Logo.png"
+APPROVAL_THUMB = "assets/tickets/static/Approved.png"
 _log = logging.getLogger(__name__)
 
 RESOLUTION_EFFECT_LEASE = timedelta(minutes=10)
