@@ -95,6 +95,12 @@ channel 1547244294757425212 (`recruiter-desk`).
   Suite at that commit: 1826 passed, 2 skipped.
 
 Checkpoint log (newest first):
+- 2026-09-09 evening: owner-rules follow-up committed `e56a35d` (detection
+  by category+prefix, outcome inference, closed/no-decision status, server
+  3/4 open-ticket policy, owner-test skip, abandoned skip + `include-abandoned`,
+  Browse Closed filter). Suite 1846 passed / 2 skipped. Sonnet review pass
+  running; NOT deployed yet. Next: review verdict, deploy, reset numbering,
+  dry run server 1.
 - 2026-09-09 evening: bulk driver committed `6913fb9`; follow-up item 1
   (owner rules) handed to a sonnet builder.
 
