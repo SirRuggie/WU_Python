@@ -14,6 +14,7 @@ import logging
 import re
 import time
 import uuid
+import weakref
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Sequence
@@ -51,7 +52,28 @@ DELIVERY_RETRY_ATTEMPTS = 3
 _IMMEDIATE_RETIRE_DELIVERY_ERRORS = frozenset({"NotFoundError", "ForbiddenError"})
 
 _creation_index_ready = False
-_creation_lock = asyncio.Lock()
+# Keyed by applicant user_id rather than one global lock: a global lock
+# serialised every applicant's Discord REST calls, link/CoC lookups and
+# delivery behind whichever applicant happened to be creating a ticket at
+# the time, even though nothing in the critical section touches another
+# applicant's data. The ticket-number counter itself is a durable Mongo
+# CAS (see ticket_runtime.reserve_ticket_number) and needs no lock of its
+# own. A weak-value dict lets each applicant's lock disappear once nothing
+# is waiting on it, instead of accumulating one entry per applicant for the
+# life of the process.
+_creation_locks: "weakref.WeakValueDictionary[int, asyncio.Lock]" = (
+    weakref.WeakValueDictionary()
+)
+
+
+def _creation_lock_for(user_id: int) -> asyncio.Lock:
+    """Return this applicant's creation lock, creating it if needed.
+
+    ``WeakValueDictionary.setdefault`` is one synchronous dict operation
+    with no ``await`` inside it, so two coroutines racing on the same
+    not-yet-seen ``user_id`` still resolve to the same ``Lock`` instance.
+    """
+    return _creation_locks.setdefault(int(user_id), asyncio.Lock())
 
 # `_creation_index_ready` is set only on success, so a conflicting row leaves
 # it False forever and every ticket-creation interaction retries the full
@@ -1578,7 +1600,7 @@ async def create_live_thread_ticket(
         )
         raise
 
-    async with _creation_lock:
+    async with _creation_lock_for(user_id):
         # At most one iteration retires a terminal committed pair; the next
         # iteration allocates a new number and pair for the repeat application.
         for _pair_attempt in range(2):

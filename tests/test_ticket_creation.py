@@ -202,6 +202,46 @@ def test_creation_lease_is_global_across_source_guilds():
     assert thread_service._creation_id(999, 30, "main") == "thread:30:main"
 
 
+def test_creation_lock_is_scoped_per_applicant_not_shared_globally():
+    thread_service._creation_locks.clear()
+    same_applicant_again = thread_service._creation_lock_for(30)
+    same_applicant = thread_service._creation_lock_for(30)
+    other_applicant = thread_service._creation_lock_for(31)
+
+    assert same_applicant is same_applicant_again
+    assert same_applicant is not other_applicant
+
+
+def test_two_applicants_creating_at_once_do_not_serialize_on_one_lock():
+    """The old single global _creation_lock meant a second applicant's
+    Discord/CoC/delivery work waited on the first applicant's, even though
+    neither touches the other's data. A per-applicant lock must let the
+    second applicant's lock be acquired immediately while the first is held."""
+    thread_service._creation_locks.clear()
+
+    async def run():
+        async with thread_service._creation_lock_for(30):
+            other_lock = thread_service._creation_lock_for(31)
+            await asyncio.wait_for(other_lock.acquire(), timeout=0.1)
+            other_lock.release()
+        return True
+
+    assert asyncio.run(run()) is True
+
+
+def test_creation_lock_is_garbage_collected_once_nothing_holds_it():
+    """A weak-value dict, not a plain dict keyed by ever-growing applicant
+    IDs, so a finished applicant's lock does not linger for the process
+    lifetime."""
+    import gc
+
+    thread_service._creation_locks.clear()
+    thread_service._creation_lock_for(99)
+    gc.collect()
+
+    assert 99 not in thread_service._creation_locks
+
+
 def test_only_owner_can_establish_initial_ticket_target():
     assert handlers._can_configure_thread_target(
         actor_id=handlers.TICKET_BOOTSTRAP_OWNER_ID,
