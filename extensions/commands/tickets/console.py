@@ -263,6 +263,23 @@ def _player_tags(ticket_doc: Mapping) -> tuple[str, ...]:
     return tuple(tags)
 
 
+def _mentioned_tags(ticket_doc: Mapping) -> tuple[str, ...]:
+    """Unverified `#TAG`-shaped tokens the applicant typed. Display/search only."""
+    raw = ticket_doc.get("mentioned_tags") or ()
+    if isinstance(raw, str):
+        raw = (raw,)
+    tags: list[str] = []
+    for value in raw:
+        tag = str(value or "").strip().upper()
+        if not tag:
+            continue
+        if not tag.startswith("#"):
+            tag = "#" + tag
+        if tag not in tags:
+            tags.append(tag)
+    return tuple(tags)
+
+
 def _tag_omission_suffix(omitted: int) -> str:
     return f"… +{omitted} tag{'s' if omitted != 1 else ''} omitted"
 
@@ -1499,6 +1516,7 @@ def build_ticket_detail(
     status = str(ticket_doc.get("status") or "unknown").casefold()
     status_label, status_emoji, accent = _status_meta(status)
     tags = _player_tags(ticket_doc)
+    mentioned = _mentioned_tags(ticket_doc)
     user_id = _int(ticket_doc.get("user_id"))
     active_flags = _active_flags(flags)
     blacklisted = any(
@@ -1546,12 +1564,21 @@ def build_ticket_detail(
         _bounded_tag_display(tags, limit=DISCORD_MESSAGE_TEXT_LIMIT)
         if tags else None
     )
+    mentioned_prefix = "**Mentioned tags:** "
+    mentioned_copy = (
+        _bounded_tag_display(mentioned, limit=DISCORD_MESSAGE_TEXT_LIMIT)
+        if mentioned else None
+    )
     intake_copy = _intake_content(ticket_doc)
     flag_copy = _flag_detail_content(flag_lines) if flag_lines else None
 
     fixed_tag_line = tag_prefix if tag_copy is not None else "**Player tags:** none recorded"
+    fixed_detail_lines = [*details_before_tags, fixed_tag_line]
+    if mentioned_copy is not None:
+        fixed_detail_lines.append(mentioned_prefix)
+    fixed_detail_lines.append(opened)
     fixed_texts = [title, footer, *history_copy]
-    fixed_texts.append("\n".join((*details_before_tags, fixed_tag_line, opened)))
+    fixed_texts.append("\n".join(fixed_detail_lines))
     if blacklist_warning:
         fixed_texts.append(blacklist_warning)
     if history_heading:
@@ -1581,6 +1608,13 @@ def build_ticket_detail(
             len(tag_copy),
             len(_tag_omission_suffix(len(tags))),
         ))
+    if mentioned_copy is not None:
+        variable_keys.append("mentioned")
+        desired_lengths.append(len(mentioned_copy))
+        minimum_lengths.append(min(
+            len(mentioned_copy),
+            len(_tag_omission_suffix(len(mentioned))),
+        ))
 
     allocations = dict(zip(
         variable_keys,
@@ -1594,7 +1628,13 @@ def build_ticket_detail(
         tag_prefix + _bounded_tag_display(tags, limit=allocations["tags"])
         if tags else "**Player tags:** none recorded"
     )
-    details = [*details_before_tags, tag_line, opened]
+    details = [*details_before_tags, tag_line]
+    if mentioned_copy is not None:
+        details.append(
+            mentioned_prefix
+            + _bounded_tag_display(mentioned, limit=allocations["mentioned"])
+        )
+    details.append(opened)
     components: list = [
         Text(content=title),
         Text(content="\n".join(details)),

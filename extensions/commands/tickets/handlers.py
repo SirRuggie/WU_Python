@@ -91,7 +91,12 @@ async def capture_candidate_thread_activity(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
 ) -> None:
-    """Durably capture applicant answers and newly disclosed player tags."""
+    """Durably capture applicant answers and any `#TAG`-shaped tokens they type.
+
+    Typed tags are unverified — anyone can type any tag — so they are stored
+    as ``mentioned_tags``, a search/display hint only. They never join the
+    verified ``player_tags`` identity used for flag and blacklist matching.
+    """
     if not event.is_human:
         return
     ticket = await store.find_by_location(mongo, int(event.channel_id))
@@ -111,7 +116,7 @@ async def capture_candidate_thread_activity(
         message_id=int(event.message_id),
         author_id=int(event.author_id),
         content=snapshot,
-        player_tags=tags,
+        mentioned_tags=tags,
         occurred_at=event.message.timestamp,
     )
     if result.won and result.reason != "already recorded" and result.doc is not None:

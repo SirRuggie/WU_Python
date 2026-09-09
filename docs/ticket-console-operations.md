@@ -381,9 +381,13 @@ un-cloned `button_store` tickets. Useful v2 fallbacks are:
   accounts.
 - **Currently linked** is the latest successful link-service snapshot. It
   drives the current account count and automatic FWA Chocolate checklist.
-- **Observed** tags are permanent identity history: applicant-disclosed tags
-  plus every linked tag seen in a successful snapshot. Search, prior-ticket
-  matching, and flags use that history even after an account is unlinked.
+- **Verified** tags are permanent identity history: every linked tag seen in a
+  successful account snapshot, plus any tag a recruiter records through
+  **Manage flags**. Prior-ticket matching and flags use only this verified
+  set, even after an account is unlinked.
+- **Mentioned** tags are `#TAG`-shaped text the applicant typed in their
+  thread. They help search find the ticket and show on ticket detail, but
+  anyone can type any tag, so they never affect flags or the blacklist gate.
 - Approve and deny force-refresh all linked accounts immediately before the
   decision.
 
@@ -415,7 +419,8 @@ from ticket detail or `flags` before removing it.
 2. Choose **Approve** or **Deny** in private ticket detail. The final linked
    account refresh runs before the decision write.
 3. Approval stays blocked when the lookup fails, zero accounts are currently
-   linked, or an active blacklist matches the Discord ID or an observed tag.
+   linked, or an active blacklist matches the Discord ID or a verified player
+   tag. A tag the applicant only mentioned in chat never triggers this block.
 4. If an FWA approval refresh finds a newly linked account, the ticket remains
    open while the Chocolate pages update. Review the new link and approve
    again. Pending checklist delivery also keeps approval blocked and retries.

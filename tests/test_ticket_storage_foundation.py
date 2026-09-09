@@ -1861,16 +1861,19 @@ def test_candidate_activity_is_idempotent_and_merges_normalized_tags():
     mongo = _mongo(_ticket())
     first = asyncio.run(store.append_candidate_activity(
         mongo, "ticket_101", message_id=500, author_id=30,
-        content="My tag is #def456", player_tags=("def456",), occurred_at=NOW,
+        content="My tag is #def456", mentioned_tags=("def456",), occurred_at=NOW,
     ))
     again = asyncio.run(store.append_candidate_activity(
         mongo, "ticket_101", message_id=500, author_id=30,
-        content="My tag is #def456", player_tags=("def456",), occurred_at=NOW,
+        content="My tag is #def456", mentioned_tags=("def456",), occurred_at=NOW,
     ))
     assert first.won and again.won
     assert again.reason == "already recorded"
     assert again.doc["answer_count"] == 1
-    assert again.doc["player_tags"] == ["#ABC123", "#DEF456"]
+    # A tag typed by the applicant is unverified: it merges into mentioned_tags
+    # only, and never joins the verified player_tags identity.
+    assert again.doc["player_tags"] == ["#ABC123"]
+    assert again.doc["mentioned_tags"] == ["#DEF456"]
 
 
 @pytest.mark.parametrize("mode", ["unauthorized", "missing", "blacklisted", "lost"])

@@ -180,7 +180,12 @@ def _search_identity(query: str) -> dict:
             raise SearchQueryError(str(exc)) from exc
         if not 3 <= len(tag.removeprefix("#")) <= 9:
             raise SearchQueryError("player tags must contain 3 to 9 letters or numbers")
-        return {"$or": [{"player_tags": tag}, {"player_tag": tag}, {"tag": tag}]}
+        return {"$or": [
+            {"player_tags": tag},
+            {"mentioned_tags": tag},
+            {"player_tag": tag},
+            {"tag": tag},
+        ]}
     if not 2 <= len(value) <= 32 or re.fullmatch(r"[\w .-]+", value) is None:
         raise SearchQueryError(
             "Use a Discord ID, player tag, or a 2-32 character username"
@@ -750,15 +755,21 @@ async def append_candidate_activity(
     message_id,
     author_id,
     content: str,
-    player_tags: Iterable[str] = (),
+    mentioned_tags: Iterable[str] = (),
     occurred_at: datetime | None = None,
     kind: str = "answer",
 ) -> Transition:
-    """Idempotently append one bounded candidate answer and merge discovered tags."""
+    """Idempotently append one bounded candidate answer and merge mentioned tags.
+
+    Tags scraped from applicant messages are unverified — anyone can type any
+    tag. They are stored on ``mentioned_tags`` as a search/display hint only
+    and never join ``player_tags``, the verified identity used for flag and
+    blacklist matching.
+    """
     message = schema.snowflake(message_id, field="message_id")
     author = schema.snowflake(author_id, field="author_id")
     at = schema.normalize_datetime(occurred_at, field="occurred_at")
-    tags = schema.player_tags(player_tags)
+    tags = schema.player_tags(mentioned_tags)
     answer = {
         "message_id": message,
         "author_id": author,
@@ -776,7 +787,7 @@ async def append_candidate_activity(
         "$inc": {"answer_count": 1, "rev": 1},
     }
     if tags:
-        update["$addToSet"] = {"player_tags": {"$each": tags}}
+        update["$addToSet"] = {"mentioned_tags": {"$each": tags}}
     updated = await primary.find_one_and_update(
         {
             "_id": ticket_id,

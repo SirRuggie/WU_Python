@@ -207,6 +207,7 @@ def new_ticket_document(
         "display_name": str(display_name or name).strip(),
         "player_tags": tags,
         "player_tag": tags[0] if tags else None,
+        "mentioned_tags": [],
         "created_at": created,
         "updated_at": created,
         "last_activity_at": created,
@@ -319,6 +320,12 @@ def normalize_ticket_document(document: Mapping) -> dict:
         tags = []
     out["player_tags"] = tags
     out["player_tag"] = tags[0] if tags else None
+
+    try:
+        out["mentioned_tags"] = player_tags(out.get("mentioned_tags") or [])
+    except TicketSchemaError:
+        # A malformed historical value must not block the rest of the row.
+        out["mentioned_tags"] = []
 
     out["rev"] = max(0, int(out.get("rev") or 0))
     out["audit"] = list(out.get("audit") or [])

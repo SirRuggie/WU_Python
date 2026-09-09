@@ -229,8 +229,12 @@ therefore hold.
 ## 5. Flags and FWA Chocolate — implemented staff flow
 
 Three flag kinds are staff-authored and match a ticket by Discord ID **or** any
-permanently recorded player tag. Either identity match is sufficient, and only
-one kind blocks approval:
+verified player tag — one confirmed by the linked-account sync or recorded by a
+recruiter through **Manage flags**. A `#TAG`-shaped token an applicant merely
+types in their thread is stored separately as a mentioned tag; it is a search
+hint only and never joins this identity, so it cannot bind an applicant to
+someone else's flag. Either identity match is sufficient, and only one kind
+blocks approval:
 
 | Kind | Blocks Approve? | Source |
 |---|---|---|
@@ -286,8 +290,9 @@ concern. The bot does not fetch, infer, or save a Chocolate blacklist verdict.
 Approve and deny both force-refresh all linked accounts immediately before the
 decision. Approval fails closed if that lookup fails or if it confirms zero
 currently linked accounts. It also checks active blacklist flags against the
-Discord ID and every permanently recorded tag, including identities discovered
-by that final refresh.
+Discord ID and every verified player tag, including identities discovered by
+that final refresh — a tag the applicant only mentioned in chat is never part
+of this check.
 
 If an FWA approval refresh discovers an account that was not in the preceding
 current snapshot, the ticket remains open. The bot durably queues and attempts a
