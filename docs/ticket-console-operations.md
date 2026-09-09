@@ -415,30 +415,43 @@ from ticket detail or `flags` before removing it.
 ### Approve or deny
 
 1. Read the staff account context, matching flags, earlier-ticket links, and,
-   for FWA, every current-account Chocolate link.
-2. Choose **Approve** or **Deny** in private ticket detail. The final linked
-   account refresh runs before the decision write.
+   for FWA, every current-account Chocolate link. Applicant activity in the
+   thread never bumps the ticket's resolution revision, so it cannot make an
+   otherwise-valid Approve/Deny look like a race with another recruiter.
+2. Choose **Approve** or **Deny** in private ticket detail. Approve opens a
+   one-step confirm ("Approve X for Main/FWA?"); Deny's reason modal is its
+   own confirm. The final linked account refresh runs before the decision
+   write.
 3. Approval stays blocked when the lookup fails, zero accounts are currently
    linked, or an active blacklist matches the Discord ID or a verified player
    tag. A tag the applicant only mentioned in chat never triggers this block.
+   Overlapping active flags on the same identity are surfaced as a yellow
+   notice on the detail panel, not a block — approval is gated only by the
+   blacklist check.
 4. If an FWA approval refresh finds a newly linked account, the ticket remains
    open while the Chocolate pages update. Review the new link and approve
    again. Pending checklist delivery also keeps approval blocked and retries.
 5. Denial is allowed after a failed or zero-account lookup. A failed denial
    lookup is recorded and retried so staff context and Chocolate pages can
    converge later.
-6. The decision commits only if the expected status, ticket revision, and
-   linked-account revision still match. A stale or missing attempt does not
-   notify the applicant or apply terminal thread effects. Any offered override
-   is owner-bound, rechecks recruiter access, waits for the prior effects to
-   complete, and re-runs current approval gates before another conditional
-   write.
+6. The only conflict check left on Approve/Deny is status: if someone else
+   already decided the ticket, the console shows who and when instead of
+   acting, with a button back to the refreshed detail panel. A decided
+   ticket's detail panel instead offers the opposite action (Deny on an
+   approved ticket, Approve on a denied one); confirming it asks "already
+   approved/denied by X, do the opposite anyway?" before continuing into the
+   normal approve/deny path. Any recruiter may overturn a decision, it always
+   runs the full normal effects (including, for deny-after-approve, removing
+   any roles the approval granted), and it is logged on the ticket as an
+   overturn. `/ticket-pilot approve`/`deny` never offers an overturn — on a
+   decided ticket it just names who decided it and points to the console.
 7. Applicant notification, staff updates, archive, and console refresh are
    durable follow-up work. **Decision recorded; updates retrying** means the
    terminal decision is safe and the remaining work will retry.
 
 Terminal candidate and staff threads remain locked, archived, and available
-read-only from the console.
+read-only from the console; an overturn briefly unarchives the candidate
+thread to deliver the new decision card, then re-archives it.
 
 ## Candidate return and follow-up status
 

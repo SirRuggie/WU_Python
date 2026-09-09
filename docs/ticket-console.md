@@ -358,7 +358,16 @@ After approve or deny, the runtime locks and archives both the candidate and
 staff threads. If a Discord update fails after the decision is recorded, durable
 recovery keeps retrying it. Console jump links open terminal threads read-only;
 they remain archived and locked. The runtime does not auto-unarchive them on a
-view and has no close or reopen workflow.
+view.
+
+A decided ticket is not frozen, though: any recruiter can overturn it the
+other way from the console's detail panel (a "already approved/denied by
+X" confirm, then the normal approve/deny path). The candidate thread is
+briefly unarchived to deliver the new decision card, then re-archived, and
+the overturn is logged on the ticket alongside the original decision — see
+"Approve or deny" in `docs/ticket-console-operations.md`. There is still no
+console "reopen to open" workflow; overturning only flips between approved
+and denied.
 
 ## 8. Copy standard
 
