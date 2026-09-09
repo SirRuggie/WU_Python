@@ -28,7 +28,6 @@ CREATION_RECOVERY_LIMIT = 50
 MIGRATION_RECOVERY_LIMIT = 5
 STAFF_CONTEXT_RECOVERY_LIMIT = 25
 ACCOUNT_SYNC_RECOVERY_LIMIT = 25
-LEGACY_DELIVERY_RECOVERY_LIMIT = 25
 
 
 async def prepare_ticket_runtime(mongo: MongoClient) -> dict[str, str]:
@@ -54,21 +53,6 @@ async def prepare_ticket_runtime(mongo: MongoClient) -> dict[str, str]:
     return errors
 
 
-async def recover_pending_legacy_deliveries(
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    *,
-    limit: int = LEGACY_DELIVERY_RECOVERY_LIMIT,
-) -> dict[str, int]:
-    """Resume legacy monitor work inside the existing startup retry loop."""
-
-    from extensions.events.channel import ticket_channel_monitor
-
-    return await ticket_channel_monitor.recover_pending_automation_deliveries(
-        bot=bot, mongo=mongo, limit=limit
-    )
-
-
 async def recover_ticket_workflows(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
@@ -82,9 +66,6 @@ async def recover_ticket_workflows(
 
     await store.ensure_indexes(mongo)
     _slot_backfill, _slot_reconcile = await ticket_runtime.recover_ticket_runtime(mongo)
-    legacy_delivery = await recover_pending_legacy_deliveries(
-        bot, mongo, limit=LEGACY_DELIVERY_RECOVERY_LIMIT
-    )
     blockers = await ticket_runtime.runtime_blocker_status(mongo)
     if blockers.blocked:
         details: list[str] = []
@@ -156,13 +137,10 @@ async def recover_ticket_workflows(
             staff_context,
             account_identities,
             open_context,
-            legacy_delivery,
         )
     )
     print(
         "[Tickets] startup_workflow_recovery "
-        f"legacy_delivery={legacy_delivery.get('completed', 0)}/"
-        f"{legacy_delivery.get('processed', 0)} "
         f"creation={creation.get('completed', 0)}/{creation.get('processed', 0)} "
         f"migration={migration.get('completed', 0)}/{migration.get('processed', 0)} "
         f"staff_context={staff_context.get('completed', 0)}/"
@@ -176,11 +154,7 @@ async def recover_ticket_workflows(
     if failed:
         raise RuntimeError(f"{failed} ticket workflow recovery item(s) remain pending")
     if (
-        int(legacy_delivery.get("processed", 0))
-        >= LEGACY_DELIVERY_RECOVERY_LIMIT
-        or int(legacy_delivery.get("synthesized", 0))
-        >= LEGACY_DELIVERY_RECOVERY_LIMIT
-        or int(creation.get("processed", 0)) >= CREATION_RECOVERY_LIMIT
+        int(creation.get("processed", 0)) >= CREATION_RECOVERY_LIMIT
         or int(migration.get("processed", 0)) >= MIGRATION_RECOVERY_LIMIT
         or int(staff_context.get("processed", 0)) >= STAFF_CONTEXT_RECOVERY_LIMIT
         or int(account_identities.get("processed", 0)) >= ACCOUNT_SYNC_RECOVERY_LIMIT
@@ -312,7 +286,6 @@ __all__ = [
     "ticket_config",
     "startup_index_errors",
     "prepare_ticket_runtime",
-    "recover_pending_legacy_deliveries",
     "recover_ticket_workflows",
     "start_ticket_workflow_recovery",
     "thread_intake_ready",

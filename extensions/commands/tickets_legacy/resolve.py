@@ -34,7 +34,7 @@ from hikari.impl import (
     ThumbnailComponentBuilder as Thumbnail,
 )
 
-from extensions.commands.tickets_legacy import perms, resolution_delivery, store
+from extensions.commands.tickets_legacy import perms, store
 from extensions.components import register_action
 from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
@@ -74,59 +74,6 @@ _LABEL = {
     KIND_DENY_MAIN: "Overturn and deny",
     KIND_DENY_CUSTOM: "Overturn and deny",
 }
-
-DELIVERY_QUEUED_WARNING = (
-    "\n\n⚠️ The decision was recorded, but its Discord updates are queued for "
-    "automatic retry."
-)
-
-
-def build_resolution_effect(
-    *,
-    kind: str,
-    user_id,
-    actor_name: str,
-    reason: str | None = None,
-) -> dict:
-    """Freeze the exact applicant notice and rename plan before status commit."""
-
-    user_id = int(user_id)
-    if kind == KIND_APPROVE:
-        return {
-            "kind": kind,
-            "user_id": user_id,
-            "actor_name": str(actor_name),
-            "rename_emoji": "✅",
-            "notice_content": (
-                f"<@{user_id}> Congratulations on being accepted to Warriors United! "
-                "Stand by for further instructions."
-            ),
-        }
-    body = reason if kind == KIND_DENY_CUSTOM else _DENIAL_BODY[kind]
-    return {
-        "kind": kind,
-        "user_id": user_id,
-        "actor_name": str(actor_name),
-        "rename_emoji": "❌",
-        "notice_text": (
-            f"<@{user_id}>, we regret to inform you that currently your "
-            "application has been denied.\n\n"
-            f"## **Reason:**\n{body}"
-        ),
-        "accent_color": int(RED_ACCENT),
-        "denied_thumb": DENIED_THUMB,
-        "footer_media": "assets/Red_Footer.png",
-    }
-
-
-async def deliver_committed_resolution(bot, mongo, ticket: dict) -> bool:
-    """Best-effort drive one atomic marker; durable retries own any failure."""
-
-    return await resolution_delivery.drive_or_schedule(
-        bot=bot,
-        mongo=mongo,
-        ticket=ticket,
-    )
 
 
 def get_channel_name_with_new_emoji(channel_name: str, new_emoji: str) -> str:
@@ -425,12 +372,6 @@ async def ticket_override_handler(
             "by_name": None,
             "at": data.get("prior_at"),
         },
-        resolution_effect=build_resolution_effect(
-            kind=kind,
-            user_id=data.get("user_id"),
-            actor_name=ctx.user.username,
-            reason=data.get("reason"),
-        ),
     )
 
     if result.outcome == store.MISSING:
@@ -439,16 +380,15 @@ async def ticket_override_handler(
             components=[],
         )
         return
-    if result.busy:
-        await ctx.interaction.edit_initial_response(
-            content=store.transition_busy_message(result),
-            components=[],
-        )
-        return
 
-    delivery_warning = ""
-    if not await deliver_committed_resolution(bot, mongo, result.doc):
-        delivery_warning = DELIVERY_QUEUED_WARNING
+    await run_side_effects(
+        bot, mongo,
+        kind=kind,
+        channel_id=data["channel_id"],
+        user_id=data.get("user_id"),
+        actor_name=ctx.user.username,
+        reason=data.get("reason"),
+    )
     await delete_state(mongo, action_id)
 
     verb = "Approved" if kind == KIND_APPROVE else "Denied"
@@ -457,7 +397,7 @@ async def ticket_override_handler(
     await ctx.interaction.edit_initial_response(
         content=(
             f"{verb}. That overturns {who}'s call from {ts(data.get('prior_at'))}, "
-            f"recorded against your name.{delivery_warning}"
+            f"recorded against your name."
         ),
         components=[],
     )

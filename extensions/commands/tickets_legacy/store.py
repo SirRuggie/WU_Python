@@ -1,38 +1,47 @@
-"""Repository for the production channel-ticket runtime.
+"""The single seam between ticket documents and the collection that holds them.
 
-Legacy channel tickets remain authoritative in ``button_store`` while the
-thread runtime is piloted beside them.  Every query is constrained to channel
-tickets, and no write is mirrored into the thread runtime's ``tickets``
-collection.  Rows created before runtime markers existed remain legacy rows.
+Ticket documents were originally written into `button_store` - the same
+collection the component dispatcher uses for ephemeral component kwargs. Durable
+business records interleaved with throwaway UI state, unindexed, by accident
+rather than by design. See docs/ticket-data-model.md.
+
+Phase 1 moves them into a dedicated `tickets` collection. Every ticket-document
+read and write in the bot goes through this module, so the transition has exactly
+one home.
+
+READS follow the `ticket_store` flag on ticket_setup/_id="config", defaulting to
+`button_store`. WRITES always go to BOTH collections for the duration of the
+transition, so flipping the flag either way strands nothing.
+
+Making the read switch a config value rather than a deploy is deliberate: it
+means the backfill and the code repoint cannot land in the wrong order. The code
+can ship first and change nothing, and the moment of risk becomes a single Mongo
+write that reverses in a second.
+
+DO NOT ADD A TTL INDEX TO `tickets`. Ticket history is permanent and referred
+back to. The pruning problem that motivated part of this move belongs to the
+ephemeral collection, not this one - see docs/ticket-data-model.md.
 """
 
-import asyncio
 import dataclasses
-import uuid
+import logging
 from collections import Counter
 from datetime import datetime, timezone
 
 from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
 
 from utils.mongo import MongoClient
 
-LEGACY_RUNTIME = "legacy_channel"
-LEGACY_FILTER = {
-    "type": "ticket",
-    "$or": [
-        # New channel-runtime rows carry both ownership markers.
-        {"venue": "channel", "runtime": LEGACY_RUNTIME},
-        # Pre-coexistence production rows had neither marker.
-        {"venue": {"$exists": False}, "runtime": {"$exists": False}},
-        # Accept either marker independently for interrupted rollout writes.
-        {"venue": "channel", "runtime": {"$exists": False}},
-        {"venue": {"$exists": False}, "runtime": LEGACY_RUNTIME},
-    ],
-}
-TICKET_FILTER = LEGACY_FILTER
+_log = logging.getLogger(__name__)
+
+# Ticket documents carry this discriminator. It is redundant inside `tickets`,
+# where every document is a ticket, but keeping it means a document copied in
+# either direction is still valid, and the queries do not have to fork.
+TICKET_FILTER = {"type": "ticket"}
 
 STORE_BUTTON = "button_store"
+STORE_TICKETS = "tickets"
+DEFAULT_STORE = STORE_BUTTON
 
 
 def utcnow() -> datetime:
@@ -52,147 +61,86 @@ def as_int(value) -> int:
 
 
 async def active_store(mongo: MongoClient) -> str:
-    """Return the fixed authoritative collection for channel-era tickets."""
-    return STORE_BUTTON
+    """Which collection reads currently come from.
+
+    Read fresh every call rather than cached at startup. The `ticket_config`
+    global in __init__.py is the cautionary tale: it is loaded once on
+    StartedEvent and read by nothing, while every real consumer re-queries. A
+    cached flag here would mean a flip needed a restart, which defeats the point
+    of it being a flag.
+    """
+    config = await mongo.ticket_setup.find_one({"_id": "config"}, {"ticket_store": 1})
+    return (config or {}).get("ticket_store", DEFAULT_STORE)
 
 
-def _legacy_filter(filt: dict) -> dict:
-    """Constrain a caller filter without letting it weaken runtime isolation."""
-    return {"$and": [dict(filt), dict(LEGACY_FILTER)]}
+async def _reader(mongo: MongoClient):
+    return mongo.tickets if await active_store(mongo) == STORE_TICKETS else mongo.button_store
 
 
-def is_legacy_ticket_document(document: dict | None) -> bool:
-    if not document or document.get("type") != "ticket":
-        return False
-    venue = document.get("venue")
-    runtime = document.get("runtime")
-    return venue in {None, "channel"} and runtime in {None, LEGACY_RUNTIME}
+async def _both(mongo: MongoClient):
+    """(primary, secondary) with primary being whatever reads come from.
+
+    Ordering matters on partial failure: if the second write raises, the
+    collection actually being READ from is already correct, so the symptom is
+    divergence visible in /ticket diagnostics rather than a ticket that appears
+    not to exist.
+    """
+    if await active_store(mongo) == STORE_TICKETS:
+        return mongo.tickets, mongo.button_store
+    return mongo.button_store, mongo.tickets
 
 
 # --- reads -------------------------------------------------------------------
 
 async def find_one(mongo: MongoClient, filt: dict):
-    return await mongo.button_store.find_one(_legacy_filter(filt))
+    return await (await _reader(mongo)).find_one(filt)
 
 
 async def find(mongo: MongoClient, filt: dict) -> list[dict]:
     """All matching ticket documents. Callers all wanted a list anyway."""
-    return await mongo.button_store.find(_legacy_filter(filt)).to_list(length=None)
+    return await (await _reader(mongo)).find(filt).to_list(length=None)
 
 
-# --- writes ------------------------------------------------------------------
-
-_EXACT_TEXT_FIELDS = (
-    "_id",
-    "type",
-    "ticket_type",
-    "username",
-    "venue",
-    "runtime",
-    "open_slot_id",
-    "creation_workflow_id",
-)
-_EXACT_INT_FIELDS = (
-    "ticket_number",
-    "guild_id",
-    "channel_id",
-    "thread_id",
-    "category_id",
-    "user_id",
-    "rollout_revision",
-    "creation_generation",
-)
-
-
-def _normalize_exact_ticket(doc: dict) -> dict:
-    normalized = dict(doc)
-    if normalized.get("type") != "ticket":
-        raise ValueError("legacy ticket type must be 'ticket'")
-    normalized.setdefault("venue", "channel")
-    normalized.setdefault("runtime", LEGACY_RUNTIME)
-    if normalized.get("venue") != "channel" or normalized.get("runtime") != LEGACY_RUNTIME:
-        raise ValueError("legacy ticket authority markers are invalid")
-    if normalized.get("status") != "open":
-        raise ValueError("new legacy ticket status must be open")
-    return normalized
-
-
-def _assert_exact_ticket_identity(
-    existing: dict,
-    expected: dict,
-    *,
-    allow_terminal: bool = False,
-) -> None:
-    if not is_legacy_ticket_document(existing):
-        raise ValueError("ticket id belongs to a non-legacy runtime")
-    for field in _EXACT_TEXT_FIELDS:
-        if str(existing.get(field) or "") != str(expected.get(field) or ""):
-            raise ValueError(f"legacy ticket identity mismatch: {field}")
-    for field in _EXACT_INT_FIELDS:
-        if as_int(existing.get(field)) != as_int(expected.get(field)):
-            raise ValueError(f"legacy ticket identity mismatch: {field}")
-    existing_created = existing.get("created_at")
-    expected_created = expected.get("created_at")
-    if not isinstance(existing_created, datetime) or not isinstance(
-        expected_created, datetime
-    ):
-        raise ValueError("legacy ticket identity mismatch: created_at")
-    existing_utc = (
-        existing_created.replace(tzinfo=timezone.utc)
-        if existing_created.tzinfo is None
-        else existing_created.astimezone(timezone.utc)
-    )
-    expected_utc = (
-        expected_created.replace(tzinfo=timezone.utc)
-        if expected_created.tzinfo is None
-        else expected_created.astimezone(timezone.utc)
-    )
-    if int(existing_utc.timestamp() * 1000) != int(
-        expected_utc.timestamp() * 1000
-    ):
-        raise ValueError("legacy ticket identity mismatch: created_at")
-    status = str(existing.get("status") or "").strip().lower()
-    if status != "open" and not (allow_terminal and status in TERMINAL_STATUSES):
-        raise ValueError("legacy ticket identity mismatch: status")
-
-
-async def ensure_exact_ticket(
-    mongo: MongoClient,
-    doc: dict,
-    *,
-    allow_terminal: bool = False,
-) -> dict:
-    """Insert once or accept only the exact matching late commit."""
-
-    normalized = _normalize_exact_ticket(doc)
-    existing = await mongo.button_store.find_one({"_id": normalized["_id"]})
-    if existing is None:
-        try:
-            await mongo.button_store.insert_one(normalized)
-            return normalized
-        except DuplicateKeyError:
-            existing = await mongo.button_store.find_one({"_id": normalized["_id"]})
-            if existing is None:
-                raise
-    _assert_exact_ticket_identity(
-        existing,
-        normalized,
-        allow_terminal=allow_terminal,
-    )
-    return existing
+# --- writes (always both) ----------------------------------------------------
 
 async def insert_one(mongo: MongoClient, doc: dict) -> None:
-    """Idempotently persist one exact channel ticket without replacement."""
+    """Idempotently persist a new ticket to the primary and best-effort mirror.
 
-    await ensure_exact_ticket(mongo, doc)
+    A secondary write cannot roll back the primary. Treating that divergence as
+    total failure made callers retry an already-created Discord ticket. The
+    primary is the configured read source, so it is the commit point; diagnostics
+    already expose and repair mirror divergence.
+    """
+    primary, secondary = await _both(mongo)
+    ticket_id = doc["_id"]
+    await primary.replace_one({"_id": ticket_id}, dict(doc), upsert=True)
+    try:
+        await secondary.replace_one({"_id": ticket_id}, dict(doc), upsert=True)
+    except Exception:
+        _log.exception(
+            "ticket insert mirror failed for %s - primary remains authoritative",
+            ticket_id,
+        )
 
 
 async def update_one(mongo: MongoClient, filt: dict, update: dict):
-    return await mongo.button_store.update_one(_legacy_filter(filt), update)
+    """Returns the PRIMARY result, so matched_count still means what callers think.
+
+    close.py checks matched_count to catch silent no-op status writes
+    (_status_write_warning). That check has to be against the collection being
+    read from, or it reports on the wrong side of the transition.
+    """
+    primary, secondary = await _both(mongo)
+    result = await primary.update_one(filt, update)
+    await secondary.update_one(filt, update)
+    return result
 
 
 async def update_many(mongo: MongoClient, filt: dict, update: dict):
-    return await mongo.button_store.update_many(_legacy_filter(filt), update)
+    primary, secondary = await _both(mongo)
+    result = await primary.update_many(filt, update)
+    await secondary.update_many(filt, update)
+    return result
 
 
 # --- conditional writes ------------------------------------------------------
@@ -209,16 +157,6 @@ async def update_many(mongo: MongoClient, filt: dict, update: dict):
 WON = "won"
 LOST = "lost"
 MISSING = "missing"
-BUSY = "busy"
-TERMINAL_STATUSES = frozenset({"approved", "denied"})
-OPENING_DELIVERY_BUSY_MESSAGE = (
-    "⏳ Ticket opening messages are still finishing. No decision was recorded; "
-    "retry shortly."
-)
-RESOLUTION_DELIVERY_BUSY_MESSAGE = (
-    "⏳ The previous decision is still being delivered. No new decision was "
-    "recorded; retry shortly."
-)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -230,8 +168,6 @@ class Transition:
     outcome == LOST    -> the precondition did not hold. `doc` is the CURRENT
                           document, so the caller can say who got there first and
                           when. Nothing was written.
-    outcome == BUSY    -> an opening-message POST owns the authority row. The
-                          decision was not recorded and no side effect may run.
     outcome == MISSING -> no such ticket. `doc` is None. Nothing was written.
     """
 
@@ -242,91 +178,26 @@ class Transition:
     def won(self) -> bool:
         return self.outcome == WON
 
-    @property
-    def busy(self) -> bool:
-        return self.outcome == BUSY
 
+async def _mirror(mongo: MongoClient, doc: dict) -> None:
+    """Copy a post-image onto the secondary collection, unconditionally.
 
-def transition_busy_message(result: Transition) -> str:
-    """Explain which same-row delivery fence prevented the decision."""
+    Deliberately NOT conditional. The secondary is a copy kept so the
+    `ticket_store` flag stays reversible; it is not a second opinion. Re-applying
+    the precondition here would let a drifted secondary silently refuse and the
+    divergence would compound. Mirroring the post-image instead means a
+    conditional write HEALS drift rather than perpetuating it.
 
-    delivery = (result.doc or {}).get("resolution_delivery") or {}
-    if delivery and delivery.get("state") != "complete":
-        return RESOLUTION_DELIVERY_BUSY_MESSAGE
-    return OPENING_DELIVERY_BUSY_MESSAGE
-
-
-def _identity_id(value: int) -> dict:
-    """Match the canonical Discord id across historical int/string storage."""
-    canonical = int(value)
-    return {"$in": [canonical, str(canonical)]}
-
-
-async def acquire_opening_post_intent(
-    mongo: MongoClient,
-    ticket_id,
-    *,
-    channel_id: int,
-    thread_id: int,
-    guild_id: int,
-    user_id: int,
-    ticket_type: str,
-    token: str,
-    step: str,
-    target_id: int,
-) -> dict | None:
-    """Linearize one opening-message POST against every terminal writer.
-
-    The intent deliberately has no lease or expiry. An ambiguous Discord result
-    may only be settled after an exact history scan proves whether the POST
-    landed; elapsed time can never authorize a decision or a duplicate POST.
+    Safe because nothing else writes ticket documents to the secondary - every
+    path goes through this module - so there is no concurrent writer to clobber.
     """
-    token = str(token or "").strip()
-    step = str(step or "").strip()
-    if not token or not step:
-        raise ValueError("opening post intent requires token and step")
-    target_id = int(target_id)
-    if target_id <= 0:
-        raise ValueError("opening post intent requires a target channel")
-
-    return await mongo.button_store.find_one_and_update(
-        _legacy_filter({
-            "_id": ticket_id,
-            "status": "open",
-            "guild_id": _identity_id(guild_id),
-            "channel_id": _identity_id(channel_id),
-            "thread_id": _identity_id(thread_id),
-            "user_id": _identity_id(user_id),
-            "ticket_type": str(ticket_type),
-            "opening_post_intent": {"$exists": False},
-        }),
-        {"$set": {"opening_post_intent": {
-            "token": token,
-            "step": step,
-            "target_id": target_id,
-            "created_at": utcnow(),
-        }}},
-        return_document=ReturnDocument.AFTER,
-    )
-
-
-async def clear_opening_post_intent(
-    mongo: MongoClient,
-    ticket_id,
-    *,
-    token: str,
-    step: str,
-) -> bool:
-    """Clear only the exact intent a successfully reconciled POST owns."""
-    result = await mongo.button_store.update_one(
-        _legacy_filter({
-            "_id": ticket_id,
-            "opening_post_intent.token": str(token),
-            "opening_post_intent.step": str(step),
-        }),
-        {"$unset": {"opening_post_intent": ""}},
-    )
-    return bool(result.modified_count)
+    _, secondary = await _both(mongo)
+    try:
+        await secondary.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+    except Exception:
+        # The primary has already committed and the primary is what reads come
+        # from, so the outcome stands. Divergence shows up in /ticket diagnostics.
+        _log.exception("ticket mirror failed for %s - collections have diverged", doc.get("_id"))
 
 
 async def _conditional(
@@ -335,18 +206,18 @@ async def _conditional(
         update: dict,
         ticket_id,
 ) -> Transition:
-    """Run a legacy-only compare-and-swap against ``button_store``."""
-    doc = await mongo.button_store.find_one_and_update(
-        _legacy_filter(filt), update, return_document=ReturnDocument.AFTER
+    """find_one_and_update against the primary, then mirror on success."""
+    primary, _ = await _both(mongo)
+    doc = await primary.find_one_and_update(
+        filt, update, return_document=ReturnDocument.AFTER
     )
     if doc is not None:
+        await _mirror(mongo, doc)
         return Transition(WON, doc)
 
     # Nothing matched. Distinguish "someone beat me to it" from "no such ticket",
     # because they need completely different things said to the user.
-    current = await mongo.button_store.find_one(
-        _legacy_filter({"_id": ticket_id})
-    )
+    current = await primary.find_one({"_id": ticket_id})
     return Transition(LOST, current) if current is not None else Transition(MISSING, None)
 
 
@@ -360,15 +231,13 @@ async def transition(
         expect: str | None = "open",
         extra: dict | None = None,
         overrides: dict | None = None,
-        resolution_effect: dict | None = None,
 ) -> Transition:
     """Move a ticket to `to_status`, only if it is currently `expect`.
 
-    expect=None removes only the status precondition. That is the override path -
+    expect=None performs the write unconditionally. That is the override path -
     a recruiter deliberately overturning a resolution someone else already made,
     which is normal in recruiting (a mistaken deny, an appeal, a leader's call)
-    and should not require hand-editing Mongo. Opening-message intent fencing
-    still applies to overrides.
+    and should not require hand-editing Mongo.
 
     `overrides` is the prior resolution the actor was SHOWN before confirming.
     It is recorded verbatim in the audit entry. Note the small TOCTOU: a third
@@ -398,93 +267,12 @@ async def transition(
     if expect is not None:
         filt["status"] = expect
 
-    terminal = to_status in TERMINAL_STATUSES
-    delivery = None
-    if terminal:
-        filt["opening_post_intent"] = {"$exists": False}
-        filt["$or"] = [
-            {"resolution_delivery": {"$exists": False}},
-            {"resolution_delivery.state": {"$in": ["complete", "cancelled"]}},
-        ]
-        plan = dict(resolution_effect or {})
-        if not plan.get("kind"):
-            if to_status == "approved":
-                plan["kind"] = "approve"
-            else:
-                denial_type = str((extra or {}).get("denial_type") or "custom")
-                plan["kind"] = {
-                    "fwa_default": "deny_fwa",
-                    "main_default": "deny_main",
-                    "custom": "deny_custom",
-                }.get(denial_type, "deny_custom")
-                plan.setdefault("reason", (extra or {}).get("denial_reason"))
-        delivery = {
-            "effect_id": uuid.uuid4().hex,
-            "decision_status": to_status,
-            "state": "pending",
-            "requested_at": now,
-            "updated_at": now,
-            "actor_id": int(actor_id),
-            "actor_name": str(actor_name),
-            "plan": plan,
-        }
-
-    result = None
-    for attempt in range(3):
-        result = await _conditional(
-            mongo,
-            filt,
-            {
-                "$set": {
-                    "status": to_status,
-                    **(extra or {}),
-                    **(
-                        {"resolution_delivery": delivery}
-                        if delivery is not None
-                        else {}
-                    ),
-                },
-                "$push": {"audit": audit},
-            },
-            ticket_id,
-        )
-        if result.won or not terminal:
-            break
-        current = result.doc
-        expected_status = expect is None or (
-            current is not None and current.get("status") == expect
-        )
-        resolution_busy = (
-            current is not None
-            and bool(current.get("resolution_delivery"))
-            and (current.get("resolution_delivery") or {}).get("state")
-            not in {"complete", "cancelled"}
-        )
-        if not (
-            current is not None
-            and expected_status
-            and ("opening_post_intent" in current or resolution_busy)
-        ):
-            break
-        if attempt < 2:
-            await asyncio.sleep((0.05, 0.15)[attempt])
-    assert result is not None
-    if (
-        terminal
-        and not result.won
-        and result.doc is not None
-        and (expect is None or result.doc.get("status") == expect)
-        and (
-            "opening_post_intent" in result.doc
-            or (
-                bool(result.doc.get("resolution_delivery"))
-                and (result.doc.get("resolution_delivery") or {}).get("state")
-                not in {"complete", "cancelled"}
-            )
-        )
-    ):
-        return Transition(BUSY, result.doc)
-    return result
+    return await _conditional(
+        mongo,
+        filt,
+        {"$set": {"status": to_status, **(extra or {})}, "$push": {"audit": audit}},
+        ticket_id,
+    )
 
 
 async def claim(mongo: MongoClient, ticket_id, actor_id: int, actor_name: str) -> Transition:
@@ -538,16 +326,11 @@ async def release(
 
 # --- reconciliation helpers --------------------------------------------------
 
-async def status_counts(collection, filt: dict | None = None) -> dict[str, int]:
+async def status_counts(collection) -> dict[str, int]:
     """{status: count} for ticket documents in one collection.
 
     Takes a collection rather than the client because both /ticket diagnostics
     and the backfill need to compare the two sides directly.
     """
-    query = (
-        {"$and": [dict(TICKET_FILTER), dict(filt)]}
-        if filt
-        else TICKET_FILTER
-    )
-    docs = await collection.find(query, {"status": 1}).to_list(length=None)
+    docs = await collection.find(TICKET_FILTER, {"status": 1}).to_list(length=None)
     return dict(Counter(d.get("status") or "(missing)" for d in docs))

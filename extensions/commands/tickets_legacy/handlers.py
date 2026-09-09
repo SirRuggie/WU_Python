@@ -380,23 +380,23 @@ def cleanup_expired_cooldowns():
     """Remove expired cooldown entries to prevent memory leak"""
     global last_cleanup
     current_time = datetime.now(timezone.utc)
-
+    
     # Only cleanup if enough time has passed
     if (current_time - last_cleanup).total_seconds() < COOLDOWN_CLEANUP_INTERVAL:
         return
-
+    
     # Remove expired entries
     expired_users = []
     for user_id, cooldown_time in user_cooldowns.items():
         if (current_time - cooldown_time).total_seconds() > COOLDOWN_DURATION:
             expired_users.append(user_id)
-
+    
     for user_id in expired_users:
         user_cooldowns.pop(user_id, None)
-
+    
     if expired_users:
         print(f"[Tickets] Cleaned up {len(expired_users)} expired cooldown entries")
-
+    
     last_cleanup = current_time
 
 
@@ -493,7 +493,7 @@ async def handle_create_ticket(
     # Check cooldown (30 seconds)
     user_id = ctx.user.id
     current_time = datetime.now(timezone.utc)
-
+    
     if user_id in user_cooldowns:
         time_since_last = (current_time - user_cooldowns[user_id]).total_seconds()
         if time_since_last < COOLDOWN_DURATION:
@@ -502,7 +502,7 @@ async def handle_create_ticket(
                 content=f"⏳ Please wait {remaining} seconds before creating another ticket."
             )
             return
-
+    
     # Update cooldown
     user_cooldowns[user_id] = current_time
 
@@ -676,7 +676,7 @@ async def handle_create_ticket(
                             hikari.Permissions.SEND_MESSAGES |
                             hikari.Permissions.READ_MESSAGE_HISTORY |
                             hikari.Permissions.ATTACH_FILES |
-                            hikari.Permissions.EMBED_LINKS |
+                            hikari.Permissions.EMBED_LINKS | 
                             hikari.Permissions.ADD_REACTIONS
                     ),
                 ),

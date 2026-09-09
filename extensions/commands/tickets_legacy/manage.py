@@ -274,12 +274,7 @@ LEGACY_OPEN_PREFIX = "✅"
 #      so this is a no-op against the current 361 documents.
 #   2. _active_thread_ids() below is unioned into the live-id set, so a thread
 #      ticket that somehow lacks the venue field still cannot be read as a ghost.
-CHANNEL_ERA_ONLY = {
-    "$or": [
-        {"venue": "channel"},
-        {"venue": {"$exists": False}},
-    ]
-}
+CHANNEL_ERA_ONLY = {"venue": {"$ne": "thread"}}
 
 
 async def _active_thread_ids(bot: hikari.GatewayBot, guild_id: int) -> set[int]:
@@ -366,7 +361,17 @@ class Diagnostics(
             flag = " ⚠️" if count >= 45 else ""
             lines.append(f"• {name} — {count}/50{flag}")
 
+        # Both sides, always, for the duration of the button_store -> tickets
+        # transition. This is the instrument for verifying every migration step:
+        # the two lines should be identical, and "divergence" is the single word
+        # that says whether the dual-write is holding.
         bs_counts = await store.status_counts(mongo.button_store)
+        tk_counts = await store.status_counts(mongo.tickets)
+        divergence = [
+            f"`{k}` {bs_counts.get(k, 0)}/{tk_counts.get(k, 0)}"
+            for k in sorted(set(bs_counts) | set(tk_counts))
+            if bs_counts.get(k, 0) != tk_counts.get(k, 0)
+        ]
 
         def _fmt(counts: dict) -> str:
             return ", ".join(f"`{k}`={v}" for k, v in sorted(counts.items())) or "(none)"
@@ -375,6 +380,8 @@ class Diagnostics(
             "",
             "**Ticket documents**",
             f"• `button_store` (type=ticket): **{sum(bs_counts.values())}** — {_fmt(bs_counts)}",
+            f"• `tickets`: **{sum(tk_counts.values())}** — {_fmt(tk_counts)}",
+            "• Divergence: " + ("none ✅" if not divergence else "⚠️ " + ", ".join(divergence)),
             f"• Reading from: **`{await store.active_store(mongo)}`**",
             "",
             "**Reconciled set (channel-era only)**",
@@ -511,22 +518,13 @@ class CleanupGhosts(
         # between the read above and this write is not clobbered.
         result = await store.update_many(
             mongo,
-            {
-                "_id": {"$in": [d["_id"] for d in ghosts]},
-                "status": "open",
-            },
-            {
-                "$set": {
-                    "status": "denied",
-                    "denied_at": datetime.now(timezone.utc),
-                    "denied_reason": "channel_deleted",
-                    "denied_by": ctx.user.id,
-                },
-                # The candidate channel is authoritatively absent, so exact
-                # Discord history reconciliation is impossible. Closing the
-                # row and invalidating any in-flight POST must be one write.
-                "$unset": {"opening_post_intent": ""},
-            },
+            {"_id": {"$in": [d["_id"] for d in ghosts]}, "status": "open"},
+            {"$set": {
+                "status": "denied",
+                "denied_at": datetime.now(timezone.utc),
+                "denied_reason": "channel_deleted",
+                "denied_by": ctx.user.id,
+            }},
         )
 
         print(f"[Tickets] cleanup-ghosts by {ctx.user.username}: "
@@ -642,11 +640,7 @@ class FixMismatched(
         else:
             result = await store.update_many(
                 mongo,
-                {
-                    "_id": {"$in": [doc["_id"] for doc, _ in mismatched]},
-                    "status": "open",
-                    "opening_post_intent": {"$exists": False},
-                },
+                {"_id": {"$in": [doc["_id"] for doc, _ in mismatched]}, "status": "open"},
                 {"$set": {
                     "status": "denied",
                     "denied_reason": "name_shows_denied",
@@ -657,24 +651,12 @@ class FixMismatched(
                     "corrected_at": datetime.now(timezone.utc),
                 }},
             )
-            remaining = await store.find(mongo, {
-                "_id": {"$in": [doc["_id"] for doc, _ in mismatched]},
-                "status": "open",
-            })
-            skipped_count = len(remaining)
-            busy_count = sum(
-                "opening_post_intent" in doc for doc in remaining
-            )
             print(f"[Tickets] fix-mismatched by {ctx.user.username}: "
-                  f"{result.modified_count} row(s) corrected to denied/name_shows_denied; "
-                  f"{skipped_count} skipped ({busy_count} still busy)")
+                  f"{result.modified_count} row(s) corrected to denied/name_shows_denied")
             body = "\n".join([
                 *preamble,
                 f"✅ **Wrote {result.modified_count} row(s)** "
                 f"(matched {result.matched_count}).",
-                *([f"⏳ **Skipped {skipped_count} row(s) safely**; {busy_count} still "
-                   "show an active opening-message fence. Re-run this command shortly."]
-                  if skipped_count else []),
                 "",
                 *rows,
                 "",

@@ -50,6 +50,7 @@ EXPECTED_LEGACY_COMMANDS = {
     "diagnostics",
     "fix-mismatched",
     "list",
+    "migrate-store",
     "release",
     "reset-counter",
     "setup",
@@ -77,17 +78,11 @@ def _shared_runtime_recovery(monkeypatch):
             ticket_runtime.ReconcileResult((), (), (), ()),
         )
 
-    async def legacy_delivery(_bot, _mongo, **_kwargs):
-        return {"processed": 0, "completed": 0, "failed": 0, "pending": 0}
-
     async def blockers(_mongo):
         return ticket_runtime.RuntimeBlockerStatus(0, 0)
 
     monkeypatch.setattr(ticket_runtime, "recover_ticket_runtime", recover)
     monkeypatch.setattr(ticket_runtime, "runtime_blocker_status", blockers)
-    monkeypatch.setattr(
-        ticket_extension, "recover_pending_legacy_deliveries", legacy_delivery
-    )
     monkeypatch.setattr(ticket_extension, "_thread_intake_ready", False)
 
 
@@ -452,95 +447,6 @@ def test_shared_blockers_keep_intake_unready_until_startup_retry(monkeypatch):
 
     assert attempts == 3
     assert reconciler.health.attempts == 3
-    assert reconciler.health.state == "healthy"
-    assert ticket_extension.thread_intake_ready() is True
-
-
-def test_full_legacy_delivery_batch_forces_another_startup_pass(monkeypatch):
-    legacy_calls = 0
-
-    async def indexes(_mongo):
-        return None
-
-    async def legacy_delivery(_bot, _mongo, **_kwargs):
-        nonlocal legacy_calls
-        legacy_calls += 1
-        if legacy_calls == 1:
-            limit = ticket_extension.LEGACY_DELIVERY_RECOVERY_LIMIT
-            return {
-                "processed": limit,
-                "completed": limit,
-                "cancelled": 0,
-                "failed": 0,
-                "pending": 0,
-                "synthesized": limit,
-            }
-        return {
-            "processed": 0,
-            "completed": 0,
-            "cancelled": 0,
-            "failed": 0,
-            "pending": 0,
-            "synthesized": 0,
-        }
-
-    async def complete(**_kwargs):
-        return {"processed": 0, "completed": 0, "failed": 0}
-
-    async def open_context(**_kwargs):
-        return {
-            "processed": 0,
-            "completed": 0,
-            "failed": 0,
-            "after_ticket_id": None,
-            "exhausted": True,
-        }
-
-    async def no_wait(_delay):
-        return None
-
-    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
-    monkeypatch.setattr(
-        ticket_extension, "recover_pending_legacy_deliveries", legacy_delivery
-    )
-    monkeypatch.setattr(
-        ticket_extension.thread_service,
-        "recover_pending_thread_ticket_creations",
-        complete,
-    )
-    monkeypatch.setattr(
-        ticket_extension.legacy_migration,
-        "recover_pending_legacy_migrations",
-        complete,
-    )
-    monkeypatch.setattr(
-        ticket_extension.console,
-        "recover_pending_staff_identity_contexts",
-        complete,
-    )
-    monkeypatch.setattr(
-        ticket_extension.console,
-        "recover_open_staff_identity_contexts",
-        open_context,
-    )
-    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
-    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
-
-    async def scenario():
-        reconciler = ticket_extension.StartupReconciler(
-            "legacy-delivery-batches",
-            lambda: ticket_extension.recover_ticket_workflows(object(), object()),
-            retry_delays=(0,),
-            sleep=no_wait,
-        )
-        task = reconciler.start()
-        await task
-        return reconciler
-
-    reconciler = asyncio.run(scenario())
-
-    assert legacy_calls == 2
-    assert reconciler.health.attempts == 2
     assert reconciler.health.state == "healthy"
     assert ticket_extension.thread_intake_ready() is True
 

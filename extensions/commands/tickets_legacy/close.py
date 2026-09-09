@@ -23,10 +23,22 @@ from hikari.impl import (
 )
 
 
-MISSING_TICKET_MESSAGE = (
-    "❌ The ticket record is missing. No decision was recorded and no applicant "
-    "message was sent."
-)
+def _status_write_warning(result, doc_id) -> str:
+    """Return a recruiter-facing warning when a status update matched nothing.
+
+    Mongo reports success on a zero-match update_one, so a write against a missing
+    document silently no-ops while the channel rename further down still runs. That
+    divergence is how live channels ended up carrying a ✅/❌ emoji with their ticket
+    document still reading "open". The rename is deliberately still performed - the
+    emoji is the signal recruiters actually read - but the mismatch is surfaced
+    instead of being reported as success.
+    """
+    if getattr(result, "matched_count", 0):
+        return ""
+    return (
+        f"\n\n⚠️ **Status was not recorded** — no ticket document matched `{doc_id}`. "
+        f"The channel was still renamed; please report this to an admin."
+    )
 
 
 @ticket.register()
@@ -90,11 +102,11 @@ class Deny(
                 user_id = automation_doc["user_id"]
         except Exception:
             pass
-
+        
         # If not found in automation state, try to get from ticket
         if not user_id:
             user_id = ticket.get("user_id")
-
+        
         if not user_id:
             await ctx.respond(
                 "❌ Could not find the user associated with this ticket!"
@@ -133,7 +145,7 @@ class Deny(
                 )
             ]
         )
-
+        
         await ctx.respond(
             "Select a denial option:",
             components=[row],
@@ -203,20 +215,7 @@ class Approve(
             actor_id=ctx.user.id,
             actor_name=ctx.user.username,
             extra={"approved_at": store.utcnow(), "approved_by": ctx.user.id},
-            resolution_effect=resolve.build_resolution_effect(
-                kind=resolve.KIND_APPROVE,
-                user_id=ticket["user_id"],
-                actor_name=ctx.user.username,
-            ),
         )
-
-        if result.busy:
-            await ctx.respond(store.transition_busy_message(result))
-            return
-
-        if result.outcome == store.MISSING:
-            await ctx.respond(MISSING_TICKET_MESSAGE)
-            return
 
         if result.outcome == store.LOST:
             content, rows = await resolve.offer_override(
@@ -230,12 +229,17 @@ class Approve(
             await ctx.respond(content, components=rows)
             return
 
-        delivery_warning = ""
-        if not await resolve.deliver_committed_resolution(bot, mongo, result.doc):
-            delivery_warning = resolve.DELIVERY_QUEUED_WARNING
+        # A missing document is a data error, not a race, and is handled exactly
+        # as before: the channel is still marked, because the emoji is the signal
+        # recruiters actually read, and the mismatch is surfaced instead.
+        status_warning = "" if result.won else _status_write_warning(None, ticket["_id"])
+
+        await resolve.apply_approval(
+            bot, mongo, channel_id=ticket["channel_id"], actor_name=ctx.user.username
+        )
         await ctx.respond(
-            f"✅ Ticket approved for <@{ticket['user_id']}>!"
-            f"{delivery_warning}{resolve.claim_note(result.doc, ctx.user.id)}"
+            f"✅ Ticket approved for <@{ticket['user_id']}>!{status_warning}"
+            f"{resolve.claim_note(result.doc, ctx.user.id)}"
         )
         return
 
@@ -273,9 +277,9 @@ class Approve(
 #         if i > 0 and i % 5 == 0:
 #             print(f"[Tickets] Checked {i}/{len(open_tickets)} tickets, pausing 5s to avoid rate limits...")
 #             await asyncio.sleep(5)
-#
+#         
 #         checked_count += 1
-#
+#         
 #         try:
 #             # Try to fetch the channel
 #             channel = await bot.rest.fetch_channel(ticket["channel_id"])
@@ -346,7 +350,7 @@ async def deny_fwa_default_handler(
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
-
+    
     # Status FIRST, applicant message second. The message used to be sent before
     # this write, so two recruiters denying the same ticket in the same second
     # both succeeded and the applicant received two denials.
@@ -361,27 +365,7 @@ async def deny_fwa_default_handler(
             "denied_by": data['denier_id'],
             "denial_type": "fwa_default",
         },
-        resolution_effect=resolve.build_resolution_effect(
-            kind=resolve.KIND_DENY_FWA,
-            user_id=data["user_id"],
-            actor_name=data["denier_name"],
-        ),
     )
-
-    if result.busy:
-        await ctx.interaction.edit_initial_response(
-            content=store.transition_busy_message(result),
-            components=[],
-        )
-        return
-
-    if result.outcome == store.MISSING:
-        await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(
-            content=MISSING_TICKET_MESSAGE,
-            components=[],
-        )
-        return
 
     if result.outcome == store.LOST:
         content, rows = await resolve.offer_override(
@@ -396,13 +380,19 @@ async def deny_fwa_default_handler(
         await ctx.interaction.edit_initial_response(content=content, components=rows)
         return
 
-    delivery_warning = ""
-    if not await resolve.deliver_committed_resolution(bot, mongo, result.doc):
-        delivery_warning = resolve.DELIVERY_QUEUED_WARNING
+    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
+
+    await resolve.apply_denial(
+        bot, mongo,
+        kind=resolve.KIND_DENY_FWA,
+        channel_id=data['channel_id'],
+        user_id=data['user_id'],
+        actor_name=data['denier_name'],
+    )
     await delete_state(mongo, action_id)
 
     await ctx.interaction.edit_initial_response(
-        content=f"✅ FWA default denial sent!{delivery_warning}"
+        content=f"✅ FWA default denial sent!{status_warning}"
                 f"{resolve.claim_note(result.doc, ctx.user.id)}",
         component=None
     )
@@ -423,7 +413,7 @@ async def deny_main_default_handler(
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
-
+    
     # Status FIRST, applicant message second - see deny_fwa_default_handler.
     result = await store.transition(
         mongo,
@@ -436,27 +426,7 @@ async def deny_main_default_handler(
             "denied_by": data['denier_id'],
             "denial_type": "main_default",
         },
-        resolution_effect=resolve.build_resolution_effect(
-            kind=resolve.KIND_DENY_MAIN,
-            user_id=data["user_id"],
-            actor_name=data["denier_name"],
-        ),
     )
-
-    if result.busy:
-        await ctx.interaction.edit_initial_response(
-            content=store.transition_busy_message(result),
-            components=[],
-        )
-        return
-
-    if result.outcome == store.MISSING:
-        await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(
-            content=MISSING_TICKET_MESSAGE,
-            components=[],
-        )
-        return
 
     if result.outcome == store.LOST:
         content, rows = await resolve.offer_override(
@@ -471,13 +441,19 @@ async def deny_main_default_handler(
         await ctx.interaction.edit_initial_response(content=content, components=rows)
         return
 
-    delivery_warning = ""
-    if not await resolve.deliver_committed_resolution(bot, mongo, result.doc):
-        delivery_warning = resolve.DELIVERY_QUEUED_WARNING
+    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
+
+    await resolve.apply_denial(
+        bot, mongo,
+        kind=resolve.KIND_DENY_MAIN,
+        channel_id=data['channel_id'],
+        user_id=data['user_id'],
+        actor_name=data['denier_name'],
+    )
     await delete_state(mongo, action_id)
 
     await ctx.interaction.edit_initial_response(
-        content=f"✅ Main default denial sent!{delivery_warning}"
+        content=f"✅ Main default denial sent!{status_warning}"
                 f"{resolve.claim_note(result.doc, ctx.user.id)}",
         component=None
     )
@@ -502,7 +478,7 @@ async def deny_custom_handler(
         min_length=5,
         max_length=1000
     )
-
+    
     await ctx.interaction.create_modal_response(
         title="Custom Denial Reason",
         custom_id=f"process_custom_denial:{action_id}",
@@ -525,7 +501,7 @@ async def process_custom_denial_handler(
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
-
+    
     # Get denial reason from modal
     reason = ""
     for row in ctx.interaction.components:
@@ -533,7 +509,7 @@ async def process_custom_denial_handler(
             if comp.custom_id == "denial_reason":
                 reason = comp.value.strip()
                 break
-
+    
     # Status FIRST, applicant message second - see deny_fwa_default_handler.
     result = await store.transition(
         mongo,
@@ -547,28 +523,7 @@ async def process_custom_denial_handler(
             "denial_type": "custom",
             "denial_reason": reason,
         },
-        resolution_effect=resolve.build_resolution_effect(
-            kind=resolve.KIND_DENY_CUSTOM,
-            user_id=data["user_id"],
-            actor_name=data["denier_name"],
-            reason=reason,
-        ),
     )
-
-    if result.busy:
-        await ctx.respond(
-            store.transition_busy_message(result),
-            ephemeral=True,
-        )
-        return
-
-    if result.outcome == store.MISSING:
-        await delete_state(mongo, action_id)
-        await ctx.respond(
-            MISSING_TICKET_MESSAGE,
-            ephemeral=True,
-        )
-        return
 
     if result.outcome == store.LOST:
         content, rows = await resolve.offer_override(
@@ -584,13 +539,20 @@ async def process_custom_denial_handler(
         await ctx.respond(content, components=rows, ephemeral=True)
         return
 
-    delivery_warning = ""
-    if not await resolve.deliver_committed_resolution(bot, mongo, result.doc):
-        delivery_warning = resolve.DELIVERY_QUEUED_WARNING
+    status_warning = "" if result.won else _status_write_warning(None, data['ticket_id'])
+
+    await resolve.apply_denial(
+        bot, mongo,
+        kind=resolve.KIND_DENY_CUSTOM,
+        channel_id=data['channel_id'],
+        user_id=data['user_id'],
+        actor_name=data['denier_name'],
+        reason=reason,
+    )
     await delete_state(mongo, action_id)
 
     await ctx.respond(
-        f"✅ Custom denial sent!{delivery_warning}"
+        f"✅ Custom denial sent!{status_warning}"
         f"{resolve.claim_note(result.doc, ctx.user.id)}",
         ephemeral=True
     )

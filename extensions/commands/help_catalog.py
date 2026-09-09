@@ -88,6 +88,7 @@ HELP_CATEGORIES = {
             ("/ticket fix-mismatched", "Repair mismatched legacy records. Admin only."),
             ("/ticket claim", "Claim a legacy ticket. Recruiter/Admin only."),
             ("/ticket release", "Release a legacy ticket claim. Recruiter/Admin only."),
+            ("/ticket migrate-store", "Copy legacy ticket rows to the tickets collection. Admin only."),
         ],
     },
     "tickets_v2": {
