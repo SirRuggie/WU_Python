@@ -1516,6 +1516,59 @@ def test_refresh_worker_backs_off_exponentially_then_caps_at_one_hour(monkeypatc
     assert delays == [60.0, 120.0, 240.0, 480.0, 960.0, 1920.0, 3600.0, 3600.0]
 
 
+def test_worker_giving_up_on_missing_config_clears_stale_refresh_error():
+    """A prior publish failure recorded `refresh_error`/`refresh_failures` on
+    the shared hub state. If the console channel is then cleared, the
+    refresh worker gives up immediately (there is nowhere left to publish)
+    -- it must not leave that stale error sitting there forever, or
+    `/tickets rollout-status` keeps reporting a failure that stopped being
+    true the moment the channel was unset."""
+
+    class Collection:
+        def __init__(self, document):
+            self.document = document
+
+        async def find_one(self, _query):
+            return copy.deepcopy(self.document)
+
+        async def find_one_and_update(self, _query, update, **_kwargs):
+            self._apply(update)
+            return copy.deepcopy(self.document)
+
+        async def update_one(self, _query, update, **_kwargs):
+            self._apply(update)
+
+        def _apply(self, update):
+            for key, value in update.get("$set", {}).items():
+                self.document[key] = value
+            for key in update.get("$unset", {}):
+                self.document.pop(key, None)
+            for key, value in update.get("$inc", {}).items():
+                self.document[key] = self.document.get(key, 0) + value
+            for key, value in update.get("$max", {}).items():
+                self.document[key] = max(self.document.get(key, value), value)
+
+    document = {
+        "_id": console.HUB_STATE_ID,
+        "desired_revision": 3,
+        "applied_revision": 2,
+        "channel_id": None,
+        "refresh_error": "RuntimeError: ticket console channel is not configured",
+        "refresh_failures": 4,
+    }
+    collection = Collection(document)
+    mongo = SimpleNamespace(ticket_setup=collection)
+
+    result = asyncio.run(console._drain_hub_refreshes(
+        SimpleNamespace(), mongo, debounce=False
+    ))
+
+    assert result is False
+    assert collection.document.get("refresh_error") is None
+    assert collection.document.get("refresh_failures") == 0
+    assert asyncio.run(console.refresh_status(mongo)) == "not configured"
+
+
 def test_staff_context_delivery_is_one_durable_message_and_updates_in_place(monkeypatch):
     class Collection:
         def __init__(self):

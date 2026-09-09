@@ -188,6 +188,13 @@ def _mixed_id(value) -> list:
 
 
 async def find_by_location(mongo: MongoClient, location_id) -> dict | None:
+    # `channel_id`/`thread_id` are the guarded compatibility aliases of
+    # `location.id`/`location.staff_space_id` for every thread-runtime
+    # document (see GUARDED_IDENTITY_FIELDS) -- they are always equal, so
+    # matching on the two `location.*` fields already covers both aliases.
+    # Dropping those branches lets the `$or` run entirely off the unique
+    # partial indexes on `location.id`/`location.staff_space_id` instead of
+    # falling back to a collection scan.
     ids = _mixed_id(location_id)
     if not ids:
         return None
@@ -196,8 +203,6 @@ async def find_by_location(mongo: MongoClient, location_id) -> dict | None:
         "$or": [
             {"location.id": {"$in": ids}},
             {"location.staff_space_id": {"$in": ids}},
-            {"channel_id": {"$in": ids}},
-            {"thread_id": {"$in": ids}},
         ],
     })
 
@@ -1156,21 +1161,12 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
             name="thread_v2_ticket_staff_location_unique",
         ),
         # find_by_location's $or scans every guild message to resolve which
-        # ticket a channel/thread belongs to. The unique indexes above are
-        # scoped to a uniqueness *constraint*, not documented as this read
-        # path's support; give the read path its own explicit, non-unique
-        # partial indexes on the same two fields so the $or does not fall
-        # back to a collection scan.
-        await collection.create_index(
-            [("location.id", 1)],
-            partialFilterExpression=RUNTIME_FILTER,
-            name="thread_v2_location_lookup",
-        ),
-        await collection.create_index(
-            [("location.staff_space_id", 1)],
-            partialFilterExpression=RUNTIME_FILTER,
-            name="thread_v2_staff_location_lookup",
-        ),
+        # ticket a channel/thread belongs to. Its two branches query
+        # location.id/location.staff_space_id with a non-null $in, which
+        # entails existence -- so the unique partial indexes above (whose
+        # partial filter is exactly RUNTIME_FILTER plus that field existing)
+        # already serve the read path; a separate non-unique index on the
+        # same keys would be redundant.
         await collection.create_index(
             [("ticket_type", 1), ("ticket_number", 1)],
             unique=True,

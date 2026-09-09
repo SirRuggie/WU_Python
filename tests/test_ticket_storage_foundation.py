@@ -1647,27 +1647,52 @@ def test_account_recovery_or_predicates_each_have_a_selective_index():
         assert options["name"] in names
 
 
-def test_find_by_location_or_predicates_each_have_a_selective_index():
+def test_find_by_location_or_has_only_the_two_location_branches(monkeypatch):
     """`find_by_location`'s `$or` runs on every guild message to resolve
-    which ticket a channel/thread belongs to -- each branch it depends on
-    (`location.id`, `location.staff_space_id`) needs its own selective,
-    named, idempotent index scoped to RUNTIME_FILTER, not just the existing
-    uniqueness-constraint index that happens to share the same field."""
+    which ticket a channel/thread belongs to. `channel_id`/`thread_id` are
+    guarded aliases of `location.id`/`location.staff_space_id` that are
+    always equal on thread-runtime documents, so the `$or` must only carry
+    the two `location.*` branches -- those are the ones served by the
+    existing unique partial indexes; a `channel_id`/`thread_id` branch would
+    have no index and force a collection scan."""
+    ticket = _ticket(public=101, staff=102)
+    mongo = _mongo(ticket)
+
+    by_public = asyncio.run(store.find_by_location(mongo, 101))
+    assert by_public is not None
+    assert by_public["_id"] == ticket["_id"]
+
+    by_staff = asyncio.run(store.find_by_location(mongo, 102))
+    assert by_staff is not None
+    assert by_staff["_id"] == ticket["_id"]
+
+    captured = {}
+
+    async def fake_find_one(_mongo, filt):
+        captured.update(filt)
+        return None
+
+    monkeypatch.setattr(store, "find_one", fake_find_one)
+    asyncio.run(store.find_by_location(mongo, 101))
+    assert captured["$or"] == [
+        {"location.id": {"$in": [101, "101"]}},
+        {"location.staff_space_id": {"$in": [101, "101"]}},
+    ]
+
+
+def test_thread_v2_location_lookup_indexes_are_not_installed():
+    """The unique partial indexes on `location.id`/`location.staff_space_id`
+    already serve `find_by_location`'s `$or` (a non-null `$in` entails
+    existence, which is exactly what those indexes' partial filter requires)
+    -- a separate non-unique index on the same keys is redundant and must
+    not be installed."""
     mongo = _mongo(_ticket())
     names = asyncio.run(store.ensure_indexes(mongo))
-    indexes = {
-        options.get("name"): options
-        for _spec, options in mongo.tickets.indexes
-    }
-
-    for name, field in (
-        ("thread_v2_location_lookup", "location.id"),
-        ("thread_v2_staff_location_lookup", "location.staff_space_id"),
-    ):
-        assert name in names
-        options = indexes[name]
-        assert options["partialFilterExpression"] == store.RUNTIME_FILTER
-        assert "unique" not in options or not options["unique"]
+    assert "thread_v2_location_lookup" not in names
+    assert "thread_v2_staff_location_lookup" not in names
+    installed = {options.get("name") for _spec, options in mongo.tickets.indexes}
+    assert "thread_v2_location_lookup" not in installed
+    assert "thread_v2_staff_location_lookup" not in installed
 
     # Idempotent: a second install must not error and must produce the same
     # set of names.

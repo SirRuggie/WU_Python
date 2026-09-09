@@ -706,8 +706,16 @@ async def refresh_status(mongo: MongoClient) -> str | None:
     ``/tickets rollout-status`` use this to surface a permanent
     console-config failure that would otherwise only show up as repeated
     log lines.
+
+    A missing ``channel_id`` reports ``"not configured"`` ahead of any
+    ``refresh_error`` -- the refresh worker gives up (and clears
+    ``refresh_error``/``refresh_failures``) the moment the console channel
+    is unset, so an unconfigured console must never keep echoing whatever
+    error was last recorded before it was cleared.
     """
     state = await _hub_state(mongo)
+    if not _int(state.get("channel_id")):
+        return "not configured"
     error = state.get("refresh_error")
     return str(error) if error else None
 
@@ -760,6 +768,7 @@ async def _release_hub_lease(
     *,
     applied_revision: int | None = None,
     error: Exception | None = None,
+    clear_error: bool = False,
 ) -> None:
     update: dict = {"$unset": {"lease_owner": "", "lease_until": ""}}
     if applied_revision is not None:
@@ -774,6 +783,17 @@ async def _release_hub_lease(
             "refresh_failed_at": utcnow(),
         })
         update.setdefault("$inc", {})["refresh_failures"] = 1
+    if clear_error:
+        # The worker gave up because the console is unconfigured, not
+        # because a publish failed -- a stale `refresh_error` from an
+        # earlier failure must not keep surfacing once the config that
+        # caused it is gone. `refresh_status` reports "not configured"
+        # for a missing channel_id regardless, but clear the counters too
+        # so a later misconfiguration starts its failure count fresh.
+        update.setdefault("$set", {}).update({
+            "refresh_error": None,
+            "refresh_failures": 0,
+        })
     await mongo.ticket_setup.update_one(
         {"_id": HUB_STATE_ID, "lease_owner": owner},
         update,
@@ -946,7 +966,7 @@ async def _drain_hub_refreshes(
             await _release_hub_lease(mongo, owner)
             return True
         if not _int(state.get("channel_id")):
-            await _release_hub_lease(mongo, owner)
+            await _release_hub_lease(mongo, owner, clear_error=True)
             return False
         try:
             await _publish_hub(bot, mongo, state)
