@@ -428,6 +428,17 @@ def test_username_search_uses_only_the_indexed_normalized_field():
     }
 
 
+def test_bare_tag_search_matches_tag_or_username():
+    # Recruiters type tags without "#": "9llur8" must find #9LLUR8 and still
+    # match a member whose username happens to be "9llur8".
+    query = store._search_identity("9llur8")
+    assert {"player_tags": "#9LLUR8"} in query["$or"]
+    assert {"mentioned_tags": "#9LLUR8"} in query["$or"]
+    assert {"username_search": "9llur8"} in query["$or"]
+    # Letters outside the tag alphabet stay a plain username search.
+    assert store._search_identity("Applicant") == {"username_search": "applicant"}
+
+
 @pytest.mark.parametrize("count", [1, 15, 37])
 def test_linked_account_sync_persists_complete_snapshot_and_identity_audit(
     monkeypatch,

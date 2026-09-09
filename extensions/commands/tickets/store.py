@@ -278,6 +278,21 @@ def _search_identity(query: str) -> dict:
         raise SearchQueryError(
             "Use a Discord ID, player tag, or a 2-32 character username"
         )
+    # A bare tag typed without "#" (recruiters do this constantly) is both a
+    # plausible tag and a plausible username, so match either.
+    if re.fullmatch(r"[0289PYLQGRJCVUOo]{3,9}", value, re.IGNORECASE):
+        try:
+            tag = schema.player_tag("#" + value)
+        except schema.TicketSchemaError:
+            tag = None
+        if tag:
+            return {"$or": [
+                {"player_tags": tag},
+                {"mentioned_tags": tag},
+                {"player_tag": tag},
+                {"tag": tag},
+                {"username_search": schema.username_search(value)},
+            ]}
     # `username_search` is pre-normalized (casefolded, whitespace-collapsed)
     # the same way on write and here, and thread_v2_username_created indexes
     # exactly that field. A case-insensitive $regex on the raw `username`
