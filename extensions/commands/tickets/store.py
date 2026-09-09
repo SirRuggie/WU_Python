@@ -945,14 +945,20 @@ async def mark_thread_missing(
     let the applicant open a new one instead of pointing at a dead thread
     forever, and resolution effects can skip instead of retrying every 60s.
     Idempotent: re-marking an already-flagged ticket just refreshes the
-    timestamp, never raises.
+    timestamp, never raises. A staff marker never downgrades a candidate
+    marker: once the candidate thread is known missing (slot released, new
+    ticket allowed), a later staff-thread deletion must not overwrite that
+    fact and bring the ticket back into the open authority set.
     """
     role = str(thread_role or "").strip()
     if role not in {"candidate", "staff"}:
         raise ValueError("thread_role must be 'candidate' or 'staff'")
     now = utcnow()
+    filter_doc = {"_id": ticket_id, **RUNTIME_FILTER}
+    if role == "staff":
+        filter_doc["thread_missing.thread_role"] = {"$ne": "candidate"}
     updated = await mongo.tickets.find_one_and_update(
-        {"_id": ticket_id, **RUNTIME_FILTER},
+        filter_doc,
         {"$set": {
             "thread_missing": {"thread_role": role, "detected_at": now},
             "updated_at": now,
@@ -960,6 +966,11 @@ async def mark_thread_missing(
         return_document=ReturnDocument.AFTER,
     )
     if updated is None:
+        if role == "staff":
+            existing = await mongo.tickets.find_one({"_id": ticket_id, **RUNTIME_FILTER})
+            if existing is not None:
+                # Candidate marker already present; keep it, treat as done.
+                return Transition(WON, existing)
         return Transition(MISSING, None)
     return Transition(WON, updated)
 
