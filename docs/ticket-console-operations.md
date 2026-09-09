@@ -406,7 +406,15 @@ from ticket detail or `flags` before removing it.
    immediately. That follow-up work is idempotent and reconciled on its own
    at startup, so a crash mid-task loses nothing. **Decision recorded;
    updates retrying** means the terminal decision is safe and the remaining
-   work will retry.
+   work will retry. The three steps (applicant notification, staff context,
+   console/hub refresh) each checkpoint independently: a staff-context
+   delivery that is still pending only defers that one step and leaves
+   `resolution_effects.complete` false, it never holds back the applicant's
+   decision card. Each step's `resolution_effects.<step>.at` records when
+   that step itself actually delivered, even across retries — the pass that
+   finally clears every step only flips `complete`/`completed_at`, it does
+   not re-stamp the individual steps that already succeeded on an earlier
+   pass.
 
 The bot never archives or locks a ticket thread because of a decision.
 Approve, deny, and overturn all leave both the candidate and staff threads

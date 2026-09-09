@@ -410,22 +410,27 @@ async def _finalize_effects(
     mongo: MongoClient,
     ticket_id,
     marker: str,
-    *,
-    notification_message_id: int | None = None,
 ) -> bool:
+    """Mark resolution effects complete once every step is already done.
+
+    Only reached from `_process_resolution_effects_owned` when its `pending`
+    list is empty, i.e. the notification, staff_context and hub steps each
+    already checkpointed their own `state`/`at` (via `_checkpoint_effect`,
+    this pass or an earlier one). Re-stamping those three sub-documents here
+    used to overwrite honest per-step delivery times with the completion
+    time -- so a notification delivered promptly on an earlier pass looked,
+    in Mongo, exactly like it was delivered together with a staff_context
+    step that only cleared on a later retry. This only ever touches the
+    completion fields; the per-step docs are left as their own checkpoints
+    recorded them.
+    """
     now = store.utcnow()
-    notification_doc = {"state": "delivered", "at": now}
-    if notification_message_id:
-        notification_doc["message_id"] = int(notification_message_id)
     try:
         result = await store.update_one(
             mongo,
             {"_id": ticket_id, **store.RUNTIME_FILTER, "resolution_effects.marker": marker},
             {
                 "$set": {
-                    "resolution_effects.notification": notification_doc,
-                    "resolution_effects.staff_context": {"state": "delivered", "at": now},
-                    "resolution_effects.hub": {"state": "requested", "at": now},
                     "resolution_effects.complete": True,
                     "resolution_effects.completed_at": now,
                     "resolution_effects.updated_at": now,
@@ -755,10 +760,7 @@ async def _process_resolution_effects_owned(
             ),
         )
 
-    finalized = await _finalize_effects(
-        mongo, ticket["_id"], marker,
-        notification_message_id=notification_message_id or None,
-    )
+    finalized = await _finalize_effects(mongo, ticket["_id"], marker)
     latest = await store.find_one(
         mongo, {"_id": ticket["_id"], **store.RUNTIME_FILTER}
     )

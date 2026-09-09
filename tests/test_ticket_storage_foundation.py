@@ -3488,6 +3488,138 @@ def test_notification_failure_still_requests_hub(monkeypatch):
     assert effects["complete"] is False
 
 
+def test_staff_context_pending_defers_only_that_step_not_the_applicant(monkeypatch):
+    """Live-incident regression: staff-context delivery raising "pending" on
+    the first reconciliation pass must not delay the applicant's decision
+    card. Only the staff_context step may defer; notification (and hub)
+    still checkpoint on the pass that reaches them, and `complete` stays
+    False until staff_context is actually delivered. A second pass, with
+    staff context now ready, must complete without posting a second card,
+    and must not overwrite the notification step's own delivery timestamp
+    with the later completion time (the bug that made Mongo show
+    notification.at == staff_context.at for a card that actually posted
+    minutes earlier).
+    """
+    marker = "ticket-resolution:ticket_101:1:approved"
+    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "linked_accounts": {
+            "version": 1,
+            "state": account_sync.STATE_READY,
+            "current": [{
+                "tag": "#NEW123",
+                "name": "New Account",
+                "town_hall": 17,
+                "profile_status": "loaded",
+            }],
+            "current_tags": ["#NEW123"],
+            "retry_required": False,
+            "revision": 1,
+        },
+        "resolution_effects": {
+            "marker": marker,
+            "kind": resolve.KIND_APPROVE,
+            "notification": {"state": "pending"},
+            "staff_context": {"state": "pending"},
+            "hub": {"state": "pending"},
+            "complete": False,
+        },
+    })
+    mongo = _mongo(ticket)
+
+    class ApprovalRest(EffectRest):
+        async def create_message(self, *, channel, components, **_kwargs):
+            message = SimpleNamespace(
+                id=len(self.messages) + 1,
+                content="",
+                components=components,
+                author=SimpleNamespace(id=7),
+            )
+            self.messages.append(message)
+            return message
+
+    rest = ApprovalRest()
+
+    clock_calls = [0]
+
+    def fake_utcnow():
+        clock_calls[0] += 1
+        return NOW + timedelta(seconds=clock_calls[0])
+
+    monkeypatch.setattr(resolve.store, "utcnow", fake_utcnow)
+
+    context_calls = []
+
+    async def context_still_syncing(*_args, **_kwargs):
+        context_calls.append("pending")
+        raise RuntimeError("latest staff context refresh remains pending")
+
+    async def context_now_ready(_bot, _mongo, _ticket, **_kwargs):
+        context_calls.append("ready")
+        mongo.ticket_automation_state.documents[
+            f"ticket_staff_context:{ticket['_id']}"
+        ] = {
+            "_id": f"ticket_staff_context:{ticket['_id']}",
+            "kind": "ticket_staff_context",
+            "delivery_state": "delivered",
+            "refresh_requested_at": NOW,
+            "delivered_at": NOW,
+        }
+
+    hub_calls = []
+
+    async def hub(*_args, **_kwargs):
+        hub_calls.append(1)
+        return True
+
+    async def acquire(received_mongo, *_args, **_kwargs):
+        return await store.find_one(
+            received_mongo, {"_id": ticket["_id"], **store.RUNTIME_FILTER}
+        )
+
+    async def release(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(resolve, "_acquire_resolution_effect_lease", acquire)
+    monkeypatch.setattr(resolve, "_release_resolution_effect_lease", release)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", hub)
+    monkeypatch.setattr(console, "deliver_staff_identity_context", context_still_syncing)
+
+    first = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, ticket
+    ))
+
+    assert first.outcome == store.EFFECT_FAILED
+    assert first.reason == "RuntimeError: staff account context is pending"
+    effects1 = first.doc["resolution_effects"]
+    assert effects1["notification"]["state"] == "delivered"
+    assert effects1["staff_context"]["state"] == "failed"
+    assert effects1["hub"]["state"] == "requested"
+    assert effects1["complete"] is False
+    assert len(rest.messages) == 1
+    assert resolve._is_notification_card(rest.messages[0], resolve.KIND_APPROVE)
+    notification_at_first_pass = effects1["notification"]["at"]
+
+    monkeypatch.setattr(console, "deliver_staff_identity_context", context_now_ready)
+
+    second = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, first.doc
+    ))
+
+    assert second.won
+    effects2 = second.doc["resolution_effects"]
+    assert effects2["complete"] is True
+    assert effects2["staff_context"]["state"] == "delivered"
+    # Only one card ever went out -- the second pass did not re-notify.
+    assert len(rest.messages) == 1
+    assert context_calls == ["pending", "ready"]
+    assert hub_calls == [1]
+    # Finalizing must not stomp the notification step's own delivery time
+    # with the completion time of a later step's retry.
+    assert effects2["notification"]["at"] == notification_at_first_pass
+    assert effects2["notification"]["at"] != effects2["staff_context"]["at"]
+
+
 def test_resolution_effects_skip_a_known_missing_thread_instead_of_retrying(monkeypatch):
     """thread_missing is set by the GuildThreadDeleteEvent listener in
     handlers.py. Effects that need the gone thread must be marked skipped
