@@ -297,8 +297,11 @@ async def handle_create_ticket(
     if previous is not None:
         elapsed = (now - previous).total_seconds()
         if elapsed < COOLDOWN_DURATION:
+            # <t:..:R> renders as a live countdown ("in 9 seconds") on the
+            # applicant's client; a static number is wrong the moment it lands.
+            retry_at = int(previous.timestamp() + COOLDOWN_DURATION)
             await ctx.interaction.edit_initial_response(
-                content=f"⏳ Please wait {int(COOLDOWN_DURATION - elapsed)} seconds before trying again."
+                content=f"⏳ You can try again <t:{retry_at}:R>."
             )
             return
     await ctx.interaction.edit_initial_response(content="🎫 Creating your ticket…")

@@ -2193,7 +2193,7 @@ def test_cancelled_open_staff_context_sweep_retries_same_ticket(monkeypatch):
     assert result["failed"] == 0
 
 
-def test_terminal_staff_context_retry_converges_locked_after_restore_failure(monkeypatch):
+def test_terminal_staff_context_retry_reopens_and_stays_open(monkeypatch):
     ticket = _ticket(22, venue="thread", status="denied")
     ticket["location"].update({
         "guild_id": ticket["guild_id"],
@@ -2227,7 +2227,6 @@ def test_terminal_staff_context_retry_converges_locked_after_restore_failure(mon
         def __init__(self):
             self.archived = True
             self.locked = True
-            self.restore_failures = 1
             self.message_edits = 0
             self.message_creates = 0
 
@@ -2249,10 +2248,6 @@ def test_terminal_staff_context_retry_converges_locked_after_restore_failure(mon
             )
 
         async def edit_channel(self, _channel_id, **kwargs):
-            if kwargs.get("locked") is True and kwargs.get("archived") is True:
-                if self.restore_failures:
-                    self.restore_failures -= 1
-                    raise TimeoutError("restore acknowledgement lost")
             if "archived" in kwargs:
                 self.archived = kwargs["archived"]
             if "locked" in kwargs:
@@ -2276,24 +2271,20 @@ def test_terminal_staff_context_retry_converges_locked_after_restore_failure(mon
     )
     bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
 
-    first = asyncio.run(console.recover_pending_staff_identity_contexts(
+    # No re-lock/re-archive step exists any more, so a retried delivery
+    # completes in a single pass -- reopened once to deliver the message,
+    # then left open rather than restored to locked/archived.
+    result = asyncio.run(console.recover_pending_staff_identity_contexts(
         bot=bot, mongo=mongo
     ))
-    assert first == {"processed": 1, "completed": 0, "failed": 1}
+    assert result == {"processed": 1, "completed": 1, "failed": 0}
     assert (rest.archived, rest.locked) == (False, False)
-    assert states.documents[state_id]["delivery_state"] == "failed"
-
-    second = asyncio.run(console.recover_pending_staff_identity_contexts(
-        bot=bot, mongo=mongo
-    ))
-    assert second == {"processed": 1, "completed": 1, "failed": 0}
-    assert (rest.archived, rest.locked) == (True, True)
-    assert rest.message_edits == 2
+    assert rest.message_edits == 1
     assert rest.message_creates == 0
     assert states.documents[state_id]["delivery_state"] == "delivered"
 
 
-def test_current_terminal_staff_context_still_converges_locked_and_archived(monkeypatch):
+def test_current_terminal_staff_context_recovery_leaves_thread_open(monkeypatch):
     ticket = _ticket(29, venue="thread", status="approved")
     ticket["location"].update({
         "guild_id": ticket["guild_id"],
@@ -2320,7 +2311,6 @@ def test_current_terminal_staff_context_still_converges_locked_and_archived(monk
         def __init__(self):
             self.archived = False
             self.locked = False
-            self.channel_edits = 0
 
         async def fetch_channel(self, channel_id):
             return SimpleNamespace(
@@ -2336,10 +2326,11 @@ def test_current_terminal_staff_context_still_converges_locked_and_archived(monk
                 is_locked=self.locked,
             )
 
-        async def edit_channel(self, _channel_id, **kwargs):
-            self.channel_edits += 1
-            self.archived = kwargs["archived"]
-            self.locked = kwargs["locked"]
+        async def edit_channel(self, _channel_id, **_kwargs):
+            raise AssertionError(
+                "a decision must never archive or lock a thread -- context "
+                "already current and thread already open needs no edit"
+            )
 
         async def edit_message(self, **_kwargs):
             raise AssertionError("current context must not be edited")
@@ -2362,8 +2353,7 @@ def test_current_terminal_staff_context_still_converges_locked_and_archived(monk
     ))
 
     assert result == {"processed": 1, "completed": 1, "failed": 0}
-    assert (rest.archived, rest.locked) == (True, True)
-    assert rest.channel_edits == 1
+    assert (rest.archived, rest.locked) == (False, False)
 
 
 def test_staff_context_recovery_excludes_nonpending_and_clears_no_panel_error(monkeypatch):

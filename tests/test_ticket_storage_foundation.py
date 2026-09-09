@@ -3141,7 +3141,6 @@ def _effect_ticket():
             "kind": resolve.KIND_DENY_CUSTOM,
             "notification": {"state": "pending"},
             "staff_context": {"state": "delivered"},
-            "archive": {"state": "pending"},
             "hub": {"state": "pending"},
             "complete": False,
         },
@@ -3216,7 +3215,7 @@ def _effect_bot(rest):
 
 
 @pytest.mark.parametrize("fresh", [True, False])
-def test_final_account_context_must_be_fresh_before_terminal_archive(
+def test_final_account_context_must_be_fresh_before_terminal_effects(
     monkeypatch,
     fresh,
 ):
@@ -3243,7 +3242,6 @@ def test_final_account_context_must_be_fresh_before_terminal_archive(
             "kind": resolve.KIND_DENY_CUSTOM,
             "notification": {"state": "delivered"},
             "staff_context": {"state": "pending"},
-            "archive": {"state": "pending"},
             "hub": {"state": "pending"},
             "complete": False,
         },
@@ -3270,14 +3268,10 @@ def test_final_account_context_must_be_fresh_before_terminal_archive(
         }
         return 555
 
-    async def archive(*_args, **_kwargs):
-        order.append(("archive", ()))
-
     async def hub(*_args, **_kwargs):
         return True
 
     monkeypatch.setattr(console, "deliver_staff_identity_context", context)
-    monkeypatch.setattr(resolve.thread_service, "archive_ticket_pair", archive)
     monkeypatch.setattr(console, "request_hub_refresh_best_effort", hub)
     result = asyncio.run(resolve._process_resolution_effects_owned(
         _effect_bot(EffectRest()),
@@ -3285,12 +3279,12 @@ def test_final_account_context_must_be_fresh_before_terminal_archive(
         ticket,
     ))
 
-    assert order[0] == ("context", ("#NEW123",))
+    # No archive step exists any more -- staff context is the only thing
+    # this path calls, and its freshness alone decides WON vs EFFECT_FAILED.
+    assert order == [("context", ("#NEW123",))]
     if fresh:
-        assert order[1] == ("archive", ())
         assert result.outcome == store.WON
     else:
-        assert all(step != "archive" for step, _details in order)
         assert result.outcome == store.EFFECT_FAILED
 
 
@@ -3298,7 +3292,6 @@ def test_checkpoint_failure_after_notification_does_not_report_false_failure(mon
     ticket = _effect_ticket()
     rest = EffectRest()
     sends = []
-    archives = []
     checkpoint_failed = False
 
     async def side_effects(*_args, marker, **_kwargs):
@@ -3317,9 +3310,6 @@ def test_checkpoint_failure_after_notification_does_not_report_false_failure(mon
             raise TimeoutError("acknowledgement lost")
         return Result(1)
 
-    async def archive(*_args):
-        archives.append(True)
-
     async def refresh(*_args, **_kwargs):
         return True
 
@@ -3337,17 +3327,15 @@ def test_checkpoint_failure_after_notification_does_not_report_false_failure(mon
     monkeypatch.setattr(resolve.store, "find_one", latest)
     monkeypatch.setattr(resolve, "_acquire_resolution_effect_lease", acquire)
     monkeypatch.setattr(resolve, "_release_resolution_effect_lease", release)
-    monkeypatch.setattr(resolve.thread_service, "archive_ticket_pair", archive)
     monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
     result = asyncio.run(resolve.process_resolution_effects(
         _effect_bot(rest), SimpleNamespace(), ticket
     ))
     assert result.won
     assert sends == [ticket["resolution_effects"]["marker"]]
-    assert archives == [True]
 
 
-def test_notification_failure_still_archives_and_requests_hub(monkeypatch):
+def test_notification_failure_still_requests_hub(monkeypatch):
     ticket = _effect_ticket()
     mongo = _mongo(ticket)
     rest = EffectRest()
@@ -3356,9 +3344,6 @@ def test_notification_failure_still_archives_and_requests_hub(monkeypatch):
     async def notification(*_args, **_kwargs):
         calls.append("notification")
         raise TimeoutError("notification unavailable")
-
-    async def archive(*_args):
-        calls.append("archive")
 
     async def refresh(*_args, **_kwargs):
         calls.append("hub")
@@ -3375,7 +3360,6 @@ def test_notification_failure_still_archives_and_requests_hub(monkeypatch):
     monkeypatch.setattr(resolve, "run_side_effects", notification)
     monkeypatch.setattr(resolve, "_acquire_resolution_effect_lease", acquire)
     monkeypatch.setattr(resolve, "_release_resolution_effect_lease", release)
-    monkeypatch.setattr(resolve.thread_service, "archive_ticket_pair", archive)
     monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
 
     result = asyncio.run(resolve.process_resolution_effects(
@@ -3383,11 +3367,10 @@ def test_notification_failure_still_archives_and_requests_hub(monkeypatch):
     ))
 
     assert result.outcome == store.EFFECT_FAILED
-    assert calls == ["notification", "archive", "hub"]
+    assert calls == ["notification", "hub"]
     assert result.reason == "TimeoutError: applicant notification is pending"
     effects = result.doc["resolution_effects"]
     assert effects["notification"]["state"] == "failed"
-    assert effects["archive"]["state"] == "archived"
     assert effects["hub"]["state"] == "requested"
     assert effects["complete"] is False
 
@@ -3439,12 +3422,10 @@ def test_resolution_effects_skip_a_known_missing_thread_instead_of_retrying(monk
 
     assert result.outcome == store.WON
     assert result.doc["resolution_effects"]["complete"] is True
-    # The staff thread (102) still got archived; only the missing candidate
-    # thread (101) was skipped rather than retried.
-    assert (102, {"locked": True, "archived": True, "reason": "Archiving resolved ticket"}) in rest.edits
+    # A decision never archives or locks either thread, missing or not.
+    assert rest.edits == []
     audit_events = [entry["event"] for entry in result.doc["audit"]]
     assert "resolution_notification_skipped" in audit_events
-    assert "resolution_archive_skipped" in audit_events
 
 
 @pytest.mark.parametrize("order", [("candidate", "staff"), ("staff", "candidate")])
@@ -3522,11 +3503,10 @@ def test_thread_missing_records_both_roles_regardless_of_mark_order(monkeypatch,
     assert "resolution_staff_context_skipped" in audit_events
 
 
-def test_notification_retry_reopens_only_to_write_and_rearchives(monkeypatch):
+def test_notification_retry_reopens_only_to_write_and_stays_open(monkeypatch):
     ticket = _effect_ticket()
     ticket["resolution_effects"].update({
         "notification": {"state": "failed"},
-        "archive": {"state": "archived"},
         "hub": {"state": "requested"},
     })
     mongo = _mongo(ticket)
@@ -3572,16 +3552,11 @@ def test_notification_retry_reopens_only_to_write_and_rearchives(monkeypatch):
             "locked": False,
             "reason": "Delivering an updated ticket decision",
         }),
-        (101, {
-            "locked": True,
-            "archived": True,
-            "reason": "Archiving resolved ticket",
-        }),
     ]
-    assert all(
-        channel.is_archived and channel.is_locked
-        for channel in rest.channels.values()
-    )
+    # The candidate thread was reopened to deliver the notice and stays
+    # open -- nothing re-archives or re-locks it afterward.
+    assert not rest.channels[101].is_archived
+    assert not rest.channels[101].is_locked
     assert result.doc["resolution_effects"]["complete"] is True
 
     edits = list(rest.edits)
@@ -3594,7 +3569,7 @@ def test_notification_retry_reopens_only_to_write_and_rearchives(monkeypatch):
 
 
 @pytest.mark.parametrize("cancel_stage", ["before", "during", "after"])
-def test_resolution_notification_cancellation_archives_releases_and_resumes_once(
+def test_resolution_notification_cancellation_releases_and_resumes_once(
     monkeypatch,
     cancel_stage,
 ):
@@ -3649,10 +3624,11 @@ def test_resolution_notification_cancellation_archives_releases_and_resumes_once
         ))
 
     assert cancellation_injected is True
-    assert all(
-        channel.is_archived and channel.is_locked
-        for channel in rest.channels.values()
-    )
+    # Cancellation must not archive or lock either thread. Only the
+    # candidate thread was reopened to deliver the notice, and it stays
+    # open; the staff thread is untouched by this path.
+    assert not rest.channels[101].is_archived
+    assert not rest.channels[101].is_locked
     durable = mongo.tickets.documents[ticket["_id"]]
     assert durable["resolution_effects"]["complete"] is False
     assert "lease_owner" not in durable["resolution_effects"]
@@ -3666,10 +3642,8 @@ def test_resolution_notification_cancellation_archives_releases_and_resumes_once
         marker in str(getattr(message, "content", ""))
         for message in rest.messages
     ) == 1
-    assert all(
-        channel.is_archived and channel.is_locked
-        for channel in rest.channels.values()
-    )
+    assert not rest.channels[101].is_archived
+    assert not rest.channels[101].is_locked
 
 
 def test_checkpoint_effect_caps_audit_at_max_entries():
@@ -3693,11 +3667,10 @@ def test_checkpoint_effect_caps_audit_at_max_entries():
     assert audit[-1]["event"] == "resolution_notification_attempt_249"
 
 
-def test_archive_retry_finds_marker_and_never_duplicates_notification(monkeypatch):
+def test_hub_retry_finds_marker_and_never_duplicates_notification(monkeypatch):
     ticket = _effect_ticket()
     rest = EffectRest()
     sends = []
-    archive_attempts = 0
     hub_attempts = 0
 
     async def side_effects(*_args, marker, **_kwargs):
@@ -3711,15 +3684,11 @@ def test_archive_retry_finds_marker_and_never_duplicates_notification(monkeypatc
     async def update(*_args, **_kwargs):
         return Result(1)
 
-    async def archive(*_args):
-        nonlocal archive_attempts
-        archive_attempts += 1
-        if archive_attempts == 1:
-            raise TimeoutError("archive response lost")
-
     async def refresh(*_args, **_kwargs):
         nonlocal hub_attempts
         hub_attempts += 1
+        if hub_attempts == 1:
+            raise TimeoutError("hub refresh response lost")
         return True
 
     async def latest(*_args, **_kwargs):
@@ -3736,7 +3705,6 @@ def test_archive_retry_finds_marker_and_never_duplicates_notification(monkeypatc
     monkeypatch.setattr(resolve.store, "find_one", latest)
     monkeypatch.setattr(resolve, "_acquire_resolution_effect_lease", acquire)
     monkeypatch.setattr(resolve, "_release_resolution_effect_lease", release)
-    monkeypatch.setattr(resolve.thread_service, "archive_ticket_pair", archive)
     monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
     first = asyncio.run(resolve.process_resolution_effects(
         _effect_bot(rest), SimpleNamespace(), ticket
@@ -3747,9 +3715,117 @@ def test_archive_retry_finds_marker_and_never_duplicates_notification(monkeypatc
     assert first.outcome == store.EFFECT_FAILED
     assert second.won
     assert sends == [ticket["resolution_effects"]["marker"]]
-    assert archive_attempts == 2
     assert hub_attempts == 2
     assert rest.fetch_channel_calls == [101]
+
+
+@pytest.mark.parametrize("status,kind", [
+    ("approved", resolve.KIND_APPROVE),
+    ("denied", resolve.KIND_DENY_CUSTOM),
+])
+def test_approve_and_deny_effects_never_lock_or_archive_either_thread(
+    monkeypatch, status, kind,
+):
+    """Owner decision, live smoke test 2026-09-09: approving/denying a
+    ticket locked and archived both threads immediately, so nobody could
+    see the notice or keep talking. The bot must never archive or lock a
+    ticket thread because of a decision -- both threads stay open.
+    """
+    ticket = _ticket(status=status, source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "handled_by_name": "Recruiter",
+        "resolution_effects": {
+            "marker": f"ticket-resolution:{ticket['_id']}:1:{status}",
+            "kind": kind,
+            "notification": {"state": "pending"},
+            "staff_context": {"state": "delivered"},
+            "hub": {"state": "pending"},
+            "complete": False,
+        },
+    })
+    if kind != resolve.KIND_APPROVE:
+        ticket["denial_type"] = "custom"
+        ticket["denial_reason"] = "Not eligible"
+    mongo = _mongo(ticket)
+    rest = EffectRest()
+
+    async def notification(*_args, marker, **_kwargs):
+        rest.messages.append(SimpleNamespace(
+            content=f"-# {marker}",
+            components=[],
+            author=SimpleNamespace(id=7),
+        ))
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, "run_side_effects", notification)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    result = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, ticket
+    ))
+
+    assert result.won
+    assert not any(
+        kwargs.get("archived") is True or kwargs.get("locked") is True
+        for _channel_id, kwargs in rest.edits
+    )
+
+
+def test_overturn_unarchives_to_post_and_never_rearchives(monkeypatch):
+    """Owner decision, live smoke test 2026-09-09: an overturn must be able
+    to deliver its fresh decision card into a candidate thread Discord had
+    already auto-archived -- unarchiving it to post, then leaving it open
+    rather than re-archiving or re-locking it.
+    """
+    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "handled_by_name": "Recruiter",
+        "resolution_effects": {
+            "marker": f"ticket-resolution:{ticket['_id']}:2:approved",
+            "kind": resolve.KIND_APPROVE,
+            "notification": {"state": "pending"},
+            "staff_context": {"state": "delivered"},
+            "hub": {"state": "pending"},
+            "complete": False,
+        },
+    })
+    mongo = _mongo(ticket)
+    # Discord's own seven-day inactivity archive never locks a thread.
+    rest = EffectRest(archived=True, locked=False)
+    notices = []
+
+    async def notification(*_args, marker, **_kwargs):
+        notices.append(marker)
+        rest.messages.append(SimpleNamespace(
+            content=f"-# {marker}",
+            components=[],
+            author=SimpleNamespace(id=7),
+        ))
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, "run_side_effects", notification)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    result = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, ticket
+    ))
+
+    assert result.won
+    assert notices == [ticket["resolution_effects"]["marker"]]
+    assert (101, {
+        "archived": False,
+        "reason": "Delivering an updated ticket decision",
+    }) in rest.edits
+    assert not any(
+        kwargs.get("archived") is True or kwargs.get("locked") is True
+        for _channel_id, kwargs in rest.edits
+    )
+    assert not rest.channels[101].is_archived
+    assert not rest.channels[101].is_locked
 
 
 def test_resolution_effect_lease_blocks_a_second_notification_worker(monkeypatch):

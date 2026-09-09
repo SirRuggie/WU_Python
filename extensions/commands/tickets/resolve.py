@@ -44,7 +44,6 @@ from extensions.commands.tickets import (
     perms,
     schema,
     store,
-    thread_service,
 )
 from extensions.components import register_action
 from utils.constants import RED_ACCENT
@@ -59,7 +58,7 @@ RESOLUTION_EFFECT_RETRY_MESSAGE = (
     "updates are retrying automatically. Ask an admin to inspect only if this persists."
 )
 OVERRIDE_EFFECT_PENDING_MESSAGE = (
-    "The earlier decision is still finishing its applicant and archive updates. "
+    "The earlier decision is still finishing its applicant and console updates. "
     "Nothing was changed. Try this override again in a moment."
 )
 FWA_IDENTITY_REVIEW_MESSAGE = (
@@ -306,7 +305,6 @@ async def _finalize_effects(mongo: MongoClient, ticket_id, marker: str) -> bool:
                 "$set": {
                     "resolution_effects.notification": {"state": "delivered", "at": now},
                     "resolution_effects.staff_context": {"state": "delivered", "at": now},
-                    "resolution_effects.archive": {"state": "archived", "at": now},
                     "resolution_effects.hub": {"state": "requested", "at": now},
                     "resolution_effects.complete": True,
                     "resolution_effects.completed_at": now,
@@ -414,19 +412,6 @@ async def _release_resolution_effect_lease(
         _log.exception("resolution effect lease release failed ticket=%s", ticket_id)
 
 
-async def _archive_terminal_pair_after_cancellation(
-    rest: hikari.api.RESTClient,
-    ticket: dict,
-) -> None:
-    """Best-effort physical convergence while cancellation is propagating."""
-    try:
-        await thread_service.archive_ticket_pair(rest, ticket)
-    except Exception:
-        _log.exception(
-            "resolution cancellation archive failed ticket=%s", ticket.get("_id")
-        )
-
-
 async def _process_resolution_effects_owned(
         bot: hikari.GatewayBot,
         mongo: MongoClient,
@@ -438,8 +423,6 @@ async def _process_resolution_effects_owned(
     kind = _resolution_kind(ticket)
     location_id = int((ticket.get("location") or {}).get("id") or 0)
     pending: list[tuple[str, Exception]] = []
-    notification_write_needed = False
-    staff_context_ready = True
     # Set by the GuildThreadDeleteEvent listener in handlers.py. A step that
     # needs the missing half of the pair is marked skipped (with an audit
     # note from _checkpoint_effect) instead of retried every 60s forever.
@@ -463,7 +446,6 @@ async def _process_resolution_effects_owned(
                     marker,
                     bot_user_id=int(me.id),
                 ):
-                    notification_write_needed = True
                     await _ensure_notification_thread_writable(bot.rest, ticket)
                     await run_side_effects(
                         bot,
@@ -525,7 +507,6 @@ async def _process_resolution_effects_owned(
                 state="delivered",
             )
     except Exception as exc:
-        staff_context_ready = False
         await _checkpoint_effect(
             mongo,
             ticket["_id"],
@@ -535,35 +516,6 @@ async def _process_resolution_effects_owned(
             error=exc,
         )
         pending.append(("staff account context", exc))
-
-    if staff_context_ready:
-        try:
-            # Reconcile physical state on every attempt. A notification retry may
-            # have temporarily reopened the candidate after an earlier archive
-            # checkpoint, and terminal threads must never be left active.
-            await thread_service.archive_ticket_pair(bot.rest, ticket)
-            if (
-                (effects.get("archive") or {}).get("state") != "archived"
-                or notification_write_needed
-            ):
-                await _checkpoint_effect(
-                    mongo, ticket["_id"], marker, step="archive", state="archived"
-                )
-        except Exception as exc:
-            if candidate_thread_missing or staff_thread_missing:
-                # A thread of the pair is already known gone -- the
-                # GuildThreadDeleteEvent listener recorded it. The other
-                # half may or may not be archived, but retrying this every
-                # 60s cannot fix a thread that no longer exists.
-                await _checkpoint_effect(
-                    mongo, ticket["_id"], marker, step="archive", state="skipped",
-                    error=exc,
-                )
-            else:
-                await _checkpoint_effect(
-                    mongo, ticket["_id"], marker, step="archive", state="failed", error=exc
-                )
-                pending.append(("thread archive", exc))
 
     try:
         if (effects.get("hub") or {}).get("state") != "requested":
@@ -614,7 +566,7 @@ async def process_resolution_effects(
         mongo: MongoClient,
         ticket: dict,
 ) -> store.Transition:
-    """Reconcile notify -> archive -> hub without duplicating notifications."""
+    """Reconcile notify -> staff context -> hub without duplicating notifications."""
     effects = ticket.get("resolution_effects") or {}
     if effects.get("complete"):
         return store.Transition(store.WON, ticket, "effects already complete")
@@ -649,11 +601,7 @@ async def process_resolution_effects(
             "another worker is delivering this decision",
         )
     try:
-        try:
-            return await _process_resolution_effects_owned(bot, mongo, leased)
-        except asyncio.CancelledError:
-            await _archive_terminal_pair_after_cancellation(bot.rest, leased)
-            raise
+        return await _process_resolution_effects_owned(bot, mongo, leased)
     finally:
         await _release_resolution_effect_lease(
             mongo, ticket["_id"], marker, owner
@@ -1223,9 +1171,10 @@ async def overturn_ticket(
 
     Reuses the normal approve/deny path with the same override CAS the
     legacy race-loss flow uses, so the candidate thread gets a fresh decision
-    card (unarchive, post, re-archive) and approve-after-deny still runs the
-    usual approval checks (blacklist, linked accounts). Deny-after-approve
-    additionally removes whatever roles the earlier approval granted.
+    card (unarchived first if Discord had auto-archived it, then posted --
+    never re-archived) and approve-after-deny still runs the usual approval
+    checks (blacklist, linked accounts). Deny-after-approve additionally
+    removes whatever roles the earlier approval granted.
     """
     if to_status not in schema.TERMINAL_STATUSES:
         raise ValueError("to_status must be approved or denied")

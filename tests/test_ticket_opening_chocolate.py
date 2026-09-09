@@ -549,14 +549,16 @@ def test_recovered_terminal_accounts_update_archived_checklist_without_duplicate
 
     assert creates_after_recovery == 3
     assert rest.creates == creates_after_recovery
-    assert (rest.archived, rest.locked) == (True, True)
+    # A decision never re-archives or re-locks the staff thread; it was
+    # reopened once to deliver the recovered context and stays open.
+    assert (rest.archived, rest.locked) == (False, False)
     copy = "\n".join(
         content for message in rest.messages for content in _contents(message.components)
     )
     assert copy.count("cc.fwafarm.com") == 30
 
 
-def test_terminal_reopen_unlock_and_archive_each_require_a_fresh_lease():
+def test_terminal_reopen_and_unlock_each_require_a_fresh_lease():
     renewals = 0
     effects = []
     ticket = _ticket(count=1)
@@ -596,7 +598,7 @@ def test_terminal_reopen_unlock_and_archive_each_require_a_fresh_lease():
             pass
 
     asyncio.run(scenario())
-    assert renewals == 3
+    assert renewals == 2
     assert [kwargs for _channel_id, kwargs in effects] == [
         {
             "archived": False,
@@ -605,11 +607,6 @@ def test_terminal_reopen_unlock_and_archive_each_require_a_fresh_lease():
         {
             "locked": False,
             "reason": "Retrying committed ticket staff context",
-        },
-        {
-            "locked": True,
-            "archived": True,
-            "reason": "Restoring resolved ticket staff thread",
         },
     ]
 

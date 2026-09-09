@@ -406,18 +406,19 @@ owns the implemented authority contract.
 | Questionnaire | `GuildChannelCreateEvent` → monitor | posted inline at creation (threads fire `GuildThreadCreateEvent`, not the channel event) |
 | Status | channel rename ✅/❌ | **Mongo only** — never rename |
 | Approve/Deny | Conditional terminal transition in the legacy authority | Conditional terminal transition in the v2 authority |
-| *(no "close")* | rename, leave forever | `archived: true, locked: true` in one PATCH, background-only — see below |
+| *(no "close")* | rename, leave forever | left open and writable; never archived or locked for a decision — see below |
 
-`locked` matters: archive alone means any stray message silently reopens a
-resolved ticket and re-consumes an active slot. Locked returns error `160005`
-instead.
+Neither `archived` nor `locked` is set by a decision: both threads stay
+postable, and Discord's own 7-day inactivity auto-archive is the only thing
+that ever dormant-flags a terminal thread.
 
 > **2026-08-17: there is no "close."** Decided in console review — tickets
 > are permanently `approved` or `denied`, never a status meaning gone, and
-> the console never renders "closed." The implemented runtime locks and
-> archives both terminal threads. Console jump links open them read-only; they
-> remain locked and archived and are not automatically unarchived. Full
-> reasoning is in [ticket-console.md](ticket-console.md) §7.
+> the console never renders "closed." The implemented runtime never locks or
+> archives a thread because of a decision; both terminal threads stay open
+> and writable, with Discord's own 7-day inactivity auto-archive the only
+> archiving. Console jump links open them read-only. Full reasoning is in
+> [ticket-console.md](ticket-console.md) §7.
 
 ## 3.4 Implemented phase routing
 
@@ -467,11 +468,11 @@ slots, and pending legacy workflows.
 | 1 | **Legacy reconciliation could mistake threads for missing channels.** | Resolved by separate legacy/v2 repositories and command surfaces; legacy reconciliation does not own v2 rows. |
 | 2 | **A dashboard handler could delete a ticket record through the old shared-state convention.** | Resolved with dedicated component state and v2 action namespacing. |
 | 3 | **Losing the recruiter back-channel.** Two commercial bots lost it in this exact migration. | Resolved: every v2 ticket receives a parallel staff thread in the configured private staff parent. |
-| 4 | **Tickets become inoperable when archived** — an original-design concern. | The implemented v2 flow acts before terminal archive, then keeps terminal pairs locked, archived, and available read-only. Durable recovery temporarily repairs only pending bot-owned work. |
+| 4 | **Tickets become inoperable when archived** — an original-design concern. | Resolved by not archiving: the implemented v2 flow leaves both terminal threads open and writable, never locking or archiving them for a decision. Durable recovery temporarily repairs only pending bot-owned work. |
 | 5 | **Silent status overwrite** — approve could clobber deny. | Resolved: both runtimes use conditional terminal transitions; only one decision wins. |
 | 6 | **A legacy clone cannot fetch a source attachment.** | The read-only preview audits attachment loss; confirmation requires the exact reported `LOSS-...` token. The source remains unchanged. |
 | 7 | **A large recruiter role cannot rely on role-mention auto-add.** | Resolved by requiring `MANAGE_THREADS` on the configured recruiter role; parent validation enforces it. |
-| 8 | **~1000 active-thread cap is undocumented** and Discord shortens auto-archive as you approach it. | The implemented runtime locks and archives each terminal pair. Console links keep it read-only and do not auto-unarchive it. |
+| 8 | **~1000 active-thread cap is undocumented** and Discord shortens auto-archive as you approach it. | The implemented runtime does not archive terminal pairs to manage the cap; Discord's own 7-day inactivity auto-archive is what eventually removes a decided thread from the active count. Console links keep the thread read-only either way. |
 | 9 | **System-message spam** on every thread member add. Undeletable. | Set membership once at creation; never use add/remove for claiming. |
 | 10 | **`SEND_MESSAGES` does nothing in threads** — candidates need `SEND_MESSAGES_IN_THREADS`. | `/ticket-pilot configure-threads` validates configured parent and recruiter permissions, `/ticket-pilot thread-config` revalidates them, and intake validates the applicant before creating threads. |
 | 11 | Thread renames fail *silently* at ~2/10min. | Never rename. Status in Mongo. |
@@ -507,7 +508,7 @@ Full detail and reasoning in [ticket-console.md](ticket-console.md). Summary:
 | 13 | **Blacklist is binary, no "maybe" tier.** Two more flags added as non-blocking cautions: denied-before, not-loyal-to-WU. | Implemented in the audited `ticket_flags` collection; only Blacklisted blocks approval. See [ticket-console.md](ticket-console.md), Related. |
 | 14 | **Status/Type filters cannot live inside the "Find a ticket" modal** — hikari has no Label builder, so Discord's Aug-2025 modal-select support is unreachable (the wall established in §1.5). Relocated to the ephemeral results panel as two message selects. | Corrects a mockup mistake before it became a build mistake. |
 | 15 | **`/fwa chocolate` is a link-out, not a lookup** — confirmed against `extensions/commands/fwa/chocolate.py`. A human reads the ban status and records it as a flag. | Corrects a second mockup mistake; the flag record's shape (`addedBy`, `checkedAt`, `source`) was already right for this. |
-| 16 | **Nothing is ever "closed."** Tickets are permanently `approved`/`denied`; the thread is never renamed to imply done, never deleted. | Implemented: the runtime locks and archives both terminal threads, while console links keep them available read-only. See [ticket-console.md](ticket-console.md) §7. |
+| 16 | **Nothing is ever "closed."** Tickets are permanently `approved`/`denied`; the thread is never renamed to imply done, never deleted. | Implemented: the runtime never locks or archives a thread for a decision, so both terminal threads stay open and writable, while console links keep them available read-only. See [ticket-console.md](ticket-console.md) §7. |
 | 17 | **Ticket-history auto-detect** — any repeat Discord ID/player tag gets a staff-thread panel with jump links, independent of the flag system. Fires for everyone with history, not just flagged people. | New behavior, not in the original proposal at all. |
 | 18 | **The flag is labelled "Blacklisted," not "On blacklist."** | Copy change only; applied to console copy, the chart pill and the mockup. |
 | 19 | **Chart palette is vibrant, and colorblind/CVD validation is explicitly NOT a requirement.** The earlier `dataviz` six-check palette (`#43a25a`/`#7b83f0`/`#e0656a`) is rescinded. Flag colors are sampled from the supplied artwork. | Reverses a self-imposed constraint that was never asked for. The only standing audience requirement is plain-English copy. See [ticket-console.md](ticket-console.md) §3.2. |

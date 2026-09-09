@@ -684,7 +684,6 @@ async def transition(
             "kind": str(effect_kind or ("approve" if target == "approved" else "deny_custom")),
             "notification": {"state": "pending"},
             "staff_context": {"state": "pending"},
-            "archive": {"state": "pending"},
             "hub": {"state": "pending"},
             "complete": False,
             "updated_at": now,

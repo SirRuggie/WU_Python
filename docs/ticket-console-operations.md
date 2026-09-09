@@ -216,7 +216,7 @@ following before promotion:
 - The target public-v2 panel remains disabled.
 - The shared open-ticket guard blocks a duplicate across the two runtimes.
 - The console, search, account context, flags, Chocolate links, approve, deny,
-  and terminal thread archive all work as expected.
+  and overturn all work as expected, leaving both threads open afterward.
 
 ### 6. Promote the target public-v2 panel
 
@@ -386,33 +386,39 @@ from ticket detail or `flags` before removing it.
    any roles the approval granted), and it is logged on the ticket as an
    overturn. `/tickets approve`/`deny` never offers an overturn — on a
    decided ticket it just names who decided it and points to the console.
-7. Applicant notification, staff updates, archive, and console refresh are
-   durable follow-up work. **Decision recorded; updates retrying** means the
+7. Applicant notification, staff updates, and console refresh are durable
+   follow-up work. **Decision recorded; updates retrying** means the
    terminal decision is safe and the remaining work will retry.
 
-Terminal candidate and staff threads remain locked, archived, and available
-read-only from the console; an overturn briefly unarchives the candidate
-thread to deliver the new decision card, then re-archives it.
+The bot never archives or locks a ticket thread because of a decision.
+Approve, deny, and overturn all leave both the candidate and staff threads
+open and writable, so recruiters and applicants can keep talking in a
+decided ticket. If Discord had already auto-archived a thread (see below),
+delivering the decision notice or an overturn's fresh card briefly
+unarchives it to post, then leaves it open rather than re-archiving it.
 
 ## Candidate return and follow-up status
 
-Candidate follow-up is **not implemented**. A candidate cannot currently use
-the console, find their archived ticket, or post into the locked candidate
-thread a month later. Staff can open its details and archived links through the
-private console, `/tickets find`, or `/tickets history`.
+A self-service **My Tickets / Ask Follow-Up** action is **not implemented**.
+A candidate cannot currently use the console or search for their own past
+tickets. Staff can open ticket details and thread links through the private
+console, `/tickets find`, or `/tickets history`.
 
-This is separate from a still-**open** ticket's thread going idle: Discord
-auto-archives it after seven days of silence, but it is never locked while
-open, so the applicant's next message re-opens it on its own, the thread
-stays reachable by its link the whole time, and both a panel re-click and the
-**My ticket** button already restore full candidate access on demand. Once a
-ticket is approved or denied, **My ticket** only hands back a jump link into
-the now-locked, archived thread pair — it does not unlock or reopen it, and
-it is not the same as the not-implemented follow-up flow below.
+The bot never archives or locks a ticket thread because of a decision, so a
+decided ticket's thread pair behaves like any other: Discord auto-archives it
+after seven days of silence, but it is never locked, so the applicant's next
+message (or a recruiter's) re-opens it on its own, and the thread stays
+reachable by its link the whole time. A panel re-click or the **My ticket**
+button on a still-**open** ticket also proactively restores full candidate
+access on demand. Once a ticket is approved or denied, **My ticket** hands
+back a jump link into the (never-locked) thread pair; posting in it is what
+un-archives it if Discord had already auto-archived it. This is not the same
+as the not-implemented follow-up flow below, which would proactively restore
+access and alert recruiters instead of relying on the next message.
 
 After approval or denial releases the shared open-ticket slot, the applicant
 may create a later **new** ticket and receive a new thread pair. That is repeat
-intake, not reopening or continuing the archived conversation.
+intake, not reopening or continuing the earlier conversation.
 
 The researched recommendation, pending explicit product approval and a future
 implementation, is a candidate-facing **My Tickets / Ask Follow-Up** action on
@@ -422,11 +428,13 @@ the target public intake panel:
    tickets.
 2. Let the applicant select the original ticket and submit the question in a
    private modal.
-3. Durably unlock and unarchive the same candidate/staff thread pair, restore
-   candidate membership, post an attributed question, and alert recruiters
-   once.
-4. Preserve the original `approved` or `denied` decision, track the follow-up
-   lifecycle separately, and relock/rearchive the pair after inactivity.
+3. Durably unarchive the same candidate/staff thread pair if Discord had
+   auto-archived it, restore candidate membership, post an attributed
+   question, and alert recruiters once.
+4. Preserve the original `approved` or `denied` decision and track the
+   follow-up lifecycle separately. The pair is left open; Discord archives it
+   again only after its own seven-day inactivity window, same as any other
+   decided ticket.
 
 Do not tell candidates this exists and do not substitute a new ticket for the
 same-ticket follow-up until that design is approved and implemented.
@@ -483,10 +491,11 @@ deleting them can defeat safe recovery.
 
 For interrupted live v2 work, preserve both ticket threads, bot-authored marker
 messages, and automation-state rows. Startup recovery resumes setup messages,
-account snapshots, Chocolate pages, decision notices, archive convergence, and
-console refresh without creating a second ticket pair. Recovery may temporarily
-make a terminal thread writable to repair pending bot-owned work; it then
-relocks and rearchives the thread without reopening the ticket status.
+account snapshots, Chocolate pages, decision notices, and console refresh
+without creating a second ticket pair. Recovery may temporarily unarchive a
+terminal thread Discord had already auto-archived, to repair pending
+bot-owned work; it leaves the thread open afterward rather than re-archiving
+or re-locking it, without reopening the ticket status.
 
 Startup reconciles shared open-ticket slots and reports legacy blockers
 (pending legacy initial deliveries, legacy-vs-legacy open-ticket conflicts) in

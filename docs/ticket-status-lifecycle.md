@@ -93,8 +93,8 @@ The decision write cannot reopen a ticket or target a legacy channel row.
 | `effect_failed` | The decision committed, but durable follow-up work is incomplete. | Preserve the terminal status and retry the pending checkpoints. |
 
 Account and staff-context refreshes performed before the compare-and-swap may
-remain useful if a race is lost. Applicant notification, terminal archive, and
-terminal console effects never run for `lost` or `missing`.
+remain useful if a race is lost. Applicant notification and terminal console
+effects never run for `lost` or `missing`.
 
 ### Approval and denial gates
 
@@ -127,24 +127,25 @@ path triggered it.
 ### Durable effect completion and audit
 
 A winning transition writes a unique resolution marker and pending checkpoints
-for applicant notification, staff account context, thread-pair archive, and hub
-refresh. The worker leases that exact marker, completes each idempotent step,
-then marks the whole effect set complete.
+for applicant notification, staff account context, and hub refresh. The
+worker leases that exact marker, completes each idempotent step, then marks
+the whole effect set complete.
 
 Startup and the periodic reconciler retry terminal tickets whose marker is not
 complete. Notification recovery checks the marker before posting, so retrying
-does not intentionally send the applicant a duplicate. Archive reconciliation
-always returns both terminal threads to locked and archived. A visible
-**Decision recorded; updates retrying** result means the status is authoritative
-and the remaining effects must be allowed to recover; it is not a failed or
-rolled-back decision.
+does not intentionally send the applicant a duplicate. Neither the reconciler
+nor the effect worker archives or locks a terminal thread; both threads stay
+open and writable, and reconciliation only unarchives a thread if it needs to
+post in it. A visible **Decision recorded; updates retrying** result means the
+status is authoritative and the remaining effects must be allowed to recover;
+it is not a failed or rolled-back decision.
 
 Every winning transition appends an audit entry recording the actor, old and
 new status, revisions, effect marker, and linked-account snapshot: event
 `status_transition` for a first decision, or `overturn` (with the prior
 decision's own identity under `overrode`) when it overturns one. Delivery,
-staff-context, archive, and hub-refresh checkpoints each add their own event
-as the resolution effects complete.
+staff-context, and hub-refresh checkpoints each add their own event as the
+resolution effects complete.
 
 ## Claim and close behavior
 

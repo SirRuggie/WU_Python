@@ -360,16 +360,19 @@ Two different concepts must not be called “closed”:
 - **Discord's `archived` flag on the thread object** — a dormancy flag, not
   a deletion. The messages and thread ID remain intact.
 
-After approve or deny, the runtime locks and archives both the candidate and
-staff threads. If a Discord update fails after the decision is recorded, durable
-recovery keeps retrying it. Console jump links open terminal threads read-only;
-they remain archived and locked. The runtime does not auto-unarchive them on a
-view.
+After approve or deny, both the candidate and staff threads stay open and
+writable — the bot never archives or locks a thread because of a decision.
+If a Discord update fails after the decision is recorded, durable recovery
+keeps retrying it. Console jump links open terminal threads read-only and
+never unarchive them. Separately, the runtime does unarchive a terminal
+thread whenever it needs to post in it — an overturn notice, a staff-context
+retry, or "My ticket" re-access — in case Discord's own 7-day inactivity
+auto-archive has since kicked in.
 
 A decided ticket is not frozen, though: any recruiter can overturn it the
 other way from the console's detail panel (a "already approved/denied by
 X" confirm, then the normal approve/deny path). The candidate thread is
-briefly unarchived to deliver the new decision card, then re-archived, and
+unarchived first if needed to deliver the new decision card, and
 the overturn is logged on the ticket alongside the original decision — see
 "Approve or deny" in `docs/ticket-console-operations.md`. There is still no
 console "reopen to open" workflow; overturning only flips between approved

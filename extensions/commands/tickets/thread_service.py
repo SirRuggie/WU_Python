@@ -1841,7 +1841,8 @@ async def reconcile_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str
     status = ticket.get("status")
     public_id, staff_id = _ticket_thread_ids(ticket)
     if status in {"approved", "denied"}:
-        await archive_ticket_pair(rest, ticket)
+        # Decided tickets are never archived or locked by the bot; Discord's
+        # own inactivity archive is the only archiving. Nothing to reconcile.
         return
     if status != "open":
         raise ThreadTicketError(f"unsupported ticket status {status!r}")

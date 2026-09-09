@@ -2863,42 +2863,21 @@ async def _staff_context_write_window(
     )
     was_archived = bool(getattr(thread, "is_archived", False))
     was_locked = bool(getattr(thread, "is_locked", False))
-    delivery_error: BaseException | None = None
-    try:
-        if was_archived:
-            await renew_lease()
-            await rest.edit_channel(
-                staff_id,
-                archived=False,
-                reason="Retrying committed ticket staff context",
-            )
-        if was_locked:
-            await renew_lease()
-            await rest.edit_channel(
-                staff_id,
-                locked=False,
-                reason="Retrying committed ticket staff context",
-            )
-        yield
-    except BaseException as exc:
-        delivery_error = exc
-        raise
-    finally:
-        try:
-            await renew_lease()
-            await rest.edit_channel(
-                staff_id,
-                locked=True,
-                archived=True,
-                reason="Restoring resolved ticket staff thread",
-            )
-        except Exception:
-            if delivery_error is None:
-                raise
-            _log.exception(
-                "terminal staff context restoration also failed staff=%s",
-                staff_id,
-            )
+    if was_archived:
+        await renew_lease()
+        await rest.edit_channel(
+            staff_id,
+            archived=False,
+            reason="Retrying committed ticket staff context",
+        )
+    if was_locked:
+        await renew_lease()
+        await rest.edit_channel(
+            staff_id,
+            locked=False,
+            reason="Retrying committed ticket staff context",
+        )
+    yield
 
 
 async def _validated_terminal_staff_thread(
@@ -2926,35 +2905,6 @@ async def _validated_terminal_staff_thread(
         expected_owner_id=expected_owner_id,
     )
     return thread
-
-
-async def _converge_terminal_staff_thread(
-    rest,
-    ticket_doc: Mapping,
-    staff_id: int,
-    *,
-    expected_owner_id: int | None,
-    renew_lease,
-) -> None:
-    if str(ticket_doc.get("status") or "") not in {"approved", "denied"}:
-        return
-    thread = await _validated_terminal_staff_thread(
-        rest,
-        ticket_doc,
-        staff_id,
-        expected_owner_id=expected_owner_id,
-    )
-    if not (
-        bool(getattr(thread, "is_archived", False))
-        and bool(getattr(thread, "is_locked", False))
-    ):
-        await renew_lease()
-        await rest.edit_channel(
-            staff_id,
-            locked=True,
-            archived=True,
-            reason="Restoring resolved ticket staff thread",
-        )
 
 
 async def queue_staff_identity_context(
@@ -3187,14 +3137,6 @@ async def deliver_staff_identity_context(
             existing_message_id = _int(getattr(recovered, "id", 0))
         chocolate_source = build_staff_chocolate_checklist(ticket_doc)
         if components is None and not existing_message_id and not chocolate_source:
-            if reopen_terminal_thread:
-                await _converge_terminal_staff_thread(
-                    bot.rest,
-                    ticket_doc,
-                    staff_id,
-                    expected_owner_id=expected_owner_id,
-                    renew_lease=renew_lease,
-                )
             finished = await _finish_staff_context_lease(
                 mongo,
                 state_id,
@@ -3291,14 +3233,6 @@ async def deliver_staff_identity_context(
             )
         )
         if context_current and chocolate_current:
-            if reopen_terminal_thread:
-                await _converge_terminal_staff_thread(
-                    bot.rest,
-                    ticket_doc,
-                    staff_id,
-                    expected_owner_id=expected_owner_id,
-                    renew_lease=renew_lease,
-                )
             finished = await _finish_staff_context_lease(
                 mongo,
                 state_id,
