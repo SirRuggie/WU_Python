@@ -100,6 +100,12 @@ Findings that belong to it are recorded here so nobody re-discovers them:
 - [ ] `lazy_cwl.py:428` and ~30 other sites: `to_list(length=None)` on a growing collection — `find_one(sort=...)` or `.limit()` (rule 12).
 
 **clan** (`extensions/commands/clan/dashboard/`)
+- [ ] Make the clan tag the document `_id` (owner, 2026-09-08: no duplicate
+  clans exist, so the natural key is safe). One-off migration: insert each
+  clan with `_id = tag`, delete the ObjectId twin, then drop the interim
+  unique index on `tag` and update every read/write that keys on `_id`
+  (`update_clan_info.py` lines 300/442/589/681/702/919/993/1268/1539). Do it
+  as its own commit when this module is refactored, not before (rule 7).
 - [ ] `update_clan_info.py:1440` creates the Discord emoji before `clans.update_one`, and deletes the emoji before `delete_one` — either failure leaves a clan row pointing at a nonexistent emoji. Persist the mention first, delete after (rule 13).
 
 **recruit** (`extensions/commands/recruit/`, `extensions/tasks/recruit_role_cleanup.py`)
