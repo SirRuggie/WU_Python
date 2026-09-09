@@ -159,6 +159,27 @@ same as `main`", not "fix legacy".
 - Fix: Key flags and blacklist checks on verified linked tags (`linked_accounts.current_tags`/`linked_account_identities`), not the unverified scraped `player_tags` set.
 - Note: Related location: `extensions/commands/tickets/resolve.py:1063`, where the approval blacklist gate reads the same scraped `player_tags` set. Half of this (blacklist keyed on observed tags) is documented as intentional in docs/ticket-console.md; the flag-extension half is not and there is no undo.
 
+## P1 decisions (owner, 2026-09-09)
+
+- All eleven P1 items go ahead, in three builder batches, each refuted
+  before the next: A = Back-button emoji, vendored chart font, applicant
+  text escaping, bounded FWA staff-thread read, dead-end applicant copy;
+  B = applicant messages no longer bump the ticket revision, Approve
+  confirmation and two-way overturn, overlapping-flag conflict surfaced;
+  C = candidate re-add and "My ticket" panel button plus best-effort DM,
+  deleted-thread handling, restore bot-wide REST retries.
+- Approve/deny flow: Approve asks once ("Approve this applicant?"). Deny on
+  an approved ticket asks "This person was approved. Deny anyway?" and one
+  more confirm flips it and removes the granted role; the reverse works the
+  same way. Any recruiter may overturn; every overturn is logged on the
+  ticket.
+- Finding the thread, either/or: the intake panel gains a "My ticket"
+  button that shows the applicant their open ticket link and earlier
+  tickets (ephemeral), and the bot DMs the thread link at creation as a
+  best effort. Nothing depends on the DM arriving.
+- Nothing may block on an applicant typing; the revision counter is for
+  recruiter-versus-recruiter conflicts only.
+
 ## P1 — before the pilot starts
 
 ### Flag-manager Back button uses a non-emoji arrow; Discord may reject the whole flag panel
