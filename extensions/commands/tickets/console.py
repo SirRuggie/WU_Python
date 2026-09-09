@@ -873,6 +873,10 @@ def _hub_action_ids(component) -> set[str]:
 
 
 _STAFF_CONTEXT_SCAN_LIMIT = 100
+# The hub is always one of the bot's own most recent messages in the console
+# channel -- crawling the channel's entire history to find it does not scale
+# as unrelated chatter accumulates there over the channel's lifetime.
+_ORPHANED_HUB_SCAN_LIMIT = 200
 
 
 async def _message_history(rest, channel_id: int, *, limit: int | None = None) -> list:
@@ -899,7 +903,9 @@ async def _find_orphaned_hub(bot: hikari.GatewayBot, channel_id: int):
         f"ticket_v2_console_pick:{HUB_ACTION_ID}",
         f"ticket_v2_console_find:{HUB_ACTION_ID}",
     }
-    messages = await _message_history(bot.rest, channel_id)
+    messages = await _message_history(
+        bot.rest, channel_id, limit=_ORPHANED_HUB_SCAN_LIMIT
+    )
     matches = []
     for message in messages:
         if _int(getattr(getattr(message, "author", None), "id", 0)) != int(me.id):

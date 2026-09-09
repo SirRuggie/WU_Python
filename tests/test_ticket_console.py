@@ -2931,6 +2931,49 @@ def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
     assert collection.update[1]["$set"]["message_id"] == 777
 
 
+def test_orphaned_hub_scan_is_bounded_to_the_newest_200_messages():
+    """The hub is always one of the bot's own most recent console-channel
+    messages -- crawling the channel's entire history to find it does not
+    scale as unrelated chatter accumulates there."""
+    hub = SimpleNamespace(
+        id=777,
+        author=SimpleNamespace(id=7),
+        components=[SimpleNamespace(components=[
+            SimpleNamespace(custom_id="ticket_v2_console_pick:hub"),
+            SimpleNamespace(custom_id="ticket_v2_console_find:hub"),
+        ])],
+    )
+
+    class Messages:
+        def __init__(self):
+            self.messages = [
+                SimpleNamespace(id=1000 + index, author=SimpleNamespace(id=7), components=[])
+                for index in range(250)
+            ] + [hub]
+            self.requested_limit = None
+
+        def limit(self, amount):
+            self.requested_limit = amount
+            return SimpleNamespace(to_list=lambda: _limited(self.messages, amount))
+
+        async def to_list(self):
+            return list(self.messages)
+
+    async def _limited(messages, amount):
+        return list(messages[:amount])
+
+    messages = Messages()
+    rest = SimpleNamespace(fetch_messages=lambda _channel_id: messages)
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+
+    orphan = asyncio.run(console._find_orphaned_hub(bot, 123))
+
+    assert messages.requested_limit == console._ORPHANED_HUB_SCAN_LIMIT
+    # The hub sits past the 200-message window behind 250 older messages, so
+    # a bounded scan must not find it.
+    assert orphan is None
+
+
 def test_hub_publish_stops_before_private_data_render_on_permission_drift(monkeypatch):
     calls = []
 
