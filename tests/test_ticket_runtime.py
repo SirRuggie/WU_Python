@@ -639,6 +639,30 @@ def test_claim_ignores_a_preexisting_ticket_whose_thread_is_missing():
     asyncio.run(scenario())
 
 
+def test_claim_does_not_ignore_a_preexisting_ticket_whose_staff_thread_is_missing():
+    """A missing STAFF thread must not be treated like a missing candidate
+    thread: the authority query must keep the ticket in the applicant's
+    live set, so a fresh claim is blocked exactly as it would be for any
+    other open ticket."""
+    async def scenario():
+        ticket = _ticket("thread-open", user=91, route=runtime.ROUTE_THREAD, location=911)
+        ticket["thread_missing"] = {"thread_role": "staff"}
+        mongo = _mongo(rollout=[_cross_rollout()], thread=[ticket])
+        claim = await runtime.claim_open_slot(
+            mongo,
+            user_id=91,
+            ticket_type="main",
+            route=runtime.ROUTE_THREAD,
+            guild_id=11,
+            workflow_id="thread:91:main",
+            rollout_revision=4,
+            now=NOW,
+        )
+        assert not claim.won
+
+    asyncio.run(scenario())
+
+
 def test_next_claim_repairs_exact_terminal_slot_when_release_checkpoint_failed():
     async def scenario():
         terminal = _ticket(

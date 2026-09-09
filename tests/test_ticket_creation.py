@@ -95,6 +95,22 @@ class AutomationStateCollection:
         return UpdateResult(1)
 
 
+class TicketsDMCollection:
+    """Minimal `mongo.tickets` fake for the creation-DM CAS claim: a
+    `find_one_and_update` that only matches while `creation_dm_sent_at`
+    is unset, mirroring `store.claim_creation_dm`'s guard."""
+
+    def __init__(self, ticket):
+        self.documents = {ticket["_id"]: dict(ticket)}
+
+    async def find_one_and_update(self, query, update, **_kwargs):
+        document = self.documents.get(query["_id"])
+        if document is None or "creation_dm_sent_at" in document:
+            return None
+        document.update(update["$set"])
+        return dict(document)
+
+
 class EmptyLazyIterator:
     async def to_list(self):
         return []
@@ -523,12 +539,33 @@ def test_creation_dm_sends_a_jump_link_to_the_candidate():
             sent.append(kwargs)
 
     ticket_doc = _ticket()
-    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), ticket_doc))
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
 
     assert len(sent) == 1
     assert sent[0]["channel"].id == 999
     assert "https://discord.com/channels/10/101" in sent[0]["content"]
     assert "My ticket" in sent[0]["content"]
+
+
+def test_creation_dm_second_call_is_a_no_op():
+    """A retried REST call after a crash between send and record must not
+    DM the applicant twice: the CAS marker set by the first call blocks it."""
+    sent = []
+
+    class Rest:
+        async def create_dm_channel(self, user_id):
+            return SimpleNamespace(id=999, user_id=user_id)
+
+        async def create_message(self, **kwargs):
+            sent.append(kwargs)
+
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
+
+    assert len(sent) == 1
 
 
 def test_creation_dm_failure_is_swallowed_and_never_raises():
@@ -538,8 +575,10 @@ def test_creation_dm_failure_is_swallowed_and_never_raises():
                 url="", headers={}, raw_body=b"", code=50007
             )
 
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
     # Must not raise; a closed-DM applicant still gets a fully created ticket.
-    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), _ticket()))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
 
 
 def test_creation_dm_unexpected_error_is_also_swallowed():
@@ -547,7 +586,9 @@ def test_creation_dm_unexpected_error_is_also_swallowed():
         async def create_dm_channel(self, _user_id):
             raise RuntimeError("boom")
 
-    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), _ticket()))
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
 
 
 def test_ensure_candidate_thread_access_unarchives_and_readds_member():

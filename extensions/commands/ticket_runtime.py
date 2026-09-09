@@ -1062,7 +1062,8 @@ async def mark_slot_release_pending_for_missing_thread(
     if slot is None:
         raise SlotConflict("no open slot is bound to that ticket")
     ticket = await _ticket_for_slot(mongo, slot)
-    if not (ticket or {}).get("thread_missing"):
+    missing_role = ((ticket or {}).get("thread_missing") or {}).get("thread_role")
+    if missing_role != "candidate":
         raise SlotConflict("ticket thread is not marked missing")
     moment = now or utcnow()
     document = await mongo.ticket_open_slots.find_one_and_update(
@@ -1103,7 +1104,8 @@ async def release_open_slot_for_missing_thread(
     if slot is None:
         return False
     ticket = await _ticket_for_slot(mongo, slot)
-    if not (ticket or {}).get("thread_missing"):
+    missing_role = ((ticket or {}).get("thread_missing") or {}).get("thread_role")
+    if missing_role != "candidate":
         return False
     result = await mongo.ticket_open_slots.delete_one(
         {
@@ -1262,13 +1264,15 @@ def _authority_query(
     if status is not None:
         query["status"] = str(status)
         if str(status) == "open":
-            # A thread_missing open ticket (see the GuildThreadDeleteEvent
-            # listener in handlers.py) is not usable and must not keep
-            # re-claiming or re-backfilling its own slot forever -- that is
-            # exactly what let the applicant open a new ticket. It is still
+            # A candidate-thread_missing open ticket (see the
+            # GuildThreadDeleteEvent listener in handlers.py) is not usable
+            # and must not keep re-claiming or re-backfilling its own slot
+            # forever -- that is exactly what let the applicant open a new
+            # ticket. A staff-thread_missing ticket is still usable by the
+            # applicant and must stay in the authority set. It is still
             # found by every status=None query (conflict reconciliation),
             # so nothing here hides it from cleanup.
-            query["thread_missing"] = {"$exists": False}
+            query["thread_missing.thread_role"] = {"$ne": "candidate"}
     if route == ROUTE_THREAD:
         query.update({"venue": "thread", "runtime": THREAD_RUNTIME})
     elif route == ROUTE_LEGACY:

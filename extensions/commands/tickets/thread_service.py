@@ -1232,18 +1232,34 @@ async def _deliver_opening_messages(rest: hikari.api.RESTClient, ticket: dict) -
     )
 
 
-async def _send_ticket_creation_dm(rest: hikari.api.RESTClient, ticket: Mapping[str, Any]) -> None:
+async def _send_ticket_creation_dm(
+    rest: hikari.api.RESTClient, mongo: MongoClient, ticket: Mapping[str, Any]
+) -> None:
     """Best-effort DM pointing the candidate back to their new thread.
 
     Nothing here may fail ticket creation: DMs are commonly closed, and the
     in-thread welcome message plus the "My ticket" panel button are the
     durable ways back in. Never retried -- a missed DM is covered by those.
+
+    Claims a one-time `creation_dm_sent_at` marker (CAS, set before sending)
+    so a retried REST call after a crash between send and record cannot
+    DM the applicant twice. A claim failure is swallowed like every other
+    failure here -- it must not fail ticket creation either.
     """
     user_id = _as_int(ticket.get("user_id"))
     guild_id = _as_int(ticket.get("guild_id"))
     location = ticket.get("location") or {}
     candidate_id = _as_int(location.get("id") or ticket.get("channel_id"))
     if not user_id or not guild_id or not candidate_id:
+        return
+    try:
+        if not await store.claim_creation_dm(mongo, ticket["_id"]):
+            return
+    except Exception:
+        _log.exception(
+            "ticket creation DM claim failed user=%s ticket=%s",
+            user_id, ticket.get("_id"),
+        )
         return
     jump_url = f"https://discord.com/channels/{guild_id}/{candidate_id}"
     try:
@@ -1526,9 +1542,12 @@ async def create_live_thread_ticket(
         existing = await store.find_open_for_applicant(
             mongo, user_id=int(user_id), ticket_type=ticket_type
         )
-        if existing is not None and existing.get("thread_missing"):
-            # A dead-thread ticket must not block a genuinely new one --
-            # that is the whole point of the applicant's slot being released.
+        if existing is not None and (
+            existing.get("thread_missing") or {}
+        ).get("thread_role") == "candidate":
+            # A dead-candidate-thread ticket must not block a genuinely new
+            # one -- that is the whole point of the applicant's slot being
+            # released. A staff-thread_missing ticket is still usable.
             existing = None
         if existing is not None:
             await ticket_runtime.cancel_open_slot(
@@ -1566,7 +1585,9 @@ async def create_live_thread_ticket(
             existing = await store.find_open_for_applicant(
                 mongo, user_id=int(user_id), ticket_type=ticket_type
             )
-            if existing is not None and existing.get("thread_missing"):
+            if existing is not None and (
+                existing.get("thread_missing") or {}
+            ).get("thread_role") == "candidate":
                 existing = None
             if existing is not None:
                 await ticket_runtime.cancel_open_slot(
@@ -1691,7 +1712,7 @@ async def create_live_thread_ticket(
                     bot, mongo, ticket, reconcile_pair=False
                 )
                 if delivery_complete:
-                    await _send_ticket_creation_dm(bot.rest, ticket)
+                    await _send_ticket_creation_dm(bot.rest, mongo, ticket)
                 await notify_console_after_change(
                     bot, mongo, ticket, reason="ticket created"
                 )

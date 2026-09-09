@@ -113,19 +113,16 @@ Denial may proceed after a failed or confirmed-zero account lookup. A failed
 lookup is recorded as durable retry work so staff context can converge later;
 it is never interpreted as zero accounts.
 
-### Overrides are conditional
+### Overturning a decided ticket
 
-A recruiter who loses a race may be offered an override only when the requested
-outcome differs from the current decision. The saved action is bound to that
-recruiter, recruiter authorization is checked again at click time, and approval
-re-runs all current account and blacklist gates.
-
-The override must still match the prior status, revision, and resolution marker,
-and the prior decision's effects must be complete. Markerless terminal legacy
-imports are eligible only while their audited import provenance remains intact.
-If the ticket changes again, disappears, or still has pending effects, nothing
-is overwritten. An override is another compare-and-swap transition; there is no
-unconditional `expect=None` write.
+A recruiter who reaches an already-decided ticket sees an "Already approved/denied
+by <recruiter>" notice, then a second, explicit confirm ("Overturn this decision?
+Approve/Deny anyway?") before anything is overwritten. That overturn reuses the
+normal approve/deny path, gated only by the ticket's current status
+(`expected_status`) rather than a revision or resolution-marker match, and it
+still requires the prior decision's effects to be complete before it runs.
+Approval re-runs all current account and blacklist gates regardless of which
+path triggered it.
 
 ### Durable effect completion and audit
 

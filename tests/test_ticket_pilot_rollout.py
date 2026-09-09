@@ -1554,3 +1554,50 @@ def test_my_ticket_button_with_thread_missing_ticket_releases_slot(monkeypatch):
     assert reaccess_calls == []
     assert "removed" in edits[-1]["content"]
     assert "<#777>" not in edits[-1]["content"]
+
+
+def test_my_ticket_button_with_staff_thread_missing_keeps_the_candidate_link(
+    monkeypatch,
+):
+    """A missing STAFF thread must not be treated like a missing candidate
+    thread: the ticket stays open, the applicant's slot is kept, and My
+    ticket still points at the (still alive) candidate thread."""
+    edits = []
+    ticket_doc = {
+        "_id": "ticket_9",
+        "location": {"id": 777},
+        "guild_id": 11,
+        "user_id": 50,
+        "ticket_type": "main",
+        "thread_missing": {"thread_role": "staff"},
+    }
+
+    async def find_open(_mongo, *, user_id, ticket_type):
+        return ticket_doc if ticket_type == "main" else None
+
+    released = []
+
+    async def release(_mongo, ticket_id):
+        released.append(ticket_id)
+
+    reaccess_calls = []
+
+    async def ensure_access(*_args, **_kwargs):
+        reaccess_calls.append(True)
+        return True
+
+    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(handlers, "_release_slot_for_missing_thread", release)
+    monkeypatch.setattr(
+        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
+    )
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_my_ticket(
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+    ))
+
+    assert released == []
+    assert reaccess_calls == [True]
+    assert "removed" not in edits[-1]["content"]
+    assert "<#777>" in edits[-1]["content"]

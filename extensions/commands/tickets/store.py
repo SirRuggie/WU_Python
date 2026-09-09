@@ -964,6 +964,22 @@ async def mark_thread_missing(
     return Transition(WON, updated)
 
 
+async def claim_creation_dm(mongo: MongoClient, ticket_id) -> bool:
+    """CAS-claim the one-time send of the ticket creation DM.
+
+    A retried REST call after a crash between send and record must not DM
+    the applicant twice, so the marker is written before the DM is sent and
+    the filter only matches while it is still unset. Returns True when this
+    call won the claim (send the DM); False when it was already claimed.
+    """
+    updated = await mongo.tickets.find_one_and_update(
+        {"_id": ticket_id, **RUNTIME_FILTER, "creation_dm_sent_at": {"$exists": False}},
+        {"$set": {"creation_dm_sent_at": utcnow()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    return updated is not None
+
+
 async def status_counts(collection) -> dict[str, int]:
     docs = await collection.find(TICKET_FILTER, {"status": 1}).to_list(length=None)
     return dict(Counter(doc.get("status") or "(missing)" for doc in docs))

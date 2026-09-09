@@ -355,7 +355,9 @@ async def handle_create_ticket(
             message = " ".join(sentences)
         elif location_id:
             existing_ticket = await store.find_by_location(mongo, location_id)
-            if existing_ticket is not None and existing_ticket.get("thread_missing"):
+            if existing_ticket is not None and (
+                existing_ticket.get("thread_missing") or {}
+            ).get("thread_role") == "candidate":
                 await _release_slot_for_missing_thread(mongo, existing_ticket["_id"])
                 message = (
                     "⚠️ Your earlier ticket's thread was removed. "
@@ -510,7 +512,9 @@ async def handle_my_ticket(
         if open_ticket is not None:
             break
 
-    if open_ticket is not None and open_ticket.get("thread_missing"):
+    if open_ticket is not None and (
+        open_ticket.get("thread_missing") or {}
+    ).get("thread_role") == "candidate":
         await _release_slot_for_missing_thread(mongo, open_ticket["_id"])
         await ctx.interaction.edit_initial_response(
             content=(

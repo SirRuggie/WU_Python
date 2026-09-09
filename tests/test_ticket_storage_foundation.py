@@ -2533,6 +2533,19 @@ def test_mark_thread_missing_rejects_an_unknown_role():
         ))
 
 
+def test_claim_creation_dm_wins_once_then_a_retry_is_a_no_op():
+    """The CAS marker must let exactly one caller send the DM -- a retried
+    REST call after a crash between send and record must find the marker
+    already set and skip, never sending a second copy."""
+    mongo = _mongo(_ticket())
+    first = asyncio.run(store.claim_creation_dm(mongo, "ticket_101"))
+    assert first is True
+    assert mongo.tickets.documents["ticket_101"]["creation_dm_sent_at"] is not None
+
+    second = asyncio.run(store.claim_creation_dm(mongo, "ticket_101"))
+    assert second is False
+
+
 def test_approve_succeeds_after_applicant_activity_between_panel_open_and_click():
     mongo = _mongo(_ticket())
     asyncio.run(store.append_candidate_activity(

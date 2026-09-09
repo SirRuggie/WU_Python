@@ -29,10 +29,8 @@ from utils.component_state import delete_state, get_state, insert_state
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
-    InteractiveButtonBuilder as Button,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
-    MessageActionRowBuilder as ActionRow,
     SectionComponentBuilder as Section,
     TextDisplayComponentBuilder as Text,
     ThumbnailComponentBuilder as Thumbnail,
@@ -97,13 +95,6 @@ DENIAL_TYPE = {
     KIND_DENY_FWA: "fwa_default",
     KIND_DENY_MAIN: "main_default",
     KIND_DENY_CUSTOM: "custom",
-}
-
-_LABEL = {
-    KIND_APPROVE: "Overturn and approve",
-    KIND_DENY_FWA: "Overturn and deny",
-    KIND_DENY_MAIN: "Overturn and deny",
-    KIND_DENY_CUSTOM: "Overturn and deny",
 }
 
 
@@ -1298,57 +1289,3 @@ def _prior(current: dict) -> dict:
     return {"verb": "denied", "by": current.get("denied_by"), "at": current.get("denied_at")}
 
 
-def _override_rows(kind: str, action_id: str) -> list:
-    return [ActionRow(components=[Button(
-        style=(
-            hikari.ButtonStyle.SUCCESS
-            if kind == KIND_APPROVE
-            else hikari.ButtonStyle.DANGER
-        ),
-        custom_id=f"ticket_v2_override:{action_id}",
-        label=_LABEL[kind],
-    )])]
-
-
-def lost_message(kind: str, current: dict, action_id: str | None) -> tuple[str, list]:
-    """(content, components) for the panel a recruiter sees when someone got there first.
-
-    Deliberately NOT a Components V2 container. The ephemeral this replaces is
-    plain content plus an ActionRow, and IS_COMPONENTS_V2 is a one-way latch:
-    once set on a message, `content` is rejected with a 400 forever after. This
-    panel gets edited with text when the override completes, so it must stay
-    non-V2. (ActionRow alone does not trip the flag - hikari excludes it.)
-
-    `action_id is None` means the viewer may not override, so no button is shown
-    and the copy does not dangle an option they cannot take.
-    """
-    prior = _prior(current)
-    who = f"<@{prior['by']}>" if prior["by"] else "Someone"
-    when = ts(prior["at"])
-    noun = "approval" if prior["verb"] == "approved" else "denial"
-
-    if action_id is None:
-        return (
-            f"### {who} already {prior['verb']} this one\n"
-            f"That was {when}, so I've left it as it stands. A recruiter can revisit it "
-            f"if it needs another look.",
-            [],
-        )
-
-    if kind == KIND_APPROVE:
-        content = (
-            f"### {who} {prior['verb']} this one already\n"
-            f"That was {when}, so I've not touched anything — the applicant still has the "
-            f"{noun}, and the channel still shows it.\n\n"
-            f"Approving now overturns that. Normal enough if there's been an appeal or a "
-            f"leader's called it differently; it'll go on the record as yours."
-        )
-    else:
-        content = (
-            f"### {who} already {prior['verb']} this one\n"
-            f"That was {when}. I've left everything as it was — the applicant hasn't been "
-            f"messaged again, and the channel still shows their call.\n\n"
-            f"If this needs overturning, that's yours to make. Mistaken deny, an appeal, a "
-            f"leader stepping in — go ahead and it'll be recorded as your decision."
-        )
-    return content, _override_rows(kind, action_id)
