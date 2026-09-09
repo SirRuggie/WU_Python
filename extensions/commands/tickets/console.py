@@ -593,8 +593,15 @@ def _hub_action_ids(component) -> set[str]:
     return result
 
 
-async def _message_history(rest, channel_id: int) -> list:
+_STAFF_CONTEXT_SCAN_LIMIT = 100
+
+
+async def _message_history(rest, channel_id: int, *, limit: int | None = None) -> list:
     iterator = rest.fetch_messages(channel_id)
+    if limit:
+        bound = getattr(iterator, "limit", None)
+        if callable(bound):
+            iterator = bound(limit)
     collect = getattr(iterator, "collect", None)
     if callable(collect):
         return list(await collect(list))
@@ -2247,7 +2254,10 @@ async def _find_staff_context_messages_with_prefix(
     if me is None:
         raise RuntimeError("bot identity is unavailable")
     matches: dict[str, object] = {}
-    for message in await _message_history(bot.rest, staff_id):
+    history = await _message_history(
+        bot.rest, staff_id, limit=_STAFF_CONTEXT_SCAN_LIMIT
+    )
+    for message in history:
         if _int(getattr(getattr(message, "author", None), "id", 0)) != int(me.id):
             continue
         for component in getattr(message, "components", ()) or ():
@@ -2802,8 +2812,17 @@ async def deliver_staff_identity_context(
         stored_chocolate_ids = state.get("chocolate_message_ids") or ()
         stored_chocolate_fingerprints = state.get("chocolate_fingerprints") or ()
         chocolate_prefix = f"ticket-chocolate:{ticket_id}:"
+        chocolate_checkpoint_complete = (
+            len(stored_chocolate_ids) >= len(prepared_chocolate)
+            and all(
+                _int(value)
+                for value in stored_chocolate_ids[:len(prepared_chocolate)]
+            )
+        )
         recovered_chocolate = (
-            await _find_staff_context_messages_with_prefix(
+            {}
+            if chocolate_checkpoint_complete
+            else await _find_staff_context_messages_with_prefix(
                 bot, staff_id, chocolate_prefix
             )
             if chocolate_source or stored_chocolate_ids
@@ -2844,9 +2863,12 @@ async def deliver_staff_identity_context(
             chocolate_ids[index]
             and index < len(stored_chocolate_fingerprints)
             and panel_fingerprint == str(stored_chocolate_fingerprints[index])
-            and _int(getattr(
-                recovered_chocolate.get(panel_marker), "id", 0
-            )) == chocolate_ids[index]
+            and (
+                chocolate_checkpoint_complete
+                or _int(getattr(
+                    recovered_chocolate.get(panel_marker), "id", 0
+                )) == chocolate_ids[index]
+            )
             for index, (panel_marker, _panel, panel_fingerprint) in enumerate(
                 prepared_chocolate
             )
@@ -2907,9 +2929,12 @@ async def deliver_staff_identity_context(
                     and index < len(stored_chocolate_fingerprints)
                     and chocolate_fingerprint
                     == str(stored_chocolate_fingerprints[index])
-                    and _int(getattr(
-                        recovered_chocolate.get(chocolate_marker), "id", 0
-                    )) == chocolate_ids[index]
+                    and (
+                        chocolate_checkpoint_complete
+                        or _int(getattr(
+                            recovered_chocolate.get(chocolate_marker), "id", 0
+                        )) == chocolate_ids[index]
+                    )
                 )
                 if panel_current:
                     continue

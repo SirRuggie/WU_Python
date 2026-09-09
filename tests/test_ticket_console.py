@@ -1457,6 +1457,103 @@ def test_staff_context_reuses_committed_message_after_checkpoint_loss(monkeypatc
     assert collection.document["message_id"] == 900
 
 
+def test_fwa_chocolate_recheck_skips_the_scan_once_fully_checkpointed(monkeypatch):
+    class Collection:
+        def __init__(self):
+            self.document = None
+
+        async def update_one(self, query, update, **_kwargs):
+            if self.document is None:
+                self.document = {"_id": query["_id"]}
+                self.document.update(update.get("$setOnInsert", {}))
+            self.document.update(update.get("$set", {}))
+            return SimpleNamespace(matched_count=1)
+
+        async def find_one_and_update(self, _query, update, **_kwargs):
+            self.document.update(update.get("$set", {}))
+            return dict(self.document)
+
+        async def find_one(self, _query):
+            return dict(self.document or {})
+
+    limit_calls: list[int] = []
+
+    class Messages:
+        def __init__(self, messages):
+            self.messages = messages
+
+        def limit(self, amount):
+            limit_calls.append(amount)
+            return Messages(self.messages[:amount])
+
+        async def to_list(self):
+            return list(self.messages)
+
+    class Rest:
+        def __init__(self):
+            self.creates = 0
+            self.edits = 0
+            self.messages = []
+            self.fetch_calls: list[int] = []
+
+        def fetch_messages(self, channel_id):
+            self.fetch_calls.append(channel_id)
+            return Messages(self.messages)
+
+        async def create_message(self, **kwargs):
+            self.creates += 1
+            message = SimpleNamespace(
+                id=900 + self.creates,
+                author=SimpleNamespace(id=7),
+                components=kwargs["components"],
+            )
+            self.messages.append(message)
+            return message
+
+        async def edit_message(self, **_kwargs):
+            self.edits += 1
+
+    async def context(_mongo, _ticket_doc):
+        return console._notice("Applicant context", "Matched history")
+
+    monkeypatch.setattr(console, "build_staff_identity_context", context)
+    collection = Collection()
+    rest = Rest()
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+    mongo = SimpleNamespace(ticket_automation_state=collection)
+
+    ticket_doc = _ticket(21, linked_accounts={
+        "state": "ready",
+        "current": [{"tag": "#ABC123", "name": "Alt One"}],
+        "current_tags": ["#ABC123"],
+        "revision": 1,
+    })
+
+    async def run():
+        await console.deliver_staff_identity_context(bot, mongo, ticket_doc)
+        fetches_after_first = len(rest.fetch_calls)
+
+        await console.deliver_staff_identity_context(bot, mongo, ticket_doc)
+        fetches_after_second = len(rest.fetch_calls)
+
+        # Simulate the checkpoint losing a chocolate message id.
+        collection.document["chocolate_message_ids"] = []
+        await console.deliver_staff_identity_context(bot, mongo, ticket_doc)
+        fetches_after_third = len(rest.fetch_calls)
+
+        return fetches_after_first, fetches_after_second, fetches_after_third
+
+    fetches_after_first, fetches_after_second, fetches_after_third = asyncio.run(run())
+
+    # Second call: main context and the chocolate page are both already
+    # checkpointed, so the staff thread is never re-read.
+    assert fetches_after_second == fetches_after_first
+    # Third call: the chocolate checkpoint is missing, so exactly one bounded
+    # fetch happens to recover it.
+    assert fetches_after_third == fetches_after_second + 1
+    assert limit_calls[-1] == 100
+
+
 def test_failed_staff_context_recovers_once_and_is_not_selected_again(monkeypatch):
     ticket = _ticket(21, venue="thread")
     state_id = f"ticket_staff_context:{ticket['_id']}"
