@@ -414,7 +414,6 @@ dashboard
 diagnostics
 cleanup-ghosts
 fix-mismatched
-migrate-store
 ```
 
 Some similarly named legacy commands remain under `/ticket` only while legacy

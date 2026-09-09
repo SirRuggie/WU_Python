@@ -165,7 +165,6 @@ ghost tickets, repair mismatches, and migrate legacy data.
 | `/ticket diagnostics` | Compare ticket channels and stored records. Admin only. |
 | `/ticket cleanup-ghosts` | Close records whose Discord channel is gone. Admin only. |
 | `/ticket fix-mismatched` | Repair status/channel-name mismatches. Admin only. |
-| `/ticket migrate-store` | Copy legacy ticket rows to the tickets collection. Admin only. |
 
 </details>
 
