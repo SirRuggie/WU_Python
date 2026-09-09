@@ -510,7 +510,11 @@ def _my_ticket_history_line(prior: dict) -> str:
 
 
 @register_action(
-    "ticket_v2_my_ticket", no_return=True, preload_state=False,
+    # opens_modal=True is the dispatcher's "handler acknowledges itself"
+    # switch (see ticket_v2_create): without it _dispatch defers with
+    # edit=True against the components-v2 panel, and every later
+    # edit_initial_response(content=...) is refused by Discord (50035).
+    "ticket_v2_my_ticket", opens_modal=True, no_return=True, preload_state=False,
 )
 @lightbulb.di.with_di
 async def handle_my_ticket(
