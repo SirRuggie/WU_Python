@@ -36,22 +36,35 @@ RETIRED_EXTENSIONS = frozenset({
 TICKETS_GUILD_ID_DEFAULT = 644963518025826315
 
 
-def _parse_tickets_guild_id() -> int:
-    """``TICKETS_GUILD_ID`` from the environment, falling back on a bad value.
+def tickets_guild_id() -> int:
+    """``TICKETS_GUILD_ID`` from the environment, read fresh on every call.
 
-    An unset or unparseable value must not crash extension loading for the
-    whole bot at import time; it falls back to the configured default guild.
+    Reading this at call time (rather than caching it in a module constant)
+    matters because ``main.py`` calls ``load_dotenv()`` before importing the
+    command extensions; a module-level read would run before the `.env` file
+    is loaded and the documented override would never take effect. An unset,
+    unparseable, or non-positive value must not crash extension loading for
+    the whole bot; it falls back to the configured default guild and prints
+    a warning.
     """
     raw = os.getenv("TICKETS_GUILD_ID", "").strip()
     if not raw:
         return TICKETS_GUILD_ID_DEFAULT
     try:
-        return int(raw)
+        value = int(raw)
     except ValueError:
+        print(
+            f"[Startup] TICKETS_GUILD_ID={raw!r} is not an integer; "
+            f"using default {TICKETS_GUILD_ID_DEFAULT}"
+        )
         return TICKETS_GUILD_ID_DEFAULT
-
-
-TICKETS_GUILD_ID = _parse_tickets_guild_id()
+    if value <= 0:
+        print(
+            f"[Startup] TICKETS_GUILD_ID={raw!r} must be a positive guild ID; "
+            f"using default {TICKETS_GUILD_ID_DEFAULT}"
+        )
+        return TICKETS_GUILD_ID_DEFAULT
+    return value
 
 
 def _binds_loader(module_path: Path) -> bool:

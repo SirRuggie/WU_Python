@@ -87,6 +87,29 @@ def test_clash_client_is_created_on_running_loop_without_deprecation_warning():
     assert not any("There is no current event loop" in str(item.message) for item in caught)
 
 
+def test_tickets_guild_id_reads_the_environment_on_every_call(monkeypatch):
+    monkeypatch.delenv("TICKETS_GUILD_ID", raising=False)
+    assert startup.tickets_guild_id() == startup.TICKETS_GUILD_ID_DEFAULT
+
+    monkeypatch.setenv("TICKETS_GUILD_ID", "123456789")
+    assert startup.tickets_guild_id() == 123456789
+
+    monkeypatch.delenv("TICKETS_GUILD_ID", raising=False)
+    assert startup.tickets_guild_id() == startup.TICKETS_GUILD_ID_DEFAULT
+
+
+def test_tickets_guild_id_falls_back_on_a_bad_value(monkeypatch, capsys):
+    monkeypatch.setenv("TICKETS_GUILD_ID", "not-a-number")
+    assert startup.tickets_guild_id() == startup.TICKETS_GUILD_ID_DEFAULT
+    assert "TICKETS_GUILD_ID" in capsys.readouterr().out
+
+    monkeypatch.setenv("TICKETS_GUILD_ID", "0")
+    assert startup.tickets_guild_id() == startup.TICKETS_GUILD_ID_DEFAULT
+
+    monkeypatch.setenv("TICKETS_GUILD_ID", "-5")
+    assert startup.tickets_guild_id() == startup.TICKETS_GUILD_ID_DEFAULT
+
+
 def test_retired_extensions_are_kept_but_not_loaded():
     retired_command_sources = {
         "extensions.commands.cards": "extensions/commands/cards.py",

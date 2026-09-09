@@ -10,7 +10,7 @@ import coc
 
 from extensions.commands import ticket_runtime
 from utils.mongo import MongoClient
-from utils.startup import TICKETS_GUILD_ID
+from utils.startup import tickets_guild_id
 from utils.startup_reconciler import StartupReconciler
 
 
@@ -304,7 +304,7 @@ from . import legacy_migration
 from . import rollout
 
 
-loader.command(ticket, guilds=[TICKETS_GUILD_ID])
+loader.command(ticket, guilds=[tickets_guild_id()])
 
 __all__ = [
     "loader",

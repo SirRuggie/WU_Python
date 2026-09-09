@@ -9,7 +9,7 @@ from extensions.commands import help_catalog
 from extensions.commands import tickets as ticket_extension
 from extensions.commands import tickets_legacy as legacy_extension
 from extensions.commands.tickets import config, console, resolve
-from utils.startup import TICKETS_GUILD_ID
+from utils.startup import tickets_guild_id
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -117,7 +117,7 @@ def _command_loadable(loader, command):
 
 def test_tickets_group_is_registered_only_in_the_configured_guild():
     tickets_loadable = _command_loadable(ticket_extension.loader, ticket_extension.ticket)
-    assert tickets_loadable._guilds == [TICKETS_GUILD_ID]
+    assert tickets_loadable._guilds == [tickets_guild_id()]
     assert tickets_loadable._global is None
     assert tickets_loadable._defer_guilds is False
 
