@@ -365,9 +365,13 @@ def test_cross_server_setup_verifies_both_admins_and_binds_two_owned_panels(monk
     monkeypatch.setattr(setup.ticket_runtime, "seed_rollout", seed)
     monkeypatch.setattr(setup, "_guild_administrator", old_admin)
     rest = _CrossServerSetupRest()
+    # A first-ever cross-server bind: no legacy/target guild is recorded yet
+    # (a config that already names guild 10 as ticket_target_guild_id would
+    # also carry old-guild candidate parents from that write, which blocks
+    # setup on a later check regardless -- see setup.py's removed
+    # old_single_guild_binding tolerance).
     config = _SetupConfig({
         "_id": "config",
-        "ticket_target_guild_id": 10,
         "main_recruiter_role": 900,
     })
     ctx = _setup_context()
@@ -394,6 +398,37 @@ def test_cross_server_setup_verifies_both_admins_and_binds_two_owned_panels(monk
     assert ctx.responses[-1].startswith("✅ Cross-server intake bound")
 
 
+def test_setup_refuses_a_stale_single_guild_target_binding(monkeypatch):
+    """A pre-cross-server config that recorded `ticket_target_guild_id` equal
+    to the (now legacy) guild, with no `legacy_ticket_guild_id` yet, used to
+    be tolerated as a single-guild-era binding and let setup proceed. That
+    tolerance was dead in practice -- the write that produces this state also
+    plants old-guild candidate parents that block setup on a later check
+    regardless -- so it must simply be refused like any other guild
+    mismatch, with nothing posted and no config write."""
+    async def get_rollout(_mongo):
+        return ticket_runtime.RolloutState(ticket_runtime.PHASE_LEGACY_ONLY, 0, False)
+
+    async def old_admin(*_args):
+        raise AssertionError("a refused guild mismatch must stop before any admin check")
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = _CrossServerSetupRest()
+    config = _SetupConfig({"_id": "config", "ticket_target_guild_id": 10})
+    ctx = _setup_context()
+
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert rest.created == []
+    assert config.write_calls == 0
+    assert "bound to a different target server" in ctx.responses[-1]
+
+
 def test_setup_refuses_a_pilot_channel_that_is_not_a_guild_text_channel(monkeypatch):
     """The pilot panel used to post straight to `ctx.channel_id` with no
     fetch or type check. A thread, forum, or voice channel must be refused,
@@ -417,7 +452,7 @@ def test_setup_refuses_a_pilot_channel_that_is_not_a_guild_text_channel(monkeypa
     monkeypatch.setattr(setup, "_guild_administrator", old_admin)
     rest = Rest()
     ctx = _setup_context()
-    config = _SetupConfig({"_id": "config", "ticket_target_guild_id": 10})
+    config = _SetupConfig({"_id": "config"})
 
     asyncio.run(_setup_command().invoke(
         ctx,
@@ -469,7 +504,6 @@ def test_setup_warns_but_still_posts_when_everyone_can_view_the_pilot_channel(
     rest = Rest()
     config = _SetupConfig({
         "_id": "config",
-        "ticket_target_guild_id": 10,
         "main_recruiter_role": 900,
     })
     ctx = _setup_context()
@@ -623,7 +657,6 @@ def test_cross_server_setup_restores_config_and_compensates_when_rollout_fails(
     rest = _CrossServerSetupRest()
     original = {
         "_id": "config",
-        "ticket_target_guild_id": 10,
         "main_recruiter_role": 900,
     }
     config = _SetupConfig(original)
@@ -652,7 +685,7 @@ def test_cross_server_setup_requires_old_server_admin_before_any_post(monkeypatc
     monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
     monkeypatch.setattr(setup, "_guild_administrator", old_admin)
     rest = _CrossServerSetupRest()
-    config = _SetupConfig({"_id": "config", "ticket_target_guild_id": 10})
+    config = _SetupConfig({"_id": "config"})
     ctx = _setup_context()
 
     asyncio.run(_setup_command().invoke(
@@ -662,7 +695,7 @@ def test_cross_server_setup_requires_old_server_admin_before_any_post(monkeypatc
     ))
 
     assert rest.created == []
-    assert config.document == {"_id": "config", "ticket_target_guild_id": 10}
+    assert config.document == {"_id": "config"}
     assert "both the old and target servers" in ctx.responses[-1]
 
 
@@ -721,9 +754,7 @@ def test_cross_server_setup_rejects_non_bot_old_panel_before_post(monkeypatch):
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=_SetupConfig({
-            "_id": "config", "ticket_target_guild_id": 10,
-        })),
+        mongo=SimpleNamespace(ticket_setup=_SetupConfig({"_id": "config"})),
     ))
 
     assert rest.created == []

@@ -333,10 +333,7 @@ class Setup(
             )
             return
         bound_target_guild = _as_positive_int(config.get("ticket_target_guild_id"))
-        old_single_guild_binding = (
-            not bound_legacy_guild and bound_target_guild == legacy_source.guild_id
-        )
-        if bound_target_guild not in {None, guild_id} and not old_single_guild_binding:
+        if bound_target_guild not in {None, guild_id}:
             await ctx.respond(
                 "🛑 Thread ticketing is bound to a different target server. Nothing was posted.",
                 ephemeral=True,
