@@ -108,11 +108,12 @@ Findings that belong to it are recorded here so nobody re-discovers them:
   as its own commit when this module is refactored, not before (rule 7).
 - [ ] Shape verdict (2026-09-08): one flat document per clan with bot config
   embedded is correct; keep it. Fix the hygiene below, not the shape.
-- [ ] Dead fields: `status` and `th_attribute` are read
-  (`clan/info_hub/helpers.py:75`, `info_hub/handlers.py:120,261,322`) but
-  never written anywhere; `profile` and `thread_message_id` are insert-only
-  defaults (`update_clan_info.py:236,239`) never used. Remove them or give
-  them a writer (rule 5).
+- [ ] Remove leftovers from the old bot (owner, 2026-09-08: none of these
+  are used): `status` and `th_attribute` reads in `clan/info_hub/helpers.py:75`
+  and `info_hub/handlers.py:120,261,322` and whatever they render; the
+  `profile` and `thread_message_id` defaults at `update_clan_info.py:236,239`;
+  then `$unset` the four fields from existing documents in a one-off tools
+  script (rule 5).
 - Not an issue: `name` is copied once at insert (`update_clan_info.py:235`)
   and never re-synced, which is fine because Clash of Clans clan names cannot
   be changed after creation (owner, 2026-09-08).
