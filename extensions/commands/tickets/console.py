@@ -4738,7 +4738,8 @@ async def _transition_result_panel(
     if result.outcome == store.WON:
         return _notice(
             f"Ticket {verb}",
-            "The decision was saved. The permanent thread remains available from the console.",
+            "The decision was saved. The applicant is being notified. The "
+            "permanent thread remains available from the console.",
             accent=ACCENT_GREEN if verb == "approved" else ACCENT_RED,
         )
     if result.outcome == store.EFFECT_FAILED:
@@ -4792,6 +4793,34 @@ async def _owner_only_notice(ctx, owner_id: int) -> list[Container] | None:
     return None
 
 
+async def _show_in_progress(ctx, title: str) -> None:
+    """Best-effort loading card so the confirm buttons don't look dead.
+
+    The dispatcher's own `defer(edit=True)` (DEFERRED_MESSAGE_UPDATE) and a
+    handler's own manual defer both acknowledge silently with no loading
+    state, so without this the confirm buttons stay live for as long as the
+    decision takes to commit -- inviting a second click that loses the
+    status CAS and renders "Already approved/denied", read as a failure.
+    Best-effort: a missing or dead interaction (several tests build a bare
+    ctx with no `.interaction`; a live token can also die mid-click) must
+    never stop the real decision from proceeding.
+    """
+    try:
+        await ctx.interaction.edit_initial_response(
+            components=_notice(
+                title,
+                "Saving the decision and updating the ticket. This can take "
+                "a few seconds.",
+                accent=ACCENT_YELLOW,
+            ),
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
+        )
+    except Exception:
+        _log.exception("failed to show in-progress notice %r", title)
+
+
 @register_action("ticket_v2_console_approve", requires_state=True)
 @lightbulb.di.with_di
 async def ticket_console_approve(
@@ -4831,14 +4860,24 @@ async def ticket_console_approve_go(
 ):
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
-    result = await resolve.approve_ticket(
-        bot,
-        mongo,
-        ticket_id=ticket_id,
-        member=ctx.member,
-        actor_name=ctx.user.username,
-        expected_status=expected_status,
-    )
+    await _show_in_progress(ctx, "Approving…")
+    try:
+        result = await resolve.approve_ticket(
+            bot,
+            mongo,
+            ticket_id=ticket_id,
+            member=ctx.member,
+            actor_name=ctx.user.username,
+            expected_status=expected_status,
+        )
+    except Exception:
+        _log.exception("ticket approval failed ticket=%s", ticket_id)
+        return _notice(
+            "Decision not saved",
+            "Something went wrong before the decision was saved. Open the "
+            "ticket again and retry.",
+            accent=ACCENT_RED,
+        )
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
         await request_hub_refresh_best_effort(bot, mongo, reason="ticket approved")
     return await _transition_result_panel(
@@ -4937,14 +4976,24 @@ async def ticket_console_overturn_approve_go(
 ):
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
-    result = await resolve.overturn_ticket(
-        bot,
-        mongo,
-        ticket_id=ticket_id,
-        member=ctx.member,
-        actor_name=ctx.user.username,
-        to_status="approved",
-    )
+    await _show_in_progress(ctx, "Approving…")
+    try:
+        result = await resolve.overturn_ticket(
+            bot,
+            mongo,
+            ticket_id=ticket_id,
+            member=ctx.member,
+            actor_name=ctx.user.username,
+            to_status="approved",
+        )
+    except Exception:
+        _log.exception("ticket overturn failed ticket=%s", ticket_id)
+        return _notice(
+            "Decision not saved",
+            "Something went wrong before the decision was saved. Open the "
+            "ticket again and retry.",
+            accent=ACCENT_RED,
+        )
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
         await request_hub_refresh_best_effort(bot, mongo, reason="ticket overturned")
     return await _transition_result_panel(
@@ -5053,15 +5102,32 @@ async def ticket_overturn_deny_submit(
             accent=ACCENT_RED,
         ))
         return
-    result = await resolve.overturn_ticket(
-        bot,
-        mongo,
-        ticket_id=str(data.get("ticket_id") or ""),
-        member=ctx.member,
-        actor_name=ctx.user.username,
-        to_status="denied",
-        reason=reason,
-    )
+    await _show_in_progress(ctx, "Denying…")
+    ticket_id = str(data.get("ticket_id") or "")
+    try:
+        result = await resolve.overturn_ticket(
+            bot,
+            mongo,
+            ticket_id=ticket_id,
+            member=ctx.member,
+            actor_name=ctx.user.username,
+            to_status="denied",
+            reason=reason,
+        )
+    except Exception:
+        _log.exception("ticket overturn failed ticket=%s", ticket_id)
+        await ctx.interaction.edit_initial_response(
+            components=_notice(
+                "Decision not saved",
+                "Something went wrong before the decision was saved. Open "
+                "the ticket again and retry.",
+                accent=ACCENT_RED,
+            ),
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
+        )
+        return
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
         await request_hub_refresh_best_effort(bot, mongo, reason="ticket overturned")
     components = await _transition_result_panel(
@@ -5174,16 +5240,33 @@ async def ticket_console_deny_submit(
             accent=ACCENT_RED,
         ))
         return
-    result = await resolve.deny_ticket(
-        bot,
-        mongo,
-        ticket_id=str(data.get("ticket_id") or ""),
-        member=ctx.member,
-        actor_name=ctx.user.username,
-        kind=resolve.KIND_DENY_CUSTOM,
-        reason=reason,
-        expected_status=str(data.get("expected_status") or "open"),
-    )
+    await _show_in_progress(ctx, "Denying…")
+    ticket_id = str(data.get("ticket_id") or "")
+    try:
+        result = await resolve.deny_ticket(
+            bot,
+            mongo,
+            ticket_id=ticket_id,
+            member=ctx.member,
+            actor_name=ctx.user.username,
+            kind=resolve.KIND_DENY_CUSTOM,
+            reason=reason,
+            expected_status=str(data.get("expected_status") or "open"),
+        )
+    except Exception:
+        _log.exception("ticket denial failed ticket=%s", ticket_id)
+        await ctx.interaction.edit_initial_response(
+            components=_notice(
+                "Decision not saved",
+                "Something went wrong before the decision was saved. Open "
+                "the ticket again and retry.",
+                accent=ACCENT_RED,
+            ),
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
+        )
+        return
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
         await request_hub_refresh_best_effort(bot, mongo, reason="ticket denied")
     components = await _transition_result_panel(

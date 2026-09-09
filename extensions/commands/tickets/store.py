@@ -592,6 +592,7 @@ async def transition(
     linked_account_snapshot: Mapping | None = None,
     linked_account_retry: Mapping | None = None,
     expected_linked_account_revision: int | None = None,
+    previous_notification_message_id: int | None = None,
 ) -> Transition:
     """CAS a ticket status using the status and revision the actor observed."""
     target = schema.ticket_status(to_status)
@@ -672,22 +673,33 @@ async def transition(
         "ticket_number", "status", "rev", "audit", "created_at",
     }
     supplied = {key: value for key, value in dict(extra or {}).items() if key not in protected}
+    resolution_effects_doc = {
+        "version": 1,
+        "marker": marker,
+        "kind": str(effect_kind or ("approve" if target == "approved" else "deny_custom")),
+        "notification": {"state": "pending"},
+        "staff_context": {"state": "pending"},
+        "hub": {"state": "pending"},
+        "complete": False,
+        "updated_at": now,
+        # An overturn's replacement card must remove the decision it is
+        # replacing. Recorded on the resolution_effects document itself
+        # because this wholesale replacement is the last point that still
+        # has both the "is this an overturn" fact and the prior card's
+        # checkpointed message id in hand.
+        "overturn": overrides is not None,
+    }
+    if previous_notification_message_id:
+        resolution_effects_doc["previous_notification_message_id"] = int(
+            previous_notification_message_id
+        )
     set_fields = {
         "status": target,
         "updated_at": now,
         "handled_at": now,
         "handled_by": actor,
         "handled_by_name": name,
-        "resolution_effects": {
-            "version": 1,
-            "marker": marker,
-            "kind": str(effect_kind or ("approve" if target == "approved" else "deny_custom")),
-            "notification": {"state": "pending"},
-            "staff_context": {"state": "pending"},
-            "hub": {"state": "pending"},
-            "complete": False,
-            "updated_at": now,
-        },
+        "resolution_effects": resolution_effects_doc,
         **supplied,
     }
     if linked_account_retry is not None:

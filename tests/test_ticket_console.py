@@ -1560,8 +1560,11 @@ def test_console_deny_submit_authorizes_before_loading_private_state(monkeypatch
         Context(), "detail", mongo=object(), bot=object(),
     ))
 
+    # The extra "edit" before "transition" is the in-progress notice shown
+    # right before the (potentially slow) deny_ticket call; the final "edit"
+    # delivers the actual result.
     assert [event[0] for event in events] == [
-        "defer", "envelope", "permission", "private-state", "transition", "edit",
+        "defer", "envelope", "permission", "private-state", "edit", "transition", "edit",
     ]
 
 
@@ -1627,8 +1630,10 @@ def test_console_deny_submit_already_decided_mentions_and_suppresses_pings(monke
         Context(), "detail", mongo=object(), bot=object(),
     ))
 
-    assert len(edits) == 1
-    kwargs = edits[0]
+    # The first edit is the in-progress notice shown before deny_ticket
+    # runs; the last edit delivers the actual already-decided result.
+    assert len(edits) == 2
+    kwargs = edits[-1]
     content = "\n".join(
         str(node["content"]) for node in _nodes(kwargs["components"]) if "content" in node
     )
@@ -1729,6 +1734,170 @@ def test_console_approve_confirm_step_completes_the_approval(monkeypatch):
     )
     assert "Ticket approved" in content
     _assert_component_limits(go_view)
+
+
+def test_console_approve_go_shows_in_progress_notice_before_calling_approve_ticket(
+    monkeypatch,
+):
+    """Owner decision, live smoke test: the confirm buttons stayed live and
+    unchanged while resolve.approve_ticket ran (seconds to tens of seconds),
+    because the dispatcher's own defer(edit=True) draws no loading state --
+    inviting a second click that loses the CAS. The handler must show its
+    own buttonless in-progress card before calling approve_ticket, not
+    after."""
+    ticket = _ticket(21, status="open")
+    events = []
+
+    class Interaction:
+        async def edit_initial_response(self, **kwargs):
+            events.append(("in_progress", kwargs))
+
+    ctx = SimpleNamespace(
+        user=SimpleNamespace(id=22, username="Recruiter"),
+        member=SimpleNamespace(id=22),
+        interaction=Interaction(),
+    )
+
+    async def approve(*_args, **_kwargs):
+        events.append(("approve_ticket", {}))
+        return console.store.Transition(console.store.WON, ticket)
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(console.resolve, "approve_ticket", approve)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    asyncio.run(console.ticket_console_approve_go(
+        ctx, "detail", owner_id=22, guild_id=ticket["guild_id"],
+        ticket_id=ticket["_id"], mongo=object(), bot=object(),
+    ))
+
+    assert [event[0] for event in events] == ["in_progress", "approve_ticket"]
+    heading = "\n".join(
+        str(node["content"])
+        for node in _nodes(events[0][1]["components"])
+        if "content" in node
+    )
+    assert "Approving" in heading
+    assert events[0][1]["user_mentions"] is False
+    assert events[0][1]["role_mentions"] is False
+    assert events[0][1]["mentions_everyone"] is False
+
+
+def test_console_deny_submit_shows_in_progress_notice_before_calling_deny_ticket(
+    monkeypatch,
+):
+    """Mirrors the approve-go ordering test above for the deny-modal path:
+    the in-progress notice must be shown before resolve.deny_ticket runs."""
+    private = {
+        "type": "ticket_v2_console_detail",
+        "owner_id": 22,
+        "guild_id": 33,
+        "ticket_id": "ticket_1",
+        "expected_status": "open",
+    }
+    ticket = _ticket(21, status="denied")
+    events = []
+
+    class Interaction:
+        message = None
+        components = [[SimpleNamespace(custom_id="reason", value="Clear reason")]]
+
+        async def edit_initial_response(self, **kwargs):
+            events.append(("edit", kwargs))
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22, username="Recruiter")
+        member = object()
+        guild_id = 33
+
+        async def defer(self, **kwargs):
+            return None
+
+    async def get(_mongo, _action_id, projection=None):
+        if projection is not None:
+            return {
+                "type": private["type"],
+                "owner_id": private["owner_id"],
+                "guild_id": private["guild_id"],
+            }
+        return dict(private)
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def deny(*_args, **_kwargs):
+        events.append(("deny_ticket", {}))
+        return console.store.Transition(console.store.WON, ticket)
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(console, "get_state", get)
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.resolve, "deny_ticket", deny)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    asyncio.run(console.ticket_console_deny_submit(
+        Context(), "detail", mongo=object(), bot=object(),
+    ))
+
+    # The in-progress notice ("edit") is delivered before deny_ticket runs;
+    # the trailing "edit" delivers the actual result.
+    assert [event[0] for event in events] == ["edit", "deny_ticket", "edit"]
+    heading = "\n".join(
+        str(node["content"])
+        for node in _nodes(events[0][1]["components"])
+        if "content" in node
+    )
+    assert "Denying" in heading
+
+
+def test_console_approve_go_returns_a_red_notice_when_approve_ticket_raises(monkeypatch):
+    """Refuter fix: `ticket_console_approve_go` called `_show_in_progress`
+    then `resolve.approve_ticket` with no try/except, so an exception left
+    the recruiter staring at a buttonless "Approving..." panel forever --
+    the handler never returned anything for the dispatcher to render. It
+    must now catch the exception (after the in-progress edit already ran)
+    and return the same red "Decision not saved" notice used elsewhere."""
+    ticket = _ticket(21, status="open")
+    events = []
+
+    class Interaction:
+        async def edit_initial_response(self, **kwargs):
+            events.append(("in_progress", kwargs))
+
+    ctx = SimpleNamespace(
+        user=SimpleNamespace(id=22, username="Recruiter"),
+        member=SimpleNamespace(id=22),
+        interaction=Interaction(),
+    )
+
+    async def approve(*_args, **_kwargs):
+        raise RuntimeError("mongo write timed out")
+
+    async def refresh(*_args, **_kwargs):
+        raise AssertionError("a raised approve_ticket must not request a hub refresh")
+
+    monkeypatch.setattr(console.resolve, "approve_ticket", approve)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    view = asyncio.run(console.ticket_console_approve_go(
+        ctx, "detail", owner_id=22, guild_id=ticket["guild_id"],
+        ticket_id=ticket["_id"], mongo=object(), bot=object(),
+    ))
+
+    # The in-progress edit ran before the exception -- there is no second
+    # panel state from the (never reached) success path.
+    assert [event[0] for event in events] == ["in_progress"]
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    assert "Decision not saved" in content
+    assert view[0].accent_color == console.ACCENT_RED
+    _assert_component_limits(view)
 
 
 def test_console_approve_go_no_longer_sends_a_rev_and_shows_already_approved_on_lost(

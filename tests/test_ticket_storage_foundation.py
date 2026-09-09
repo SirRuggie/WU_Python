@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -2477,6 +2478,107 @@ def test_permission_is_rechecked_at_terminal_mutation_boundary(monkeypatch):
     assert mongo.tickets.documents[ticket["_id"]]["status"] == "open"
 
 
+def test_deny_ticket_returns_before_effects_complete_then_wait_for_background_effects(
+    monkeypatch,
+):
+    """Owner decision, live smoke test: process_resolution_effects (a full
+    candidate-thread scan over REST, decision card, staff-context delivery,
+    hub refresh) used to run on the click path -- seconds to tens of
+    seconds -- before deny_ticket/approve_ticket returned anything. It must
+    now run as a background task: the transition's own WON result comes
+    back immediately, and resolve.wait_for_background_effects() (a test-only
+    helper; production code never calls it) is the only way to observe the
+    background work finishing."""
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    completed = {"done": False}
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def effects(_bot, _mongo, doc):
+        started.set()
+        await release.wait()
+        completed["done"] = True
+        return store.Transition(store.WON, doc)
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
+    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+
+    async def run():
+        result = await resolve.deny_ticket(
+            object(), mongo, ticket_id=ticket["_id"],
+            member=SimpleNamespace(id=99), actor_name="Recruiter",
+            kind=resolve.KIND_DENY_CUSTOM, reason="Clear denial reason",
+        )
+        # The decision commits and is reported immediately -- the effects
+        # mock has not even started running yet, let alone completed.
+        assert result.outcome == store.WON
+        assert not completed["done"]
+
+        await started.wait()
+        release.set()
+        await resolve.wait_for_background_effects()
+        assert completed["done"]
+
+    asyncio.run(run())
+    assert mongo.tickets.documents[ticket["_id"]]["status"] == "denied"
+
+
+def test_background_effects_done_logs_when_the_result_is_not_won(monkeypatch, caplog):
+    """Refuter fix: `process_resolution_effects` never raises for a failed
+    step -- it reports failure as `Transition(EFFECT_FAILED, ...)` so the
+    partial doc and reason survive -- so `_on_background_effects_done`,
+    which only checked `task.exception()`, never logged a failed applicant
+    notification; the task always completes "successfully" with a failure
+    Transition inside it. It must now also read `task.result()` and log at
+    error level when `not result.won`.
+    """
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def effects(_bot, _mongo, doc):
+        return store.Transition(
+            store.EFFECT_FAILED,
+            doc,
+            "TimeoutError: applicant notification is pending",
+        )
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
+    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+
+    async def run():
+        result = await resolve.deny_ticket(
+            object(), mongo, ticket_id=ticket["_id"],
+            member=SimpleNamespace(id=99), actor_name="Recruiter",
+            kind=resolve.KIND_DENY_CUSTOM, reason="Clear denial reason",
+        )
+        assert result.outcome == store.WON
+        with caplog.at_level(
+            logging.ERROR, logger="extensions.commands.tickets.resolve"
+        ):
+            await resolve.wait_for_background_effects()
+
+    asyncio.run(run())
+
+    errors = [
+        record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR
+    ]
+    assert any(
+        "resolution effects incomplete" in message
+        and f"ticket={ticket['_id']}" in message
+        and "TimeoutError: applicant notification is pending" in message
+        for message in errors
+    )
+
+
 def test_live_resolution_reconciler_sweeps_durable_account_retries(monkeypatch):
     ticket = _ticket()
     seen = []
@@ -3940,6 +4042,160 @@ def test_overturn_unarchives_to_post_and_never_rearchives(monkeypatch):
     assert not rest.channels[101].is_locked
 
 
+def test_overturn_removes_the_previous_decision_card_by_checkpointed_id(monkeypatch):
+    """Owner decision, live smoke test 2026-09-09 ("should it remove the old
+    message? yes"): an overturn's fresh decision card must not leave the
+    superseded card sitting in the candidate thread. When the earlier
+    resolution's card message id was checkpointed
+    (resolution_effects.previous_notification_message_id, carried over by
+    store.transition), deletion goes straight to that id -- no thread scan
+    needed."""
+    ticket = _effect_ticket()
+    ticket["resolution_effects"]["overturn"] = True
+    ticket["resolution_effects"]["previous_notification_message_id"] = 500
+    mongo = _mongo(ticket)
+    rest = EffectRest()
+    deleted = []
+
+    async def delete_message(channel_id, message_id):
+        deleted.append((channel_id, message_id))
+
+    rest.delete_message = delete_message
+
+    async def notification(*_args, marker, **_kwargs):
+        rest.messages.append(SimpleNamespace(
+            content=f"-# {marker}", components=[], author=SimpleNamespace(id=7),
+        ))
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, "run_side_effects", notification)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    result = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, ticket
+    ))
+
+    assert result.won
+    assert deleted == [(101, 500)]
+    audit_events = [entry["event"] for entry in result.doc["audit"]]
+    assert "previous_decision_card_removed" in audit_events
+
+
+def test_overturn_removes_the_previous_decision_card_by_structural_fallback(
+    monkeypatch,
+):
+    """A ticket resolved before the message-id checkpoint existed has no
+    previous_notification_message_id to go on. The fallback scans the
+    candidate thread for the newest bot-authored message that structurally
+    matches either decision-card kind (`_is_notification_card`) and deletes
+    that instead."""
+    ticket = _effect_ticket()
+    ticket["resolution_effects"]["overturn"] = True
+    mongo = _mongo(ticket)
+    rest = EffectRest()
+    rest.messages.append(SimpleNamespace(
+        id=700,
+        author=SimpleNamespace(id=7),
+        content=f"<@30> {resolve.APPROVAL_CARD_TITLE}",
+        components=[],
+    ))
+    deleted = []
+
+    async def delete_message(channel_id, message_id):
+        deleted.append((channel_id, message_id))
+
+    rest.delete_message = delete_message
+
+    async def notification(*_args, marker, **_kwargs):
+        rest.messages.append(SimpleNamespace(
+            id=900, content=f"-# {marker}", components=[], author=SimpleNamespace(id=7),
+        ))
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, "run_side_effects", notification)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    result = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, ticket
+    ))
+
+    assert result.won
+    assert deleted == [(101, 700)]
+    audit_events = [entry["event"] for entry in result.doc["audit"]]
+    assert "previous_decision_card_removed" in audit_events
+
+
+def test_delete_previous_decision_card_error_fails_the_step_and_retry_is_idempotent(
+    monkeypatch,
+):
+    """Refuter finding: `_delete_previous_decision_card` used to swallow
+    every non-404 REST error and return, so on an auto-archived thread (or a
+    transient 5xx) the old card survived, the new card still posted, and the
+    notification step checkpointed `delivered` -- leaving the applicant with
+    two decision cards forever. It must now re-raise so the notification
+    step checkpoints `failed` instead (no new card posted this attempt), and
+    a retry (as `reconcile_pending_resolution_effects` performs) must be
+    idempotent: the checkpointed message id 404s by the retry (already gone
+    or transient error cleared) and the new card is posted exactly once --
+    `_notification_exists` is only reached *after* the delete succeeds, so
+    it never had a chance to post a duplicate on the first, failed attempt.
+    """
+    ticket = _effect_ticket()
+    ticket["resolution_effects"]["overturn"] = True
+    ticket["resolution_effects"]["previous_notification_message_id"] = 500
+    mongo = _mongo(ticket)
+    rest = EffectRest()
+    delete_calls = []
+
+    async def failing_delete(channel_id, message_id):
+        delete_calls.append((channel_id, message_id))
+        raise hikari.InternalServerError(
+            url="", status=500, headers={}, raw_body=b"", code=0,
+        )
+
+    rest.delete_message = failing_delete
+    posted = []
+
+    async def notification(*_args, marker, **_kwargs):
+        posted.append(marker)
+        rest.messages.append(SimpleNamespace(
+            content=f"-# {marker}", components=[], author=SimpleNamespace(id=7),
+        ))
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, "run_side_effects", notification)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    first = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, ticket
+    ))
+
+    assert first.outcome == store.EFFECT_FAILED
+    assert posted == []
+    assert delete_calls == [(101, 500)]
+    assert first.doc["resolution_effects"]["notification"]["state"] == "failed"
+
+    async def now_gone_delete(channel_id, message_id):
+        delete_calls.append((channel_id, message_id))
+        raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10008)
+
+    rest.delete_message = now_gone_delete
+
+    second = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), mongo, first.doc
+    ))
+
+    assert second.outcome == store.WON
+    assert posted == [ticket["resolution_effects"]["marker"]]
+    assert delete_calls == [(101, 500), (101, 500)]
+
+
 def test_resolution_effect_lease_blocks_a_second_notification_worker(monkeypatch):
     ticket = _effect_ticket()
 
@@ -4342,7 +4598,10 @@ def test_approval_message_tells_the_applicant_what_happens_next_and_how_to_retur
     """The old copy ("Stand by for further instructions.") was posted into a
     thread that is then locked, leaving the applicant with an instruction to
     wait with no way to act on it. The new copy must say what happens next
-    and how to find the ticket again, and must not still say the old line."""
+    and how to find the ticket again, must not still say the old line, and
+    -- since the ticket stays open, not closed -- must not claim it closes.
+    The approval is now a Components V2 card matching the denial card's
+    layout, not a plain `content=` message."""
     sent = []
 
     class Rest:
@@ -4359,11 +4618,25 @@ def test_approval_message_tells_the_applicant_what_happens_next_and_how_to_retur
     asyncio.run(resolve.apply_approval(bot, SimpleNamespace(), ticket=ticket))
 
     assert len(sent) == 1
-    content = sent[0]["content"]
-    assert "A recruiter will contact you with your clan invite" in content
-    assert "This ticket is now closed" in content
-    assert "My ticket" in content
-    assert "Stand by for further instructions" not in content
+    payload = sent[0]
+    assert "content" not in payload
+    components = payload["components"]
+
+    def has_text(text: str) -> bool:
+        return any(
+            resolve._component_contains_text(component, text)
+            for component in components
+        )
+
+    assert has_text(resolve.APPROVAL_CARD_TITLE)
+    assert has_text("A recruiter will contact you with your clan invite")
+    assert has_text("This ticket stays open")
+    assert has_text("My ticket")
+    assert not has_text("Stand by for further instructions")
+    assert not has_text("now closed")
+    assert payload["user_mentions"] == [30]
+    assert payload["mentions_everyone"] is False
+    assert payload["role_mentions"] is False
 
 
 def test_custom_denial_modal_label_matches_the_console_wording(monkeypatch):

@@ -46,10 +46,14 @@ from extensions.commands.tickets import (
     store,
 )
 from extensions.components import register_action
-from utils.constants import RED_ACCENT
+from utils.constants import GREEN_ACCENT, RED_ACCENT
 from utils.mongo import MongoClient
 
 DENIED_THUMB = "assets/tickets/static/Denied.png"
+# No dedicated "approved"/"accepted" image exists yet in
+# assets/tickets/static/ (only Denied.png does) -- the club logo stands in
+# for it until one is added.
+APPROVAL_THUMB = "assets/branding/logo/WU_Logo.png"
 _log = logging.getLogger(__name__)
 
 RESOLUTION_EFFECT_LEASE = timedelta(minutes=10)
@@ -121,7 +125,11 @@ def _thread_identity(ticket: dict) -> tuple[int, int]:
 # Fixed card text used to identify a decision notification structurally,
 # instead of a hidden marker line. Kept independent of the applicant mention
 # and (for denial) the reason, both of which vary per ticket.
-APPROVAL_CARD_TITLE = "Congratulations on being accepted to Warriors United!"
+APPROVAL_CARD_TITLE = "You have been accepted to Warriors United."
+# The approval card's copy changed from a plain-text message to a matching
+# Components V2 card. A card posted before that change still carries this
+# older sentence -- kept so it is still recognised structurally.
+_LEGACY_APPROVAL_CARD_TITLE = "Congratulations on being accepted to Warriors United!"
 DENIAL_CARD_TITLE = (
     "we regret to inform you that currently your application has been denied."
 )
@@ -179,18 +187,38 @@ async def apply_approval(
 ):
     """Congratulate the applicant. Thread tickets are never renamed.
 
+    Matches ``apply_denial``'s card layout (a green accent instead of red,
+    and the club logo standing in for the missing dedicated approval image
+    -- see ``APPROVAL_THUMB``), in plain English for non-native speakers.
+
     Returns the created message -- callers checkpoint its id for durable,
     marker-free recovery.
     """
     channel_id, user_id = _thread_identity(ticket)
+    components = [
+        Container(
+            accent_color=GREEN_ACCENT,
+            components=[
+                Section(
+                    components=[
+                        Text(content=(
+                            f"<@{user_id}> **Congratulations!** You have been "
+                            f"accepted to Warriors United. A recruiter will "
+                            f"contact you with your clan invite. This ticket "
+                            f"stays open if you have questions. You can "
+                            f"always find it again with the **My ticket** "
+                            f"button on the panel."
+                        ))
+                    ],
+                    accessory=Thumbnail(media=APPROVAL_THUMB),
+                ),
+                Media(items=[MediaItem(media="assets/Green_Footer.png")]),
+            ],
+        )
+    ]
     return await bot.rest.create_message(
         channel=channel_id,
-        content=(
-            f"<@{user_id}> Congratulations on being accepted to Warriors United! "
-            f"A recruiter will contact you with your clan invite. This ticket "
-            f"is now closed. You can find it again with the My ticket button "
-            f"on the panel."
-        ),
+        components=components,
         mentions_everyone=False,
         user_mentions=[int(user_id)],
         role_mentions=False,
@@ -242,16 +270,23 @@ def _is_notification_card(message, kind: str) -> bool:
     """True if this message is the applicant's own decision card.
 
     Identified by its fixed card text -- no bookkeeping text is posted to
-    Discord for it -- rather than a hidden marker line.
+    Discord for it -- rather than a hidden marker line. An approval checks
+    both the current and legacy title so a card from before the card's
+    copy changed is still recognised.
     """
 
-    title = APPROVAL_CARD_TITLE if kind == KIND_APPROVE else DENIAL_CARD_TITLE
+    titles = (
+        (APPROVAL_CARD_TITLE, _LEGACY_APPROVAL_CARD_TITLE)
+        if kind == KIND_APPROVE
+        else (DENIAL_CARD_TITLE,)
+    )
     content = str(getattr(message, "content", "") or "")
-    if title in content:
+    if any(title in content for title in titles):
         return True
     return any(
         _component_contains_text(component, title)
         for component in (getattr(message, "components", ()) or ())
+        for title in titles
     )
 
 
@@ -445,6 +480,81 @@ async def _ensure_notification_thread_writable(rest, ticket: dict) -> None:
         )
 
 
+async def _delete_previous_decision_card(
+        bot: hikari.GatewayBot,
+        mongo: MongoClient,
+        ticket: dict,
+        effects: Mapping,
+) -> None:
+    """Remove the decision card an overturn is about to replace.
+
+    Preferred by the message id checkpointed in the resolution being
+    overturned (``resolution_effects.previous_notification_message_id``,
+    carried over by ``store.transition``). A ticket resolved before that
+    checkpoint existed has no id to go on; the fallback then scans the
+    candidate thread for the newest bot-authored message that structurally
+    matches either card kind (``_is_notification_card``) and deletes that.
+    A 404 (already gone) is swallowed. Any other error is re-raised so the
+    caller checkpoints the notification step ``failed`` instead of posting a
+    new card over an old one that may still be sitting there -- the retry
+    (via ``reconcile_pending_resolution_effects``) is idempotent: the
+    checkpointed message id will 404 by then (already deleted) or the
+    structural scan will find nothing, and ``_notification_exists`` still
+    guards against the new card being posted twice.
+    """
+    channel_id, _user_id = _thread_identity(ticket)
+    message_id = store.as_int(effects.get("previous_notification_message_id"))
+    if not message_id:
+        me = bot.get_me()
+        if me is None:
+            return
+        try:
+            messages = await _all_messages(bot.rest, channel_id)
+        except Exception:
+            _log.exception(
+                "previous decision card scan failed ticket=%s", ticket.get("_id"),
+            )
+            raise
+        candidates = [
+            message for message in messages
+            if int(getattr(getattr(message, "author", None), "id", 0)) == int(me.id)
+            and (
+                _is_notification_card(message, KIND_APPROVE)
+                or _is_notification_card(message, KIND_DENY_CUSTOM)
+            )
+        ]
+        if not candidates:
+            return
+        message_id = int(max(candidates, key=lambda message: int(message.id)).id)
+    try:
+        await bot.rest.delete_message(channel_id, message_id)
+    except hikari.NotFoundError:
+        pass
+    except Exception:
+        _log.exception(
+            "previous decision card deletion failed ticket=%s message=%s",
+            ticket.get("_id"), message_id,
+        )
+        raise
+    try:
+        await store.update_one(
+            mongo,
+            {"_id": ticket["_id"], **store.RUNTIME_FILTER},
+            {"$push": {"audit": {
+                "$each": [{
+                    "event": "previous_decision_card_removed",
+                    "at": store.utcnow(),
+                    "message_id": message_id,
+                }],
+                "$slice": -store.MAX_AUDIT_ENTRIES,
+            }}},
+        )
+    except Exception:
+        _log.exception(
+            "previous decision card audit write failed ticket=%s", ticket.get("_id"),
+        )
+
+
 async def _acquire_resolution_effect_lease(
         mongo: MongoClient,
         ticket_id,
@@ -537,6 +647,8 @@ async def _process_resolution_effects_owned(
                     message_id=notification_message_id,
                 ):
                     await _ensure_notification_thread_writable(bot.rest, ticket)
+                    if effects.get("overturn"):
+                        await _delete_previous_decision_card(bot, mongo, ticket, effects)
                     sent_message = await run_side_effects(
                         bot,
                         mongo,
@@ -704,6 +816,71 @@ async def process_resolution_effects(
         await _release_resolution_effect_lease(
             mongo, ticket["_id"], marker, owner
         )
+
+
+# Tracks in-flight background effect runs so asyncio does not garbage-collect
+# a Task that nothing else holds a reference to (a task with no other
+# referrers can be swept mid-run, silently dropping the applicant
+# notification, staff context delivery, and hub refresh it was doing).
+_background_effect_tasks: set[asyncio.Task] = set()
+
+
+def _on_background_effects_done(task: asyncio.Task) -> None:
+    _background_effect_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        _log.error(
+            "background resolution effects task %s failed", task.get_name(),
+            exc_info=exc,
+        )
+        return
+    # `process_resolution_effects` never raises for a step that failed --
+    # it reports failure as `Transition(EFFECT_FAILED, ...)` so the reason
+    # and partial doc survive -- so a failed applicant notification only
+    # shows up here by reading the result, not by catching an exception.
+    result = task.result()
+    if not result.won:
+        _log.error(
+            "[Tickets] resolution effects incomplete ticket=%s reason=%s",
+            (result.doc or {}).get("_id"), result.reason,
+        )
+
+
+def _schedule_resolution_effects(
+        bot: hikari.GatewayBot,
+        mongo: MongoClient,
+        ticket: dict,
+) -> asyncio.Task:
+    """Run `process_resolution_effects` off the click path.
+
+    The decision itself (`store.transition`) has already committed by the
+    time this is called; everything `process_resolution_effects` does from
+    here -- the candidate-thread scan, the decision card, staff-context
+    delivery, the hub refresh -- is idempotent and reconciled on its own by
+    `reconcile_pending_resolution_effects` on startup, so a crash mid-task
+    is already handled without the caller waiting on it.
+    """
+    task = asyncio.create_task(
+        process_resolution_effects(bot, mongo, ticket),
+        name=f"ticket-resolution-effects:{ticket.get('_id')}",
+    )
+    _background_effect_tasks.add(task)
+    task.add_done_callback(_on_background_effects_done)
+    return task
+
+
+async def wait_for_background_effects() -> None:
+    """Test helper: await every in-flight background effects task, then clear it.
+
+    Production code never calls this -- the whole point of scheduling these
+    as background tasks is that nothing on the click path waits for them.
+    """
+    tasks = list(_background_effect_tasks)
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    _background_effect_tasks.clear()
 
 
 async def reconcile_pending_resolution_effects(
@@ -927,6 +1104,14 @@ async def _resolve_ticket(
     ticket = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
     if ticket is None:
         return store.Transition(store.MISSING, None)
+    # Only meaningful on an override (overturn): the card this resolution's
+    # own effects will delete before posting a replacement. Read here,
+    # before store.transition() replaces resolution_effects wholesale.
+    previous_notification_message_id = store.as_int(
+        ((ticket.get("resolution_effects") or {}).get("notification") or {}).get(
+            "message_id"
+        )
+    ) or None
     if override is not None:
         effects = ticket.get("resolution_effects") or {}
         marker = str(prior_effect_marker or "")
@@ -1126,6 +1311,7 @@ async def _resolve_ticket(
         "expected_linked_account_revision": account_sync.snapshot_from_ticket(
             ticket
         ).revision,
+        "previous_notification_message_id": previous_notification_message_id,
     }
     if kind == KIND_APPROVE:
         try:
@@ -1164,7 +1350,26 @@ async def _resolve_ticket(
         result = await store.transition(mongo, ticket_id, **transition_kwargs)
     if not result.won:
         return result
-    return await process_resolution_effects(bot, mongo, result.doc)
+    # The decision itself is already committed at this point. Everything
+    # process_resolution_effects still has to do -- the candidate-thread
+    # scan, the decision card, staff-context delivery, the hub refresh --
+    # can take seconds to tens of seconds, and none of it needs to finish
+    # before the clicker sees a result: it is idempotent and reconciled on
+    # its own by reconcile_pending_resolution_effects on startup, so a
+    # crash mid-task loses nothing. Only failing to even schedule it should
+    # still surface as EFFECT_FAILED.
+    try:
+        _schedule_resolution_effects(bot, mongo, result.doc)
+    except Exception as exc:
+        _log.exception(
+            "failed to schedule resolution effects ticket=%s", ticket_id,
+        )
+        return store.Transition(
+            store.EFFECT_FAILED,
+            result.doc,
+            f"{type(exc).__name__}: resolution effects could not be scheduled",
+        )
+    return result
 
 
 async def approve_ticket(

@@ -362,7 +362,10 @@ from ticket detail or `flags` before removing it.
 2. Choose **Approve** or **Deny** in private ticket detail. Approve opens a
    one-step confirm ("Approve X for Main/FWA?"); Deny's reason modal is its
    own confirm. The final linked account refresh runs before the decision
-   write.
+   write. Clicking the confirm button immediately swaps it for a buttonless
+   "Saving the decision..." notice (best-effort; a stale interaction never
+   blocks the decision itself) so the confirm control never sits there
+   looking clickable while the decision and its follow-up work run.
 3. Approval stays blocked when the lookup fails, zero accounts are currently
    linked, or an active blacklist matches the Discord ID or a verified player
    tag. A tag the applicant only mentioned in chat never triggers this block.
@@ -384,11 +387,26 @@ from ticket detail or `flags` before removing it.
    normal approve/deny path. Any recruiter may overturn a decision, it always
    runs the full normal effects (including, for deny-after-approve, removing
    any roles the approval granted), and it is logged on the ticket as an
-   overturn. `/tickets approve`/`deny` never offers an overturn — on a
-   decided ticket it just names who decided it and points to the console.
-7. Applicant notification, staff updates, and console refresh are durable
-   follow-up work. **Decision recorded; updates retrying** means the
-   terminal decision is safe and the remaining work will retry.
+   overturn. Before posting its fresh decision card, an overturn also deletes
+   the earlier decision card it is replacing from the candidate thread (by
+   the message id checkpointed on the resolution being overturned, or, for a
+   ticket resolved before that checkpoint existed, by scanning the thread for
+   the newest bot-authored card and deleting that instead) — the applicant
+   only ever sees the current decision. `/tickets approve`/`deny` never
+   offers an overturn — on a decided ticket it just names who decided it and
+   points to the console. While the previous decision's own follow-up work
+   (applicant notification, staff updates, console refresh) is still
+   running — a few seconds — an overturn is refused with "Nothing was
+   changed. Try this override again in a moment."
+7. The decision write (status, revision, audit) is the only part of
+   Approve/Deny/overturn on the click path. Applicant notification, staff
+   updates, and console refresh — the previous decision card's deletion on
+   an overturn included — are scheduled as a background task the instant the
+   decision commits and are not waited on; the click gets its result back
+   immediately. That follow-up work is idempotent and reconciled on its own
+   at startup, so a crash mid-task loses nothing. **Decision recorded;
+   updates retrying** means the terminal decision is safe and the remaining
+   work will retry.
 
 The bot never archives or locks a ticket thread because of a decision.
 Approve, deny, and overturn all leave both the candidate and staff threads
