@@ -61,10 +61,23 @@ legacy kept out of creation state); only verified tags count as identity;
 legacy thread-system hooks removed; migrate-store and extra denial checks
 dropped; docs line cleanup. Full suite: 1676 passed, 8 skipped.
 
-Deferred from the legacy work (P2): the delivery/recovery engine differences
-in `tickets_legacy/` (resolution_delivery, opening-post-intent, busy-transition
-in store.py) and the `ticket_channel_monitor.py` rewrite. `/ticket diagnostics`
-no longer prints the `tickets` count.
+Legacy revert completed 2026-09-09 (was wrongly "deferred" before): the
+branch's rewritten `ticket_channel_monitor.py` failed live on the first
+branch deploy (`legacy ticket delivery identity is invalid`, startup
+reconcile retry loop; rolled back to main within two minutes). Every file in
+`tickets_legacy/` and the monitor is now main's exact content plus the
+import-path rename; `resolution_delivery.py` and the new system's
+`recover_pending_legacy_deliveries` hook are gone; main's `migrate.py`
+(`/ticket migrate-store`) is back because legacy `__init__` imports it.
+
+The ONE legacy edit the new system requires: `tickets_legacy/migrate.py`
+refuses to write when `ticket_setup.config.ticket_store_activation_version`
+is set. Without it, re-running `/ticket migrate-store confirm:true` after
+`/tickets migrate-store` would overwrite the canonical `tickets` dataset and
+create a non-partial unique `channel_id` index that rejects thread tickets.
+Atlas runs MongoDB 8.0, so the same-key `status_created` index coexists with
+the partial `thread_v2_status_created` index. Suite after the revert: 1734
+passed, 2 skipped.
 
 ## P0 — blocks merge (original items, kept for reference)
 
