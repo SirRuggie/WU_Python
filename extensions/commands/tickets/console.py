@@ -1864,11 +1864,17 @@ def _structured_intake(ticket_doc: Mapping) -> list[tuple[str, str]]:
 
 
 def _answer_transcript(ticket_doc: Mapping) -> list[str]:
+    """Last 3 applicant messages, newest first, one trimmed line each.
+
+    ``answers`` only ever holds applicant-authored messages -- see
+    ``store.append_candidate_activity`` / ``handlers.capture_candidate_thread_activity``,
+    which gate on the message author matching the ticket owner.
+    """
     answers = ticket_doc.get("answers") or ()
     if not isinstance(answers, Sequence) or isinstance(answers, (str, bytes)):
         return []
     lines: list[str] = []
-    for answer in answers[-6:]:
+    for answer in reversed(answers[-3:]):
         if isinstance(answer, Mapping):
             content = answer.get("content") or answer.get("answer") or answer.get("response")
             when = _timestamp(answer.get("at"))
@@ -1877,7 +1883,7 @@ def _answer_transcript(ticket_doc: Mapping) -> list[str]:
             when = "time unknown"
         value = _intake_value(content)
         if value:
-            lines.append(f"- {when} · {value}")
+            lines.append(f"- {when} · {_truncate_text(value, 120)}")
     return lines
 
 
@@ -1888,7 +1894,7 @@ def _intake_content(ticket_doc: Mapping) -> str | None:
         return f"### Captured intake\n{body}"
     transcript = _answer_transcript(ticket_doc)
     if transcript:
-        return "### Captured answer transcript\n" + "\n".join(transcript)
+        return "### Latest messages from the applicant\n" + "\n".join(transcript)
     return None
 
 

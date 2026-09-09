@@ -1123,11 +1123,44 @@ def test_detail_renders_structured_intake_then_canonical_answer_fallback():
     transcript_text = "\n".join(
         str(node["content"]) for node in _nodes(transcript_view) if "content" in node
     )
-    assert "Captured answer transcript" in transcript_text
-    assert "Candidate answer 1" not in transcript_text
-    assert "Candidate answer 2" in transcript_text
+    assert "Latest messages from the applicant" in transcript_text
+    assert "Candidate answer 4" not in transcript_text
+    assert "Candidate answer 5" in transcript_text
     assert "Candidate answer 7" in transcript_text
+    # Newest first.
+    assert (
+        transcript_text.index("Candidate answer 7")
+        < transcript_text.index("Candidate answer 6")
+        < transcript_text.index("Candidate answer 5")
+    )
     _assert_component_limits(transcript_view)
+
+
+def test_transcript_shows_only_newest_three_and_trims_a_long_line():
+    """Point 2 of the recruiter-console noise fix: only the last 3 applicant
+    messages render, newest first, each collapsed to one line of at most
+    120 characters with an ellipsis when trimmed."""
+    long_line = "x" * 200
+    ticket = _ticket(15, answers=[{
+        "message_id": 600 + index,
+        "kind": "answer",
+        "content": long_line if index == 4 else f"Reply {index}",
+        "at": datetime(2026, 8, 20, 4, index, tzinfo=timezone.utc),
+    } for index in range(5)])
+    view = console.build_ticket_detail(
+        ticket, action_id="j" * 32, flags=[], history=[],
+    )
+    text = "\n".join(str(node["content"]) for node in _nodes(view) if "content" in node)
+    trimmed = "x" * 119 + "…"
+    assert trimmed in text
+    assert "x" * 120 not in text
+    assert "Reply 0" not in text
+    assert "Reply 1" not in text
+    assert "Reply 2" in text
+    assert "Reply 3" in text
+    # Newest (index 4, the trimmed long line) first, then 3, then 2.
+    assert text.index(trimmed) < text.index("Reply 3") < text.index("Reply 2")
+    _assert_component_limits(view)
 
 
 def test_transcript_uppercases_a_tag_looking_token_in_a_raw_answer():
