@@ -4872,9 +4872,9 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
 
     assert len(captured) == 1
     overview = captured[0]
-    assert overview.statuses == {"open": 3, "approved": 1, "denied": 1}
-    assert overview.by_type["main"] == {"open": 2, "approved": 1, "denied": 0}
-    assert overview.by_type["fwa"] == {"open": 1, "approved": 0, "denied": 1}
+    assert overview.statuses == {"open": 3, "approved": 1, "denied": 1, "closed": 0}
+    assert overview.by_type["main"] == {"open": 2, "approved": 1, "denied": 0, "closed": 0}
+    assert overview.by_type["fwa"] == {"open": 1, "approved": 0, "denied": 1, "closed": 0}
     assert overview.flags == {
         flag_store.FLAG_BLACKLISTED: 2,
         flag_store.FLAG_DENIED_BEFORE: 1,

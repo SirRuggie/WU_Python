@@ -538,17 +538,40 @@ legacy channel number.
 ```
 
 Lists every `GUILD_TEXT` channel in the source guild (or just the chosen
-category) whose name matches the legacy ticket pattern (`main-<n>` /
-`fwa-<n>`), previews each one oldest-first, and classifies it: `ready`,
-`already_copied` (a completed `ticket_migrations` row already exists — not
-re-previewed), `open` (still-open tickets are refused, same as
-`migrate-legacy`), `no_applicant` (no candidate ID could be detected),
-`ambiguous_type`, or `error:<ExceptionName>`. The plan is saved to
-`ticket_migration_batches` (`_id: "batch:<source_guild_id>"`, capped at 1000
-matching channels per category — narrow the category if it reports more) and
-the reply is a plain-English summary: totals per classification and per
-type, the first 15 problem channels with a reason and a jump link, and the
-exact `confirm:true` command to run.
+category) that qualifies as a legacy ticket channel — its category name
+contains "ticket", "main clan", "mainclan" or "fwa", or its name (after
+stripping leading emoji/dashes/spaces) starts with `main`, `fwa`,
+`mainclan` or `closed`; anything with "log" in its name is excluded. This
+covers server 1's un-numbered names (`main-<name>`, `fwa-<name>`) as well as
+the numbered `main-<n>`/`fwa-<n>` pattern the other servers use. Each match
+is previewed oldest-first and classified: `ready`, `already_copied` (a
+completed `ticket_migrations` row already exists — not re-previewed),
+`open` (still-open tickets are refused, same as `migrate-legacy`, except
+server 3 — see below), `no_applicant` (no candidate ID could be detected),
+`ambiguous_type`, `skipped_owner_test` (the owner's own test ticket — never
+migrated, any server), `abandoned` (the applicant never wrote in the
+channel — skipped unless `include-abandoned:true`), or
+`error:<ExceptionName>`. The plan is saved to `ticket_migration_batches`
+(`_id: "batch:<source_guild_id>"`, capped at 1000 matching channels per
+category — narrow the category if it reports more) and the reply is a
+plain-English summary: totals per classification, per type, and per
+outcome (including `closed, no decision`), the first 15 problem channels
+with a reason and a jump link, and the exact `confirm:true` command to run.
+
+**Outcome when a channel has no ✅/❌ prefix:** the channel's history is
+scanned for an approval message/embed ("Welcome to the Family!",
+"Congratulations on being accepted", or content mentioning "accepted to
+Warriors United") or a denial one ("regret to inform", "has been denied", or
+an embed titled "Denied"). If neither is found the ticket still imports —
+as `closed`, with `decision_note: "No decision recorded"` — rather than
+being skipped; the console renders that status as "Closed · no decision
+recorded" with a grey accent everywhere a status shows. The decided date is
+the decision message's time when one was found, otherwise the channel's
+last message time. Server 3 (`1194706934926946457`) applies this same
+closed/no-decision treatment to its still-open tickets instead of refusing
+them; server 4 (`1078723854303756298`) keeps refusing open tickets. See
+`docs/handoff-legacy-migration.md` ("Owner rules") for the full rule set,
+including the owner-test-ticket skip and the abandoned-ticket option.
 
 **Run** (`confirm:true`): requires a plan from the last 24 hours (dry-run
 first if none exists, or if it is stale). Claims a lease on the batch so only

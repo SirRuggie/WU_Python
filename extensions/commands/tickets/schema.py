@@ -16,7 +16,7 @@ from typing import Iterable, Mapping
 
 SCHEMA_VERSION = 3
 TICKET_TYPES = frozenset({"main", "fwa"})
-TICKET_STATUSES = frozenset({"open", "approved", "denied"})
+TICKET_STATUSES = frozenset({"open", "approved", "denied", "closed"})
 TERMINAL_STATUSES = frozenset({"approved", "denied"})
 CLAIM_FIELDS = frozenset({"claimed_by", "claimed_by_name", "claimed_at"})
 

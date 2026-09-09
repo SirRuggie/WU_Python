@@ -60,6 +60,43 @@ _PLAYER_TAG_RE = re.compile(
 )
 _TICKET_NUMBER_RE = re.compile(r"(?:main|fwa)[-_ ]?(\d+)", re.IGNORECASE)
 
+# docs/handoff-legacy-migration.md "How a channel is read": server 1's names
+# carry no ticket numbers at all, so detection falls back to the category
+# name or a bare name prefix instead of `_TICKET_NUMBER_RE`.
+_LEGACY_CATEGORY_KEYWORDS = ("ticket", "main clan", "mainclan", "fwa")
+_LEGACY_NAME_PREFIXES = ("main", "fwa", "mainclan", "closed")
+_LEADING_NON_ALNUM_RE = re.compile(r"^[^A-Za-z0-9]+")
+
+
+def _stripped_channel_name(name: str) -> str:
+    """Drop a legacy channel name's leading emoji/dashes/spaces for prefix checks."""
+    return _LEADING_NON_ALNUM_RE.sub("", str(name or ""))
+
+
+def _is_legacy_ticket_channel(channel: Any, category_name: str) -> bool:
+    """Whether a GUILD_TEXT channel is a legacy ticket channel candidate.
+
+    docs/handoff-legacy-migration.md "How a channel is read": category name
+    or bare name prefix, excluding anything with "log" in its name (audit
+    logs live in the same categories as the ticket channels themselves).
+    """
+    name = str(getattr(channel, "name", "") or "")
+    if "log" in name.casefold():
+        return False
+    if any(keyword in str(category_name or "").casefold() for keyword in _LEGACY_CATEGORY_KEYWORDS):
+        return True
+    stripped = _stripped_channel_name(name).casefold()
+    return stripped.startswith(_LEGACY_NAME_PREFIXES)
+
+
+# docs/handoff-legacy-migration.md "Owner rules" #2-#3: server 3's open
+# tickets import as closed/no-decision; server 4's stay in legacy until a
+# human decides, so its open tickets keep being refused (classified `open`,
+# skipped, and reported in the dry run).
+_OPEN_TICKET_IMPORT_AS_CLOSED_GUILDS = frozenset({
+    1194706934926946457,  # server 3
+})
+
 
 class LegacyMigrationError(RuntimeError):
     pass
@@ -75,6 +112,14 @@ class LegacyMigrationBusy(LegacyMigrationError):
 
 class PilotLimitReached(LegacyMigrationError):
     pass
+
+
+class SkippedOwnerTestTicket(LegacyMigrationError):
+    """The owner's own test ticket; never migrated (handoff "Owner rules" #4)."""
+
+
+class AbandonedLegacyTicket(LegacyMigrationError):
+    """The applicant never wrote in this ticket (handoff "Owner rules" #5)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +141,10 @@ class LegacyMigrationRequest:
     # Set only by a confirmed `/tickets migrate-all` run; lets `_claim_migration`
     # bypass the five-ticket pilot cap without touching single-ticket callers.
     bulk_batch_id: str | None = None
+    # Owner rule #5: an abandoned ticket (applicant never wrote) is skipped by
+    # default; `/tickets migrate-all include-abandoned:true` sets this to
+    # import it as closed/no-decision instead.
+    include_abandoned: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +175,10 @@ class LegacyMigrationPreview:
     attachment_count: int
     recruiter_role_id: int
     attachment_audit: tuple[AttachmentAuditResult, ...] = ()
+    # Owner rule #1: set only when the outcome was inferred (no ✅/❌, no
+    # override) rather than read straight off the channel name/stored status.
+    decided_at: datetime | None = None
+    decision_note: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -836,40 +889,143 @@ async def _discover_staff_thread(
     return candidates[0] if candidates else None
 
 
-def _infer_status(
+def _legacy_decision_from_message(message: Any) -> str | None:
+    """Approval/denial marker on one message (handoff "How a channel is read")."""
+    content_lower = str(getattr(message, "content", "") or "").casefold()
+    if "accepted to warriors united" in content_lower:
+        return "approved"
+    if "regret to inform" in content_lower or "has been denied" in content_lower:
+        return "denied"
+    for embed in getattr(message, "embeds", ()) or ():
+        title_lower = str(getattr(embed, "title", "") or "").casefold()
+        description_lower = str(getattr(embed, "description", "") or "").casefold()
+        if (
+            "welcome to the family" in title_lower
+            or "welcome to the family" in description_lower
+            or "congratulations on being accepted" in title_lower
+            or "congratulations on being accepted" in description_lower
+        ):
+            return "approved"
+        if (
+            title_lower == "denied"
+            or "regret to inform" in title_lower
+            or "regret to inform" in description_lower
+            or "has been denied" in title_lower
+            or "has been denied" in description_lower
+        ):
+            return "denied"
+    return None
+
+
+def _infer_legacy_outcome(messages: Sequence[Any]) -> tuple[str | None, Any | None]:
+    """Scan channel history for the first approval/denial marker.
+
+    Returns ``(status, decision_message)``; ``status`` is ``None`` when no
+    decision could be found anywhere in history.
+    """
+    for message in messages:
+        decision = _legacy_decision_from_message(message)
+        if decision:
+            return decision, message
+    return None, None
+
+
+def _legacy_decided_at(
+    messages: Sequence[Any], decision_message: Any | None
+) -> datetime | None:
+    """The decision message's time, else the last message's time."""
+    for message in (decision_message, messages[-1] if messages else None):
+        stamp = getattr(message, "timestamp", None)
+        if isinstance(stamp, datetime):
+            return _aware(stamp)
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class _LegacyStatusDetail:
+    status: str
+    decided_at: datetime | None = None
+    decision_note: str | None = None
+
+
+def _infer_status_detail(
     source_ticket: Mapping[str, Any] | None,
     channel_name: str,
     override: str | None,
-) -> str:
+    *,
+    messages: Sequence[Any] = (),
+    source_guild_id: int | None = None,
+) -> _LegacyStatusDetail:
     stored = str((source_ticket or {}).get("status") or "").casefold()
     selected = str(override or "").casefold()
+    open_imports_as_closed = (
+        source_guild_id is not None
+        and int(source_guild_id) in _OPEN_TICKET_IMPORT_AS_CLOSED_GUILDS
+    )
     if stored in {"open", "new"}:
+        if open_imports_as_closed:
+            return _LegacyStatusDetail(
+                "closed",
+                decided_at=_legacy_decided_at(messages, None),
+                decision_note="No decision recorded",
+            )
         raise LegacyTicketStillOpen("still-open legacy tickets cannot be migrated")
     if stored == "closed":
         if selected in {"approved", "denied"}:
-            return selected
+            return _LegacyStatusDetail(selected)
         raise LegacyMigrationError(
             "the stored status is closed; choose Approved or Denied explicitly"
         )
     if stored in {"approved", "denied"}:
         if selected in {"approved", "denied"}:
-            return selected
-        return stored
+            return _LegacyStatusDetail(selected)
+        return _LegacyStatusDetail(stored)
     if channel_name.casefold().startswith(("new", "🆕")):
+        if open_imports_as_closed:
+            return _LegacyStatusDetail(
+                "closed",
+                decided_at=_legacy_decided_at(messages, None),
+                decision_note="No decision recorded",
+            )
         raise LegacyTicketStillOpen("still-open legacy tickets cannot be migrated")
     if selected in {"approved", "denied"}:
-        return selected
+        return _LegacyStatusDetail(selected)
     if channel_name.startswith("✅"):
-        return "approved"
+        return _LegacyStatusDetail("approved")
     if channel_name.startswith("❌"):
-        return "denied"
-    raise LegacyMigrationError(
-        "the final outcome could not be detected; choose Approved or Denied"
+        return _LegacyStatusDetail("denied")
+    decision, decision_message = _infer_legacy_outcome(messages)
+    if decision:
+        return _LegacyStatusDetail(
+            decision, decided_at=_legacy_decided_at(messages, decision_message)
+        )
+    return _LegacyStatusDetail(
+        "closed",
+        decided_at=_legacy_decided_at(messages, None),
+        decision_note="No decision recorded",
     )
 
 
+def _infer_status(
+    source_ticket: Mapping[str, Any] | None,
+    channel_name: str,
+    override: str | None,
+    *,
+    messages: Sequence[Any] = (),
+    source_guild_id: int | None = None,
+) -> str:
+    return _infer_status_detail(
+        source_ticket, channel_name, override,
+        messages=messages, source_guild_id=source_guild_id,
+    ).status
+
+
 def _infer_ticket_type(
-    source_ticket: Mapping[str, Any] | None, channel_name: str, override: str | None
+    source_ticket: Mapping[str, Any] | None,
+    channel_name: str,
+    override: str | None,
+    *,
+    category_name: str | None = None,
 ) -> str:
     selected = str(override or "").casefold()
     if selected in {"main", "fwa"}:
@@ -877,11 +1033,37 @@ def _infer_ticket_type(
     stored = str((source_ticket or {}).get("ticket_type") or "").casefold()
     if stored in {"main", "fwa"}:
         return stored
-    lowered = channel_name.casefold()
-    for value in ("main", "fwa"):
-        if value in lowered:
-            return value
+    stripped = _stripped_channel_name(channel_name).casefold()
+    if stripped.startswith("main"):
+        return "main"
+    if stripped.startswith("fwa"):
+        return "fwa"
+    category_lowered = str(category_name or "").casefold()
+    if "fwa" in category_lowered:
+        return "fwa"
+    if "main clan" in category_lowered or "mainclan" in category_lowered:
+        return "main"
     raise LegacyMigrationError("the ticket type could not be detected; choose Main or FWA")
+
+
+_OWNER_TEST_USER_ID = 505227988229554179
+_OWNER_TEST_USERNAME = "sirruggie"
+
+
+def _is_owner_test_applicant(user_id: int, username: str) -> bool:
+    """Owner rule #4: never migrate the owner's own test tickets, any server."""
+    return (
+        int(user_id) == _OWNER_TEST_USER_ID
+        or str(username or "").strip().casefold() == _OWNER_TEST_USERNAME
+    )
+
+
+def _applicant_authored_a_message(messages: Sequence[Any], user_id: int) -> bool:
+    """Owner rule #5: whether the applicant ever wrote in this legacy ticket."""
+    return any(
+        _as_int(getattr(getattr(message, "author", None), "id", 0)) == int(user_id)
+        for message in messages
+    )
 
 
 def _member_overwrite_ids(channel: Any, *, guild_id: int, bot_user_id: int) -> list[int]:
@@ -1046,9 +1228,54 @@ async def preview_legacy_ticket(
         mongo, request.source_guild_id, request.source_channel_id
     )
     channel_name = str(getattr(source_channel, "name", "legacy-ticket"))
-    status = _infer_status(source_ticket, channel_name, request.status_override)
+    public_messages = await _all_messages(bot.rest, request.source_channel_id)
+    user_id, username, display_name = await _identity(
+        bot.rest,
+        source_ticket=source_ticket,
+        source_channel=source_channel,
+        request=request,
+        bot_user_id=int(me.id),
+        messages=public_messages[:20],
+    )
+    if _is_owner_test_applicant(user_id, username):
+        raise SkippedOwnerTestTicket(
+            "this ticket belongs to the owner's test account and is never migrated"
+        )
+    # Still-open detection (and server 3/4's differing open-ticket policy)
+    # takes priority over the abandoned check below: a ticket a human still
+    # needs to decide is reported as `open`, not `abandoned`.
+    status_detail = _infer_status_detail(
+        source_ticket, channel_name, request.status_override,
+        messages=public_messages, source_guild_id=request.source_guild_id,
+    )
+    applicant_wrote = _applicant_authored_a_message(public_messages, user_id)
+    if not applicant_wrote:
+        if not request.include_abandoned:
+            raise AbandonedLegacyTicket(
+                "the applicant never wrote a message in this legacy ticket"
+            )
+        # Import as closed/no-decision outright rather than trusting an
+        # embed the applicant never saw.
+        status_detail = _LegacyStatusDetail(
+            "closed",
+            decided_at=_legacy_decided_at(public_messages, None),
+            decision_note="No decision recorded",
+        )
+    status = status_detail.status
+
+    category_name = ""
+    parent_id = _as_int(getattr(source_channel, "parent_id", 0))
+    if parent_id:
+        try:
+            parent_channel = await bot.rest.fetch_channel(parent_id)
+        except (hikari.NotFoundError, hikari.ForbiddenError):
+            parent_channel = None
+        if parent_channel is not None:
+            category_name = str(getattr(parent_channel, "name", "") or "")
+
     ticket_type = _infer_ticket_type(
-        source_ticket, channel_name, request.ticket_type_override
+        source_ticket, channel_name, request.ticket_type_override,
+        category_name=category_name,
     )
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
     target_guild_id = _as_int(config.get("ticket_target_guild_id"))
@@ -1075,17 +1302,8 @@ async def preview_legacy_ticket(
             else _as_int((source_ticket or {}).get("thread_id"))
         ) or None,
     )
-    public_messages = await _all_messages(bot.rest, request.source_channel_id)
     staff_messages = (
         await _all_messages(bot.rest, int(source_staff.id)) if source_staff is not None else []
-    )
-    user_id, username, display_name = await _identity(
-        bot.rest,
-        source_ticket=source_ticket,
-        source_channel=source_channel,
-        request=request,
-        bot_user_id=int(me.id),
-        messages=public_messages[:20],
     )
     created_at = (source_ticket or {}).get("created_at")
     if not isinstance(created_at, datetime):
@@ -1123,6 +1341,8 @@ async def preview_legacy_ticket(
         attachment_count=sum(len(getattr(item, "attachments", ())) for item in all_messages),
         recruiter_role_id=parents.recruiter_role_id,
         attachment_audit=attachment_audit,
+        decided_at=status_detail.decided_at,
+        decision_note=status_detail.decision_note,
     )
 
 
@@ -1175,6 +1395,8 @@ async def _claim_migration(
             "source_ticket_fingerprint": _source_ticket_fingerprint(
                 preview.source_ticket
             ),
+            "decided_at": preview.decided_at,
+            "decision_note": preview.decision_note,
         },
     }
     if current:
@@ -1941,6 +2163,10 @@ async def migrate_legacy_ticket(
             status=metadata["status"],
             source=source,
         )
+        if metadata.get("decided_at") is not None:
+            canonical["decided_at"] = metadata["decided_at"]
+        if metadata.get("decision_note"):
+            canonical["decision_note"] = metadata["decision_note"]
         await _require_legacy_source_unchanged(mongo, state)
         source_ticket_id = state["metadata"].get("source_ticket_id")
         if str(canonical.get("_id")) == str(source_ticket_id):
@@ -2050,6 +2276,9 @@ async def recover_pending_legacy_migrations(
             attachment_ack_actor_name=(
                 str(attachment_policy.get("accepted_by_name") or "") or None
             ),
+            # This migration was already claimed once; the abandoned check
+            # must not re-block a resume of a run that already accepted it.
+            include_abandoned=True,
         )
         try:
             preview = await preview_legacy_ticket(bot=bot, mongo=mongo, request=request)

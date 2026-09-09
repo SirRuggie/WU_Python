@@ -95,10 +95,13 @@ channel 1547244294757425212 (`recruiter-desk`).
 
 ## Follow-up still to do (in order)
 
-1. Bulk driver follow-up: detection by category+prefix (server 1 names have
+1. ~~Bulk driver follow-up: detection by category+prefix (server 1 names have
    no numbers), applicant fallback from the first message's mention, outcome
    inference from embeds, "closed, no decision" status, skip-owner rule, skip
-   abandoned by default, and a "Closed" entry in the Browse status filter.
+   abandoned by default, and a "Closed" entry in the Browse status filter.~~
+   Done, uncommitted (`extensions/commands/tickets/legacy_bulk.py`,
+   `legacy_migration.py`, `schema.py`, `console.py`; tests extended in
+   `tests/test_ticket_legacy_bulk.py` and `tests/test_ticket_console.py`).
 2. Refuter pass on the driver, commit, push, deploy.
 3. Reset numbering (`tools/reset_thread_ticket_test_data.py --confirm`).
 4. Dry run server 1, fix what it flags, run; then 2, 3, 4.

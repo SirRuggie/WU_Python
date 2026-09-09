@@ -451,6 +451,46 @@ def test_browse_panel_with_no_results_disables_the_open_picker():
     _assert_component_limits(view)
 
 
+def test_browse_status_options_include_closed_with_a_grey_accent():
+    # Bulk-migration follow-up rule 6: Closed joins the Browse status select.
+    values = [value for value, _label, _emoji in console.BROWSE_STATUS_OPTIONS]
+    assert "closed" in values
+    label, _emoji, accent = console._status_meta("closed")
+    assert label == "Closed · no decision recorded"
+    assert accent == console.ACCENT_GREY
+
+
+def test_browse_panel_status_select_offers_a_closed_option():
+    view = console.build_browse_panel(
+        "a" * 32,
+        status="closed",
+        ticket_type="all",
+        period="all",
+        page=1,
+        total_pages=1,
+        results=[_ticket(1, status="closed")],
+        total=1,
+    )
+    nodes = _nodes(view)
+    status_select = next(
+        node for node in nodes
+        if node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU
+        and str(node["custom_id"]).startswith("ticket_v2_console_browse_status:")
+    )
+    option_values = [option["value"] for option in status_select["options"]]
+    assert "closed" in option_values
+    selected = next(option for option in status_select["options"] if option["value"] == "closed")
+    assert selected["default"] is True
+
+
+def test_browse_row_line_shows_closed_no_decision():
+    ticket_doc = _ticket(1, status="closed")
+    # `_browse_row_line` renders `_ticket_label` plus the status via
+    # `_status_meta`, so this also proves `_ticket_label` did not choke on
+    # the new status value.
+    assert "Closed · no decision recorded" in console._browse_row_line(ticket_doc)
+
+
 def test_browse_total_pages_and_clamp_page_are_pure_pagination_math():
     assert console._browse_total_pages(0, 10) == 1
     assert console._browse_total_pages(10, 10) == 1

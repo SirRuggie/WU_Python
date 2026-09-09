@@ -42,6 +42,8 @@ CLASS_ALREADY_COPIED = "already_copied"
 CLASS_OPEN = "open"
 CLASS_NO_APPLICANT = "no_applicant"
 CLASS_AMBIGUOUS_TYPE = "ambiguous_type"
+CLASS_SKIPPED_OWNER_TEST = "skipped_owner_test"
+CLASS_ABANDONED = "abandoned"
 
 _as_int = legacy_migration._as_int
 _aware = legacy_migration._aware
@@ -62,6 +64,7 @@ def _entry(
     classification: str,
     detail: str,
     ticket_type: str | None,
+    ticket_status: str | None = None,
 ) -> dict[str, Any]:
     return {
         "channel_id": int(channel_id),
@@ -69,6 +72,10 @@ def _entry(
         "classification": classification,
         "detail": str(detail or "")[:300],
         "ticket_type": ticket_type,
+        # The outcome (approved/denied/closed) a `ready` entry would import
+        # with -- distinct from "status" below, which is this *run's*
+        # pending/done/failed/skipped progress.
+        "ticket_status": ticket_status,
         "status": "pending" if classification == CLASS_READY else "skipped",
     }
 
@@ -82,16 +89,30 @@ def _tally(entries: list[dict[str, Any]]) -> dict[str, int]:
 
 async def _candidate_channels(
     rest: hikari.api.RESTClient, guild_id: int, category_id: int | None
-) -> list[Any]:
+) -> tuple[list[Any], dict[int, str]]:
+    """Legacy ticket channels in scope, plus a ``parent_id -> category name`` map.
+
+    docs/handoff-legacy-migration.md "How a channel is read": server 1's
+    channel names carry no ticket numbers, so detection uses category name
+    or a bare name prefix (``legacy_migration._is_legacy_ticket_channel``)
+    instead of `_TICKET_NUMBER_RE`.
+    """
     channels = await rest.fetch_guild_channels(guild_id)
+    categories = {
+        int(channel.id): str(getattr(channel, "name", "") or "")
+        for channel in channels
+        if getattr(channel, "type", None) == hikari.ChannelType.GUILD_CATEGORY
+    }
     matched = [
         channel for channel in channels
         if getattr(channel, "type", None) == hikari.ChannelType.GUILD_TEXT
         and (category_id is None or _as_int(getattr(channel, "parent_id", 0)) == category_id)
-        and legacy_migration._TICKET_NUMBER_RE.search(str(getattr(channel, "name", "")))
+        and legacy_migration._is_legacy_ticket_channel(
+            channel, categories.get(_as_int(getattr(channel, "parent_id", 0)), "")
+        )
     ]
     matched.sort(key=lambda channel: int(channel.id))
-    return matched
+    return matched, categories
 
 
 def _destination_for_type(
@@ -109,24 +130,30 @@ async def _classify(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
     request: legacy_migration.LegacyMigrationRequest,
-) -> tuple[str, str]:
+) -> tuple[str, str, str | None]:
     try:
-        await legacy_migration.preview_legacy_ticket(bot=bot, mongo=mongo, request=request)
+        preview = await legacy_migration.preview_legacy_ticket(
+            bot=bot, mongo=mongo, request=request
+        )
+    except legacy_migration.SkippedOwnerTestTicket as error:
+        return CLASS_SKIPPED_OWNER_TEST, str(error), None
+    except legacy_migration.AbandonedLegacyTicket as error:
+        return CLASS_ABANDONED, str(error), None
     except legacy_migration.LegacyTicketStillOpen as error:
-        return CLASS_OPEN, str(error)
+        return CLASS_OPEN, str(error), None
     except legacy_migration.LegacyMigrationError as error:
         message = str(error)
         if "candidate Discord ID could not be detected" in message:
-            return CLASS_NO_APPLICANT, message
+            return CLASS_NO_APPLICANT, message, None
         if "ticket type could not be detected" in message:
-            return CLASS_AMBIGUOUS_TYPE, message
-        return f"error:{type(error).__name__}", message
+            return CLASS_AMBIGUOUS_TYPE, message, None
+        return f"error:{type(error).__name__}", message, None
     except Exception as error:  # pragma: no cover - defensive, logged below
         _log.exception(
             "[Tickets] bulk_migration_preview_failed channel=%s", request.source_channel_id
         )
-        return f"error:{type(error).__name__}", str(error)
-    return CLASS_READY, ""
+        return f"error:{type(error).__name__}", str(error), None
+    return CLASS_READY, "", getattr(preview, "status", None)
 
 
 async def build_plan(
@@ -137,10 +164,11 @@ async def build_plan(
     category_id: int | None,
     attachments: str,
     limit: int | None,
+    include_abandoned: bool = False,
 ) -> dict[str, Any]:
     """Read-only: list, classify, and durably record a fresh plan for one guild."""
     rest = bot.rest
-    channels = await _candidate_channels(rest, source_guild_id, category_id)
+    channels, categories = await _candidate_channels(rest, source_guild_id, category_id)
     if len(channels) > MAX_CHANNELS_PER_PLAN:
         raise BulkMigrationError(
             f"this category has {len(channels)} matching channels, above the "
@@ -154,6 +182,7 @@ async def build_plan(
     for channel in channels:
         channel_id = int(channel.id)
         channel_name = str(getattr(channel, "name", channel_id))
+        category_name = categories.get(_as_int(getattr(channel, "parent_id", 0)), "")
         migration_id = legacy_migration._migration_id(source_guild_id, channel_id)
         existing = await mongo.ticket_migrations.find_one({"_id": migration_id})
         if existing and existing.get("state") == "complete":
@@ -163,7 +192,9 @@ async def build_plan(
             continue
 
         try:
-            ticket_type = legacy_migration._infer_ticket_type(None, channel_name, None)
+            ticket_type = legacy_migration._infer_ticket_type(
+                None, channel_name, None, category_name=category_name,
+            )
         except legacy_migration.LegacyMigrationError as error:
             entries.append(
                 _entry(channel_id, channel_name, CLASS_AMBIGUOUS_TYPE, str(error), None)
@@ -186,9 +217,12 @@ async def build_plan(
             target_guild_id=target_guild_id,
             candidate_parent_id=candidate_parent_id,
             staff_parent_id=staff_parent_id,
+            include_abandoned=include_abandoned,
         )
-        classification, detail = await _classify(bot=bot, mongo=mongo, request=request)
-        entries.append(_entry(channel_id, channel_name, classification, detail, ticket_type))
+        classification, detail, ticket_status = await _classify(bot=bot, mongo=mongo, request=request)
+        entries.append(
+            _entry(channel_id, channel_name, classification, detail, ticket_type, ticket_status)
+        )
         await asyncio.sleep(PREVIEW_SLEEP_SECONDS)
 
     now = utcnow()
@@ -210,6 +244,7 @@ async def build_plan(
         "category_id": int(category_id) if category_id else None,
         "attachments": attachments,
         "requested_limit": int(limit) if limit else None,
+        "include_abandoned": bool(include_abandoned),
         "state": "planned",
         "entries": entries,
         "counts": _tally(entries),
@@ -249,18 +284,33 @@ def dry_run_summary(document: dict[str, Any], *, guild_name: str) -> str:
         f"**Ready to copy:** `{ready}`",
     ]
     by_type: dict[str, int] = {}
+    by_outcome: dict[str, int] = {}
     for entry in entries:
         if entry["classification"] == CLASS_READY:
             key = str(entry.get("ticket_type") or "unknown")
             by_type[key] = by_type.get(key, 0) + 1
+            outcome_key = str(entry.get("ticket_status") or "unknown")
+            by_outcome[outcome_key] = by_outcome.get(outcome_key, 0) + 1
     if by_type:
         lines.append(
             "**By type:** " + ", ".join(f"{key}: `{value}`" for key, value in sorted(by_type.items()))
         )
+    if by_outcome:
+        outcome_bits = [
+            f"{'closed, no decision' if key == 'closed' else key}: `{value}`"
+            for key, value in sorted(by_outcome.items())
+        ]
+        lines.append("**By outcome:** " + ", ".join(outcome_bits))
     other = {key: value for key, value in counts.items() if key != CLASS_READY}
     if other:
         lines.append(
             "**Not ready:** " + ", ".join(f"{key}: `{value}`" for key, value in sorted(other.items()))
+        )
+    abandoned = int(counts.get(CLASS_ABANDONED, 0))
+    if abandoned:
+        lines.append(
+            f"**Abandoned (applicant never wrote):** `{abandoned}` — skipped unless "
+            "`include-abandoned: true`"
         )
 
     all_problems = [entry for entry in entries if entry["classification"] != CLASS_READY]
@@ -389,6 +439,7 @@ async def run_batch(
 
     entries = document["entries"]
     attachments_policy = document.get("attachments", "copy")
+    include_abandoned = bool(document.get("include_abandoned", False))
     total = sum(1 for entry in entries if entry["classification"] == CLASS_READY)
     done = sum(1 for entry in entries if entry["status"] == "done")
     failed = sum(1 for entry in entries if str(entry["status"]).startswith("failed:"))
@@ -452,6 +503,7 @@ async def run_batch(
                 attachment_ack_actor_id=actor_id,
                 attachment_ack_actor_name=actor_name,
                 bulk_batch_id=batch_id,
+                include_abandoned=include_abandoned,
             )
             try:
                 preview = await legacy_migration.preview_legacy_ticket(
@@ -576,6 +628,11 @@ class MigrateAllLegacyTickets(
         "limit", "Maximum channels to copy this run; leave blank for no limit",
         default=None, min_value=1,
     )
+    include_abandoned = lightbulb.boolean(
+        "include-abandoned",
+        "Import abandoned tickets (applicant never wrote) as closed instead of skipping them",
+        default=False,
+    )
     confirm = lightbulb.boolean(
         "confirm", "False previews only. True copies or resumes this batch", default=False
     )
@@ -615,6 +672,7 @@ class MigrateAllLegacyTickets(
                     category_id=category_id,
                     attachments=self.attachments,
                     limit=self.limit,
+                    include_abandoned=self.include_abandoned,
                 )
                 await ctx.respond(
                     "🔎 **DRY RUN — nothing was written.**\n"

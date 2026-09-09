@@ -239,7 +239,8 @@ def test_build_plan_document_shape(monkeypatch):
     assert len(document["entries"]) == 1
     entry = document["entries"][0]
     assert set(entry) == {
-        "channel_id", "channel_name", "classification", "detail", "ticket_type", "status",
+        "channel_id", "channel_name", "classification", "detail", "ticket_type",
+        "ticket_status", "status",
     }
 
 
@@ -588,3 +589,209 @@ def test_single_ticket_request_without_bulk_batch_id_still_enforces_the_pilot_ca
 
     with pytest.raises(legacy_migration.PilotLimitReached):
         asyncio.run(legacy_migration._claim_migration(mongo, preview))
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: detection by category+prefix (handoff "How a channel is read")
+# ---------------------------------------------------------------------------
+
+def test_is_legacy_ticket_channel_detects_server_1_style_names_without_numbers():
+    # Server 1's names carry no ticket number at all.
+    assert legacy_migration._is_legacy_ticket_channel(
+        _channel(1, "main-frank"), ""
+    ) is True
+    assert legacy_migration._is_legacy_ticket_channel(
+        _channel(2, "fwa-carol"), ""
+    ) is True
+    assert legacy_migration._is_legacy_ticket_channel(
+        _channel(3, "mainclan-dave"), ""
+    ) is True
+    assert legacy_migration._is_legacy_ticket_channel(
+        _channel(4, "closed-0005"), ""
+    ) is True
+    assert legacy_migration._is_legacy_ticket_channel(
+        _channel(5, "✅--main-6-frank"), ""
+    ) is True
+
+
+def test_is_legacy_ticket_channel_detects_by_category_name_only():
+    channel = _channel(6, "welcome-desk")
+    assert legacy_migration._is_legacy_ticket_channel(channel, "Main Clan Tickets") is True
+    assert legacy_migration._is_legacy_ticket_channel(channel, "FWA Tickets") is True
+    assert legacy_migration._is_legacy_ticket_channel(channel, "Mainclan Tickets 2") is True
+    assert legacy_migration._is_legacy_ticket_channel(channel, "General") is False
+
+
+def test_is_legacy_ticket_channel_excludes_log_channels():
+    assert legacy_migration._is_legacy_ticket_channel(
+        _channel(7, "main-log"), "Main Clan Tickets"
+    ) is False
+
+
+def test_stripped_channel_name_drops_leading_emoji_dashes_and_spaces():
+    assert legacy_migration._stripped_channel_name("✅ --main-6-frank") == "main-6-frank"
+
+
+def test_infer_ticket_type_falls_back_to_category_name():
+    assert legacy_migration._infer_ticket_type(
+        None, "welcome-desk", None, category_name="FWA Tickets"
+    ) == "fwa"
+    assert legacy_migration._infer_ticket_type(
+        None, "welcome-desk", None, category_name="Main Clan Tickets"
+    ) == "main"
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="ticket type"):
+        legacy_migration._infer_ticket_type(None, "welcome-desk", None, category_name="General")
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: outcome inference from embed/message history
+# ---------------------------------------------------------------------------
+
+def _history_message(content="", embeds=(), timestamp=NOW):
+    return SimpleNamespace(content=content, embeds=list(embeds), timestamp=timestamp)
+
+
+def test_infer_status_detects_an_approval_embed():
+    embed = SimpleNamespace(title="Welcome to the Family!", description="")
+    assert legacy_migration._infer_status(
+        None, "ticket-applicant", None, messages=[_history_message(embeds=[embed])]
+    ) == "approved"
+
+
+def test_infer_status_detects_a_denial_embed():
+    embed = SimpleNamespace(title="Denied", description="")
+    assert legacy_migration._infer_status(
+        None, "ticket-applicant", None, messages=[_history_message(embeds=[embed])]
+    ) == "denied"
+
+
+def test_infer_status_defaults_to_closed_with_no_decision_note():
+    detail = legacy_migration._infer_status_detail(
+        None, "ticket-applicant", None,
+        messages=[_history_message(content="just chatting")],
+    )
+    assert detail.status == "closed"
+    assert detail.decision_note == "No decision recorded"
+    assert detail.decided_at == NOW
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: server 3/4 open-ticket import policy (owner rules #2-#3)
+# ---------------------------------------------------------------------------
+
+_SERVER_3 = 1194706934926946457
+_SERVER_4 = 1078723854303756298
+
+
+def test_server_3_open_ticket_imports_as_closed_no_decision():
+    detail = legacy_migration._infer_status_detail(
+        {"status": "open"}, "main-9-applicant", None, source_guild_id=_SERVER_3,
+    )
+    assert detail.status == "closed"
+    assert detail.decision_note == "No decision recorded"
+
+
+def test_server_4_open_ticket_still_refuses():
+    with pytest.raises(legacy_migration.LegacyTicketStillOpen):
+        legacy_migration._infer_status_detail(
+            {"status": "open"}, "main-9-applicant", None, source_guild_id=_SERVER_4,
+        )
+
+
+def test_open_ticket_with_no_guild_policy_still_refuses():
+    with pytest.raises(legacy_migration.LegacyTicketStillOpen):
+        legacy_migration._infer_status({"status": "open"}, "main-9-applicant", None)
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: skip the owner's test tickets (owner rule #4)
+# ---------------------------------------------------------------------------
+
+def test_is_owner_test_applicant_matches_id_or_username():
+    assert legacy_migration._is_owner_test_applicant(505227988229554179, "whoever") is True
+    assert legacy_migration._is_owner_test_applicant(1, "SirRuggie") is True
+    assert legacy_migration._is_owner_test_applicant(1, "someone-else") is False
+
+
+def test_classify_maps_skipped_owner_test(monkeypatch):
+    async def fake_preview(*, bot, mongo, request):
+        raise legacy_migration.SkippedOwnerTestTicket("owner test ticket")
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    classification, _detail, ticket_status = asyncio.run(
+        legacy_bulk._classify(bot=SimpleNamespace(), mongo=SimpleNamespace(), request=request)
+    )
+    assert classification == legacy_bulk.CLASS_SKIPPED_OWNER_TEST
+    assert ticket_status is None
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: abandoned tickets skipped unless `include-abandoned` (owner rule #5)
+# ---------------------------------------------------------------------------
+
+def test_applicant_authored_a_message_checks_author_ids():
+    messages = [
+        SimpleNamespace(author=SimpleNamespace(id=1)),
+        SimpleNamespace(author=SimpleNamespace(id=2)),
+    ]
+    assert legacy_migration._applicant_authored_a_message(messages, 2) is True
+    assert legacy_migration._applicant_authored_a_message(messages, 3) is False
+
+
+def test_classify_maps_abandoned_ticket(monkeypatch):
+    async def fake_preview(*, bot, mongo, request):
+        raise legacy_migration.AbandonedLegacyTicket("never wrote")
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    classification, _detail, ticket_status = asyncio.run(
+        legacy_bulk._classify(bot=SimpleNamespace(), mongo=SimpleNamespace(), request=request)
+    )
+    assert classification == legacy_bulk.CLASS_ABANDONED
+    assert ticket_status is None
+
+
+def test_build_plan_passes_include_abandoned_through_to_each_request(monkeypatch):
+    async def fetch_guild_channels(_guild_id):
+        return [_channel(6001, "✅main-1-alice")]
+
+    bot = SimpleNamespace(rest=SimpleNamespace(fetch_guild_channels=fetch_guild_channels))
+    captured = []
+
+    async def fake_preview(*, bot, mongo, request):
+        captured.append(request.include_abandoned)
+        return SimpleNamespace(status="approved")
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    mongo = _mongo()
+    asyncio.run(legacy_bulk.build_plan(
+        bot=bot, mongo=mongo, source_guild_id=6, category_id=None,
+        attachments="copy", limit=None, include_abandoned=True,
+    ))
+    assert captured == [True]
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: dry-run summary shows the new classifications and outcome counts
+# ---------------------------------------------------------------------------
+
+def test_dry_run_summary_reports_closed_no_decision_and_abandoned_counts():
+    entries = [
+        legacy_bulk._entry(1, "main-1", legacy_bulk.CLASS_READY, "", "main", "approved"),
+        legacy_bulk._entry(2, "main-2", legacy_bulk.CLASS_READY, "", "main", "closed"),
+        legacy_bulk._entry(3, "main-3", legacy_bulk.CLASS_ABANDONED, "never wrote", None),
+        legacy_bulk._entry(4, "main-4", legacy_bulk.CLASS_SKIPPED_OWNER_TEST, "owner", None),
+    ]
+    document = _batch_document(9, entries)
+    summary = legacy_bulk.dry_run_summary(document, guild_name="Legacy Nine")
+    assert "closed, no decision: `1`" in summary
+    assert "Abandoned (applicant never wrote):** `1`" in summary
+    assert f"{legacy_bulk.CLASS_ABANDONED}: `1`" in summary
+    assert f"{legacy_bulk.CLASS_SKIPPED_OWNER_TEST}: `1`" in summary

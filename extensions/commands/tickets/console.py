@@ -122,6 +122,9 @@ STATUS_META = {
     "open": ("New / open", "🆕", ACCENT_BLUE),
     "approved": ("Approved", "✅", ACCENT_GREEN),
     "denied": ("Denied", "❌", ACCENT_RED),
+    # Legacy import with no ✅/❌ prefix and no decision embed in history; see
+    # docs/handoff-legacy-migration.md "Owner rules" #1.
+    "closed": ("Closed · no decision recorded", "🔒", ACCENT_GREY),
 }
 FLAG_META = {
     flag_store.FLAG_BLACKLISTED: ("Blacklisted", "⛔", True),
@@ -1733,6 +1736,7 @@ BROWSE_STATUS_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("open", "Open", STATUS_META["open"][1]),
     ("approved", "Approved", STATUS_META["approved"][1]),
     ("denied", "Denied", STATUS_META["denied"][1]),
+    ("closed", "Closed", STATUS_META["closed"][1]),
 )
 BROWSE_TYPE_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("all", "All clan types", "📋"),
