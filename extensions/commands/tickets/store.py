@@ -1196,4 +1196,13 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
             partialFilterExpression={**RUNTIME_FILTER, field: True},
             name="thread_v2_account_recovery_" + field.rsplit(".", 1)[-1],
         ))
+    # account_sync.recover_pending_account_syncs sorts every sweep by this
+    # field, oldest first, to bound and order its batch at the database --
+    # without a supporting index that sort has nothing to use and every
+    # stuck row with no `last_attempt_at` sorts first unindexed.
+    specs.append(await collection.create_index(
+        [("linked_accounts.last_attempt_at", 1)],
+        partialFilterExpression=RUNTIME_FILTER,
+        name="thread_v2_account_recovery_last_attempt",
+    ))
     return [str(name) for name in specs]

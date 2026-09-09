@@ -346,7 +346,17 @@ async def handle_create_ticket(
         if slot_claim.slot.get("state") == ticket_runtime.SLOT_CLEANUP_REQUIRED:
             sentences = ["⚠️ A recruiter still needs to finish your earlier ticket."]
             if location_id:
-                sentences.append(f"Jump to it here: <#{location_id}>.")
+                # A bare <#id> mention only resolves in the channel's own
+                # guild, and this slot's channel is not necessarily in
+                # ctx.guild_id (the pilot/public panels span two servers
+                # during rollout) -- a jump URL resolves anywhere.
+                slot_guild_id = (
+                    store.as_int(slot_claim.slot.get("guild_id")) or int(ctx.guild_id)
+                )
+                sentences.append(
+                    "Jump to it here: "
+                    f"https://discord.com/channels/{slot_guild_id}/{location_id}."
+                )
             role_name = await _recruiter_role_name(
                 bot, mongo, guild_id=store.as_int(ctx.guild_id), ticket_type=ticket_type
             )
@@ -549,8 +559,18 @@ async def handle_my_ticket(
                 "[Tickets] v2_my_ticket_reaccess_failed "
                 f"user={user_id} error={type(error).__name__}"
             )
+        # A bare <#id> mention only resolves in the channel's own guild, and
+        # the applicant's open ticket is not necessarily in the guild they
+        # clicked "My ticket" in (the pilot/public panels span two servers
+        # during rollout) -- a jump URL resolves anywhere.
+        ticket_guild_id = (
+            store.as_int(open_ticket.get("guild_id")) or int(ctx.guild_id)
+        )
         await ctx.interaction.edit_initial_response(
-            content=f"🎟️ Your open ticket: <#{location_id}>"
+            content=(
+                "🎟️ Your open ticket: "
+                f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
+            )
         )
         return
 

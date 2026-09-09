@@ -601,6 +601,13 @@ def test_flag_identity_propagation_survives_post_snapshot_failure(monkeypatch):
     assert linked["current_tags"] == ["#NEW123"]
     assert linked["flag_refresh_required"] is True
 
+    # The follow-up branch is gated by the same 10-minute cooldown as the
+    # lookup branch, and the sync above just stamped last_attempt_at -- move
+    # past the cooldown so the recovery sweep below picks it up.
+    monkeypatch.setattr(
+        account_sync, "utcnow",
+        lambda: datetime.now(timezone.utc) + timedelta(minutes=11),
+    )
     recovered = asyncio.run(account_sync.recover_pending_account_syncs(
         mongo, object()
     ))
@@ -967,6 +974,13 @@ def test_terminal_retry_context_obligation_survives_callback_failure_and_resync(
         queues += 1
         return f"ticket_staff_context:{_ticket['_id']}"
 
+    # The follow-up branch is gated by the same 10-minute cooldown as the
+    # lookup branch, and the resync above just stamped last_attempt_at --
+    # move past the cooldown so the sweep below picks it up.
+    monkeypatch.setattr(
+        account_sync, "utcnow",
+        lambda: datetime.now(timezone.utc) + timedelta(minutes=11),
+    )
     second = asyncio.run(account_sync.recover_pending_account_syncs(
         mongo, object(), after_sync=queue
     ))
@@ -1804,21 +1818,73 @@ def test_account_recovery_executes_the_frozen_indexed_predicate(monkeypatch):
     base_index = account_sync.account_recovery_filter()
     assert query["type"] == base_index["type"]
     assert query["venue"] == base_index["venue"]
-    # Only the branches that actually re-run the lookup are gated by the
-    # cooldown; the flag/context follow-up branches, which never touch
-    # last_attempt_at, stay ungated so they cannot be starved by it.
+    # Both branches -- the lookup-due retry/never-synced case and the
+    # flag/context follow-up case -- are gated by the same cooldown, so a
+    # permanently-stuck follow-up cannot sort first every sweep and starve
+    # the lookups sharing the same bounded batch.
     assert query["$or"][0]["$and"][0] == {"$or": [
         {"linked_accounts.retry_required": True},
         {"status": "open", "linked_accounts.version": {"$exists": False}},
     ]}
-    assert query["$or"][1] == {"$or": [
+    assert query["$or"][1]["$and"][0] == {"$or": [
         {"linked_accounts.context_refresh_required": True},
         {"linked_accounts.flag_refresh_required": True},
     ]}
-    cutoff = query["$or"][0]["$and"][1]["$or"][1]["linked_accounts.last_attempt_at"]["$lte"]
-    assert abs((datetime.now(timezone.utc) - timedelta(minutes=10) - cutoff).total_seconds()) < 5
+    for clause in query["$or"]:
+        cutoff = clause["$and"][1]["$or"][1]["linked_accounts.last_attempt_at"]["$lte"]
+        assert abs((datetime.now(timezone.utc) - timedelta(minutes=10) - cutoff).total_seconds()) < 5
     assert sort == [("linked_accounts.last_attempt_at", 1), ("_id", 1)]
     assert limit == 25
+
+
+def test_follow_up_due_is_gated_by_the_same_cooldown_as_lookup_due(monkeypatch):
+    """A ticket that only needs the flag/context follow-up (it already has
+    a `linked_accounts.version`, so the lookup branch is skipped) must be
+    gated by the same 10-minute cooldown as a lookup-due ticket -- otherwise
+    a permanently-failing follow-up sorts first (oldest/missing
+    `last_attempt_at`) every sweep and starves the lookups sharing the same
+    bounded batch."""
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(account_sync, "utcnow", lambda: now)
+
+    def _follow_up_ticket(number, *, minutes_ago):
+        ticket = _ticket(
+            public=200 + number, staff=300 + number,
+            number=number, user=100 + number,
+        )
+        ticket["linked_accounts"] = {
+            "version": 1,
+            "state": account_sync.STATE_READY,
+            "current": [],
+            "current_tags": [],
+            "retry_required": False,
+            "flag_refresh_required": True,
+            "last_attempt_at": now - timedelta(minutes=minutes_ago),
+            "revision": 1,
+        }
+        return ticket
+
+    recent = _follow_up_ticket(1, minutes_ago=5)
+    stale = _follow_up_ticket(2, minutes_ago=15)
+    mongo = _mongo(recent, stale)
+
+    reconciled_ids = []
+
+    async def reconcile(_mongo, ticket, *, source):
+        reconciled_ids.append(ticket["_id"])
+        durable = deepcopy(ticket)
+        durable["linked_accounts"]["flag_refresh_required"] = False
+        return durable
+
+    monkeypatch.setattr(account_sync, "reconcile_flag_identities", reconcile)
+
+    counts = asyncio.run(account_sync.recover_pending_account_syncs(mongo, object()))
+
+    # Only the ticket whose follow-up attempt is outside the cooldown
+    # (15 minutes ago) is selected; the one attempted 5 minutes ago is
+    # skipped.
+    assert reconciled_ids == [stale["_id"]]
+    assert counts == {"processed": 1, "completed": 1, "failed": 0}
 
 
 def test_recovery_indexes_are_idempotent_and_unique_preflight_still_fails_closed():

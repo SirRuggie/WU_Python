@@ -1130,7 +1130,9 @@ def test_cleanup_required_reply_names_the_recruiter_and_links_the_earlier_ticket
     ))
 
     message = edits[-1]["content"]
-    assert "<#999>" in message
+    # A bare <#id> mention only resolves in the channel's own guild; a jump
+    # URL resolves everywhere, including outside the slot's server.
+    assert "https://discord.com/channels/11/999" in message
     assert "Main Recruiter" in message
     assert "quarantine" not in message.lower()
     assert "cleanup_required" not in message.lower()
@@ -1172,6 +1174,50 @@ def test_cleanup_required_reply_falls_back_without_link_or_role(monkeypatch):
     assert "recruiter" in message.lower()
     assert "quarantine" not in message.lower()
     assert "cleanup_required" not in message.lower()
+
+
+def test_cleanup_required_reply_links_the_slots_own_server_not_the_viewers(
+    monkeypatch,
+):
+    """The reserved slot needing cleanup can be bound to a different server
+    than the one the applicant clicked the (possibly pilot) panel in during
+    the two-server rollout. A bare `<#id>` mention only resolves in its own
+    guild and shows as nothing elsewhere, so the cleanup-required reply must
+    jump-link using the slot's own guild_id, not ctx.guild_id."""
+    edits = []
+
+    async def route(*_args, **_kwargs):
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_THREAD,
+            True,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            8,
+            "thread_default",
+        )
+
+    async def claim(*_args, **_kwargs):
+        return ticket_runtime.SlotClaim(False, None, {
+            "_id": "ticket-open:50:main",
+            "state": ticket_runtime.SLOT_CLEANUP_REQUIRED,
+            "location_id": 999,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": 77,
+            "workflow_id": "thread:50:main",
+        })
+
+    monkeypatch.setattr(handlers, "thread_intake_ready", lambda: True)
+    monkeypatch.setattr(handlers.ticket_runtime, "route_public_intake", route)
+    monkeypatch.setattr(handlers.ticket_runtime, "claim_open_slot", claim)
+    handlers.user_cooldowns.clear()
+    ctx = _pilot_context(edits)  # ctx.guild_id is 11; the slot's is 77.
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx, "public:main", bot=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+
+    message = edits[-1]["content"]
+    assert "https://discord.com/channels/77/999" in message
+    assert "<#999>" not in message
 
 
 def test_config_read_failure_exactly_cancels_untouched_slot(monkeypatch):
@@ -1724,8 +1770,47 @@ def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
     ))
 
     assert reaccess_calls == [("ticket_9", 50)]
-    assert "<#777>" in edits[-1]["content"]
+    # A bare <#id> mention only resolves in the channel's own guild; a jump
+    # URL resolves everywhere, including outside the ticket's server.
+    assert "https://discord.com/channels/11/777" in edits[-1]["content"]
     assert "flag" not in edits[-1]["content"].lower()
+
+
+def test_my_ticket_button_links_the_tickets_own_server_not_the_viewers(monkeypatch):
+    """The applicant's open ticket can be bound to a different server than
+    the one they clicked "My ticket" in during the two-server rollout. A
+    bare `<#id>` mention only resolves in its own guild and shows as
+    nothing elsewhere, so this reply must jump-link using the ticket's own
+    guild_id, not ctx.guild_id."""
+    edits = []
+    ticket_doc = {
+        "_id": "ticket_9",
+        "location": {"id": 777, "staff_space_id": 778},
+        "guild_id": 77,
+        "user_id": 50,
+        "status": "open",
+        "ticket_type": "main",
+    }
+
+    async def find_open(_mongo, *, user_id, ticket_type):
+        return ticket_doc if ticket_type == "main" else None
+
+    async def ensure_access(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(
+        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
+    )
+    ctx = _pilot_context(edits)  # ctx.guild_id is 11; the ticket's is 77.
+
+    asyncio.run(handlers.handle_my_ticket(
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+    ))
+
+    message = edits[-1]["content"]
+    assert "https://discord.com/channels/77/777" in message
+    assert "<#777>" not in message
 
 
 def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch):
@@ -1994,4 +2079,4 @@ def test_my_ticket_button_with_staff_thread_missing_keeps_the_candidate_link(
     assert released == []
     assert reaccess_calls == [True]
     assert "removed" not in edits[-1]["content"]
-    assert "<#777>" in edits[-1]["content"]
+    assert "https://discord.com/channels/11/777" in edits[-1]["content"]

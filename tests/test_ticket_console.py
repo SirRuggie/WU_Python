@@ -3177,9 +3177,85 @@ def test_hub_forces_a_redraw_when_force_pending_even_if_counts_would_match(
 
     assert message_id == 456
     assert rest.edits == 1
-    update = collection.updates[0][0][1]
+    query, update = collection.updates[0][0]
+    assert query == {"_id": console.HUB_STATE_ID, "desired_revision": 0}
     assert update["$set"]["force_pending"] is False
-    assert "chart_signature" not in update["$set"]
+    # The forced (full-redraw) path must still store the signature of what
+    # was actually drawn, so a later non-forced publish has a real baseline
+    # to compare against instead of stale or missing data.
+    assert "chart_signature" in update["$set"]
+
+
+def test_force_raised_mid_publish_survives_the_settle_write(monkeypatch):
+    """A ticket change that lands while the hub is being redrawn calls
+    _mark_hub_dirty again, bumping desired_revision and re-raising
+    force_pending. The settle write at the end of the publish that was
+    already in flight must not clobber that -- it is conditioned on the
+    desired_revision read at entry, so the next drain redraws instead of
+    leaving a stale picker forever."""
+
+    async def counts(_mongo):
+        return {"statuses": {"open": 3}}
+
+    async def flags(_mongo):
+        return {}
+
+    async def valid(*_args, **_kwargs):
+        return object()
+
+    async def payload(_mongo):
+        return ["FRESH PANEL"]
+
+    class Collection:
+        def __init__(self, document):
+            self.document = document
+            self.updates = []
+
+        async def update_one(self, query, update, **_kwargs):
+            self.updates.append((query, update))
+            if all(self.document.get(key) == value for key, value in query.items()):
+                for key, value in update.get("$set", {}).items():
+                    self.document[key] = value
+
+    class Rest:
+        def __init__(self):
+            self.edits = 0
+
+        async def edit_message(self, **_kwargs):
+            self.edits += 1
+
+    monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.flag_store, "count_active", flags)
+    monkeypatch.setattr(console, "validate_console_channel", valid)
+    monkeypatch.setattr(console, "_hub_payload", payload)
+
+    rest = Rest()
+    document = {
+        "_id": console.HUB_STATE_ID,
+        "guild_id": 321, "channel_id": 123, "message_id": 456,
+        "force_pending": True, "desired_revision": 5,
+    }
+    collection = Collection(document)
+    state = dict(document)
+
+    # A ticket change lands mid-publish: _mark_hub_dirty bumps
+    # desired_revision and re-raises force_pending before this publish's
+    # settle write runs.
+    document["desired_revision"] = 6
+    document["force_pending"] = True
+
+    message_id = asyncio.run(console._publish_hub(
+        SimpleNamespace(rest=rest),
+        SimpleNamespace(ticket_setup=collection),
+        state,
+    ))
+
+    assert message_id == 456
+    assert rest.edits == 1
+    # The settle write's filter (desired_revision == 5, the entry snapshot)
+    # no longer matches the document (now at 6), so it must not apply.
+    assert document["force_pending"] is True
+    assert document["desired_revision"] == 6
 
 
 def test_flag_manager_back_button_uses_a_real_arrow_emoji():

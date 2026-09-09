@@ -681,10 +681,11 @@ async def recover_pending_account_syncs(
     ``linked_accounts.last_attempt_at`` first -- instead of loading every
     matching ticket and sorting in Python, so a ticket that keeps failing
     cannot camp at the head of every sweep and starve the rest of the batch.
-    Only the branches that actually re-run the lookup (a pending retry, or a
-    ticket that has never synced) are cooled down; a ticket waiting solely on
-    the separate flag/context follow-up is not gated by it, since completing
-    that follow-up never touches ``last_attempt_at``.
+    Both branches (a pending retry/never-synced ticket, and a ticket waiting
+    solely on the separate flag/context follow-up) are gated by the same
+    cooldown -- an ungated follow-up branch let a permanently-stuck
+    follow-up with no ``last_attempt_at`` sort first every sweep and starve
+    the lookups sharing the same bounded batch.
     """
     amount = max(1, min(int(limit), ACCOUNT_RECOVERY_READ_LIMIT))
     cutoff = utcnow() - ACCOUNT_RECOVERY_COOLDOWN
@@ -702,7 +703,10 @@ async def recover_pending_account_syncs(
     ]}
     filt = {
         **store.RUNTIME_FILTER,
-        "$or": [{"$and": [lookup_due, cooldown_elapsed]}, follow_up_due],
+        "$or": [
+            {"$and": [lookup_due, cooldown_elapsed]},
+            {"$and": [follow_up_due, cooldown_elapsed]},
+        ],
     }
     pending = await store.find(
         mongo, filt,

@@ -938,6 +938,11 @@ async def _publish_hub(
     )
 
     message_id = _int(state.get("message_id"))
+    # The revision read at entry -- a ticket change that lands mid-publish
+    # bumps desired_revision (and re-raises force_pending via
+    # _mark_hub_dirty) past this value, and the settle write below must not
+    # clobber that.
+    entry_revision = _int(state.get("desired_revision"))
     # Missing force_pending (a state row predating this field, or a caller
     # that never went through _mark_hub_dirty) means "unknown baseline" and
     # must default to a full redraw, not a skip.
@@ -966,8 +971,25 @@ async def _publish_hub(
                 role_mentions=False,
                 mentions_everyone=False,
             )
+            edit_settle_fields = settle_fields
+            if signature is None:
+                # The forced (full-redraw) path used to leave
+                # chart_signature unwritten -- always store the signature
+                # of what was actually drawn here, so a later non-forced
+                # publish compares against the right baseline instead of
+                # stale or missing data.
+                edit_settle_fields = {
+                    **settle_fields,
+                    "chart_signature": await _chart_signature(mongo),
+                }
+            # Conditioned on the revision read at entry: if a ticket change
+            # landed mid-publish and bumped desired_revision (re-raising
+            # force_pending), that force must survive this settle so the
+            # next drain redraws instead of silently clearing the flag on
+            # data this publish never saw.
             await mongo.ticket_setup.update_one(
-                {"_id": HUB_STATE_ID}, {"$set": settle_fields},
+                {"_id": HUB_STATE_ID, "desired_revision": entry_revision},
+                {"$set": edit_settle_fields},
             )
             return message_id
         except hikari.NotFoundError:
