@@ -3251,6 +3251,42 @@ def test_opening_delivery_scans_beyond_last_hundred_messages():
     assert rest.created == 0
 
 
+def test_send_components_once_survives_a_retried_post_without_a_second_card():
+    """A retried delivery attempt (e.g. main.py's REST retry resending a
+    create_message whose response was lost) must not duplicate the card:
+    the marker-scan-before-post guard is what let bot-wide retries be
+    restored instead of leaving them disabled for every command.
+    """
+    marker = "ticket-setup:101:candidate"
+
+    class Rest:
+        def __init__(self):
+            self.messages = []
+            self.create_calls = 0
+
+        def fetch_messages(self, _channel_id):
+            async def to_list():
+                return list(self.messages)
+            return SimpleNamespace(to_list=to_list)
+
+        async def create_message(self, _channel_id, **kwargs):
+            self.create_calls += 1
+            self.messages.append(SimpleNamespace(
+                content="", components=kwargs.get("components", []),
+            ))
+
+    rest = Rest()
+    card = [thread_service.Text(content="Welcome to your ticket")]
+
+    asyncio.run(thread_service._send_components_once(rest, 101, marker, card))
+    # Simulates the same delivery attempt firing again (a lost-response retry,
+    # or an outer recovery pass re-running _deliver_opening_messages).
+    asyncio.run(thread_service._send_components_once(rest, 101, marker, card))
+
+    assert rest.create_calls == 1
+    assert len(rest.messages) == 1
+
+
 def test_destination_marker_scan_is_not_limited_to_recent_messages():
     marker = "migration-source:1:2:3:1/1"
 

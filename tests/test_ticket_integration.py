@@ -123,7 +123,11 @@ def test_main_loads_both_ticket_runtimes_and_the_legacy_monitor():
     assert '"extensions.commands.tickets"' in source
     assert '"extensions.commands.tickets_legacy"' in source
     assert '"extensions.events.channel.ticket_channel_monitor"' in source
-    assert "max_retries=0" in source
+    # hikari's default REST retry is restored bot-wide; ticket message POSTs
+    # that motivated disabling it are made retry-safe individually instead
+    # (idempotent markers in thread_service.py), not by disabling retries
+    # for every /clan, /cards and /cwl interaction.
+    assert "max_retries=0" not in source
     assert "max_retries=1" not in source
 
 

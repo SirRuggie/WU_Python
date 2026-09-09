@@ -67,9 +67,6 @@ bot = hikari.GatewayBot(
     ),
     # Fix hikari's overly aggressive rate limiting
     max_rate_limit=120.0,  # Guild channel-create bucket slides to a 60s window; 30s made those a user-facing error
-    # Message POST ambiguity is reconciled from bot-authored channel history.
-    # An internal retry here could duplicate an accepted response-lost POST.
-    max_retries=0,
 )
 
 client = lightbulb.client_from_app(bot)
