@@ -16,6 +16,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands.tickets import loader, thread_intake_ready, ticket
+from extensions.commands.tickets import resolve
 from extensions.commands.tickets import store
 from extensions.commands.tickets import thread_service
 from extensions.commands import ticket_runtime
@@ -291,6 +292,18 @@ async def handle_create_ticket(
             )
             message = " ".join(sentences)
         elif location_id:
+            existing_ticket = await store.find_by_location(mongo, location_id)
+            if existing_ticket is not None:
+                try:
+                    await thread_service.ensure_candidate_thread_access(
+                        bot.rest, existing_ticket, user_id=user_id,
+                    )
+                except Exception as error:
+                    print(
+                        "[Tickets] v2_reclick_reaccess_failed "
+                        f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
+                        f"error={type(error).__name__}"
+                    )
             message = f"✅ You already have an open {ticket_type.upper()} ticket: <#{location_id}>"
         else:
             message = "⏳ Your ticket is already being created. Please try again shortly."
@@ -373,6 +386,89 @@ async def handle_create_ticket(
             f"✅ Your {ticket_type.upper()} ticket is {wording}: <#{location_id}>"
             f"{delivery_note}"
         )
+    )
+
+
+MAX_MY_TICKET_HISTORY = 5
+
+
+def _my_ticket_history_line(prior: dict) -> str:
+    """One "My ticket" history row. Applicant-facing only: no flags or notes."""
+    kind = "FWA" if str(prior.get("ticket_type") or "").casefold() == "fwa" else "Main"
+    try:
+        number = int(prior.get("ticket_number"))
+    except (TypeError, ValueError):
+        number = "?"
+    status = str(prior.get("status") or "unknown").replace("_", " ").title()
+    at = (
+        prior.get("approved_at")
+        or prior.get("denied_at")
+        or prior.get("updated_at")
+        or prior.get("created_at")
+    )
+    line = f"{kind} #{number} · {status} · {resolve.ts(at)}"
+    guild_id = store.as_int(prior.get("guild_id"))
+    location_id = _ticket_location(prior)
+    if guild_id and location_id:
+        line += f" · https://discord.com/channels/{guild_id}/{location_id}"
+    return line
+
+
+@register_action(
+    "ticket_v2_my_ticket", no_return=True, preload_state=False,
+)
+@lightbulb.di.with_di
+async def handle_my_ticket(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    """Ephemeral pointer back to the applicant's own ticket.
+
+    Never shows recruiter-only content (no flags, no staff notes) -- this is
+    the applicant's own read of `store`'s applicant-facing fields only.
+    """
+    await ctx.defer(ephemeral=True)
+    user_id = int(ctx.user.id)
+
+    open_ticket = None
+    for kind in ("main", "fwa"):
+        open_ticket = await store.find_open_for_applicant(
+            mongo, user_id=user_id, ticket_type=kind,
+        )
+        if open_ticket is not None:
+            break
+
+    if open_ticket is not None:
+        location_id = _ticket_location(open_ticket)
+        try:
+            await thread_service.ensure_candidate_thread_access(
+                bot.rest, open_ticket, user_id=user_id,
+            )
+        except Exception as error:
+            print(
+                "[Tickets] v2_my_ticket_reaccess_failed "
+                f"user={user_id} error={type(error).__name__}"
+            )
+        await ctx.interaction.edit_initial_response(
+            content=f"🎟️ Your open ticket: <#{location_id}>"
+        )
+        return
+
+    history = await store.history_for(
+        mongo, user_id=user_id, limit=MAX_MY_TICKET_HISTORY,
+    )
+    if not history:
+        await ctx.interaction.edit_initial_response(
+            content="You have no ticket yet. Press Main or FWA to start one."
+        )
+        return
+
+    lines = "\n".join(_my_ticket_history_line(prior) for prior in history)
+    await ctx.interaction.edit_initial_response(
+        content=f"🎟️ You have no open ticket. Earlier tickets:\n{lines}"
     )
 
 

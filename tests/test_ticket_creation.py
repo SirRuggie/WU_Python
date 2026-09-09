@@ -512,6 +512,83 @@ def test_opening_message_mentions_only_candidate_and_recruiter(monkeypatch):
     assert "<@30>" not in repr(calls[1][0][3])
 
 
+def test_creation_dm_sends_a_jump_link_to_the_candidate():
+    sent = []
+
+    class Rest:
+        async def create_dm_channel(self, user_id):
+            return SimpleNamespace(id=999, user_id=user_id)
+
+        async def create_message(self, **kwargs):
+            sent.append(kwargs)
+
+    ticket_doc = _ticket()
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), ticket_doc))
+
+    assert len(sent) == 1
+    assert sent[0]["channel"].id == 999
+    assert "https://discord.com/channels/10/101" in sent[0]["content"]
+    assert "My ticket" in sent[0]["content"]
+
+
+def test_creation_dm_failure_is_swallowed_and_never_raises():
+    class Rest:
+        async def create_dm_channel(self, _user_id):
+            raise hikari.ForbiddenError(
+                url="", headers={}, raw_body=b"", code=50007
+            )
+
+    # Must not raise; a closed-DM applicant still gets a fully created ticket.
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), _ticket()))
+
+
+def test_creation_dm_unexpected_error_is_also_swallowed():
+    class Rest:
+        async def create_dm_channel(self, _user_id):
+            raise RuntimeError("boom")
+
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), _ticket()))
+
+
+def test_ensure_candidate_thread_access_unarchives_and_readds_member():
+    calls = {"edits": [], "adds": []}
+
+    class Rest:
+        async def fetch_channel(self, _channel_id):
+            return SimpleNamespace(is_archived=True, is_locked=True)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            calls["edits"].append((channel_id, kwargs))
+
+        async def add_thread_member(self, channel_id, user_id):
+            calls["adds"].append((channel_id, user_id))
+
+    ticket_doc = _ticket()
+    result = asyncio.run(thread_service.ensure_candidate_thread_access(
+        Rest(), ticket_doc, user_id=30,
+    ))
+
+    assert result is True
+    assert calls["edits"] == [(101, {
+        "locked": False, "archived": False,
+        "reason": "Restoring candidate access to an open ticket",
+    })]
+    assert calls["adds"] == [(101, 30)]
+
+
+def test_ensure_candidate_thread_access_returns_false_on_deleted_thread():
+    class Rest:
+        async def fetch_channel(self, _channel_id):
+            raise hikari.NotFoundError(
+                url="", headers={}, raw_body=b"", code=10003
+            )
+
+    result = asyncio.run(thread_service.ensure_candidate_thread_access(
+        Rest(), _ticket(), user_id=30,
+    ))
+    assert result is False
+
+
 def test_legacy_migration_help_explains_overrides_and_confirmation():
     options = legacy_migration.MigrateLegacyTicket._command_data.options
     assert options["type"].description == (

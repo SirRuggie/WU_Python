@@ -1232,6 +1232,44 @@ async def _deliver_opening_messages(rest: hikari.api.RESTClient, ticket: dict) -
     )
 
 
+async def _send_ticket_creation_dm(rest: hikari.api.RESTClient, ticket: Mapping[str, Any]) -> None:
+    """Best-effort DM pointing the candidate back to their new thread.
+
+    Nothing here may fail ticket creation: DMs are commonly closed, and the
+    in-thread welcome message plus the "My ticket" panel button are the
+    durable ways back in. Never retried -- a missed DM is covered by those.
+    """
+    user_id = _as_int(ticket.get("user_id"))
+    guild_id = _as_int(ticket.get("guild_id"))
+    location = ticket.get("location") or {}
+    candidate_id = _as_int(location.get("id") or ticket.get("channel_id"))
+    if not user_id or not guild_id or not candidate_id:
+        return
+    jump_url = f"https://discord.com/channels/{guild_id}/{candidate_id}"
+    try:
+        dm_channel = await rest.create_dm_channel(user_id)
+        await rest.create_message(
+            channel=dm_channel,
+            content=(
+                f"Your Warriors United ticket is here: {jump_url}. "
+                "If you lose it, press My ticket on the panel."
+            ),
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
+        )
+    except (hikari.ForbiddenError, hikari.NotFoundError):
+        _log.debug(
+            "ticket creation DM undeliverable user=%s ticket=%s",
+            user_id, ticket.get("_id"),
+        )
+    except Exception:
+        _log.exception(
+            "ticket creation DM failed unexpectedly user=%s ticket=%s",
+            user_id, ticket.get("_id"),
+        )
+
+
 async def _set_committed_creation_state(
     mongo: MongoClient,
     ticket: Mapping[str, Any],
@@ -1646,6 +1684,8 @@ async def create_live_thread_ticket(
                 delivery_complete = await _finish_committed_creation(
                     bot, mongo, ticket, reconcile_pair=False
                 )
+                if delivery_complete:
+                    await _send_ticket_creation_dm(bot.rest, ticket)
                 await notify_console_after_change(
                     bot, mongo, ticket, reason="ticket created"
                 )
@@ -1746,6 +1786,50 @@ async def reconcile_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str
                 archived=False,
                 reason="Restoring active open ticket",
             )
+
+
+async def ensure_candidate_thread_access(
+    rest: hikari.api.RESTClient,
+    ticket: Mapping[str, Any],
+    *,
+    user_id: int,
+) -> bool:
+    """Idempotently restore an applicant's own access to their candidate thread.
+
+    Called on every panel re-click and from the "My ticket" button so a
+    candidate who left the thread, or whose thread got archived, can always
+    get back in -- the same un-archive `reconcile_ticket_pair` does for an
+    open ticket, plus re-adding them as a thread member. Returns False when
+    the candidate thread itself is gone; callers fall through to the
+    deleted-thread handling instead of treating this as fatal.
+    """
+    location = ticket.get("location") or {}
+    candidate_id = _as_int(location.get("id") or ticket.get("channel_id"))
+    if not candidate_id:
+        return False
+    try:
+        channel = await rest.fetch_channel(candidate_id)
+    except hikari.NotFoundError:
+        return False
+    if bool(getattr(channel, "is_archived", False)) or bool(getattr(channel, "is_locked", False)):
+        try:
+            await rest.edit_channel(
+                candidate_id,
+                locked=False,
+                archived=False,
+                reason="Restoring candidate access to an open ticket",
+            )
+        except hikari.NotFoundError:
+            return False
+    try:
+        await rest.add_thread_member(candidate_id, int(user_id))
+    except hikari.NotFoundError:
+        return False
+    except hikari.BadRequestError:
+        # Discord's add-member is already idempotent; treat a rejection the
+        # same as "already a member" rather than surfacing it to the caller.
+        pass
+    return True
 
 
 async def _retire_degraded_creation_state(

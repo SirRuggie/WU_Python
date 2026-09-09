@@ -1,5 +1,6 @@
 import asyncio
 from copy import deepcopy
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import hikari
@@ -375,10 +376,10 @@ def test_cross_server_setup_verifies_both_admins_and_binds_two_owned_panels(monk
     assert config.document["main_recruiter_role"] == 900
     assert seeded[0]["legacy_intake"] == ticket_runtime.IntakeSource(10, 20, 30)
     assert seeded[0]["thread_intake"] == ticket_runtime.IntakeSource(11, 21, 31)
-    assert surface.message_action_ids(SimpleNamespace(components=rest.created[0][2])) == (
+    assert surface.message_action_ids(SimpleNamespace(components=rest.created[0][2])) >= (
         surface.THREAD_PUBLIC_PANEL_ACTIONS
     )
-    assert surface.message_action_ids(SimpleNamespace(components=rest.created[1][2])) == (
+    assert surface.message_action_ids(SimpleNamespace(components=rest.created[1][2])) >= (
         surface.PILOT_PANEL_ACTIONS
     )
     assert rest.deleted == []
@@ -1183,3 +1184,205 @@ def test_migrated_thread_insert_is_distinct_and_idempotent_in_tickets_only():
 
     assert result == expected
     assert collection.inserted == [expected]
+
+
+def test_reclick_with_open_ticket_reaccesses_candidate_thread(monkeypatch):
+    edits = []
+
+    async def route(*_args, **_kwargs):
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_THREAD,
+            True,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            8,
+            "thread_default",
+        )
+
+    async def claim(*_args, **_kwargs):
+        return ticket_runtime.SlotClaim(False, None, {
+            "_id": "ticket-open:50:main",
+            "state": ticket_runtime.SLOT_OPEN,
+            "location_id": 999,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": 11,
+            "workflow_id": "thread:50:main",
+        })
+
+    ticket_doc = {
+        "_id": "ticket_1",
+        "location": {"id": 999, "staff_space_id": 1000},
+        "guild_id": 11,
+        "user_id": 50,
+        "status": "open",
+    }
+
+    async def find_by_location(_mongo, location_id):
+        assert location_id == 999
+        return ticket_doc
+
+    reaccess_calls = []
+
+    async def ensure_access(_rest, ticket, *, user_id):
+        reaccess_calls.append((ticket["_id"], user_id))
+        return True
+
+    monkeypatch.setattr(handlers, "thread_intake_ready", lambda: True)
+    monkeypatch.setattr(handlers.ticket_runtime, "route_public_intake", route)
+    monkeypatch.setattr(handlers.ticket_runtime, "claim_open_slot", claim)
+    monkeypatch.setattr(handlers.store, "find_by_location", find_by_location)
+    monkeypatch.setattr(
+        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
+    )
+    handlers.user_cooldowns.clear()
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx,
+        "public:main",
+        bot=SimpleNamespace(rest=SimpleNamespace()),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert reaccess_calls == [("ticket_1", 50)]
+    assert "<#999>" in edits[-1]["content"]
+
+
+def test_reclick_reply_survives_reaccess_failure(monkeypatch):
+    """A vanished candidate thread must not stop the reply from going out."""
+    edits = []
+
+    async def route(*_args, **_kwargs):
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_THREAD,
+            True,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            8,
+            "thread_default",
+        )
+
+    async def claim(*_args, **_kwargs):
+        return ticket_runtime.SlotClaim(False, None, {
+            "_id": "ticket-open:50:main",
+            "state": ticket_runtime.SLOT_OPEN,
+            "location_id": 999,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": 11,
+            "workflow_id": "thread:50:main",
+        })
+
+    async def find_by_location(_mongo, _location_id):
+        return {"_id": "ticket_1", "location": {"id": 999}, "guild_id": 11}
+
+    async def ensure_access(*_args, **_kwargs):
+        raise hikari.NotFoundError(
+            url="", headers={}, raw_body=b"", code=10003, message="unknown channel"
+        )
+
+    monkeypatch.setattr(handlers, "thread_intake_ready", lambda: True)
+    monkeypatch.setattr(handlers.ticket_runtime, "route_public_intake", route)
+    monkeypatch.setattr(handlers.ticket_runtime, "claim_open_slot", claim)
+    monkeypatch.setattr(handlers.store, "find_by_location", find_by_location)
+    monkeypatch.setattr(
+        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
+    )
+    handlers.user_cooldowns.clear()
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx,
+        "public:main",
+        bot=SimpleNamespace(rest=SimpleNamespace()),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert "<#999>" in edits[-1]["content"]
+
+
+def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
+    edits = []
+    ticket_doc = {
+        "_id": "ticket_9",
+        "location": {"id": 777, "staff_space_id": 778},
+        "guild_id": 11,
+        "user_id": 50,
+        "status": "open",
+        "ticket_type": "main",
+    }
+
+    async def find_open(_mongo, *, user_id, ticket_type):
+        assert user_id == 50
+        return ticket_doc if ticket_type == "main" else None
+
+    reaccess_calls = []
+
+    async def ensure_access(_rest, ticket, *, user_id):
+        reaccess_calls.append((ticket["_id"], user_id))
+        return True
+
+    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(
+        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
+    )
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_my_ticket(
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+    ))
+
+    assert reaccess_calls == [("ticket_9", 50)]
+    assert "<#777>" in edits[-1]["content"]
+    assert "flag" not in edits[-1]["content"].lower()
+
+
+def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch):
+    edits = []
+
+    async def find_open(_mongo, *, user_id, ticket_type):
+        return None
+
+    history = [{
+        "ticket_type": "main",
+        "ticket_number": 198,
+        "status": "denied",
+        "denied_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+        "guild_id": 11,
+        "location": {"id": 555},
+    }]
+
+    async def history_for(_mongo, *, user_id, limit):
+        assert user_id == 50
+        assert limit == handlers.MAX_MY_TICKET_HISTORY
+        return history
+
+    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(handlers.store, "history_for", history_for)
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_my_ticket(
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+    ))
+
+    content = edits[-1]["content"]
+    assert "Main #198" in content
+    assert "Denied" in content
+    assert "555" in content
+
+
+def test_my_ticket_button_hints_when_nothing_found(monkeypatch):
+    edits = []
+
+    async def find_open(_mongo, *, user_id, ticket_type):
+        return None
+
+    async def history_for(_mongo, *, user_id, limit):
+        return []
+
+    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(handlers.store, "history_for", history_for)
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_my_ticket(
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+    ))
+
+    assert "no ticket yet" in edits[-1]["content"]

@@ -122,6 +122,12 @@ def create_public_ticket_embed() -> List[Container]:
                     label="FWA Clan Interest",
                     emoji="💎",
                 ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id="ticket_v2_my_ticket",
+                    label="My ticket",
+                    emoji="🎟️",
+                ),
             ]),
         ],
     )]
@@ -158,6 +164,12 @@ def create_ticket_embed() -> List[Container]:
                             custom_id="ticket_v2_create:pilot:fwa",
                             label="FWA Clan Interest",
                             emoji="💎",  # Diamond emoji
+                        ),
+                        Button(
+                            style=hikari.ButtonStyle.SECONDARY,
+                            custom_id="ticket_v2_my_ticket",
+                            label="My ticket",
+                            emoji="🎟️",  # Ticket emoji
                         ),
                     ]
                 ),
