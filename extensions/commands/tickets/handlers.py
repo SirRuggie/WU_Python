@@ -72,6 +72,32 @@ def _can_configure_thread_target(*, actor_id: int, guild_id: int, config: dict) 
     return int(actor_id) == TICKET_BOOTSTRAP_OWNER_ID
 
 
+async def _recruiter_role_name(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    *,
+    guild_id: int,
+    ticket_type: str,
+) -> str | None:
+    """Look up the configured recruiter role's display name, no mention."""
+    try:
+        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    except Exception:
+        return None
+    role_id = store.as_int(config.get(f"{ticket_type}_thread_recruiter_role"))
+    if not role_id:
+        return None
+    cache = getattr(bot, "cache", None)
+    role = cache.get_role(role_id) if cache is not None else None
+    if role is None:
+        try:
+            role = await bot.rest.fetch_role(int(guild_id), role_id)
+        except Exception:
+            return None
+    name = getattr(role, "name", None)
+    return str(name) if name else None
+
+
 _PLAYER_TAG_RE = re.compile(r"(?<![A-Z0-9])#[A-Z0-9]{3,9}(?![A-Z0-9])", re.IGNORECASE)
 
 
@@ -251,10 +277,21 @@ async def handle_create_ticket(
         return
     if not slot_claim.won:
         location_id = store.as_int(slot_claim.slot.get("location_id"))
-        if location_id:
+        if slot_claim.slot.get("state") == ticket_runtime.SLOT_CLEANUP_REQUIRED:
+            sentences = ["⚠️ A recruiter still needs to finish your earlier ticket."]
+            if location_id:
+                sentences.append(f"Jump to it here: <#{location_id}>.")
+            role_name = await _recruiter_role_name(
+                bot, mongo, guild_id=store.as_int(ctx.guild_id), ticket_type=ticket_type
+            )
+            sentences.append(
+                f"Ask the {role_name} role if you need an update."
+                if role_name else
+                "Ask a recruiter if you need an update."
+            )
+            message = " ".join(sentences)
+        elif location_id:
             message = f"✅ You already have an open {ticket_type.upper()} ticket: <#{location_id}>"
-        elif slot_claim.slot.get("state") == ticket_runtime.SLOT_CLEANUP_REQUIRED:
-            message = "⚠️ A previous ticket needs staff cleanup before another can be created."
         else:
             message = "⏳ Your ticket is already being created. Please try again shortly."
         await ctx.interaction.edit_initial_response(content=message)

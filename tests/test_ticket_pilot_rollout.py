@@ -825,6 +825,97 @@ def test_target_public_v2_surface_routes_and_claims_in_target_guild(monkeypatch)
     assert handlers.user_cooldowns == {}
 
 
+def test_cleanup_required_reply_names_the_recruiter_and_links_the_earlier_ticket(
+    monkeypatch,
+):
+    edits = []
+
+    async def route(*_args, **_kwargs):
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_THREAD,
+            True,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            8,
+            "thread_default",
+        )
+
+    async def claim(*_args, **_kwargs):
+        return ticket_runtime.SlotClaim(False, None, {
+            "_id": "ticket-open:50:main",
+            "state": ticket_runtime.SLOT_CLEANUP_REQUIRED,
+            "location_id": 999,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": 11,
+            "workflow_id": "thread:50:main",
+        })
+
+    class TicketSetup:
+        async def find_one(self, _query):
+            return {"main_thread_recruiter_role": 555}
+
+    class Cache:
+        def get_role(self, role_id):
+            assert role_id == 555
+            return SimpleNamespace(name="Main Recruiter")
+
+    monkeypatch.setattr(handlers, "thread_intake_ready", lambda: True)
+    monkeypatch.setattr(handlers.ticket_runtime, "route_public_intake", route)
+    monkeypatch.setattr(handlers.ticket_runtime, "claim_open_slot", claim)
+    handlers.user_cooldowns.clear()
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx,
+        "public:main",
+        bot=SimpleNamespace(cache=Cache()),
+        mongo=SimpleNamespace(ticket_setup=TicketSetup()),
+    ))
+
+    message = edits[-1]["content"]
+    assert "<#999>" in message
+    assert "Main Recruiter" in message
+    assert "quarantine" not in message.lower()
+    assert "cleanup_required" not in message.lower()
+
+
+def test_cleanup_required_reply_falls_back_without_link_or_role(monkeypatch):
+    edits = []
+
+    async def route(*_args, **_kwargs):
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_THREAD,
+            True,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            8,
+            "thread_default",
+        )
+
+    async def claim(*_args, **_kwargs):
+        return ticket_runtime.SlotClaim(False, None, {
+            "_id": "ticket-open:50:main",
+            "state": ticket_runtime.SLOT_CLEANUP_REQUIRED,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": 11,
+            "workflow_id": "thread:50:main",
+        })
+
+    monkeypatch.setattr(handlers, "thread_intake_ready", lambda: True)
+    monkeypatch.setattr(handlers.ticket_runtime, "route_public_intake", route)
+    monkeypatch.setattr(handlers.ticket_runtime, "claim_open_slot", claim)
+    handlers.user_cooldowns.clear()
+    ctx = _pilot_context(edits)
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx, "public:main", bot=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+
+    message = edits[-1]["content"]
+    assert "<#" not in message
+    assert "recruiter" in message.lower()
+    assert "quarantine" not in message.lower()
+    assert "cleanup_required" not in message.lower()
+
+
 def test_config_read_failure_exactly_cancels_untouched_slot(monkeypatch):
     edits = []
     cancelled = []
