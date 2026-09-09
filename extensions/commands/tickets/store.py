@@ -587,6 +587,13 @@ async def transition(
         "effect_marker": marker,
     }
     if overrides is not None:
+        # An override always overturns a prior terminal decision (open cannot
+        # be a `from` here - transition() below refuses re-opening). Record it
+        # under its own event name with the fields a reader would look for,
+        # alongside `overrode` which keeps the prior decision's own identity.
+        audit["event"] = "overturn"
+        audit["by"] = actor
+        audit["reason"] = str((extra or {}).get("denial_reason") or "") or None
         audit["overrode"] = {
             "status": expected_status,
             "by": overrides.get("by"),

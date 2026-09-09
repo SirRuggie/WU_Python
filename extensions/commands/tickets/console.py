@@ -479,6 +479,78 @@ async def _already_decided_notice(
     )
 
 
+def _confirm_panel(
+    title: str,
+    body: str,
+    *,
+    confirm_id: str,
+    cancel_id: str,
+    confirm_label: str = "Confirm",
+    confirm_style: hikari.ButtonStyle = hikari.ButtonStyle.SUCCESS,
+    accent: int = ACCENT_YELLOW,
+) -> list[Container]:
+    return _notice_with_row(
+        title,
+        body,
+        accent=accent,
+        row=ActionRow(components=[
+            Button(style=confirm_style, custom_id=confirm_id, label=confirm_label),
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=cancel_id,
+                label="Cancel",
+            ),
+        ]),
+    )
+
+
+_TICKET_TYPE_LABEL = {"main": "Main", "fwa": "FWA"}
+
+
+def _approve_confirm_panel(
+    ticket_doc: Mapping, *, action_id: str, overturn: bool = False,
+) -> list[Container]:
+    label = _TICKET_TYPE_LABEL.get(_ticket_type(ticket_doc), "Unknown")
+    username = _clean(ticket_doc.get("username"), limit=80)
+    confirm_id = (
+        f"ticket_v2_console_overturn_approve_go:{action_id}"
+        if overturn else f"ticket_v2_console_approve_go:{action_id}"
+    )
+    return _confirm_panel(
+        "Confirm approval",
+        f"Approve **{username}** for **{label}**?",
+        confirm_id=confirm_id,
+        cancel_id=f"ticket_v2_console_confirm_cancel:{action_id}",
+        confirm_label="Approve",
+        confirm_style=hikari.ButtonStyle.SUCCESS,
+        accent=ACCENT_GREEN,
+    )
+
+
+def _overturn_step1_panel(ticket_doc: Mapping, *, action_id: str) -> list[Container]:
+    """'Someone already decided this. Do the opposite anyway?' — step 1 of 2."""
+    status = str(ticket_doc.get("status") or "").casefold()
+    if status == "approved":
+        who = _clean(ticket_doc.get("approved_by_name"), limit=80) or "Someone"
+        when = _timestamp(ticket_doc.get("approved_at"))
+        verb, ask, style = "approved", "Deny anyway?", hikari.ButtonStyle.DANGER
+        confirm_id = f"ticket_v2_overturn_deny_open:{action_id}"
+    else:
+        who = _clean(ticket_doc.get("denied_by_name"), limit=80) or "Someone"
+        when = _timestamp(ticket_doc.get("denied_at"))
+        verb, ask, style = "denied", "Approve anyway?", hikari.ButtonStyle.SUCCESS
+        confirm_id = f"ticket_v2_console_overturn_approve_confirm:{action_id}"
+    return _confirm_panel(
+        "Overturn this decision?",
+        f"This person was {verb} by **{who}** {when}. {ask}",
+        confirm_id=confirm_id,
+        cancel_id=f"ticket_v2_console_confirm_cancel:{action_id}",
+        confirm_label="Continue",
+        confirm_style=style,
+        accent=ACCENT_YELLOW,
+    )
+
+
 def _open_picker_options(open_tickets: Sequence[Mapping]) -> list[SelectOption]:
     options: list[SelectOption] = []
     for ticket_doc in open_tickets[:MAX_OPEN_PICKER]:
@@ -1760,6 +1832,18 @@ def build_ticket_detail(
                 label="Deny",
             ),
         ]))
+    elif status in schema.TERMINAL_STATUSES:
+        # Nothing is ever closed for good: any recruiter can overturn a
+        # decided ticket the other way, and every overturn is logged.
+        components.append(ActionRow(components=[Button(
+            style=(
+                hikari.ButtonStyle.DANGER
+                if status == "approved"
+                else hikari.ButtonStyle.SUCCESS
+            ),
+            custom_id=f"ticket_v2_console_overturn:{action_id}",
+            label="Deny" if status == "approved" else "Approve",
+        )]))
 
     if history:
         components.extend([
@@ -4318,7 +4402,7 @@ async def _transition_result_panel(
             if "try again" not in reason.casefold():
                 reason += " Try again."
             return _notice(
-                "Approval not completed",
+                "Approval not completed" if verb == "approved" else "Not completed",
                 reason,
                 accent=ACCENT_YELLOW,
             )
@@ -4346,9 +4430,43 @@ async def _transition_result_panel(
     )
 
 
+async def _owner_only_notice(ctx, owner_id: int) -> list[Container] | None:
+    if int(ctx.user.id) != int(owner_id):
+        return _notice(
+            "Private panel",
+            "Open your own ticket panel from the shared console.",
+            accent=ACCENT_RED,
+        )
+    return None
+
+
 @register_action("ticket_v2_console_approve", requires_state=True)
 @lightbulb.di.with_di
 async def ticket_console_approve(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    ticket_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Approve is one click plus a confirm, never a silent single click."""
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
+    if ticket_doc is None:
+        return _notice(
+            "Ticket not found",
+            "The ticket record is no longer available.",
+            accent=ACCENT_RED,
+        )
+    return _approve_confirm_panel(ticket_doc, action_id=action_id)
+
+
+@register_action("ticket_v2_console_approve_go", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_approve_go(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
     owner_id: int,
@@ -4359,12 +4477,8 @@ async def ticket_console_approve(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    if int(ctx.user.id) != int(owner_id):
-        return _notice(
-            "Private panel",
-            "Open your own ticket panel from the shared console.",
-            accent=ACCENT_RED,
-        )
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
     result = await resolve.approve_ticket(
         bot,
         mongo,
@@ -4378,6 +4492,230 @@ async def ticket_console_approve(
     return await _transition_result_panel(
         result, verb="approved", mongo=mongo, owner_id=owner_id, guild_id=guild_id,
     )
+
+
+@register_action("ticket_v2_console_confirm_cancel", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_confirm_cancel(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    ticket_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
+    if ticket_doc is None:
+        return _notice(
+            "Ticket not found",
+            "The ticket record is no longer available.",
+            accent=ACCENT_RED,
+        )
+    return await _ticket_detail_panel(
+        mongo, ticket_doc, owner_id=owner_id, guild_id=guild_id,
+    )
+
+
+@register_action("ticket_v2_console_overturn", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_overturn(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    ticket_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        return _notice(
+            "Recruiter access required",
+            "Only recruiters can use the ticket console.",
+            accent=ACCENT_RED,
+        )
+    ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
+    if ticket_doc is None or ticket_doc.get("status") not in schema.TERMINAL_STATUSES:
+        return _notice(
+            "Ticket changed",
+            "This ticket is no longer decided. Open it again from the console.",
+            accent=ACCENT_YELLOW,
+        )
+    return _overturn_step1_panel(ticket_doc, action_id=action_id)
+
+
+@register_action("ticket_v2_console_overturn_approve_confirm", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_overturn_approve_confirm(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    ticket_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
+    if ticket_doc is None:
+        return _notice(
+            "Ticket not found",
+            "The ticket record is no longer available.",
+            accent=ACCENT_RED,
+        )
+    return _approve_confirm_panel(ticket_doc, action_id=action_id, overturn=True)
+
+
+@register_action("ticket_v2_console_overturn_approve_go", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_overturn_approve_go(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    ticket_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
+        return denied
+    result = await resolve.overturn_ticket(
+        bot,
+        mongo,
+        ticket_id=ticket_id,
+        member=ctx.member,
+        actor_name=ctx.user.username,
+        to_status="approved",
+    )
+    if result.outcome in {store.WON, store.EFFECT_FAILED}:
+        await request_hub_refresh_best_effort(bot, mongo, reason="ticket overturned")
+    return await _transition_result_panel(
+        result, verb="approved", mongo=mongo, owner_id=owner_id, guild_id=guild_id,
+    )
+
+
+@register_action(
+    "ticket_v2_overturn_deny_open", opens_modal=True, no_return=True,
+    requires_state=True, preload_state=False,
+)
+@lightbulb.di.with_di
+async def ticket_overturn_deny_open(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    **_kwargs,
+) -> None:
+    # Matches ticket_console_deny: no state read here, since the reason
+    # modal's own submit handler owns every check (owner, guild, recruiter).
+    await ctx.respond_with_modal(
+        title="Deny ticket",
+        custom_id=f"ticket_v2_overturn_deny_submit:{action_id}",
+        components=[ModalActionRow().add_text_input(
+            "reason",
+            "Reason shown to the applicant",
+            placeholder="Use short, clear language",
+            required=True,
+            style=hikari.TextInputStyle.PARAGRAPH,
+            min_length=5,
+            max_length=1000,
+        )],
+    )
+
+
+@register_action(
+    "ticket_v2_overturn_deny_submit", is_modal=True, no_return=True, preload_state=False,
+)
+@lightbulb.di.with_di
+async def ticket_overturn_deny_submit(
+    ctx: lightbulb.components.ModalContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    edits_origin = getattr(ctx.interaction, "message", None) is not None
+    if edits_origin:
+        await ctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+        )
+    else:
+        await ctx.defer(ephemeral=True)
+    envelope = await get_state(mongo, action_id, {
+        "type": 1,
+        "owner_id": 1,
+        "guild_id": 1,
+    })
+    if not envelope or envelope.get("type") != "ticket_v2_console_detail":
+        await ctx.interaction.edit_initial_response(components=_notice(
+            "Ticket panel expired",
+            "Open the ticket again from the console.",
+            accent=ACCENT_RED,
+        ))
+        return
+    owner_id = _int(envelope.get("owner_id"))
+    if int(ctx.user.id) != owner_id:
+        await ctx.interaction.edit_initial_response(components=_notice(
+            "Private panel",
+            "Open your own ticket panel from the shared console.",
+            accent=ACCENT_RED,
+        ))
+        return
+    guild_id = _int(envelope.get("guild_id"))
+    if not guild_id or _int(getattr(ctx, "guild_id", 0)) != guild_id:
+        await ctx.interaction.edit_initial_response(components=_notice(
+            "Ticket panel expired",
+            "Open the ticket again from the console.",
+            accent=ACCENT_RED,
+        ))
+        return
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        await ctx.interaction.edit_initial_response(components=_notice(
+            "Recruiter access required",
+            "Only recruiters can use the ticket console.",
+            accent=ACCENT_RED,
+        ))
+        return
+    data = await get_state(mongo, action_id)
+    if (
+        not data
+        or data.get("type") != "ticket_v2_console_detail"
+        or _int(data.get("owner_id")) != owner_id
+        or _int(data.get("guild_id")) != guild_id
+    ):
+        await ctx.interaction.edit_initial_response(components=_notice(
+            "Ticket panel expired",
+            "Open the ticket again from the console.",
+            accent=ACCENT_RED,
+        ))
+        return
+    reason = _modal_value(ctx, "reason")
+    if len(reason) < 5:
+        await ctx.interaction.edit_initial_response(components=_notice(
+            "Ticket not denied",
+            "Write a clear reason with at least 5 characters.",
+            accent=ACCENT_RED,
+        ))
+        return
+    result = await resolve.overturn_ticket(
+        bot,
+        mongo,
+        ticket_id=str(data.get("ticket_id") or ""),
+        member=ctx.member,
+        actor_name=ctx.user.username,
+        to_status="denied",
+        reason=reason,
+    )
+    if result.outcome in {store.WON, store.EFFECT_FAILED}:
+        await request_hub_refresh_best_effort(bot, mongo, reason="ticket overturned")
+    components = await _transition_result_panel(
+        result, verb="denied", mongo=mongo, owner_id=owner_id, guild_id=guild_id,
+    )
+    await ctx.interaction.edit_initial_response(components=components)
 
 
 @register_action(

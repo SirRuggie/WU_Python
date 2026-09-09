@@ -1237,7 +1237,38 @@ def test_console_deny_submit_authorizes_before_loading_private_state(monkeypatch
     ]
 
 
-def test_console_approve_no_longer_sends_a_rev_and_shows_already_approved_on_lost(
+def test_console_approve_opens_a_confirm_step_before_touching_anything(monkeypatch):
+    """Commit 2: Approve is one click plus a confirm, never a silent single click."""
+    ticket = _ticket(21, status="open", username="Some Applicant", ticket_type="fwa")
+
+    async def find(_mongo, query):
+        assert query["_id"] == ticket["_id"]
+        return copy.deepcopy(ticket)
+
+    monkeypatch.setattr(console.store, "find_one", find)
+
+    ctx = SimpleNamespace(user=SimpleNamespace(id=22, username="Recruiter"))
+
+    view = asyncio.run(console.ticket_console_approve(
+        ctx, "detail", owner_id=22, guild_id=ticket["guild_id"],
+        ticket_id=ticket["_id"], mongo=object(),
+    ))
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    labels = [str(node["label"]) for node in _nodes(view) if "label" in node]
+    assert "Some Applicant" in content
+    assert "FWA" in content
+    assert labels == ["Approve", "Cancel"]
+    custom_ids = [str(node["custom_id"]) for node in _nodes(view) if "custom_id" in node]
+    assert custom_ids == [
+        "ticket_v2_console_approve_go:detail",
+        "ticket_v2_console_confirm_cancel:detail",
+    ]
+    _assert_component_limits(view)
+
+
+def test_console_approve_go_no_longer_sends_a_rev_and_shows_already_approved_on_lost(
     monkeypatch,
 ):
     """Commit 1: the console drops the client-side expected_rev CAS entirely,
@@ -1268,7 +1299,7 @@ def test_console_approve_no_longer_sends_a_rev_and_shows_already_approved_on_los
         user=SimpleNamespace(id=22, username="Recruiter"),
         member=SimpleNamespace(id=22),
     )
-    view = asyncio.run(console.ticket_console_approve(
+    view = asyncio.run(console.ticket_console_approve_go(
         ctx, "detail", owner_id=22, guild_id=ticket["guild_id"],
         ticket_id=ticket["_id"], mongo=object(), bot=object(),
     ))

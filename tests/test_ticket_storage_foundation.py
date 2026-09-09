@@ -2101,6 +2101,188 @@ def test_override_requires_observed_terminal_revision_and_records_prior_decision
     assert result.doc["audit"][-1]["overrode"]["by"] == 40
 
 
+def test_override_transition_audits_as_an_overturn_with_reason():
+    """Commit 2: an override is logged under its own event, not a plain
+    status_transition, with the fields a reader would look for."""
+    prior_marker = "ticket-resolution:ticket_101:4:approved"
+    terminal = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    terminal.update({
+        "rev": 4,
+        "approved_by": 40,
+        "approved_at": NOW,
+        "resolution_effects": {"marker": prior_marker, "complete": True},
+    })
+    mongo = _mongo(terminal)
+    result = asyncio.run(store.transition(
+        mongo, terminal["_id"], to_status="denied", actor_id=50,
+        actor_name="Lead", expect="approved", expected_rev=4,
+        overrides={"status": "approved", "rev": 4, "by": 40, "at": NOW},
+        extra={"denial_type": "custom", "denial_reason": "Appeal reviewed"},
+        effect_kind=resolve.KIND_DENY_CUSTOM,
+        prior_effect_marker=prior_marker,
+    ))
+    entry = result.doc["audit"][-1]
+    assert entry["event"] == "overturn"
+    assert entry["from"] == "approved"
+    assert entry["to"] == "denied"
+    assert entry["by"] == 50
+    assert entry["reason"] == "Appeal reviewed"
+
+
+def test_overturn_ticket_requires_recruiter(monkeypatch):
+    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    mongo = _mongo(ticket)
+
+    async def not_recruiter(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", not_recruiter)
+    result = asyncio.run(resolve.overturn_ticket(
+        object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
+        actor_name="Recruiter", to_status="denied", reason="Appeal reviewed",
+    ))
+    assert result.outcome == store.UNAUTHORIZED
+
+
+def test_overturn_ticket_refuses_an_undecided_ticket(monkeypatch):
+    ticket = _ticket(status="open")
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    result = asyncio.run(resolve.overturn_ticket(
+        object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
+        actor_name="Recruiter", to_status="denied", reason="Appeal reviewed",
+    ))
+    assert result.outcome == store.LOST
+    assert result.reason == resolve.OVERTURN_NOT_DECIDED_MESSAGE
+
+
+def test_overturn_ticket_refuses_the_same_status(monkeypatch):
+    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    result = asyncio.run(resolve.overturn_ticket(
+        object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
+        actor_name="Recruiter", to_status="approved",
+    ))
+    assert result.outcome == store.LOST
+    assert "already approved" in (result.reason or "")
+
+
+def test_overturn_deny_after_approve_removes_recorded_roles(monkeypatch):
+    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "rev": 4,
+        "approved_by": 40,
+        "approved_by_name": "Lead",
+        "approved_at": NOW,
+        "granted_role_ids": [555],
+        "resolution_effects": {"marker": "m", "complete": True},
+    })
+    mongo = _mongo(ticket)
+    removed = []
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def deny(_bot, _mongo, **kwargs):
+        assert kwargs["override"]["by"] == 40
+        assert kwargs["override"]["status"] == "approved"
+        assert kwargs["expected_rev"] == 4
+        assert kwargs["prior_effect_marker"] == "m"
+        current = deepcopy(ticket)
+        current["status"] = "denied"
+        return store.Transition(store.WON, current)
+
+    async def remove_role(guild_id, user_id, role_id, **_kwargs):
+        removed.append((guild_id, user_id, role_id))
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve, "deny_ticket", deny)
+
+    bot = SimpleNamespace(rest=SimpleNamespace(remove_role_from_member=remove_role))
+    result = asyncio.run(resolve.overturn_ticket(
+        bot, mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
+        actor_name="Recruiter", to_status="denied", reason="Appeal reviewed",
+    ))
+    assert result.won
+    assert removed == [(ticket["guild_id"], ticket["user_id"], 555)]
+
+
+def test_overturn_deny_after_approve_is_a_no_op_when_no_roles_were_recorded(
+    monkeypatch,
+):
+    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "rev": 4,
+        "approved_by": 40,
+        "resolution_effects": {"marker": "m", "complete": True},
+    })
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def deny(_bot, _mongo, **_kwargs):
+        current = deepcopy(ticket)
+        current["status"] = "denied"
+        return store.Transition(store.WON, current)
+
+    async def remove_role(*_args, **_kwargs):
+        raise AssertionError("nothing was ever granted; there is nothing to remove")
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve, "deny_ticket", deny)
+
+    bot = SimpleNamespace(rest=SimpleNamespace(remove_role_from_member=remove_role))
+    result = asyncio.run(resolve.overturn_ticket(
+        bot, mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
+        actor_name="Recruiter", to_status="denied", reason="Appeal reviewed",
+    ))
+    assert result.won
+
+
+def test_overturn_approve_after_deny_delegates_with_the_prior_decision(monkeypatch):
+    ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "rev": 2,
+        "denied_by": 41,
+        "denied_by_name": "Other Lead",
+        "denied_at": NOW,
+        "resolution_effects": {"marker": "m2", "complete": True},
+    })
+    mongo = _mongo(ticket)
+    calls = {}
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def approve(_bot, _mongo, **kwargs):
+        calls.update(kwargs)
+        current = deepcopy(ticket)
+        current["status"] = "approved"
+        return store.Transition(store.WON, current)
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve, "approve_ticket", approve)
+
+    result = asyncio.run(resolve.overturn_ticket(
+        object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
+        actor_name="Recruiter", to_status="approved",
+    ))
+    assert result.won
+    assert calls["override"]["by"] == 41
+    assert calls["expected_status"] == "denied"
+    assert calls["expected_rev"] == 2
+
+
 def test_override_cas_requires_exact_completed_prior_effect_marker():
     prior_marker = "ticket-resolution:ticket_101:4:approved"
     terminal = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
@@ -3389,6 +3571,97 @@ def test_override_state_is_owner_bound_before_permission_or_transition(monkeypat
         ctx, "state", mongo=SimpleNamespace(), bot=SimpleNamespace()
     ))
     assert responses == [("This override belongs to another recruiter.", {"ephemeral": True})]
+
+
+def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
+    monkeypatch,
+):
+    """Commit 2: /ticket-pilot never offers an overturn - only the console does."""
+    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    ticket["approved_by_name"] = "Lead Recruiter"
+    ticket["approved_at"] = NOW
+    responses = []
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def find_by_location(_mongo, _channel_id):
+        return deepcopy(ticket)
+
+    async def approve(*_args, **_kwargs):
+        return store.Transition(store.LOST, deepcopy(ticket))
+
+    async def offer_override(*_args, **_kwargs):
+        raise AssertionError("the slash command must not offer an overturn")
+
+    async def defer(**_kwargs):
+        return None
+
+    async def respond(content, **_kwargs):
+        responses.append(content)
+
+    monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(close.store, "find_by_location", find_by_location)
+    monkeypatch.setattr(close.resolve, "approve_ticket", approve)
+    monkeypatch.setattr(close.resolve, "offer_override", offer_override)
+
+    ctx = SimpleNamespace(
+        member=SimpleNamespace(id=1), user=SimpleNamespace(id=1, username="Recruiter"),
+        channel_id=999, defer=defer, respond=respond,
+    )
+    asyncio.run(close.Approve.invoke._func(
+        SimpleNamespace(), ctx, mongo=object(), bot=object(),
+    ))
+
+    assert len(responses) == 1
+    assert "Already approved by Lead Recruiter" in responses[0]
+    assert "Use the console to overturn" in responses[0]
+
+
+def test_slash_deny_button_on_a_decided_ticket_names_the_decision_maker_no_overturn(
+    monkeypatch,
+):
+    ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket["denied_by_name"] = "Other Recruiter"
+    ticket["denied_at"] = NOW
+    edits = []
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def deny(*_args, **_kwargs):
+        return store.Transition(store.LOST, deepcopy(ticket))
+
+    async def get(*_args, **_kwargs):
+        return {
+            "denier_id": 1,
+            "ticket_id": ticket["_id"],
+            "channel_id": 101,
+            "user_id": 30,
+        }
+
+    async def delete(*_args, **_kwargs):
+        return None
+
+    async def edit_initial_response(**kwargs):
+        edits.append(kwargs)
+
+    monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(close.resolve, "deny_ticket", deny)
+    monkeypatch.setattr(close, "get_state", get)
+    monkeypatch.setattr(close, "delete_state", delete)
+
+    ctx = SimpleNamespace(
+        member=SimpleNamespace(id=1), user=SimpleNamespace(id=1, username="Recruiter"),
+        interaction=SimpleNamespace(edit_initial_response=edit_initial_response),
+    )
+    asyncio.run(close.deny_fwa_default_handler(
+        ctx, "action", mongo=object(), bot=object(),
+    ))
+
+    assert len(edits) == 1
+    assert "Already denied by Other Recruiter" in edits[0]["content"]
+    assert edits[0]["components"] == []
 
 
 def test_unauthorized_flag_mutation_has_no_write(monkeypatch):

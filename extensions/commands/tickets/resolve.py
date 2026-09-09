@@ -43,6 +43,7 @@ from extensions.commands.tickets import (
     flag_store,
     loader,
     perms,
+    schema,
     store,
     thread_service,
 )
@@ -1149,6 +1150,115 @@ async def deny_ticket(
         prior_effects_legacy_baseline=prior_effects_legacy_baseline,
         coc_client=coc_client,
     )
+
+
+# --- overturning a decided ticket from the console ---------------------------
+
+OVERTURN_NOT_DECIDED_MESSAGE = "This ticket has not been decided yet."
+
+
+async def _remove_granted_roles(bot: hikari.GatewayBot, ticket: Mapping) -> None:
+    """Undo whatever roles the earlier approval granted, if any were recorded.
+
+    Nothing in this pipeline grants roles yet, so `granted_role_ids` is
+    normally absent and this is a no-op. It exists so that whenever approval
+    does start granting a role, it only has to record the id here to make
+    deny-after-approve overturn-safe automatically.
+    """
+    role_ids = [
+        int(value) for value in (ticket.get("granted_role_ids") or ()) if int(value or 0)
+    ]
+    if not role_ids:
+        return
+    guild_id = int(ticket.get("guild_id") or 0)
+    user_id = int(ticket.get("user_id") or 0)
+    if not guild_id or not user_id:
+        return
+    for role_id in role_ids:
+        try:
+            await bot.rest.remove_role_from_member(
+                guild_id, user_id, role_id,
+                reason="Approval overturned to a denial",
+            )
+        except Exception:
+            _log.exception(
+                "overturn role removal failed ticket=%s role=%s",
+                ticket.get("_id"), role_id,
+            )
+
+
+async def overturn_ticket(
+        bot: hikari.GatewayBot,
+        mongo: MongoClient,
+        *,
+        ticket_id,
+        member: hikari.Member,
+        actor_name: str,
+        to_status: str,
+        reason: str | None = None,
+        coc_client: coc.Client | None = None,
+) -> store.Transition:
+    """Flip a decided ticket the other way. Any recruiter may do this.
+
+    Reuses the normal approve/deny path with the same override CAS the
+    legacy race-loss flow uses, so the candidate thread gets a fresh decision
+    card (unarchive, post, re-archive) and approve-after-deny still runs the
+    usual approval checks (blacklist, linked accounts). Deny-after-approve
+    additionally removes whatever roles the earlier approval granted.
+    """
+    if to_status not in schema.TERMINAL_STATUSES:
+        raise ValueError("to_status must be approved or denied")
+    if not await perms.is_recruiter(member, mongo):
+        return store.Transition(store.UNAUTHORIZED, None, "recruiter permission required")
+    current = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
+    if current is None:
+        return store.Transition(store.MISSING, None)
+    if current.get("status") not in schema.TERMINAL_STATUSES:
+        return store.Transition(store.LOST, current, OVERTURN_NOT_DECIDED_MESSAGE)
+    if current.get("status") == to_status:
+        return store.Transition(store.LOST, current, f"already {to_status}")
+
+    effects = current.get("resolution_effects") or {}
+    prior_effect_marker = str(effects.get("marker") or "")
+    prior_effects_legacy_baseline = (
+        not prior_effect_marker and store.is_markerless_legacy_terminal(current)
+    )
+    if not prior_effect_marker and not prior_effects_legacy_baseline:
+        return store.Transition(store.BLOCKED, current, OVERRIDE_EFFECT_PENDING_MESSAGE)
+    if not prior_effects_legacy_baseline and effects.get("complete") is not True:
+        return store.Transition(store.BLOCKED, current, OVERRIDE_EFFECT_PENDING_MESSAGE)
+
+    prior = _prior(current)
+    current_rev = max(0, int(current.get("rev") or 0))
+    common = dict(
+        ticket_id=ticket_id,
+        member=member,
+        actor_name=actor_name,
+        expected_status=current.get("status"),
+        expected_rev=current_rev,
+        override={
+            "status": current.get("status"),
+            "rev": current_rev,
+            "by": prior["by"],
+            "by_name": None,
+            "at": prior["at"],
+        },
+        prior_effect_marker=prior_effect_marker,
+        prior_effects_legacy_baseline=prior_effects_legacy_baseline,
+        coc_client=coc_client,
+    )
+    if to_status == "approved":
+        return await approve_ticket(bot, mongo, **common)
+
+    reason = str(reason or "").strip()
+    if not 5 <= len(reason) <= 1000:
+        return store.Transition(
+            store.BLOCKED, current, "custom denial reason must be 5-1000 characters"
+        )
+    result = await deny_ticket(bot, mongo, kind=KIND_DENY_CUSTOM, reason=reason, **common)
+    if result.won:
+        await _remove_granted_roles(bot, current)
+    return result
 
 
 # --- losing the race ---------------------------------------------------------

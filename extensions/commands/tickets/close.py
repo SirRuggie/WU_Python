@@ -19,6 +19,18 @@ from hikari.impl import (
 )
 
 
+def _already_decided_message(doc: dict) -> str:
+    """No overturn from the slash command - only the console offers that."""
+    status = str(doc.get("status") or "")
+    if status == "approved":
+        who = doc.get("approved_by_name") or "someone"
+        when = resolve.ts(doc.get("approved_at"))
+    else:
+        who = doc.get("denied_by_name") or "someone"
+        when = resolve.ts(doc.get("denied_at"))
+    return f"Already {status} by {who} {when}. Use the console to overturn."
+
+
 async def _validate_denial_actor(ctx, mongo: MongoClient, data: dict) -> bool:
     """Fail closed unless the initiating recruiter is still acting."""
     if int(data.get("denier_id") or 0) != int(ctx.user.id):
@@ -166,15 +178,7 @@ class Approve(
                     "The ticket changed before approval finished. Run `/ticket-pilot approve` again."
                 )
                 return
-            content, rows = await resolve.offer_override(
-                ctx, mongo,
-                kind=resolve.KIND_APPROVE,
-                current=result.doc,
-                ticket_id=ticket["_id"],
-                channel_id=ticket["channel_id"],
-                user_id=ticket.get("user_id"),
-            )
-            await ctx.respond(content, components=rows)
+            await ctx.respond(_already_decided_message(result.doc or {}))
             return
 
         if result.outcome == store.MISSING:
@@ -237,16 +241,11 @@ async def deny_fwa_default_handler(
                 components=[],
             )
             return
-        content, rows = await resolve.offer_override(
-            ctx, mongo,
-            kind=resolve.KIND_DENY_FWA,
-            current=result.doc,
-            ticket_id=data['ticket_id'],
-            channel_id=data['channel_id'],
-            user_id=data['user_id'],
-        )
         await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(content=content, components=rows)
+        await ctx.interaction.edit_initial_response(
+            content=_already_decided_message(result.doc or {}),
+            components=[],
+        )
         return
     if result.outcome in {store.MISSING, store.UNAUTHORIZED}:
         await delete_state(mongo, action_id)
@@ -307,16 +306,11 @@ async def deny_main_default_handler(
                 components=[],
             )
             return
-        content, rows = await resolve.offer_override(
-            ctx, mongo,
-            kind=resolve.KIND_DENY_MAIN,
-            current=result.doc,
-            ticket_id=data['ticket_id'],
-            channel_id=data['channel_id'],
-            user_id=data['user_id'],
-        )
         await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(content=content, components=rows)
+        await ctx.interaction.edit_initial_response(
+            content=_already_decided_message(result.doc or {}),
+            components=[],
+        )
         return
     if result.outcome in {store.MISSING, store.UNAUTHORIZED}:
         await delete_state(mongo, action_id)
@@ -444,17 +438,11 @@ async def process_custom_denial_handler(
                 )
             )
             return
-        content, rows = await resolve.offer_override(
-            ctx, mongo,
-            kind=resolve.KIND_DENY_CUSTOM,
-            current=result.doc,
-            ticket_id=data['ticket_id'],
-            channel_id=data['channel_id'],
-            user_id=data['user_id'],
-            reason=reason,
-        )
         await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(content=content, components=rows)
+        await ctx.interaction.edit_initial_response(
+            content=_already_decided_message(result.doc or {}),
+            components=[],
+        )
         return
     if result.outcome in {store.MISSING, store.UNAUTHORIZED, store.BLOCKED}:
         await delete_state(mongo, action_id)
