@@ -905,34 +905,47 @@ async def mark_thread_missing(
     or staff's Discord thread itself was deleted, so re-click/My ticket can
     let the applicant open a new one instead of pointing at a dead thread
     forever, and resolution effects can skip instead of retrying every 60s.
+
+    ``thread_missing.roles`` accumulates additively (``$addToSet``): a
+    candidate-thread deletion followed by a staff-thread deletion (or the
+    reverse) must record both facts, not lose the first one -- every
+    consumer tests membership (``"candidate" in roles`` / ``"staff" in
+    roles``), not equality. A staff marker therefore never downgrades a
+    candidate marker: once "candidate" is in ``roles`` it can never be
+    removed, only added to.
+
+    ``thread_missing.thread_role`` is kept in sync as the first-recorded
+    role, for callers still on the old single-role shape. It is written
+    once, guarded by an ``$exists: False`` filter, so a later mark of the
+    other role can never overwrite it -- the old version's no-downgrade
+    behaviour falls out of that by construction.
+
     Idempotent: re-marking an already-flagged ticket just refreshes the
-    timestamp, never raises. A staff marker never downgrades a candidate
-    marker: once the candidate thread is known missing (slot released, new
-    ticket allowed), a later staff-thread deletion must not overwrite that
-    fact and bring the ticket back into the open authority set.
+    timestamp, never raises.
     """
     role = str(thread_role or "").strip()
     if role not in {"candidate", "staff"}:
         raise ValueError("thread_role must be 'candidate' or 'staff'")
     now = utcnow()
-    filter_doc = {"_id": ticket_id, **RUNTIME_FILTER}
-    if role == "staff":
-        filter_doc["thread_missing.thread_role"] = {"$ne": "candidate"}
     updated = await mongo.tickets.find_one_and_update(
-        filter_doc,
-        {"$set": {
-            "thread_missing": {"thread_role": role, "detected_at": now},
-            "updated_at": now,
-        }},
+        {"_id": ticket_id, **RUNTIME_FILTER},
+        {
+            "$addToSet": {"thread_missing.roles": role},
+            "$set": {"thread_missing.detected_at": now, "updated_at": now},
+        },
         return_document=ReturnDocument.AFTER,
     )
     if updated is None:
-        if role == "staff":
-            existing = await mongo.tickets.find_one({"_id": ticket_id, **RUNTIME_FILTER})
-            if existing is not None:
-                # Candidate marker already present; keep it, treat as done.
-                return Transition(WON, existing)
         return Transition(MISSING, None)
+    await mongo.tickets.find_one_and_update(
+        {
+            "_id": ticket_id,
+            **RUNTIME_FILTER,
+            "thread_missing.thread_role": {"$exists": False},
+        },
+        {"$set": {"thread_missing.thread_role": role}},
+    )
+    updated.setdefault("thread_missing", {}).setdefault("thread_role", role)
     return Transition(WON, updated)
 
 

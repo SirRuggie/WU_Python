@@ -3381,6 +3381,81 @@ def test_resolution_effects_skip_a_known_missing_thread_instead_of_retrying(monk
     assert "resolution_archive_skipped" in audit_events
 
 
+@pytest.mark.parametrize("order", [("candidate", "staff"), ("staff", "candidate")])
+def test_thread_missing_records_both_roles_regardless_of_mark_order(monkeypatch, order):
+    """A candidate-thread deletion followed by a staff-thread deletion (or
+    the reverse) must record both facts, not lose the first one:
+    `thread_missing.roles` accumulates additively. Once "candidate" is
+    recorded the ticket must leave the open authority set (it must not keep
+    re-claiming/re-backfilling its own slot), and once each role is
+    recorded the resolution effect that needs that now-gone thread must be
+    skipped rather than retried forever -- regardless of mark order.
+    """
+    # -- both roles accumulate in thread_missing.roles, in either order --
+    open_ticket = _ticket(status="open")
+    mongo = _mongo(open_ticket)
+    for role in order:
+        result = asyncio.run(store.mark_thread_missing(
+            mongo, open_ticket["_id"], thread_role=role,
+        ))
+        assert result.won
+    stored = mongo.tickets.documents[open_ticket["_id"]]
+    assert set(stored["thread_missing"]["roles"]) == {"candidate", "staff"}
+    # thread_role stays the first-recorded role, for compatibility.
+    assert stored["thread_missing"]["thread_role"] == order[0]
+
+    # -- out of the open authority set --
+    authoritative = asyncio.run(
+        ticket_runtime._open_authoritative_tickets(mongo, limit=25)
+    )
+    assert authoritative == []
+
+    # -- both resolution-effect kinds are skipped, not retried --
+    effect_ticket = _effect_ticket()
+    effect_ticket["resolution_effects"]["staff_context"] = {"state": "pending"}
+    effect_mongo = _mongo(effect_ticket)
+    marked = None
+    for role in order:
+        marked = asyncio.run(store.mark_thread_missing(
+            effect_mongo, effect_ticket["_id"], thread_role=role,
+        ))
+        assert marked.won
+
+    class Rest:
+        async def fetch_channel(self, _channel_id):
+            raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10003)
+
+        async def edit_channel(self, *_args, **_kwargs):
+            return None
+
+    rest = Rest()
+
+    async def acquire(received_mongo, *_args, **_kwargs):
+        return await store.find_one(
+            received_mongo, {"_id": effect_ticket["_id"], **store.RUNTIME_FILTER}
+        )
+
+    async def release(*_args, **_kwargs):
+        return None
+
+    async def refresh(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, "_acquire_resolution_effect_lease", acquire)
+    monkeypatch.setattr(resolve, "_release_resolution_effect_lease", release)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    result = asyncio.run(resolve.process_resolution_effects(
+        _effect_bot(rest), effect_mongo, marked.doc,
+    ))
+
+    assert result.outcome == store.WON
+    assert result.doc["resolution_effects"]["complete"] is True
+    audit_events = [entry["event"] for entry in result.doc["audit"]]
+    assert "resolution_notification_skipped" in audit_events
+    assert "resolution_staff_context_skipped" in audit_events
+
+
 def test_notification_retry_reopens_only_to_write_and_rearchives(monkeypatch):
     ticket = _effect_ticket()
     ticket["resolution_effects"].update({

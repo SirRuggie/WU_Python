@@ -1572,9 +1572,9 @@ async def create_live_thread_ticket(
         existing = await store.find_open_for_applicant(
             mongo, user_id=int(user_id), ticket_type=ticket_type
         )
-        if existing is not None and (
-            existing.get("thread_missing") or {}
-        ).get("thread_role") == "candidate":
+        if existing is not None and ticket_runtime.thread_missing_has_role(
+            existing, "candidate"
+        ):
             # A dead-candidate-thread ticket must not block a genuinely new
             # one -- that is the whole point of the applicant's slot being
             # released. A staff-thread_missing ticket is still usable.
@@ -1615,9 +1615,9 @@ async def create_live_thread_ticket(
             existing = await store.find_open_for_applicant(
                 mongo, user_id=int(user_id), ticket_type=ticket_type
             )
-            if existing is not None and (
-                existing.get("thread_missing") or {}
-            ).get("thread_role") == "candidate":
+            if existing is not None and ticket_runtime.thread_missing_has_role(
+                existing, "candidate"
+            ):
                 existing = None
             if existing is not None:
                 await ticket_runtime.cancel_open_slot(

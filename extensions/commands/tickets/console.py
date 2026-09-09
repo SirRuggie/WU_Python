@@ -39,6 +39,7 @@ from hikari.impl import (
     TextSelectMenuBuilder as TextSelectMenu,
 )
 
+from extensions.commands import ticket_runtime
 from extensions.commands.fwa.chocolate_links import chocolate_url
 from extensions.commands.tickets import (
     account_sync,
@@ -2034,9 +2035,10 @@ def build_ticket_detail(
         ])
     public_url = ticket_jump_url(ticket_doc)
     staff_url = ticket_jump_url(ticket_doc, staff=True)
-    missing_role = str((ticket_doc.get("thread_missing") or {}).get("thread_role") or "")
+    candidate_missing = ticket_runtime.thread_missing_has_role(ticket_doc, "candidate")
+    staff_missing = ticket_runtime.thread_missing_has_role(ticket_doc, "staff")
     jump_buttons: list = []
-    if missing_role == "candidate":
+    if candidate_missing:
         jump_buttons.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"ticket_v2_console_unavailable:thread|{_ticket_id(ticket_doc)}|candidate",
@@ -2045,7 +2047,7 @@ def build_ticket_detail(
         ))
     elif public_url:
         jump_buttons.append(LinkButton(label="Open the thread", url=public_url))
-    if missing_role == "staff":
+    if staff_missing:
         jump_buttons.append(Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"ticket_v2_console_unavailable:thread|{_ticket_id(ticket_doc)}|staff",

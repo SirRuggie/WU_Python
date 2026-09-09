@@ -36,6 +36,7 @@ from hikari.impl import (
     ThumbnailComponentBuilder as Thumbnail,
 )
 
+from extensions.commands import ticket_runtime
 from extensions.commands.tickets import (
     account_sync,
     flag_store,
@@ -442,12 +443,13 @@ async def _process_resolution_effects_owned(
     # Set by the GuildThreadDeleteEvent listener in handlers.py. A step that
     # needs the missing half of the pair is marked skipped (with an audit
     # note from _checkpoint_effect) instead of retried every 60s forever.
-    missing_role = str((ticket.get("thread_missing") or {}).get("thread_role") or "") or None
+    candidate_thread_missing = ticket_runtime.thread_missing_has_role(ticket, "candidate")
+    staff_thread_missing = ticket_runtime.thread_missing_has_role(ticket, "staff")
 
     try:
         notification_state = (effects.get("notification") or {}).get("state")
         if notification_state not in {"delivered", "skipped"}:
-            if missing_role == "candidate":
+            if candidate_thread_missing:
                 await _checkpoint_effect(
                     mongo, ticket["_id"], marker, step="notification", state="skipped",
                 )
@@ -484,7 +486,7 @@ async def _process_resolution_effects_owned(
         staff_context_state = (effects.get("staff_context") or {}).get("state")
         if staff_context_state in {"delivered", "skipped"}:
             pass
-        elif missing_role == "staff":
+        elif staff_thread_missing:
             await _checkpoint_effect(
                 mongo, ticket["_id"], marker, step="staff_context", state="skipped",
             )
@@ -548,7 +550,7 @@ async def _process_resolution_effects_owned(
                     mongo, ticket["_id"], marker, step="archive", state="archived"
                 )
         except Exception as exc:
-            if missing_role:
+            if candidate_thread_missing or staff_thread_missing:
                 # A thread of the pair is already known gone -- the
                 # GuildThreadDeleteEvent listener recorded it. The other
                 # half may or may not be archived, but retrying this every

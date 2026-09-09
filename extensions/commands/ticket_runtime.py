@@ -1043,6 +1043,22 @@ async def release_open_slot(
     return bool(result.deleted_count)
 
 
+def thread_missing_has_role(ticket: Mapping[str, Any] | None, role: str) -> bool:
+    """True if `role` ("candidate" or "staff") is recorded missing on `ticket`.
+
+    Checks the current additive `thread_missing.roles` set first (a
+    candidate-thread deletion followed by a staff-thread deletion, or the
+    reverse, records both facts there) and falls back to the single-role
+    `thread_missing.thread_role` shape written before `roles` existed, so a
+    ticket marked missing before this field became a set is still read
+    correctly.
+    """
+    missing = (ticket or {}).get("thread_missing") or {}
+    if role in (missing.get("roles") or ()):
+        return True
+    return missing.get("thread_role") == role
+
+
 async def mark_slot_release_pending_for_missing_thread(
     mongo: Any,
     *,
@@ -1062,8 +1078,7 @@ async def mark_slot_release_pending_for_missing_thread(
     if slot is None:
         raise SlotConflict("no open slot is bound to that ticket")
     ticket = await _ticket_for_slot(mongo, slot)
-    missing_role = ((ticket or {}).get("thread_missing") or {}).get("thread_role")
-    if missing_role != "candidate":
+    if not thread_missing_has_role(ticket, "candidate"):
         raise SlotConflict("ticket thread is not marked missing")
     moment = now or utcnow()
     document = await mongo.ticket_open_slots.find_one_and_update(
@@ -1104,8 +1119,7 @@ async def release_open_slot_for_missing_thread(
     if slot is None:
         return False
     ticket = await _ticket_for_slot(mongo, slot)
-    missing_role = ((ticket or {}).get("thread_missing") or {}).get("thread_role")
-    if missing_role != "candidate":
+    if not thread_missing_has_role(ticket, "candidate"):
         return False
     result = await mongo.ticket_open_slots.delete_one(
         {
@@ -1272,6 +1286,12 @@ def _authority_query(
             # applicant and must stay in the authority set. It is still
             # found by every status=None query (conflict reconciliation),
             # so nothing here hides it from cleanup.
+            #
+            # "candidate" excludes a ticket whether it was recorded in the
+            # current additive `thread_missing.roles` set or (a ticket
+            # marked missing before that field existed) the single-role
+            # `thread_missing.thread_role` shape -- both must be checked.
+            query["thread_missing.roles"] = {"$ne": "candidate"}
             query["thread_missing.thread_role"] = {"$ne": "candidate"}
     if route == ROUTE_THREAD:
         query.update({"venue": "thread", "runtime": THREAD_RUNTIME})
