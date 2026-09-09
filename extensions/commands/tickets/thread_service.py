@@ -504,9 +504,14 @@ async def ensure_creation_indexes(mongo: MongoClient) -> None:
             "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
         )
     except Exception as exc:
-        _creation_index_failed = True
-        _creation_index_retry_at = time.monotonic() + CREATION_INDEX_RETRY_SECONDS
-        _creation_index_last_error = exc
+        # Only an outcome that needs operator repair is worth caching; a
+        # transient Atlas outage must not block ticket intake for the retry
+        # window after Mongo has already recovered. See
+        # store.is_cacheable_index_error.
+        if store.is_cacheable_index_error(exc):
+            _creation_index_failed = True
+            _creation_index_retry_at = time.monotonic() + CREATION_INDEX_RETRY_SECONDS
+            _creation_index_last_error = exc
         raise
     _creation_index_ready = True
     _creation_index_failed = False

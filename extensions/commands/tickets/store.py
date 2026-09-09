@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Iterable, Mapping
 
 from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import schema
@@ -150,9 +150,20 @@ async def find_one(mongo: MongoClient, filt: dict):
     return _normalized(raw)
 
 
-async def find(mongo: MongoClient, filt: dict) -> list[dict]:
+async def find(mongo: MongoClient, filt: dict, *, include_legacy: bool = False) -> list[dict]:
+    """Read ticket documents, thread-runtime only by default.
+
+    RUNTIME_FILTER's own ``venue``/``runtime`` keys are merged in last, so
+    they always win over anything the caller passed for those keys -- a
+    caller filtering for channel-era rows (``venue`` != ``thread``) would
+    silently get zero results. Pass ``include_legacy=True`` for a
+    diagnostics-only read that must also see those rows; it drops
+    RUNTIME_FILTER down to the bare ``type`` check so the caller's own venue
+    filter is honoured. Every ticket-lifecycle reader keeps the default.
+    """
+    base = TICKET_FILTER if include_legacy else RUNTIME_FILTER
     raw = await (await _reader(mongo)).find(
-        {**dict(filt), **RUNTIME_FILTER}
+        {**dict(filt), **base}
     ).to_list(length=None)
     return _normalized_many(raw)
 
@@ -955,6 +966,22 @@ async def index_conflicts(collection) -> dict[str, list]:
     return index_conflicts_for_documents(docs)
 
 
+def is_cacheable_index_error(exc: Exception) -> bool:
+    """Only an outcome that needs operator repair should be cached.
+
+    ``IndexConflictError`` (a conflicting row) and pymongo's
+    ``OperationFailure`` (an incompatible existing index) are stable until
+    someone fixes the data or the index definition, so caching them avoids
+    repeating the full-collection preflight scan on every interaction.
+    A transient Atlas outage raises ``ServerSelectionTimeoutError``,
+    ``AutoReconnect``, ``NetworkTimeout`` or another ``PyMongoError`` that is
+    not an ``OperationFailure`` -- those clear on their own, so they must not
+    be cached or ticket intake would stay blocked for the retry window after
+    Mongo has already recovered.
+    """
+    return isinstance(exc, (IndexConflictError, OperationFailure))
+
+
 async def ensure_indexes(mongo: MongoClient) -> list[str]:
     """Install v2-only indexes after preflight.
 
@@ -962,11 +989,14 @@ async def ensure_indexes(mongo: MongoClient) -> list[str]:
     broader. That failure is intentional and blocks intake for operator review;
     this service never drops or silently replaces production indexes.
 
-    A failure here (a conflicting row, an incompatible existing index) is
-    cached for ``INDEX_RETRY_SECONDS`` so a caller on the ticket-creation hot
-    path does not repeat the full-collection preflight scan and every
-    create_index round trip on each interaction; it retries automatically
-    once the window passes.
+    A failure here that needs operator repair (a conflicting row, an
+    incompatible existing index) is cached for ``INDEX_RETRY_SECONDS`` so a
+    caller on the ticket-creation hot path does not repeat the
+    full-collection preflight scan and every create_index round trip on each
+    interaction; it retries automatically once the window passes. A
+    transient connection failure is never cached -- see
+    ``is_cacheable_index_error`` -- so the next interaction retries
+    immediately instead of waiting out the window.
     """
     global _indexes_failed, _index_retry_at, _last_index_error
     if _indexes_failed and time.monotonic() < _index_retry_at:
@@ -976,9 +1006,10 @@ async def ensure_indexes(mongo: MongoClient) -> list[str]:
     try:
         names = await _install_indexes(mongo)
     except Exception as exc:
-        _indexes_failed = True
-        _index_retry_at = time.monotonic() + INDEX_RETRY_SECONDS
-        _last_index_error = exc
+        if is_cacheable_index_error(exc):
+            _indexes_failed = True
+            _index_retry_at = time.monotonic() + INDEX_RETRY_SECONDS
+            _last_index_error = exc
         raise
     _indexes_failed = False
     _last_index_error = None

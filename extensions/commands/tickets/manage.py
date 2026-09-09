@@ -310,7 +310,13 @@ class Diagnostics(
         # per-ticket fetch_channel loop - that is what got the startup orphan sweep
         # disabled in close.py for causing rate limits.
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
-        docs = await store.find(mongo, {"type": "ticket", **CHANNEL_ERA_ONLY})
+        # store.find defaults to thread-runtime rows (RUNTIME_FILTER), which
+        # would silently override CHANNEL_ERA_ONLY's venue filter and return
+        # zero rows here. This diagnostics view needs the channel-era rows,
+        # so opt in explicitly.
+        docs = await store.find(
+            mongo, {"type": "ticket", **CHANNEL_ERA_ONLY}, include_legacy=True
+        )
 
         live_ids = {_as_int(ch.id) for ch in guild_channels}
         live_ids |= await _active_thread_ids(bot, ctx.guild_id)

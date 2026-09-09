@@ -285,10 +285,13 @@ async def _checkpoint_effect(
                 },
                 "$inc": {"rev": 1},
                 "$push": {"audit": {
-                    "event": f"resolution_{step}_{state}",
-                    "at": now,
-                    "effect_marker": marker,
-                    "error_type": type(error).__name__ if error else None,
+                    "$each": [{
+                        "event": f"resolution_{step}_{state}",
+                        "at": now,
+                        "effect_marker": marker,
+                        "error_type": type(error).__name__ if error else None,
+                    }],
+                    "$slice": -store.MAX_AUDIT_ENTRIES,
                 }},
             },
         )
@@ -317,9 +320,12 @@ async def _finalize_effects(mongo: MongoClient, ticket_id, marker: str) -> bool:
                 },
                 "$inc": {"rev": 1},
                 "$push": {"audit": {
-                    "event": "resolution_effects_complete",
-                    "at": now,
-                    "effect_marker": marker,
+                    "$each": [{
+                        "event": "resolution_effects_complete",
+                        "at": now,
+                        "effect_marker": marker,
+                    }],
+                    "$slice": -store.MAX_AUDIT_ENTRIES,
                 }},
             },
         )

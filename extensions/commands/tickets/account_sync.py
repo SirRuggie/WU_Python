@@ -297,18 +297,21 @@ def _success_update(
         if not ticket.get("player_tag"):
             update["$set"]["player_tag"] = current_tags[0]
     if added:
-        update["$push"]["linked_account_identities"] = {"$each": [
-            {
-                "tag": item["tag"],
-                "name": item.get("name"),
-                "town_hall": item.get("town_hall", 0),
-                "profile_status": item.get("profile_status"),
-                "first_seen_at": at,
-                "first_seen_source": source,
-            }
-            for item in accounts
-            if item["tag"] in set(added)
-        ]}
+        update["$push"]["linked_account_identities"] = {
+            "$each": [
+                {
+                    "tag": item["tag"],
+                    "name": item.get("name"),
+                    "town_hall": item.get("town_hall", 0),
+                    "profile_status": item.get("profile_status"),
+                    "first_seen_at": at,
+                    "first_seen_source": source,
+                }
+                for item in accounts
+                if item["tag"] in set(added)
+            ],
+            "$slice": -store.MAX_AUDIT_ENTRIES,
+        }
     linked = ticket.get("linked_accounts") or {}
     if added or (
         isinstance(linked, Mapping)

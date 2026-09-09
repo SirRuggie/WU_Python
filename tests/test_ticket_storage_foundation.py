@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import hikari
 import pytest
 from bson import BSON
-from pymongo.errors import DuplicateKeyError, OperationFailure
+from pymongo.errors import DuplicateKeyError, OperationFailure, ServerSelectionTimeoutError
 
 from extensions import components as dispatcher
 from extensions.commands import ticket_runtime
@@ -16,6 +16,7 @@ from extensions.commands.tickets import (
     close,
     console,
     flag_store,
+    manage,
     migrate,
     perms,
     resolve,
@@ -1514,6 +1515,53 @@ def test_ensure_creation_indexes_caches_failure_within_a_retry_window(monkeypatc
     assert len(calls) == 2
 
 
+def test_ensure_indexes_does_not_cache_a_transient_connection_error(monkeypatch):
+    """A ServerSelectionTimeoutError from the index_conflicts preflight (an
+    Atlas outage) must not block ticket intake for the retry window once
+    Mongo recovers -- unlike IndexConflictError, it is retried every call.
+    """
+    mongo = _mongo(_ticket())
+    calls = []
+
+    async def flaky_index_conflicts(collection):
+        calls.append(1)
+        raise ServerSelectionTimeoutError("no primary available")
+
+    monkeypatch.setattr(store, "index_conflicts", flaky_index_conflicts)
+
+    with pytest.raises(ServerSelectionTimeoutError):
+        asyncio.run(store.ensure_indexes(mongo))
+    assert len(calls) == 1
+    assert store._indexes_failed is False
+    assert store._last_index_error is None
+
+    with pytest.raises(ServerSelectionTimeoutError):
+        asyncio.run(store.ensure_indexes(mongo))
+    assert len(calls) == 2
+
+
+def test_ensure_creation_indexes_does_not_cache_a_transient_connection_error(monkeypatch):
+    calls = []
+
+    async def flaky_canonical_store(_mongo):
+        calls.append(1)
+        raise ServerSelectionTimeoutError("no primary available")
+
+    monkeypatch.setattr(
+        thread_service, "ensure_canonical_ticket_store", flaky_canonical_store
+    )
+    mongo = SimpleNamespace()
+
+    with pytest.raises(ServerSelectionTimeoutError):
+        asyncio.run(thread_service.ensure_creation_indexes(mongo))
+    assert len(calls) == 1
+    assert thread_service._creation_index_failed is False
+
+    with pytest.raises(ServerSelectionTimeoutError):
+        asyncio.run(thread_service.ensure_creation_indexes(mongo))
+    assert len(calls) == 2
+
+
 def test_runtime_lookup_fails_closed_for_legacy_channel_rows():
     legacy = schema.normalize_ticket_document({
         "_id": "legacy", "status": "open", "ticket_type": "main",
@@ -1521,6 +1569,25 @@ def test_runtime_lookup_fails_closed_for_legacy_channel_rows():
     })
     mongo = _mongo(legacy)
     assert asyncio.run(store.find_by_location(mongo, 101)) is None
+
+
+def test_store_find_default_hides_channel_era_rows_include_legacy_reveals_them():
+    """manage.py's diagnostics view filters for CHANNEL_ERA_ONLY (venue !=
+    thread). store.find's default RUNTIME_FILTER merges its own venue/runtime
+    keys in last, silently overriding that filter and returning zero rows;
+    include_legacy=True is the diagnostics-only opt-out.
+    """
+    legacy = schema.normalize_ticket_document({
+        "_id": "legacy-101", "status": "open", "ticket_type": "main",
+        "channel_id": 101, "user_id": 30,
+    })
+    mongo = _mongo(legacy)
+    query = {"type": "ticket", **manage.CHANNEL_ERA_ONLY}
+
+    assert asyncio.run(store.find(mongo, query)) == []
+
+    rows = asyncio.run(store.find(mongo, query, include_legacy=True))
+    assert [row["_id"] for row in rows] == ["legacy-101"]
 
 
 def test_ticket_authorization_is_bound_to_the_configured_target_guild():
@@ -2785,6 +2852,27 @@ def test_resolution_notification_cancellation_archives_releases_and_resumes_once
         channel.is_archived and channel.is_locked
         for channel in rest.channels.values()
     )
+
+
+def test_checkpoint_effect_caps_audit_at_max_entries():
+    """`audit` is unbounded per-action history on a collection with no TTL
+    (store.MAX_AUDIT_ENTRIES); every $push into it must slice to that bound,
+    including the resolution-effect checkpoint pushes.
+    """
+    ticket = _effect_ticket()
+    mongo = _mongo(ticket)
+    marker = ticket["resolution_effects"]["marker"]
+
+    for i in range(250):
+        matched = asyncio.run(resolve._checkpoint_effect(
+            mongo, ticket["_id"], marker,
+            step="notification", state=f"attempt_{i}",
+        ))
+        assert matched
+
+    audit = mongo.tickets.documents[ticket["_id"]]["audit"]
+    assert len(audit) == store.MAX_AUDIT_ENTRIES
+    assert audit[-1]["event"] == "resolution_notification_attempt_249"
 
 
 def test_archive_retry_finds_marker_and_never_duplicates_notification(monkeypatch):
