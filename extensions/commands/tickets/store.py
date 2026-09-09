@@ -11,7 +11,13 @@ from datetime import datetime, timezone
 from typing import Iterable, Mapping
 
 from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError, OperationFailure
+from pymongo.errors import (
+    DuplicateKeyError,
+    ExecutionTimeout,
+    OperationFailure,
+    WriteConcernError,
+    WTimeoutError,
+)
 
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import schema
@@ -160,11 +166,19 @@ async def find(mongo: MongoClient, filt: dict, *, include_legacy: bool = False) 
     diagnostics-only read that must also see those rows; it drops
     RUNTIME_FILTER down to the bare ``type`` check so the caller's own venue
     filter is honoured. Every ticket-lifecycle reader keeps the default.
+
+    ``include_legacy=True`` also skips schema normalisation and returns raw
+    documents as stored: ``normalize_ticket_document`` raises
+    ``TicketSchemaError`` on a legacy row with ``status == "closed"``, and
+    such rows exist in production. The only caller (manage.py's diagnostics
+    reconciliation) wants raw statuses, not the canonical shape.
     """
     base = TICKET_FILTER if include_legacy else RUNTIME_FILTER
     raw = await (await _reader(mongo)).find(
         {**dict(filt), **base}
     ).to_list(length=None)
+    if include_legacy:
+        return raw
     return _normalized_many(raw)
 
 
@@ -966,20 +980,39 @@ async def index_conflicts(collection) -> dict[str, list]:
     return index_conflicts_for_documents(docs)
 
 
+# Atlas failover raises a bare OperationFailure with one of these codes
+# (ExecutionTimeout, ShutdownInProgress, PrimarySteppedDown,
+# ExceededTimeLimit, InterruptedAtShutdown, InterruptedDueToReplStateChange).
+# These clear on their own once a primary is elected, so caching them would
+# block ticket intake for the retry window after Mongo has already recovered.
+TRANSIENT_OPERATION_FAILURE_CODES = frozenset({50, 91, 189, 262, 11600, 11602})
+
+
 def is_cacheable_index_error(exc: Exception) -> bool:
     """Only an outcome that needs operator repair should be cached.
 
-    ``IndexConflictError`` (a conflicting row) and pymongo's
+    ``IndexConflictError`` (a conflicting row) and a stable pymongo
     ``OperationFailure`` (an incompatible existing index) are stable until
     someone fixes the data or the index definition, so caching them avoids
     repeating the full-collection preflight scan on every interaction.
-    A transient Atlas outage raises ``ServerSelectionTimeoutError``,
+
+    ``ExecutionTimeout``, ``WriteConcernError`` and ``WTimeoutError`` all
+    subclass ``OperationFailure`` but are transient, as is a bare
+    ``OperationFailure`` whose ``.code`` is in
+    ``TRANSIENT_OPERATION_FAILURE_CODES`` (Atlas failover/step-down). A
+    transient Atlas outage also raises ``ServerSelectionTimeoutError``,
     ``AutoReconnect``, ``NetworkTimeout`` or another ``PyMongoError`` that is
-    not an ``OperationFailure`` -- those clear on their own, so they must not
-    be cached or ticket intake would stay blocked for the retry window after
-    Mongo has already recovered.
+    not an ``OperationFailure`` at all -- none of these must be cached or
+    ticket intake would stay blocked for the retry window after Mongo has
+    already recovered.
     """
-    return isinstance(exc, (IndexConflictError, OperationFailure))
+    if isinstance(exc, IndexConflictError):
+        return True
+    if not isinstance(exc, OperationFailure):
+        return False
+    if isinstance(exc, (ExecutionTimeout, WriteConcernError, WTimeoutError)):
+        return False
+    return exc.code not in TRANSIENT_OPERATION_FAILURE_CODES
 
 
 async def ensure_indexes(mongo: MongoClient) -> list[str]:

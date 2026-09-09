@@ -7,7 +7,12 @@ from types import SimpleNamespace
 import hikari
 import pytest
 from bson import BSON
-from pymongo.errors import DuplicateKeyError, OperationFailure, ServerSelectionTimeoutError
+from pymongo.errors import (
+    DuplicateKeyError,
+    ExecutionTimeout,
+    OperationFailure,
+    ServerSelectionTimeoutError,
+)
 
 from extensions import components as dispatcher
 from extensions.commands import ticket_runtime
@@ -1519,25 +1524,59 @@ def test_ensure_indexes_does_not_cache_a_transient_connection_error(monkeypatch)
     """A ServerSelectionTimeoutError from the index_conflicts preflight (an
     Atlas outage) must not block ticket intake for the retry window once
     Mongo recovers -- unlike IndexConflictError, it is retried every call.
+    ExecutionTimeout subclasses OperationFailure but is transient, as is a
+    bare OperationFailure whose .code is an Atlas failover code (91 here).
+    """
+    transient_errors = [
+        ServerSelectionTimeoutError("no primary available"),
+        OperationFailure("interrupted due to repl state change", code=91),
+        ExecutionTimeout("operation exceeded time limit", code=50),
+    ]
+
+    for error in transient_errors:
+        mongo = _mongo(_ticket())
+        calls = []
+
+        async def flaky_index_conflicts(collection, _error=error):
+            calls.append(1)
+            raise _error
+
+        monkeypatch.setattr(store, "index_conflicts", flaky_index_conflicts)
+
+        with pytest.raises(type(error)):
+            asyncio.run(store.ensure_indexes(mongo))
+        assert len(calls) == 1
+        assert store._indexes_failed is False
+        assert store._last_index_error is None
+
+        with pytest.raises(type(error)):
+            asyncio.run(store.ensure_indexes(mongo))
+        assert len(calls) == 2
+
+
+def test_ensure_indexes_caches_a_non_transient_bare_operation_failure(monkeypatch):
+    """A bare OperationFailure for an incompatible index definition (85,
+    IndexOptionsConflict) needs operator repair and is stable, unlike the
+    Atlas-failover codes above -- it must be cached like IndexConflictError.
     """
     mongo = _mongo(_ticket())
     calls = []
 
-    async def flaky_index_conflicts(collection):
+    async def failing_index_conflicts(collection):
         calls.append(1)
-        raise ServerSelectionTimeoutError("no primary available")
+        raise OperationFailure(
+            "Index already exists with a different definition", code=85
+        )
 
-    monkeypatch.setattr(store, "index_conflicts", flaky_index_conflicts)
+    monkeypatch.setattr(store, "index_conflicts", failing_index_conflicts)
 
-    with pytest.raises(ServerSelectionTimeoutError):
+    with pytest.raises(OperationFailure):
         asyncio.run(store.ensure_indexes(mongo))
     assert len(calls) == 1
-    assert store._indexes_failed is False
-    assert store._last_index_error is None
 
-    with pytest.raises(ServerSelectionTimeoutError):
+    with pytest.raises(OperationFailure):
         asyncio.run(store.ensure_indexes(mongo))
-    assert len(calls) == 2
+    assert len(calls) == 1
 
 
 def test_ensure_creation_indexes_does_not_cache_a_transient_connection_error(monkeypatch):
@@ -1588,6 +1627,32 @@ def test_store_find_default_hides_channel_era_rows_include_legacy_reveals_them()
 
     rows = asyncio.run(store.find(mongo, query, include_legacy=True))
     assert [row["_id"] for row in rows] == ["legacy-101"]
+
+
+def test_store_find_include_legacy_returns_raw_documents_normalization_would_reject():
+    """normalize_ticket_document raises TicketSchemaError on a legacy row with
+    status == "closed" (schema.py), and such a row exists in production.
+    manage.py's diagnostics reader -- the only include_legacy=True caller --
+    wants the raw status, so include_legacy=True must skip normalisation
+    entirely instead of crashing the diagnostics command.
+    """
+    raw_closed = {
+        "_id": "legacy-closed-1",
+        "type": "ticket",
+        "venue": "channel",
+        "status": "closed",
+        "ticket_type": "main",
+        "channel_id": 555,
+        "user_id": 40,
+    }
+    mongo = _mongo(raw_closed)
+
+    assert asyncio.run(store.find(mongo, {"_id": "legacy-closed-1"})) == []
+
+    rows = asyncio.run(
+        store.find(mongo, {"_id": "legacy-closed-1"}, include_legacy=True)
+    )
+    assert rows == [raw_closed]
 
 
 def test_ticket_authorization_is_bound_to_the_configured_target_guild():
