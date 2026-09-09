@@ -287,6 +287,19 @@ def _search_identity(query: str) -> dict:
     return {"username_search": schema.username_search(value)}
 
 
+def _search_filter(
+    query: str, statuses: Iterable[str] | None, ticket_types: Iterable[str] | None
+) -> dict:
+    filt: dict = {**RUNTIME_FILTER, **_search_identity(query)}
+    if statuses:
+        filt["status"] = {"$in": [schema.ticket_status(value) for value in statuses]}
+    if ticket_types:
+        filt["ticket_type"] = {
+            "$in": [schema.ticket_type(value) for value in ticket_types]
+        }
+    return filt
+
+
 async def search(
     mongo: MongoClient,
     query: str = "",
@@ -295,19 +308,29 @@ async def search(
     ticket_types: Iterable[str] | None = None,
     limit: int = 10,
 ) -> list[dict]:
-    filt: dict = {**RUNTIME_FILTER, **_search_identity(query)}
-    if statuses:
-        filt["status"] = {"$in": [schema.ticket_status(value) for value in statuses]}
-    if ticket_types:
-        filt["ticket_type"] = {
-            "$in": [schema.ticket_type(value) for value in ticket_types]
-        }
+    filt = _search_filter(query, statuses, ticket_types)
     amount = max(1, min(int(limit), 10))
     cursor = (await _reader(mongo)).find(filt)
     raw = await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
         length=amount
     )
     return _normalized_many(raw)
+
+
+async def search_count(
+    mongo: MongoClient,
+    query: str = "",
+    *,
+    statuses: Iterable[str] | None = None,
+    ticket_types: Iterable[str] | None = None,
+) -> int:
+    """How many tickets `search` matches in total, ignoring its own limit.
+
+    Lets the search panel tell a recruiter "newest 10 of 27" instead of a
+    fixed "newest 10 matches" that hides how many results are not shown.
+    """
+    filt = _search_filter(query, statuses, ticket_types)
+    return int(await (await _reader(mongo)).count_documents(filt))
 
 
 async def history_for(

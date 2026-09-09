@@ -217,6 +217,9 @@ class Collection:
     def find(self, query, *_args, **_kwargs):
         return Cursor(document for document in self.documents.values() if _matches(document, query))
 
+    async def count_documents(self, query, *_args, **_kwargs):
+        return sum(1 for document in self.documents.values() if _matches(document, query))
+
     async def update_one(self, query, update, *, upsert=False, **_kwargs):
         for key, document in self.documents.items():
             if _matches(document, query):
@@ -383,6 +386,20 @@ def test_list_open_search_and_history_for_normalize_documents():
     assert opened[0]["schema_version"] == schema.SCHEMA_VERSION
     assert searched[0]["schema_version"] == schema.SCHEMA_VERSION
     assert history[0]["schema_version"] == schema.SCHEMA_VERSION
+
+
+def test_search_count_ignores_searchs_own_result_limit():
+    """`search` caps its result page at 10; `search_count` must report the
+    true total so the console can say "newest 10 of 27" instead of hiding
+    how many results are not shown."""
+    tickets = [_ticket(public=100 + index, staff=200 + index, number=index) for index in range(1, 13)]
+    mongo = _mongo(*tickets)
+
+    results = asyncio.run(store.search(mongo, "Applicant"))
+    total = asyncio.run(store.search_count(mongo, "Applicant"))
+
+    assert len(results) == 10
+    assert total == 12
 
 
 def test_list_open_orders_oldest_first_the_longest_waiting_at_top():

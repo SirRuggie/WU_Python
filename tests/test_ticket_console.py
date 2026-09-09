@@ -339,6 +339,30 @@ def test_search_worst_case_uses_exact_safe_budget_and_unknown_status_fallback():
     _assert_component_limits(view)
 
 
+def test_search_heading_shows_the_actual_number_rendered():
+    """A fixed "newest 10 matches" hid how many results there actually were
+    -- 3 out of 3 looked identical to 3 out of 300. The heading must show
+    the true count, and say how much is hidden only when it is truncated."""
+    few = console.build_search_panel(
+        "a" * 32, "", (), (), [_ticket(index) for index in range(1, 4)],
+    )
+    exact = console.build_search_panel(
+        "a" * 32, "", (), (), [_ticket(index) for index in range(1, 11)], total=10,
+    )
+    truncated = console.build_search_panel(
+        "a" * 32, "", (), (), [_ticket(index) for index in range(1, 11)], total=27,
+    )
+
+    def _summary(view):
+        return next(
+            str(node["content"]) for node in _nodes(view) if "content" in node
+        ).splitlines()[1]
+
+    assert _summary(few) == "All tickets · 3 matches"
+    assert _summary(exact) == "All tickets · 10 matches"
+    assert _summary(truncated) == "All tickets · newest 10 of 27 matches"
+
+
 def test_long_notice_reserves_its_heading_inside_the_message_text_budget():
     title = "Important recruiter notice"
     view = console._notice(title, "x" * 4000)

@@ -1458,6 +1458,21 @@ async def _search_results(
     )
 
 
+async def _search_total(
+    mongo: MongoClient,
+    *,
+    query: str,
+    statuses: Sequence[str],
+    ticket_types: Sequence[str],
+) -> int:
+    return await store.search_count(
+        mongo,
+        query,
+        statuses=tuple(statuses) or None,
+        ticket_types=tuple(ticket_types) or None,
+    )
+
+
 def _filter_selects(
     action_id: str,
     statuses: Sequence[str],
@@ -1501,6 +1516,18 @@ def _filter_selects(
     ]
 
 
+def _search_count_phrase(shown: int, total: int | None) -> str:
+    """The actual number rendered, not a fixed claim of ``MAX_SEARCH_RESULTS``.
+
+    ``total`` unknown or no larger than what is shown just states the exact
+    count ("3 matches"); a truncated result set says how much more there is
+    ("newest 10 of 27 matches").
+    """
+    if total is not None and total > shown:
+        return f"newest {shown} of {total} matches"
+    return f"{shown} match" if shown == 1 else f"{shown} matches"
+
+
 def build_search_panel(
     action_id: str,
     query: str,
@@ -1509,10 +1536,12 @@ def build_search_panel(
     results: Sequence[Mapping],
     *,
     view_action_ids: Sequence[str] = (),
+    total: int | None = None,
 ) -> list[Container]:
+    count_phrase = _search_count_phrase(min(len(results), MAX_SEARCH_RESULTS), total)
     summary = (
-        f"Query: **{_clean(query, limit=80)}** · newest {MAX_SEARCH_RESULTS} matches"
-        if query else f"All tickets · newest {MAX_SEARCH_RESULTS} matches"
+        f"Query: **{_clean(query, limit=80)}** · {count_phrase}"
+        if query else f"All tickets · {count_phrase}"
     )
     heading = f"## Search results\n{summary}"
     footer = "-# Archived threads open in read-only mode and stay archived."
@@ -1603,11 +1632,13 @@ async def _render_search_session(
     statuses: Sequence[str],
     ticket_types: Sequence[str],
 ) -> list[Container]:
-    results = await _search_results(
-        mongo,
-        query=query,
-        statuses=statuses,
-        ticket_types=ticket_types,
+    results, total = await asyncio.gather(
+        _search_results(
+            mongo, query=query, statuses=statuses, ticket_types=ticket_types,
+        ),
+        _search_total(
+            mongo, query=query, statuses=statuses, ticket_types=ticket_types,
+        ),
     )
     view_action_ids = await _create_search_result_states(
         mongo,
@@ -1622,6 +1653,7 @@ async def _render_search_session(
         ticket_types,
         results,
         view_action_ids=view_action_ids,
+        total=total,
     )
 
 
