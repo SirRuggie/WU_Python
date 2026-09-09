@@ -231,11 +231,13 @@ def _search_identity(query: str) -> dict:
         raise SearchQueryError(
             "Use a Discord ID, player tag, or a 2-32 character username"
         )
-    normalized = schema.username_search(value)
-    return {"$or": [
-        {"username_search": normalized},
-        {"username": re.compile(rf"^{re.escape(value)}$", re.IGNORECASE)},
-    ]}
+    # `username_search` is pre-normalized (casefolded, whitespace-collapsed)
+    # the same way on write and here, and thread_v2_username_created indexes
+    # exactly that field. A case-insensitive $regex on the raw `username`
+    # cannot use that index (no collation), so a query landing here would
+    # scan the whole collection for no matches the indexed field would not
+    # already catch (rule 12).
+    return {"username_search": schema.username_search(value)}
 
 
 async def search(

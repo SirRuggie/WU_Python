@@ -335,6 +335,16 @@ def test_list_open_search_and_history_for_normalize_documents():
     assert history[0]["schema_version"] == schema.SCHEMA_VERSION
 
 
+def test_username_search_uses_only_the_indexed_normalized_field():
+    # A case-insensitive $regex on raw `username` cannot use
+    # thread_v2_username_created (no collation); the search filter must stay
+    # on the pre-normalized, indexed `username_search` field only.
+    assert store._search_identity("Applicant") == {"username_search": "applicant"}
+    assert store._search_identity("  John   Doe ") == {
+        "username_search": "john doe"
+    }
+
+
 @pytest.mark.parametrize("count", [1, 15, 37])
 def test_linked_account_sync_persists_complete_snapshot_and_identity_audit(
     monkeypatch,
