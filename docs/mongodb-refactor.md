@@ -113,9 +113,9 @@ Findings that belong to it are recorded here so nobody re-discovers them:
   never written anywhere; `profile` and `thread_message_id` are insert-only
   defaults (`update_clan_info.py:236,239`) never used. Remove them or give
   them a writer (rule 5).
-- [ ] `name` is copied from the Clash API at insert (`update_clan_info.py:235`)
-  and never re-synced. Refresh it on the existing scheduler or on
-  `/clan info` reads (rule 8).
+- Not an issue: `name` is copied once at insert (`update_clan_info.py:235`)
+  and never re-synced, which is fine because Clash of Clans clan names cannot
+  be changed after creation (owner, 2026-09-08).
 - [ ] Every clan loaded per interaction: `clan/list.py:48`,
   `clan/dashboard/dashboard.py:36`, `info_hub/helpers.py:12,75`,
   `fwa/links.py:114,168`, `family_links.py:442-608`, four `recruit/dashboard`
