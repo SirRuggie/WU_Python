@@ -2674,6 +2674,36 @@ def test_mark_thread_missing_rejects_an_unknown_role():
         ))
 
 
+def test_mark_thread_missing_staff_never_overwrites_a_candidate_marker():
+    """A staff-thread deletion must not downgrade a ticket that already knows
+    its candidate thread is gone: overwriting `thread_missing` back to
+    "staff" would bring the ticket back into the open authority set even
+    though the slot was already released. The staff call on an
+    already-candidate-marked ticket must be a no-op that still reports WON
+    with the existing (unchanged) document, while a staff call on a fresh
+    ticket with no marker at all must still set one normally."""
+    mongo = _mongo(_ticket())
+    candidate = asyncio.run(store.mark_thread_missing(
+        mongo, "ticket_101", thread_role="candidate",
+    ))
+    assert candidate.won
+    assert candidate.doc["thread_missing"]["thread_role"] == "candidate"
+
+    staff_after_candidate = asyncio.run(store.mark_thread_missing(
+        mongo, "ticket_101", thread_role="staff",
+    ))
+    assert staff_after_candidate.won
+    assert staff_after_candidate.doc["thread_missing"]["thread_role"] == "candidate"
+    assert mongo.tickets.documents["ticket_101"]["thread_missing"]["thread_role"] == "candidate"
+
+    fresh_mongo = _mongo(_ticket())
+    fresh_staff = asyncio.run(store.mark_thread_missing(
+        fresh_mongo, "ticket_101", thread_role="staff",
+    ))
+    assert fresh_staff.won
+    assert fresh_staff.doc["thread_missing"]["thread_role"] == "staff"
+
+
 def test_claim_creation_dm_wins_once_then_a_retry_is_a_no_op():
     """The CAS marker must let exactly one caller send the DM -- a retried
     REST call after a crash between send and record must find the marker
