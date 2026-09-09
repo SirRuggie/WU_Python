@@ -544,8 +544,9 @@ async def reconcile_flag_identities(
 
     snapshot = snapshot_from_ticket(ticket)
     conflict_set: dict = {}
+    extended: list = []
     try:
-        await flag_store.extend_matching_flags(
+        extended = await flag_store.extend_matching_flags(
             mongo,
             discord_ids=ticket.get("user_id"),
             player_tags=ticket.get("player_tags") or (),
@@ -561,6 +562,30 @@ async def reconcile_flag_identities(
         conflict_set = {
             "linked_accounts.flag_conflict": {"flag_ids": exc.flag_ids, "at": utcnow()},
         }
+    update: dict = {
+        "$set": {
+            "linked_accounts.flag_refresh_required": False,
+            "linked_accounts.flag_refreshed_at": utcnow(),
+            **conflict_set,
+        },
+    }
+    if not conflict_set:
+        # A prior reconcile may have left a conflict marker behind; this
+        # attempt resolved cleanly, so clear it instead of leaving the
+        # console's "Two flags overlap" notice stuck forever.
+        update["$unset"] = {"linked_accounts.flag_conflict": ""}
+    if extended:
+        update["$push"] = {
+            "account_identity_audit": {
+                "$each": [{
+                    "event": "linked_accounts_flags_refreshed",
+                    "at": utcnow(),
+                    "account_revision": snapshot.revision,
+                    "source": _source(source),
+                }],
+                "$slice": -store.MAX_AUDIT_ENTRIES,
+            },
+        }
     result = await store.update_one(
         mongo,
         {
@@ -570,24 +595,7 @@ async def reconcile_flag_identities(
             "linked_accounts.flag_refresh_required": True,
             "linked_accounts.flag_refresh_revision": snapshot.revision,
         },
-        {
-            "$set": {
-                "linked_accounts.flag_refresh_required": False,
-                "linked_accounts.flag_refreshed_at": utcnow(),
-                **conflict_set,
-            },
-            "$push": {
-                "account_identity_audit": {
-                    "$each": [{
-                        "event": "linked_accounts_flags_refreshed",
-                        "at": utcnow(),
-                        "account_revision": snapshot.revision,
-                        "source": _source(source),
-                    }],
-                    "$slice": -store.MAX_AUDIT_ENTRIES,
-                },
-            },
-        },
+        update,
     )
     if not getattr(result, "matched_count", 0):
         raise AccountSyncError("flag refresh lost an account snapshot race")

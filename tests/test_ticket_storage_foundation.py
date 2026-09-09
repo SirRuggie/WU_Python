@@ -559,6 +559,50 @@ def test_reconcile_flag_identities_records_overlap_and_clears_refresh_flag(
     assert linked["flag_conflict"]["flag_ids"] == ["flag_a", "flag_b"]
 
 
+def test_reconcile_flag_identities_clears_a_stale_conflict_on_next_success(
+    monkeypatch,
+):
+    """A recorded conflict must not survive a later reconcile that succeeds,
+    or the console's "Two flags overlap" notice (build_ticket_detail reads
+    linked_accounts.flag_conflict) would stick forever after a recruiter
+    fixes the overlap."""
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#NEW123"),))
+
+    async def conflict(*_args, **_kwargs):
+        raise flag_store.FlagIdentityConflict(["flag_a", "flag_b"])
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(flag_store, "extend_matching_flags", conflict)
+
+    asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_OPEN, now=NOW,
+    ))
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert durable["linked_accounts"]["flag_conflict"]["flag_ids"] == ["flag_a", "flag_b"]
+
+    # A later observed-identity change asks for another reconcile - e.g. the
+    # recruiter merged or removed one of the overlapping flags.
+    linked = durable["linked_accounts"]
+    linked["flag_refresh_required"] = True
+    linked["flag_refresh_revision"] = linked["revision"]
+
+    async def resolved(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(flag_store, "extend_matching_flags", resolved)
+
+    result = asyncio.run(account_sync.reconcile_flag_identities(
+        mongo, durable, source=account_sync.SOURCE_OPEN,
+    ))
+
+    assert "flag_conflict" not in result["linked_accounts"]
+    assert "flag_conflict" not in mongo.tickets.documents[ticket["_id"]]["linked_accounts"]
+
+
 def test_linked_account_discovery_expands_matching_flag_identities(monkeypatch):
     ticket = _ticket()
     flag = {
@@ -2256,7 +2300,8 @@ def test_overturn_deny_after_approve_removes_recorded_roles(monkeypatch):
     async def deny(_bot, _mongo, **kwargs):
         assert kwargs["override"]["by"] == 40
         assert kwargs["override"]["status"] == "approved"
-        assert kwargs["expected_rev"] == 4
+        assert "rev" not in kwargs["override"]
+        assert "expected_rev" not in kwargs
         assert kwargs["prior_effect_marker"] == "m"
         current = deepcopy(ticket)
         current["status"] = "denied"
@@ -2341,7 +2386,58 @@ def test_overturn_approve_after_deny_delegates_with_the_prior_decision(monkeypat
     assert result.won
     assert calls["override"]["by"] == 41
     assert calls["expected_status"] == "denied"
-    assert calls["expected_rev"] == 2
+    assert "rev" not in calls["override"]
+    assert "expected_rev" not in calls
+
+
+def test_overturn_ignores_an_unrelated_rev_bump_between_snapshot_and_transition(
+    monkeypatch,
+):
+    """Commit: overturn_ticket no longer freezes an expected_rev snapshot
+    before the account-sync round trip. An unrelated rev bump landing between
+    that read and the eventual CAS must not produce a false "Already approved
+    by" notice - the status filter is the only guard now."""
+    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "rev": 2,
+        "approved_by": 40,
+        "approved_at": NOW,
+        "resolution_effects": {"marker": "m", "complete": True},
+    })
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def effects(_bot, _mongo, doc):
+        # Effects delivery is exercised elsewhere; this test is only about
+        # the CAS the transition itself uses.
+        return store.Transition(store.WON, doc)
+
+    real_snapshot_from_ticket = account_sync.snapshot_from_ticket
+    bumped = {"done": False}
+
+    def bump_once_then_snapshot(ticket_doc):
+        if not bumped["done"]:
+            bumped["done"] = True
+            # An unrelated write (e.g. candidate activity) lands after
+            # overturn_ticket's initial read but before the CAS transition.
+            mongo.tickets.documents[ticket["_id"]]["rev"] += 3
+        return real_snapshot_from_ticket(ticket_doc)
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+    monkeypatch.setattr(account_sync, "snapshot_from_ticket", bump_once_then_snapshot)
+
+    result = asyncio.run(resolve.overturn_ticket(
+        object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
+        actor_name="Recruiter", to_status="denied", reason="Appeal reviewed",
+    ))
+
+    assert result.won
+    assert result.reason is None
+    assert mongo.tickets.documents[ticket["_id"]]["status"] == "denied"
+    assert mongo.tickets.documents[ticket["_id"]]["rev"] == 6
 
 
 def test_override_cas_requires_exact_completed_prior_effect_marker():
@@ -2386,90 +2482,6 @@ def test_override_cas_requires_exact_completed_prior_effect_marker():
     ))
     assert wrong_marker.outcome == store.LOST
     assert mongo.tickets.documents[terminal["_id"]]["status"] == "approved"
-
-
-@pytest.mark.parametrize(
-    "provenance_event",
-    ["legacy_ticket_imported", "legacy_location_replaced"],
-)
-def test_markerless_imported_terminal_offer_and_override_remain_available(
-    monkeypatch,
-    provenance_event,
-):
-    terminal = _ticket(
-        status="approved",
-        source={"guild_id": 1, "channel_id": 2},
-    )
-    terminal["audit"] = [{"event": provenance_event, "at": NOW, "rev": 0}]
-    mongo = _mongo(terminal)
-    state = {}
-    deleted = []
-    edits = []
-
-    async def recruiter(*_args, **_kwargs):
-        return True
-
-    async def insert(_mongo, document):
-        state.update(deepcopy(document))
-
-    async def get(_mongo, action_id):
-        assert action_id == state["_id"]
-        return deepcopy(state)
-
-    async def delete(_mongo, action_id):
-        deleted.append(action_id)
-
-    async def effects(_bot, _mongo, ticket):
-        return store.Transition(store.WON, ticket)
-
-    async def edit_initial_response(**kwargs):
-        edits.append(kwargs)
-
-    async def respond(*_args, **_kwargs):
-        raise AssertionError("the owner-bound override should edit its original response")
-
-    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
-    monkeypatch.setattr(resolve, "insert_state", insert)
-    monkeypatch.setattr(resolve, "get_state", get)
-    monkeypatch.setattr(resolve, "delete_state", delete)
-    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
-    ctx = SimpleNamespace(
-        member=SimpleNamespace(id=50),
-        user=SimpleNamespace(id=50, username="Lead"),
-        respond=respond,
-        interaction=SimpleNamespace(
-            id=444,
-            edit_initial_response=edit_initial_response,
-        ),
-    )
-
-    async def run():
-        _content, rows = await resolve.offer_override(
-            ctx,
-            mongo,
-            kind=resolve.KIND_DENY_CUSTOM,
-            current=terminal,
-            ticket_id=terminal["_id"],
-            channel_id=101,
-            user_id=30,
-            reason="Appeal reviewed",
-        )
-        assert rows
-        await resolve.ticket_override_handler(
-            ctx,
-            state["_id"],
-            mongo=mongo,
-            bot=SimpleNamespace(),
-        )
-
-    asyncio.run(run())
-
-    assert state["prior_effect_marker"] == ""
-    assert state["prior_effects_legacy_baseline"] is True
-    assert mongo.tickets.documents[terminal["_id"]]["status"] == "denied"
-    assert mongo.tickets.documents[terminal["_id"]]["rev"] == 1
-    assert deleted == ["444"]
-    assert edits[-1]["components"] == []
 
 
 def test_candidate_activity_is_idempotent_and_merges_normalized_tags():
@@ -2826,139 +2838,6 @@ def test_final_account_context_must_be_fresh_before_terminal_archive(
     else:
         assert all(step != "archive" for step, _details in order)
         assert result.outcome == store.EFFECT_FAILED
-
-
-def test_override_waits_for_prior_notice_before_sending_replacement(monkeypatch):
-    prior_marker = "ticket-resolution:ticket_101:1:approved"
-    ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
-    ticket.update({
-        "rev": 1,
-        "approved_by": 9,
-        "approved_at": NOW,
-        "resolution_effects": {
-            "version": 1,
-            "marker": prior_marker,
-            "kind": resolve.KIND_APPROVE,
-            "notification": {"state": "pending"},
-            "staff_context": {"state": "delivered"},
-            "archive": {"state": "pending"},
-            "hub": {"state": "pending"},
-            "complete": False,
-        },
-    })
-    mongo = _mongo(ticket)
-    rest = EffectRest()
-    bot = _effect_bot(rest)
-    state = {}
-    deleted = []
-    edits = []
-    notices = []
-    notification_started = asyncio.Event()
-    release_notification = asyncio.Event()
-
-    async def recruiter(*_args, **_kwargs):
-        return True
-
-    async def insert(_mongo, document):
-        state.update(deepcopy(document))
-
-    async def get(_mongo, action_id):
-        assert action_id == state["_id"]
-        return deepcopy(state)
-
-    async def delete(_mongo, action_id):
-        deleted.append(action_id)
-
-    async def notification(*_args, marker, **_kwargs):
-        if marker == prior_marker:
-            notification_started.set()
-            await release_notification.wait()
-        notices.append(marker)
-        rest.messages.append(SimpleNamespace(
-            content=f"-# {marker}",
-            components=[],
-            author=SimpleNamespace(id=7),
-        ))
-
-    async def refresh(*_args, **_kwargs):
-        return True
-
-    async def edit_initial_response(**kwargs):
-        edits.append(kwargs)
-
-    async def respond(*_args, **_kwargs):
-        raise AssertionError("the owner-bound override should edit its original response")
-
-    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
-    monkeypatch.setattr(resolve, "insert_state", insert)
-    monkeypatch.setattr(resolve, "get_state", get)
-    monkeypatch.setattr(resolve, "delete_state", delete)
-    monkeypatch.setattr(resolve, "run_side_effects", notification)
-    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
-    ctx = SimpleNamespace(
-        member=SimpleNamespace(id=50),
-        user=SimpleNamespace(id=50, username="Lead"),
-        respond=respond,
-        interaction=SimpleNamespace(
-            id=555,
-            edit_initial_response=edit_initial_response,
-        ),
-    )
-
-    async def run():
-        _content, rows = await resolve.offer_override(
-            ctx,
-            mongo,
-            kind=resolve.KIND_DENY_CUSTOM,
-            current=ticket,
-            ticket_id=ticket["_id"],
-            channel_id=101,
-            user_id=30,
-            reason="Appeal reviewed",
-        )
-        assert rows
-
-        first_worker = asyncio.create_task(
-            resolve.process_resolution_effects(bot, mongo, ticket)
-        )
-        await notification_started.wait()
-
-        await resolve.ticket_override_handler(
-            ctx,
-            state["_id"],
-            mongo=mongo,
-            bot=bot,
-        )
-        durable = mongo.tickets.documents[ticket["_id"]]
-        assert durable["status"] == "approved"
-        assert durable["resolution_effects"]["complete"] is False
-        assert notices == []
-        assert deleted == []
-        assert edits[-1]["content"] == resolve.OVERRIDE_EFFECT_PENDING_MESSAGE
-        assert edits[-1]["components"]
-
-        release_notification.set()
-        first_result = await first_worker
-        assert first_result.won
-        assert notices == [prior_marker]
-
-        await resolve.ticket_override_handler(
-            ctx,
-            state["_id"],
-            mongo=mongo,
-            bot=bot,
-        )
-
-    asyncio.run(run())
-
-    durable = mongo.tickets.documents[ticket["_id"]]
-    assert durable["status"] == "denied"
-    assert notices[0] == prior_marker
-    assert notices[1] == durable["resolution_effects"]["marker"]
-    assert notices[1].endswith(":denied")
-    assert notices.count(prior_marker) == 1
-    assert deleted == ["555"]
-    assert edits[-1]["components"] == []
 
 
 def test_checkpoint_failure_after_notification_does_not_report_false_failure(monkeypatch):
@@ -3497,65 +3376,6 @@ def test_denial_effect_failure_reports_durable_automatic_retry(monkeypatch, hand
     assert deleted == ["state"]
 
 
-def test_override_effect_failure_reports_durable_automatic_retry(monkeypatch):
-    ticket = _effect_ticket()
-    prior_effect_marker = ticket["resolution_effects"]["marker"]
-    ticket["rev"] = 3
-    ticket["resolution_effects"]["complete"] = True
-    data = {
-        "type": "ticket_v2_override",
-        "owner_id": 10,
-        "kind": resolve.KIND_APPROVE,
-        "ticket_id": ticket["_id"],
-        "prior_status": "denied",
-        "prior_rev": 3,
-        "prior_effect_marker": prior_effect_marker,
-        "prior_by": 9,
-        "prior_at": NOW,
-    }
-    edits = []
-
-    async def get(*_args, **_kwargs):
-        return data
-
-    async def recruiter(*_args, **_kwargs):
-        return True
-
-    async def find_current(*_args, **_kwargs):
-        return ticket
-
-    async def effects_pending(*_args, **_kwargs):
-        return store.Transition(
-            store.EFFECT_FAILED, ticket, "completion checkpoint is pending"
-        )
-
-    async def delete(*_args, **_kwargs):
-        return None
-
-    async def edit_initial_response(**kwargs):
-        edits.append(kwargs)
-
-    monkeypatch.setattr(resolve, "get_state", get)
-    monkeypatch.setattr(resolve, "delete_state", delete)
-    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
-    monkeypatch.setattr(resolve.store, "find_one", find_current)
-    monkeypatch.setattr(resolve, "approve_ticket", effects_pending)
-    ctx = SimpleNamespace(
-        user=SimpleNamespace(id=10, username="Recruiter"),
-        member=SimpleNamespace(id=10),
-        respond=None,
-        interaction=SimpleNamespace(edit_initial_response=edit_initial_response),
-    )
-    asyncio.run(resolve.ticket_override_handler(
-        ctx, "state", mongo=SimpleNamespace(), bot=SimpleNamespace()
-    ))
-
-    assert edits == [{
-        "content": resolve.RESOLUTION_EFFECT_RETRY_MESSAGE,
-        "components": [],
-    }]
-
-
 @pytest.mark.parametrize(
     "handler",
     [
@@ -3685,35 +3505,6 @@ def test_custom_denial_modal_defers_before_state_or_permission_work(monkeypatch)
     ]
 
 
-def test_override_state_is_owner_bound_before_permission_or_transition(monkeypatch):
-    responses = []
-
-    async def get(*_args):
-        return {
-            "type": "ticket_v2_override",
-            "owner_id": 10,
-            "kind": resolve.KIND_APPROVE,
-        }
-
-    async def forbidden(*_args, **_kwargs):
-        raise AssertionError("permission or transition ran after owner mismatch")
-
-    async def respond(content, **kwargs):
-        responses.append((content, kwargs))
-
-    monkeypatch.setattr(resolve, "get_state", get)
-    monkeypatch.setattr(resolve.perms, "is_recruiter", forbidden)
-    monkeypatch.setattr(resolve, "approve_ticket", forbidden)
-    ctx = SimpleNamespace(
-        user=SimpleNamespace(id=11), member=SimpleNamespace(id=11), respond=respond,
-        interaction=SimpleNamespace(edit_initial_response=forbidden),
-    )
-    asyncio.run(resolve.ticket_override_handler(
-        ctx, "state", mongo=SimpleNamespace(), bot=SimpleNamespace()
-    ))
-    assert responses == [("This override belongs to another recruiter.", {"ephemeral": True})]
-
-
 def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
     monkeypatch,
 ):
@@ -3732,9 +3523,6 @@ def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
     async def approve(*_args, **_kwargs):
         return store.Transition(store.LOST, deepcopy(ticket))
 
-    async def offer_override(*_args, **_kwargs):
-        raise AssertionError("the slash command must not offer an overturn")
-
     async def defer(**_kwargs):
         return None
 
@@ -3744,7 +3532,6 @@ def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
     monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
     monkeypatch.setattr(close.store, "find_by_location", find_by_location)
     monkeypatch.setattr(close.resolve, "approve_ticket", approve)
-    monkeypatch.setattr(close.resolve, "offer_override", offer_override)
 
     ctx = SimpleNamespace(
         member=SimpleNamespace(id=1), user=SimpleNamespace(id=1, username="Recruiter"),

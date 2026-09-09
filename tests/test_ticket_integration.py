@@ -110,7 +110,6 @@ def test_ticket_package_registers_console_and_creation_actions():
         "ticket_v2_console_approve",
         "ticket_v2_console_deny",
         "ticket_v2_console_deny_submit",
-        "ticket_v2_override",
     }
 
     assert required <= set(components.registered_functions)

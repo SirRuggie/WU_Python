@@ -1255,16 +1255,18 @@ async def overturn_ticket(
         return store.Transition(store.BLOCKED, current, OVERRIDE_EFFECT_PENDING_MESSAGE)
 
     prior = _prior(current)
-    current_rev = max(0, int(current.get("rev") or 0))
+    # No expected_rev snapshot here: the ticket is re-fetched inside
+    # store.transition() right before the CAS, after the account-sync
+    # network round-trip, so a snapshot taken now would be stale. The
+    # status filter (expected_status/override["status"]) is the only guard;
+    # store.transition() reads the current revision itself.
     common = dict(
         ticket_id=ticket_id,
         member=member,
         actor_name=actor_name,
         expected_status=current.get("status"),
-        expected_rev=current_rev,
         override={
             "status": current.get("status"),
-            "rev": current_rev,
             "by": prior["by"],
             "by_name": None,
             "at": prior["at"],
@@ -1350,199 +1352,3 @@ def lost_message(kind: str, current: dict, action_id: str | None) -> tuple[str, 
             f"leader stepping in — go ahead and it'll be recorded as your decision."
         )
     return content, _override_rows(kind, action_id)
-
-
-async def offer_override(
-        ctx,
-        mongo: MongoClient,
-        *,
-        kind: str,
-        current: dict,
-        ticket_id,
-        channel_id,
-        user_id,
-        reason: str | None = None,
-) -> tuple[str, list]:
-    """Stash what an override would need, and build the panel offering it.
-
-    Returns (content, components); the caller delivers them, because the deny
-    handlers respond through edit_initial_response and approve responds directly.
-    """
-    if not await perms.is_recruiter(ctx.member, mongo):
-        return lost_message(kind, current, None)
-    target = "approved" if kind == KIND_APPROVE else "denied"
-    if current.get("status") == target:
-        return lost_message(kind, current, None)
-
-    prior_effect_marker = str(
-        ((current.get("resolution_effects") or {}).get("marker") or "")
-    )
-    prior_effects_legacy_baseline = (
-        not prior_effect_marker
-        and store.is_markerless_legacy_terminal(current)
-    )
-    if not prior_effect_marker and not prior_effects_legacy_baseline:
-        return OVERRIDE_EFFECT_PENDING_MESSAGE, []
-
-    prior = _prior(current)
-    action_id = str(ctx.interaction.id)
-    await insert_state(mongo, {
-        "_id": action_id,
-        "type": "ticket_v2_override",
-        "kind": kind,
-        "ticket_id": ticket_id,
-        "channel_id": channel_id,
-        "user_id": user_id,
-        "reason": reason,
-        "prior_status": current.get("status"),
-        "prior_rev": int(current.get("rev") or 0),
-        "prior_effect_marker": prior_effect_marker,
-        "prior_effects_legacy_baseline": prior_effects_legacy_baseline,
-        "prior_by": prior["by"],
-        "prior_at": prior["at"],
-        "owner_id": int(ctx.user.id),
-    })
-    return lost_message(kind, current, action_id)
-
-
-@register_action("ticket_v2_override", no_return=True, requires_state=True)
-@lightbulb.di.with_di
-async def ticket_override_handler(
-        ctx: lightbulb.components.MenuContext,
-        action_id: str,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-        **kwargs,
-):
-    """Overturn a resolution someone else already made.
-
-    Re-checks the recruiter role at click time. The dispatcher enforces nothing -
-    `user_only` is stored and never read - so a button cannot inherit trust from
-    the interaction that rendered it, even an ephemeral one.
-    """
-    data = await get_state(mongo, action_id)
-    if not data or data.get("type") != "ticket_v2_override":
-        await ctx.interaction.edit_initial_response(
-            content="That override has expired. Run the command again.", components=[]
-        )
-        return
-
-    if int(data.get("owner_id") or 0) != int(ctx.user.id):
-        await ctx.respond("This override belongs to another recruiter.", ephemeral=True)
-        return
-
-    if not await perms.is_recruiter(ctx.member, mongo):
-        await ctx.interaction.edit_initial_response(
-            content="Only recruiters can overturn a resolution.", components=[]
-        )
-        return
-
-    kind = data["kind"]
-    prior_status = str(data.get("prior_status") or "")
-    prior_effect_marker = str(data.get("prior_effect_marker") or "")
-    prior_effects_legacy_baseline = bool(
-        data.get("prior_effects_legacy_baseline")
-    )
-    prior_rev = max(0, int(data.get("prior_rev") or 0))
-    current = await store.find_one(
-        mongo,
-        {"_id": data.get("ticket_id"), **store.RUNTIME_FILTER},
-    )
-    if current is None:
-        await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(
-            content=f"The ticket record `{data.get('ticket_id')}` has gone. Nothing was changed.",
-            components=[],
-        )
-        return
-    effects = current.get("resolution_effects") or {}
-    current_rev = max(0, int(current.get("rev") or 0))
-    exact_legacy_baseline = bool(
-        prior_effects_legacy_baseline
-        and store.is_markerless_legacy_terminal(current)
-    )
-    if (
-        current.get("status") != prior_status
-        or current_rev < prior_rev
-        or (
-            not exact_legacy_baseline
-            and (
-                not prior_effect_marker
-                or str(effects.get("marker") or "") != prior_effect_marker
-            )
-        )
-    ):
-        await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(
-            content="The ticket changed again before your override landed. Nothing was changed.",
-            components=[],
-        )
-        return
-    if not exact_legacy_baseline and effects.get("complete") is not True:
-        await ctx.interaction.edit_initial_response(
-            content=OVERRIDE_EFFECT_PENDING_MESSAGE,
-            components=_override_rows(kind, action_id),
-        )
-        return
-
-    override = {
-        "status": prior_status,
-        "rev": current_rev,
-        "by": data.get("prior_by"),
-        "by_name": None,
-        "at": data.get("prior_at"),
-    }
-    action = approve_ticket if kind == KIND_APPROVE else deny_ticket
-    action_kwargs = {
-        "ticket_id": data["ticket_id"],
-        "member": ctx.member,
-        "actor_name": ctx.user.username,
-        "expected_status": prior_status,
-        "expected_rev": current_rev,
-        "override": override,
-        "prior_effect_marker": prior_effect_marker,
-        "prior_effects_legacy_baseline": exact_legacy_baseline,
-    }
-    if kind != KIND_APPROVE:
-        action_kwargs.update({"kind": kind, "reason": data.get("reason")})
-    result = await action(bot, mongo, **action_kwargs)
-
-    if result.outcome == store.MISSING:
-        await ctx.interaction.edit_initial_response(
-            content=f"The ticket record `{data['ticket_id']}` has gone. Nothing was changed.",
-            components=[],
-        )
-        return
-    if result.outcome == store.LOST:
-        await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(
-            content="The ticket changed again before your override landed. Nothing was changed.",
-            components=[],
-        )
-        return
-    if result.outcome in {store.UNAUTHORIZED, store.BLOCKED}:
-        await delete_state(mongo, action_id)
-        message = (
-            "Approval blocked: this applicant is blacklisted."
-            if result.blocker else result.reason or "This action is not allowed."
-        )
-        await ctx.interaction.edit_initial_response(content=message, components=[])
-        return
-    if result.outcome == store.EFFECT_FAILED:
-        await delete_state(mongo, action_id)
-        await ctx.interaction.edit_initial_response(
-            content=RESOLUTION_EFFECT_RETRY_MESSAGE,
-            components=[],
-        )
-        return
-    await delete_state(mongo, action_id)
-
-    verb = "Approved" if kind == KIND_APPROVE else "Denied"
-    who = f"<@{data['prior_by']}>" if data.get("prior_by") else "the previous decision"
-    await ctx.interaction.edit_initial_response(
-        content=(
-            f"{verb}. That overturns {who}'s call from {ts(data.get('prior_at'))}, "
-            f"recorded against your name."
-        ),
-        components=[],
-    )

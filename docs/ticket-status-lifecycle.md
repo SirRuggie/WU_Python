@@ -142,9 +142,12 @@ always returns both terminal threads to locked and archived. A visible
 and the remaining effects must be allowed to recover; it is not a failed or
 rolled-back decision.
 
-Every winning transition appends a `status_transition` audit entry with the
-actor, old and new status, revisions, effect marker, linked-account snapshot,
-and override provenance when applicable.
+Every winning transition appends an audit entry recording the actor, old and
+new status, revisions, effect marker, and linked-account snapshot: event
+`status_transition` for a first decision, or `overturn` (with the prior
+decision's own identity under `overrode`) when it overturns one. Delivery,
+staff-context, archive, and hub-refresh checkpoints each add their own event
+as the resolution effects complete.
 
 ## Claim and close behavior
 
