@@ -13,10 +13,16 @@ _TAG_RE = re.compile(r"^[A-Z0-9]{2,15}$")
 
 
 def normalize_tag(tag: str) -> str:
-    """Return a Clash tag without its leading hash and in uppercase."""
+    """Return a Clash tag without leading hashes or internal whitespace, in uppercase.
 
-    normalized = str(tag).strip().upper()
-    return normalized[1:] if normalized.startswith("#") else normalized
+    Leniently accepts what `main`'s `/fwa chocolate` accepts: doubled `#`
+    (``##ABC123``) and internal spaces (``# ABC 123``), not just a single
+    clean leading hash.
+    """
+
+    normalized = str(tag).strip().lstrip("#")
+    normalized = re.sub(r"\s+", "", normalized)
+    return normalized.upper()
 
 
 def is_valid_tag(tag: str) -> bool:

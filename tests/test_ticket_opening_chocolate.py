@@ -163,6 +163,15 @@ def test_shared_chocolate_url_is_used_for_every_player_link():
     )
 
 
+@pytest.mark.parametrize("tag", ("##abc123", "# abc 123", "##  a b c 1 2 3"))
+def test_chocolate_url_tolerates_doubled_hash_and_internal_spaces(tag):
+    """`main`'s `/fwa chocolate` accepts a doubled leading `#` and internal
+    spaces; the shared parser must stay just as lenient."""
+    assert chocolate_url(tag) == (
+        "https://cc.fwafarm.com/cc_n/member.php?tag=ABC123"
+    )
+
+
 @pytest.mark.parametrize("tag", ("#ABC?123", "#ABC&123", "#ABC#123"))
 def test_chocolate_url_rejects_punctuation_that_could_change_the_query(tag):
     assert not is_valid_tag(tag)
