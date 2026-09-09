@@ -2908,10 +2908,10 @@ def test_deleted_hub_message_is_recreated_and_new_id_is_saved(monkeypatch):
 
     class Collection:
         def __init__(self):
-            self.update = None
+            self.updates = []
 
         async def update_one(self, query, update, **_kwargs):
-            self.update = (query, update)
+            self.updates.append((query, update))
 
     async def payload(_mongo):
         return []
@@ -2922,8 +2922,12 @@ def test_deleted_hub_message_is_recreated_and_new_id_is_saved(monkeypatch):
     async def _empty_messages():
         return []
 
+    async def signature(_mongo):
+        return "sig"
+
     monkeypatch.setattr(console.hikari, "NotFoundError", MissingMessage)
     monkeypatch.setattr(console, "_hub_payload", payload)
+    monkeypatch.setattr(console, "_chart_signature", signature)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     collection = Collection()
     mongo = SimpleNamespace(ticket_setup=collection)
@@ -2938,7 +2942,14 @@ def test_deleted_hub_message_is_recreated_and_new_id_is_saved(monkeypatch):
 
     assert message_id == 999
     assert (rest.edits, rest.creates) == (1, 1)
-    assert collection.update[1]["$set"]["message_id"] == 999
+    # The message binding is written unconditionally; the settle that clears
+    # force_pending is a separate, revision-guarded write.
+    sets = [update["$set"] for _query, update in collection.updates]
+    assert any(fields.get("message_id") == 999 for fields in sets)
+    settle_query, settle_update = collection.updates[-1]
+    assert "desired_revision" in settle_query
+    assert settle_update["$set"]["force_pending"] is False
+    assert settle_update["$set"]["chart_signature"] == "sig"
 
 
 def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
@@ -2988,10 +2999,10 @@ def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
 
     class Collection:
         def __init__(self):
-            self.update = None
+            self.updates = []
 
         async def update_one(self, query, update, **_kwargs):
-            self.update = (query, update)
+            self.updates.append((query, update))
 
     async def payload(_mongo):
         return ["fresh payload"]
@@ -2999,7 +3010,11 @@ def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
     async def valid(*_args, **_kwargs):
         return object()
 
+    async def signature(_mongo):
+        return "sig"
+
     monkeypatch.setattr(console, "_hub_payload", payload)
+    monkeypatch.setattr(console, "_chart_signature", signature)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     rest = Rest()
     collection = Collection()
@@ -3011,7 +3026,11 @@ def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
     assert message_id == 777
     assert rest.creates == 0
     assert rest.edits[0]["message"] == 777
-    assert collection.update[1]["$set"]["message_id"] == 777
+    sets = [update["$set"] for _query, update in collection.updates]
+    assert any(fields.get("message_id") == 777 for fields in sets)
+    settle_query, settle_update = collection.updates[-1]
+    assert "desired_revision" in settle_query
+    assert settle_update["$set"]["force_pending"] is False
 
 
 def test_orphaned_hub_scan_is_bounded_to_the_newest_200_messages():

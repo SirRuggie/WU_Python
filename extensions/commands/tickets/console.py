@@ -956,9 +956,23 @@ async def _publish_hub(
             # signature here means there is nothing new to draw. Skip the
             # Pillow render and Discord PNG re-upload.
             return message_id
-    settle_fields: dict = {"force_pending": False}
-    if signature is not None:
-        settle_fields["chart_signature"] = signature
+    # Always store the signature of what is actually drawn (the forced path
+    # used to leave it unwritten), so a later non-forced publish compares
+    # against the right baseline instead of stale or missing data.
+    if signature is None:
+        signature = await _chart_signature(mongo)
+    settle_fields: dict = {"force_pending": False, "chart_signature": signature}
+
+    async def _settle() -> None:
+        # Conditioned on the revision read at entry: if a ticket change
+        # landed mid-publish and bumped desired_revision (re-raising
+        # force_pending), that force must survive this settle so the next
+        # drain redraws instead of silently clearing the flag on data this
+        # publish never saw. Shared by the edit, orphan and create paths.
+        await mongo.ticket_setup.update_one(
+            {"_id": HUB_STATE_ID, "desired_revision": entry_revision},
+            {"$set": settle_fields},
+        )
 
     components = await _hub_payload(mongo)
     if message_id:
@@ -971,26 +985,7 @@ async def _publish_hub(
                 role_mentions=False,
                 mentions_everyone=False,
             )
-            edit_settle_fields = settle_fields
-            if signature is None:
-                # The forced (full-redraw) path used to leave
-                # chart_signature unwritten -- always store the signature
-                # of what was actually drawn here, so a later non-forced
-                # publish compares against the right baseline instead of
-                # stale or missing data.
-                edit_settle_fields = {
-                    **settle_fields,
-                    "chart_signature": await _chart_signature(mongo),
-                }
-            # Conditioned on the revision read at entry: if a ticket change
-            # landed mid-publish and bumped desired_revision (re-raising
-            # force_pending), that force must survive this settle so the
-            # next drain redraws instead of silently clearing the flag on
-            # data this publish never saw.
-            await mongo.ticket_setup.update_one(
-                {"_id": HUB_STATE_ID, "desired_revision": entry_revision},
-                {"$set": edit_settle_fields},
-            )
+            await _settle()
             return message_id
         except hikari.NotFoundError:
             # The channel may still exist while the bot-owned hub message was
@@ -1012,14 +1007,17 @@ async def _publish_hub(
             orphan = None
         else:
             message_id = int(orphan.id)
+            # The message binding must never be conditional (a lost write
+            # would orphan the message and duplicate the hub); only the
+            # settle is revision-guarded.
             await mongo.ticket_setup.update_one(
                 {"_id": HUB_STATE_ID},
                 {"$set": {
                     "message_id": message_id,
                     "message_recovered_at": utcnow(),
-                    **settle_fields,
                 }},
             )
+            await _settle()
             return message_id
 
     message = await bot.rest.create_message(
@@ -1036,9 +1034,9 @@ async def _publish_hub(
         {"$set": {
             "message_id": message_id,
             "message_created_at": utcnow(),
-            **settle_fields,
         }},
     )
+    await _settle()
     return message_id
 
 
