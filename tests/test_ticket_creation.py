@@ -1611,7 +1611,7 @@ def test_live_creation_queue_failure_resumes_without_duplicate_resources(monkeyp
         committed["doc"] = dict(document)
         return dict(document)
 
-    async def opening_messages(_rest, ticket):
+    async def opening_messages(_rest, ticket, **_kwargs):
         calls["opening"] += 1
         messages.update({
             f"ticket-setup:{ticket['location']['id']}:candidate",

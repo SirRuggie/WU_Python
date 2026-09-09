@@ -1557,7 +1557,8 @@ async def _finish_committed_creation(
     try:
         if reconcile_pair:
             await reconcile_ticket_pair(bot.rest, ticket)
-        me = bot.get_me()
+        get_me = getattr(bot, "get_me", None)
+        me = get_me() if callable(get_me) else None
         await _deliver_opening_messages(
             bot.rest, ticket, bot_id=int(me.id) if me is not None else None
         )
