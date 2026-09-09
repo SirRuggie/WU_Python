@@ -12,11 +12,8 @@ import lightbulb
 from extensions.commands.clan import loader, clan
 from extensions.autocomplete import clans
 from utils.mongo import MongoClient
-from utils.cloudinary_client import CloudinaryClient
-from utils.text_utils import sanitize_filename
+from utils.media_store import CLAN_BANNER, CLAN_LOGO, MediaStore, MediaStoreError, clan_folder
 
-
-SERVER_FAMILY = "Warriors_United"
 
 @clan.register()
 class UploadImages(
@@ -51,7 +48,7 @@ class UploadImages(
             self,
             ctx: lightbulb.Context,
             mongo: MongoClient = lightbulb.di.INJECTED,
-            cloudinary_client: CloudinaryClient = lightbulb.di.INJECTED,
+            media: MediaStore = lightbulb.di.INJECTED,
     ) -> None:
         # Defer the response since file uploads might take a few seconds
         # This prevents Discord from timing out while we process the images
@@ -111,10 +108,6 @@ class UploadImages(
                 )
                 return
 
-        # Get the sanitized clan name for use in filenames
-        # This converts "Arcane Angels" to "Arcane_Angels", removing special characters
-        clean_clan_name = sanitize_filename(clan_data['name'])
-
         # Prepare variables to track what we're updating
         update_data = {}  # Will store the URLs to save in the database
         upload_summary = []  # Will store success messages for user feedback
@@ -126,21 +119,15 @@ class UploadImages(
                 # This downloads the file from Discord's servers
                 logo_data = await self.logo.read()
 
-                # Create a descriptive public ID using the clan name
-                # For "Arcane Angels", this becomes "Arcane_Angels"
-                logo_public_id = clean_clan_name
-
-                # Upload to Cloudinary with proper organization
-                # This will create: clan_logos/Warriors_United/Arcane_Angels
-                logo_result = await cloudinary_client.upload_image_from_bytes(
+                # Upload to R2 with proper organization
+                # This will create: clans/Arcane_Angels/logo.<hash>.png
+                # The public URL the store returns is what gets saved in
+                # your database
+                update_data["logo"] = await media.upload_bytes(
                     logo_data,
-                    folder=f"clan_logos/{SERVER_FAMILY}",  # Warriors_United subfolder
-                    public_id=logo_public_id  # Sets the filename
+                    folder=clan_folder(clan_data['name']),  # Per-clan subfolder
+                    name=CLAN_LOGO  # Sets the filename
                 )
-
-                # Store the secure URL that Cloudinary returns
-                # This URL will be saved in your database
-                update_data["logo"] = logo_result["secure_url"]
 
                 # Create a user-friendly summary of what was uploaded
                 file_size_kb = self.logo.size // 1024  # Convert bytes to KB
@@ -153,20 +140,14 @@ class UploadImages(
                 # Read the banner attachment data
                 banner_data = await self.banner.read()
 
-                # Create a descriptive public ID with _Banner suffix
-                # For "Arcane Angels", this becomes "Arcane_Angels_Banner"
-                banner_public_id = f"{clean_clan_name}_Banner"
-
-                # Upload to Cloudinary with proper organization
-                # This will create: clan_banners/Warriors_United/Arcane_Angels_Banner
-                banner_result = await cloudinary_client.upload_image_from_bytes(
-                    banner_data,
-                    folder=f"clan_banners/{SERVER_FAMILY}",  # Warriors_United subfolder
-                    public_id=banner_public_id
-                )
-
+                # Upload to R2 with proper organization
+                # This will create: clans/Arcane_Angels/banner.<hash>.png
                 # Store the URL for database update
-                update_data["banner"] = banner_result["secure_url"]
+                update_data["banner"] = await media.upload_bytes(
+                    banner_data,
+                    folder=clan_folder(clan_data['name']),  # Per-clan subfolder
+                    name=CLAN_BANNER
+                )
 
                 # Add to the summary
                 file_size_kb = self.banner.size // 1024
@@ -181,6 +162,17 @@ class UploadImages(
                     {"tag": clan_tag},
                     {"$set": update_data}  # $set only updates specified fields
                 )
+
+                # Keys are content-addressed, so a replaced image leaves its
+                # old object behind. Tidy it; a failure here is logged, not
+                # shown, because the upload itself already succeeded.
+                for field, new_url in update_data.items():
+                    old_url = clan_data.get(field)
+                    if old_url and old_url != new_url:
+                        try:
+                            await media.delete_url(old_url)
+                        except MediaStoreError as exc:
+                            print(f"[clan upload] could not delete old {field} for {clan_tag}: {exc}")
 
             # Create a visually appealing success embed
             embed = hikari.Embed(
@@ -206,10 +198,7 @@ class UploadImages(
                 embed.set_image(update_data["banner"])
 
             # Add informative footer about where images are stored
-            embed.set_footer(
-                text="Images are stored securely on Cloudinary CDN",
-                icon="https://res.cloudinary.com/demo/image/upload/cloudinary_icon.png"
-            )
+            embed.set_footer(text="Images are stored on Cloudflare R2")
 
             # Send the success response
             await ctx.respond(embed=embed, ephemeral=True)
@@ -249,15 +238,12 @@ class UploadImages(
                 inline=False
             )
 
-            # If it's a Cloudinary-specific error, add more targeted advice
-            if "cloudinary" in error_message.lower():
+            # A storage-side failure names its own cause (not configured, not
+            # an image, R2 rejected it); surface that instead of guessing.
+            if isinstance(e, MediaStoreError):
                 error_embed.add_field(
-                    name="☁️ Cloudinary Issues",
-                    value=(
-                        "• **API limits:** Check if you've hit upload limits\n"
-                        "• **Invalid characters:** Try renaming your file\n"
-                        "• **Connection:** Cloudinary might be temporarily unavailable"
-                    ),
+                    name="☁️ Storage",
+                    value=str(e)[:500],
                     inline=False
                 )
 

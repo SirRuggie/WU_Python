@@ -30,6 +30,32 @@ def _field_after_bold(soup, label: str):
     return None
 
 
+def _normalize(text) -> str:
+    """Whitespace-collapsed, case-folded text for name comparisons."""
+    return re.sub(r"\s+", " ", (text or "")).strip().lower()
+
+
+def parse_active_fwa(html: str) -> bool | None:
+    """Read the standalone `<b>Active FWA</b>: Yes/No` field.
+
+    Deliberately independent of the Win Calculator block: this is used to
+    check the OPPONENT's page, which may have no winner-box yet (no war
+    detected for them) while still carrying this field. Returns None if the
+    label itself is missing.
+
+    points.fwafarm.com answers HTTP 200 with the literal body "Clan not
+    found." for a tag it does not recognize - that is not FWA, full stop, so
+    it is treated as False rather than falling through to "label missing".
+    """
+    if (html or "").strip().lower() == "clan not found.":
+        return False
+    soup = BeautifulSoup(html, "html.parser")
+    active_raw = _field_after_bold(soup, "Active FWA")
+    if active_raw is None:
+        return None
+    return active_raw.strip().lower() == "yes"
+
+
 def parse_clan_points(html: str, our_tag: str) -> dict:
     """Extract the Win Calculator fields for the clan we scraped for.
 
@@ -69,13 +95,46 @@ def parse_clan_points(html: str, our_tag: str) -> dict:
     m = re.search(r"Sync #(\d+)", box_text)
     sync_number = int(m.group(1)) if m else None
 
-    m = re.search(r"vs\.\s*(.+?)\s*\(\s*" + re.escape(opponent_tag), box_text, re.IGNORECASE)
-    opponent_name = m.group(1).strip() if m else None
+    # The "A (tagA) vs. B (tagB)" line is not always ours-first (the opponent
+    # can be listed first on the points site), so names are parsed out of the
+    # raw HTML segment rather than assumed to be in a fixed order. That
+    # segment sits between the first "<br><br>" and the second, and is
+    # identifiable - once the box is split on <br> tags - as the segment
+    # ending with "):" . Within it, each clan's name is the text immediately
+    # preceding " (<a href=".../clan?tag=TAG">": the first clan's name is
+    # measured from the segment start, the second's from just after "vs.".
+    box_html = box.decode_contents()
+    br_segments = re.split(r"<br\s*/?>", box_html, flags=re.IGNORECASE)
+    vs_segment = next((s for s in br_segments if s.strip().endswith("):")), None)
+
+    def _name_before_tag_link(fragment: str, tag: str, start: int = 0):
+        found = re.search(
+            r"([^(]*)\(\s*<a\b[^>]*\bhref=\"[^\"]*clan\?tag=" + re.escape(tag) + r"\b",
+            fragment[start:],
+            re.IGNORECASE,
+        )
+        return found.group(1).strip() if found else None
+
+    name_map = {}
+    if vs_segment is not None and len(box_tags) >= 2:
+        name_map[box_tags[0]] = _name_before_tag_link(vs_segment, box_tags[0])
+        vs_kw = re.search(r"vs\.", vs_segment, re.IGNORECASE)
+        vs_pos = vs_kw.end() if vs_kw else 0
+        name_map[box_tags[1]] = _name_before_tag_link(vs_segment, box_tags[1], vs_pos)
+
+    opponent_name = name_map.get(opponent_tag)
+    our_name_in_box = name_map.get(our_tag)
 
     # Verdict = the last line of the box (after the final <br>), tags stripped.
     segments = re.split(r"<br\s*/?>", box.decode_contents(), flags=re.IGNORECASE)
     verdict_html = segments[-1] if segments else box.decode_contents()
-    raw_verdict = BeautifulSoup(verdict_html, "html.parser").get_text().strip()
+    verdict_soup = BeautifulSoup(verdict_html, "html.parser")
+    raw_verdict = verdict_soup.get_text().strip()
+
+    # The predicted winner is the clan bolded in that last segment, e.g.
+    # "<b>Edrag Rush</b> should win by points (10 > 9)".
+    winner_tag = verdict_soup.find("b")
+    predicted_winner_name = winner_tag.get_text(strip=True) if winner_tag else None
 
     point_balance = None
     pb = _field_after_bold(soup, "Point Balance")
@@ -88,15 +147,36 @@ def parse_clan_points(html: str, our_tag: str) -> dict:
     active_raw = _field_after_bold(soup, "Active FWA")
     active_fwa = (active_raw or "").strip().lower() == "yes"
 
+    clan_name = _field_after_bold(soup, "Clan Name")
+
+    # "win"/"lose" from OUR side: which name the verdict bolded. Neither match
+    # (unreadable name, or a draw-shaped verdict) falls back to "unknown"
+    # rather than guessing. Both sides of the comparison must be non-empty -
+    # an empty `<b></b>` (predicted_winner_name == "") and a missing Clan Name
+    # field (clan_name is None, normalizing to "") would otherwise compare
+    # equal as two blank strings and produce a false "win".
+    predicted_winner_norm = _normalize(predicted_winner_name)
+    clan_name_norm = _normalize(clan_name)
+    opponent_name_norm = _normalize(opponent_name)
+    if predicted_winner_norm and clan_name_norm and predicted_winner_norm == clan_name_norm:
+        our_outcome = "win"
+    elif predicted_winner_norm and opponent_name_norm and predicted_winner_norm == opponent_name_norm:
+        our_outcome = "lose"
+    else:
+        our_outcome = "unknown"
+
     return {
-        "clan_name": _field_after_bold(soup, "Clan Name"),
+        "clan_name": clan_name,
         "point_balance": point_balance,
         "active_fwa": active_fwa,
         "war_number": war_number,
         "sync_number": sync_number,
         "opponent_tag": opponent_tag,
         "opponent_name": opponent_name,
+        "our_name_in_box": our_name_in_box,
         "raw_verdict": raw_verdict,
+        "predicted_winner_name": predicted_winner_name,
+        "our_outcome": our_outcome,
         "last_war_state": _field_after_bold(soup, "Last Known War State"),
         "clan_tags_in_box": box_tags,
     }

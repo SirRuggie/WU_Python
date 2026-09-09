@@ -49,7 +49,7 @@ class RecruitAboutUs(
             Media(
                 items=[
                     MediaItem(
-                        media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753167826/misc_images/Warriors_United.gif"
+                        media="assets/branding/banners/Warriors_United.gif"
                     )
                 ]
             ),

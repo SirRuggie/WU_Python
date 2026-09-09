@@ -105,6 +105,20 @@ class FakeScheduler:
         self.shutdown_calls.append(wait)
 
 
+def test_snapshot_link_lookup_uses_shared_authenticated_resolver(monkeypatch):
+    calls = []
+
+    async def resolved(tags):
+        calls.append(tags)
+        return {"#ABC": "123456789012345678"}
+
+    monkeypatch.setattr(lazy_cwl, "resolve_discord_ids", resolved)
+    result = asyncio.run(lazy_cwl.get_discord_ids(["#ABC", "#MISSING"]))
+
+    assert calls == [["#ABC", "#MISSING"]]
+    assert result == {"#ABC": "123456789012345678"}
+
+
 def test_next_run_preserves_future_cadence_and_skips_missed_intervals():
     anchor = datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc)
     snapshot = {

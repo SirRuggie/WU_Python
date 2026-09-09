@@ -2,17 +2,18 @@
 APScheduler
 
 # Main Discord API wrapper for bots.
-# PINNED DELIBERATELY. These two move together: hikari-lightbulb 3.0.3 declares
-# `hikari~=2.3.1` (>=2.3.1,<2.4.0), so 2.3.5 is the highest hikari it accepts -
-# which is why the bot logs "consider upgrading to 2.5.0" on every boot and why
-# the 2.4.1 upgrade in 397e3ba did not survive: leaving these unpinned let a
-# later `pip install -r requirements.txt` re-resolve straight back down to 2.3.5.
-# Upgrading is one coupled move (hikari 2.5.0 + hikari-lightbulb 3.2.5), never
-# one package alone. See docs/hikari-lightbulb-versions.md.
-hikari==2.3.5
+# PINNED DELIBERATELY. These two move together: hikari-lightbulb 3.2.6 declares
+# `hikari~=2.6.0` (>=2.6.0,<2.7.0), so upgrading is one coupled move (hikari
+# 2.6.0 + hikari-lightbulb 3.2.6), never one package alone - leaving these
+# unpinned lets a later `pip install -r requirements.txt` re-resolve to
+# whatever lightbulb's latest release demands. 2.6.0 is the first hikari that
+# stops uploading URL media as attachments (Components V2 double-fetch), which
+# is why the startup shim in utils/hikari_shims.py was removed on 2026-09-08
+# when this pair was upgraded. See docs/hikari-lightbulb-versions.md.
+hikari==2.6.0
 
 # Command framework for hikari (handles slash and prefix commands)
-hikari-lightbulb==3.0.3
+hikari-lightbulb==3.2.6
 
 # Loads .env file contents into environment variables
 python-dotenv
@@ -59,7 +60,8 @@ pendulum
 coc.py==3.10.0
 
 # Image processing library (resize, convert, etc.)
-Pillow
+# Pillow 12 or newer; tests/test_card_board.py and tests/test_card_scan.py use Image.get_flattened_data (docs/editing-this-repo.md), and a fresh venv must not land on 11.
+Pillow>=12
 
 # HTTP library for sending requests (e.g. API calls)
 requests
@@ -67,8 +69,9 @@ requests
 # Async version of requests (works with async code)
 aiohttp
 
-# Uploads and manages media on Cloudinary
-cloudinary
+# S3-compatible client for Cloudflare R2, where uploaded clan logos, banners
+# and FWA base images live (utils/media_store.py, docs/media-hosting.md).
+boto3
 
 # Async Reddit API wrapper (used for bots interacting with Reddit)
 asyncpraw

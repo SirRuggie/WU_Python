@@ -22,8 +22,23 @@ before changing durable documentation.
   `GatewayBot.__init__` silently takes over `logging` and `warnings.filters`.
   Any warning filter installed before it is dead. Cost three attempts.
 - [lightbulb-context-api.md](lightbulb-context-api.md) — what exists on
-  `Context` in 3.0.3, what does not, and the usage-count rule that came out of
-  getting this wrong.
+  `Context` in the pinned lightbulb (3.2.6), what does not, and the
+  usage-count rule that came out of getting this wrong.
+
+## Legal
+
+- [terms-of-service.md](terms-of-service.md) — WU Wizard's Terms of Service,
+  published for Discord app verification.
+- [privacy-policy.md](privacy-policy.md) — WU Wizard's Privacy Policy,
+  published for Discord app verification.
+
+## Working with Claude
+
+- [agent-orchestration.md](agent-orchestration.md) — the main session
+  orchestrates and delegates to the agents in `.claude/agents/` (scout on
+  Haiku, researcher and builder on Sonnet, refuter and debugger on Opus).
+  Pricing, task-to-model reasoning, and the Claude Code mechanics behind the
+  always-loaded rule in `.claude/rules/orchestration.md`.
 
 ## Features
 
@@ -38,6 +53,15 @@ before changing durable documentation.
   four views, layout rules and why, the freshness stamp, emoji slots, verified
   vs inferred. **Contains the `str()`-on-a-coc.py-enum trap — read it before
   touching any Clash state comparison anywhere in this repo.**
+
+- [fwa-points-monitor.md](fwa-points-monitor.md) — the points.fwafarm.com
+  scraper that watches every FWA clan, the watch-list rule, stored record
+  fields, `/fwapoints` commands, and the Hetzner-vs-residential-IP history.
+
+- [fwa-blacklist.md](fwa-blacklist.md) — the staff-maintained FWA opponent
+  blacklist: stored fields, how entries get in (`/fwa war-plans` Blacklisted,
+  `/fwa blacklist add`), and how it shows up on `/todo` and in the points
+  monitor's records.
 
 - [lazycwl-autopings.md](lazycwl-autopings.md) — the auto-ping scheduler (no
   jobstore, Mongo-backed restore), the select-all + partial-failure pattern to
@@ -77,6 +101,14 @@ before changing durable documentation.
   (2026-08-02). Kept for research and component-budget reasoning; its rollout,
   command, and migration plans are superseded by the
   [operations guide](ticket-console-operations.md).
+
+- [media-hosting.md](media-hosting.md) — why `/todo` burned through
+  Cloudinary's free bandwidth (hikari 2.3.5 downloaded every image URL on
+  every render; full-size originals used as thumbnails), the free-hosting
+  comparison — Discord-native, Cloudflare R2, object stores, Cloudinary-likes —
+  and the migration (2026-09-02). **Decided: Cloudflare R2, implemented;
+  the hikari double-fetch fix is closed by the 2026-09-08 upgrade to
+  hikari 2.6.0.**
 
 ## Architecture
 

@@ -9,6 +9,7 @@ from typing import List, Optional
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.constants import BLUE_ACCENT, GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, GOLDENROD_ACCENT
+from utils.media_urls import GALLERY, optimized
 from utils.emoji import emojis
 
 from hikari.impl import (
@@ -139,7 +140,7 @@ async def build_family_links_panel(
     
     # Get server icon
     guild_icon_url = guild.make_icon_url() if guild else None
-    server_logo = str(guild_icon_url) if guild_icon_url else "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752836911/misc_images/WU_Logo.png"
+    server_logo = str(guild_icon_url) if guild_icon_url else "assets/branding/logo/WU_Logo.png"
     
     # Build TH dropdown options
     th_options = []
@@ -242,7 +243,7 @@ async def build_family_links_panel(
                 Media(
                     items=[
                         MediaItem(
-                            media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753167826/misc_images/Warriors_United.gif"
+                            media="assets/branding/banners/Warriors_United.gif"
                         )
                     ]
                 )
@@ -699,7 +700,7 @@ async def view_clan_info_handler(
                 accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"# {clan_name}"),
-                    Media(items=[MediaItem(media=clan_logo)]),
+                    Media(items=[MediaItem(media=optimized(clan_logo, width=GALLERY))]),
                     ActionRow(
                         components=[
                             LinkButton(

@@ -39,11 +39,11 @@ LEAGUE_ORDER = [
 ]
 
 BANNERS = {
-    "Competitive": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/main_clans.png",
-    "Casual": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/feeder_clans.png",
-    "Zen": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752234005/server_banners/zen_clans.png",
-    "FWA": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/fwa_clans.png",
-    "Trial": "https://res.cloudinary.com/dxmtzuomk/image/upload/v1752233879/server_banners/trial_clans.png"
+    "Competitive": "assets/branding/banners/main_clans.png",
+    "Casual": "assets/branding/banners/feeder_clans.png",
+    "Zen": "assets/branding/banners/zen_clans.png",
+    "FWA": "assets/branding/banners/fwa_clans.png",
+    "Trial": "assets/branding/banners/trial_clans.png"
 }
 
 

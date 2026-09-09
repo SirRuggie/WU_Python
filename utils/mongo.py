@@ -68,3 +68,6 @@ class MongoClient(AsyncMongoClient):
         # emoji, keyed "troop:<slug>". A row here is what authorizes replacing
         # an emoji, so emojis added by hand are never touched by the sync.
         self.emoji_registry = self.__settings.get_collection("emoji_registry")
+        # Staff-maintained FWA opponent blacklist. Keyed by sanitized tag (no
+        # '#'). See utils/fwa_blacklist.py and docs/fwa-blacklist.md.
+        self.fwa_blacklist = self.__settings.get_collection("fwa_blacklist")

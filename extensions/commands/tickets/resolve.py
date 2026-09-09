@@ -50,7 +50,7 @@ from extensions.components import register_action
 from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
 
-DENIED_THUMB = "https://res.cloudinary.com/dxmtzuomk/image/upload/v1753271403/misc_images/Denied.png"
+DENIED_THUMB = "assets/tickets/static/Denied.png"
 _log = logging.getLogger(__name__)
 
 RESOLUTION_EFFECT_LEASE = timedelta(minutes=10)

@@ -11,6 +11,7 @@ fwa = lightbulb.Group("fwa", "All FWA-related commands")
 
 # Import all FWA modules
 from . import bases
+from . import blacklist
 from . import chocolate
 from . import lazy_cwl
 from . import links

@@ -9,15 +9,16 @@ import hikari
 import lightbulb
 
 from extensions.commands.fwa import loader, fwa
-from utils.cloudinary_client import CloudinaryClient
+from utils.media_store import (
+    FWA_ACTIVE_BASE_NAME,
+    FWA_WAR_BASE_NAME,
+    MediaStore,
+    MediaStoreError,
+    fwa_base_folder,
+)
+from utils.media_urls import DETAIL, optimized
 from utils.mongo import MongoClient
 from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
-
-SERVER_FAMILY = "Warriors_United"
-
-# Cloudinary folders
-CLOUDINARY_WAR_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/war_bases"
-CLOUDINARY_ACTIVE_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/active_bases"
 
 # TH levels we support
 FWA_TH_LEVELS = ["th9", "th10", "th11", "th12", "th13", "th14", "th15", "th16", "th16_new", "th17", "th17_new", "th18", "th18_new"]
@@ -61,7 +62,7 @@ class UploadImages(
     async def invoke(
             self,
             ctx: lightbulb.Context,
-            cloudinary_client: CloudinaryClient = lightbulb.di.INJECTED,
+            media: MediaStore = lightbulb.di.INJECTED,
             mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
@@ -111,22 +112,20 @@ class UploadImages(
             if self.war_base:
                 war_data = await self.war_base.read()
 
-                # Create public_id with new naming convention
-                war_public_id = f"TH{th_num}_WarBase"
-
-                war_result = await cloudinary_client.upload_image_from_bytes(
+                war_url = await media.upload_bytes(
                     war_data,
-                    folder=CLOUDINARY_WAR_BASE_FOLDER,
-                    public_id=war_public_id
+                    folder=fwa_base_folder(self.th_level),
+                    name=FWA_WAR_BASE_NAME
                 )
 
-                # Update the constant in memory
-                FWA_WAR_BASE[self.th_level] = war_result["secure_url"]
+                # Update the constant in memory (delivery-optimized; Mongo
+                # below keeps the raw URL, matching the startup load)
+                FWA_WAR_BASE[self.th_level] = optimized(war_url, width=DETAIL)
 
                 # Update in database - same document as base links
                 await mongo.fwa_data.update_one(
                     {"_id": "fwa_config"},
-                    {"$set": {f"war_base_images.{self.th_level}": war_result["secure_url"]}},
+                    {"$set": {f"war_base_images.{self.th_level}": war_url}},
                     upsert=True
                 )
 
@@ -139,22 +138,20 @@ class UploadImages(
             if self.active_base:
                 active_data = await self.active_base.read()
 
-                # Create public_id with new naming convention
-                active_public_id = f"TH{th_num}_Active_WarBase"
-
-                active_result = await cloudinary_client.upload_image_from_bytes(
+                active_url = await media.upload_bytes(
                     active_data,
-                    folder=CLOUDINARY_ACTIVE_BASE_FOLDER,
-                    public_id=active_public_id
+                    folder=fwa_base_folder(self.th_level),
+                    name=FWA_ACTIVE_BASE_NAME
                 )
 
-                # Update the constant in memory
-                FWA_ACTIVE_WAR_BASE[self.th_level] = active_result["secure_url"]
+                # Update the constant in memory (delivery-optimized; Mongo
+                # below keeps the raw URL, matching the startup load)
+                FWA_ACTIVE_WAR_BASE[self.th_level] = optimized(active_url, width=DETAIL)
 
                 # Update in database - same document as base links
                 await mongo.fwa_data.update_one(
                     {"_id": "fwa_config"},
-                    {"$set": {f"active_base_images.{self.th_level}": active_result["secure_url"]}},
+                    {"$set": {f"active_base_images.{self.th_level}": active_url}},
                     upsert=True
                 )
 
@@ -174,24 +171,21 @@ class UploadImages(
             )
 
             # Add thumbnails of uploaded images
-            if self.war_base and 'war_result' in locals():
+            if self.war_base and 'war_url' in locals():
                 embed.add_field(
                     name="War Base Preview",
-                    value=f"[View Full Image]({war_result['secure_url']})",
+                    value=f"[View Full Image]({war_url})",
                     inline=True
                 )
 
-            if self.active_base and 'active_result' in locals():
+            if self.active_base and 'active_url' in locals():
                 embed.add_field(
                     name="Active Base Preview",
-                    value=f"[View Full Image]({active_result['secure_url']})",
+                    value=f"[View Full Image]({active_url})",
                     inline=True
                 )
 
-            embed.set_footer(
-                text="Images stored on Cloudinary CDN and saved to database",
-                icon="https://res.cloudinary.com/demo/image/upload/cloudinary_icon.png"
-            )
+            embed.set_footer(text="Images stored on Cloudflare R2 and saved to database")
 
             await ctx.respond(embed=embed, ephemeral=True)
 
@@ -212,6 +206,14 @@ class UploadImages(
                 value=f"```{error_message}```",
                 inline=False
             )
+
+            # A storage-side failure names its own cause; show it as-is.
+            if isinstance(e, MediaStoreError):
+                error_embed.add_field(
+                    name="☁️ Storage",
+                    value=str(e)[:500],
+                    inline=False
+                )
 
             error_embed.add_field(
                 name="💡 Troubleshooting",

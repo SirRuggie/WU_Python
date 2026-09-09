@@ -59,7 +59,7 @@ class Links(
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753732596/misc_images/FWA.png"
+                                media="assets/fwa/static/FWA.png"
                             ),
                         ]
                     ),

@@ -3,7 +3,6 @@ from logging import exception
 import lightbulb
 import hikari
 import coc
-import requests
 import re
 import asyncio
 
@@ -30,10 +29,12 @@ from PIL import Image
 
 from utils.constants import RED_ACCENT
 from utils.classes import Clan
+from utils.image_fetch import download_image_blocking
+from utils.media_urls import THUMBNAIL, optimized
 from utils.emoji import emojis
 from utils.mongo import MongoClient
-from utils.url_safety import is_safe_public_url, MAX_IMAGE_BYTES
-from extensions.commands.clan.dashboard import dashboard_page
+from utils.url_safety import is_safe_public_url
+from extensions.commands.clan.dashboard.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
 
 CLAN_MANAGEMENT_ROLE_ID = 993015846442127420
@@ -462,7 +463,7 @@ async def clan_edit_menu(
                         )
                     ),
                 ],
-                accessory=Thumbnail(media=db_clan.logo)
+                accessory=Thumbnail(media=optimized(db_clan.logo, width=THUMBNAIL))
             )
         )
     else:
@@ -1185,9 +1186,9 @@ async def update_emoji_button(
                     "• Provide a direct link to an emoji image\n"
                     "• Will be automatically resized to 128x128\n"
                     "• Uploaded to Discord as a bot emoji\n\n"
-                    "**☁️ Option 2: From Cloudinary**\n"
-                    "• Automatically fetch from your clan's Cloudinary folder\n"
-                    "• Uses your clan logo as the emoji\n"
+                    "**🛡️ Option 2: From the clan logo**\n"
+                    "• Uses the logo uploaded with /clan upload-images\n"
+                    "• Resized to 128x128 automatically\n"
                     "• One-click solution\n"
                 )),
                 Separator(divider=True, spacing=hikari.SpacingType.SMALL),
@@ -1203,9 +1204,9 @@ async def update_emoji_button(
                         ),
                         Button(
                             style=hikari.ButtonStyle.PRIMARY,
-                            custom_id=f"emoji_from_cloudinary:{tag}",
-                            label="Use Cloudinary Logo",
-                            emoji="☁️"
+                            custom_id=f"emoji_from_logo:{tag}",
+                            label="Use Clan Logo",
+                            emoji="🛡️"
                         ),
                     ]
                 ),
@@ -1252,9 +1253,9 @@ async def emoji_url_modal_handler(
     )
 
 
-@register_action("emoji_from_cloudinary", ephemeral=True, no_return=True)
+@register_action("emoji_from_logo", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
-async def emoji_from_cloudinary(
+async def emoji_from_logo(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         mongo: MongoClient = lightbulb.di.INJECTED,
@@ -1316,33 +1317,6 @@ async def emoji_from_cloudinary(
         mongo=mongo,
         bot=bot
     )
-
-
-def _download_image_blocking(url: str) -> bytes:
-    """Fetch an image with a timeout, no redirects, and a byte cap.
-
-    Blocking on purpose: it is called via asyncio.to_thread so the download and
-    the (also blocking) PIL work never run on the event loop. allow_redirects is
-    off so a URL we validated as public cannot bounce us to an internal host.
-    """
-    with requests.get(
-        url,
-        timeout=(5, 15),        # (connect seconds, read seconds)
-        allow_redirects=False,
-        stream=True,
-    ) as resp:
-        resp.raise_for_status()
-        declared = resp.headers.get("Content-Length")
-        if declared is not None and declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
-            raise ValueError("Image is larger than the 10 MB limit.")
-        chunks = []
-        total = 0
-        for chunk in resp.iter_content(8192):
-            total += len(chunk)
-            if total > MAX_IMAGE_BYTES:
-                raise ValueError("Image is larger than the 10 MB limit.")
-            chunks.append(chunk)
-        return b"".join(chunks)
 
 
 async def process_emoji_upload(
@@ -1414,7 +1388,7 @@ async def process_emoji_upload(
         # Prepare the new image (download + resize) BEFORE deleting the old emoji,
         # so a download/resize failure leaves the clan's current emoji intact.
         # Both steps run off the event loop (network + CPU-bound PIL work).
-        raw_bytes = await asyncio.to_thread(_download_image_blocking, emoji_url)
+        raw_bytes = await asyncio.to_thread(download_image_blocking, emoji_url)
         img_data = await asyncio.to_thread(resize_and_compress_image, raw_bytes)
 
         application = await bot.rest.fetch_my_user()

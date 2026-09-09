@@ -431,7 +431,7 @@ async def primary_questions(
                     )),
                     Media(
                         items=[
-                            MediaItem(media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1762095036/misc_images/CW_Leagues.png"),
+                            MediaItem(media="assets/recruit/static/CW_Leagues.png"),
                         ]),
                     Text(content=f"-# Requested by {ctx.member.mention}"),
                 ]
@@ -724,7 +724,7 @@ async def fwa_questions(
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1753732333/misc_images/WU_ClanChat.jpg"),
+                                media="assets/recruit/static/WU_ClanChat.jpg"),
                         ]
                     ),
                     Text(content=f"-# Requested by {ctx.member.mention}"),
@@ -749,7 +749,7 @@ async def fwa_questions(
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1751550804/TH_Weight.png"),
+                                media="assets/recruit/static/TH_Weight.png"),
                         ]
                     ),
                     Text(content=f"-# Requested by {ctx.member.mention}"),
@@ -1203,7 +1203,7 @@ async def explanations(
                     Media(
                         items=[
                             MediaItem(
-                                media="https://res.cloudinary.com/dxmtzuomk/image/upload/v1751616880/Default_FWA_Base.jpg")
+                                media="assets/fwa/static/Default_FWA_Base.jpg")
                         ]),
                     Text(content=f"-# Requested by {ctx.member.mention}"),
                 ]

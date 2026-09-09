@@ -24,8 +24,19 @@ from utils.component_state import delete_state, get_state, insert_state
 from utils.mongo import MongoClient
 from utils.constants import RED_ACCENT, GREEN_ACCENT
 
-# Hardcoded owner ID - ONLY this user can reboot the bot
-OWNER_ID = 505227988229554179
+# Explicit allowlist: Discord Administrator alone must never grant process
+# restart access.
+REBOOT_OWNER_IDS = frozenset({
+    505227988229554179,
+    644005027052126208,
+})
+
+
+def _is_reboot_owner(user_id: object) -> bool:
+    try:
+        return int(user_id) in REBOOT_OWNER_IDS
+    except (TypeError, ValueError):
+        return False
 
 loader = lightbulb.Loader()
 
@@ -44,8 +55,7 @@ class Reboot(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
-        # Hardcoded owner check
-        if ctx.user.id != OWNER_ID:
+        if not _is_reboot_owner(ctx.user.id):
             await ctx.respond(
                 components=[
                     Container(
@@ -126,8 +136,8 @@ async def handle_reboot_confirm(
     if not stored_data:
         return await ctx.respond("❌ Session expired. Please run the command again.")
 
-    # Double verify owner
-    if ctx.user.id != OWNER_ID:
+    # Double verify owner at the destructive action boundary.
+    if not _is_reboot_owner(ctx.user.id):
         return await ctx.respond("❌ Only the bot owner can reboot!")
 
     # Verify user matches command invoker

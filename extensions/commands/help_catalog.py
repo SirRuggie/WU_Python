@@ -5,6 +5,8 @@ a command. The renderer deliberately stays separate so this inventory can be
 tested without constructing Discord components.
 """
 
+from utils.startup import RETIRED_EXTENSIONS
+
 
 HELP_CATEGORIES = {
     "start": {
@@ -13,6 +15,7 @@ HELP_CATEGORIES = {
         "description": "Everyday commands and self-service tools",
         "commands": [
             ("/help", "Open this command guide."),
+            ("/ping", "Check whether the bot is online and responding."),
             ("/accounts", "Show every Clash account linked to your Discord."),
             ("/cards", "Update your card collection and find family trade matches."),
             ("/todo", "Show what your linked Clash accounts still need to do."),
@@ -161,6 +164,15 @@ HELP_CATEGORIES = {
         ],
     },
 }
+
+# The /cards command is retired along with the Clash of Cards event (see
+# utils.startup.RETIRED_EXTENSIONS). Hide its row while the extension is
+# switched off; the tuple stays above so re-enabling is a one-line revert
+# in startup.py.
+if "extensions.commands.cards" in RETIRED_EXTENSIONS:
+    HELP_CATEGORIES["start"]["commands"] = [
+        row for row in HELP_CATEGORIES["start"]["commands"] if row[0] != "/cards"
+    ]
 
 
 def command_paths() -> set[str]:

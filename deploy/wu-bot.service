@@ -1,0 +1,26 @@
+# Installed by copying this file to /etc/systemd/system/wu-bot.service.
+# Compared with the old Hetzner unit (user wubot, /home/wubot/wu-bot) this
+# one runs as botrunner from /home/botrunner/wu-bot, orders after
+# network-online.target instead of network.target, carries a fuller PATH,
+# and folds the old drop-in's PYTHONUNBUFFERED=1 into the unit itself. A
+# change here needs `sudo systemctl daemon-reload` on the target box before
+# it takes effect.
+
+[Unit]
+Description=WU Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botrunner
+Group=botrunner
+WorkingDirectory=/home/botrunner/wu-bot
+Environment="PATH=/home/botrunner/wu-bot/venv/bin:/usr/bin:/bin"
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/botrunner/wu-bot/venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

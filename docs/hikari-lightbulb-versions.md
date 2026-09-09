@@ -1,51 +1,49 @@
 # hikari / lightbulb versions — what actually runs
 
-## Current state (2026-08-02)
+## Current state (2026-09-08)
 
 | | Version |
 |---|---|
 | Python | 3.12.3 (enforced at startup — commit `85dd076`) |
-| hikari | **2.3.5** on the box |
-| hikari-lightbulb | **3.0.3** |
+| hikari | **2.6.0** on the box |
+| hikari-lightbulb | **3.2.6** |
 | pymongo | 4.13.2, using `AsyncMongoClient` (native async, **not** motor) |
 
-The bot logs `A newer version of hikari is available, consider upgrading to
-2.5.0` on every boot.
+Upgraded 2026-09-08 from hikari 2.3.5 + hikari-lightbulb 3.0.3 (the coupled
+move described below), which also removed the startup shim in
+`utils/hikari_shims.py` — see [media-hosting.md](media-hosting.md) section 3.
 
-## `requirements.txt` pins nothing
+## `requirements.txt` pins the pair
 
-The file lists bare `hikari` and `hikari-lightbulb` with no version specifiers.
-This means:
+`hikari==2.6.0` and `hikari-lightbulb==3.2.6` are both pinned, so a fresh
+`pip install -r requirements.txt` reproduces the running environment exactly.
+Never unpin one without the other — see the constraint below.
 
-- **A fresh install does not reproduce the running environment.** `pip install
-  -r requirements.txt` today resolves to the newest release, not 2.3.5 / 3.0.3.
-- The version the bot runs is whatever is installed in the venv on the box, and
-  that is the only place it is recorded.
+## THE REAL CONSTRAINT: lightbulb pins the hikari minor line
 
-Treat the box as the source of truth for versions, not the repo.
-
-## THE REAL CONSTRAINT: lightbulb pins hikari below 2.4.0
-
-**Verified from PyPI, 2026-08-02.** `hikari-lightbulb==3.0.3` declares:
+**Verified from PyPI, 2026-08-02, still true at the 2026-09-08 upgrade.**
+`hikari-lightbulb==3.2.6` declares:
 
 ```
-requires_dist: ["hikari~=2.3.1", "async-timeout<6,>=4", "linkd>=0.0.7", ...]
+requires_dist: ["hikari~=2.6.0", "async-timeout<6,>=4", "linkd>=0.6.2", ...]
 ```
 
-`hikari~=2.3.1` means **`>=2.3.1, <2.4.0`**. While lightbulb 3.0.3 is installed,
-hikari genuinely cannot go past the 2.3.x line. **2.3.5 is the ceiling** — which
-is exactly what the box runs, and exactly why it nags about 2.5.0 forever.
+`hikari~=2.6.0` means **`>=2.6.0, <2.7.0`**. While lightbulb 3.2.6 is
+installed, hikari cannot go past the 2.6.x line without a matching lightbulb
+bump.
 
-The two are a package deal. Current PyPI state:
+The two are a package deal. Historical PyPI state (2026-08-02):
 
 | lightbulb | requires |
 |---|---|
 | 3.0.3 – 3.1.3 | `hikari~=2.3.1` (→ 2.3.5 max) |
-| 3.2.2 – **3.2.5** (latest) | `hikari~=2.5.0` |
+| 3.2.2 – 3.2.5 | `hikari~=2.5.0` |
+| 3.2.6 | `hikari~=2.6.0` (current pin) |
 
-So hikari 2.5.0 + lightbulb 3.0.3 are **mutually exclusive**. Any upgrade is one
-coupled move: `hikari 2.3.5 + lightbulb 3.0.3` → `hikari 2.5.0 + lightbulb
-3.2.5`. There is no intermediate step.
+So hikari 2.6.0 + lightbulb 3.0.3 would have been **mutually exclusive**. The
+2026-09-08 upgrade was one coupled move: `hikari 2.3.5 + lightbulb 3.0.3` →
+`hikari 2.6.0 + lightbulb 3.2.6`. There was no intermediate step. Any future
+upgrade must stay coupled the same way.
 
 ## The "bug in 2.3.4+" belief is RETIRED — it was a mangled memory of this pin
 
@@ -71,28 +69,30 @@ The git history says the opposite of the folklore too. Commit `397e3ba`
 hand-rolled REST client in `utils/rest_client.py` (deleted in that same commit)
 which had caused 679-minute waits. **Do not rebuild a custom REST client.**
 
-## Why the box is on 2.3.5 despite that commit
+## Why the box was on 2.3.5 for so long (historical)
 
 `hikari==2.4.1` with lightbulb 3.0.3 installed was **never a valid combination**
 — it violates `hikari~=2.3.1`. Installing it would have produced a resolver
 conflict warning, and any later `pip install -r requirements.txt` against that
 venv re-resolves bare `hikari` against lightbulb's `<2.4.0` ceiling and lands on
-**2.3.5 — precisely the observed state**.
+**2.3.5 — precisely the observed state prior to the 2026-09-08 upgrade**.
 
 *Inference, not proof.* It is indistinguishable from "the upgrade was written
 into the commit message as a manual step and never actually run on the box."
 The venv's pip history on the Hetzner host would settle it; the repo cannot.
-Either way the outcome is the same and the constraint above is what governs.
+Either way the outcome no longer matters now that the pin is 2.6.0 / 3.2.6.
 
 ## Rules
 
-- Verify any version-dependent API against **2.3.5 / 3.0.3**, not against the
+- Verify any version-dependent API against **2.6.0 / 3.2.6**, not against the
   current online docs and not from memory.
 - Do not treat the 2.3.4+ folklore as a constraint. If a real defect is found,
   document it here with a citation; otherwise it stays retired.
-- Any upgrade needs the rate-limit behaviour re-checked, because that is what
-  2.4.x changed and rate limiting has bitten this bot before — see
+- **Due, not yet done:** the rate-limit behaviour re-check the 2.4.x line
+  demanded still applies to the 2026-09-08 upgrade to 2.6.0, because rate
+  limiting has bitten this bot before — see
   [incident-2026-07-29-channel-rate-limit.md](incident-2026-07-29-channel-rate-limit.md).
+  Verify live against the running bot, not from the changelog alone.
 
 ## coc.py — pinned at 3.10.0
 

@@ -302,7 +302,7 @@ def test_initial_delivery_seeds_exact_panel_snapshot(monkeypatch, notice):
             assert kwargs == {"ephemeral": False}
 
     async def fake_load(*args, **kwargs):
-        return (None, problem) if notice else (data, None)
+        return (None, problem, None) if notice else (data, None, None)
 
     async def fake_deliver(*args, **kwargs):
         return SimpleNamespace(id=55), True
@@ -806,7 +806,7 @@ def test_check_now_reactivates_panel_for_exact_claimed_window(monkeypatch):
 
     async def fake_load(*args, **kwargs):
         assert kwargs["force"] is True
-        return data, None
+        return data, None, None
 
     async def takeover(*args, **kwargs):
         assert kwargs["message_id"] == 55
@@ -849,7 +849,7 @@ def test_check_now_on_webhook_fallback_stays_manual(monkeypatch):
             self.responses.append(kwargs)
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def takeover(*args, **kwargs):
         takeovers.append(kwargs)
@@ -946,7 +946,7 @@ def test_rapid_dm_clicks_share_one_snapshot_miss_and_finish_in_order(monkeypatch
         if load_count == 1:
             first_load_entered.set()
             await release_first_load.wait()
-        return data, None
+        return data, None, None
 
     async def read_owner(*args, **kwargs):
         return True, dict(owner)
@@ -1013,7 +1013,7 @@ def test_manual_edit_holds_owner_lock_until_discord_then_auto_uses_new_view(monk
             edit_order.append("automatic")
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def read_owner(*args, **kwargs):
         return True, dict(owner)
@@ -1085,7 +1085,7 @@ def test_auto_edit_holds_owner_lock_until_discord_then_manual_wins(monkeypatch):
             edit_order.append("manual")
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def read_owner(*args, **kwargs):
         return True, dict(owner)
@@ -1189,7 +1189,7 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     marked = []
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def fake_get(_mongo, owner_id, message_id, generation):
         assert owner_id == "dm:77:66"
@@ -1233,7 +1233,7 @@ def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
         return None, todo._notice(
             "Temporary problem", "Try again shortly.", auto_refresh=True,
             refresh_until=kwargs["refresh_until"], checked_at=1_725_000_000,
-        )
+        ), None
 
     async def fake_get(_mongo, _owner_id, _message_id, _generation):
         return True, {
@@ -1270,7 +1270,7 @@ def test_automatic_refresh_reports_failed_when_schedule_cannot_advance(monkeypat
     postponed = []
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def fake_get(_mongo, _owner_id, _message_id, _generation):
         return True, {"view": todo.VIEW_WAR, "page": 0}
@@ -1303,7 +1303,7 @@ def test_automatic_refresh_postpones_mongo_read_failure(monkeypatch):
     postponed = []
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def failed_read(*args, **kwargs):
         return False, None
@@ -1333,7 +1333,7 @@ def test_deployed_legacy_panel_keeps_refreshing_until_its_old_deadline(monkeypat
     marked = []
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def read_owner(*args, **kwargs):
         return True, None
@@ -1437,7 +1437,7 @@ def test_automatic_refresh_removes_missing_message_session(monkeypatch):
             raise MissingMessage
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def fake_get(_mongo, _owner_id, _message_id, _generation):
         return True, {"view": todo.VIEW_WAR, "page": 0}
@@ -1476,7 +1476,7 @@ def test_missing_message_is_postponed_when_mongo_removal_fails(monkeypatch):
             raise MissingMessage
 
     async def fake_load(*args, **kwargs):
-        return data, None
+        return data, None, None
 
     async def fake_get(*args, **kwargs):
         return True, {"view": todo.VIEW_WAR, "page": 0}
@@ -1561,3 +1561,257 @@ def test_auto_refresh_cycle_shares_one_negative_cache_cutoff(monkeypatch):
     expected_min = before - todo.todo_sessions.REFRESH_INTERVAL_SECONDS
     expected_max = after - todo.todo_sessions.REFRESH_INTERVAL_SECONDS
     assert expected_min - 0.01 <= cutoffs[0] <= expected_max + 0.01
+
+
+# ---------------------------------------------------------------------------
+# FWA points suffix on the War view header
+# ---------------------------------------------------------------------------
+
+def _war_row(*, clan_tag="#2PPCL2GYP", clan_name="Edrag Rush", ends_at=1_800_000_000):
+    return todo_data.Row(
+        account="Acct1", tag="#P1",
+        clan_name=clan_name, clan_tag=clan_tag,
+        used=0, limit=2, ends_at=ends_at, state="inWar",
+    )
+
+
+def test_fwa_suffix_rendered_when_war_end_time_matches():
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "sync_number": 558,
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "our_outcome": "win",
+        "raw_verdict": "should never be shown for a win",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "**Edrag Rush** vs DevilHarvesters (FWA) · <:Yes:1397096942907166831> WIN War" in text
+
+
+def test_fwa_suffix_omitted_when_war_end_time_does_not_match():
+    row = _war_row()
+    record = {
+        # A different war's end time - over an hour off, well past the 60s
+        # tolerance, so this must not be attributed to the current war.
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at + 3600).isoformat(),
+        "sync_number": 558,
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "our_outcome": "win",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "**Edrag Rush**" in text
+    assert "DevilHarvesters" not in text
+    assert "WIN War" not in text
+
+
+def test_fwa_suffix_omitted_when_no_record_for_the_clan():
+    row = _war_row()
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={},
+    )]
+    text = _payload_text(payload)
+
+    assert "**Edrag Rush**" in text
+    assert "vs " not in text
+    assert "WIN War" not in text
+
+
+def test_fwa_suffix_falls_back_to_coc_opponent_name_when_scrape_has_none():
+    # The points-site scrape can fail to yield a name (e.g. an unreadable
+    # "A vs. B" line); the CoC API's own opponent name must still show up
+    # rather than dropping the "vs Opponent" part of the header entirely.
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "sync_number": 558,
+        "opponent_name": None,
+        "coc_opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "our_outcome": "win",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "**Edrag Rush** vs DevilHarvesters (FWA) · <:Yes:1397096942907166831> WIN War" in text
+
+
+def test_fwa_suffix_escapes_raw_verdict_for_unknown_outcome():
+    # our_outcome == "unknown" falls back to the site's raw (scraped) verdict
+    # text, which must be escaped exactly like the opponent name is - it is
+    # just as untrusted, and was previously inserted into the header raw.
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "sync_number": 558,
+        "our_outcome": "unknown",
+        "raw_verdict": "**@everyone** _x_ [l](http://e)",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "**@everyone** _x_ [l](http://e)" not in text
+    expected_escaped = "\\*\\*@​everyone\\*\\* \\_x\\_ \\[l\\]\\(http://e\\)"
+    assert expected_escaped in text
+
+
+def test_fwa_suffix_shows_blacklisted_and_hides_fwa_status():
+    # opponent_blacklisted takes over the "(FWA)"/"(not FWA)" spot entirely -
+    # the two facts about the opponent (blacklisted vs Active FWA) are never
+    # shown side by side. The WIN/LOSE verdict half of the line is unchanged.
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "sync_number": 558,
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "opponent_blacklisted": True,
+        "our_outcome": "win",
+    }
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+
+    assert "vs DevilHarvesters 🚫 BLACKLISTED" in text
+    assert "<:Yes:1397096942907166831> WIN War" in text
+    assert "(FWA)" not in text
+    assert "(not FWA)" not in text
+
+
+# ---------------------------------------------------------------------------
+# _load_fwa_records: blacklist cross-check
+# ---------------------------------------------------------------------------
+
+class _FwaFindResult:
+    def __init__(self, docs):
+        self._docs = list(docs)
+
+    async def to_list(self, length=None):
+        return list(self._docs)
+
+
+class _FwaPointsCollection:
+    def __init__(self, docs):
+        self.docs = list(docs)
+
+    def find(self, query):
+        wanted = set(query["_id"]["$in"])
+        return _FwaFindResult([d for d in self.docs if d["_id"] in wanted])
+
+
+class _FwaBlacklistCollection:
+    def __init__(self, tags):
+        self.tags = set(tags)
+
+    def find(self, query, projection=None):
+        wanted = set(query["_id"]["$in"])
+        return _FwaFindResult([{"_id": t} for t in wanted & self.tags])
+
+
+class _FwaMongo:
+    def __init__(self, fwa_points, fwa_blacklist):
+        self.fwa_points = fwa_points
+        self.fwa_blacklist = fwa_blacklist
+
+
+def test_load_fwa_records_marks_opponent_blacklisted_added_after_scrape():
+    # The scrape happened before staff blacklisted the opponent - the record
+    # itself carries no such field - so this must be caught by re-checking
+    # the blacklist on every load, not by trusting what was scraped.
+    row = _war_row(clan_tag="#2PPCL2GYP")
+    record = {
+        "_id": "2PPCL2GYP",
+        "scraped_opponent_tag": "OPPONENT",
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "our_outcome": "win",
+    }
+    mongo = _FwaMongo(
+        _FwaPointsCollection([record]),
+        _FwaBlacklistCollection(["OPPONENT"]),
+    )
+
+    records = asyncio.run(todo._load_fwa_records(mongo, [row]))
+
+    assert records[row.clan_tag]["opponent_blacklisted"] is True
+
+
+def test_load_fwa_records_leaves_flag_unset_when_opponent_not_blacklisted():
+    row = _war_row(clan_tag="#2PPCL2GYP")
+    record = {
+        "_id": "2PPCL2GYP",
+        "scraped_opponent_tag": "OPPONENT",
+        "opponent_name": "DevilHarvesters",
+    }
+    mongo = _FwaMongo(
+        _FwaPointsCollection([record]),
+        _FwaBlacklistCollection([]),
+    )
+
+    records = asyncio.run(todo._load_fwa_records(mongo, [row]))
+
+    assert records[row.clan_tag]["opponent_blacklisted"] is False
+
+
+def test_load_fwa_records_clears_stale_blacklisted_flag():
+    # The monitor stored opponent_blacklisted=True from an earlier scrape, but
+    # the opponent has since been removed from the blacklist - the re-check on
+    # every load must clear it, not just OR in True.
+    row = _war_row(clan_tag="#2PPCL2GYP")
+    record = {
+        "_id": "2PPCL2GYP",
+        "scraped_opponent_tag": "OPPONENT",
+        "opponent_name": "DevilHarvesters",
+        "opponent_active_fwa": True,
+        "opponent_blacklisted": True,
+        "our_outcome": "win",
+    }
+    mongo = _FwaMongo(
+        _FwaPointsCollection([record]),
+        _FwaBlacklistCollection([]),
+    )
+
+    records = asyncio.run(todo._load_fwa_records(mongo, [row]))
+    assert records[row.clan_tag]["opponent_blacklisted"] is False
+
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
+
+    payload = [component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data, fwa_records=records,
+    )]
+    text = _payload_text(payload)
+
+    assert "BLACKLISTED" not in text

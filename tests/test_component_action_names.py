@@ -107,3 +107,15 @@ def test_back_to_clan_edit_keeps_the_production_handler():
         "extensions/commands/clan/dashboard/update_clan_info.py:"
     )
     assert declarations[0].endswith("(back_to_clan_edit)")
+
+
+def test_clan_actions_are_registered_at_import():
+    import extensions.commands.clan  # noqa: F401
+    from extensions.components import registered_functions
+
+    declared = {
+        name for name, sites in _registered_action_sites().items()
+        if any(s.startswith("extensions/commands/clan/") for s in sites)
+    }
+    missing = sorted(declared - set(registered_functions))
+    assert not missing, f"declared but never imported: {missing}"

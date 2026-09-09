@@ -41,8 +41,8 @@ import lightbulb
 from dotenv import load_dotenv
 from utils.mongo import MongoClient
 import coc
-from utils.startup import create_clash_client, load_cogs, unique_extensions
-from utils.cloudinary_client import CloudinaryClient
+from utils.startup import active_extensions, create_clash_client, load_cogs, unique_extensions
+from utils.media_store import MediaStore
 from extensions.autocomplete import preload_autocomplete_cache
 from utils import bot_data
 
@@ -82,15 +82,20 @@ logging.getLogger("coc.http").setLevel(logging.WARNING)
 mongo_client = MongoClient(uri=os.getenv("MONGODB_URI"))
 clash_client: coc.Client | None = None
 
-cloudinary_client = CloudinaryClient()
+# Uploaded clan logos, banners and FWA base images live on Cloudflare R2.
+# Missing R2 settings do not stop the boot: uploads fail closed with a
+# message naming the variables to set. See docs/media-hosting.md.
+media_store = MediaStore.from_env()
+if not media_store.configured:
+    print("[WARN] R2 is not configured (R2_* in .env): image uploads are disabled")
 
 bot_data.data["mongo"] = mongo_client
-bot_data.data["cloudinary_client"] = cloudinary_client
+bot_data.data["media_store"] = media_store
 bot_data.data["bot"] = bot
 
 registry = client.di.registry_for(lightbulb.di.Contexts.DEFAULT)
 registry.register_value(MongoClient, mongo_client)
-registry.register_value(CloudinaryClient, cloudinary_client)
+registry.register_value(MediaStore, media_store)
 registry.register_value(hikari.GatewayBot, bot)
 
 @bot.listen(hikari.StartingEvent)
@@ -134,6 +139,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
             },
         ),
     )
+    all_extensions = active_extensions(all_extensions)
 
     await client.load_extensions(*all_extensions)
     await client.start()
@@ -153,15 +159,24 @@ async def on_bot_start(event: hikari.StartedEvent):
 
     if fwa_data:
         from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
+        from utils.media_urls import DETAIL, optimized
 
+        # Mongo keeps the raw upload URLs; the in-memory dicts hold
+        # delivery-optimized ones, so every render site is covered at once.
         # Load war base images
         if "war_base_images" in fwa_data:
-            FWA_WAR_BASE.update(fwa_data["war_base_images"])
+            FWA_WAR_BASE.update({
+                th: optimized(url, width=DETAIL)
+                for th, url in fwa_data["war_base_images"].items()
+            })
             print(f"[INFO] Loaded {len(fwa_data['war_base_images'])} FWA war base URLs")
 
         # Load active base images
         if "active_base_images" in fwa_data:
-            FWA_ACTIVE_WAR_BASE.update(fwa_data["active_base_images"])
+            FWA_ACTIVE_WAR_BASE.update({
+                th: optimized(url, width=DETAIL)
+                for th, url in fwa_data["active_base_images"].items()
+            })
             print(f"[INFO] Loaded {len(fwa_data['active_base_images'])} FWA active base URLs")
 
     # Check for reboot notification

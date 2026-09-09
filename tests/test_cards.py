@@ -677,7 +677,9 @@ def test_acceptance_promotes_temporary_resources_before_final_status(
         mongo,
         trade,
         user_id=222,
-        live_clans=live_clans,
+        live_clans=tuple(
+            cards_command._LiveClan(tag, None, False) for tag in live_clans
+        ),
         now=now,
     ))
 
@@ -2415,10 +2417,17 @@ def _claim_env(monkeypatch, *, offers=("wizard", "dragon"), poster=None,
     dms = _DmRecorder()
     monkeypatch.setattr(cards_command, "_send_trade_dm", dms)
 
-    async def live(_mongo, _coc_client, _left, _right):
-        return live_clans
+    async def live(_coc_client, _left, _right):
+        if live_clans is None:
+            return None, None
+        return tuple(
+            clan
+            if clan is None or isinstance(clan, cards_command._LiveClan)
+            else cards_command._LiveClan(clan, None, False)
+            for clan in live_clans
+        )
 
-    monkeypatch.setattr(cards_command, "_live_family_clans", live)
+    monkeypatch.setattr(cards_command, "_live_trade_clans", live)
     _fake_linked_accounts(
         monkeypatch,
         accounts_by_user
@@ -2591,16 +2600,84 @@ def test_a_failed_conversion_rolls_the_want_ad_back_open(monkeypatch):
     ] == []
 
 
-def test_unverifiable_family_clans_roll_the_claim_back(monkeypatch):
+def test_a_clan_lookup_outage_never_blocks_a_claim(monkeypatch):
+    """Clan location is guidance, not a gate.
+
+    The old hard refusal ("both accounts must be in family clans") rolled
+    the claim back on ANY lookup failure - an API blip, a clanless account,
+    or a Leader whose partner had stepped outside the family all looked
+    identical and all blocked a swap both players wanted. Now the claim
+    proceeds on the stored clans and at worst lands in move_needed.
+    """
     env = _claim_env(monkeypatch, live_clans=None)
     text = _view_text(_claim(env))
-    assert "family clans" in text
-    assert "stays open" in text
+    assert "Trade accepted" in text
     saved = env.trades.docs["req-a"]
-    assert saved["status"] == "open"
-    assert "claim_token" not in saved
-    assert saved["open_request_key"] == "1:#ME:root_rider"
-    assert env.rest.messages == [] and env.rest.edits == []
+    assert saved["status"] == "claimed"
+    converted = [
+        d for d in env.trades.docs.values() if d.get("kind") == "trade"
+    ]
+    assert len(converted) == 1
+    trade = converted[0]
+    # The stored inventory clans carried through: poster in #HOME, claimer
+    # in #AWAY, so the swap waits for the move instead of being refused.
+    assert trade["status"] == "move_needed"
+    assert trade["requester_clan_tag"] == "#HOME"
+    assert trade["holder_clan_tag"] == "#AWAY"
+
+
+def test_a_pinned_leader_redirects_the_move_to_the_other_player(monkeypatch):
+    """When one account leads its clan, everyone is told who travels.
+
+    A Leader literally cannot leave their clan, so "one of you moves" is
+    misdirection and the old family gate refused the swap outright. The
+    acceptance now records who leads, and every move_needed surface names
+    the Leader as pinned and the other player as the one who joins them.
+    """
+    env = _claim_env(monkeypatch, live_clans=(
+        cards_command._LiveClan("#HOME", "Morning Woods", True),
+        cards_command._LiveClan("#AWAY", "Edrag Rush", False),
+    ))
+    text = _view_text(_claim(env))
+    assert "Trade accepted" in text
+    trade = next(
+        d for d in env.trades.docs.values() if d.get("kind") == "trade"
+    )
+    assert trade["status"] == "move_needed"
+    assert trade["requester_is_leader"] is True
+    assert trade["holder_is_leader"] is False
+    # The claimer's own panel says who joins whom, by name.
+    assert "**Shaun** leads Morning Woods" in text
+    assert "**Claimer Person** joins them there." in text
+    # The requester's DM and the My-trades row carry the same sentence.
+    dm_text = _view_text(cards_command._accepted_trade_dm(trade))
+    assert "**Claimer Person** joins them there." in dm_text
+    summary = cards_command._trade_summary(trade, role="holder")
+    assert "cannot move" in summary
+
+
+def test_move_instruction_covers_every_leadership_shape():
+    base = {
+        "requester_name": "Asker", "holder_name": "Holder",
+        "requester_clan_tag": "#A", "requester_clan_name": "Alpha",
+        "holder_clan_tag": "#B", "holder_clan_name": "Bravo",
+    }
+    neither = cards_command._move_instruction(base)
+    assert neither == "One of you moves to the other clan."
+    holder_leads = cards_command._move_instruction(
+        dict(base, holder_is_leader=True)
+    )
+    assert "**Holder** leads Bravo" in holder_leads
+    assert "**Asker** joins them there." in holder_leads
+    requester_leads = cards_command._move_instruction(
+        dict(base, requester_is_leader=True)
+    )
+    assert "**Asker** leads Alpha" in requester_leads
+    assert "**Holder** joins them there." in requester_leads
+    both = cards_command._move_instruction(
+        dict(base, requester_is_leader=True, holder_is_leader=True)
+    )
+    assert "both lead their clans" in both
 
 
 def test_a_reservation_conflict_leaves_a_saved_pending_proposal(monkeypatch):
@@ -4048,14 +4125,17 @@ def _patch_trade_handler_dependencies(monkeypatch, account):
         return account, {}, None
 
     async def live_clans(*_args, **_kwargs):
-        return "#HOME", "#HOME"
+        return (
+            cards_command._LiveClan("#HOME", None, False),
+            cards_command._LiveClan("#HOME", None, False),
+        )
 
     async def verify(*_args, **_kwargs):
         return True
 
     monkeypatch.setattr(cards_command, "CARDS_GUILD_ID", 1)
     monkeypatch.setattr(cards_command, "_load_trade_actor", load_actor)
-    monkeypatch.setattr(cards_command, "_live_family_clans", live_clans)
+    monkeypatch.setattr(cards_command, "_live_trade_clans", live_clans)
     monkeypatch.setattr(cards_command, "_verify_trade_reservation", verify)
 
 

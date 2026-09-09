@@ -1,6 +1,8 @@
-# lightbulb 3.0.3 — the Context API
+# lightbulb — the Context API
 
-We run **hikari-lightbulb 3.0.3**. Its `Context` object is narrower than people
+We run **hikari-lightbulb 3.2.6** (upgraded from 3.0.3 on 2026-09-08; not
+re-verified against 3.2.6, but a researcher diff of the 3.0.3->3.2.6
+changelog found no `Context` API changes). Its `Context` object is narrower than people
 assume, and the repo contains at least one call site proving that assumption
 wrong at runtime rather than at import time.
 

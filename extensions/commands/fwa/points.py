@@ -5,6 +5,7 @@ import lightbulb
 from datetime import datetime
 
 from extensions.commands.fwa import loader, fwa
+from extensions.tasks.fwa_points_monitor import effective_watch_list
 from utils.mongo import MongoClient
 from utils.constants import GOLD_ACCENT
 from utils.fwa_points_parser import sanitize_tag
@@ -34,7 +35,7 @@ class Points(lightbulb.SlashCommand, name="points",
         await ctx.defer()
         try:
             config = await mongo.fwa_points.find_one({"_id": "config"}) or {}
-            watch = config.get("watch_list", [])
+            watch = await effective_watch_list(config)
 
             body = [Text(content="## 📊 **FWA Points**"), Separator(divider=True)]
             if not watch:

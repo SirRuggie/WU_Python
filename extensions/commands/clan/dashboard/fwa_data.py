@@ -12,7 +12,8 @@ import asyncio
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
-from utils.cloudinary_client import CloudinaryClient
+from utils.media_store import FWA_ACTIVE_BASE_NAME, FWA_WAR_BASE_NAME, MediaStore, fwa_base_folder
+from utils.media_urls import DETAIL, optimized
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 from utils.emoji import emojis
 from extensions.commands.clan.dashboard.dashboard import dashboard_page
@@ -36,32 +37,6 @@ FWA_REP_ROLE_ID = 993015846442127420
 
 # TH levels we support for FWA (ordered from highest to lowest)
 FWA_TH_LEVELS = ["th18_new", "th18", "th17_new", "th17", "th16_new", "th16", "th15", "th14", "th13", "th12", "th11", "th10", "th9"]
-
-SERVER_FAMILY = "Warriors_United"
-
-# Cloudinary folder structure
-CLOUDINARY_WAR_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/war_bases"
-CLOUDINARY_ACTIVE_BASE_FOLDER = f"FWA_Images/{SERVER_FAMILY}/active_bases"
-
-
-# Helper function to generate public IDs
-def get_fwa_public_id(th_level: str, base_type: str) -> str:
-    """Generate consistent public ID for FWA images
-
-    Args:
-        th_level: e.g., "th15" or "TH15"
-        base_type: "war" or "active"
-
-    Returns:
-        str: e.g., "TH15_WarBase" or "TH15_Active_WarBase"
-    """
-    th_num = th_level.upper().replace("TH", "")
-
-    if base_type == "war":
-        return f"TH{th_num}_WarBase"
-    else:
-        return f"TH{th_num}_Active_WarBase"
-
 
 def get_th_emoji(th_level: str):
     """Get the appropriate TH emoji object"""
@@ -139,11 +114,11 @@ async def build_fwa_management_screen(
     war_images = fwa_data.get("war_base_images", {})
     active_images = fwa_data.get("active_base_images", {})
 
-    # Update the constants with stored URLs
+    # Mongo keeps the raw URLs; the in-memory dicts hold delivery-optimized ones, as main.py seeds them at startup.
     if war_images:
-        FWA_WAR_BASE.update(war_images)
+        FWA_WAR_BASE.update({th: optimized(u, width=DETAIL) for th, u in war_images.items()})
     if active_images:
-        FWA_ACTIVE_WAR_BASE.update(active_images)
+        FWA_ACTIVE_WAR_BASE.update({th: optimized(u, width=DETAIL) for th, u in active_images.items()})
 
     # Build overview of all TH levels
     overview_lines = []
@@ -432,7 +407,7 @@ async def fwa_back_to_main(
 async def fwa_th_select(
         ctx: lightbulb.components.MenuContext,
         mongo: MongoClient = lightbulb.di.INJECTED,
-        cloudinary: CloudinaryClient = lightbulb.di.INJECTED,
+        media: MediaStore = lightbulb.di.INJECTED,
         **kwargs
 ):
     """Display detailed edit view for selected TH"""
@@ -647,7 +622,7 @@ async def fwa_image_urls(
 async def fwa_images_submit(
         ctx: lightbulb.components.ModalContext,
         action_id: str,
-        cloudinary: CloudinaryClient = lightbulb.di.INJECTED,
+        media: MediaStore = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
@@ -695,7 +670,7 @@ async def fwa_images_submit(
                 accent_color=BLUE_ACCENT,
                 components=[
                     Text(content="## ⏳ Uploading Images..."),
-                    Text(content="Please wait while we upload your images to Cloudinary...")
+                    Text(content="Please wait while we fetch and store your images...")
                 ]
             )
         ]
@@ -706,22 +681,20 @@ async def fwa_images_submit(
 
         # Upload war base image
         if war_url:
-            war_public_id = get_fwa_public_id(th_level, "war")
-
-            result = await cloudinary.upload_image_from_url(
+            war_stored_url = await media.upload_from_url(
                 war_url,
-                folder=CLOUDINARY_WAR_BASE_FOLDER,
-                public_id=war_public_id
+                folder=fwa_base_folder(th_level),
+                name=FWA_WAR_BASE_NAME
             )
-            war_cloudinary_url = result["secure_url"]
 
-            # Update the constant in memory (for this session)
-            FWA_WAR_BASE[th_level] = war_cloudinary_url
+            # Update the constant in memory (for this session),
+            # delivery-optimized; Mongo below keeps the raw URL
+            FWA_WAR_BASE[th_level] = optimized(war_stored_url, width=DETAIL)
 
             # Update in database
             await mongo.fwa_data.update_one(
                 {"_id": "fwa_config"},
-                {"$set": {f"war_base_images.{th_level}": war_cloudinary_url}},
+                {"$set": {f"war_base_images.{th_level}": war_stored_url}},
                 upsert=True
             )
 
@@ -729,22 +702,20 @@ async def fwa_images_submit(
 
         # Upload active base image
         if active_url:
-            active_public_id = get_fwa_public_id(th_level, "active")
-
-            result = await cloudinary.upload_image_from_url(
+            active_stored_url = await media.upload_from_url(
                 active_url,
-                folder=CLOUDINARY_ACTIVE_BASE_FOLDER,
-                public_id=active_public_id
+                folder=fwa_base_folder(th_level),
+                name=FWA_ACTIVE_BASE_NAME
             )
-            active_cloudinary_url = result["secure_url"]
 
-            # Update the constant in memory (for this session)
-            FWA_ACTIVE_WAR_BASE[th_level] = active_cloudinary_url
+            # Update the constant in memory (for this session),
+            # delivery-optimized; Mongo below keeps the raw URL
+            FWA_ACTIVE_WAR_BASE[th_level] = optimized(active_stored_url, width=DETAIL)
 
             # Update in database
             await mongo.fwa_data.update_one(
                 {"_id": "fwa_config"},
-                {"$set": {f"active_base_images.{th_level}": active_cloudinary_url}},
+                {"$set": {f"active_base_images.{th_level}": active_stored_url}},
                 upsert=True
             )
 
@@ -851,7 +822,7 @@ async def fwa_th_select_return(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         mongo: MongoClient = lightbulb.di.INJECTED,
-        cloudinary: CloudinaryClient = lightbulb.di.INJECTED,
+        media: MediaStore = lightbulb.di.INJECTED,
         **kwargs
 ):
     """Return to TH edit view"""
@@ -859,7 +830,7 @@ async def fwa_th_select_return(
     ctx.interaction.values = [action_id]
 
     # Call fwa_th_select and get its components
-    return await fwa_th_select(ctx=ctx, mongo=mongo, cloudinary=cloudinary, **kwargs)
+    return await fwa_th_select(ctx=ctx, mongo=mongo, media=media, **kwargs)
 
 
 @register_action("fwa_descriptions_submit", no_return=True, is_modal=True)

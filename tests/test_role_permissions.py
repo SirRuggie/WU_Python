@@ -55,13 +55,18 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     paths = command_paths()
     expected_catalog_total = 100
 
+    # /cards is retired along with the Clash of Cards event (see
+    # utils.startup.RETIRED_EXTENSIONS) and hidden from the catalog, so the
+    # count is one lower than the registered slash paths and the row is
+    # asserted absent rather than present.
     assert len(paths) == expected_catalog_total
     assert (
         sum(len(category["commands"]) for category in HELP_CATEGORIES.values())
         == expected_catalog_total
     )
     assert "/accounts" in paths
-    assert "/cards" in paths
+    assert "/cards" not in paths
+    assert "/ping" in paths
     assert {"/role add", "/role remove", "/role manage"} <= paths
     assert {"/poll create", "/poll view", "/poll active"} <= paths
     assert "/cwl-reminder list" in paths

@@ -1,5 +1,6 @@
 import asyncio
 import warnings
+from pathlib import Path
 
 from utils import startup
 
@@ -10,7 +11,8 @@ def test_extension_discovery_only_returns_loader_entry_points():
     )
 
     assert "extensions.commands.accounts" in discovered
-    assert "extensions.commands.cards" in discovered
+    assert "extensions.commands.cards" not in discovered
+    assert "extensions.commands.ping" in discovered
     assert "extensions.commands.poll" in discovered
     assert "extensions.commands.todo" in discovered
     assert "extensions.commands.fwa.lazy_cwl" in discovered
@@ -68,7 +70,7 @@ def test_shared_loader_command_families_use_one_package_entry_point():
     assert "extensions.commands.recruit.questions" not in extensions
     assert "extensions.commands.setup.recruit_aboutus" not in extensions
     assert "extensions.commands.accounts" in extensions
-    assert "extensions.commands.cards" in extensions
+    assert "extensions.commands.cards" not in extensions
     assert "extensions.commands.todo" in extensions
 
 
@@ -83,3 +85,23 @@ def test_clash_client_is_created_on_running_loop_without_deprecation_warning():
 
     assert client.loop is loop
     assert not any("There is no current event loop" in str(item.message) for item in caught)
+
+
+def test_retired_extensions_are_kept_but_not_loaded():
+    retired_command_sources = {
+        "extensions.commands.cards": "extensions/commands/cards.py",
+        "extensions.tasks.cards_sticky": "extensions/tasks/cards_sticky.py",
+        "extensions.tasks.cards_deadlines": "extensions/tasks/cards_deadlines.py",
+    }
+
+    assert startup.RETIRED_EXTENSIONS == frozenset(retired_command_sources)
+    for module_name, relative_path in retired_command_sources.items():
+        assert Path(relative_path).is_file(), module_name
+
+    extensions = ["extensions.one", *retired_command_sources, "extensions.two"]
+    assert startup.active_extensions(extensions) == ["extensions.one", "extensions.two"]
+
+    discovered = startup.load_cogs(
+        disallowed={"example"}, disallowed_folders={"tickets"}
+    )
+    assert "extensions.commands.cards" not in discovered

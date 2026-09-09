@@ -85,8 +85,11 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils import clan_history, coc_maintenance, todo_data, todo_sessions
 from utils.clash_links import resolve_tags
+from utils.media_urls import THUMBNAIL, optimized
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, RED_ACCENT
 from utils.emoji import emojis
+from utils.fwa_blacklist import blacklisted_tags
+from utils.fwa_points_parser import sanitize_tag
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
@@ -110,6 +113,10 @@ class _DashboardSnapshot:
     problem: list | None
     checked_at: int
     stored_at: float
+    # {clan_tag: fwa_points record} for the War view's clans - see
+    # _load_fwa_records. Snapshotted alongside `data` so a cache hit renders
+    # the same suffix a fresh load would, without a second Mongo round trip.
+    fwa_map: dict | None = None
 
 
 _panel_snapshots: OrderedDict[
@@ -154,13 +161,14 @@ def _snapshot_put(
     data: dict[str, todo_data.ViewData] | None,
     problem: list | None,
     checked_at: int,
+    fwa_map: dict | None = None,
 ) -> None:
     key = _snapshot_key(user_id, channel_id, message_id)
     if key is None or (data is None and problem is None):
         return
     _snapshot_prune()
     _panel_snapshots[key] = _DashboardSnapshot(
-        data, problem, int(checked_at), time.monotonic()
+        data, problem, int(checked_at), time.monotonic(), fwa_map
     )
     _panel_snapshots.move_to_end(key)
     while len(_panel_snapshots) > PANEL_SNAPSHOT_LIMIT:
@@ -634,7 +642,7 @@ def _nav_select(view: str, counts: dict, *,
 def _clan_logos() -> dict:
     """{clan_tag: logo_url} for family clans, from the clan_data collection.
 
-    These are OUR Cloudinary logos, uploaded via /clan upload and rendered the
+    These are OUR uploaded logos (Cloudflare R2, via /clan upload), rendered the
     same way at update_clan_info.py:465. The Clash API badge is the generic
     war-league shield - every clan in a league looks identical - so it is only
     a fallback for clans outside the family.
@@ -646,10 +654,17 @@ def _clan_logos() -> dict:
 
 
 def _thumbnail_for(row):
-    """Our logo if the clan is one of ours, else the Clash badge, else nothing."""
+    """Our logo if the clan is one of ours, else the Clash badge, else nothing.
+
+    The logo is a full-size upload rendered into an ~80px slot, and this
+    is the one hosted image URL the bot re-serves on an automated loop
+    (every auto-refresh edit, every panel, all day). Serving it unshrunk
+    is what spent 116 GB of Cloudinary bandwidth in August 2026 - always
+    keep the optimized() wrapper here, whatever host is behind it.
+    """
     logo = _clan_logos().get(row.clan_tag)
     if logo and isinstance(logo, str) and logo.startswith("http"):
-        return logo
+        return optimized(logo, width=THUMBNAIL)
     return row.clan_badge
 
 
@@ -673,7 +688,78 @@ def _row_line(row) -> str:
     return f"{lead} {th} {row.account}".replace("  ", " ").strip()
 
 
-def _render_rows(rows: list, verb: str = "", stamp_of=None) -> list:
+def _escape_markdown(value: object, *, limit: int = 100) -> str:
+    """Escape scraped/user-supplied text before it goes into a header line.
+
+    Same characters and @-mention guard as the repo's other markdown escapers
+    (extensions/commands/cards.py, extensions/commands/accounts.py).
+    """
+    raw = str(value or "").strip()
+    if len(raw) > limit:
+        raw = f"{raw[:limit - 1]}…"
+    escaped = raw.replace("\\", "\\\\")
+    for char in ("`", "*", "_", "~", "|", ">", "[", "]", "(", ")"):
+        escaped = escaped.replace(char, f"\\{char}")
+    return escaped.replace("@", "@\u200b")
+
+
+def _fwa_suffix(first, fwa_records: dict | None) -> str:
+    """`` vs DevilHarvesters (FWA) · WIN War`` or "".
+
+    Only shown when the stored record's war matches the war these rows are
+    actually for - compared via coc_war_end_time vs Row.ends_at, tolerating up
+    to 60 seconds of clock/parsing slack. A record for an older or newer war
+    (the site hasn't caught up yet, or we haven't re-scraped) renders nothing
+    rather than a stale verdict attached to the wrong war.
+    """
+    if not fwa_records:
+        return ""
+    record = fwa_records.get(first.clan_tag)
+    if not record:
+        return ""
+
+    end_time_raw = record.get("coc_war_end_time")
+    if not end_time_raw or first.ends_at is None:
+        return ""
+    try:
+        record_ends_at = datetime.fromisoformat(end_time_raw).timestamp()
+    except (ValueError, OverflowError, OSError):
+        return ""
+    if abs(record_ends_at - first.ends_at) > 60:
+        return ""
+
+    outcome = record.get("our_outcome")
+    if outcome == "win":
+        verdict = f"{emojis.yes} WIN War"
+    elif outcome == "lose":
+        verdict = f"{emojis.no} LOSE War"
+    else:
+        verdict = _escape_markdown(record.get("raw_verdict") or "unknown")
+
+    vs_bit = ""
+    opponent_name = record.get("opponent_name") or record.get("coc_opponent_name")
+    if opponent_name:
+        vs_bit = f"vs {_escape_markdown(opponent_name)}"
+        if record.get("opponent_blacklisted"):
+            # Deliberately NOT emojis.no - that same "No" glyph already means
+            # LOSE in the verdict half of this same line (see below), and the
+            # two would sit side by side with different meanings. 🚫 is used
+            # nowhere else in this suffix.
+            vs_bit += " 🚫 BLACKLISTED"
+        else:
+            active = record.get("opponent_active_fwa")
+            if active is True:
+                vs_bit += " (FWA)"
+            elif active is False:
+                vs_bit += " (not FWA)"
+
+    parts = [p for p in (vs_bit, verdict) if p]
+    if not parts:
+        return ""
+    return " " + " · ".join(parts) if vs_bit else " · " + verdict
+
+
+def _render_rows(rows: list, verb: str = "", stamp_of=None, fwa_records: dict | None = None) -> list:
     """Rows grouped by clan, one Text Display per clan.
 
     THE DEADLINE IS PER CLAN, NOT PER BLOCK. It was a block heading for one
@@ -690,6 +776,13 @@ def _render_rows(rows: list, verb: str = "", stamp_of=None) -> list:
     at the wrap limit before anything grows. A subtext line cannot collide with
     the name at all, and being smaller it reads as a caption on the clan rather
     than competing with it.
+
+    The FWA points verdict (_fwa_suffix) is the one deliberate exception to
+    that rule - it IS appended to the header line. That is safe here for two
+    reasons the timing chip does not share: it is per-clan, not per-row, so it
+    never has to summarize rows it is not true for; and it only ever renders on
+    the War view, so it never has to coexist with the timing chip on the same
+    line in the first place.
 
     `verb` is "" for callers with no timing (the Private War Logs view).
     """
@@ -710,7 +803,7 @@ def _render_rows(rows: list, verb: str = "", stamp_of=None) -> list:
         first = members[0]
         lines = "\n".join(_row_line(r) for r in members)
 
-        head = f"**{first.clan_name}**"
+        head = f"**{first.clan_name}**{_fwa_suffix(first, fwa_records)}"
         if verb and stamp_of is not None:
             # min() WITHIN one clan is safe - every row here belongs to the same
             # war, so the stamps are equal. It is only a lie ACROSS clans.
@@ -828,7 +921,7 @@ def _paginate(view: str, rows: list) -> list:
     return pages
 
 
-def _timing_blocks(view: str, rows: list) -> list:
+def _timing_blocks(view: str, rows: list, fwa_records: dict | None = None) -> list:
     """Rows split by STATE. Each clan states its own deadline.
 
     The grouping is still state-first, and that survived the per-clan-timing
@@ -840,6 +933,10 @@ def _timing_blocks(view: str, rows: list) -> list:
 
     A heading may therefore state the state and nothing else. Anything a
     heading asserts has to be true of every row beneath it.
+
+    `fwa_records` only makes sense for the War view (see _fwa_suffix) - it is
+    forwarded to _render_rows solely when `view == VIEW_WAR`, so a caller that
+    passes it for CWL/Raids by mistake cannot leak a War-only verdict there.
     """
     live_label, prep_label = BLOCK_LABELS.get(view, BLOCK_LABELS_DEFAULT)
     # Labels/verbs by key. The SPLIT itself comes from _split_blocks so the
@@ -848,6 +945,7 @@ def _timing_blocks(view: str, rows: list) -> list:
         "live": (EMOJI_LIVE, live_label, "ends", lambda r: r.ends_at),
         "prep": (EMOJI_WAITING, prep_label, "starts", lambda r: r.starts_at),
     }
+    row_fwa_records = fwa_records if view == VIEW_WAR else None
 
     out: list = []
     for key, group in _split_blocks(view, rows):
@@ -859,7 +957,7 @@ def _timing_blocks(view: str, rows: list) -> list:
         # under it, which is the STATE. The clock is per clan.
         heading = f"### {_emoji(emoji_name)} {label}".replace("###  ", "### ")
         out.append(Text(content=heading.rstrip()))
-        out.extend(_render_rows(group, verb, stamp_of))
+        out.extend(_render_rows(group, verb, stamp_of, row_fwa_records))
     return out
 
 
@@ -894,11 +992,15 @@ def _reason_blocks(rows: list) -> list:
 def render_dashboard(view: str, page: int, data: dict, *,
                      checked_at: int | None = None,
                      auto_refresh: bool = False,
-                     refresh_until: datetime | None = None) -> list:
+                     refresh_until: datetime | None = None,
+                     fwa_records: dict | None = None) -> list:
     """The dashboard itself.
 
     `data` maps view name -> ViewData. A view whose ViewData is None could not
     be computed at all.
+
+    `fwa_records` is {clan_tag: fwa_points record}, used only when rendering
+    the War view (see _fwa_suffix); every other view ignores it.
     """
     counts = {
         k: (v.count if v is not None and v.ok else None)
@@ -997,7 +1099,7 @@ def render_dashboard(view: str, page: int, data: dict, *,
             if view == VIEW_PRIVATE:
                 body.extend(_reason_blocks(window))
             else:
-                body.extend(_timing_blocks(view, window))
+                body.extend(_timing_blocks(view, window, fwa_records))
 
         if current.notes:
             body.append(Separator(divider=True))
@@ -1231,14 +1333,69 @@ def _with_account_failures(view_data: todo_data.ViewData, error_count: int) -> t
     return replace(view_data, notes=notes, incomplete=warning)
 
 
+async def _load_fwa_records(mongo, war_rows: list) -> dict:
+    """{Row.clan_tag: fwa_points record} for the distinct clans in the War view.
+
+    One batched find() covers every clan at once. fwa_points documents are
+    keyed by the sanitized tag (no '#'), while Row.clan_tag carries whatever
+    format the CoC API returned, so results are re-keyed back to that original
+    form for a direct row.clan_tag lookup at render time.
+    """
+    if mongo is None:
+        return {}
+    sanitized_to_original: dict[str, str] = {}
+    for row in war_rows:
+        if not row.clan_tag:
+            continue
+        sanitized = sanitize_tag(row.clan_tag)
+        if sanitized:
+            sanitized_to_original[sanitized] = row.clan_tag
+    if not sanitized_to_original:
+        return {}
+    try:
+        docs = await mongo.fwa_points.find(
+            {"_id": {"$in": list(sanitized_to_original)}}
+        ).to_list(length=None)
+    except Exception as exc:  # noqa: BLE001 - a missing suffix must not break the panel
+        print(f"[todo] fwa_points lookup failed: {type(exc).__name__}: {exc}")
+        return {}
+    records = {
+        sanitized_to_original[doc["_id"]]: doc
+        for doc in docs
+        if doc.get("_id") in sanitized_to_original
+    }
+
+    # Re-checked against the blacklist on every load (not just what the
+    # scraper saw at the time) so a clan blacklisted after the record was
+    # scraped still shows as blacklisted here.
+    opponent_tags = {
+        sanitize_tag(doc.get("scraped_opponent_tag") or "") for doc in records.values()
+    }
+    opponent_tags.discard("")
+    if opponent_tags:
+        try:
+            blacklisted = await blacklisted_tags(mongo, opponent_tags)
+        except Exception as exc:  # noqa: BLE001 - a missing suffix must not break the panel
+            print(f"[todo] fwa_blacklist lookup failed: {type(exc).__name__}: {exc}")
+            blacklisted = set()
+        for doc in records.values():
+            opp_tag = sanitize_tag(doc.get("scraped_opponent_tag") or "")
+            if opp_tag:
+                doc["opponent_blacklisted"] = opp_tag in blacklisted
+
+    return records
+
+
 async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None,
                 perf: "_Perf | None" = None, auto_refresh: bool = False,
                 refresh_until: datetime | None = None,
                 recheck_negative_after: float | None = None):
     """Resolve tags and compute every section.
 
-    Returns (data, problem). `problem` is a ready-to-render component list when
-    the dashboard cannot be shown at all; otherwise None.
+    Returns (data, problem, fwa_map). `problem` is a ready-to-render component
+    list when the dashboard cannot be shown at all; otherwise None. `fwa_map`
+    is {clan_tag: fwa_points record} for the War view's clans, or None when
+    `data` is None (nothing was loaded to key it against).
 
     All sections compute together because the nav badges show every count, and
     because they share the same per-clan fetches - once a clan's war is warm,
@@ -1272,7 +1429,7 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
                 "This is a problem on their end, not yours — try again shortly.",
                 checked_at=int(time.time()), auto_refresh=auto_refresh,
                 refresh_until=refresh_until,
-            )
+            ), None
         todo_data.cache_put(cache_key, tags, todo_data.TTL_LINKS)
 
     if not tags:
@@ -1284,7 +1441,7 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             "`/todo` again.",
             checked_at=int(time.time()), auto_refresh=auto_refresh,
             refresh_until=refresh_until,
-        )
+        ), None
 
     # Counted BEFORE the fetch, or every entry reads as a hit afterwards.
     perf.meta["tags"] = len(tags)
@@ -1330,14 +1487,14 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
                 "in a few minutes.",
                 checked_at=int(time.time()), auto_refresh=auto_refresh,
                 refresh_until=refresh_until,
-            )
+            ), None
         return None, _notice(
             "Couldn't load your accounts",
             "Your accounts are linked, but the Clash API didn't answer for any "
             "of them. Try again shortly.",
             checked_at=int(time.time()), auto_refresh=auto_refresh,
             refresh_until=refresh_until,
-        )
+        ), None
 
     # Persist the current player responses while war/CWL network work runs.
     # This does not gate the first view; it is awaited before returning so a
@@ -1358,6 +1515,7 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
             coc_client, accounts, sem=sem, candidates=candidates,
             recheck_negative_after=recheck_negative_after,
         )
+        fwa_map = await _load_fwa_records(mongo, war.rows)
         cwl = await todo_data.build_cwl_view(
             coc_client, accounts, sem=sem, candidates=candidates,
             recheck_negative_after=recheck_negative_after,
@@ -1384,7 +1542,7 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
 
     await history_write
 
-    return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: raid, VIEW_PRIVATE: blocked}, None
+    return {VIEW_WAR: war, VIEW_CWL: cwl, VIEW_RAID: raid, VIEW_PRIVATE: blocked}, None, fwa_map
 
 
 # ---------------------------------------------------------------------------
@@ -1562,7 +1720,7 @@ class Todo(
         with perf.timing("defer"):
             await ctx.defer(ephemeral=not is_dm)
 
-        data, problem = await _load(
+        data, problem, fwa_map = await _load(
             bot, coc_client, ctx.user.id, mongo=mongo, perf=perf,
             auto_refresh=is_dm,
             refresh_until=notice_refresh_until,
@@ -1578,7 +1736,7 @@ class Todo(
             message_id = int(getattr(sent, "id", 0) or 0)
             _snapshot_put(
                 int(ctx.user.id), int(ctx.channel_id), message_id,
-                data, problem, checked_at,
+                data, problem, checked_at, fwa_map,
             )
             perf.meta["result"] = "notice"
             print(perf.line(), flush=True)
@@ -1601,7 +1759,7 @@ class Todo(
             checked_at = int(time.time())
             components = render_dashboard(
                 opening, 0, data, checked_at=checked_at, auto_refresh=is_dm,
-                refresh_until=refresh_until,
+                refresh_until=refresh_until, fwa_records=fwa_map,
             )
             delivered = (
                 _manual_fallback_panel(components, checked_at=checked_at)
@@ -1621,7 +1779,7 @@ class Todo(
         message_id = int(getattr(sent, "id", 0) or 0)
         _snapshot_put(
             int(ctx.user.id), int(ctx.channel_id), message_id,
-            data, None, checked_at,
+            data, None, checked_at, fwa_map,
         )
 
         # Printed BEFORE the todo_sessions write. The line must describe what
@@ -1686,12 +1844,13 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
     if snapshot is not None:
         data, problem = snapshot.data, snapshot.problem
         checked_at = snapshot.checked_at
+        fwa_map = snapshot.fwa_map
         perf.meta["snapshot"] = "hit"
     else:
         refresh_until = (
             todo_sessions.new_refresh_until() if is_dm else None
         )
-        data, problem = await _load(
+        data, problem, fwa_map = await _load(
             bot, coc_client, ctx.user.id, force=force, mongo=mongo, perf=perf,
             auto_refresh=is_dm,
             refresh_until=refresh_until,
@@ -1705,7 +1864,7 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
             return
         _snapshot_put(
             user_id, channel_id, message_id,
-            data, problem, checked_at,
+            data, problem, checked_at, fwa_map,
         )
 
     def render(*, automatic: bool, until: datetime | None) -> list:
@@ -1721,6 +1880,7 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
                 checked_at=checked_at,
                 auto_refresh=automatic,
                 refresh_until=until,
+                fwa_records=fwa_map,
             )
             if is_dm and not automatic:
                 return _manual_fallback_panel(
@@ -1983,7 +2143,7 @@ async def _refresh_session(
         # the exact read under the lock skips this stale result.
         perf = _Perf()
         perf.meta["path"] = "automatic"
-        data, problem = await _load(
+        data, problem, fwa_map = await _load(
             bot, coc_client, user_id, mongo=mongo, perf=perf,
             auto_refresh=True,
             refresh_until=session.get("refresh_until"),
@@ -2022,6 +2182,7 @@ async def _refresh_session(
                 view, page, data,
                 checked_at=int(checked_at.timestamp()), auto_refresh=True,
                 refresh_until=latest.get("refresh_until"),
+                fwa_records=fwa_map,
             )
             await bot.rest.edit_message(
                 channel_id, message_id, components=rendered
@@ -2033,6 +2194,7 @@ async def _refresh_session(
                 data,
                 problem,
                 int(checked_at.timestamp()),
+                fwa_map,
             )
             recorded = await todo_sessions.mark_refreshed(
                 mongo, owner_id, message_id, generation,

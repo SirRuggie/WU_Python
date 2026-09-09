@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from extensions.components import register_action
 from utils.component_state import get_state
+from utils.media_urls import GALLERY, optimized
 from utils.mongo import MongoClient
 from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT
 
@@ -238,7 +239,7 @@ async def execute_server_walkthrough_handler(
                 Media(
                     items=[
                         MediaItem(
-                            media=clan_banner if clan_banner else "assets/Red_Footer.png"
+                            media=optimized(clan_banner, width=GALLERY) if clan_banner else "assets/Red_Footer.png"
                         )
                     ]
                 ),
