@@ -319,12 +319,16 @@ completed-clone** ticket in `tickets` (any status), that same staff context
 includes prior-ticket links independently of the flag system. Un-cloned legacy
 rows remain outside this console:
 
-> 📜 **This person has opened a ticket before.**
-> One earlier ticket matches this Discord ID or player tag.
-> [glyph] **FWA #167** · Denied — "Got his butt hurt and left" · 5 months ago
-> [Open FWA #167 thread]
+> ### This person has opened a ticket before.
+> Open the earlier thread and read it before you answer here.
 >
-> The old thread is never deleted. Open it and read before you answer here.
+> **FWA #167** · ❌ Denied — Got his butt hurt and left
+> Opened <t:1700000000:R>
+> [Open FWA #167]
+
+(`<t:1700000000:R>` is Discord's relative-timestamp markup; it renders
+client-side as something like "5 months ago." The last line is a button, not
+text — `build_staff_identity_context` in `console.py`.)
 
 This history is deliberately broader than flags: an unflagged returning
 applicant still gets it. Delivery and later refreshes are durable retry work,
@@ -341,8 +345,10 @@ to threads exists in the first place — Part 1.1's honest justification
 carried one step further: a ticket you can't find again is as bad as a
 ticket you deleted.
 
-Console copy reflects this directly: `❌ Denied · the thread is kept
-forever — find it from the console any time`, never "closed."
+Console copy reflects this directly: after a decision completes, the
+confirmation panel reads `Ticket approved` / `Ticket denied` and "The
+decision was saved. The permanent thread remains available from the
+console." (`_transition_result_panel` in `console.py`) — never "closed."
 
 ### Implemented Discord thread lifecycle
 
