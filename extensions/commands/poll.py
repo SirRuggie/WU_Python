@@ -471,9 +471,17 @@ async def _sync_poll_message(
     outcome, error = await _edit_poll_message(bot, document)
     try:
         if outcome == "synced":
-            await poll_store.mark_message_synced(
+            synced = await poll_store.mark_message_synced(
                 mongo, guild_id=guild_id, poll_id=poll_id,
+                expected_updated_at=document["updated_at"],
             )
+            if synced is None:
+                # A vote landed between the read and this render (record_vote
+                # bumped updated_at), so the CAS above matched nothing and
+                # message_sync_pending is still True. Retry soon instead of
+                # leaving the poll stale until the next full recovery pass.
+                _schedule_sync_retry(document)
+                return False
             _remove_sync_job(poll_id)
             return True
         if outcome == "unavailable":
