@@ -17,6 +17,10 @@ class MongoClient(AsyncMongoClient):
         # Durable ticket records. Historically these lived in button_store next to
         # ephemeral component state; see extensions/commands/tickets/store.py.
         # NO TTL INDEX ON THIS COLLECTION - ticket history is permanent.
+        # schema_version is this collection's own counter, owned by
+        # extensions/commands/tickets/schema.py:SCHEMA_VERSION (currently 3).
+        # It is unrelated to ticket_rollout/ticket_open_slots below, whose
+        # schema_version is a separate, independently-versioned literal.
         self.tickets = self.__settings.get_collection("tickets")
         # Durable staff-authored applicant flags used by the ticket console.
         # No TTL: inactive records remain as an audit trail.
@@ -40,7 +44,15 @@ class MongoClient(AsyncMongoClient):
         # Shared, non-TTL durability for legacy/thread ticket coexistence.
         # ticket_rollout also holds the monotonic counters; neither collection
         # may ever receive a TTL index.
+        # ROLLOUT_SCHEMA_VERSION (extensions/commands/ticket_runtime.py) versions
+        # the rollout-state document only; the ticket_number_counters document
+        # in the same collection carries its own literal schema_version: 1.
         self.ticket_rollout = self.__settings.get_collection("ticket_rollout")
+        # schema_version: 1 is a plain literal here (extensions/commands/
+        # ticket_runtime.py), not a named constant like tickets' SCHEMA_VERSION
+        # or ticket_rollout's ROLLOUT_SCHEMA_VERSION above -- each of these
+        # three ticket-adjacent collections versions its own documents
+        # independently; the numbers are not comparable across collections.
         self.ticket_open_slots = self.__settings.get_collection("ticket_open_slots")
         self.recruit_onboarding = self.__settings.get_collection("recruit_onboarding")
         # Short-lived message challenges used during recruitment. This stays
