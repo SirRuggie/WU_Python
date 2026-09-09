@@ -419,10 +419,26 @@ def _identity_datetime(value: Any) -> datetime | None:
 
 
 def _source_ticket_fingerprint(ticket: Mapping[str, Any] | None) -> str:
+    """Fingerprint only the narrow identity a resumed migration must
+    re-bind on: status, ticket type, applicant, and channel location.
+
+    Hashing the entire `button_store` legacy row made any unrelated write
+    to it (a delivery lease timestamp, for example) look like the source
+    ticket itself had changed, wedging every resume behind "a migration for
+    this source already exists with different ... details" forever.
+    """
     if not ticket:
         return ""
+    identity: dict[str, Any] = {
+        "status": str(ticket.get("status") or ""),
+        "ticket_type": str(ticket.get("ticket_type") or ""),
+        "user_id": _as_int(ticket.get("user_id")) or None,
+        "channel_id": _as_int(ticket.get("channel_id")) or None,
+    }
+    if "message_count" in ticket:
+        identity["message_count"] = _as_int(ticket.get("message_count"))
     encoded = json.dumps(
-        dict(ticket),
+        identity,
         sort_keys=True,
         separators=(",", ":"),
         default=str,
@@ -431,15 +447,24 @@ def _source_ticket_fingerprint(ticket: Mapping[str, Any] | None) -> str:
 
 
 def _channel_mirror_identity(ticket: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalize only fields added by the retired store-copy command."""
-    identity = dict(ticket)
-    identity.pop("schema_version", None)
-    identity.pop("venue", None)
-    identity.pop("runtime", None)
-    channel_id = _as_int(identity.get("channel_id"))
-    if channel_id:
-        identity["channel_id"] = channel_id
-    return identity
+    """Only the identity/location/status fields that prove a `tickets` row
+    is a mirror of the same ticket as the `button_store` legacy-authority
+    row -- not full-document equality. A best-effort `tickets` mirror
+    written by the retired store-copy command drifts on timestamps, claim
+    state, and other mutable fields the `button_store` source keeps
+    changing; none of that should block a migration resume from treating a
+    stale-but-matching mirror as harmless.
+    """
+    return {
+        "_id": str(ticket.get("_id") or ""),
+        "type": str(ticket.get("type") or ""),
+        "ticket_type": str(ticket.get("ticket_type") or ""),
+        "user_id": _as_int(ticket.get("user_id")) or None,
+        "guild_id": _as_int(ticket.get("guild_id")) or None,
+        "channel_id": _as_int(ticket.get("channel_id")) or None,
+        "thread_id": _as_int(ticket.get("thread_id")) or None,
+        "status": str(ticket.get("status") or ""),
+    }
 
 
 def _is_exact_channel_mirror(
@@ -1506,14 +1531,21 @@ async def _execute_clone_part(
         # Never turn transient Discord/network failures into accepted loss.
         # A text-only note is allowed only after an operator explicitly binds
         # the current attachment manifest to this durable migration.
+        #
+        # hikari wraps a rejected upload as one of its own HTTP error types
+        # (`NotFoundError` 404, `ForbiddenError` 403, or the generic
+        # `ClientHTTPResponseError` for 413/415/422/etc.), not a raw
+        # `aiohttp.ClientResponseError` -- the aiohttp check alone never
+        # matched a real Discord rejection, so this whole fallback was
+        # unreachable in production and always re-raised instead.
         unavailable_http = (
             isinstance(error, aiohttp.ClientResponseError)
             and int(error.status) in {400, 401, 403, 404, 410, 413, 415, 422}
+        ) or (
+            isinstance(error, hikari.ClientHTTPResponseError)
+            and int(error.status) in {400, 401, 403, 404, 410, 413, 415, 422}
         )
-        if not (
-            isinstance(error, (FileNotFoundError, hikari.BadRequestError))
-            or unavailable_http
-        ):
+        if not (isinstance(error, FileNotFoundError) or unavailable_http):
             raise
         if not attachments or not allow_payload_loss:
             raise LegacyMigrationError(

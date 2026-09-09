@@ -2027,6 +2027,93 @@ def test_unaccepted_runtime_payload_loss_stops_without_fallback():
     assert len(rest.payloads) == 1
 
 
+def test_hikari_http_rejection_reaches_the_acknowledged_attachment_fallback():
+    """hikari wraps a rejected upload (payload too large, unsupported media
+    type, unprocessable, etc.) as its own `ClientHTTPResponseError` family
+    -- `NotFoundError`/`ForbiddenError`/the generic 413/415/422 case -- not
+    a raw `aiohttp.ClientResponseError`. Only the aiohttp check meant this
+    fallback never actually fired for a real Discord rejection; it must
+    fire once the operator has acknowledged the loss."""
+    marker = "migration-source:1:2:3:1/1"
+
+    class Rest:
+        def __init__(self):
+            self.payloads = []
+
+        def fetch_messages(self, _thread_id):
+            return EmptyLazyIterator()
+
+        async def execute_webhook(self, *_args, **kwargs):
+            self.payloads.append(_args[2])
+            if kwargs.get("attachments"):
+                raise hikari.ClientHTTPResponseError(
+                    url="https://discord.com/api/webhooks",
+                    status=413,
+                    headers={},
+                    raw_body=b"",
+                )
+
+    rest = Rest()
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[SimpleNamespace(filename="proof.png")],
+        embeds=[],
+    )
+    losses = asyncio.run(legacy_migration._execute_clone_part(
+        rest=rest,
+        webhook=SimpleNamespace(id=8, token="secret"),
+        thread_id=9,
+        marker=marker,
+        content=f"proof\n-# {marker}",
+        message=message,
+        include_payload=True,
+        allow_payload_loss=True,
+    ))
+    assert losses == ["proof.png"]
+    assert len(rest.payloads) == 2
+    assert marker in rest.payloads[-1]
+    assert "proof" in rest.payloads[-1]
+
+
+def test_hikari_http_rejection_without_acknowledgement_still_raises():
+    marker = "migration-source:1:2:3:1/1"
+
+    class Rest:
+        def __init__(self):
+            self.payloads = []
+
+        def fetch_messages(self, _thread_id):
+            return EmptyLazyIterator()
+
+        async def execute_webhook(self, *_args, **kwargs):
+            self.payloads.append(_args[2])
+            if kwargs.get("attachments"):
+                raise hikari.NotFoundError(
+                    url="https://discord.com/api/webhooks",
+                    headers={},
+                    raw_body=b"",
+                )
+
+    rest = Rest()
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[SimpleNamespace(filename="proof.png")],
+        embeds=[],
+    )
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="source message remains pending"):
+        asyncio.run(legacy_migration._execute_clone_part(
+            rest=rest,
+            webhook=SimpleNamespace(id=8, token="secret"),
+            thread_id=9,
+            marker=marker,
+            content=f"proof\n-# {marker}",
+            message=message,
+            include_payload=True,
+            allow_payload_loss=False,
+        ))
+    assert len(rest.payloads) == 1
+
+
 def test_unaccepted_runtime_loss_does_not_advance_source_checkpoint(monkeypatch):
     state = {
         "_id": "legacy:1:2",

@@ -1224,6 +1224,76 @@ def test_legacy_source_absence_and_present_record_are_revalidated():
         )
 
 
+def test_require_legacy_source_unchanged_tolerates_a_lease_timestamp_write():
+    """Fingerprinting the whole `button_store` row made any unrelated write
+    to it -- a delivery lease timestamp, in particular -- look like the
+    source ticket itself had changed, wedging every resume behind "source
+    ... changed" forever. The narrow fingerprint (status, ticket_type,
+    user_id, channel_id) must not react to that kind of drift."""
+    source = {
+        "_id": "ticket_2",
+        "type": "ticket",
+        "channel_id": 2,
+        "ticket_type": "main",
+        "user_id": 30,
+        "status": "approved",
+        "delivery_lease_until": "2026-01-01T00:00:00Z",
+        "delivery_lease_owner": "worker-a",
+    }
+    present_state = {
+        "source": {"guild_id": 1, "channel_id": 2},
+        "metadata": {
+            "source_ticket_id": source["_id"],
+            "source_ticket_fingerprint": legacy_migration._source_ticket_fingerprint(source),
+        },
+    }
+    leased = {
+        **source,
+        "delivery_lease_until": "2026-06-01T12:00:00Z",
+        "delivery_lease_owner": "worker-b",
+    }
+
+    result = asyncio.run(
+        legacy_migration._require_legacy_source_unchanged(
+            _source_mongo([leased]), present_state
+        )
+    )
+
+    assert result == leased
+
+
+def test_legacy_source_allows_a_stale_best_effort_mirror():
+    """The `tickets` mirror written by the retired store-copy command is a
+    best-effort snapshot and drifts on fields outside a ticket's identity,
+    location, or status (claim state, timestamps). That drift alone must
+    not raise "conflicting divergent" and block a legitimate migration."""
+    source = {
+        "_id": "ticket_2",
+        "type": "ticket",
+        "channel_id": 2,
+        "guild_id": 1,
+        "user_id": 30,
+        "ticket_type": "main",
+        "status": "approved",
+        "claimed_by": None,
+        "updated_at": "2026-01-01T00:00:00Z",
+    }
+    mirror = {
+        **source,
+        "venue": "channel",
+        "claimed_by": 999,
+        "updated_at": "2026-06-01T00:00:00Z",
+    }
+
+    found = asyncio.run(
+        legacy_migration._legacy_source_ticket(
+            _source_mongo([source], [mirror]), 1, 2
+        )
+    )
+
+    assert found == source
+
+
 class _InsertCollection:
     def __init__(self, existing=None):
         self.existing = deepcopy(existing)
