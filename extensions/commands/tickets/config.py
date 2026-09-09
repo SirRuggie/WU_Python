@@ -39,8 +39,16 @@ def _source(source: ticket_runtime.IntakeSource | None) -> str:
 def configuration_summary(
     config: Mapping,
     rollout: ticket_runtime.RolloutState | None = None,
+    counters: Mapping | None = None,
 ) -> str:
-    """Render only settings that affect the thread v2 runtime."""
+    """Render only settings that affect the thread v2 runtime.
+
+    ``counters`` is the thread system's own ``ticket_rollout`` counter
+    document. It is never sourced from ``ticket_setup.config``, which is
+    legacy-owned: legacy is the only system that reads or writes that
+    counter field.
+    """
+    counters = counters or {}
     legacy_guild_id = config.get("legacy_ticket_guild_id")
     target_guild_id = config.get("ticket_target_guild_id")
     if rollout is not None:
@@ -70,7 +78,7 @@ def configuration_summary(
             f"Staff parent: {_channel(config.get(f'{kind}_staff_parent'))}",
             f"Target thread recruiter role: "
             f"{_role(config.get(f'{kind}_thread_recruiter_role'))}",
-            f"Last allocated ticket: `{int(config.get(f'{kind}_ticket_counter') or 0)}`",
+            f"Last allocated ticket: `{int(counters.get(f'{kind}_ticket_counter') or 0)}`",
         ])
 
     console_channel = config.get("ticket_console_channel_id")
@@ -107,10 +115,16 @@ class Config(
         config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
         console = await mongo.ticket_setup.find_one({"_id": "ticket_console_hub"}) or {}
         rollout = await ticket_runtime.get_rollout(mongo)
+        counters = (
+            await mongo.ticket_rollout.find_one(
+                {"_id": ticket_runtime.COUNTER_DOCUMENT_ID}
+            )
+            or {}
+        )
         view = dict(config)
         view["ticket_console_channel_id"] = console.get("channel_id")
         await ctx.interaction.edit_initial_response(
-            configuration_summary(view, rollout),
+            configuration_summary(view, rollout, counters),
             user_mentions=False,
             role_mentions=False,
             mentions_everyone=False,

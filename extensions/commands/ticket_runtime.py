@@ -1158,19 +1158,11 @@ async def _maximum_field(
 async def _observed_ticket_number_floor(mongo: Any, ticket_type: str) -> int:
     values = await asyncio.gather(
         _maximum_field(
-            mongo.button_store,
-            {
-                "type": "ticket",
-                "ticket_type": ticket_type,
-                "ticket_number": {"$exists": True},
-            },
-            "ticket_number",
-        ),
-        _maximum_field(
             mongo.tickets,
             {
                 "type": "ticket",
                 "ticket_type": ticket_type,
+                "venue": "thread",
                 "ticket_number": {"$exists": True},
             },
             "ticket_number",
@@ -1178,6 +1170,9 @@ async def _observed_ticket_number_floor(mongo: Any, ticket_type: str) -> int:
         _maximum_field(
             mongo.ticket_creation_state,
             {
+                # Legacy creation rows share this collection and carry no
+                # route; only thread rows may raise the thread floor.
+                "route": ROUTE_THREAD,
                 "ticket_type": ticket_type,
                 "ticket_number": {"$exists": True},
             },
@@ -1187,6 +1182,7 @@ async def _observed_ticket_number_floor(mongo: Any, ticket_type: str) -> int:
             mongo.ticket_open_slots,
             {
                 "ticket_type": ticket_type,
+                "route": ROUTE_THREAD,
                 "ticket_number": {"$exists": True},
             },
             "ticket_number",
@@ -1204,11 +1200,13 @@ async def _observed_ticket_number_floor(mongo: Any, ticket_type: str) -> int:
 
 
 async def reserve_ticket_number(mongo: Any, ticket_type: str) -> int:
-    """Allocate above both stores and every durable in-flight reservation.
+    """Allocate above every durable in-flight reservation for the new system.
 
-    The counter lives outside the user-editable ticket configuration, so an old
-    counter reset cannot move it backwards.  The compatibility counter is only
-    raised, never used as authority.
+    The counter lives in ``ticket_rollout`` under ``COUNTER_DOCUMENT_ID`` and
+    is owned exclusively by the thread ticket system: it starts at 1 and is
+    never seeded from, or written back to, the legacy channel system's
+    ``ticket_setup.config`` counter. Legacy state is never read as authority
+    here -- only this system's own collections feed the floor.
     """
 
     normalized_type = str(ticket_type).strip().lower()
@@ -1237,9 +1235,6 @@ async def reserve_ticket_number(mongo: Any, ticket_type: str) -> int:
         if counter is None:
             raise TicketRuntimeError("shared ticket counter disappeared")
         allocated = int(counter[field])
-        await mongo.ticket_setup.update_one(
-            {"_id": "config"}, {"$max": {field: allocated}}, upsert=True
-        )
         newest = await _observed_ticket_number_floor(mongo, normalized_type)
         if allocated > newest:
             return allocated

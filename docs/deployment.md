@@ -524,3 +524,32 @@ The original reference captured point-in-time facts that later became stale:
 **Ruggie deploys manually. Do not ssh to the box, do not `git pull` on it, and
 do not restart the service.** Hand over commands to run rather than running
 them.
+
+## One-off steps tied to specific changes
+
+Steps here are not part of the standard deploy flow above. Each is a single
+run tied to one change; remove the entry once it has been run and is no
+longer relevant.
+
+### Reset thread ticket numbering before go-live
+
+The new (thread) ticket system now allocates its own ticket numbers,
+starting at 1, and no longer reads or writes anything the legacy channel
+system owns (see the numbering fix in `extensions/commands/ticket_runtime.py`).
+Any tickets created during pilot/smoke testing will have already advanced
+that counter, so run this once, right before go-live, to clear the
+new-system test data and reset the counter back to 0 (the next allocated
+number is then 1):
+
+```
+venv/bin/python tools/reset_thread_ticket_test_data.py            # dry run, prints counts
+venv/bin/python tools/reset_thread_ticket_test_data.py --confirm  # deletes for real
+```
+
+It only touches new-system (`venue: "thread"` / `route: "thread"`) rows and
+the `ticket_rollout` counter document -- it never touches `button_store`,
+`ticket_setup`, the `ticket_rollout` rollout document, or any legacy
+`venue: "channel"` row. It also never deletes `ticket_migrations` rows; if any
+of them already hold a destination ticket number the tool reports the count
+and refuses `--confirm` (exit 3), because numbering could not restart at 1.
+Run it before the first legacy migration preview.

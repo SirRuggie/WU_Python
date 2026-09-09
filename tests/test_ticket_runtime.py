@@ -710,15 +710,25 @@ def test_next_claim_repairs_exact_terminal_slot_when_release_checkpoint_failed()
     asyncio.run(scenario())
 
 
-def test_number_allocator_scans_both_stores_pending_slots_and_migrations_as_numbers():
+def test_number_allocator_scans_thread_store_pending_slots_and_migrations_as_numbers():
     async def scenario():
         mongo = _mongo(
             legacy=[_ticket("l1", user=1, route=runtime.ROUTE_LEGACY, number="9")],
-            thread=[_ticket("t1", user=2, route=runtime.ROUTE_THREAD, number=1000)],
+            thread=[
+                _ticket("t1", user=2, route=runtime.ROUTE_THREAD, number=1000),
+                {
+                    "_id": "channel-mirror",
+                    "type": "ticket",
+                    "ticket_type": "main",
+                    "ticket_number": 5000,
+                    "venue": "channel",
+                },
+            ],
             slots=[{
                 "_id": "ticket-open:3:main",
                 "workflow_id": "w3",
                 "ticket_type": "main",
+                "route": runtime.ROUTE_THREAD,
                 "ticket_number": "1200",
             }],
             creation=[{
@@ -738,6 +748,48 @@ def test_number_allocator_scans_both_stores_pending_slots_and_migrations_as_numb
             runtime.reserve_ticket_number(mongo, "main"),
         )
         assert sorted(next_numbers) == [1702, 1703]
+
+    asyncio.run(scenario())
+
+
+def test_floor_ignores_legacy_button_store_numbering_entirely():
+    async def scenario():
+        mongo = _mongo(
+            legacy=[_ticket("l1", user=1, route=runtime.ROUTE_LEGACY, number=242)],
+        )
+        assert await runtime.reserve_ticket_number(mongo, "main") == 1
+
+    asyncio.run(scenario())
+
+
+def test_floor_filters_tickets_collection_rows_by_thread_venue():
+    async def scenario():
+        mongo = _mongo(
+            thread=[
+                {
+                    "_id": "channel-mirror",
+                    "type": "ticket",
+                    "ticket_type": "main",
+                    "ticket_number": 242,
+                    "venue": "channel",
+                },
+            ],
+        )
+        assert await runtime.reserve_ticket_number(mongo, "main") == 1
+
+        mongo = _mongo(
+            thread=[_ticket("t1", user=2, route=runtime.ROUTE_THREAD, number=5)],
+        )
+        assert await runtime.reserve_ticket_number(mongo, "main") == 6
+
+    asyncio.run(scenario())
+
+
+def test_reserve_never_writes_the_legacy_ticket_setup_counter():
+    async def scenario():
+        mongo = _mongo()
+        await runtime.reserve_ticket_number(mongo, "main")
+        assert "main_ticket_counter" not in mongo.ticket_setup.documents["config"]
 
     asyncio.run(scenario())
 

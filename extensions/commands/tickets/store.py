@@ -797,6 +797,19 @@ async def transition(
                 ticket_id=ticket_id,
                 terminal_status=target,
             )
+        except ticket_runtime.SlotConflict as error:
+            if "no open slot" in str(error):
+                # Overturn (approved -> denied or back): the slot was already
+                # released by the first decision, so there is nothing to
+                # release. Normal, not an error.
+                _log.info(
+                    "ticket slot already released for %s (%s -> %s)",
+                    ticket_id, expected_status, target,
+                )
+            else:
+                _log.exception(
+                    "ticket slot terminal checkpoint failed for %s", ticket_id
+                )
         except Exception:
             # The decision is already authoritative. Startup reconciliation can
             # observe the terminal row and repair/release its exact bound slot.
