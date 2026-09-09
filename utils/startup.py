@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -27,6 +28,30 @@ RETIRED_EXTENSIONS = frozenset({
     "extensions.tasks.cards_sticky",
     "extensions.tasks.cards_deadlines",
 })
+
+# The one guild that ever sees the permanent `/tickets` thread-ticket group.
+# Owner decision: registered only in Warriors United (644963518025826315) so
+# the legacy servers never see it; the legacy `/ticket` group stays global.
+# See docs/deployment.md "Configuration".
+TICKETS_GUILD_ID_DEFAULT = 644963518025826315
+
+
+def _parse_tickets_guild_id() -> int:
+    """``TICKETS_GUILD_ID`` from the environment, falling back on a bad value.
+
+    An unset or unparseable value must not crash extension loading for the
+    whole bot at import time; it falls back to the configured default guild.
+    """
+    raw = os.getenv("TICKETS_GUILD_ID", "").strip()
+    if not raw:
+        return TICKETS_GUILD_ID_DEFAULT
+    try:
+        return int(raw)
+    except ValueError:
+        return TICKETS_GUILD_ID_DEFAULT
+
+
+TICKETS_GUILD_ID = _parse_tickets_guild_id()
 
 
 def _binds_loader(module_path: Path) -> bool:

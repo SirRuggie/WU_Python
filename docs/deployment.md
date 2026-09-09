@@ -120,6 +120,18 @@ CARDS_GUILD_ID=1078723854303756298
 CARDS_CHANNEL_ID=<decimal Discord channel id>
 ```
 
+The permanent `/tickets` thread-ticket group reads `TICKETS_GUILD_ID`, set to
+the decimal Discord server ID for Warriors United
+(`644963518025826315`, the default when the variable is unset or
+unparseable). It is registered only in that guild, so legacy servers never
+see it; the legacy `/ticket` group is unaffected and stays registered
+globally. Changing this value moves which single guild sees `/tickets` after
+the next Discord command sync — it does not move any stored ticket data.
+
+```text
+TICKETS_GUILD_ID=644963518025826315
+```
+
 The BAND iCal feature also reads `BAND_ICAL_SYNC1`, `BAND_ICAL_SYNC2`,
 `BAND_ICAL_SYNC3`, `SYNC_DM_USER_IDS`, `SYNC_DM_OFFSETS`,
 `SYNC_DM_ANNOUNCE_ON_DISCOVERY`, and `SYNC_DM_SUMMARY_FILTER`. Whether each is

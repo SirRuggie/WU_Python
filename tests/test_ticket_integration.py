@@ -9,6 +9,7 @@ from extensions.commands import help_catalog
 from extensions.commands import tickets as ticket_extension
 from extensions.commands import tickets_legacy as legacy_extension
 from extensions.commands.tickets import config, console, resolve
+from utils.startup import TICKETS_GUILD_ID
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +100,31 @@ def test_ticket_package_registers_only_thread_runtime_commands():
     assert set(legacy_extension.ticket._commands) == EXPECTED_LEGACY_COMMANDS
     assert legacy_extension.ticket.name == "ticket"
     assert len(registered) <= 25
+
+
+def _command_loadable(loader, command):
+    """The registered ``_CommandLoadable`` wrapping one command group.
+
+    Lightbulb records each ``loader.command(...)`` call as a loadable holding
+    the exact ``guilds``/``global_`` it was registered with; this walks the
+    loader's private list to find the one for ``command``.
+    """
+    for loadable in loader._loadables:
+        if getattr(loadable, "_command", None) is command:
+            return loadable
+    raise AssertionError(f"no command loadable registered for {command!r}")
+
+
+def test_tickets_group_is_registered_only_in_the_configured_guild():
+    tickets_loadable = _command_loadable(ticket_extension.loader, ticket_extension.ticket)
+    assert tickets_loadable._guilds == [TICKETS_GUILD_ID]
+    assert tickets_loadable._global is None
+    assert tickets_loadable._defer_guilds is False
+
+    legacy_loadable = _command_loadable(legacy_extension.loader, legacy_extension.ticket)
+    assert legacy_loadable._guilds is None
+    assert legacy_loadable._global is None
+    assert legacy_loadable._defer_guilds is False
 
 
 def test_ticket_package_registers_console_and_creation_actions():
