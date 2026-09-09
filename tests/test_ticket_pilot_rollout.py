@@ -837,7 +837,7 @@ def test_cross_server_rollback_requires_live_exact_old_panel_before_cas(monkeypa
         raise ValueError("legacy controls missing")
 
     async def transition(*_args, **_kwargs):
-        transitions.append(kwargs)
+        transitions.append(_kwargs)
 
     monkeypatch.setattr(rollout, "_require_admin", allowed)
     monkeypatch.setattr(rollout, "_rollout_for_guild", rollout_state)
@@ -853,6 +853,55 @@ def test_cross_server_rollback_requires_live_exact_old_panel_before_cas(monkeypa
     assert transitions == []
     assert "Rollback readiness failed" in ctx.responses[-1]
     assert "Nothing changed" in ctx.responses[-1]
+
+
+def test_cross_server_rollback_is_one_phase_cas_back_to_legacy(monkeypatch):
+    """The only other RolloutRollback test covers the readiness-failure path;
+    this covers the success path -- readiness passes, the CAS transition is
+    called with the exact expected phase/revision, and the confirmation
+    names the new revision."""
+    state = _rollout_state(ticket_runtime.PHASE_THREAD_DEFAULT)
+    calls = []
+
+    async def allowed(*_args):
+        return True
+
+    async def rollout_state(*_args):
+        return state
+
+    async def ready(*_args):
+        return None
+
+    async def transition(_mongo, **kwargs):
+        calls.append(kwargs)
+        return ticket_runtime.RolloutState(
+            **{
+                **{field: getattr(state, field) for field in (
+                    "revision", "valid", "legacy_intake", "thread_intake",
+                    "pilot_intake", "pilot_user_ids", "pilot_role_ids",
+                    "pilot_ticket_types",
+                )},
+                "phase": ticket_runtime.PHASE_ROLLBACK_LEGACY,
+            }
+        )
+
+    monkeypatch.setattr(rollout, "_require_admin", allowed)
+    monkeypatch.setattr(rollout, "_rollout_for_guild", rollout_state)
+    monkeypatch.setattr(rollout, "_validate_legacy_intake", ready)
+    monkeypatch.setattr(rollout.ticket_runtime, "transition_rollout", transition)
+    command = rollout.RolloutRollback()
+    command.confirm = True
+    ctx = _rollout_command_context()
+    asyncio.run(command.invoke(
+        ctx, bot=SimpleNamespace(), mongo=SimpleNamespace()
+    ))
+
+    assert len(calls) == 1
+    assert calls[0]["expected_phase"] == ticket_runtime.PHASE_THREAD_DEFAULT
+    assert calls[0]["expected_revision"] == state.revision
+    assert calls[0]["to_phase"] == ticket_runtime.PHASE_ROLLBACK_LEGACY
+    assert ctx.responses[-1].startswith("✅ New intake returned to legacy")
+    assert f"revision `{state.revision}`" in ctx.responses[-1]
 
 
 def test_rollout_status_surfaces_a_stuck_console_refresh_error(monkeypatch):

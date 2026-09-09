@@ -1450,6 +1450,65 @@ def test_console_approve_opens_a_confirm_step_before_touching_anything(monkeypat
     _assert_component_limits(view)
 
 
+def test_console_approve_confirm_step_completes_the_approval(monkeypatch):
+    """The first click only renders a confirm panel (no Mongo write yet).
+    Clicking that panel's own Approve button -- ticket_v2_console_approve_go,
+    wired with the exact same action_id -- must then perform the real
+    approval and refresh the hub. No test previously went through both
+    steps of ticket_console_approve's confirm gate."""
+    ticket = _ticket(21, status="open", username="Some Applicant", ticket_type="fwa")
+
+    async def find(_mongo, query):
+        assert query["_id"] == ticket["_id"]
+        return copy.deepcopy(ticket)
+
+    monkeypatch.setattr(console.store, "find_one", find)
+
+    ctx = SimpleNamespace(
+        user=SimpleNamespace(id=22, username="Recruiter"),
+        member=SimpleNamespace(id=22),
+    )
+
+    view = asyncio.run(console.ticket_console_approve(
+        ctx, "detail", owner_id=22, guild_id=ticket["guild_id"],
+        ticket_id=ticket["_id"], mongo=object(),
+    ))
+    custom_ids = [str(node["custom_id"]) for node in _nodes(view) if "custom_id" in node]
+    approve_go_id, cancel_id = custom_ids
+    assert approve_go_id == "ticket_v2_console_approve_go:detail"
+    assert cancel_id == "ticket_v2_console_confirm_cancel:detail"
+
+    approve_calls = {}
+
+    async def approve(*_args, **kwargs):
+        approve_calls.update(kwargs)
+        return console.store.Transition(console.store.WON, ticket)
+
+    refresh_calls = []
+
+    async def refresh(*_args, reason, **_kwargs):
+        refresh_calls.append(reason)
+        return True
+
+    monkeypatch.setattr(console.resolve, "approve_ticket", approve)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    # Follow the confirm panel's own custom_id, not a hardcoded one.
+    action_id = approve_go_id.split(":", 1)[1]
+    go_view = asyncio.run(console.ticket_console_approve_go(
+        ctx, action_id, owner_id=22, guild_id=ticket["guild_id"],
+        ticket_id=ticket["_id"], mongo=object(), bot=object(),
+    ))
+
+    assert approve_calls["ticket_id"] == ticket["_id"]
+    assert refresh_calls == ["ticket approved"]
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(go_view) if "content" in node
+    )
+    assert "Ticket approved" in content
+    _assert_component_limits(go_view)
+
+
 def test_console_approve_go_no_longer_sends_a_rev_and_shows_already_approved_on_lost(
     monkeypatch,
 ):

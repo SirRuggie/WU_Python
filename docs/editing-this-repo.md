@@ -104,6 +104,25 @@ installed globally; there is no venv. Two cautions specific to this box:
 **On any other machine**, assume there is no Python. The greps above are then
 the only pre-commit check, and a real syntax check happens on the box at deploy.
 
+## Real-Mongo regression tests
+
+Eight tests, spread across `tests/test_ticket_channel_monitor.py` and four
+other `tests/test_ticket_*.py` files, exercise index-dependent behaviour
+(upsert/takeover races, CAS-style atomic updates) that a mocked collection
+cannot reproduce faithfully. Each is gated on the `TICKET_TEST_MONGODB_URI`
+environment variable and calls `pytest.skip(...)` when it is unset, so the
+normal `pytest -q` run above passes without it. To run them, point the
+variable at a real, disposable MongoDB deployment (a local `mongod` or a
+scratch Atlas cluster — never production) and re-run the normal suite; each
+of the eight tests only runs instead of skipping once the variable is set:
+
+```bash
+TICKET_TEST_MONGODB_URI="mongodb://localhost:27017" pytest -q
+```
+
+Each test creates its own randomly-named database and drops it in a
+`finally` block, so runs do not collide or leave data behind.
+
 ## Recovery
 
 `git checkout -- <file>` and redo the work with the editing tools. That is what
