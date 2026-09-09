@@ -70,6 +70,32 @@ import-path rename; `resolution_delivery.py` and the new system's
 `recover_pending_legacy_deliveries` hook are gone; main's `migrate.py`
 (`/ticket migrate-store`) is back because legacy `__init__` imports it.
 
+Live smoke test 2026-09-09 (branch deployed on Ruggie's Zone, pilot
+phase, owner as sole tester; channels apply-here 1547242779711766528,
+recruiter-hq 1547243827436191774, recruiter-desk 1547244294757425212)
+produced these owner rules and fixes, all committed through `74b2e09`
+and deployed: legacy Mongo blockers (duplicate open legacy tickets,
+legacy in-flight deliveries) no longer gate the thread system's startup
+recovery; `/tickets setup` channel check reads the REST-fetched channel
+(interaction channel options carry no guild id); "My ticket" handler
+acknowledges itself (`opens_modal=True` pattern) so it no longer trips
+the components-v2 content rule; decisions never archive or lock threads
+(Discord's 7-day inactivity archive is the only archiving); the cooldown
+notice is a live `<t:..:R>` countdown; ticket numbering is the thread
+system's own (never reads button_store or legacy counters, never writes
+`ticket_setup.config.*_ticket_counter`), with
+`tools/reset_thread_ticket_test_data.py` to restart at 1 before go-live;
+every person in Discord-facing text is a suppressed-ping mention (select
+labels and the staff thread's Candidate line are the two exceptions, the
+latter because a mention would add the applicant to the staff thread);
+applicant-typed tags render uppercased; the creation DM is a container
+with an "Open my ticket" link button; no bot message carries visible
+bookkeeping text any more (checklist, applicant-context panel, decision
+cards, opening cards are re-found by their title lines, old markers still
+matched). Owner confirmed: a decided ticket is final and the next click
+makes a new ticket; a support-ticket panel is wanted later as a second
+panel type.
+
 The ONE legacy edit the new system requires: `tickets_legacy/migrate.py`
 refuses to write when `ticket_setup.config.ticket_store_activation_version`
 is set. Without it, re-running `/ticket migrate-store confirm:true` after
