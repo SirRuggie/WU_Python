@@ -45,7 +45,7 @@ channel 1547244294757425212 (`recruiter-desk`).
 3. Server 4: import approved and denied exactly as they are. Open tickets in
    server 4 stay in legacy until decided; do not import them.
 4. Skip any ticket whose applicant is the owner (username `sirruggie`, user id
-   505227988229554179) in servers 3 and 4: those are test tickets.
+   505227988229554179) in every server: those are test tickets.
 5. Abandoned tickets (applicant never wrote) → not yet decided by the owner;
    default to skipping them and report the count in the dry run.
 6. Imported tickets take fresh numbers in import order (oldest channel first),
@@ -95,6 +95,11 @@ channel 1547244294757425212 (`recruiter-desk`).
   Suite at that commit: 1826 passed, 2 skipped.
 
 Checkpoint log (newest first):
+- 2026-09-09 evening: review passed with one fix (1 s pause between copied
+  tickets); DEPLOYED as `5dced26` on the box. Follow-up items 1 and 2 done.
+  Next: owner confirms the numbering reset (tool dry run shows what goes),
+  then owner runs `/tickets migrate-all source-guild:<Server 1> confirm:false`
+  in the new server and pastes the summary.
 - 2026-09-09 evening: owner-rules follow-up committed `e56a35d` (detection
   by category+prefix, outcome inference, closed/no-decision status, server
   3/4 open-ticket policy, owner-test skip, abandoned skip + `include-abandoned`,
@@ -110,7 +115,7 @@ Checkpoint log (newest first):
    no numbers), applicant fallback from the first message's mention, outcome
    inference from embeds, "closed, no decision" status, skip-owner rule, skip
    abandoned by default, and a "Closed" entry in the Browse status filter.
-2. Refuter pass on the driver, commit, push, deploy.
+2. ~~Refuter pass on the driver, commit, push, deploy.~~ Done, `5dced26`.
 3. Reset numbering (`tools/reset_thread_ticket_test_data.py --confirm`).
 4. Dry run server 1, fix what it flags, run; then 2, 3, 4.
 5. After all four: legacy removal a few weeks after go-live; nightly Mongo
