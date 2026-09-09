@@ -264,6 +264,34 @@ def test_shared_hub_has_only_chart_picker_and_find_and_uploads_a_fresh_png():
     _assert_component_limits(view)
 
 
+def test_hub_picker_with_more_than_25_open_shows_oldest_and_says_how_many():
+    """The picker only ever holds 25 options. Given an oldest-first list (as
+    `store.list_open` now returns) of 30 open tickets, the 25 shown must be
+    the 25 oldest -- not the 25 newest, which would drop the
+    longest-waiting applicants off the list -- and the placeholder must
+    tell the recruiter there are more."""
+    tickets = [_ticket(index) for index in range(1, 31)]  # oldest (1) first
+    view = console.build_hub_components(tickets, b"png", total_open=30)
+    container, _attachments = view[0].build()
+
+    select = container["components"][1]["components"][0]
+    assert len(select["options"]) == 25
+    shown_ids = {option["value"] for option in select["options"]}
+    assert shown_ids == {console._ticket_id(_ticket(index)) for index in range(1, 26)}
+    assert select["placeholder"] == (
+        "Choose a ticket (25 of 30 shown, oldest first; use Find for the rest)"
+    )
+    _assert_component_limits(view)
+
+
+def test_hub_picker_placeholder_stays_plain_when_25_or_fewer_open():
+    tickets = [_ticket(index) for index in range(1, 26)]
+    view = console.build_hub_components(tickets, b"png", total_open=25)
+    container, _attachments = view[0].build()
+    select = container["components"][1]["components"][0]
+    assert select["placeholder"] == "Choose an open ticket"
+
+
 def test_empty_hub_keeps_a_valid_disabled_picker():
     view = console.build_hub_components([], b"png")
     container, _attachments = view[0].build()
@@ -1456,6 +1484,36 @@ def test_refresh_worker_recovers_after_outage_without_another_ticket_event(monke
 
     asyncio.run(run())
     assert attempts == [True, False]
+
+
+def test_refresh_worker_backs_off_exponentially_then_caps_at_one_hour(monkeypatch):
+    """A permanent console-config failure (channel gone, privacy validation)
+    must not keep reconciling at a fixed ~77s cadence forever: each
+    unsuccessful cycle should double the wait starting at 60s, capped at
+    3600s (1h)."""
+    delays = []
+
+    async def drain(_bot, _mongo, *, debounce):
+        # Succeed once eight backoff sleeps have been observed, so the
+        # doubling sequence and the cap are both visible.
+        return len(delays) >= 8
+
+    async def dirty(_mongo):
+        return {"channel_id": 1, "desired_revision": 2, "applied_revision": 1}
+
+    async def record_sleep(seconds):
+        delays.append(seconds)
+
+    monkeypatch.setattr(console, "_drain_hub_refreshes", drain)
+    monkeypatch.setattr(console, "_hub_state", dirty)
+    monkeypatch.setattr(console.asyncio, "sleep", record_sleep)
+
+    result = asyncio.run(
+        console._hub_refresh_worker(object(), object(), debounce=False)
+    )
+
+    assert result is True
+    assert delays == [60.0, 120.0, 240.0, 480.0, 960.0, 1920.0, 3600.0, 3600.0]
 
 
 def test_staff_context_delivery_is_one_durable_message_and_updates_in_place(monkeypatch):

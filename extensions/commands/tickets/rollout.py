@@ -9,6 +9,7 @@ import lightbulb
 
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import (
+    console,
     perms,
     store,
     thread_intake_ready,
@@ -338,26 +339,27 @@ class RolloutStatus(
             "kind": "thread_ticket_creation",
             "recovery_note": {"$exists": True},
         })
-        await ctx.respond(
-            "\n".join([
-                f"**Phase:** `{state.phase}` ({validity}, revision `{state.revision}`)",
-                f"**Old legacy panel:** {_source_label(state.legacy_intake)}",
-                f"**Target public v2 panel:** {_source_label(state.thread_intake)}",
-                f"**Pilot panel:** {_source_label(state.pilot_intake)}",
-                f"**Pilot access:** {len(state.pilot_user_ids)} user(s), "
-                f"{len(state.pilot_role_ids)} role(s)",
-                "**Store conversion:** intentionally unavailable while both runtimes coexist",
-                f"**Legacy drain:** {drain.legacy_open_tickets} open, "
-                f"{drain.legacy_slots} slot(s), "
-                f"{drain.legacy_pending_workflows} pending workflow(s)",
-                f"**Pending legacy deliveries:** {drain.legacy_pending_deliveries} "
-                f"(`{pending_ids}`)",
-                f"**Unresolved open-ticket conflicts:** "
-                f"{drain.unresolved_conflicts} (`{conflict_ids}`)",
-                f"**Degraded ticket creations:** {degraded_creations}",
-            ]),
-            ephemeral=True,
-        )
+        lines = [
+            f"**Phase:** `{state.phase}` ({validity}, revision `{state.revision}`)",
+            f"**Old legacy panel:** {_source_label(state.legacy_intake)}",
+            f"**Target public v2 panel:** {_source_label(state.thread_intake)}",
+            f"**Pilot panel:** {_source_label(state.pilot_intake)}",
+            f"**Pilot access:** {len(state.pilot_user_ids)} user(s), "
+            f"{len(state.pilot_role_ids)} role(s)",
+            "**Store conversion:** intentionally unavailable while both runtimes coexist",
+            f"**Legacy drain:** {drain.legacy_open_tickets} open, "
+            f"{drain.legacy_slots} slot(s), "
+            f"{drain.legacy_pending_workflows} pending workflow(s)",
+            f"**Pending legacy deliveries:** {drain.legacy_pending_deliveries} "
+            f"(`{pending_ids}`)",
+            f"**Unresolved open-ticket conflicts:** "
+            f"{drain.unresolved_conflicts} (`{conflict_ids}`)",
+            f"**Degraded ticket creations:** {degraded_creations}",
+        ]
+        console_error = await console.refresh_status(mongo)
+        if console_error:
+            lines.append(f"console: {console_error}")
+        await ctx.respond("\n".join(lines), ephemeral=True)
 
 
 @ticket.register()

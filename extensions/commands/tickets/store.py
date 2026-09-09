@@ -219,9 +219,12 @@ async def find_open_for_applicant(
 
 
 async def list_open(mongo: MongoClient, *, limit: int = 25) -> list[dict]:
+    """Open tickets, oldest first -- the console hub picker only ever shows
+    the first `limit`, and it must be the longest-waiting applicants that
+    stay visible, not the ones who just opened a ticket."""
     amount = max(1, min(int(limit), 25))
     cursor = (await _reader(mongo)).find({**RUNTIME_FILTER, "status": "open"})
-    raw = await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
+    raw = await cursor.sort([("created_at", 1), ("_id", 1)]).limit(amount).to_list(
         length=amount
     )
     return _normalized_many(raw)

@@ -1,7 +1,7 @@
 import asyncio
 import time
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import hikari
@@ -339,6 +339,21 @@ def test_list_open_search_and_history_for_normalize_documents():
     assert opened[0]["schema_version"] == schema.SCHEMA_VERSION
     assert searched[0]["schema_version"] == schema.SCHEMA_VERSION
     assert history[0]["schema_version"] == schema.SCHEMA_VERSION
+
+
+def test_list_open_orders_oldest_first_the_longest_waiting_at_top():
+    """The console hub picker only shows the first `limit` results, so the
+    longest-waiting applicants must be the ones that stay visible when more
+    tickets are open than fit -- not the ones who just opened one."""
+    older = _ticket(public=101, staff=102, number=1)
+    older["created_at"] = NOW - timedelta(hours=2)
+    newer = _ticket(public=201, staff=202, number=2)
+    newer["created_at"] = NOW - timedelta(minutes=5)
+    mongo = _mongo(newer, older)
+
+    opened = asyncio.run(store.list_open(mongo))
+
+    assert [doc["_id"] for doc in opened] == [older["_id"], newer["_id"]]
 
 
 def test_username_search_uses_only_the_indexed_normalized_field():

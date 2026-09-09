@@ -725,6 +725,84 @@ def test_cross_server_rollback_requires_live_exact_old_panel_before_cas(monkeypa
     assert "Nothing changed" in ctx.responses[-1]
 
 
+def test_rollout_status_surfaces_a_stuck_console_refresh_error(monkeypatch):
+    """`refresh_error`/`refresh_failures` were recorded on the shared-console
+    hub state but never surfaced anywhere -- an operator had no way to see
+    a permanently broken console short of reading logs. rollout-status must
+    show it as a `console: <error>` line."""
+    state = _rollout_state(ticket_runtime.PHASE_PILOT)
+    drain = ticket_runtime.DrainStatus(
+        legacy_open_tickets=0, legacy_slots=0, legacy_pending_workflows=0,
+    )
+
+    async def allowed(*_args):
+        return True
+
+    async def rollout_state(*_args):
+        return state
+
+    async def drain_status(*_args):
+        return drain
+
+    async def console_error(_mongo):
+        return "ConsoleConfigurationError: console channel must deny View Channel to @everyone"
+
+    async def count_documents(*_args, **_kwargs):
+        return 0
+
+    monkeypatch.setattr(rollout, "_require_admin", allowed)
+    monkeypatch.setattr(rollout.ticket_runtime, "get_rollout", rollout_state)
+    monkeypatch.setattr(rollout.ticket_runtime, "legacy_drain_status", drain_status)
+    monkeypatch.setattr(rollout.console, "refresh_status", console_error)
+
+    mongo = SimpleNamespace(
+        ticket_creation_state=SimpleNamespace(count_documents=count_documents),
+    )
+    ctx = _rollout_command_context()
+    asyncio.run(rollout.RolloutStatus().invoke(ctx, mongo=mongo))
+
+    lines = ctx.responses[-1].split("\n")
+    assert (
+        "console: ConsoleConfigurationError: console channel must deny "
+        "View Channel to @everyone"
+    ) in lines
+
+
+def test_rollout_status_omits_console_line_when_healthy(monkeypatch):
+    state = _rollout_state(ticket_runtime.PHASE_PILOT)
+    drain = ticket_runtime.DrainStatus(
+        legacy_open_tickets=0, legacy_slots=0, legacy_pending_workflows=0,
+    )
+
+    async def allowed(*_args):
+        return True
+
+    async def rollout_state(*_args):
+        return state
+
+    async def drain_status(*_args):
+        return drain
+
+    async def console_healthy(_mongo):
+        return None
+
+    async def count_documents(*_args, **_kwargs):
+        return 0
+
+    monkeypatch.setattr(rollout, "_require_admin", allowed)
+    monkeypatch.setattr(rollout.ticket_runtime, "get_rollout", rollout_state)
+    monkeypatch.setattr(rollout.ticket_runtime, "legacy_drain_status", drain_status)
+    monkeypatch.setattr(rollout.console, "refresh_status", console_healthy)
+
+    mongo = SimpleNamespace(
+        ticket_creation_state=SimpleNamespace(count_documents=count_documents),
+    )
+    ctx = _rollout_command_context()
+    asyncio.run(rollout.RolloutStatus().invoke(ctx, mongo=mongo))
+
+    assert not any(line.startswith("console:") for line in ctx.responses[-1].split("\n"))
+
+
 def _pilot_context(edits):
     async def defer(**_kwargs):
         return None

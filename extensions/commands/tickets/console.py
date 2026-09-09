@@ -67,6 +67,11 @@ HUB_DEBOUNCE_SECONDS = 0.75
 HUB_LEASE = timedelta(minutes=3)
 HUB_RETRY_DELAYS = (0.0, 1.0, 4.0, 12.0)
 HUB_RECONCILE_SECONDS = 60.0
+# A permanent failure (channel gone, privacy validation failing) must not
+# keep hammering Discord at a fixed 60s/~77s cadence forever. Each
+# unsuccessful reconcile cycle doubles the wait, starting at
+# HUB_RECONCILE_SECONDS, up to this ceiling.
+HUB_RECONCILE_MAX_SECONDS = 3600.0
 # One Discord REST attempt can spend up to 120 seconds waiting on a rate-limit
 # bucket plus the client's request timeout.  Keep each renewed ownership window
 # comfortably beyond that single-attempt ceiling; Hikari retries stay disabled.
@@ -120,6 +125,10 @@ USERNAME_RE = re.compile(r"^[\w .-]{2,32}$", re.UNICODE)
 
 _refresh_tasks: dict[int, asyncio.Task] = {}
 _startup_recovery: StartupReconciler | None = None
+# Tracks the last logged failure signature per mongo client (keyed by id),
+# so a permanent failure logs one full traceback and then one line per
+# retry instead of a fresh traceback every attempt.
+_refresh_error_signatures: dict[int, str] = {}
 
 
 class ConsoleConfigurationError(RuntimeError):
@@ -591,11 +600,36 @@ def _open_picker_options(open_tickets: Sequence[Mapping]) -> list[SelectOption]:
     )]
 
 
-def build_hub_components(open_tickets: Sequence[Mapping], png_bytes: bytes) -> list[Container]:
-    """The only shared message shape: image, picker, and Find button."""
+def _hub_picker_placeholder(has_open: bool, shown: int, total_open: int | None) -> str:
+    if not has_open:
+        return "No open tickets"
+    if total_open is not None and total_open > shown:
+        return (
+            f"Choose a ticket ({shown} of {total_open} shown, oldest first; "
+            "use Find for the rest)"
+        )
+    return "Choose an open ticket"
+
+
+def build_hub_components(
+    open_tickets: Sequence[Mapping],
+    png_bytes: bytes,
+    *,
+    total_open: int | None = None,
+) -> list[Container]:
+    """The only shared message shape: image, picker, and Find button.
+
+    ``open_tickets`` is oldest-first (the longest-waiting applicant at the
+    top) so that when more than ``MAX_OPEN_PICKER`` tickets are open, the
+    ones that fall off the picker are the newest, not the ones a recruiter
+    is most overdue to look at. ``total_open`` (the true open count, which
+    may exceed ``len(open_tickets)``) drives the placeholder hint so a
+    recruiter knows the picker is not showing everything.
+    """
 
     attachment = hikari.Bytes(png_bytes, HUB_ATTACHMENT, "image/png")
     has_open = bool(open_tickets)
+    shown = min(len(open_tickets), MAX_OPEN_PICKER)
     return [Container(
         accent_color=ACCENT_BLUE,
         components=[
@@ -605,10 +639,7 @@ def build_hub_components(open_tickets: Sequence[Mapping], png_bytes: bytes) -> l
             )]),
             ActionRow(components=[TextSelectMenu(
                 custom_id=f"ticket_v2_console_pick:{HUB_ACTION_ID}",
-                placeholder=(
-                    "Choose an open ticket"
-                    if has_open else "No open tickets"
-                ),
+                placeholder=_hub_picker_placeholder(has_open, shown, total_open),
                 min_values=1,
                 max_values=1,
                 is_disabled=not has_open,
@@ -658,11 +689,27 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
         flags=flag_counts if isinstance(flag_counts, Mapping) else {},
         updated_at=utcnow(),
     ))
-    return build_hub_components(open_tickets, png)
+    return build_hub_components(
+        open_tickets, png, total_open=statuses.get("open", len(open_tickets))
+    )
 
 
 async def _hub_state(mongo: MongoClient) -> dict:
     return await mongo.ticket_setup.find_one({"_id": HUB_STATE_ID}) or {}
+
+
+async def refresh_status(mongo: MongoClient) -> str | None:
+    """The shared console's current unresolved publish error, if any.
+
+    ``None`` once a refresh has since succeeded -- ``_release_hub_lease``
+    clears ``refresh_error`` on every successful publish. Callers such as
+    ``/ticket-pilot rollout-status`` use this to surface a permanent
+    console-config failure that would otherwise only show up as repeated
+    log lines.
+    """
+    state = await _hub_state(mongo)
+    error = state.get("refresh_error")
+    return str(error) if error else None
 
 
 async def _ensure_hub_state(mongo: MongoClient) -> None:
@@ -723,7 +770,7 @@ async def _release_hub_lease(
         })
     if error is not None:
         update.setdefault("$set", {}).update({
-            "refresh_error": type(error).__name__,
+            "refresh_error": f"{type(error).__name__}: {error}"[:300],
             "refresh_failed_at": utcnow(),
         })
         update.setdefault("$inc", {})["refresh_failures"] = 1
@@ -731,6 +778,27 @@ async def _release_hub_lease(
         {"_id": HUB_STATE_ID, "lease_owner": owner},
         update,
     )
+
+
+def _log_refresh_failure(mongo: MongoClient, exc: Exception, *, attempt: int) -> None:
+    """Log a full traceback the first time an error is seen, then one line
+    per retry after that.
+
+    Without this, a permanent failure (channel gone, privacy validation)
+    logs a fresh traceback on every one of the four quick retries, every
+    reconcile cycle, forever -- pure noise once the cause is known.
+    """
+    key = id(mongo)
+    signature = f"{type(exc).__name__}: {exc}"[:300]
+    if _refresh_error_signatures.get(key) != signature:
+        _refresh_error_signatures[key] = signature
+        _log.exception(
+            "ticket console refresh failed attempt=%s: %s", attempt, signature
+        )
+    else:
+        _log.warning(
+            "ticket console refresh failed again attempt=%s: %s", attempt, signature
+        )
 
 
 def _hub_action_ids(component) -> set[str]:
@@ -886,15 +954,12 @@ async def _drain_hub_refreshes(
             await _release_hub_lease(mongo, owner)
             raise
         except Exception as exc:  # durable dirty revision remains unapplied
-            _log.exception(
-                "ticket console refresh failed attempt=%s revision=%s",
-                retry_index + 1,
-                desired,
-            )
+            _log_refresh_failure(mongo, exc, attempt=retry_index + 1)
             await _release_hub_lease(mongo, owner, error=exc)
             retry_index += 1
             continue
 
+        _refresh_error_signatures.pop(id(mongo), None)
         await _release_hub_lease(mongo, owner, applied_revision=desired)
         retry_index = 0
         latest = await _hub_state(mongo)
@@ -914,6 +979,7 @@ async def _hub_refresh_worker(
     """Keep reconciling durable dirty state after the fast retry window."""
 
     first = True
+    backoff = HUB_RECONCILE_SECONDS
     while True:
         clean = await _drain_hub_refreshes(
             bot,
@@ -930,9 +996,13 @@ async def _hub_refresh_worker(
         ):
             return False
         # The quick retries are intentionally bounded. The worker remains alive
-        # at a capped cadence so an extended Discord outage heals without a new
-        # ticket event or process restart.
-        await asyncio.sleep(HUB_RECONCILE_SECONDS)
+        # at a geometrically growing cadence -- starting at
+        # HUB_RECONCILE_SECONDS, doubling each unsuccessful cycle, capped at
+        # HUB_RECONCILE_MAX_SECONDS -- so a transient Discord outage still
+        # heals promptly while a permanent config failure stops hammering
+        # Discord every ~77s forever.
+        await asyncio.sleep(backoff)
+        backoff = min(backoff * 2.0, HUB_RECONCILE_MAX_SECONDS)
 
 
 def _schedule_hub_refresh(
@@ -954,6 +1024,7 @@ def _schedule_hub_refresh(
     def done(finished: asyncio.Task) -> None:
         if _refresh_tasks.get(key) is finished:
             _refresh_tasks.pop(key, None)
+        _refresh_error_signatures.pop(key, None)
         if not finished.cancelled():
             with contextlib.suppress(Exception):
                 finished.result()
