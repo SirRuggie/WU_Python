@@ -77,7 +77,18 @@ client = lightbulb.client_from_app(bot)
 # it classifies the response, while real HTTP warnings/errors remain visible.
 logging.getLogger("coc.http").setLevel(logging.WARNING)
 
-mongo_client = MongoClient(uri=os.getenv("MONGODB_URI"))
+# Fail fast and loudly rather than have pymongo silently default to
+# localhost:27017 (docs/mongodb-refactor.md rule 2, mirroring the interpreter
+# version check above): with that fallback the bot boots "fine" and every
+# query only fails after a 30s server-selection timeout.
+_mongodb_uri = os.getenv("MONGODB_URI", "")
+if not _mongodb_uri:
+    raise RuntimeError(
+        "MONGODB_URI is not set. Set it in the environment or .env file "
+        "before starting the bot."
+    )
+
+mongo_client = MongoClient(uri=_mongodb_uri)
 clash_client: coc.Client | None = None
 
 # Uploaded clan logos, banners and FWA base images live on Cloudflare R2.
