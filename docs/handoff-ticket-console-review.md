@@ -96,6 +96,24 @@ matched). Owner confirmed: a decided ticket is final and the next click
 makes a new ticket; a support-ticket panel is wanted later as a second
 panel type.
 
+Afternoon additions, committed through `42da9f6` and deployed: console
+search accepts a bare tag; decision confirm clicks show an in-progress
+notice and the follow-up effects run as a tracked background task;
+overturn deletes the earlier decision card; approval is a card with the
+Approved stamp (both stamps downscaled to 512px in
+`assets/tickets/static/`); the detail panel shows only the applicant's
+latest three messages; a Browse tickets panel (Status/Type/Period
+selects, custom year-month range, 10 per page, `thread_v2_created`
+partial index) sits next to Find a ticket; the staff thread receives
+the legacy recruiter talking points verbatim (Main 3, FWA 4 messages);
+the Chocolate checklist is one paginated message; the dispatcher leaves
+the source message untouched when a handler returns None. Migration
+survey (read-only) is in memory and in this session's notes: 319 legacy
+tickets with records across three visible servers, 64 records whose
+channel is in no visible server, `/tickets migrate-legacy` is
+one-ticket-per-command so a bulk driver is the next build; open owner
+questions: a fourth legacy server, and open legacy tickets at cutover.
+
 The ONE legacy edit the new system requires: `tickets_legacy/migrate.py`
 refuses to write when `ticket_setup.config.ticket_store_activation_version`
 is set. Without it, re-running `/ticket migrate-store confirm:true` after
