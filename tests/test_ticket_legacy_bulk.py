@@ -412,6 +412,162 @@ def test_run_batch_refuses_a_stale_plan():
 
 
 # ---------------------------------------------------------------------------
+# Progress logging and durable summaries (long dry runs and runs outlive a
+# 15-minute interaction token; see docs/ticket-console-operations.md "Bulk
+# legacy migration").
+# ---------------------------------------------------------------------------
+
+def test_build_plan_prints_progress_lines_every_ten_channels(monkeypatch, capsys):
+    channels = [_channel(7000 + i, f"main-{i}-user{i}") for i in range(23)]
+
+    async def fetch_guild_channels(_guild_id):
+        return channels
+
+    bot = SimpleNamespace(rest=SimpleNamespace(fetch_guild_channels=fetch_guild_channels))
+
+    async def fake_preview(*, bot, mongo, request):
+        return SimpleNamespace()
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    monkeypatch.setattr(legacy_bulk, "PREVIEW_SLEEP_SECONDS", 0)
+
+    mongo = _mongo()
+    asyncio.run(legacy_bulk.build_plan(
+        bot=bot, mongo=mongo, source_guild_id=77, category_id=None,
+        attachments="copy", limit=None,
+    ))
+
+    out = capsys.readouterr().out
+    assert "[Tickets] migrate_all_plan_start guild=77 candidates=23" in out
+    assert "[Tickets] migrate_all_plan_progress guild=77 scanned=10/23 ready=10 problems=0" in out
+    assert "[Tickets] migrate_all_plan_progress guild=77 scanned=20/23 ready=20 problems=0" in out
+    assert "[Tickets] migrate_all_plan_done guild=77 scanned=23 ready=23 problems=0" in out
+
+
+def test_build_plan_persists_a_partial_plan_when_interrupted_mid_scan(monkeypatch):
+    channels = [_channel(8000 + i, f"main-{i}-user{i}") for i in range(23)]
+
+    async def fetch_guild_channels(_guild_id):
+        return channels
+
+    bot = SimpleNamespace(rest=SimpleNamespace(fetch_guild_channels=fetch_guild_channels))
+
+    calls: list[int] = []
+
+    async def fake_preview(*, bot, mongo, request):
+        calls.append(request.source_channel_id)
+        if len(calls) == 15:
+            # Simulates the process dying mid-scan (a killed task, not a
+            # classification failure -- those are caught and turned into
+            # `error:` entries instead).
+            raise asyncio.CancelledError()
+        return SimpleNamespace()
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    monkeypatch.setattr(legacy_bulk, "PREVIEW_SLEEP_SECONDS", 0)
+
+    mongo = _mongo()
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(legacy_bulk.build_plan(
+            bot=bot, mongo=mongo, source_guild_id=88, category_id=None,
+            attachments="copy", limit=None,
+        ))
+
+    document = mongo.ticket_migration_batches.document
+    assert document["state"] == "planning"
+    assert len(document["entries"]) == 10
+    assert document["counts"] == {legacy_bulk.CLASS_READY: 10}
+
+
+def test_run_batch_prints_progress_lines_per_ticket(monkeypatch, capsys):
+    _patch_migration_cycle(monkeypatch)
+    entries = [_ready(9001), _ready(9002), _ready(9003)]
+    batch = _batch_document(16, entries, state="planned")
+    mongo = _mongo(batch=batch)
+    bot = SimpleNamespace(rest=SimpleNamespace())
+
+    asyncio.run(legacy_bulk.run_batch(
+        bot=bot, mongo=mongo, source_guild_id=16, guild_name="Legacy Six",
+        limit=None, actor_id=1, actor_name="Admin",
+    ))
+
+    out = capsys.readouterr().out
+    assert "[Tickets] migrate_all_run_start guild=16 total=3" in out
+    assert "[Tickets] migrate_all_run_progress guild=16 done=1 failed=0 skipped=0 total=3" in out
+    assert "[Tickets] migrate_all_run_progress guild=16 done=2 failed=0 skipped=0 total=3" in out
+    assert "[Tickets] migrate_all_run_progress guild=16 done=3 failed=0 skipped=0 total=3" in out
+    assert "[Tickets] migrate_all_run_done guild=16 done=3 failed=0 skipped=0 total=3" in out
+
+
+def test_post_console_summary_posts_an_unpinged_message_in_the_console_channel():
+    posted = []
+
+    async def create_message(channel_id, content, *, user_mentions=None):
+        posted.append((channel_id, content, user_mentions))
+        return SimpleNamespace(id=1)
+
+    bot = SimpleNamespace(rest=SimpleNamespace(create_message=create_message))
+    mongo = _mongo(setup_docs=(CONFIG, {"_id": "ticket_console_hub", "channel_id": 555}))
+
+    asyncio.run(legacy_bulk._post_console_summary(bot=bot, mongo=mongo, text="the summary"))
+
+    assert posted == [(555, "the summary", False)]
+
+
+def test_post_console_summary_is_a_no_op_without_a_configured_console_channel():
+    async def create_message(*_args, **_kwargs):
+        raise AssertionError("must not post without a configured console channel")
+
+    bot = SimpleNamespace(rest=SimpleNamespace(create_message=create_message))
+    mongo = _mongo()  # no ticket_console_hub doc
+
+    asyncio.run(legacy_bulk._post_console_summary(bot=bot, mongo=mongo, text="ignored"))
+
+
+def test_finish_with_summary_falls_back_to_the_console_post_on_a_dead_token(capsys):
+    posted = []
+
+    async def create_message(channel_id, content, *, user_mentions=None):
+        posted.append((channel_id, content, user_mentions))
+        return SimpleNamespace(id=1)
+
+    bot = SimpleNamespace(rest=SimpleNamespace(create_message=create_message))
+    mongo = _mongo(setup_docs=(CONFIG, {"_id": "ticket_console_hub", "channel_id": 555}))
+
+    class DeadCtx:
+        async def respond(self, *_args, **_kwargs):
+            raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10062)
+
+    asyncio.run(legacy_bulk._finish_with_summary(
+        ctx=DeadCtx(), bot=bot, mongo=mongo, source_guild_id=99, text="the durable summary",
+    ))
+
+    assert posted == [(555, "the durable summary", False)]
+    out = capsys.readouterr().out
+    assert "[Tickets] migrate_all_reply_lost guild=99" in out
+
+
+def test_finish_with_summary_replies_normally_when_the_token_is_alive():
+    responded = []
+
+    async def create_message(channel_id, content, *, user_mentions=None):
+        return SimpleNamespace(id=1)
+
+    bot = SimpleNamespace(rest=SimpleNamespace(create_message=create_message))
+    mongo = _mongo(setup_docs=(CONFIG, {"_id": "ticket_console_hub", "channel_id": 555}))
+
+    class LiveCtx:
+        async def respond(self, text, *, ephemeral=False):
+            responded.append((text, ephemeral))
+
+    asyncio.run(legacy_bulk._finish_with_summary(
+        ctx=LiveCtx(), bot=bot, mongo=mongo, source_guild_id=100, text="hi",
+    ))
+
+    assert responded == [("hi", True)]
+
+
+# ---------------------------------------------------------------------------
 # legacy_migration._identity fallback via the legacy welcome message
 # ---------------------------------------------------------------------------
 

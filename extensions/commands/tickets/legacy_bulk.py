@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -39,6 +40,15 @@ PROGRESS_EDIT_EVERY = 5
 CONSECUTIVE_FAILURE_LIMIT = 10
 MAX_CHANNELS_PER_PLAN = 1000
 DRY_RUN_PROBLEM_LIMIT = 15
+# How often (in channels/tickets) the dry-run plan and confirmed run persist
+# progress and print a `[Tickets] migrate_all_*_progress` line.
+PLAN_PROGRESS_EVERY = 10
+# Dry-run classification only needs the applicant mention/welcome message
+# (near the start) and the decision embed (near the end); bound the history
+# read to the first/last N messages instead of the full channel so a plan
+# over ~160 channels does not stall on REST pagination. The confirmed run
+# always re-previews with full history (no `history_limit`).
+BULK_PLAN_HISTORY_LIMIT = 20
 
 CLASS_READY = "ready"
 CLASS_ALREADY_COPIED = "already_copied"
@@ -169,7 +179,15 @@ async def build_plan(
     limit: int | None,
     include_abandoned: bool = False,
 ) -> dict[str, Any]:
-    """Read-only: list, classify, and durably record a fresh plan for one guild."""
+    """Read-only: list, classify, and durably record a fresh plan for one guild.
+
+    Persisted incrementally (``state: "planning"``, ``entries``/``counts``
+    updated every `PLAN_PROGRESS_EVERY` channels) so a plan killed mid-scan
+    (long interaction tokens die after 15 minutes) leaves a partial plan
+    behind instead of losing the scan entirely; a fresh plan simply replaces
+    it once classification finishes.
+    """
+    start_perf = time.monotonic()
     rest = bot.rest
     channels, categories = await _candidate_channels(rest, source_guild_id, category_id)
     if len(channels) > MAX_CHANNELS_PER_PLAN:
@@ -177,56 +195,11 @@ async def build_plan(
             f"this category has {len(channels)} matching channels, above the "
             f"{MAX_CHANNELS_PER_PLAN}-channel bulk-plan limit; narrow the category and try again"
         )
+    total = len(channels)
+    print(f"[Tickets] migrate_all_plan_start guild={source_guild_id} candidates={total}")
 
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
     target_guild_id = _as_int(config.get("ticket_target_guild_id"))
-
-    entries: list[dict[str, Any]] = []
-    for channel in channels:
-        channel_id = int(channel.id)
-        channel_name = str(getattr(channel, "name", channel_id))
-        category_name = categories.get(_as_int(getattr(channel, "parent_id", 0)), "")
-        migration_id = legacy_migration._migration_id(source_guild_id, channel_id)
-        existing = await mongo.ticket_migrations.find_one({"_id": migration_id})
-        if existing and existing.get("state") == "complete":
-            entries.append(
-                _entry(channel_id, channel_name, CLASS_ALREADY_COPIED, "already copied", None)
-            )
-            continue
-
-        try:
-            ticket_type = legacy_migration._infer_ticket_type(
-                None, channel_name, None, category_name=category_name,
-            )
-        except legacy_migration.LegacyMigrationError as error:
-            entries.append(
-                _entry(channel_id, channel_name, CLASS_AMBIGUOUS_TYPE, str(error), None)
-            )
-            continue
-
-        parents = _destination_for_type(config, ticket_type)
-        if not target_guild_id or parents is None:
-            entries.append(_entry(
-                channel_id, channel_name, f"error:{BulkMigrationError.__name__}",
-                f"target destination or {ticket_type.upper()} parents are not configured",
-                ticket_type,
-            ))
-            continue
-
-        candidate_parent_id, staff_parent_id = parents
-        request = legacy_migration.LegacyMigrationRequest(
-            source_guild_id=source_guild_id,
-            source_channel_id=channel_id,
-            target_guild_id=target_guild_id,
-            candidate_parent_id=candidate_parent_id,
-            staff_parent_id=staff_parent_id,
-            include_abandoned=include_abandoned,
-        )
-        classification, detail, ticket_status = await _classify(bot=bot, mongo=mongo, request=request)
-        entries.append(
-            _entry(channel_id, channel_name, classification, detail, ticket_type, ticket_status)
-        )
-        await asyncio.sleep(PREVIEW_SLEEP_SECONDS)
 
     now = utcnow()
     batch_id = _batch_id(source_guild_id)
@@ -239,7 +212,7 @@ async def build_plan(
                 "to finish or let it pause before planning again"
             )
 
-    document = {
+    base_fields = {
         "_id": batch_id,
         "kind": "legacy_migration_batch",
         "schema_version": 1,
@@ -248,27 +221,109 @@ async def build_plan(
         "attachments": attachments,
         "requested_limit": int(limit) if limit else None,
         "include_abandoned": bool(include_abandoned),
-        "state": "planned",
-        "entries": entries,
-        "counts": _tally(entries),
+        "state": "planning",
+        "entries": [],
+        "counts": {},
         "consecutive_failures": 0,
         "created_at": (current or {}).get("created_at", now),
-        "updated_at": now,
-        "planned_at": now,
     }
     filt: dict[str, Any] = {"_id": batch_id}
     upsert = current is None
     if not upsert:
         filt["revision"] = int(current.get("revision", 0))
-    saved = await mongo.ticket_migration_batches.find_one_and_update(
+    document = await mongo.ticket_migration_batches.find_one_and_update(
         filt,
-        {"$set": document, "$inc": {"revision": 1}},
+        {"$set": {**base_fields, "updated_at": now}, "$inc": {"revision": 1}},
         upsert=upsert,
         return_document=ReturnDocument.AFTER,
     )
-    if saved is None:
+    if document is None:
         raise BulkMigrationError("the batch plan changed concurrently; run the dry run again")
-    return saved
+
+    entries: list[dict[str, Any]] = []
+
+    async def _checkpoint(index: int) -> None:
+        nonlocal document
+        if index % PLAN_PROGRESS_EVERY:
+            return
+        counts = _tally(entries)
+        ready = counts.get(CLASS_READY, 0)
+        problems = sum(value for key, value in counts.items() if key != CLASS_READY)
+        print(
+            f"[Tickets] migrate_all_plan_progress guild={source_guild_id} "
+            f"scanned={index}/{total} ready={ready} problems={problems}"
+        )
+        document = await _cas_update(
+            mongo, document, set_fields={"entries": entries, "counts": counts}
+        )
+
+    for index, channel in enumerate(channels, start=1):
+        channel_id = int(channel.id)
+        channel_name = str(getattr(channel, "name", channel_id))
+        category_name = categories.get(_as_int(getattr(channel, "parent_id", 0)), "")
+        migration_id = legacy_migration._migration_id(source_guild_id, channel_id)
+        existing = await mongo.ticket_migrations.find_one({"_id": migration_id})
+        if existing and existing.get("state") == "complete":
+            entries.append(
+                _entry(channel_id, channel_name, CLASS_ALREADY_COPIED, "already copied", None)
+            )
+            await _checkpoint(index)
+            continue
+
+        try:
+            ticket_type = legacy_migration._infer_ticket_type(
+                None, channel_name, None, category_name=category_name,
+            )
+        except legacy_migration.LegacyMigrationError as error:
+            entries.append(
+                _entry(channel_id, channel_name, CLASS_AMBIGUOUS_TYPE, str(error), None)
+            )
+            await _checkpoint(index)
+            continue
+
+        parents = _destination_for_type(config, ticket_type)
+        if not target_guild_id or parents is None:
+            entries.append(_entry(
+                channel_id, channel_name, f"error:{BulkMigrationError.__name__}",
+                f"target destination or {ticket_type.upper()} parents are not configured",
+                ticket_type,
+            ))
+            await _checkpoint(index)
+            continue
+
+        candidate_parent_id, staff_parent_id = parents
+        request = legacy_migration.LegacyMigrationRequest(
+            source_guild_id=source_guild_id,
+            source_channel_id=channel_id,
+            target_guild_id=target_guild_id,
+            candidate_parent_id=candidate_parent_id,
+            staff_parent_id=staff_parent_id,
+            include_abandoned=include_abandoned,
+            history_limit=BULK_PLAN_HISTORY_LIMIT,
+        )
+        classification, detail, ticket_status = await _classify(bot=bot, mongo=mongo, request=request)
+        entries.append(
+            _entry(channel_id, channel_name, classification, detail, ticket_type, ticket_status)
+        )
+        await _checkpoint(index)
+        await asyncio.sleep(PREVIEW_SLEEP_SECONDS)
+
+    final_now = utcnow()
+    counts = _tally(entries)
+    document = await _cas_update(mongo, document, set_fields={
+        "entries": entries,
+        "counts": counts,
+        "state": "planned",
+        "planned_at": final_now,
+    })
+    ready = counts.get(CLASS_READY, 0)
+    problems = sum(value for key, value in counts.items() if key != CLASS_READY)
+    elapsed = time.monotonic() - start_perf
+    print(
+        f"[Tickets] migrate_all_plan_done guild={source_guild_id} scanned={total} "
+        f"ready={ready} problems={problems} elapsed={elapsed:.1f}s"
+    )
+    return document
 
 
 def _jump_link(guild_id: int, channel_id: int) -> str:
@@ -343,6 +398,45 @@ async def _console_channel_id(mongo: MongoClient) -> int:
     return _as_int(hub.get("channel_id"))
 
 
+async def _post_console_summary(*, bot: hikari.GatewayBot, mongo: MongoClient, text: str) -> None:
+    """Durable copy of a dry-run/run summary: a plain message in the console
+
+    channel, unpinged, posted alongside (never instead of) the ephemeral
+    reply. An interaction token dies after 15 minutes, which a bulk plan or
+    run over many channels can outlive; this is what survives that.
+    """
+    console_channel_id = await _console_channel_id(mongo)
+    if not console_channel_id:
+        return
+    try:
+        await bot.rest.create_message(console_channel_id, text, user_mentions=False)
+    except (hikari.NotFoundError, hikari.ForbiddenError):
+        _log.warning(
+            "[Tickets] migrate_all_console_summary_failed channel=%s", console_channel_id
+        )
+
+
+async def _finish_with_summary(
+    *,
+    ctx: lightbulb.Context,
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    source_guild_id: int,
+    text: str,
+) -> None:
+    """Post the durable console summary, then attempt the ephemeral reply.
+
+    A dead interaction token (``NotFoundError``/``BadRequestError``, e.g.
+    after a long dry run) is logged and otherwise ignored: the console post
+    above already carries the result.
+    """
+    await _post_console_summary(bot=bot, mongo=mongo, text=text)
+    try:
+        await ctx.respond(text, ephemeral=True)
+    except (hikari.NotFoundError, hikari.BadRequestError):
+        print(f"[Tickets] migrate_all_reply_lost guild={source_guild_id}")
+
+
 def _progress_text(
     guild_name: str, *, done: int, failed: int, skipped: int, total: int
 ) -> str:
@@ -413,6 +507,7 @@ async def run_batch(
     actor_name: str,
 ) -> dict[str, Any]:
     """Process `ready` entries oldest-first, up to `limit`, resuming durably."""
+    start_perf = time.monotonic()
     batch_id = _batch_id(source_guild_id)
     now = utcnow()
     current = await mongo.ticket_migration_batches.find_one({"_id": batch_id})
@@ -448,6 +543,8 @@ async def run_batch(
     failed = sum(1 for entry in entries if str(entry["status"]).startswith("failed:"))
     skipped = sum(1 for entry in entries if entry["classification"] != CLASS_READY)
     consecutive_failures = int(document.get("consecutive_failures", 0))
+
+    print(f"[Tickets] migrate_all_run_start guild={source_guild_id} total={total}")
 
     channel_id = _as_int(document.get("progress_channel_id"))
     message_id = _as_int(document.get("progress_message_id"))
@@ -546,6 +643,11 @@ async def run_batch(
             "lease_until": utcnow() + BATCH_LEASE,
         })
 
+        print(
+            f"[Tickets] migrate_all_run_progress guild={source_guild_id} "
+            f"done={done} failed={failed} skipped={skipped} total={total}"
+        )
+
         if done % PROGRESS_EDIT_EVERY == 0:
             await _post_progress()
 
@@ -574,6 +676,11 @@ async def run_batch(
             )
 
     await _post_progress()
+    elapsed = time.monotonic() - start_perf
+    print(
+        f"[Tickets] migrate_all_run_done guild={source_guild_id} done={done} "
+        f"failed={failed} skipped={skipped} total={total} elapsed={elapsed:.1f}s"
+    )
     return document
 
 
@@ -678,10 +785,12 @@ class MigrateAllLegacyTickets(
                     limit=self.limit,
                     include_abandoned=self.include_abandoned,
                 )
-                await ctx.respond(
-                    "🔎 **DRY RUN — nothing was written.**\n"
-                    + dry_run_summary(document, guild_name=guild_name),
-                    ephemeral=True,
+                await _finish_with_summary(
+                    ctx=ctx, bot=bot, mongo=mongo, source_guild_id=source_guild_id,
+                    text=(
+                        "🔎 **DRY RUN — nothing was written.**\n"
+                        + dry_run_summary(document, guild_name=guild_name)
+                    ),
                 )
                 return
 
@@ -702,11 +811,13 @@ class MigrateAllLegacyTickets(
             entries = document.get("entries") or []
             done = sum(1 for entry in entries if entry["status"] == "done")
             failed = sum(1 for entry in entries if str(entry["status"]).startswith("failed:"))
-            await ctx.respond(
-                f"✅ **Batch `{document.get('state')}`.** `{done}` copied, `{failed}` failed, "
-                f"`{sum(v for k, v in counts.items() if k != CLASS_READY)}` skipped. "
-                "Re-run with `confirm: true` to resume.",
-                ephemeral=True,
+            await _finish_with_summary(
+                ctx=ctx, bot=bot, mongo=mongo, source_guild_id=source_guild_id,
+                text=(
+                    f"✅ **Batch `{document.get('state')}`.** `{done}` copied, `{failed}` failed, "
+                    f"`{sum(v for k, v in counts.items() if k != CLASS_READY)}` skipped. "
+                    "Re-run with `confirm: true` to resume."
+                ),
             )
         except (legacy_migration.LegacyMigrationError, BulkMigrationError) as error:
             await ctx.respond(f"❌ Bulk migration stopped safely: {error}", ephemeral=True)

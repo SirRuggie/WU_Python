@@ -145,6 +145,13 @@ class LegacyMigrationRequest:
     # default; `/tickets migrate-all include-abandoned:true` sets this to
     # import it as closed/no-decision instead.
     include_abandoned: bool = False
+    # Set only by `legacy_bulk.build_plan`'s dry-run classification: bounds
+    # the source channel/staff-thread history read to the first/last
+    # `history_limit` messages instead of the full history, since a plan
+    # only needs the applicant mention/welcome (near the start) and the
+    # decision embed (near the end). A confirmed migration always leaves
+    # this unset and reads full history.
+    history_limit: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -724,6 +731,30 @@ async def _all_messages(rest: hikari.api.RESTClient, channel_id: int) -> list[An
     return sorted(messages, key=lambda item: int(item.id))
 
 
+async def _bounded_messages(
+    rest: hikari.api.RESTClient, channel_id: int, limit: int
+) -> list[Any]:
+    """Head+tail bounded history: the oldest and newest `limit` messages only.
+
+    Used only for `LegacyMigrationRequest.history_limit` (the bulk dry-run
+    classification path): the applicant mention/welcome message lives near
+    channel creation and the decision embed lives near the end, so this
+    avoids paginating the full channel history for a preview whose result
+    is discarded except for `status`. A confirmed migration never sets
+    `history_limit` and always reads full history via `_all_messages`.
+    """
+    oldest, newest = await asyncio.gather(
+        thread_service._collect_rest_iterator(
+            rest.fetch_messages(channel_id, after=0).limit(limit)
+        ),
+        thread_service._collect_rest_iterator(
+            rest.fetch_messages(channel_id).limit(limit)
+        ),
+    )
+    merged = {int(item.id): item for item in (*oldest, *newest)}
+    return sorted(merged.values(), key=lambda item: int(item.id))
+
+
 def _attachment_http_status(status: int) -> str:
     if 200 <= int(status) < 400:
         return "live"
@@ -1228,7 +1259,11 @@ async def preview_legacy_ticket(
         mongo, request.source_guild_id, request.source_channel_id
     )
     channel_name = str(getattr(source_channel, "name", "legacy-ticket"))
-    public_messages = await _all_messages(bot.rest, request.source_channel_id)
+    public_messages = (
+        await _bounded_messages(bot.rest, request.source_channel_id, request.history_limit)
+        if request.history_limit
+        else await _all_messages(bot.rest, request.source_channel_id)
+    )
     user_id, username, display_name = await _identity(
         bot.rest,
         source_ticket=source_ticket,
@@ -1302,9 +1337,14 @@ async def preview_legacy_ticket(
             else _as_int((source_ticket or {}).get("thread_id"))
         ) or None,
     )
-    staff_messages = (
-        await _all_messages(bot.rest, int(source_staff.id)) if source_staff is not None else []
-    )
+    if source_staff is None:
+        staff_messages = []
+    elif request.history_limit:
+        staff_messages = await _bounded_messages(
+            bot.rest, int(source_staff.id), request.history_limit
+        )
+    else:
+        staff_messages = await _all_messages(bot.rest, int(source_staff.id))
     created_at = (source_ticket or {}).get("created_at")
     if not isinstance(created_at, datetime):
         created_at = hikari.Snowflake(request.source_channel_id).created_at

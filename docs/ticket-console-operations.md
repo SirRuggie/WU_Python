@@ -557,6 +557,38 @@ category — narrow the category if it reports more) and the reply is a
 plain-English summary: totals per classification, per type, and per
 outcome (including `closed, no decision`), the first 15 problem channels
 with a reason and a jump link, and the exact `confirm:true` command to run.
+Because each channel's own classification only needs the applicant
+mention/welcome message near the start and any decision embed near the
+end, the dry run reads a bounded head+tail slice of history (first/last 20
+messages per channel/staff-thread) instead of the full channel — a
+confirmed run always re-previews with full history, so a bounded-mode
+misread here (e.g. an applicant who only wrote outside that window,
+misclassified `abandoned`) is corrected at confirm time rather than
+affecting what actually gets copied.
+
+A source guild with many legacy channels can take minutes to scan, longer
+than the 15-minute life of the interaction token that started it, so the
+scan is durable and observable rather than a single all-or-nothing call:
+
+- The plan document is written immediately as `state: "planning"` with
+  empty `entries`/`counts`, then updated (CAS on `revision`) every 10
+  channels scanned, and finally to `state: "planned"` once the scan
+  completes. If the process dies mid-scan, `ticket_migration_batches` still
+  holds the last 10-channel checkpoint instead of nothing; a fresh dry run
+  replaces it from scratch.
+- Console output logs `[Tickets] migrate_all_plan_start guild=<id>
+  candidates=<n>` once channels are discovered, `[Tickets]
+  migrate_all_plan_progress guild=<id> scanned=<i>/<n> ready=<r>
+  problems=<p>` every 10 channels, and `[Tickets] migrate_all_plan_done
+  guild=<id> scanned=<n> ready=<r> problems=<p> elapsed=<s>s` when it
+  finishes.
+- The finished summary is posted twice: once as the normal ephemeral
+  reply, and once as a plain (unpinged) message in the ticket console
+  channel (`ticket_setup` doc `ticket_console_hub`) so the result survives
+  even if the interaction token has already died. If the ephemeral reply
+  itself fails (`NotFoundError`/`BadRequestError` — a dead token), that is
+  logged as `[Tickets] migrate_all_reply_lost guild=<id>` and the console
+  post is the only record of the result.
 
 **Outcome when a channel has no ✅/❌ prefix:** the channel's history is
 scanned for an approval message/embed ("Welcome to the Family!",
@@ -589,7 +621,15 @@ its own admin confirmation); every bypass logs
 One progress message is posted in the ticket console channel at the start of
 a run and edited every five completed tickets and once more at the end:
 `Copying legacy tickets from {guild name}: {done}/{total} done, {failed}
-failed, {skipped} skipped · <relative time>`.
+failed, {skipped} skipped · <relative time>`. Separately, console output logs
+`[Tickets] migrate_all_run_start guild=<id> total=<n>` at the start,
+`[Tickets] migrate_all_run_progress guild=<id> done=<d> failed=<f>
+skipped=<s> total=<n>` after every ticket, and `[Tickets] migrate_all_run_done
+guild=<id> done=<d> failed=<f> skipped=<s> total=<n> elapsed=<s>s` when the
+run stops (finished, paused, or limit-cut). As with the dry run, the final
+outcome is posted both as the ephemeral reply and as a plain message in the
+console channel — the durable copy that survives a dead interaction token,
+logged as `[Tickets] migrate_all_reply_lost guild=<id>` when that happens.
 
 **Resume and pause:** running `/tickets migrate-all confirm:true` again with
 the same `source-guild` resumes the same batch and skips every entry already
