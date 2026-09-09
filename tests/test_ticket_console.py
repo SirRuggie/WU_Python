@@ -301,6 +301,19 @@ def test_empty_hub_keeps_a_valid_disabled_picker():
     _assert_component_limits(view)
 
 
+def test_hub_picker_option_label_is_not_markdown_escaped():
+    """Select-option labels are plain text Discord never renders as
+    markdown, so `_escape_markdown`'s backslashes would show up literally
+    instead of staying inert."""
+    ticket = _ticket(1, username="_Weird*Name_")
+    view = console.build_hub_components([ticket], b"png")
+    container, _attachments = view[0].build()
+    select = container["components"][1]["components"][0]
+
+    assert select["options"][0]["label"] == "FWA #1 · _Weird*Name_"
+    assert "\\" not in select["options"][0]["label"]
+
+
 def test_search_worst_case_uses_exact_safe_budget_and_unknown_status_fallback():
     results = [_ticket(index) for index in range(1, 11)]
     results[-1]["status"] = "legacy_unknown"
@@ -520,6 +533,29 @@ def test_ticket_detail_manage_flags_panel_binds_37_tags_without_manual_ids():
     assert "flag_blacklist" not in remove["options"][0]["value"]
     _assert_component_limits(detail)
     _assert_component_limits(panel)
+
+
+def test_flag_remove_option_description_is_not_markdown_escaped():
+    """Select-option descriptions are plain text too -- an operator-entered
+    flag reason with markdown characters must show up unescaped, not with
+    literal backslashes Discord never interprets."""
+    ticket = _ticket(21)
+    flags = [{
+        "_id": "flag_blacklist",
+        "kind": console.flag_store.FLAG_BLACKLISTED,
+        "active": True,
+        "rev": 4,
+        "reason": "*repeat* offender (see #general)",
+    }]
+    panel = console.build_flag_manager(ticket, action_id="f" * 32, flags=flags)
+    remove = next(
+        node for node in _nodes(panel)
+        if str(node.get("custom_id", "")).startswith("ticket_v2_flag_remove:")
+    )
+
+    description = remove["options"][0]["description"]
+    assert description == "*repeat* offender (see #general)"
+    assert "\\" not in description
 
 
 def test_flag_modal_openers_acknowledge_with_modal_before_state_or_permission(

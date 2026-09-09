@@ -266,12 +266,21 @@ def _ticket_number(ticket_doc: Mapping) -> str:
         return "?"
 
 
-def _ticket_label(ticket_doc: Mapping, *, username: bool = False) -> str:
+def _ticket_label(ticket_doc: Mapping, *, username: bool = False, markdown: bool = True) -> str:
+    """A ticket's display label.
+
+    ``markdown=False`` is for a Discord select-option label: those fields
+    are plain text Discord never renders as markdown, so escaping would
+    leak literal backslashes into it instead of keeping anything inert.
+    Every other caller embeds this in real Text content and keeps the
+    default, where escaping is required.
+    """
     kind = _ticket_type(ticket_doc)
     prefix = "FWA" if kind == "fwa" else "Main" if kind == "main" else "Ticket"
     label = f"{prefix} #{_ticket_number(ticket_doc)}"
     if username:
-        label += f" · {_clean(ticket_doc.get('username'), limit=45)}"
+        clean = _clean if markdown else _clean_code_span
+        label += f" · {clean(ticket_doc.get('username'), limit=45)}"
     return label[:100]
 
 
@@ -586,7 +595,7 @@ def _open_picker_options(open_tickets: Sequence[Mapping]) -> list[SelectOption]:
         user_id = _int(ticket_doc.get("user_id"))
         description = f"Discord ID {user_id}" if user_id else "Applicant ID unavailable"
         options.append(SelectOption(
-            label=_ticket_label(ticket_doc, username=True),
+            label=_ticket_label(ticket_doc, username=True, markdown=False),
             value=ticket_id,
             description=description[:100],
             emoji="💎" if _ticket_type(ticket_doc) == "fwa" else "🏆",
@@ -2150,7 +2159,7 @@ def build_flag_manager(
                     f"{FLAG_META.get(_flag_kind(flag), ('Unknown flag', '⚠️', False))[0]}"
                 )[:100],
                 value=str(index),
-                description=_clean(flag.get("reason"), limit=100),
+                description=_clean_code_span(flag.get("reason"), limit=100),
             ) for index, flag in enumerate(removable)],
         )]))
     components.append(ActionRow(components=[Button(
