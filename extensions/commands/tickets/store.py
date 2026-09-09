@@ -206,19 +206,19 @@ async def find_by_location(mongo: MongoClient, location_id) -> dict | None:
     # `location.id`/`location.staff_space_id` for every thread-runtime
     # document (see GUARDED_IDENTITY_FIELDS) -- they are always equal, so
     # matching on the two `location.*` fields already covers both aliases.
-    # Dropping those branches lets the `$or` run entirely off the unique
-    # partial indexes on `location.id`/`location.staff_space_id` instead of
-    # falling back to a collection scan.
+    #
+    # A single `$or` across both fields cannot use either unique partial
+    # index (their `partialFilterExpression` requires that one field to
+    # exist, which the `$or`'s other branch does not imply), so it falls
+    # back to a collection scan on every guild message. Two sequential
+    # single-field lookups each stay on their own unique partial index.
     ids = _mixed_id(location_id)
     if not ids:
         return None
-    return await find_one(mongo, {
-        **RUNTIME_FILTER,
-        "$or": [
-            {"location.id": {"$in": ids}},
-            {"location.staff_space_id": {"$in": ids}},
-        ],
-    })
+    candidate = await find_one(mongo, {"location.id": {"$in": ids}})
+    if candidate is not None:
+        return candidate
+    return await find_one(mongo, {"location.staff_space_id": {"$in": ids}})
 
 
 async def find_open_for_applicant(
@@ -1113,13 +1113,13 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
             },
             name="thread_v2_ticket_staff_location_unique",
         ),
-        # find_by_location's $or scans every guild message to resolve which
-        # ticket a channel/thread belongs to. Its two branches query
-        # location.id/location.staff_space_id with a non-null $in, which
-        # entails existence -- so the unique partial indexes above (whose
-        # partial filter is exactly RUNTIME_FILTER plus that field existing)
-        # already serve the read path; a separate non-unique index on the
-        # same keys would be redundant.
+        # find_by_location resolves which ticket a channel/thread belongs to
+        # on every guild message via two sequential single-field lookups on
+        # location.id/location.staff_space_id, each with a non-null $in,
+        # which entails existence -- so the unique partial indexes above
+        # (whose partial filter is exactly RUNTIME_FILTER plus that field
+        # existing) already serve the read path; a separate non-unique index
+        # on the same keys would be redundant.
         await collection.create_index(
             [("ticket_type", 1), ("ticket_number", 1)],
             unique=True,

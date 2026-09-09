@@ -1731,14 +1731,14 @@ def test_account_recovery_or_predicates_each_have_a_selective_index():
         assert options["name"] in names
 
 
-def test_find_by_location_or_has_only_the_two_location_branches(monkeypatch):
-    """`find_by_location`'s `$or` runs on every guild message to resolve
-    which ticket a channel/thread belongs to. `channel_id`/`thread_id` are
-    guarded aliases of `location.id`/`location.staff_space_id` that are
-    always equal on thread-runtime documents, so the `$or` must only carry
-    the two `location.*` branches -- those are the ones served by the
-    existing unique partial indexes; a `channel_id`/`thread_id` branch would
-    have no index and force a collection scan."""
+def test_find_by_location_runs_two_single_field_lookups_no_or(monkeypatch):
+    """`find_by_location` resolves which ticket a channel/thread belongs to
+    on every guild message. A single `$or` across `location.id`/
+    `location.staff_space_id` cannot use either field's unique partial index
+    (each index's `partialFilterExpression` requires only that one field to
+    exist, which the `$or`'s other branch does not imply), so it used to
+    fall back to a collection scan. Two sequential single-field `find_one`
+    calls each stay on their own unique partial index instead."""
     ticket = _ticket(public=101, staff=102)
     mongo = _mongo(ticket)
 
@@ -1750,26 +1750,28 @@ def test_find_by_location_or_has_only_the_two_location_branches(monkeypatch):
     assert by_staff is not None
     assert by_staff["_id"] == ticket["_id"]
 
-    captured = {}
+    captured = []
 
     async def fake_find_one(_mongo, filt):
-        captured.update(filt)
+        captured.append(filt)
         return None
 
     monkeypatch.setattr(store, "find_one", fake_find_one)
     asyncio.run(store.find_by_location(mongo, 101))
-    assert captured["$or"] == [
+    assert captured == [
         {"location.id": {"$in": [101, "101"]}},
         {"location.staff_space_id": {"$in": [101, "101"]}},
     ]
+    for filt in captured:
+        assert "$or" not in filt
 
 
 def test_thread_v2_location_lookup_indexes_are_not_installed():
     """The unique partial indexes on `location.id`/`location.staff_space_id`
-    already serve `find_by_location`'s `$or` (a non-null `$in` entails
-    existence, which is exactly what those indexes' partial filter requires)
-    -- a separate non-unique index on the same keys is redundant and must
-    not be installed."""
+    already serve `find_by_location`'s two single-field lookups (a non-null
+    `$in` entails existence, which is exactly what those indexes' partial
+    filter requires) -- a separate non-unique index on the same keys is
+    redundant and must not be installed."""
     mongo = _mongo(_ticket())
     names = asyncio.run(store.ensure_indexes(mongo))
     assert "thread_v2_location_lookup" not in names
