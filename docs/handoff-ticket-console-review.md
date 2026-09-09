@@ -159,6 +159,37 @@ same as `main`", not "fix legacy".
 - Fix: Key flags and blacklist checks on verified linked tags (`linked_accounts.current_tags`/`linked_account_identities`), not the unverified scraped `player_tags` set.
 - Note: Related location: `extensions/commands/tickets/resolve.py:1063`, where the approval blacklist gate reads the same scraped `player_tags` set. Half of this (blacklist keyed on observed tags) is documented as intentional in docs/ticket-console.md; the flag-extension half is not and there is no undo.
 
+## Overnight run 2026-09-09: everything on the list is done
+
+Branch `feature/ticket-console`, local tip `9c86281`, not pushed. Full
+suite: 1805 passed, 8 skipped. Every batch was built by a Sonnet builder and
+checked by an Opus refuter; every rejection was fixed and re-checked, the
+last one (hub settle race on the orphan/create paths) verified after the
+final commit. About 30 refuter findings were fixed along the way; two of
+them were proven on a real MongoDB 7 container.
+
+Done tonight, in order: P0 (five), Mongo house-standard pass (seven plus
+fixes), P1 (eleven, three batches), P2 (eleven), rename to `/tickets`
+registered only in guild 644963518025826315 (`TICKETS_GUILD_ID` env
+override, default built in), P3 (twenty-one live items in two batches).
+
+Left for the owner, none blocking:
+- Push when ready: `git push origin feature/ticket-console` (fast-forward).
+- Live smoke test in the real server before the pilot: flag-panel Back
+  button, "My ticket" button and "Thread removed" disabled button render;
+  chart renders with the vendored font; recruiter role-name lookup on the
+  cleanup message; the creation DM arrives when DMs are open; approve
+  confirm → overturn → deny flow end to end.
+- Migration preview: one ticket from each of the four legacy servers.
+- Approving grants no Discord role in either system today; decide whether
+  it should.
+- Cosmetic leftovers: a comment in `handlers.py` (~379) still claims panels
+  span two servers; the pilot-channel refusal wording omits announcement
+  channels; `docs/editing-this-repo.md` still references the old laptop
+  section above the new Mongo-test paragraph.
+- Then: nightly Mongo backup to R2, the gradual Mongo backlog in
+  `docs/mongodb-refactor.md`, and legacy removal a few weeks after go-live.
+
 ## P1 status (2026-09-09 overnight): done, verified
 
 All eleven P1 items landed on `feature/ticket-console` between 422bbd1 and
