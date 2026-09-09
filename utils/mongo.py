@@ -1,4 +1,18 @@
+import logging
+import time
+
 from pymongo import AsyncMongoClient
+from pymongo.errors import DuplicateKeyError
+
+_log = logging.getLogger(__name__)
+
+# Retry at most hourly rather than on every /clan add. A transient startup
+# outage must not disable the guard until restart, but repeated failures
+# also must not flood the log.
+_clan_tag_index_ready = False
+_clan_tag_index_failed = False
+_clan_tag_index_retry_at = 0.0
+CLAN_TAG_INDEX_RETRY_SECONDS = 60 * 60
 
 
 class MongoClient(AsyncMongoClient):
@@ -67,3 +81,38 @@ class MongoClient(AsyncMongoClient):
         # Staff-maintained FWA opponent blacklist. Keyed by sanitized tag (no
         # '#'). See utils/fwa_blacklist.py and docs/fwa-blacklist.md.
         self.fwa_blacklist = self.__settings.get_collection("fwa_blacklist")
+
+
+async def ensure_clan_tag_index(mongo: "MongoClient") -> bool:
+    """Create the unique index on clans.tag once per process, retrying hourly
+    after failure; never fatal.
+
+    Without this index, a repeat `/clan add` for the same tag inserts a
+    second document instead of updating the existing one (rules 7, 9 in
+    docs/mongodb-refactor.md). If duplicate tags already exist, index
+    creation fails with DuplicateKeyError -- that is logged at ERROR and the
+    bot keeps running with the index absent; see
+    tools/find_duplicate_clans.py to locate and resolve the duplicates.
+    """
+    global _clan_tag_index_ready, _clan_tag_index_failed, _clan_tag_index_retry_at
+    if _clan_tag_index_ready:
+        return True
+    if _clan_tag_index_failed and time.monotonic() < _clan_tag_index_retry_at:
+        return False
+    try:
+        await mongo.clans.create_index("tag", unique=True, name="uniq_clan_tag")
+        _clan_tag_index_ready = True
+        _clan_tag_index_failed = False
+        return True
+    except DuplicateKeyError:
+        _clan_tag_index_failed = True
+        _clan_tag_index_retry_at = time.monotonic() + CLAN_TAG_INDEX_RETRY_SECONDS
+        _log.error("duplicate clan tags exist; run tools/find_duplicate_clans.py")
+        return False
+    except Exception as exc:  # noqa: BLE001 - index setup must not take the bot down
+        _clan_tag_index_failed = True
+        _clan_tag_index_retry_at = time.monotonic() + CLAN_TAG_INDEX_RETRY_SECONDS
+        _log.error(
+            "clans.tag unique index unavailable: %s: %s", type(exc).__name__, exc
+        )
+        return False
