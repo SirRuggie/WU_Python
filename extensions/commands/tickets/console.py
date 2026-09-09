@@ -1967,6 +1967,8 @@ async def _browse_custom_year_range(mongo: MongoClient) -> tuple[int, int]:
     oldest = await store.find(mongo, {}, sort=[("created_at", 1)], limit=1)
     created_at = oldest[0].get("created_at") if oldest else None
     start_year = created_at.year if isinstance(created_at, datetime) else current_year
+    # A string select holds at most 25 options.
+    start_year = max(start_year, current_year - 24)
     return min(start_year, current_year), current_year
 
 
@@ -1984,6 +1986,9 @@ def build_browse_custom_panel(
     rows: list = [Text(content=heading)]
     if error:
         rows.append(Text(content=f"⚠️ {error}"))
+    # A select's placeholder is hidden once a value is selected, and these
+    # always have one, so the From/To labels must be visible text rows.
+    rows.append(Text(content="**From** (year, then month)"))
     rows.append(_browse_select_row(
         "ticket_v2_console_browse_custom_from_year", action_id, year_options, from_year,
         placeholder="From year",
@@ -1992,6 +1997,7 @@ def build_browse_custom_panel(
         "ticket_v2_console_browse_custom_from_month", action_id, BROWSE_MONTH_OPTIONS, from_month,
         placeholder="From month",
     ))
+    rows.append(Text(content="**To** (year, then month)"))
     rows.append(_browse_select_row(
         "ticket_v2_console_browse_custom_to_year", action_id, year_options, to_year,
         placeholder="To year",
