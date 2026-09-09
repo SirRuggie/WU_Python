@@ -172,8 +172,11 @@ async def capture_candidate_thread_activity(
         occurred_at=event.message.timestamp,
     )
     if result.won and result.reason != "already recorded" and result.doc is not None:
+        # A candidate's own message never moves the console's chart counts
+        # or the open-ticket set, so it must not force a full hub redraw --
+        # see console._chart_signature.
         await thread_service.notify_console_after_change(
-            bot, mongo, result.doc, reason="candidate activity"
+            bot, mongo, result.doc, reason="candidate activity", force=False,
         )
 
 

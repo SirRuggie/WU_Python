@@ -703,6 +703,27 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
     )
 
 
+async def _chart_signature(mongo: MongoClient) -> str:
+    """A stable fingerprint of the hub chart's own inputs: console_counts
+    plus flag counts.
+
+    The open-ticket picker's *set membership* is deliberately not part of
+    this -- two different open-ticket sets can have identical totals. That
+    case is covered separately by ``force_pending``, which every ticket
+    create/decide/flag change sets regardless of whether this signature
+    happens to net out unchanged.
+    """
+    raw_counts, flag_counts = await asyncio.gather(
+        store.console_counts(mongo), flag_store.count_active(mongo),
+    )
+    statuses, by_type = _coerce_counts(raw_counts)
+    flags = flag_counts if isinstance(flag_counts, Mapping) else {}
+    return json.dumps(
+        {"statuses": statuses, "by_type": by_type, "flags": flags},
+        sort_keys=True, separators=(",", ":"),
+    )
+
+
 async def _hub_state(mongo: MongoClient) -> dict:
     return await mongo.ticket_setup.find_one({"_id": HUB_STATE_ID}) or {}
 
@@ -736,20 +757,31 @@ async def _ensure_hub_state(mongo: MongoClient) -> None:
             "kind": "ticket_console_hub",
             "desired_revision": 0,
             "applied_revision": -1,
+            "force_pending": True,
             "created_at": utcnow(),
         }},
         upsert=True,
     )
 
 
-async def _mark_hub_dirty(mongo: MongoClient, *, reason: str) -> int:
+async def _mark_hub_dirty(mongo: MongoClient, *, reason: str, force: bool = True) -> int:
+    """Bump the durable dirty revision. ``force=True`` (the default) means a
+    create/decide/flag-style change: the next publish must fully redraw even
+    if the chart signature happens to look unchanged (open-ticket set
+    membership can change without moving any total). ``force=False`` never
+    clears an already-pending force from an earlier call in the same
+    debounce window -- only a publish that actually redraws does that.
+    """
     await _ensure_hub_state(mongo)
+    update: dict = {
+        "$inc": {"desired_revision": 1},
+        "$set": {"refresh_requested_at": utcnow(), "refresh_reason": reason[:80]},
+    }
+    if force:
+        update["$set"]["force_pending"] = True
     state = await mongo.ticket_setup.find_one_and_update(
         {"_id": HUB_STATE_ID},
-        {
-            "$inc": {"desired_revision": 1},
-            "$set": {"refresh_requested_at": utcnow(), "refresh_reason": reason[:80]},
-        },
+        update,
         return_document=ReturnDocument.AFTER,
     )
     return _int((state or {}).get("desired_revision"))
@@ -897,8 +929,26 @@ async def _publish_hub(
         guild_id=guild_id,
         channel_id=channel_id,
     )
-    components = await _hub_payload(mongo)
+
     message_id = _int(state.get("message_id"))
+    # Missing force_pending (a state row predating this field, or a caller
+    # that never went through _mark_hub_dirty) means "unknown baseline" and
+    # must default to a full redraw, not a skip.
+    signature: str | None = None
+    if message_id and not state.get("force_pending", True):
+        signature = await _chart_signature(mongo)
+        if signature == state.get("chart_signature"):
+            # Every applicant message dirties the hub, but the chart and
+            # open-ticket picker only ever change on a create/decide/flag
+            # event -- those always set force_pending, so an unchanged
+            # signature here means there is nothing new to draw. Skip the
+            # Pillow render and Discord PNG re-upload.
+            return message_id
+    settle_fields: dict = {"force_pending": False}
+    if signature is not None:
+        settle_fields["chart_signature"] = signature
+
+    components = await _hub_payload(mongo)
     if message_id:
         try:
             await bot.rest.edit_message(
@@ -908,6 +958,9 @@ async def _publish_hub(
                 user_mentions=False,
                 role_mentions=False,
                 mentions_everyone=False,
+            )
+            await mongo.ticket_setup.update_one(
+                {"_id": HUB_STATE_ID}, {"$set": settle_fields},
             )
             return message_id
         except hikari.NotFoundError:
@@ -932,7 +985,11 @@ async def _publish_hub(
             message_id = int(orphan.id)
             await mongo.ticket_setup.update_one(
                 {"_id": HUB_STATE_ID},
-                {"$set": {"message_id": message_id, "message_recovered_at": utcnow()}},
+                {"$set": {
+                    "message_id": message_id,
+                    "message_recovered_at": utcnow(),
+                    **settle_fields,
+                }},
             )
             return message_id
 
@@ -947,7 +1004,11 @@ async def _publish_hub(
     message_id = int(message.id)
     await mongo.ticket_setup.update_one(
         {"_id": HUB_STATE_ID},
-        {"$set": {"message_id": message_id, "message_created_at": utcnow()}},
+        {"$set": {
+            "message_id": message_id,
+            "message_created_at": utcnow(),
+            **settle_fields,
+        }},
     )
     return message_id
 
@@ -1080,10 +1141,11 @@ async def request_hub_refresh(
     mongo: MongoClient,
     *,
     reason: str = "ticket changed",
+    force: bool = True,
 ) -> int:
     """Durably request one coalesced refresh and return its revision."""
 
-    revision = await _mark_hub_dirty(mongo, reason=reason)
+    revision = await _mark_hub_dirty(mongo, reason=reason, force=force)
     _schedule_hub_refresh(bot, mongo)
     return revision
 
@@ -1093,11 +1155,12 @@ async def request_hub_refresh_best_effort(
     mongo: MongoClient,
     *,
     reason: str = "ticket changed",
+    force: bool = True,
 ) -> bool:
     """Queue a durable redraw without changing a committed action's outcome."""
 
     try:
-        await request_hub_refresh(bot, mongo, reason=reason)
+        await request_hub_refresh(bot, mongo, reason=reason, force=force)
     except Exception:
         _log.exception("could not queue ticket console refresh reason=%s", reason)
         return False

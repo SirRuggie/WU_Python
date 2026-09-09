@@ -2961,6 +2961,101 @@ def test_hub_publish_stops_before_private_data_render_on_permission_drift(monkey
     assert calls == ["validate"]
 
 
+def test_hub_skips_render_when_chart_signature_is_unchanged_and_not_forced(
+    monkeypatch,
+):
+    """A candidate's own message (force_pending=False) must not repeat the
+    Pillow render and Discord PNG re-upload when the chart's own inputs --
+    console_counts and flag counts -- have not moved since the last publish."""
+
+    async def counts(_mongo):
+        return {"statuses": {"open": 3}, "by_type": {"main": {"open": 2}, "fwa": {"open": 1}}}
+
+    async def flags(_mongo):
+        return {"blacklisted": 1}
+
+    async def valid(*_args, **_kwargs):
+        return object()
+
+    async def forbidden_payload(_mongo):
+        raise AssertionError("chart re-rendered despite an unchanged signature")
+
+    class Rest:
+        async def edit_message(self, **_kwargs):
+            raise AssertionError("hub edited despite an unchanged signature")
+
+    monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.flag_store, "count_active", flags)
+    monkeypatch.setattr(console, "validate_console_channel", valid)
+    monkeypatch.setattr(console, "_hub_payload", forbidden_payload)
+
+    signature = asyncio.run(console._chart_signature(object()))
+    message_id = asyncio.run(console._publish_hub(
+        SimpleNamespace(rest=Rest()),
+        object(),
+        {
+            "guild_id": 321, "channel_id": 123, "message_id": 456,
+            "force_pending": False, "chart_signature": signature,
+        },
+    ))
+
+    assert message_id == 456
+
+
+def test_hub_forces_a_redraw_when_force_pending_even_if_counts_would_match(
+    monkeypatch,
+):
+    """A ticket create/decide/flag event always sets force_pending, and it
+    must force a full redraw even when the totals happen to net out
+    unchanged -- the open-ticket picker's set membership can differ without
+    moving any total."""
+
+    async def counts(_mongo):
+        return {"statuses": {"open": 3}}
+
+    async def flags(_mongo):
+        return {}
+
+    async def valid(*_args, **_kwargs):
+        return object()
+
+    async def payload(_mongo):
+        return ["FRESH PANEL"]
+
+    class Collection:
+        def __init__(self):
+            self.updates = []
+
+        async def update_one(self, *args, **kwargs):
+            self.updates.append((args, kwargs))
+
+    class Rest:
+        def __init__(self):
+            self.edits = 0
+
+        async def edit_message(self, **_kwargs):
+            self.edits += 1
+
+    monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.flag_store, "count_active", flags)
+    monkeypatch.setattr(console, "validate_console_channel", valid)
+    monkeypatch.setattr(console, "_hub_payload", payload)
+
+    rest = Rest()
+    collection = Collection()
+    message_id = asyncio.run(console._publish_hub(
+        SimpleNamespace(rest=rest),
+        SimpleNamespace(ticket_setup=collection),
+        {"guild_id": 321, "channel_id": 123, "message_id": 456, "force_pending": True},
+    ))
+
+    assert message_id == 456
+    assert rest.edits == 1
+    update = collection.updates[0][0][1]
+    assert update["$set"]["force_pending"] is False
+    assert "chart_signature" not in update["$set"]
+
+
 def test_flag_manager_back_button_uses_a_real_arrow_emoji():
     ticket_doc = _ticket()
     view = console.build_flag_manager(ticket_doc, action_id="abc", flags=[])

@@ -1487,8 +1487,14 @@ async def notify_console_after_change(
     ticket: dict,
     *,
     reason: str,
+    force: bool = True,
 ) -> None:
-    """Late import keeps the core ticket service independent from console UI."""
+    """Late import keeps the core ticket service independent from console UI.
+
+    ``force=False`` is for a change that never moves the console's own chart
+    counts or the open-ticket set (candidate activity) -- see
+    ``console._chart_signature``. Every other caller keeps the default.
+    """
     try:
         from extensions.commands.tickets import console  # local import avoids cycle
     except (AttributeError, ImportError):
@@ -1499,7 +1505,9 @@ async def notify_console_after_change(
     except Exception:
         _log.exception("ticket staff-context update failed for %s", ticket.get("_id"))
     try:
-        await console.request_hub_refresh_best_effort(bot, mongo, reason=reason)
+        await console.request_hub_refresh_best_effort(
+            bot, mongo, reason=reason, force=force,
+        )
     except Exception:
         _log.exception("ticket hub refresh request failed for %s", ticket.get("_id"))
 

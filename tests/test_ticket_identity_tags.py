@@ -63,6 +63,38 @@ def test_applicant_typed_tag_becomes_mentioned_not_verified(monkeypatch):
     assert saved["player_tags"] == ["#ABC123"]
 
 
+def test_candidate_activity_does_not_force_a_hub_redraw(monkeypatch):
+    """A candidate's own message never moves the console's chart counts or
+    the open-ticket set, so it must not force a full hub redraw the way a
+    ticket create/decide/flag change does. See console._chart_signature."""
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+    calls = []
+
+    async def notify(_bot, _mongo, _ticket_doc, *, reason, force=True):
+        calls.append((reason, force))
+
+    monkeypatch.setattr(handlers.thread_service, "notify_console_after_change", notify)
+
+    event = SimpleNamespace(
+        is_human=True,
+        channel_id=ticket["location"]["id"],
+        author_id=ticket["user_id"],
+        message_id=9002,
+        message=SimpleNamespace(
+            content="Just checking in!",
+            attachments=(),
+            timestamp=NOW,
+        ),
+    )
+
+    asyncio.run(handlers.capture_candidate_thread_activity(
+        event, bot=SimpleNamespace(), mongo=mongo,
+    ))
+
+    assert calls == [("candidate activity", False)]
+
+
 def test_blacklist_on_mentioned_tag_does_not_block_approval_or_console(monkeypatch):
     """(b) A blacklist flag keyed only to a mentioned tag blocks nothing."""
     ticket = _ticket()
