@@ -985,7 +985,13 @@ async def index_conflicts(collection) -> dict[str, list]:
 # ExceededTimeLimit, InterruptedAtShutdown, InterruptedDueToReplStateChange).
 # These clear on their own once a primary is elected, so caching them would
 # block ticket intake for the retry window after Mongo has already recovered.
-TRANSIENT_OPERATION_FAILURE_CODES = frozenset({50, 91, 189, 262, 11600, 11602})
+# 6, 7, 89, 134, 9001 are pymongo's own retryable codes (HostUnreachable,
+# HostNotFound, NetworkTimeout, ReadConcernMajorityNotAvailableYet,
+# SocketException); a mongos-fronted deployment surfaces them as a bare
+# OperationFailure rather than a connection error.
+TRANSIENT_OPERATION_FAILURE_CODES = frozenset(
+    {6, 7, 50, 89, 91, 134, 189, 262, 9001, 11600, 11602}
+)
 
 
 def is_cacheable_index_error(exc: Exception) -> bool:

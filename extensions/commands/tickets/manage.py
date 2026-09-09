@@ -464,8 +464,12 @@ class CleanupGhosts(
             )
             return
 
+        # include_legacy keeps the store from overriding CHANNEL_ERA_ONLY's
+        # venue filter with the thread-only runtime filter.
         open_docs = await store.find(
-            mongo, {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
+            mongo,
+            {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY},
+            include_legacy=True,
         )
 
         ghosts = [d for d in open_docs if _as_int(d.get("channel_id")) not in live_ids]
@@ -587,9 +591,12 @@ class FixMismatched(
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
         live_names = {_as_int(ch.id): (ch.name or "") for ch in guild_channels}
         # Thread-era rows are excluded explicitly rather than relying on the
-        # `name is None` skip below to drop them by accident.
+        # `name is None` skip below to drop them by accident. include_legacy
+        # keeps the store from overriding that venue filter.
         open_docs = await store.find(
-            mongo, {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
+            mongo,
+            {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY},
+            include_legacy=True,
         )
 
         mismatched, legacy_open = [], 0
