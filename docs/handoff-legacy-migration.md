@@ -84,14 +84,19 @@ channel 1547244294757425212 (`recruiter-desk`).
   phase is `pilot`.
 - `/tickets migrate-legacy`: one channel per command. Unusable for 900+
   tickets; kept for one-offs.
-- Bulk driver: a builder was writing `extensions/commands/tickets/legacy_bulk.py`
-  with `/tickets migrate-all source-guild category attachments limit confirm`
+- Bulk driver: DONE and committed as `6913fb9` on the branch (not yet
+  deployed): `extensions/commands/tickets/legacy_bulk.py`,
+  `/tickets migrate-all source-guild category attachments limit confirm`
   (dry run → plan doc in `ticket_migration_batches`; confirm → resumable
   sequential run with a progress message in the console channel, 10
   consecutive failures pause it, admin bulk runs bypass the pilot cap with a
-  log line). Check `git status` on the branch checkout for its state; run the
-  suite; if it is unfinished, finish it to that spec, then apply the
-  follow-up below.
+  log line); applicant fallback from the welcome mention and channel name
+  is in `legacy_migration.py`. Tests: `tests/test_ticket_legacy_bulk.py`.
+  Suite at that commit: 1826 passed, 2 skipped.
+
+Checkpoint log (newest first):
+- 2026-09-09 evening: bulk driver committed `6913fb9`; follow-up item 1
+  (owner rules) handed to a sonnet builder.
 
 ## Follow-up still to do (in order)
 
