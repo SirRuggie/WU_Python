@@ -307,7 +307,9 @@ async def extend_matching_flags(
                     current.get("player_tags") or ()
                 )))
             ):
-                updated_documents.append(current)
+                # Already covers the whole observed identity: nothing to
+                # write, so this flag must not appear in the caller's
+                # "actually changed" list (it drives the audit push).
                 continue
             rev = max(0, int(current.get("rev") or 0))
             try:

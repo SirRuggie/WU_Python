@@ -603,6 +603,73 @@ def test_reconcile_flag_identities_clears_a_stale_conflict_on_next_success(
     assert "flag_conflict" not in mongo.tickets.documents[ticket["_id"]]["linked_accounts"]
 
 
+def _flag_refresh_ticket():
+    ticket = _ticket()
+    ticket["linked_accounts"] = {
+        "version": 1,
+        "state": account_sync.STATE_READY,
+        "current": [],
+        "current_tags": ["#ABC123"],
+        "retry_required": False,
+        "revision": 1,
+        "flag_refresh_required": True,
+        "flag_refresh_revision": 1,
+    }
+    return ticket
+
+
+def test_reconcile_flag_identities_skips_audit_when_a_flag_already_covers_identity():
+    """Bug: extend_matching_flags appended a flag it left untouched (already
+    covering the whole observed identity) to its returned list, so reconcile
+    pushed a "linked_accounts_flags_refreshed" audit entry recording a
+    change that never happened. Fix: the no-op branch is never appended."""
+    ticket = _flag_refresh_ticket()
+    flag = {
+        "_id": "flag_a",
+        "kind": flag_store.FLAG_BLACKLISTED,
+        "active": True,
+        "discord_ids": [ticket["user_id"]],
+        "player_tags": ["#ABC123"],
+        "rev": 0,
+        "audit": [],
+    }
+    mongo = _mongo(ticket)
+    mongo.ticket_flags = Collection([flag])
+
+    result = asyncio.run(account_sync.reconcile_flag_identities(
+        mongo, ticket, source=account_sync.SOURCE_OPEN,
+    ))
+
+    assert result["linked_accounts"]["flag_refresh_required"] is False
+    assert not result.get("account_identity_audit")
+    assert mongo.ticket_flags.documents["flag_a"]["rev"] == 0
+
+
+def test_reconcile_flag_identities_audits_when_a_flag_is_actually_extended():
+    ticket = _flag_refresh_ticket()
+    flag = {
+        "_id": "flag_a",
+        "kind": flag_store.FLAG_BLACKLISTED,
+        "active": True,
+        "discord_ids": [],
+        "player_tags": ["#ABC123"],
+        "rev": 0,
+        "audit": [],
+    }
+    mongo = _mongo(ticket)
+    mongo.ticket_flags = Collection([flag])
+
+    result = asyncio.run(account_sync.reconcile_flag_identities(
+        mongo, ticket, source=account_sync.SOURCE_OPEN,
+    ))
+
+    assert result["linked_accounts"]["flag_refresh_required"] is False
+    audit = result.get("account_identity_audit") or []
+    assert audit and audit[-1]["event"] == "linked_accounts_flags_refreshed"
+    assert mongo.ticket_flags.documents["flag_a"]["discord_ids"] == [ticket["user_id"]]
+    assert mongo.ticket_flags.documents["flag_a"]["rev"] == 1
+
+
 def test_linked_account_discovery_expands_matching_flag_identities(monkeypatch):
     ticket = _ticket()
     flag = {
@@ -2437,6 +2504,80 @@ def test_overturn_ignores_an_unrelated_rev_bump_between_snapshot_and_transition(
     assert result.won
     assert result.reason is None
     assert mongo.tickets.documents[ticket["_id"]]["status"] == "denied"
+    assert mongo.tickets.documents[ticket["_id"]]["rev"] == 6
+
+
+def test_overturn_deny_to_approve_ignores_rev_bump_between_snapshot_and_transition(
+    monkeypatch,
+):
+    """Bug: _resolve_ticket froze expected_rev to the just-read ticket rev
+    whenever kind == KIND_APPROVE, even on the override/overturn path. A
+    background effect checkpoint bumping rev between that freeze and
+    store.transition's CAS then produced a false "prior resolution changed"
+    LOST on an approve-side overturn, even though override's own status
+    filter is the only guard an overturn is supposed to need. Fix: the
+    freeze is skipped whenever override is not None."""
+    ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket.update({
+        "rev": 2,
+        "denied_by": 41,
+        "denied_by_name": "Other Lead",
+        "denied_at": NOW,
+        "resolution_effects": {"marker": "m2", "complete": True},
+        "linked_accounts": {
+            "version": 1,
+            "state": account_sync.STATE_READY,
+            "current": [{
+                "tag": "#ABC123",
+                "name": "Player 123",
+                "town_hall": 17,
+                "profile_status": STATUS_LOADED,
+            }],
+            "current_tags": ["#ABC123"],
+            "retry_required": False,
+            "revision": 1,
+        },
+        "linked_account_identities": [{
+            "tag": "#ABC123",
+            "name": "Player 123",
+            "town_hall": 17,
+            "profile_status": STATUS_LOADED,
+            "first_seen_at": NOW,
+            "first_seen_source": "test",
+        }],
+    })
+    mongo = _mongo(ticket)
+
+    async def recruiter(*_args, **_kwargs):
+        return True
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#ABC123"),))
+
+    async def effects(_bot, _mongo, doc):
+        return store.Transition(store.WON, doc)
+
+    async def blacklist_with_rev_bump(*_args, **_kwargs):
+        # A background effect checkpoint (e.g. a concurrent resolution's
+        # side-effect write) lands after transition_kwargs is built - the
+        # point a buggy freeze would have snapshotted rev at - but before
+        # store.transition runs its CAS.
+        mongo.tickets.documents[ticket["_id"]]["rev"] += 3
+        return None
+
+    monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    monkeypatch.setattr(resolve, "process_resolution_effects", effects)
+    monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist_with_rev_bump)
+
+    result = asyncio.run(resolve.overturn_ticket(
+        object(), mongo, ticket_id=ticket["_id"], member=SimpleNamespace(id=1),
+        actor_name="Recruiter", to_status="approved", coc_client=object(),
+    ))
+
+    assert result.won
+    assert result.reason is None
+    assert mongo.tickets.documents[ticket["_id"]]["status"] == "approved"
     assert mongo.tickets.documents[ticket["_id"]]["rev"] == 6
 
 

@@ -1058,7 +1058,7 @@ async def _resolve_ticket(
         "expect": expected_status,
         "expected_rev": (
             max(0, int(ticket.get("rev") or 0))
-            if kind == KIND_APPROVE and expected_rev is None
+            if kind == KIND_APPROVE and expected_rev is None and override is None
             else expected_rev
         ),
         "extra": extra,
