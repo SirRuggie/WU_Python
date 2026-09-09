@@ -33,6 +33,10 @@ ACCOUNT_RECOVERY_BOOLEAN_FIELDS = (
 STORE_BUTTON = "button_store"
 STORE_TICKETS = "tickets"
 CANONICAL_ACTIVATION_VERSION = 3
+# `audit` and `account_identity_audit` are unbounded per-action history on a
+# collection that may never carry a TTL; every $push into either one must
+# slice to this bound at the push site (rule 8).
+MAX_AUDIT_ENTRIES = 200
 # Coexistence has two explicit authorities: this v2 repository always owns
 # ``tickets`` and the namespaced legacy repository always owns ``button_store``.
 DEFAULT_STORE = STORE_TICKETS
@@ -603,16 +607,21 @@ async def transition(
                 "resolution_effects.complete": {"$exists": False},
             })
 
-    push_fields: dict = {"audit": audit}
+    push_fields: dict = {
+        "audit": {"$each": [audit], "$slice": -MAX_AUDIT_ENTRIES},
+    }
     increments = {"rev": 1}
     if linked_account_retry is not None:
         increments["linked_accounts.revision"] = 1
         push_fields["account_identity_audit"] = {
-            "event": "linked_accounts_sync_failed",
-            "at": now,
-            "source": set_fields["linked_accounts.source"],
-            "error": set_fields["linked_accounts.error"],
-            "retry_queued_with_decision": True,
+            "$each": [{
+                "event": "linked_accounts_sync_failed",
+                "at": now,
+                "source": set_fields["linked_accounts.source"],
+                "error": set_fields["linked_accounts.error"],
+                "retry_queued_with_decision": True,
+            }],
+            "$slice": -MAX_AUDIT_ENTRIES,
         }
 
     outcome = await _conditional(
@@ -737,7 +746,9 @@ async def replace_legacy_location(
                 "$set": set_fields,
                 "$unset": {field: "" for field in schema.CLAIM_FIELDS},
                 "$inc": {"rev": 1},
-                "$push": {"audit": audit},
+                "$push": {
+                    "audit": {"$each": [audit], "$slice": -MAX_AUDIT_ENTRIES},
+                },
             },
             return_document=ReturnDocument.AFTER,
         )

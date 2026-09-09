@@ -1514,6 +1514,82 @@ def test_status_transition_is_cas_audited_and_missing_has_no_write():
     assert mongo.tickets.documents == before
 
 
+def test_status_transition_slices_audit_and_account_identity_audit_at_200():
+    ticket = _ticket()
+    old_audit = [{"event": f"seed_{index}"} for index in range(250)]
+    old_account_audit = [{"event": f"acct_seed_{index}"} for index in range(250)]
+    ticket["audit"] = old_audit
+    ticket["account_identity_audit"] = old_account_audit
+    mongo = _mongo(ticket)
+
+    won = asyncio.run(store.transition(
+        mongo, "ticket_101", to_status="denied", actor_id=99,
+        actor_name="Recruiter", expected_rev=0,
+        linked_account_retry={"source": "final_denial", "error": "AccountSyncError"},
+    ))
+
+    assert won.outcome == store.WON
+    audit = won.doc["audit"]
+    assert len(audit) == store.MAX_AUDIT_ENTRIES
+    assert audit[:-1] == old_audit[-(store.MAX_AUDIT_ENTRIES - 1):]
+    assert audit[-1]["event"] == "status_transition"
+
+    account_audit = won.doc["account_identity_audit"]
+    assert len(account_audit) == store.MAX_AUDIT_ENTRIES
+    assert account_audit[:-1] == old_account_audit[-(store.MAX_AUDIT_ENTRIES - 1):]
+    assert account_audit[-1]["event"] == "linked_accounts_sync_failed"
+
+
+def test_account_sync_slices_account_identity_audit_at_200(monkeypatch):
+    ticket = _ticket()
+    ticket["account_identity_audit"] = [
+        {"event": f"acct_seed_{index}"} for index in range(250)
+    ]
+    mongo = _mongo(ticket)
+
+    async def load(*_args, **_kwargs):
+        return AccountsData(entries=(_linked_account("#SLICE01"),))
+
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"], source=account_sync.SOURCE_OPEN, now=NOW,
+    ))
+
+    durable = mongo.tickets.documents[ticket["_id"]]
+    account_audit = durable["account_identity_audit"]
+    assert len(account_audit) == store.MAX_AUDIT_ENTRIES
+    assert any(entry["event"] == "linked_accounts_synced" for entry in account_audit)
+
+
+def test_flag_set_slices_audit_at_200():
+    existing_flag = {
+        "_id": "flag_existing",
+        "kind": "blacklisted",
+        "discord_ids": [42],
+        "player_tags": [],
+        "active": True,
+        "rev": 0,
+        "audit": [{"event": f"seed_{index}"} for index in range(250)],
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+    mongo = SimpleNamespace(ticket_flags=Collection([existing_flag]))
+
+    updated = asyncio.run(flag_store.set_flag(
+        mongo,
+        kind="blacklisted",
+        discord_ids=42,
+        source="recruiter_review",
+        added_by=99,
+        added_by_name="Recruiter",
+        reason="repeat abuse",
+    ))
+
+    audit = updated["audit"]
+    assert len(audit) == store.MAX_AUDIT_ENTRIES
+    assert audit[-1]["event"] == "flag_set"
+
+
 @pytest.mark.parametrize("status", ["approved", "denied"])
 def test_terminal_commit_checkpoints_slot_and_release_failure_is_retryable(
     monkeypatch, status

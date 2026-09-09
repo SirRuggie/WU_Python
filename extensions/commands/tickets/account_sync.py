@@ -199,7 +199,11 @@ def _failed_update(
             "linked_accounts.revision": revision,
             "updated_at": at,
         },
-        "$push": {"account_identity_audit": audit},
+        "$push": {
+            "account_identity_audit": {
+                "$each": [audit], "$slice": -store.MAX_AUDIT_ENTRIES,
+            },
+        },
     }
     display_changed = prior.state != STATE_FAILED or prior.error != error
     prior_refresh_required = staff_context_refresh_required(ticket)
@@ -274,14 +278,17 @@ def _success_update(
         "$unset": {"linked_accounts.error": ""},
         "$push": {
             "account_identity_audit": {
-                "event": "linked_accounts_synced",
-                "at": at,
-                "source": source,
-                "outcome": state,
-                "current_tags": list(current_tags),
-                "added_tags": list(added),
-                "no_longer_linked_tags": list(no_longer_linked),
-                "account_revision": revision,
+                "$each": [{
+                    "event": "linked_accounts_synced",
+                    "at": at,
+                    "source": source,
+                    "outcome": state,
+                    "current_tags": list(current_tags),
+                    "added_tags": list(added),
+                    "no_longer_linked_tags": list(no_longer_linked),
+                    "account_revision": revision,
+                }],
+                "$slice": -store.MAX_AUDIT_ENTRIES,
             },
         },
     }
@@ -340,7 +347,7 @@ def _success_update(
         }
         update["$push"]["account_identity_audit"] = {
             "$each": [
-                update["$push"]["account_identity_audit"],
+                *update["$push"]["account_identity_audit"]["$each"],
                 {
                     "event": "fwa_approval_identity_review_required",
                     "at": at,
@@ -349,7 +356,8 @@ def _success_update(
                     "new_tags": list(approval_review_tags),
                     "account_revision": revision,
                 },
-            ]
+            ],
+            "$slice": -store.MAX_AUDIT_ENTRIES,
         }
     return update, added, no_longer_linked
 
@@ -551,10 +559,13 @@ async def reconcile_flag_identities(
             },
             "$push": {
                 "account_identity_audit": {
-                    "event": "linked_accounts_flags_refreshed",
-                    "at": utcnow(),
-                    "account_revision": snapshot.revision,
-                    "source": _source(source),
+                    "$each": [{
+                        "event": "linked_accounts_flags_refreshed",
+                        "at": utcnow(),
+                        "account_revision": snapshot.revision,
+                        "source": _source(source),
+                    }],
+                    "$slice": -store.MAX_AUDIT_ENTRIES,
                 },
             },
         },
@@ -601,10 +612,13 @@ async def confirm_staff_context_queued(
             },
             "$push": {
                 "account_identity_audit": {
-                    "event": "linked_accounts_staff_context_queued",
-                    "at": at,
-                    "account_revision": revision,
-                }
+                    "$each": [{
+                        "event": "linked_accounts_staff_context_queued",
+                        "at": at,
+                        "account_revision": revision,
+                    }],
+                    "$slice": -store.MAX_AUDIT_ENTRIES,
+                },
             },
         },
     )
