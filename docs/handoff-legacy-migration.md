@@ -95,6 +95,14 @@ channel 1547244294757425212 (`recruiter-desk`).
   Suite at that commit: 1826 passed, 2 skipped.
 
 Checkpoint log (newest first):
+- 2026-09-09 night: first server-1 dry run spun silently (no logs, plan
+  written only at the end, 15-min token risk). Fixed and DEPLOYED as
+  `a8ef3fb`: bounded history (20 oldest + 20 newest) for the dry run,
+  `[Tickets] migrate_all_plan_*` / `migrate_all_run_*` journal lines,
+  incremental plan checkpoints, summary also posted to the console
+  channel. Also `16360d5`: id options accept an autocomplete label.
+  Next: owner re-runs the server-1 dry run and watches
+  `journalctl -u wu-bot.service -f`.
 - 2026-09-09 evening: numbering reset DONE with `--confirm` (4 smoke
   tickets, 1 creation row, 4 automation rows deleted; counters 0). Bot
   restarted. Follow-up item 3 done. Next: owner runs the server 1 dry run.
