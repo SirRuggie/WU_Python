@@ -1924,19 +1924,6 @@ def thread_collection(mongo: Any) -> Any:
     return mongo.tickets
 
 
-async def insert_thread_ticket(mongo: Any, document: Mapping[str, Any]) -> Any:
-    """Insert a v2 ticket into ``tickets`` only; mirroring is forbidden."""
-
-    payload = dict(document)
-    if payload.get("type") != "ticket":
-        raise ValueError("thread ticket type must be 'ticket'")
-    if payload.get("venue") != "thread" or payload.get("runtime") != THREAD_RUNTIME:
-        raise ValueError("thread ticket authority fields are missing")
-    if not payload.get("open_slot_id") or not payload.get("creation_workflow_id"):
-        raise ValueError("thread ticket must be bound to a creation slot")
-    return await mongo.tickets.insert_one(payload)
-
-
 __all__ = [
     "ACTIVE_SLOT_STATES",
     "BackfillLimitExceeded",
@@ -1979,7 +1966,6 @@ __all__ = [
     "configure_rollout",
     "ensure_indexes",
     "get_rollout",
-    "insert_thread_ticket",
     "legacy_drain_status",
     "legacy_pending_delivery_query",
     "legacy_recoverable_delivery_query",

@@ -1131,7 +1131,11 @@ def test_indexes_are_non_ttl_and_thread_insert_never_mirrors():
             "status": "open",
             **runtime.thread_ticket_fields(slot),
         }
-        await runtime.insert_thread_ticket(mongo, ticket)
+        # `ticket_runtime` never owns ticket insertion (that is
+        # `tickets/store.py`'s job, which normalizes on write); this checks
+        # only that this runtime's own fields keep the write off the legacy
+        # mirror collection.
+        await mongo.tickets.insert_one(ticket)
         assert "thread-ticket" in mongo.tickets.documents
         assert "thread-ticket" not in mongo.button_store.documents
 
