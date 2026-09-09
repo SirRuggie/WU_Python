@@ -182,10 +182,17 @@ class Cursor:
         self.documents = [deepcopy(document) for document in documents]
 
     def sort(self, spec):
+        # Mongo sorts a missing/null field before every real value in
+        # ascending order (and after, in descending). A bare `_get(..., "")`
+        # default would crash comparing a str stand-in against a real
+        # datetime the moment one row has the field and another does not, so
+        # rank presence first and only compare real values within a rank.
         for path, direction in reversed(spec):
-            self.documents.sort(
-                key=lambda item: _get(item, path, ""), reverse=direction < 0
-            )
+            def key(item, path=path):
+                value = _get(item, path, MISSING_VALUE)
+                return (0, None) if value is MISSING_VALUE else (1, value)
+
+            self.documents.sort(key=key, reverse=direction < 0)
         return self
 
     def limit(self, amount):
@@ -1001,6 +1008,21 @@ def test_approval_without_client_persists_retry_and_automatic_recovery(monkeypat
         return f"ticket_staff_context:{_ticket['_id']}"
 
     monkeypatch.setattr(account_sync, "load_accounts", load)
+
+    # The failure just landed, so it is still within the retry cooldown --
+    # a sweep running right now must leave it alone.
+    immediate = asyncio.run(account_sync.recover_pending_account_syncs(
+        mongo, object(), after_sync=queue
+    ))
+    assert immediate == {"processed": 0, "completed": 0, "failed": 0}
+    still_failed = mongo.tickets.documents[ticket["_id"]]["linked_accounts"]
+    assert still_failed["retry_required"] is True
+
+    # Once the cooldown has elapsed, the same sweep retries it.
+    monkeypatch.setattr(
+        account_sync, "utcnow",
+        lambda: datetime.now(timezone.utc) + timedelta(minutes=11),
+    )
     recovered = asyncio.run(account_sync.recover_pending_account_syncs(
         mongo, object(), after_sync=queue
     ))
@@ -1748,8 +1770,8 @@ def test_thread_v2_location_lookup_indexes_are_not_installed():
 def test_account_recovery_executes_the_frozen_indexed_predicate(monkeypatch):
     observed = []
 
-    async def find(_mongo, query):
-        observed.append(query)
+    async def find(_mongo, query, *, sort=None, limit=None):
+        observed.append((query, sort, limit))
         return []
 
     monkeypatch.setattr(account_sync.store, "find", find)
@@ -1757,7 +1779,27 @@ def test_account_recovery_executes_the_frozen_indexed_predicate(monkeypatch):
         SimpleNamespace(), object()
     ))
     assert counts == {"processed": 0, "completed": 0, "failed": 0}
-    assert observed == [account_sync.account_recovery_filter()]
+    assert len(observed) == 1
+    query, sort, limit = observed[0]
+
+    base_index = account_sync.account_recovery_filter()
+    assert query["type"] == base_index["type"]
+    assert query["venue"] == base_index["venue"]
+    # Only the branches that actually re-run the lookup are gated by the
+    # cooldown; the flag/context follow-up branches, which never touch
+    # last_attempt_at, stay ungated so they cannot be starved by it.
+    assert query["$or"][0]["$and"][0] == {"$or": [
+        {"linked_accounts.retry_required": True},
+        {"status": "open", "linked_accounts.version": {"$exists": False}},
+    ]}
+    assert query["$or"][1] == {"$or": [
+        {"linked_accounts.context_refresh_required": True},
+        {"linked_accounts.flag_refresh_required": True},
+    ]}
+    cutoff = query["$or"][0]["$and"][1]["$or"][1]["linked_accounts.last_attempt_at"]["$lte"]
+    assert abs((datetime.now(timezone.utc) - timedelta(minutes=10) - cutoff).total_seconds()) < 5
+    assert sort == [("linked_accounts.last_attempt_at", 1), ("_id", 1)]
+    assert limit == 25
 
 
 def test_recovery_indexes_are_idempotent_and_unique_preflight_still_fails_closed():

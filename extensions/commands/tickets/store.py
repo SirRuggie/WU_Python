@@ -156,7 +156,14 @@ async def find_one(mongo: MongoClient, filt: dict):
     return _normalized(raw)
 
 
-async def find(mongo: MongoClient, filt: dict, *, include_legacy: bool = False) -> list[dict]:
+async def find(
+    mongo: MongoClient,
+    filt: dict,
+    *,
+    include_legacy: bool = False,
+    sort: list[tuple[str, int]] | None = None,
+    limit: int | None = None,
+) -> list[dict]:
     """Read ticket documents, thread-runtime only by default.
 
     RUNTIME_FILTER's own ``venue``/``runtime`` keys are merged in last, so
@@ -172,11 +179,18 @@ async def find(mongo: MongoClient, filt: dict, *, include_legacy: bool = False) 
     ``TicketSchemaError`` on a legacy row with ``status == "closed"``, and
     such rows exist in production. The only caller (manage.py's diagnostics
     reconciliation) wants raw statuses, not the canonical shape.
+
+    ``sort``/``limit`` push the ordering and bound down to the database
+    instead of the caller reading every match into memory -- pass both for
+    any read whose match count can grow with the collection.
     """
     base = TICKET_FILTER if include_legacy else RUNTIME_FILTER
-    raw = await (await _reader(mongo)).find(
-        {**dict(filt), **base}
-    ).to_list(length=None)
+    cursor = (await _reader(mongo)).find({**dict(filt), **base})
+    if sort:
+        cursor = cursor.sort(sort)
+    if limit:
+        cursor = cursor.limit(limit)
+    raw = await cursor.to_list(length=limit)
     if include_legacy:
         return raw
     return _normalized_many(raw)

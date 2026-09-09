@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Mapping
 
 import coc
@@ -664,6 +664,10 @@ async def confirm_staff_context_queued(
     return bool(getattr(result, "matched_count", 0))
 
 
+ACCOUNT_RECOVERY_READ_LIMIT = 50
+ACCOUNT_RECOVERY_COOLDOWN = timedelta(minutes=10)
+
+
 async def recover_pending_account_syncs(
     mongo: MongoClient,
     coc_client: coc.Client,
@@ -671,15 +675,42 @@ async def recover_pending_account_syncs(
     limit: int = 25,
     after_sync: Callable[[dict], Awaitable[object]] | None = None,
 ) -> dict[str, int]:
-    """Retry a bounded batch of durable failed/pending account observations."""
-    amount = max(1, min(int(limit), 100))
-    pending = await store.find(mongo, account_recovery_filter())
-    pending.sort(key=lambda item: (
-        (item.get("linked_accounts") or {}).get("last_attempt_at") or item.get("created_at"),
-        str(item.get("_id") or ""),
-    ))
+    """Retry a bounded batch of durable failed/pending account observations.
+
+    The read is bounded and ordered at the database -- oldest
+    ``linked_accounts.last_attempt_at`` first -- instead of loading every
+    matching ticket and sorting in Python, so a ticket that keeps failing
+    cannot camp at the head of every sweep and starve the rest of the batch.
+    Only the branches that actually re-run the lookup (a pending retry, or a
+    ticket that has never synced) are cooled down; a ticket waiting solely on
+    the separate flag/context follow-up is not gated by it, since completing
+    that follow-up never touches ``last_attempt_at``.
+    """
+    amount = max(1, min(int(limit), ACCOUNT_RECOVERY_READ_LIMIT))
+    cutoff = utcnow() - ACCOUNT_RECOVERY_COOLDOWN
+    cooldown_elapsed = {"$or": [
+        {"linked_accounts.last_attempt_at": {"$exists": False}},
+        {"linked_accounts.last_attempt_at": {"$lte": cutoff}},
+    ]}
+    lookup_due = {"$or": [
+        {"linked_accounts.retry_required": True},
+        {"status": "open", "linked_accounts.version": {"$exists": False}},
+    ]}
+    follow_up_due = {"$or": [
+        {field: True} for field in store.ACCOUNT_RECOVERY_BOOLEAN_FIELDS
+        if field != "linked_accounts.retry_required"
+    ]}
+    filt = {
+        **store.RUNTIME_FILTER,
+        "$or": [{"$and": [lookup_due, cooldown_elapsed]}, follow_up_due],
+    }
+    pending = await store.find(
+        mongo, filt,
+        sort=[("linked_accounts.last_attempt_at", 1), ("_id", 1)],
+        limit=amount,
+    )
     counts = {"processed": 0, "completed": 0, "failed": 0}
-    for ticket in pending[:amount]:
+    for ticket in pending:
         counts["processed"] += 1
         try:
             before = snapshot_from_ticket(ticket)
