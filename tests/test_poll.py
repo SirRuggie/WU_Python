@@ -29,6 +29,7 @@ def _poll(
         "message_id": 700,
         "creator_id": 999,
         "created_at": NOW,
+        "updated_at": NOW,
         "ends_at": ends_at,
         "title": "Which card should lead?",
         "description": "Choose one for the next round.",

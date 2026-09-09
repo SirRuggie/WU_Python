@@ -11046,6 +11046,20 @@ async def cards_scan_dm_upload(
     )
 
 
+async def _create_card_index(coll, keys, *, name: str, critical: bool = False, **kwargs) -> None:
+    """Create one index, logging its own failure instead of aborting the rest.
+
+    `critical=True` for the two unique indexes the trade design depends on
+    (uniq_open_card_proposal, uniq_open_card_request) -- losing either lets
+    two proposals/requests double-book the same slot.
+    """
+    try:
+        await coll.create_index(keys, name=name, **kwargs)
+    except Exception:
+        log = _log.critical if critical else _log.error
+        log("card inventory index unavailable: %s", name, exc_info=True)
+
+
 @loader.listener(hikari.StartedEvent)
 @lightbulb.di.with_di
 async def prepare_card_inventory_storage(
@@ -11067,74 +11081,89 @@ async def prepare_card_inventory_storage(
         # with the sticky notice and a wrong one is the kind of mistake that is
         # only visible in the wrong channel.
         _log.info("Card Hub trade board and sticky notice: #%s", channel_id)
-    try:
-        await mongo.component_state.create_index(
-            [("type", 1), ("user_id", 1), ("created_at", -1)],
-            name="idx_component_card_upload_user",
-        )
-        await mongo.card_inventories.create_index(
-            [("guild_id", 1), ("confirmed_at", -1)],
-            name="idx_card_inventories_guild_confirmed",
-        )
-        await mongo.card_inventories.create_index(
-            "discord_id",
-            name="idx_card_inventories_discord",
-        )
-        await mongo.card_trades.create_index(
-            "lease_expires_at",
-            expireAfterSeconds=0,
-            name="ttl_card_trade_leases",
-        )
-        await mongo.card_trades.create_index(
-            [("kind", 1), ("guild_id", 1), ("requester_tag", 1),
-             ("status", 1), ("updated_at", -1)],
-            name="idx_card_trades_requester",
-        )
-        await mongo.card_trades.create_index(
-            [("kind", 1), ("guild_id", 1), ("holder_tag", 1),
-             ("status", 1), ("updated_at", -1)],
-            name="idx_card_trades_holder",
-        )
-        await mongo.card_trades.create_index(
-            "open_proposal_key",
-            unique=True,
-            sparse=True,
-            name="uniq_open_card_proposal",
-        )
-        await mongo.card_trades.create_index(
-            [("kind", 1), ("guild_id", 1), ("status", 1), ("expires_at", 1)],
-            name="idx_card_trades_open_requests",
-        )
-        await mongo.card_trades.create_index(
-            "open_request_key",
-            unique=True,
-            sparse=True,
-            name="uniq_open_card_request",
-        )
-        await mongo.card_trades.create_index(
-            [("kind", 1), ("status", 1), ("reservation_until", 1)],
-            name="idx_card_trades_reserving",
-        )
-        await mongo.card_trades.create_index(
-            [("kind", 1), ("status", 1), ("expires_at", 1)],
-            name="idx_card_trades_completing",
-        )
-        await mongo.card_trades.create_index(
-            [("kind", 1), ("trade_id", 1), ("owner_token", 1)],
-            name="idx_card_trade_lease_owner",
-        )
-        await mongo.card_trades.create_index(
-            [("kind", 1), ("guild_id", 1), ("player_tag", 1)],
-            name="idx_card_proposal_slots",
-        )
-        await mongo.card_trades.create_index(
-            [("kind", 1), ("guild_id", 1), ("cleanup_pending", 1)],
-            name="idx_card_trade_cleanup",
-        )
-    except Exception:
-        # A temporary/no-index-permission Mongo problem must not stop the rest
-        # of the bot. At family scale a collection scan still remains bounded.
-        _log.exception("card inventory indexes unavailable")
+    # Each index is created independently: a temporary/no-index-permission
+    # Mongo problem on one must not stop the rest from being installed. At
+    # family scale a collection scan on any single missing index still
+    # remains bounded.
+    await _create_card_index(
+        mongo.component_state,
+        [("type", 1), ("user_id", 1), ("created_at", -1)],
+        name="idx_component_card_upload_user",
+    )
+    await _create_card_index(
+        mongo.card_inventories,
+        [("guild_id", 1), ("confirmed_at", -1)],
+        name="idx_card_inventories_guild_confirmed",
+    )
+    await _create_card_index(
+        mongo.card_inventories,
+        "discord_id",
+        name="idx_card_inventories_discord",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        "lease_expires_at",
+        expireAfterSeconds=0,
+        name="ttl_card_trade_leases",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        [("kind", 1), ("guild_id", 1), ("requester_tag", 1),
+         ("status", 1), ("updated_at", -1)],
+        name="idx_card_trades_requester",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        [("kind", 1), ("guild_id", 1), ("holder_tag", 1),
+         ("status", 1), ("updated_at", -1)],
+        name="idx_card_trades_holder",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        "open_proposal_key",
+        unique=True,
+        sparse=True,
+        name="uniq_open_card_proposal",
+        critical=True,
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        [("kind", 1), ("guild_id", 1), ("status", 1), ("expires_at", 1)],
+        name="idx_card_trades_open_requests",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        "open_request_key",
+        unique=True,
+        sparse=True,
+        name="uniq_open_card_request",
+        critical=True,
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        [("kind", 1), ("status", 1), ("reservation_until", 1)],
+        name="idx_card_trades_reserving",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        [("kind", 1), ("status", 1), ("expires_at", 1)],
+        name="idx_card_trades_completing",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        [("kind", 1), ("trade_id", 1), ("owner_token", 1)],
+        name="idx_card_trade_lease_owner",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        [("kind", 1), ("guild_id", 1), ("player_tag", 1)],
+        name="idx_card_proposal_slots",
+    )
+    await _create_card_index(
+        mongo.card_trades,
+        [("kind", 1), ("guild_id", 1), ("cleanup_pending", 1)],
+        name="idx_card_trade_cleanup",
+    )
     guild_id = _configured_cards_guild_id()
     if guild_id is not None:
         try:

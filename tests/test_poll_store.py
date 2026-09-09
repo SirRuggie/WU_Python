@@ -367,7 +367,8 @@ def test_pending_message_sync_is_global_for_recovery_and_state_updates_are_guild
 
     listed = asyncio.run(poll_store.list_pending_message_sync(mongo, limit=10))
     wrong_guild = asyncio.run(poll_store.mark_message_synced(
-        mongo, guild_id=2, poll_id="pending", observed_at=NOW,
+        mongo, guild_id=2, poll_id="pending",
+        expected_updated_at=NOW, observed_at=NOW,
     ))
     transient = asyncio.run(poll_store.mark_message_sync_pending(
         mongo,
@@ -380,6 +381,7 @@ def test_pending_message_sync_is_global_for_recovery_and_state_updates_are_guild
         mongo,
         guild_id=1,
         poll_id="pending",
+        expected_updated_at=transient["updated_at"],
         observed_at=NOW + timedelta(seconds=3),
     ))
     unavailable = asyncio.run(poll_store.mark_message_unavailable(
@@ -399,3 +401,34 @@ def test_pending_message_sync_is_global_for_recovery_and_state_updates_are_guild
     assert unavailable["message_sync_pending"] is False
     assert unavailable["message_sync_terminal"] is True
     assert unavailable["message_sync_error"] == "NotFoundError"
+
+
+def test_vote_landing_during_render_is_not_lost_by_the_sync_write():
+    """docs/mongodb-refactor.md section 4: mark_message_synced() used to clear
+    message_sync_pending unconditionally, so a vote recorded between the read
+    that started a render and this write had its pending=True wiped, leaving
+    the tally permanently stale. The CAS on updated_at must instead leave it
+    pending so the next sync pass re-renders."""
+    poll = _poll("p1", guild_id=1)
+    poll.update({"message_sync_pending": True, "updated_at": NOW})
+    mongo = _Mongo([poll])
+
+    # The renderer read the poll (and its updated_at) before this vote landed.
+    render_started_at = poll["updated_at"]
+
+    voted = asyncio.run(poll_store.record_vote(
+        mongo, guild_id=1, poll_id="p1", user_id=42, choice=1,
+        observed_at=NOW + timedelta(seconds=1),
+    ))
+    assert voted["message_sync_pending"] is True
+
+    synced = asyncio.run(poll_store.mark_message_synced(
+        mongo, guild_id=1, poll_id="p1",
+        expected_updated_at=render_started_at,
+        observed_at=NOW + timedelta(seconds=2),
+    ))
+
+    assert synced is None
+    stored = mongo.discord_polls.documents["p1"]
+    assert stored["message_sync_pending"] is True
+    assert stored["votes"] == {"42": 1}

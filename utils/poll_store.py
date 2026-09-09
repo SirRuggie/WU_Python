@@ -313,12 +313,26 @@ async def mark_message_synced(
     *,
     guild_id: int,
     poll_id: str,
+    expected_updated_at: datetime,
     observed_at: datetime | None = None,
 ) -> dict | None:
-    """Clear durable render recovery after Discord matches the saved poll."""
+    """Clear durable render recovery after Discord matches the saved poll.
+
+    `expected_updated_at` is the poll's `updated_at` as read before the
+    render started (rule 10, docs/mongodb-refactor.md: put the old value in
+    the filter and let find_one_and_update arbitrate). record_vote() bumps
+    `updated_at` and re-sets `message_sync_pending` on every vote, so if a
+    vote landed during the render this write matches nothing and returns
+    None -- pending stays True and the next sync pass re-renders instead of
+    the vote being silently wiped.
+    """
     now = _utc(observed_at)
     return await _coll(mongo).find_one_and_update(
-        {"_id": poll_id, "guild_id": int(guild_id)},
+        {
+            "_id": poll_id,
+            "guild_id": int(guild_id),
+            "updated_at": expected_updated_at,
+        },
         {"$set": {
             "message_sync_pending": False,
             "message_sync_error": None,

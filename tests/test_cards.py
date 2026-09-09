@@ -14258,3 +14258,52 @@ def test_the_preview_auto_deduct_state_says_seven_days():
     text = _view_text(rest.messages[0])
     assert "7 days" in text
     assert "24 hours" not in text
+
+
+class _FakeIndexCollection:
+    """create_index double that can fail for one named index only."""
+
+    def __init__(self, failing_names=()):
+        self.failing_names = set(failing_names)
+        self.created = []
+
+    async def create_index(self, keys, **kwargs):
+        name = kwargs.get("name")
+        self.created.append(name)
+        if name in self.failing_names:
+            raise DuplicateKeyError(f"E11000 duplicate key error: {name}")
+        return name
+
+
+def test_one_index_failure_does_not_skip_the_rest(monkeypatch, caplog):
+    """docs/mongodb-refactor.md section 4: all fourteen create_index calls
+    used to share one try/except, so a failure on uniq_open_card_proposal
+    silently skipped every index after it, including the lease TTL. Each
+    index must now be created independently."""
+    import logging
+
+    inventories = _FakeIndexCollection(failing_names={"uniq_open_card_proposal"})
+    trades = inventories
+    component_state = _FakeIndexCollection()
+    mongo = SimpleNamespace(
+        component_state=component_state,
+        card_inventories=inventories,
+        card_trades=trades,
+    )
+
+    with caplog.at_level(logging.ERROR, logger=cards_command._log.name):
+        asyncio.run(cards_command.prepare_card_inventory_storage._func(
+            SimpleNamespace(), mongo=mongo,
+        ))
+
+    all_created = component_state.created + inventories.created
+    assert "ttl_card_trade_leases" in all_created, (
+        "the lease TTL index after the failing one must still be created"
+    )
+    assert "uniq_open_card_request" in all_created
+    assert len(all_created) == 14
+
+    critical_records = [r for r in caplog.records if r.levelno == logging.CRITICAL]
+    assert any("uniq_open_card_proposal" in r.getMessage() for r in critical_records), (
+        "the trade-critical unique index must log at CRITICAL, not ERROR"
+    )

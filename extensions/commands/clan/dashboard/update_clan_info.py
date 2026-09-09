@@ -32,7 +32,7 @@ from utils.classes import Clan
 from utils.image_fetch import download_image_blocking
 from utils.media_urls import THUMBNAIL, optimized
 from utils.emoji import emojis
-from utils.mongo import MongoClient
+from utils.mongo import MongoClient, ensure_clan_tag_index
 from utils.url_safety import is_safe_public_url
 from extensions.commands.clan.dashboard.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
@@ -222,24 +222,32 @@ async def add_clan_modal(
         return await ctx.respond("⚠️ You must enter a clan tag!", ephemeral=True)
 
     clan = await coc_client.get_clan(tag=clan_tag)
-    await mongo.clans.insert_one({
-        "announcement_id": 0,
-        "chat_channel_id": 0,
-        "emoji": "",
-        "tag": clan.tag,
-        "leader_id": 0,
-        "leader_role_id": 0,
-        "leadership_channel_id": 0,
-        "logo": "",
-        "banner": "",
-        "name": clan.name,
-        "profile": "",
-        "role_id": 0,
-        "rules_channel_id": 0,
-        "thread_id": 0,
-        "thread_message_id": 0,
-        "type": "",
-    })
+    await ensure_clan_tag_index(mongo)
+    # Upsert keyed on tag (guarded by the unique index above) so a repeat
+    # /clan add for a clan already on file updates it instead of inserting a
+    # second document with a fresh ObjectId _id.
+    await mongo.clans.update_one(
+        {"tag": clan.tag},
+        {"$setOnInsert": {
+            "announcement_id": 0,
+            "chat_channel_id": 0,
+            "emoji": "",
+            "tag": clan.tag,
+            "leader_id": 0,
+            "leader_role_id": 0,
+            "leadership_channel_id": 0,
+            "logo": "",
+            "banner": "",
+            "name": clan.name,
+            "profile": "",
+            "role_id": 0,
+            "rules_channel_id": 0,
+            "thread_id": 0,
+            "thread_message_id": 0,
+            "type": "",
+        }},
+        upsert=True,
+    )
 
     await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
     new_components = await clan_edit_menu(ctx, action_id=clan.tag, mongo=mongo, tag=clan.tag)
