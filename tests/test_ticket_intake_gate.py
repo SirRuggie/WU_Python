@@ -10,6 +10,14 @@ raises whenever any recovery batch reports a failure, which keeps
 These tests pin the fixed behaviour: such rows are reported as ``degraded``
 (logged, annotated, and marked complete so they drop out of the next pass)
 and never counted toward ``failed``.
+
+A still-pending opening delivery specifically gets bounded retries first
+(``DELIVERY_RETRY_ATTEMPTS`` recovery passes, each attempting the existing
+redelivery) before it is retired -- so the welcome/questionnaire cards get
+more than one chance to actually go out. A row whose bound ticket document
+is missing is retired the same degraded way. And because
+``store.transition`` is shared with the legacy channel package, it must
+never upsert a ``ticket_creation_state`` row for a legacy-venue ticket.
 """
 
 import asyncio
@@ -108,6 +116,10 @@ class CreationStates:
         ]
         return Cursor(matches)
 
+    async def find_one(self, query):
+        doc = self.docs.get(query.get("_id"))
+        return dict(doc) if doc is not None else None
+
     async def update_one(self, query, update, **_kwargs):
         doc_id = query["_id"]
         doc = self.docs.setdefault(doc_id, {"_id": doc_id})
@@ -144,9 +156,12 @@ def _mongo(*, states, slot=None):
     )
 
 
-def test_committed_ticket_with_pending_delivery_is_degraded_not_failed(monkeypatch):
-    """(a) A committed ticket whose opening delivery is still pending must be
-    reported as degraded, not failed, so intake stays ready."""
+def test_pending_delivery_is_retried_before_retiring_on_the_third_pass(monkeypatch):
+    """(a) A committed ticket whose opening delivery is still pending is
+    reported as degraded (never failed), retried on passes 1 and 2 -- the
+    row stays selectable and ``recovery_attempts`` climbs -- and only
+    retired (state complete, with a note and the final attempt count) on
+    the third pass. A fourth pass then finds nothing left to process."""
     state = _state()
     mongo = _mongo(states=[state], slot=_open_slot(state))
     ticket = _ticket(status="open")
@@ -163,19 +178,82 @@ def test_committed_ticket_with_pending_delivery_is_degraded_not_failed(monkeypat
     monkeypatch.setattr(thread_service, "_committed_ticket_for_creation_state", committed)
     monkeypatch.setattr(thread_service, "_reconcile_existing_ticket", reconcile)
 
-    result = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+    for pass_number in (1, 2):
+        result = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+            bot=object(), mongo=mongo
+        ))
+        assert result == {"processed": 1, "completed": 0, "degraded": 1, "failed": 0}
+        row = mongo.ticket_creation_state.docs[state["_id"]]
+        assert row["state"] != "complete"
+        assert row["recovery_attempts"] == pass_number
+        assert "recovery_note" not in row
+        assert not mongo.tickets.updates
+
+    third = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
         bot=object(), mongo=mongo
     ))
-
-    assert result == {"processed": 1, "completed": 0, "degraded": 1, "failed": 0}
+    assert third == {"processed": 1, "completed": 0, "degraded": 1, "failed": 0}
     row = mongo.ticket_creation_state.docs[state["_id"]]
     assert row["state"] == "complete"
+    assert row["recovery_attempts"] == 3
     assert row["recovery_note"]
     assert "recovery_noted_at" in row
     # The ticket document is also annotated for staff visibility.
     assert mongo.tickets.updates
     annotated = mongo.tickets.updates[0][1]["$set"]
     assert annotated["creation_state.recovery_note"]
+
+    fourth = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+        bot=object(), mongo=mongo
+    ))
+    assert fourth == {"processed": 0, "completed": 0, "degraded": 0, "failed": 0}
+
+
+def test_pending_delivery_that_succeeds_on_retry_completes_without_a_note(monkeypatch):
+    """A retried redelivery that succeeds on a later pass completes the row
+    the normal way -- no recovery note, because nothing was ever retired."""
+    state = _state()
+    mongo = _mongo(states=[state], slot=_open_slot(state))
+    ticket = _ticket(status="open")
+    calls = {"count": 0}
+
+    async def committed(*_args, **_kwargs):
+        return dict(ticket)
+
+    async def reconcile(_bot, _mongo, received_ticket, *, coc_client=None):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return thread_service.CreatedThreadTicket(
+                received_ticket, resumed=True, delivery_pending=True
+            )
+        # Mirrors the real _mark_committed_creation_complete checkpoint that
+        # a genuine successful redelivery performs.
+        await mongo.ticket_creation_state.update_one(
+            {"_id": state["_id"]}, {"$set": {"state": "complete"}}
+        )
+        return thread_service.CreatedThreadTicket(
+            received_ticket, resumed=True, delivery_pending=False
+        )
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", _no_op)
+    monkeypatch.setattr(thread_service, "_committed_ticket_for_creation_state", committed)
+    monkeypatch.setattr(thread_service, "_reconcile_existing_ticket", reconcile)
+
+    first = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+        bot=object(), mongo=mongo
+    ))
+    assert first == {"processed": 1, "completed": 0, "degraded": 1, "failed": 0}
+    row = mongo.ticket_creation_state.docs[state["_id"]]
+    assert row["recovery_attempts"] == 1
+
+    second = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+        bot=object(), mongo=mongo
+    ))
+    assert second == {"processed": 1, "completed": 1, "degraded": 0, "failed": 0}
+    row = mongo.ticket_creation_state.docs[state["_id"]]
+    assert row["state"] == "complete"
+    assert "recovery_note" not in row
+    assert not mongo.tickets.updates
 
 
 def test_candidate_thread_fetch_not_found_is_degraded_not_failed(monkeypatch):
@@ -254,34 +332,34 @@ def test_missing_thread_config_binding_still_counts_as_failed(monkeypatch):
     assert result == {"processed": 1, "completed": 0, "degraded": 0, "failed": 1}
 
 
-def test_degraded_row_is_not_reselected_on_the_next_pass(monkeypatch):
-    """(e) Once a row is retired as degraded, the next recovery pass must not
-    pick it up again -- this is what stops the infinite reselect."""
+def test_missing_ticket_document_is_degraded_not_failed(monkeypatch):
+    """(e) A creation-state row whose bound ticket document cannot be found
+    (deleted, or never actually written) must be retired as degraded --
+    intake stays ready -- rather than raise ThreadConfigurationError and
+    gate it forever."""
     state = _state()
     mongo = _mongo(states=[state], slot=_open_slot(state))
-    ticket = _ticket(status="open")
 
     async def committed(*_args, **_kwargs):
-        return dict(ticket)
-
-    async def reconcile(_bot, _mongo, received_ticket, *, coc_client=None):
-        return thread_service.CreatedThreadTicket(
-            received_ticket, resumed=True, delivery_pending=True
-        )
+        return None
 
     monkeypatch.setattr(thread_service, "ensure_creation_indexes", _no_op)
     monkeypatch.setattr(thread_service, "_committed_ticket_for_creation_state", committed)
-    monkeypatch.setattr(thread_service, "_reconcile_existing_ticket", reconcile)
 
-    first = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+    result = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
         bot=object(), mongo=mongo
     ))
-    assert first == {"processed": 1, "completed": 0, "degraded": 1, "failed": 0}
 
-    second = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+    assert result == {"processed": 1, "completed": 0, "degraded": 1, "failed": 0}
+    row = mongo.ticket_creation_state.docs[state["_id"]]
+    assert row["state"] == "complete"
+    assert row["recovery_note"] == "ticket document missing"
+
+    # Intake stays ready: the next pass finds nothing left to reselect.
+    again = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
         bot=object(), mongo=mongo
     ))
-    assert second == {"processed": 0, "completed": 0, "degraded": 0, "failed": 0}
+    assert again == {"processed": 0, "completed": 0, "degraded": 0, "failed": 0}
 
 
 def test_terminal_transition_retires_the_creation_state_row(monkeypatch):
@@ -297,13 +375,15 @@ def test_terminal_transition_retires_the_creation_state_row(monkeypatch):
     monkeypatch.setattr(ticket_runtime, "release_open_slot", _no_op)
 
     async def conditional(_mongo, _filt, _update, ticket_id):
-        return store.Transition(store.WON, {"_id": ticket_id, "status": "approved"})
+        return store.Transition(
+            store.WON, {"_id": ticket_id, "status": "approved", "venue": "thread"}
+        )
 
     monkeypatch.setattr(store, "_conditional", conditional)
 
     class SourceTickets:
         async def find_one(self, _query):
-            return {"_id": "ticket_101", "status": "open", "rev": 0}
+            return {"_id": "ticket_101", "status": "open", "rev": 0, "venue": "thread"}
 
     mongo = SimpleNamespace(tickets=SourceTickets())
     outcome = asyncio.run(store.transition(
@@ -316,3 +396,41 @@ def test_terminal_transition_retires_the_creation_state_row(monkeypatch):
 
     assert outcome.won
     assert calls == ["ticket_101"]
+
+
+def test_legacy_venue_terminal_transition_writes_no_creation_state(monkeypatch):
+    """store.transition is shared with the legacy channel package
+    (tickets_legacy/close.py and resolve.py). A legacy-venue ticket reaching
+    a terminal status must never upsert a ticket_creation_state row -- that
+    state exists only for thread-venue tickets."""
+    calls = []
+
+    async def mark_complete(_mongo, ticket):
+        calls.append(ticket["_id"])
+
+    monkeypatch.setattr(thread_service, "mark_creation_complete_for_terminal_ticket", mark_complete)
+    monkeypatch.setattr(ticket_runtime, "mark_slot_release_pending", _no_op)
+    monkeypatch.setattr(ticket_runtime, "release_open_slot", _no_op)
+
+    async def conditional(_mongo, _filt, _update, ticket_id):
+        return store.Transition(
+            store.WON, {"_id": ticket_id, "status": "approved", "venue": "channel"}
+        )
+
+    monkeypatch.setattr(store, "_conditional", conditional)
+
+    class SourceTickets:
+        async def find_one(self, _query):
+            return {"_id": "ticket-legacy-1", "status": "open", "rev": 0, "venue": "channel"}
+
+    mongo = SimpleNamespace(tickets=SourceTickets())
+    outcome = asyncio.run(store.transition(
+        mongo,
+        "ticket-legacy-1",
+        to_status="approved",
+        actor_id=1,
+        actor_name="Recruiter",
+    ))
+
+    assert outcome.won
+    assert calls == []

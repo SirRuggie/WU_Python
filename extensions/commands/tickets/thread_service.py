@@ -42,6 +42,12 @@ _log = logging.getLogger(__name__)
 CREATION_LEASE = timedelta(minutes=10)
 COMPLETE_STATE_RETENTION = timedelta(days=1)
 AUTO_ARCHIVE_MINUTES = 10080
+# A row whose opening delivery is still pending gets this many recovery
+# passes -- each one retries the existing redelivery -- before it is
+# retired as degraded. A Discord-level 404/403 means the thread itself is
+# gone, so those retire on the first pass instead of waiting out the count.
+DELIVERY_RETRY_ATTEMPTS = 3
+_IMMEDIATE_RETIRE_DELIVERY_ERRORS = frozenset({"NotFoundError", "ForbiddenError"})
 
 _creation_index_ready = False
 _creation_lock = asyncio.Lock()
@@ -1717,6 +1723,8 @@ async def _retire_degraded_creation_state(
     state: Mapping[str, Any],
     ticket: Mapping[str, Any] | None,
     reason: str,
+    *,
+    extra_fields: Mapping[str, Any] | None = None,
 ) -> None:
     """Log, annotate, and drop a per-ticket recovery problem out of the pending query.
 
@@ -1724,7 +1732,9 @@ async def _retire_degraded_creation_state(
     gone, or its slot was already released for a terminal decision) must never
     keep re-selecting the row and blocking all new-ticket intake. This is
     called at most once per row: the row is marked ``complete`` here, so the
-    next recovery pass no longer selects it.
+    next recovery pass no longer selects it. ``extra_fields`` lets a caller
+    persist extra bookkeeping (e.g. the final ``recovery_attempts`` count)
+    alongside the retirement in the same write.
     """
     now = utcnow()
     _log.warning(
@@ -1756,6 +1766,7 @@ async def _retire_degraded_creation_state(
                     "recovery_noted_at": now,
                     "updated_at": now,
                     "expires_at": now + COMPLETE_STATE_RETENTION,
+                    **(dict(extra_fields) if extra_fields else {}),
                 },
                 "$unset": {"lease_owner": "", "lease_until": ""},
             },
@@ -1763,6 +1774,52 @@ async def _retire_degraded_creation_state(
     except Exception:
         _log.exception(
             "failed to retire degraded creation-state row %s", state.get("_id")
+        )
+
+
+async def _retry_or_retire_pending_delivery(
+    mongo: MongoClient,
+    state: Mapping[str, Any],
+    ticket: Mapping[str, Any] | None,
+) -> None:
+    """Give a still-pending opening delivery bounded retries before retiring it.
+
+    The redelivery attempt for this pass already ran (the caller just
+    resolved ``result`` via ``_reconcile_existing_ticket`` or
+    ``create_live_thread_ticket``); this only decides whether the row stays
+    selectable for another pass or gets retired. A Discord-level 404/403
+    recorded on the row by :func:`_set_committed_creation_state` means the
+    thread itself is gone -- retrying will not help, so that retires
+    immediately, matching the existing thread-gone/slot-gone-on-terminal
+    behaviour. Anything else is a transient delivery problem and gets up to
+    :data:`DELIVERY_RETRY_ATTEMPTS` passes before it is retired.
+    """
+    fresh = await mongo.ticket_creation_state.find_one({"_id": state["_id"]}) or state
+    last_error = str(fresh.get("last_error") or "")
+    if last_error in _IMMEDIATE_RETIRE_DELIVERY_ERRORS:
+        await _retire_degraded_creation_state(
+            mongo, state, ticket, "committed ticket delivery has not completed"
+        )
+        return
+    attempts = int(fresh.get("recovery_attempts") or 0) + 1
+    if attempts >= DELIVERY_RETRY_ATTEMPTS:
+        await _retire_degraded_creation_state(
+            mongo,
+            state,
+            ticket,
+            "committed ticket delivery has not completed after "
+            f"{DELIVERY_RETRY_ATTEMPTS} recovery attempts",
+            extra_fields={"recovery_attempts": attempts},
+        )
+        return
+    try:
+        await mongo.ticket_creation_state.update_one(
+            {"_id": state["_id"]},
+            {"$set": {"recovery_attempts": attempts, "updated_at": utcnow()}},
+        )
+    except Exception:
+        _log.exception(
+            "failed to record delivery recovery attempt for %s", state.get("_id")
         )
 
 
@@ -1831,15 +1888,23 @@ async def recover_pending_thread_ticket_creations(
                     user_id=_as_int(state.get("user_id")),
                     ticket_type=ticket_type,
                 )
-                if committed is None or str(slot.get("ticket_id")) != str(
-                    committed.get("_id")
-                ):
+                if committed is None:
+                    # The row's bound ticket document is gone (or was never
+                    # written). Nothing can be reconciled or redelivered, but
+                    # this is the row's own per-ticket problem, not a runtime
+                    # binding failure -- retire it rather than gate intake.
+                    degraded_reason = "ticket document missing"
+                    await _retire_degraded_creation_state(
+                        mongo, state, None, degraded_reason
+                    )
+                elif str(slot.get("ticket_id")) != str(committed.get("_id")):
                     raise ThreadConfigurationError(
                         "open slot is not bound to the pending creation ticket"
                     )
-                result = await _reconcile_existing_ticket(
-                    bot, mongo, committed, coc_client=coc_client
-                )
+                else:
+                    result = await _reconcile_existing_ticket(
+                        bot, mongo, committed, coc_client=coc_client
+                    )
             else:
                 try:
                     slot_claim = await ticket_runtime.resume_open_slot(
@@ -1896,12 +1961,7 @@ async def recover_pending_thread_ticket_creations(
             counts["degraded"] += 1
             continue
         if result is not None and result.delivery_pending:
-            await _retire_degraded_creation_state(
-                mongo,
-                state,
-                result.ticket,
-                "committed ticket delivery has not completed",
-            )
+            await _retry_or_retire_pending_delivery(mongo, state, result.ticket)
             counts["degraded"] += 1
             continue
         counts["completed"] += 1

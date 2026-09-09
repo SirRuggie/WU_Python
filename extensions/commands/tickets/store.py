@@ -642,13 +642,18 @@ async def transition(
                 await ticket_runtime.release_open_slot(mongo, ticket_id=ticket_id)
             except Exception:
                 _log.exception("ticket slot release deferred for %s", ticket_id)
-        # Local import: thread_service imports this module at top level, so a
-        # top-level import here would be circular.
-        from extensions.commands.tickets import thread_service
+        # Thread-system state (ticket_creation_state) only exists for
+        # thread-venue tickets. transition() is also used by the legacy
+        # channel package, whose tickets carry venue "channel"; calling this
+        # for them would upsert a bogus row that nothing ever cleans up.
+        if str((outcome.doc or {}).get("venue") or "") == "thread":
+            # Local import: thread_service imports this module at top level,
+            # so a top-level import here would be circular.
+            from extensions.commands.tickets import thread_service
 
-        await thread_service.mark_creation_complete_for_terminal_ticket(
-            mongo, outcome.doc
-        )
+            await thread_service.mark_creation_complete_for_terminal_ticket(
+                mongo, outcome.doc
+            )
     return outcome
 
 
