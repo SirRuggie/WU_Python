@@ -327,7 +327,10 @@ def _setup_context():
 def _setup_command():
     command = setup.Setup()
     command.legacy_panel = "10/20/30"
-    command.public_channel = SimpleNamespace(id=21, guild_id=11)
+    # Real lightbulb channel options resolve to hikari.InteractionChannel,
+    # which has no `guild_id` attribute -- only `id` -- so the fake must not
+    # carry one either. Guild membership is proven via the REST fetch.
+    command.public_channel = SimpleNamespace(id=21)
     command.tester = SimpleNamespace(id=50)
     command.tester_role = None
     command.replace = False
@@ -396,6 +399,49 @@ def test_cross_server_setup_verifies_both_admins_and_binds_two_owned_panels(monk
     )
     assert rest.deleted == []
     assert ctx.responses[-1].startswith("✅ Cross-server intake bound")
+    # The success path above proves the "guild matches" branch of the
+    # public-channel check lets setup proceed all the way through.
+
+
+def test_setup_refuses_a_public_channel_fetched_from_a_different_guild(monkeypatch):
+    """`public_channel` is a lightbulb channel option, which resolves to
+    hikari.InteractionChannel and carries no `guild_id` -- it is not safe to
+    trust for cross-guild identity. The REST fetch of that channel is what
+    must be checked; when its guild does not match the target guild, setup
+    must refuse with the public-channel message and post nothing."""
+    state = ticket_runtime.RolloutState(ticket_runtime.PHASE_LEGACY_ONLY, 0, False)
+
+    async def get_rollout(_mongo):
+        return state
+
+    async def old_admin(*_args):
+        return True
+
+    class Rest(_CrossServerSetupRest):
+        async def fetch_channel(self, channel_id):
+            if int(channel_id) == 21:
+                return SimpleNamespace(
+                    id=21, guild_id=99, type=hikari.ChannelType.GUILD_TEXT
+                )
+            return await super().fetch_channel(channel_id)
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = Rest()
+    config = _SetupConfig({"_id": "config"})
+    ctx = _setup_context()
+
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert rest.created == []
+    assert config.write_calls == 0
+    assert ctx.responses[-1] == (
+        "🛑 The public v2 channel must be in the target server. Nothing was posted."
+    )
 
 
 def test_setup_refuses_a_stale_single_guild_target_binding(monkeypatch):
@@ -564,7 +610,7 @@ def test_safe_phase_target_panel_relocation_precedes_parent_reconfiguration(
     })
     ctx = _setup_context()
     command = _setup_command()
-    command.public_channel = SimpleNamespace(id=41, guild_id=11)
+    command.public_channel = SimpleNamespace(id=41)
     command.replace = True
 
     asyncio.run(command.invoke(
@@ -621,7 +667,7 @@ def test_target_panel_relocation_rejects_unsafe_phase_before_post_or_write(
     })
     ctx = _setup_context()
     command = _setup_command()
-    command.public_channel = SimpleNamespace(id=41, guild_id=11)
+    command.public_channel = SimpleNamespace(id=41)
     command.replace = True
 
     asyncio.run(command.invoke(

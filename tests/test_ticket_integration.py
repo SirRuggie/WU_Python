@@ -369,33 +369,74 @@ def test_startup_resumes_confirmed_creation_and_migration_after_indexes(monkeypa
     ]
 
 
-def test_shared_blockers_keep_intake_unready_until_startup_retry(monkeypatch):
-    attempts = 0
+class _FakeSlotCollection:
+    """Stands in for ``mongo.ticket_open_slots`` for the thread-route check."""
+
+    def __init__(self, thread_route_conflicts: int = 0):
+        self.thread_route_conflicts = thread_route_conflicts
+        self.queries: list[dict] = []
+
+    async def count_documents(self, query):
+        self.queries.append(query)
+        return self.thread_route_conflicts
+
+    def find(self, query):
+        self.queries.append(query)
+        ids = [
+            {"_id": f"ticket-open:thread-{index}:main"}
+            for index in range(self.thread_route_conflicts)
+        ]
+
+        class _Cursor:
+            def sort(self, _spec):
+                return self
+
+            def limit(self, _amount):
+                return self
+
+            async def to_list(self, length=None):
+                return ids[:length] if length else ids
+
+        return _Cursor()
+
+
+class _FakeMongo:
+    def __init__(self, thread_route_conflicts: int = 0):
+        self.ticket_open_slots = _FakeSlotCollection(thread_route_conflicts)
+
+
+def test_legacy_blockers_never_block_thread_intake_recovery(monkeypatch, capsys):
+    """Legacy deliveries and legacy-vs-legacy open-ticket conflicts (the real
+    live incident: one user with two open legacy FWA channel tickets) must
+    never block the new thread system -- recovery logs and continues."""
+
+    calls = []
 
     async def indexes(_mongo):
         return None
 
     async def blockers(_mongo):
-        nonlocal attempts
-        attempts += 1
-        if attempts == 1:
-            return ticket_runtime.RuntimeBlockerStatus(
-                1,
-                0,
-                pending_delivery_ids=("41",),
-            )
-        if attempts == 2:
-            return ticket_runtime.RuntimeBlockerStatus(
-                0,
-                1,
-                conflict_slot_ids=("ticket-open:7:main",),
-            )
-        return ticket_runtime.RuntimeBlockerStatus(0, 0)
+        return ticket_runtime.RuntimeBlockerStatus(
+            1,
+            1,
+            pending_delivery_ids=("41",),
+            conflict_slot_ids=("ticket-open:7:main",),
+        )
 
-    async def complete(**_kwargs):
+    async def creations(**_kwargs):
+        calls.append("creation")
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def migrations(**_kwargs):
+        calls.append("migration")
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def staff_contexts(**_kwargs):
+        calls.append("staff_context")
         return {"processed": 0, "completed": 0, "failed": 0}
 
     async def open_context(**_kwargs):
+        calls.append("open_context")
         return {
             "processed": 0,
             "completed": 0,
@@ -404,25 +445,22 @@ def test_shared_blockers_keep_intake_unready_until_startup_retry(monkeypatch):
             "exhausted": True,
         }
 
-    async def no_wait(_delay):
-        return None
-
     monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
     monkeypatch.setattr(ticket_runtime, "runtime_blocker_status", blockers)
     monkeypatch.setattr(
         ticket_extension.thread_service,
         "recover_pending_thread_ticket_creations",
-        complete,
+        creations,
     )
     monkeypatch.setattr(
         ticket_extension.legacy_migration,
         "recover_pending_legacy_migrations",
-        complete,
+        migrations,
     )
     monkeypatch.setattr(
         ticket_extension.console,
         "recover_pending_staff_identity_contexts",
-        complete,
+        staff_contexts,
     )
     monkeypatch.setattr(
         ticket_extension.console,
@@ -432,23 +470,46 @@ def test_shared_blockers_keep_intake_unready_until_startup_retry(monkeypatch):
     monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
     monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
 
-    async def scenario():
-        reconciler = ticket_extension.StartupReconciler(
-            "shared-ticket-blocker",
-            lambda: ticket_extension.recover_ticket_workflows(object(), object()),
-            retry_delays=(0,),
-            sleep=no_wait,
-        )
-        task = reconciler.start()
-        await task
-        return reconciler
+    mongo = _FakeMongo(thread_route_conflicts=0)
 
-    reconciler = asyncio.run(scenario())
+    asyncio.run(ticket_extension.recover_ticket_workflows(object(), mongo))
 
-    assert attempts == 3
-    assert reconciler.health.attempts == 3
-    assert reconciler.health.state == "healthy"
+    assert calls == ["creation", "migration", "staff_context", "open_context"]
     assert ticket_extension.thread_intake_ready() is True
+    assert mongo.ticket_open_slots.queries, "thread-route conflict count was checked"
+
+    captured = capsys.readouterr()
+    assert "[Tickets] legacy_blockers_ignored" in captured.out
+    assert "legacy_deliveries=1" in captured.out
+    assert "open_ticket_conflicts=1" in captured.out
+    assert "remains blocked" not in captured.out
+
+
+def test_thread_route_conflict_still_blocks_recovery(monkeypatch):
+    """A conflict where the thread runtime itself owns one side of the
+    collision is not legacy-only and must keep blocking thread intake."""
+
+    async def indexes(_mongo):
+        return None
+
+    async def blockers(_mongo):
+        return ticket_runtime.RuntimeBlockerStatus(
+            0,
+            1,
+            conflict_slot_ids=("ticket-open:7:main",),
+        )
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(ticket_runtime, "runtime_blocker_status", blockers)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+
+    mongo = _FakeMongo(thread_route_conflicts=1)
+
+    with pytest.raises(RuntimeError, match="thread-route conflict.*ticket-open:thread-0:main"):
+        asyncio.run(ticket_extension.recover_ticket_workflows(object(), mongo))
+
+    assert ticket_extension.thread_intake_ready() is False
 
 
 def test_account_retry_queues_terminal_context_before_staff_recovery(monkeypatch):

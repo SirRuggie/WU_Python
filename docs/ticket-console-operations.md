@@ -488,8 +488,14 @@ console refresh without creating a second ticket pair. Recovery may temporarily
 make a terminal thread writable to repair pending bot-owned work; it then
 relocks and rearchives the thread without reopening the ticket status.
 
-Startup also retries pending legacy initial deliveries before enabling v2
-intake and reconciles shared open-ticket slots. If delivery or conflict IDs
-remain in `rollout-status`, intake stays fail-closed: preserve the named rows,
-repair the source condition, and let the next startup recovery pass prove that
-the blocker is safe to clear.
+Startup reconciles shared open-ticket slots and reports legacy blockers
+(pending legacy initial deliveries, legacy-vs-legacy open-ticket conflicts) in
+`rollout-status`, but they never gate v2 intake: legacy state is read-only
+source data and duplicate open channel tickets are normal legacy reality. When
+such blockers exist the bot prints one `[Tickets] legacy_blockers_ignored ...`
+line and continues recovery. The only blocker that still fails closed is an
+open-ticket conflict where the thread runtime owns one side (`route: thread`
+on the slot or inside `conflicting_tickets`); that raises
+`shared ticket recovery remains blocked by a thread-route conflict` naming the
+offending slot IDs, and the startup reconciler retries until it is repaired.
+Legacy blockers still matter for `rollout-drain`, which fails closed on them.

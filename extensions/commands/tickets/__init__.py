@@ -68,17 +68,54 @@ async def recover_ticket_workflows(
     _slot_backfill, _slot_reconcile = await ticket_runtime.recover_ticket_runtime(mongo)
     blockers = await ticket_runtime.runtime_blocker_status(mongo)
     if blockers.blocked:
-        details: list[str] = []
+        # Legacy in-flight welcome deliveries and legacy-vs-legacy open-ticket
+        # conflicts (duplicate channel tickets are normal, uncleaned legacy
+        # reality) must never block the new thread system. Only a conflict
+        # where the thread runtime itself owns one side of the collision is
+        # unsafe to ignore -- keep raising for that case alone.
+        thread_route_conflicts = 0
+        thread_conflict_query: dict = {}
+        if blockers.unresolved_conflicts:
+            thread_conflict_query = {
+                "$and": [
+                    ticket_runtime.unresolved_open_conflict_query(),
+                    {
+                        "$or": [
+                            {"route": ticket_runtime.ROUTE_THREAD},
+                            {"conflicting_tickets.route": ticket_runtime.ROUTE_THREAD},
+                        ]
+                    },
+                ]
+            }
+            thread_route_conflicts = await mongo.ticket_open_slots.count_documents(
+                thread_conflict_query
+            )
+        if thread_route_conflicts:
+            thread_conflict_ids = await ticket_runtime._bounded_document_ids(
+                mongo.ticket_open_slots, thread_conflict_query
+            )
+            details: list[str] = []
+            if thread_conflict_ids:
+                details.append(
+                    "open-ticket conflicts=" + ",".join(thread_conflict_ids)
+                )
+            suffix = f" ({'; '.join(details)})" if details else ""
+            raise RuntimeError(
+                f"shared ticket recovery remains blocked by a thread-route "
+                f"conflict{suffix}"
+            )
+        ids_parts: list[str] = []
         if blockers.pending_delivery_ids:
-            details.append(
-                "legacy deliveries=" + ",".join(blockers.pending_delivery_ids)
-            )
+            ids_parts.append("deliveries:" + ",".join(blockers.pending_delivery_ids))
         if blockers.conflict_slot_ids:
-            details.append(
-                "open-ticket conflicts=" + ",".join(blockers.conflict_slot_ids)
-            )
-        suffix = f" ({'; '.join(details)})" if details else ""
-        raise RuntimeError(f"shared ticket recovery remains blocked{suffix}")
+            ids_parts.append("conflicts:" + ",".join(blockers.conflict_slot_ids))
+        ids_suffix = f" ids={';'.join(ids_parts)}" if ids_parts else ""
+        print(
+            "[Tickets] legacy_blockers_ignored "
+            f"legacy_deliveries={blockers.legacy_pending_deliveries} "
+            f"open_ticket_conflicts={blockers.unresolved_conflicts}"
+            f"{ids_suffix}"
+        )
     creation_kwargs = {
         "bot": bot,
         "mongo": mongo,

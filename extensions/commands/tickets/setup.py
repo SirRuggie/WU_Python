@@ -369,15 +369,6 @@ class Setup(
 
         if public_channel_option is not None:
             public_channel_id = int(public_channel_option.id)
-            public_channel_guild = int(
-                getattr(public_channel_option, "guild_id", 0) or 0
-            )
-            if public_channel_guild != guild_id:
-                await ctx.respond(
-                    "🛑 The public v2 channel must be in the target server. Nothing was posted.",
-                    ephemeral=True,
-                )
-                return
         elif target_already_bound and state.thread_intake is not None:
             public_channel_id = state.thread_intake.channel_id
         else:
@@ -433,10 +424,13 @@ class Setup(
                 or getattr(legacy_channel, "type", None) != hikari.ChannelType.GUILD_TEXT
             ):
                 raise ValueError("legacy panel channel identity does not match its server")
-            if (
-                int(getattr(target_public_channel, "guild_id", 0) or 0) != guild_id
-                or getattr(target_public_channel, "type", None) != hikari.ChannelType.GUILD_TEXT
-            ):
+            if int(getattr(target_public_channel, "guild_id", 0) or 0) != guild_id:
+                await ctx.respond(
+                    "🛑 The public v2 channel must be in the target server. Nothing was posted.",
+                    ephemeral=True,
+                )
+                return
+            if getattr(target_public_channel, "type", None) != hikari.ChannelType.GUILD_TEXT:
                 raise ValueError("public v2 channel is not a target-server text channel")
             if int(getattr(getattr(legacy_message, "author", None), "id", 0) or 0) != int(me.id):
                 raise ValueError("legacy panel was not authored by this bot")
