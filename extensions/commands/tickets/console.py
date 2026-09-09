@@ -4457,7 +4457,20 @@ async def _filter_action(
         await ctx.respond("This search panel belongs to someone else.", ephemeral=True)
         return None
     if not await _require_recruiter(ctx, mongo):
-        return None
+        # The dispatcher already deferred this interaction as a message edit
+        # (see extensions/components.py); returning None here unconditionally
+        # edits the panel to no components at all, blanking a search panel
+        # that still legitimately belongs to this owner. Re-render it
+        # unchanged instead of losing it out from under them.
+        return await _render_search_session(
+            mongo,
+            action_id=action_id,
+            owner_id=owner_id,
+            guild_id=guild_id,
+            query=query,
+            statuses=statuses,
+            ticket_types=ticket_types,
+        )
     selected = [
         str(value) for value in (getattr(ctx.interaction, "values", ()) or ())
         if str(value) in allowed

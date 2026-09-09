@@ -1243,6 +1243,51 @@ def test_root_find_submit_acknowledges_before_creating_owner_bound_state(monkeyp
     assert events[3][1]["action_id"] == "root-search"
 
 
+def test_status_filter_re_renders_the_panel_instead_of_blanking_it_when_not_recruiter(
+    monkeypatch,
+):
+    """The dispatcher already deferred this interaction as a message edit
+    (extensions/components.py). Returning None from the recruiter-check
+    branch would edit the panel down to zero components, blanking a search
+    panel that still legitimately belongs to its owner."""
+    responses = []
+
+    class Context:
+        user = SimpleNamespace(id=22)
+        member = object()
+
+        async def respond(self, *args, **kwargs):
+            responses.append((args, kwargs))
+
+    async def denied(_member, _mongo):
+        return False
+
+    async def render(_mongo, **kwargs):
+        assert kwargs == {
+            "action_id": "abc",
+            "owner_id": 22,
+            "guild_id": 33,
+            "query": "Applicant",
+            "statuses": ["open"],
+            "ticket_types": [],
+        }
+        return ["UNCHANGED PANEL"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console, "_render_search_session", render)
+
+    result = asyncio.run(console.ticket_console_status(
+        Context(), "abc",
+        owner_id=22, guild_id=33, query="Applicant",
+        statuses=["open"], ticket_types=[],
+        mongo=object(),
+    ))
+
+    assert result == ["UNCHANGED PANEL"]
+    assert len(responses) == 1
+    assert "Only recruiters" in responses[0][0][0]
+
+
 def test_console_deny_submit_defers_then_rejects_wrong_guild_before_transition(
     monkeypatch,
 ):
