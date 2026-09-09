@@ -10,6 +10,14 @@ import pytest
 from extensions.commands.tickets import legacy_bulk, legacy_migration
 
 
+@pytest.fixture(autouse=True)
+def _no_run_sleep(monkeypatch):
+    # The confirmed run pauses one second per ticket in production;
+    # tests must not.
+    from extensions.commands.tickets import legacy_bulk
+    monkeypatch.setattr(legacy_bulk, "RUN_SLEEP_SECONDS", 0)
+
+
 NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
 
 

@@ -45,7 +45,7 @@ channel 1547244294757425212 (`recruiter-desk`).
 3. Server 4: import approved and denied exactly as they are. Open tickets in
    server 4 stay in legacy until decided; do not import them.
 4. Skip any ticket whose applicant is the owner (username `sirruggie`, user id
-   505227988229554179) in servers 3 and 4: those are test tickets.
+   505227988229554179) in every server: those are test tickets.
 5. Abandoned tickets (applicant never wrote) → not yet decided by the owner;
    default to skipping them and report the count in the dry run.
 6. Imported tickets take fresh numbers in import order (oldest channel first),

@@ -32,6 +32,9 @@ _log = logging.getLogger(__name__)
 BATCH_LEASE = timedelta(seconds=45)
 PLAN_STALE_AFTER = timedelta(hours=24)
 PREVIEW_SLEEP_SECONDS = 0.25
+# Pause between copied tickets so a long confirmed run never leans on
+# hikari's bucket limiter alone (each ticket is many REST calls).
+RUN_SLEEP_SECONDS = 1.0
 PROGRESS_EDIT_EVERY = 5
 CONSECUTIVE_FAILURE_LIMIT = 10
 MAX_CHANNELS_PER_PLAN = 1000
@@ -550,6 +553,7 @@ async def run_batch(
             paused = True
             document = await _cas_update(mongo, document, set_fields={"state": "paused"})
             break
+        await asyncio.sleep(RUN_SLEEP_SECONDS)
 
     remaining_pending = any(
         entry["classification"] == CLASS_READY and entry["status"] == "pending"
