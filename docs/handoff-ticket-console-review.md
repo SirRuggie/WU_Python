@@ -159,6 +159,18 @@ same as `main`", not "fix legacy".
 - Fix: Key flags and blacklist checks on verified linked tags (`linked_accounts.current_tags`/`linked_account_identities`), not the unverified scraped `player_tags` set.
 - Note: Related location: `extensions/commands/tickets/resolve.py:1063`, where the approval blacklist gate reads the same scraped `player_tags` set. Half of this (blacklist keyed on observed tags) is documented as intentional in docs/ticket-console.md; the flag-extension half is not and there is no undo.
 
+## P1 status (2026-09-09 overnight): done, verified
+
+All eleven P1 items landed on `feature/ticket-console` between 422bbd1 and
+1fd3514 (batches A, B, C plus their refuter-driven fixes), every batch
+approved by an Opus refuter. Suite: 1753 passed, 8 skipped. Not pushed.
+Found along the way and left for the owner: approving a ticket grants no
+Discord role in either the new or the old code; the overturn path removes
+roles if that is ever added. Parked in P3: `thread_missing` records one
+role, so a candidate-thread deletion followed by a staff-thread deletion
+loses the staff fact and that ticket's effects never complete; fix by
+recording roles additively.
+
 ## P1 decisions (owner, 2026-09-09)
 
 - All eleven P1 items go ahead, in three builder batches, each refuted
