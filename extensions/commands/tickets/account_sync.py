@@ -198,6 +198,7 @@ def _failed_update(
             "linked_accounts.retry_required": True,
             "linked_accounts.source": source,
             "linked_accounts.last_attempt_at": at,
+            "linked_accounts.fetched_at": at,
             "linked_accounts.error": error,
             "linked_accounts.revision": revision,
             "updated_at": at,
@@ -275,6 +276,7 @@ def _success_update(
             "linked_accounts.source": source,
             "linked_accounts.last_attempt_at": at,
             "linked_accounts.last_success_at": at,
+            "linked_accounts.fetched_at": at,
             "linked_accounts.revision": revision,
             "updated_at": at,
         },
@@ -381,6 +383,15 @@ async def _persist_sync_result(
         ticket = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
         if ticket is None:
             return AccountSyncResult(None, snapshot_from_ticket(None))
+        linked = ticket.get("linked_accounts")
+        existing_fetch = linked.get("fetched_at") if isinstance(linked, Mapping) else None
+        if isinstance(existing_fetch, datetime) and schema.normalize_datetime(
+            existing_fetch, field="linked_accounts.fetched_at"
+        ) > at:
+            # A lookup that started after this one already landed durably.
+            # Applying this call's stale result would move current_tags and
+            # last_success_at backwards, so accept the newer state instead.
+            return AccountSyncResult(ticket, snapshot_from_ticket(ticket))
         prior = snapshot_from_ticket(ticket)
         if failure is not None:
             update, added, removed = _failed_update(
@@ -397,6 +408,7 @@ async def _persist_sync_result(
             ticket_id,
             expected_revision=prior.revision,
             update=update,
+            fetched_at=at,
         )
         if result.outcome == store.MISSING:
             return AccountSyncResult(None, snapshot_from_ticket(None))

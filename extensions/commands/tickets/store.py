@@ -499,6 +499,7 @@ async def compare_and_swap_linked_accounts(
     *,
     expected_revision: int,
     update: dict,
+    fetched_at: datetime | None = None,
 ) -> Transition:
     """Atomically persist one linked-account observation without changing decision rev.
 
@@ -506,6 +507,13 @@ async def compare_and_swap_linked_accounts(
     them.  Account refreshes use their own revision so a background refresh cannot
     invalidate an otherwise current Approve/Deny panel.  The CAS still prevents two
     workers from replacing each other's complete account snapshots.
+
+    ``fetched_at``, when given, is the caller's lookup start time.  The revision
+    filter alone cannot stop a slower, older lookup from overwriting a faster,
+    newer one: both can observe the same revision, the newer one wins the CAS
+    first, and the older one's retry then re-reads the now-current revision and
+    matches it too.  Requiring the document's stored ``linked_accounts.fetched_at``
+    to be no newer than this lookup's rejects that stale write.
     """
     revision = max(0, int(expected_revision))
     revision_filter = (
@@ -516,16 +524,18 @@ async def compare_and_swap_linked_accounts(
         if revision == 0
         else {"linked_accounts.revision": revision}
     )
-    return await _conditional(
-        mongo,
-        {
-            "_id": ticket_id,
-            **RUNTIME_FILTER,
-            **revision_filter,
-        },
-        update,
-        ticket_id,
-    )
+    filt = {"_id": ticket_id, **RUNTIME_FILTER}
+    if fetched_at is None:
+        filt.update(revision_filter)
+    else:
+        filt["$and"] = [
+            revision_filter,
+            {"$or": [
+                {"linked_accounts.fetched_at": {"$exists": False}},
+                {"linked_accounts.fetched_at": {"$lte": fetched_at}},
+            ]},
+        ]
+    return await _conditional(mongo, filt, update, ticket_id)
 
 
 async def transition(

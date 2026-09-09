@@ -90,6 +90,9 @@ def _condition(values, expected):
         elif operator == "$in":
             if not any(any(_equal(value, choice) for choice in operand) for value in values):
                 return False
+        elif operator == "$lte":
+            if not any(value is not None and value <= operand for value in values):
+                return False
         else:
             raise AssertionError(f"unsupported query operator {operator}")
     return True
@@ -99,6 +102,10 @@ def _matches(document, query):
     for key, expected in query.items():
         if key == "$or":
             if not any(_matches(document, clause) for clause in expected):
+                return False
+            continue
+        if key == "$and":
+            if not all(_matches(document, clause) for clause in expected):
                 return False
             continue
         if not _condition(_values(document, key.split(".")), expected):
@@ -497,6 +504,44 @@ def test_linked_account_sync_retries_cas_without_duplicate_identity(monkeypatch)
     assert attempts == 2
     identities = mongo.tickets.documents[ticket["_id"]]["linked_account_identities"]
     assert [item["tag"] for item in identities] == ["#CAS123"]
+
+
+def test_slower_older_lookup_cannot_overwrite_a_faster_newer_one(monkeypatch):
+    """A sync whose API lookup started before another sync's, but finishes
+    persisting after it, must not revert current_tags/last_success_at to its
+    own stale result."""
+    ticket = _ticket()
+    mongo = _mongo(ticket)
+    older_lookup_started_at = NOW - timedelta(minutes=5)
+    newer_lookup_started_at = NOW
+    responses = {
+        older_lookup_started_at: AccountsData(entries=(_linked_account("#OLDSTALE"),)),
+        newer_lookup_started_at: AccountsData(entries=(_linked_account("#FRESH000"),)),
+    }
+
+    async def load(*_args, **_kwargs):
+        return responses[load.next_at]
+
+    # The newer lookup's API call finishes and persists first.
+    load.next_at = newer_lookup_started_at
+    monkeypatch.setattr(account_sync, "load_accounts", load)
+    newer = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"],
+        source=account_sync.SOURCE_OPEN, now=newer_lookup_started_at,
+    ))
+    assert newer.snapshot.current_tags == ("#FRESH000",)
+
+    # The older lookup, which actually started earlier, only persists now.
+    load.next_at = older_lookup_started_at
+    older = asyncio.run(account_sync.sync_ticket_accounts(
+        mongo, object(), ticket["_id"],
+        source=account_sync.SOURCE_OPEN, now=older_lookup_started_at,
+    ))
+
+    assert older.snapshot.current_tags == ("#FRESH000",)
+    durable = mongo.tickets.documents[ticket["_id"]]
+    assert durable["linked_accounts"]["current_tags"] == ["#FRESH000"]
+    assert durable["linked_accounts"]["last_success_at"] == newer_lookup_started_at
 
 
 def test_flag_identity_propagation_survives_post_snapshot_failure(monkeypatch):
