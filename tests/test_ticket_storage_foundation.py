@@ -4115,6 +4115,7 @@ def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
 ):
     """Commit 2: /tickets never offers an overturn - only the console does."""
     ticket = _ticket(status="approved", source={"guild_id": 1, "channel_id": 2})
+    ticket["approved_by"] = 999
     ticket["approved_by_name"] = "Lead Recruiter"
     ticket["approved_at"] = NOW
     responses = []
@@ -4131,8 +4132,8 @@ def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
     async def defer(**_kwargs):
         return None
 
-    async def respond(content, **_kwargs):
-        responses.append(content)
+    async def respond(content, **kwargs):
+        responses.append((content, kwargs))
 
     monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
     monkeypatch.setattr(close.store, "find_by_location", find_by_location)
@@ -4147,14 +4148,22 @@ def test_slash_approve_on_a_decided_ticket_names_the_decision_maker_no_overturn(
     ))
 
     assert len(responses) == 1
-    assert "Already approved by Lead Recruiter" in responses[0]
-    assert "Use the console to overturn" in responses[0]
+    content, kwargs = responses[0]
+    # A mention of the recruiter who decided it, never the stored name -
+    # and the send must suppress notifications since it now mentions someone.
+    assert "Already approved by <@999>" in content
+    assert "Lead Recruiter" not in content
+    assert "Use the console to overturn" in content
+    assert kwargs["user_mentions"] is False
+    assert kwargs["role_mentions"] is False
+    assert kwargs["mentions_everyone"] is False
 
 
 def test_slash_deny_button_on_a_decided_ticket_names_the_decision_maker_no_overturn(
     monkeypatch,
 ):
     ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
+    ticket["denied_by"] = 888
     ticket["denied_by_name"] = "Other Recruiter"
     ticket["denied_at"] = NOW
     edits = []
@@ -4193,8 +4202,12 @@ def test_slash_deny_button_on_a_decided_ticket_names_the_decision_maker_no_overt
     ))
 
     assert len(edits) == 1
-    assert "Already denied by Other Recruiter" in edits[0]["content"]
+    assert "Already denied by <@888>" in edits[0]["content"]
+    assert "Other Recruiter" not in edits[0]["content"]
     assert edits[0]["components"] == []
+    assert edits[0]["user_mentions"] is False
+    assert edits[0]["role_mentions"] is False
+    assert edits[0]["mentions_everyone"] is False
 
 
 def test_unauthorized_flag_mutation_has_no_write(monkeypatch):

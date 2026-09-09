@@ -20,14 +20,23 @@ from hikari.impl import (
 
 
 def _already_decided_message(doc: dict) -> str:
-    """No overturn from the slash command - only the console offers that."""
+    """No overturn from the slash command - only the console offers that.
+
+    Renders a mention, never the stored ``*_by_name`` field - the caller
+    must suppress notifications on the send since this text now contains
+    a mention.
+    """
     status = str(doc.get("status") or "")
     if status == "approved":
-        who = doc.get("approved_by_name") or "someone"
+        actor_id = doc.get("approved_by")
         when = resolve.ts(doc.get("approved_at"))
     else:
-        who = doc.get("denied_by_name") or "someone"
+        actor_id = doc.get("denied_by")
         when = resolve.ts(doc.get("denied_at"))
+    try:
+        who = f"<@{int(actor_id)}>" if actor_id else "someone"
+    except (TypeError, ValueError):
+        who = "someone"
     return f"Already {status} by {who} {when}. Use the console to overturn."
 
 
@@ -178,7 +187,12 @@ class Approve(
                     "The ticket changed before approval finished. Run `/tickets approve` again."
                 )
                 return
-            await ctx.respond(_already_decided_message(result.doc or {}))
+            await ctx.respond(
+                _already_decided_message(result.doc or {}),
+                user_mentions=False,
+                role_mentions=False,
+                mentions_everyone=False,
+            )
             return
 
         if result.outcome == store.MISSING:
@@ -245,6 +259,9 @@ async def deny_fwa_default_handler(
         await ctx.interaction.edit_initial_response(
             content=_already_decided_message(result.doc or {}),
             components=[],
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
         )
         return
     if result.outcome in {store.MISSING, store.UNAUTHORIZED}:
@@ -310,6 +327,9 @@ async def deny_main_default_handler(
         await ctx.interaction.edit_initial_response(
             content=_already_decided_message(result.doc or {}),
             components=[],
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
         )
         return
     if result.outcome in {store.MISSING, store.UNAUTHORIZED}:
@@ -442,6 +462,9 @@ async def process_custom_denial_handler(
         await ctx.interaction.edit_initial_response(
             content=_already_decided_message(result.doc or {}),
             components=[],
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
         )
         return
     if result.outcome in {store.MISSING, store.UNAUTHORIZED, store.BLOCKED}:

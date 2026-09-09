@@ -51,7 +51,9 @@ class _RecorderCtx:
     async def respond(self, components=None, edit=False, **kwargs):
         self.events.append(("respond", edit, components))
 
-    async def _edit_message(self, channel_id, message_id, components=None):
+    async def _edit_message(self, channel_id, message_id, components=None, **kwargs):
+        # The dead-token fallback suppresses pings like every other delivery.
+        assert kwargs.get("user_mentions") is False
         self.events.append(("rest_edit", channel_id, message_id, components))
 
 

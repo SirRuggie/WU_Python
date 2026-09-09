@@ -331,6 +331,8 @@ async def _dispatch(
             if components is not None and message is not None:
                 await ctx.interaction.app.rest.edit_message(
                     message.channel_id, message.id, components=components,
+                    user_mentions=False, role_mentions=False,
+                    mentions_everyone=False,
                 )
         elif action.is_modal:
             # ModalContext inherits the plain response mixin, which has no edit=

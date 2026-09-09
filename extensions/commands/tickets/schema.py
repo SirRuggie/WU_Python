@@ -106,6 +106,30 @@ def player_tags(values: Iterable[str] | str | None) -> list[str]:
     return result
 
 
+_TAG_TOKEN_ALPHABET = "0289PYLQGRJCVUO"
+# Left boundary (not inside a word or URL fragment) and at least one tag
+# digit, so ordinary words like "#group" or "#glory" are left alone.
+_TAG_TOKEN_RE = re.compile(
+    rf"(?<![\w#])#(?=[{_TAG_TOKEN_ALPHABET}]*[0289])[{_TAG_TOKEN_ALPHABET}]{{5,12}}\b",
+    re.IGNORECASE,
+)
+
+
+def normalize_tag_tokens_for_display(text: str) -> str:
+    """Uppercase `#TAG`-shaped tokens in free text, mapping O to 0.
+
+    Display-only, for rendering raw applicant-typed text (e.g. an answer
+    transcript) that was never run through :func:`player_tag`. Never changes
+    what is stored - only what a reader sees.
+    """
+
+    def _replace(match: "re.Match[str]") -> str:
+        token = match.group(0)
+        return "#" + token[1:].upper().replace("O", "0")
+
+    return _TAG_TOKEN_RE.sub(_replace, str(text or ""))
+
+
 def username_search(value: str | None) -> str:
     return " ".join(str(value or "").strip().split()).casefold()
 

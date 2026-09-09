@@ -191,6 +191,17 @@ def _clean_code_span(value, *, limit: int = 80) -> str:
     return text[:limit] or "Unknown"
 
 
+def _mention(user_id, *, fallback: str = "someone") -> str:
+    """A Discord mention for a person; never a stored name.
+
+    Rendering the mention itself never pings -- every caller that sends this
+    text is responsible for passing ``user_mentions=False`` on the send.
+    """
+
+    value = _int(user_id)
+    return f"<@{value}>" if value else fallback
+
+
 def _allocate_message_text(
     desired_lengths: Sequence[int],
     *,
@@ -273,15 +284,19 @@ def _ticket_label(ticket_doc: Mapping, *, username: bool = False, markdown: bool
     ``markdown=False`` is for a Discord select-option label: those fields
     are plain text Discord never renders as markdown, so escaping would
     leak literal backslashes into it instead of keeping anything inert.
+    Discord also cannot render a mention inside a select-option label, so
+    that path falls back to the stored display name instead.
     Every other caller embeds this in real Text content and keeps the
-    default, where escaping is required.
+    default, where a mention is used instead of the stored name.
     """
     kind = _ticket_type(ticket_doc)
     prefix = "FWA" if kind == "fwa" else "Main" if kind == "main" else "Ticket"
     label = f"{prefix} #{_ticket_number(ticket_doc)}"
     if username:
-        clean = _clean if markdown else _clean_code_span
-        label += f" · {clean(ticket_doc.get('username'), limit=45)}"
+        if markdown:
+            label += f" · {_mention(ticket_doc.get('user_id'))}"
+        else:
+            label += f" · {_clean_code_span(ticket_doc.get('username'), limit=45)}"
     return label[:100]
 
 
@@ -486,13 +501,13 @@ async def _already_decided_notice(
     if status == "approved":
         verb, who, when = (
             "approved",
-            _clean(current.get("approved_by_name"), limit=80) or "someone",
+            _mention(current.get("approved_by")),
             _timestamp(current.get("approved_at")),
         )
     else:
         verb, who, when = (
             "denied",
-            _clean(current.get("denied_by_name"), limit=80) or "someone",
+            _mention(current.get("denied_by")),
             _timestamp(current.get("denied_at")),
         )
     action_id = uuid.uuid4().hex
@@ -505,7 +520,7 @@ async def _already_decided_notice(
     })
     return _notice_with_row(
         f"Already {verb}",
-        f"Already {verb} by **{who}** {when}.",
+        f"Already {verb} by {who} {when}.",
         accent=ACCENT_YELLOW,
         row=ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
@@ -547,14 +562,14 @@ def _approve_confirm_panel(
     ticket_doc: Mapping, *, action_id: str, overturn: bool = False,
 ) -> list[Container]:
     label = _TICKET_TYPE_LABEL.get(_ticket_type(ticket_doc), "Unknown")
-    username = _clean(ticket_doc.get("username"), limit=80)
+    applicant = _mention(ticket_doc.get("user_id"))
     confirm_id = (
         f"ticket_v2_console_overturn_approve_go:{action_id}"
         if overturn else f"ticket_v2_console_approve_go:{action_id}"
     )
     return _confirm_panel(
         "Confirm approval",
-        f"Approve **{username}** for **{label}**?",
+        f"Approve {applicant} for **{label}**?",
         confirm_id=confirm_id,
         cancel_id=f"ticket_v2_console_confirm_cancel:{action_id}",
         confirm_label="Approve",
@@ -567,18 +582,18 @@ def _overturn_step1_panel(ticket_doc: Mapping, *, action_id: str) -> list[Contai
     """'Someone already decided this. Do the opposite anyway?' — step 1 of 2."""
     status = str(ticket_doc.get("status") or "").casefold()
     if status == "approved":
-        who = _clean(ticket_doc.get("approved_by_name"), limit=80) or "Someone"
+        who = _mention(ticket_doc.get("approved_by"))
         when = _timestamp(ticket_doc.get("approved_at"))
         verb, ask, style = "approved", "Deny anyway?", hikari.ButtonStyle.DANGER
         confirm_id = f"ticket_v2_overturn_deny_open:{action_id}"
     else:
-        who = _clean(ticket_doc.get("denied_by_name"), limit=80) or "Someone"
+        who = _mention(ticket_doc.get("denied_by"))
         when = _timestamp(ticket_doc.get("denied_at"))
         verb, ask, style = "denied", "Approve anyway?", hikari.ButtonStyle.SUCCESS
         confirm_id = f"ticket_v2_console_overturn_approve_confirm:{action_id}"
     return _confirm_panel(
         "Overturn this decision?",
-        f"This person was {verb} by **{who}** {when}. {ask}",
+        f"This person was {verb} by {who} {when}. {ask}",
         confirm_id=confirm_id,
         cancel_id=f"ticket_v2_console_confirm_cancel:{action_id}",
         confirm_label="Continue",
@@ -1766,7 +1781,11 @@ def _intake_value(value) -> str | None:
         text = ", ".join(str(item).strip() for item in value if str(item).strip())
     else:
         text = str(value).strip()
-    return _clean(text, limit=350) if text else None
+    if not text:
+        return None
+    # Applicant-typed tags render uppercased (O -> 0) in every intake view,
+    # structured or transcript; storage is untouched.
+    return _clean(schema.normalize_tag_tokens_for_display(text), limit=350)
 
 
 def _structured_intake(ticket_doc: Mapping) -> list[tuple[str, str]]:
@@ -1914,7 +1933,7 @@ def build_ticket_detail(
     )
     details_before_tags = [
         f"**Status:** {status_emoji} {status_label}",
-        f"**Applicant:** {_clean(ticket_doc.get('username'), limit=80)}",
+        f"**Applicant:** {_mention(user_id)}",
         f"**Discord ID:** `{user_id}`" if user_id else "**Discord ID:** unavailable",
     ]
     opened = (
@@ -4935,7 +4954,12 @@ async def ticket_overturn_deny_submit(
     components = await _transition_result_panel(
         result, verb="denied", mongo=mongo, owner_id=owner_id, guild_id=guild_id,
     )
-    await ctx.interaction.edit_initial_response(components=components)
+    await ctx.interaction.edit_initial_response(
+        components=components,
+        user_mentions=False,
+        role_mentions=False,
+        mentions_everyone=False,
+    )
 
 
 @register_action(
@@ -5052,7 +5076,12 @@ async def ticket_console_deny_submit(
     components = await _transition_result_panel(
         result, verb="denied", mongo=mongo, owner_id=owner_id, guild_id=guild_id,
     )
-    await ctx.interaction.edit_initial_response(components=components)
+    await ctx.interaction.edit_initial_response(
+        components=components,
+        user_mentions=False,
+        role_mentions=False,
+        mentions_everyone=False,
+    )
 
 
 @ticket.register()

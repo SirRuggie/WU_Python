@@ -970,7 +970,9 @@ def test_already_decided_panel_names_who_and_when_with_an_open_button(monkeypatc
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
     assert "Already approved" in content
-    assert "Lead Recruiter" in content
+    # A mention of the recruiter who decided it, never the stored name.
+    assert "<@999>" in content
+    assert "Lead Recruiter" not in content
     labels = [str(node["label"]) for node in _nodes(view) if "label" in node]
     assert "Open ticket" in labels
     assert saved["type"] == "ticket_v2_console_view"
@@ -1014,6 +1016,38 @@ def test_detail_renders_structured_intake_then_canonical_answer_fallback():
     assert "Candidate answer 2" in transcript_text
     assert "Candidate answer 7" in transcript_text
     _assert_component_limits(transcript_view)
+
+
+def test_transcript_uppercases_a_tag_looking_token_in_a_raw_answer():
+    """A tag-shaped token the applicant typed (e.g. lowercase, letter-O)
+    renders normalized for staff, without changing what is stored."""
+    tag_ticket = _ticket(16, answers=[{
+        "message_id": 700,
+        "kind": "answer",
+        "content": "My tag is #9llUR8, thanks!",
+        "at": datetime(2026, 8, 20, 3, 0, tzinfo=timezone.utc),
+    }])
+    view = console.build_ticket_detail(
+        tag_ticket, action_id="f" * 32, flags=[], history=[],
+    )
+    text = "\n".join(str(node["content"]) for node in _nodes(view) if "content" in node)
+    assert "#9LLUR8" in text
+    assert "#9llUR8" not in text
+    # The stored answer itself is untouched.
+    assert tag_ticket["answers"][0]["content"] == "My tag is #9llUR8, thanks!"
+
+
+def test_ticket_label_mentions_in_real_text_but_not_in_a_select_label():
+    """Discord select-option labels cannot render a mention, so that path
+    keeps the stored display name; every other caller gets a mention."""
+    ticket = _ticket(17, username="Some Applicant")
+    real_text = console._ticket_label(ticket, username=True)
+    assert f"<@{ticket['user_id']}>" in real_text
+    assert "Some Applicant" not in real_text
+
+    select_label = console._ticket_label(ticket, username=True, markdown=False)
+    assert "Some Applicant" in select_label
+    assert "<@" not in select_label
 
 
 def test_shared_hub_actions_are_no_return_so_dispatcher_cannot_edit_the_root():
@@ -1419,6 +1453,80 @@ def test_console_deny_submit_authorizes_before_loading_private_state(monkeypatch
     ]
 
 
+def test_console_deny_submit_already_decided_mentions_and_suppresses_pings(monkeypatch):
+    """The already-decided notice must mention the decider, never their
+    stored name, and the edit delivering it must suppress notifications."""
+    private = {
+        "type": "ticket_v2_console_detail",
+        "owner_id": 22,
+        "guild_id": 33,
+        "ticket_id": "ticket_1",
+        "expected_status": "open",
+    }
+    ticket = _ticket(
+        23,
+        status="approved",
+        approved_by=777,
+        approved_by_name="Someone Else",
+        approved_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    edits = []
+
+    class Interaction:
+        message = None
+        components = [[SimpleNamespace(custom_id="reason", value="Clear reason")]]
+
+        async def edit_initial_response(self, **kwargs):
+            edits.append(kwargs)
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22, username="Recruiter")
+        member = object()
+        guild_id = 33
+
+        async def defer(self, **kwargs):
+            return None
+
+    async def get(_mongo, _action_id, projection=None):
+        if projection is not None:
+            return {
+                "type": private["type"],
+                "owner_id": private["owner_id"],
+                "guild_id": private["guild_id"],
+            }
+        return dict(private)
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def deny(*_args, **_kwargs):
+        return console.store.Transition(console.store.LOST, ticket)
+
+    async def insert(_mongo, _document):
+        return None
+
+    monkeypatch.setattr(console, "get_state", get)
+    monkeypatch.setattr(console, "insert_state", insert)
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.resolve, "deny_ticket", deny)
+
+    asyncio.run(console.ticket_console_deny_submit(
+        Context(), "detail", mongo=object(), bot=object(),
+    ))
+
+    assert len(edits) == 1
+    kwargs = edits[0]
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(kwargs["components"]) if "content" in node
+    )
+    assert "<@777>" in content
+    assert "Someone Else" not in content
+    assert kwargs["user_mentions"] is False
+    assert kwargs["role_mentions"] is False
+    assert kwargs["mentions_everyone"] is False
+
+
 def test_console_approve_opens_a_confirm_step_before_touching_anything(monkeypatch):
     """Commit 2: Approve is one click plus a confirm, never a silent single click."""
     ticket = _ticket(21, status="open", username="Some Applicant", ticket_type="fwa")
@@ -1439,7 +1547,9 @@ def test_console_approve_opens_a_confirm_step_before_touching_anything(monkeypat
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
     labels = [str(node["label"]) for node in _nodes(view) if "label" in node]
-    assert "Some Applicant" in content
+    # A mention of the applicant, never the stored username.
+    assert f"<@{ticket['user_id']}>" in content
+    assert "Some Applicant" not in content
     assert "FWA" in content
     assert labels == ["Approve", "Cancel"]
     custom_ids = [str(node["custom_id"]) for node in _nodes(view) if "custom_id" in node]
@@ -1517,6 +1627,7 @@ def test_console_approve_go_no_longer_sends_a_rev_and_shows_already_approved_on_
     ticket = _ticket(
         21,
         status="approved",
+        approved_by=888,
         approved_by_name="Other Recruiter",
         approved_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
     )
@@ -1550,7 +1661,8 @@ def test_console_approve_go_no_longer_sends_a_rev_and_shows_already_approved_on_
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
     assert "Already approved" in content
-    assert "Other Recruiter" in content
+    assert "<@888>" in content
+    assert "Other Recruiter" not in content
 
 
 def test_direct_find_command_defers_before_permission_and_search_work(monkeypatch):

@@ -23,8 +23,10 @@ import hikari
 import coc
 from hikari.impl import (
     ContainerComponentBuilder as Container,
+    LinkButtonBuilder as LinkButton,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
+    MessageActionRowBuilder as ActionRow,
     SeparatorComponentBuilder as Separator,
     SectionComponentBuilder as Section,
     TextDisplayComponentBuilder as Text,
@@ -1284,14 +1286,25 @@ async def _send_ticket_creation_dm(
         )
         return
     jump_url = f"https://discord.com/channels/{guild_id}/{candidate_id}"
+    components = [Container(
+        accent_color=GOLDENROD_ACCENT,
+        components=[
+            Text(content="**Your ticket is ready**"),
+            Text(content=(
+                "A recruiter will reply in your ticket. Press the button to "
+                "open it."
+            )),
+            ActionRow(components=[
+                LinkButton(label="Open my ticket", url=jump_url),
+            ]),
+        ],
+    )]
     try:
         dm_channel = await rest.create_dm_channel(user_id)
         await rest.create_message(
             channel=dm_channel,
-            content=(
-                f"Your Warriors United ticket is here: {jump_url}. "
-                "If you lose it, press My ticket on the panel."
-            ),
+            components=components,
+            flags=hikari.MessageFlag.IS_COMPONENTS_V2,
             user_mentions=False,
             role_mentions=False,
             mentions_everyone=False,

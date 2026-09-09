@@ -568,7 +568,7 @@ def test_opening_message_mentions_only_candidate_and_recruiter(monkeypatch):
     assert "<@30>" not in repr(calls[1][0][3])
 
 
-def test_creation_dm_sends_a_jump_link_to_the_candidate():
+def test_creation_dm_sends_a_components_v2_container_with_a_link_button():
     sent = []
 
     class Rest:
@@ -584,8 +584,13 @@ def test_creation_dm_sends_a_jump_link_to_the_candidate():
 
     assert len(sent) == 1
     assert sent[0]["channel"].id == 999
-    assert "https://discord.com/channels/10/101" in sent[0]["content"]
-    assert "My ticket" in sent[0]["content"]
+    # Components V2 messages never carry a `content=` alongside components.
+    assert "content" not in sent[0]
+    assert sent[0]["flags"] == hikari.MessageFlag.IS_COMPONENTS_V2
+    payload = repr(sent[0]["components"])
+    assert "https://discord.com/channels/10/101" in payload
+    assert "Open my ticket" in payload
+    assert "Your ticket is ready" in payload
 
 
 def test_creation_dm_second_call_is_a_no_op():
