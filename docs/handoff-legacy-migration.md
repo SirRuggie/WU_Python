@@ -84,25 +84,38 @@ channel 1547244294757425212 (`recruiter-desk`).
   phase is `pilot`.
 - `/tickets migrate-legacy`: one channel per command. Unusable for 900+
   tickets; kept for one-offs.
-- Bulk driver: a builder was writing `extensions/commands/tickets/legacy_bulk.py`
-  with `/tickets migrate-all source-guild category attachments limit confirm`
+- Bulk driver: DONE and committed as `6913fb9` on the branch (not yet
+  deployed): `extensions/commands/tickets/legacy_bulk.py`,
+  `/tickets migrate-all source-guild category attachments limit confirm`
   (dry run → plan doc in `ticket_migration_batches`; confirm → resumable
   sequential run with a progress message in the console channel, 10
   consecutive failures pause it, admin bulk runs bypass the pilot cap with a
-  log line). Check `git status` on the branch checkout for its state; run the
-  suite; if it is unfinished, finish it to that spec, then apply the
-  follow-up below.
+  log line); applicant fallback from the welcome mention and channel name
+  is in `legacy_migration.py`. Tests: `tests/test_ticket_legacy_bulk.py`.
+  Suite at that commit: 1826 passed, 2 skipped.
+
+Checkpoint log (newest first):
+- 2026-09-09 evening: review passed with one fix (1 s pause between copied
+  tickets); DEPLOYED as `5dced26` on the box. Follow-up items 1 and 2 done.
+  Next: owner confirms the numbering reset (tool dry run shows what goes),
+  then owner runs `/tickets migrate-all source-guild:<Server 1> confirm:false`
+  in the new server and pastes the summary.
+- 2026-09-09 evening: owner-rules follow-up committed `e56a35d` (detection
+  by category+prefix, outcome inference, closed/no-decision status, server
+  3/4 open-ticket policy, owner-test skip, abandoned skip + `include-abandoned`,
+  Browse Closed filter). Suite 1846 passed / 2 skipped. Sonnet review pass
+  running; NOT deployed yet. Next: review verdict, deploy, reset numbering,
+  dry run server 1.
+- 2026-09-09 evening: bulk driver committed `6913fb9`; follow-up item 1
+  (owner rules) handed to a sonnet builder.
 
 ## Follow-up still to do (in order)
 
-1. ~~Bulk driver follow-up: detection by category+prefix (server 1 names have
+1. Bulk driver follow-up: detection by category+prefix (server 1 names have
    no numbers), applicant fallback from the first message's mention, outcome
    inference from embeds, "closed, no decision" status, skip-owner rule, skip
-   abandoned by default, and a "Closed" entry in the Browse status filter.~~
-   Done, uncommitted (`extensions/commands/tickets/legacy_bulk.py`,
-   `legacy_migration.py`, `schema.py`, `console.py`; tests extended in
-   `tests/test_ticket_legacy_bulk.py` and `tests/test_ticket_console.py`).
-2. Refuter pass on the driver, commit, push, deploy.
+   abandoned by default, and a "Closed" entry in the Browse status filter.
+2. ~~Refuter pass on the driver, commit, push, deploy.~~ Done, `5dced26`.
 3. Reset numbering (`tools/reset_thread_ticket_test_data.py --confirm`).
 4. Dry run server 1, fix what it flags, run; then 2, 3, 4.
 5. After all four: legacy removal a few weeks after go-live; nightly Mongo
