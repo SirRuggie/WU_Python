@@ -243,6 +243,36 @@ class Collection:
         self.indexes.append((spec, kwargs))
         return kwargs.get("name")
 
+    async def aggregate(self, pipeline):
+        """Minimal `$match`/`$group` support -- the only two stages
+        `store.console_counts` and `flag_store.count_active` actually use."""
+        rows = list(self.documents.values())
+        for stage in pipeline:
+            if "$match" in stage:
+                rows = [row for row in rows if _matches(row, stage["$match"])]
+            elif "$group" in stage:
+                id_spec = (stage["$group"] or {}).get("_id")
+                grouped: dict = {}
+                order: list = []
+                for row in rows:
+                    if isinstance(id_spec, dict):
+                        id_value = {
+                            name: _get(row, str(ref).lstrip("$"), None)
+                            for name, ref in id_spec.items()
+                        }
+                        key = tuple(sorted(id_value.items()))
+                    else:
+                        id_value = _get(row, str(id_spec).lstrip("$"), None)
+                        key = id_value
+                    if key not in grouped:
+                        grouped[key] = {"_id": id_value, "count": 0}
+                        order.append(key)
+                    grouped[key]["count"] += 1
+                rows = [grouped[key] for key in order]
+            else:
+                raise AssertionError(f"unsupported aggregate stage: {stage}")
+        return Cursor(rows)
+
 
 class SetupCollection(Collection):
     def __init__(self):
@@ -1615,6 +1645,34 @@ def test_account_recovery_or_predicates_each_have_a_selective_index():
             field: True,
         }
         assert options["name"] in names
+
+
+def test_find_by_location_or_predicates_each_have_a_selective_index():
+    """`find_by_location`'s `$or` runs on every guild message to resolve
+    which ticket a channel/thread belongs to -- each branch it depends on
+    (`location.id`, `location.staff_space_id`) needs its own selective,
+    named, idempotent index scoped to RUNTIME_FILTER, not just the existing
+    uniqueness-constraint index that happens to share the same field."""
+    mongo = _mongo(_ticket())
+    names = asyncio.run(store.ensure_indexes(mongo))
+    indexes = {
+        options.get("name"): options
+        for _spec, options in mongo.tickets.indexes
+    }
+
+    for name, field in (
+        ("thread_v2_location_lookup", "location.id"),
+        ("thread_v2_staff_location_lookup", "location.staff_space_id"),
+    ):
+        assert name in names
+        options = indexes[name]
+        assert options["partialFilterExpression"] == store.RUNTIME_FILTER
+        assert "unique" not in options or not options["unique"]
+
+    # Idempotent: a second install must not error and must produce the same
+    # set of names.
+    again = asyncio.run(store.ensure_indexes(mongo))
+    assert again == names
 
 
 def test_account_recovery_executes_the_frozen_indexed_predicate(monkeypatch):
@@ -3805,3 +3863,166 @@ def test_unauthorized_flag_mutation_has_no_write(monkeypatch):
         kind=flag_store.FLAG_BLACKLISTED, discord_ids=(30,), source="test",
     ))
     assert result.outcome == store.UNAUTHORIZED
+
+
+def test_approval_message_tells_the_applicant_what_happens_next_and_how_to_return():
+    """The old copy ("Stand by for further instructions.") was posted into a
+    thread that is then locked, leaving the applicant with an instruction to
+    wait with no way to act on it. The new copy must say what happens next
+    and how to find the ticket again, and must not still say the old line."""
+    sent = []
+
+    class Rest:
+        async def create_message(self, **kwargs):
+            sent.append(kwargs)
+
+    bot = SimpleNamespace(rest=Rest())
+    ticket = {
+        "venue": "thread",
+        "location": {"id": 101},
+        "user_id": 30,
+    }
+
+    asyncio.run(resolve.apply_approval(bot, SimpleNamespace(), ticket=ticket))
+
+    assert len(sent) == 1
+    content = sent[0]["content"]
+    assert "A recruiter will contact you with your clan invite" in content
+    assert "This ticket is now closed" in content
+    assert "My ticket" in content
+    assert "Stand by for further instructions" not in content
+
+
+def test_custom_denial_modal_label_matches_the_console_wording(monkeypatch):
+    """The slash-command deny modal and the console's overturn-deny modal
+    must show the applicant-facing field the same way: "Reason shown to the
+    applicant", not the old "Denial Reason"."""
+    modals = []
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("custom denial opener performed prerequisite work")
+
+    async def create_modal_response(**kwargs):
+        modals.append(kwargs)
+
+    async def no_defer(**_kwargs):
+        raise AssertionError("custom denial opener was deferred")
+
+    monkeypatch.setattr(close, "get_state", forbidden)
+    monkeypatch.setattr(close.perms, "is_recruiter", forbidden)
+    monkeypatch.setattr(dispatcher, "get_state", forbidden)
+    ctx = SimpleNamespace(
+        user=SimpleNamespace(id=10),
+        defer=no_defer,
+        interaction=SimpleNamespace(
+            custom_id="ticket_v2_deny_custom:state",
+            create_modal_response=create_modal_response,
+        ),
+    )
+
+    asyncio.run(dispatcher._dispatch(ctx, SimpleNamespace()))
+
+    assert len(modals) == 1
+    field = modals[0]["components"][0].components[0]
+    assert field.label == "Reason shown to the applicant"
+    assert field.custom_id == "denial_reason"
+
+
+def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
+    """`_hub_payload` wires `store.list_open`, `store.console_counts`, and
+    `flag_store.count_active` together against real Mongo-shaped documents
+    -- `_hub_payload` itself is never stubbed here. Only the PNG rendering
+    step is replaced, since pixel output is not what this test pins."""
+
+    def _doc(number, *, ticket_type, status, source=None):
+        document = schema.new_ticket_document(
+            ticket_type=ticket_type,
+            ticket_number=number,
+            guild_id=10,
+            public_thread_id=100 + number,
+            public_parent_id=20,
+            staff_thread_id=200 + number,
+            staff_parent_id=21,
+            user_id=1000 + number,
+            username=f"Applicant {number}",
+            created_at=NOW,
+            status=status,
+            source=source,
+        )
+        document["runtime"] = ticket_runtime.THREAD_RUNTIME
+        return document
+
+    legacy_source = {"guild_id": 10, "channel_id": 999}
+    tickets = [
+        _doc(1, ticket_type="main", status="open"),
+        _doc(2, ticket_type="main", status="open"),
+        _doc(3, ticket_type="fwa", status="open"),
+        _doc(4, ticket_type="main", status="approved", source=legacy_source),
+        _doc(5, ticket_type="fwa", status="denied", source=legacy_source),
+    ]
+    flags = [
+        {"_id": "flag_a", "kind": flag_store.FLAG_BLACKLISTED, "active": True},
+        {"_id": "flag_b", "kind": flag_store.FLAG_BLACKLISTED, "active": True},
+        {"_id": "flag_c", "kind": flag_store.FLAG_DENIED_BEFORE, "active": True},
+        {"_id": "flag_d", "kind": flag_store.FLAG_DENIED_BEFORE, "active": False},
+    ]
+    mongo = SimpleNamespace(
+        tickets=Collection(tickets),
+        ticket_flags=Collection(flags),
+    )
+
+    captured = []
+
+    async def fake_render(counts):
+        captured.append(counts)
+        return b"png"
+
+    monkeypatch.setattr(console, "render_overview", fake_render)
+
+    components = asyncio.run(console._hub_payload(mongo))
+
+    assert len(captured) == 1
+    overview = captured[0]
+    assert overview.statuses == {"open": 3, "approved": 1, "denied": 1}
+    assert overview.by_type["main"] == {"open": 2, "approved": 1, "denied": 0}
+    assert overview.by_type["fwa"] == {"open": 1, "approved": 0, "denied": 1}
+    assert overview.flags == {
+        flag_store.FLAG_BLACKLISTED: 2,
+        flag_store.FLAG_DENIED_BEFORE: 1,
+        flag_store.FLAG_NOT_LOYAL: 0,
+    }
+
+    container, _attachments = components[0].build()
+    select = container["components"][1]["components"][0]
+    assert len(select["options"]) == 3
+
+
+def test_search_identity_field_names_match_what_schema_writes():
+    """`_search_identity`'s query must reference the exact field names
+    `schema.py` actually writes onto a ticket document -- a rename on
+    either side does not raise, it just silently returns zero rows, so this
+    pins both sides against each other."""
+    document = schema.new_ticket_document(
+        ticket_type="main", ticket_number=1, guild_id=10,
+        public_thread_id=101, public_parent_id=20,
+        staff_thread_id=102, staff_parent_id=21,
+        user_id=30, username="Applicant",
+        player_tags=("abc123",), created_at=NOW,
+    )
+    written_fields = set(document)
+
+    discord_id_query = store._search_identity("223456789012345678")
+    assert set(discord_id_query) == {"user_id"}
+    assert set(discord_id_query) <= written_fields
+
+    username_query = store._search_identity("Applicant")
+    assert set(username_query) == {"username_search"}
+    assert set(username_query) <= written_fields
+
+    tag_query = store._search_identity("#ABC123")
+    tag_fields = {name for clause in tag_query["$or"] for name in clause}
+    assert tag_fields == {"player_tags", "mentioned_tags", "player_tag", "tag"}
+    # `tag` alone is a legacy-only fallback kept for rows written before this
+    # schema and is not something `new_ticket_document` writes; every other
+    # branch here must be a field the current schema actually writes.
+    assert (tag_fields - {"tag"}) <= written_fields

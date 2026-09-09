@@ -386,6 +386,11 @@ may create a later **new** Main or FWA ticket and receive a new thread pair.
 That repeat-ticket behavior is not reopening and does not continue the old
 conversation.
 
+That boundary only applies once a ticket is decided: a still-**open** thread
+auto-archives after 7 days of Discord silence but is never locked, so it stays
+reachable by its link, re-opens on the applicant's next post, and `My ticket`
+or a panel re-click already bring the applicant straight back into it.
+
 The researched—but unapproved and unbuilt—design is:
 
 1. Add **My Tickets / Ask Follow-Up** to the target public intake panel.

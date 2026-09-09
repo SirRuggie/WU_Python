@@ -460,6 +460,15 @@ the console, find their archived ticket, or post into the locked candidate
 thread a month later. Staff can open its details and archived links through the
 private console, `/ticket-pilot find`, or `/ticket-pilot history`.
 
+This is separate from a still-**open** ticket's thread going idle: Discord
+auto-archives it after seven days of silence, but it is never locked while
+open, so the applicant's next message re-opens it on its own, the thread
+stays reachable by its link the whole time, and both a panel re-click and the
+**My ticket** button already restore full candidate access on demand. Once a
+ticket is approved or denied, **My ticket** only hands back a jump link into
+the now-locked, archived thread pair — it does not unlock or reopen it, and
+it is not the same as the not-implemented follow-up flow below.
+
 After approval or denial releases the shared open-ticket slot, the applicant
 may create a later **new** ticket and receive a new thread pair. That is repeat
 intake, not reopening or continuing the archived conversation.

@@ -347,7 +347,7 @@ async def deny_custom_handler(
     """Open modal for custom denial reason"""
     reason_input = ModalActionRow().add_text_input(
         "denial_reason",
-        "Denial Reason",
+        "Reason shown to the applicant",
         placeholder="Please provide a clear reason for the denial",
         required=True,
         style=hikari.TextInputStyle.PARAGRAPH,

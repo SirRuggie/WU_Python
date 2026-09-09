@@ -171,7 +171,9 @@ async def apply_approval(
         channel=channel_id,
         content=(
             f"<@{user_id}> Congratulations on being accepted to Warriors United! "
-            f"Stand by for further instructions."
+            f"A recruiter will contact you with your clan invite. This ticket "
+            f"is now closed. You can find it again with the My ticket button "
+            f"on the panel."
             + (f"\n-# {marker}" if marker else "")
         ),
         mentions_everyone=False,

@@ -1155,6 +1155,22 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
             },
             name="thread_v2_ticket_staff_location_unique",
         ),
+        # find_by_location's $or scans every guild message to resolve which
+        # ticket a channel/thread belongs to. The unique indexes above are
+        # scoped to a uniqueness *constraint*, not documented as this read
+        # path's support; give the read path its own explicit, non-unique
+        # partial indexes on the same two fields so the $or does not fall
+        # back to a collection scan.
+        await collection.create_index(
+            [("location.id", 1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_location_lookup",
+        ),
+        await collection.create_index(
+            [("location.staff_space_id", 1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_staff_location_lookup",
+        ),
         await collection.create_index(
             [("ticket_type", 1), ("ticket_number", 1)],
             unique=True,
