@@ -95,6 +95,9 @@ channel 1547244294757425212 (`recruiter-desk`).
   Suite at that commit: 1826 passed, 2 skipped.
 
 Checkpoint log (newest first):
+- 2026-09-09 evening: numbering reset DONE with `--confirm` (4 smoke
+  tickets, 1 creation row, 4 automation rows deleted; counters 0). Bot
+  restarted. Follow-up item 3 done. Next: owner runs the server 1 dry run.
 - 2026-09-09 evening: review passed with one fix (1 s pause between copied
   tickets); DEPLOYED as `5dced26` on the box. Follow-up items 1 and 2 done.
   Next: owner confirms the numbering reset (tool dry run shows what goes),
@@ -116,7 +119,7 @@ Checkpoint log (newest first):
    inference from embeds, "closed, no decision" status, skip-owner rule, skip
    abandoned by default, and a "Closed" entry in the Browse status filter.
 2. ~~Refuter pass on the driver, commit, push, deploy.~~ Done, `5dced26`.
-3. Reset numbering (`tools/reset_thread_ticket_test_data.py --confirm`).
+3. ~~Reset numbering.~~ Done 2026-09-09 evening.
 4. Dry run server 1, fix what it flags, run; then 2, 3, 4.
 5. After all four: legacy removal a few weeks after go-live; nightly Mongo
    backup to R2 (see `docs/database-options-2026.md`).
