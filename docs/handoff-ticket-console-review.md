@@ -177,8 +177,10 @@ same as `main`", not "fix legacy".
   button that shows the applicant their open ticket link and earlier
   tickets (ephemeral), and the bot DMs the thread link at creation as a
   best effort. Nothing depends on the DM arriving.
-- Nothing may block on an applicant typing; the revision counter is for
-  recruiter-versus-recruiter conflicts only.
+- Nothing may block on anyone typing, recruiter or applicant. The only
+  conflict check that stays is on the Approve/Deny buttons: if the ticket
+  was already approved or denied by someone else, show "Already approved
+  by X" instead of acting twice. No other revision checks in the console.
 
 ## P1 — before the pilot starts
 
