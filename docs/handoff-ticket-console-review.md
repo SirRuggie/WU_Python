@@ -41,6 +41,16 @@ reviewers proposed. Line numbers drift after edits; search the function name.
 - Cloudinary is gone. Images are on Cloudflare R2; the bot runs on Ruggie's
   Zone. Anything on the branch that still references Cloudinary is dead code.
 
+## Mongo house-standard pass (2026-09-08 evening): done, verified
+
+After P0, the seven section-3 items from `docs/mongodb-refactor.md` were
+applied on `feature/ticket-console` (audit arrays capped, guarded identity
+writes, normalised reads, index-failure caching that ignores transient
+errors, dead insert path removed, regex username fallback dropped, schema
+versions documented), plus the fixes two refuter rounds demanded. Branch tip
+after that pass: see the commit "treat pymongo retryable codes as transient".
+Suite: 1700 passed, 8 skipped. Not pushed.
+
 ## P0 status (2026-09-08): all done, verified by refuters
 
 Local branch `feature/ticket-console` is at `648cb3b`, eight commits ahead of
