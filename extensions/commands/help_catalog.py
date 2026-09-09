@@ -86,7 +86,6 @@ HELP_CATEGORIES = {
             ("/ticket diagnostics", "Inspect legacy ticket records. Admin only."),
             ("/ticket cleanup-ghosts", "Repair missing legacy channel records. Admin only."),
             ("/ticket fix-mismatched", "Repair mismatched legacy records. Admin only."),
-            ("/ticket migrate-store", "Copy legacy ticket rows to the tickets collection. Admin only."),
             ("/ticket claim", "Claim a legacy ticket. Recruiter/Admin only."),
             ("/ticket release", "Release a legacy ticket claim. Recruiter/Admin only."),
         ],

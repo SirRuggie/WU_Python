@@ -811,8 +811,6 @@ def _aware_datetime(value: Any) -> datetime | None:
 
 
 def _creation_state_id(workflow_id: str, route: str) -> str:
-    if route == ROUTE_LEGACY and workflow_id.startswith("legacy:"):
-        return workflow_id.removeprefix("legacy:")
     return workflow_id
 
 
@@ -1481,21 +1479,14 @@ def _route_allowed_for_claim(
     guild_id: int,
 ) -> bool:
     if not state.valid:
-        return route == ROUTE_LEGACY
-    legacy_guild_id = state.legacy_intake.guild_id if state.legacy_intake else None
+        return False
     thread_guild_id = state.thread_intake.guild_id if state.thread_intake else None
     if state.phase in {
         PHASE_LEGACY_ONLY,
         PHASE_PREPARED,
         PHASE_ROLLBACK_LEGACY,
     }:
-        return route == ROUTE_LEGACY and int(guild_id) == legacy_guild_id
-    if state.phase == PHASE_PILOT:
-        return (
-            route == ROUTE_LEGACY and int(guild_id) == legacy_guild_id
-        ) or (
-            route == ROUTE_THREAD and int(guild_id) == thread_guild_id
-        )
+        return False
     return route == ROUTE_THREAD and int(guild_id) == thread_guild_id
 
 
@@ -1521,17 +1512,6 @@ async def claim_open_slot(
         state = await get_rollout(mongo)
         if state.revision != int(rollout_revision):
             raise RolloutConflict("rollout changed before the ticket slot was claimed")
-        if not state.valid and route == ROUTE_LEGACY:
-            setup = await mongo.ticket_setup.find_one(
-                {"_id": "config"},
-                {"legacy_ticket_guild_id": 1},
-            ) or {}
-            if "legacy_ticket_guild_id" in setup:
-                legacy_guild_id = _positive_int(setup.get("legacy_ticket_guild_id"))
-                if legacy_guild_id is None or legacy_guild_id != int(guild_id):
-                    raise RolloutConflict(
-                        "the requested runtime is disabled in this ticket guild"
-                    )
         if not _route_allowed_for_claim(state, route, guild_id):
             raise RolloutConflict("the requested runtime is disabled in this rollout phase")
         authoritative = await _open_authoritative_tickets(

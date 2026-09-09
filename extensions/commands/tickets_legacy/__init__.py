@@ -106,7 +106,6 @@ async def on_stopping(_: hikari.StoppingEvent) -> None:
 
 
 # Import all ticket modules.
-# Order matters: migrate imports a helper from manage, so manage must land first.
 from . import setup
 from . import config
 from . import manage
@@ -115,7 +114,6 @@ from . import handlers
 # imports it too, but registering it explicitly keeps the action's origin obvious.
 from . import resolve
 from . import close
-from . import migrate
 from . import claim
 
 # Register the ticket group with the loader

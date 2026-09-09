@@ -389,9 +389,6 @@ def test_missing_denial_authority_reports_no_change_and_runs_no_effects(
     async def get_state(*_args, **_kwargs):
         return data
 
-    async def allowed(*_args, **_kwargs):
-        return True
-
     async def missing_transition(*_args, **_kwargs):
         return store.Transition(store.MISSING, None)
 
@@ -409,7 +406,6 @@ def test_missing_denial_authority_reports_no_change_and_runs_no_effects(
 
     monkeypatch.setattr(legacy_close, "get_state", get_state)
     monkeypatch.setattr(legacy_close, "delete_state", delete_state)
-    monkeypatch.setattr(legacy_close, "_allow_denial_action", allowed)
     monkeypatch.setattr(legacy_close.store, "transition", missing_transition)
     monkeypatch.setattr(
         legacy_close.resolve,

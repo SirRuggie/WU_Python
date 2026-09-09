@@ -11,7 +11,7 @@ import asyncio
 from utils.mongo import MongoClient
 from utils.component_state import delete_state, get_state, insert_state
 from extensions.commands.tickets_legacy import loader, ticket
-from extensions.commands.tickets_legacy import perms, resolve, store
+from extensions.commands.tickets_legacy import resolve, store
 from extensions.components import register_action
 from utils.constants import RED_ACCENT
 import re
@@ -27,14 +27,6 @@ MISSING_TICKET_MESSAGE = (
     "❌ The ticket record is missing. No decision was recorded and no applicant "
     "message was sent."
 )
-
-
-async def _allow_denial_action(ctx, mongo: MongoClient, data: dict) -> bool:
-    """Re-authorize persisted denial controls."""
-    if not await perms.is_recruiter(ctx.member, mongo):
-        await ctx.respond("❌ Only recruiters can use this denial action.", ephemeral=True)
-        return False
-    return True
 
 
 @ticket.register()
@@ -354,8 +346,6 @@ async def deny_fwa_default_handler(
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
-    if not await _allow_denial_action(ctx, mongo, data):
-        return
 
     # Status FIRST, applicant message second. The message used to be sent before
     # this write, so two recruiters denying the same ticket in the same second
@@ -433,8 +423,6 @@ async def deny_main_default_handler(
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
         return
-    if not await _allow_denial_action(ctx, mongo, data):
-        return
 
     # Status FIRST, applicant message second - see deny_fwa_default_handler.
     result = await store.transition(
@@ -504,13 +492,6 @@ async def deny_custom_handler(
     **kwargs
 ):
     """Open modal for custom denial reason"""
-    data = await get_state(mongo, action_id)
-    if not data:
-        await ctx.respond("❌ Session expired", ephemeral=True)
-        return
-    if not await _allow_denial_action(ctx, mongo, data):
-        return
-
     # Create modal for denial reason
     reason_input = ModalActionRow().add_text_input(
         "denial_reason",
@@ -543,8 +524,6 @@ async def process_custom_denial_handler(
     data = await get_state(mongo, action_id)
     if not data:
         await ctx.respond("❌ Session expired", ephemeral=True)
-        return
-    if not await _allow_denial_action(ctx, mongo, data):
         return
 
     # Get denial reason from modal

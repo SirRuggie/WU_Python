@@ -373,39 +373,6 @@ def test_cross_server_routing_uses_exact_phase_source_matrix():
     asyncio.run(scenario())
 
 
-def test_concurrent_legacy_and_pilot_claims_have_one_winner_and_sticky_route():
-    async def scenario():
-        mongo = _mongo(rollout=[_cross_rollout()])
-        legacy, thread = await asyncio.gather(
-            runtime.claim_open_slot(
-                mongo,
-                user_id=70,
-                ticket_type="main",
-                route=runtime.ROUTE_LEGACY,
-                guild_id=10,
-                workflow_id="legacy:70:main",
-                rollout_revision=4,
-                now=NOW,
-            ),
-            runtime.claim_open_slot(
-                mongo,
-                user_id=70,
-                ticket_type="main",
-                route=runtime.ROUTE_THREAD,
-                guild_id=11,
-                workflow_id="thread:70:main",
-                rollout_revision=4,
-                now=NOW,
-            ),
-        )
-        assert sum(item.won for item in (legacy, thread)) == 1
-        slot = mongo.ticket_open_slots.documents["ticket-open:70:main"]
-        assert slot["route"] in {runtime.ROUTE_LEGACY, runtime.ROUTE_THREAD}
-        assert {legacy.slot["route"], thread.slot["route"]} == {slot["route"]}
-
-    asyncio.run(scenario())
-
-
 def test_cross_server_claim_and_resume_are_guild_fenced_before_mutation():
     async def scenario():
         mongo = _mongo(rollout=[_cross_rollout()])
@@ -449,54 +416,6 @@ def test_cross_server_claim_and_resume_are_guild_fenced_before_mutation():
             now=NOW,
         )
         assert right.won
-
-    asyncio.run(scenario())
-
-
-def test_pre_setup_invalid_rollout_claim_ignores_target_until_legacy_is_bound():
-    async def scenario():
-        mongo = _mongo()
-        mongo.ticket_setup.documents["config"].update({
-            "main_recruiter_role": 700,
-            "main_category": 800,
-            "ticket_target_guild_id": 999,
-        })
-        allowed = await runtime.claim_open_slot(
-            mongo,
-            user_id=73,
-            ticket_type="main",
-            route=runtime.ROUTE_LEGACY,
-            guild_id=10,
-            workflow_id="legacy:10:73:main",
-            rollout_revision=0,
-            now=NOW,
-        )
-        assert allowed.won
-        target_only_ignored = await runtime.claim_open_slot(
-            mongo,
-            user_id=74,
-            ticket_type="main",
-            route=runtime.ROUTE_LEGACY,
-            guild_id=11,
-            workflow_id="legacy:11:74:main",
-            rollout_revision=0,
-            now=NOW,
-        )
-        assert target_only_ignored.won
-
-        mongo.ticket_setup.documents["config"]["legacy_ticket_guild_id"] = 10
-        with pytest.raises(runtime.RolloutConflict):
-            await runtime.claim_open_slot(
-                mongo,
-                user_id=75,
-                ticket_type="main",
-                route=runtime.ROUTE_LEGACY,
-                guild_id=11,
-                workflow_id="legacy:11:75:main",
-                rollout_revision=0,
-                now=NOW,
-            )
-        assert "ticket-open:75:main" not in mongo.ticket_open_slots.documents
 
     asyncio.run(scenario())
 
@@ -967,7 +886,6 @@ def test_reconcile_terminal_delete_preserves_reused_live_slot_on_mongodb7():
     ("route", "workflow_id", "creation_id"),
     [
         (runtime.ROUTE_THREAD, "thread:103:main", "thread:103:main"),
-        (runtime.ROUTE_LEGACY, "legacy:10:103:main", "10:103:main"),
     ],
 )
 def test_expired_slot_cannot_be_taken_from_a_live_creation_worker(

@@ -263,7 +263,7 @@ def test_legacy_commands_and_persistent_actions_are_preserved():
     assert tickets_legacy.ticket.name == "ticket"
     assert {
         "setup", "config", "approve", "deny", "list", "dashboard",
-        "migrate-store", "reset-counter",
+        "reset-counter",
     } <= set(tickets_legacy.ticket.subcommands)
     assert LEGACY_ACTIONS <= set(registered_functions)
     for action_name in LEGACY_ACTIONS:
