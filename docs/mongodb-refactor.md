@@ -61,9 +61,28 @@ That part of the branch does not need a fix; the items below do.
 - [ ] **HIGH** — CWL reminders write to a stray database literally named `database`. `utils/mongo.py:39-40` declares `settings.cwl_pending_reminders`, but every write goes through `mongo_client.database.cwl_reminder` (pymongo's `__getattr__` resolves `.database` to a second, undeclared DB named `database`). Sites: `extensions/tasks/cwl_reminder.py:285,362,404,424,537,726,886,1181`. Fix: route through the declared attribute, delete the unused `settings.cwl_pending_reminders`. Test: `mongo.settings.cwl_pending_reminders.find_one({...})` returns a freshly written reminder; `mongo.database` is never touched (grep confirms).
 - [ ] **HIGH** — `clans` (`settings.clan_data`) has no unique index on `tag`. `extensions/commands/clan/dashboard/update_clan_info.py:225` inserts with an ObjectId `_id`, no dedupe; reads/writes at lines 300/442/589/681/702/919/993/1268/1539 then pick one of possibly several docs at random. Fix: `update_one({"tag":tag},{"$setOnInsert":doc},upsert=True)` plus a unique index on `tag` (rules 7, 9). Test: add the same tag twice, assert `clan_data.count_documents({"tag": tag}) == 1`.
 - [ ] **HIGH** — swallowed index creation in `cards.py`. All fourteen `create_index` calls at `:11071-11131` run inside one `try`/`except Exception`; if `uniq_open_card_proposal` (`:11098`) fails to build, the rest — including the lease TTL — are silently never created. Fix: one try per index, log-and-continue, assert presence on startup (rule 4). Test: make one call raise, assert the remaining thirteen still fire.
-- [ ] **HIGH** — unindexed per-interaction `button_store` lookup. `extensions/commands/tickets/claim.py:35`, `close.py:86` call `store.find_one(mongo, {"type":"ticket","channel_id":X})` against `button_store`, whose only index is a goblin-scoped partial index this query can't use — every claim/close is a collection scan. Fix: `create_index([("type",1),("channel_id",1)], name="ticket_channel")` at startup (rule 4). Test: `button_store.index_information()` includes `ticket_channel` after boot.
 - [ ] **MEDIUM** — poll sync can lose a vote. `extensions/commands/poll.py:474` → `utils/poll_store.py:308` `mark_message_synced` clears `message_sync_pending` unconditionally after rendering; a vote landing between `edit_message` and this write gets its `pending=True` wiped, leaving the tally permanently stale. Fix: add `"updated_at": document["updated_at"]` to the filter (rule 10). Test: call `record_vote` between render and sync, assert `message_sync_pending` stays `True`.
 - [ ] **HIGH** — `main.py:80` `MONGODB_URI` unset silently falls back to `localhost:27017`; the bot boots "fine" and every query fails only after the 30s selection timeout. Fix: raise at import if empty, mirroring `main.py:29` (rule 2). Test: unset the var, assert import raises.
+
+### Found but skipped on purpose: legacy ticket system
+
+The owner decided on 2026-09-08 that the channel-per-ticket system
+(`extensions/commands/tickets/` on main, `tickets_legacy/` on the branch, and
+`extensions/events/channel/ticket_channel_monitor.py`) gets no fixes, indexes,
+or refactors. It is removed outright once the thread ticket system is live.
+Findings that belong to it are recorded here so nobody re-discovers them:
+
+- **HIGH (skipped)** — unindexed per-interaction `button_store` lookup.
+  `extensions/commands/tickets/claim.py:35` and `close.py:86` call
+  `store.find_one(mongo, {"type":"ticket","channel_id":X})` against
+  `button_store`, whose only index is a goblin-scoped partial index this query
+  cannot use, so every claim/close is a collection scan. The fix would have
+  been a `(type, channel_id)` index named `ticket_channel`. Not done: the
+  lookup disappears with legacy, and `button_store` stops holding tickets.
+- **MEDIUM (skipped)** — main's ticket dual-write mirrors each legacy ticket
+  into `tickets` best-effort, so the mirror drifts (see section 5 schema
+  notes). Not done for the same reason; the thread system owns `tickets`
+  going forward and normalises legacy-shaped rows on read.
 
 ## 5. Gradual refactor backlog by module
 

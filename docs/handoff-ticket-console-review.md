@@ -94,9 +94,9 @@ same as `main`", not "fix legacy".
   asserted the removed behaviour. The thread system claims only
   `ticket_v2_create:*` in `644963518025826315`; if it needs the legacy guild
   id, `/tickets setup` sets it itself.
-- Later (P2, owner's call): restore the monitor and the `__init__.py`
-  recovery engine to `main`'s versions so legacy runs exactly today's code.
-  Cost: a builder day plus deleting the monitor/recovery tests.
+- Dropped (owner, 2026-09-08): no further work on legacy at all. It will be
+  removed outright once the thread system is live, so the deferred monitor
+  and recovery-engine differences stay as they are.
 
 ### Migration from four legacy servers: verified OK, no code change
 
