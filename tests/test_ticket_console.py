@@ -767,14 +767,17 @@ def test_staff_context_reserves_complete_marker_in_worst_case_payload(monkeypatc
 
 
 def test_lock_contention_panel_does_not_claim_a_blacklist_exists():
-    view = console._transition_result_panel(
+    view = asyncio.run(console._transition_result_panel(
         console.store.Transition(
             console.store.BLOCKED,
             _ticket(18),
             "applicant identity is being updated; try again",
         ),
         verb="approved",
-    )
+        mongo=object(),
+        owner_id=22,
+        guild_id=123456789012345678,
+    ))
     content = "\n".join(
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
@@ -784,20 +787,59 @@ def test_lock_contention_panel_does_not_claim_a_blacklist_exists():
 
 
 def test_effect_failure_panel_reports_durable_automatic_retry():
-    view = console._transition_result_panel(
+    view = asyncio.run(console._transition_result_panel(
         console.store.Transition(
             console.store.EFFECT_FAILED,
             _ticket(19, status="approved"),
             "thread archive is pending",
         ),
         verb="approved",
-    )
+        mongo=object(),
+        owner_id=22,
+        guild_id=123456789012345678,
+    ))
     content = "\n".join(
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
     assert "Decision recorded; updates retrying" in content
     assert resolve.RESOLUTION_EFFECT_RETRY_MESSAGE in content
     assert "notification failed" not in content.casefold()
+
+
+def test_already_decided_panel_names_who_and_when_with_an_open_button(monkeypatch):
+    saved = {}
+
+    async def insert(_mongo, document):
+        saved.update(document)
+
+    monkeypatch.setattr(console, "insert_state", insert)
+
+    ticket = _ticket(
+        20,
+        status="approved",
+        approved_by=999,
+        approved_by_name="Lead Recruiter",
+        approved_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        rev=3,
+    )
+    view = asyncio.run(console._transition_result_panel(
+        console.store.Transition(console.store.LOST, ticket),
+        verb="approved",
+        mongo=object(),
+        owner_id=22,
+        guild_id=ticket["guild_id"],
+    ))
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    assert "Already approved" in content
+    assert "Lead Recruiter" in content
+    labels = [str(node["label"]) for node in _nodes(view) if "label" in node]
+    assert "Open ticket" in labels
+    assert saved["type"] == "ticket_v2_console_view"
+    assert saved["ticket_id"] == ticket["_id"]
+    assert saved["owner_id"] == 22
+    _assert_component_limits(view)
 
 
 def test_detail_renders_structured_intake_then_canonical_answer_fallback():
@@ -1193,6 +1235,50 @@ def test_console_deny_submit_authorizes_before_loading_private_state(monkeypatch
     assert [event[0] for event in events] == [
         "defer", "envelope", "permission", "private-state", "transition", "edit",
     ]
+
+
+def test_console_approve_no_longer_sends_a_rev_and_shows_already_approved_on_lost(
+    monkeypatch,
+):
+    """Commit 1: the console drops the client-side expected_rev CAS entirely,
+    and the only conflict check left is 'someone else already decided this'."""
+    ticket = _ticket(
+        21,
+        status="approved",
+        approved_by_name="Other Recruiter",
+        approved_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    calls = {}
+
+    async def approve(*_args, **kwargs):
+        calls.update(kwargs)
+        return console.store.Transition(console.store.LOST, ticket)
+
+    async def insert(_mongo, document):
+        calls["saved_state"] = document
+
+    async def refresh(*_args, **_kwargs):
+        raise AssertionError("a LOST outcome must not request a hub refresh")
+
+    monkeypatch.setattr(console.resolve, "approve_ticket", approve)
+    monkeypatch.setattr(console, "insert_state", insert)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", refresh)
+
+    ctx = SimpleNamespace(
+        user=SimpleNamespace(id=22, username="Recruiter"),
+        member=SimpleNamespace(id=22),
+    )
+    view = asyncio.run(console.ticket_console_approve(
+        ctx, "detail", owner_id=22, guild_id=ticket["guild_id"],
+        ticket_id=ticket["_id"], mongo=object(), bot=object(),
+    ))
+
+    assert "expected_rev" not in calls
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    assert "Already approved" in content
+    assert "Other Recruiter" in content
 
 
 def test_direct_find_command_defers_before_permission_and_search_work(monkeypatch):

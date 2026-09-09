@@ -875,6 +875,12 @@ async def append_candidate_activity(
     tag. They are stored on ``mentioned_tags`` as a search/display hint only
     and never join ``player_tags``, the verified identity used for flag and
     blacklist matching.
+
+    This never touches ``rev``: ``rev`` is the console's resolution CAS
+    counter, and an applicant typing another answer while a recruiter has a
+    detail panel open must not make that recruiter's Approve/Deny look like
+    it raced someone else. Anything that needs to observe fresh activity
+    bumps ``activity_revision`` instead.
     """
     message = schema.snowflake(message_id, field="message_id")
     author = schema.snowflake(author_id, field="author_id")
@@ -894,7 +900,7 @@ async def append_candidate_activity(
         },
         "$max": {"last_activity_at": at},
         "$set": {"updated_at": utcnow()},
-        "$inc": {"answer_count": 1, "rev": 1},
+        "$inc": {"answer_count": 1, "activity_revision": 1},
     }
     if tags:
         update["$addToSet"] = {"mentioned_tags": {"$each": tags}}

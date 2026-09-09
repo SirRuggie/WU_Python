@@ -2246,6 +2246,28 @@ def test_candidate_activity_is_idempotent_and_merges_normalized_tags():
     # only, and never joins the verified player_tags identity.
     assert again.doc["player_tags"] == ["#ABC123"]
     assert again.doc["mentioned_tags"] == ["#DEF456"]
+    # Applicant activity must never bump `rev`: that is the console's
+    # resolution CAS counter, and a false "another recruiter changed this"
+    # must not be manufactured by the applicant typing another answer.
+    assert again.doc.get("rev", 0) == 0
+    assert again.doc["activity_revision"] == 1
+
+
+def test_approve_succeeds_after_applicant_activity_between_panel_open_and_click():
+    mongo = _mongo(_ticket())
+    asyncio.run(store.append_candidate_activity(
+        mongo, "ticket_101", message_id=501, author_id=30,
+        content="One more answer", occurred_at=NOW,
+    ))
+    # A recruiter's detail panel was rendered before the applicant's message
+    # landed; the console no longer snapshots a client-side expected_rev, so
+    # the applicant's activity in between must not defeat the approval.
+    won = asyncio.run(store.transition(
+        mongo, "ticket_101", to_status="approved", actor_id=99,
+        actor_name="Recruiter", expected_rev=None, effect_kind=resolve.KIND_APPROVE,
+    ))
+    assert won.outcome == store.WON
+    assert won.doc["status"] == "approved"
 
 
 @pytest.mark.parametrize("mode", ["unauthorized", "missing", "blacklisted", "lost"])

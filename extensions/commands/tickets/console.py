@@ -418,6 +418,67 @@ def _notice(title: str, body: str, *, accent: int = ACCENT_BLUE) -> list[Contain
     )]
 
 
+def _notice_with_row(
+    title: str, body: str, *, accent: int = ACCENT_BLUE, row: ActionRow,
+) -> list[Container]:
+    heading = f"## {title}"
+    body = str(body)
+    (body_budget,) = _allocate_message_text(
+        [len(body)],
+        fixed_texts=[heading],
+        minimum_lengths=[min(1, len(body))],
+    )
+    return [Container(
+        accent_color=accent,
+        components=[
+            Text(content=heading),
+            Text(content=_truncate_text(body, body_budget)),
+            row,
+        ],
+    )]
+
+
+async def _already_decided_notice(
+    mongo: MongoClient,
+    current: Mapping,
+    *,
+    owner_id: int,
+    guild_id: int,
+) -> list[Container]:
+    """The single conflict check that remains: someone else already decided this."""
+    status = str(current.get("status") or "").casefold()
+    if status == "approved":
+        verb, who, when = (
+            "approved",
+            _clean(current.get("approved_by_name"), limit=80) or "someone",
+            _timestamp(current.get("approved_at")),
+        )
+    else:
+        verb, who, when = (
+            "denied",
+            _clean(current.get("denied_by_name"), limit=80) or "someone",
+            _timestamp(current.get("denied_at")),
+        )
+    action_id = uuid.uuid4().hex
+    await insert_state(mongo, {
+        "_id": action_id,
+        "type": "ticket_v2_console_view",
+        "owner_id": int(owner_id),
+        "guild_id": int(guild_id),
+        "ticket_id": _ticket_id(current),
+    })
+    return _notice_with_row(
+        f"Already {verb}",
+        f"Already {verb} by **{who}** {when}.",
+        accent=ACCENT_YELLOW,
+        row=ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"ticket_v2_console_view:{action_id}",
+            label="Open ticket",
+        )]),
+    )
+
+
 def _open_picker_options(open_tickets: Sequence[Mapping]) -> list[SelectOption]:
     options: list[SelectOption] = []
     for ticket_doc in open_tickets[:MAX_OPEN_PICKER]:
@@ -1737,7 +1798,6 @@ async def _ticket_detail_panel(
         "guild_id": int(guild_id),
         "ticket_id": _ticket_id(ticket_doc),
         "expected_status": str(ticket_doc.get("status") or "open"),
-        "expected_rev": max(0, _int(ticket_doc.get("rev"))),
     })
     return build_ticket_detail(
         ticket_doc,
@@ -4236,7 +4296,9 @@ async def ticket_console_type(
     )
 
 
-def _transition_result_panel(result, *, verb: str) -> list[Container]:
+async def _transition_result_panel(
+    result, *, verb: str, mongo: MongoClient, owner_id: int, guild_id: int,
+) -> list[Container]:
     if result.outcome == store.WON:
         return _notice(
             f"Ticket {verb}",
@@ -4279,11 +4341,8 @@ def _transition_result_panel(result, *, verb: str) -> list[Container]:
             accent=ACCENT_RED,
         )
     current = result.doc or {}
-    label, emoji, _accent = _status_meta(current.get("status"))
-    return _notice(
-        "Ticket changed",
-        f"Another recruiter changed this ticket first. It is now {emoji} **{label}**.",
-        accent=ACCENT_YELLOW,
+    return await _already_decided_notice(
+        mongo, current, owner_id=owner_id, guild_id=guild_id,
     )
 
 
@@ -4293,9 +4352,9 @@ async def ticket_console_approve(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
     owner_id: int,
+    guild_id: int,
     ticket_id: str,
     expected_status: str = "open",
-    expected_rev: int | None = None,
     mongo: MongoClient = lightbulb.di.INJECTED,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **_kwargs,
@@ -4313,11 +4372,12 @@ async def ticket_console_approve(
         member=ctx.member,
         actor_name=ctx.user.username,
         expected_status=expected_status,
-        expected_rev=expected_rev,
     )
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
         await request_hub_refresh_best_effort(bot, mongo, reason="ticket approved")
-    return _transition_result_panel(result, verb="approved")
+    return await _transition_result_panel(
+        result, verb="approved", mongo=mongo, owner_id=owner_id, guild_id=guild_id,
+    )
 
 
 @register_action(
@@ -4428,11 +4488,12 @@ async def ticket_console_deny_submit(
         kind=resolve.KIND_DENY_CUSTOM,
         reason=reason,
         expected_status=str(data.get("expected_status") or "open"),
-        expected_rev=data.get("expected_rev"),
     )
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
         await request_hub_refresh_best_effort(bot, mongo, reason="ticket denied")
-    components = _transition_result_panel(result, verb="denied")
+    components = await _transition_result_panel(
+        result, verb="denied", mongo=mongo, owner_id=owner_id, guild_id=guild_id,
+    )
     await ctx.interaction.edit_initial_response(components=components)
 
 
