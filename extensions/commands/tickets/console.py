@@ -164,6 +164,23 @@ def _clean(value, *, limit: int = 300) -> str:
     return text[:limit] or "Unknown"
 
 
+def _clean_code_span(value, *, limit: int = 80) -> str:
+    """Short, inert text for a value shown inside a Discord code span.
+
+    Discord does not process markdown escapes inside a code span, so callers
+    here must NOT run this through `_clean`/`_escape_markdown` — the leading
+    backslash from an escaped hash or underscore would render literally
+    (e.g. a player tag showing as a backslash followed by the tag instead
+    of the tag itself). Strip backticks and newlines instead, so the value
+    cannot break out of the span, then truncate.
+    """
+
+    text = str(value or "").replace("\x00", "").strip()
+    text = re.sub(r"[\r\n]+", " ", text)
+    text = text.replace("`", "")
+    return text[:limit] or "Unknown"
+
+
 def _allocate_message_text(
     desired_lengths: Sequence[int],
     *,
@@ -297,7 +314,7 @@ def _tag_omission_suffix(omitted: int) -> str:
 
 def _bounded_tag_display(tags: Sequence[str], *, limit: int) -> str:
     """Format tags for Discord without changing the canonical tag sequence."""
-    rendered = [f"`{_clean(tag, limit=15)}`" for tag in tags]
+    rendered = [f"`{_clean_code_span(tag, limit=15)}`" for tag in tags]
     complete = ", ".join(rendered)
     if len(complete) <= limit:
         return complete
@@ -1342,7 +1359,7 @@ def build_search_panel(
         for index, ticket_doc in enumerate(results[:MAX_SEARCH_RESULTS]):
             status_label, status_emoji, _accent = _status_meta(ticket_doc.get("status"))
             tags = _player_tags(ticket_doc)
-            identity = f" · `{_clean(tags[0], limit=15)}`" if tags else ""
+            identity = f" · `{_clean_code_span(tags[0], limit=15)}`" if tags else ""
             body = (
                 f"**{_ticket_label(ticket_doc, username=True)}**\n"
                 f"{status_emoji} {status_label} · opened "
@@ -1718,8 +1735,9 @@ def build_ticket_detail(
         reason = _clean(flag.get("reason"), limit=300)
         rule = " · blocks approve" if blocks else " · caution only"
         # IDs are shown in code spans specifically so staff can copy the exact
-        # value into /ticket-pilot flag-remove. Escaping underscores changes that ID.
-        flag_id = str(flag.get("_id") or "")[:80] or "Unknown"
+        # value into /ticket-pilot flag-remove. _clean_code_span truncates but
+        # never escapes, since escaping underscores would change that ID.
+        flag_id = _clean_code_span(flag.get("_id"), limit=80)
         flag_lines.append(f"{glyph} **{label}**{rule} · `{flag_id}`\n{reason}")
 
     tag_prefix = "**Player tags:** "
@@ -4423,7 +4441,7 @@ async def _transition_result_panel(
                 reason,
                 accent=ACCENT_YELLOW,
             )
-        flag_id = _clean(blocker.get("_id"), limit=80)
+        flag_id = _clean_code_span(blocker.get("_id"), limit=80)
         return _notice(
             "Approval blocked",
             f"This applicant has an active blacklist flag (`{flag_id}`). You can still deny.",

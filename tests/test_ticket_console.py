@@ -815,6 +815,26 @@ def test_lock_contention_panel_does_not_claim_a_blacklist_exists():
     assert "blacklist" not in content.casefold()
 
 
+def test_blocked_panel_flag_id_in_code_span_has_no_backslash_escape():
+    view = asyncio.run(console._transition_result_panel(
+        console.store.Transition(
+            console.store.BLOCKED,
+            _ticket(20),
+            "blacklisted",
+            blocker={"_id": "flag_2PP0JCCLU"},
+        ),
+        verb="approved",
+        mongo=object(),
+        owner_id=22,
+        guild_id=123456789012345678,
+    ))
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    assert "`flag_2PP0JCCLU`" in content
+    assert "\\_" not in content
+
+
 def test_effect_failure_panel_reports_durable_automatic_retry():
     view = asyncio.run(console._transition_result_panel(
         console.store.Transition(
@@ -2769,6 +2789,25 @@ def test_clean_neutralizes_headings_masked_links_and_newlines():
     assert "\n" not in cleaned
     assert not any(line.strip().startswith("#") for line in cleaned.split("\n"))
     assert "](" not in cleaned
+
+
+def test_clean_code_span_never_escapes_and_strips_backticks_and_newlines():
+    assert console._clean_code_span("#2PP0JCCLU") == "#2PP0JCCLU"
+    assert console._clean_code_span("weird`tick\nid") == "weirdtick id"
+    assert console._clean_code_span(None) == "Unknown"
+    assert console._clean_code_span("x" * 200, limit=5) == "xxxxx"
+
+
+def test_player_tag_in_code_span_has_no_backslash_escape():
+    ticket = _ticket(21, player_tags=["#2PP0JCCLU"])
+    view = console.build_ticket_detail(
+        ticket, action_id="h" * 32, flags=[], history=[],
+    )
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    assert "`#2PP0JCCLU`" in content
+    assert "\\#2PP0JCCLU" not in content
 
 
 def test_applicant_intake_text_cannot_inject_headings_or_masked_links():
