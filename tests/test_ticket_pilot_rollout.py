@@ -287,6 +287,14 @@ class _CrossServerSetupRest:
         assert (int(channel_id), int(message_id)) == (20, 30)
         return _message(*surface.LEGACY_PANEL_ACTIONS)
 
+    async def fetch_guild(self, guild_id):
+        return SimpleNamespace(id=int(guild_id), owner_id=999999)
+
+    async def fetch_roles(self, guild_id):
+        # @everyone with no permissions -- the pilot channel is not visible
+        # to @everyone by default, so no warning is expected.
+        return [SimpleNamespace(id=int(guild_id), permissions=0, is_managed=False)]
+
     async def create_message(self, *, channel, components, **_kwargs):
         message_id = 31 if int(channel) == 21 else 32
         self.created.append((int(channel), message_id, components))
@@ -384,6 +392,97 @@ def test_cross_server_setup_verifies_both_admins_and_binds_two_owned_panels(monk
     )
     assert rest.deleted == []
     assert ctx.responses[-1].startswith("✅ Cross-server intake bound")
+
+
+def test_setup_refuses_a_pilot_channel_that_is_not_a_guild_text_channel(monkeypatch):
+    """The pilot panel used to post straight to `ctx.channel_id` with no
+    fetch or type check. A thread, forum, or voice channel must be refused,
+    with nothing posted."""
+    state = ticket_runtime.RolloutState(ticket_runtime.PHASE_LEGACY_ONLY, 0, False)
+
+    async def get_rollout(_mongo):
+        return state
+
+    async def old_admin(*_args):
+        return True
+
+    class Rest(_CrossServerSetupRest):
+        async def fetch_channel(self, channel_id):
+            channel = await super().fetch_channel(channel_id)
+            if int(channel_id) == 22:
+                channel.type = hikari.ChannelType.GUILD_PUBLIC_THREAD
+            return channel
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = Rest()
+    ctx = _setup_context()
+    config = _SetupConfig({"_id": "config", "ticket_target_guild_id": 10})
+
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert rest.created == []
+    assert "not a thread, forum, or voice channel" in ctx.responses[-1]
+
+
+def test_setup_warns_but_still_posts_when_everyone_can_view_the_pilot_channel(
+    monkeypatch,
+):
+    """The docs allow a temporary restricted channel to share visibility as
+    long as every tester already has recruiter/owner/Administrator access --
+    so a pilot channel visible to @everyone is a warning, not a refusal."""
+    state = ticket_runtime.RolloutState(ticket_runtime.PHASE_LEGACY_ONLY, 0, False)
+
+    async def get_rollout(_mongo):
+        return state
+
+    async def old_admin(*_args):
+        return True
+
+    async def seed(_mongo, **kwargs):
+        pilot_source = ticket_runtime.IntakeSource(**kwargs["pilot"]["intake"])
+        return ticket_runtime.RolloutState(
+            phase=ticket_runtime.PHASE_LEGACY_ONLY,
+            revision=1,
+            valid=True,
+            legacy_intake=kwargs["legacy_intake"],
+            thread_intake=kwargs["thread_intake"],
+            pilot_intake=pilot_source,
+            pilot_user_ids=(50,),
+        )
+
+    class Rest(_CrossServerSetupRest):
+        async def fetch_roles(self, guild_id):
+            return [SimpleNamespace(
+                id=int(guild_id),
+                permissions=int(hikari.Permissions.VIEW_CHANNEL),
+                is_managed=False,
+            )]
+
+    monkeypatch.setattr(setup.ticket_runtime, "get_rollout", get_rollout)
+    monkeypatch.setattr(setup.ticket_runtime, "seed_rollout", seed)
+    monkeypatch.setattr(setup, "_guild_administrator", old_admin)
+    rest = Rest()
+    config = _SetupConfig({
+        "_id": "config",
+        "ticket_target_guild_id": 10,
+        "main_recruiter_role": 900,
+    })
+    ctx = _setup_context()
+
+    asyncio.run(_setup_command().invoke(
+        ctx,
+        bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
+        mongo=SimpleNamespace(ticket_setup=config),
+    ))
+
+    assert len(rest.created) == 2
+    assert ctx.responses[-1].startswith("✅ Cross-server intake bound")
+    assert "@everyone can view the pilot panel channel" in ctx.responses[-1]
 
 
 def test_safe_phase_target_panel_relocation_precedes_parent_reconfiguration(

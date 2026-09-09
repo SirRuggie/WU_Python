@@ -5,6 +5,7 @@ Ticket system setup command - posts the ticket creation embed
 
 import asyncio
 import re
+from types import SimpleNamespace
 from typing import List
 
 import hikari
@@ -26,6 +27,7 @@ from utils.constants import RED_ACCENT
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import ticket
 from extensions.commands.tickets import surface
+from extensions.commands.tickets import thread_service
 from utils.mongo import MongoClient
 
 
@@ -454,6 +456,39 @@ class Setup(
             )
             return
 
+        try:
+            pilot_channel, pilot_guild, pilot_roles = await asyncio.gather(
+                bot.rest.fetch_channel(int(ctx.channel_id)),
+                bot.rest.fetch_guild(guild_id),
+                bot.rest.fetch_roles(guild_id),
+            )
+        except Exception as error:
+            await ctx.respond(
+                f"🛑 The pilot panel channel could not be verified: {error}. "
+                "Nothing was posted.",
+                ephemeral=True,
+            )
+            return
+        if (
+            int(getattr(pilot_channel, "guild_id", 0) or 0) != guild_id
+            or getattr(pilot_channel, "type", None) != hikari.ChannelType.GUILD_TEXT
+        ):
+            await ctx.respond(
+                "🛑 Run this command in a guild text channel in the target server -- "
+                "not a thread, forum, or voice channel. Nothing was posted.",
+                ephemeral=True,
+            )
+            return
+        pilot_everyone_visible = bool(
+            thread_service._effective_permissions(
+                guild_id=guild_id,
+                owner_id=_as_positive_int(getattr(pilot_guild, "owner_id", 0)) or 0,
+                member=SimpleNamespace(id=0, role_ids=()),
+                roles=pilot_roles,
+                channel=pilot_channel,
+            ) & hikari.Permissions.VIEW_CHANNEL
+        )
+
         posted: list[tuple[int, int]] = []
         config_binding_committed = False
         config_binding_uncertain = False
@@ -578,6 +613,12 @@ class Setup(
                 f"revision `{updated.revision}`. Run `/tickets rollout-prepare` "
                 "when the tester allowlist is ready, then explicitly enable the pilot."
             )
+            if pilot_everyone_visible:
+                success_message += (
+                    "\n⚠️ @everyone can view the pilot panel channel. Use a temporary "
+                    "restricted channel unless every tester already has recruiter/owner/"
+                    "Administrator access."
+                )
 
         except Exception as e:
             restore_failed = False
