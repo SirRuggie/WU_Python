@@ -332,6 +332,18 @@ un-cloned `button_store` tickets. Useful v2 fallbacks are:
 - Approve and deny force-refresh all linked accounts immediately before the
   decision.
 
+### Staff thread opening talking points
+
+Right after the staff opening card, the staff thread receives the same
+recruiter talking-point messages the legacy channel system posts (Main gets
+the role line, the "how did you hear about us" line, and the hook question;
+FWA also gets the donations/loot line), pinging the ticket's configured
+recruiter role only once — the staff opening card's own notification already
+pings it, so the talking-point role line does not ping a second time. Each
+message is delivered idempotently and, like the opening cards themselves, a
+delivery failure does not fail ticket creation; it is retried by the same
+delivery-recovery pass that retries the opening cards.
+
 ### Review Chocolate and manage flags
 
 Each live FWA staff thread receives staff-only Chocolate pages after its linked-

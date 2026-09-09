@@ -1117,6 +1117,41 @@ _CANDIDATE_WELCOME_TITLE_SUFFIX = " interest ticket"
 _STAFF_OPENING_TITLE_PREFIX = "## 🔒 "
 _STAFF_OPENING_TITLE_INFIX = " recruiter workspace · #"
 
+# Recruiter talking-point messages, carried over byte-for-byte from the
+# legacy channel ticket system (`extensions/commands/tickets_legacy/handlers.py`,
+# read-only). Posted as plain `content=` messages into the STAFF thread,
+# right after the staff opening card. The role line drops legacy's
+# second, legacy-server-only role mention; the staff opening card already
+# pings the recruiter role in its notification line, so this one does not
+# ping a second time.
+_STAFF_TALKING_POINTS_HOW_HEARD_MAIN = "Hello there 👋🏻...how you hear about Warriors United?"
+_STAFF_TALKING_POINTS_HOW_HEARD_FWA = "Hello there 👋🏻...how you hear about our FWA Operation?"
+_STAFF_TALKING_POINTS_HOOK = (
+    "What was the hook that reeled you in? The thing that said "
+    "\"yeah, I need to check these guys out!!!\""
+)
+_STAFF_TALKING_POINTS_FWA_DONATIONS = (
+    "Donations are better with the update allowing loot to be used "
+    "but clan chats are and can be sporadic."
+)
+
+
+def _bot_authored_content_match(bot_id: int, content: str) -> Callable[[Any], bool]:
+    """`is_match` factory for a plain-content talking-point message.
+
+    Recognises a prior delivery structurally (this exact text, from the
+    bot) instead of a hidden marker line, matching how the opening cards
+    are recognised on a retried delivery.
+    """
+
+    def match(message: Any) -> bool:
+        return (
+            int(getattr(getattr(message, "author", None), "id", 0)) == bot_id
+            and (getattr(message, "content", "") or "") == content
+        )
+
+    return match
+
 
 def _component_title_matches(
     component: Any, *, prefix: str, suffix: str = "", infix: str = "",
@@ -1364,6 +1399,82 @@ async def _deliver_opening_messages(
         post_marker=False,
         is_match=staff_card_match,
     )
+    await _deliver_staff_talking_points(
+        rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id
+    )
+
+
+async def _deliver_staff_talking_points(
+    rest: hikari.api.RESTClient,
+    staff_id: int,
+    ticket_type: str,
+    *,
+    recruiter_role: int,
+    bot_id: int,
+) -> None:
+    """Recruiter talking points, posted right after the staff opening card.
+
+    Each is a separate idempotent plain-content send (see
+    `_bot_authored_content_match`), so a retried delivery -- an outer
+    recovery pass rerunning `_deliver_opening_messages` after a crash --
+    never duplicates one already posted.
+    """
+
+    if recruiter_role:
+        role_line = (
+            f"<@&{recruiter_role}> "
+            "this is a private thread for the candidate. They cannot see this thread, "
+            "so DO NOT ping them, as it will add them.\n\n"
+        )
+        await _send_once(
+            rest,
+            staff_id,
+            "ticket-setup:staff:role-line",
+            role_line,
+            user_mentions=False,
+            role_mentions=False,
+            post_marker=False,
+            is_match=_bot_authored_content_match(bot_id, role_line),
+        )
+
+    how_heard = (
+        _STAFF_TALKING_POINTS_HOW_HEARD_FWA
+        if ticket_type == "fwa"
+        else _STAFF_TALKING_POINTS_HOW_HEARD_MAIN
+    )
+    await _send_once(
+        rest,
+        staff_id,
+        "ticket-setup:staff:how-heard",
+        how_heard,
+        user_mentions=False,
+        role_mentions=False,
+        post_marker=False,
+        is_match=_bot_authored_content_match(bot_id, how_heard),
+    )
+    await _send_once(
+        rest,
+        staff_id,
+        "ticket-setup:staff:hook",
+        _STAFF_TALKING_POINTS_HOOK,
+        user_mentions=False,
+        role_mentions=False,
+        post_marker=False,
+        is_match=_bot_authored_content_match(bot_id, _STAFF_TALKING_POINTS_HOOK),
+    )
+    if ticket_type == "fwa":
+        await _send_once(
+            rest,
+            staff_id,
+            "ticket-setup:staff:fwa-donations",
+            _STAFF_TALKING_POINTS_FWA_DONATIONS,
+            user_mentions=False,
+            role_mentions=False,
+            post_marker=False,
+            is_match=_bot_authored_content_match(
+                bot_id, _STAFF_TALKING_POINTS_FWA_DONATIONS
+            ),
+        )
 
 
 async def _send_ticket_creation_dm(

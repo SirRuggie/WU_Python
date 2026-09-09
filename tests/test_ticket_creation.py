@@ -556,8 +556,14 @@ def test_opening_message_mentions_only_candidate_and_recruiter(monkeypatch):
     async def fetch_my_user():
         return SimpleNamespace(id=7)
 
+    async def no_talking_points(*_args, **_kwargs):
+        return None
+
     monkeypatch.setattr(thread_service, "_send_components_once", send_once)
     monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    # Out of scope here: the recruiter talking points are covered by their
+    # own tests below; this test isolates the two opening cards' mentions.
+    monkeypatch.setattr(thread_service, "_deliver_staff_talking_points", no_talking_points)
     ticket_doc = _ticket()
     ticket_doc["recruiter_role_id"] = 40
     asyncio.run(thread_service._deliver_opening_messages(
@@ -613,9 +619,12 @@ def test_opening_cards_have_no_marker_text_and_recover_structurally(monkeypatch)
     ticket_doc = _ticket()
 
     asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
-    assert rest.creates == 2
+    # 2 opening cards + 2 recruiter talking points (`_ticket()` sets no
+    # `recruiter_role_id`, so the role line is skipped; how-heard and hook
+    # still post for a "main" ticket).
+    assert rest.creates == 4
     assert len(rest.channels[101]) == 1
-    assert len(rest.channels[102]) == 1
+    assert len(rest.channels[102]) == 3
 
     def _flat_text(message):
         texts = [str(getattr(message, "content", "") or "")]
@@ -633,9 +642,9 @@ def test_opening_cards_have_no_marker_text_and_recover_structurally(monkeypatch)
         assert "ticket-setup:" not in _flat_text(message)
 
     asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
-    assert rest.creates == 2
+    assert rest.creates == 4
     assert len(rest.channels[101]) == 1
-    assert len(rest.channels[102]) == 1
+    assert len(rest.channels[102]) == 3
 
 
 def test_legacy_opening_card_marker_messages_are_still_recognised(monkeypatch):
@@ -681,12 +690,175 @@ def test_legacy_opening_card_marker_messages_are_still_recognised(monkeypatch):
     async def questionnaire_exists(*_args, **_kwargs):
         return True
 
+    async def no_talking_points(*_args, **_kwargs):
+        return None
+
     monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    # Out of scope here: this test is about card recognition, not the
+    # recruiter talking points (covered by their own tests below).
+    monkeypatch.setattr(thread_service, "_deliver_staff_talking_points", no_talking_points)
     rest = Rest()
     ticket_doc = _ticket()
 
     asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
     assert rest.creates == 0
+
+
+class _StaffThreadRest:
+    """`hikari.api.RESTClient` double recording every plain-content message
+    posted, so the recruiter talking points can be asserted in order."""
+
+    def __init__(self):
+        self.channels = {101: [], 102: []}
+        self.creates = 0
+
+    def fetch_messages(self, channel_id):
+        messages = self.channels[channel_id]
+
+        async def to_list():
+            return list(messages)
+
+        return SimpleNamespace(to_list=to_list)
+
+    async def create_message(self, channel_id, **kwargs):
+        self.creates += 1
+        message = SimpleNamespace(
+            id=1000 + self.creates,
+            author=SimpleNamespace(id=7),
+            content=kwargs.get("content", "") or "",
+            components=kwargs.get("components", []),
+            _kwargs=kwargs,
+        )
+        self.channels[channel_id].append(message)
+        return message
+
+    async def fetch_my_user(self):
+        return SimpleNamespace(id=7)
+
+
+def _staff_plain_messages(rest):
+    """Plain `content=` messages posted to the staff thread (102), in the
+    order they were sent, skipping the Components V2 opening card."""
+    return [
+        message
+        for message in rest.channels[102]
+        if message.content and not message.components
+    ]
+
+
+def test_main_ticket_staff_talking_points_match_legacy_byte_for_byte(monkeypatch):
+    """Legacy posts these into the staff thread's private setup
+    (`extensions/commands/tickets_legacy/handlers.py:779-821`, read-only).
+    The literals below are pasted from that file, not imported, so this
+    test also catches an accidental drift in either copy."""
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = _StaffThreadRest()
+    ticket_doc = _ticket()
+    ticket_doc["recruiter_role_id"] = 40
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+
+    messages = _staff_plain_messages(rest)
+    assert len(messages) == 3
+    assert messages[0].content == (
+        "<@&40> this is a private thread for the candidate. They cannot see "
+        "this thread, so DO NOT ping them, as it will add them.\n\n"
+    )
+    assert messages[0]._kwargs["role_mentions"] is False
+    assert messages[0]._kwargs["user_mentions"] is False
+    assert messages[1].content == "Hello there 👋🏻...how you hear about Warriors United?"
+    assert messages[2].content == (
+        "What was the hook that reeled you in? The thing that said "
+        "\"yeah, I need to check these guys out!!!\""
+    )
+
+
+def test_fwa_ticket_staff_talking_points_include_donations_line(monkeypatch):
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = _StaffThreadRest()
+    ticket_doc = schema.new_ticket_document(
+        ticket_type="fwa",
+        ticket_number=1,
+        guild_id=10,
+        public_thread_id=101,
+        public_parent_id=20,
+        staff_thread_id=102,
+        staff_parent_id=21,
+        user_id=30,
+        username="Applicant",
+        created_at=NOW,
+    )
+    ticket_doc["recruiter_role_id"] = 40
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+
+    messages = _staff_plain_messages(rest)
+    assert len(messages) == 4
+    assert messages[1].content == "Hello there 👋🏻...how you hear about our FWA Operation?"
+    assert messages[3].content == (
+        "Donations are better with the update allowing loot to be used "
+        "but clan chats are and can be sporadic."
+    )
+
+
+def test_staff_talking_points_are_not_duplicated_on_recovery_rerun(monkeypatch):
+    """A retried delivery (an outer recovery pass rerunning
+    `_deliver_opening_messages` after a crash) must not repost any of the
+    four talking-point messages."""
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = _StaffThreadRest()
+    ticket_doc = schema.new_ticket_document(
+        ticket_type="fwa",
+        ticket_number=1,
+        guild_id=10,
+        public_thread_id=101,
+        public_parent_id=20,
+        staff_thread_id=102,
+        staff_parent_id=21,
+        user_id=30,
+        username="Applicant",
+        created_at=NOW,
+    )
+    ticket_doc["recruiter_role_id"] = 40
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    first_pass_creates = rest.creates
+    assert len(_staff_plain_messages(rest)) == 4
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+
+    assert rest.creates == first_pass_creates
+    assert len(_staff_plain_messages(rest)) == 4
+
+
+def test_staff_talking_points_never_reach_the_candidate_thread(monkeypatch):
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = _StaffThreadRest()
+    ticket_doc = _ticket()
+    ticket_doc["recruiter_role_id"] = 40
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+
+    candidate_plain_messages = [
+        message
+        for message in rest.channels[101]
+        if message.content and not message.components
+    ]
+    assert candidate_plain_messages == []
 
 
 def _dm_section(components):
