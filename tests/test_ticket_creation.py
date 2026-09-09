@@ -698,7 +698,7 @@ def test_crash_before_insert_recovery_reuses_exact_pair_and_shared_slot(monkeypa
         bot=object(), mongo=mongo
     ))
 
-    assert result == {"processed": 1, "completed": 1, "failed": 0}
+    assert result == {"processed": 1, "completed": 1, "degraded": 0, "failed": 0}
     assert len(calls) == 1
     assert calls[0]["open_slot_claim"].slot["_id"] == state["open_slot_id"]
     assert calls[0]["config"]["main_thread_recruiter_role"] == 40
@@ -780,7 +780,7 @@ def test_startup_recovery_rejects_a_cross_guild_stale_open_slot(monkeypatch):
         bot=object(), mongo=mongo
     ))
 
-    assert result == {"processed": 1, "completed": 0, "failed": 1}
+    assert result == {"processed": 1, "completed": 0, "degraded": 0, "failed": 1}
     assert calls == [("resume", 10)]
 
 

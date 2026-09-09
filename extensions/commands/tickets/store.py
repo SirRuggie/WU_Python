@@ -637,6 +637,13 @@ async def transition(
                 await ticket_runtime.release_open_slot(mongo, ticket_id=ticket_id)
             except Exception:
                 _log.exception("ticket slot release deferred for %s", ticket_id)
+        # Local import: thread_service imports this module at top level, so a
+        # top-level import here would be circular.
+        from extensions.commands.tickets import thread_service
+
+        await thread_service.mark_creation_complete_for_terminal_ticket(
+            mongo, outcome.doc
+        )
     return outcome
 
 

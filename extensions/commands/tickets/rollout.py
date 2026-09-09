@@ -334,6 +334,10 @@ class RolloutStatus(
         validity = "valid" if state.valid else "invalid / safe legacy default"
         pending_ids = ", ".join(drain.pending_delivery_ids) or "none"
         conflict_ids = ", ".join(drain.conflict_slot_ids) or "none"
+        degraded_creations = await mongo.ticket_creation_state.count_documents({
+            "kind": "thread_ticket_creation",
+            "recovery_note": {"$exists": True},
+        })
         await ctx.respond(
             "\n".join([
                 f"**Phase:** `{state.phase}` ({validity}, revision `{state.revision}`)",
@@ -350,6 +354,7 @@ class RolloutStatus(
                 f"(`{pending_ids}`)",
                 f"**Unresolved open-ticket conflicts:** "
                 f"{drain.unresolved_conflicts} (`{conflict_ids}`)",
+                f"**Degraded ticket creations:** {degraded_creations}",
             ]),
             ephemeral=True,
         )

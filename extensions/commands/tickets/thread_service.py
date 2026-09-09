@@ -1268,6 +1268,27 @@ async def _mark_committed_creation_complete(
     await _set_committed_creation_state(mongo, ticket, state="complete")
 
 
+async def mark_creation_complete_for_terminal_ticket(
+    mongo: MongoClient, ticket: Mapping[str, Any] | None
+) -> None:
+    """Retire a terminal ticket's applicant lease so recovery stops reselecting it.
+
+    Called once a ticket reaches ``approved``/``denied`` (see
+    :func:`extensions.commands.tickets.store.transition`) so its open slot's
+    eventual deletion never resurfaces as a ``SlotConflict`` in
+    :func:`recover_pending_thread_ticket_creations`.
+    """
+    if ticket is None or str(ticket.get("status") or "") not in {"approved", "denied"}:
+        return
+    try:
+        await _set_committed_creation_state(mongo, ticket, state="complete")
+    except Exception:
+        _log.exception(
+            "failed to retire creation-state lease for terminal ticket %s",
+            ticket.get("_id"),
+        )
+
+
 async def _queue_staff_context_outbox(
     mongo: MongoClient,
     ticket: Mapping[str, Any],
@@ -1691,6 +1712,60 @@ async def reconcile_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str
             )
 
 
+async def _retire_degraded_creation_state(
+    mongo: MongoClient,
+    state: Mapping[str, Any],
+    ticket: Mapping[str, Any] | None,
+    reason: str,
+) -> None:
+    """Log, annotate, and drop a per-ticket recovery problem out of the pending query.
+
+    A committed ticket's own problem (delivery still pending, its threads are
+    gone, or its slot was already released for a terminal decision) must never
+    keep re-selecting the row and blocking all new-ticket intake. This is
+    called at most once per row: the row is marked ``complete`` here, so the
+    next recovery pass no longer selects it.
+    """
+    now = utcnow()
+    _log.warning(
+        "ticket creation recovery degraded ticket=%s reason=%s",
+        (ticket or {}).get("_id") or state.get("ticket_id") or state.get("_id"),
+        reason,
+    )
+    if ticket is not None and ticket.get("_id") is not None:
+        try:
+            await store.update_one(
+                mongo,
+                {"_id": ticket["_id"]},
+                {"$set": {
+                    "creation_state.recovery_note": reason,
+                    "creation_state.recovery_noted_at": now,
+                }},
+            )
+        except Exception:
+            _log.exception(
+                "failed to record creation recovery note on ticket %s", ticket.get("_id")
+            )
+    try:
+        await mongo.ticket_creation_state.update_one(
+            {"_id": state["_id"]},
+            {
+                "$set": {
+                    "state": "complete",
+                    "recovery_note": reason,
+                    "recovery_noted_at": now,
+                    "updated_at": now,
+                    "expires_at": now + COMPLETE_STATE_RETENTION,
+                },
+                "$unset": {"lease_owner": "", "lease_until": ""},
+            },
+        )
+    except Exception:
+        _log.exception(
+            "failed to retire degraded creation-state row %s", state.get("_id")
+        )
+
+
 async def recover_pending_thread_ticket_creations(
     *,
     bot: hikari.GatewayBot,
@@ -1698,7 +1773,15 @@ async def recover_pending_thread_ticket_creations(
     coc_client: coc.Client | None = None,
     limit: int = 50,
 ) -> dict[str, int]:
-    """Resume expired, operator-authorized live creation attempts at startup."""
+    """Resume expired, operator-authorized live creation attempts at startup.
+
+    A committed ticket's own stuck delivery, a missing candidate/staff thread,
+    or a slot already released for a terminal decision are per-ticket
+    problems: they are reported as ``degraded`` (logged, annotated, and
+    retired so they are not reselected) and never counted toward ``failed``.
+    Only runtime-level errors -- missing/invalid binding data -- count as
+    ``failed`` and keep gating :func:`thread_intake_ready`.
+    """
     await ensure_creation_indexes(mongo)
     amount = max(1, min(int(limit), 100))
     now = utcnow()
@@ -1711,7 +1794,7 @@ async def recover_pending_thread_ticket_creations(
         ],
     })
     pending = await cursor.sort("updated_at", 1).limit(amount).to_list(length=amount)
-    counts = {"processed": 0, "completed": 0, "failed": 0}
+    counts = {"processed": 0, "completed": 0, "degraded": 0, "failed": 0}
     for state in pending:
         counts["processed"] += 1
         ticket_type = str(state.get("ticket_type") or "")
@@ -1722,6 +1805,8 @@ async def recover_pending_thread_ticket_creations(
             f"{ticket_type}_staff_parent": state.get("staff_parent_id"),
             f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
         }
+        result: CreatedThreadTicket | None = None
+        degraded_reason: str | None = None
         try:
             if not state_guild_id:
                 raise ThreadConfigurationError(
@@ -1756,36 +1841,68 @@ async def recover_pending_thread_ticket_creations(
                     bot, mongo, committed, coc_client=coc_client
                 )
             else:
-                slot_claim = await ticket_runtime.resume_open_slot(
-                    mongo,
-                    slot_id=slot_id,
-                    workflow_id=workflow_id,
-                    route=ticket_runtime.ROUTE_THREAD,
-                    guild_id=state_guild_id,
-                    now=now,
-                )
-                if not slot_claim.won:
-                    raise ThreadCreationBusy(
-                        "pending creation's sticky shared slot is not resumable"
+                try:
+                    slot_claim = await ticket_runtime.resume_open_slot(
+                        mongo,
+                        slot_id=slot_id,
+                        workflow_id=workflow_id,
+                        route=ticket_runtime.ROUTE_THREAD,
+                        guild_id=state_guild_id,
+                        now=now,
                     )
-                result = await create_live_thread_ticket(
-                    bot=bot,
-                    mongo=mongo,
-                    guild_id=state_guild_id,
-                    user_id=_as_int(state.get("user_id")),
-                    username=str(state.get("username") or "candidate"),
-                    display_name=str(state.get("display_name") or "") or None,
-                    ticket_type=ticket_type,
-                    config=config,
-                    open_slot_claim=slot_claim,
-                    coc_client=coc_client,
-                )
+                except ticket_runtime.SlotConflict:
+                    # The most common cause is a terminal ticket whose slot was
+                    # already released after approve/deny; that is a resolved
+                    # ticket, not a broken one.
+                    committed = await _committed_ticket_for_creation_state(
+                        mongo,
+                        guild_id=state_guild_id,
+                        user_id=_as_int(state.get("user_id")),
+                        ticket_type=ticket_type,
+                    )
+                    if committed is not None and str(
+                        committed.get("status") or ""
+                    ) in {"approved", "denied"}:
+                        degraded_reason = (
+                            "open slot already released for a terminal ticket"
+                        )
+                        await _retire_degraded_creation_state(
+                            mongo, state, committed, degraded_reason
+                        )
+                    else:
+                        raise
+                else:
+                    if not slot_claim.won:
+                        raise ThreadCreationBusy(
+                            "pending creation's sticky shared slot is not resumable"
+                        )
+                    result = await create_live_thread_ticket(
+                        bot=bot,
+                        mongo=mongo,
+                        guild_id=state_guild_id,
+                        user_id=_as_int(state.get("user_id")),
+                        username=str(state.get("username") or "candidate"),
+                        display_name=str(state.get("display_name") or "") or None,
+                        ticket_type=ticket_type,
+                        config=config,
+                        open_slot_claim=slot_claim,
+                        coc_client=coc_client,
+                    )
         except Exception:
             counts["failed"] += 1
             _log.exception("startup ticket creation recovery failed for %s", state.get("_id"))
-        else:
-            if result.delivery_pending:
-                counts["failed"] += 1
-                continue
-            counts["completed"] += 1
+            continue
+        if degraded_reason is not None:
+            counts["degraded"] += 1
+            continue
+        if result is not None and result.delivery_pending:
+            await _retire_degraded_creation_state(
+                mongo,
+                state,
+                result.ticket,
+                "committed ticket delivery has not completed",
+            )
+            counts["degraded"] += 1
+            continue
+        counts["completed"] += 1
     return counts
