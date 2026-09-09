@@ -378,7 +378,18 @@ async def handle_create_ticket(
                             f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
                             f"error={type(error).__name__}"
                         )
-                message = f"✅ You already have an open {ticket_type.upper()} ticket: <#{location_id}>"
+                # A bare <#id> mention only resolves in the channel's own
+                # guild, and this ticket's channel is not necessarily in
+                # ctx.guild_id (the pilot/public panels span two servers
+                # during rollout) -- a jump URL resolves anywhere.
+                ticket_guild_id = (
+                    store.as_int(existing_ticket.get("guild_id"))
+                    if existing_ticket is not None else None
+                ) or int(ctx.guild_id)
+                message = (
+                    f"✅ You already have an open {ticket_type.upper()} ticket: "
+                    f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
+                )
         else:
             message = "⏳ Your ticket is already being created. Please try again shortly."
         await ctx.interaction.edit_initial_response(content=message)

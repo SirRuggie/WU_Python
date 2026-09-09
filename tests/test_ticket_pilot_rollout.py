@@ -1522,7 +1522,74 @@ def test_reclick_with_open_ticket_reaccesses_candidate_thread(monkeypatch):
     ))
 
     assert reaccess_calls == [("ticket_1", 50)]
-    assert "<#999>" in edits[-1]["content"]
+    # A bare <#id> mention only resolves in the channel's own guild; a jump
+    # URL resolves everywhere, including outside the ticket's server.
+    assert "https://discord.com/channels/11/999" in edits[-1]["content"]
+
+
+def test_reclick_duplicate_guard_links_the_tickets_own_server_not_the_viewers(
+    monkeypatch,
+):
+    """The existing ticket can be bound to a different server than the one
+    the applicant clicked the (possibly pilot) panel in during the two-server
+    rollout. A bare `<#id>` mention only resolves in its own guild and shows
+    as nothing elsewhere, so the duplicate-ticket guard must jump-link using
+    the ticket's own guild_id, not ctx.guild_id."""
+    edits = []
+
+    async def route(*_args, **_kwargs):
+        return ticket_runtime.RouteDecision(
+            ticket_runtime.ROUTE_THREAD,
+            True,
+            ticket_runtime.PHASE_THREAD_DEFAULT,
+            8,
+            "thread_default",
+        )
+
+    async def claim(*_args, **_kwargs):
+        return ticket_runtime.SlotClaim(False, None, {
+            "_id": "ticket-open:50:main",
+            "state": ticket_runtime.SLOT_OPEN,
+            "location_id": 999,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": 11,
+            "workflow_id": "thread:50:main",
+        })
+
+    ticket_doc = {
+        "_id": "ticket_1",
+        "location": {"id": 999, "staff_space_id": 1000},
+        "guild_id": 77,
+        "user_id": 50,
+        "status": "open",
+    }
+
+    async def find_by_location(_mongo, location_id):
+        assert location_id == 999
+        return ticket_doc
+
+    async def ensure_access(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(handlers, "thread_intake_ready", lambda: True)
+    monkeypatch.setattr(handlers.ticket_runtime, "route_public_intake", route)
+    monkeypatch.setattr(handlers.ticket_runtime, "claim_open_slot", claim)
+    monkeypatch.setattr(handlers.store, "find_by_location", find_by_location)
+    monkeypatch.setattr(
+        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
+    )
+    handlers.user_cooldowns.clear()
+    ctx = _pilot_context(edits)  # ctx.guild_id is 11; the ticket's is 77.
+
+    asyncio.run(handlers.handle_create_ticket(
+        ctx,
+        "public:main",
+        bot=SimpleNamespace(rest=SimpleNamespace()),
+        mongo=SimpleNamespace(),
+    ))
+
+    assert "https://discord.com/channels/77/999" in edits[-1]["content"]
+    assert "<#999>" not in edits[-1]["content"]
 
 
 def test_reclick_reply_survives_reaccess_failure(monkeypatch):
@@ -1573,7 +1640,7 @@ def test_reclick_reply_survives_reaccess_failure(monkeypatch):
         mongo=SimpleNamespace(),
     ))
 
-    assert "<#999>" in edits[-1]["content"]
+    assert "https://discord.com/channels/11/999" in edits[-1]["content"]
 
 
 def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
