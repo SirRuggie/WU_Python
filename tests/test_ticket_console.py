@@ -1,7 +1,9 @@
 import asyncio
 import copy
 import json
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import hikari
@@ -2502,3 +2504,29 @@ def test_hub_publish_stops_before_private_data_render_on_permission_drift(monkey
             {"guild_id": 321, "channel_id": 123, "message_id": 456},
         ))
     assert calls == ["validate"]
+
+
+def test_flag_manager_back_button_uses_a_real_arrow_emoji():
+    ticket_doc = _ticket()
+    view = console.build_flag_manager(ticket_doc, action_id="abc", flags=[])
+    nodes = _nodes(view)
+    back_button = next(
+        node for node in nodes
+        if isinstance(node, dict)
+        and str(node.get("custom_id", "")).startswith("ticket_v2_flag_back")
+    )
+    glyph = back_button["emoji"]["name"]
+    assert ord(glyph[0]) == 0x2B05
+    assert glyph == "⬅️"
+
+
+def test_no_ticket_component_emoji_uses_a_bare_arrow_codepoint():
+    package_dir = Path(__file__).resolve().parents[1] / "extensions" / "commands" / "tickets"
+    offenders = []
+    for path in sorted(package_dir.glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r'emoji\s*=\s*"([^"]*)"', text):
+            value = match.group(1)
+            if any(0x2190 <= ord(ch) <= 0x21FF for ch in value):
+                offenders.append((path.name, value))
+    assert offenders == []

@@ -1854,7 +1854,7 @@ def build_flag_manager(
         style=hikari.ButtonStyle.PRIMARY,
         custom_id=f"ticket_v2_flag_back:{action_id}",
         label="Back to ticket details",
-        emoji="←️",
+        emoji="⬅️",
     )]))
     components.append(Text(content=footer))
     return [Container(accent_color=ACCENT_RED if any(
