@@ -144,12 +144,23 @@ def _int(value) -> int:
         return 0
 
 
+_MARKDOWN_ESCAPE_CHARACTERS = ("\\", "`", "*", "_", "~", "|", ">", "[", "]", "(", ")", "#")
+
+
+def _escape_markdown(text: str) -> str:
+    """Escape every Discord markdown control character callers must keep inert."""
+
+    for character in _MARKDOWN_ESCAPE_CHARACTERS:
+        text = text.replace(character, "\\" + character)
+    return text
+
+
 def _clean(value, *, limit: int = 300) -> str:
     """Short, inert Discord markdown for user/database supplied values."""
 
     text = str(value or "").replace("\x00", "").strip()
-    for character in ("\\", "`", "*", "_", "~", "|", ">"):
-        text = text.replace(character, "\\" + character)
+    text = re.sub(r"[\r\n]+", " ", text)
+    text = _escape_markdown(text)
     return text[:limit] or "Unknown"
 
 
@@ -1959,8 +1970,7 @@ def _chocolate_link_label(name: object) -> str:
 
     label = " ".join(str(name or "").replace("\x00", "").split())[:80]
     label = label.replace("@", "@\u200b")
-    for character in ("\\", "`", "*", "_", "~", "|", ">", "[", "]", "(", ")"):
-        label = label.replace(character, "\\" + character)
+    label = _escape_markdown(label)
     return label or "Player"
 
 

@@ -2520,6 +2520,32 @@ def test_flag_manager_back_button_uses_a_real_arrow_emoji():
     assert glyph == "⬅️"
 
 
+def test_clean_neutralizes_headings_masked_links_and_newlines():
+    injected = "IGN Bob\n## Verified\n[Open](https://x)"
+    cleaned = console._clean(injected)
+    assert "\n" not in cleaned
+    assert not any(line.strip().startswith("#") for line in cleaned.split("\n"))
+    assert "](" not in cleaned
+
+
+def test_applicant_intake_text_cannot_inject_headings_or_masked_links():
+    injected = "IGN Bob\n## Verified\n[Open](https://x)"
+    ticket_doc = _ticket(15, intake_snapshot={"looking_for": injected})
+    view = console.build_ticket_detail(
+        ticket_doc, action_id="e" * 32, flags=[], history=[],
+    )
+    rendered = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    applicant_line = next(
+        line for line in rendered.split("\n")
+        if "What they want from a clan" in line
+    )
+    assert not applicant_line.strip().startswith("#")
+    assert "](" not in applicant_line
+    assert "]\\(" in applicant_line or "\\[Open\\]" in applicant_line
+
+
 def test_no_ticket_component_emoji_uses_a_bare_arrow_codepoint():
     package_dir = Path(__file__).resolve().parents[1] / "extensions" / "commands" / "tickets"
     offenders = []
