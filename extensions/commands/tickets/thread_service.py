@@ -1367,7 +1367,11 @@ async def _deliver_opening_messages(
 
 
 async def _send_ticket_creation_dm(
-    rest: hikari.api.RESTClient, mongo: MongoClient, ticket: Mapping[str, Any]
+    rest: hikari.api.RESTClient,
+    mongo: MongoClient,
+    ticket: Mapping[str, Any],
+    *,
+    bot: hikari.GatewayBot | None = None,
 ) -> None:
     """Best-effort DM pointing the candidate back to their new thread.
 
@@ -1379,6 +1383,11 @@ async def _send_ticket_creation_dm(
     so a retried REST call after a crash between send and record cannot
     DM the applicant twice. A claim failure is swallowed like every other
     failure here -- it must not fail ticket creation either.
+
+    ``bot`` is optional so callers without a cached identity still work: the
+    guild is looked up from ``bot.cache`` when available, falling back to a
+    REST fetch, and to the plain "Warriors United" name plus the branding
+    logo when neither resolves the guild.
     """
     user_id = _as_int(ticket.get("user_id"))
     guild_id = _as_int(ticket.get("guild_id"))
@@ -1396,14 +1405,36 @@ async def _send_ticket_creation_dm(
         )
         return
     jump_url = f"https://discord.com/channels/{guild_id}/{candidate_id}"
+    guild = bot.cache.get_guild(guild_id) if bot is not None else None
+    if guild is None:
+        try:
+            guild = await rest.fetch_guild(guild_id)
+        except (hikari.ForbiddenError, hikari.NotFoundError):
+            guild = None
+        except Exception:
+            _log.exception(
+                "ticket creation DM guild lookup failed guild=%s ticket=%s",
+                guild_id, ticket.get("_id"),
+            )
+            guild = None
+    guild_name = (
+        _safe_markdown(guild.name, limit=80) if guild is not None else "Warriors United"
+    )
+    icon_url = getattr(guild, "make_icon_url", lambda: None)() if guild is not None else None
+    logo = str(icon_url) if icon_url else "assets/branding/logo/WU_Logo.png"
     components = [Container(
         accent_color=GOLDENROD_ACCENT,
         components=[
-            Text(content="**Your ticket is ready**"),
-            Text(content=(
-                "A recruiter will reply in your ticket. Press the button to "
-                "open it."
-            )),
+            Section(
+                components=[
+                    Text(content=f"**{guild_name}**"),
+                    Text(content=(
+                        "A recruiter will reply in your ticket. Press the button to "
+                        "open it."
+                    )),
+                ],
+                accessory=Thumbnail(media=logo),
+            ),
             ActionRow(components=[
                 LinkButton(label="Open my ticket", url=jump_url),
             ]),
@@ -1869,7 +1900,7 @@ async def create_live_thread_ticket(
                     bot, mongo, ticket, reconcile_pair=False
                 )
                 if delivery_complete:
-                    await _send_ticket_creation_dm(bot.rest, mongo, ticket)
+                    await _send_ticket_creation_dm(bot.rest, mongo, ticket, bot=bot)
                 await notify_console_after_change(
                     bot, mongo, ticket, reason="ticket created"
                 )

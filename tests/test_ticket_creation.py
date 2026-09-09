@@ -689,7 +689,22 @@ def test_legacy_opening_card_marker_messages_are_still_recognised(monkeypatch):
     assert rest.creates == 0
 
 
+def _dm_section(components):
+    """Walk a components-v2 payload for the first Section, as
+    `_questionnaire_exists` walks messages for marker text."""
+    for component in components:
+        if isinstance(component, thread_service.Section):
+            return component
+        found = _dm_section(getattr(component, "components", ()) or ())
+        if found is not None:
+            return found
+    return None
+
+
 def test_creation_dm_sends_a_components_v2_container_with_a_link_button():
+    """No `bot` and no `fetch_guild` on the REST double: the guild cannot be
+    resolved, so the DM falls back to the plain server name and the branding
+    logo attachment."""
     sent = []
 
     class Rest:
@@ -708,10 +723,53 @@ def test_creation_dm_sends_a_components_v2_container_with_a_link_button():
     # Components V2 messages never carry a `content=` alongside components.
     assert "content" not in sent[0]
     assert sent[0]["flags"] == hikari.MessageFlag.IS_COMPONENTS_V2
-    payload = repr(sent[0]["components"])
+    components = sent[0]["components"]
+    payload = repr(components)
     assert "https://discord.com/channels/10/101" in payload
     assert "Open my ticket" in payload
-    assert "Your ticket is ready" in payload
+
+    section = _dm_section(components[0].components)
+    assert section is not None
+    title, sentence = section.components
+    assert title.content == "**Warriors United**"
+    assert "A recruiter will reply in your ticket" in sentence.content
+    assert section.accessory.media == "assets/branding/logo/WU_Logo.png"
+
+
+def test_creation_dm_uses_the_guild_name_and_cached_icon():
+    """`bot.cache.get_guild` resolves the guild: the title becomes the
+    server name and the thumbnail accessory carries the icon URL."""
+    sent = []
+
+    class Rest:
+        async def create_dm_channel(self, user_id):
+            return SimpleNamespace(id=999, user_id=user_id)
+
+        async def create_message(self, **kwargs):
+            sent.append(kwargs)
+
+    guild = SimpleNamespace(
+        name="Warriors United FWA",
+        make_icon_url=lambda: "https://cdn.discordapp.com/icons/10/abc.png",
+    )
+    bot = SimpleNamespace(cache=SimpleNamespace(get_guild=lambda _gid: guild))
+
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    asyncio.run(
+        thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc, bot=bot)
+    )
+
+    assert len(sent) == 1
+    components = sent[0]["components"]
+    section = _dm_section(components[0].components)
+    assert section is not None
+    title, _sentence = section.components
+    assert title.content == "**Warriors United FWA**"
+    assert section.accessory.media == "https://cdn.discordapp.com/icons/10/abc.png"
+    payload = repr(components)
+    assert "https://discord.com/channels/10/101" in payload
+    assert "Open my ticket" in payload
 
 
 def test_creation_dm_second_call_is_a_no_op():
