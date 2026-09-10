@@ -105,10 +105,21 @@ def _stripped_channel_name(name: str) -> str:
 
 
 _NON_TICKET_SUPPORT_CHANNEL_NAMES = frozenset({
+    "background-check",
     "mainclan-commands",
+    "main-background-check",
+    "mainclan-background-check",
     "fwa-background-check",
+    "league-team-background-check",
     "mainclan-recruitment-process",
+    "fwa-recruitment-process",
     "fwa-commands",
+    "main-ticket-log",
+    "main-ticket-backup-log",
+    "mainclan-ticket-log",
+    "mainclan-ticket-backup-log",
+    "fwa-ticket-log",
+    "fwa-ticket-backup-log",
 })
 _NON_TICKET_ROLE_CHANNEL_RE = re.compile(
     r"^(?:main|mainclan|fwa)-(?:notes|log|rules|info|general|chat)$"
@@ -1300,6 +1311,10 @@ async def _identity(
             ) from exc
     username = username or str(getattr(member, "username", ""))
     display_name = display_name or str(getattr(member, "display_name", "") or username)
+    if getattr(member, "is_bot", False):
+        raise NotALegacyTicketChannel(
+            "the only resolved applicant identity is a bot account"
+        )
     if not username:
         raise LegacyMigrationError("candidate username could not be resolved")
     return user_id, username[:32], (display_name or username)[:80]
@@ -1371,6 +1386,12 @@ async def preview_legacy_ticket(
         mongo, request.source_guild_id, request.source_channel_id
     )
     channel_name = str(getattr(source_channel, "name", "legacy-ticket"))
+    # Confirmed bulk runs re-preview saved ready entries. Keep structural
+    # support/log channels out even if the plan predates the name guard.
+    if _looks_like_non_ticket_channel_name(channel_name):
+        raise NotALegacyTicketChannel(
+            "channel name matches a structural non-ticket support/log pattern"
+        )
     public_messages = (
         await _bounded_messages(bot.rest, request.source_channel_id, request.history_limit)
         if request.history_limit

@@ -932,6 +932,12 @@ async def run_batch(
                     raise BulkMigrationError(
                         "the batch lease could not be renewed during ticket migration"
                     ) from lease_state["renewal_error"]
+            except legacy_migration.NotALegacyTicketChannel as error:
+                entry["classification"] = CLASS_NOT_A_TICKET
+                entry["status"] = "skipped"
+                entry["detail"] = str(error)
+                skipped += 1
+                consecutive_failures = 0
             except legacy_migration.DeletedApplicant as error:
                 entry["classification"] = CLASS_DELETED_APPLICANT
                 entry["status"] = "skipped"

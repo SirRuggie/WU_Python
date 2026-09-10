@@ -554,8 +554,12 @@ migrated, except source guild `1024958361306927124` plus source channel
 `1045185178437423114` (`sir-ruggie1500`) together), `abandoned` (the applicant never wrote in the
 channel — skipped unless `include-abandoned:true`), `not_a_ticket` (a
 non-ticket channel swept up by the category/prefix match — only the exact
-observed support names `mainclan-commands`, `fwa-background-check`,
-`mainclan-recruitment-process`, `fwa-commands`, plus exact type-prefixed
+observed support names `background-check`, `mainclan-commands`, `main-background-check`,
+`mainclan-background-check`, `fwa-background-check`, `league-team-background-check`,
+`mainclan-recruitment-process`, `fwa-recruitment-process`, `fwa-commands`,
+and exact typed operational logs such as `main-ticket-log`,
+`main-ticket-backup-log`, `mainclan-ticket-log`, `mainclan-ticket-backup-log`,
+`fwa-ticket-log`, and `fwa-ticket-backup-log`, plus exact type-prefixed
 role names such as `main-notes`, `fwa-log`, `main-rules`, `fwa-info`,
 `mainclan-general` and `fwa-chat`; or it has no permission-overwrite
 applicant and no welcome/mention message at all — never migrated; applicant

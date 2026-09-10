@@ -89,10 +89,19 @@ channel 1547244294757425212 (`recruiter-desk`).
   `fetch_user`; if both 404 the applicant's account no longer exists --
   raise `DeletedApplicant` and skip the ticket (Owner rule 8), never fall
   back to the channel name. A channel with no permission-overwrite applicant
-  and no mention message at all is `not_a_ticket`, never migrated -- likewise
-  only these exact observed support names: `mainclan-commands`,
-  `fwa-background-check`, `mainclan-recruitment-process`, `fwa-commands`;
-  or an exact type-prefixed role name such as `main-notes`, `fwa-log`,
+  and no mention message at all is `not_a_ticket`, never migrated. A resolved
+  candidate that is itself a bot account is also `not_a_ticket`: Ticket Tool
+  welcome posts still work because their leading mention selects the human
+  applicant. The same classification applies to these exact observed support
+  names: `background-check`, `mainclan-commands`,
+  `main-background-check`, `mainclan-background-check`,
+  `fwa-background-check`, `league-team-background-check`,
+  `mainclan-recruitment-process`,
+  `fwa-recruitment-process`, `fwa-commands`, and typed operational logs such
+  as `main-ticket-log`, `main-ticket-backup-log`, `mainclan-ticket-log`,
+  `mainclan-ticket-backup-log`, `fwa-ticket-log`, or
+  `fwa-ticket-backup-log`; and to an exact type-prefixed role name such as
+  `main-notes`, `fwa-log`,
   `main-rules`, `fwa-info`, `mainclan-general` or `fwa-chat`. This uses
   full-name matches, so applicant names such as `main-42-chatty` and
   `fwa-7-catalog` remain candidates.
@@ -124,6 +133,15 @@ channel 1547244294757425212 (`recruiter-desk`).
   Suite at that commit: 1826 passed, 2 skipped.
 
 Checkpoint log (newest first):
+- 2026-09-09: the failed pilot imported three structural support channels
+  (`mainclan-background-check`, `mainclan-ticket-log`, and
+  `fwa-ticket-log`) before the bot was stopped. User-authorized cleanup
+  removed six destination threads, two webhooks, three migration rows, two
+  canonical tickets, two context rows, and the batch; the source channels
+  were preserved. Main/FWA counters and floors were verified at 0. The private
+  temporary backup is `/tmp/wu-migration-cleanup-_efhw2cd`. The classification
+  fix is pending deployment; run a fresh dry run afterward, never the removed
+  plan.
 - 2026-09-09: migration fixes independently reviewed; full regression suite
   passed (1871 passed, 2 skipped; card-board/card-scan excluded as usual).
   Not deployed; run a fresh server-1 dry run after deployment so the saved

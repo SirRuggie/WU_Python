@@ -1093,9 +1093,12 @@ def test_leading_mention_id_uses_the_raw_leading_mention_not_unordered_parsed_id
 
 def test_looks_like_non_ticket_channel_name_matches_the_observed_server_1_names():
     for name in (
-        "mainclan-commands", "fwa-background-check", "mainclan-recruitment-process",
-        "fwa-commands", "main-notes", "fwa-log", "main-rules", "fwa-info",
-        "mainclan-general", "fwa-chat",
+        "background-check", "mainclan-commands", "main-background-check", "mainclan-background-check",
+        "fwa-background-check", "league-team-background-check", "mainclan-recruitment-process",
+        "fwa-recruitment-process", "fwa-commands", "main-ticket-log",
+        "main-ticket-backup-log", "mainclan-ticket-log",
+        "mainclan-ticket-backup-log", "fwa-ticket-log", "fwa-ticket-backup-log",
+        "main-notes", "fwa-log", "main-rules", "fwa-info", "mainclan-general", "fwa-chat",
     ):
         assert legacy_migration._looks_like_non_ticket_channel_name(name) is True
     for name in (
@@ -1124,6 +1127,143 @@ def test_identity_raises_not_a_ticket_when_no_overwrite_and_no_mention_at_all():
             bot_user_id=999,
             messages=messages,
         ))
+
+
+def test_identity_rejects_a_ticket_tool_bot_overwrite_as_an_applicant():
+    class Rest:
+        async def fetch_member(self, _guild_id, _user_id):
+            return SimpleNamespace(username="Ticket Tool", display_name="Ticket Tool", is_bot=True)
+
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    source_channel = SimpleNamespace(
+        name="fwa-9-alice",
+        permission_overwrites=[SimpleNamespace(
+            type=hikari.PermissionOverwriteType.MEMBER, id=596655147029790750,
+        )],
+    )
+    with pytest.raises(legacy_migration.NotALegacyTicketChannel, match="bot account"):
+        asyncio.run(legacy_migration._identity(
+            Rest(), source_ticket=None, source_channel=source_channel, request=request,
+            bot_user_id=999,
+            messages=[SimpleNamespace(author=SimpleNamespace(id=596655147029790750), content="<Server-Info>")],
+        ))
+
+
+def test_preview_rejects_structural_support_name_before_identity(monkeypatch):
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    source_channel = SimpleNamespace(
+        id=2, guild_id=1, name="❌-background-check",
+        type=hikari.ChannelType.GUILD_TEXT,
+    )
+
+    class Rest:
+        async def fetch_guild(self, _guild_id):
+            return SimpleNamespace()
+
+        async def fetch_channel(self, _channel_id):
+            return source_channel
+
+    async def source_ticket(*_args):
+        return None
+
+    async def messages(*_args):
+        raise AssertionError("support channel reached history/identity")
+
+    monkeypatch.setattr(legacy_migration, "_legacy_source_ticket", source_ticket)
+    monkeypatch.setattr(legacy_migration, "_all_messages", messages)
+    with pytest.raises(legacy_migration.NotALegacyTicketChannel, match="structural"):
+        asyncio.run(legacy_migration.preview_legacy_ticket(
+            bot=SimpleNamespace(rest=Rest(), get_me=lambda: SimpleNamespace(id=999)),
+            mongo=SimpleNamespace(), request=request,
+        ))
+
+
+@pytest.mark.parametrize("applicant_is_bot", [True, False])
+def test_full_preview_rejects_bot_identity_but_accepts_a_human(monkeypatch, applicant_is_bot):
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    applicant_id = 555
+    source_channel = SimpleNamespace(
+        id=2, guild_id=1, name="main-9-alice", parent_id=0,
+        type=hikari.ChannelType.GUILD_TEXT,
+        permission_overwrites=[SimpleNamespace(
+            type=hikari.PermissionOverwriteType.MEMBER, id=applicant_id,
+        )],
+    )
+
+    class Rest:
+        async def fetch_guild(self, _guild_id):
+            return SimpleNamespace()
+
+        async def fetch_channel(self, _channel_id):
+            return source_channel
+
+        async def fetch_member(self, _guild_id, _user_id):
+            return SimpleNamespace(username="applicant", display_name="Applicant", is_bot=applicant_is_bot)
+
+    async def source_ticket(*_args):
+        return {"status": "approved"}
+
+    async def messages(*_args):
+        return [SimpleNamespace(id=10, author=SimpleNamespace(id=applicant_id), content="hello", attachments=[])]
+
+    async def validate(*_args, **_kwargs):
+        return None
+
+    async def no_staff(*_args, **_kwargs):
+        return None
+
+    async def config(_query):
+        return {
+            "ticket_target_guild_id": 10,
+            "main_candidate_parent": 20,
+            "main_staff_parent": 21,
+            "main_thread_recruiter_role": 22,
+        }
+
+    monkeypatch.setattr(legacy_migration, "_legacy_source_ticket", source_ticket)
+    monkeypatch.setattr(legacy_migration, "_all_messages", messages)
+    monkeypatch.setattr(legacy_migration.thread_service, "validate_thread_parents", validate)
+    monkeypatch.setattr(legacy_migration, "_discover_staff_thread", no_staff)
+    mongo = SimpleNamespace(ticket_setup=SimpleNamespace(find_one=config))
+    bot = SimpleNamespace(rest=Rest(), get_me=lambda: SimpleNamespace(id=999))
+
+    if applicant_is_bot:
+        with pytest.raises(legacy_migration.NotALegacyTicketChannel, match="bot account"):
+            asyncio.run(legacy_migration.preview_legacy_ticket(bot=bot, mongo=mongo, request=request))
+    else:
+        preview = asyncio.run(legacy_migration.preview_legacy_ticket(
+            bot=bot, mongo=mongo, request=request,
+        ))
+        assert preview.user_id == applicant_id
+        assert preview.username == "applicant"
+
+
+def test_run_batch_reclassifies_a_stale_ready_support_channel_as_skipped(monkeypatch):
+    batch = _batch_document(31, [_ready(3101, ticket_type="fwa")], state="planned")
+    mongo = _mongo(batch=batch)
+
+    async def rejected_preview(*_args, **_kwargs):
+        raise legacy_migration.NotALegacyTicketChannel("structural support channel")
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", rejected_preview)
+    document = asyncio.run(legacy_bulk.run_batch(
+        bot=SimpleNamespace(rest=SimpleNamespace()), mongo=mongo,
+        source_guild_id=31, guild_name="Source", limit=None, actor_id=1, actor_name="Admin",
+    ))
+
+    entry = document["entries"][0]
+    assert entry["classification"] == legacy_bulk.CLASS_NOT_A_TICKET
+    assert entry["status"] == "skipped"
+    assert document["counts"] == {legacy_bulk.CLASS_NOT_A_TICKET: 1}
 
 
 def test_classify_maps_not_a_legacy_ticket_channel(monkeypatch):
