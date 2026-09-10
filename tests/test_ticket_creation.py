@@ -1,4 +1,5 @@
 import asyncio
+import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -19,6 +20,54 @@ from extensions.commands.tickets import (
 
 
 NOW = datetime(2026, 8, 20, 6, 0, tzinfo=timezone.utc)
+
+
+def test_migration_webhook_pacing_serializes_concurrent_sends(monkeypatch):
+    """Public and staff replay sends share one conservative process pacing gate."""
+    calls: list[float] = []
+
+    class Rest:
+        async def execute_webhook(self, *_args, **_kwargs):
+            calls.append(time.monotonic())
+
+    monkeypatch.setattr(legacy_migration, "WEBHOOK_SEND_INTERVAL_SECONDS", 0.02)
+    monkeypatch.setattr(legacy_migration, "_webhook_send_lock", None)
+    monkeypatch.setattr(legacy_migration, "_last_webhook_send_at", 0.0)
+
+    async def run() -> None:
+        webhook = SimpleNamespace(id=8, token="secret")
+        await asyncio.gather(
+            legacy_migration._execute_paced_webhook(Rest(), webhook, "public"),
+            legacy_migration._execute_paced_webhook(Rest(), webhook, "staff"),
+        )
+
+    asyncio.run(run())
+    assert len(calls) == 2
+    assert calls[1] - calls[0] >= 0.015
+
+
+def test_clone_part_routes_primary_webhook_send_through_pacing(monkeypatch):
+    marker = "migration-source:1:2:3:1/1"
+    routed: list[str] = []
+
+    async def paced(_rest, _webhook, content, **_kwargs):
+        routed.append(content)
+
+    monkeypatch.setattr(legacy_migration, "_execute_paced_webhook", paced)
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[], embeds=[],
+    )
+    rest = SimpleNamespace(fetch_messages=lambda _thread_id: EmptyLazyIterator())
+
+    losses = asyncio.run(legacy_migration._execute_clone_part(
+        rest=rest, webhook=SimpleNamespace(id=8, token="secret"), thread_id=9,
+        marker=marker, content=f"proof\n-# {marker}", message=message,
+        include_payload=True,
+    ))
+
+    assert losses == []
+    assert routed == [f"proof\n-# {marker}"]
 
 
 def _slot_claim(*, guild_id=10, user_id=30, ticket_type="main"):

@@ -60,6 +60,8 @@ def _clause_matches(document: dict, clause: dict) -> bool:
                 return False
             if "$lte" in condition and (value is None or value > condition["$lte"]):
                 return False
+            if "$gt" in condition and (value is None or value <= condition["$gt"]):
+                return False
         elif value != condition:
             return False
     return True
@@ -70,6 +72,7 @@ class FakeBatches:
 
     def __init__(self, document=None):
         self.document = dict(document) if document else None
+        self.update_calls: list[tuple[dict, dict]] = []
 
     async def find_one(self, query):
         if self.document and self.document.get("_id") == query.get("_id"):
@@ -77,6 +80,7 @@ class FakeBatches:
         return None
 
     async def find_one_and_update(self, query, update, *, upsert=False, return_document=None):
+        self.update_calls.append((deepcopy(query), deepcopy(update)))
         if self.document is None:
             if not upsert:
                 return None
@@ -468,6 +472,98 @@ def test_run_batch_refuses_a_second_runner_while_the_lease_is_held(monkeypatch):
             bot=bot, mongo=mongo, source_guild_id=13, guild_name="Legacy Three",
             limit=None, actor_id=1, actor_name="Admin",
         ))
+
+
+def test_run_batch_renews_its_lease_during_a_slow_ticket(monkeypatch):
+    entries = [_ready(4010)]
+    mongo = _mongo(batch=_batch_document(13, entries, state="planned"))
+    bot = SimpleNamespace(rest=SimpleNamespace())
+    _patch_migration_cycle(monkeypatch)
+    monkeypatch.setattr(legacy_bulk, "BATCH_LEASE_RENEW_SECONDS", 0.005)
+
+    original = legacy_migration.migrate_legacy_ticket
+
+    async def slow_migrate(**kwargs):
+        await asyncio.sleep(0.025)
+        return await original(**kwargs)
+
+    monkeypatch.setattr(legacy_migration, "migrate_legacy_ticket", slow_migrate)
+    document = asyncio.run(legacy_bulk.run_batch(
+        bot=bot, mongo=mongo, source_guild_id=13, guild_name="Legacy Three",
+        limit=None, actor_id=1, actor_name="Admin",
+    ))
+
+    assert document["state"] == "complete"
+    renewals = [
+        (query, update)
+        for query, update in mongo.ticket_migration_batches.update_calls
+        if query.get("lease_owner")
+        and query.get("state") == "running"
+        and "$gt" in query.get("lease_until", {})
+        and "revision" not in query
+        and "lease_until" in update.get("$set", {})
+        and "$inc" not in update
+    ]
+    assert renewals
+    assert "lease_owner" not in mongo.ticket_migration_batches.document
+    assert "lease_until" not in mongo.ticket_migration_batches.document
+
+
+def test_run_batch_stops_when_its_lease_is_lost_during_a_ticket(monkeypatch):
+    entries = [_ready(4020), _ready(4021)]
+    mongo = _mongo(batch=_batch_document(13, entries, state="planned"))
+    bot = SimpleNamespace(rest=SimpleNamespace())
+    starts: list[int] = []
+
+    async def preview(*, bot, mongo, request):
+        return SimpleNamespace(request=request)
+
+    async def slow_migrate(*, bot, mongo, preview):
+        starts.append(preview.request.source_channel_id)
+        await asyncio.Event().wait()
+        raise AssertionError("cancelled migration continued")
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", preview)
+    monkeypatch.setattr(legacy_migration, "migrate_legacy_ticket", slow_migrate)
+    monkeypatch.setattr(legacy_bulk, "BATCH_LEASE_RENEW_SECONDS", 0.005)
+
+    async def run() -> None:
+        task = asyncio.create_task(legacy_bulk.run_batch(
+            bot=bot, mongo=mongo, source_guild_id=13, guild_name="Legacy Three",
+            limit=None, actor_id=1, actor_name="Admin",
+        ))
+        await asyncio.sleep(0.012)
+        mongo.ticket_migration_batches.document["lease_owner"] = "other-runner"
+        with pytest.raises(legacy_bulk.BulkMigrationError, match="lease was lost"):
+            await task
+
+    asyncio.run(run())
+    assert starts == [4020]
+
+
+def test_run_batch_checks_its_lease_before_starting_preview(monkeypatch):
+    entries = [_ready(4030)]
+    mongo = _mongo(batch=_batch_document(13, entries, state="planned"))
+    bot = SimpleNamespace(rest=SimpleNamespace())
+    previewed: list[int] = []
+
+    async def preview(*, bot, mongo, request):
+        previewed.append(request.source_channel_id)
+        raise AssertionError("preview ran after lease loss")
+
+    async def lost_lease(_mongo, _document, _owner):
+        return None
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", preview)
+    monkeypatch.setattr(legacy_bulk, "_renew_batch_lease", lost_lease)
+
+    with pytest.raises(legacy_bulk.BulkMigrationError, match="before ticket migration"):
+        asyncio.run(legacy_bulk.run_batch(
+            bot=bot, mongo=mongo, source_guild_id=13, guild_name="Legacy Three",
+            limit=None, actor_id=1, actor_name="Admin",
+        ))
+
+    assert previewed == []
 
 
 def test_run_batch_requires_a_plan_first():

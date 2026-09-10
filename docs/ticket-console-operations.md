@@ -658,6 +658,16 @@ is exempt from the five-ticket pilot cap that guards `migrate-legacy` (it has
 its own admin confirmation); every bypass logs
 `[Tickets] migration_pilot_cap_bypassed batch=... channel=...`.
 
+Each outbound temporary-webhook replay is conservatively paced across the
+process, including both public and staff histories and the acknowledged
+text-only fallback for an attachment payload. Hikari remains responsible for
+Discord's dynamic `Retry-After` handling; the pacing only prevents this
+operation from immediately starting another shared-route request after a
+webhook execution completes. While any ticket's preview or replay is in
+flight, its batch lease is renewed without changing the progress revision. If
+that owner lease cannot be renewed, the in-flight ticket is stopped and the
+batch does not begin another source channel.
+
 One progress message is posted in the ticket console channel at the start of
 a run and edited every five completed tickets and once more at the end:
 `Copying legacy tickets from {guild name}: {done}/{total} done, {failed}

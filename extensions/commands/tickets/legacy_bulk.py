@@ -31,6 +31,7 @@ from utils.mongo import MongoClient
 _log = logging.getLogger(__name__)
 
 BATCH_LEASE = timedelta(seconds=45)
+BATCH_LEASE_RENEW_SECONDS = 15
 PLAN_STALE_AFTER = timedelta(hours=24)
 PREVIEW_SLEEP_SECONDS = 0.25
 # Pause between copied tickets so a long confirmed run never leans on
@@ -681,8 +682,14 @@ async def _cas_update(
     update: dict[str, Any] = {"$set": {**(set_fields or {}), "updated_at": now}, "$inc": {"revision": 1}}
     if unset_fields:
         update["$unset"] = unset_fields
+    query: dict[str, Any] = {"_id": document["_id"], "revision": revision}
+    if document.get("state") == "running" and document.get("lease_owner"):
+        query.update({
+            "lease_owner": document["lease_owner"],
+            "lease_until": {"$gt": now},
+        })
     updated = await mongo.ticket_migration_batches.find_one_and_update(
-        {"_id": document["_id"], "revision": revision},
+        query,
         update,
         return_document=ReturnDocument.AFTER,
     )
@@ -714,6 +721,57 @@ async def _claim_batch_lease(
             },
             "$inc": {"revision": 1},
         },
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+async def _batch_lease_heartbeat(
+    mongo: MongoClient,
+    state: dict[str, Any],
+    owner: str,
+    work: asyncio.Task,
+    stop: asyncio.Event,
+) -> None:
+    """Renew one owned batch while its current ticket awaits Discord.
+
+    This deliberately does not increment the batch revision: the main loop's
+    checkpoint CAS remains authoritative. A lost lease stops the in-flight
+    ticket before another source channel can begin.
+    """
+    while True:
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=BATCH_LEASE_RENEW_SECONDS)
+            return
+        except TimeoutError:
+            pass
+        document = state["document"]
+        try:
+            updated = await _renew_batch_lease(mongo, document, owner)
+        except Exception as error:
+            _log.warning("[Tickets] migrate_all_lease_renewal_failed error=%s", type(error).__name__)
+            state["renewal_error"] = error
+            work.cancel()
+            return
+        if updated is None:
+            state["lost"] = True
+            work.cancel()
+            return
+        state["document"] = updated
+
+
+async def _renew_batch_lease(
+    mongo: MongoClient, document: dict[str, Any], owner: str
+) -> dict[str, Any] | None:
+    """Extend an unexpired lease held by this runner without changing revision."""
+    now = utcnow()
+    return await mongo.ticket_migration_batches.find_one_and_update(
+        {
+            "_id": document["_id"],
+            "lease_owner": owner,
+            "state": "running",
+            "lease_until": {"$gt": now},
+        },
+        {"$set": {"lease_until": now + BATCH_LEASE, "updated_at": now}},
         return_document=ReturnDocument.AFTER,
     )
 
@@ -819,7 +877,7 @@ async def run_batch(
                 bulk_batch_id=batch_id,
                 include_abandoned=include_abandoned,
             )
-            try:
+            async def _preview_and_migrate() -> legacy_migration.LegacyMigrationResult:
                 preview = await legacy_migration.preview_legacy_ticket(
                     bot=bot, mongo=mongo, request=request
                 )
@@ -830,15 +888,59 @@ async def run_batch(
                             bot=bot, mongo=mongo,
                             request=replace(request, attachment_ack=token),
                         )
-                result = await legacy_migration.migrate_legacy_ticket(
-                    bot=bot, mongo=mongo, preview=preview
+                return await legacy_migration.migrate_legacy_ticket(
+                    bot=bot, mongo=mongo, preview=preview,
                 )
+
+            try:
+                # Do not begin even a preview if the run was displaced while
+                # status/config setup was in progress.
+                document = await _renew_batch_lease(mongo, document, owner)
+                if document is None:
+                    raise BulkMigrationError(
+                        "the batch lease was lost before ticket migration began"
+                    )
+                migration_task = asyncio.create_task(
+                    _preview_and_migrate(),
+                    name=f"legacy-migration:{entry['channel_id']}",
+                )
+                lease_state = {"document": document, "lost": False, "renewal_error": None}
+                heartbeat_stop = asyncio.Event()
+                heartbeat = asyncio.create_task(
+                    _batch_lease_heartbeat(
+                        mongo, lease_state, owner, migration_task, heartbeat_stop
+                    ),
+                    name=f"legacy-batch-lease:{source_guild_id}",
+                )
+                try:
+                    result = await migration_task
+                except asyncio.CancelledError:
+                    if lease_state["lost"]:
+                        raise BulkMigrationError(
+                            "the batch lease was lost during ticket migration"
+                        ) from None
+                    if lease_state["renewal_error"] is not None:
+                        raise BulkMigrationError(
+                            "the batch lease could not be renewed during ticket migration"
+                        ) from lease_state["renewal_error"]
+                    raise
+                finally:
+                    heartbeat_stop.set()
+                    await heartbeat
+                if lease_state["lost"]:
+                    raise BulkMigrationError("the batch lease was lost during ticket migration")
+                if lease_state["renewal_error"] is not None:
+                    raise BulkMigrationError(
+                        "the batch lease could not be renewed during ticket migration"
+                    ) from lease_state["renewal_error"]
             except legacy_migration.DeletedApplicant as error:
                 entry["classification"] = CLASS_DELETED_APPLICANT
                 entry["status"] = "skipped"
                 entry["detail"] = str(error)
                 skipped += 1
                 consecutive_failures = 0
+            except BulkMigrationError:
+                raise
             except Exception as error:
                 entry["status"] = f"failed:{type(error).__name__}: {str(error)[:180]}"
                 failed += 1

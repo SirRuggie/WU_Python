@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -37,8 +38,38 @@ ATTACHMENT_AUDIT_CONCURRENCY = 5
 ATTACHMENT_AUDIT_TIMEOUT_SECONDS = 8
 DISCORD_MESSAGE_CONTENT_LIMIT = 2000
 MIGRATION_SUMMARY_LIMIT = 1600
+# Discord places temporary migration webhooks in a shared sub-bucket. Keep the
+# lock through the actual request so public/staff replays and simultaneous
+# migrations cannot start competing webhook sends in this process. Hikari still
+# owns 429 retries; this only spaces completed webhook executions.
+WEBHOOK_SEND_INTERVAL_SECONDS = 2.5
+_webhook_send_lock: asyncio.Lock | None = None
+_last_webhook_send_at = 0.0
 _migration_index_ready = False
 _log = logging.getLogger(__name__)
+
+
+def _webhook_pacing_lock() -> asyncio.Lock:
+    global _webhook_send_lock
+    if _webhook_send_lock is None:
+        _webhook_send_lock = asyncio.Lock()
+    return _webhook_send_lock
+
+
+async def _execute_paced_webhook(rest, webhook, content: str, **kwargs) -> None:
+    """Serialize migration webhook sends without adding a second retry policy."""
+    global _last_webhook_send_at
+    async with _webhook_pacing_lock():
+        delay = _last_webhook_send_at + WEBHOOK_SEND_INTERVAL_SECONDS - time.monotonic()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        try:
+            await rest.execute_webhook(webhook.id, webhook.token, content, **kwargs)
+        finally:
+            # Hikari may wait through one or more Retry-After responses. Space
+            # the next request from when that work actually finishes.
+            _last_webhook_send_at = time.monotonic()
+
 
 _ALLOWED_ROLLOUT_PHASES = frozenset({
     ticket_runtime.PHASE_PILOT,
@@ -1918,7 +1949,7 @@ async def _execute_clone_part(
     if avatar_url is not None:
         kwargs["avatar_url"] = avatar_url
     try:
-        await rest.execute_webhook(webhook.id, webhook.token, content, **kwargs)
+        await _execute_paced_webhook(rest, webhook, content, **kwargs)
         if known_markers is not None:
             known_markers.add(marker)
         return []
@@ -1982,9 +2013,7 @@ async def _execute_clone_part(
         }
         if avatar_url is not None:
             fallback_kwargs["avatar_url"] = avatar_url
-        await rest.execute_webhook(
-            webhook.id, webhook.token, note, **fallback_kwargs
-        )
+        await _execute_paced_webhook(rest, webhook, note, **fallback_kwargs)
         if known_markers is not None:
             known_markers.add(marker)
         return losses
