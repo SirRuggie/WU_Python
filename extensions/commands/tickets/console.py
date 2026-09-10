@@ -78,9 +78,6 @@ HUB_CLAN_BAR_ATTACHMENTS = {
 HUB_THUMBNAIL_FILENAMES = (
     "clan_main.png",
     "clan_fwa.png",
-    "flag_blacklisted.png",
-    "flag_denied_before.png",
-    "flag_not_loyal.png",
 )
 HUB_DEBOUNCE_SECONDS = 0.75
 HUB_LEASE = timedelta(minutes=3)
@@ -742,8 +739,6 @@ def build_hub_components(
         accent_color=ACCENT_BLUE,
         components=[
             Text(content="# Ticket Console"),
-            Text(content=total_copy),
-            Separator(divider=True),
             Media(items=[MediaItem(
                 media=attachment,
                 description="Approved, open, and denied ticket totals.",
@@ -755,13 +750,13 @@ def build_hub_components(
             Section(components=[Text(content=clan_line("fwa", "FWA clan", "💎"))],
                     accessory=thumbnail("clan_fwa.png")),
             clan_bar("fwa"),
+            Separator(divider=True),
             Text(content="### Flags"),
-            Section(components=[Text(content=f"**{_int(counts.flags.get('blacklisted'))} blacklisted**")],
-                    accessory=thumbnail("flag_blacklisted.png")),
-            Section(components=[Text(content=f"**{_int(counts.flags.get('denied_before'))} denied before**")],
-                    accessory=thumbnail("flag_denied_before.png")),
-            Section(components=[Text(content=f"**{_int(counts.flags.get('not_loyal'))} not loyal to WU**")],
-                    accessory=thumbnail("flag_not_loyal.png")),
+            Text(content=f"🔴 **{_int(counts.flags.get('blacklisted'))} blacklisted**"),
+            Separator(divider=True),
+            Text(content=f"🟡 **{_int(counts.flags.get('denied_before'))} denied before**"),
+            Separator(divider=True),
+            Text(content=f"🟠 **{_int(counts.flags.get('not_loyal'))} not loyal to WU**"),
             Separator(divider=True),
             *([Text(content="No open tickets right now. Find and Browse still search ticket history.")]
               if not has_open else []),
@@ -787,6 +782,8 @@ def build_hub_components(
                     emoji="📋",
                 ),
             ]),
+            Separator(divider=True),
+            Text(content=total_copy),
         ],
     )]
 
@@ -825,8 +822,8 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
         flags=flag_counts if isinstance(flag_counts, Mapping) else {},
         updated_at=utcnow(),
     )
-    # Pillow decodes and resizes the thumbnail PNGs only on their first use.
-    # Prewarm all five together off the gateway event loop; subsequent builds
+    # Pillow decodes and resizes the clan-thumbnail PNGs only on their first
+    # use. Prewarm both together off the gateway event loop; subsequent builds
     # read the tiny process-local cache synchronously.
     clan_bar_maximum = max(
         1,
@@ -852,7 +849,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 4
+HUB_LAYOUT_VERSION = 5
 
 
 async def _chart_signature(mongo: MongoClient) -> str:

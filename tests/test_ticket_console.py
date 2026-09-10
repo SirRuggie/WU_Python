@@ -260,30 +260,48 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
     view = console.build_hub_components([_ticket(index) for index in range(1, 26)], b"png")
     container, attachments = view[0].build()
 
-    assert [child["type"] for child in container["components"][:4]] == [
+    assert [child["type"] for child in container["components"][:3]] == [
         hikari.ComponentType.TEXT_DISPLAY,
-        hikari.ComponentType.TEXT_DISPLAY,
-        hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.MEDIA_GALLERY,
+        hikari.ComponentType.SEPARATOR,
     ]
     assert container["components"][0]["content"] == "# Ticket Console"
     assert [attachment.filename for attachment in attachments] == [
         "ticket_overview.png", "clan_main.png", "ticket_main_status.png",
         "clan_fwa.png", "ticket_fwa_status.png",
-        "flag_blacklisted.png", "flag_denied_before.png", "flag_not_loyal.png",
     ]
-    assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 5
+    assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 2
     assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 3
-    assert len(attachments) == 8
+    assert len(attachments) == 5
     select = _hub_picker_component(container)
     assert len(select["options"]) == 25
     assert all(option["value"].startswith("ticket_") for option in select["options"])
-    buttons = container["components"][-1]["components"]
+    buttons = next(
+        child["components"]
+        for child in container["components"]
+        if child["type"] == hikari.ComponentType.ACTION_ROW
+        and child["components"][0].get("custom_id") == "ticket_v2_console_find:hub"
+    )
     assert [button["custom_id"] for button in buttons] == [
         "ticket_v2_console_find:hub",
         "ticket_v2_console_browse:hub",
     ]
     assert buttons[1]["label"] == "Browse tickets"
+    assert container["components"][-2]["type"] == hikari.ComponentType.SEPARATOR
+    assert "tickets** · Main" in container["components"][-1]["content"]
+    contents = [child.get("content", "") for child in container["components"]]
+    assert "🔴 **0 blacklisted**" in contents
+    assert "🟡 **0 denied before**" in contents
+    assert "🟠 **0 not loyal to WU**" in contents
+    flag_indices = [
+        index for index, child in enumerate(container["components"])
+        if child.get("content", "").startswith(("🔴", "🟡", "🟠"))
+    ]
+    assert len(flag_indices) == 3
+    assert all(container["components"][index]["type"] == hikari.ComponentType.TEXT_DISPLAY for index in flag_indices)
+    assert [container["components"][index + 1]["type"] for index in flag_indices[:2]] == [
+        hikari.ComponentType.SEPARATOR, hikari.ComponentType.SEPARATOR,
+    ]
     _assert_component_limits(view)
 
 

@@ -72,12 +72,13 @@ current state.
 
 ## 3. Native overview with a readable status strip
 
-The shared message keeps its title, all-ticket total, relative update time,
-Main/FWA breakdown, and flag rows as Components V2 text and Sections. The
-existing crest and flag artwork remains as Section thumbnails. Only the three
-Approved/Open/Denied totals are rendered as a compact 720×250 Pillow strip;
-this prevents a full dashboard image from being shrunk until its labels are
-unreadable on mobile.
+The shared message keeps its title, Main/FWA breakdown, and flag rows as
+Components V2 text. Main/FWA retain their crest thumbnails; flags use compact
+native colored icon-and-count rows rather than oversized artwork. Only the
+three Approved/Open/Denied totals are rendered as a compact 720×250 Pillow
+strip; this prevents a full dashboard image from being shrunk until its labels
+are unreadable on mobile. The complete total, Main/FWA totals, relative update
+time, and closed/no-decision count sit together in a footer below the controls.
 
 The pragmatic/max-flash split in the original proposal (§2.4–2.5) is
 resolved: **build max-flash.** Every "free" item in the old flash column
