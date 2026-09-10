@@ -54,6 +54,7 @@ from extensions.commands.tickets import (
     ticket,
 )
 from extensions.commands.tickets.console_render import (
+    GHOSTED,
     OverviewCounts,
     render_clan_status_bar,
     render_clan_status_bar_sync,
@@ -81,16 +82,19 @@ HUB_FLAG_ROW_ATTACHMENTS = {
     "blacklisted": "ticket_flag_blacklisted.png",
     "denied_before": "ticket_flag_denied_before.png",
     "not_loyal": "ticket_flag_not_loyal.png",
+    "ghosted": "ticket_flag_ghosted.png",
 }
 HUB_FLAG_ROWS = (
     ("blacklisted", "BLACKLISTED", "#dd1c1d", "flag_blacklisted.png"),
     ("denied_before", "DENIED BEFORE", "#ffcc00", "flag_denied_before.png"),
     ("not_loyal", "NOT LOYAL TO WU", "#f17511", "flag_not_loyal.png"),
+    ("ghosted", "GHOSTED", GHOSTED, "flag_ghosted.png"),
 )
 HUB_FLAG_ACCESSIBLE_LABELS = {
     "blacklisted": "Blacklisted",
     "denied_before": "Denied before",
     "not_loyal": "Not loyal to WU",
+    "ghosted": "Ghosted",
 }
 HUB_THUMBNAIL_FILENAMES = (
     "clan_main.png",
@@ -162,6 +166,7 @@ FLAG_META = {
     flag_store.FLAG_BLACKLISTED: ("Blacklisted", "⛔", True),
     flag_store.FLAG_DENIED_BEFORE: ("Previously denied", "⚠️", False),
     flag_store.FLAG_NOT_LOYAL: ("Not loyal to WU", "⚠️", False),
+    flag_store.FLAG_GHOSTED: ("Ghosted", "👻", False),
 }
 FLAG_SOURCES = flag_store.FLAG_SOURCES
 MAX_FLAG_MANAGER_OPTIONS = 25
@@ -793,6 +798,8 @@ def build_hub_components(
             Separator(divider=True),
             flag_row("not_loyal"),
             Separator(divider=True),
+            flag_row("ghosted"),
+            Separator(divider=True),
             *([Text(content="No open tickets right now. Find and Browse still search ticket history.")]
               if not has_open else []),
             ActionRow(components=[TextSelectMenu(
@@ -893,7 +900,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 6
+HUB_LAYOUT_VERSION = 7
 
 
 async def _chart_signature(mongo: MongoClient) -> str:

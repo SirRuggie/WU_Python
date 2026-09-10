@@ -25,11 +25,15 @@ from utils.mongo import MongoClient
 FLAG_BLACKLISTED = "blacklisted"
 FLAG_DENIED_BEFORE = "denied_before"
 FLAG_NOT_LOYAL = "not_loyal"
-FLAG_KINDS = frozenset({FLAG_BLACKLISTED, FLAG_DENIED_BEFORE, FLAG_NOT_LOYAL})
+FLAG_GHOSTED = "ghosted"
+FLAG_KINDS = frozenset({
+    FLAG_BLACKLISTED, FLAG_DENIED_BEFORE, FLAG_NOT_LOYAL, FLAG_GHOSTED,
+})
 FLAG_SOURCES = {
     FLAG_BLACKLISTED: "FWA Chocolate · FWA ban list",
     FLAG_DENIED_BEFORE: "Warriors United ticket history",
     FLAG_NOT_LOYAL: "Warriors United recruiter note",
+    FLAG_GHOSTED: "Warriors United recruiter ghosting report",
 }
 IDENTITY_LOCK_LEASE = timedelta(minutes=3)
 IDENTITY_LOCK_WAIT_SECONDS = 5.0

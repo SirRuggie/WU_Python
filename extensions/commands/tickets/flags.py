@@ -30,6 +30,7 @@ FLAG_LABELS = {
     flag_store.FLAG_BLACKLISTED: "Blacklisted",
     flag_store.FLAG_DENIED_BEFORE: "Previously denied",
     flag_store.FLAG_NOT_LOYAL: "Not loyal to WU",
+    flag_store.FLAG_GHOSTED: "Ghosted",
 }
 FLAG_SOURCES = flag_store.FLAG_SOURCES
 DISCORD_ID_RE = re.compile(r"^\d{17,20}$")
@@ -105,6 +106,7 @@ class FlagAddCommand(
             lightbulb.Choice(name="Blacklisted", value=flag_store.FLAG_BLACKLISTED),
             lightbulb.Choice(name="Previously denied", value=flag_store.FLAG_DENIED_BEFORE),
             lightbulb.Choice(name="Not loyal to WU", value=flag_store.FLAG_NOT_LOYAL),
+            lightbulb.Choice(name="Ghosted", value=flag_store.FLAG_GHOSTED),
         ],
     )
     reason = lightbulb.string(

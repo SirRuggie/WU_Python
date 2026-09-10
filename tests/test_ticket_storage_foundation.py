@@ -4890,6 +4890,7 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
         {"_id": "flag_b", "kind": flag_store.FLAG_BLACKLISTED, "active": True},
         {"_id": "flag_c", "kind": flag_store.FLAG_DENIED_BEFORE, "active": True},
         {"_id": "flag_d", "kind": flag_store.FLAG_DENIED_BEFORE, "active": False},
+        {"_id": "flag_e", "kind": flag_store.FLAG_GHOSTED, "active": True},
     ]
     mongo = SimpleNamespace(
         tickets=Collection(tickets),
@@ -4915,6 +4916,7 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
         flag_store.FLAG_BLACKLISTED: 2,
         flag_store.FLAG_DENIED_BEFORE: 1,
         flag_store.FLAG_NOT_LOYAL: 0,
+        flag_store.FLAG_GHOSTED: 1,
     }
 
     container, _attachments = components[0].build()

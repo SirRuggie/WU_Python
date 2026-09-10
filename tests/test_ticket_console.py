@@ -270,11 +270,11 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
         "ticket_overview.png", "clan_main.png", "ticket_main_status.png",
         "clan_fwa.png", "ticket_fwa_status.png",
         "ticket_flag_blacklisted.png", "ticket_flag_denied_before.png",
-        "ticket_flag_not_loyal.png",
+        "ticket_flag_not_loyal.png", "ticket_flag_ghosted.png",
     ]
     assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 2
-    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 6
-    assert len(attachments) == 8
+    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 7
+    assert len(attachments) == 9
     select = _hub_picker_component(container)
     assert len(select["options"]) == 25
     assert all(option["value"].startswith("ticket_") for option in select["options"])
@@ -296,10 +296,12 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
         if child["type"] == hikari.ComponentType.MEDIA_GALLERY
         and child["items"][0]["description"].startswith((
             "Blacklisted:", "Denied before:", "Not loyal to WU:",
+            "Ghosted:",
         ))
     ]
-    assert len(flag_indices) == 3
+    assert len(flag_indices) == 4
     assert [container["components"][index + 1]["type"] for index in flag_indices] == [
+        hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
@@ -309,6 +311,7 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
 
 def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkeypatch):
     calls = []
+    flag_calls = []
 
     async def list_open(_mongo, *, limit):
         assert limit == console.MAX_OPEN_PICKER
@@ -327,7 +330,8 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
         assert maximum == 1
         return b"bar"
 
-    async def flag_row(**_kwargs):
+    async def flag_row(**kwargs):
+        flag_calls.append(kwargs)
         return b"flag-row"
 
     async def to_thread(function, *args, **kwargs):
@@ -345,6 +349,10 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
     view = asyncio.run(console._hub_payload(object()))
 
     assert calls == [(console._hub_thumbnail_assets, ())]
+    assert [call["filename"] for call in flag_calls] == [
+        "flag_blacklisted.png", "flag_denied_before.png",
+        "flag_not_loyal.png", "flag_ghosted.png",
+    ]
     _assert_component_limits(view)
 
 
@@ -1272,6 +1280,47 @@ def test_blacklist_disables_approve_but_keeps_deny_available():
     assert deny.get("disabled", False) is False
     assert len([node for node in _nodes(view) if "url" in node]) >= 2
     _assert_component_limits(view)
+
+
+def test_ghosted_flag_is_visible_but_never_blocks_approval():
+    view = console.build_ticket_detail(
+        _ticket(12),
+        action_id="g" * 32,
+        flags=[{
+            "kind": console.flag_store.FLAG_GHOSTED,
+            "active": True,
+            "reason": "Stopped responding after recruiter follow-up.",
+        }],
+        history=[],
+    )
+    content = "\n".join(
+        str(node["content"]) for node in _nodes(view) if "content" in node
+    )
+    buttons = [
+        node for node in _nodes(view)
+        if int(node.get("type", -1)) == int(hikari.ComponentType.BUTTON)
+    ]
+    approve = next(node for node in buttons if node.get("label") == "Approve")
+
+    assert "Ghosted" in content
+    assert approve.get("disabled", False) is False
+    _assert_component_limits(view)
+
+
+def test_flag_manager_offers_ghosted_as_a_caution_only_flag():
+    view = console.build_flag_manager(
+        _ticket(12), action_id="h" * 32, flags=[],
+    )
+    buttons = [
+        node for node in _nodes(view)
+        if int(node.get("type", -1)) == int(hikari.ComponentType.BUTTON)
+        and str(node.get("custom_id", "")).startswith("ticket_v2_flag_set:")
+    ]
+    ghosted = next(node for node in buttons if node.get("label") == "Ghosted")
+
+    assert ghosted["custom_id"] == f"ticket_v2_flag_set:{'h' * 32}|ghosted"
+    assert ghosted["style"] == hikari.ButtonStyle.SECONDARY
+    assert len(buttons) == 4
 
 
 def test_detail_shows_flag_conflict_notice_and_leaves_approve_enabled():

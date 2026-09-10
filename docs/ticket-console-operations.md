@@ -352,7 +352,8 @@ updates those pages when the current snapshot changes. Open each link and review
 the site yourself: the bot does not fetch, infer, or record a Chocolate verdict.
 
 In ticket detail, use **Manage flags** to add, update, or remove
-**Blacklisted**, **Previously denied**, or **Not loyal to WU**. Only
+**Blacklisted**, **Previously denied**, **Not loyal to WU**, or **Ghosted**.
+Only
 **Blacklisted** blocks approval. Use these recruiter-only commands only when the
 ticket-detail flow is unavailable:
 

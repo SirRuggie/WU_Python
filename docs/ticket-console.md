@@ -74,7 +74,7 @@ current state.
 
 The shared message keeps its title, Main/FWA breakdown, and controls as
 Components V2 text. Main/FWA retain their crest thumbnails. The supplied flag
-artwork appears in three separate slim, full-width Pillow rows, with a real
+artwork appears in four separate slim, full-width Pillow rows, with a real
 native Separator after each row: this keeps each icon, label, and count large
 on mobile without the oversized footprint Discord gives a Section thumbnail.
 Gallery descriptions carry the flag counts for assistive technology. Only the
@@ -118,6 +118,7 @@ present on the deploy box.
 | Blacklisted | `#dd1c1d` | sampled from the supplied flag icon |
 | Denied before | `#ffcc00` | sampled from the supplied flag icon |
 | Not loyal to WU | `#f17511` | sampled from the supplied flag icon |
+| Ghosted | `#08c3fa` | sampled from the supplied flag icon |
 | Canvas / card | `#0b1018` / `#111822` | |
 | Ink / muted / faint | `#f2f3f5` / `#b5bac1` / `#80848e` | |
 
@@ -131,7 +132,7 @@ reinstated.** Colorblind safety was never a requirement here — it was
 self-imposed during design and explicitly struck: *"I don't like the
 colorblind version and we don't have color blind and I never made that
 something for you to follow. I just said Non Native English speakers."*
-The three flag hexes above are sampled directly from the artwork rather
+The four flag hexes above are sampled directly from the artwork rather
 than chosen, so they match their icons exactly. The only standing
 audience requirement is the plain-English copy rule in §8.
 
@@ -153,7 +154,7 @@ Top to bottom, full width (`1400×740`, 2× supersampled then downscaled):
    rows** so Main and FWA are visually comparable rather than each
    self-normalized.
 4. **Flags** — directly *underneath* by-clan-type (moved there deliberately),
-   as one full-width card of three tinted pills: icon, label, count.
+   as four slim full-width artwork rows: icon, label, count.
 5. **Footer** — one monospace line: `drawn by WU Wizard · attached to the
    message · redrawn when a ticket changes`.
 
@@ -165,7 +166,7 @@ an emoji that looks right locally can render as a box, a mono glyph, or
 nothing at all on the Hetzner box. Two sanctioned approaches only:
 
 - **Supplied artwork**, pasted with real alpha (`paste_icon()`, cropped to
-  content via `getbbox()` and centered) — five assets, all verified as
+  content via `getbbox()` and centered) — six assets, all verified as
   genuine RGBA transparency, not white-matted:
 
   | Asset | Used for |
@@ -173,6 +174,7 @@ nothing at all on the Hetzner box. Two sanctioned approaches only:
   | `flag_blacklisted.png` | Blacklisted — red slash over WU wings |
   | `flag_denied_before.png` | Denied before — yellow warning triangle |
   | `flag_not_loyal.png` | Not loyal to WU — orange broken heart |
+  | `flag_ghosted.png` | Ghosted — cyan supplied artwork |
   | `clan_main.png` | Main clan badge |
   | `clan_fwa.png` | FWA clan badge |
 
@@ -180,7 +182,7 @@ nothing at all on the Hetzner box. Two sanctioned approaches only:
   font dependency, identical on any box. In use: check, plus and × (the
   three status-tile badges), the refresh arc, and the header bar glyph.
 
-The production renderer and these five production assets are listed in §10;
+The production renderer and these six production assets are listed in §10;
 the similarly named renderer under `docs/ticket-console/` is a standalone
 visual reference only.
 
@@ -318,7 +320,7 @@ falling back to memory.
 
 ## 5. Flags and FWA Chocolate — implemented staff flow
 
-Three flag kinds are staff-authored and match a ticket by Discord ID **or** any
+Four flag kinds are staff-authored and match a ticket by Discord ID **or** any
 verified player tag — one confirmed by the linked-account sync or recorded by a
 recruiter through **Manage flags**. A `#TAG`-shaped token an applicant merely
 types in their thread is stored separately as a mentioned tag; it is a search
@@ -331,6 +333,7 @@ blocks approval:
 | Blacklisted | **Yes** | FWA ban verified by a recruiter on FWA Chocolate |
 | Previously denied | No — caution only | Warriors United ticket history |
 | Not loyal to WU | No — caution only | Warriors United recruiter note |
+| Ghosted | No — caution only | Warriors United recruiter ghosting report |
 
 The chart uses the shorter label **Denied before** for the
 `Previously denied` count. **Blacklisted**, not “On blacklist,” is the

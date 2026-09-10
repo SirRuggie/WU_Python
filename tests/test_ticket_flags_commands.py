@@ -25,7 +25,9 @@ def test_flag_sources_preserve_the_decided_human_authority():
         flag_store.FLAG_BLACKLISTED: "FWA Chocolate · FWA ban list",
         flag_store.FLAG_DENIED_BEFORE: "Warriors United ticket history",
         flag_store.FLAG_NOT_LOYAL: "Warriors United recruiter note",
+        flag_store.FLAG_GHOSTED: "Warriors United recruiter ghosting report",
     }
+    assert flag_store.normalize_kind("GHOSTED") == flag_store.FLAG_GHOSTED
 
 
 def test_flag_reply_panel_reserves_text_budget_for_its_heading():
