@@ -550,7 +550,8 @@ completed `ticket_migrations` row already exists — not re-previewed),
 server 3 — see below), `no_applicant` (an overwrite or mention applicant
 candidate exists but could not be resolved to exactly one ID),
 `ambiguous_type`, `skipped_owner_test` (the owner's own test ticket — never
-migrated, any server), `abandoned` (the applicant never wrote in the
+migrated, except source guild `1024958361306927124` plus source channel
+`1045185178437423114` (`sir-ruggie1500`) together), `abandoned` (the applicant never wrote in the
 channel — skipped unless `include-abandoned:true`), `not_a_ticket` (a
 non-ticket channel swept up by the category/prefix match — only the exact
 observed support names `mainclan-commands`, `fwa-background-check`,
@@ -581,6 +582,10 @@ confirmed run always re-previews with full history, so a bounded-mode
 misread here (e.g. an applicant who only wrote outside that window,
 misclassified `abandoned`) is corrected at confirm time rather than
 affecting what actually gets copied.
+
+Saved plans retain their existing classifications. After deploying the
+owner-ticket exception, refresh the dry run before confirming that source
+guild's batch; this change does not alter any Mongo plan document.
 
 A source guild with many legacy channels can take minutes to scan, longer
 than the 15-minute life of the interaction token that started it, so the

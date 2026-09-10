@@ -1198,6 +1198,109 @@ def test_is_owner_test_applicant_matches_id_or_username():
     assert legacy_migration._is_owner_test_applicant(1, "someone-else") is False
 
 
+def test_authorized_owner_ticket_passes_the_owner_skip_gate():
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1024958361306927124,
+        source_channel_id=1045185178437423114,
+        target_guild_id=10, candidate_parent_id=20, staff_parent_id=21,
+    )
+    assert legacy_migration._skip_owner_test_ticket(
+        request, 505227988229554179, "SirRuggie",
+    ) is False
+
+
+@pytest.mark.parametrize(
+    ("source_guild_id", "source_channel_id", "user_id", "username"),
+    [
+        # The channel alone never grants the exception.
+        (1, 1045185178437423114, 505227988229554179, "someone-else"),
+        # The guild alone never grants the exception, including username match.
+        (1024958361306927124, 2, 1, "SirRuggie"),
+    ],
+)
+def test_other_owner_tickets_remain_blocked_by_the_owner_skip_gate(
+    source_guild_id, source_channel_id, user_id, username,
+):
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=source_guild_id, source_channel_id=source_channel_id,
+        target_guild_id=10, candidate_parent_id=20, staff_parent_id=21,
+    )
+    assert legacy_migration._skip_owner_test_ticket(request, user_id, username) is True
+
+
+def _owner_preview_request(source_guild_id, source_channel_id):
+    return legacy_migration.LegacyMigrationRequest(
+        source_guild_id=source_guild_id, source_channel_id=source_channel_id,
+        target_guild_id=10, candidate_parent_id=20, staff_parent_id=21,
+    )
+
+
+def _owner_preview_bot(source_guild_id, source_channel_id):
+    channel = SimpleNamespace(
+        id=source_channel_id,
+        guild_id=source_guild_id,
+        name="main-sir-ruggie1500",
+        type=hikari.ChannelType.GUILD_TEXT,
+    )
+
+    class Rest:
+        async def fetch_guild(self, _guild_id):
+            return SimpleNamespace()
+
+        async def fetch_channel(self, channel_id):
+            assert channel_id == source_channel_id
+            return channel
+
+    return SimpleNamespace(rest=Rest(), get_me=lambda: SimpleNamespace(id=999))
+
+
+def _stub_owner_preview_inputs(monkeypatch):
+    async def source_ticket(_mongo, _guild_id, _channel_id):
+        return {"status": "approved"}
+
+    async def messages(_rest, _channel_id):
+        return []
+
+    async def identity(*_args, **_kwargs):
+        return 505227988229554179, "SirRuggie", "Sir Ruggie"
+
+    monkeypatch.setattr(legacy_migration, "_legacy_source_ticket", source_ticket)
+    monkeypatch.setattr(legacy_migration, "_all_messages", messages)
+    monkeypatch.setattr(legacy_migration, "_identity", identity)
+
+
+def test_preview_exact_owner_source_pair_passes_owner_gate_then_stays_abandoned(monkeypatch):
+    """The exception only clears rule #4; rule #5 must still stop this ticket."""
+    _stub_owner_preview_inputs(monkeypatch)
+    request = _owner_preview_request(1024958361306927124, 1045185178437423114)
+
+    with pytest.raises(legacy_migration.AbandonedLegacyTicket):
+        asyncio.run(legacy_migration.preview_legacy_ticket(
+            bot=_owner_preview_bot(request.source_guild_id, request.source_channel_id),
+            mongo=SimpleNamespace(), request=request,
+        ))
+
+
+@pytest.mark.parametrize(
+    ("source_guild_id", "source_channel_id"),
+    [
+        (1, 1045185178437423114),
+        (1024958361306927124, 2),
+    ],
+)
+def test_preview_near_match_owner_sources_still_raise_owner_skip(
+    monkeypatch, source_guild_id, source_channel_id,
+):
+    _stub_owner_preview_inputs(monkeypatch)
+    request = _owner_preview_request(source_guild_id, source_channel_id)
+
+    with pytest.raises(legacy_migration.SkippedOwnerTestTicket):
+        asyncio.run(legacy_migration.preview_legacy_ticket(
+            bot=_owner_preview_bot(source_guild_id, source_channel_id),
+            mongo=SimpleNamespace(), request=request,
+        ))
+
+
 def test_classify_maps_skipped_owner_test(monkeypatch):
     async def fake_preview(*, bot, mongo, request):
         raise legacy_migration.SkippedOwnerTestTicket("owner test ticket")

@@ -147,7 +147,7 @@ class PilotLimitReached(LegacyMigrationError):
 
 
 class SkippedOwnerTestTicket(LegacyMigrationError):
-    """The owner's own test ticket; never migrated (handoff "Owner rules" #4)."""
+    """An owner's test ticket excluded by handoff "Owner rules" #4."""
 
 
 class AbandonedLegacyTicket(LegacyMigrationError):
@@ -1123,13 +1123,30 @@ def _infer_ticket_type(
 
 _OWNER_TEST_USER_ID = 505227988229554179
 _OWNER_TEST_USERNAME = "sirruggie"
+# Owner-authorized one-ticket exception to rule #4.  Both source identifiers
+# must match: never widen this by username, guild, or channel alone.
+_OWNER_TEST_MIGRATION_EXCEPTION = (
+    1024958361306927124,
+    1045185178437423114,
+)
 
 
 def _is_owner_test_applicant(user_id: int, username: str) -> bool:
-    """Owner rule #4: never migrate the owner's own test tickets, any server."""
+    """Whether an applicant matches the owner-test identity in rule #4."""
     return (
         int(user_id) == _OWNER_TEST_USER_ID
         or str(username or "").strip().casefold() == _OWNER_TEST_USERNAME
+    )
+
+
+def _skip_owner_test_ticket(
+    request: LegacyMigrationRequest, user_id: int, username: str,
+) -> bool:
+    """Apply owner rule #4 except for its single authorized source ticket."""
+    return (
+        _is_owner_test_applicant(user_id, username)
+        and (request.source_guild_id, request.source_channel_id)
+        != _OWNER_TEST_MIGRATION_EXCEPTION
     )
 
 
@@ -1336,7 +1353,7 @@ async def preview_legacy_ticket(
         bot_user_id=int(me.id),
         messages=public_messages[:20],
     )
-    if _is_owner_test_applicant(user_id, username):
+    if _skip_owner_test_ticket(request, user_id, username):
         raise SkippedOwnerTestTicket(
             "this ticket belongs to the owner's test account and is never migrated"
         )
