@@ -501,7 +501,7 @@ exact `LOSS-...` token into `attachment-ack` on the confirmed rerun.
 When the preview is correct, rerun the same selections with `confirm:true`.
 The command creates or resumes the same destination thread pair, copies both
 histories, records the v2 ticket, and locks and archives the pair. Check message
-order, visible original timestamps, attachments or loss notes, identity,
+order, the ticket-level start/end source dates, attachments or loss notes, identity,
 outcome, console search, and both archived links. Confirm again that every
 source object is unchanged.
 

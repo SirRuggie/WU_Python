@@ -2201,7 +2201,8 @@ def test_long_clone_parts_fit_and_have_unique_durable_markers():
     assert len(parts) >= 3
     assert all(len(content) <= 2000 for _marker, content in parts)
     assert len({marker for marker, _content in parts}) == len(parts)
-    assert all(marker in content for marker, content in parts)
+    assert all(marker in legacy_migration._hidden_markers(content) for marker, content in parts)
+    assert all("migration-source:" not in content for _marker, content in parts)
 
 
 def test_lost_webhook_response_is_reconciled_without_duplicate():
@@ -2300,6 +2301,7 @@ def test_public_and_staff_histories_resume_from_confirmed_checkpoints(monkeypatc
     monkeypatch.setattr(legacy_migration, "_execute_clone_part", clone_part)
     monkeypatch.setattr(legacy_migration, "_migration_update", update)
     monkeypatch.setattr(legacy_migration, "_destination_markers", no_markers)
+    monkeypatch.setattr(legacy_migration, "_copy_boundary", lambda **_kwargs: asyncio.sleep(0))
 
     async def run_copy():
         await legacy_migration._copy_space(
@@ -2378,7 +2380,7 @@ def test_attachment_fallback_retains_idempotency_marker():
         known_markers=known_markers,
     ))
     assert losses == ["proof.png"]
-    assert marker in rest.payloads[-1]
+    assert marker in legacy_migration._hidden_markers(rest.payloads[-1])
     assert len(rest.payloads[-1]) <= 2000
     assert asyncio.run(legacy_migration._execute_clone_part(
         rest=rest,
@@ -2429,11 +2431,10 @@ def test_attachment_fallback_bounds_long_filenames_without_losing_marker_or_audi
 
     fallback = rest.payloads[-1]
     assert len(fallback) <= legacy_migration.DISCORD_MESSAGE_CONTENT_LIMIT
-    assert fallback.endswith(f"\n-# {marker}")
+    assert marker in legacy_migration._hidden_markers(fallback)
     assert filenames[0] in fallback
-    assert filenames[1] in fallback
-    assert filenames[2] not in fallback
-    assert "+8 filenames omitted" in fallback
+    assert filenames[1] not in fallback
+    assert "+9 filenames omitted" in fallback
     assert losses == filenames
 
 
@@ -2516,7 +2517,7 @@ def test_hikari_http_rejection_reaches_the_acknowledged_attachment_fallback():
     ))
     assert losses == ["proof.png"]
     assert len(rest.payloads) == 2
-    assert marker in rest.payloads[-1]
+    assert marker in legacy_migration._hidden_markers(rest.payloads[-1])
     assert "proof" in rest.payloads[-1]
 
 
@@ -2596,6 +2597,7 @@ def test_unaccepted_runtime_loss_does_not_advance_source_checkpoint(monkeypatch)
     monkeypatch.setattr(legacy_migration, "_destination_markers", markers)
     monkeypatch.setattr(legacy_migration, "_execute_clone_part", refuses_loss)
     monkeypatch.setattr(legacy_migration, "_migration_update", update)
+    monkeypatch.setattr(legacy_migration, "_copy_boundary", lambda **_kwargs: asyncio.sleep(0))
     with pytest.raises(legacy_migration.LegacyMigrationError, match="checkpoint"):
         asyncio.run(legacy_migration._copy_space(
             bot=SimpleNamespace(rest=SimpleNamespace()),

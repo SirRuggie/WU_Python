@@ -79,10 +79,12 @@ Repeat the previewed selections with `confirm:true`. The implementation:
    acknowledgement.
 2. Creates or resumes the same destination candidate/staff thread pair.
 3. Clones candidate history and the detected or selected recruiter-only staff
-   history. If no staff history exists, it records that fact in a
-   destination-only note.
-4. Reposts historical authors by webhook without real pings. Discord messages
-   cannot be backdated, so the original timestamp is rendered visibly.
+   history. Each copied history begins with `Ticket started: <date>` from its
+   first source message and ends with `Ticket ended: <date>` from its last.
+   Empty staff histories do not receive a synthetic source-history note.
+4. Reposts historical authors by webhook without real pings. Individual
+   messages keep their original visible content; the ticket-boundary dates
+   provide the source timeline without adding per-message timestamps.
 5. Writes the full terminal thread-v2 ticket record and durable migration
    checkpoints.
 6. Locks and archives both destination threads.
@@ -95,6 +97,9 @@ recovery state needed by the console.
 
 Confirmed cloning is resumable. Candidate and staff histories have independent
 `last_source_message_id` checkpoints, and copied messages have durable markers.
+New markers use an invisible Discord-preserved token; recovery also recognizes
+the earlier visible ASCII tokens. The marker never exposes source IDs in the
+destination history.
 Re-running the same confirmed source, or startup recovery, reuses the same
 thread pair, ticket number, and ticket row rather than duplicating them.
 
@@ -124,7 +129,7 @@ complete. A preview does not consume a pilot selection; a confirmed source does.
 For every selected clone, verify:
 
 - The terminal outcome, type, applicant, and observed tags.
-- Candidate and staff message order and visible original timestamps.
+- Candidate and staff message order and their ticket-level source start/end dates.
 - Attachments or explicit loss notes.
 - Both destination threads are locked and archived.
 - `/tickets find` locates the clone by Discord ID, username, and a player

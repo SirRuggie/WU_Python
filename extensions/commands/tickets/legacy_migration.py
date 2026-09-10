@@ -17,6 +17,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any, Iterable, Mapping, Sequence
 
 import aiohttp
@@ -33,6 +34,10 @@ from utils.mongo import MongoClient
 MIGRATION_LEASE = timedelta(minutes=15)
 PILOT_LIMIT = 5
 SOURCE_MARKER_PREFIX = "migration-source"
+BOUNDARY_MARKER_PREFIX = "migration-boundary"
+_HIDDEN_MARKER_DELIMITER = "\u2063"
+_HIDDEN_MARKER_ZERO = "\u200b"
+_HIDDEN_MARKER_ONE = "\u200c"
 ATTACHMENT_AUDIT_LIMIT = 250
 ATTACHMENT_AUDIT_CONCURRENCY = 5
 ATTACHMENT_AUDIT_TIMEOUT_SECONDS = 8
@@ -1909,23 +1914,44 @@ def _message_parts(
     source_message_id: int,
     timestamp: datetime,
 ) -> list[tuple[str, str]]:
-    stamp = timestamp.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     base_marker = (
         f"{SOURCE_MARKER_PREFIX}:{source_guild_id}:{source_channel_id}:{source_message_id}"
     )
     content = content or "[Original message had no text content]"
-    # Reserve space for the visible original timestamp and durable replay marker.
-    first_prefix = f"-# Originally sent {stamp}\n"
-    reserve = max(len(first_prefix), 80) + len(base_marker) + 32
+    # Reserve for a multi-digit part counter, rather than only ``1/1``.  The
+    # invisible token is part of Discord's 2,000-character content limit.
+    reserve = len(_hidden_marker(base_marker + ":9999/9999"))
     width = max(200, 2000 - reserve)
     raw_parts = [content[index:index + width] for index in range(0, len(content), width)] or [""]
     total = len(raw_parts)
     parts: list[tuple[str, str]] = []
     for index, value in enumerate(raw_parts, start=1):
         marker = f"{base_marker}:{index}/{total}"
-        prefix = first_prefix if index == 1 else f"-# Continued from original message {source_message_id}\n"
-        parts.append((marker, f"{prefix}{value}\n-# {marker}"))
+        # Append directly: a newline would create a visible blank line after
+        # every replayed message even though the identity itself is invisible.
+        parts.append((marker, f"{value}{_hidden_marker(marker)}"))
     return parts
+
+
+def _hidden_marker(marker: str) -> str:
+    bits = "".join(f"{byte:08b}" for byte in marker.encode("utf-8"))
+    return _HIDDEN_MARKER_DELIMITER + "".join(
+        _HIDDEN_MARKER_ONE if bit == "1" else _HIDDEN_MARKER_ZERO for bit in bits
+    ) + _HIDDEN_MARKER_DELIMITER
+
+
+def _hidden_markers(content: str) -> set[str]:
+    found: set[str] = set()
+    pattern = re.escape(_HIDDEN_MARKER_DELIMITER) + "([\u200b\u200c]+)" + re.escape(_HIDDEN_MARKER_DELIMITER)
+    for encoded in re.findall(pattern, content):
+        if len(encoded) % 8:
+            continue
+        bits = "".join("1" if char == _HIDDEN_MARKER_ONE else "0" for char in encoded)
+        try:
+            found.add(bytes(int(bits[index:index + 8], 2) for index in range(0, len(bits), 8)).decode("utf-8"))
+        except UnicodeDecodeError:
+            continue
+    return found
 
 
 async def _destination_has_marker(
@@ -1934,7 +1960,11 @@ async def _destination_has_marker(
     messages = await thread_service._collect_rest_iterator(
         rest.fetch_messages(thread_id)
     )
-    return any(marker in (getattr(item, "content", "") or "") for item in messages)
+    return any(
+        marker in (getattr(item, "content", "") or "")
+        or marker in _hidden_markers(getattr(item, "content", "") or "")
+        for item in messages
+    )
 
 
 async def _destination_markers(
@@ -1949,7 +1979,9 @@ async def _destination_markers(
     )
     markers: set[str] = set()
     for item in messages:
-        markers.update(pattern.findall(getattr(item, "content", "") or ""))
+        content = getattr(item, "content", "") or ""
+        markers.update(pattern.findall(content))
+        markers.update(_hidden_markers(content))
     return markers
 
 
@@ -2027,7 +2059,7 @@ async def _execute_clone_part(
             ) from error
         losses = [str(getattr(item, "filename", "attachment")) for item in attachments]
         loss_prefix = "\n-# Unavailable during migration: "
-        marker_suffix = f"\n-# {marker}"
+        marker_suffix = _hidden_marker(marker)
         loss_budget = (
             DISCORD_MESSAGE_CONTENT_LIMIT - len(loss_prefix) - len(marker_suffix)
         )
@@ -2037,7 +2069,8 @@ async def _execute_clone_part(
             noun="filename",
         )
         suffix = loss_prefix + displayed_losses + marker_suffix
-        without_marker = content.rsplit(f"\n-# {marker}", 1)[0]
+        without_marker = content.rsplit(_hidden_marker(marker), 1)[0]
+        without_marker = without_marker.rsplit(f"\n-# {marker}", 1)[0]
         note = without_marker[
             : max(0, DISCORD_MESSAGE_CONTENT_LIMIT - len(suffix))
         ] + suffix
@@ -2056,6 +2089,22 @@ async def _execute_clone_part(
         if known_markers is not None:
             known_markers.add(marker)
         return losses
+
+
+async def _copy_boundary(*, rest, webhook, thread_id, state, space, kind, message, known_markers):
+    marker = f"{BOUNDARY_MARKER_PREFIX}:{state['_id']}:{space}:{kind}"
+    if marker in known_markers:
+        return
+    timestamp = getattr(message, "timestamp", None)
+    if not isinstance(timestamp, datetime):
+        return
+    label = "Ticket started" if kind == "start" else "Ticket ended"
+    await _execute_clone_part(
+        rest=rest, webhook=webhook, thread_id=thread_id, marker=marker,
+        content=f"{label}: <t:{int(timestamp.timestamp())}:F>{_hidden_marker(marker)}",
+        message=SimpleNamespace(author=SimpleNamespace(display_name="Ticket history", username="Ticket history", display_avatar_url=None), attachments=[], embeds=[]), include_payload=False,
+        known_markers=known_markers,
+    )
 
 
 async def _copy_space(
@@ -2079,6 +2128,9 @@ async def _copy_space(
     losses = list(progress.get("losses") or [])
     messages = await _all_messages(bot.rest, source_channel_id)
     known_markers = await _destination_markers(bot.rest, destination_thread_id)
+    if messages:
+        await _copy_boundary(rest=bot.rest, webhook=webhook, thread_id=destination_thread_id,
+                             state=state, space=space, kind="start", message=messages[0], known_markers=known_markers)
     for message in messages:
         if int(message.id) <= checkpoint:
             continue
@@ -2122,6 +2174,9 @@ async def _copy_space(
             f"progress.{space}.losses": losses,
             "state": f"copying_{space}",
         })
+    if messages:
+        await _copy_boundary(rest=bot.rest, webhook=webhook, thread_id=destination_thread_id,
+                             state=state, space=space, kind="end", message=messages[-1], known_markers=known_markers)
     return state
 
 
@@ -2308,18 +2363,6 @@ async def migrate_legacy_ticket(
             role_names=role_names,
             channel_names=channel_names,
         )
-        if preview.source_staff_thread is None:
-            marker = f"legacy-staff-seed:{state['_id']}"
-            await thread_service._send_once(
-                bot.rest,
-                int(staff.id),
-                marker,
-                (
-                    f"Migrated from #{preview.source_channel.name}. The source ticket had no "
-                    "recruiter-only thread history."
-                ),
-            )
-
         await asyncio.gather(
             _delete_webhook_safely(bot.rest, public_webhook),
             _delete_webhook_safely(bot.rest, staff_webhook),
