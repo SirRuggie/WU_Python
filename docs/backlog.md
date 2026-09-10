@@ -66,6 +66,26 @@ No active items.
   non-raid paths and clan-history war discovery have automated coverage, but
   live raid data needs event-time verification.
 
+### P2 — future ticket features
+
+- **`TICKET-001` — Add an isolated ticket testing mode.** This is a deferred
+  feature, not authorization to change the production ticket workflow. An
+  administrator should be able to open a time-bounded, opt-in test window
+  that expires automatically and grants access through a temporary allowlist
+  of specific users, multiple users, Discord roles, and/or administrators.
+  Test tickets must use the same forms, questions, and staff layout as live
+  tickets so the exercise is meaningful, while being stamped as test mode
+  **before** any number allocation. They need a separate `TEST001`-style
+  counter that can never reserve or advance a production ticket number, and
+  the mode marker must survive retries and recovery.
+
+  Test approval or denial must never assign real roles, create permanent
+  history flags, or affect live ticket statistics. Add configurable automatic
+  cleanup and a `Clear test tickets` action that is durably scoped to test
+  records and their test threads only; it must never select a production row
+  or thread. Define durable cleanup/retry behavior before implementation so a
+  restart cannot leave test artifacts indistinguishable from live tickets.
+
 ## Completed hardening
 
 ### `REL-003` — Bounded BAND calendar DM delivery
