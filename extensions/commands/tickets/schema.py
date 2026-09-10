@@ -270,7 +270,16 @@ def normalize_ticket_document(document: Mapping) -> dict:
     out["schema_version"] = SCHEMA_VERSION
 
     raw_status = str(out.get("status") or "open").strip().casefold()
-    if raw_status == "closed":
+    # A closed channel-era row has no recorded decision and still needs an
+    # operator to classify it. Confirmed legacy imports intentionally retain
+    # that distinction as closed/no-decision, but only after the thread-v2
+    # writer has made the row canonical and versioned.
+    canonical_v2_closed = (
+        out.get("runtime") == "thread_v2"
+        and prior_schema >= SCHEMA_VERSION
+        and str(out.get("venue") or "").strip().casefold() == "thread"
+    )
+    if raw_status == "closed" and not canonical_v2_closed:
         raise TicketSchemaError(
             "legacy status 'closed' requires explicit approved/denied classification"
         )

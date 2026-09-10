@@ -200,6 +200,10 @@ class Cursor:
         self.documents = self.documents[:amount]
         return self
 
+    def skip(self, amount):
+        self.documents = self.documents[max(0, int(amount)):]
+        return self
+
     async def to_list(self, length=None):
         return deepcopy(self.documents if length is None else self.documents[:length])
 
@@ -1403,6 +1407,38 @@ def test_migrated_terminal_ticket_has_source_creation_audit_and_closed_is_blocke
     assert ticket["audit"][0]["source"]["channel_id"] == 2
     with pytest.raises(schema.TicketSchemaError, match="explicit approved/denied"):
         schema.normalize_ticket_document({"_id": "legacy", "status": "closed"})
+
+
+def test_canonical_v2_closed_import_normalizes_browses_and_preflights_indexes():
+    """A confirmed legacy import may truthfully have no decision recorded.
+
+    This is deliberately a complete thread-v2 row, unlike a channel-era
+    ``closed`` row that still needs an operator's approved/denied choice.
+    """
+    imported = _ticket(
+        status="closed",
+        source={"guild_id": 1, "channel_id": 2, "channel_name": "fwa-applicant"},
+    )
+    imported["audit"] = [{
+        "event": "legacy_ticket_imported", "at": NOW, "status": "closed",
+        "source": {"guild_id": 1, "channel_id": 2},
+    }]
+
+    normalized = schema.normalize_ticket_document(imported)
+    assert normalized["status"] == "closed"
+    assert store.index_conflicts_for_documents([imported]) == {}
+
+    mongo = _mongo(imported)
+    rows = asyncio.run(store.browse(mongo, statuses=("closed",)))
+    assert [row["_id"] for row in rows] == [imported["_id"]]
+    assert rows[0]["status"] == "closed"
+
+    for near_miss in (
+        {"_id": "channel", "schema_version": 3, "runtime": "thread_v2", "venue": "channel", "status": "closed"},
+        {"_id": "old", "schema_version": 2, "runtime": "thread_v2", "venue": "thread", "status": "closed"},
+    ):
+        with pytest.raises(schema.TicketSchemaError, match="explicit approved/denied"):
+            schema.normalize_ticket_document(near_miss)
 
 
 def test_store_migration_requires_explicit_closed_classification():
