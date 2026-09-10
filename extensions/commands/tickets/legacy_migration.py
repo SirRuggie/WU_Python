@@ -1176,6 +1176,11 @@ _OWNER_TEST_MIGRATION_EXCEPTION = (
     1024958361306927124,
     1045185178437423114,
 )
+# Discord returned this exact snowflake as a 200-success "Deleted User"
+# placeholder during the live migration audit. A display name is never enough
+# to infer deletion: real users can choose the same name. Discord does not
+# expose a general deleted-account field, so keep this deliberately narrow.
+_CONFIRMED_DELETED_APPLICANT_IDS = frozenset({456226577798135808})
 
 
 def _is_owner_test_applicant(user_id: int, username: str) -> bool:
@@ -1332,6 +1337,15 @@ async def _identity(
         username = ""
         display_name = ""
         member = await _resolved_member(user_id)
+    resolved_id = _as_int(getattr(member, "id", 0))
+    if resolved_id and resolved_id != user_id:
+        raise LegacyMigrationError(
+            "candidate identity lookup returned a different Discord ID; skip this ticket"
+        )
+    if user_id in _CONFIRMED_DELETED_APPLICANT_IDS:
+        raise DeletedApplicant(
+            "the applicant is a confirmed Discord deleted-account placeholder; skip this ticket"
+        )
     username = username or str(getattr(member, "username", ""))
     display_name = display_name or str(getattr(member, "display_name", "") or username)
     if getattr(member, "is_bot", False):

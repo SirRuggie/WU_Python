@@ -998,6 +998,79 @@ def test_identity_raises_deleted_applicant_when_the_applicant_account_is_gone(sa
         ))
 
 
+@pytest.mark.parametrize("member_exists", [True, False])
+@pytest.mark.parametrize("saved_identity", [False, True])
+def test_identity_skips_the_confirmed_deleted_account_placeholder(
+    member_exists, saved_identity,
+):
+    tombstone_id = 456226577798135808
+    placeholder = SimpleNamespace(
+        id=tombstone_id, username="Deleted User", discriminator="0000",
+        global_name=None, display_name="Deleted User", is_bot=False,
+    )
+
+    class Rest:
+        async def fetch_member(self, _guild_id, _user_id):
+            if member_exists:
+                return placeholder
+            raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10007)
+
+        async def fetch_user(self, _user_id):
+            return placeholder
+
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+        user_id_override=None if saved_identity else tombstone_id,
+    )
+    source_ticket = {"user_id": tombstone_id} if saved_identity else None
+
+    with pytest.raises(legacy_migration.DeletedApplicant, match="confirmed Discord"):
+        asyncio.run(legacy_migration._identity(
+            Rest(), source_ticket=source_ticket,
+            source_channel=SimpleNamespace(permission_overwrites={}), request=request,
+            bot_user_id=999, messages=(),
+        ))
+
+
+def test_identity_does_not_treat_a_similarly_named_live_user_as_deleted():
+    class Rest:
+        async def fetch_member(self, _guild_id, user_id):
+            return SimpleNamespace(
+                id=user_id, username="Deleted User", discriminator="0000",
+                global_name=None, display_name="Deleted User", is_bot=False,
+            )
+
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21, user_id_override=555,
+    )
+    user_id, username, _display_name = asyncio.run(legacy_migration._identity(
+        Rest(), source_ticket=None,
+        source_channel=SimpleNamespace(permission_overwrites={}), request=request,
+        bot_user_id=999, messages=(),
+    ))
+
+    assert (user_id, username) == (555, "Deleted User")
+
+
+def test_identity_rejects_a_mismatched_successful_lookup_response():
+    class Rest:
+        async def fetch_member(self, _guild_id, _user_id):
+            return SimpleNamespace(id=556, username="other", display_name="Other", is_bot=False)
+
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21, user_id_override=555,
+    )
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="different Discord ID"):
+        asyncio.run(legacy_migration._identity(
+            Rest(), source_ticket=None,
+            source_channel=SimpleNamespace(permission_overwrites={}), request=request,
+            bot_user_id=999, messages=(),
+        ))
+
+
 def test_identity_fallback_reads_a_welcome_posted_by_a_deleted_non_bot_user():
     """Server 1: the welcome ping is posted by a now-deleted *user* account
     (``author.is_bot`` False), not the current bot -- any author qualifies.

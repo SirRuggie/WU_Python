@@ -565,9 +565,10 @@ role names such as `main-notes`, `fwa-log`, `main-rules`, `fwa-info`,
 applicant and no welcome/mention message at all — never migrated; applicant
 suffixes are full-name matched conservatively, so `main-42-chatty` and
 `fwa-7-catalog` remain candidates), `deleted_applicant` (the applicant's Discord account no longer
-exists — REST `fetch_member` and `fetch_user` both 404 — never migrated,
-Owner rule 8; a deleted welcome-poster account is irrelevant, those still
-import), or `error:<ExceptionName>`. The plan is saved to
+exists — REST `fetch_member` and `fetch_user` both 404, or it resolves to a
+confirmed, audited Discord deleted-account placeholder — never migrated,
+Owner rule 8; names alone never identify a deleted account, and a deleted
+welcome-poster account is irrelevant), or `error:<ExceptionName>`. The plan is saved to
 `ticket_migration_batches`
 (`_id: "batch:<source_guild_id>"`, capped at 1000 matching channels per
 category — narrow the category if it reports more) and the reply is a
