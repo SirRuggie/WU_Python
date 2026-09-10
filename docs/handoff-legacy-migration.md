@@ -92,7 +92,10 @@ channel 1547244294757425212 (`recruiter-desk`).
   and no mention message at all is `not_a_ticket`, never migrated. A resolved
   candidate that is itself a bot account is also `not_a_ticket`: Ticket Tool
   welcome posts still work because their leading mention selects the human
-  applicant. The same classification applies to these exact observed support
+  applicant. If Ticket Tool is the sole member overwrite, that bot candidate
+  is replaced only by a distinct leading welcome mention; an explicit or
+  stored applicant identity remains authoritative. The same classification
+  applies to these exact observed support
   names: `background-check`, `mainclan-commands`,
   `main-background-check`, `mainclan-background-check`,
   `fwa-background-check`, `league-team-background-check`,

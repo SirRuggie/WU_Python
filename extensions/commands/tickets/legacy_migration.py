@@ -1268,19 +1268,22 @@ async def _identity(
     messages: Sequence[Any] = (),
 ) -> tuple[int, str, str]:
     user_id = _as_int(request.user_id_override) or _as_int((source_ticket or {}).get("user_id"))
+    authoritative_identity = bool(user_id)
     overwrite_candidates: list[int] = []
-    if not user_id:
+    selected_overwrite = False
+    welcome_id = None
+    if not authoritative_identity:
         overwrite_candidates = _member_overwrite_ids(
             source_channel,
             guild_id=request.source_guild_id,
             bot_user_id=bot_user_id,
         )
+        welcome_id = _welcome_message_applicant_id(messages, bot_user_id=bot_user_id)
         if len(overwrite_candidates) == 1:
             user_id = overwrite_candidates[0]
-    welcome_id = None
-    if not user_id:
-        welcome_id = _welcome_message_applicant_id(messages, bot_user_id=bot_user_id)
-        user_id = welcome_id
+            selected_overwrite = True
+        elif welcome_id:
+            user_id = welcome_id
     if not user_id:
         if not overwrite_candidates and welcome_id is None:
             # No permission-overwrite applicant at all and no welcome/mention
@@ -1294,21 +1297,36 @@ async def _identity(
             "the candidate Discord ID could not be detected; enter it in `user-id`"
         )
 
-    username = str(
-        request.username_override or (source_ticket or {}).get("username") or ""
-    ).strip()
+    username = str(request.username_override or (source_ticket or {}).get("username") or "").strip()
     display_name = str((source_ticket or {}).get("display_name") or "").strip()
-    # Stored names and admin overrides are historical metadata, not proof
-    # the applicant still exists. Always verify, including on confirmed runs.
-    try:
-        member = await rest.fetch_member(request.source_guild_id, user_id)
-    except (hikari.NotFoundError, hikari.ForbiddenError):
+
+    async def _resolved_member(candidate_id: int):
+        # Stored names and admin overrides are historical metadata, not proof
+        # the applicant still exists. Always verify, including on confirmed runs.
         try:
-            member = await rest.fetch_user(user_id)
-        except hikari.NotFoundError as exc:
-            raise DeletedApplicant(
-                "the applicant's Discord account no longer exists; skip this ticket"
-            ) from exc
+            return await rest.fetch_member(request.source_guild_id, candidate_id)
+        except (hikari.NotFoundError, hikari.ForbiddenError):
+            try:
+                return await rest.fetch_user(candidate_id)
+            except hikari.NotFoundError as exc:
+                raise DeletedApplicant(
+                    "the applicant's Discord account no longer exists; skip this ticket"
+                ) from exc
+
+    member = await _resolved_member(user_id)
+    if (
+        getattr(member, "is_bot", False)
+        and not authoritative_identity
+        and selected_overwrite
+        and welcome_id
+        and welcome_id != user_id
+    ):
+        # Ticket Tool is often the sole member overwrite. Its bot identity is
+        # not an applicant when a leading welcome mention identifies a human.
+        user_id = welcome_id
+        username = ""
+        display_name = ""
+        member = await _resolved_member(user_id)
     username = username or str(getattr(member, "username", ""))
     display_name = display_name or str(getattr(member, "display_name", "") or username)
     if getattr(member, "is_bot", False):

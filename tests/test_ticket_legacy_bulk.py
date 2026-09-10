@@ -1184,18 +1184,26 @@ def test_preview_rejects_structural_support_name_before_identity(monkeypatch):
         ))
 
 
-@pytest.mark.parametrize("applicant_is_bot", [True, False])
-def test_full_preview_rejects_bot_identity_but_accepts_a_human(monkeypatch, applicant_is_bot):
+@pytest.mark.parametrize(
+    ("overwrite_id", "welcome_id", "expected_id"),
+    [
+        (557628352828014614, None, None),  # Ticket Tool-only Server-Info channel
+        (555, None, 555),                  # ordinary human overwrite
+        (557628352828014614, 639048158365614095, 639048158365614095),
+    ],
+)
+def test_full_preview_rejects_bot_identity_but_uses_a_human_welcome(
+    monkeypatch, overwrite_id, welcome_id, expected_id,
+):
     request = legacy_migration.LegacyMigrationRequest(
         source_guild_id=1, source_channel_id=2, target_guild_id=10,
         candidate_parent_id=20, staff_parent_id=21,
     )
-    applicant_id = 555
     source_channel = SimpleNamespace(
         id=2, guild_id=1, name="main-9-alice", parent_id=0,
         type=hikari.ChannelType.GUILD_TEXT,
         permission_overwrites=[SimpleNamespace(
-            type=hikari.PermissionOverwriteType.MEMBER, id=applicant_id,
+            type=hikari.PermissionOverwriteType.MEMBER, id=overwrite_id,
         )],
     )
 
@@ -1206,14 +1214,24 @@ def test_full_preview_rejects_bot_identity_but_accepts_a_human(monkeypatch, appl
         async def fetch_channel(self, _channel_id):
             return source_channel
 
-        async def fetch_member(self, _guild_id, _user_id):
-            return SimpleNamespace(username="applicant", display_name="Applicant", is_bot=applicant_is_bot)
+        async def fetch_member(self, _guild_id, user_id):
+            if user_id == 557628352828014614:
+                return SimpleNamespace(username="Ticket Tool", display_name="Ticket Tool", is_bot=True)
+            return SimpleNamespace(username="applicant", display_name="Applicant", is_bot=False)
 
     async def source_ticket(*_args):
         return {"status": "approved"}
 
     async def messages(*_args):
-        return [SimpleNamespace(id=10, author=SimpleNamespace(id=applicant_id), content="hello", attachments=[])]
+        if welcome_id is None:
+            return [SimpleNamespace(id=10, author=SimpleNamespace(id=overwrite_id), content="hello", attachments=[])]
+        return [
+            SimpleNamespace(
+                id=10, author=SimpleNamespace(id=557628352828014614),
+                content=f"<@{welcome_id}> Welcome to your entry ticket!", attachments=[],
+            ),
+            SimpleNamespace(id=11, author=SimpleNamespace(id=welcome_id), content="hello", attachments=[]),
+        ]
 
     async def validate(*_args, **_kwargs):
         return None
@@ -1236,14 +1254,14 @@ def test_full_preview_rejects_bot_identity_but_accepts_a_human(monkeypatch, appl
     mongo = SimpleNamespace(ticket_setup=SimpleNamespace(find_one=config))
     bot = SimpleNamespace(rest=Rest(), get_me=lambda: SimpleNamespace(id=999))
 
-    if applicant_is_bot:
+    if expected_id is None:
         with pytest.raises(legacy_migration.NotALegacyTicketChannel, match="bot account"):
             asyncio.run(legacy_migration.preview_legacy_ticket(bot=bot, mongo=mongo, request=request))
     else:
         preview = asyncio.run(legacy_migration.preview_legacy_ticket(
             bot=bot, mongo=mongo, request=request,
         ))
-        assert preview.user_id == applicant_id
+        assert preview.user_id == expected_id
         assert preview.username == "applicant"
 
 
