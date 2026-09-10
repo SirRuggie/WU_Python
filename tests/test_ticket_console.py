@@ -268,10 +268,13 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
     ]
     assert container["components"][0]["content"] == "# Ticket Console"
     assert [attachment.filename for attachment in attachments] == [
-        "ticket_overview.png", "clan_main.png", "clan_fwa.png",
+        "ticket_overview.png", "clan_main.png", "ticket_main_status.png",
+        "clan_fwa.png", "ticket_fwa_status.png",
         "flag_blacklisted.png", "flag_denied_before.png", "flag_not_loyal.png",
     ]
     assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 5
+    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 3
+    assert len(attachments) == 8
     select = _hub_picker_component(container)
     assert len(select["options"]) == 25
     assert all(option["value"].startswith("ticket_") for option in select["options"])
@@ -300,7 +303,11 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
     async def strip(_counts):
         return b"strip"
 
-    async def to_thread(function, *args):
+    async def bar(_values, *, maximum):
+        assert maximum == 1
+        return b"bar"
+
+    async def to_thread(function, *args, **kwargs):
         calls.append((function, args))
         return {filename: b"thumbnail" for filename in console.HUB_THUMBNAIL_FILENAMES}
 
@@ -308,6 +315,7 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
     monkeypatch.setattr(console.store, "console_counts", counts)
     monkeypatch.setattr(console.flag_store, "count_active", flags)
     monkeypatch.setattr(console, "render_status_strip", strip)
+    monkeypatch.setattr(console, "render_clan_status_bar", bar)
     monkeypatch.setattr(console.asyncio, "to_thread", to_thread)
 
     view = asyncio.run(console._hub_payload(object()))
@@ -333,6 +341,20 @@ def test_hub_picker_with_more_than_25_open_shows_oldest_and_says_how_many():
     assert select["placeholder"] == (
         "Choose a ticket (25 of 30 shown, oldest first; use Find for the rest)"
     )
+    _assert_component_limits(view)
+
+
+def test_hub_clan_lines_keep_closed_counts_native_when_present():
+    counts = console.OverviewCounts(
+        statuses={"closed": 3},
+        by_type={"main": {"closed": 3}, "fwa": {}},
+        flags={},
+    )
+
+    view = console.build_hub_components([], b"png", counts=counts)
+    contents = [str(node["content"]) for node in _nodes(view) if "content" in node]
+
+    assert any("3 closed / no decision" in content for content in contents)
     _assert_component_limits(view)
 
 

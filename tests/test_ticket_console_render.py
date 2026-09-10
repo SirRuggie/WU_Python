@@ -3,7 +3,7 @@ import io
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageColor
 
 from extensions.commands.tickets import console_render
 
@@ -88,6 +88,54 @@ def test_async_status_strip_moves_pillow_off_the_event_loop(monkeypatch):
 
     assert asyncio.run(console_render.render_status_strip(counts)) == b"strip"
     assert calls == [(console_render.render_status_strip_sync, (counts,))]
+
+
+def test_clan_status_bar_has_shared_scale_colored_segments_and_neutral_zero_state():
+    payload = console_render.render_clan_status_bar_sync(
+        {"approved": 40, "open": 20, "denied": 10, "closed": 30}, maximum=100,
+    )
+    with Image.open(io.BytesIO(payload)) as image:
+        assert image.size == (720 * console_render.SCALE, 48 * console_render.SCALE)
+        y = 24 * console_render.SCALE
+        assert image.getpixel((10 * console_render.SCALE, y)) == ImageColor.getrgb(console_render.APPROVED)
+        assert image.getpixel((300 * console_render.SCALE, y)) == ImageColor.getrgb(console_render.OPEN)
+        assert image.getpixel((450 * console_render.SCALE, y)) == ImageColor.getrgb(console_render.DENIED)
+        assert image.getpixel((530 * console_render.SCALE, y)) == ImageColor.getrgb(console_render.NEUTRAL)
+
+    # A clan with half the shared maximum occupies half the common track;
+    # it is not normalized to a misleading 100%-wide bar.
+    smaller = console_render.render_clan_status_bar_sync(
+        {"approved": 20, "open": 10, "denied": 5, "closed": 15}, maximum=100,
+    )
+    with Image.open(io.BytesIO(smaller)) as image:
+        y = 24 * console_render.SCALE
+        assert image.getpixel((350 * console_render.SCALE, y)) == ImageColor.getrgb(
+            console_render.NEUTRAL
+        )
+        assert image.getpixel((400 * console_render.SCALE, y)) == ImageColor.getrgb(
+            console_render.CANVAS
+        )
+
+    empty = console_render.render_clan_status_bar_sync({}, maximum=100)
+    with Image.open(io.BytesIO(empty)) as image:
+        assert image.getpixel((360 * console_render.SCALE, 24 * console_render.SCALE)) == ImageColor.getrgb(console_render.NEUTRAL)
+
+
+def test_async_clan_status_bar_moves_pillow_off_the_event_loop(monkeypatch):
+    calls = []
+
+    async def to_thread(function, *args, **kwargs):
+        calls.append((function, args, kwargs))
+        return b"bar"
+
+    monkeypatch.setattr(console_render.asyncio, "to_thread", to_thread)
+
+    assert asyncio.run(console_render.render_clan_status_bar({"approved": 1}, maximum=4)) == b"bar"
+    assert calls == [(
+        console_render.render_clan_status_bar_sync,
+        ({"approved": 1},),
+        {"maximum": 4},
+    )]
 
 
 def test_console_thumbnail_assets_are_bounded_png_bytes_and_cached():

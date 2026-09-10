@@ -180,6 +180,16 @@ The production renderer and these five production assets are listed in §10;
 the similarly named renderer under `docs/ticket-console/` is a standalone
 visual reference only.
 
+### 3.5 Clan status bars
+
+The live Components V2 hub keeps the Main and FWA names and counts as native
+text. A compact, text-free PNG directly beneath each clan section restores the
+colored distribution bar: approved is green, open is blue, denied is red, and
+closed/no-decision is neutral. Both bars share one scale based on the larger
+clan total, so their lengths compare volume as well as outcome mix. An all-zero
+clan renders as a neutral track. The two small attachments are rendered in
+worker threads with the existing overview image, never on the gateway loop.
+
 ## 4. Search — three input types, and a hikari correction
 
 **Inputs, and only these three:** Discord ID, player tag, or username.

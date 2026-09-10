@@ -34,6 +34,7 @@ DENIED = "#f0555a"
 BLACKLISTED = "#dd1c1d"
 DENIED_BEFORE = "#ffcc00"
 NOT_LOYAL = "#f17511"
+NEUTRAL = "#80848e"
 
 _ROOT = Path(__file__).resolve().parents[3]
 _ASSETS = _ROOT / "assets" / "tickets"
@@ -353,3 +354,64 @@ def render_status_strip_sync(counts: OverviewCounts) -> bytes:
 
 async def render_status_strip(counts: OverviewCounts) -> bytes:
     return await asyncio.to_thread(render_status_strip_sync, counts)
+
+
+def render_clan_status_bar_sync(
+    values: Mapping[str, int], *, maximum: int | None = None,
+) -> bytes:
+    """Render a compact, text-free status distribution for one clan section."""
+    width, height, inset = 720, 48, 4
+    image = Image.new("RGB", (width * SCALE, height * SCALE), CANVAS)
+    draw = ImageDraw.Draw(image)
+    categories = (
+        (APPROVED, _count(values, "approved")),
+        (OPEN, _count(values, "open")),
+        (DENIED, _count(values, "denied")),
+        (NEUTRAL, _count(values, "closed")),
+    )
+    total = sum(value for _, value in categories)
+    scale_total = max(total, int(maximum or 0), 1)
+    bounds = (inset * SCALE, inset * SCALE, (width - inset) * SCALE, (height - inset) * SCALE)
+    radius = (height // 2) * SCALE
+    if total <= 0:
+        draw.rounded_rectangle(bounds, radius=radius, fill=NEUTRAL)
+    else:
+        left = inset
+        usable = round((width - inset * 2) * total / scale_total)
+        for index, (color, value) in enumerate(categories):
+            if value <= 0:
+                continue
+            # The last present segment absorbs rounding, keeping the bar flush.
+            remaining = sum(number for _, number in categories[index + 1:])
+            right = inset + usable if remaining == 0 else left + round(usable * value / total)
+            draw.rectangle(
+                (left * SCALE, inset * SCALE, right * SCALE, (height - inset) * SCALE),
+                fill=color,
+            )
+            left = right
+        # Reapply the silhouette as a mask so only the outer ends are rounded.
+        mask = Image.new("L", image.size, 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.rounded_rectangle(
+            (
+                inset * SCALE,
+                inset * SCALE,
+                (inset + usable) * SCALE,
+                (height - inset) * SCALE,
+            ),
+            radius=min(radius, usable * SCALE // 2),
+            fill=255,
+        )
+        clipped = Image.new("RGB", image.size, CANVAS)
+        clipped.paste(image, mask=mask)
+        image = clipped
+    output = io.BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
+async def render_clan_status_bar(
+    values: Mapping[str, int], *, maximum: int | None = None,
+) -> bytes:
+    """Render a clan bar without occupying the Discord gateway event loop."""
+    return await asyncio.to_thread(render_clan_status_bar_sync, values, maximum=maximum)
