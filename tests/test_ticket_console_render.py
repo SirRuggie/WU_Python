@@ -138,6 +138,50 @@ def test_async_clan_status_bar_moves_pillow_off_the_event_loop(monkeypatch):
     )]
 
 
+def test_flag_row_is_slim_readable_and_handles_empty_or_large_counts():
+    for count in (0, 123_456):
+        payload = console_render.render_flag_row_sync(
+            label="NOT LOYAL TO WU", count=count,
+            color=console_render.NOT_LOYAL, filename="flag_not_loyal.png",
+        )
+        with Image.open(io.BytesIO(payload)) as image:
+            assert image.size == (1200 * console_render.SCALE, 132 * console_render.SCALE)
+            assert image.mode == "RGB"
+
+    # The wide six-digit count still has a generous gap after the longest
+    # flag label inside the configured 1200px logical row.
+    label_left, _top, label_right, _bottom = console_render._font(52, bold=True).getbbox(
+        "NOT LOYAL TO WU"
+    )
+    count_left, _top, count_right, _bottom = console_render._font(60, bold=True).getbbox(
+        "123456"
+    )
+    label_end = 146 + (label_right - label_left) / console_render.SCALE
+    count_start = 1200 - 44 - (count_right - count_left) / console_render.SCALE
+    assert label_end + 100 < count_start
+
+
+def test_async_flag_row_moves_pillow_off_the_event_loop(monkeypatch):
+    calls = []
+
+    async def to_thread(function, *args, **kwargs):
+        calls.append((function, args, kwargs))
+        return b"flag-row"
+
+    monkeypatch.setattr(console_render.asyncio, "to_thread", to_thread)
+
+    assert asyncio.run(console_render.render_flag_row(
+        label="BLACKLISTED", count=1,
+        color=console_render.BLACKLISTED, filename="flag_blacklisted.png",
+    )) == b"flag-row"
+    assert calls == [(
+        console_render.render_flag_row_sync,
+        (),
+        {"label": "BLACKLISTED", "count": 1,
+         "color": console_render.BLACKLISTED, "filename": "flag_blacklisted.png"},
+    )]
+
+
 def test_console_thumbnail_assets_are_bounded_png_bytes_and_cached():
     console_render.thumbnail_asset.cache_clear()
 

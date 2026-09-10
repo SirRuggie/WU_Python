@@ -57,6 +57,8 @@ from extensions.commands.tickets.console_render import (
     OverviewCounts,
     render_clan_status_bar,
     render_clan_status_bar_sync,
+    render_flag_row,
+    render_flag_row_sync,
     render_status_strip,
     thumbnail_asset,
 )
@@ -74,6 +76,21 @@ HUB_ATTACHMENT = "ticket_overview.png"
 HUB_CLAN_BAR_ATTACHMENTS = {
     "main": "ticket_main_status.png",
     "fwa": "ticket_fwa_status.png",
+}
+HUB_FLAG_ROW_ATTACHMENTS = {
+    "blacklisted": "ticket_flag_blacklisted.png",
+    "denied_before": "ticket_flag_denied_before.png",
+    "not_loyal": "ticket_flag_not_loyal.png",
+}
+HUB_FLAG_ROWS = (
+    ("blacklisted", "BLACKLISTED", "#dd1c1d", "flag_blacklisted.png"),
+    ("denied_before", "DENIED BEFORE", "#ffcc00", "flag_denied_before.png"),
+    ("not_loyal", "NOT LOYAL TO WU", "#f17511", "flag_not_loyal.png"),
+)
+HUB_FLAG_ACCESSIBLE_LABELS = {
+    "blacklisted": "Blacklisted",
+    "denied_before": "Denied before",
+    "not_loyal": "Not loyal to WU",
 }
 HUB_THUMBNAIL_FILENAMES = (
     "clan_main.png",
@@ -678,6 +695,7 @@ def build_hub_components(
     counts: OverviewCounts | None = None,
     thumbnails: Mapping[str, bytes] | None = None,
     clan_bars: Mapping[str, bytes] | None = None,
+    flag_rows: Mapping[str, bytes] | None = None,
 ) -> list[Container]:
     """The shared message shape: native overview, readable status strip and controls.
 
@@ -714,6 +732,15 @@ def build_hub_components(
         )
         for kind in HUB_CLAN_BAR_ATTACHMENTS
     }
+    flag_rows = flag_rows or {
+        kind: render_flag_row_sync(
+            label=label,
+            count=_int(counts.flags.get(kind)),
+            color=color,
+            filename=filename,
+        )
+        for kind, label, color, filename in HUB_FLAG_ROWS
+    }
     total = sum(_int(value) for value in counts.statuses.values())
     updated = int(counts.updated_at.timestamp()) if counts.updated_at else None
     freshness = f"Updated <t:{updated}:R>" if updated else "Updated just now"
@@ -735,6 +762,14 @@ def build_hub_components(
         if closed_for_type:
             line += f" · **{closed_for_type} closed / no decision**"
         return line
+    def flag_row(kind: str) -> Media:
+        count = _int(counts.flags.get(kind))
+        suffix = "flag" if count == 1 else "flags"
+        return Media(items=[MediaItem(
+            media=hikari.Bytes(flag_rows[kind], HUB_FLAG_ROW_ATTACHMENTS[kind], "image/png"),
+            description=(f"{HUB_FLAG_ACCESSIBLE_LABELS[kind]}: "
+                         f"{count} active {suffix}."),
+        )])
     return [Container(
         accent_color=ACCENT_BLUE,
         components=[
@@ -752,11 +787,11 @@ def build_hub_components(
             clan_bar("fwa"),
             Separator(divider=True),
             Text(content="### Flags"),
-            Text(content=f"🔴 **{_int(counts.flags.get('blacklisted'))} blacklisted**"),
+            flag_row("blacklisted"),
             Separator(divider=True),
-            Text(content=f"🟡 **{_int(counts.flags.get('denied_before'))} denied before**"),
+            flag_row("denied_before"),
             Separator(divider=True),
-            Text(content=f"🟠 **{_int(counts.flags.get('not_loyal'))} not loyal to WU**"),
+            flag_row("not_loyal"),
             Separator(divider=True),
             *([Text(content="No open tickets right now. Find and Browse still search ticket history.")]
               if not has_open else []),
@@ -822,19 +857,24 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
         flags=flag_counts if isinstance(flag_counts, Mapping) else {},
         updated_at=utcnow(),
     )
-    # Pillow decodes and resizes the clan-thumbnail PNGs only on their first
-    # use. Prewarm both together off the gateway event loop; subsequent builds
-    # read the tiny process-local cache synchronously.
+    # Pillow decodes and resizes the fixed artwork only in worker threads;
+    # subsequent thumbnail reads use the tiny process-local cache.
     clan_bar_maximum = max(
         1,
         *(sum(_int(values.get(status)) for status in ("approved", "open", "denied", "closed"))
           for values in by_type.values()),
     )
-    png, thumbnails, main_bar, fwa_bar = await asyncio.gather(
+    png, thumbnails, main_bar, fwa_bar, *flag_rows = await asyncio.gather(
         render_status_strip(counts),
         asyncio.to_thread(_hub_thumbnail_assets),
         render_clan_status_bar(by_type["main"], maximum=clan_bar_maximum),
         render_clan_status_bar(by_type["fwa"], maximum=clan_bar_maximum),
+        *(render_flag_row(
+            label=label,
+            count=_int(counts.flags.get(kind)),
+            color=color,
+            filename=filename,
+        ) for kind, label, color, filename in HUB_FLAG_ROWS),
     )
     return build_hub_components(
         open_tickets,
@@ -843,13 +883,17 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
         counts=counts,
         thumbnails=thumbnails,
         clan_bars={"main": main_bar, "fwa": fwa_bar},
+        flag_rows={
+            kind: payload
+            for (kind, _label, _color, _filename), payload in zip(HUB_FLAG_ROWS, flag_rows)
+        },
     )
 
 
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 5
+HUB_LAYOUT_VERSION = 6
 
 
 async def _chart_signature(mongo: MongoClient) -> str:

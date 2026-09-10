@@ -415,3 +415,44 @@ async def render_clan_status_bar(
 ) -> bytes:
     """Render a clan bar without occupying the Discord gateway event loop."""
     return await asyncio.to_thread(render_clan_status_bar_sync, values, maximum=maximum)
+
+
+def render_flag_row_sync(*, label: str, count: int, color: str, filename: str) -> bytes:
+    """Render one slim, full-width flag row for the Components V2 hub.
+
+    Discord keeps media-gallery images at their intrinsic wide aspect ratio.
+    A dedicated row therefore preserves the supplied flag artwork at a useful
+    mobile size without the forced tall footprint of a Section thumbnail.
+    """
+    width, height = 1200, 132
+    image = Image.new("RGB", (width * SCALE, height * SCALE), CANVAS)
+    draw = ImageDraw.Draw(image)
+    inset = 8
+    draw.rounded_rectangle(
+        (inset * SCALE, inset * SCALE, (width - inset) * SCALE, (height - inset) * SCALE),
+        radius=18 * SCALE,
+        fill=_tint(color, amount=0.16),
+        outline=color,
+        width=2 * SCALE,
+    )
+    with Image.open(_ASSETS / filename) as source:
+        icon = source.convert("RGBA")
+        bounds = icon.getbbox()
+        if bounds:
+            icon = icon.crop(bounds)
+        icon.thumbnail((88 * SCALE, 88 * SCALE), Image.Resampling.LANCZOS)
+        left = 28 * SCALE
+        top = (height * SCALE - icon.height) // 2
+        image.paste(icon, (left, top), icon)
+    draw.text((146 * SCALE, (height // 2) * SCALE), label,
+              font=_font(52, bold=True), fill=INK, anchor="lm")
+    draw.text(((width - 44) * SCALE, (height // 2) * SCALE), str(max(0, int(count))),
+              font=_font(60, bold=True), fill=color, anchor="rm")
+    output = io.BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
+async def render_flag_row(**kwargs) -> bytes:
+    """Render a flag row without occupying the Discord gateway event loop."""
+    return await asyncio.to_thread(render_flag_row_sync, **kwargs)

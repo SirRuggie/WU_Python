@@ -269,10 +269,12 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
     assert [attachment.filename for attachment in attachments] == [
         "ticket_overview.png", "clan_main.png", "ticket_main_status.png",
         "clan_fwa.png", "ticket_fwa_status.png",
+        "ticket_flag_blacklisted.png", "ticket_flag_denied_before.png",
+        "ticket_flag_not_loyal.png",
     ]
     assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 2
-    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 3
-    assert len(attachments) == 5
+    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 6
+    assert len(attachments) == 8
     select = _hub_picker_component(container)
     assert len(select["options"]) == 25
     assert all(option["value"].startswith("ticket_") for option in select["options"])
@@ -289,18 +291,18 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
     assert buttons[1]["label"] == "Browse tickets"
     assert container["components"][-2]["type"] == hikari.ComponentType.SEPARATOR
     assert "tickets** · Main" in container["components"][-1]["content"]
-    contents = [child.get("content", "") for child in container["components"]]
-    assert "🔴 **0 blacklisted**" in contents
-    assert "🟡 **0 denied before**" in contents
-    assert "🟠 **0 not loyal to WU**" in contents
     flag_indices = [
         index for index, child in enumerate(container["components"])
-        if child.get("content", "").startswith(("🔴", "🟡", "🟠"))
+        if child["type"] == hikari.ComponentType.MEDIA_GALLERY
+        and child["items"][0]["description"].startswith((
+            "Blacklisted:", "Denied before:", "Not loyal to WU:",
+        ))
     ]
     assert len(flag_indices) == 3
-    assert all(container["components"][index]["type"] == hikari.ComponentType.TEXT_DISPLAY for index in flag_indices)
-    assert [container["components"][index + 1]["type"] for index in flag_indices[:2]] == [
-        hikari.ComponentType.SEPARATOR, hikari.ComponentType.SEPARATOR,
+    assert [container["components"][index + 1]["type"] for index in flag_indices] == [
+        hikari.ComponentType.SEPARATOR,
+        hikari.ComponentType.SEPARATOR,
+        hikari.ComponentType.SEPARATOR,
     ]
     _assert_component_limits(view)
 
@@ -325,6 +327,9 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
         assert maximum == 1
         return b"bar"
 
+    async def flag_row(**_kwargs):
+        return b"flag-row"
+
     async def to_thread(function, *args, **kwargs):
         calls.append((function, args))
         return {filename: b"thumbnail" for filename in console.HUB_THUMBNAIL_FILENAMES}
@@ -334,6 +339,7 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
     monkeypatch.setattr(console.flag_store, "count_active", flags)
     monkeypatch.setattr(console, "render_status_strip", strip)
     monkeypatch.setattr(console, "render_clan_status_bar", bar)
+    monkeypatch.setattr(console, "render_flag_row", flag_row)
     monkeypatch.setattr(console.asyncio, "to_thread", to_thread)
 
     view = asyncio.run(console._hub_payload(object()))

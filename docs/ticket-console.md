@@ -72,9 +72,12 @@ current state.
 
 ## 3. Native overview with a readable status strip
 
-The shared message keeps its title, Main/FWA breakdown, and flag rows as
-Components V2 text. Main/FWA retain their crest thumbnails; flags use compact
-native colored icon-and-count rows rather than oversized artwork. Only the
+The shared message keeps its title, Main/FWA breakdown, and controls as
+Components V2 text. Main/FWA retain their crest thumbnails. The supplied flag
+artwork appears in three separate slim, full-width Pillow rows, with a real
+native Separator after each row: this keeps each icon, label, and count large
+on mobile without the oversized footprint Discord gives a Section thumbnail.
+Gallery descriptions carry the flag counts for assistive technology. Only the
 three Approved/Open/Denied totals are rendered as a compact 720×250 Pillow
 strip; this prevents a full dashboard image from being shrunk until its labels
 are unreadable on mobile. The complete total, Main/FWA totals, relative update
