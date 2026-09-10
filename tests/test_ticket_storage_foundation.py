@@ -4866,7 +4866,7 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
         captured.append(counts)
         return b"png"
 
-    monkeypatch.setattr(console, "render_overview", fake_render)
+    monkeypatch.setattr(console, "render_status_strip", fake_render)
 
     components = asyncio.run(console._hub_payload(mongo))
 
@@ -4882,7 +4882,12 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
     }
 
     container, _attachments = components[0].build()
-    select = container["components"][1]["components"][0]
+    select = next(
+        child["components"][0]
+        for child in container["components"]
+        if child["type"] == hikari.ComponentType.ACTION_ROW
+        and child["components"][0].get("custom_id") == "ticket_v2_console_pick:hub"
+    )
     assert len(select["options"]) == 3
 
 

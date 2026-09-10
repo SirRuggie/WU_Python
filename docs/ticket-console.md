@@ -40,7 +40,8 @@ minority); a permanent Main-only *console* is not.
 
 ```
 #recruiter-hub  ─ ONE persistent message, bot-owned, in-channel
-                  ├ Media Gallery: ticket_overview.png (Pillow chart, §3)
+                  ├ Native title, total, freshness, clan and flag Sections
+                  ├ Media Gallery: ticket_overview.png (status strip, §3)
                   ├ String Select: up to 25 open tickets, newest first
                   └ Button: 🔍 Find a ticket
                                 │
@@ -69,7 +70,14 @@ to drive recovery. Someone's already-open ephemeral panel is still a snapshot
 and does not live-update; open the ticket details again from the hub to read
 current state.
 
-## 3. The chart replaces the stat Section
+## 3. Native overview with a readable status strip
+
+The shared message keeps its title, all-ticket total, relative update time,
+Main/FWA breakdown, and flag rows as Components V2 text and Sections. The
+existing crest and flag artwork remains as Section thumbnails. Only the three
+Approved/Open/Denied totals are rendered as a compact 720×250 Pillow strip;
+this prevents a full dashboard image from being shrunk until its labels are
+unreadable on mobile.
 
 The pragmatic/max-flash split in the original proposal (§2.4–2.5) is
 resolved: **build max-flash.** Every "free" item in the old flash column

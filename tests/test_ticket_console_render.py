@@ -57,6 +57,52 @@ def test_async_renderer_moves_pillow_off_the_event_loop(monkeypatch):
     assert calls == [(console_render.render_overview_sync, (_counts(),))]
 
 
+def test_status_strip_renders_mobile_friendly_contract_and_five_digit_counts():
+    counts = _counts(statuses={"approved": 99_999, "open": 12_345, "denied": 54_321})
+
+    payload = console_render.render_status_strip_sync(counts)
+
+    assert payload.startswith(b"\x89PNG\r\n\x1a\n")
+    with Image.open(io.BytesIO(payload)) as image:
+        # The strip keeps SCALE=2 pixels for crisp Discord downscaling while
+        # preserving the intended 720x250 logical aspect ratio.
+        assert image.size == (720 * console_render.SCALE, 250 * console_render.SCALE)
+        assert image.mode == "RGB"
+
+    # At the renderer's five-digit size the widest value retains breathing
+    # room inside a 218px card instead of clipping at either edge.
+    font = console_render._font(50, bold=True)
+    left, _top, right, _bottom = font.getbbox("99999")
+    assert (right - left) / console_render.SCALE < 200
+
+
+def test_async_status_strip_moves_pillow_off_the_event_loop(monkeypatch):
+    calls = []
+
+    async def to_thread(function, *args):
+        calls.append((function, args))
+        return b"strip"
+
+    counts = _counts()
+    monkeypatch.setattr(console_render.asyncio, "to_thread", to_thread)
+
+    assert asyncio.run(console_render.render_status_strip(counts)) == b"strip"
+    assert calls == [(console_render.render_status_strip_sync, (counts,))]
+
+
+def test_console_thumbnail_assets_are_bounded_png_bytes_and_cached():
+    console_render.thumbnail_asset.cache_clear()
+
+    first = console_render.thumbnail_asset("clan_main.png")
+    second = console_render.thumbnail_asset("clan_main.png")
+
+    assert first is second
+    with Image.open(io.BytesIO(first)) as image:
+        assert image.format == "PNG"
+        assert image.width <= 160
+        assert image.height <= 160
+
+
 def test_overview_renders_from_vendored_fonts_without_the_system_directory(monkeypatch):
     monkeypatch.setattr(console_render, "_SYSTEM_FONT_DIR", Path("/nonexistent/dejavu"))
     assert console_render._VENDORED_FONT_DIR.is_dir()

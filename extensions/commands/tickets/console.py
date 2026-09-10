@@ -37,6 +37,7 @@ from hikari.impl import (
     SeparatorComponentBuilder as Separator,
     TextDisplayComponentBuilder as Text,
     TextSelectMenuBuilder as TextSelectMenu,
+    ThumbnailComponentBuilder as Thumbnail,
 )
 
 from extensions.commands import ticket_runtime
@@ -52,7 +53,7 @@ from extensions.commands.tickets import (
     thread_service,
     ticket,
 )
-from extensions.commands.tickets.console_render import OverviewCounts, render_overview
+from extensions.commands.tickets.console_render import OverviewCounts, render_status_strip, thumbnail_asset
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state, update_state
 from utils.mongo import MongoClient
@@ -64,6 +65,13 @@ _log = logging.getLogger(__name__)
 HUB_STATE_ID = "ticket_console_hub"
 HUB_ACTION_ID = "hub"
 HUB_ATTACHMENT = "ticket_overview.png"
+HUB_THUMBNAIL_FILENAMES = (
+    "clan_main.png",
+    "clan_fwa.png",
+    "flag_blacklisted.png",
+    "flag_denied_before.png",
+    "flag_not_loyal.png",
+)
 HUB_DEBOUNCE_SECONDS = 0.75
 HUB_LEASE = timedelta(minutes=3)
 HUB_RETRY_DELAYS = (0.0, 1.0, 4.0, 12.0)
@@ -650,13 +658,20 @@ def _hub_picker_placeholder(has_open: bool, shown: int, total_open: int | None) 
     return "Choose an open ticket"
 
 
+def _hub_thumbnail_assets() -> dict[str, bytes]:
+    """Load the fixed hub thumbnails, intended for one worker-thread call."""
+    return {filename: thumbnail_asset(filename) for filename in HUB_THUMBNAIL_FILENAMES}
+
+
 def build_hub_components(
     open_tickets: Sequence[Mapping],
     png_bytes: bytes,
     *,
     total_open: int | None = None,
+    counts: OverviewCounts | None = None,
+    thumbnails: Mapping[str, bytes] | None = None,
 ) -> list[Container]:
-    """The only shared message shape: image, picker, and Find button.
+    """The shared message shape: native overview, readable status strip and controls.
 
     ``open_tickets`` is oldest-first (the longest-waiting applicant at the
     top) so that when more than ``MAX_OPEN_PICKER`` tickets are open, the
@@ -667,15 +682,55 @@ def build_hub_components(
     """
 
     attachment = hikari.Bytes(png_bytes, HUB_ATTACHMENT, "image/png")
+    thumbnails = thumbnails or _hub_thumbnail_assets()
+
+    def thumbnail(filename: str):
+        return Thumbnail(media=hikari.Bytes(thumbnails[filename], filename, "image/png"))
     has_open = bool(open_tickets)
     shown = min(len(open_tickets), MAX_OPEN_PICKER)
+    counts = counts or OverviewCounts(statuses={}, by_type={}, flags={})
+    total = sum(_int(value) for value in counts.statuses.values())
+    updated = int(counts.updated_at.timestamp()) if counts.updated_at else None
+    freshness = f"Updated <t:{updated}:R>" if updated else "Updated just now"
+    closed = _int(counts.statuses.get("closed"))
+    main_total = sum(_int(value) for value in counts.by_type.get("main", {}).values())
+    fwa_total = sum(_int(value) for value in counts.by_type.get("fwa", {}).values())
+    total_copy = f"**{total} tickets** · Main {main_total} · FWA {fwa_total} · {freshness}"
+    if closed:
+        total_copy += f" · **{closed} closed / no decision**"
+    def clan_line(kind: str, label: str, icon: str) -> str:
+        values = counts.by_type.get(kind, {})
+        return (
+            f"### {icon} {label}\n"
+            f"**{_int(values.get('approved'))} approved** · "
+            f"**{_int(values.get('open'))} open** · "
+            f"**{_int(values.get('denied'))} denied**"
+        )
     return [Container(
         accent_color=ACCENT_BLUE,
         components=[
+            Text(content="# Ticket Console"),
+            Text(content=total_copy),
+            Separator(divider=True),
             Media(items=[MediaItem(
                 media=attachment,
-                description="Ticket totals by status and clan type, plus active staff flags.",
+                description="Approved, open, and denied ticket totals.",
             )]),
+            Separator(divider=True),
+            Section(components=[Text(content=clan_line("main", "Main clan", "🏆"))],
+                    accessory=thumbnail("clan_main.png")),
+            Section(components=[Text(content=clan_line("fwa", "FWA clan", "💎"))],
+                    accessory=thumbnail("clan_fwa.png")),
+            Text(content="### Flags"),
+            Section(components=[Text(content=f"**{_int(counts.flags.get('blacklisted'))} blacklisted**")],
+                    accessory=thumbnail("flag_blacklisted.png")),
+            Section(components=[Text(content=f"**{_int(counts.flags.get('denied_before'))} denied before**")],
+                    accessory=thumbnail("flag_denied_before.png")),
+            Section(components=[Text(content=f"**{_int(counts.flags.get('not_loyal'))} not loyal to WU**")],
+                    accessory=thumbnail("flag_not_loyal.png")),
+            Separator(divider=True),
+            *([Text(content="No open tickets right now. Find and Browse still search ticket history.")]
+              if not has_open else []),
             ActionRow(components=[TextSelectMenu(
                 custom_id=f"ticket_v2_console_pick:{HUB_ACTION_ID}",
                 placeholder=_hub_picker_placeholder(has_open, shown, total_open),
@@ -730,21 +785,32 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
         flag_store.count_active(mongo),
     )
     statuses, by_type = _coerce_counts(raw_counts)
-    png = await render_overview(OverviewCounts(
+    counts = OverviewCounts(
         statuses=statuses,
         by_type=by_type,
         flags=flag_counts if isinstance(flag_counts, Mapping) else {},
         updated_at=utcnow(),
-    ))
+    )
+    # Pillow decodes and resizes the thumbnail PNGs only on their first use.
+    # Prewarm all five together off the gateway event loop; subsequent builds
+    # read the tiny process-local cache synchronously.
+    png, thumbnails = await asyncio.gather(
+        render_status_strip(counts),
+        asyncio.to_thread(_hub_thumbnail_assets),
+    )
     return build_hub_components(
-        open_tickets, png, total_open=statuses.get("open", len(open_tickets))
+        open_tickets,
+        png,
+        total_open=statuses.get("open", len(open_tickets)),
+        counts=counts,
+        thumbnails=thumbnails,
     )
 
 
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 2
+HUB_LAYOUT_VERSION = 3
 
 
 async def _chart_signature(mongo: MongoClient) -> str:

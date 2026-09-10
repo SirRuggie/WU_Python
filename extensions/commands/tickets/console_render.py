@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 import math
+from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,6 +99,17 @@ def _age_copy(value: datetime | None) -> str:
         return f"updated {minutes}m ago"
     hours = minutes // 60
     return f"updated {hours}h ago"
+
+
+@lru_cache(maxsize=5)
+def thumbnail_asset(filename: str) -> bytes:
+    """Return a small cached PNG for a native console thumbnail."""
+    with Image.open(_ASSETS / filename) as source:
+        image = source.convert("RGBA")
+        image.thumbnail((160, 160), Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        image.save(output, format="PNG", optimize=True)
+        return output.getvalue()
 
 
 def render_overview_sync(counts: OverviewCounts) -> bytes:
@@ -310,3 +322,34 @@ async def render_overview(counts: OverviewCounts) -> bytes:
     """Render without occupying the Discord gateway event loop."""
 
     return await asyncio.to_thread(render_overview_sync, counts)
+
+
+def render_status_strip_sync(counts: OverviewCounts) -> bytes:
+    """Render only the three high-value status totals for a narrow media card."""
+    width, height = 720, 250
+    image = Image.new("RGB", (width * SCALE, height * SCALE), CANVAS)
+    draw = ImageDraw.Draw(image)
+    values = (
+        ("APPROVED", _count(counts.statuses, "approved"), APPROVED),
+        ("OPEN", _count(counts.statuses, "open"), OPEN),
+        ("DENIED", _count(counts.statuses, "denied"), DENIED),
+    )
+    gap, left, card_width = 14, 18, 218
+    for index, (label, number, color) in enumerate(values):
+        x = left + index * (card_width + gap)
+        draw.rounded_rectangle(
+            (x * SCALE, 20 * SCALE, (x + card_width) * SCALE, 230 * SCALE),
+            radius=16 * SCALE, fill=_tint(color), outline=color, width=2 * SCALE,
+        )
+        number_size = 72 if len(str(number)) <= 3 else 60 if len(str(number)) == 4 else 50
+        draw.text(((x + card_width // 2) * SCALE, 102 * SCALE), str(number),
+                  font=_font(number_size, bold=True), fill=color, anchor="mm")
+        draw.text(((x + card_width // 2) * SCALE, 176 * SCALE), label,
+                  font=_font(28, bold=True), fill=INK, anchor="mm")
+    output = io.BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
+async def render_status_strip(counts: OverviewCounts) -> bytes:
+    return await asyncio.to_thread(render_status_strip_sync, counts)

@@ -247,26 +247,72 @@ def test_archived_ticket_jump_is_a_plain_url_and_never_an_unarchive_action():
     )
 
 
-def test_shared_hub_has_only_chart_picker_and_find_and_uploads_a_fresh_png():
+def _hub_picker_component(container):
+    return next(
+        child["components"][0]
+        for child in container["components"]
+        if child["type"] == hikari.ComponentType.ACTION_ROW
+        and child["components"][0].get("custom_id") == "ticket_v2_console_pick:hub"
+    )
+
+
+def test_shared_hub_has_native_overview_status_picker_and_actions():
     view = console.build_hub_components([_ticket(index) for index in range(1, 26)], b"png")
     container, attachments = view[0].build()
 
-    assert len(container["components"]) == 3
-    assert [child["type"] for child in container["components"]] == [
+    assert [child["type"] for child in container["components"][:4]] == [
+        hikari.ComponentType.TEXT_DISPLAY,
+        hikari.ComponentType.TEXT_DISPLAY,
+        hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.MEDIA_GALLERY,
-        hikari.ComponentType.ACTION_ROW,
-        hikari.ComponentType.ACTION_ROW,
     ]
-    assert [attachment.filename for attachment in attachments] == ["ticket_overview.png"]
-    select = container["components"][1]["components"][0]
+    assert container["components"][0]["content"] == "# Ticket Console"
+    assert [attachment.filename for attachment in attachments] == [
+        "ticket_overview.png", "clan_main.png", "clan_fwa.png",
+        "flag_blacklisted.png", "flag_denied_before.png", "flag_not_loyal.png",
+    ]
+    assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 5
+    select = _hub_picker_component(container)
     assert len(select["options"]) == 25
     assert all(option["value"].startswith("ticket_") for option in select["options"])
-    buttons = container["components"][2]["components"]
+    buttons = container["components"][-1]["components"]
     assert [button["custom_id"] for button in buttons] == [
         "ticket_v2_console_find:hub",
         "ticket_v2_console_browse:hub",
     ]
     assert buttons[1]["label"] == "Browse tickets"
+    _assert_component_limits(view)
+
+
+def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkeypatch):
+    calls = []
+
+    async def list_open(_mongo, *, limit):
+        assert limit == console.MAX_OPEN_PICKER
+        return []
+
+    async def counts(_mongo):
+        return {"statuses": {"open": 0}, "by_type": {"main": {}, "fwa": {}}}
+
+    async def flags(_mongo):
+        return {}
+
+    async def strip(_counts):
+        return b"strip"
+
+    async def to_thread(function, *args):
+        calls.append((function, args))
+        return {filename: b"thumbnail" for filename in console.HUB_THUMBNAIL_FILENAMES}
+
+    monkeypatch.setattr(console.store, "list_open", list_open)
+    monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.flag_store, "count_active", flags)
+    monkeypatch.setattr(console, "render_status_strip", strip)
+    monkeypatch.setattr(console.asyncio, "to_thread", to_thread)
+
+    view = asyncio.run(console._hub_payload(object()))
+
+    assert calls == [(console._hub_thumbnail_assets, ())]
     _assert_component_limits(view)
 
 
@@ -280,7 +326,7 @@ def test_hub_picker_with_more_than_25_open_shows_oldest_and_says_how_many():
     view = console.build_hub_components(tickets, b"png", total_open=30)
     container, _attachments = view[0].build()
 
-    select = container["components"][1]["components"][0]
+    select = _hub_picker_component(container)
     assert len(select["options"]) == 25
     shown_ids = {option["value"] for option in select["options"]}
     assert shown_ids == {console._ticket_id(_ticket(index)) for index in range(1, 26)}
@@ -294,14 +340,14 @@ def test_hub_picker_placeholder_stays_plain_when_25_or_fewer_open():
     tickets = [_ticket(index) for index in range(1, 26)]
     view = console.build_hub_components(tickets, b"png", total_open=25)
     container, _attachments = view[0].build()
-    select = container["components"][1]["components"][0]
+    select = _hub_picker_component(container)
     assert select["placeholder"] == "Choose an open ticket"
 
 
 def test_empty_hub_keeps_a_valid_disabled_picker():
     view = console.build_hub_components([], b"png")
     container, _attachments = view[0].build()
-    select = container["components"][1]["components"][0]
+    select = _hub_picker_component(container)
     assert select["disabled"] is True
     assert [option["label"] for option in select["options"]] == ["No open tickets"]
     _assert_component_limits(view)
@@ -314,7 +360,7 @@ def test_hub_picker_option_label_is_not_markdown_escaped():
     ticket = _ticket(1, username="_Weird*Name_")
     view = console.build_hub_components([ticket], b"png")
     container, _attachments = view[0].build()
-    select = container["components"][1]["components"][0]
+    select = _hub_picker_component(container)
 
     assert select["options"][0]["label"] == "FWA #1 · _Weird*Name_"
     assert "\\" not in select["options"][0]["label"]
