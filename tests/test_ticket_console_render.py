@@ -139,10 +139,13 @@ def test_async_clan_status_bar_moves_pillow_off_the_event_loop(monkeypatch):
 
 
 def test_flag_row_is_slim_readable_and_handles_empty_or_large_counts():
-    for count in (0, 123_456):
+    for count, color, filename in (
+        (0, console_render.NOT_LOYAL, "flag_not_loyal.png"),
+        (123_456, console_render.GHOSTED, "flag_ghosted.png"),
+    ):
         payload = console_render.render_flag_row_sync(
             label="NOT LOYAL TO WU", count=count,
-            color=console_render.NOT_LOYAL, filename="flag_not_loyal.png",
+            color=color, filename=filename,
         )
         with Image.open(io.BytesIO(payload)) as image:
             assert image.size == (1200 * console_render.SCALE, 132 * console_render.SCALE)

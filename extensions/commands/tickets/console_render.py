@@ -34,6 +34,7 @@ DENIED = "#f0555a"
 BLACKLISTED = "#dd1c1d"
 DENIED_BEFORE = "#ffcc00"
 NOT_LOYAL = "#f17511"
+GHOSTED = "#08c3fa"
 NEUTRAL = "#80848e"
 
 _ROOT = Path(__file__).resolve().parents[3]
