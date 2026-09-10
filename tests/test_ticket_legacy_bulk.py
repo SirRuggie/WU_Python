@@ -252,6 +252,28 @@ def test_build_plan_document_shape(monkeypatch):
     }
 
 
+def test_build_plan_previews_an_applicant_name_with_log_as_a_substring(monkeypatch):
+    async def fetch_guild_channels(_guild_id):
+        return [_channel(2002, "fwa-7-catalog")]
+
+    previewed = []
+
+    async def fake_preview(*, bot, mongo, request):
+        previewed.append(request.source_channel_id)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    bot = SimpleNamespace(rest=SimpleNamespace(fetch_guild_channels=fetch_guild_channels))
+
+    document = asyncio.run(legacy_bulk.build_plan(
+        bot=bot, mongo=_mongo(), source_guild_id=1, category_id=None,
+        attachments="copy", limit=None,
+    ))
+
+    assert previewed == [2002]
+    assert document["entries"][0]["classification"] == legacy_bulk.CLASS_READY
+
+
 def test_build_plan_skips_already_copied_channels_without_previewing(monkeypatch):
     async def fetch_guild_channels(_guild_id):
         return [_channel(3001, "✅main-1-alice")]
@@ -345,6 +367,69 @@ def test_run_batch_resumes_and_skips_done_entries(monkeypatch):
     statuses = {entry["channel_id"]: entry["status"] for entry in document["entries"]}
     assert statuses == {2001: "done", 2002: "skipped", 2003: "done", 2005: "done"}
     assert document["state"] == "complete"
+
+
+def test_run_batch_retries_a_failed_ready_entry_without_double_counting_progress(monkeypatch):
+    attempts: dict[int, int] = {}
+
+    async def preview(*, bot, mongo, request):
+        return SimpleNamespace(request=request)
+
+    async def migrate(*, bot, mongo, preview):
+        channel_id = preview.request.source_channel_id
+        attempts[channel_id] = attempts.get(channel_id, 0) + 1
+        if channel_id == 2001 and attempts[channel_id] == 1:
+            raise RuntimeError("transient failure")
+        return legacy_migration.LegacyMigrationResult(
+            ticket={"_id": f"ticket_{channel_id}", "ticket_number": channel_id},
+            migration={}, resumed=False,
+        )
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", preview)
+    monkeypatch.setattr(legacy_migration, "migrate_legacy_ticket", migrate)
+    mongo = _mongo(batch=_batch_document(11, [_ready(2001), _ready(2003)]))
+    bot = SimpleNamespace(rest=SimpleNamespace())
+
+    first = asyncio.run(legacy_bulk.run_batch(
+        bot=bot, mongo=mongo, source_guild_id=11, guild_name="Legacy One",
+        limit=None, actor_id=1, actor_name="Admin",
+    ))
+    assert first["state"] == "running"
+    assert [entry["status"] for entry in first["entries"]] == [
+        "failed:RuntimeError: transient failure", "done",
+    ]
+
+    second = asyncio.run(legacy_bulk.run_batch(
+        bot=bot, mongo=mongo, source_guild_id=11, guild_name="Legacy One",
+        limit=None, actor_id=1, actor_name="Admin",
+    ))
+    assert second["state"] == "complete"
+    assert [entry["status"] for entry in second["entries"]] == ["done", "done"]
+    assert attempts == {2001: 2, 2003: 1}
+
+
+def test_run_batch_skips_applicants_deleted_since_the_plan_without_pausing(monkeypatch):
+    _patch_migration_cycle(monkeypatch)
+    deleted_ids = set(range(3001, 3013))
+
+    async def preview(*, bot, mongo, request):
+        if request.source_channel_id in deleted_ids:
+            raise legacy_migration.DeletedApplicant("applicant account deleted")
+        return SimpleNamespace(request=request)
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", preview)
+    entries = [_ready(channel_id) for channel_id in range(3001, 3014)]
+    mongo = _mongo(batch=_batch_document(12, entries, state="planned"))
+    document = asyncio.run(legacy_bulk.run_batch(
+        bot=SimpleNamespace(rest=SimpleNamespace()), mongo=mongo,
+        source_guild_id=12, guild_name="Legacy Two",
+        limit=None, actor_id=1, actor_name="Admin",
+    ))
+    assert document["state"] == "complete"
+    assert document["counts"][legacy_bulk.CLASS_DELETED_APPLICANT] == 12
+    assert all(entry["status"] == "skipped" for entry in document["entries"][:-1])
+    assert document["entries"][-1]["status"] == "done"
+    assert document["consecutive_failures"] == 0
 
 
 def test_run_batch_marks_failures_and_stops_after_ten_consecutive(monkeypatch):
@@ -514,6 +599,38 @@ def test_post_console_summary_posts_an_unpinged_message_in_the_console_channel()
     assert posted == [(555, "the summary", False)]
 
 
+def test_long_summary_is_delivered_in_full_within_discord_limits():
+    posted, replied = [], []
+    text = "\n".join(f"• channel-{i} " + "🛡" * 120 for i in range(25))
+
+    async def create_message(channel_id, content, *, user_mentions=None):
+        assert len(content.encode("utf-16-le")) // 2 <= 2000
+        assert user_mentions is False
+        posted.append(content)
+
+    class Ctx:
+        async def respond(self, content, *, ephemeral=False):
+            assert len(content.encode("utf-16-le")) // 2 <= 2000
+            assert ephemeral
+            replied.append(content)
+
+    asyncio.run(legacy_bulk._finish_with_summary(
+        ctx=Ctx(), bot=SimpleNamespace(rest=SimpleNamespace(create_message=create_message)),
+        mongo=_mongo(setup_docs=(CONFIG, {"_id": "ticket_console_hub", "channel_id": 555})),
+        source_guild_id=99, text=text,
+    ))
+    assert len(posted) > 1
+    assert "".join(posted) == text
+    assert replied == posted
+
+
+def test_summary_chunks_handles_a_single_oversized_line():
+    text = "🛡" * 2500
+    chunks = legacy_bulk._summary_chunks(text)
+    assert "".join(chunks) == text
+    assert all(len(chunk.encode("utf-16-le")) // 2 <= 2000 for chunk in chunks)
+
+
 def test_post_console_summary_is_a_no_op_without_a_configured_console_channel():
     async def create_message(*_args, **_kwargs):
         raise AssertionError("must not post without a configured console channel")
@@ -524,7 +641,8 @@ def test_post_console_summary_is_a_no_op_without_a_configured_console_channel():
     asyncio.run(legacy_bulk._post_console_summary(bot=bot, mongo=mongo, text="ignored"))
 
 
-def test_finish_with_summary_falls_back_to_the_console_post_on_a_dead_token(capsys):
+@pytest.mark.parametrize("error_type", [hikari.NotFoundError, hikari.UnauthorizedError])
+def test_finish_with_summary_falls_back_to_the_console_post_on_a_dead_token(capsys, error_type):
     posted = []
 
     async def create_message(channel_id, content, *, user_mentions=None):
@@ -536,7 +654,7 @@ def test_finish_with_summary_falls_back_to_the_console_post_on_a_dead_token(caps
 
     class DeadCtx:
         async def respond(self, *_args, **_kwargs):
-            raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10062)
+            raise error_type(url="", headers={}, raw_body=b"", code=50027)
 
     asyncio.run(legacy_bulk._finish_with_summary(
         ctx=DeadCtx(), bot=bot, mongo=mongo, source_guild_id=99, text="the durable summary",
@@ -609,7 +727,8 @@ def test_identity_fallback_reads_the_bot_welcome_message_mention():
     assert display_name == "Ghost"
 
 
-def test_identity_fallback_uses_the_channel_name_when_the_applicant_is_gone():
+@pytest.mark.parametrize("saved_identity", [False, True])
+def test_identity_raises_deleted_applicant_when_the_applicant_account_is_gone(saved_identity):
     class Rest:
         async def fetch_member(self, _guild_id, _user_id):
             raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10007)
@@ -623,18 +742,220 @@ def test_identity_fallback_uses_the_channel_name_when_the_applicant_is_gone():
     )
     source_channel = SimpleNamespace(name="✅main-9-oldname", permission_overwrites={})
 
+    with pytest.raises(legacy_migration.DeletedApplicant):
+        asyncio.run(legacy_migration._identity(
+            Rest(),
+            source_ticket=(
+                {"user_id": 555, "username": "saved", "display_name": "Saved"}
+                if saved_identity else None
+            ),
+            source_channel=source_channel,
+            request=request,
+            bot_user_id=999,
+            messages=(),
+        ))
+
+
+def test_identity_fallback_reads_a_welcome_posted_by_a_deleted_non_bot_user():
+    """Server 1: the welcome ping is posted by a now-deleted *user* account
+    (``author.is_bot`` False), not the current bot -- any author qualifies.
+    """
+    class Rest:
+        async def fetch_member(self, _guild_id, _user_id):
+            raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10007)
+
+        async def fetch_user(self, _user_id):
+            return SimpleNamespace(username="ghost", display_name="Ghost")
+
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    source_channel = SimpleNamespace(name="closed-0007", permission_overwrites={})
+    messages = [
+        SimpleNamespace(
+            author=SimpleNamespace(id=0, is_bot=False, username="Deleted User"),
+            content="<@555> Welcome! Thank you for your interest!",
+        ),
+    ]
+
     user_id, username, display_name = asyncio.run(legacy_migration._identity(
         Rest(),
         source_ticket=None,
         source_channel=source_channel,
         request=request,
         bot_user_id=999,
-        messages=(),
+        messages=messages,
     ))
 
     assert user_id == 555
-    assert username == "oldname"
-    assert display_name == "oldname"
+    assert username == "ghost"
+    assert display_name == "Ghost"
+
+
+def test_identity_fallback_reads_a_ticket_tool_welcome_with_an_embed_questionnaire():
+    class Rest:
+        async def fetch_member(self, _guild_id, _user_id):
+            return SimpleNamespace(username="momspaghetti", display_name="Mom Spaghetti")
+
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    source_channel = SimpleNamespace(name="momspaghetti", permission_overwrites={})
+    messages = [
+        SimpleNamespace(
+            author=SimpleNamespace(id=596655147029790750, is_bot=True, username="Ticket Tool"),
+            content="<@!555> Welcome to your \U0001F6E1 WARRIOR'S UNITED\U0001F6E1 Entry Ticket!!",
+            embeds=[SimpleNamespace(title="Questionnaire", description="1) IGN? 2) TH level?")],
+        ),
+    ]
+
+    user_id, username, display_name = asyncio.run(legacy_migration._identity(
+        Rest(),
+        source_ticket=None,
+        source_channel=source_channel,
+        request=request,
+        bot_user_id=999,
+        messages=messages,
+    ))
+
+    assert user_id == 555
+    assert username == "momspaghetti"
+    assert display_name == "Mom Spaghetti"
+
+
+def test_welcome_message_applicant_id_falls_back_to_first_mention_without_welcome_word():
+    messages = [
+        SimpleNamespace(author=SimpleNamespace(id=1), content="no mention here"),
+        SimpleNamespace(author=SimpleNamespace(id=1), content="<@777> please read the rules"),
+    ]
+    assert legacy_migration._welcome_message_applicant_id(
+        messages, bot_user_id=999
+    ) == 777
+
+
+def test_leading_mention_id_uses_the_raw_leading_mention_not_unordered_parsed_ids():
+    message = SimpleNamespace(
+        content="<@111> Welcome! Please ask <@222> for help.",
+        user_mentions_ids=[222, 111],
+    )
+    assert legacy_migration._leading_mention_id(message) == 111
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: `not_a_ticket` classification (non-ticket channels swept up by
+# the category/prefix match -- see docs/handoff-legacy-migration.md "How a
+# channel is read")
+# ---------------------------------------------------------------------------
+
+def test_looks_like_non_ticket_channel_name_matches_the_observed_server_1_names():
+    for name in (
+        "mainclan-commands", "fwa-background-check", "mainclan-recruitment-process",
+        "fwa-commands", "main-notes", "fwa-log", "main-rules", "fwa-info",
+        "mainclan-general", "fwa-chat",
+    ):
+        assert legacy_migration._looks_like_non_ticket_channel_name(name) is True
+    for name in (
+        "main-1-alice", "main-42-chatty", "fwa-7-catalog",
+        "main-applicant-chat", "fwa-candidate-info",
+    ):
+        assert legacy_migration._looks_like_non_ticket_channel_name(name) is False
+
+
+def test_identity_raises_not_a_ticket_when_no_overwrite_and_no_mention_at_all():
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    source_channel = SimpleNamespace(name="mainclan-commands", permission_overwrites={})
+    messages = [
+        SimpleNamespace(author=SimpleNamespace(id=1), content="just chatting, no mention"),
+    ]
+
+    with pytest.raises(legacy_migration.NotALegacyTicketChannel):
+        asyncio.run(legacy_migration._identity(
+            SimpleNamespace(),
+            source_ticket=None,
+            source_channel=source_channel,
+            request=request,
+            bot_user_id=999,
+            messages=messages,
+        ))
+
+
+def test_classify_maps_not_a_legacy_ticket_channel(monkeypatch):
+    async def fake_preview(*, bot, mongo, request):
+        raise legacy_migration.NotALegacyTicketChannel("not a ticket")
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    classification, _detail, ticket_status = asyncio.run(
+        legacy_bulk._classify(bot=SimpleNamespace(), mongo=SimpleNamespace(), request=request)
+    )
+    assert classification == legacy_bulk.CLASS_NOT_A_TICKET
+    assert ticket_status is None
+
+
+def test_classify_maps_deleted_applicant(monkeypatch):
+    async def fake_preview(*, bot, mongo, request):
+        raise legacy_migration.DeletedApplicant("applicant account deleted")
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1, source_channel_id=2, target_guild_id=10,
+        candidate_parent_id=20, staff_parent_id=21,
+    )
+    classification, _detail, ticket_status = asyncio.run(
+        legacy_bulk._classify(bot=SimpleNamespace(), mongo=SimpleNamespace(), request=request)
+    )
+    assert classification == legacy_bulk.CLASS_DELETED_APPLICANT
+    assert ticket_status is None
+
+
+def test_build_plan_classifies_non_ticket_channel_names_without_previewing():
+    async def fetch_guild_channels(_guild_id):
+        return [_channel(4001, "mainclan-commands")]
+
+    bot = SimpleNamespace(rest=SimpleNamespace(fetch_guild_channels=fetch_guild_channels))
+    mongo = _mongo()
+
+    document = asyncio.run(legacy_bulk.build_plan(
+        bot=bot, mongo=mongo, source_guild_id=50, category_id=None,
+        attachments="copy", limit=None,
+    ))
+
+    entry = document["entries"][0]
+    assert entry["classification"] == legacy_bulk.CLASS_NOT_A_TICKET
+    assert entry["status"] == "skipped"
+
+
+def test_dry_run_summary_reports_the_not_a_ticket_count():
+    entries = [
+        legacy_bulk._entry(1, "main-1", legacy_bulk.CLASS_READY, "", "main", "approved"),
+        legacy_bulk._entry(2, "mainclan-commands", legacy_bulk.CLASS_NOT_A_TICKET, "not a ticket", None),
+        legacy_bulk._entry(3, "fwa-background-check", legacy_bulk.CLASS_NOT_A_TICKET, "not a ticket", None),
+    ]
+    document = _batch_document(9, entries)
+    summary = legacy_bulk.dry_run_summary(document, guild_name="Legacy Nine")
+    assert "**Not tickets:** `2`" in summary
+    assert f"{legacy_bulk.CLASS_NOT_A_TICKET}: `2`" in summary
+
+
+def test_dry_run_summary_reports_the_deleted_applicant_count():
+    entries = [
+        legacy_bulk._entry(1, "main-1", legacy_bulk.CLASS_READY, "", "main", "approved"),
+        legacy_bulk._entry(
+            2, "main-2", legacy_bulk.CLASS_DELETED_APPLICANT, "applicant account deleted", None,
+        ),
+    ]
+    document = _batch_document(9, entries)
+    summary = legacy_bulk.dry_run_summary(document, guild_name="Legacy Nine")
+    assert "**Applicant account deleted:** `1`" in summary
+    assert f"{legacy_bulk.CLASS_DELETED_APPLICANT}: `1`" in summary
 
 
 # ---------------------------------------------------------------------------

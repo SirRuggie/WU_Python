@@ -55,18 +55,42 @@ channel 1547244294757425212 (`recruiter-desk`).
    kept only as a note in the record.
 7. Numbering, statuses and everything else must never read or write
    legacy-owned Mongo fields (`button_store`, `ticket_setup.config.*_ticket_counter`).
+8. If the APPLICANT's Discord account no longer exists (REST `fetch_user` on
+   the resolved applicant id returns 404 / `NotFoundError`), skip the ticket
+   -- never import it. A deleted WELCOME-POSTER account is irrelevant: those
+   tickets still import when the applicant exists.
+   Always verify the applicant, even with a saved username/display name or
+   an admin override. If the applicant disappears after planning, the
+   confirmed run reclassifies the entry as skipped, not failed.
 
 ## How a channel is read (rules that work across all four eras)
 
 - Ticket detection: GUILD_TEXT channel in a category whose name contains
   "ticket", "main clan", "mainclan" or "fwa", or whose name starts with
   `main`, `fwa`, `mainclan`, `closed` after stripping emoji and dashes.
-  Exclude names containing "log".
+  Exclude only exact type-prefixed `*-log` support roles (for example,
+  `main-log` or `fwa-log`); an applicant suffix such as `fwa-7-catalog`
+  remains a candidate.
 - Type: name prefix (`main`/`mainclan` → main, `fwa` → fwa), else category.
 - Applicant: channel permission overwrites (legacy adds the user), else the
-  first user mention in the channel's first message (posted by "WU Bot",
-  "Ticket Tool" or a now-"Deleted User" bot: `<@id> Welcome! …`). Resolve
-  the username with REST `fetch_user`; on 404 use the channel-name suffix.
+  first message (any first 20 messages, any author -- not just a bot; server
+  1's welcome is often a now-deleted *user* account) that opens with a user
+  mention and mentions "welcome" (`<@id> Welcome! …` / `<@id> Welcome to
+  your 🛡 WARRIOR'S UNITED🛡 Entry Ticket!!`, sometimes with the
+  questionnaire in an embed on the same message), else the first message of
+  any kind that opens with a user mention. The applicant ID always comes from
+  that raw leading mention; `user_mentions_ids` is unordered and may put a
+  later mention first. Resolve the username with REST `fetch_member`, falling back to
+  `fetch_user`; if both 404 the applicant's account no longer exists --
+  raise `DeletedApplicant` and skip the ticket (Owner rule 8), never fall
+  back to the channel name. A channel with no permission-overwrite applicant
+  and no mention message at all is `not_a_ticket`, never migrated -- likewise
+  only these exact observed support names: `mainclan-commands`,
+  `fwa-background-check`, `mainclan-recruitment-process`, `fwa-commands`;
+  or an exact type-prefixed role name such as `main-notes`, `fwa-log`,
+  `main-rules`, `fwa-info`, `mainclan-general` or `fwa-chat`. This uses
+  full-name matches, so applicant names such as `main-42-chatty` and
+  `fwa-7-catalog` remain candidates.
 - Outcome: ✅ → approved, ❌ → denied; else an approval embed in history
   ("Welcome to the Family!", "Congratulations on being accepted"); else a
   denial embed ("regret to inform", "Denied"); else closed/no decision.
@@ -95,6 +119,36 @@ channel 1547244294757425212 (`recruiter-desk`).
   Suite at that commit: 1826 passed, 2 skipped.
 
 Checkpoint log (newest first):
+- 2026-09-09: migration fixes independently reviewed; full regression suite
+  passed (1871 passed, 2 skipped; card-board/card-scan excluded as usual).
+  Not deployed; run a fresh server-1 dry run after deployment so the saved
+  plan reflects the corrected applicant and support-channel classifications.
+- 2026-09-09: log review confirmed the server-1 dry run finished scanning
+  451 channels (261 ready, 190 problems), then summary delivery failed:
+  Discord rejected content over 2000 characters, followed by an expired
+  interaction token (401 / 50027). Summary delivery now splits long text
+  into bounded messages and handles expired tokens. Deleted-applicant
+  checks now also cover saved identities and confirmed-run rechecks.
+  These changes require deployment before another migration run.
+- 2026-09-09 final migration hardening: applicant selection now parses the
+  raw leading mention because hikari's parsed mention IDs are unordered;
+  non-ticket support-channel filtering uses only observed full names, so
+  applicant suffixes such as `main-42-chatty` remain eligible. A failed
+  `ready` batch entry is retryable and keeps the batch incomplete until it
+  succeeds, rather than allowing a premature `complete` state.
+- 2026-09-09 later: a live server-1 dry run showed two misclassifications.
+  Real tickets whose welcome was posted by a now-deleted *user* account or
+  by "Ticket Tool" (not the current bot) fell through to `no_applicant`;
+  fixed by accepting any author for the welcome/mention message
+  (`legacy_migration._welcome_message_applicant_id` /
+  `_leading_mention_id`, parsing the raw leading mention because hikari's
+  `user_mentions_ids` order is not reliable). Non-ticket channels swept up by the category/prefix
+  match (`mainclan-commands`, `fwa-background-check`, etc., or any channel
+  with no overwrite applicant and no mention message at all) also fell
+  through to `no_applicant`; added the `not_a_ticket` classification
+  (`legacy_migration._looks_like_non_ticket_channel_name`,
+  `legacy_migration.NotALegacyTicketChannel`) so they are counted
+  separately in the dry-run summary and never migrated.
 - 2026-09-09 night: first server-1 dry run spun silently (no logs, plan
   written only at the end, 15-min token risk). Fixed and DEPLOYED as
   `a8ef3fb`: bounded history (20 oldest + 20 newest) for the dry run,

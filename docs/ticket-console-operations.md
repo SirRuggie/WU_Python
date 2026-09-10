@@ -547,17 +547,33 @@ the numbered `main-<n>`/`fwa-<n>` pattern the other servers use. Each match
 is previewed oldest-first and classified: `ready`, `already_copied` (a
 completed `ticket_migrations` row already exists — not re-previewed),
 `open` (still-open tickets are refused, same as `migrate-legacy`, except
-server 3 — see below), `no_applicant` (no candidate ID could be detected),
+server 3 — see below), `no_applicant` (an overwrite or mention applicant
+candidate exists but could not be resolved to exactly one ID),
 `ambiguous_type`, `skipped_owner_test` (the owner's own test ticket — never
 migrated, any server), `abandoned` (the applicant never wrote in the
-channel — skipped unless `include-abandoned:true`), or
-`error:<ExceptionName>`. The plan is saved to `ticket_migration_batches`
+channel — skipped unless `include-abandoned:true`), `not_a_ticket` (a
+non-ticket channel swept up by the category/prefix match — only the exact
+observed support names `mainclan-commands`, `fwa-background-check`,
+`mainclan-recruitment-process`, `fwa-commands`, plus exact type-prefixed
+role names such as `main-notes`, `fwa-log`, `main-rules`, `fwa-info`,
+`mainclan-general` and `fwa-chat`; or it has no permission-overwrite
+applicant and no welcome/mention message at all — never migrated; applicant
+suffixes are full-name matched conservatively, so `main-42-chatty` and
+`fwa-7-catalog` remain candidates), `deleted_applicant` (the applicant's Discord account no longer
+exists — REST `fetch_member` and `fetch_user` both 404 — never migrated,
+Owner rule 8; a deleted welcome-poster account is irrelevant, those still
+import), or `error:<ExceptionName>`. The plan is saved to
+`ticket_migration_batches`
 (`_id: "batch:<source_guild_id>"`, capped at 1000 matching channels per
 category — narrow the category if it reports more) and the reply is a
 plain-English summary: totals per classification, per type, and per
-outcome (including `closed, no decision`), the first 15 problem channels
-with a reason and a jump link, and the exact `confirm:true` command to run.
-Because each channel's own classification only needs the applicant
+outcome (including `closed, no decision`), a dedicated `Not tickets: N`
+line counting the `not_a_ticket` entries (never migrated), a dedicated
+`Applicant account deleted: N` line counting the `deleted_applicant`
+entries (never migrated), the first 15 problem channels with a reason and
+a jump link, and the exact
+`confirm:true` command to run. Because each channel's own classification
+only needs the applicant
 mention/welcome message near the start and any decision embed near the
 end, the dry run reads a bounded head+tail slice of history (first/last 20
 messages per channel/staff-thread) instead of the full channel — a
@@ -583,12 +599,22 @@ scan is durable and observable rather than a single all-or-nothing call:
   guild=<id> scanned=<n> ready=<r> problems=<p> elapsed=<s>s` when it
   finishes.
 - The finished summary is posted twice: once as the normal ephemeral
-  reply, and once as a plain (unpinged) message in the ticket console
+  reply, and once as plain (unpinged) messages in the ticket console
   channel (`ticket_setup` doc `ticket_console_hub`) so the result survives
-  even if the interaction token has already died. If the ephemeral reply
-  itself fails (`NotFoundError`/`BadRequestError` — a dead token), that is
+  even if the interaction token has already died. Both copies are split
+  at line boundaries into messages within Discord's 2000-character
+  content limit; unusually long individual lines are also split. If the reply
+  itself fails (`UnauthorizedError`/`NotFoundError`/`BadRequestError`), that is
   logged as `[Tickets] migrate_all_reply_lost guild=<id>` and the console
   post is the only record of the result.
+
+Applicant existence is checked even when a source record or admin override
+already supplies the name. A member who left the server still qualifies if
+the user lookup succeeds. An unknown user is classified as
+`deleted_applicant`; permissions and transient lookup failures are not
+treated as account deletion. If the applicant is deleted between planning
+and confirmation, the entry becomes skipped and does not count toward the
+ten-consecutive-failures pause.
 
 **Outcome when a channel has no ✅/❌ prefix:** the channel's history is
 scanned for an approval message/embed ("Welcome to the Family!",
@@ -633,8 +659,10 @@ logged as `[Tickets] migrate_all_reply_lost guild=<id>` when that happens.
 
 **Resume and pause:** running `/tickets migrate-all confirm:true` again with
 the same `source-guild` resumes the same batch and skips every entry already
-marked `done` — safe to repeat after a restart, a `limit` cutoff, or a lease
-timeout. After ten consecutive per-ticket failures the batch pauses itself
+marked `done`. Any `ready` entry whose status is `failed:*` remains retryable;
+the batch cannot complete until every `ready` entry is `done` — safe to repeat
+after a restart, a `limit` cutoff, a transient failure, or a lease timeout.
+After ten consecutive per-ticket failures the batch pauses itself
 (`state: "paused"`) rather than continuing to fail; confirming again resumes
 from the same point once the underlying problem (usually a destination
 configuration issue) is fixed. Per-ticket crash recovery still relies on the

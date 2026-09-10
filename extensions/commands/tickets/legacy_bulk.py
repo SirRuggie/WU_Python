@@ -57,6 +57,13 @@ CLASS_NO_APPLICANT = "no_applicant"
 CLASS_AMBIGUOUS_TYPE = "ambiguous_type"
 CLASS_SKIPPED_OWNER_TEST = "skipped_owner_test"
 CLASS_ABANDONED = "abandoned"
+# The applicant's Discord account no longer exists (handoff "Owner rules" #8)
+# -- never migrated.
+CLASS_DELETED_APPLICANT = "deleted_applicant"
+# Channel name matched the legacy category/prefix rules only incidentally
+# (a commands/notes/log/etc. channel), or no applicant overwrite and no
+# welcome/mention message was found at all -- never migrated.
+CLASS_NOT_A_TICKET = "not_a_ticket"
 
 _as_int = legacy_migration._as_int
 _aware = legacy_migration._aware
@@ -148,12 +155,16 @@ async def _classify(
         preview = await legacy_migration.preview_legacy_ticket(
             bot=bot, mongo=mongo, request=request
         )
+    except legacy_migration.NotALegacyTicketChannel as error:
+        return CLASS_NOT_A_TICKET, str(error), None
     except legacy_migration.SkippedOwnerTestTicket as error:
         return CLASS_SKIPPED_OWNER_TEST, str(error), None
     except legacy_migration.AbandonedLegacyTicket as error:
         return CLASS_ABANDONED, str(error), None
     except legacy_migration.LegacyTicketStillOpen as error:
         return CLASS_OPEN, str(error), None
+    except legacy_migration.DeletedApplicant as error:
+        return CLASS_DELETED_APPLICANT, str(error), None
     except legacy_migration.LegacyMigrationError as error:
         message = str(error)
         if "candidate Discord ID could not be detected" in message:
@@ -270,6 +281,16 @@ async def build_plan(
             await _checkpoint(index)
             continue
 
+        if legacy_migration._looks_like_non_ticket_channel_name(channel_name):
+            entries.append(_entry(
+                channel_id, channel_name, CLASS_NOT_A_TICKET,
+                "channel name matches a non-ticket pattern "
+                "(commands/notes/log/rules/info/general/chat/etc.)",
+                None,
+            ))
+            await _checkpoint(index)
+            continue
+
         try:
             ticket_type = legacy_migration._infer_ticket_type(
                 None, channel_name, None, category_name=category_name,
@@ -370,6 +391,14 @@ def dry_run_summary(document: dict[str, Any], *, guild_name: str) -> str:
             f"**Abandoned (applicant never wrote):** `{abandoned}` — skipped unless "
             "`include-abandoned: true`"
         )
+    not_a_ticket = int(counts.get(CLASS_NOT_A_TICKET, 0))
+    if not_a_ticket:
+        lines.append(f"**Not tickets:** `{not_a_ticket}` — never migrated")
+    deleted_applicant = int(counts.get(CLASS_DELETED_APPLICANT, 0))
+    if deleted_applicant:
+        lines.append(
+            f"**Applicant account deleted:** `{deleted_applicant}` — never migrated"
+        )
 
     all_problems = [entry for entry in entries if entry["classification"] != CLASS_READY]
     problems = all_problems[:DRY_RUN_PROBLEM_LIMIT]
@@ -398,6 +427,30 @@ async def _console_channel_id(mongo: MongoClient) -> int:
     return _as_int(hub.get("channel_id"))
 
 
+def _summary_chunks(text: str) -> list[str]:
+    """Split at line boundaries when possible, within Discord's content limit.
+
+    Count UTF-16 units conservatively so emoji-heavy names fit too.
+    """
+    chunks: list[str] = []
+    while text:
+        units = 0
+        end = 0
+        for char in text:
+            size = 2 if ord(char) > 0xFFFF else 1
+            if units + size > 2000:
+                break
+            units += size
+            end += 1
+        if end < len(text):
+            newline = text.rfind("\n", 0, end)
+            if newline >= 0:
+                end = newline + 1
+        chunks.append(text[:end])
+        text = text[end:]
+    return chunks
+
+
 async def _post_console_summary(*, bot: hikari.GatewayBot, mongo: MongoClient, text: str) -> None:
     """Durable copy of a dry-run/run summary: a plain message in the console
 
@@ -409,7 +462,8 @@ async def _post_console_summary(*, bot: hikari.GatewayBot, mongo: MongoClient, t
     if not console_channel_id:
         return
     try:
-        await bot.rest.create_message(console_channel_id, text, user_mentions=False)
+        for chunk in _summary_chunks(text):
+            await bot.rest.create_message(console_channel_id, chunk, user_mentions=False)
     except (hikari.NotFoundError, hikari.ForbiddenError):
         _log.warning(
             "[Tickets] migrate_all_console_summary_failed channel=%s", console_channel_id
@@ -426,14 +480,15 @@ async def _finish_with_summary(
 ) -> None:
     """Post the durable console summary, then attempt the ephemeral reply.
 
-    A dead interaction token (``NotFoundError``/``BadRequestError``, e.g.
+    A dead interaction token (``UnauthorizedError``/``NotFoundError``, e.g.
     after a long dry run) is logged and otherwise ignored: the console post
     above already carries the result.
     """
     await _post_console_summary(bot=bot, mongo=mongo, text=text)
     try:
-        await ctx.respond(text, ephemeral=True)
-    except (hikari.NotFoundError, hikari.BadRequestError):
+        for chunk in _summary_chunks(text):
+            await ctx.respond(chunk, ephemeral=True)
+    except (hikari.NotFoundError, hikari.BadRequestError, hikari.UnauthorizedError):
         print(f"[Tickets] migrate_all_reply_lost guild={source_guild_id}")
 
 
@@ -585,6 +640,12 @@ async def run_batch(
         if limit is not None and processed_this_run >= limit:
             break
 
+        # A failed ready entry is retryable. Remove its previous contribution
+        # before recording this attempt, so a repeat failure remains one
+        # failure and a later success clears the displayed failure count.
+        if str(entry["status"]).startswith("failed:"):
+            failed -= 1
+
         ticket_type = entry.get("ticket_type")
         parents = _destination_for_type(config, ticket_type) if ticket_type else None
         target_guild_id = _as_int(config.get("ticket_target_guild_id"))
@@ -619,6 +680,12 @@ async def run_batch(
                 result = await legacy_migration.migrate_legacy_ticket(
                     bot=bot, mongo=mongo, preview=preview
                 )
+            except legacy_migration.DeletedApplicant as error:
+                entry["classification"] = CLASS_DELETED_APPLICANT
+                entry["status"] = "skipped"
+                entry["detail"] = str(error)
+                skipped += 1
+                consecutive_failures = 0
             except Exception as error:
                 entry["status"] = f"failed:{type(error).__name__}: {str(error)[:180]}"
                 failed += 1
@@ -657,12 +724,12 @@ async def run_batch(
             break
         await asyncio.sleep(RUN_SLEEP_SECONDS)
 
-    remaining_pending = any(
-        entry["classification"] == CLASS_READY and entry["status"] == "pending"
+    remaining_work = any(
+        entry["classification"] == CLASS_READY and entry["status"] != "done"
         for entry in entries
     )
     if not paused:
-        if remaining_pending:
+        if remaining_work:
             document = await _cas_update(
                 mongo, document,
                 set_fields={"updated_at": utcnow()},

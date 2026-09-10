@@ -73,19 +73,51 @@ def _stripped_channel_name(name: str) -> str:
     return _LEADING_NON_ALNUM_RE.sub("", str(name or ""))
 
 
+_NON_TICKET_SUPPORT_CHANNEL_NAMES = frozenset({
+    "mainclan-commands",
+    "fwa-background-check",
+    "mainclan-recruitment-process",
+    "fwa-commands",
+})
+_NON_TICKET_ROLE_CHANNEL_RE = re.compile(
+    r"^(?:main|mainclan|fwa)-(?:notes|log|rules|info|general|chat)$"
+)
+
+
+def _looks_like_non_ticket_channel_name(name: str) -> bool:
+    """Whether a channel that otherwise matched the legacy-ticket category or
+    name-prefix rules is actually a non-ticket channel swept up alongside
+    them (docs/handoff-legacy-migration.md "How a channel is read"): e.g.
+    `mainclan-commands`, `fwa-background-check`, `mainclan-recruitment-process`,
+    `fwa-commands`, or an exact typed role channel such as `main-notes` or
+    `fwa-log` living in the same category as real ticket channels.
+
+    This intentionally uses full-name matches. Applicant channel suffixes
+    may contain ordinary words such as "chat", "info", or "log".
+    """
+    stripped = _stripped_channel_name(name).casefold()
+    return (
+        stripped in _NON_TICKET_SUPPORT_CHANNEL_NAMES
+        or _NON_TICKET_ROLE_CHANNEL_RE.fullmatch(stripped) is not None
+    )
+
+
 def _is_legacy_ticket_channel(channel: Any, category_name: str) -> bool:
     """Whether a GUILD_TEXT channel is a legacy ticket channel candidate.
 
     docs/handoff-legacy-migration.md "How a channel is read": category name
-    or bare name prefix, excluding anything with "log" in its name (audit
-    logs live in the same categories as the ticket channels themselves).
+    or bare name prefix, excluding only exact typed ``*-log`` support roles
+    (audit logs live in the same categories as the ticket channels).
     """
     name = str(getattr(channel, "name", "") or "")
-    if "log" in name.casefold():
+    stripped = _stripped_channel_name(name).casefold()
+    if (
+        _NON_TICKET_ROLE_CHANNEL_RE.fullmatch(stripped) is not None
+        and stripped.endswith("-log")
+    ):
         return False
     if any(keyword in str(category_name or "").casefold() for keyword in _LEGACY_CATEGORY_KEYWORDS):
         return True
-    stripped = _stripped_channel_name(name).casefold()
     return stripped.startswith(_LEGACY_NAME_PREFIXES)
 
 
@@ -120,6 +152,18 @@ class SkippedOwnerTestTicket(LegacyMigrationError):
 
 class AbandonedLegacyTicket(LegacyMigrationError):
     """The applicant never wrote in this ticket (handoff "Owner rules" #5)."""
+
+
+class NotALegacyTicketChannel(LegacyMigrationError):
+    """No permission-overwrite applicant candidate and no welcome/mention
+    message at all -- this channel is not a legacy ticket (a commands,
+    notes, log, or similar non-ticket channel that matched the category or
+    name-prefix rules only incidentally)."""
+
+
+class DeletedApplicant(LegacyMigrationError):
+    """The applicant's Discord account no longer exists; skip, never import
+    (handoff "Owner rules" #8)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1113,32 +1157,46 @@ def _member_overwrite_ids(channel: Any, *, guild_id: int, bot_user_id: int) -> l
 _WELCOME_MENTION_RE = re.compile(r"^<@!?(\d+)>")
 
 
+def _leading_mention_id(message: Any) -> int | None:
+    """The user id in the leading raw-content mention, if present.
+
+    ``user_mentions_ids`` is unordered and can contain later mentions, so it
+    cannot identify the applicant when a welcome message mentions multiple
+    users. Parse the leading ``<@id>`` or ``<@!id>`` token directly.
+    """
+    content = str(getattr(message, "content", "") or "").strip()
+    match = _WELCOME_MENTION_RE.match(content)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
 def _welcome_message_applicant_id(
     messages: Sequence[Any], *, bot_user_id: int
 ) -> int | None:
     """Scan the channel's earliest messages for the legacy welcome ping.
 
-    Covers both the exact welcome line (``<@id> Welcome! Thank you for your
-    interest!``) and any other bot message that opens with a user mention.
+    Server 1's welcome message (``<@id> Welcome! Thank you for your
+    interest! ...`` or ``<@id> Welcome to your \U0001F6E1 WARRIORS
+    UNITED\U0001F6E1 Entry Ticket!!``, sometimes with the questionnaire in
+    an attached embed) is posted by a now-deleted *user* account or by the
+    "Ticket Tool" bot -- never necessarily ``bot_user_id`` -- so any author
+    is accepted here, not just bot messages. Preferred match: a message that
+    opens with a user mention and mentions "welcome" anywhere in its
+    content. Falls back to the first message of any kind that opens with a
+    user mention when no "welcome" message is found in the window.
     """
+    fallback: int | None = None
     for message in messages[:20]:
-        author_id = _as_int(getattr(getattr(message, "author", None), "id", 0))
-        if author_id != bot_user_id:
+        mention_id = _leading_mention_id(message)
+        if mention_id is None:
             continue
-        content = str(getattr(message, "content", "") or "").strip()
-        match = _WELCOME_MENTION_RE.match(content)
-        if match:
-            return int(match.group(1))
-    return None
-
-
-def _channel_name_username_fallback(source_channel: Any) -> str:
-    """Best-effort username when the applicant has left the source guild."""
-    name = str(getattr(source_channel, "name", "") or "")
-    match = _TICKET_NUMBER_RE.search(name)
-    remainder = name[match.end():] if match else name
-    remainder = remainder.strip("-_ ")
-    return (remainder or name or "legacy-candidate")[:32]
+        if fallback is None:
+            fallback = mention_id
+        content = str(getattr(message, "content", "") or "")
+        if "welcome" in content.casefold():
+            return mention_id
+    return fallback
 
 
 async def _identity(
@@ -1151,17 +1209,28 @@ async def _identity(
     messages: Sequence[Any] = (),
 ) -> tuple[int, str, str]:
     user_id = _as_int(request.user_id_override) or _as_int((source_ticket or {}).get("user_id"))
+    overwrite_candidates: list[int] = []
     if not user_id:
-        candidates = _member_overwrite_ids(
+        overwrite_candidates = _member_overwrite_ids(
             source_channel,
             guild_id=request.source_guild_id,
             bot_user_id=bot_user_id,
         )
-        if len(candidates) == 1:
-            user_id = candidates[0]
+        if len(overwrite_candidates) == 1:
+            user_id = overwrite_candidates[0]
+    welcome_id = None
     if not user_id:
-        user_id = _welcome_message_applicant_id(messages, bot_user_id=bot_user_id)
+        welcome_id = _welcome_message_applicant_id(messages, bot_user_id=bot_user_id)
+        user_id = welcome_id
     if not user_id:
+        if not overwrite_candidates and welcome_id is None:
+            # No permission-overwrite applicant at all and no welcome/mention
+            # message anywhere in the window: this is not a legacy ticket
+            # channel, e.g. `mainclan-commands` or `fwa-background-check`.
+            raise NotALegacyTicketChannel(
+                "no applicant overwrite or welcome/mention message was found; "
+                "this channel does not look like a legacy ticket"
+            )
         raise LegacyMigrationError(
             "the candidate Discord ID could not be detected; enter it in `user-id`"
         )
@@ -1170,24 +1239,19 @@ async def _identity(
         request.username_override or (source_ticket or {}).get("username") or ""
     ).strip()
     display_name = str((source_ticket or {}).get("display_name") or "").strip()
-    if not username or not display_name:
-        member = None
+    # Stored names and admin overrides are historical metadata, not proof
+    # the applicant still exists. Always verify, including on confirmed runs.
+    try:
+        member = await rest.fetch_member(request.source_guild_id, user_id)
+    except (hikari.NotFoundError, hikari.ForbiddenError):
         try:
-            member = await rest.fetch_member(request.source_guild_id, user_id)
-        except (hikari.NotFoundError, hikari.ForbiddenError):
-            try:
-                member = await rest.fetch_user(user_id)
-            except hikari.NotFoundError:
-                member = None
-        if member is not None:
-            username = username or str(getattr(member, "username", ""))
-            display_name = display_name or str(getattr(member, "display_name", "") or username)
-        else:
-            # The applicant no longer exists (left/deleted); fall back to the
-            # legacy channel-name suffix rather than refusing the migration.
-            fallback = _channel_name_username_fallback(source_channel)
-            username = username or fallback
-            display_name = display_name or fallback
+            member = await rest.fetch_user(user_id)
+        except hikari.NotFoundError as exc:
+            raise DeletedApplicant(
+                "the applicant's Discord account no longer exists; skip this ticket"
+            ) from exc
+    username = username or str(getattr(member, "username", ""))
+    display_name = display_name or str(getattr(member, "display_name", "") or username)
     if not username:
         raise LegacyMigrationError("candidate username could not be resolved")
     return user_id, username[:32], (display_name or username)[:80]
