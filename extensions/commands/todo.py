@@ -703,8 +703,8 @@ def _escape_markdown(value: object, *, limit: int = 100) -> str:
     return escaped.replace("@", "@\u200b")
 
 
-def _fwa_suffix(first, fwa_records: dict | None) -> str:
-    """`` vs DevilHarvesters (FWA) · WIN War`` or "".
+def _fwa_header(first, fwa_records: dict | None) -> tuple[str, str]:
+    """Return the compact verdict and a separate opponent line.
 
     Only shown when the stored record's war matches the war these rows are
     actually for - compared via coc_war_end_time vs Row.ends_at, tolerating up
@@ -713,50 +713,37 @@ def _fwa_suffix(first, fwa_records: dict | None) -> str:
     rather than a stale verdict attached to the wrong war.
     """
     if not fwa_records:
-        return ""
+        return "", ""
     record = fwa_records.get(first.clan_tag)
     if not record:
-        return ""
+        return "", ""
 
     end_time_raw = record.get("coc_war_end_time")
     if not end_time_raw or first.ends_at is None:
-        return ""
+        return "", ""
     try:
         record_ends_at = datetime.fromisoformat(end_time_raw).timestamp()
     except (ValueError, OverflowError, OSError):
-        return ""
+        return "", ""
     if abs(record_ends_at - first.ends_at) > 60:
-        return ""
+        return "", ""
 
     outcome = record.get("our_outcome")
-    if outcome == "win":
-        verdict = f"{emojis.yes} WIN War"
+    if record.get("opponent_blacklisted"):
+        verdict = "🚫 BLACKLISTED"
+    elif outcome == "win":
+        verdict = f"{emojis.yes} WIN"
     elif outcome == "lose":
-        verdict = f"{emojis.no} LOSE War"
+        verdict = f"{emojis.no} LOSE"
     else:
-        verdict = _escape_markdown(record.get("raw_verdict") or "unknown")
+        verdict = ""
 
-    vs_bit = ""
     opponent_name = record.get("opponent_name") or record.get("coc_opponent_name")
     if opponent_name:
         vs_bit = f"vs {_escape_markdown(opponent_name)}"
-        if record.get("opponent_blacklisted"):
-            # Deliberately NOT emojis.no - that same "No" glyph already means
-            # LOSE in the verdict half of this same line (see below), and the
-            # two would sit side by side with different meanings. 🚫 is used
-            # nowhere else in this suffix.
-            vs_bit += " 🚫 BLACKLISTED"
-        else:
-            active = record.get("opponent_active_fwa")
-            if active is True:
-                vs_bit += " (FWA)"
-            elif active is False:
-                vs_bit += " (not FWA)"
-
-    parts = [p for p in (vs_bit, verdict) if p]
-    if not parts:
-        return ""
-    return " " + " · ".join(parts) if vs_bit else " · " + verdict
+    else:
+        vs_bit = ""
+    return verdict, vs_bit
 
 
 def _render_rows(rows: list, verb: str = "", stamp_of=None, fwa_records: dict | None = None) -> list:
@@ -777,12 +764,8 @@ def _render_rows(rows: list, verb: str = "", stamp_of=None, fwa_records: dict | 
     the name at all, and being smaller it reads as a caption on the clan rather
     than competing with it.
 
-    The FWA points verdict (_fwa_suffix) is the one deliberate exception to
-    that rule - it IS appended to the header line. That is safe here for two
-    reasons the timing chip does not share: it is per-clan, not per-row, so it
-    never has to summarize rows it is not true for; and it only ever renders on
-    the War view, so it never has to coexist with the timing chip on the same
-    line in the first place.
+    The compact war verdict shares the bold clan heading. The opponent sits
+    on its own regular-text line, keeping long names out of the verdict line.
 
     `verb` is "" for callers with no timing (the Private War Logs view).
     """
@@ -803,7 +786,13 @@ def _render_rows(rows: list, verb: str = "", stamp_of=None, fwa_records: dict | 
         first = members[0]
         lines = "\n".join(_row_line(r) for r in members)
 
-        head = f"**{first.clan_name}**{_fwa_suffix(first, fwa_records)}"
+        verdict, opponent = _fwa_header(first, fwa_records)
+        title = _escape_markdown(first.clan_name)
+        if verdict:
+            title += f" · {verdict}"
+        head = f"**{title}**"
+        if opponent:
+            head += f"\n{opponent}"
         if verb and stamp_of is not None:
             # min() WITHIN one clan is safe - every row here belongs to the same
             # war, so the stamps are equal. It is only a lie ACROSS clans.
@@ -815,8 +804,8 @@ def _render_rows(rows: list, verb: str = "", stamp_of=None, fwa_records: dict | 
         # Section + Thumbnail(clan badge). The badge is the visual anchor that
         # the old "🕒 CLAN · prep · opens in 18h · closes in 2 days" header was
         # trying and failing to be - that header wrapped to two lines on a phone
-        # for every single clan. The clan name still sits alone on a short line;
-        # only its own deadline follows, on the line below.
+        # for every single clan. Keep the compact verdict beside the clan name,
+        # with the opponent and deadline on separate lines below it.
         thumb = _thumbnail_for(first)
         if thumb:
             out.append(Section(
@@ -934,7 +923,7 @@ def _timing_blocks(view: str, rows: list, fwa_records: dict | None = None) -> li
     A heading may therefore state the state and nothing else. Anything a
     heading asserts has to be true of every row beneath it.
 
-    `fwa_records` only makes sense for the War view (see _fwa_suffix) - it is
+    `fwa_records` only makes sense for the War view (see _fwa_header) - it is
     forwarded to _render_rows solely when `view == VIEW_WAR`, so a caller that
     passes it for CWL/Raids by mistake cannot leak a War-only verdict there.
     """
@@ -1000,7 +989,7 @@ def render_dashboard(view: str, page: int, data: dict, *,
     be computed at all.
 
     `fwa_records` is {clan_tag: fwa_points record}, used only when rendering
-    the War view (see _fwa_suffix); every other view ignores it.
+    the War view (see _fwa_header); every other view ignores it.
     """
     counts = {
         k: (v.count if v is not None and v.ok else None)
