@@ -680,6 +680,52 @@ def test_run_batch_prints_progress_lines_per_ticket(monkeypatch, capsys):
     assert "[Tickets] migrate_all_run_done guild=16 done=3 failed=0 skipped=0 total=3" in out
 
 
+def test_run_batch_updates_console_after_a_long_first_ticket(monkeypatch):
+    entries = [_ready(9010), _ready(9011)]
+    mongo = _mongo(batch=_batch_document(16, entries, state="planned"))
+    bot = SimpleNamespace(rest=SimpleNamespace())
+    clock = [0.0]
+    routine_edits: list[str] = []
+
+    async def preview(*, bot, mongo, request):
+        return SimpleNamespace(request=request)
+
+    async def migrate(*, bot, mongo, preview):
+        channel_id = preview.request.source_channel_id
+        if channel_id == 9010:
+            # The first copy took longer than the console edit interval.
+            clock[0] = legacy_bulk.PROGRESS_EDIT_MIN_SECONDS + 1
+        else:
+            assert routine_edits == [
+                "Copying legacy tickets from Legacy Six: 1/2 done, 0 failed, 0 skipped · <t:1788955200:R>"
+            ]
+        return legacy_migration.LegacyMigrationResult(
+            ticket={"_id": f"ticket_{channel_id}", "ticket_number": channel_id},
+            migration={}, resumed=False,
+        )
+
+    async def edit_progress(*, bot, document, text):
+        if text.startswith("Copying legacy tickets"):
+            routine_edits.append(text)
+        return "ok"
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", preview)
+    monkeypatch.setattr(legacy_migration, "migrate_legacy_ticket", migrate)
+    monkeypatch.setattr(legacy_bulk, "_edit_progress_message", edit_progress)
+    monkeypatch.setattr(legacy_bulk.time, "monotonic", lambda: clock[0])
+
+    asyncio.run(legacy_bulk.run_batch(
+        bot=bot, mongo=mongo, source_guild_id=16, guild_name="Legacy Six",
+        limit=None, actor_id=1, actor_name="Admin",
+    ))
+
+    # Ticket two completed at the same monotonic instant, so the normal
+    # throttle emitted only the first current-progress update.
+    assert routine_edits == [
+        "Copying legacy tickets from Legacy Six: 1/2 done, 0 failed, 0 skipped · <t:1788955200:R>"
+    ]
+
+
 def test_post_console_summary_posts_an_unpinged_message_in_the_console_channel():
     posted = []
 

@@ -669,7 +669,8 @@ that owner lease cannot be renewed, the in-flight ticket is stopped and the
 batch does not begin another source channel.
 
 One progress message is posted in the ticket console channel at the start of
-a run and edited every five completed tickets and once more at the end:
+a run and updated after each durable ticket checkpoint when at least ten
+seconds have elapsed since the last routine edit, and once more at the end:
 `Copying legacy tickets from {guild name}: {done}/{total} done, {failed}
 failed, {skipped} skipped · <relative time>`. Separately, console output logs
 `[Tickets] migrate_all_run_start guild=<id> total=<n>` at the start,

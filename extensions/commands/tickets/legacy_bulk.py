@@ -37,7 +37,6 @@ PREVIEW_SLEEP_SECONDS = 0.25
 # Pause between copied tickets so a long confirmed run never leans on
 # hikari's bucket limiter alone (each ticket is many REST calls).
 RUN_SLEEP_SECONDS = 1.0
-PROGRESS_EDIT_EVERY = 5
 # Status writes share the console channel with normal recruiter work.  Count
 # checkpoints alone can bunch several edits into one bucket, so also require a
 # little wall time between routine updates.  Start and terminal states bypass
@@ -970,8 +969,9 @@ async def run_batch(
             f"done={done} failed={failed} skipped={skipped} total={total}"
         )
 
-        if processed_this_run % PROGRESS_EDIT_EVERY == 0:
-            await _post_progress()
+        # A long first ticket should not leave the console at 0/N until four
+        # more finish. _post_progress keeps routine edits time-bounded.
+        await _post_progress()
 
         if consecutive_failures >= CONSECUTIVE_FAILURE_LIMIT:
             paused = True
