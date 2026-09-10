@@ -587,8 +587,8 @@ def test_run_batch_prints_progress_lines_per_ticket(monkeypatch, capsys):
 def test_post_console_summary_posts_an_unpinged_message_in_the_console_channel():
     posted = []
 
-    async def create_message(channel_id, content, *, user_mentions=None):
-        posted.append((channel_id, content, user_mentions))
+    async def create_message(channel_id, content, **kwargs):
+        posted.append((channel_id, content, kwargs))
         return SimpleNamespace(id=1)
 
     bot = SimpleNamespace(rest=SimpleNamespace(create_message=create_message))
@@ -596,16 +596,114 @@ def test_post_console_summary_posts_an_unpinged_message_in_the_console_channel()
 
     asyncio.run(legacy_bulk._post_console_summary(bot=bot, mongo=mongo, text="the summary"))
 
-    assert posted == [(555, "the summary", False)]
+    assert posted == [(555, "the summary", {
+        "user_mentions": False, "role_mentions": False, "mentions_everyone": False,
+    })]
+
+
+def test_progress_message_is_created_and_edited_without_mentions():
+    calls = []
+
+    async def fetch_channel(channel_id):
+        assert channel_id == 555
+        return _channel(555, "recruiter-console")
+
+    async def create_message(channel_id, content, **kwargs):
+        calls.append(("create", channel_id, content, kwargs))
+        return SimpleNamespace(id=777)
+
+    async def edit_message(channel_id, message_id, content, **kwargs):
+        calls.append(("edit", channel_id, message_id, content, kwargs))
+
+    bot = SimpleNamespace(rest=SimpleNamespace(
+        fetch_channel=fetch_channel, create_message=create_message, edit_message=edit_message,
+    ))
+    document = _batch_document(21, [])
+    mongo = _mongo(
+        batch=document,
+        setup_docs=(CONFIG, {"_id": "ticket_console_hub", "channel_id": 555}),
+    )
+
+    document = asyncio.run(legacy_bulk._ensure_progress_message(
+        bot=bot, mongo=mongo, document=document, text="🔎 scanning @everyone",
+    ))
+    assert document["progress_channel_id"] == 555
+    assert document["progress_message_id"] == 777
+    mentions = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
+    assert calls == [("create", 555, "🔎 scanning @everyone", mentions)]
+
+    assert asyncio.run(legacy_bulk._edit_progress_message(
+        bot=bot, document=document, text="✅ complete @here",
+    )) == "ok"
+    assert calls[-1] == ("edit", 555, 777, "✅ complete @here", mentions)
+
+
+def test_progress_delivery_failure_does_not_stop_a_plan(monkeypatch):
+    async def fetch_guild_channels(_guild_id):
+        return [_channel(7101, "main-1-user")]
+
+    async def fetch_channel(_channel_id):
+        raise hikari.ForbiddenError(url="", headers={}, raw_body=b"", code=50013)
+
+    bot = SimpleNamespace(rest=SimpleNamespace(
+        fetch_guild_channels=fetch_guild_channels, fetch_channel=fetch_channel,
+    ))
+
+    async def fake_preview(*_args, **_kwargs):
+        return SimpleNamespace(status="approved")
+
+    monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    monkeypatch.setattr(legacy_bulk, "PREVIEW_SLEEP_SECONDS", 0)
+    mongo = _mongo(setup_docs=(CONFIG, {"_id": "ticket_console_hub", "channel_id": 555}))
+
+    document = asyncio.run(legacy_bulk.build_plan(
+        bot=bot, mongo=mongo, source_guild_id=22, category_id=None,
+        attachments="skip", limit=None, guild_name="Source",
+    ))
+    assert document["state"] == "planned"
+    assert document["entries"][0]["classification"] == legacy_bulk.CLASS_READY
+
+
+def test_confirmed_run_completes_when_console_progress_cannot_be_posted(monkeypatch):
+    _patch_migration_cycle(monkeypatch)
+
+    async def fetch_channel(_channel_id):
+        raise hikari.ForbiddenError(url="", headers={}, raw_body=b"", code=50013)
+
+    batch = _batch_document(23, [_ready(7301)])
+    mongo = _mongo(
+        batch=batch,
+        setup_docs=(CONFIG, {"_id": "ticket_console_hub", "channel_id": 555}),
+    )
+    document = asyncio.run(legacy_bulk.run_batch(
+        bot=SimpleNamespace(rest=SimpleNamespace(fetch_channel=fetch_channel)),
+        mongo=mongo, source_guild_id=23, guild_name="Source", limit=None,
+        actor_id=1, actor_name="Admin",
+    ))
+    assert document["state"] == "complete"
+    assert document["entries"][0]["status"] == "done"
+
+
+def test_initial_deferred_status_is_best_effort():
+    calls = []
+
+    class Interaction:
+        async def edit_initial_response(self, *, content):
+            calls.append(content)
+
+    asyncio.run(legacy_bulk._replace_deferred_status(
+        SimpleNamespace(interaction=Interaction()), "🔎 Preparing scan",
+    ))
+    assert calls == ["🔎 Preparing scan"]
 
 
 def test_long_summary_is_delivered_in_full_within_discord_limits():
     posted, replied = [], []
     text = "\n".join(f"• channel-{i} " + "🛡" * 120 for i in range(25))
 
-    async def create_message(channel_id, content, *, user_mentions=None):
+    async def create_message(channel_id, content, **kwargs):
         assert len(content.encode("utf-16-le")) // 2 <= 2000
-        assert user_mentions is False
+        assert kwargs == {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
         posted.append(content)
 
     class Ctx:
@@ -645,8 +743,8 @@ def test_post_console_summary_is_a_no_op_without_a_configured_console_channel():
 def test_finish_with_summary_falls_back_to_the_console_post_on_a_dead_token(capsys, error_type):
     posted = []
 
-    async def create_message(channel_id, content, *, user_mentions=None):
-        posted.append((channel_id, content, user_mentions))
+    async def create_message(channel_id, content, **kwargs):
+        posted.append((channel_id, content, kwargs))
         return SimpleNamespace(id=1)
 
     bot = SimpleNamespace(rest=SimpleNamespace(create_message=create_message))
@@ -660,7 +758,9 @@ def test_finish_with_summary_falls_back_to_the_console_post_on_a_dead_token(caps
         ctx=DeadCtx(), bot=bot, mongo=mongo, source_guild_id=99, text="the durable summary",
     ))
 
-    assert posted == [(555, "the durable summary", False)]
+    assert posted == [(555, "the durable summary", {
+        "user_mentions": False, "role_mentions": False, "mentions_everyone": False,
+    })]
     out = capsys.readouterr().out
     assert "[Tickets] migrate_all_reply_lost guild=99" in out
 

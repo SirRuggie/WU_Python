@@ -597,6 +597,15 @@ scan is durable and observable rather than a single all-or-nothing call:
   completes. If the process dies mid-scan, `ticket_migration_batches` still
   holds the last 10-channel checkpoint instead of nothing; a fresh dry run
   replaces it from scratch.
+- The deferred command reply is immediately replaced with a short scanning
+  receipt before permission checks or source reads begin, so the operator does
+  not watch Discord's loading indicator. A bot-authored, unpinged status
+  message in the already-validated private ticket console then reports only
+  aggregate scan counts. It is reused for the later confirmed run, updates at
+  bounded count/time checkpoints, and receives a final planned, complete,
+  paused, or resume-needed state. This route does not use the interaction
+  webhook, so it continues after the webhook token expires; a missing or
+  inaccessible console status is logged but never stops migration work.
 - Console output logs `[Tickets] migrate_all_plan_start guild=<id>
   candidates=<n>` once channels are discovered, `[Tickets]
   migrate_all_plan_progress guild=<id> scanned=<i>/<n> ready=<r>

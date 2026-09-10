@@ -37,6 +37,11 @@ PREVIEW_SLEEP_SECONDS = 0.25
 # hikari's bucket limiter alone (each ticket is many REST calls).
 RUN_SLEEP_SECONDS = 1.0
 PROGRESS_EDIT_EVERY = 5
+# Status writes share the console channel with normal recruiter work.  Count
+# checkpoints alone can bunch several edits into one bucket, so also require a
+# little wall time between routine updates.  Start and terminal states bypass
+# this limit.
+PROGRESS_EDIT_MIN_SECONDS = 10.0
 CONSECUTIVE_FAILURE_LIMIT = 10
 MAX_CHANNELS_PER_PLAN = 1000
 DRY_RUN_PROBLEM_LIMIT = 15
@@ -189,6 +194,7 @@ async def build_plan(
     attachments: str,
     limit: int | None,
     include_abandoned: bool = False,
+    guild_name: str | None = None,
 ) -> dict[str, Any]:
     """Read-only: list, classify, and durably record a fresh plan for one guild.
 
@@ -251,10 +257,20 @@ async def build_plan(
     if document is None:
         raise BulkMigrationError("the batch plan changed concurrently; run the dry run again")
 
+    # This is a bot-authored console message, rather than an interaction
+    # webhook response.  A large scan can outlive the 15-minute interaction
+    # token that started it.
+    document = await _ensure_progress_message(
+        bot=bot, mongo=mongo, document=document,
+        text=_plan_progress_text(guild_name or str(source_guild_id), scanned=0, total=total,
+                                 ready=0, problems=0),
+    )
+    last_progress_edit = time.monotonic()
+
     entries: list[dict[str, Any]] = []
 
     async def _checkpoint(index: int) -> None:
-        nonlocal document
+        nonlocal document, last_progress_edit
         if index % PLAN_PROGRESS_EVERY:
             return
         counts = _tally(entries)
@@ -267,6 +283,15 @@ async def build_plan(
         document = await _cas_update(
             mongo, document, set_fields={"entries": entries, "counts": counts}
         )
+        if time.monotonic() - last_progress_edit >= PROGRESS_EDIT_MIN_SECONDS:
+            await _edit_progress_message(
+                bot=bot, document=document,
+                text=_plan_progress_text(
+                    guild_name or str(source_guild_id), scanned=index, total=total,
+                    ready=ready, problems=problems,
+                ),
+            )
+            last_progress_edit = time.monotonic()
 
     for index, channel in enumerate(channels, start=1):
         channel_id = int(channel.id)
@@ -343,6 +368,13 @@ async def build_plan(
     print(
         f"[Tickets] migrate_all_plan_done guild={source_guild_id} scanned={total} "
         f"ready={ready} problems={problems} elapsed={elapsed:.1f}s"
+    )
+    await _edit_progress_message(
+        bot=bot, document=document,
+        text=(
+            f"✅ Dry run complete for {guild_name or source_guild_id}: "
+            f"{total}/{total} scanned, {ready} ready, {problems} not ready."
+        ),
     )
     return document
 
@@ -427,6 +459,133 @@ async def _console_channel_id(mongo: MongoClient) -> int:
     return _as_int(hub.get("channel_id"))
 
 
+async def _console_status_link(mongo: MongoClient) -> str | None:
+    """Return the configured private-console link, if its durable binding is complete."""
+    try:
+        hub = await mongo.ticket_setup.find_one({"_id": "ticket_console_hub"}) or {}
+    except Exception as error:
+        _log.warning("[Tickets] migrate_all_console_link_lookup_failed error=%s", type(error).__name__)
+        return None
+    guild_id = _as_int(hub.get("guild_id"))
+    channel_id = _as_int(hub.get("channel_id"))
+    if not guild_id or not channel_id:
+        return None
+    return f"https://discord.com/channels/{guild_id}/{channel_id}"
+
+
+def _plan_progress_text(
+    guild_name: str, *, scanned: int, total: int, ready: int, problems: int
+) -> str:
+    stamp = int(utcnow().timestamp())
+    return (
+        f"🔎 Scanning legacy tickets from {guild_name}: {scanned}/{total} scanned, "
+        f"{ready} ready, {problems} not ready · <t:{stamp}:R>"
+    )
+
+
+async def _edit_progress_message(
+    *, bot: hikari.GatewayBot, document: Mapping[str, Any], text: str
+) -> str:
+    """Best-effort update for the bot-authored, durable status message.
+
+    Progress visibility must never interrupt a migration.  In particular, this
+    route must not depend on the interaction webhook that expires after 15
+    minutes. The count/time throttle is owned by the callers.
+    """
+    channel_id = _as_int(document.get("progress_channel_id"))
+    message_id = _as_int(document.get("progress_message_id"))
+    if not channel_id or not message_id:
+        return "unavailable"
+    try:
+        await bot.rest.edit_message(
+            channel_id, message_id, text, user_mentions=False, role_mentions=False,
+            mentions_everyone=False,
+        )
+    except hikari.NotFoundError as error:
+        _log.warning(
+            "[Tickets] migrate_all_progress_edit_failed channel=%s message=%s error=%s",
+            channel_id, message_id, type(error).__name__,
+        )
+        return "missing"
+    except Exception as error:  # status delivery is strictly observational
+        _log.warning(
+            "[Tickets] migrate_all_progress_edit_failed channel=%s message=%s error=%s",
+            channel_id, message_id, type(error).__name__,
+        )
+        return "unavailable"
+    return "ok"
+
+
+async def _ensure_progress_message(
+    *, bot: hikari.GatewayBot, mongo: MongoClient, document: dict[str, Any], text: str
+) -> dict[str, Any]:
+    """Create or reuse one console status message without risking batch work."""
+    if _as_int(document.get("progress_channel_id")) and _as_int(document.get("progress_message_id")):
+        outcome = await _edit_progress_message(bot=bot, document=document, text=text)
+        if outcome == "ok":
+            return document
+        if outcome != "missing":
+            return document
+        # A deleted status message must not leave every resumed run silently
+        # attempting the same dead edit. Clearing first makes the next create
+        # durable; if the CAS loses, batch work still proceeds without status.
+        try:
+            document = await _cas_update(mongo, document, set_fields={
+                "progress_channel_id": None,
+                "progress_message_id": None,
+            })
+        except Exception as error:
+            _log.warning(
+                "[Tickets] migrate_all_progress_clear_failed error=%s",
+                type(error).__name__,
+            )
+            return document
+
+    try:
+        console_channel_id = await _console_channel_id(mongo)
+    except Exception as error:
+        _log.warning("[Tickets] migrate_all_progress_lookup_failed error=%s", type(error).__name__)
+        return document
+    if not console_channel_id:
+        return document
+    try:
+        # The console setup validates its privacy and bot permissions. Fetching
+        # here also catches a stale/deleted configured channel before posting.
+        channel = await bot.rest.fetch_channel(console_channel_id)
+        if getattr(channel, "type", None) != hikari.ChannelType.GUILD_TEXT:
+            raise RuntimeError("configured console is not a guild text channel")
+        message = await bot.rest.create_message(
+            console_channel_id, text, user_mentions=False, role_mentions=False,
+            mentions_everyone=False,
+        )
+    except Exception as error:  # a status failure must not stop scan/copy work
+        _log.warning(
+            "[Tickets] migrate_all_progress_create_failed channel=%s error=%s",
+            console_channel_id, type(error).__name__,
+        )
+        return document
+
+    try:
+        return await _cas_update(mongo, document, set_fields={
+            "progress_channel_id": console_channel_id,
+            "progress_message_id": int(message.id),
+        })
+    except Exception as error:  # the message is useful even if reuse is lost
+        _log.warning(
+            "[Tickets] migrate_all_progress_store_failed channel=%s message=%s error=%s",
+            console_channel_id, int(message.id), type(error).__name__,
+        )
+        return document
+
+
+async def _replace_deferred_status(ctx: lightbulb.Context, text: str) -> None:
+    """Resolve the interaction spinner before any migration network work."""
+    try:
+        await ctx.interaction.edit_initial_response(content=text)
+    except Exception as error:  # durable console status still carries the run
+        _log.warning("[Tickets] migrate_all_initial_status_failed error=%s", type(error).__name__)
+
+
 def _summary_chunks(text: str) -> list[str]:
     """Split at line boundaries when possible, within Discord's content limit.
 
@@ -458,15 +617,23 @@ async def _post_console_summary(*, bot: hikari.GatewayBot, mongo: MongoClient, t
     reply. An interaction token dies after 15 minutes, which a bulk plan or
     run over many channels can outlive; this is what survives that.
     """
-    console_channel_id = await _console_channel_id(mongo)
+    try:
+        console_channel_id = await _console_channel_id(mongo)
+    except Exception as error:
+        _log.warning("[Tickets] migrate_all_console_summary_lookup_failed error=%s", type(error).__name__)
+        return
     if not console_channel_id:
         return
     try:
         for chunk in _summary_chunks(text):
-            await bot.rest.create_message(console_channel_id, chunk, user_mentions=False)
-    except (hikari.NotFoundError, hikari.ForbiddenError):
+            await bot.rest.create_message(
+                console_channel_id, chunk, user_mentions=False, role_mentions=False,
+                mentions_everyone=False,
+            )
+    except Exception as error:
         _log.warning(
-            "[Tickets] migrate_all_console_summary_failed channel=%s", console_channel_id
+            "[Tickets] migrate_all_console_summary_failed channel=%s error=%s",
+            console_channel_id, type(error).__name__,
         )
 
 
@@ -600,35 +767,21 @@ async def run_batch(
     consecutive_failures = int(document.get("consecutive_failures", 0))
 
     print(f"[Tickets] migrate_all_run_start guild={source_guild_id} total={total}")
+    document = await _ensure_progress_message(
+        bot=bot, mongo=mongo, document=document,
+        text=_progress_text(guild_name, done=done, failed=failed, skipped=skipped, total=total),
+    )
+    last_progress_edit = time.monotonic()
 
-    channel_id = _as_int(document.get("progress_channel_id"))
-    message_id = _as_int(document.get("progress_message_id"))
-    if not message_id:
-        console_channel_id = await _console_channel_id(mongo)
-        if console_channel_id:
-            message = await bot.rest.create_message(
-                console_channel_id,
-                _progress_text(guild_name, done=done, failed=failed, skipped=skipped, total=total),
-            )
-            channel_id = console_channel_id
-            message_id = int(message.id)
-            document = await _cas_update(mongo, document, set_fields={
-                "progress_channel_id": channel_id,
-                "progress_message_id": message_id,
-            })
-
-    async def _post_progress() -> None:
-        if not channel_id or not message_id:
+    async def _post_progress(*, force: bool = False) -> None:
+        nonlocal last_progress_edit
+        if not force and time.monotonic() - last_progress_edit < PROGRESS_EDIT_MIN_SECONDS:
             return
-        try:
-            await bot.rest.edit_message(
-                channel_id, message_id,
-                _progress_text(guild_name, done=done, failed=failed, skipped=skipped, total=total),
-            )
-        except (hikari.NotFoundError, hikari.ForbiddenError):
-            _log.warning(
-                "[Tickets] bulk_migration_progress_message_missing batch=%s", batch_id
-            )
+        await _edit_progress_message(
+            bot=bot, document=document,
+            text=_progress_text(guild_name, done=done, failed=failed, skipped=skipped, total=total),
+        )
+        last_progress_edit = time.monotonic()
 
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
     processed_this_run = 0
@@ -715,7 +868,7 @@ async def run_batch(
             f"done={done} failed={failed} skipped={skipped} total={total}"
         )
 
-        if done % PROGRESS_EDIT_EVERY == 0:
+        if processed_this_run % PROGRESS_EDIT_EVERY == 0:
             await _post_progress()
 
         if consecutive_failures >= CONSECUTIVE_FAILURE_LIMIT:
@@ -742,7 +895,23 @@ async def run_batch(
                 unset_fields={"lease_owner": "", "lease_until": ""},
             )
 
-    await _post_progress()
+    terminal_state = document.get("state", "running")
+    if terminal_state == "complete":
+        progress_text = (
+            f"✅ Legacy migration complete for {guild_name}: {done}/{total} copied, "
+            f"{failed} failed, {skipped} skipped."
+        )
+    elif terminal_state == "paused":
+        progress_text = (
+            f"⏸️ Legacy migration paused for {guild_name}: {done}/{total} copied, "
+            f"{failed} failed, {skipped} skipped. Re-run to resume."
+        )
+    else:
+        progress_text = (
+            f"⏸️ Legacy migration stopped for {guild_name}: {done}/{total} copied, "
+            f"{failed} failed, {skipped} skipped. Re-run to resume."
+        )
+    await _edit_progress_message(bot=bot, document=document, text=progress_text)
     elapsed = time.monotonic() - start_perf
     print(
         f"[Tickets] migrate_all_run_done guild={source_guild_id} done={done} "
@@ -827,9 +996,16 @@ class MigrateAllLegacyTickets(
             await ctx.respond("❌ Administrator permission is required.", ephemeral=True)
             return
         await ctx.defer(ephemeral=True)
+        await _replace_deferred_status(
+            ctx,
+            "🔎 Preparing bulk migration work. Progress will appear in the ticket console.",
+        )
         allowed, reason = await legacy_migration._migration_phase_allowed(mongo)
         if not allowed:
-            await ctx.respond(f"🛑 Migration unavailable: {reason}.", ephemeral=True)
+            await _finish_with_summary(
+                ctx=ctx, bot=bot, mongo=mongo, source_guild_id=0,
+                text=f"🛑 Migration unavailable: {reason}.",
+            )
             return
         try:
             source_guild_id = int(legacy_migration._numeric(self.source_guild, "source guild"))
@@ -842,6 +1018,13 @@ class MigrateAllLegacyTickets(
                 )
             source_guild = await bot.rest.fetch_guild(source_guild_id)
             guild_name = str(getattr(source_guild, "name", source_guild_id))
+            console_link = await _console_status_link(mongo)
+            if console_link:
+                await _replace_deferred_status(
+                    ctx,
+                    "🔎 Starting bulk migration. Follow progress in the "
+                    f"[ticket console]({console_link}).",
+                )
 
             if not self.confirm:
                 document = await build_plan(
@@ -851,6 +1034,7 @@ class MigrateAllLegacyTickets(
                     attachments=self.attachments,
                     limit=self.limit,
                     include_abandoned=self.include_abandoned,
+                    guild_name=guild_name,
                 )
                 await _finish_with_summary(
                     ctx=ctx, bot=bot, mongo=mongo, source_guild_id=source_guild_id,
@@ -887,13 +1071,23 @@ class MigrateAllLegacyTickets(
                 ),
             )
         except (legacy_migration.LegacyMigrationError, BulkMigrationError) as error:
-            await ctx.respond(f"❌ Bulk migration stopped safely: {error}", ephemeral=True)
+            source_guild_id = _as_int(self.source_guild)
+            await _finish_with_summary(
+                ctx=ctx, bot=bot, mongo=mongo,
+                source_guild_id=source_guild_id,
+                text=f"❌ Bulk migration stopped safely: {error}",
+            )
         except Exception as error:
             print(
                 "[Tickets] legacy_bulk_migration_failed "
                 f"source={self.source_guild} error={type(error).__name__}"
             )
-            await ctx.respond(
-                "❌ Bulk migration stopped safely after an unexpected error. Confirm again to resume.",
-                ephemeral=True,
+            source_guild_id = _as_int(self.source_guild)
+            await _finish_with_summary(
+                ctx=ctx, bot=bot, mongo=mongo,
+                source_guild_id=source_guild_id,
+                text=(
+                    "❌ Bulk migration stopped safely after an unexpected error. "
+                    "Confirm again to resume."
+                ),
             )
