@@ -81,7 +81,9 @@ Gallery descriptions carry the flag counts for assistive technology. Only the
 three Approved/Open/Denied totals are rendered as a compact 720×250 Pillow
 strip; this prevents a full dashboard image from being shrunk until its labels
 are unreadable on mobile. The complete total, Main/FWA totals, relative update
-time, and closed/no-decision count sit together in a footer below the controls.
+time, and closed count sit together in a footer below the controls. Each
+current native clan-bar image scales its segments to that clan's own total, so
+a nonempty bar reaches its rounded right edge.
 
 The pragmatic/max-flash split in the original proposal (§2.4–2.5) is
 resolved: **build max-flash.** Every "free" item in the old flash column
@@ -150,9 +152,9 @@ Top to bottom, full width (`1400×740`, 2× supersampled then downscaled):
    top-right of each tile, oversized count, label beneath.
 3. **By clan type** — one row per type. Real Main/FWA badge artwork, the
    type name, a plain-English breakdown line (`1 approved · 1 new/open · 1
-   denied`), a segmented bar, and `N total`. **Bars share one scale across
-   rows** so Main and FWA are visually comparable rather than each
-   self-normalized.
+   denied`), a segmented bar, and `N total`. This retained full-overview
+   reference uses its original shared comparison scale; the current native hub
+   uses separate per-clan bar images described above.
 4. **Flags** — directly *underneath* by-clan-type (moved there deliberately),
    as four slim full-width artwork rows: icon, label, count.
 5. **Footer** — one monospace line: `drawn by WU Wizard · attached to the

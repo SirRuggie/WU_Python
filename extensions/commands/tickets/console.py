@@ -725,15 +725,9 @@ def build_hub_components(
     has_open = bool(open_tickets)
     shown = min(len(open_tickets), MAX_OPEN_PICKER)
     counts = counts or OverviewCounts(statuses={}, by_type={}, flags={})
-    clan_bar_maximum = max(
-        1,
-        *(sum(_int(counts.by_type.get(kind, {}).get(status))
-              for status in ("approved", "open", "denied", "closed"))
-          for kind in HUB_CLAN_BAR_ATTACHMENTS),
-    )
     clan_bars = clan_bars or {
         kind: render_clan_status_bar_sync(
-            counts.by_type.get(kind, {}), maximum=clan_bar_maximum,
+            counts.by_type.get(kind, {}),
         )
         for kind in HUB_CLAN_BAR_ATTACHMENTS
     }
@@ -754,7 +748,7 @@ def build_hub_components(
     fwa_total = sum(_int(value) for value in counts.by_type.get("fwa", {}).values())
     total_copy = f"**{total} tickets** · Main {main_total} · FWA {fwa_total} · {freshness}"
     if closed:
-        total_copy += f" · **{closed} closed / no decision**"
+        total_copy += f" · **{closed} closed**"
     def clan_line(kind: str, label: str, icon: str) -> str:
         values = counts.by_type.get(kind, {})
         line = (
@@ -765,7 +759,7 @@ def build_hub_components(
         )
         closed_for_type = _int(values.get("closed"))
         if closed_for_type:
-            line += f" · **{closed_for_type} closed / no decision**"
+            line += f" · **{closed_for_type} closed**"
         return line
     def flag_row(kind: str) -> Media:
         count = _int(counts.flags.get(kind))
@@ -866,16 +860,11 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
     )
     # Pillow decodes and resizes the fixed artwork only in worker threads;
     # subsequent thumbnail reads use the tiny process-local cache.
-    clan_bar_maximum = max(
-        1,
-        *(sum(_int(values.get(status)) for status in ("approved", "open", "denied", "closed"))
-          for values in by_type.values()),
-    )
     png, thumbnails, main_bar, fwa_bar, *flag_rows = await asyncio.gather(
         render_status_strip(counts),
         asyncio.to_thread(_hub_thumbnail_assets),
-        render_clan_status_bar(by_type["main"], maximum=clan_bar_maximum),
-        render_clan_status_bar(by_type["fwa"], maximum=clan_bar_maximum),
+        render_clan_status_bar(by_type["main"]),
+        render_clan_status_bar(by_type["fwa"]),
         *(render_flag_row(
             label=label,
             count=_int(counts.flags.get(kind)),
@@ -900,7 +889,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 7
+HUB_LAYOUT_VERSION = 8
 
 
 async def _chart_signature(mongo: MongoClient) -> str:

@@ -326,8 +326,8 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
     async def strip(_counts):
         return b"strip"
 
-    async def bar(_values, *, maximum):
-        assert maximum == 1
+    async def bar(_values, *, maximum=None):
+        assert maximum is None
         return b"bar"
 
     async def flag_row(**kwargs):
@@ -386,7 +386,8 @@ def test_hub_clan_lines_keep_closed_counts_native_when_present():
     view = console.build_hub_components([], b"png", counts=counts)
     contents = [str(node["content"]) for node in _nodes(view) if "content" in node]
 
-    assert any("3 closed / no decision" in content for content in contents)
+    assert any("3 closed" in content for content in contents)
+    assert not any("closed / no decision" in content for content in contents)
     _assert_component_limits(view)
 
 

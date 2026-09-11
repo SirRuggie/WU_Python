@@ -90,7 +90,7 @@ def test_async_status_strip_moves_pillow_off_the_event_loop(monkeypatch):
     assert calls == [(console_render.render_status_strip_sync, (counts,))]
 
 
-def test_clan_status_bar_has_shared_scale_colored_segments_and_neutral_zero_state():
+def test_clan_status_bar_fills_each_nonempty_clan_track_and_keeps_neutral_zero_state():
     payload = console_render.render_clan_status_bar_sync(
         {"approved": 40, "open": 20, "denied": 10, "closed": 30}, maximum=100,
     )
@@ -102,18 +102,18 @@ def test_clan_status_bar_has_shared_scale_colored_segments_and_neutral_zero_stat
         assert image.getpixel((450 * console_render.SCALE, y)) == ImageColor.getrgb(console_render.DENIED)
         assert image.getpixel((530 * console_render.SCALE, y)) == ImageColor.getrgb(console_render.NEUTRAL)
 
-    # A clan with half the shared maximum occupies half the common track;
-    # it is not normalized to a misleading 100%-wide bar.
+    # Dashboard callers omit ``maximum``: a smaller clan still fills the
+    # complete rounded track with its own proportions.
     smaller = console_render.render_clan_status_bar_sync(
-        {"approved": 20, "open": 10, "denied": 5, "closed": 15}, maximum=100,
+        {"approved": 20, "open": 10, "denied": 5, "closed": 15},
     )
     with Image.open(io.BytesIO(smaller)) as image:
         y = 24 * console_render.SCALE
-        assert image.getpixel((350 * console_render.SCALE, y)) == ImageColor.getrgb(
+        assert image.getpixel((600 * console_render.SCALE, y)) == ImageColor.getrgb(
             console_render.NEUTRAL
         )
-        assert image.getpixel((400 * console_render.SCALE, y)) == ImageColor.getrgb(
-            console_render.CANVAS
+        assert image.getpixel((700 * console_render.SCALE, y)) == ImageColor.getrgb(
+            console_render.NEUTRAL
         )
 
     empty = console_render.render_clan_status_bar_sync({}, maximum=100)
@@ -130,11 +130,11 @@ def test_async_clan_status_bar_moves_pillow_off_the_event_loop(monkeypatch):
 
     monkeypatch.setattr(console_render.asyncio, "to_thread", to_thread)
 
-    assert asyncio.run(console_render.render_clan_status_bar({"approved": 1}, maximum=4)) == b"bar"
+    assert asyncio.run(console_render.render_clan_status_bar({"approved": 1})) == b"bar"
     assert calls == [(
         console_render.render_clan_status_bar_sync,
         ({"approved": 1},),
-        {"maximum": 4},
+        {"maximum": None},
     )]
 
 
