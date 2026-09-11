@@ -628,6 +628,24 @@ scan is durable and observable rather than a single all-or-nothing call:
   logged as `[Tickets] migrate_all_reply_lost guild=<id>` and the console
   post is the only record of the result.
 
+### Migration overview panel
+
+The private ticket console has one persistent **Legacy recruitment migration**
+panel in this fixed order: **Recruitment Server 1** (`1024958361306927124`),
+**Recruitment Server 2** (`1115678309389434901`), **Recruitment Server 3**
+(`1194706934926946457`), and **Recruitment Server 4** (`1078723854303756298`).
+It reads saved `ticket_migration_batches` checkpoints and completed migration
+records; it never starts a scan, resets a plan, or changes a migration.
+
+Each row says **Not started**, **Scanning**, **Ready to copy**, **Copying**,
+**Paused**, **Ready to resume**, **Copy interrupted**, or **Complete**, with
+copied/failed/skipped totals where a plan exists. A valid batch lease is
+required before the panel calls a run Copying; an expired owner lease is shown
+as interrupted instead. Completed rows do not suggest rerunning or resuming.
+The panel refreshes from existing dry-run/run checkpoints and around startup
+recovery, then reuses its saved message binding. It is observational: missing
+or inaccessible panel delivery is logged and never stops the migration.
+
 Applicant existence is checked even when a source record or admin override
 already supplies the name. A member who left the server still qualifies if
 the user lookup succeeds. An unknown user is classified as

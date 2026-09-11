@@ -23,12 +23,19 @@ from typing import Any, Mapping
 import hikari
 import lightbulb
 from pymongo import ReturnDocument
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    SeparatorComponentBuilder as Separator,
+    TextDisplayComponentBuilder as Text,
+)
 
 from extensions.commands.tickets import legacy_migration, ticket
 from utils.mongo import MongoClient
 
 
 _log = logging.getLogger(__name__)
+_overview_publish_task: asyncio.Task | None = None
+_overview_publish_again = False
 
 BATCH_LEASE = timedelta(seconds=45)
 BATCH_LEASE_RENEW_SECONDS = 15
@@ -54,6 +61,16 @@ PLAN_PROGRESS_EVERY = 10
 # over ~160 channels does not stall on REST pagination. The confirmed run
 # always re-previews with full history (no `history_limit`).
 BULK_PLAN_HISTORY_LIMIT = 20
+OVERVIEW_PUBLISH_TIMEOUT_SECONDS = 5.0
+OVERVIEW_LOCK_LEASE = timedelta(seconds=20)
+OVERVIEW_RECENT_ACTIVITY = timedelta(minutes=2)
+OVERVIEW_BINDING_ID = "legacy_migration_overview"
+OVERVIEW_SOURCES = (
+    (1024958361306927124, "Recruitment Server 1"),
+    (1115678309389434901, "Recruitment Server 2"),
+    (1194706934926946457, "Recruitment Server 3"),
+    (1078723854303756298, "Recruitment Server 4"),
+)
 
 CLASS_READY = "ready"
 CLASS_ALREADY_COPIED = "already_copied"
@@ -81,6 +98,65 @@ class BulkMigrationError(RuntimeError):
 
 def _batch_id(source_guild_id: int) -> str:
     return f"batch:{int(source_guild_id)}"
+
+
+def _overview_batch_line(batch: Mapping[str, Any] | None, *, label: str, now: datetime, recovered_done: int = 0) -> str:
+    """Describe only durable batch state; an expired lease is never running."""
+    if not batch:
+        return f"### {label}\nNot started"
+    entries = list(batch.get("entries") or ())
+    candidate_count = _as_int(batch.get("candidate_count"))
+    total = candidate_count or len(entries)
+    ready = sum(1 for entry in entries if entry.get("classification") == CLASS_READY)
+    already_copied = sum(1 for entry in entries if entry.get("classification") == CLASS_ALREADY_COPIED)
+    copy_total = ready + already_copied
+    done = sum(1 for entry in entries if entry.get("status") == "done")
+    done = max(done + already_copied, recovered_done)
+    copy_total = max(copy_total, done)
+    failed = sum(1 for entry in entries if str(entry.get("status") or "").startswith("failed:"))
+    skipped = sum(1 for entry in entries if entry.get("classification") not in {CLASS_READY, CLASS_ALREADY_COPIED})
+    state = str(batch.get("state") or "")
+    if state == "complete":
+        detail = f"✅ Complete · {done} copied · {skipped} skipped"
+        if failed:
+            detail += f" · {failed} failed"
+    elif state == "planning":
+        recent = _aware(batch.get("updated_at"))
+        verb = "🔎 Scanning" if recent and now - recent <= OVERVIEW_RECENT_ACTIVITY else "⏸️ Scan status stale"
+        scanned = f"{len(entries)}/{total}" if candidate_count else str(len(entries))
+        detail = f"{verb} · {scanned} classified"
+    elif state == "running":
+        lease_until = _aware(batch.get("lease_until"))
+        if batch.get("lease_owner") and lease_until and lease_until > now:
+            detail = f"🔄 Copying · {done}/{copy_total} copied · {failed} failed · {skipped} skipped"
+        elif not batch.get("lease_owner") and lease_until is None:
+            detail = f"Ready to resume · {done}/{copy_total} copied · {failed} failed · {skipped} skipped"
+        else:
+            detail = f"⏸️ Copy interrupted · {done}/{copy_total} saved · {failed} failed · {skipped} skipped"
+    elif state == "paused":
+        detail = f"⏸️ Paused · {done}/{copy_total} copied · {failed} failed · {skipped} skipped"
+    elif state == "planned":
+        detail = f"Ready to copy · {ready} ready · {skipped} skipped"
+    else:
+        detail = f"⚠️ Needs attention · {done}/{copy_total} copied · {failed} failed"
+    return f"### {label}\n{detail}"
+
+
+def build_migration_overview_components(
+    batches: Mapping[int, Mapping[str, Any]], *, now: datetime,
+    recovered_done: Mapping[int, int] | None = None,
+) -> list[Container]:
+    """Build the one fixed-order Components V2 migration overview."""
+    components: list = [Text(content="# Legacy recruitment migration")]
+    for index, (guild_id, label) in enumerate(OVERVIEW_SOURCES):
+        components.append(Text(content=_overview_batch_line(
+            batches.get(guild_id), label=label, now=now,
+            recovered_done=_as_int((recovered_done or {}).get(guild_id)),
+        )))
+        if index != len(OVERVIEW_SOURCES) - 1:
+            components.append(Separator(divider=True))
+    components.extend([Separator(divider=True), Text(content=f"-# Updated <t:{int(now.timestamp())}:R>")])
+    return [Container(accent_color=0x2F80ED, components=components)]
 
 
 def _entry(
@@ -239,6 +315,7 @@ async def build_plan(
         "requested_limit": int(limit) if limit else None,
         "include_abandoned": bool(include_abandoned),
         "state": "planning",
+        "candidate_count": total,
         "entries": [],
         "counts": {},
         "consecutive_failures": 0,
@@ -265,6 +342,7 @@ async def build_plan(
         text=_plan_progress_text(guild_name or str(source_guild_id), scanned=0, total=total,
                                  ready=0, problems=0),
     )
+    await refresh_migration_overview(bot, mongo)
     last_progress_edit = time.monotonic()
 
     entries: list[dict[str, Any]] = []
@@ -292,6 +370,7 @@ async def build_plan(
                 ),
             )
             last_progress_edit = time.monotonic()
+            await refresh_migration_overview(bot, mongo)
 
     for index, channel in enumerate(channels, start=1):
         channel_id = int(channel.id)
@@ -376,6 +455,7 @@ async def build_plan(
             f"{total}/{total} scanned, {ready} ready, {problems} not ready."
         ),
     )
+    await refresh_migration_overview(bot, mongo)
     return document
 
 
@@ -457,6 +537,189 @@ def dry_run_summary(document: dict[str, Any], *, guild_name: str) -> str:
 async def _console_channel_id(mongo: MongoClient) -> int:
     hub = await mongo.ticket_setup.find_one({"_id": "ticket_console_hub"}) or {}
     return _as_int(hub.get("channel_id"))
+
+
+async def _recovered_completed_channels(mongo: MongoClient) -> dict[int, set[int]]:
+    """Return completed source channels, grouped without crossing batch scope."""
+    guild_ids = [guild_id for guild_id, _label in OVERVIEW_SOURCES]
+    cursor = mongo.ticket_migrations.find({
+        "kind": "legacy_thread_migration", "state": "complete",
+        "source.guild_id": {"$in": guild_ids},
+    })
+    rows = await cursor.to_list(length=None)
+    channels = {guild_id: set() for guild_id in guild_ids}
+    for row in rows:
+        source = row.get("source") or {}
+        guild_id = _as_int(source.get("guild_id"))
+        channel_id = _as_int(source.get("channel_id"))
+        if guild_id in channels and channel_id:
+            channels[guild_id].add(channel_id)
+    return channels
+
+
+def _is_migration_overview_message(message: Any, *, bot_user_id: int) -> bool:
+    """Recognize this bot's overview so a lost binding can be recovered."""
+    author_id = _as_int(getattr(getattr(message, "author", None), "id", 0))
+    if not bot_user_id or author_id != bot_user_id:
+        return False
+
+    def contains_title(component: Any) -> bool:
+        if str(getattr(component, "content", "") or "") == "# Legacy recruitment migration":
+            return True
+        return any(contains_title(child) for child in (getattr(component, "components", None) or ()))
+
+    return any(contains_title(component) for component in (getattr(message, "components", None) or ()))
+
+
+async def _recover_migration_overview_message(bot: hikari.GatewayBot, channel_id: int) -> Any | None:
+    """Find a recently orphaned overview before creating a replacement."""
+    me = bot.get_me()
+    if me is None:
+        raise BulkMigrationError("bot identity is unavailable for overview recovery")
+    try:
+        iterator = bot.rest.fetch_messages(channel_id)
+        if hasattr(iterator, "limit"):
+            iterator = iterator.limit(50)
+        async for message in iterator:
+            if _is_migration_overview_message(message, bot_user_id=int(me.id)):
+                return message
+    except Exception as error:
+        _log.warning("[Tickets] migration_overview_recovery_failed error=%s", type(error).__name__)
+        raise
+    return None
+
+
+async def _publish_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient) -> None:
+    """Publish while holding the overview lease through create and binding."""
+    owner = uuid.uuid4().hex
+    now = utcnow()
+    try:
+        binding = await mongo.ticket_setup.find_one_and_update(
+            {"_id": OVERVIEW_BINDING_ID, "$or": [
+                {"lease_until": {"$exists": False}}, {"lease_until": {"$lte": now}},
+            ]},
+            {"$setOnInsert": {"kind": "legacy_migration_overview"},
+             "$set": {"lease_owner": owner, "lease_until": now + OVERVIEW_LOCK_LEASE}},
+            upsert=True, return_document=ReturnDocument.AFTER,
+        )
+        if not binding or binding.get("lease_owner") != owner:
+            return
+        if binding:
+            # Fetch batches after acquiring the shared lease so a concurrent
+            # publisher cannot overwrite a newer checkpoint with an old view.
+            ids = [_batch_id(guild_id) for guild_id, _label in OVERVIEW_SOURCES]
+            rows = await mongo.ticket_migration_batches.find({"_id": {"$in": ids}}).to_list(length=None)
+            batches = {_as_int(row.get("source_guild_id")): row for row in rows}
+            recovered_channels = await _recovered_completed_channels(mongo)
+            recovered_done = {
+                guild_id: len({
+                    _as_int(entry.get("channel_id")) for entry in (batch.get("entries") or ())
+                } & recovered_channels.get(guild_id, set()))
+                for guild_id, batch in batches.items()
+            }
+            # Fresh binding read preserves a recovered/recreated message ID.
+            binding = await mongo.ticket_setup.find_one({"_id": OVERVIEW_BINDING_ID}) or binding
+            channel_id = _as_int(binding.get("channel_id")) or await _console_channel_id(mongo)
+            if not channel_id:
+                return
+            components = build_migration_overview_components(
+                batches, now=utcnow(), recovered_done=recovered_done,
+            )
+            message_id = _as_int(binding.get("message_id"))
+            try:
+                if message_id:
+                    await bot.rest.edit_message(channel_id, message_id, components=components)
+                else:
+                    message = await _recover_migration_overview_message(bot, channel_id)
+                    if message is not None:
+                        await bot.rest.edit_message(channel_id, message.id, components=components)
+                    else:
+                        message = await bot.rest.create_message(
+                            channel_id, components=components,
+                            flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+                        )
+                    await mongo.ticket_setup.update_one(
+                        {"_id": OVERVIEW_BINDING_ID, "lease_owner": owner},
+                        {"$set": {"channel_id": channel_id, "message_id": int(message.id)}},
+                    )
+            except hikari.NotFoundError:
+                await mongo.ticket_setup.update_one(
+                    {"_id": OVERVIEW_BINDING_ID, "lease_owner": owner},
+                    {"$unset": {"message_id": ""}},
+                )
+                message = await _recover_migration_overview_message(bot, channel_id)
+                if message is None:
+                    message = await bot.rest.create_message(
+                        channel_id, components=components,
+                        flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+                    )
+                else:
+                    await bot.rest.edit_message(channel_id, message.id, components=components)
+                await mongo.ticket_setup.update_one(
+                    {"_id": OVERVIEW_BINDING_ID, "lease_owner": owner},
+                    {"$set": {"channel_id": channel_id, "message_id": int(message.id)}},
+                )
+    except Exception as error:
+        _log.warning("[Tickets] migration_overview_refresh_failed error=%s", type(error).__name__)
+    finally:
+        try:
+            await mongo.ticket_setup.update_one(
+                {"_id": OVERVIEW_BINDING_ID, "lease_owner": owner},
+                {"$unset": {"lease_owner": "", "lease_until": ""}},
+            )
+        except Exception:
+            pass
+
+
+async def refresh_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient) -> None:
+    """Bounded observational refresh that cannot cancel create-before-bind."""
+    global _overview_publish_task, _overview_publish_again
+    task = _overview_publish_task
+    if task is not None and not task.done():
+        _overview_publish_again = True
+    else:
+        async def _coalesced_publish() -> None:
+            global _overview_publish_again
+            while True:
+                _overview_publish_again = False
+                await _publish_migration_overview(bot, mongo)
+                if not _overview_publish_again:
+                    return
+
+        task = asyncio.create_task(_coalesced_publish())
+        _overview_publish_task = task
+        def _clear(done: asyncio.Task) -> None:
+            global _overview_publish_task
+            if _overview_publish_task is done:
+                _overview_publish_task = None
+            try:
+                done.result()
+            except asyncio.CancelledError:
+                return
+            except Exception as error:
+                _log.warning("[Tickets] migration_overview_background_failed error=%s", type(error).__name__)
+        task.add_done_callback(_clear)
+    try:
+        await asyncio.wait_for(asyncio.shield(task), OVERVIEW_PUBLISH_TIMEOUT_SECONDS)
+    except TimeoutError:
+        return
+
+
+async def stop_migration_overview_publisher() -> None:
+    """Drain the owned publisher before the shared REST and Mongo clients close."""
+    global _overview_publish_task, _overview_publish_again
+    task = _overview_publish_task
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    finally:
+        _overview_publish_task = None
+        _overview_publish_again = False
 
 
 async def _console_status_link(mongo: MongoClient) -> str | None:
@@ -828,6 +1091,7 @@ async def run_batch(
         bot=bot, mongo=mongo, document=document,
         text=_progress_text(guild_name, done=done, failed=failed, skipped=skipped, total=total),
     )
+    await refresh_migration_overview(bot, mongo)
     last_progress_edit = time.monotonic()
 
     async def _post_progress(*, force: bool = False) -> None:
@@ -839,6 +1103,7 @@ async def run_batch(
             text=_progress_text(guild_name, done=done, failed=failed, skipped=skipped, total=total),
         )
         last_progress_edit = time.monotonic()
+        await refresh_migration_overview(bot, mongo)
 
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
     processed_this_run = 0
@@ -1020,6 +1285,7 @@ async def run_batch(
             f"{failed} failed, {skipped} skipped. Re-run to resume."
         )
     await _edit_progress_message(bot=bot, document=document, text=progress_text)
+    await refresh_migration_overview(bot, mongo)
     elapsed = time.monotonic() - start_perf
     print(
         f"[Tickets] migrate_all_run_done guild={source_guild_id} done={done} "
@@ -1170,12 +1436,14 @@ class MigrateAllLegacyTickets(
             entries = document.get("entries") or []
             done = sum(1 for entry in entries if entry["status"] == "done")
             failed = sum(1 for entry in entries if str(entry["status"]).startswith("failed:"))
+            state = str(document.get("state") or "")
+            resume = "" if state == "complete" else " Confirm again to resume the saved plan."
             await _finish_with_summary(
                 ctx=ctx, bot=bot, mongo=mongo, source_guild_id=source_guild_id,
                 text=(
-                    f"✅ **Batch `{document.get('state')}`.** `{done}` copied, `{failed}` failed, "
+                    f"✅ **Batch `{state}`.** `{done}` copied, `{failed}` failed, "
                     f"`{sum(v for k, v in counts.items() if k != CLASS_READY)}` skipped. "
-                    "Re-run with `confirm: true` to resume."
+                    + resume
                 ),
             )
         except (legacy_migration.LegacyMigrationError, BulkMigrationError) as error:

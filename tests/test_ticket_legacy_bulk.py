@@ -163,6 +163,211 @@ def _mongo(*, migrations=None, batch=None, setup_docs=(CONFIG,)):
     )
 
 
+def test_migration_overview_is_fixed_order_and_never_calls_an_expired_lease_running():
+    active = _batch_document(
+        1115678309389434901,
+        [_ready(1, status="done"), _ready(2), _skip(3, legacy_bulk.CLASS_OPEN)],
+        state="running", lease_owner="runner", lease_until=NOW + timedelta(seconds=30), candidate_count=3,
+    )
+    complete = _batch_document(
+        1024958361306927124,
+        [_ready(4, status="done"), _skip(5, legacy_bulk.CLASS_OPEN)],
+        state="complete", candidate_count=2,
+    )
+    view = legacy_bulk.build_migration_overview_components(
+        {active["source_guild_id"]: active, complete["source_guild_id"]: complete}, now=NOW,
+    )
+    container, _attachments = view[0].build()
+    content = "\n".join(str(item.get("content") or "") for item in container["components"])
+
+    assert content.index("Recruitment Server 1") < content.index("Recruitment Server 2")
+    assert content.index("Recruitment Server 2") < content.index("Recruitment Server 3")
+    assert "Complete · 1 copied · 1 skipped" in content
+    assert "Copying · 1/2 copied" in content
+    assert content.count("Not started") == 2
+
+    active["lease_until"] = NOW - timedelta(seconds=1)
+    expired = legacy_bulk.build_migration_overview_components(
+        {active["source_guild_id"]: active}, now=NOW,
+    )[0].build()[0]
+    expired_content = "\n".join(str(item.get("content") or "") for item in expired["components"])
+    assert "Copy interrupted · 1/2 saved" in expired_content
+    assert "Copying ·" not in expired_content
+
+
+def test_recovered_completed_channels_remain_source_scoped():
+    rows = [
+        {"source": {"guild_id": 1, "channel_id": 10}},
+        {"source": {"guild_id": 1, "channel_id": 11}},
+        {"source": {"guild_id": 2, "channel_id": 20}},
+    ]
+
+    class Cursor:
+        async def to_list(self, *, length):
+            assert length is None
+            return rows
+
+    mongo = SimpleNamespace(ticket_migrations=SimpleNamespace(find=lambda _query: Cursor()))
+    old_sources = legacy_bulk.OVERVIEW_SOURCES
+    legacy_bulk.OVERVIEW_SOURCES = ((1, "One"), (2, "Two"))
+    try:
+        result = asyncio.run(legacy_bulk._recovered_completed_channels(mongo))
+    finally:
+        legacy_bulk.OVERVIEW_SOURCES = old_sources
+    assert result == {1: {10, 11}, 2: {20}}
+
+
+def test_overview_counts_replanned_copies_and_skips_disjointly():
+    batch = _batch_document(1, [
+        _skip(10, legacy_bulk.CLASS_ALREADY_COPIED),
+        _skip(11, legacy_bulk.CLASS_OPEN),
+        _ready(12),
+    ], state="running")
+    line = legacy_bulk._overview_batch_line(
+        batch, label="One", now=NOW, recovered_done=2,
+    )
+    assert "2/2 copied" in line
+    assert "1 skipped" in line
+
+
+def test_overview_recognizes_only_its_own_bot_authored_marker():
+    marker = SimpleNamespace(content="# Legacy recruitment migration", components=[])
+    container = SimpleNamespace(content=None, components=[marker])
+    own = SimpleNamespace(author=SimpleNamespace(id=9), components=[container])
+    other = SimpleNamespace(author=SimpleNamespace(id=8), components=[container])
+    assert legacy_bulk._is_migration_overview_message(own, bot_user_id=9)
+    assert not legacy_bulk._is_migration_overview_message(other, bot_user_id=9)
+
+
+def test_overview_refresh_coalesces_a_trailing_fresh_publish(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = []
+
+    async def publish(_bot, _mongo):
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            started.set()
+            await release.wait()
+
+    monkeypatch.setattr(legacy_bulk, "_publish_migration_overview", publish)
+    legacy_bulk._overview_publish_task = None
+    legacy_bulk._overview_publish_again = False
+
+    async def scenario():
+        first = asyncio.create_task(legacy_bulk.refresh_migration_overview(object(), object()))
+        await started.wait()
+        second = asyncio.create_task(legacy_bulk.refresh_migration_overview(object(), object()))
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(first, second)
+
+    asyncio.run(scenario())
+    assert calls == [1, 2]
+    assert legacy_bulk._overview_publish_task is None
+
+
+def test_overview_timeout_does_not_cancel_create_before_bind(monkeypatch):
+    release = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def publish(_bot, _mongo):
+        await release.wait()
+        finished.set()
+
+    monkeypatch.setattr(legacy_bulk, "_publish_migration_overview", publish)
+    monkeypatch.setattr(legacy_bulk, "OVERVIEW_PUBLISH_TIMEOUT_SECONDS", 0.001)
+    legacy_bulk._overview_publish_task = None
+    legacy_bulk._overview_publish_again = False
+
+    async def scenario():
+        await legacy_bulk.refresh_migration_overview(object(), object())
+        assert legacy_bulk._overview_publish_task is not None
+        assert not legacy_bulk._overview_publish_task.cancelled()
+        release.set()
+        await legacy_bulk._overview_publish_task
+        assert finished.is_set()
+
+    asyncio.run(scenario())
+
+
+def test_overview_404_recovers_recent_owned_panel_without_duplicate_create():
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def limit(self, _count):
+            return self
+
+        def __aiter__(self):
+            async def iterate():
+                for row in self.rows:
+                    yield row
+            return iterate()
+
+        async def to_list(self, *, length):
+            assert length is None
+            return list(self.rows)
+
+    class Setup:
+        def __init__(self):
+            self.doc = {
+                "_id": legacy_bulk.OVERVIEW_BINDING_ID,
+                "channel_id": 55,
+                "message_id": 66,
+            }
+
+        async def find_one_and_update(self, _query, update, **_kwargs):
+            self.doc.update(update["$set"])
+            return dict(self.doc)
+
+        async def find_one(self, query):
+            return dict(self.doc) if query["_id"] == legacy_bulk.OVERVIEW_BINDING_ID else None
+
+        async def update_one(self, query, update):
+            if self.doc.get("lease_owner") != query.get("lease_owner"):
+                return
+            self.doc.update(update.get("$set", {}))
+            for key in update.get("$unset", {}):
+                self.doc.pop(key, None)
+
+    marker = SimpleNamespace(content="# Legacy recruitment migration", components=[])
+    recovered = SimpleNamespace(
+        id=77, author=SimpleNamespace(id=9),
+        components=[SimpleNamespace(content=None, components=[marker])],
+    )
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def edit_message(self, channel_id, message_id, **_kwargs):
+            self.edits.append((channel_id, message_id))
+            if message_id == 66:
+                raise hikari.NotFoundError(url="", headers={}, raw_body=b"", code=10008)
+
+        def fetch_messages(self, channel_id):
+            assert channel_id == 55
+            return Cursor([recovered])
+
+        async def create_message(self, *_args, **_kwargs):
+            raise AssertionError("an owned recent overview must be reused")
+
+    setup = Setup()
+    mongo = SimpleNamespace(
+        ticket_setup=setup,
+        ticket_migration_batches=SimpleNamespace(find=lambda _query: Cursor([])),
+        ticket_migrations=SimpleNamespace(find=lambda _query: Cursor([])),
+    )
+    rest = Rest()
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=9))
+    asyncio.run(legacy_bulk._publish_migration_overview(bot, mongo))
+
+    assert rest.edits == [(55, 66), (55, 77)]
+    assert setup.doc["message_id"] == 77
+    assert "lease_owner" not in setup.doc
+
+
 # ---------------------------------------------------------------------------
 # build_plan: classification of a mixed channel list
 # ---------------------------------------------------------------------------

@@ -116,6 +116,9 @@ async def recover_ticket_workflows(
             f"open_ticket_conflicts={blockers.unresolved_conflicts}"
             f"{ids_suffix}"
         )
+    # Show saved bulk-batch state before recovery and once more after recovery
+    # changes any partial migration checkpoints. This is best-effort only.
+    await legacy_bulk.refresh_migration_overview(bot, mongo)
     creation_kwargs = {
         "bot": bot,
         "mongo": mongo,
@@ -129,6 +132,7 @@ async def recover_ticket_workflows(
     migration = await legacy_migration.recover_pending_legacy_migrations(
         bot=bot, mongo=mongo, limit=MIGRATION_RECOVERY_LIMIT
     )
+    await legacy_bulk.refresh_migration_overview(bot, mongo)
     async def queue_context_after_account_sync(ticket_doc: dict) -> str | None:
         return await console.queue_staff_identity_context(mongo, ticket_doc)
 
@@ -292,7 +296,10 @@ async def on_stopping(_: hikari.StoppingEvent) -> None:
         try:
             await resolve.stop_resolution_reconciler()
         finally:
-            await console.stop_hub_refresh_workers()
+            try:
+                await legacy_bulk.stop_migration_overview_publisher()
+            finally:
+                await console.stop_hub_refresh_workers()
 
 
 # Durable domain modules first; registration modules may safely import them.
