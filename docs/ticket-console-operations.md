@@ -366,6 +366,21 @@ ticket-detail flow is unavailable:
 `flag-add` needs at least one Discord ID or player tag. Copy the exact flag ID
 from ticket detail or `flags` before removing it.
 
+### Automatic previously-denied warning
+
+The console also adds an applicant-wide **Previously denied** warning when a
+earlier canonical ticket for the same Discord ID or verified player tag has
+denied status and a later canonical ticket exists. Imported tickets use their
+original source `created_at` time for that comparison, so a later import does
+not change the applicant's history order. The warning is informational only:
+it never blocks approval.
+
+Automatic warnings keep their automatic source and the earlier-ticket reason;
+an existing recruiter-added reason is never overwritten. Removing an automatic
+warning is honored, and recovery does not recreate it. Startup reconciliation
+also checks existing canonical ticket history, so eligible records created or
+imported before this behavior was enabled are covered.
+
 ### Approve or deny
 
 1. Read the staff account context, matching flags, earlier-ticket links, and,

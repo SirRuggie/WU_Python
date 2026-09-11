@@ -3804,6 +3804,26 @@ async def deliver_staff_identity_context(
     staff_id = _location_id(ticket_doc, staff=True)
     if not ticket_id or not staff_id:
         return None
+    try:
+        get_me = getattr(bot, "get_me", None)
+        me = get_me() if callable(get_me) else None
+        if me is not None:
+            flag_ticket = dict(ticket_doc)
+            flag_ticket["player_tags"] = list(_player_tags(ticket_doc))
+            flag_doc, created = await flag_store.ensure_prior_denial_flag(
+                mongo, flag_ticket, actor_id=int(me.id), actor_name=str(me.username),
+            )
+            if created and flag_doc is not None:
+                await _queue_open_staff_context_refreshes(
+                    mongo,
+                    discord_ids=flag_doc.get("discord_ids") or (),
+                    player_tags=flag_doc.get("player_tags") or (),
+                )
+                await request_hub_refresh_best_effort(
+                    bot, mongo, reason="automatic prior denial flag",
+                )
+    except Exception:
+        _log.exception("automatic prior-denial reconciliation failed ticket=%s", ticket_id)
     state_id = await queue_staff_identity_context(
         mongo,
         ticket_doc,
@@ -4404,6 +4424,42 @@ async def refresh_open_staff_contexts_for_flag_best_effort(
             flag_doc.get("_id"),
         )
         return False
+
+
+async def reconcile_prior_denial_flags(
+    bot: hikari.GatewayBot, mongo: MongoClient,
+) -> dict[str, int]:
+    """Backfill automatic history cautions across canonical tickets."""
+    get_me = getattr(bot, "get_me", None)
+    me = get_me() if callable(get_me) else None
+    if me is None:
+        return {"checked": 0, "created": 0, "failed": 0}
+    cursor = mongo.tickets.find(store.RUNTIME_FILTER, {
+        "_id": 1, "user_id": 1, "player_tags": 1, "playerTags": 1,
+        "player_tag": 1, "tag": 1, "linked_accounts": 1,
+    }).sort([("created_at", 1), ("_id", 1)])
+    tickets = await cursor.to_list(length=None)
+    created = 0
+    failed = 0
+    for ticket_doc in tickets:
+        try:
+            flag_ticket = dict(ticket_doc)
+            flag_ticket["player_tags"] = list(_player_tags(ticket_doc))
+            _flag, was_created = await flag_store.ensure_prior_denial_flag(
+                mongo, flag_ticket, actor_id=int(me.id), actor_name=str(me.username),
+            )
+            created += int(was_created)
+        except Exception:
+            failed += 1
+            _log.exception(
+                "automatic prior-denial startup reconciliation failed ticket=%s",
+                _ticket_id(ticket_doc),
+            )
+    if created:
+        await request_hub_refresh_best_effort(
+            bot, mongo, reason="automatic prior denial reconciliation",
+        )
+    return {"checked": len(tickets), "created": created, "failed": failed}
 
 
 async def _create_search_state(

@@ -35,6 +35,7 @@ FLAG_SOURCES = {
     FLAG_NOT_LOYAL: "Warriors United recruiter note",
     FLAG_GHOSTED: "Warriors United recruiter ghosting report",
 }
+AUTOMATIC_PRIOR_DENIAL_SOURCE = "Automatic earlier denied ticket history"
 IDENTITY_LOCK_LEASE = timedelta(minutes=3)
 IDENTITY_LOCK_WAIT_SECONDS = 5.0
 IDENTITY_LOCK_POLL_SECONDS = 0.05
@@ -385,6 +386,7 @@ async def _set_flag_unlocked(
     added_by_name: str,
     reason: str = "",
     checked_at: datetime | None = None,
+    automatic_rule: str | None = None,
 ) -> dict:
     """Create or extend one active flag, retry-safe under unique indexes."""
     flag_kind = normalize_kind(kind)
@@ -464,6 +466,8 @@ async def _set_flag_unlocked(
         "rev": 0,
         "audit": [audit],
     }
+    if automatic_rule:
+        document["automatic_rule"] = str(automatic_rule)
     try:
         await mongo.ticket_flags.insert_one(document)
     except DuplicateKeyError:
@@ -553,6 +557,58 @@ async def set_flag_authorized(
         checked_at=checked_at,
     )
     return FlagMutation(store.WON, document)
+
+
+async def ensure_prior_denial_flag(
+    mongo: MongoClient, ticket_doc: dict, *, actor_id, actor_name: str,
+) -> tuple[dict | None, bool]:
+    """Set the global caution only when an earlier durable denial exists.
+
+    Any active *or inactive* Denied-before flag wins over automation, preserving
+    recruiters' reasons and an intentional removal.
+    """
+    ids = _discord_ids(ticket_doc.get("user_id"))
+    tags = schema.player_tags(ticket_doc.get("player_tags") or ())
+    if not ids and not tags:
+        return None, False
+    pair = await store.denial_history_pair_for(
+        mongo, user_id=ids[0] if ids else None, player_tags=tags,
+    )
+    if pair is None:
+        return None, False
+    prior, later = pair
+    ids = _discord_ids([
+        value for value in (ticket_doc.get("user_id"), prior.get("user_id"), later.get("user_id"))
+        if value
+    ])
+    tags = schema.player_tags([
+        *(ticket_doc.get("player_tags") or ()),
+        *(prior.get("player_tags") or ()),
+        *(later.get("player_tags") or ()),
+    ])
+    async with identity_guard(mongo, discord_ids=ids, player_tags=tags):
+        active = await mongo.ticket_flags.find({
+            "kind": FLAG_DENIED_BEFORE, "active": True,
+            "$or": _identity_query(ids, tags),
+        }).limit(2).to_list(length=2)
+        if active:
+            return active[0], False
+        removed = await mongo.ticket_flags.find({
+            "kind": FLAG_DENIED_BEFORE, "active": False,
+            "$or": _identity_query(ids, tags),
+        }).limit(1).to_list(length=1)
+        if removed:
+            return removed[0], False
+        if not ids:
+            return None, False
+        document = await _set_flag_unlocked(
+            mongo, kind=FLAG_DENIED_BEFORE, discord_ids=ids, player_tags=tags,
+            source=AUTOMATIC_PRIOR_DENIAL_SOURCE, added_by=actor_id,
+            added_by_name=actor_name,
+            reason=f"Earlier denied ticket: {prior.get('_id')}",
+            automatic_rule="prior_denial",
+        )
+        return document, document.get("automatic_rule") == "prior_denial"
 
 
 async def set_flag_if_current_authorized(

@@ -461,6 +461,39 @@ async def history_for(
     return _normalized_many(raw)
 
 
+async def denial_history_pair_for(
+    mongo: MongoClient, *, user_id=None, player_tags: Iterable[str] = (),
+) -> tuple[dict, dict] | None:
+    """Find an actual denial followed by another canonical ticket."""
+    identities: list[dict] = []
+    ids = [item for value in (user_id if isinstance(user_id, (list, tuple, set)) else (user_id,))
+           for item in _mixed_id(value)]
+    if ids:
+        identities.append({"user_id": {"$in": ids}})
+    tags = schema.player_tags(player_tags)
+    if tags:
+        identities.append({"player_tags": {"$in": tags}})
+    if not identities:
+        return None
+    reader = await _reader(mongo)
+    denied = await reader.find_one(
+        {**RUNTIME_FILTER, "status": "denied", "created_at": {"$type": "date"},
+         "$or": identities},
+        sort=[("created_at", 1), ("_id", 1)],
+    )
+    if not denied or not isinstance(denied.get("created_at"), datetime):
+        return None
+    later = await reader.find_one({
+        **RUNTIME_FILTER,
+        "_id": {"$ne": denied.get("_id")},
+        "created_at": {"$gt": denied["created_at"]},
+        "$or": identities,
+    }, sort=[("created_at", 1), ("_id", 1)])
+    if not later:
+        return None
+    return normalize_ticket_document(denied), normalize_ticket_document(later)
+
+
 async def console_counts(mongo: MongoClient) -> dict:
     """Return chart totals as ``total/status/by_type`` dictionaries."""
     pipeline = [

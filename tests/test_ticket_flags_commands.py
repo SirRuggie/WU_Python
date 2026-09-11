@@ -1,10 +1,89 @@
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from extensions.commands.tickets import flag_store, flags
+
+
+def test_automatic_prior_denial_uses_bot_actor_and_atomic_marker(monkeypatch):
+    @asynccontextmanager
+    async def guard(*_args, **_kwargs):
+        yield
+
+    class Cursor:
+        def limit(self, _count):
+            return self
+
+        async def to_list(self, *, length):
+            return []
+
+    async def pair(*_args, **_kwargs):
+        return ({"_id": "old", "user_id": 5, "player_tags": [],
+                 "created_at": object()},
+                {"_id": "new", "user_id": 5, "player_tags": [],
+                 "created_at": object()})
+
+    captured = {}
+
+    async def set_unlocked(_mongo, **kwargs):
+        captured.update(kwargs)
+        return {"_id": "auto", "automatic_rule": kwargs.get("automatic_rule")}
+
+    monkeypatch.setattr(flag_store, "identity_guard", guard)
+    monkeypatch.setattr(flag_store.store, "denial_history_pair_for", pair)
+    monkeypatch.setattr(flag_store, "_set_flag_unlocked", set_unlocked)
+    mongo = SimpleNamespace(ticket_flags=SimpleNamespace(find=lambda _query: Cursor()))
+
+    document, created = asyncio.run(flag_store.ensure_prior_denial_flag(
+        mongo, {"_id": "new", "user_id": 5, "player_tags": []},
+        actor_id=999, actor_name="WU Wizard",
+    ))
+
+    assert created and document["automatic_rule"] == "prior_denial"
+    assert captured["added_by"] == 999
+    assert captured["added_by_name"] == "WU Wizard"
+    assert captured["automatic_rule"] == "prior_denial"
+
+
+@pytest.mark.parametrize("active", [True, False])
+def test_existing_prior_denial_flag_is_preserved_without_automation_write(monkeypatch, active):
+    @asynccontextmanager
+    async def guard(*_args, **_kwargs):
+        yield
+
+    existing = {"_id": "manual", "active": active, "source": "Recruiter", "reason": "Keep me"}
+
+    class Cursor:
+        def __init__(self, query):
+            self.query = query
+
+        def limit(self, _count):
+            return self
+
+        async def to_list(self, *, length):
+            return [existing] if self.query.get("active") is active else []
+
+    async def pair(*_args, **_kwargs):
+        return ({"_id": "old", "user_id": 5, "player_tags": []},
+                {"_id": "new", "user_id": 5, "player_tags": []})
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("existing recruiter state must not be rewritten")
+
+    monkeypatch.setattr(flag_store, "identity_guard", guard)
+    monkeypatch.setattr(flag_store.store, "denial_history_pair_for", pair)
+    monkeypatch.setattr(flag_store, "_set_flag_unlocked", forbidden)
+    mongo = SimpleNamespace(ticket_flags=SimpleNamespace(find=lambda query: Cursor(query)))
+
+    document, created = asyncio.run(flag_store.ensure_prior_denial_flag(
+        mongo, {"_id": "new", "user_id": 5, "player_tags": []},
+        actor_id=999, actor_name="WU Wizard",
+    ))
+    assert document == existing
+    assert not created
 
 
 def test_flag_command_normalizes_multiple_identities_without_duplicates():

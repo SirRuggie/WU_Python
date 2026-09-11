@@ -2376,6 +2376,26 @@ def test_flag_set_slices_audit_at_200():
     assert audit[-1]["event"] == "flag_set"
 
 
+def test_automatic_prior_denial_marker_is_part_of_the_initial_flag_insert():
+    mongo = SimpleNamespace(ticket_flags=Collection())
+
+    document = asyncio.run(flag_store._set_flag_unlocked(
+        mongo,
+        kind=flag_store.FLAG_DENIED_BEFORE,
+        discord_ids=42,
+        source=flag_store.AUTOMATIC_PRIOR_DENIAL_SOURCE,
+        added_by=99,
+        added_by_name="WU Wizard",
+        reason="Earlier denied ticket: ticket_old",
+        automatic_rule="prior_denial",
+    ))
+
+    durable = mongo.ticket_flags.documents[document["_id"]]
+    assert durable["automatic_rule"] == "prior_denial"
+    assert durable["added_by"] == 99
+    assert durable["source"] == flag_store.AUTOMATIC_PRIOR_DENIAL_SOURCE
+
+
 @pytest.mark.parametrize("status", ["approved", "denied"])
 def test_terminal_commit_checkpoints_slot_and_release_failure_is_retryable(
     monkeypatch, status

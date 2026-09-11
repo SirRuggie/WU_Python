@@ -119,6 +119,7 @@ async def recover_ticket_workflows(
     # Show saved bulk-batch state before recovery and once more after recovery
     # changes any partial migration checkpoints. This is best-effort only.
     await legacy_bulk.refresh_migration_overview(bot, mongo)
+    prior_denials = await console.reconcile_prior_denial_flags(bot, mongo)
     creation_kwargs = {
         "bot": bot,
         "mongo": mongo,
@@ -178,6 +179,7 @@ async def recover_ticket_workflows(
             staff_context,
             account_identities,
             open_context,
+            prior_denials,
         )
     )
     print(
@@ -190,6 +192,8 @@ async def recover_ticket_workflows(
         f"{account_identities.get('processed', 0)} "
         f"open_context={open_context.get('completed', 0)}/"
         f"{open_context.get('processed', 0)} "
+        f"prior_denials={prior_denials.get('created', 0)}/"
+        f"{prior_denials.get('checked', 0)} "
         f"failed={failed}"
     )
     if failed:
