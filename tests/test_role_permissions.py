@@ -56,10 +56,13 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
 
     # /cards is retired along with the Clash of Cards event (see
     # utils.startup.RETIRED_EXTENSIONS) and hidden from the catalog, so the
-    # count is one lower than the 81 registered slash paths and the row is
-    # asserted absent rather than present.
-    assert len(paths) == 80
-    assert sum(len(category["commands"]) for category in HELP_CATEGORIES.values()) == 80
+    # catalog count below is one lower than the number of slash paths
+    # actually registered with Discord (this test does not compare against
+    # that live count - command_paths() is derived from HELP_CATEGORIES
+    # itself, not from what's registered), and the row is asserted absent
+    # rather than present.
+    assert len(paths) == 72
+    assert sum(len(category["commands"]) for category in HELP_CATEGORIES.values()) == 72
     assert "/accounts" in paths
     assert "/cards" not in paths
     assert "/ping" in paths

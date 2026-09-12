@@ -123,6 +123,49 @@ def _wire(monkeypatch, *, mongo, coc_client=None, bot=None, scheduler=None, link
     monkeypatch.setattr(service, "get_discord_ids", fake_get_discord_ids)
 
 
+# ------------------------------------------------------------ get_discord_ids
+
+
+def test_get_discord_ids_uses_shared_authenticated_resolver(monkeypatch):
+    """Ported from tests/test_lazy_cwl_scheduler.py (deleted by D019)'s
+    test_snapshot_link_lookup_uses_shared_authenticated_resolver -
+    get_discord_ids moved into this module (D019) but the guard test was not
+    ported (refuter-14 MUST-FIX 2)."""
+    calls = []
+
+    async def resolved(tags):
+        calls.append(tags)
+        return {"#ABC": "123456789012345678"}
+
+    monkeypatch.setattr(service, "resolve_discord_ids", resolved)
+    result = asyncio.run(service.get_discord_ids(["#ABC", "#MISSING"]))
+
+    assert calls == [["#ABC", "#MISSING"]]
+    assert result == {"#ABC": "123456789012345678"}
+
+
+def test_get_discord_ids_empty_list_returns_empty_dict_without_calling_resolver(monkeypatch):
+    async def resolved(tags):
+        raise AssertionError("resolve_discord_ids should not be called for an empty list")
+
+    monkeypatch.setattr(service, "resolve_discord_ids", resolved)
+
+    assert asyncio.run(service.get_discord_ids([])) == {}
+
+
+def test_get_discord_ids_propagates_none_on_failed_lookup(monkeypatch):
+    """A failed lookup must surface as None, not {} - conflating the two
+    means every player in the list gets written with discord_id=None and
+    nothing downstream can tell a real empty answer from a down link
+    service (docstring at lazy_cwl_service.py:70-79)."""
+    async def resolved(tags):
+        return None
+
+    monkeypatch.setattr(service, "resolve_discord_ids", resolved)
+
+    assert asyncio.run(service.get_discord_ids(["#ABC"])) is None
+
+
 # ------------------------------------------------------------ save_list ----
 
 

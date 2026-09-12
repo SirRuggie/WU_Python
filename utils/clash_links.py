@@ -85,7 +85,7 @@ async def resolve_tags(discord_id: int) -> list[str] | None:
     NONE AND [] ARE DIFFERENT AND CALLERS MUST TELL THEM APART. Conflating them
     tells a user whose link service is down that they have no accounts, and
     sends them off to fix a problem they do not have. This is the same bug that
-    was fixed in lazy_cwl.get_discord_ids; do not reintroduce it here.
+    was fixed in lazy_cwl_service.get_discord_ids; do not reintroduce it here.
     """
     wanted = str(int(discord_id))
     items = await _lookup_shared_links(discord_ids=[wanted])

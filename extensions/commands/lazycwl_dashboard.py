@@ -3,8 +3,9 @@
 service (extensions/commands/fwa/lazy_cwl_service.py).
 
 S0 (home) through S6 (finish) are all wired up. The old `/fwa lazycwl-*`
-commands (extensions/commands/fwa/lazy_cwl.py) stay live and untouched;
-this is a new, separate command.
+commands (extensions/commands/fwa/lazy_cwl.py) are now redirect aliases:
+each opens this dashboard's home screen instead of its retired
+implementation.
 
 Rules carried over from extensions/commands/todo.py:25-60 and enforced here:
 

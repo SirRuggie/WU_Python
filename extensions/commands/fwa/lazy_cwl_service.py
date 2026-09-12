@@ -33,7 +33,7 @@ from utils import lazy_cwl_store as store
 from utils.mongo import MongoClient
 from utils.startup_reconciler import StartupReconciler
 from utils.constants import GOLD_ACCENT, RED_ACCENT
-from extensions.commands.fwa.lazy_cwl import get_discord_ids
+from utils.clash_links import resolve_discord_ids
 
 _log = logging.getLogger(__name__)
 
@@ -54,6 +54,33 @@ bot_instance: Optional[hikari.GatewayBot] = None
 coc_client: Optional[coc.Client] = None
 mongo_client: Optional[MongoClient] = None
 startup_reconciler: Optional[StartupReconciler] = None
+
+
+async def get_discord_ids(player_tags: list[str]) -> Optional[dict[str, Optional[str]]]:
+    """
+    Call ClashKing API to get Discord IDs for player tags.
+
+    Args:
+        player_tags: List of player tags WITH # prefix
+
+    Returns:
+        Dict mapping player tags (with #) to Discord IDs or None,
+        or **None if the lookup itself failed**.
+
+    A FAILED LOOKUP AND AN EMPTY RESULT ARE DIFFERENT THINGS AND CALLERS MUST
+    TELL THEM APART. This previously returned {} for both, and the caller could
+    not distinguish "ClashKing is down" from "nobody in this clan has linked".
+    The snapshot was written either way, with discord_id None on every player,
+    and every downstream auto-ping then silently pinged nobody. Nothing raised
+    and nothing warned; the bad snapshot persisted until deleted by hand.
+
+        None  -> the call failed. The answer is unknown. Do not persist.
+        {}    -> the call succeeded and nobody is linked. A real answer.
+    """
+    if not player_tags:
+        return {}
+
+    return await resolve_discord_ids(player_tags)
 
 
 def _reminder_job_id(list_id) -> str:

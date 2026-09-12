@@ -101,12 +101,12 @@ Recruit role automatically two hours after assignment.
 Clan administration and the family's FWA toolkit: clan dashboards and info
 hubs, logo and banner uploads, FWA base layouts, FWA Chocolate lookups, war
 weight calculation, Town Hall upgrade notes, and one-command war plans for
-win, loss, blacklist, and mismatch scenarios. The LazyCWL suite snapshots FWA
-rosters during CWL, pings players who still need to return for sync wars, and
-can run those pings automatically on a schedule.
+win, loss, blacklist, and mismatch scenarios. The Lazy CWL dashboard saves FWA
+rosters during CWL, reminds players who still need to return for sync wars,
+and can send those reminders automatically on a schedule.
 
 <details>
-<summary><strong>Command reference — Clans &amp; FWA (21 commands)</strong></summary>
+<summary><strong>Command reference — Clans &amp; FWA (16 commands)</strong></summary>
 <br>
 
 | Command | Description |
@@ -126,15 +126,7 @@ can run those pings automatically on a schedule.
 | `/fwa upload-images` | Upload FWA war and active base images. |
 | `/fwa war-plans` | Generate a war plan for win, loss, blacklist, or mismatch. |
 | `/fwa weight` | Calculate war weight from a storage value. |
-| `/fwa lazycwl-snapshot` | Snapshot FWA rosters for LazyCWL tracking. |
-| `/fwa lazycwl-ping` | Ping missing players to return for FWA sync. |
-| `/fwa lazycwl-status` | List active LazyCWL snapshots. |
-| `/fwa lazycwl-roster` | View a LazyCWL snapshot roster. |
-| `/fwa lazycwl-reset` | Deactivate completed LazyCWL snapshots. |
-| `/fwa lazycwl-autopings-start` | Start periodic missing-player pings. |
-| `/fwa lazycwl-autopings-stop` | Stop periodic pings for a snapshot. |
-| `/fwa lazycwl-autopings-status` | Show active auto-ping schedules. |
-| `/fwa lazycwl-remove-player` | Remove players from snapshot tracking. |
+| `/lazycwl` | Lazy CWL dashboard. Admins only. |
 
 </details>
 
@@ -171,7 +163,7 @@ ghost tickets, repair mismatches, and migrate legacy data.
 
 ### 📅 CWL & reminders
 
-CWL logistics on autopilot: announcement posts, LazyCWL preparation notices, a
+CWL logistics on autopilot: announcement posts, Lazy CWL preparation notices, a
 bonus-medal lottery with named recipients, and a monthly reminder schedule with
 configurable follow-ups that survives bot restarts.
 

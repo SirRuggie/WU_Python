@@ -14,16 +14,10 @@ from hikari.impl import (
 
 from extensions.commands import lazycwl_dashboard as dashboard
 from tests.test_lazy_cwl_store import _Collection
+from tests.lazycwl_wording import BANNED_WORDS, ALLOWED_CWL_STRINGS
 
 MODULE_PATH = Path(__file__).resolve().parent.parent / "extensions" / "commands" / "lazycwl_dashboard.py"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=timezone.utc)
-
-BANNED_WORDS = {
-    "snapshot", "ping", "sync", "fwa", "cwl", "th",
-    "cadence", "interval", "roster", "reset",
-}
-# "Lazy CWL" is the one allowed title exception.
-ALLOWED_CWL_STRINGS = {"Lazy CWL", "## Lazy CWL"}
 
 RENDER_FACING_CALL_KEYWORDS = {"content", "label", "placeholder", "description"}
 
