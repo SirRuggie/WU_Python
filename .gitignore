@@ -25,3 +25,7 @@ Thumbs.db
 todo.md
 CLAUDE.md
 kill_bots.bat
+
+# Claude task buckets — working context, never tracked.
+# Nothing operational, no credentials, no production data belongs in here anyway.
+.claude/scratch/

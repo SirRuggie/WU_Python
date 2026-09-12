@@ -19,6 +19,14 @@ The main session is the most expensive model. It plans, writes specs,
 delegates, reads compact reports, and integrates. It does not read bulk code,
 build, refactor, review, or write docs itself when a cheaper agent can.
 
+The general protocol behind this — the agent roster, how to write a brief,
+task buckets, verification, reporting — is now defined once, per machine, in
+`~/.claude/CLAUDE.md` as part of the
+[orchestration kit](https://github.com/SirRuggie/claude-code-orchestration-kit).
+This repo's rule only carries what is repo-specific: the cost table below
+and the repo editing rules. See `docs/agent-orchestration.md` for the kit's
+install steps and its task-bucket layout.
+
 | Work | Agent | Model | Cost vs Sonnet |
 |---|---|---|---|
 | Find files, symbols, call sites | `scout` | Haiku | 0.5x |
@@ -45,11 +53,15 @@ through the main session.
 ## 4. Agent definitions (`.claude/agents/*.md`)
 
 Five small files, one per agent, each with `name`, `description`, `model`,
-and a short system prompt. The builder's prompt says "implement exactly the
-spec, nothing more" and names the repo editing rules; the refuter's says
-"re-run the verification yourself, report only correctness findings". Copy
-the five files into another repo and edit the description lines; that is the
-whole install.
+`effort`, `tools`, `color` and a system prompt with an output contract. Each
+is the kit's agent text verbatim plus a trailing "Repo rules" section
+carrying this repo's constraints (editing rules, hikari conventions, the
+pytest command). Two frontmatter deltas from the kit: scout and researcher
+also get `Bash`, limited by their repo-rules section to read-only commands. Project agents override the global ones in
+`~/.claude/agents/` by name, so the repo copy must stay a superset of the
+kit copy. To use the workflow in another repo, install the kit core to
+`~/.claude/` once per machine and copy only the kit agents, not these repo
+copies; see section 7.
 
 ## 5. Editing rules (`docs/editing-this-repo.md`)
 
@@ -77,13 +89,24 @@ repo.
 
 ## 7. Copying this to another project
 
-1. Copy `.claude/rules/orchestration.md` and `.claude/agents/` into the new
-   repo. Adjust the model column if the pricing changes.
-2. Write the new repo's `docs/editing-this-repo.md`: the editing rules plus
+1. Install the kit core once per machine (not per repo): `~/.claude/CLAUDE.md`,
+   `~/.claude/agents/*.md`, and the `/task-session`, `/brief`, `/task-status`,
+   `/task-close` commands — see `docs/agent-orchestration.md` for the exact
+   copy commands.
+2. Copy `.claude/rules/orchestration.md` and `.claude/agents/` into the new
+   repo. Each project agent file is the kit's agent text plus a trailing
+   repo-rules section, because a project agent overrides its global
+   counterpart by name and must be a superset, not a replacement. Adjust the
+   cost table if pricing changes.
+3. Write the new repo's `docs/editing-this-repo.md`: the editing rules plus
    whatever verification command the project has (test suite, linters).
-3. Add a one-line CLAUDE.md or rule that says "Ultracode off; delegate per
+4. Add the kit's `.gitignore` snippet (`.claude/scratch/`) so task buckets
+   never get tracked, and the settings additions noted in
+   `docs/agent-orchestration.md` (spawn depth, briefs read-only, push/reset/
+   clean under ask).
+5. Add a one-line CLAUDE.md or rule that says "Ultracode off; delegate per
    the orchestration rule".
-4. Keep a handoff doc per piece of work with a prioritised checklist; every
+6. Keep a handoff doc per piece of work with a prioritised checklist; every
    session reads it first.
 
 ## Related

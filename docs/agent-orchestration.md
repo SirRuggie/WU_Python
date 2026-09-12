@@ -61,6 +61,49 @@ migration plan goes to `refuter` before it is trusted, and a debugging
 result goes to `builder` to apply, so no agent both makes and grades its
 own claim.
 
+## The kit: global core, buckets and commands
+
+The general delegation protocol — roster, briefs, task buckets,
+verification, reporting — now lives once in `~/.claude/CLAUDE.md`, not
+duplicated in this repo. That file, `~/.claude/agents/*.md` and
+`~/.claude/commands/{task-session,brief,task-close,task-status}.md` are the
+kit's **core**: installed per machine, not per repo, from
+[SirRuggie/claude-code-orchestration-kit](https://github.com/SirRuggie/claude-code-orchestration-kit).
+
+Install (or reinstall) the core on a machine:
+
+```
+cp KIT/core/CLAUDE.md ~/.claude/CLAUDE.md
+mkdir -p ~/.claude/agents ~/.claude/commands
+cp KIT/core/agents/*.md ~/.claude/agents/
+cp KIT/core/commands/task-session.md ~/.claude/commands/
+cp KIT/extras/commands/{brief,task-close,task-status}.md ~/.claude/commands/
+```
+
+**Buckets.** A task gets its own folder, `.claude/scratch/<slug>/`, holding
+`STATE.md` (replaced each update), `FINDINGS.md` and `DECISIONS.md`
+(append-only), `briefs/`, and `reports/`. `.claude/scratch/_TEMPLATE/`
+seeds a new bucket's shape.
+
+**Commands.** `/task-session <slug>` creates or resumes a bucket.
+`/brief` writes a scoped agent brief into the bucket and dispatches the
+agent. `/task-status` compares a bucket against the repo and the agent
+list and reports the true state. `/task-close` rolls a bucket's durable
+content into the project handoff and archives it.
+
+**Project agents override global agents by name.** Because of that, each
+file in `.claude/agents/` here is the kit's core agent text verbatim, plus
+a trailing `## Repo rules (Bot - Warriors United)` section carrying this
+repo's constraints (editing rules, conventions, test commands, commit
+trailers) — a project agent must be a superset of its global counterpart,
+never a replacement with rules dropped.
+
+**Settings additions the kit expects:** `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`
+capped at 1, `.claude/scratch/*/briefs/**` and `.claude/scratch/_closed/**`
+denied to Edit/Write (a brief is immutable once dispatched), and
+`git push`, `git reset --hard`, and `git clean` moved to `ask` rather than
+left on default prompting.
+
 ## Claude Code mechanics this relies on
 
 All from `code.claude.com/docs/en/` (memory, sub-agents, best-practices,
@@ -107,4 +150,8 @@ settings, hooks), verified 2026-09-02.
 Prices and model IDs change. When they do, update the table here and the
 cost column in the rule, in the same commit. When a new kind of recurring
 work appears, add an agent definition rather than widening an existing
-one; each agent's description is what routes work to it.
+one; each agent's description is what routes work to it. When the kit
+itself changes upstream, re-copy `core/` to `~/.claude/` (the install
+commands above) and re-append each repo's `## Repo rules` section onto the
+refreshed agent text — a plain overwrite of `.claude/agents/*.md` here
+would silently drop this repo's rules.

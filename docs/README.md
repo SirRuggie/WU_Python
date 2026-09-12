@@ -37,8 +37,9 @@ the hard way. The standing instruction that governs this folder is in
 - [agent-orchestration.md](agent-orchestration.md) — the main session
   orchestrates and delegates to the agents in `.claude/agents/` (scout on
   Haiku, researcher and builder on Sonnet, refuter and debugger on Opus).
-  Pricing, task-to-model reasoning, and the Claude Code mechanics behind the
-  always-loaded rule in `.claude/rules/orchestration.md`.
+  Pricing, task-to-model reasoning, the orchestration kit's global core and
+  task buckets, and the Claude Code mechanics behind the always-loaded rule
+  in `.claude/rules/orchestration.md`.
 
 ## Features
 
