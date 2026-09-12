@@ -462,8 +462,9 @@ class _FakeInteraction:
 
 
 class _FakeHandlerCtx:
-    def __init__(self, values=None):
+    def __init__(self, values=None, user_id=999):
         self.interaction = _FakeInteraction(values)
+        self.user = SimpleNamespace(id=user_id)
 
 
 class _FakeClansCollection:
@@ -494,7 +495,8 @@ def test_placeholder_handlers_keep_the_selected_tag(monkeypatch):
     the selection would render a different (or every) card, and asserting
     the custom_id's tag - not just card presence - actually exercises the
     tag being carried through, not just re-rendered from a single-clan
-    fixture regardless of selected_tag."""
+    fixture regardless of selected_tag. Save/remind are covered separately
+    below (builder-08: no longer placeholders)."""
     async def fake_away_players(doc):
         return []
 
@@ -512,7 +514,7 @@ def test_placeholder_handlers_keep_the_selected_tag(monkeypatch):
     async def run_all():
         results = []
         for handler in (
-            dashboard.handle_save, dashboard.handle_remind, dashboard.handle_auto,
+            dashboard.handle_auto,
             dashboard.handle_players, dashboard.handle_add, dashboard.handle_finish,
         ):
             results.append(await handler.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
@@ -549,6 +551,204 @@ def test_pick_handler_reads_selection_from_interaction_values(monkeypatch):
     components = asyncio.run(dashboard.handle_pick.__wrapped__(ctx=ctx, action_id="home", mongo=mongo))
     assert "### Alpha" in _texts(components)
     assert "### Beta" not in _texts(components)
+
+
+# --------------------------------------------------------------- S1 save list / S2 remind now
+
+
+def test_no_tag_clan_skipped_from_select_options():
+    """refuter-07 NOTED (lazycwl_dashboard.py:262-269): a clan doc with no
+    tag must be skipped, never emit a null select value."""
+    clans = [_clan("#ABC", "Alpha"), {"name": "No Tag Clan"}]
+    components = dashboard.render_home([], clans, None, NOW)
+    select = _select(components)
+    values = [option.value for option in select.options]
+    assert None not in values
+    assert "#ABC" in values
+    assert len(values) == 2  # "ALL" + Alpha only
+
+
+def test_render_save_result_single_clan_happy_row():
+    results = [{
+        "ok": True, "clan_name": "Alpha", "clan_tag": "#ABC",
+        "player_count": 12, "linked_count": 9, "already_saved": False,
+        "existing_saved_at": None, "error": None,
+    }]
+    components = dashboard.render_save_result(results, "#ABC")
+    texts = _texts(components)
+    assert "## \U0001F4BE Save list" in texts
+    assert any("Alpha" in t and "12 players saved" in t and "9 linked to Discord" in t for t in texts)
+    assert not any(t.startswith(("0 saved", "1 saved")) for t in texts)  # no ALL summary for a single clan
+
+
+def test_render_save_result_already_saved_row():
+    results = [{
+        "ok": False, "clan_name": "Alpha", "clan_tag": "#ABC",
+        "player_count": 0, "linked_count": 0, "already_saved": True,
+        "existing_saved_at": NOW, "error": "This clan already has a saved list.",
+    }]
+    texts = _texts(dashboard.render_save_result(results, "#ABC"))
+    assert any("already saved on 12 September" in t for t in texts)
+
+
+def test_render_save_result_error_row():
+    results = [{
+        "ok": False, "clan_name": None, "clan_tag": "#ABC",
+        "player_count": 0, "linked_count": 0, "already_saved": False,
+        "existing_saved_at": None, "error": "Clan #ABC not found.",
+    }]
+    texts = _texts(dashboard.render_save_result(results, "#ABC"))
+    assert any(t.startswith("❌ **#ABC**") and "Clan #ABC not found." in t for t in texts)
+
+
+def test_render_save_result_all_fanout_summary_counts():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "player_count": 5,
+         "linked_count": 5, "already_saved": False, "existing_saved_at": None, "error": None},
+        {"ok": False, "clan_name": "Beta", "clan_tag": "#DEF", "player_count": 0,
+         "linked_count": 0, "already_saved": True, "existing_saved_at": NOW, "error": "already"},
+        {"ok": False, "clan_name": "Gamma", "clan_tag": "#GHI", "player_count": 0,
+         "linked_count": 0, "already_saved": False, "existing_saved_at": None, "error": "boom"},
+    ]
+    texts = _texts(dashboard.render_save_result(results, "ALL"))
+    assert "1 saved · 1 already saved · 1 failed" in texts
+
+
+def test_build_save_result_all_calls_service_once_per_clan(monkeypatch):
+    calls = []
+
+    async def fake_save_list(clan_tag, saved_by):
+        calls.append((clan_tag, saved_by))
+        return {
+            "ok": True, "clan_name": f"Clan {clan_tag}", "clan_tag": clan_tag,
+            "player_count": 1, "linked_count": 0, "already_saved": False,
+            "existing_saved_at": None, "error": None,
+        }
+
+    monkeypatch.setattr(dashboard.service, "save_list", fake_save_list)
+    mongo = _FakeMongo(
+        clan_docs=[
+            {"tag": "#ABC", "name": "Alpha", "type": "FWA"},
+            {"tag": "#DEF", "name": "Beta", "type": "FWA"},
+        ],
+        list_docs=[],
+    )
+    components = asyncio.run(dashboard.build_save_result(mongo, "ALL", 777))
+    assert calls == [("#ABC", 777), ("#DEF", 777)]
+    texts = _texts(components)
+    assert "2 saved · 0 already saved · 0 failed" in texts
+
+
+def test_build_save_result_service_exception_becomes_error_row(monkeypatch):
+    async def fake_save_list(clan_tag, saved_by):
+        raise RuntimeError("coc outage")
+
+    monkeypatch.setattr(dashboard.service, "save_list", fake_save_list)
+    mongo = _FakeMongo(clan_docs=[{"tag": "#ABC", "name": "Alpha", "type": "FWA"}], list_docs=[])
+    components = asyncio.run(dashboard.build_save_result(mongo, "#ABC", 777))
+    texts = _texts(components)
+    assert any(t.startswith("❌ **#ABC**") and "coc outage" in t for t in texts)
+
+
+def test_save_result_back_button_carries_selected_tag():
+    components = dashboard.render_save_result([], "#ABC")
+    back = _button_by_action(components, "lazycwl_home")
+    assert back.custom_id == "lazycwl_home:#ABC"
+
+
+def test_save_result_component_ceiling_24_clans():
+    results = [
+        {"ok": True, "clan_name": f"Clan {i:03d}", "clan_tag": f"#C{i:03d}", "player_count": 30,
+         "linked_count": 20, "already_saved": False, "existing_saved_at": None, "error": None}
+        for i in range(24)
+    ]
+    components = dashboard.render_save_result(results, "ALL")
+    assert _component_count(components) <= 30
+
+
+def test_render_remind_result_sent_row():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 3,
+                "total_count": 10, "sent": True, "error": None}]
+    texts = _texts(dashboard.render_remind_result(results, "#ABC"))
+    assert any("3 of 10 away" in t and "message sent" in t for t in texts)
+
+
+def test_render_remind_result_everyone_here_row():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 0,
+                "total_count": 10, "sent": False, "error": None}]
+    texts = _texts(dashboard.render_remind_result(results, "#ABC"))
+    assert any("everyone is here" in t for t in texts)
+
+
+def test_render_remind_result_error_row():
+    results = [{"ok": False, "clan_name": None, "clan_tag": "#ABC", "away_count": 0,
+                "total_count": 0, "sent": False, "error": "No saved list for this clan."}]
+    texts = _texts(dashboard.render_remind_result(results, "#ABC"))
+    assert any(t.startswith("❌ **#ABC**") and "No saved list for this clan." in t for t in texts)
+
+
+def test_build_remind_result_all_calls_service_once_per_clan(monkeypatch):
+    calls = []
+
+    async def fake_remind_now(clan_tag):
+        calls.append(clan_tag)
+        return {"ok": True, "clan_name": f"Clan {clan_tag}", "clan_tag": clan_tag,
+                "away_count": 0, "total_count": 5, "sent": False, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "remind_now", fake_remind_now)
+    mongo = _FakeMongo(
+        clan_docs=[
+            {"tag": "#ABC", "name": "Alpha", "type": "FWA"},
+            {"tag": "#DEF", "name": "Beta", "type": "FWA"},
+        ],
+        list_docs=[],
+    )
+    components = asyncio.run(dashboard.build_remind_result(mongo, "ALL"))
+    assert calls == ["#ABC", "#DEF"]
+    texts = _texts(components)
+    assert "0 sent · 2 everyone home · 0 failed" in texts
+
+
+def test_build_remind_result_service_exception_becomes_error_row(monkeypatch):
+    async def fake_remind_now(clan_tag):
+        raise RuntimeError("coc outage")
+
+    monkeypatch.setattr(dashboard.service, "remind_now", fake_remind_now)
+    mongo = _FakeMongo(clan_docs=[{"tag": "#ABC", "name": "Alpha", "type": "FWA"}], list_docs=[])
+    components = asyncio.run(dashboard.build_remind_result(mongo, "#ABC"))
+    texts = _texts(components)
+    assert any(t.startswith("❌ **#ABC**") and "coc outage" in t for t in texts)
+
+
+def test_remind_result_back_button_carries_selected_tag():
+    components = dashboard.render_remind_result([], "ALL")
+    back = _button_by_action(components, "lazycwl_home")
+    assert back.custom_id == "lazycwl_home:ALL"
+
+
+def test_remind_result_component_ceiling_24_clans():
+    results = [
+        {"ok": True, "clan_name": f"Clan {i:03d}", "clan_tag": f"#C{i:03d}", "away_count": 2,
+         "total_count": 10, "sent": True, "error": None}
+        for i in range(24)
+    ]
+    components = dashboard.render_remind_result(results, "ALL")
+    assert _component_count(components) <= 30
+
+
+def test_handle_save_uses_ctx_user_id(monkeypatch):
+    calls = []
+
+    async def fake_save_list(clan_tag, saved_by):
+        calls.append((clan_tag, saved_by))
+        return {"ok": True, "clan_name": "Alpha", "clan_tag": clan_tag, "player_count": 1,
+                "linked_count": 0, "already_saved": False, "existing_saved_at": None, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "save_list", fake_save_list)
+    mongo = _FakeMongo(clan_docs=[], list_docs=[])
+    ctx = _FakeHandlerCtx(user_id=555)
+    asyncio.run(dashboard.handle_save.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert calls == [("#ABC", 555)]
 
 
 def test_component_action_names_still_pass():

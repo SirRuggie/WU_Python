@@ -2,8 +2,9 @@
 """/lazycwl - Administrator-only dashboard over the LazyCWL saved-list
 service (extensions/commands/fwa/lazy_cwl_service.py).
 
-S0 (home) only. Every other action button exists but replies "Coming soon"
-until a later brief (design-01-main.md B3-B6) wires it up. The old
+S0 (home), S1 (save list), and S2 (remind now) so far. The remaining four
+action buttons exist but reply "Coming soon" until a later brief
+(design-01-main.md B4-B6) wires them up. The old
 `/fwa lazycwl-*` commands (extensions/commands/fwa/lazy_cwl.py) stay live and
 untouched; this is a new, separate command.
 
@@ -257,10 +258,13 @@ def render_home(
     body.append(Separator())
 
     options = [SelectOption(label="\U0001F30D All clans", value="ALL")]
-    shown_clans = clans[:MAX_CLAN_OPTIONS]
+    # A clan doc with no tag can't be selected (no value to route on) - skip
+    # it entirely rather than emit a null select value (builder-08 fix).
+    taggeable_clans = [clan for clan in clans if clan.get("tag")]
+    shown_clans = taggeable_clans[:MAX_CLAN_OPTIONS]
     for clan in shown_clans:
-        tag = clan.get("tag")
-        ntag = store._normalize_tag(tag) if tag else None
+        tag = clan["tag"]
+        ntag = store._normalize_tag(tag)
         description = "✅ list saved" if ntag in lists_by_tag else "no list yet"
         options.append(SelectOption(
             label=clan.get("name", "Unknown clan"),
@@ -289,7 +293,7 @@ def render_home(
             options=options,
         )
     ]))
-    if len(clans) > MAX_CLAN_OPTIONS:
+    if len(taggeable_clans) > MAX_CLAN_OPTIONS:
         body.append(Text(content=f"Showing the first {MAX_CLAN_OPTIONS} clans."))
 
     if selected_tag is None or selected_tag == "ALL":
@@ -358,6 +362,150 @@ async def build_home(mongo: MongoClient, selected_tag: Optional[str], note: Opti
     return render_home(lists, clans, selected_tag, now, away_counts, note=note)
 
 
+def _result_name(result: dict) -> str:
+    """A result dict's display name - clan_name, falling back to whatever tag
+    the call was made with (builder-08 merges `clan_tag` into every result
+    before rendering, since save_list's "not found" path and every
+    remind_now path omit it - D008's key sets don't include it)."""
+    return result.get("clan_name") or result.get("clan_tag") or "?"
+
+
+def _chunk_rows(rows: list, budget: int = COMPACT_TEXT_BUDGET) -> list:
+    """One joined row string, or two if it would exceed `budget` chars - S1/S2
+    never need more than one Text component per chunk at realistic clan
+    counts, but this keeps the ceiling honest per the brief."""
+    joined = "\n".join(rows)
+    if len(joined) <= budget:
+        return [joined]
+    mid = len(rows) // 2
+    return ["\n".join(rows[:mid]), "\n".join(rows[mid:])]
+
+
+def _back_button(selected_tag: Optional[str]) -> ActionRow:
+    return ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_home:{_encode_tag(selected_tag)}",
+            label="⬅️ Back",
+            emoji="⬅️",
+        )
+    ])
+
+
+def render_save_result(results: list, selected_tag: Optional[str]) -> list:
+    """Pure S1 renderer. `results` are lazy_cwl_service.save_list()'s D008
+    dicts, one per clan attempted, each with `clan_tag` guaranteed present."""
+    rows = []
+    ok = already = failed = 0
+    for result in results:
+        name = _result_name(result)
+        if result.get("already_saved"):
+            already += 1
+            when = result.get("existing_saved_at")
+            when_text = _format_expires(when) if when is not None else "?"
+            rows.append(f"ℹ️ **{name}** · already saved on {when_text}")
+        elif result.get("ok"):
+            ok += 1
+            rows.append(
+                f"✅ **{name}** · {result.get('player_count', 0)} players saved"
+                f" · {result.get('linked_count', 0)} linked to Discord"
+            )
+        else:
+            failed += 1
+            rows.append(f"❌ **{name}** · {result.get('error') or 'Something went wrong.'}")
+
+    body = [Text(content="## \U0001F4BE Save list")]
+    body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
+    if selected_tag == "ALL":
+        body.append(Text(content=f"{ok} saved · {already} already saved · {failed} failed"))
+    body.append(Separator())
+    body.append(_back_button(selected_tag))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_save_result(mongo: MongoClient, action_id: str, saved_by: int) -> list:
+    """Save `action_id`'s tag, or every FWA clan for "ALL" (same union source
+    build_home uses, clans only - not orphan lists, per the brief). One
+    failing call becomes a single ❌ row, never a crash."""
+    if action_id == "ALL":
+        clans = await mongo.clans.find({"type": _FWA_CLAN_TYPE}).to_list(length=None)
+        clans = sorted(clans, key=lambda clan: clan.get("name") or "")
+        tags = [clan["tag"] for clan in clans if clan.get("tag")]
+    else:
+        tags = [action_id]
+
+    results = []
+    for tag in tags:
+        try:
+            result = await service.save_list(tag, saved_by=saved_by)
+        except Exception as exc:
+            _log.warning(
+                "lazycwl_dashboard.build_save_result: save_list failed clan_tag=%s",
+                tag, exc_info=True,
+            )
+            result = {"ok": False, "error": str(exc) or "Something went wrong."}
+        if not result.get("clan_tag"):
+            result = {**result, "clan_tag": tag}
+        results.append(result)
+
+    return render_save_result(results, action_id)
+
+
+def render_remind_result(results: list, selected_tag: Optional[str]) -> list:
+    """Pure S2 renderer. `results` are lazy_cwl_service.remind_now()'s D008
+    dicts, one per clan attempted, each with `clan_tag` guaranteed present."""
+    rows = []
+    sent = home = failed = 0
+    for result in results:
+        name = _result_name(result)
+        if result.get("error"):
+            failed += 1
+            rows.append(f"❌ **{name}** · {result.get('error')}")
+        elif result.get("sent"):
+            sent += 1
+            rows.append(
+                f"\U0001F4E8 **{name}** · {result.get('away_count', 0)} of"
+                f" {result.get('total_count', 0)} away · message sent"
+            )
+        else:
+            home += 1
+            rows.append(f"\U0001F3E0 **{name}** · everyone is here")
+
+    body = [Text(content="## \U0001F4E3 Remind now")]
+    body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
+    if selected_tag == "ALL":
+        body.append(Text(content=f"{sent} sent · {home} everyone home · {failed} failed"))
+    body.append(Separator())
+    body.append(_back_button(selected_tag))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_remind_result(mongo: MongoClient, action_id: str) -> list:
+    """Same fan-out as build_save_result, calling service.remind_now."""
+    if action_id == "ALL":
+        clans = await mongo.clans.find({"type": _FWA_CLAN_TYPE}).to_list(length=None)
+        clans = sorted(clans, key=lambda clan: clan.get("name") or "")
+        tags = [clan["tag"] for clan in clans if clan.get("tag")]
+    else:
+        tags = [action_id]
+
+    results = []
+    for tag in tags:
+        try:
+            result = await service.remind_now(tag)
+        except Exception as exc:
+            _log.warning(
+                "lazycwl_dashboard.build_remind_result: remind_now failed clan_tag=%s",
+                tag, exc_info=True,
+            )
+            result = {"ok": False, "error": str(exc) or "Something went wrong."}
+        if not result.get("clan_tag"):
+            result = {**result, "clan_tag": tag}
+        results.append(result)
+
+    return render_remind_result(results, action_id)
+
+
 class LazyCwl(
     lightbulb.SlashCommand,
     name="lazycwl",
@@ -419,7 +567,7 @@ async def handle_save(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> list:
-    return await _placeholder(action_id, mongo)
+    return await build_save_result(mongo, action_id, ctx.user.id)
 
 
 @register_action("lazycwl_remind")
@@ -430,7 +578,7 @@ async def handle_remind(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> list:
-    return await _placeholder(action_id, mongo)
+    return await build_remind_result(mongo, action_id)
 
 
 @register_action("lazycwl_auto")
