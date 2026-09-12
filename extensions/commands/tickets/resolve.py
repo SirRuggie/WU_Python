@@ -44,6 +44,7 @@ from extensions.commands.tickets import (
     perms,
     schema,
     store,
+    thread_service,
 )
 from extensions.components import register_action
 from utils.constants import GREEN_ACCENT, RED_ACCENT
@@ -356,6 +357,7 @@ async def _checkpoint_effect(
         state: str,
         error: Exception | None = None,
         message_id: int | None = None,
+        details: Mapping | None = None,
 ) -> bool:
     """Best-effort durable checkpoint; physical effects remain authoritative.
 
@@ -371,6 +373,8 @@ async def _checkpoint_effect(
     }
     if message_id:
         step_doc["message_id"] = int(message_id)
+    if details:
+        step_doc.update(dict(details))
     try:
         result = await store.update_one(
             mongo,
@@ -625,6 +629,62 @@ async def _process_resolution_effects_owned(
     # note from _checkpoint_effect) instead of retried every 60s forever.
     candidate_thread_missing = ticket_runtime.thread_missing_has_role(ticket, "candidate")
     staff_thread_missing = ticket_runtime.thread_missing_has_role(ticket, "staff")
+
+    for role, missing, thread_id, target in (
+        ("candidate", candidate_thread_missing, location_id, None),
+        ("staff", staff_thread_missing, int((ticket.get("location") or {}).get("staff_space_id") or 0), None),
+    ):
+        step = f"thread_names_{role}"
+        saved = effects.get(step) or {}
+        saved_details = {
+            key: saved[key] for key in ("target", "archived", "locked") if key in saved
+        }
+        try:
+            if saved.get("state") in {"delivered", "skipped"}:
+                continue
+            if missing or not thread_id:
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step=step, state="skipped",
+                )
+                continue
+            public_name, staff_name = thread_service.thread_names(
+                str(ticket.get("ticket_type") or ""), int(ticket.get("ticket_number") or 0),
+                str(ticket.get("username") or "candidate"), status=str(ticket.get("status") or ""),
+            )
+            target = public_name if role == "candidate" else staff_name
+
+            async def save_flags(flags, *, _step=step):
+                saved_details.update({"target": target, **flags})
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step=_step, state="pending",
+                    details={"target": target, "archived": flags["archived"], "locked": flags["locked"]},
+                )
+
+            async def current_marker():
+                latest = await store.find_one(mongo, {"_id": ticket["_id"], **store.RUNTIME_FILTER})
+                if (
+                    latest is None
+                    or str((latest.get("resolution_effects") or {}).get("marker") or "") != marker
+                    or str(latest.get("status") or "") != str(ticket.get("status") or "")
+                ):
+                    raise RuntimeError("ticket decision was overturned before thread rename")
+
+            await thread_service.rename_ticket_thread_for_status(
+                bot.rest, thread_id, target,
+                restore_state=saved if saved.get("archived") is not None else None,
+                checkpoint_flags=save_flags,
+                before_mutation=current_marker,
+            )
+            await _checkpoint_effect(
+                mongo, ticket["_id"], marker, step=step, state="delivered",
+                details=saved_details,
+            )
+        except Exception as exc:
+            await _checkpoint_effect(
+                mongo, ticket["_id"], marker, step=step, state="failed", error=exc,
+                details=saved_details,
+            )
+            pending.append((f"{role} thread status name", exc))
 
     notification = effects.get("notification") or {}
     notification_message_id = store.as_int(notification.get("message_id"))
@@ -1542,5 +1602,3 @@ def _prior(current: dict) -> dict:
     if current.get("status") == "approved":
         return {"verb": "approved", "by": current.get("approved_by"), "at": current.get("approved_at")}
     return {"verb": "denied", "by": current.get("denied_by"), "at": current.get("denied_at")}
-
-

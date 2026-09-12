@@ -231,12 +231,83 @@ class SetupCollection:
         return UpdateResult(1)
 
 
-def test_thread_names_are_stable_and_never_encode_status():
+def test_thread_names_encode_the_permanent_status_and_keep_closed_unprefixed():
     public, staff = thread_service.thread_names("main", 7, "Shaun Example")
-    assert public == "main-7-shaun-example"
-    assert staff == "staff-main-7-shaun-example"
-    assert "new" not in public
-    assert "approved" not in public
+    assert public == "🆕 main-7-shaun-example"
+    assert staff == "🆕 staff-main-7-shaun-example"
+    assert thread_service.thread_names("main", 7, "Shaun Example", status="approved")[0] == "✅ main-7-shaun-example"
+    assert thread_service.thread_names("main", 7, "Shaun Example", status="denied")[0] == "❌ main-7-shaun-example"
+    assert thread_service.thread_names("main", 7, "Shaun Example", status="closed")[0] == "main-7-shaun-example"
+
+
+def test_id_bound_recovery_accepts_only_known_status_prefixes():
+    base = "main-1-applicant"
+    identity = dict(
+        id=101, guild_id=10, parent_id=20,
+        type=hikari.ChannelType.GUILD_PRIVATE_THREAD, owner_id=999,
+    )
+    thread_service._validate_recovered_thread(
+        SimpleNamespace(**identity, name="✅ " + base),
+        guild_id=10, parent_id=20, name=base, private=True, expected_owner_id=999,
+    )
+    with pytest.raises(thread_service.ThreadTicketError, match="wrong name"):
+        thread_service._validate_recovered_thread(
+            SimpleNamespace(**identity, name="🚨 " + base),
+            guild_id=10, parent_id=20, name=base, private=True, expected_owner_id=999,
+        )
+
+
+def test_status_rename_restores_archived_and_locked_flags():
+    class Rest:
+        def __init__(self):
+            self.thread = SimpleNamespace(id=9, name="🆕 main-1-applicant", is_archived=True, is_locked=True)
+            self.edits = []
+
+        async def fetch_channel(self, _id):
+            return self.thread
+
+        async def edit_channel(self, _id, **kwargs):
+            self.edits.append(kwargs)
+            if "name" in kwargs:
+                self.thread.name = kwargs["name"]
+            if "archived" in kwargs:
+                self.thread.is_archived = kwargs["archived"]
+            if "locked" in kwargs:
+                self.thread.is_locked = kwargs["locked"]
+
+    rest = Rest()
+    asyncio.run(thread_service._rename_ticket_thread_for_status(rest, 9, "✅ main-1-applicant"))
+    assert rest.thread.name == "✅ main-1-applicant"
+    assert rest.thread.is_archived is True
+    assert rest.thread.is_locked is True
+    assert [set(edit) & {"name", "archived", "locked"} for edit in rest.edits] == [
+        {"archived"}, {"name"}, {"archived", "locked"},
+    ]
+
+
+def test_status_rename_retry_restores_flags_checkpointed_before_crash():
+    class Rest:
+        def __init__(self):
+            # Simulates a crash after unarchive + rename but before restoration.
+            self.thread = SimpleNamespace(id=9, name="✅ main-1-applicant", is_archived=False, is_locked=False)
+            self.edits = []
+
+        async def fetch_channel(self, _id):
+            return self.thread
+
+        async def edit_channel(self, _id, **kwargs):
+            self.edits.append(kwargs)
+            self.thread.is_archived = kwargs.get("archived", self.thread.is_archived)
+            self.thread.is_locked = kwargs.get("locked", self.thread.is_locked)
+
+    rest = Rest()
+    asyncio.run(thread_service.rename_ticket_thread_for_status(
+        rest, 9, "✅ main-1-applicant",
+        restore_state={"archived": True, "locked": True},
+    ))
+    assert rest.thread.is_archived is True
+    assert rest.thread.is_locked is True
+    assert rest.edits[0]["archived"] is True
 
 
 def test_create_ticket_owns_acknowledgement_without_dispatcher_state_io():
@@ -3784,8 +3855,8 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
 
 def test_migration_thread_names_use_new_unique_target_number():
     public, staff = legacy_migration._migration_thread_names("fwa", 99, "Applicant")
-    assert public == "fwa-99-applicant"
-    assert staff == "staff-fwa-99-applicant"
+    assert public == "🆕 fwa-99-applicant"
+    assert staff == "🆕 staff-fwa-99-applicant"
 
 
 def test_opening_delivery_scans_beyond_last_hundred_messages():

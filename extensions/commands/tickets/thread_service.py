@@ -46,6 +46,7 @@ _log = logging.getLogger(__name__)
 CREATION_LEASE = timedelta(minutes=10)
 COMPLETE_STATE_RETENTION = timedelta(days=1)
 AUTO_ARCHIVE_MINUTES = 10080
+THREAD_NAME_CAPABILITY_VERSION = 1
 # A row whose opening delivery is still pending gets this many recovery
 # passes -- each one retries the existing redelivery -- before it is
 # retired as degraded. A Discord-level 404/403 means the thread itself is
@@ -199,9 +200,51 @@ def _slug(value: str, *, fallback: str = "candidate", limit: int = 42) -> str:
     return (value or fallback)[:limit].rstrip("-")
 
 
-def thread_names(ticket_type: str, ticket_number: int, username: str) -> tuple[str, str]:
+_STATUS_NAME_PREFIXES = {
+    "open": "🆕 ",
+    "approved": "✅ ",
+    "denied": "❌ ",
+}
+_KNOWN_NAME_PREFIXES = tuple(_STATUS_NAME_PREFIXES.values())
+_CANONICAL_THREAD_NAME = re.compile(
+    r"^(?:staff-)?(?:main|fwa)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
+)
+
+
+def thread_names(
+    ticket_type: str,
+    ticket_number: int,
+    username: str,
+    *,
+    status: str = "open",
+) -> tuple[str, str]:
+    """Return the pair's canonical Discord names for one durable status.
+
+    ``closed`` deliberately has no prefix: it is a legacy/no-decision state,
+    while the three permanent v2 decisions remain visible in Discord.
+    """
     suffix = f"{ticket_type}-{int(ticket_number)}-{_slug(username)}"
-    return suffix[:100], f"staff-{suffix}"[:100]
+    prefix = _STATUS_NAME_PREFIXES.get(str(status), "")
+    return (prefix + suffix)[:100], (prefix + f"staff-{suffix}")[:100]
+
+
+def _name_variants(name: str) -> frozenset[str]:
+    """Return only canonical legacy/current spellings of ``name``.
+
+    Creation and migration checkpoints created before status emojis must keep
+    recovering their stored unprefixed pair.  This accepts precisely those old
+    spellings and the three known prefixes; it never turns an arbitrary thread
+    name into a recovery candidate.
+    """
+    raw = str(name or "")
+    base = raw
+    for prefix in _KNOWN_NAME_PREFIXES:
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    if len(base) > 100 or not _CANONICAL_THREAD_NAME.fullmatch(base):
+        return frozenset({raw})
+    return frozenset({base, *(prefix + base for prefix in _KNOWN_NAME_PREFIXES)})
 
 
 def _permission_names(value: hikari.Permissions) -> str:
@@ -721,6 +764,8 @@ async def _find_named_thread(
         item
         for item in active
         if _as_int(getattr(item, "parent_id", 0)) == parent_id
+        # Name discovery is intentionally exact.  A status-prefixed sibling
+        # must never be selected merely because it shares a canonical suffix.
         and str(getattr(item, "name", "")) == name
     ]
     for item in matches:
@@ -780,7 +825,7 @@ def _validate_recovered_thread(
     )
     if getattr(thread, "type", None) != expected_type:
         raise ThreadTicketError("recovered destination thread has the wrong thread type")
-    if str(getattr(thread, "name", "")) != name:
+    if str(getattr(thread, "name", "")) not in _name_variants(name):
         raise ThreadTicketError("recovered destination thread has the wrong name")
     if _as_int(getattr(thread, "owner_id", 0)) != int(expected_owner_id):
         raise ThreadTicketError("recovered destination thread has the wrong owner")
@@ -2124,6 +2169,119 @@ async def reconcile_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str
                 archived=False,
                 reason="Restoring active open ticket",
             )
+
+
+async def rename_ticket_pair_for_status(
+    rest: hikari.api.RESTClient,
+    ticket: Mapping[str, Any],
+    *,
+    roles: frozenset[str] = frozenset({"candidate", "staff"}),
+) -> None:
+    """Rename both bound threads without changing their archive/lock policy.
+
+    Discord requires an archived thread to be reopened before a rename.  The
+    original flags are restored after the edit.  The terminal resolution
+    effect retries a failed pair, including a later Discord edit failure.
+    """
+    status = str(ticket.get("status") or "")
+    if status not in {"open", "approved", "denied", "closed"}:
+        raise ThreadTicketError(f"unsupported ticket status {status!r}")
+    public_id, staff_id = _ticket_thread_ids(ticket)
+    public_name, staff_name = thread_names(
+        str(ticket.get("ticket_type") or ""),
+        _as_int(ticket.get("ticket_number")),
+        str(ticket.get("username") or "candidate"),
+        status=status,
+    )
+    targets = (
+        ("candidate", public_id, public_name),
+        ("staff", staff_id, staff_name),
+    )
+    errors: list[Exception] = []
+    for role, thread_id, name in targets:
+        if role not in roles:
+            continue
+        try:
+            await _rename_ticket_thread_for_status(rest, thread_id, name)
+        except Exception as error:
+            errors.append(error)
+    if errors:
+        raise ThreadTicketError(
+            f"failed to rename {len(errors)} ticket thread(s): {type(errors[0]).__name__}"
+        ) from errors[0]
+
+
+async def _rename_ticket_thread_for_status(
+    rest: hikari.api.RESTClient, thread_id: int, name: str,
+) -> None:
+    """Rename one thread, restoring the flags observed before the edit."""
+    thread = await rest.fetch_channel(thread_id)
+    if str(getattr(thread, "name", "")) == name:
+        return
+    archived = bool(getattr(thread, "is_archived", False))
+    locked = bool(getattr(thread, "is_locked", False))
+    if archived:
+        await rest.edit_channel(
+            thread_id, archived=False,
+            reason="Updating permanent ticket decision status",
+        )
+    await rest.edit_channel(
+        thread_id, name=name,
+        reason="Updating permanent ticket decision status",
+    )
+    if archived or locked:
+        await rest.edit_channel(
+            thread_id, archived=archived, locked=locked,
+            reason="Restoring ticket thread state after status update",
+        )
+
+
+async def rename_ticket_thread_for_status(
+    rest: hikari.api.RESTClient,
+    thread_id: int,
+    name: str,
+    *,
+    restore_state: Mapping[str, Any] | None = None,
+    checkpoint_flags: Callable[[dict[str, bool]], Any] | None = None,
+    before_mutation: Callable[[], Any] | None = None,
+) -> None:
+    """Rename one thread with a durable caller-owned flag checkpoint.
+
+    ``checkpoint_flags`` runs before the first write.  On a later retry,
+    ``restore_state`` restores the pre-unarchive flags even if the crash left
+    Discord showing an active thread with its new name.
+    """
+    thread = await rest.fetch_channel(thread_id)
+    observed = {
+        "archived": bool(getattr(thread, "is_archived", False)),
+        "locked": bool(getattr(thread, "is_locked", False)),
+    }
+    flags = {
+        key: bool(restore_state[key]) if restore_state and key in restore_state else value
+        for key, value in observed.items()
+    }
+    if checkpoint_flags is not None and not restore_state:
+        result = checkpoint_flags(flags)
+        if hasattr(result, "__await__"):
+            await result
+
+    async def mutate(**kwargs) -> None:
+        if before_mutation is not None:
+            result = before_mutation()
+            if hasattr(result, "__await__"):
+                await result
+        await rest.edit_channel(thread_id, **kwargs)
+
+    renamed = str(getattr(thread, "name", "")) != name
+    if renamed:
+        if observed["archived"]:
+            await mutate(archived=False, reason="Updating permanent ticket decision status")
+        await mutate(name=name, reason="Updating permanent ticket decision status")
+    if (renamed and observed["archived"]) or flags != observed:
+        await mutate(
+            archived=flags["archived"], locked=flags["locked"],
+            reason="Restoring ticket thread state after status update",
+        )
 
 
 async def ensure_candidate_thread_access(

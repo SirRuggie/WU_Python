@@ -1747,11 +1747,13 @@ async def _migration_update(
 
 
 def _migration_thread_names(
-    ticket_type: str, ticket_number: int, username: str
+    ticket_type: str, ticket_number: int, username: str, *, status: str = "open"
 ) -> tuple[str, str]:
     # Migrated pairs intentionally match all future pairs. Their source identity
     # lives in Mongo, not in a one-off Discord naming convention.
-    return thread_service.thread_names(ticket_type, ticket_number, username)
+    return thread_service.thread_names(
+        ticket_type, ticket_number, username, status=status,
+    )
 
 
 async def _quarantine_incomplete_migration_threads(
@@ -1790,7 +1792,8 @@ async def _ensure_destination_pair(
             mongo, state["metadata"]["ticket_type"]
         )
         public_name, staff_name = _migration_thread_names(
-            state["metadata"]["ticket_type"], number, state["metadata"]["username"]
+            state["metadata"]["ticket_type"], number, state["metadata"]["username"],
+            status=str(state["metadata"].get("status") or "closed"),
         )
         state = await _migration_update(mongo, migration_id, owner, {
             "destination.ticket_number": number,

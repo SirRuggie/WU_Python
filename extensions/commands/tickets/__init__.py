@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+import logging
+import uuid
 
 import hikari
 import lightbulb
 import coc
+import asyncio
 
 from extensions.commands import ticket_runtime
 from utils.mongo import MongoClient
@@ -15,6 +19,7 @@ from utils.startup_reconciler import StartupReconciler
 
 
 loader = lightbulb.Loader()
+_log = logging.getLogger(__name__)
 ticket = lightbulb.Group("tickets", "Warriors United thread ticket commands")
 
 ticket_config: dict | None = None
@@ -22,12 +27,14 @@ startup_index_errors: dict[str, str] = {}
 _startup_complete = False
 _thread_intake_ready = False
 _workflow_recovery: StartupReconciler | None = None
+_capability_heartbeat_task: asyncio.Task | None = None
 _staff_context_sweep_after: str | None = None
 _staff_context_sweep_complete = False
 CREATION_RECOVERY_LIMIT = 50
 MIGRATION_RECOVERY_LIMIT = 5
 STAFF_CONTEXT_RECOVERY_LIMIT = 25
 ACCOUNT_SYNC_RECOVERY_LIMIT = 25
+_THREAD_NAME_CAPABILITY_BOOT_ID = uuid.uuid4().hex
 
 
 async def prepare_ticket_runtime(mongo: MongoClient) -> dict[str, str]:
@@ -253,6 +260,30 @@ async def _recover_ticket_runtime(
         await recover_ticket_workflows(bot, mongo)
     else:
         await recover_ticket_workflows(bot, mongo, coc_client)
+    # This is written only by a booted runtime that has completed ticket
+    # recovery.  The offline emoji-backfill tool refuses writes without it,
+    # so a newer checkout cannot accidentally rename threads while an older
+    # deployed process still exact-validates unprefixed recovery names.
+    await mongo.ticket_setup.update_one(
+        {"_id": "config"},
+        {"$set": {
+            "thread_name_capability_version": thread_service.THREAD_NAME_CAPABILITY_VERSION,
+            "thread_name_capability_booted_at": datetime.now(timezone.utc),
+            "thread_name_capability_boot_id": _THREAD_NAME_CAPABILITY_BOOT_ID,
+            "thread_name_capability_heartbeat_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+
+
+async def _heartbeat_thread_name_capability(mongo: MongoClient) -> None:
+    """Keep the offline rename guard tied to this live prefix-aware process."""
+    while True:
+        await asyncio.sleep(60)
+        await mongo.ticket_setup.update_one(
+            {"_id": "config", "thread_name_capability_boot_id": _THREAD_NAME_CAPABILITY_BOOT_ID},
+            {"$set": {"thread_name_capability_heartbeat_at": datetime.now(timezone.utc)}},
+        )
 
 
 def start_ticket_workflow_recovery(
@@ -281,15 +312,24 @@ async def on_started(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
 ) -> None:
     """Start retrying runtime preparation and workflow recovery."""
+    global _capability_heartbeat_task
     start_ticket_workflow_recovery(bot, mongo)
+    if _capability_heartbeat_task is None or _capability_heartbeat_task.done():
+        _capability_heartbeat_task = asyncio.create_task(
+            _heartbeat_thread_name_capability(mongo), name="ticket-name-capability-heartbeat",
+        )
 
 
 @loader.listener(hikari.StoppingEvent)
 async def on_stopping(_: hikari.StoppingEvent) -> None:
     """Await every ticket-owned worker before shared REST/Mongo shutdown."""
     global _startup_complete, _staff_context_sweep_after, _staff_context_sweep_complete
-    global _thread_intake_ready
+    global _thread_intake_ready, _capability_heartbeat_task
     try:
+        if _capability_heartbeat_task is not None:
+            _capability_heartbeat_task.cancel()
+            await asyncio.gather(_capability_heartbeat_task, return_exceptions=True)
+            _capability_heartbeat_task = None
         if _workflow_recovery is not None:
             await _workflow_recovery.stop()
     finally:
@@ -297,6 +337,15 @@ async def on_stopping(_: hikari.StoppingEvent) -> None:
         _staff_context_sweep_after = None
         _staff_context_sweep_complete = False
         _thread_intake_ready = False
+        # Do not leave an offline maintenance tool believing this process is
+        # still the deployed prefix-aware runtime after a rollback or stop.
+        try:
+            await mongo.ticket_setup.update_one(
+                {"_id": "config", "thread_name_capability_boot_id": _THREAD_NAME_CAPABILITY_BOOT_ID},
+                {"$unset": {"thread_name_capability_heartbeat_at": ""}},
+            )
+        except Exception:
+            _log.exception("ticket status-name capability shutdown marker clear failed")
         try:
             await resolve.stop_resolution_reconciler()
         finally:

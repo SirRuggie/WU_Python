@@ -3379,6 +3379,54 @@ def _effect_ticket():
     return ticket
 
 
+def test_resolution_rename_retry_retains_pre_unarchive_flags(monkeypatch):
+    """A failed effect keeps the flags captured before Discord was reopened."""
+    ticket = _effect_ticket()
+    ticket["resolution_effects"].update({
+        "notification": {"state": "delivered"},
+        "staff_context": {"state": "delivered"},
+        "hub": {"state": "requested"},
+    })
+    checkpoints = {}
+    calls = []
+
+    async def checkpoint(_mongo, _ticket_id, _marker, *, step, state, details=None, **_kwargs):
+        checkpoints[step] = {"state": state, **(details or {})}
+        return True
+
+    async def latest(*_args, **_kwargs):
+        return ticket
+
+    async def rename(_rest, _thread_id, _target, *, restore_state, checkpoint_flags, **_kwargs):
+        calls.append(restore_state)
+        if len(calls) == 1:
+            await checkpoint_flags({"archived": True, "locked": True})
+            raise TimeoutError("rename interrupted after unarchive")
+
+    async def finalize(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(resolve, "_checkpoint_effect", checkpoint)
+    monkeypatch.setattr(resolve.store, "find_one", latest)
+    monkeypatch.setattr(resolve.thread_service, "rename_ticket_thread_for_status", rename)
+    monkeypatch.setattr(resolve, "_finalize_effects", finalize)
+    first = asyncio.run(resolve._process_resolution_effects_owned(
+        _effect_bot(EffectRest()), SimpleNamespace(), ticket,
+    ))
+    assert first.outcome == store.EFFECT_FAILED
+    saved = checkpoints["thread_names_candidate"]
+    assert saved == {"state": "failed", "target": "❌ main-1-applicant", "archived": True, "locked": True}
+
+    ticket["resolution_effects"].update(checkpoints)
+    second = asyncio.run(resolve._process_resolution_effects_owned(
+        _effect_bot(EffectRest()), SimpleNamespace(), ticket,
+    ))
+    assert second.outcome == store.WON
+    restored = next(state for state in calls if state is not None)
+    assert restored["archived"] is True
+    assert restored["locked"] is True
+
+
 def test_applicant_resolution_messages_suppress_unrelated_mentions():
     class Rest:
         def __init__(self):
@@ -3785,8 +3833,12 @@ def test_resolution_effects_skip_a_known_missing_thread_instead_of_retrying(monk
 
     assert result.outcome == store.WON
     assert result.doc["resolution_effects"]["complete"] is True
-    # A decision never archives or locks either thread, missing or not.
-    assert rest.edits == []
+    # The surviving staff half still receives its permanent status name; the
+    # missing candidate is skipped and is never retried.
+    assert rest.edits == [(102, {
+        "name": "❌ staff-main-1-applicant",
+        "reason": "Updating permanent ticket decision status",
+    })]
     audit_events = [entry["event"] for entry in result.doc["audit"]]
     assert "resolution_notification_skipped" in audit_events
 
@@ -3906,16 +3958,19 @@ def test_notification_retry_reopens_only_to_write_and_stays_open(monkeypatch):
 
     assert result.won
     assert notices == [ticket["resolution_effects"]["marker"]]
-    assert rest.edits == [
-        (101, {
-            "archived": False,
-            "reason": "Delivering an updated ticket decision",
-        }),
-        (101, {
-            "locked": False,
-            "reason": "Delivering an updated ticket decision",
-        }),
-    ]
+    # Name repair preserves the pre-existing archival policy first; the
+    # notification path then reopens the candidate and deliberately leaves it
+    # writable for the applicant.
+    assert (101, {
+        "archived": False,
+        "reason": "Delivering an updated ticket decision",
+    }) in rest.edits
+    assert (101, {
+        "locked": False,
+        "reason": "Delivering an updated ticket decision",
+    }) in rest.edits
+    assert rest.channels[101].is_archived is False
+    assert rest.channels[101].is_locked is False
     # The candidate thread was reopened to deliver the notice and stays
     # open -- nothing re-archives or re-locks it afterward.
     assert not rest.channels[101].is_archived
@@ -4191,7 +4246,10 @@ def test_hub_retry_finds_marker_and_never_duplicates_notification(monkeypatch):
     assert second.won
     assert sends == [ticket["resolution_effects"]["marker"]]
     assert hub_attempts == 2
-    assert rest.fetch_channel_calls == [101]
+    # The permanent-name effect validates both halves; retrying the hub must
+    # still find the candidate marker instead of posting another notice.
+    assert rest.fetch_channel_calls.count(101) >= 1
+    assert 102 in rest.fetch_channel_calls
 
 
 @pytest.mark.parametrize("status,kind", [
@@ -4295,10 +4353,8 @@ def test_overturn_unarchives_to_post_and_never_rearchives(monkeypatch):
         "archived": False,
         "reason": "Delivering an updated ticket decision",
     }) in rest.edits
-    assert not any(
-        kwargs.get("archived") is True or kwargs.get("locked") is True
-        for _channel_id, kwargs in rest.edits
-    )
+    # Renaming temporarily restores the archived state it observed, but the
+    # decision delivery always reopens the candidate and leaves it open.
     assert not rest.channels[101].is_archived
     assert not rest.channels[101].is_locked
 

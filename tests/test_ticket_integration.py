@@ -737,7 +737,7 @@ def test_startup_recovery_retries_failed_staff_contexts(monkeypatch):
 
 
 def test_ticket_runtime_startup_retries_config_indexes_and_workflow_once(monkeypatch):
-    attempts = {"config": 0, "indexes": 0, "workflow": 0}
+    attempts = {"config": 0, "indexes": 0, "workflow": 0, "marker": 0}
 
     class Setup:
         async def find_one(self, query):
@@ -746,6 +746,14 @@ def test_ticket_runtime_startup_retries_config_indexes_and_workflow_once(monkeyp
             if attempts["config"] == 1:
                 raise TimeoutError("temporary config outage")
             return {"main_candidate_parent": 123}
+
+        async def update_one(self, *_args, **_kwargs):
+            # Successful startup publishes the live status-name capability.
+            # This fake otherwise deliberately models only config reads.
+            attempts["marker"] += 1
+            if attempts["marker"] == 1:
+                raise TimeoutError("temporary capability marker outage")
+            return None
 
     class Mongo:
         ticket_setup = Setup()
@@ -792,7 +800,7 @@ def test_ticket_runtime_startup_retries_config_indexes_and_workflow_once(monkeyp
         assert reconciler.task is first
         await first
         assert reconciler.health.state == "healthy"
-        assert reconciler.health.attempts == 4
+        assert reconciler.health.attempts == 5
         assert ticket_extension.ticket_config == {"main_candidate_parent": 123}
         assert ticket_extension.startup_index_errors == {}
         assert ticket_extension._startup_complete is True
@@ -803,7 +811,7 @@ def test_ticket_runtime_startup_retries_config_indexes_and_workflow_once(monkeyp
 
     asyncio.run(scenario())
 
-    assert attempts == {"config": 3, "indexes": 2, "workflow": 2}
+    assert attempts == {"config": 3, "indexes": 2, "workflow": 3, "marker": 2}
 
 
 def test_console_startup_retries_hub_state_and_dirty_write_once(monkeypatch):

@@ -741,6 +741,40 @@ same `ticket_migrations` checkpoints `migrate-legacy` uses — the batch
 document only tracks which channel is next, never Discord/Mongo side effects
 directly.
 
+## Permanent thread status names
+
+Thread names show the ticket's durable status: `🆕` for open, `✅` for
+approved, and `❌` for denied. An overturn updates both the candidate and
+staff thread names to the new decision. `closed` stays unprefixed because it
+means no decision was recorded. These prefixes follow the saved ticket status;
+they do not indicate transient delivery or recovery work.
+
+The runtime accepts canonical names from before this feature as well as the
+prefixed spellings, so existing tickets and saved creation or migration
+checkpoints can still recover. New open tickets are created with `🆕` names.
+
+Use `python tools/rename_ticket_threads.py` to preview the one-time backfill
+for completed legacy imports. It lists each candidate and staff thread ID and
+target name without making changes. The tool excludes live tickets and
+unfinished imports. Only run the apply step after deploying code that supports
+prefixed-name recovery and confirming that the compatible bot deployment is
+running and publishing its live capability marker.
+
+```bash
+python tools/rename_ticket_threads.py --apply --run-id sep-2026
+```
+
+Choose a stable run ID to resume that same checkpoint after interruption.
+Apply requires `MONGODB_URI` and `DISCORD_TOKEN`, plus a fresh runtime marker in
+`settings.ticket_setup` showing the required capability version, boot ID, and
+heartbeat from the active bot process (heartbeat no older than 180 seconds).
+The bot publishes the marker after ticket recovery succeeds, refreshes its
+heartbeat every 60 seconds, and clears its own heartbeat on shutdown. The tool
+does not accept a manually supplied version as deployment proof. Completed
+thread edits are skipped on a repeat; failed phases resume from their saved
+checkpoint. Edits run serially, wait through Discord rate limits, and restore
+each thread's archived and locked state after renaming.
+
 ## Recovery boundaries
 
 | Operation | What it changes | Safe recovery |
