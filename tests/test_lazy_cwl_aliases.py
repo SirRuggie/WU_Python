@@ -6,8 +6,10 @@ from pathlib import Path
 
 import hikari
 
+from extensions.commands import lazycwl_dashboard as dashboard
 from extensions.commands.fwa import fwa, lazy_cwl
 from tests.lazycwl_wording import BANNED_WORDS
+from tests.test_lazycwl_dashboard import _FakeMongo, _texts
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -116,3 +118,30 @@ def test_redirect_renders_dashboard_home_with_moved_notice(monkeypatch):
     assert ctx.deferred is True
     assert calls == [("fake-mongo", None, lazy_cwl.MOVED_NOTICE)]
     assert ctx.interaction.edited == ["rendered-home"]
+
+
+def test_redirect_end_to_end_through_the_real_build_home(monkeypatch):
+    """refuter-15 NOTED 1: `lazy_cwl.build_home is None` (the lazy-import
+    branch, the ONLY branch production ever takes) is exercised by no other
+    test - every other happy-path test here monkeypatches `build_home`
+    itself. Drive the real `_redirect` -> the real, un-monkeypatched
+    `dashboard.build_home` -> real `render_home`, and assert MOVED_NOTICE
+    actually lands in the rendered components. Only `service.away_players`
+    is monkeypatched (build_home's one real I/O side-effect beyond Mongo)."""
+    async def fake_away_players(doc):
+        return []
+
+    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
+
+    mongo = _FakeMongo(
+        clan_docs=[{"tag": "#ABC", "name": "Alpha", "type": "FWA"}],
+        list_docs=[],
+    )
+    ctx = _FakeCtx(_FakeMember(hikari.Permissions.ADMINISTRATOR))
+
+    asyncio.run(lazy_cwl._redirect(ctx, mongo))
+
+    assert ctx.deferred is True
+    rendered = ctx.interaction.edited
+    assert rendered is not None
+    assert lazy_cwl.MOVED_NOTICE in _texts(rendered)

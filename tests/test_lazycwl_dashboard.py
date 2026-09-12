@@ -454,6 +454,21 @@ class _FakeCtx:
         self.deferred = True
 
 
+def test_is_admin_none_member():
+    """refuter-15 NOTED 5: `is_admin` is the one predicate shared by
+    LazyCwl.invoke and lazy_cwl._redirect - a missing member (e.g. a DM
+    interaction) is never an admin."""
+    assert dashboard.is_admin(None) is False
+
+
+def test_is_admin_member_without_administrator_permission():
+    assert dashboard.is_admin(_FakeMember(hikari.Permissions.NONE)) is False
+
+
+def test_is_admin_member_with_administrator_permission():
+    assert dashboard.is_admin(_FakeMember(hikari.Permissions.ADMINISTRATOR)) is True
+
+
 def test_admin_gate_denies_non_admin():
     ctx = _FakeCtx(_FakeMember(hikari.Permissions.NONE))
     command = dashboard.LazyCwl()

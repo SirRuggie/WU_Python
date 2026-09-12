@@ -64,9 +64,16 @@ the hard way. The standing instruction that governs this folder is in
   `/fwa blacklist add`), and how it shows up on `/todo` and in the points
   monitor's records.
 
-- [lazycwl-autopings.md](lazycwl-autopings.md) — the auto-ping scheduler (no
-  jobstore, Mongo-backed restore), the select-all + partial-failure pattern to
-  copy, and four unguarded 25-option menus that are clear only at current scale.
+- [lazycwl-dashboard.md](lazycwl-dashboard.md) — `/lazycwl`, the
+  Administrator-only dashboard that replaced the nine `/fwa lazycwl-*`
+  commands: the two-layer admin gate, the wording table, every screen's
+  action_id encoding, the data model and expiry/reminder rules, and the
+  redirect aliases that keep the old command names working.
+
+- [lazycwl-autopings.md](lazycwl-autopings.md) — RETIRED 2026-09-12, replaced
+  by [lazycwl-dashboard.md](lazycwl-dashboard.md). Kept as a short pointer for
+  the two facts (ping channel, select-all pattern) still true of the
+  replacement.
 
 ## Proposals
 

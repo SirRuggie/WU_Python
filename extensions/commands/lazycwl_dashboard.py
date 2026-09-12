@@ -66,6 +66,14 @@ _FWA_CLAN_TYPE = "FWA"
 COMPACT_TEXT_BUDGET = 3800
 
 
+def is_admin(member: Optional[hikari.Member]) -> bool:
+    """True if `member` has the Administrator permission. The one predicate
+    shared by LazyCwl.invoke and every /fwa lazycwl-* redirect alias
+    (extensions/commands/fwa/lazy_cwl.py:_redirect) - the two copies of this
+    check used to be able to drift (refuter-15 NOTED 5)."""
+    return bool(member and member.permissions & hikari.Permissions.ADMINISTRATOR)
+
+
 def _encode_tag(selected_tag: Optional[str]) -> str:
     """Selected clan tag -> the action_id segment of a custom_id."""
     if selected_tag is None:
@@ -1416,7 +1424,7 @@ class LazyCwl(
         ctx: lightbulb.Context,
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
-        if not (ctx.member and ctx.member.permissions & hikari.Permissions.ADMINISTRATOR):
+        if not is_admin(ctx.member):
             await ctx.respond("Only server admins can use this.", ephemeral=True)
             return
 

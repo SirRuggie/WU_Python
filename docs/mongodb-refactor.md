@@ -95,11 +95,20 @@ Findings that belong to it are recorded here so nobody re-discovers them:
 - [ ] `card_trades` keeps completed rows forever; TTL only on `lease_expires_at` — needs a purge or archive path (rules 11, 15).
 
 **fwa** (`extensions/commands/fwa/`, `utils/fwa_points_parser.py`)
-- [ ] `lazy_cwl.py:1144` `_id=uuid4()`, embeds full rosters, no `purge_at`; `ensure_snapshot_invariants` (`:102`) repairs duplicates/mixed case on every startup instead of the index preventing them at write time (rules 6, 11).
-- [ ] `lazy_cwl.py:341,426,497,576,665,758,846,981` filter on `{"active": True}` alone, which can't use the partial index at `:145` (needs `clan_tag:{"$type":"string"}`, as `:115` already does) — COLLSCAN plus blocking sort (rule 12).
+- [x] **RESOLVED 2026-09-12** — the three `lazy_cwl.py` items below described
+  the pre-dashboard implementation (`_id=uuid4()`, `ensure_snapshot_invariants`,
+  the `{"active": True}` filters, the `to_list(length=None)` sites). That file
+  is now 147 lines of redirect aliases (`extensions/commands/fwa/lazy_cwl.py`)
+  with none of that code; the replacement, `utils/lazy_cwl_store.py`
+  (collection `lazy_cwl_lists`), already uses ObjectId ids, a partial unique
+  index instead of startup invariant repair, and bounded `find`/`to_list`
+  calls. See `docs/lazycwl-dashboard.md`. Left struck through rather than
+  deleted so the history of what was found is not lost.
+  - ~~`lazy_cwl.py:1144` `_id=uuid4()`, embeds full rosters, no `purge_at`; `ensure_snapshot_invariants` (`:102`) repairs duplicates/mixed case on every startup instead of the index preventing them at write time (rules 6, 11).~~
+  - ~~`lazy_cwl.py:341,426,497,576,665,758,846,981` filter on `{"active": True}` alone, which can't use the partial index at `:145` (needs `clan_tag:{"$type":"string"}`, as `:115` already does) — COLLSCAN plus blocking sort (rule 12).~~
+  - ~~`lazy_cwl.py:428` and ~30 other sites: `to_list(length=None)` on a growing collection — `find_one(sort=...)` or `.limit()` (rule 12).~~
 - [ ] `fwa_points_monitor.py:231,234,253` store timestamps as ISO strings (no TTL, no range index); `:485` `_id="config"` shares the collection with per-clan rows — BSON datetimes, split config into `bot_config` (rules 3, 7).
 - [ ] `band_sync_ical.py:109` writes to `fwa_sync_alerts`, a collection `utils/mongo.py` never declares — declare owner/TTL (rule 14).
-- [ ] `lazy_cwl.py:428` and ~30 other sites: `to_list(length=None)` on a growing collection — `find_one(sort=...)` or `.limit()` (rule 12).
 
 **clan** (`extensions/commands/clan/dashboard/`)
 - [ ] Make the clan tag the document `_id` (owner, 2026-09-08: no duplicate
@@ -168,7 +177,8 @@ Findings that belong to it are recorded here so nobody re-discovers them:
 |---|---|---|
 | `tickets` | 1/ticket forever + unbounded `audit` | No |
 | `button_store` | legacy state + challenges + ticket mirror, no TTL | No |
-| `lazy_cwl_snapshots` | 1/clan/CWL month, never purged | No |
+| `lazy_cwl_snapshots` | legacy/unreferenced since 2026-09-12 — no code accessor remains (`utils/mongo.py` dropped its attribute, D019); old rows still sit in Mongo, dropped only by a later removal task | No (frozen, not growing) |
+| `lazy_cwl_lists` | 1/clan, replaces `lazy_cwl_snapshots` (`utils/lazy_cwl_store.py`) | Yes — `purge_at` TTL, 90 days after `expires_at` |
 | `card_trades` | completed rows kept; TTL only on `lease_expires_at` | No |
 | `[branch] ticket_flags` | 1/identity + unbounded `audit` | No |
 | `clans` | duplicates per repeat `/clan add` | No |

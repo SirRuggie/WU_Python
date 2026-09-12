@@ -5,7 +5,7 @@
 **The Discord bot that runs the Warriors United Clash of Clans family.**
 
 Recruiting and onboarding, FWA and CWL coordination, a full ticket desk, and a
-per-player to-do dashboard — 79 documented slash commands and six always-on
+per-player to-do dashboard — 74 documented slash commands and six always-on
 background jobs behind a single bot account.
 
 [![Python 3.12.3+](https://img.shields.io/badge/Python-3.12.3%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)

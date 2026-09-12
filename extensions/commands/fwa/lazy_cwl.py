@@ -18,14 +18,20 @@ MOVED_NOTICE = "ℹ️ This moved to `/lazycwl`. Use it from now on."
 # Not imported at module load: extensions/commands/lazycwl_dashboard.py imports
 # extensions/commands/fwa/lazy_cwl_service.py, which triggers this package's
 # __init__.py (`from . import lazy_cwl`) before it finishes. A module-level
-# import here completed the cycle (refuter-14 MUST-FIX 1). Left as a plain
-# module attribute (not resolved eagerly) so tests can still monkeypatch
-# `lazy_cwl.build_home` the same way they always could.
+# import here completed the cycle (refuter-14 MUST-FIX 1). Left as plain
+# module attributes (not resolved eagerly) so tests can still monkeypatch
+# `lazy_cwl.build_home` the same way they always could. `is_admin` gets the
+# same lazy treatment for the same reason (builder-16, D021: shares the
+# dashboard's admin-check predicate instead of a second copy).
 build_home = None
+is_admin = None
 
 
 async def _redirect(ctx: lightbulb.Context, mongo: MongoClient) -> None:
-    if not (ctx.member and ctx.member.permissions & hikari.Permissions.ADMINISTRATOR):
+    _is_admin = is_admin
+    if _is_admin is None:
+        from extensions.commands.lazycwl_dashboard import is_admin as _is_admin
+    if not _is_admin(ctx.member):
         await ctx.respond("Only server admins can use this.", ephemeral=True)
         return
 

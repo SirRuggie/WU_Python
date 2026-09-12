@@ -36,25 +36,33 @@ can be fixed and closed independently. A Discord default permission controls
 discoverability, but every mutating component must also enforce the same role at
 click time.
 
-1. **`AUTH-004` — `/fwa lazycwl-snapshot`:** creates operational snapshots.
-2. **`AUTH-005` — `/fwa lazycwl-ping`:** can ping members from active snapshots.
-3. **`AUTH-006` — `/fwa lazycwl-reset`:** deactivates one or all snapshots.
-4. **`AUTH-007` — `/fwa lazycwl-autopings-start`:** starts recurring pings.
-5. **`AUTH-008` — `/fwa lazycwl-autopings-stop`:** stops recurring pings.
-6. **`AUTH-009` — `/fwa lazycwl-remove-player`:** removes tracked players.
+**Status (`AUTH-004`-`AUTH-009`, `AUTH-012`-`AUTH-014`):** RESOLVED 2026-09-12.
+All nine `/fwa lazycwl-*` commands these items named are now redirect aliases
+(`extensions/commands/fwa/lazy_cwl.py`) that open `/lazycwl`
+(`extensions/commands/lazycwl_dashboard.py`), which is
+`default_member_permissions=ADMINISTRATOR` plus a runtime `is_admin(ctx.member)`
+check on both the command and every alias — closing the "no default
+permission or runtime authorization guard" gap these items described. See
+`docs/lazycwl-dashboard.md` ("Entry and the admin gate"). Left below,
+struck through, so the finding itself is not lost.
+
+1. ~~**`AUTH-004` — `/fwa lazycwl-snapshot`:** creates operational snapshots.~~
+2. ~~**`AUTH-005` — `/fwa lazycwl-ping`:** can ping members from active snapshots.~~
+3. ~~**`AUTH-006` — `/fwa lazycwl-reset`:** deactivates one or all snapshots.~~
+4. ~~**`AUTH-007` — `/fwa lazycwl-autopings-start`:** starts recurring pings.~~
+5. ~~**`AUTH-008` — `/fwa lazycwl-autopings-stop`:** stops recurring pings.~~
+6. ~~**`AUTH-009` — `/fwa lazycwl-remove-player`:** removes tracked players.~~
 7. **`AUTH-010` — `/clan dashboard`:** posts a standalone persistent dashboard
    into the channel. Its mutation controls do additional checks, but invocation
    is open and can be used to spam public dashboards.
 8. **`AUTH-011` — `/ticket dashboard`:** describes itself as recruiter-only but
    has no guard. The current menu is mostly a placeholder; enforce the stated
    role before functionality grows.
-9. **`AUTH-012` — `/fwa lazycwl-status`:** reads snapshot/member coverage data.
-10. **`AUTH-013` — `/fwa lazycwl-roster`:** reads complete snapshot rosters.
-11. **`AUTH-014` — `/fwa lazycwl-autopings-status`:** reads auto-ping state.
+9. ~~**`AUTH-012` — `/fwa lazycwl-status`:** reads snapshot/member coverage data.~~
+10. ~~**`AUTH-013` — `/fwa lazycwl-roster`:** reads complete snapshot rosters.~~
+11. ~~**`AUTH-014` — `/fwa lazycwl-autopings-status`:** reads auto-ping state.~~
 
-Items `AUTH-012` through `AUTH-014` are read-only. Decide explicitly whether
-family-wide visibility is intended; document that choice even if they remain
-public.
+`AUTH-010` and `AUTH-011` remain open.
 
 ### P1 — reliability and silent failure
 
@@ -212,7 +220,11 @@ Relevant status commands now show actual runtime state in addition to stored
 configuration:
 
 - `/cwl-reminder status`
-- `/fwa lazycwl-autopings-status`
+- `/fwa lazycwl-autopings-status` (**stale as of 2026-09-12**: this is now a
+  redirect alias that opens `/lazycwl`'s home screen, not a dedicated status
+  view — the reconciler-backed runtime state this item described is visible
+  today as a saved list's reminder state on the dashboard's home card, not a
+  standalone status command. See `docs/lazycwl-dashboard.md`.)
 - `/fwasync status`
 - `/fwapoints status`
 
