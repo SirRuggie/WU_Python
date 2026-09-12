@@ -492,8 +492,15 @@ def test_browse_panel_renders_ten_rows_status_type_period_selects_and_open_picke
         assert console._ticket_label(ticket_doc) in list_text
 
     selects = [node for node in nodes if node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU]
-    # status, type, period, and the "Open a ticket" picker
-    assert len(selects) == 4
+    # status, type, period, applicant flag, and the "Open a ticket" picker
+    assert len(selects) == 5
+    flag_select = next(
+        select for select in selects
+        if str(select["custom_id"]).startswith("ticket_v2_console_browse_flag:")
+    )
+    assert [option["value"] for option in flag_select["options"]] == [
+        "all", "blacklisted", "denied_before", "not_loyal", "ghosted",
+    ]
     picker = next(
         select for select in selects
         if str(select["custom_id"]).startswith("ticket_v2_console_browse_pick:")
@@ -641,6 +648,38 @@ def test_render_browse_session_clamps_page_and_persists_it(monkeypatch):
     assert "Page 1 of 1 · 5 tickets" in contents[0]
 
 
+def test_render_browse_flag_uses_one_active_identity_snapshot_for_count_and_page(monkeypatch):
+    events = []
+
+    async def identities(_mongo, kind):
+        events.append(("identities", kind))
+        return [44], ["#TAG44"]
+
+    async def browse_count(_mongo, **kwargs):
+        events.append(("count", kwargs))
+        return 1
+
+    async def browse(_mongo, **kwargs):
+        events.append(("browse", kwargs))
+        return [_ticket(1)]
+
+    monkeypatch.setattr(console.flag_store, "active_identities_for_kind", identities)
+    monkeypatch.setattr(console.store, "browse_count", browse_count)
+    monkeypatch.setattr(console.store, "browse", browse)
+
+    asyncio.run(console._render_browse_session(
+        object(), action_id="abc", owner_id=22, guild_id=33,
+        status="open", ticket_type="main", period="30",
+        flag_kind="denied_before", page=1,
+    ))
+
+    assert events[0] == ("identities", "denied_before")
+    assert events[1][1]["identity_discord_ids"] == [44]
+    assert events[1][1]["identity_player_tags"] == ["#TAG44"]
+    assert events[2][1]["identity_discord_ids"] is events[1][1]["identity_discord_ids"]
+    assert events[2][1]["identity_player_tags"] is events[1][1]["identity_player_tags"]
+
+
 def test_browse_status_filter_updates_state_and_resets_page(monkeypatch):
     events = []
 
@@ -682,10 +721,49 @@ def test_browse_status_filter_updates_state_and_resets_page(monkeypatch):
         "status": "open",
         "ticket_type": "fwa",
         "period": "30",
+        "flag_kind": "all",
         "page": 1,
         "custom_from": None,
         "custom_to": None,
     }
+
+
+def test_browse_flag_filter_updates_state_and_preserves_other_filters(monkeypatch):
+    events = []
+
+    class Context:
+        interaction = SimpleNamespace(values=("ghosted",))
+        user = SimpleNamespace(id=22)
+        member = object()
+
+    async def allowed(_member, _mongo):
+        return True
+
+    async def update(_mongo, action_id, update_doc, **_kwargs):
+        events.append(("update", action_id, update_doc))
+
+    async def render(_mongo, **kwargs):
+        events.append(("render", kwargs))
+        return ["RENDERED"]
+
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console, "update_state", update)
+    monkeypatch.setattr(console, "_render_browse_session", render)
+
+    result = asyncio.run(console.ticket_console_browse_flag(
+        Context(), "abc", owner_id=22, guild_id=33, status="denied",
+        ticket_type="fwa", period="90", flag_kind="all", page=4,
+        mongo=object(),
+    ))
+
+    assert result == ["RENDERED"]
+    assert events[0] == (
+        "update", "abc", {"$set": {"flag_kind": "ghosted", "page": 1}},
+    )
+    assert events[1][1]["flag_kind"] == "ghosted"
+    assert events[1][1]["status"] == "denied"
+    assert events[1][1]["ticket_type"] == "fwa"
+    assert events[1][1]["period"] == "90"
 
 
 def test_browse_filter_re_renders_unchanged_panel_when_not_recruiter(monkeypatch):
@@ -709,6 +787,7 @@ def test_browse_filter_re_renders_unchanged_panel_when_not_recruiter(monkeypatch
             "status": "open",
             "ticket_type": "all",
             "period": "all",
+            "flag_kind": "all",
             "page": 2,
             "custom_from": None,
             "custom_to": None,
@@ -738,6 +817,7 @@ def test_browse_page_button_advances_and_retreats_with_a_floor_of_one(monkeypatc
         "status": "all",
         "ticket_type": "all",
         "period": "all",
+        "flag_kind": "denied_before",
         "page": 1,
     }
 
@@ -756,7 +836,7 @@ def test_browse_page_button_advances_and_retreats_with_a_floor_of_one(monkeypatc
         events.append(("update", action_id, update_doc))
 
     async def render(_mongo, **kwargs):
-        events.append(("render", kwargs["page"]))
+        events.append(("render", kwargs["page"], kwargs["flag_kind"]))
         return ["RENDERED"]
 
     monkeypatch.setattr(console, "get_state", get)
@@ -767,12 +847,12 @@ def test_browse_page_button_advances_and_retreats_with_a_floor_of_one(monkeypatc
     # Prev on page 1 must not go below 1.
     asyncio.run(console.ticket_console_browse_page(Context(), "abc|prev", mongo=object()))
     assert events[1] == ("update", "abc", {"$set": {"page": 1}})
-    assert events[2] == ("render", 1)
+    assert events[2] == ("render", 1, "denied_before")
 
     events.clear()
     asyncio.run(console.ticket_console_browse_page(Context(), "abc|next", mongo=object()))
     assert events[1] == ("update", "abc", {"$set": {"page": 2}})
-    assert events[2] == ("render", 2)
+    assert events[2] == ("render", 2, "denied_before")
 
 
 def test_browse_page_button_reports_expired_when_state_is_gone(monkeypatch):
@@ -981,8 +1061,9 @@ def test_browse_period_custom_choice_enters_custom_mode(monkeypatch):
     async def allowed(_member, _mongo):
         return True
 
-    async def custom_entry(_ctx, action_id, *, owner_id, guild_id, status, ticket_type, custom_from, custom_to, mongo):
+    async def custom_entry(_ctx, action_id, *, owner_id, guild_id, status, ticket_type, flag_kind, custom_from, custom_to, mongo):
         events.append((action_id, owner_id, guild_id, status, ticket_type, custom_from, custom_to))
+        assert flag_kind == "all"
         return ["CUSTOM_PANEL"]
 
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
@@ -1211,7 +1292,7 @@ def test_browse_custom_cancel_restores_the_previous_period(monkeypatch):
 
     result = asyncio.run(console.ticket_console_browse_custom_cancel(
         Context(), "abc", owner_id=22, guild_id=33,
-        status="open", ticket_type="fwa", period="30", page=2,
+        status="open", ticket_type="fwa", period="30", flag_kind="ghosted", page=2,
         custom_from=None, custom_to=None,
         custom_from_year="2025", custom_from_month="6",
         custom_to_year="2025", custom_to_month="8",
@@ -1221,7 +1302,8 @@ def test_browse_custom_cancel_restores_the_previous_period(monkeypatch):
     assert result == ["LIST"]
     assert events[0] == {
         "action_id": "abc", "owner_id": 22, "guild_id": 33,
-        "status": "open", "ticket_type": "fwa", "period": "30", "page": 2,
+            "status": "open", "ticket_type": "fwa", "period": "30", "page": 2,
+            "flag_kind": "ghosted",
         "custom_from": None, "custom_to": None,
     }
 

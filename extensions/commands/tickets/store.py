@@ -362,6 +362,9 @@ def _browse_filter(
     ticket_types: Iterable[str] | None,
     since,
     until=None,
+    *,
+    identity_discord_ids: Iterable | None = None,
+    identity_player_tags: Iterable[str] | None = None,
 ) -> dict:
     """Build the console Browse filter.
 
@@ -392,6 +395,18 @@ def _browse_filter(
         if until is not None:
             created_at["$lt"] = until
         filt["created_at"] = created_at
+    # ``None`` means no applicant-flag filter. Empty iterables mean the
+    # selected flag currently has no active identities and must match zero
+    # tickets, rather than accidentally widening back to every ticket.
+    if identity_discord_ids is not None or identity_player_tags is not None:
+        identities: list[dict] = []
+        ids = [item for value in (identity_discord_ids or ()) for item in _mixed_id(value)]
+        tags = schema.player_tags(identity_player_tags or ())
+        if ids:
+            identities.append({"user_id": {"$in": ids}})
+        if tags:
+            identities.append({"player_tags": {"$in": tags}})
+        filt["$or"] = identities or [{"_id": {"$in": []}}]
     return filt
 
 
@@ -404,9 +419,15 @@ async def browse(
     until=None,
     page: int = 1,
     page_size: int = 10,
+    identity_discord_ids: Iterable | None = None,
+    identity_player_tags: Iterable[str] | None = None,
 ) -> list[dict]:
     """One page of the console's Browse tickets list, newest first."""
-    filt = _browse_filter(statuses, ticket_types, since, until)
+    filt = _browse_filter(
+        statuses, ticket_types, since, until,
+        identity_discord_ids=identity_discord_ids,
+        identity_player_tags=identity_player_tags,
+    )
     amount = max(1, min(int(page_size), 25))
     skip = max(0, int(page) - 1) * amount
     cursor = (await _reader(mongo)).find(filt, BROWSE_PROJECTION)
@@ -423,9 +444,15 @@ async def browse_count(
     ticket_types: Iterable[str] | None = None,
     since=None,
     until=None,
+    identity_discord_ids: Iterable | None = None,
+    identity_player_tags: Iterable[str] | None = None,
 ) -> int:
     """How many tickets `browse` matches in total, ignoring page/page_size."""
-    filt = _browse_filter(statuses, ticket_types, since, until)
+    filt = _browse_filter(
+        statuses, ticket_types, since, until,
+        identity_discord_ids=identity_discord_ids,
+        identity_player_tags=identity_player_tags,
+    )
     return int(await (await _reader(mongo)).count_documents(filt))
 
 

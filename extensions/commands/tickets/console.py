@@ -1895,6 +1895,13 @@ BROWSE_PERIOD_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("90", "Last 90 days", "🗓️"),
     ("custom", "Custom range…", "🗓️"),
 )
+BROWSE_FLAG_OPTIONS: tuple[tuple[str, str, str], ...] = (
+    ("all", "All tickets (no flag filter)", "📋"),
+    (flag_store.FLAG_BLACKLISTED, "Blacklisted", "🚫"),
+    (flag_store.FLAG_DENIED_BEFORE, "Denied before", "⚠️"),
+    (flag_store.FLAG_NOT_LOYAL, "Not loyal to WU", "💔"),
+    (flag_store.FLAG_GHOSTED, "Ghosted", "👻"),
+)
 BROWSE_PERIOD_DAYS = {"7": 7, "30": 30, "90": 90}
 BROWSE_MONTH_NAMES = (
     "January", "February", "March", "April", "May", "June",
@@ -2026,6 +2033,7 @@ def _browse_filter_selects(
     status: str,
     ticket_type: str,
     period: str,
+    flag_kind: str = "all",
     custom_from: str | None = None,
     custom_to: str | None = None,
 ) -> list[ActionRow]:
@@ -2035,6 +2043,9 @@ def _browse_filter_selects(
         _browse_select_row(
             "ticket_v2_console_browse_period", action_id, BROWSE_PERIOD_OPTIONS, period,
             placeholder=_browse_period_label(period, custom_from, custom_to),
+        ),
+        _browse_select_row(
+            "ticket_v2_console_browse_flag", action_id, BROWSE_FLAG_OPTIONS, flag_kind,
         ),
     ]
 
@@ -2049,6 +2060,7 @@ def build_browse_panel(
     total_pages: int,
     results: Sequence[Mapping],
     total: int,
+    flag_kind: str = "all",
     custom_from: str | None = None,
     custom_to: str | None = None,
 ) -> list[Container]:
@@ -2056,6 +2068,7 @@ def build_browse_panel(
         f"{_browse_option_label(BROWSE_STATUS_OPTIONS, status)} · "
         f"{_browse_option_label(BROWSE_TYPE_OPTIONS, ticket_type)} · "
         f"{_browse_period_label(period, custom_from, custom_to)} · "
+        f"{_browse_option_label(BROWSE_FLAG_OPTIONS, flag_kind)} · "
         f"Page {page} of {total_pages} · "
         f"{total} ticket{'s' if total != 1 else ''}"
     )
@@ -2063,7 +2076,9 @@ def build_browse_panel(
     footer = "-# Archived threads open in read-only mode and stay archived."
     rows: list = [
         Text(content=heading),
-        *_browse_filter_selects(action_id, status, ticket_type, period, custom_from, custom_to),
+        *_browse_filter_selects(
+            action_id, status, ticket_type, period, flag_kind, custom_from, custom_to,
+        ),
         Separator(divider=True),
     ]
     page_results = results[:BROWSE_PAGE_SIZE]
@@ -2206,6 +2221,7 @@ async def _create_browse_state(
         "status": "all",
         "ticket_type": "all",
         "period": "all",
+        "flag_kind": "all",
         "page": 1,
     })
     return action_id
@@ -2220,6 +2236,7 @@ async def _render_browse_session(
     status: str,
     ticket_type: str,
     period: str,
+    flag_kind: str = "all",
     page: int,
     custom_from: str | None = None,
     custom_to: str | None = None,
@@ -2227,9 +2244,19 @@ async def _render_browse_session(
     since, until = _browse_since(period, custom_from, custom_to)
     statuses = (status,) if status in schema.TICKET_STATUSES else ()
     ticket_types = (ticket_type,) if ticket_type in schema.TICKET_TYPES else ()
+    identity_kwargs: dict = {}
+    if flag_kind in flag_store.FLAG_KINDS:
+        discord_ids, player_tags = await flag_store.active_identities_for_kind(
+            mongo, flag_kind,
+        )
+        identity_kwargs = {
+            "identity_discord_ids": discord_ids,
+            "identity_player_tags": player_tags,
+        }
     total = await store.browse_count(
         mongo, statuses=statuses or None, ticket_types=ticket_types or None,
         since=since, until=until,
+        **identity_kwargs,
     )
     total_pages = _browse_total_pages(total)
     clamped_page = _clamp_browse_page(page, total_pages)
@@ -2241,6 +2268,7 @@ async def _render_browse_session(
         until=until,
         page=clamped_page,
         page_size=BROWSE_PAGE_SIZE,
+        **identity_kwargs,
     )
     if clamped_page != int(page):
         await update_state(mongo, action_id, {"$set": {"page": clamped_page}})
@@ -2253,6 +2281,7 @@ async def _render_browse_session(
         total_pages=total_pages,
         results=results,
         total=total,
+        flag_kind=flag_kind,
         custom_from=custom_from,
         custom_to=custom_to,
     )
@@ -5398,6 +5427,7 @@ async def _browse_filter_action(
     status: str,
     ticket_type: str,
     period: str,
+    flag_kind: str,
     page: int,
     field: str,
     allowed: set[str],
@@ -5419,6 +5449,7 @@ async def _browse_filter_action(
             status=status,
             ticket_type=ticket_type,
             period=period,
+            flag_kind=flag_kind,
             page=page,
             custom_from=custom_from,
             custom_to=custom_to,
@@ -5437,6 +5468,7 @@ async def _browse_filter_action(
             guild_id=guild_id,
             status=status,
             ticket_type=ticket_type,
+            flag_kind=flag_kind,
             custom_from=custom_from,
             custom_to=custom_to,
             mongo=mongo,
@@ -5445,6 +5477,7 @@ async def _browse_filter_action(
     next_status = chosen if field == "status" else status
     next_type = chosen if field == "ticket_type" else ticket_type
     next_period = chosen if field == "period" else period
+    next_flag = chosen if field == "flag_kind" else flag_kind
     return await _render_browse_session(
         mongo,
         action_id=action_id,
@@ -5453,6 +5486,7 @@ async def _browse_filter_action(
         status=next_status,
         ticket_type=next_type,
         period=next_period,
+        flag_kind=next_flag,
         page=1,
         custom_from=custom_from,
         custom_to=custom_to,
@@ -5469,6 +5503,7 @@ async def ticket_console_browse_status(
     status: str = "all",
     ticket_type: str = "all",
     period: str = "all",
+    flag_kind: str = "all",
     page: int = 1,
     custom_from: str | None = None,
     custom_to: str | None = None,
@@ -5484,6 +5519,7 @@ async def ticket_console_browse_status(
         status=status,
         ticket_type=ticket_type,
         period=period,
+        flag_kind=flag_kind,
         page=page,
         field="status",
         allowed=set(schema.TICKET_STATUSES) | {"all"},
@@ -5502,6 +5538,7 @@ async def ticket_console_browse_type(
     status: str = "all",
     ticket_type: str = "all",
     period: str = "all",
+    flag_kind: str = "all",
     page: int = 1,
     custom_from: str | None = None,
     custom_to: str | None = None,
@@ -5517,6 +5554,7 @@ async def ticket_console_browse_type(
         status=status,
         ticket_type=ticket_type,
         period=period,
+        flag_kind=flag_kind,
         page=page,
         field="ticket_type",
         allowed=set(schema.TICKET_TYPES) | {"all"},
@@ -5535,6 +5573,7 @@ async def ticket_console_browse_period(
     status: str = "all",
     ticket_type: str = "all",
     period: str = "all",
+    flag_kind: str = "all",
     page: int = 1,
     custom_from: str | None = None,
     custom_to: str | None = None,
@@ -5550,11 +5589,39 @@ async def ticket_console_browse_period(
         status=status,
         ticket_type=ticket_type,
         period=period,
+        flag_kind=flag_kind,
         page=page,
         field="period",
         allowed=set(BROWSE_PERIOD_DAYS) | {"all", "custom"},
         custom_from=custom_from,
         custom_to=custom_to,
+    )
+
+
+@register_action("ticket_v2_console_browse_flag", requires_state=True)
+@lightbulb.di.with_di
+async def ticket_console_browse_flag(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    owner_id: int,
+    guild_id: int,
+    status: str = "all",
+    ticket_type: str = "all",
+    period: str = "all",
+    flag_kind: str = "all",
+    page: int = 1,
+    custom_from: str | None = None,
+    custom_to: str | None = None,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    return await _browse_filter_action(
+        ctx, mongo,
+        action_id=action_id, owner_id=owner_id, guild_id=guild_id,
+        status=status, ticket_type=ticket_type, period=period,
+        flag_kind=flag_kind, page=page, field="flag_kind",
+        allowed=set(flag_store.FLAG_KINDS) | {"all"},
+        custom_from=custom_from, custom_to=custom_to,
     )
 
 
@@ -5581,6 +5648,7 @@ async def ticket_console_browse_custom(
     guild_id: int,
     status: str = "all",
     ticket_type: str = "all",
+    flag_kind: str = "all",
     custom_from: str | None = None,
     custom_to: str | None = None,
     mongo: MongoClient = lightbulb.di.INJECTED,
@@ -5766,6 +5834,7 @@ async def ticket_console_browse_custom_apply(
     guild_id: int,
     status: str = "all",
     ticket_type: str = "all",
+    flag_kind: str = "all",
     custom_from_year: str | None = None,
     custom_from_month: str | None = None,
     custom_to_year: str | None = None,
@@ -5805,6 +5874,7 @@ async def ticket_console_browse_custom_apply(
         status=status,
         ticket_type=ticket_type,
         period="custom",
+        flag_kind=flag_kind,
         page=1,
         custom_from=custom_from,
         custom_to=custom_to,
@@ -5821,6 +5891,7 @@ async def ticket_console_browse_custom_cancel(
     status: str = "all",
     ticket_type: str = "all",
     period: str = "all",
+    flag_kind: str = "all",
     page: int = 1,
     custom_from: str | None = None,
     custom_to: str | None = None,
@@ -5852,6 +5923,7 @@ async def ticket_console_browse_custom_cancel(
         status=status,
         ticket_type=ticket_type,
         period=period,
+        flag_kind=flag_kind,
         page=page,
         custom_from=custom_from,
         custom_to=custom_to,
@@ -5879,6 +5951,7 @@ async def ticket_console_browse_page(
     status = str(data.get("status") or "all")
     ticket_type = str(data.get("ticket_type") or "all")
     period = str(data.get("period") or "all")
+    flag_kind = str(data.get("flag_kind") or "all")
     page = _int(data.get("page")) or 1
     custom_from = data.get("custom_from")
     custom_to = data.get("custom_to")
@@ -5894,6 +5967,7 @@ async def ticket_console_browse_page(
             status=status,
             ticket_type=ticket_type,
             period=period,
+            flag_kind=flag_kind,
             page=page,
             custom_from=custom_from,
             custom_to=custom_to,
@@ -5909,6 +5983,7 @@ async def ticket_console_browse_page(
         status=status,
         ticket_type=ticket_type,
         period=period,
+        flag_kind=flag_kind,
         page=next_page,
         custom_from=custom_from,
         custom_to=custom_to,

@@ -314,6 +314,13 @@ un-cloned `button_store` tickets. Useful v2 fallbacks are:
 /tickets deny
 ```
 
+In **Browse tickets**, the **Flag** selector defaults to **All tickets (no
+flag filter)**. Select **Blacklisted**, **Denied before**, **Not loyal to WU**, or
+**Ghosted** to show tickets whose applicant currently has that active flag.
+It combines with the status, clan-type, and date filters. The list and page
+total count matching tickets, not flag records; it includes both recruiter-set
+and automatic flags.
+
 ### Understand account identity
 
 - At open, the bot force-refreshes every Clash account linked to the

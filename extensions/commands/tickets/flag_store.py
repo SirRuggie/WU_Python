@@ -261,6 +261,29 @@ async def list_for_identity(
     return await cursor.sort([("checked_at", -1), ("_id", 1)]).to_list(length=None)
 
 
+async def active_identities_for_kind(
+    mongo: MongoClient, kind: str,
+) -> tuple[list[int], list[str]]:
+    """All identities covered by active flags of one kind.
+
+    Browse resolves these once and gives the same identity snapshot to its
+    count and page queries, keeping pagination internally consistent.
+    """
+    normalized_kind = normalize_kind(kind)
+    rows = await mongo.ticket_flags.find(
+        {"kind": normalized_kind, "active": True},
+        {"discord_ids": 1, "discordIds": 1, "player_tags": 1, "playerTags": 1},
+    ).to_list(length=None)
+    ids: set[int] = set()
+    tags: set[str] = set()
+    for row in rows:
+        ids.update(_discord_ids(row.get("discord_ids")))
+        ids.update(_discord_ids(row.get("discordIds")))
+        tags.update(schema.player_tags(row.get("player_tags") or ()))
+        tags.update(schema.player_tags(row.get("playerTags") or ()))
+    return sorted(ids), sorted(tags)
+
+
 async def active_blacklist(
     mongo: MongoClient,
     *,

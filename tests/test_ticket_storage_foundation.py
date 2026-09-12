@@ -1441,6 +1441,68 @@ def test_canonical_v2_closed_import_normalizes_browses_and_preflights_indexes():
             schema.normalize_ticket_document(near_miss)
 
 
+def test_browse_identity_filter_composes_with_status_type_date_and_count():
+    source = {"guild_id": 10, "channel_id": 900}
+    newer = _ticket(public=301, staff=302, number=3, status="denied", user=44, source=source)
+    newer["player_tags"] = ["#TAG44"]
+    newer["created_at"] = NOW
+    by_tag = _ticket(public=201, staff=202, number=2, status="denied", user=55, source=source)
+    by_tag["player_tags"] = ["#TAG44"]
+    by_tag["created_at"] = NOW - timedelta(days=1)
+    unrelated = _ticket(public=101, staff=102, number=1, status="denied", user=66, source=source)
+    unrelated["created_at"] = NOW - timedelta(days=2)
+    mongo = _mongo(unrelated, by_tag, newer)
+
+    kwargs = {
+        "statuses": ("denied",),
+        "ticket_types": ("main",),
+        "identity_discord_ids": ("44",),
+        "identity_player_tags": ("#tag44",),
+    }
+    rows = asyncio.run(store.browse(mongo, page=1, page_size=1, **kwargs))
+    count = asyncio.run(store.browse_count(mongo, **kwargs))
+
+    assert count == 2
+    assert [row["user_id"] for row in rows] == [44]
+    filt = store._browse_filter(
+        ("denied",), ("main",), NOW - timedelta(days=3),
+        identity_discord_ids=("44",), identity_player_tags=("#tag44",),
+    )
+    assert filt["created_at"] == {"$gte": NOW - timedelta(days=3)}
+    assert {tuple(clause) for clause in filt["$or"]} == {
+        ("user_id",), ("player_tags",),
+    }
+
+
+def test_browse_empty_selected_flag_identity_matches_no_tickets():
+    mongo = _mongo(_ticket())
+    kwargs = {"identity_discord_ids": (), "identity_player_tags": ()}
+    assert asyncio.run(store.browse_count(mongo, **kwargs)) == 0
+    assert asyncio.run(store.browse(mongo, **kwargs)) == []
+
+
+def test_active_flag_identity_snapshot_excludes_inactive_and_reads_legacy_keys():
+    mongo = _mongo()
+    mongo.ticket_flags = Collection([
+        {
+            "_id": "active", "kind": "ghosted", "active": True,
+            "discordIds": ["44"], "playerTags": ["#abc123"],
+        },
+        {
+            "_id": "inactive", "kind": "ghosted", "active": False,
+            "discord_ids": [55], "player_tags": ["NOPE"],
+        },
+        {
+            "_id": "other", "kind": "not_loyal", "active": True,
+            "discord_ids": [66], "player_tags": ["OTHER"],
+        },
+    ])
+
+    ids, tags = asyncio.run(flag_store.active_identities_for_kind(mongo, "ghosted"))
+    assert ids == [44]
+    assert tags == ["#ABC123"]
+
+
 def test_store_migration_requires_explicit_closed_classification():
     source = [{"_id": "legacy_closed", "type": "ticket", "status": "closed"}]
     with pytest.raises(migrate.ClosedClassificationError, match="closed-ticket-id"):
