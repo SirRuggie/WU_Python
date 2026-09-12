@@ -51,6 +51,9 @@ class MongoClient(AsyncMongoClient):
         # TTL index cannot remove role-cleanup history.
         self.recruit_challenges = self.__settings.get_collection("recruit_challenges")
         self.lazy_cwl_snapshots = self.__settings.get_collection("lazy_cwl_snapshots")
+        # New LazyCWL saved-list store, replaces lazy_cwl_snapshots (no migration).
+        # utils.lazy_cwl_store owns its indexes and TTL; nothing else touches it.
+        self.lazy_cwl_lists = self.__settings.get_collection("lazy_cwl_lists")
         # CWL reminder scheduling. cwl_reminder holds one singleton "schedule"
         # document (base time, followups, delivery_issues); cwl_pending_reminders
         # holds one row per outstanding job, keyed by job_id. Keep them separate:
