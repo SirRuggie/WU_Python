@@ -208,7 +208,8 @@ def test_opponent_fetch_failure_stores_none_and_does_not_fail_catchup(monkeypatc
     assert len(points_collection.updates) == 1
     query, update, kwargs = points_collection.updates[0]
     fields = update["$set"]
-    assert query == {"_id": "2PPCL2GYP"}
+    assert query["_id"] == "2PPCL2GYP"
+    assert {"current_war_key": "OPPONENT:WAR-3"} in query["$or"]
     assert kwargs == {"upsert": True}
     assert fields["status"] == "caught_up"
     assert fields["opponent_active_fwa"] is None
@@ -276,6 +277,28 @@ def test_store_record_captures_coc_opponent_name(monkeypatch):
 
     fields = points_collection.updates[0][1]["$set"]
     assert fields["coc_opponent_name"] == "Clash Titans"
+
+
+def test_store_record_rejects_result_after_war_rollover(monkeypatch):
+    points_collection = _PointsCollection(find_result={
+        "current_war_key": "NEW-WAR", "current_war_state": "active",
+    })
+    monkeypatch.setattr(
+        monitor, "mongo_client",
+        _Mongo(points_collection, fwa_blacklist=_BlacklistCollection()),
+    )
+    parsed = {
+        "clan_name": "Alpha", "opponent_tag": "BBB", "opponent_name": "Beta",
+        "war_number": 1, "sync_number": 2, "point_balance": 3,
+        "active_fwa": True, "last_war_state": "warEnded",
+        "raw_verdict": "Alpha should win by points (3 > 2)",
+        "predicted_winner_name": "Alpha", "our_outcome": "win",
+    }
+    stored = asyncio.run(monitor.store_record(
+        "AAA", "Alpha", parsed, "BBB", "OLD-WAR", 1,
+    ))
+    assert stored is False
+    assert points_collection.updates == []
 
 
 def test_store_record_flags_opponent_blacklisted(monkeypatch):
@@ -413,6 +436,251 @@ def _payload_text(payload) -> str:
         for node in _walk(payload)
         if "content" in node
     )
+
+
+def test_live_board_is_clan_first_and_hides_previous_war_on_rollover():
+    watch = [{"tag": "#AAA", "name": "Alpha"}]
+    current = {
+        "AAA": {
+            "status": "caught_up", "our_outcome": "win",
+            "raw_verdict": "Alpha should win by points (9 < 12)",
+            "coc_war_key": "OLD", "current_war_key": "NEW",
+            "current_opponent_name": "Beta",
+        },
+    }
+    text = _payload_text([item.build() for item in monitor.build_points_board(watch, current)])
+    assert "**Alpha** · **⏳ WAITING**" in text
+    assert "Beta" in text
+    assert "WIN" not in text
+    assert "9 < 12" not in text
+
+
+def test_live_board_uses_parsed_outcome_and_blacklist_priority_without_debug_ids():
+    watch = [
+        {"tag": "#AAA", "name": "Alpha"},
+        {"tag": "#BBB", "name": "Bravo"},
+    ]
+    records = {
+        "AAA": {
+            "status": "caught_up", "our_outcome": "lose",
+            "raw_verdict": "Opponent should win by points (12 > 9)",
+            "coc_war_key": "WAR-A", "current_war_key": "WAR-A",
+            "coc_opponent_name": "Opponent", "war_number": 124800,
+            "sync_number": 560,
+        },
+        "BBB": {
+            "status": "caught_up", "our_outcome": "win",
+            "raw_verdict": "Bravo should win by points (8 < 10)",
+            "coc_war_key": "WAR-B", "current_war_key": "WAR-B",
+            "opponent_blacklisted": True, "coc_opponent_name": "Bad Clan",
+        },
+    }
+    text = _payload_text([item.build() for item in monitor.build_points_board(watch, records)])
+    assert "**Alpha** · **❌ LOSE**" in text
+    assert "Points **12 \\> 9**" in text
+    assert "**Bravo** · **🚫 BLACKLISTED**" in text
+    assert "War #124800" not in text
+    assert "Sync #560" not in text
+
+
+def test_live_board_confirmed_not_in_war_never_shows_stored_verdict():
+    watch = [{"tag": "#AAA", "name": "Alpha"}]
+    records = {"AAA": {
+        "status": "caught_up", "our_outcome": "win", "raw_verdict": "old",
+        "coc_war_key": "OLD", "current_war_key": None,
+        "current_war_state": "notInWar",
+    }}
+    text = _payload_text([item.build() for item in monitor.build_points_board(watch, records)])
+    assert "WAITING** — next war" in text
+    assert "WIN" not in text
+
+
+def test_live_board_bounds_long_watch_lists_without_exceeding_component_budget():
+    watch = [{"tag": f"#{index}", "name": "Clan " + ("x" * 90)} for index in range(100)]
+    built = [item.build() for item in monitor.build_points_board(watch, {})]
+    nodes = list(_walk(built))
+    assert sum(1 for node in nodes if "type" in node) < 40
+    assert "more watched clans" in _payload_text(built)
+
+
+def test_observing_new_war_persists_rollover_before_publishing(monkeypatch):
+    collection = _PointsCollection(find_result={"current_war_key": "OLD"})
+    published = []
+
+    def publish():
+        published.append(True)
+
+    monkeypatch.setattr(monitor, "mongo_client", _Mongo(collection))
+    monkeypatch.setattr(monitor, "request_points_board_publish", publish)
+    changed = asyncio.run(monitor.note_current_war(
+        "AAA", war_key="NEW", opponent_tag="BBB",
+        opponent_name="Beta", war_end_time="2026-09-12T12:00:00+00:00",
+    ))
+
+    assert changed is True
+    assert published == [True]
+    assert collection.updates[-1][1]["$set"] == {
+        "current_war_key": "NEW",
+        "current_war_state": "active",
+        "current_opponent_tag": "BBB",
+        "current_opponent_name": "Beta",
+        "current_war_end_time": "2026-09-12T12:00:00+00:00",
+    }
+
+
+def test_confirmed_not_in_war_clears_current_key_but_transient_none_does_not():
+    collection = _PointsCollection(find_result={
+        "current_war_key": "CURRENT", "current_war_state": "active",
+    })
+    published = []
+
+    def publish():
+        published.append(True)
+
+    monitor.mongo_client = _Mongo(collection)
+    original = monitor.request_points_board_publish
+    monitor.request_points_board_publish = publish
+    try:
+        changed = asyncio.run(monitor.note_no_current_war("AAA"))
+    finally:
+        monitor.request_points_board_publish = original
+
+    assert changed is True
+    assert published == [True]
+    assert collection.updates[-1][1]["$set"] == {
+        "current_war_state": "notInWar", "current_war_key": None,
+    }
+
+
+def test_board_publisher_edits_bound_message_instead_of_creating(monkeypatch):
+    calls = []
+
+    class Rest:
+        async def edit_message(self, channel, message, **kwargs):
+            calls.append(("edit", channel, message, kwargs))
+
+        async def create_message(self, *_args, **_kwargs):
+            raise AssertionError("bound board must be edited")
+
+    async def snapshot():
+        return {"board_channel_id": 7, "board_message_id": 8}, [], {}
+
+    monkeypatch.setattr(monitor, "bot_instance", type("Bot", (), {"rest": Rest()})())
+    monkeypatch.setattr(monitor, "_board_snapshot", snapshot)
+    asyncio.run(monitor.publish_points_board())
+
+    assert [(kind, channel, message) for kind, channel, message, _ in calls] == [
+        ("edit", 7, 8),
+    ]
+
+
+def test_board_publisher_recreates_missing_binding_and_persists_it(monkeypatch):
+    class Missing(Exception):
+        pass
+
+    class Rest:
+        async def edit_message(self, *_args, **_kwargs):
+            raise Missing()
+
+        async def create_message(self, channel, **kwargs):
+            assert channel == 7
+            assert kwargs["flags"] == monitor.hikari.MessageFlag.IS_COMPONENTS_V2
+            return type("Message", (), {"id": 99})()
+
+        def fetch_messages(self, _channel):
+            class Empty:
+                def limit(self, _amount):
+                    return self
+
+                def __aiter__(self):
+                    async def rows():
+                        if False:
+                            yield None
+                    return rows()
+            return Empty()
+
+    collection = _PointsCollection()
+
+    async def snapshot():
+        return {"board_channel_id": 7, "board_message_id": 8}, [], {}
+
+    monkeypatch.setattr(monitor.hikari, "NotFoundError", Missing)
+    monkeypatch.setattr(
+        monitor, "bot_instance",
+        type("Bot", (), {
+            "rest": Rest(),
+            "get_me": lambda self: type("Me", (), {"id": 123})(),
+        })(),
+    )
+    monkeypatch.setattr(monitor, "mongo_client", _Mongo(collection))
+    monkeypatch.setattr(monitor, "_board_snapshot", snapshot)
+    asyncio.run(monitor.publish_points_board())
+
+    assert collection.updates[-1][1] == {"$set": {
+        "board_channel_id": 7, "board_message_id": 99,
+    }}
+
+
+def test_board_publisher_does_not_create_when_reconciliation_read_fails(monkeypatch):
+    calls = []
+
+    class Missing(Exception):
+        pass
+
+    class Rest:
+        async def edit_message(self, *_args, **_kwargs):
+            raise Missing()
+
+        def fetch_messages(self, _channel):
+            raise RuntimeError("history unavailable")
+
+        async def create_message(self, *_args, **_kwargs):
+            calls.append("create")
+
+    async def snapshot():
+        return {"board_channel_id": 7, "board_message_id": 8}, [], {}
+
+    monkeypatch.setattr(monitor.hikari, "NotFoundError", Missing)
+    monkeypatch.setattr(
+        monitor, "bot_instance",
+        type("Bot", (), {
+            "rest": Rest(),
+            "get_me": lambda self: type("Me", (), {"id": 123})(),
+        })(),
+    )
+    monkeypatch.setattr(monitor, "_board_snapshot", snapshot)
+    asyncio.run(monitor.publish_points_board())
+    assert calls == []
+
+
+def test_board_publish_requests_coalesce_with_one_trailing_refresh(monkeypatch):
+    calls = []
+
+    async def scenario():
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def publish():
+            calls.append("publish")
+            if len(calls) == 1:
+                started.set()
+                await release.wait()
+
+        monkeypatch.setattr(monitor, "publish_points_board", publish)
+        monkeypatch.setattr(monitor, "bot_instance", object())
+        monitor.board_publish_task = None
+        monitor.board_publish_dirty = False
+        monitor.request_points_board_publish()
+        await started.wait()
+        monitor.request_points_board_publish()
+        release.set()
+        task = monitor.board_publish_task
+        await task
+
+    asyncio.run(scenario())
+    assert calls == ["publish", "publish"]
+    assert monitor.board_publish_task is None
+    assert monitor.board_publish_dirty is False
 
 
 class _FwaPointsConfigCollection(_PointsCollection):
