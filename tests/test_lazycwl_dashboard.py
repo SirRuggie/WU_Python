@@ -97,7 +97,7 @@ def _compact_text(components):
     view is exactly one Text component after the select's overflow note)."""
     texts = _texts(components)
     # The compact table is whichever Text line is not a fixed chrome line.
-    chrome = {"## Lazy CWL", "Pick a clan, then press a button.", dashboard.COMING_SOON_NOTE}
+    chrome = {"## Lazy CWL", "Pick a clan, then press a button."}
     candidates = [t for t in texts if t not in chrome and not t.startswith("Showing the first")]
     assert candidates, "no compact table Text found"
     return candidates[-1]
@@ -166,6 +166,23 @@ def test_all_selected_with_nothing_qualifying_disables_everything_but_save():
     # Only clan already has a list -> save disabled (nothing to save), rest enabled.
     assert _button_by_action(components, "lazycwl_save").is_disabled is True
     assert _button_by_action(components, "lazycwl_remind").is_disabled is False
+
+
+def test_all_six_action_buttons_carry_the_selected_tag():
+    """refuter-12 MUST-FIX: with a multi-clan fixture and selected_tag
+    "#ABC", every S0 action button's custom_id must end with ":#ABC" so
+    the selection is never silently dropped (lazycwl_dashboard.py:320-327).
+    Proven with TWO clans so a handler that renders regardless of
+    selected_tag cannot pass by accident."""
+    clans = [_clan("#ABC", "Alpha"), _clan("#DEF", "Beta")]
+    doc = _list_doc("#ABC")
+    components = dashboard.render_home([doc], clans, "#ABC", NOW)
+
+    for action in (
+        "lazycwl_save", "lazycwl_remind", "lazycwl_auto",
+        "lazycwl_players", "lazycwl_add", "lazycwl_finish",
+    ):
+        assert _button_by_action(components, action).custom_id.endswith(":#ABC")
 
 
 # --------------------------------------------------------------- select options
@@ -513,47 +530,219 @@ class _FakeMongo:
         self.lazy_cwl_lists = _Collection(list_docs)
 
 
-def test_finish_placeholder_keeps_the_selected_tag(monkeypatch):
-    """refuter-06 MUST-FIX 4: proven with TWO clans, so a handler that drops
-    the selection would render a different (or every) card, and asserting
-    the custom_id's tag - not just card presence - actually exercises the
-    tag being carried through, not just re-rendered from a single-clan
-    fixture regardless of selected_tag. Save/remind/players/add are covered
-    separately (builder-08/builder-10: no longer placeholders); only Finish
-    (S6) stays a placeholder per this brief's DO NOT."""
-    async def fake_away_players(doc):
-        return []
-
-    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
-
-    mongo = _FakeMongo(
-        clan_docs=[
-            {"tag": "#ABC", "name": "Alpha", "type": "FWA"},
-            {"tag": "#DEF", "name": "Beta", "type": "FWA"},
-        ],
-        list_docs=[],
-    )
-    ctx = _FakeHandlerCtx()
-
-    components = asyncio.run(dashboard.handle_finish.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
-    assert dashboard.COMING_SOON_NOTE in _texts(components)
-    # Only the selected clan's card is rendered - the other clan's name
-    # never appears (single-clan fixtures cannot tell this apart).
-    assert "### Alpha" in _texts(components)
-    assert "### Beta" not in _texts(components)
-    # The custom_id is the actual mechanism carrying the tag forward.
-    for action in (
-        "lazycwl_save", "lazycwl_remind", "lazycwl_auto",
-        "lazycwl_players", "lazycwl_add", "lazycwl_finish", "lazycwl_home",
-    ):
-        assert _button_by_action(components, action).custom_id.endswith(":#ABC")
-
-
-def test_placeholder_only_routed_from_finish():
-    """SUCCESS criterion: `_placeholder` is used by exactly one handler now
-    that S4/S5 are real screens."""
+def test_no_coming_soon_or_placeholder_string_remains():
+    """SUCCESS criterion (brief builder-12): S6 is real now, `_placeholder`
+    and COMING_SOON_NOTE are gone."""
     source = MODULE_PATH.read_text(encoding="utf-8")
-    assert source.count("_placeholder(action_id, mongo)") == 1
+    assert "_placeholder" not in source
+    assert "Coming soon" not in source
+
+
+# --------------------------------------------------------------- S6 Finish
+
+
+def test_finish_confirm_single_clan_wording_and_buttons():
+    doc = _list_doc("#ABC", "Alpha")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    components = asyncio.run(dashboard.build_finish_confirm(mongo, "#ABC"))
+    texts = _texts(components)
+    assert "## \U0001F3C1 Finish Alpha?" in texts
+    assert "This clears the saved list." in texts
+    assert "Auto reminders stop." in texts
+    assert "You can save a new list any time." in texts
+    yes = _button_by_action(components, "lazycwl_finish_yes")
+    assert yes.custom_id == "lazycwl_finish_yes:#ABC"
+    no = _button_by_action(components, "lazycwl_home")
+    assert no.custom_id == "lazycwl_home:#ABC"
+
+
+def test_finish_confirm_all_lists_clan_names():
+    doc1 = _list_doc("#ABC", "Alpha")
+    doc2 = _list_doc("#DEF", "Beta")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc1, doc2])
+    components = asyncio.run(dashboard.build_finish_confirm(mongo, "ALL"))
+    texts = _texts(components)
+    assert "## \U0001F3C1 Finish all clans?" in texts
+    assert "Clans: **Alpha, Beta**" in texts
+    yes = _button_by_action(components, "lazycwl_finish_yes")
+    assert yes.custom_id == "lazycwl_finish_yes:ALL"
+
+
+def test_finish_confirm_all_no_lists_shows_plain_screen():
+    mongo = _FakeMongo(clan_docs=[], list_docs=[])
+    components = asyncio.run(dashboard.build_finish_confirm(mongo, "ALL"))
+    texts = _texts(components)
+    assert "No saved lists to finish." in texts
+    home = _button_by_action(components, "lazycwl_home")
+    assert home.custom_id == "lazycwl_home:ALL"
+    for container in components:
+        for item in container.components:
+            if isinstance(item, ActionRow):
+                for sub in item.components:
+                    assert sub.custom_id != "lazycwl_finish_yes:ALL"
+
+
+def test_finish_press_never_calls_service_finish(monkeypatch):
+    """DO NOT: pressing lazycwl_finish must never call service.finish -
+    only lazycwl_finish_yes does."""
+    async def fake_finish(clan_tag):
+        raise AssertionError("service.finish must not be called by handle_finish")
+
+    monkeypatch.setattr(dashboard.service, "finish", fake_finish)
+    doc = _list_doc("#ABC", "Alpha")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_finish.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert "## \U0001F3C1 Finish Alpha?" in _texts(components)
+
+
+def test_finish_yes_calls_service_finish_single_clan(monkeypatch):
+    calls = []
+
+    async def fake_finish(clan_tag):
+        calls.append(clan_tag)
+        return {"ok": True, "clan_name": "Alpha", "error": None}
+
+    monkeypatch.setattr(dashboard.service, "finish", fake_finish)
+    doc = _list_doc("#ABC", "Alpha")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    components = asyncio.run(dashboard.build_finish_yes(mongo, "#ABC"))
+    assert calls == ["#ABC"]
+    texts = _texts(components)
+    assert "## \U0001F3C1 Finished" in texts
+    assert any("Alpha" in t and "list cleared" in t for t in texts)
+    home = _button_by_action(components, "lazycwl_home")
+    assert home.custom_id == "lazycwl_home:#ABC"
+
+
+def test_finish_yes_all_calls_every_active_list_sequential(monkeypatch):
+    calls = []
+
+    async def fake_finish(clan_tag):
+        calls.append(clan_tag)
+        return {"ok": True, "clan_name": None, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "finish", fake_finish)
+    doc1 = _list_doc("#ABC", "Alpha")
+    doc2 = _list_doc("#DEF", "Beta")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc1, doc2])
+    components = asyncio.run(dashboard.build_finish_yes(mongo, "ALL"))
+    assert calls == ["#ABC", "#DEF"]
+    texts = _texts(components)
+    assert "2 finished · 0 failed" in texts
+
+
+def test_finish_yes_service_exception_becomes_error_row_not_crash(monkeypatch):
+    async def fake_finish(clan_tag):
+        raise RuntimeError("mongo outage")
+
+    monkeypatch.setattr(dashboard.service, "finish", fake_finish)
+    doc = _list_doc("#ABC", "Alpha")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    components = asyncio.run(dashboard.build_finish_yes(mongo, "#ABC"))
+    texts = _texts(components)
+    assert any(t.startswith("❌ **Alpha**") and "mongo outage" in t for t in texts)
+
+
+def test_finish_yes_orphan_list_included_in_all(monkeypatch):
+    """Orphan lists (clan_tag not in mongo.clans) still get finished for
+    ALL, same as S3's auto-off (store.list_active is not filtered against
+    mongo.clans)."""
+    async def fake_finish(clan_tag):
+        return {"ok": True, "clan_name": None, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "finish", fake_finish)
+    orphan = _list_doc("#ORPH", "Ghost Clan")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[orphan])
+    components = asyncio.run(dashboard.build_finish_yes(mongo, "ALL"))
+    texts = _texts(components)
+    assert any("Ghost Clan" in t and "list cleared" in t for t in texts)
+
+
+def test_finish_yes_all_row_prefixes_and_real_failed_count(monkeypatch):
+    """refuter-12 NOTED: ok rows must start with the finish emoji, error
+    rows with X, and the ALL summary must count real outcomes, not just
+    len(results) - proven with one ok and one raising target."""
+    async def fake_finish(clan_tag):
+        if clan_tag == "#DEF":
+            raise RuntimeError("mongo outage")
+        return {"ok": True, "clan_name": "Alpha", "error": None}
+
+    monkeypatch.setattr(dashboard.service, "finish", fake_finish)
+    doc1 = _list_doc("#ABC", "Alpha")
+    doc2 = _list_doc("#DEF", "Beta")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc1, doc2])
+    components = asyncio.run(dashboard.build_finish_yes(mongo, "ALL"))
+    texts = _texts(components)
+    lines = [line for t in texts for line in t.split("\n")]
+    assert any(line.startswith("\U0001F3C1 **Alpha**") for line in lines)
+    assert any(line.startswith("❌ **Beta**") for line in lines)
+    assert "1 finished · 1 failed" in texts
+
+
+def test_handle_finish_yes_registered_and_routes(monkeypatch):
+    async def fake_finish(clan_tag):
+        return {"ok": True, "clan_name": "Alpha", "error": None}
+
+    monkeypatch.setattr(dashboard.service, "finish", fake_finish)
+    doc = _list_doc("#ABC", "Alpha")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_finish_yes.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert "## \U0001F3C1 Finished" in _texts(components)
+
+
+def test_finish_result_component_ceiling_24_clans():
+    results = [
+        {"ok": True, "clan_name": f"Clan {i:03d}", "clan_tag": f"#C{i:03d}", "error": None}
+        for i in range(24)
+    ]
+    components = dashboard.render_finish_result(results, "ALL")
+    assert _component_count(components) <= 30
+
+
+def test_finish_confirm_component_ceiling_24_clans():
+    docs = [_list_doc(f"#C{i:03d}", f"Clan {i:03d}") for i in range(24)]
+    mongo = _FakeMongo(clan_docs=[], list_docs=docs)
+    components = asyncio.run(dashboard.build_finish_confirm(mongo, "ALL"))
+    assert _component_count(components) <= 30
+
+
+def _text_char_budget_ok(components):
+    return all(len(t) <= dashboard.COMPACT_TEXT_BUDGET for t in _texts(components))
+
+
+def test_finish_confirm_clans_line_capped_at_200_clans():
+    """refuter-12 NOTED: the ALL confirm's "Clans: **{names}**" line must
+    be capped like every other multi-row screen - uncapped, 200 clans
+    measured 4409 chars, over Discord's 4000-char Text limit."""
+    docs = [_list_doc(f"#C{i:03d}", f"The Very Long Clan Name Number {i:03d}") for i in range(200)]
+    mongo = _FakeMongo(clan_docs=[], list_docs=docs)
+    components = asyncio.run(dashboard.build_finish_confirm(mongo, "ALL"))
+    assert _text_char_budget_ok(components)
+    assert "… and" in " ".join(_texts(components))
+
+
+def test_auto_confirm_off_clans_line_capped_at_200_clans():
+    docs = [
+        _list_doc(f"#C{i:03d}", f"The Very Long Clan Name Number {i:03d}", reminders={"enabled": True, "every_minutes": 60})
+        for i in range(200)
+    ]
+    mongo = _FakeMongo(clan_docs=[], list_docs=docs)
+    components = asyncio.run(dashboard.build_auto(mongo, "ALL"))
+    assert _text_char_budget_ok(components)
+    assert "… and" in " ".join(_texts(components))
+
+
+def test_auto_confirm_on_clans_line_capped_at_200_clans():
+    docs = [
+        _list_doc(f"#C{i:03d}", f"The Very Long Clan Name Number {i:03d}", reminders={"enabled": False, "every_minutes": None})
+        for i in range(200)
+    ]
+    mongo = _FakeMongo(clan_docs=[], list_docs=docs)
+    components = asyncio.run(dashboard.build_auto_confirm_on(mongo, "ALL", 30))
+    assert _text_char_budget_ok(components)
+    assert "… and" in " ".join(_texts(components))
 
 
 def test_pick_handler_reads_selection_from_interaction_values(monkeypatch):
@@ -707,6 +896,22 @@ def test_render_remind_result_error_row():
                 "total_count": 0, "sent": False, "error": "No saved list for this clan."}]
     texts = _texts(dashboard.render_remind_result(results, "#ABC"))
     assert any(t.startswith("❌ **#ABC**") and "No saved list for this clan." in t for t in texts)
+
+
+def test_render_remind_result_all_fanout_summary_counts():
+    """refuter-12 NOTED (mirrors test_render_save_result_all_fanout_summary_counts):
+    the ALL summary must count real per-row outcomes, not len(results),
+    proven with one of each category."""
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 3,
+         "total_count": 10, "sent": True, "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "away_count": 0,
+         "total_count": 10, "sent": False, "error": None},
+        {"ok": False, "clan_name": "Gamma", "clan_tag": "#GHI", "away_count": 0,
+         "total_count": 0, "sent": False, "error": "boom"},
+    ]
+    texts = _texts(dashboard.render_remind_result(results, "ALL"))
+    assert "1 sent · 1 everyone home · 1 failed" in texts
 
 
 def test_build_remind_result_all_calls_service_once_per_clan(monkeypatch):
@@ -1109,6 +1314,28 @@ def test_render_players_next_disabled_on_last_page():
     assert next_btn.is_disabled is True
 
 
+def test_render_players_prev_custom_id_stays_at_page_0_not_negative():
+    """refuter-11 NOTED: page 0's disabled Prev built page -1 into its
+    custom_id (`_decode_players_page` happened to tolerate it, but a
+    disabled button should not encode a page number outside the valid
+    range at all)."""
+    doc = _players_doc(45)
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 0, away_set=set())
+    buttons = _buttons(components)
+    prev_btn = buttons[0]
+    assert prev_btn.is_disabled is True
+    assert prev_btn.custom_id == "lazycwl_players:#ABC-0"
+
+
+def test_render_players_next_custom_id_stays_at_last_page_not_overflow():
+    doc = _players_doc(45)
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 2, away_set=set())
+    buttons = _buttons(components)
+    next_btn = buttons[1]
+    assert next_btn.is_disabled is True
+    assert next_btn.custom_id == "lazycwl_players:#ABC-2"
+
+
 def test_render_players_away_marks():
     doc = _players_doc(2)
     away_set = {"#P000"}
@@ -1215,6 +1442,35 @@ def test_remove_pick_cap_at_8_and_under_100_chars_for_realistic_tags():
     worst = sorted((t.lstrip("#") for t in page_tags), key=len, reverse=True)[:cap]
     custom_id = f"lazycwl_remove_yes:{dashboard._encode_remove_yes('#2PP0V9Y8L', 0, ['#' + t for t in worst])}"
     assert len(custom_id) <= 100
+
+
+def test_remove_pick_cap_zero_for_absurd_clan_tag():
+    """refuter-11 NOTED: the old `while cap > 1` floor meant cap could
+    never drop to 0 even when a single player's tag would not fit - not
+    reachable with real clan/player tags, but the loop should say so
+    honestly. A 60-char clan tag (the brief's own figure) still leaves room
+    for one 14-char (D014's realistic max) player tag under the 100-char
+    budget, so an even longer (70-char) tag is used here to actually reach
+    cap 0, not just prove it does not crash at 60."""
+    absurd_tag = "#" + "A" * 69
+    page_tags = ["#" + "P" * 14]
+    cap = dashboard._remove_pick_cap(absurd_tag, 0, page_tags)
+    assert cap == 0
+
+
+def test_remove_pick_absurd_clan_tag_shows_pick_up_to_screen_with_no_select():
+    absurd_tag = "#" + "A" * 69
+    doc = _players_doc(3, clan_tag=absurd_tag)
+    doc["players"] = [_player("#" + "P" * 14, "Long Tag Player", 10)]
+    mongo = _FakeMongo([], [doc])
+    components = asyncio.run(dashboard.build_remove(mongo, f"{absurd_tag}-0"))
+    joined = "\n".join(_texts(components))
+    assert "Pick up to 0" in joined
+    for container in components:
+        for item in container.components:
+            if isinstance(item, ActionRow):
+                for sub in item.components:
+                    assert not isinstance(sub, TextSelectMenu)
 
 
 def test_remove_pick_shows_cap_note_when_capped():

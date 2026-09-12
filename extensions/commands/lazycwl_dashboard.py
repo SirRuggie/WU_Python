@@ -2,11 +2,9 @@
 """/lazycwl - Administrator-only dashboard over the LazyCWL saved-list
 service (extensions/commands/fwa/lazy_cwl_service.py).
 
-S0 (home), S1 (save list), S2 (remind now), S3 (auto reminders), S4 (player
-list + remove), and S5 (add player) so far. Only Finish (S6) still replies
-"Coming soon" until a later brief (design-01-main.md B6) wires it up. The
-old `/fwa lazycwl-*` commands (extensions/commands/fwa/lazy_cwl.py) stay
-live and untouched; this is a new, separate command.
+S0 (home) through S6 (finish) are all wired up. The old `/fwa lazycwl-*`
+commands (extensions/commands/fwa/lazy_cwl.py) stay live and untouched;
+this is a new, separate command.
 
 Rules carried over from extensions/commands/todo.py:25-60 and enforced here:
 
@@ -59,8 +57,6 @@ MAX_CLAN_OPTIONS = MAX_SELECT_OPTIONS - 1  # one slot spent on "All clans"
 # walks render-facing keyword arguments (content/label/placeholder/
 # description), so it was never at risk of being flagged.
 _FWA_CLAN_TYPE = "FWA"
-
-COMING_SOON_NOTE = "\U0001F6A7 Coming soon."
 
 # D010: the compact multi-clan table is one Text component regardless of how
 # many rows it holds, so the 40-component Components V2 ceiling is never at
@@ -379,6 +375,37 @@ def _result_name(result: dict) -> str:
     before rendering, since save_list's "not found" path and every
     remind_now path omit it - D008's key sets don't include it)."""
     return result.get("clan_name") or result.get("clan_tag") or "?"
+
+
+# "Clans: **" + "**" wrapping the names in the confirm screens below.
+_CLANS_LINE_WRAP = len("Clans: **") + len("**")
+
+
+def _cap_names(names: list, budget: int = COMPACT_TEXT_BUDGET - _CLANS_LINE_WRAP) -> str:
+    """`names` joined with ", ", hard-capped under `budget` chars so the
+    "Clans: **{...}**" confirm line it feeds into can never exceed
+    COMPACT_TEXT_BUDGET at a large clan count (refuter-12 NOTED).
+    Truncates with "... and {k} more", same pattern as _build_compact_text."""
+    kept: list = []
+    total = 0
+    for name in names:
+        added = len(name) + (2 if kept else 0)
+        if kept and total + added > budget:
+            break
+        kept.append(name)
+        total += added
+
+    remaining = len(names) - len(kept)
+    if remaining <= 0:
+        return ", ".join(kept)
+
+    more = f"… and {remaining} more"
+    while kept and total + len(more) + 2 > budget:
+        dropped = kept.pop()
+        total -= len(dropped) + 2
+        remaining = len(names) - len(kept)
+        more = f"… and {remaining} more"
+    return ", ".join(kept + [more]) if kept else more
 
 
 def _chunk_rows(rows: list, budget: int = COMPACT_TEXT_BUDGET) -> list:
@@ -725,7 +752,7 @@ async def build_auto(mongo: MongoClient, action_id: str) -> list:
         note = _already_on_note(on_count)
         return render_auto_how_often(action_id, note=note)
 
-    names = ", ".join(sorted(doc.get("clan_name") or "?" for doc in actives))
+    names = _cap_names(sorted(doc.get("clan_name") or "?" for doc in actives))
     return render_auto_confirm_off(action_id, names)
 
 
@@ -740,7 +767,7 @@ async def build_auto_confirm_on(mongo: MongoClient, action_id: str, every_minute
     actives = await store.list_active(mongo)
     off_docs = [doc for doc in actives if not _reminders_on(doc)]
     on_count = len(actives) - len(off_docs)
-    names = ", ".join(sorted(doc.get("clan_name") or "?" for doc in off_docs)) or "none"
+    names = _cap_names(sorted(doc.get("clan_name") or "?" for doc in off_docs)) or "none"
     note = _already_on_note(on_count)
     return render_auto_confirm_on(action_id, names, every_minutes, note=note)
 
@@ -893,14 +920,14 @@ def render_players(
     body.append(ActionRow(components=[
         Button(
             style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, page - 1)}",
+            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, max(0, page - 1))}",
             label="⬅️ Prev",
             emoji="⬅️",
             is_disabled=page <= 0,
         ),
         Button(
             style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, page + 1)}",
+            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, min(page_count - 1, page + 1))}",
             label="➡️ Next",
             emoji="➡️",
             is_disabled=page >= page_count - 1,
@@ -953,11 +980,15 @@ def _remove_pick_cap(selected_tag: str, page: int, page_tags: list) -> int:
     lazycwl_remove_yes custom_id under Discord's 100-char limit - checked
     against the N longest tags on the page, the worst case a user could
     actually pick (brief item: "assert ... under 100-char limit - if it
-    would exceed, cap the selection at 8 players")."""
+    would exceed, cap the selection at 8 players"). Can return 0 (loops all
+    the way down to nothing fitting, not just down to 1) - not reachable
+    with real clan/player tags (worst case is ~47 chars, refuter-11 NOTED),
+    but the loop should say so honestly rather than stop at a floor of 1
+    that the math doesn't actually guarantee."""
     prefix_len = _remove_yes_prefix_len(selected_tag, page)
     stripped = sorted((t.lstrip("#") for t in page_tags), key=len, reverse=True)
     cap = min(REMOVE_MAX_PICK, len(stripped)) or 1
-    while cap > 1:
+    while cap >= 1:
         worst = stripped[:cap]
         joined_len = sum(len(t) for t in worst) + (cap - 1)
         if prefix_len + joined_len <= REMOVE_CUSTOM_ID_BUDGET:
@@ -993,7 +1024,29 @@ def render_remove_pick(doc: Optional[dict], clan_name: str, selected_tag: str, p
 
     page_tags = [store._normalize_tag(p.get("tag", "")) for p in page_players]
     cap = _remove_pick_cap(selected_tag, page, page_tags)
-    max_values = min(len(page_players), cap) or 1
+
+    if cap < 1:
+        # Even a single player would push the confirm screen's custom_id
+        # over Discord's 100-char limit - not reachable with real clan/
+        # player tags (see _remove_pick_cap), but render an honest "Pick
+        # up to" screen with no select instead of pretending one fits
+        # (refuter-11 NOTED).
+        body = [
+            Text(content=f"## \U0001F5D1️ Remove players · {clan_name}"),
+            Text(content="Pick up to 0 at a time. Too many characters to pick any player here."),
+            Separator(),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, page)}",
+                    label="⬅️ Back to list",
+                    emoji="⬅️",
+                )
+            ]),
+        ]
+        return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+    max_values = min(len(page_players), cap)
 
     body = [
         Text(content=f"## \U0001F5D1️ Remove players · {clan_name}"),
@@ -1103,11 +1156,9 @@ async def build_remove_yes(mongo: MongoClient, action_id: str) -> list:
     removed = await store.remove_players(mongo, tag, tags)
     k = len(tags)
 
-    doc = await store.get_active(mongo, tag)
-    players = _sorted_players(doc.get("players", []) if doc else [])
-    page_count = _player_page_count(len(players))
-    page = max(0, min(page, page_count - 1))
-
+    # No local sort/page-count/clamp here (refuter-11 NOTED, proven dead:
+    # build_players_with_note -> render_players -> _players_page clamps
+    # the page against the *current* player list on its own).
     note = f"\U0001F5D1️ Removed {removed} {_player_noun(removed)}."
     if removed != k:
         note += f" {k - removed} were already gone."
@@ -1218,6 +1269,139 @@ async def build_add_result(clan_tag: str, player_tag: str) -> list:
     return render_add_result(result, clan_tag)
 
 
+# --------------------------------------------------------------- S6 Finish
+
+def render_finish_confirm(selected_tag: str, name_or_names: str) -> list:
+    """Pure S6 confirm renderer. Single clan: title carries the clan's own
+    name. ALL: title is generic, a "Clans: **{names}**" line names them -
+    same shape S3's confirm screens use (D013)."""
+    if selected_tag == "ALL":
+        body = [
+            Text(content="## \U0001F3C1 Finish all clans?"),
+            Text(content=f"Clans: **{name_or_names}**"),
+        ]
+    else:
+        body = [Text(content=f"## \U0001F3C1 Finish {name_or_names}?")]
+    body.append(Text(content="This clears the saved list."))
+    body.append(Text(content="Auto reminders stop."))
+    body.append(Text(content="You can save a new list any time."))
+    body.append(Separator())
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_finish_yes:{_encode_tag(selected_tag)}",
+            label="✅ Yes, finish",
+            emoji="✅",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_home:{_encode_tag(selected_tag)}",
+            label="⬅️ No, go back",
+            emoji="⬅️",
+        ),
+    ]))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+def render_no_finish_lists() -> list:
+    """ALL with no active lists at all - nothing to finish."""
+    body = [
+        Text(content="## \U0001F3C1 Finish all clans?"),
+        Text(content="No saved lists to finish."),
+        Separator(),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id="lazycwl_home:ALL",
+                label="🏠 Home",
+                emoji="🏠",
+            )
+        ]),
+    ]
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_finish_confirm(mongo: MongoClient, action_id: str) -> list:
+    """`lazycwl_finish`'s panel. ALL lists active lists incl. orphans
+    (store.list_active is not filtered against mongo.clans, same as S3)."""
+    if action_id != "ALL":
+        doc = await store.get_active(mongo, action_id)
+        name = (doc.get("clan_name") if doc else None) or action_id
+        return render_finish_confirm(action_id, name)
+
+    actives = await store.list_active(mongo)
+    if not actives:
+        return render_no_finish_lists()
+    names = _cap_names(sorted(doc.get("clan_name") or "?" for doc in actives))
+    return render_finish_confirm("ALL", names)
+
+
+async def _finish_row(tag: str, name: str) -> dict:
+    """One clan's finish call, merged into a render-ready row dict - D008's
+    finish returns only {ok, clan_name, error}, and clan_name is only
+    guaranteed on the ok path."""
+    try:
+        result = await service.finish(tag)
+    except Exception as exc:
+        _log.warning(
+            "lazycwl_dashboard._finish_row: finish failed clan_tag=%s",
+            tag, exc_info=True,
+        )
+        result = {"ok": False, "error": str(exc) or "Something went wrong."}
+    return {
+        "ok": result.get("ok", False),
+        "error": result.get("error"),
+        "clan_name": result.get("clan_name") or name,
+        "clan_tag": tag,
+    }
+
+
+def render_finish_result(results: list, selected_tag: str) -> list:
+    rows = []
+    ok = failed = 0
+    for result in results:
+        name = _result_name(result)
+        if result.get("ok"):
+            ok += 1
+            rows.append(f"\U0001F3C1 **{name}** · list cleared")
+        else:
+            failed += 1
+            rows.append(f"❌ **{name}** · {result.get('error') or 'Something went wrong.'}")
+
+    body = [Text(content="## \U0001F3C1 Finished")]
+    body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
+    if selected_tag == "ALL":
+        body.append(Text(content=f"{ok} finished · {failed} failed"))
+    body.append(Separator())
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_home:{_encode_tag(selected_tag)}",
+            label="🏠 Home",
+            emoji="🏠",
+        )
+    ]))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_finish_yes(mongo: MongoClient, action_id: str) -> list:
+    """`lazycwl_finish_yes`'s panel: finish the target - a single clan, or
+    every active list for ALL (orphans included, sequential, each call
+    wrapped so one failure never stops the rest)."""
+    if action_id != "ALL":
+        doc = await store.get_active(mongo, action_id)
+        name = (doc.get("clan_name") if doc else None) or action_id
+        results = [await _finish_row(action_id, name)]
+    else:
+        actives = await store.list_active(mongo)
+        results = [
+            await _finish_row(doc["clan_tag"], doc.get("clan_name") or doc["clan_tag"])
+            for doc in actives
+        ]
+
+    return render_finish_result(results, action_id)
+
+
 class LazyCwl(
     lightbulb.SlashCommand,
     name="lazycwl",
@@ -1265,10 +1449,6 @@ async def handle_home(
     **kwargs,
 ) -> list:
     return await build_home(mongo, selected_tag=_decode_tag(action_id))
-
-
-async def _placeholder(action_id: str, mongo: MongoClient) -> list:
-    return await build_home(mongo, selected_tag=_decode_tag(action_id), note=COMING_SOON_NOTE)
 
 
 @register_action("lazycwl_save")
@@ -1441,7 +1621,18 @@ async def handle_finish(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> list:
-    return await _placeholder(action_id, mongo)
+    return await build_finish_confirm(mongo, action_id)
+
+
+@register_action("lazycwl_finish_yes")
+@lightbulb.di.with_di
+async def handle_finish_yes(
+    ctx=None,
+    action_id: str = "NONE",
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs,
+) -> list:
+    return await build_finish_yes(mongo, action_id)
 
 
 # ======================== BOT STARTUP EVENT ========================
