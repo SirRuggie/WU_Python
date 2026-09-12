@@ -184,6 +184,12 @@ async def list_active(mongo: MongoClient) -> list[dict]:
     return await cursor.to_list(length=None)
 
 
+async def get_by_id(mongo: MongoClient, list_id) -> dict | None:
+    """Return one saved list by _id, regardless of status. Used by the
+    reminder job to re-read current state on every scheduled run."""
+    return await _coll(mongo).find_one({"_id": list_id})
+
+
 async def add_player(
     mongo: MongoClient,
     clan_tag: str,
@@ -225,11 +231,12 @@ async def add_player(
 async def remove_players(mongo: MongoClient, clan_tag: str, tags: list[str]) -> int:
     """Remove players by tag from a clan's active list. Returns the number
     of tags that were present and removed, derived from the single
-    find_one_and_update's BEFORE image using the same predicate the $pull
-    used (no second read, so nothing else can land between two reads and
-    make the count stale). Stored tags are always '#'-prefixed and upper
-    (see _normalize_tag), so the input tags are normalized here the same
-    way for a case- and prefix-insensitive match."""
+    find_one_and_update's BEFORE image (no second read, so nothing else can
+    land between two reads and make the count stale). Stored tags are
+    always '#'-prefixed and upper (see _normalize_tag), so the input tags
+    are normalized here the same way for a case- and prefix-insensitive
+    match, and the count tests membership against that same `wanted` set
+    the $pull used instead of re-deriving its own predicate."""
     clan_tag = _normalize_tag(clan_tag)
     wanted = {_normalize_tag(tag) for tag in tags}
     if not wanted:
@@ -243,10 +250,7 @@ async def remove_players(mongo: MongoClient, clan_tag: str, tags: list[str]) -> 
     if before is None:
         return 0
 
-    return sum(
-        1 for player in before.get("players", [])
-        if _normalize_tag(player.get("tag", "")) in wanted
-    )
+    return sum(1 for player in before.get("players", []) if player.get("tag") in wanted)
 
 
 async def set_reminders(

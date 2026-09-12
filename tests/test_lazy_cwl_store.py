@@ -432,6 +432,31 @@ def test_remove_players_derives_count_from_before_image_no_second_read(monkeypat
     assert [p["tag"] for p in remaining["players"]] == ["#P2"]
 
 
+def test_remove_players_legacy_lowercase_stored_tag_count_and_pull_agree():
+    """builder-05 must-fix 2 (refuter-04): a doc written before tags were
+    always normalised on save can hold a bare lowercase tag. remove_players
+    must not remove it and must not claim it removed it either.
+
+    Proven failing-first: reverting the collapsed predicate to
+    `_normalize_tag(player["tag"]) in wanted` (refuter-04 must-fix 2) makes
+    this fail — that predicate normalises "p1" to "#P1", which IS in
+    wanted, so it reports removed == 1 while the $pull (matched against the
+    raw stored "p1") removes nothing, reproducing the count-vs-write
+    divergence."""
+    doc = _list_doc("list-1", clan_tag="ABC")
+    doc["players"] = [
+        {"tag": "p1", "name": "Foo", "town_hall": 10, "discord_id": None,
+         "added_manually": False, "added_at": NOW},
+    ]
+    mongo = _Mongo([doc])
+
+    removed = asyncio.run(lazy_cwl_store.remove_players(mongo, "abc", ["#P1"]))
+
+    assert removed == 0
+    remaining = asyncio.run(lazy_cwl_store.get_active(mongo, "abc"))
+    assert [p["tag"] for p in remaining["players"]] == ["p1"]
+
+
 def test_normalize_tag_is_hash_aware():
     """refuter-02 NOTED: add_player's duplicate check and remove_players'
     tag matching must treat "P1" and "#P1" as the same tag."""
