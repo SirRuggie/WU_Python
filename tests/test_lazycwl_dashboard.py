@@ -337,27 +337,50 @@ def test_lowercase_hashless_clan_tag_matches_normalized_store_doc():
 # --------------------------------------------------------------- source-level checks
 
 
+def _string_parts(value):
+    """A Constant str or a JoinedStr's literal (non-interpolated) parts."""
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return [value.value]
+    if isinstance(value, ast.JoinedStr):
+        return [
+            part.value for part in value.values
+            if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        ]
+    return []
+
+
 def _render_facing_literals():
-    """String literals actually shown to a user: the content/label/
-    placeholder/description keyword of a component builder call. Deliberately
-    narrower than every string literal in the file - the module's docstring
-    and the Mongo clan-type query also contain plain text that the design's
-    word-ban (design-01-main.md §2) was never meant to police. See D009."""
+    """String literals actually shown to a user:
+      1. the content/label/placeholder/description keyword of a component
+         builder call;
+      2. the argument of any `rows.append(...)` call (S1/S2/S3's row text);
+      3. every string literal inside a function whose name ends in `_row`
+         or `_line` (any helper that builds one display line, present or
+         future - refuter-08 NOTED 4).
+    Deliberately narrower than every string literal in the file - the
+    module's docstring and the Mongo clan-type query also contain plain
+    text that the design's word-ban (design-01-main.md §2) was never meant
+    to police. See D009."""
     tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
     literals = []
+
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        for keyword in node.keywords:
-            if keyword.arg not in RENDER_FACING_CALL_KEYWORDS:
-                continue
-            value = keyword.value
-            if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                literals.append(value.value)
-            elif isinstance(value, ast.JoinedStr):
-                for part in value.values:
-                    if isinstance(part, ast.Constant) and isinstance(part.value, str):
-                        literals.append(part.value)
+        if isinstance(node, ast.Call):
+            for keyword in node.keywords:
+                if keyword.arg in RENDER_FACING_CALL_KEYWORDS:
+                    literals.extend(_string_parts(keyword.value))
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "append"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "rows"
+            ):
+                for arg in node.args:
+                    literals.extend(_string_parts(arg))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.endswith(("_row", "_line")):
+            for inner in ast.walk(node):
+                literals.extend(_string_parts(inner) if isinstance(inner, (ast.Constant, ast.JoinedStr)) else [])
+
     return literals
 
 
@@ -514,7 +537,6 @@ def test_placeholder_handlers_keep_the_selected_tag(monkeypatch):
     async def run_all():
         results = []
         for handler in (
-            dashboard.handle_auto,
             dashboard.handle_players, dashboard.handle_add, dashboard.handle_finish,
         ):
             results.append(await handler.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
@@ -749,6 +771,262 @@ def test_handle_save_uses_ctx_user_id(monkeypatch):
     ctx = _FakeHandlerCtx(user_id=555)
     asyncio.run(dashboard.handle_save.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
     assert calls == [("#ABC", 555)]
+
+
+def test_handle_remind_calls_service_with_action_id_tag(monkeypatch):
+    """refuter-08 NOTED 5: no test exercised handle_remind at all."""
+    calls = []
+
+    async def fake_remind_now(clan_tag):
+        calls.append(clan_tag)
+        return {"ok": True, "clan_name": "Alpha", "clan_tag": clan_tag,
+                "away_count": 1, "total_count": 5, "sent": True, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "remind_now", fake_remind_now)
+    mongo = _FakeMongo(clan_docs=[], list_docs=[])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_remind.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert calls == ["#ABC"]
+    assert "## \U0001F4E3 Remind now" in _texts(components)
+
+
+# --------------------------------------------------------------- _chunk_rows (NOTED 1)
+
+
+def test_chunk_rows_empty_list_never_emits_empty_chunk():
+    assert dashboard._chunk_rows([]) == []
+
+
+def test_chunk_rows_oversized_single_row_is_truncated_under_budget():
+    row = "x" * 5000
+    chunks = dashboard._chunk_rows([row], budget=3800)
+    assert len(chunks) == 1
+    assert len(chunks[0]) <= 3800
+    assert chunks[0].endswith("…")
+
+
+def test_chunk_rows_never_exceeds_budget_across_multiple_large_rows():
+    rows = ["x" * 3000 for _ in range(4)]
+    chunks = dashboard._chunk_rows(rows, budget=3800)
+    assert all(len(chunk) <= 3800 for chunk in chunks)
+    assert all(chunk for chunk in chunks)  # no empty chunk
+    # every row is present in exactly one chunk
+    assert sum(chunk.count("x" * 3000) for chunk in chunks) == 4
+
+
+# --------------------------------------------------------------- _fwa_clans (NOTED 3)
+
+
+def test_fwa_clans_filters_untagged_and_sorts_by_name():
+    mongo = _FakeMongo(
+        clan_docs=[
+            {"tag": "#DEF", "name": "Beta", "type": "FWA"},
+            {"name": "No Tag Clan", "type": "FWA"},
+            {"tag": "#ABC", "name": "Alpha", "type": "FWA"},
+            {"tag": "#GHI", "name": "Gamma", "type": "NOT_FWA"},
+        ],
+        list_docs=[],
+    )
+    clans = asyncio.run(dashboard._fwa_clans(mongo))
+    assert [clan["tag"] for clan in clans] == ["#ABC", "#DEF"]
+
+
+# --------------------------------------------------------------- S3 Auto reminders
+
+
+def test_auto_how_often_screen_shown_when_off():
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_list_doc("#ABC", "Alpha")])
+    components = asyncio.run(dashboard.build_auto(mongo, "#ABC"))
+    texts = _texts(components)
+    assert "## \U0001F514 Auto reminders" in texts
+    assert "How often should the bot remind players?" in texts
+    menu = _select(components)
+    assert menu.custom_id == "lazycwl_auto_every:#ABC"
+    assert {opt.value for opt in menu.options} == {"30", "60", "120"}
+    recommended = next(opt for opt in menu.options if opt.value == "60")
+    assert recommended.label == "Every hour (recommended)"
+
+
+def test_auto_confirm_off_screen_shown_when_on():
+    doc = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    components = asyncio.run(dashboard.build_auto(mongo, "#ABC"))
+    texts = _texts(components)
+    assert "## \U0001F515 Turn off auto reminders?" in texts
+    assert "Clans: **Alpha**" in texts
+    yes = _button_by_action(components, "lazycwl_auto_off")
+    assert yes.custom_id == "lazycwl_auto_off:#ABC"
+
+
+def test_auto_all_mixed_state_shows_how_often_with_note():
+    on_doc = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    off_doc = _list_doc("#DEF", "Beta", reminders={"enabled": False, "every_minutes": None})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[on_doc, off_doc])
+    components = asyncio.run(dashboard.build_auto(mongo, "ALL"))
+    texts = _texts(components)
+    assert "## \U0001F514 Auto reminders" in texts
+    assert "1 clans already on. Turning on the rest." in texts
+
+
+def test_auto_all_every_active_on_shows_confirm_off_with_all_names():
+    on1 = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    on2 = _list_doc("#DEF", "Beta", reminders={"enabled": True, "every_minutes": 30})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[on1, on2])
+    components = asyncio.run(dashboard.build_auto(mongo, "ALL"))
+    texts = _texts(components)
+    assert "## \U0001F515 Turn off auto reminders?" in texts
+    assert "Clans: **Alpha, Beta**" in texts
+
+
+def test_auto_every_select_leads_to_confirm_on_with_dash_m_action_id():
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_list_doc("#ABC", "Alpha")])
+    ctx = _FakeHandlerCtx(values=["120"])
+    components = asyncio.run(dashboard.handle_auto_every.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    texts = _texts(components)
+    assert "## \U0001F514 Turn on auto reminders?" in texts
+    assert "Clans: **Alpha**" in texts
+    assert "Every 120 minutes, for up to 7 days." in texts
+    yes = _button_by_action(components, "lazycwl_auto_on")
+    assert yes.custom_id == "lazycwl_auto_on:#ABC-120"
+
+
+def test_auto_confirm_on_all_lists_only_off_clans_with_note():
+    on_doc = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    off_doc = _list_doc("#DEF", "Beta", reminders={"enabled": False, "every_minutes": None})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[on_doc, off_doc])
+    components = asyncio.run(dashboard.build_auto_confirm_on(mongo, "ALL", 30))
+    texts = _texts(components)
+    assert "Clans: **Beta**" in texts
+    assert "1 clans already on. Turning on the rest." in texts
+    yes = _button_by_action(components, "lazycwl_auto_on")
+    assert yes.custom_id == "lazycwl_auto_on:ALL-30"
+
+
+def test_auto_on_yes_calls_set_reminders_with_tag_true_m(monkeypatch):
+    calls = []
+
+    async def fake_set_reminders(clan_tag, enabled, every_minutes=None):
+        calls.append((clan_tag, enabled, every_minutes))
+        return {"ok": True, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "set_reminders", fake_set_reminders)
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_list_doc("#ABC", "Alpha")])
+    components = asyncio.run(dashboard.build_auto_turn_on(mongo, "#ABC-60"))
+    assert calls == [("#ABC", True, 60)]
+    texts = _texts(components)
+    assert any("Alpha" in t and "on, every 60 minutes" in t for t in texts)
+
+
+def test_auto_off_yes_calls_set_reminders_with_tag_false_none(monkeypatch):
+    calls = []
+
+    async def fake_set_reminders(clan_tag, enabled, every_minutes=None):
+        calls.append((clan_tag, enabled, every_minutes))
+        return {"ok": True, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "set_reminders", fake_set_reminders)
+    doc = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    components = asyncio.run(dashboard.build_auto_turn_off(mongo, "#ABC"))
+    assert calls == [("#ABC", False, None)]
+    texts = _texts(components)
+    assert any("Alpha" in t and t.endswith("off") for t in texts)
+
+
+def test_auto_all_turn_on_only_calls_off_clans(monkeypatch):
+    calls = []
+
+    async def fake_set_reminders(clan_tag, enabled, every_minutes=None):
+        calls.append((clan_tag, enabled, every_minutes))
+        return {"ok": True, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "set_reminders", fake_set_reminders)
+    on_doc = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    off_doc = _list_doc("#DEF", "Beta", reminders={"enabled": False, "every_minutes": None})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[on_doc, off_doc])
+    components = asyncio.run(dashboard.build_auto_turn_on(mongo, "ALL-30"))
+    assert calls == [("#DEF", True, 30)]
+    texts = _texts(components)
+    assert "1 on · 0 failed" in texts
+
+
+def test_auto_all_turn_off_calls_every_active_list(monkeypatch):
+    calls = []
+
+    async def fake_set_reminders(clan_tag, enabled, every_minutes=None):
+        calls.append((clan_tag, enabled, every_minutes))
+        return {"ok": True, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "set_reminders", fake_set_reminders)
+    on1 = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    on2 = _list_doc("#DEF", "Beta", reminders={"enabled": True, "every_minutes": 30})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[on1, on2])
+    components = asyncio.run(dashboard.build_auto_turn_off(mongo, "ALL"))
+    assert calls == [("#ABC", False, None), ("#DEF", False, None)]
+    texts = _texts(components)
+    assert "2 off · 0 failed" in texts
+
+
+def test_auto_service_exception_becomes_error_row(monkeypatch):
+    async def fake_set_reminders(clan_tag, enabled, every_minutes=None):
+        raise RuntimeError("coc outage")
+
+    monkeypatch.setattr(dashboard.service, "set_reminders", fake_set_reminders)
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_list_doc("#ABC", "Alpha")])
+    components = asyncio.run(dashboard.build_auto_turn_on(mongo, "#ABC-60"))
+    texts = _texts(components)
+    assert any(t.startswith("❌ **Alpha**") and "coc outage" in t for t in texts)
+
+
+def test_auto_back_buttons_carry_selected_tag():
+    how_often = dashboard.render_auto_how_often("#ABC")
+    assert _button_by_action(how_often, "lazycwl_home").custom_id == "lazycwl_home:#ABC"
+
+    confirm_on = dashboard.render_auto_confirm_on("ALL", "Alpha", 60)
+    assert _button_by_action(confirm_on, "lazycwl_home").custom_id == "lazycwl_home:ALL"
+
+    confirm_off = dashboard.render_auto_confirm_off("#ABC", "Alpha")
+    assert _button_by_action(confirm_off, "lazycwl_home").custom_id == "lazycwl_home:#ABC"
+
+    result = dashboard.render_auto_result([], "#ABC", turning_on=True)
+    assert _button_by_action(result, "lazycwl_home").custom_id == "lazycwl_home:#ABC"
+
+
+def test_auto_result_component_ceiling_24_clans():
+    results = [
+        {"ok": True, "clan_name": f"Clan {i:03d}", "clan_tag": f"#C{i:03d}", "error": None}
+        for i in range(24)
+    ]
+    components = dashboard.render_auto_result(results, "ALL", turning_on=True, every_minutes=60)
+    assert _component_count(components) <= 30
+
+
+def test_handle_auto_off_state_routes_to_how_often(monkeypatch):
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_list_doc("#ABC", "Alpha")])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_auto.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert "How often should the bot remind players?" in _texts(components)
+
+
+def test_handle_auto_on_state_routes_to_confirm_off(monkeypatch):
+    doc = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_auto.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert "## \U0001F515 Turn off auto reminders?" in _texts(components)
+
+
+def test_custom_ids_still_single_colon_with_s3_added():
+    """S3 adds custom_ids built with an action_id containing '-' (not ':') -
+    re-run the single-colon check to prove that didn't add a second colon."""
+    ids = [
+        f"lazycwl_auto_every:{dashboard._encode_tag('#ABC')}",
+        f"lazycwl_auto_on:{dashboard._encode_auto_on('#ABC', 60)}",
+        f"lazycwl_auto_on:{dashboard._encode_auto_on('ALL', 120)}",
+        f"lazycwl_auto_off:{dashboard._encode_tag('ALL')}",
+    ]
+    for custom_id in ids:
+        assert custom_id.count(":") == 1, custom_id
 
 
 def test_component_action_names_still_pass():

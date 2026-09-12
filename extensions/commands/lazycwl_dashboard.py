@@ -2,9 +2,9 @@
 """/lazycwl - Administrator-only dashboard over the LazyCWL saved-list
 service (extensions/commands/fwa/lazy_cwl_service.py).
 
-S0 (home), S1 (save list), and S2 (remind now) so far. The remaining four
-action buttons exist but reply "Coming soon" until a later brief
-(design-01-main.md B4-B6) wires them up. The old
+S0 (home), S1 (save list), S2 (remind now), and S3 (auto reminders) so far.
+The remaining three action buttons exist but reply "Coming soon" until a
+later brief (design-01-main.md B5-B6) wires them up. The old
 `/fwa lazycwl-*` commands (extensions/commands/fwa/lazy_cwl.py) stay live and
 untouched; this is a new, separate command.
 
@@ -342,8 +342,7 @@ async def build_home(mongo: MongoClient, selected_tag: Optional[str], note: Opti
     One clan's away_players failure shows "? away now" on its own card
     instead of failing the whole panel.
     """
-    clans = await mongo.clans.find({"type": _FWA_CLAN_TYPE}).to_list(length=None)
-    clans = sorted(clans, key=lambda clan: clan.get("name") or "")
+    clans = await _fwa_clans(mongo)
 
     lists = await store.list_active(mongo)
 
@@ -362,6 +361,16 @@ async def build_home(mongo: MongoClient, selected_tag: Optional[str], note: Opti
     return render_home(lists, clans, selected_tag, now, away_counts, note=note)
 
 
+async def _fwa_clans(mongo: MongoClient) -> list:
+    """Every FWA clan with a tag, sorted by name - the query, untagged
+    filter, and sort duplicated at build_home/build_save_result/
+    build_remind_result before this fix (refuter-08 NOTED 3)."""
+    clans = await mongo.clans.find({"type": _FWA_CLAN_TYPE}).to_list(length=None)
+    clans = [clan for clan in clans if clan.get("tag")]
+    clans.sort(key=lambda clan: clan.get("name") or "")
+    return clans
+
+
 def _result_name(result: dict) -> str:
     """A result dict's display name - clan_name, falling back to whatever tag
     the call was made with (builder-08 merges `clan_tag` into every result
@@ -371,14 +380,28 @@ def _result_name(result: dict) -> str:
 
 
 def _chunk_rows(rows: list, budget: int = COMPACT_TEXT_BUDGET) -> list:
-    """One joined row string, or two if it would exceed `budget` chars - S1/S2
-    never need more than one Text component per chunk at realistic clan
-    counts, but this keeps the ceiling honest per the brief."""
-    joined = "\n".join(rows)
-    if len(joined) <= budget:
-        return [joined]
-    mid = len(rows) // 2
-    return ["\n".join(rows[:mid]), "\n".join(rows[mid:])]
+    """Join `rows` into one or more strings, each <= `budget` chars. Never
+    returns an empty chunk (refuter-08 NOTED 1): an empty `rows` list yields
+    `[]`, not `[""]`. A single row longer than `budget` is truncated with
+    "..." so it alone never exceeds the budget."""
+    if not rows:
+        return []
+
+    chunks = []
+    current: list = []
+    current_len = 0
+    for row in rows:
+        if len(row) > budget:
+            row = row[: budget - 1] + "…"
+        added = len(row) + (1 if current else 0)
+        if current and current_len + added > budget:
+            chunks.append("\n".join(current))
+            current, current_len = [row], len(row)
+        else:
+            current.append(row)
+            current_len += added
+    chunks.append("\n".join(current))
+    return chunks
 
 
 def _back_button(selected_tag: Optional[str]) -> ActionRow:
@@ -428,9 +451,8 @@ async def build_save_result(mongo: MongoClient, action_id: str, saved_by: int) -
     build_home uses, clans only - not orphan lists, per the brief). One
     failing call becomes a single ❌ row, never a crash."""
     if action_id == "ALL":
-        clans = await mongo.clans.find({"type": _FWA_CLAN_TYPE}).to_list(length=None)
-        clans = sorted(clans, key=lambda clan: clan.get("name") or "")
-        tags = [clan["tag"] for clan in clans if clan.get("tag")]
+        clans = await _fwa_clans(mongo)
+        tags = [clan["tag"] for clan in clans]
     else:
         tags = [action_id]
 
@@ -483,9 +505,8 @@ def render_remind_result(results: list, selected_tag: Optional[str]) -> list:
 async def build_remind_result(mongo: MongoClient, action_id: str) -> list:
     """Same fan-out as build_save_result, calling service.remind_now."""
     if action_id == "ALL":
-        clans = await mongo.clans.find({"type": _FWA_CLAN_TYPE}).to_list(length=None)
-        clans = sorted(clans, key=lambda clan: clan.get("name") or "")
-        tags = [clan["tag"] for clan in clans if clan.get("tag")]
+        clans = await _fwa_clans(mongo)
+        tags = [clan["tag"] for clan in clans]
     else:
         tags = [action_id]
 
@@ -504,6 +525,225 @@ async def build_remind_result(mongo: MongoClient, action_id: str) -> list:
         results.append(result)
 
     return render_remind_result(results, action_id)
+
+
+# --------------------------------------------------------------- S3 Auto reminders
+
+AUTO_REMINDER_CHOICES = (30, 60, 120)
+
+
+def _encode_auto_on(selected_tag: Optional[str], every_minutes: int) -> str:
+    """`lazycwl_auto_on`'s action_id: "{tag|ALL}-{m}" - one colon rule means
+    the minute count can't live after a second colon, and tags never contain
+    '-' (D006 normalises to '#' + upper-case digits/letters)."""
+    return f"{_encode_tag(selected_tag)}-{every_minutes}"
+
+
+def _decode_auto_on(action_id: str) -> tuple[str, int]:
+    tag_part, _, minutes_part = action_id.rpartition("-")
+    return tag_part, int(minutes_part)
+
+
+def render_auto_how_often(selected_tag: Optional[str], note: Optional[str] = None) -> list:
+    body = [
+        Text(content="## \U0001F514 Auto reminders"),
+        Text(content="How often should the bot remind players?"),
+    ]
+    if note:
+        body.append(Text(content=note))
+    body.append(ActionRow(components=[
+        TextSelectMenu(
+            custom_id=f"lazycwl_auto_every:{_encode_tag(selected_tag)}",
+            placeholder="Choose how often",
+            max_values=1,
+            options=[
+                SelectOption(label="Every 30 minutes", value="30"),
+                SelectOption(label="Every hour (recommended)", value="60"),
+                SelectOption(label="Every 2 hours", value="120"),
+            ],
+        )
+    ]))
+    body.append(Separator())
+    body.append(_back_button(selected_tag))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+def render_auto_confirm_on(
+    selected_tag: Optional[str], names: str, every_minutes: int, note: Optional[str] = None,
+) -> list:
+    body = [
+        Text(content="## \U0001F514 Turn on auto reminders?"),
+        Text(content=f"Clans: **{names}**"),
+    ]
+    if note:
+        body.append(Text(content=note))
+    body.append(Text(content=f"Every {every_minutes} minutes, for up to 7 days."))
+    body.append(Text(content="Players who are away get a message each time."))
+    body.append(Separator())
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_auto_on:{_encode_auto_on(selected_tag, every_minutes)}",
+            label="✅ Yes, turn on",
+            emoji="✅",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_home:{_encode_tag(selected_tag)}",
+            label="⬅️ No, go back",
+            emoji="⬅️",
+        ),
+    ]))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+def render_auto_confirm_off(selected_tag: Optional[str], names: str) -> list:
+    body = [
+        Text(content="## \U0001F515 Turn off auto reminders?"),
+        Text(content=f"Clans: **{names}**"),
+        Text(content="The bot stops reminding these players."),
+        Separator(),
+    ]
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_auto_off:{_encode_tag(selected_tag)}",
+            label="✅ Yes, turn off",
+            emoji="✅",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_home:{_encode_tag(selected_tag)}",
+            label="⬅️ No, go back",
+            emoji="⬅️",
+        ),
+    ]))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+def render_auto_result(
+    results: list, selected_tag: Optional[str], turning_on: bool, every_minutes: Optional[int] = None,
+) -> list:
+    """Pure S3 result renderer. `results` are [{ok, clan_name, clan_tag,
+    error}, ...] - service.set_reminders' D008 dict ({ok, error}) merged
+    with the clan the call was made for, same shape build_auto_turn_on/off
+    build below."""
+    rows = []
+    done = failed = 0
+    for result in results:
+        name = result.get("clan_name") or result.get("clan_tag") or "?"
+        if result.get("ok"):
+            done += 1
+            if turning_on:
+                rows.append(f"\U0001F514 **{name}** · on, every {every_minutes} minutes")
+            else:
+                rows.append(f"\U0001F515 **{name}** · off")
+        else:
+            failed += 1
+            rows.append(f"❌ **{name}** · {result.get('error') or 'Something went wrong.'}")
+
+    title = "## \U0001F514 Auto reminders" if turning_on else "## \U0001F515 Auto reminders"
+    body = [Text(content=title)]
+    body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
+    if selected_tag == "ALL":
+        label = "on" if turning_on else "off"
+        body.append(Text(content=f"{done} {label} · {failed} failed"))
+    body.append(Separator())
+    body.append(_back_button(selected_tag))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_auto(mongo: MongoClient, action_id: str) -> list:
+    """`lazycwl_auto`'s panel: the how-often screen if the target (single
+    clan, or ALL with at least one active list off) needs turning on, else
+    the turn-off confirm screen (single clan on, or ALL with every active
+    list on)."""
+    if action_id != "ALL":
+        doc = await store.get_active(mongo, action_id)
+        enabled = bool(doc and (doc.get("reminders") or {}).get("enabled"))
+        if not enabled:
+            return render_auto_how_often(action_id)
+        name = (doc.get("clan_name") if doc else None) or action_id
+        return render_auto_confirm_off(action_id, name)
+
+    actives = await store.list_active(mongo)
+    off_docs = [doc for doc in actives if not (doc.get("reminders") or {}).get("enabled")]
+    if not actives or off_docs:
+        on_count = len(actives) - len(off_docs)
+        note = f"{on_count} clans already on. Turning on the rest." if on_count else None
+        return render_auto_how_often(action_id, note=note)
+
+    names = ", ".join(sorted(doc.get("clan_name") or "?" for doc in actives))
+    return render_auto_confirm_off(action_id, names)
+
+
+async def build_auto_confirm_on(mongo: MongoClient, action_id: str, every_minutes: int) -> list:
+    """`lazycwl_auto_every`'s panel: the "turn on?" confirm screen, listing
+    only the clans that will actually change (ALL: the ones currently off)."""
+    if action_id != "ALL":
+        doc = await store.get_active(mongo, action_id)
+        names = (doc.get("clan_name") if doc else None) or action_id
+        return render_auto_confirm_on(action_id, names, every_minutes)
+
+    actives = await store.list_active(mongo)
+    off_docs = [doc for doc in actives if not (doc.get("reminders") or {}).get("enabled")]
+    on_count = len(actives) - len(off_docs)
+    names = ", ".join(sorted(doc.get("clan_name") or "?" for doc in off_docs)) or "none"
+    note = f"{on_count} clans already on. Turning on the rest." if on_count else None
+    return render_auto_confirm_on(action_id, names, every_minutes, note=note)
+
+
+async def _set_reminders_row(tag: str, name: str, enabled: bool, every_minutes: Optional[int]) -> dict:
+    """One clan's set_reminders call, merged into a render-ready row dict -
+    D008's set_reminders returns only {ok, error}, never the clan."""
+    try:
+        result = await service.set_reminders(tag, enabled, every_minutes)
+    except Exception as exc:
+        _log.warning(
+            "lazycwl_dashboard._set_reminders_row: set_reminders failed clan_tag=%s",
+            tag, exc_info=True,
+        )
+        result = {"ok": False, "error": str(exc) or "Something went wrong."}
+    return {"ok": result.get("ok", False), "error": result.get("error"), "clan_name": name, "clan_tag": tag}
+
+
+async def build_auto_turn_on(mongo: MongoClient, action_id: str) -> list:
+    """`lazycwl_auto_on`'s action_id is "{tag|ALL}-{m}" (D013): a single
+    clan gets `every_minutes` on; ALL turns on every active list currently
+    off, orphans included (store.list_active is not filtered against
+    mongo.clans)."""
+    tag_part, every_minutes = _decode_auto_on(action_id)
+
+    if tag_part != "ALL":
+        doc = await store.get_active(mongo, tag_part)
+        name = (doc.get("clan_name") if doc else None) or tag_part
+        results = [await _set_reminders_row(tag_part, name, True, every_minutes)]
+    else:
+        actives = await store.list_active(mongo)
+        off_docs = [doc for doc in actives if not (doc.get("reminders") or {}).get("enabled")]
+        results = [
+            await _set_reminders_row(doc["clan_tag"], doc.get("clan_name") or doc["clan_tag"], True, every_minutes)
+            for doc in off_docs
+        ]
+
+    return render_auto_result(results, tag_part, turning_on=True, every_minutes=every_minutes)
+
+
+async def build_auto_turn_off(mongo: MongoClient, action_id: str) -> list:
+    """`lazycwl_auto_off`'s panel: a single clan, or every active list for
+    ALL (orphans included)."""
+    if action_id != "ALL":
+        doc = await store.get_active(mongo, action_id)
+        name = (doc.get("clan_name") if doc else None) or action_id
+        results = [await _set_reminders_row(action_id, name, False, None)]
+    else:
+        actives = await store.list_active(mongo)
+        results = [
+            await _set_reminders_row(doc["clan_tag"], doc.get("clan_name") or doc["clan_tag"], False, None)
+            for doc in actives
+        ]
+
+    return render_auto_result(results, action_id, turning_on=False)
 
 
 class LazyCwl(
@@ -589,7 +829,42 @@ async def handle_auto(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> list:
-    return await _placeholder(action_id, mongo)
+    return await build_auto(mongo, action_id)
+
+
+@register_action("lazycwl_auto_every")
+@lightbulb.di.with_di
+async def handle_auto_every(
+    ctx=None,
+    action_id: str = "NONE",
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs,
+) -> list:
+    values = getattr(ctx.interaction, "values", None) or []
+    every_minutes = int(values[0]) if values else AUTO_REMINDER_CHOICES[1]
+    return await build_auto_confirm_on(mongo, action_id, every_minutes)
+
+
+@register_action("lazycwl_auto_on")
+@lightbulb.di.with_di
+async def handle_auto_on(
+    ctx=None,
+    action_id: str = "NONE",
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs,
+) -> list:
+    return await build_auto_turn_on(mongo, action_id)
+
+
+@register_action("lazycwl_auto_off")
+@lightbulb.di.with_di
+async def handle_auto_off(
+    ctx=None,
+    action_id: str = "NONE",
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs,
+) -> list:
+    return await build_auto_turn_off(mongo, action_id)
 
 
 @register_action("lazycwl_players")
