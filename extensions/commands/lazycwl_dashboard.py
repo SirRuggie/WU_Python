@@ -2,11 +2,11 @@
 """/lazycwl - Administrator-only dashboard over the LazyCWL saved-list
 service (extensions/commands/fwa/lazy_cwl_service.py).
 
-S0 (home), S1 (save list), S2 (remind now), and S3 (auto reminders) so far.
-The remaining three action buttons exist but reply "Coming soon" until a
-later brief (design-01-main.md B5-B6) wires them up. The old
-`/fwa lazycwl-*` commands (extensions/commands/fwa/lazy_cwl.py) stay live and
-untouched; this is a new, separate command.
+S0 (home), S1 (save list), S2 (remind now), S3 (auto reminders), S4 (player
+list + remove), and S5 (add player) so far. Only Finish (S6) still replies
+"Coming soon" until a later brief (design-01-main.md B6) wires it up. The
+old `/fwa lazycwl-*` commands (extensions/commands/fwa/lazy_cwl.py) stay
+live and untouched; this is a new, separate command.
 
 Rules carried over from extensions/commands/todo.py:25-60 and enforced here:
 
@@ -22,6 +22,7 @@ Rules carried over from extensions/commands/todo.py:25-60 and enforced here:
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -37,6 +38,7 @@ from hikari.impl import (
     TextSelectMenuBuilder as TextSelectMenu,
     SelectOptionBuilder as SelectOption,
     InteractiveButtonBuilder as Button,
+    ModalActionRowBuilder as ModalActionRow,
 )
 
 from extensions.components import register_action
@@ -539,9 +541,60 @@ def _encode_auto_on(selected_tag: Optional[str], every_minutes: int) -> str:
     return f"{_encode_tag(selected_tag)}-{every_minutes}"
 
 
-def _decode_auto_on(action_id: str) -> tuple[str, int]:
-    tag_part, _, minutes_part = action_id.rpartition("-")
-    return tag_part, int(minutes_part)
+def _decode_auto_on(action_id: str) -> tuple[str, int] | None:
+    """None on anything malformed or an `every_minutes` outside
+    AUTO_REMINDER_CHOICES (refuter-09 NOTED 1 and 2) - never raises, so a
+    forged or stale custom_id renders an error screen instead of a 500."""
+    tag_part, sep, minutes_part = action_id.rpartition("-")
+    if not sep:
+        return None
+    try:
+        minutes = int(minutes_part)
+    except ValueError:
+        return None
+    if minutes not in AUTO_REMINDER_CHOICES:
+        return None
+    return tag_part, minutes
+
+
+def _reminders_on(doc: Optional[dict]) -> bool:
+    """One predicate for "does this saved list have reminders on" (refuter-09
+    NOTED 3), used everywhere a doc's reminders.enabled is checked."""
+    return bool(doc and (doc.get("reminders") or {}).get("enabled"))
+
+
+def _already_on_note(on_count: int) -> Optional[str]:
+    """"{n} clans already on. Turning on the rest." with correct singular
+    (refuter-09 NOTED 4: "1 clans already on." was always plural)."""
+    if not on_count:
+        return None
+    noun = "clan" if on_count == 1 else "clans"
+    return f"{on_count} {noun} already on. Turning on the rest."
+
+
+def _player_noun(n: int) -> str:
+    """"player" for 1, "players" otherwise (refuter-10 NOTED: singular
+    always read plural, the same class of bug _already_on_note fixed)."""
+    return "player" if n == 1 else "players"
+
+
+def render_error(message: str) -> list:
+    """A plain error screen with only a Home button - used when an action_id
+    can't be decoded at all, so there is no clan tag to route Back/Home to."""
+    body = [
+        Text(content="## ❌ Error"),
+        Text(content=message),
+        Separator(),
+        ActionRow(components=[
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id="lazycwl_home:NONE",
+                label="🏠 Home",
+                emoji="🏠",
+            )
+        ]),
+    ]
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
 
 
 def render_auto_how_often(selected_tag: Optional[str], note: Optional[str] = None) -> list:
@@ -631,7 +684,7 @@ def render_auto_result(
     rows = []
     done = failed = 0
     for result in results:
-        name = result.get("clan_name") or result.get("clan_tag") or "?"
+        name = _result_name(result)
         if result.get("ok"):
             done += 1
             if turning_on:
@@ -660,17 +713,16 @@ async def build_auto(mongo: MongoClient, action_id: str) -> list:
     list on)."""
     if action_id != "ALL":
         doc = await store.get_active(mongo, action_id)
-        enabled = bool(doc and (doc.get("reminders") or {}).get("enabled"))
-        if not enabled:
+        if not _reminders_on(doc):
             return render_auto_how_often(action_id)
         name = (doc.get("clan_name") if doc else None) or action_id
         return render_auto_confirm_off(action_id, name)
 
     actives = await store.list_active(mongo)
-    off_docs = [doc for doc in actives if not (doc.get("reminders") or {}).get("enabled")]
+    off_docs = [doc for doc in actives if not _reminders_on(doc)]
     if not actives or off_docs:
         on_count = len(actives) - len(off_docs)
-        note = f"{on_count} clans already on. Turning on the rest." if on_count else None
+        note = _already_on_note(on_count)
         return render_auto_how_often(action_id, note=note)
 
     names = ", ".join(sorted(doc.get("clan_name") or "?" for doc in actives))
@@ -686,10 +738,10 @@ async def build_auto_confirm_on(mongo: MongoClient, action_id: str, every_minute
         return render_auto_confirm_on(action_id, names, every_minutes)
 
     actives = await store.list_active(mongo)
-    off_docs = [doc for doc in actives if not (doc.get("reminders") or {}).get("enabled")]
+    off_docs = [doc for doc in actives if not _reminders_on(doc)]
     on_count = len(actives) - len(off_docs)
     names = ", ".join(sorted(doc.get("clan_name") or "?" for doc in off_docs)) or "none"
-    note = f"{on_count} clans already on. Turning on the rest." if on_count else None
+    note = _already_on_note(on_count)
     return render_auto_confirm_on(action_id, names, every_minutes, note=note)
 
 
@@ -712,7 +764,10 @@ async def build_auto_turn_on(mongo: MongoClient, action_id: str) -> list:
     clan gets `every_minutes` on; ALL turns on every active list currently
     off, orphans included (store.list_active is not filtered against
     mongo.clans)."""
-    tag_part, every_minutes = _decode_auto_on(action_id)
+    decoded = _decode_auto_on(action_id)
+    if decoded is None:
+        return render_error("Something went wrong. Press Home.")
+    tag_part, every_minutes = decoded
 
     if tag_part != "ALL":
         doc = await store.get_active(mongo, tag_part)
@@ -720,7 +775,7 @@ async def build_auto_turn_on(mongo: MongoClient, action_id: str) -> list:
         results = [await _set_reminders_row(tag_part, name, True, every_minutes)]
     else:
         actives = await store.list_active(mongo)
-        off_docs = [doc for doc in actives if not (doc.get("reminders") or {}).get("enabled")]
+        off_docs = [doc for doc in actives if not _reminders_on(doc)]
         results = [
             await _set_reminders_row(doc["clan_tag"], doc.get("clan_name") or doc["clan_tag"], True, every_minutes)
             for doc in off_docs
@@ -744,6 +799,423 @@ async def build_auto_turn_off(mongo: MongoClient, action_id: str) -> list:
         ]
 
     return render_auto_result(results, action_id, turning_on=False)
+
+
+# --------------------------------------------------------------- S4 Player list / Remove
+
+PLAYERS_PAGE_SIZE = 20
+REMOVE_CUSTOM_ID_BUDGET = 100
+REMOVE_MAX_PICK = 8
+
+
+def _encode_players_page(tag: str, page: int) -> str:
+    return f"{tag}-{page}"
+
+
+def _decode_players_page(action_id: str) -> tuple[str, int]:
+    """"{tag}-{page}" (D013-style rpartition, tags never contain '-') with a
+    fallback to page 0 for the S0 "Player list" button, whose custom_id is
+    still bare `lazycwl_players:{tag}` (DO NOT: existing custom_id formats
+    stay unchanged)."""
+    tag_part, sep, page_part = action_id.rpartition("-")
+    if not sep:
+        return action_id, 0
+    try:
+        return tag_part, int(page_part)
+    except ValueError:
+        return action_id, 0
+
+
+def _sorted_players(players: list) -> list:
+    return sorted(players, key=lambda p: (-int(p.get("town_hall") or 0), p.get("name") or ""))
+
+
+def _player_page_count(n: int) -> int:
+    return max(1, math.ceil(n / PLAYERS_PAGE_SIZE))
+
+
+def _players_page(doc: Optional[dict], page: int) -> tuple[list, int, int, int]:
+    """Single source of truth for "who is on page p": sorts, computes the
+    page count from the *current* player list, clamps `page` into range,
+    and slices. Shared by render_players and render_remove_pick so the two
+    screens can never disagree about a page's contents when the list has
+    shrunk or expired out from under a stale action_id (refuter-10
+    MUST-FIX 1). Returns (page_players, clamped_page, page_count, total)."""
+    players = _sorted_players(doc.get("players", []) if doc else [])
+    n = len(players)
+    page_count = _player_page_count(n)
+    page = max(0, min(page, page_count - 1))
+    start = page * PLAYERS_PAGE_SIZE
+    return players[start:start + PLAYERS_PAGE_SIZE], page, page_count, n
+
+
+def _player_row(player: dict, away_ok: bool, away_set: set) -> str:
+    th = player.get("town_hall")
+    name = player.get("name") or "?"
+    parts = [f"Town Hall {th} · **{name}**"]
+    if away_ok:
+        tag = store._normalize_tag(player.get("tag", ""))
+        parts.append("🚪 away" if tag in away_set else "🏠 here")
+    if player.get("added_manually"):
+        parts.append("➕ added by hand")
+    return " · ".join(parts)
+
+
+def render_players(
+    doc: Optional[dict],
+    clan_name: str,
+    selected_tag: str,
+    page: int,
+    away_set: Optional[set] = None,
+    away_ok: bool = True,
+) -> list:
+    """Pure S4 renderer. `page` is 0-indexed; clamped to a valid page for the
+    player count given. `away_ok` False means the away lookup failed - no
+    🚪/🏠 marks are shown, and a note line explains why (design-01-main.md
+    §3 S4)."""
+    away_set = away_set or set()
+    page_players, page, page_count, n = _players_page(doc, page)
+
+    body = [Text(content=f"## \U0001F465 Player list · {clan_name}")]
+    away_count = len(away_set) if away_ok else 0
+    body.append(Text(content=f"{n} players · {away_count} away · page {page + 1} of {page_count}"))
+    if not away_ok:
+        body.append(Text(content="Could not check who is away."))
+    body.append(Separator())
+
+    if page_players:
+        rows = [_player_row(player, away_ok, away_set) for player in page_players]
+        body.append(Text(content="\n".join(rows)))
+    else:
+        body.append(Text(content="No players saved yet."))
+
+    body.append(Separator())
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, page - 1)}",
+            label="⬅️ Prev",
+            emoji="⬅️",
+            is_disabled=page <= 0,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, page + 1)}",
+            label="➡️ Next",
+            emoji="➡️",
+            is_disabled=page >= page_count - 1,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_remove:{_encode_players_page(selected_tag, page)}",
+            label="🗑️ Remove players",
+            emoji="🗑️",
+            is_disabled=not page_players,
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_home:{_encode_tag(selected_tag)}",
+            label="🏠 Home",
+            emoji="🏠",
+        ),
+    ]))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_players(mongo: MongoClient, action_id: str) -> list:
+    tag, page = _decode_players_page(action_id)
+    doc = await store.get_active(mongo, tag)
+    clan_name = (doc.get("clan_name") if doc else None) or tag
+
+    away_set: set = set()
+    away_ok = True
+    if doc is not None:
+        try:
+            away = await service.away_players(doc)
+            away_set = {store._normalize_tag(player.get("tag", "")) for player in away}
+        except Exception:
+            away_ok = False
+            _log.warning(
+                "lazycwl_dashboard.build_players: away_players failed clan_tag=%s",
+                tag, exc_info=True,
+            )
+
+    return render_players(doc, clan_name, tag, page, away_set, away_ok)
+
+
+def _remove_yes_prefix_len(selected_tag: str, page: int) -> int:
+    return len(f"lazycwl_remove_yes:{selected_tag}-{page}-")
+
+
+def _remove_pick_cap(selected_tag: str, page: int, page_tags: list) -> int:
+    """Largest N (<= REMOVE_MAX_PICK) such that ANY N of `page_tags` (the
+    current page's player tags, '#'-stripped) still fit the
+    lazycwl_remove_yes custom_id under Discord's 100-char limit - checked
+    against the N longest tags on the page, the worst case a user could
+    actually pick (brief item: "assert ... under 100-char limit - if it
+    would exceed, cap the selection at 8 players")."""
+    prefix_len = _remove_yes_prefix_len(selected_tag, page)
+    stripped = sorted((t.lstrip("#") for t in page_tags), key=len, reverse=True)
+    cap = min(REMOVE_MAX_PICK, len(stripped)) or 1
+    while cap > 1:
+        worst = stripped[:cap]
+        joined_len = sum(len(t) for t in worst) + (cap - 1)
+        if prefix_len + joined_len <= REMOVE_CUSTOM_ID_BUDGET:
+            break
+        cap -= 1
+    return cap
+
+
+def render_remove_pick(doc: Optional[dict], clan_name: str, selected_tag: str, page: int) -> list:
+    page_players, page, _page_count, _n = _players_page(doc, page)
+    if not page_players:
+        # No select possible - Discord requires 1-25 options, and a
+        # zero-option select 400s (refuter-10 MUST-FIX 1). Hit when the
+        # list expired or was fully emptied out from under a still-open
+        # panel: `doc` is None (no active list) or its player list is
+        # genuinely empty; `_players_page`'s clamp already rules out a
+        # merely-stale page number.
+        message = "No players to remove." if doc is not None else "No saved list for this clan."
+        body = [
+            Text(content=f"## \U0001F5D1️ Remove players · {clan_name}"),
+            Text(content=message),
+            Separator(),
+            ActionRow(components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"lazycwl_home:{_encode_tag(selected_tag)}",
+                    label="🏠 Home",
+                    emoji="🏠",
+                )
+            ]),
+        ]
+        return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+    page_tags = [store._normalize_tag(p.get("tag", "")) for p in page_players]
+    cap = _remove_pick_cap(selected_tag, page, page_tags)
+    max_values = min(len(page_players), cap) or 1
+
+    body = [
+        Text(content=f"## \U0001F5D1️ Remove players · {clan_name}"),
+        Text(content="Pick the players to remove from the list."),
+    ]
+    if len(page_players) > cap:
+        body.append(Text(content=f"Pick up to {cap} at a time."))
+    body.append(Separator())
+
+    options = [
+        SelectOption(
+            label=player.get("name") or "?",
+            value=store._normalize_tag(player.get("tag", "")),
+            description=f"Town Hall {player.get('town_hall')} · {store._normalize_tag(player.get('tag', ''))}",
+        )
+        for player in page_players
+    ]
+    body.append(ActionRow(components=[
+        TextSelectMenu(
+            custom_id=f"lazycwl_remove_pick:{_encode_players_page(selected_tag, page)}",
+            placeholder="Choose players to remove",
+            min_values=1,
+            max_values=max_values,
+            options=options,
+        )
+    ]))
+    body.append(Separator())
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, page)}",
+            label="⬅️ Back to list",
+            emoji="⬅️",
+        )
+    ]))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_remove(mongo: MongoClient, action_id: str) -> list:
+    tag, page = _decode_players_page(action_id)
+    doc = await store.get_active(mongo, tag)
+    clan_name = (doc.get("clan_name") if doc else None) or tag
+    return render_remove_pick(doc, clan_name, tag, page)
+
+
+def _encode_remove_yes(selected_tag: str, page: int, tags: list) -> str:
+    stripped = [t.lstrip("#") for t in tags]
+    return f"{_encode_players_page(selected_tag, page)}-{'.'.join(stripped)}"
+
+
+def _decode_remove_yes(action_id: str) -> tuple[str, int, list]:
+    tag_part, page_part, tags_part = action_id.split("-", 2)
+    tags = [f"#{t}" for t in tags_part.split(".")] if tags_part else []
+    return tag_part, int(page_part), tags
+
+
+def render_remove_confirm(clan_name: str, selected_tag: str, page: int, chosen: list) -> list:
+    """`chosen` is [{tag, name}, ...] - the players selected on the pick
+    screen, resolved to their names for display."""
+    body = [
+        Text(content=f"## \U0001F5D1️ Remove {len(chosen)} {_player_noun(len(chosen))}?"),
+    ]
+    rows = [f"**{player['name']}** · {player['tag']}" for player in chosen]
+    body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
+    body.append(Text(content="They will not get reminders any more."))
+    body.append(Separator())
+
+    tags = [player["tag"] for player in chosen]
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_remove_yes:{_encode_remove_yes(selected_tag, page, tags)}",
+            label="✅ Yes, remove",
+            emoji="✅",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, page)}",
+            label="⬅️ No, go back",
+            emoji="⬅️",
+        ),
+    ]))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_remove_confirm(mongo: MongoClient, action_id: str, chosen_tags: list) -> list:
+    tag, page = _decode_players_page(action_id)
+    doc = await store.get_active(mongo, tag)
+    clan_name = (doc.get("clan_name") if doc else None) or tag
+    by_tag = {store._normalize_tag(p.get("tag", "")): p for p in (doc.get("players", []) if doc else [])}
+    chosen = [
+        {"tag": store._normalize_tag(t), "name": (by_tag.get(store._normalize_tag(t)) or {}).get("name") or "?"}
+        for t in chosen_tags
+    ]
+    return render_remove_confirm(clan_name, tag, page, chosen)
+
+
+async def build_remove_yes(mongo: MongoClient, action_id: str) -> list:
+    try:
+        tag, page, tags = _decode_remove_yes(action_id)
+    except ValueError:
+        # Not reachable from the UI (S3's own render never builds a
+        # malformed action_id) - but a malformed one should land on the
+        # same render_error screen its S3 siblings use, not raise
+        # (refuter-10 NOTED).
+        return render_error("Something went wrong. Press Home.")
+    removed = await store.remove_players(mongo, tag, tags)
+    k = len(tags)
+
+    doc = await store.get_active(mongo, tag)
+    players = _sorted_players(doc.get("players", []) if doc else [])
+    page_count = _player_page_count(len(players))
+    page = max(0, min(page, page_count - 1))
+
+    note = f"\U0001F5D1️ Removed {removed} {_player_noun(removed)}."
+    if removed != k:
+        note += f" {k - removed} were already gone."
+
+    return await build_players_with_note(mongo, tag, page, note)
+
+
+async def build_players_with_note(mongo: MongoClient, tag: str, page: int, note: str) -> list:
+    """Same as build_players, with an extra line above the player list -
+    the removal result banner (design's "re-render the list page")."""
+    doc = await store.get_active(mongo, tag)
+    clan_name = (doc.get("clan_name") if doc else None) or tag
+
+    away_set: set = set()
+    away_ok = True
+    if doc is not None:
+        try:
+            away = await service.away_players(doc)
+            away_set = {store._normalize_tag(player.get("tag", "")) for player in away}
+        except Exception:
+            away_ok = False
+            _log.warning(
+                "lazycwl_dashboard.build_players_with_note: away_players failed clan_tag=%s",
+                tag, exc_info=True,
+            )
+
+    components = render_players(doc, clan_name, tag, page, away_set, away_ok)
+    container = components[0]
+    # `.components` returns a fresh list, not a live reference (mutating it
+    # in place has no effect) - rebuild the Container instead.
+    return [Container(
+        accent_color=container.accent_color,
+        components=[Text(content=note)] + list(container.components),
+    )]
+
+
+# --------------------------------------------------------------- S5 Add player
+
+ADD_PLAYER_MODAL_CUSTOM_ID = "lazycwl_add_submit"
+
+_ADD_PLAYER_REASON_MESSAGES = {
+    "invalid_tag": "That does not look like a player tag. Example: #ABC123",
+    "not_found": "No player has that tag.",
+    "no_list": "No saved list for this clan.",
+    "already_listed": None,  # uses result["name"] - built where the reason is handled
+}
+
+
+def render_add_result(result: dict, selected_tag: str) -> list:
+    body = [Text(content="## ➕ Add player")]
+
+    if result.get("ok"):
+        away_text = "🚪 away now" if result.get("away_now") else "🏠 here"
+        body.append(Text(content=(
+            f"✅ **{result.get('name')}** · Town Hall {result.get('town_hall')} · {away_text}"
+        )))
+        if result.get("reason") == "link_service_down":
+            body.append(Text(content="Could not check the Discord link. Try again later."))
+        elif result.get("discord_id"):
+            body.append(Text(content=f"Linked to <@{result['discord_id']}>"))
+        else:
+            body.append(Text(content="No Discord link found."))
+    else:
+        reason = result.get("reason")
+        if reason == "already_listed":
+            message = f"**{result.get('name')}** is already on the list."
+        else:
+            message = _ADD_PLAYER_REASON_MESSAGES.get(reason) or result.get("error") or "Something went wrong."
+        body.append(Text(content=message))
+
+    body.append(Separator())
+    body.append(ActionRow(components=[
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_add:{_encode_tag(selected_tag)}",
+            label="➕ Add another",
+            emoji="➕",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_players:{_encode_players_page(selected_tag, 0)}",
+            label="\U0001F465 Player list",
+            emoji="\U0001F465",
+        ),
+        Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"lazycwl_home:{_encode_tag(selected_tag)}",
+            label="🏠 Home",
+            emoji="🏠",
+        ),
+    ]))
+    return [Container(accent_color=BLUE_ACCENT, components=body)]
+
+
+async def build_add_result(clan_tag: str, player_tag: str) -> list:
+    if not (player_tag or "").strip():
+        # An empty/whitespace modal submission is never a valid tag - skip
+        # the service round-trip entirely (refuter-10 NOTED).
+        return render_add_result({"ok": False, "name": None, "error": None, "reason": "invalid_tag"}, clan_tag)
+    try:
+        result = await service.add_player_by_tag(clan_tag, player_tag)
+    except Exception as exc:
+        _log.warning(
+            "lazycwl_dashboard.build_add_result: add_player_by_tag failed clan_tag=%s",
+            clan_tag, exc_info=True,
+        )
+        result = {"ok": False, "error": str(exc) or "Something went wrong.", "reason": None}
+    return render_add_result(result, clan_tag)
 
 
 class LazyCwl(
@@ -841,7 +1313,12 @@ async def handle_auto_every(
     **kwargs,
 ) -> list:
     values = getattr(ctx.interaction, "values", None) or []
-    every_minutes = int(values[0]) if values else AUTO_REMINDER_CHOICES[1]
+    try:
+        every_minutes = int(values[0]) if values else AUTO_REMINDER_CHOICES[1]
+    except ValueError:
+        return render_error("Something went wrong. Press Home.")
+    if every_minutes not in AUTO_REMINDER_CHOICES:
+        return render_error("Something went wrong. Press Home.")
     return await build_auto_confirm_on(mongo, action_id, every_minutes)
 
 
@@ -875,18 +1352,85 @@ async def handle_players(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> list:
-    return await _placeholder(action_id, mongo)
+    return await build_players(mongo, action_id)
 
 
-@register_action("lazycwl_add")
+@register_action("lazycwl_remove")
 @lightbulb.di.with_di
-async def handle_add(
+async def handle_remove(
     ctx=None,
     action_id: str = "NONE",
     mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> list:
-    return await _placeholder(action_id, mongo)
+    return await build_remove(mongo, action_id)
+
+
+@register_action("lazycwl_remove_pick")
+@lightbulb.di.with_di
+async def handle_remove_pick(
+    ctx=None,
+    action_id: str = "NONE",
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs,
+) -> list:
+    values = getattr(ctx.interaction, "values", None) or []
+    return await build_remove_confirm(mongo, action_id, values)
+
+
+@register_action("lazycwl_remove_yes")
+@lightbulb.di.with_di
+async def handle_remove_yes(
+    ctx=None,
+    action_id: str = "NONE",
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs,
+) -> list:
+    return await build_remove_yes(mongo, action_id)
+
+
+@register_action("lazycwl_add", opens_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def handle_add(
+    ctx=None,
+    action_id: str = "NONE",
+    **kwargs,
+) -> None:
+    tag_input = ModalActionRow().add_text_input(
+        "player_tag",
+        "Player tag",
+        placeholder="#ABC123",
+        min_length=3,
+        max_length=15,
+        required=True,
+    )
+    await ctx.respond_with_modal(
+        title="Add a player",
+        custom_id=f"{ADD_PLAYER_MODAL_CUSTOM_ID}:{action_id}",
+        components=[tag_input],
+    )
+
+
+@register_action(ADD_PLAYER_MODAL_CUSTOM_ID, is_modal=True, no_return=True)
+@lightbulb.di.with_di
+async def handle_add_submit(
+    ctx=None,
+    action_id: str = "NONE",
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **kwargs,
+) -> None:
+    def get_val(custom_id: str) -> str:
+        for row in ctx.interaction.components:
+            for component in row:
+                if component.custom_id == custom_id:
+                    return component.value
+        return ""
+
+    player_tag = get_val("player_tag")
+
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    components = await build_add_result(action_id, player_tag)
+    await ctx.interaction.edit_initial_response(components=components)
 
 
 @register_action("lazycwl_finish")

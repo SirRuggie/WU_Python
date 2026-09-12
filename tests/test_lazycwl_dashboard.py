@@ -513,13 +513,14 @@ class _FakeMongo:
         self.lazy_cwl_lists = _Collection(list_docs)
 
 
-def test_placeholder_handlers_keep_the_selected_tag(monkeypatch):
+def test_finish_placeholder_keeps_the_selected_tag(monkeypatch):
     """refuter-06 MUST-FIX 4: proven with TWO clans, so a handler that drops
     the selection would render a different (or every) card, and asserting
     the custom_id's tag - not just card presence - actually exercises the
     tag being carried through, not just re-rendered from a single-clan
-    fixture regardless of selected_tag. Save/remind are covered separately
-    below (builder-08: no longer placeholders)."""
+    fixture regardless of selected_tag. Save/remind/players/add are covered
+    separately (builder-08/builder-10: no longer placeholders); only Finish
+    (S6) stays a placeholder per this brief's DO NOT."""
     async def fake_away_players(doc):
         return []
 
@@ -534,26 +535,25 @@ def test_placeholder_handlers_keep_the_selected_tag(monkeypatch):
     )
     ctx = _FakeHandlerCtx()
 
-    async def run_all():
-        results = []
-        for handler in (
-            dashboard.handle_players, dashboard.handle_add, dashboard.handle_finish,
-        ):
-            results.append(await handler.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
-        return results
+    components = asyncio.run(dashboard.handle_finish.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert dashboard.COMING_SOON_NOTE in _texts(components)
+    # Only the selected clan's card is rendered - the other clan's name
+    # never appears (single-clan fixtures cannot tell this apart).
+    assert "### Alpha" in _texts(components)
+    assert "### Beta" not in _texts(components)
+    # The custom_id is the actual mechanism carrying the tag forward.
+    for action in (
+        "lazycwl_save", "lazycwl_remind", "lazycwl_auto",
+        "lazycwl_players", "lazycwl_add", "lazycwl_finish", "lazycwl_home",
+    ):
+        assert _button_by_action(components, action).custom_id.endswith(":#ABC")
 
-    for components in asyncio.run(run_all()):
-        assert dashboard.COMING_SOON_NOTE in _texts(components)
-        # Only the selected clan's card is rendered - the other clan's name
-        # never appears (single-clan fixtures cannot tell this apart).
-        assert "### Alpha" in _texts(components)
-        assert "### Beta" not in _texts(components)
-        # The custom_id is the actual mechanism carrying the tag forward.
-        for action in (
-            "lazycwl_save", "lazycwl_remind", "lazycwl_auto",
-            "lazycwl_players", "lazycwl_add", "lazycwl_finish", "lazycwl_home",
-        ):
-            assert _button_by_action(components, action).custom_id.endswith(":#ABC")
+
+def test_placeholder_only_routed_from_finish():
+    """SUCCESS criterion: `_placeholder` is used by exactly one handler now
+    that S4/S5 are real screens."""
+    source = MODULE_PATH.read_text(encoding="utf-8")
+    assert source.count("_placeholder(action_id, mongo)") == 1
 
 
 def test_pick_handler_reads_selection_from_interaction_values(monkeypatch):
@@ -865,7 +865,7 @@ def test_auto_all_mixed_state_shows_how_often_with_note():
     components = asyncio.run(dashboard.build_auto(mongo, "ALL"))
     texts = _texts(components)
     assert "## \U0001F514 Auto reminders" in texts
-    assert "1 clans already on. Turning on the rest." in texts
+    assert "1 clan already on. Turning on the rest." in texts
 
 
 def test_auto_all_every_active_on_shows_confirm_off_with_all_names():
@@ -897,7 +897,7 @@ def test_auto_confirm_on_all_lists_only_off_clans_with_note():
     components = asyncio.run(dashboard.build_auto_confirm_on(mongo, "ALL", 30))
     texts = _texts(components)
     assert "Clans: **Beta**" in texts
-    assert "1 clans already on. Turning on the rest." in texts
+    assert "1 clan already on. Turning on the rest." in texts
     yes = _button_by_action(components, "lazycwl_auto_on")
     assert yes.custom_id == "lazycwl_auto_on:ALL-30"
 
@@ -1041,3 +1041,569 @@ def test_component_action_names_still_pass():
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# --------------------------------------------------------------- S4 Player list
+
+
+def _player(tag, name, th, *, added_manually=False):
+    return {"tag": tag, "name": name, "town_hall": th, "discord_id": None, "added_manually": added_manually}
+
+
+def _players_doc(n, clan_tag="#ABC", clan_name="Alpha"):
+    players = [_player(f"#P{i:03d}", f"Player {i:03d}", 10 + (i % 5)) for i in range(n)]
+    return {"_id": "id-1", "clan_tag": clan_tag, "clan_name": clan_name, "status": "active", "players": players}
+
+
+def test_player_page_count_matrix():
+    assert dashboard._player_page_count(0) == 1
+    assert dashboard._player_page_count(20) == 1
+    assert dashboard._player_page_count(21) == 2
+    assert dashboard._player_page_count(45) == 3
+
+
+def test_players_sorted_by_town_hall_desc_then_name():
+    players = [
+        {"tag": "#A", "name": "Zed", "town_hall": 10},
+        {"tag": "#B", "name": "Amy", "town_hall": 12},
+        {"tag": "#C", "name": "Bob", "town_hall": 12},
+    ]
+    sorted_players = dashboard._sorted_players(players)
+    assert [p["name"] for p in sorted_players] == ["Amy", "Bob", "Zed"]
+
+
+def test_render_players_page_math_and_title():
+    doc = _players_doc(45)
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 1, away_set=set())
+    texts = _texts(components)
+    assert "## \U0001F465 Player list · Alpha" in texts
+    assert "45 players · 0 away · page 2 of 3" in texts
+
+
+def test_render_players_zero_players():
+    components = dashboard.render_players(None, "Alpha", "#ABC", 0, away_set=set())
+    texts = _texts(components)
+    assert "0 players · 0 away · page 1 of 1" in texts
+    assert "No players saved yet." in texts
+
+
+def test_render_players_prev_disabled_on_first_page():
+    doc = _players_doc(45)
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 0, away_set=set())
+    prev = _button_by_action(components, "lazycwl_players")
+    buttons = _buttons(components)
+    prev_btn = buttons[0]
+    next_btn = buttons[1]
+    assert prev_btn.label == "⬅️ Prev"
+    assert prev_btn.is_disabled is True
+    assert next_btn.label == "➡️ Next"
+    assert next_btn.is_disabled is False
+
+
+def test_render_players_next_disabled_on_last_page():
+    doc = _players_doc(45)
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 2, away_set=set())
+    buttons = _buttons(components)
+    prev_btn, next_btn = buttons[0], buttons[1]
+    assert prev_btn.is_disabled is False
+    assert next_btn.is_disabled is True
+
+
+def test_render_players_away_marks():
+    doc = _players_doc(2)
+    away_set = {"#P000"}
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 0, away_set=away_set, away_ok=True)
+    text = _texts(components)
+    joined = "\n".join(text)
+    assert "🚪 away" in joined
+    assert "🏠 here" in joined
+
+
+def test_render_players_away_failure_shows_no_marks_and_note():
+    doc = _players_doc(2)
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 0, away_set=set(), away_ok=False)
+    texts = _texts(components)
+    joined = "\n".join(texts)
+    assert "Could not check who is away." in texts
+    assert "🚪" not in joined
+    assert "🏠" not in joined
+
+
+def test_render_players_manual_add_marker():
+    doc = _players_doc(0)
+    doc["players"] = [_player("#P1", "Manual", 10, added_manually=True)]
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 0, away_set=set())
+    joined = "\n".join(_texts(components))
+    assert "➕ added by hand" in joined
+
+
+def test_build_players_away_failure_falls_back(monkeypatch):
+    async def fake_away_players(doc):
+        raise RuntimeError("coc outage")
+
+    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_players_doc(3)])
+    components = asyncio.run(dashboard.build_players(mongo, "#ABC-0"))
+    assert "Could not check who is away." in _texts(components)
+
+
+def test_build_players_bare_tag_defaults_to_page_zero(monkeypatch):
+    """S0's Player list button's custom_id has no page (DO NOT: unchanged
+    custom_id format) - `lazycwl_players:{tag}` alone must still work."""
+    async def fake_away_players(doc):
+        return []
+
+    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_players_doc(3)])
+    components = asyncio.run(dashboard.build_players(mongo, "#ABC"))
+    assert "page 1 of 1" in "\n".join(_texts(components))
+
+
+def test_render_players_component_ceiling():
+    doc = _players_doc(20)
+    components = dashboard.render_players(doc, "Alpha", "#ABC", 0, away_set=set())
+    assert _component_count(components) <= 30
+
+
+def test_render_add_result_component_ceiling():
+    result = {"ok": True, "name": "Ace", "town_hall": 15, "discord_id": 1, "away_now": False, "error": None, "reason": None}
+    components = dashboard.render_add_result(result, "#ABC")
+    assert _component_count(components) <= 30
+
+
+def test_handle_players_routes_through_build_players(monkeypatch):
+    async def fake_away_players(doc):
+        return []
+
+    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_players_doc(3)])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_players.__wrapped__(ctx=ctx, action_id="#ABC-0", mongo=mongo))
+    assert "## \U0001F465 Player list · Alpha" in _texts(components)
+
+
+# --------------------------------------------------------------- S4 Remove
+
+
+def test_remove_pick_options_are_current_page():
+    doc = _players_doc(25)
+    components = asyncio.run(dashboard.build_remove(_FakeMongo([], [doc]), "#ABC-0"))
+    menu = _select(components)
+    assert len(menu.options) == 20
+    values = {opt.value for opt in menu.options}
+    page0_tags = {p["tag"] for p in dashboard._sorted_players(doc["players"])[:20]}
+    assert values == page0_tags
+
+
+def test_remove_pick_select_custom_id_and_min_max():
+    doc = _players_doc(5)
+    components = asyncio.run(dashboard.build_remove(_FakeMongo([], [doc]), "#ABC-0"))
+    menu = _select(components)
+    assert menu.custom_id == "lazycwl_remove_pick:#ABC-0"
+    assert menu.min_values == 1
+    assert menu.max_values == 5
+
+
+def test_remove_pick_cap_at_8_and_under_100_chars_for_realistic_tags():
+    """brief: cap the selection so the yes-button's custom_id can never
+    exceed Discord's 100-char limit, checked with realistic (#2PP0V9Y8L
+    style, 9-char) tags - the literal "8" alone does not fit at that tag
+    length, so the cap must be computed, not hard-coded (see D014)."""
+    page_tags = [f"#{i}PP0V9Y8L"[:10] for i in range(20)]
+    cap = dashboard._remove_pick_cap("#2PP0V9Y8L", 0, page_tags)
+    assert cap <= 8
+    worst = sorted((t.lstrip("#") for t in page_tags), key=len, reverse=True)[:cap]
+    custom_id = f"lazycwl_remove_yes:{dashboard._encode_remove_yes('#2PP0V9Y8L', 0, ['#' + t for t in worst])}"
+    assert len(custom_id) <= 100
+
+
+def test_remove_pick_shows_cap_note_when_capped():
+    # Force long realistic tags (#2PP0V9Y8L style) so the page needs capping
+    # below the full page size to stay under the 100-char custom_id limit.
+    doc = _players_doc(20, clan_tag="#2PP0V9Y8L")
+    doc["players"] = [_player(f"#{i}PP0V9Y8L", f"Player {i}", 10) for i in range(20)]
+    components = asyncio.run(dashboard.build_remove(_FakeMongo([], [doc]), "#2PP0V9Y8L-0"))
+    menu = _select(components)
+    assert menu.max_values < 20
+    joined = "\n".join(_texts(components))
+    assert f"Pick up to {menu.max_values} at a time." in joined
+
+
+def test_remove_pick_no_active_list_shows_message_no_select_no_exception():
+    """refuter-10 MUST-FIX 1: the list expired (store.get_active -> None)
+    out from under a still-open panel - render_remove_pick must not build
+    a zero-option select (Discord 400s on that)."""
+    components = asyncio.run(dashboard.build_remove(_FakeMongo([], []), "#ABC-0"))
+    joined = "\n".join(_texts(components))
+    assert "No saved list for this clan." in joined
+    for container in components:
+        for item in container.components:
+            if isinstance(item, ActionRow):
+                for sub in item.components:
+                    assert not isinstance(sub, TextSelectMenu)
+
+
+def test_remove_pick_empty_player_list_shows_message_no_select():
+    doc = _players_doc(0)
+    components = asyncio.run(dashboard.build_remove(_FakeMongo([], [doc]), "#ABC-0"))
+    joined = "\n".join(_texts(components))
+    assert "No players to remove." in joined
+    for container in components:
+        for item in container.components:
+            if isinstance(item, ActionRow):
+                for sub in item.components:
+                    assert not isinstance(sub, TextSelectMenu)
+
+
+def test_remove_pick_stale_page_beyond_range_clamps_to_last_page_with_options():
+    """A page number from before another admin removed players down to one
+    page - the pick screen must clamp, not build an empty select."""
+    doc = _players_doc(3)
+    components = asyncio.run(dashboard.build_remove(_FakeMongo([], [doc]), "#ABC-5"))
+    menu = _select(components)
+    assert len(menu.options) == 3
+
+
+def test_remove_pick_cap_holds_end_to_end_through_confirm_custom_id():
+    """Renders the real pick screen for 20 players with 14-char tag bodies
+    (the modal's max_length is 15), reads the real menu's max_values, picks
+    that many of the page's longest tags, and renders the confirm screen
+    through build_remove_confirm - the same code path the handler uses.
+    The rendered Yes button's custom_id must stay under Discord's 100-char
+    limit (refuter-10 MUST-FIX 2). Proof this actually guards the cap:
+    hard-coding render_remove_pick's cap to REMOVE_MAX_PICK (bypassing
+    _remove_pick_cap) makes this fail while the existing flat-cap
+    assertions in test_remove_pick_cap_at_8_and_under_100_chars_for_realistic_tags
+    keep passing, because that test only checks _remove_pick_cap in
+    isolation, not the render+confirm round trip."""
+    doc = _players_doc(20, clan_tag="#ABC")
+    doc["players"] = [
+        _player("#" + (f"P{i:02d}" + "X" * 20)[:14], f"Player {i}", 10)
+        for i in range(20)
+    ]
+    mongo = _FakeMongo([], [doc])
+    components = asyncio.run(dashboard.build_remove(mongo, "#ABC-0"))
+    menu = _select(components)
+    page_players = dashboard._sorted_players(doc["players"])[:20]
+    longest = sorted(page_players, key=lambda p: len(p["tag"]), reverse=True)[:menu.max_values]
+    chosen_tags = [p["tag"] for p in longest]
+    confirm = asyncio.run(dashboard.build_remove_confirm(mongo, "#ABC-0", chosen_tags))
+    yes = _button_by_action(confirm, "lazycwl_remove_yes")
+    assert len(yes.custom_id) <= 100
+
+
+def test_remove_confirm_rows_and_back_button():
+    doc = _players_doc(3)
+    mongo = _FakeMongo([], [doc])
+    chosen_tags = [doc["players"][0]["tag"], doc["players"][1]["tag"]]
+    components = asyncio.run(dashboard.build_remove_confirm(mongo, "#ABC-0", chosen_tags))
+    texts = _texts(components)
+    assert "## \U0001F5D1️ Remove 2 players?" in texts
+    joined = "\n".join(texts)
+    assert doc["players"][0]["name"] in joined and doc["players"][0]["tag"] in joined
+    assert "They will not get reminders any more." in texts
+    back = _button_by_action(components, "lazycwl_players")
+    assert back.custom_id == "lazycwl_players:#ABC-0"
+    yes = _button_by_action(components, "lazycwl_remove_yes")
+    assert yes.custom_id.startswith("lazycwl_remove_yes:#ABC-0-")
+
+
+def test_handle_remove_pick_reads_values_and_builds_confirm(monkeypatch):
+    doc = _players_doc(3)
+    mongo = _FakeMongo([], [doc])
+    ctx = _FakeHandlerCtx(values=[doc["players"][0]["tag"]])
+    components = asyncio.run(dashboard.handle_remove_pick.__wrapped__(ctx=ctx, action_id="#ABC-0", mongo=mongo))
+    assert "## \U0001F5D1️ Remove 1 player?" in _texts(components)
+
+
+def test_remove_yes_calls_store_with_hash_prefixed_tags(monkeypatch):
+    doc = _players_doc(3)
+    mongo = _FakeMongo([], [doc])
+    calls = []
+    real_remove_players = dashboard.store.remove_players
+
+    async def spy_remove_players(mongo_arg, clan_tag, tags):
+        calls.append((clan_tag, list(tags)))
+        return await real_remove_players(mongo_arg, clan_tag, tags)
+
+    monkeypatch.setattr(dashboard.store, "remove_players", spy_remove_players)
+
+    async def fake_away_players(d):
+        return []
+
+    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
+
+    chosen = [doc["players"][0]["tag"], doc["players"][1]["tag"]]
+    action_id = dashboard._encode_remove_yes("#ABC", 0, chosen)
+    components = asyncio.run(dashboard.build_remove_yes(mongo, action_id))
+    assert calls == [("#ABC", [doc["players"][0]["tag"], doc["players"][1]["tag"]])]
+    assert all(t.startswith("#") for _, tags in calls for t in tags)
+    joined = "\n".join(_texts(components))
+    assert "\U0001F5D1️ Removed 2 players." in joined
+
+
+def test_remove_yes_mismatch_message(monkeypatch):
+    doc = _players_doc(3)
+    mongo = _FakeMongo([], [doc])
+
+    async def fake_away_players(d):
+        return []
+
+    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
+
+    action_id = dashboard._encode_remove_yes("#ABC", 0, [doc["players"][0]["tag"], "#GONE123"])
+    components = asyncio.run(dashboard.build_remove_yes(mongo, action_id))
+    joined = "\n".join(_texts(components))
+    assert "\U0001F5D1️ Removed 1 player." in joined
+    assert "1 were already gone." in joined
+
+
+def test_remove_yes_clamps_page_after_removing_last_item_on_last_page(monkeypatch):
+    doc = _players_doc(21)  # page 0: 20 players, page 1: 1 player
+    mongo = _FakeMongo([], [doc])
+
+    async def fake_away_players(d):
+        return []
+
+    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
+
+    last_player_tag = dashboard._sorted_players(doc["players"])[20]["tag"]
+    action_id = dashboard._encode_remove_yes("#ABC", 1, [last_player_tag])
+    components = asyncio.run(dashboard.build_remove_yes(mongo, action_id))
+    joined = "\n".join(_texts(components))
+    assert "page 1 of 1" in joined
+
+
+def test_remove_yes_malformed_action_id_renders_error_not_raises():
+    """refuter-10 NOTED: `_decode_remove_yes` malformed input should land
+    on the same render_error screen its S3 siblings use, not raise."""
+    mongo = _FakeMongo([], [])
+    for action_id in ("#ABC-0", "#ABC-abc-111"):
+        components = asyncio.run(dashboard.build_remove_yes(mongo, action_id))
+        assert "## ❌ Error" in _texts(components)
+
+
+def test_handle_remove_and_handle_remove_yes_registered(monkeypatch):
+    mongo = _FakeMongo([], [_players_doc(3)])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_remove.__wrapped__(ctx=ctx, action_id="#ABC-0", mongo=mongo))
+    assert "Pick the players to remove from the list." in _texts(components)
+
+
+# --------------------------------------------------------------- S5 Add player
+
+
+def test_add_modal_opens_with_expected_fields():
+    class _FakeModalOpenCtx:
+        def __init__(self):
+            self.modal_calls = []
+
+        async def respond_with_modal(self, title, custom_id, components):
+            self.modal_calls.append((title, custom_id, components))
+
+    ctx = _FakeModalOpenCtx()
+    asyncio.run(dashboard.handle_add.__wrapped__(ctx=ctx, action_id="#ABC"))
+    assert len(ctx.modal_calls) == 1
+    title, custom_id, components = ctx.modal_calls[0]
+    assert title == "Add a player"
+    assert custom_id == "lazycwl_add_submit:#ABC"
+    row = components[0]
+    field = row.components[0]
+    assert field.custom_id == "player_tag"
+    assert field.placeholder == "#ABC123"
+    assert field.min_length == 3
+    assert field.max_length == 15
+    assert field.is_required is True
+
+
+def test_add_result_ok_with_link():
+    result = {"ok": True, "name": "Ace", "town_hall": 15, "discord_id": 123, "away_now": True, "error": None, "reason": None}
+    texts = _texts(dashboard.render_add_result(result, "#ABC"))
+    joined = "\n".join(texts)
+    assert "✅ **Ace** · Town Hall 15 · 🚪 away now" in joined
+    assert "Linked to <@123>" in joined
+
+
+def test_add_result_ok_without_link():
+    result = {"ok": True, "name": "Ace", "town_hall": 15, "discord_id": None, "away_now": False, "error": None, "reason": None}
+    texts = _texts(dashboard.render_add_result(result, "#ABC"))
+    joined = "\n".join(texts)
+    assert "🏠 here" in joined
+    assert "No Discord link found." in joined
+
+
+def test_add_result_link_service_down():
+    result = {"ok": True, "name": "Ace", "town_hall": 15, "discord_id": None, "away_now": False, "error": None, "reason": "link_service_down"}
+    joined = "\n".join(_texts(dashboard.render_add_result(result, "#ABC")))
+    assert "Could not check the Discord link. Try again later." in joined
+
+
+def test_add_result_every_error_reason():
+    cases = {
+        "invalid_tag": "That does not look like a player tag. Example: #ABC123",
+        "not_found": "No player has that tag.",
+        "no_list": "No saved list for this clan.",
+    }
+    for reason, expected in cases.items():
+        result = {"ok": False, "name": None, "error": "generic", "reason": reason}
+        joined = "\n".join(_texts(dashboard.render_add_result(result, "#ABC")))
+        assert expected in joined
+
+
+def test_add_result_already_listed_uses_name():
+    result = {"ok": False, "name": "Ace", "error": "Ace is already on the list.", "reason": "already_listed"}
+    joined = "\n".join(_texts(dashboard.render_add_result(result, "#ABC")))
+    assert "**Ace** is already on the list." in joined
+
+
+def test_add_result_falls_back_to_service_error():
+    result = {"ok": False, "name": None, "error": "Something odd happened.", "reason": None}
+    joined = "\n".join(_texts(dashboard.render_add_result(result, "#ABC")))
+    assert "Something odd happened." in joined
+
+
+def test_add_result_buttons():
+    components = dashboard.render_add_result({"ok": False, "error": "x", "reason": None}, "#ABC")
+    assert _button_by_action(components, "lazycwl_add").custom_id == "lazycwl_add:#ABC"
+    assert _button_by_action(components, "lazycwl_players").custom_id == "lazycwl_players:#ABC-0"
+    assert _button_by_action(components, "lazycwl_home").custom_id == "lazycwl_home:#ABC"
+
+
+def test_build_add_result_calls_service_with_clan_and_player_tag(monkeypatch):
+    calls = []
+
+    async def fake_add_player_by_tag(clan_tag, tag):
+        calls.append((clan_tag, tag))
+        return {"ok": True, "name": "Ace", "town_hall": 10, "discord_id": None, "away_now": False, "error": None, "reason": None}
+
+    monkeypatch.setattr(dashboard.service, "add_player_by_tag", fake_add_player_by_tag)
+    components = asyncio.run(dashboard.build_add_result("#ABC", "#P1"))
+    assert calls == [("#ABC", "#P1")]
+    assert "## ➕ Add player" in _texts(components)
+
+
+def test_build_add_result_service_exception_becomes_error(monkeypatch):
+    async def fake_add_player_by_tag(clan_tag, tag):
+        raise RuntimeError("coc outage")
+
+    monkeypatch.setattr(dashboard.service, "add_player_by_tag", fake_add_player_by_tag)
+    components = asyncio.run(dashboard.build_add_result("#ABC", "#P1"))
+    assert "coc outage" in "\n".join(_texts(components))
+
+
+def test_build_add_result_empty_or_whitespace_skips_service_call(monkeypatch):
+    """refuter-10 NOTED: an empty/whitespace modal submission should never
+    hit the service - the recording fake below asserts zero calls."""
+    calls = []
+
+    async def fake_add_player_by_tag(clan_tag, tag):
+        calls.append((clan_tag, tag))
+        return {"ok": True, "name": "Ace", "town_hall": 10, "discord_id": None, "away_now": False, "error": None, "reason": None}
+
+    monkeypatch.setattr(dashboard.service, "add_player_by_tag", fake_add_player_by_tag)
+    for value in ("", "   "):
+        components = asyncio.run(dashboard.build_add_result("#ABC", value))
+        joined = "\n".join(_texts(components))
+        assert "That does not look like a player tag. Example: #ABC123" in joined
+    assert calls == []
+
+
+def test_handle_add_submit_reads_modal_field_and_edits_response(monkeypatch):
+    class _FakeModalField:
+        def __init__(self, custom_id, value):
+            self.custom_id = custom_id
+            self.value = value
+
+    class _FakeModalInteraction:
+        def __init__(self, fields):
+            self.components = [[_FakeModalField(cid, val) for cid, val in fields]]
+            self.deferred_type = None
+            self.edited = []
+
+        async def create_initial_response(self, response_type):
+            self.deferred_type = response_type
+
+        async def edit_initial_response(self, components):
+            self.edited.append(components)
+
+    class _FakeModalSubmitCtx:
+        def __init__(self, fields):
+            self.interaction = _FakeModalInteraction(fields)
+
+    async def fake_add_player_by_tag(clan_tag, tag):
+        assert clan_tag == "#ABC"
+        assert tag == "#P1"
+        return {"ok": True, "name": "Ace", "town_hall": 10, "discord_id": None, "away_now": False, "error": None, "reason": None}
+
+    monkeypatch.setattr(dashboard.service, "add_player_by_tag", fake_add_player_by_tag)
+
+    ctx = _FakeModalSubmitCtx([("player_tag", "#P1")])
+    mongo = _FakeMongo([], [])
+    asyncio.run(dashboard.handle_add_submit.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert ctx.interaction.deferred_type == hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    assert len(ctx.interaction.edited) == 1
+    assert "Ace" in "\n".join(_texts(ctx.interaction.edited[0]))
+
+
+# --------------------------------------------------------------- refuter-09 cleanup
+
+
+def test_decode_auto_on_malformed_returns_none():
+    assert dashboard._decode_auto_on("ALL") is None
+    assert dashboard._decode_auto_on("#ABC-") is None
+    assert dashboard._decode_auto_on("#ABC-abc") is None
+    assert dashboard._decode_auto_on("#ABC-999") is None  # not in AUTO_REMINDER_CHOICES
+
+
+def test_build_auto_turn_on_malformed_action_id_renders_error_screen():
+    mongo = _FakeMongo([], [])
+    components = asyncio.run(dashboard.build_auto_turn_on(mongo, "malformed"))
+    joined = "\n".join(_texts(components))
+    assert "Something went wrong. Press Home." in joined
+
+
+def test_handle_auto_every_rejects_non_choice_value():
+    mongo = _FakeMongo([], [_list_doc("#ABC", "Alpha")])
+    ctx = _FakeHandlerCtx(values=["999"])
+    components = asyncio.run(dashboard.handle_auto_every.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    joined = "\n".join(_texts(components))
+    assert "Something went wrong. Press Home." in joined
+
+
+def test_handle_auto_on_handler_level(monkeypatch):
+    calls = []
+
+    async def fake_set_reminders(clan_tag, enabled, every_minutes=None):
+        calls.append((clan_tag, enabled, every_minutes))
+        return {"ok": True, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "set_reminders", fake_set_reminders)
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_list_doc("#ABC", "Alpha")])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_auto_on.__wrapped__(ctx=ctx, action_id="#ABC-60", mongo=mongo))
+    assert calls == [("#ABC", True, 60)]
+    assert "on, every 60 minutes" in "\n".join(_texts(components))
+
+
+def test_handle_auto_off_handler_level(monkeypatch):
+    calls = []
+
+    async def fake_set_reminders(clan_tag, enabled, every_minutes=None):
+        calls.append((clan_tag, enabled, every_minutes))
+        return {"ok": True, "error": None}
+
+    monkeypatch.setattr(dashboard.service, "set_reminders", fake_set_reminders)
+    doc = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    ctx = _FakeHandlerCtx()
+    components = asyncio.run(dashboard.handle_auto_off.__wrapped__(ctx=ctx, action_id="#ABC", mongo=mongo))
+    assert calls == [("#ABC", False, None)]
+    assert "off" in "\n".join(_texts(components))
+
+
+def test_render_auto_result_uses_result_name_helper():
+    """refuter-09 NOTED 3: render_auto_result must not re-inline the
+    clan_name-or-clan_tag fallback that _result_name already does."""
+    results = [{"ok": True, "clan_name": None, "clan_tag": "#XYZ", "error": None}]
+    joined = "\n".join(_texts(dashboard.render_auto_result(results, "#XYZ", turning_on=False)))
+    assert "**#XYZ**" in joined
