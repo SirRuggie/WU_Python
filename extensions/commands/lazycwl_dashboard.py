@@ -38,12 +38,15 @@ from hikari.impl import (
     SelectOptionBuilder as SelectOption,
     InteractiveButtonBuilder as Button,
     ModalActionRowBuilder as ModalActionRow,
+    SectionComponentBuilder as Section,
+    ThumbnailComponentBuilder as Thumbnail,
 )
 
 from extensions.components import register_action
 from extensions.commands.fwa import lazy_cwl_service as service
 from utils.mongo import MongoClient
-from utils.constants import BLUE_ACCENT
+from utils.constants import BLUE_ACCENT, GREEN_ACCENT, GOLD_ACCENT, RED_ACCENT
+from utils.media_urls import THUMBNAIL, optimized
 from utils import lazy_cwl_store as store
 
 loader = lightbulb.Loader()
@@ -92,16 +95,89 @@ def _format_expires(expires_at) -> str:
     return f"{expires_at.day} {expires_at.strftime('%B')}"
 
 
-def _full_card(name: str, doc: Optional[dict], away_counts: dict, orphan: bool = False) -> list:
+def _clan_badge_urls(clans: list) -> dict:
+    """`{clan_tag: url|None}` from the clan docs' own `logo` field (D026:
+    this dashboard is independent of every other family screen - reverses
+    D025's mechanism, the badge feature itself is unchanged). Pure, no
+    I/O, no cache - `clans` is the list `_fwa_clans` already loaded for
+    this render, one query, same as the clan list itself. Orphan lists
+    have no clan doc here, so they get no badge (their tag is simply
+    absent from the returned dict).
+    Per-clan try/except around utils.media_urls.optimized: a raising or
+    missing/non-http logo yields None for that tag, never a crash -
+    render_home stays pure and only ever sees this dict."""
+    urls: dict = {}
+    for clan in clans:
+        tag = clan.get("tag")
+        if not tag:
+            continue
+        logo = clan.get("logo")
+        if not logo or not isinstance(logo, str) or not logo.startswith("http"):
+            urls[tag] = None
+            continue
+        try:
+            urls[tag] = optimized(logo, width=THUMBNAIL)
+        except Exception:
+            _log.warning("lazycwl_dashboard._clan_badge_urls: badge url failed tag=%s", tag, exc_info=True)
+            urls[tag] = None
+    return urls
+
+
+def _clan_badge_url(clan_tag: Optional[str], badge_urls: dict) -> Optional[str]:
+    """`clan_tag`'s already-resolved badge URL out of `badge_urls` (built by
+    the async `_clan_badge_urls` above) - a pure dict lookup, so `render_home`
+    and everything under it stays pure and can never raise on a badge (D023
+    item 3, MUST-FIX 3)."""
+    if not clan_tag or not badge_urls:
+        return None
+    if clan_tag in badge_urls:
+        return badge_urls[clan_tag]
+    ntag = store._normalize_tag(clan_tag)
+    return next(
+        (value for key, value in badge_urls.items() if store._normalize_tag(key) == ntag),
+        None,
+    )
+
+
+def _accent_for(lists: list, away_counts: dict, selected_tag: Optional[str]) -> hikari.Color:
+    """Home's accent colour (D023 item 2): GREEN when every list actually
+    shown has 0 away (or nothing is shown), GOLD when any shown list has
+    someone away or an unknown "?" away count. `lists` is every active
+    list; only the one(s) D010's layout actually shows for `selected_tag`
+    are considered - a single selected clan, or every list for ALL/no
+    selection."""
+    if selected_tag is None or selected_tag == "ALL":
+        shown = lists
+    else:
+        ntag = store._normalize_tag(selected_tag)
+        shown = [doc for doc in lists if store._normalize_tag(doc["clan_tag"]) == ntag]
+
+    if not shown:
+        return GREEN_ACCENT
+    for doc in shown:
+        away = away_counts.get(doc["clan_tag"])
+        if away is None or away > 0:
+            return GOLD_ACCENT
+    return GREEN_ACCENT
+
+
+def _full_card(
+    name: str, doc: Optional[dict], away_counts: dict, orphan: bool = False, clan_tag: Optional[str] = None,
+    badge_urls: Optional[dict] = None,
+) -> list:
     """One clan's full card - up to 5 lines. Only used when exactly one clan
     is selected (D010); the ALL/nothing-selected case renders the compact
-    table instead."""
+    table instead. D023 item 3: wrapped in a Section with a Thumbnail of the
+    clan badge when one is known, else the plain Text lines (unchanged).
+    `badge_urls` is the pre-resolved dict `build_home` computed via
+    `_clan_badge_urls` - this function does no I/O and never raises on a
+    badge (MUST-FIX 1/3)."""
     suffix = " (not in clan table)" if orphan else ""
     lines = [Text(content=f"### {name}{suffix}")]
 
     if doc is None:
         lines.append(Text(content="No list saved yet."))
-        return lines
+        return _with_badge(lines, clan_tag, badge_urls or {})
 
     players = doc.get("players", [])
     away = away_counts.get(doc["clan_tag"])
@@ -114,7 +190,7 @@ def _full_card(name: str, doc: Optional[dict], away_counts: dict, orphan: bool =
     else:
         auto_text = "\U0001F514 Auto reminders: Off"
 
-    lines.append(Text(content=f"\U0001F465 {len(players)} players saved"))
+    lines.append(Text(content=f"\U0001F465 {len(players)} {_noun(len(players), 'player')} saved"))
     lines.append(Text(content=f"\U0001F6AA {away_text} away now"))
     lines.append(Text(content=auto_text))
 
@@ -122,7 +198,17 @@ def _full_card(name: str, doc: Optional[dict], away_counts: dict, orphan: bool =
     if expires_at is not None:
         lines.append(Text(content=f"⏰ Expires {_format_expires(expires_at)}"))
 
-    return lines
+    return _with_badge(lines, clan_tag, badge_urls or {})
+
+
+def _with_badge(lines: list, clan_tag: Optional[str], badge_urls: dict) -> list:
+    """`lines` (a _full_card's Text components) wrapped in a Section with a
+    Thumbnail when `clan_tag`'s badge is known, else `lines` unchanged."""
+    badge = _clan_badge_url(clan_tag, badge_urls)
+    if not badge:
+        return lines
+    joined = "\n".join(text.content for text in lines)
+    return [Section(accessory=Thumbnail(media=badge), components=[Text(content=joined)])]
 
 
 def _compact_row(name: str, doc: Optional[dict], away_counts: dict, orphan: bool = False) -> str:
@@ -242,8 +328,11 @@ def render_home(
     now,
     away_counts: Optional[dict] = None,
     note: Optional[str] = None,
+    badge_urls: Optional[dict] = None,
 ) -> list:
     """Pure S0 renderer. No I/O; every caller passes in what it needs.
+    `badge_urls` is a pre-resolved `{clan_tag: url|None}` dict (D026) -
+    this function only ever reads it, never does a lookup that could raise.
 
     D010: with ONE clan selected, render that clan's full card. With ALL or
     nothing selected, render ONE compact-table Text row per clan/orphan-list,
@@ -251,20 +340,33 @@ def render_home(
     the UNION of `clans` (mongo.clans) and active lists (a list whose tag is
     not in `clans` still shows, marked orphan). Tags are normalised
     (# + upper) before any comparison - see D006/D010.
+
+    D023 item 1: no selection renders identically to "ALL" (compact table,
+    ALL's disabled-button rules, the select's "All clans" option
+    preselected) - `selected_tag=None` is never distinguishable from "ALL"
+    in the returned components, and no custom_id built here ever encodes
+    "NONE" any more.
     """
     away_counts = away_counts or {}
+    # A naive `now` silently read as local time when formatted as a Unix
+    # timestamp below (refuter-17 NOTED 3); render_home is public and pure,
+    # so it can be called directly with one - treat it as UTC, same as the
+    # store does for every timestamp it touches.
+    now = store._utc(now)
+    selected_tag = "ALL" if selected_tag is None else selected_tag
     lists_by_tag = {store._normalize_tag(doc["clan_tag"]): doc for doc in lists}
     clan_tags = {store._normalize_tag(clan.get("tag", "")) for clan in clans if clan.get("tag")}
 
     body = [
         Text(content="## Lazy CWL"),
         Text(content="Pick a clan, then press a button."),
+        Text(content=f"Updated <t:{int(now.timestamp())}:R>"),
     ]
     if note:
         body.append(Text(content=note))
     body.append(Separator())
 
-    options = [SelectOption(label="\U0001F30D All clans", value="ALL")]
+    options = [SelectOption(label="\U0001F30D All clans", value="ALL", is_default=selected_tag == "ALL")]
     # A clan doc with no tag can't be selected (no value to route on) - skip
     # it entirely rather than emit a null select value (builder-08 fix).
     taggeable_clans = [clan for clan in clans if clan.get("tag")]
@@ -303,7 +405,7 @@ def render_home(
     if len(taggeable_clans) > MAX_CLAN_OPTIONS:
         body.append(Text(content=f"Showing the first {MAX_CLAN_OPTIONS} clans."))
 
-    if selected_tag is None or selected_tag == "ALL":
+    if selected_tag == "ALL":
         rows = _rows_union(clans, lists_by_tag)
         if rows:
             body.append(Separator())
@@ -313,14 +415,17 @@ def render_home(
         clan = next((c for c in clans if store._normalize_tag(c.get("tag", "")) == normalized_selected), None)
         doc = lists_by_tag.get(normalized_selected)
         if clan is not None:
-            name, orphan = clan.get("name") or "Unknown clan", False
+            name, orphan, tag_for_badge = clan.get("name") or "Unknown clan", False, clan.get("tag")
         elif doc is not None:
-            name, orphan = doc.get("clan_name") or "Unknown clan", True
+            name, orphan, tag_for_badge = doc.get("clan_name") or "Unknown clan", True, doc.get("clan_tag")
         else:
             name = None
+            tag_for_badge = None
         if name is not None:
             body.append(Separator())
-            body.extend(_full_card(name, doc, away_counts, orphan=orphan))
+            body.extend(_full_card(
+                name, doc, away_counts, orphan=orphan, clan_tag=tag_for_badge, badge_urls=badge_urls,
+            ))
 
     body.append(Separator())
 
@@ -339,15 +444,19 @@ def render_home(
         _button("\U0001F504 Refresh", "\U0001F504", "lazycwl_home", selected_tag, False),
     ]))
 
-    return [Container(accent_color=BLUE_ACCENT, components=body)]
+    accent = _accent_for(lists, away_counts, selected_tag)
+    return [Container(accent_color=accent, components=body)]
 
 
 async def build_home(mongo: MongoClient, selected_tag: Optional[str], note: Optional[str] = None) -> list:
-    """Load clans, active lists, and away counts, then render S0.
+    """Load clans, active lists, away counts, and badge URLs, then render S0.
 
-    Store/service only - never touches the saved-list collection directly.
-    One clan's away_players failure shows "? away now" on its own card
-    instead of failing the whole panel.
+    Store/service only for lists/away data - never touches the saved-list
+    collection directly. One clan's away_players failure shows "? away now"
+    on its own card instead of failing the whole panel. Badge URLs (D026)
+    come from the same `clans` docs `_fwa_clans` already loaded - no second
+    query, no dependency on any other family screen; a missing or bad
+    logo degrades to plain Text cards, never a crash.
     """
     clans = await _fwa_clans(mongo)
 
@@ -364,14 +473,18 @@ async def build_home(mongo: MongoClient, selected_tag: Optional[str], note: Opti
                 doc.get("clan_tag"), exc_info=True,
             )
 
+    badge_urls = _clan_badge_urls(clans)
+
     now = datetime.now(timezone.utc)
-    return render_home(lists, clans, selected_tag, now, away_counts, note=note)
+    return render_home(lists, clans, selected_tag, now, away_counts, note=note, badge_urls=badge_urls)
 
 
 async def _fwa_clans(mongo: MongoClient) -> list:
     """Every FWA clan with a tag, sorted by name - the query, untagged
     filter, and sort duplicated at build_home/build_save_result/
-    build_remind_result before this fix (refuter-08 NOTED 3)."""
+    build_remind_result before this fix (refuter-08 NOTED 3). No
+    projection is passed, so every field including `logo` (D026's badge
+    source, see `_clan_badge_urls`) comes back on every doc."""
     clans = await mongo.clans.find({"type": _FWA_CLAN_TYPE}).to_list(length=None)
     clans = [clan for clan in clans if clan.get("tag")]
     clans.sort(key=lambda clan: clan.get("name") or "")
@@ -384,6 +497,110 @@ def _result_name(result: dict) -> str:
     before rendering, since save_list's "not found" path and every
     remind_now path omit it - D008's key sets don't include it)."""
     return result.get("clan_name") or result.get("clan_tag") or "?"
+
+
+def _summary_line(kind: str, results: list, selected_tag: Optional[str], **extra) -> str:
+    """One bold sentence above a result screen's rows (D023 item 5): Save,
+    Remind, Auto on/off, Finish, Remove-done, and Add. Every literal lives
+    in this one function so the banned-word scan (which walks every
+    `*_row`/`*_line` helper) covers all six screens' summaries in one
+    place, instead of six separate f-strings scattered across their
+    renderers."""
+    if kind == "save":
+        ok = sum(1 for r in results if r.get("ok") and not r.get("already_saved"))
+        already = sum(1 for r in results if r.get("already_saved"))
+        failed = sum(1 for r in results if not r.get("ok") and not r.get("already_saved"))
+        if selected_tag == "ALL":
+            parts = []
+            if ok:
+                parts.append(f"{ok} {_noun(ok, 'clan')} saved")
+            if already:
+                parts.append(f"{already} already saved")
+            if failed:
+                parts.append(f"{failed} failed")
+            text = ", ".join(parts) if parts else "Nothing to save"
+            return f"**{text}.**"
+        result = results[0] if results else {}
+        name = _result_name(result)
+        if result.get("already_saved"):
+            return f"**{name} already saved.**"
+        if result.get("ok"):
+            return f"**{name} saved.**"
+        return f"**Could not save {name}.**"
+
+    if kind == "remind":
+        if selected_tag == "ALL":
+            sent = sum(1 for r in results if r.get("sent"))
+            reminded = sum(r.get("away_count", 0) for r in results if r.get("sent"))
+            # Count real outcomes like Save/Finish/Auto do (refuter-18
+            # MUST-FIX): a silent "Everyone is home" headline over failed
+            # remind_now calls hides the failure from the admin.
+            failed = sum(1 for r in results if r.get("error"))
+            home = sum(1 for r in results if not r.get("sent") and not r.get("error"))
+            if results and failed == len(results):
+                return "**Could not remind any clan.**"
+            if failed:
+                return (
+                    f"**{sent} {_noun(sent, 'clan')} reminded, {home} everyone home, "
+                    f"{failed} {_noun(failed, 'clan')} failed.**"
+                )
+            if sent:
+                return (
+                    f"**{reminded} {_noun(reminded, 'player')} reminded across "
+                    f"{sent} {_noun(sent, 'clan')}.**"
+                )
+            return "**Everyone is home in every clan.**"
+        result = results[0] if results else {}
+        name = _result_name(result)
+        if result.get("error"):
+            return f"**Could not remind {name}.**"
+        if result.get("sent"):
+            away_count = result.get("away_count", 0)
+            return f"**{away_count} {_noun(away_count, 'player')} reminded in {name}.**"
+        return f"**Everyone is home in {name}.**"
+
+    if kind == "auto":
+        turning_on = extra.get("turning_on", True)
+        label = "on" if turning_on else "off"
+        done = sum(1 for r in results if r.get("ok"))
+        if selected_tag == "ALL":
+            if results and done == 0:
+                return f"**Could not turn {label} auto reminders for any clan.**"
+            return f"**Auto reminders {label} for {done} {_noun(done, 'clan')}.**"
+        result = results[0] if results else {}
+        if result.get("ok"):
+            return f"**Auto reminders {label} for {_result_name(result)}.**"
+        return f"**Could not update auto reminders for {_result_name(result)}.**"
+
+    if kind == "finish":
+        ok = sum(1 for r in results if r.get("ok"))
+        if selected_tag == "ALL":
+            if results and ok == 0:
+                return "**Could not finish any clan.**"
+            return f"**{ok} {_noun(ok, 'clan')} finished.**"
+        result = results[0] if results else {}
+        if result.get("ok"):
+            return f"**{_result_name(result)} finished.**"
+        return f"**Could not finish {_result_name(result)}.**"
+
+    if kind == "remove":
+        removed = extra["removed"]
+        requested = extra["requested"]
+        parts = [f"{removed} {_noun(removed, 'player')} removed"]
+        if removed != requested:
+            parts.append(f"{requested - removed} already gone")
+        return f"**{', '.join(parts)}.**"
+
+    if kind == "add":
+        result = results[0] if results else {}
+        display = result.get("name") or result.get("player_tag") or "the player"
+        if result.get("ok"):
+            return f"**Added {display}.**"
+        if result.get("reason") == "already_listed":
+            return f"**{display} is already on the list.**"
+        return "**Could not add player.**"
+
+    raise ValueError(f"unknown summary kind: {kind!r}")
 
 
 # "Clans: **" + "**" wrapping the names in the confirm screens below.
@@ -467,15 +684,19 @@ def render_save_result(results: list, selected_tag: Optional[str]) -> list:
             rows.append(f"ℹ️ **{name}** · already saved on {when_text}")
         elif result.get("ok"):
             ok += 1
+            player_count = result.get("player_count", 0)
             rows.append(
-                f"✅ **{name}** · {result.get('player_count', 0)} players saved"
+                f"✅ **{name}** · {player_count} {_noun(player_count, 'player')} saved"
                 f" · {result.get('linked_count', 0)} linked to Discord"
             )
         else:
             failed += 1
             rows.append(f"❌ **{name}** · {result.get('error') or 'Something went wrong.'}")
 
-    body = [Text(content="## \U0001F4BE Save list")]
+    body = [
+        Text(content="## \U0001F4BE Save list"),
+        Text(content=_summary_line("save", results, selected_tag)),
+    ]
     body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
     if selected_tag == "ALL":
         body.append(Text(content=f"{ok} saved · {already} already saved · {failed} failed"))
@@ -531,7 +752,10 @@ def render_remind_result(results: list, selected_tag: Optional[str]) -> list:
             home += 1
             rows.append(f"\U0001F3E0 **{name}** · everyone is here")
 
-    body = [Text(content="## \U0001F4E3 Remind now")]
+    body = [
+        Text(content="## \U0001F4E3 Remind now"),
+        Text(content=_summary_line("remind", results, selected_tag)),
+    ]
     body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
     if selected_tag == "ALL":
         body.append(Text(content=f"{sent} sent · {home} everyone home · {failed} failed"))
@@ -604,14 +828,16 @@ def _already_on_note(on_count: int) -> Optional[str]:
     (refuter-09 NOTED 4: "1 clans already on." was always plural)."""
     if not on_count:
         return None
-    noun = "clan" if on_count == 1 else "clans"
-    return f"{on_count} {noun} already on. Turning on the rest."
+    return f"{on_count} {_noun(on_count, 'clan')} already on. Turning on the rest."
 
 
-def _player_noun(n: int) -> str:
-    """"player" for 1, "players" otherwise (refuter-10 NOTED: singular
-    always read plural, the same class of bug _already_on_note fixed)."""
-    return "player" if n == 1 else "players"
+def _noun(n: int, word: str) -> str:
+    """`word` for 1, `word` + "s" otherwise - the one pluraliser used by
+    every summary line (refuter-17 MUST-FIX 2: generalises the old
+    `_player_noun`, which Save/Remind/Auto/Finish's own inline
+    pluralisation disagreed with, the same class of bug _already_on_note
+    fixed for the clan count)."""
+    return word if n == 1 else f"{word}s"
 
 
 def render_error(message: str) -> list:
@@ -624,7 +850,7 @@ def render_error(message: str) -> list:
         ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id="lazycwl_home:NONE",
+                custom_id="lazycwl_home:ALL",
                 label="🏠 Home",
                 emoji="🏠",
             )
@@ -707,7 +933,7 @@ def render_auto_confirm_off(selected_tag: Optional[str], names: str) -> list:
             emoji="⬅️",
         ),
     ]))
-    return [Container(accent_color=BLUE_ACCENT, components=body)]
+    return [Container(accent_color=RED_ACCENT, components=body)]
 
 
 def render_auto_result(
@@ -732,7 +958,10 @@ def render_auto_result(
             rows.append(f"❌ **{name}** · {result.get('error') or 'Something went wrong.'}")
 
     title = "## \U0001F514 Auto reminders" if turning_on else "## \U0001F515 Auto reminders"
-    body = [Text(content=title)]
+    body = [
+        Text(content=title),
+        Text(content=_summary_line("auto", results, selected_tag, turning_on=turning_on)),
+    ]
     body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
     if selected_tag == "ALL":
         label = "on" if turning_on else "off"
@@ -1116,7 +1345,7 @@ def render_remove_confirm(clan_name: str, selected_tag: str, page: int, chosen: 
     """`chosen` is [{tag, name}, ...] - the players selected on the pick
     screen, resolved to their names for display."""
     body = [
-        Text(content=f"## \U0001F5D1️ Remove {len(chosen)} {_player_noun(len(chosen))}?"),
+        Text(content=f"## \U0001F5D1️ Remove {len(chosen)} {_noun(len(chosen), 'player')}?"),
     ]
     rows = [f"**{player['name']}** · {player['tag']}" for player in chosen]
     body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
@@ -1138,7 +1367,7 @@ def render_remove_confirm(clan_name: str, selected_tag: str, page: int, chosen: 
             emoji="⬅️",
         ),
     ]))
-    return [Container(accent_color=BLUE_ACCENT, components=body)]
+    return [Container(accent_color=RED_ACCENT, components=body)]
 
 
 async def build_remove_confirm(mongo: MongoClient, action_id: str, chosen_tags: list) -> list:
@@ -1168,11 +1397,14 @@ async def build_remove_yes(mongo: MongoClient, action_id: str) -> list:
     # No local sort/page-count/clamp here (refuter-11 NOTED, proven dead:
     # build_players_with_note -> render_players -> _players_page clamps
     # the page against the *current* player list on its own).
-    note = f"\U0001F5D1️ Removed {removed} {_player_noun(removed)}."
+    note = f"\U0001F5D1️ Removed {removed} {_noun(removed, 'player')}."
     if removed != k:
         note += f" {k - removed} were already gone."
 
-    return await build_players_with_note(mongo, tag, page, note)
+    # D023 item 5: one bold summary line above the existing note (kept
+    # unchanged, unlike-worded strings stay guarded by the tests above).
+    summary = _summary_line("remove", [], tag, removed=removed, requested=k)
+    return await build_players_with_note(mongo, tag, page, f"{summary}\n{note}")
 
 
 async def build_players_with_note(mongo: MongoClient, tag: str, page: int, note: str) -> list:
@@ -1217,7 +1449,10 @@ _ADD_PLAYER_REASON_MESSAGES = {
 
 
 def render_add_result(result: dict, selected_tag: str) -> list:
-    body = [Text(content="## ➕ Add player")]
+    body = [
+        Text(content="## ➕ Add player"),
+        Text(content=_summary_line("add", [result], selected_tag)),
+    ]
 
     if result.get("ok"):
         away_text = "🚪 away now" if result.get("away_now") else "🏠 here"
@@ -1233,7 +1468,8 @@ def render_add_result(result: dict, selected_tag: str) -> list:
     else:
         reason = result.get("reason")
         if reason == "already_listed":
-            message = f"**{result.get('name')}** is already on the list."
+            display = result.get("name") or result.get("player_tag") or "That player"
+            message = f"**{display}** is already on the list."
         else:
             message = _ADD_PLAYER_REASON_MESSAGES.get(reason) or result.get("error") or "Something went wrong."
         body.append(Text(content=message))
@@ -1275,6 +1511,9 @@ async def build_add_result(clan_tag: str, player_tag: str) -> list:
             clan_tag, exc_info=True,
         )
         result = {"ok": False, "error": str(exc) or "Something went wrong.", "reason": None}
+    # A raw tag to fall back on when the service returns no player name
+    # (refuter-17 NOTED 4: "Added None." otherwise).
+    result.setdefault("player_tag", player_tag)
     return render_add_result(result, clan_tag)
 
 
@@ -1309,7 +1548,7 @@ def render_finish_confirm(selected_tag: str, name_or_names: str) -> list:
             emoji="⬅️",
         ),
     ]))
-    return [Container(accent_color=BLUE_ACCENT, components=body)]
+    return [Container(accent_color=RED_ACCENT, components=body)]
 
 
 def render_no_finish_lists() -> list:
@@ -1377,7 +1616,10 @@ def render_finish_result(results: list, selected_tag: str) -> list:
             failed += 1
             rows.append(f"❌ **{name}** · {result.get('error') or 'Something went wrong.'}")
 
-    body = [Text(content="## \U0001F3C1 Finished")]
+    body = [
+        Text(content="## \U0001F3C1 Finished"),
+        Text(content=_summary_line("finish", results, selected_tag)),
+    ]
     body.extend(Text(content=chunk) for chunk in _chunk_rows(rows))
     if selected_tag == "ALL":
         body.append(Text(content=f"{ok} finished · {failed} failed"))

@@ -21,14 +21,14 @@ thing actually is, not the reasoning that got it there.
 
 ## Entry and the admin gate — TWO layers, not one
 
-`/lazycwl` (`lazycwl_dashboard.py:1414` `class LazyCwl`) is a top-level
+`/lazycwl` (`lazycwl_dashboard.py:1656` `class LazyCwl`) is a top-level
 Administrator-only slash command: `default_member_permissions=
 hikari.Permissions.ADMINISTRATOR` hides it from Discord's command picker for
-non-admins, and `LazyCwl.invoke` (`:1427`) additionally checks
+non-admins, and `LazyCwl.invoke` (`:1664`) additionally checks
 `is_admin(ctx.member)` at runtime — the same double layer `/lazyprep` uses,
 because the Discord-side permission alone is a UI hint, not enforcement.
 
-`is_admin(member)` (`lazycwl_dashboard.py:69-74`) is the single predicate:
+`is_admin(member)` (`lazycwl_dashboard.py:72-77`) is the single predicate:
 `bool(member and member.permissions & hikari.Permissions.ADMINISTRATOR)`.
 Both `/lazycwl` and every `/fwa lazycwl-*` redirect alias call it —
 `extensions/commands/fwa/lazy_cwl.py:_redirect` imports it lazily (see
@@ -83,19 +83,19 @@ routing rule (`extensions/commands/todo.py`'s rule, restated at
 
 | Screen | Action name(s) | action_id encoding |
 |---|---|---|
-| S0 Home | `lazycwl_pick` (select), `lazycwl_home` (Refresh/Back), `lazycwl_save`, `lazycwl_remind`, `lazycwl_auto`, `lazycwl_players`, `lazycwl_add`, `lazycwl_finish` | `{tag}` — `NONE` (nothing picked), `ALL`, or the clan's own `#TAG` (`_encode_tag`/`_decode_tag`, `:77-89`) |
+| S0 Home | `lazycwl_pick` (select), `lazycwl_home` (Refresh/Back), `lazycwl_save`, `lazycwl_remind`, `lazycwl_auto`, `lazycwl_players`, `lazycwl_add`, `lazycwl_finish` | `{tag}` — `ALL`, or the clan's own `#TAG` (`_encode_tag`/`_decode_tag`, `:80-91`). **D023 item 1:** `render_home`'s `selected_tag=None` (nothing picked yet) is normalised to `"ALL"` at the top of the function, so home always opens with the compact table, ALL's disabled-button rules, and the select's "All clans" option preselected (`is_default=True`) — `"NONE"` is never encoded into a button's or select's `custom_id` any more (it survives only as `_encode_tag`/`_decode_tag`'s legacy decode branch and unused handler-parameter defaults) |
 | S1 Save list result | `lazycwl_save` | same `{tag\|ALL}` |
 | S2 Remind now result | `lazycwl_remind` | same `{tag\|ALL}` |
-| S3 Auto reminders | `lazycwl_auto`, `lazycwl_auto_every` (select), `lazycwl_auto_on`, `lazycwl_auto_off` | `lazycwl_auto`/`lazycwl_auto_every`/`lazycwl_auto_off`: `{tag\|ALL}`. `lazycwl_auto_on`: `"{tag}-{m}"` via `_encode_auto_on`/`_decode_auto_on` (`:573-590`), decoded with `str.rpartition("-")` — safe because a normalized clan tag never contains `-` |
-| S4 Player list / Remove | `lazycwl_players`, `lazycwl_remove`, `lazycwl_remove_pick` (select), `lazycwl_remove_yes` | `lazycwl_players`/`lazycwl_remove`/`lazycwl_remove_pick`: `"{tag}-{page}"` (0-indexed) via `_encode_players_page`/`_decode_players_page` (`:847-857`). `lazycwl_remove_yes`: `"{tag}-{page}-{t1}.{t2}..."` via `_encode_remove_yes`/`_decode_remove_yes` (`:1104-1112`), each `ti` the chosen player's tag with `#` stripped |
+| S3 Auto reminders | `lazycwl_auto`, `lazycwl_auto_every` (select), `lazycwl_auto_on`, `lazycwl_auto_off` | `lazycwl_auto`/`lazycwl_auto_every`/`lazycwl_auto_off`: `{tag\|ALL}`. `lazycwl_auto_on`: `"{tag}-{m}"` via `_encode_auto_on`/`_decode_auto_on` (`:797-816`), decoded with `str.rpartition("-")` — safe because a normalized clan tag never contains `-` |
+| S4 Player list / Remove | `lazycwl_players`, `lazycwl_remove`, `lazycwl_remove_pick` (select), `lazycwl_remove_yes` | `lazycwl_players`/`lazycwl_remove`/`lazycwl_remove_pick`: `"{tag}-{page}"` (0-indexed) via `_encode_players_page`/`_decode_players_page` (`:1076-1091`). `lazycwl_remove_yes`: `"{tag}-{page}-{t1}.{t2}..."` via `_encode_remove_yes`/`_decode_remove_yes` (`:1333-1341`), each `ti` the chosen player's tag with `#` stripped |
 | S5 Add player | `lazycwl_add` (opens a modal), `lazycwl_add_submit` (modal submit) | `lazycwl_add`: `{tag}`. Modal custom_id is `"lazycwl_add_submit:{tag}"` |
 | S6 Finish | `lazycwl_finish`, `lazycwl_finish_yes` | `{tag\|ALL}` |
 
 **Per-page remove cap and the 100-char reason.** `REMOVE_MAX_PICK = 8`
-(`:844`) is a ceiling, not the actual cap: `_remove_pick_cap` (`:986-1006`)
+(`:1073`) is a ceiling, not the actual cap: `_remove_pick_cap` (`:1215-1234`)
 computes, per page, the largest N ≤ 8 such that the N *longest* tags on that
 page still keep `lazycwl_remove_yes:{tag}-{page}-{t1.t2...}` under Discord's
-100-char custom_id limit (`REMOVE_CUSTOM_ID_BUDGET = 100`, `:843`) — a fixed
+100-char custom_id limit (`REMOVE_CUSTOM_ID_BUDGET = 100`, `:1072`) — a fixed
 8 measured 111 chars for a 10-char clan tag and 8 realistic 9-char player
 tags, already over budget. The computed N is what `render_remove_pick` uses
 as the select's `max_values`; at realistic FWA tag lengths it lands at 6, not
@@ -114,10 +114,38 @@ a saved list whose `clan_tag` no longer matches any `mongo.clans` doc) as
 **one row each inside a single `Text` component** (`_build_compact_text`,
 `_rows_union`), so the compact view's component count never grows with clan
 count — only its character count does, capped under
-`COMPACT_TEXT_BUDGET = 3800` chars (`:66`) with a "… and {k} more" truncation
+`COMPACT_TEXT_BUDGET = 3800` chars (`:69`) with a "… and {k} more" truncation
 when it would not fit. Measured with real hikari builders: one-clan-selected
 tops out at 24 components at 40 clans; ALL/nothing tops out at 20. Both stay
 comfortably under 40.
+
+**D023 re-measurement (B9, real hikari builders, 24 clans / 20 players
+throughout unless noted):** home ALL selected 20; home one clan selected 24;
+home one clan selected **with a known badge** 22 (the Section+Thumbnail
+wrapper replaces up to 5 loose `Text` nodes with 3: `Section`, `Thumbnail`,
+one `Text`, so a badge card is never *more* expensive than the plain one);
+S1/S2/S3/S6 result screens (ALL, 24 clans) 8 each; S4 player list (20
+players) 11; S5 add-player result 10. All comfortably under both the
+30-component test margin and Discord's real 40-component ceiling; see D024.
+
+## Colour and badge rules (D023)
+
+Home's `Container.accent_color` is state-driven (`_accent_for`): **GREEN**
+when every list D010's layout actually shows (the one selected clan, or
+every active list for ALL/no selection) has 0 players away, or nothing is
+shown at all; **GOLD** when any shown list has someone away, or an unknown
+`"?"` away count (an `away_players` failure never silently reads as "all
+home"). Every other screen stays **BLUE**, except the three destructive
+confirm screens — Finish (`render_finish_confirm`), Remove
+(`render_remove_confirm`), and Auto-off (`render_auto_confirm_off`) — which
+are **RED**; turning auto reminders *on* is not destructive and stays BLUE.
+
+The single selected clan's full card wraps its `### {name}` + status lines
+in a `Section` with a `Thumbnail` accessory when the clan's uploaded logo is
+known (`_clan_badge_url`, reading the `logo` field off the same `mongo.clans`
+docs `_fwa_clans` already loaded for this render - D026, no dependency on any
+other family screen); when unknown, the card renders as the same plain
+`Text` lines as before.
 
 ## Data model
 
@@ -270,22 +298,22 @@ rather than missed:
   real_build_home`); the equivalent branch in `_redirect`'s `is_admin`
   lazy-import is still only covered indirectly through that same test, not
   by a dedicated mutation-proof case (refuter-15 NOTED 1, partially closed).
-- `lazycwl_dashboard.py:282-288` — orphan select options (a saved list whose
+- `lazycwl_dashboard.py:384-395` — orphan select options (a saved list whose
   clan has no matching `mongo.clans` doc) are appended only into whatever
   select slots remain after up to 24 real clans; at 24+ real FWA clans an
   orphan list has no select option and therefore no reachable Finish button,
   though it still appears as a compact-table row (refuter-07).
-- `lazycwl_dashboard.py:199-211` — `_disabled_states` for `ALL` only
+- `lazycwl_dashboard.py:285-310` — `_disabled_states` for `ALL` only
   iterates `clans`, so an orphan-only list does not count toward
   `any_has_list`; Remind/Auto/Finish read as disabled under `ALL` even
   though the orphan list itself is still reachable by selecting it directly
   (refuter-07).
-- `lazycwl_dashboard.py:393-417`, `:420-442`, `:152-177` — three independent
+- `lazycwl_dashboard.py:610-633`, `:637-658`, `:238-263` — three independent
   "join with `, `/`\n`, truncate with `… and {k} more`" implementations
   (`_cap_names`, `_chunk_rows`, `_build_compact_text`) exist instead of one
   shared helper; all three are test-guarded today, but a fourth copy or a
   divergent fix to one is a real drift risk (refuter-13).
-- `lazycwl_dashboard.py:393-417` `_cap_names` always keeps the *first* name
+- `lazycwl_dashboard.py:610-633` `_cap_names` always keeps the *first* name
   in a list regardless of budget; a single clan name longer than ~3789
   chars would still render an over-budget line. Unreachable — CoC clan
   names are game-capped at 15 characters (refuter-13).

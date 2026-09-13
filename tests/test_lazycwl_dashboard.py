@@ -59,11 +59,29 @@ def _button_by_action(components, action):
 
 
 def _texts(components):
+    """Every rendered line of text, top-level or wrapped in a Section
+    (refuter-17 NOTED 1: badge mode wraps a card's Text lines in a Section,
+    joined with "\\n" into one Text - split them back apart so exact-line
+    assertions written for the plain-card case still work in badge mode).
+    Descends into a Section's accessory too, in case a Thumbnail ever
+    carries alt text."""
     lines = []
     for container in components:
         for item in container.components:
             if hasattr(item, "content"):
+                # Top-level Text is kept whole (unchanged) - only a
+                # Section's joined card content (below) needs splitting;
+                # splitting here too would break _compact_text, which
+                # relies on the compact table staying one multi-line entry.
                 lines.append(item.content)
+            elif isinstance(item, dashboard.hikari.impl.SectionComponentBuilder):
+                for sub in item.components:
+                    if hasattr(sub, "content"):
+                        lines.extend(sub.content.split("\n"))
+                accessory = getattr(item, "accessory", None)
+                description = getattr(accessory, "description", None)
+                if description:
+                    lines.append(description)
     return lines
 
 
@@ -110,13 +128,40 @@ def _select(components):
 # --------------------------------------------------------------- disabled matrix
 
 
-def test_no_selection_disables_every_action_button_except_refresh():
+def test_no_selection_matches_all_selected_disabled_states():
+    """D023 item 1: no selection defaults to "All clans" - the disabled
+    matrix (and every button's custom_id) must be identical to passing
+    selected_tag="ALL" explicitly, and no button encodes "NONE" any more."""
+    clans = [_clan("#ABC", "Alpha")]
+    none_components = dashboard.render_home([], clans, None, NOW)
+    all_components = dashboard.render_home([], clans, "ALL", NOW)
+
+    for action in (
+        "lazycwl_save", "lazycwl_remind", "lazycwl_auto",
+        "lazycwl_players", "lazycwl_add", "lazycwl_finish", "lazycwl_home",
+    ):
+        none_button = _button_by_action(none_components, action)
+        all_button = _button_by_action(all_components, action)
+        assert none_button.is_disabled == all_button.is_disabled
+        assert none_button.custom_id == all_button.custom_id == f"{action}:ALL"
+
+    # ALL selected here: DEF has no list -> save enabled, rest disabled
+    # (same matrix test_all_selected_with_nothing_qualifying_disables_
+    # everything_but_save exercises directly).
+    assert _button_by_action(none_components, "lazycwl_save").is_disabled is False
+    for action in ("lazycwl_remind", "lazycwl_auto", "lazycwl_players", "lazycwl_add", "lazycwl_finish"):
+        assert _button_by_action(none_components, action).is_disabled is True
+    assert _button_by_action(none_components, "lazycwl_home").is_disabled is False
+
+
+def test_no_selection_preselects_all_clans_option():
+    """D023 item 1: the select's "All clans" option carries is_default=True
+    when nothing (or "ALL") is selected."""
     clans = [_clan("#ABC", "Alpha")]
     components = dashboard.render_home([], clans, None, NOW)
-
-    for action in ("lazycwl_save", "lazycwl_remind", "lazycwl_auto", "lazycwl_players", "lazycwl_add", "lazycwl_finish"):
-        assert _button_by_action(components, action).is_disabled is True
-    assert _button_by_action(components, "lazycwl_home").is_disabled is False
+    menu = _select(components)
+    assert menu.options[0].value == "ALL"
+    assert menu.options[0].is_default is True
 
 
 def test_clan_with_list_disables_save_enables_the_rest():
@@ -223,7 +268,7 @@ def test_card_text_reminders_on():
     lines = _texts(components)
     assert "\U0001F514 Auto reminders: On, every 45 minutes" in lines
     assert "\U0001F6AA 2 away now" in lines
-    assert "\U0001F465 1 players saved" in lines
+    assert "\U0001F465 1 player saved" in lines
 
 
 def test_card_text_reminders_off():
@@ -406,6 +451,9 @@ def test_banned_words_grep():
 
 
 def test_custom_id_single_colon_rule():
+    """Only `custom_id=` keyword values are in scope - D023's new freshness
+    line ("Updated <t:{ts}:R>") is an f-string with a colon in it too, but
+    it is a `content=` value, not a custom_id, and must not trip this."""
     tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
     ids = []
     for node in ast.walk(tree):
@@ -413,20 +461,17 @@ def test_custom_id_single_colon_rule():
             "Button", "TextSelectMenu",
         }:
             for keyword in node.keywords:
-                if keyword.arg == "custom_id" and isinstance(keyword.value, ast.Constant):
+                if keyword.arg != "custom_id":
+                    continue
+                if isinstance(keyword.value, ast.Constant):
                     ids.append(keyword.value.value)
-    # Also cover the f-string-built custom_ids on buttons (custom_id=f"{action}:{...}")
-    for node in ast.walk(tree):
-        if isinstance(node, ast.JoinedStr):
-            parts = []
-            for value in node.values:
-                if isinstance(value, ast.Constant):
-                    parts.append(value.value)
-                else:
-                    parts.append("X")
-            joined = "".join(parts)
-            if ":" in joined:
-                ids.append(joined)
+                elif isinstance(keyword.value, ast.JoinedStr):
+                    # f-string-built custom_ids (custom_id=f"{action}:{...}")
+                    parts = [
+                        part.value if isinstance(part, ast.Constant) else "X"
+                        for part in keyword.value.values
+                    ]
+                    ids.append("".join(parts))
 
     assert ids, "expected at least one custom_id literal/f-string in the module"
     for custom_id in ids:
@@ -520,9 +565,12 @@ class _FakeClansCollection:
     def __init__(self, docs):
         self._docs = docs
 
-    def find(self, query):
-        clan_type = query.get("type")
-        return _FakeCursor([d for d in self._docs if d.get("type") == clan_type])
+    def find(self, query, projection=None):
+        # _fwa_clans's only query shape: {"type": ...}, no projection - real
+        # Mongo returns the whole doc (including "logo", D026's badge
+        # source) for an unrestricted find.
+        docs = [d for d in self._docs if d.get("type") == query.get("type")]
+        return _FakeCursor(docs)
 
 
 class _FakeCursor:
@@ -1872,3 +1920,569 @@ def test_render_auto_result_uses_result_name_helper():
     results = [{"ok": True, "clan_name": None, "clan_tag": "#XYZ", "error": None}]
     joined = "\n".join(_texts(dashboard.render_auto_result(results, "#XYZ", turning_on=False)))
     assert "**#XYZ**" in joined
+
+
+# --------------------------------------------------------------- D023 item 2: accent by state
+
+
+def _accent_of(components):
+    assert len(components) == 1
+    return components[0].accent_color
+
+
+def test_home_accent_green_when_nobody_away():
+    clans = [_clan("#ABC", "Alpha")]
+    doc = _list_doc("#ABC")
+    components = dashboard.render_home([doc], clans, "ALL", NOW, away_counts={"#ABC": 0})
+    assert _accent_of(components) == dashboard.GREEN_ACCENT
+
+
+def test_home_accent_gold_when_someone_away():
+    clans = [_clan("#ABC", "Alpha")]
+    doc = _list_doc("#ABC")
+    components = dashboard.render_home([doc], clans, "ALL", NOW, away_counts={"#ABC": 2})
+    assert _accent_of(components) == dashboard.GOLD_ACCENT
+
+
+def test_home_accent_gold_when_away_count_unknown():
+    clans = [_clan("#ABC", "Alpha")]
+    doc = _list_doc("#ABC")
+    components = dashboard.render_home([doc], clans, "ALL", NOW, away_counts={})
+    assert _accent_of(components) == dashboard.GOLD_ACCENT
+
+
+def test_home_accent_green_when_no_lists_at_all():
+    clans = [_clan("#ABC", "Alpha")]
+    components = dashboard.render_home([], clans, "ALL", NOW)
+    assert _accent_of(components) == dashboard.GREEN_ACCENT
+
+
+def test_home_accent_reflects_only_the_selected_clan_not_others():
+    """A single clan selected must ignore an away count on some other
+    clan's list - only the clan actually shown matters."""
+    clans = [_clan("#ABC", "Alpha"), _clan("#DEF", "Beta")]
+    doc_abc = _list_doc("#ABC")
+    doc_def = _list_doc("#DEF")
+    components = dashboard.render_home(
+        [doc_abc, doc_def], clans, "#ABC", NOW, away_counts={"#ABC": 0, "#DEF": 5},
+    )
+    assert _accent_of(components) == dashboard.GREEN_ACCENT
+
+
+def test_finish_confirm_accent_is_red():
+    doc = _list_doc("#ABC", "Alpha")
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    components = asyncio.run(dashboard.build_finish_confirm(mongo, "#ABC"))
+    assert _accent_of(components) == dashboard.RED_ACCENT
+
+
+def test_auto_confirm_off_accent_is_red():
+    doc = _list_doc("#ABC", "Alpha", reminders={"enabled": True, "every_minutes": 60})
+    mongo = _FakeMongo(clan_docs=[], list_docs=[doc])
+    components = asyncio.run(dashboard.build_auto(mongo, "#ABC"))
+    assert _accent_of(components) == dashboard.RED_ACCENT
+
+
+def test_remove_confirm_accent_is_red():
+    doc = _players_doc(3)
+    mongo = _FakeMongo([], [doc])
+    chosen_tags = [doc["players"][0]["tag"]]
+    components = asyncio.run(dashboard.build_remove_confirm(mongo, "#ABC-0", chosen_tags))
+    assert _accent_of(components) == dashboard.RED_ACCENT
+
+
+def test_auto_confirm_on_accent_stays_blue():
+    """Only Finish/Remove/Auto-off confirms are RED - turning ON is not
+    destructive."""
+    mongo = _FakeMongo(clan_docs=[], list_docs=[_list_doc("#ABC", "Alpha")])
+    components = asyncio.run(dashboard.build_auto_confirm_on(mongo, "#ABC", 30))
+    assert _accent_of(components) == dashboard.BLUE_ACCENT
+
+
+def test_save_result_accent_stays_blue():
+    components = dashboard.render_save_result([], "#ABC")
+    assert _accent_of(components) == dashboard.BLUE_ACCENT
+
+
+def test_remind_result_accent_stays_blue():
+    components = dashboard.render_remind_result([], "#ABC")
+    assert _accent_of(components) == dashboard.BLUE_ACCENT
+
+
+def test_finish_result_accent_stays_blue():
+    components = dashboard.render_finish_result([], "#ABC")
+    assert _accent_of(components) == dashboard.BLUE_ACCENT
+
+
+def test_players_accent_stays_blue():
+    components = dashboard.render_players(None, "Alpha", "#ABC", 0)
+    assert _accent_of(components) == dashboard.BLUE_ACCENT
+
+
+def test_add_result_accent_stays_blue():
+    result = {"ok": True, "name": "Ace", "town_hall": 15, "discord_id": 1, "away_now": False, "error": None, "reason": None}
+    components = dashboard.render_add_result(result, "#ABC")
+    assert _accent_of(components) == dashboard.BLUE_ACCENT
+
+
+# --------------------------------------------------------------- D023 item 3: clan badge
+
+
+def test_full_card_wraps_in_section_with_thumbnail_when_badge_known():
+    """render_home is pure (MUST-FIX 1): badge_urls is a plain dict passed
+    in, no lookup function involved at all."""
+    clans = [_clan("#ABC", "Alpha")]
+    doc = _list_doc("#ABC")
+    components = dashboard.render_home(
+        [doc], clans, "#ABC", NOW, badge_urls={"#ABC": "https://cdn.example.com/abc.png"},
+    )
+
+    container = components[0]
+    sections = [c for c in container.components if isinstance(c, dashboard.hikari.impl.SectionComponentBuilder)]
+    assert sections, "expected the full card to be wrapped in a Section"
+    section = sections[0]
+    assert isinstance(section.accessory, dashboard.hikari.impl.ThumbnailComponentBuilder)
+    assert "### Alpha" in section.components[0].content
+
+
+def test_full_card_stays_plain_text_when_badge_unknown():
+    clans = [_clan("#ABC", "Alpha")]
+    doc = _list_doc("#ABC")
+    components = dashboard.render_home([doc], clans, "#ABC", NOW, badge_urls={})
+
+    container = components[0]
+    assert not any(isinstance(c, dashboard.hikari.impl.SectionComponentBuilder) for c in container.components)
+    assert "### Alpha" in _texts(components)
+
+
+def test_clan_badge_url_component_ceiling_stays_under_30():
+    clans, docs = _clans_with_lists(24)
+    components = dashboard.render_home(
+        docs, clans, "#C000", NOW, badge_urls={"#C000": "https://cdn.example.com/x.png"},
+    )
+    assert _component_count(components) <= 30
+
+
+def test_build_home_resolves_badge_from_clan_doc_logo():
+    """D026: the badge comes straight from the clan doc's own `logo` field -
+    `_fwa_clans` already loaded it, no second collection or module
+    involved. Real, un-monkeypatched end-to-end path: build_home ->
+    _fwa_clans -> _clan_badge_urls -> optimized()."""
+    clans = [{"tag": "#ABC", "name": "Alpha", "type": "FWA", "logo": "https://cdn.example.com/abc.png"}]
+    doc = _list_doc("#ABC")
+    mongo = _FakeMongo(clan_docs=clans, list_docs=[doc])
+
+    components = asyncio.run(dashboard.build_home(mongo, "#ABC"))
+
+    container = components[0]
+    sections = [c for c in container.components if isinstance(c, dashboard.hikari.impl.SectionComponentBuilder)]
+    assert sections, "expected the full card to be wrapped in a Section (badge was never populated)"
+    assert isinstance(sections[0].accessory, dashboard.hikari.impl.ThumbnailComponentBuilder)
+    assert "### Alpha" in _texts(components)
+
+
+def test_build_home_survives_a_raising_badge_lookup(monkeypatch):
+    """A raising optimized() must not take the whole home screen down -
+    `_clan_badge_urls` catches it per-clan and that clan simply gets no
+    badge, proven through the real (un-monkeypatched) build_home path."""
+    def _raise(url, *, width=None):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(dashboard, "optimized", _raise)
+    clans = [{"tag": "#ABC", "name": "Alpha", "type": "FWA", "logo": "https://cdn.example.com/abc.png"}]
+    doc = _list_doc("#ABC")
+    mongo = _FakeMongo(clan_docs=clans, list_docs=[doc])
+
+    components = asyncio.run(dashboard.build_home(mongo, "#ABC"))
+
+    container = components[0]
+    assert not any(isinstance(c, dashboard.hikari.impl.SectionComponentBuilder) for c in container.components)
+    assert "### Alpha" in _texts(components)
+
+
+def test_clan_badge_urls_missing_logo_yields_none():
+    """A clan without a `logo` field gets no badge."""
+    clans = [{"tag": "#ABC", "name": "Alpha", "type": "FWA"}]
+    urls = dashboard._clan_badge_urls(clans)
+    assert urls["#ABC"] is None
+
+
+def test_dashboard_module_imports_no_todo_module():
+    """D026: the dashboard must not import extensions/commands/todo.py or
+    utils/todo_data.py - parsed via the AST, not a text grep, so a match
+    inside a string or comment can't hide a real import (or fake one)."""
+    tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            assert not node.module or "todo" not in node.module, node.module
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                assert "todo" not in alias.name, alias.name
+
+
+# --------------------------------------------------------------- D023 item 4: freshness line
+
+
+def test_home_freshness_line_exact_format():
+    clans = [_clan("#ABC", "Alpha")]
+    components = dashboard.render_home([], clans, None, NOW)
+    assert f"Updated <t:{int(NOW.timestamp())}:R>" in _texts(components)
+
+
+def test_home_freshness_line_treats_naive_now_as_utc():
+    """NOTED 3: `now.timestamp()` on a naive datetime silently reads local
+    time. render_home is public and pure, so a caller can pass one in
+    directly - it must be treated as UTC, same as the store does for every
+    timestamp it touches (utils/lazy_cwl_store.py's `_utc`)."""
+    naive_now = NOW.replace(tzinfo=None)
+    clans = [_clan("#ABC", "Alpha")]
+    components = dashboard.render_home([], clans, None, naive_now)
+    assert f"Updated <t:{int(NOW.timestamp())}:R>" in _texts(components)
+
+
+# --------------------------------------------------------------- D023 item 5: result summary line
+
+
+def test_save_summary_single_clan_saved():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "player_count": 5,
+                "linked_count": 5, "already_saved": False, "existing_saved_at": None, "error": None}]
+    texts = _texts(dashboard.render_save_result(results, "#ABC"))
+    assert "**Alpha saved.**" in texts
+
+
+def test_save_summary_all_matches_brief_example():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "player_count": 5,
+         "linked_count": 5, "already_saved": False, "existing_saved_at": None, "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "player_count": 5,
+         "linked_count": 5, "already_saved": False, "existing_saved_at": None, "error": None},
+        {"ok": False, "clan_name": "Gamma", "clan_tag": "#GHI", "player_count": 0,
+         "linked_count": 0, "already_saved": True, "existing_saved_at": NOW, "error": "already"},
+    ]
+    texts = _texts(dashboard.render_save_result(results, "ALL"))
+    assert "**2 clans saved, 1 already saved.**" in texts
+
+
+def test_remind_summary_single_clan_matches_brief_example():
+    results = [{"ok": True, "clan_name": "Warriors United", "clan_tag": "#ABC", "away_count": 4,
+                "total_count": 10, "sent": True, "error": None}]
+    texts = _texts(dashboard.render_remind_result(results, "#ABC"))
+    assert "**4 players reminded in Warriors United.**" in texts
+
+
+def test_remind_summary_everyone_home():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 0,
+                "total_count": 10, "sent": False, "error": None}]
+    texts = _texts(dashboard.render_remind_result(results, "#ABC"))
+    assert "**Everyone is home in Alpha.**" in texts
+
+
+def test_auto_summary_all_matches_brief_example():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "error": None},
+        {"ok": True, "clan_name": "Gamma", "clan_tag": "#GHI", "error": None},
+    ]
+    texts = _texts(dashboard.render_auto_result(results, "ALL", turning_on=True, every_minutes=60))
+    assert "**Auto reminders on for 3 clans.**" in texts
+
+
+def test_auto_summary_single_clan_off():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None}]
+    texts = _texts(dashboard.render_auto_result(results, "#ABC", turning_on=False))
+    assert "**Auto reminders off for Alpha.**" in texts
+
+
+def test_finish_summary_single_clan_matches_brief_example():
+    results = [{"ok": True, "clan_name": "Warriors United", "clan_tag": "#ABC", "error": None}]
+    texts = _texts(dashboard.render_finish_result(results, "#ABC"))
+    assert "**Warriors United finished.**" in texts
+
+
+def test_finish_summary_all():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "error": None},
+    ]
+    texts = _texts(dashboard.render_finish_result(results, "ALL"))
+    assert "**2 clans finished.**" in texts
+
+
+# ------------------------------------------------ MUST-FIX 2: 1 vs many plural
+
+
+def test_save_summary_all_singular_clan():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "already_saved": False, "error": None}]
+    assert dashboard._summary_line("save", results, "ALL") == "**1 clan saved.**"
+
+
+def test_save_summary_all_plural_clans():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "already_saved": False, "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "already_saved": False, "error": None},
+    ]
+    assert dashboard._summary_line("save", results, "ALL") == "**2 clans saved.**"
+
+
+def test_remind_summary_single_clan_singular_player():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 1, "sent": True, "error": None}]
+    assert dashboard._summary_line("remind", results, "#ABC") == "**1 player reminded in Alpha.**"
+
+
+def test_remind_summary_single_clan_plural_players():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 2, "sent": True, "error": None}]
+    assert dashboard._summary_line("remind", results, "#ABC") == "**2 players reminded in Alpha.**"
+
+
+def test_remind_summary_all_singular_player_and_clan():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 1, "sent": True, "error": None}]
+    assert dashboard._summary_line("remind", results, "ALL") == "**1 player reminded across 1 clan.**"
+
+
+def test_remind_summary_all_plural_players_and_clans():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 2, "sent": True, "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "away_count": 1, "sent": True, "error": None},
+    ]
+    assert dashboard._summary_line("remind", results, "ALL") == "**3 players reminded across 2 clans.**"
+
+
+def test_finish_summary_all_singular_clan():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None}]
+    assert dashboard._summary_line("finish", results, "ALL") == "**1 clan finished.**"
+
+
+def test_finish_summary_all_plural_clans():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "error": None},
+    ]
+    assert dashboard._summary_line("finish", results, "ALL") == "**2 clans finished.**"
+
+
+def test_finish_summary_all_failed():
+    """builder-21 (refuter-18/19 NOTED): an all-failed ALL finish fan-out
+    must say so, not the misleading "0 clans finished."."""
+    results = [
+        {"ok": False, "clan_name": "Alpha", "clan_tag": "#ABC", "error": "coc timeout"},
+        {"ok": False, "clan_name": "Beta", "clan_tag": "#DEF", "error": "coc timeout"},
+    ]
+    assert dashboard._summary_line("finish", results, "ALL") == "**Could not finish any clan.**"
+
+
+def test_auto_on_summary_all_singular_clan():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None}]
+    text = dashboard._summary_line("auto", results, "ALL", turning_on=True)
+    assert text == "**Auto reminders on for 1 clan.**"
+
+
+def test_auto_on_summary_all_plural_clans():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "error": None},
+    ]
+    text = dashboard._summary_line("auto", results, "ALL", turning_on=True)
+    assert text == "**Auto reminders on for 2 clans.**"
+
+
+def test_auto_off_summary_all_singular_clan():
+    results = [{"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None}]
+    text = dashboard._summary_line("auto", results, "ALL", turning_on=False)
+    assert text == "**Auto reminders off for 1 clan.**"
+
+
+def test_auto_off_summary_all_plural_clans():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "error": None},
+    ]
+    text = dashboard._summary_line("auto", results, "ALL", turning_on=False)
+    assert text == "**Auto reminders off for 2 clans.**"
+
+
+def test_auto_on_summary_all_failed():
+    """builder-21 (refuter-18/19 NOTED): an all-failed ALL auto-on fan-out
+    must say so, not the misleading "Auto reminders on for 0 clans."."""
+    results = [
+        {"ok": False, "clan_name": "Alpha", "clan_tag": "#ABC", "error": "coc timeout"},
+        {"ok": False, "clan_name": "Beta", "clan_tag": "#DEF", "error": "coc timeout"},
+    ]
+    text = dashboard._summary_line("auto", results, "ALL", turning_on=True)
+    assert text == "**Could not turn on auto reminders for any clan.**"
+
+
+def test_auto_off_summary_all_failed():
+    results = [
+        {"ok": False, "clan_name": "Alpha", "clan_tag": "#ABC", "error": "coc timeout"},
+        {"ok": False, "clan_name": "Beta", "clan_tag": "#DEF", "error": "coc timeout"},
+    ]
+    text = dashboard._summary_line("auto", results, "ALL", turning_on=False)
+    assert text == "**Could not turn off auto reminders for any clan.**"
+
+
+def test_add_summary_matches_brief_example():
+    result = {"ok": True, "name": "Player Name", "town_hall": 15, "discord_id": None, "away_now": False, "error": None, "reason": None}
+    texts = _texts(dashboard.render_add_result(result, "#ABC"))
+    assert "**Added Player Name.**" in texts
+
+
+def test_add_summary_failure_path():
+    result = {"ok": False, "name": None, "error": None, "reason": "invalid_tag"}
+    texts = _texts(dashboard.render_add_result(result, "#ABC"))
+    assert "**Could not add player.**" in texts
+
+
+def test_add_summary_falls_back_to_tag_never_says_added_none():
+    """NOTED 4: **Added {result.get('name')}.** rendered **Added None.**
+    when the service returned no `name` at all."""
+    result = {"ok": True, "name": None, "player_tag": "#P123", "town_hall": 10,
+              "discord_id": None, "away_now": False, "error": None, "reason": None}
+    texts = _texts(dashboard.render_add_result(result, "#ABC"))
+    assert "**Added #P123.**" in texts
+    assert "**Added None.**" not in texts
+
+
+def test_add_summary_already_listed_matches_row():
+    """NOTED 4: the bold summary said "Could not add player." above a row
+    that correctly said the player was already listed - the two must
+    agree."""
+    result = {"ok": False, "name": "Ace", "player_tag": "#P123", "error": "Ace is already on the list.",
+              "reason": "already_listed"}
+    texts = _texts(dashboard.render_add_result(result, "#ABC"))
+    assert "**Ace is already on the list.**" in texts
+    assert "**Could not add player.**" not in texts
+
+
+def test_remove_done_summary_above_existing_note(monkeypatch):
+    doc = _players_doc(3)
+    mongo = _FakeMongo([], [doc])
+
+    async def fake_away_players(d):
+        return []
+
+    monkeypatch.setattr(dashboard.service, "away_players", fake_away_players)
+    chosen = [doc["players"][0]["tag"], doc["players"][1]["tag"]]
+    action_id = dashboard._encode_remove_yes("#ABC", 0, chosen)
+    components = asyncio.run(dashboard.build_remove_yes(mongo, action_id))
+    joined = "\n".join(_texts(components))
+    assert "**2 players removed.**" in joined
+    # The old, already-guarded emoji note must still be present too (D023
+    # item 5 adds a line, it does not replace the guarded one).
+    assert "\U0001F5D1️ Removed 2 players." in joined
+
+
+def test_summary_line_scanned_by_banned_word_test():
+    """Proof D023 item 5's requirement ("put summaries through a
+    _summary_line(...) helper so it is scanned") actually holds: the
+    banned-word scanner walks every function whose name ends in `_line`,
+    and _summary_line does - confirmed by checking it is present in the
+    literals _render_facing_literals() collects."""
+    literals = _render_facing_literals()
+    assert any("saved." in literal for literal in literals)
+
+
+# ------------------------------------------------ builder-20: refuter-18 rework
+
+
+def test_remind_summary_all_failed():
+    """MUST-FIX: an all-failed ALL fan-out must say so, not "Everyone is
+    home" (refuter-18 MUST-FIX)."""
+    results = [
+        {"ok": False, "clan_name": "Alpha", "clan_tag": "#ABC", "sent": False, "error": "coc timeout"},
+        {"ok": False, "clan_name": "Bravo", "clan_tag": "#DEF", "sent": False, "error": "coc timeout"},
+    ]
+    assert dashboard._summary_line("remind", results, "ALL") == "**Could not remind any clan.**"
+
+
+def test_remind_summary_all_mixed_reports_failures():
+    """MUST-FIX: a mixed ALL fan-out must not be silent about failures."""
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 4, "sent": True, "error": None},
+        {"ok": False, "clan_name": "Bravo", "clan_tag": "#DEF", "sent": False, "error": "coc timeout"},
+    ]
+    assert dashboard._summary_line("remind", results, "ALL") == (
+        "**1 clan reminded, 0 everyone home, 1 clan failed.**"
+    )
+
+
+def test_remind_summary_all_mixed_includes_everyone_home_count():
+    """builder-21 (refuter-19 NOTED 3): a mixed ALL fan-out with a clan
+    that had nobody away must not drop that clan from the headline."""
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 4, "sent": True, "error": None},
+        {"ok": True, "clan_name": "Beta", "clan_tag": "#DEF", "away_count": 0, "sent": False, "error": None},
+        {"ok": False, "clan_name": "Gamma", "clan_tag": "#GHI", "sent": False, "error": "coc timeout"},
+    ]
+    assert dashboard._summary_line("remind", results, "ALL") == (
+        "**1 clan reminded, 1 everyone home, 1 clan failed.**"
+    )
+
+
+def test_remind_summary_all_home_only_when_none_away_and_none_failed():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 0, "sent": False, "error": None},
+        {"ok": True, "clan_name": "Bravo", "clan_tag": "#DEF", "away_count": 0, "sent": False, "error": None},
+    ]
+    assert dashboard._summary_line("remind", results, "ALL") == "**Everyone is home in every clan.**"
+
+
+def test_remind_summary_all_sent_no_failures_unchanged():
+    results = [
+        {"ok": True, "clan_name": "Alpha", "clan_tag": "#ABC", "away_count": 2, "sent": True, "error": None},
+        {"ok": True, "clan_name": "Bravo", "clan_tag": "#DEF", "away_count": 1, "sent": True, "error": None},
+    ]
+    assert dashboard._summary_line("remind", results, "ALL") == "**3 players reminded across 2 clans.**"
+
+
+def test_already_on_note_uses_noun_singular():
+    """NOTED 1: _already_on_note must route through _noun, the one
+    pluraliser, not keep its own inline copy of the rule."""
+    assert dashboard._already_on_note(1) == "1 clan already on. Turning on the rest."
+
+
+def test_already_on_note_uses_noun_plural():
+    assert dashboard._already_on_note(2) == "2 clans already on. Turning on the rest."
+
+
+def test_build_add_result_setdefaults_player_tag_when_service_omits_it(monkeypatch):
+    """NOTED 3: build_add_result's setdefault("player_tag", ...) must
+    survive - a not-found/already-listed result with no name falls back to
+    the raw tag, never "None" or "the player"."""
+    async def fake_add_player_by_tag(clan_tag, tag):
+        return {"ok": False, "name": None, "error": None, "reason": "already_listed"}
+
+    monkeypatch.setattr(dashboard.service, "add_player_by_tag", fake_add_player_by_tag)
+    components = asyncio.run(dashboard.build_add_result("#ABC", "#P9"))
+    texts = _texts(components)
+    assert "**#P9 is already on the list.**" in texts
+
+
+def test_card_text_players_saved_singular():
+    """NOTED 4 (:193): home card's player count must not always be plural."""
+    clans = [_clan("#ABC", "Alpha")]
+    doc = _list_doc("#ABC", players=[{"tag": "#P1", "name": "One", "town_hall": 10, "discord_id": None}])
+    components = dashboard.render_home([doc], clans, "#ABC", NOW)
+    lines = _texts(components)
+    assert "\U0001F465 1 player saved" in lines
+
+
+def test_card_text_players_saved_plural():
+    clans = [_clan("#ABC", "Alpha")]
+    doc = _list_doc("#ABC", players=[
+        {"tag": "#P1", "name": "One", "town_hall": 10, "discord_id": None},
+        {"tag": "#P2", "name": "Two", "town_hall": 10, "discord_id": None},
+    ])
+    components = dashboard.render_home([doc], clans, "#ABC", NOW)
+    lines = _texts(components)
+    assert "\U0001F465 2 players saved" in lines
+
+
+def test_render_save_result_row_singular_player():
+    """NOTED 4 (:672): render_save_result's row must not always be plural."""
+    results = [{
+        "ok": True, "clan_name": "Alpha", "clan_tag": "#ABC",
+        "player_count": 1, "linked_count": 1, "already_saved": False,
+        "existing_saved_at": None, "error": None,
+    }]
+    texts = _texts(dashboard.render_save_result(results, "#ABC"))
+    assert any("1 player saved" in t and "1 linked to Discord" in t for t in texts)
