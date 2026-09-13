@@ -98,7 +98,7 @@ Findings that belong to it are recorded here so nobody re-discovers them:
 - [ ] `lazy_cwl.py:1144` `_id=uuid4()`, embeds full rosters, no `purge_at`; `ensure_snapshot_invariants` (`:102`) repairs duplicates/mixed case on every startup instead of the index preventing them at write time (rules 6, 11).
 - [ ] `lazy_cwl.py:341,426,497,576,665,758,846,981` filter on `{"active": True}` alone, which can't use the partial index at `:145` (needs `clan_tag:{"$type":"string"}`, as `:115` already does) — COLLSCAN plus blocking sort (rule 12).
 - [ ] `fwa_points_monitor.py:231,234,253` store timestamps as ISO strings (no TTL, no range index); `:485` `_id="config"` shares the collection with per-clan rows — BSON datetimes, split config into `bot_config` (rules 3, 7).
-- [ ] `band_sync_ical.py:109` writes to `fwa_sync_alerts`, a collection `utils/mongo.py` never declares — declare owner/TTL (rule 14).
+- [x] `band_sync_ical.py:99-107` `_legacy_alerts()` reads (never writes) `fwa_sync_alerts` for the one-time config migration only; the four live collections it used to share are now declared in `utils/mongo.py` (rule 14) — done in the band-sync-panel bucket's builder-01/02 (see docs/band-sync-panel.md).
 - [ ] `lazy_cwl.py:428` and ~30 other sites: `to_list(length=None)` on a growing collection — `find_one(sort=...)` or `.limit()` (rule 12).
 
 **clan** (`extensions/commands/clan/dashboard/`)
@@ -160,7 +160,7 @@ Findings that belong to it are recorded here so nobody re-discovers them:
 | `recruit_role_cleanup_due` (old 3-field, name collision) | Atlas, per comment at `recruit_role_cleanup.py:313-319` | Dead — drop |
 | `tickets.status_created` | `migrate.py:194` | Unused on `main` until the store flag flips to `tickets` |
 | `card_inventories.idx_card_inventories_guild_confirmed` | `cards.py:11075` | Sort it should cover (`created_at`) isn't the field it's built on |
-| `fwa_sync_alerts` sorts | `band_sync_ical.py:875,893` | No supporting index, but diagnostic-command-only and TTL-bounded — acceptable |
+| `fwa_sync_deliveries` sorts | `band_sync_ical.py:967-970,985-989` (`/fwasync status`, was `fwa_sync_alerts` before the four-collection split) | No supporting index, but diagnostic-command-only and TTL-bounded — acceptable |
 
 **Growth risks vs. the 512 MB cap**
 
