@@ -120,6 +120,18 @@ CARDS_GUILD_ID=1078723854303756298
 CARDS_CHANNEL_ID=<decimal Discord channel id>
 ```
 
+The permanent `/tickets` thread-ticket group reads `TICKETS_GUILD_ID`, set to
+the decimal Discord server ID for Warriors United
+(`644963518025826315`, the default when the variable is unset or
+unparseable). It is registered only in that guild, so legacy servers never
+see it; the legacy `/ticket` group is unaffected and stays registered
+globally. Changing this value moves which single guild sees `/tickets` after
+the next Discord command sync — it does not move any stored ticket data.
+
+```text
+TICKETS_GUILD_ID=644963518025826315
+```
+
 The BAND iCal feature also reads `BAND_ICAL_SYNC1`, `BAND_ICAL_SYNC2`,
 `BAND_ICAL_SYNC3`, `SYNC_DM_USER_IDS`, `SYNC_DM_OFFSETS`,
 `SYNC_DM_ANNOUNCE_ON_DISCOVERY`, and `SYNC_DM_SUMMARY_FILTER`. Whether each is
@@ -526,3 +538,29 @@ them.
   `python tools/find_duplicate_clans.py` (read-only), delete the extra
   documents by hand, and restart; the unique index on `clans.tag` builds on
   the next start.
+Steps here are not part of the standard deploy flow above. Each is a single
+run tied to one change; remove the entry once it has been run and is no
+longer relevant.
+
+### Reset thread ticket numbering before go-live
+
+The new (thread) ticket system now allocates its own ticket numbers,
+starting at 1, and no longer reads or writes anything the legacy channel
+system owns (see the numbering fix in `extensions/commands/ticket_runtime.py`).
+Any tickets created during pilot/smoke testing will have already advanced
+that counter, so run this once, right before go-live, to clear the
+new-system test data and reset the counter back to 0 (the next allocated
+number is then 1):
+
+```
+venv/bin/python tools/reset_thread_ticket_test_data.py            # dry run, prints counts
+venv/bin/python tools/reset_thread_ticket_test_data.py --confirm  # deletes for real
+```
+
+It only touches new-system (`venue: "thread"` / `route: "thread"`) rows and
+the `ticket_rollout` counter document -- it never touches `button_store`,
+`ticket_setup`, the `ticket_rollout` rollout document, or any legacy
+`venue: "channel"` row. It also never deletes `ticket_migrations` rows; if any
+of them already hold a destination ticket number the tool reports the count
+and refuses `--confirm` (exit 3), because numbering could not restart at 1.
+Run it before the first legacy migration preview.

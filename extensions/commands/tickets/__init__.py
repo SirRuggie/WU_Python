@@ -1,59 +1,390 @@
-# extensions/commands/tickets/__init__.py
-import lightbulb
-from utils.mongo import MongoClient
+"""Thread-only recruitment ticket extension entry point."""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+import logging
+import uuid
+
 import hikari
+import lightbulb
+import coc
+import asyncio
+
+from extensions.commands import ticket_runtime
+from utils.mongo import MongoClient
+from utils.startup import tickets_guild_id
+from utils.startup_reconciler import StartupReconciler
+
 
 loader = lightbulb.Loader()
-ticket = lightbulb.Group("ticket", "Warriors United ticket system commands")
+_log = logging.getLogger(__name__)
+ticket = lightbulb.Group("tickets", "Warriors United thread ticket commands")
 
-# Store config globally for all ticket modules
-ticket_config = None
-_config_loaded = False  # Guard flag
+ticket_config: dict | None = None
+startup_index_errors: dict[str, str] = {}
+_startup_complete = False
+_thread_intake_ready = False
+_workflow_recovery: StartupReconciler | None = None
+_capability_heartbeat_task: asyncio.Task | None = None
+_staff_context_sweep_after: str | None = None
+_staff_context_sweep_complete = False
+CREATION_RECOVERY_LIMIT = 50
+MIGRATION_RECOVERY_LIMIT = 5
+STAFF_CONTEXT_RECOVERY_LIMIT = 25
+ACCOUNT_SYNC_RECOVERY_LIMIT = 25
+_THREAD_NAME_CAPABILITY_BOOT_ID = uuid.uuid4().hex
 
 
-# Single startup listener for ALL ticket modules
+async def prepare_ticket_runtime(mongo: MongoClient) -> dict[str, str]:
+    """Install every durable index independently and report fail-closed errors."""
+    operations: tuple[tuple[str, Callable[[], Awaitable[object]]], ...] = (
+        ("shared_runtime", lambda: ticket_runtime.ensure_indexes(mongo)),
+        ("tickets", lambda: store.ensure_indexes(mongo)),
+        ("flags", lambda: flag_store.ensure_indexes(mongo)),
+        ("creation", lambda: thread_service.ensure_creation_indexes(mongo)),
+        ("migration", lambda: legacy_migration.ensure_migration_indexes(mongo)),
+        ("staff_context", lambda: console.ensure_staff_context_indexes(mongo)),
+    )
+    errors: dict[str, str] = {}
+    for name, operation in operations:
+        try:
+            await operation()
+        except Exception as exc:
+            errors[name] = f"{type(exc).__name__}: {str(exc)[:240]}"
+            print(
+                f"[Tickets] startup_index_failed subsystem={name} "
+                f"error={type(exc).__name__}"
+            )
+    return errors
+
+
+async def recover_ticket_workflows(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    coc_client: coc.Client | None = None,
+) -> None:
+    """Resume only durable, previously authorized ticket work."""
+    global _staff_context_sweep_after, _staff_context_sweep_complete
+    global _thread_intake_ready
+
+    _thread_intake_ready = False
+
+    await store.ensure_indexes(mongo)
+    _slot_backfill, _slot_reconcile = await ticket_runtime.recover_ticket_runtime(mongo)
+    blockers = await ticket_runtime.runtime_blocker_status(mongo)
+    if blockers.blocked:
+        # Legacy in-flight welcome deliveries and legacy-vs-legacy open-ticket
+        # conflicts (duplicate channel tickets are normal, uncleaned legacy
+        # reality) must never block the new thread system. Only a conflict
+        # where the thread runtime itself owns one side of the collision is
+        # unsafe to ignore -- keep raising for that case alone.
+        thread_route_conflicts = 0
+        thread_conflict_query: dict = {}
+        if blockers.unresolved_conflicts:
+            thread_conflict_query = {
+                "$and": [
+                    ticket_runtime.unresolved_open_conflict_query(),
+                    {
+                        "$or": [
+                            {"route": ticket_runtime.ROUTE_THREAD},
+                            {"conflicting_tickets.route": ticket_runtime.ROUTE_THREAD},
+                        ]
+                    },
+                ]
+            }
+            thread_route_conflicts = await mongo.ticket_open_slots.count_documents(
+                thread_conflict_query
+            )
+        if thread_route_conflicts:
+            thread_conflict_ids = await ticket_runtime._bounded_document_ids(
+                mongo.ticket_open_slots, thread_conflict_query
+            )
+            details: list[str] = []
+            if thread_conflict_ids:
+                details.append(
+                    "open-ticket conflicts=" + ",".join(thread_conflict_ids)
+                )
+            suffix = f" ({'; '.join(details)})" if details else ""
+            raise RuntimeError(
+                f"shared ticket recovery remains blocked by a thread-route "
+                f"conflict{suffix}"
+            )
+        ids_parts: list[str] = []
+        if blockers.pending_delivery_ids:
+            ids_parts.append("deliveries:" + ",".join(blockers.pending_delivery_ids))
+        if blockers.conflict_slot_ids:
+            ids_parts.append("conflicts:" + ",".join(blockers.conflict_slot_ids))
+        ids_suffix = f" ids={';'.join(ids_parts)}" if ids_parts else ""
+        print(
+            "[Tickets] legacy_blockers_ignored "
+            f"legacy_deliveries={blockers.legacy_pending_deliveries} "
+            f"open_ticket_conflicts={blockers.unresolved_conflicts}"
+            f"{ids_suffix}"
+        )
+    # Show saved bulk-batch state before recovery and once more after recovery
+    # changes any partial migration checkpoints. This is best-effort only.
+    await legacy_bulk.refresh_migration_overview(bot, mongo)
+    prior_denials = await console.reconcile_prior_denial_flags(bot, mongo)
+    creation_kwargs = {
+        "bot": bot,
+        "mongo": mongo,
+        "limit": CREATION_RECOVERY_LIMIT,
+    }
+    if coc_client is not None:
+        creation_kwargs["coc_client"] = coc_client
+    creation = await thread_service.recover_pending_thread_ticket_creations(
+        **creation_kwargs
+    )
+    migration = await legacy_migration.recover_pending_legacy_migrations(
+        bot=bot, mongo=mongo, limit=MIGRATION_RECOVERY_LIMIT
+    )
+    await legacy_bulk.refresh_migration_overview(bot, mongo)
+    async def queue_context_after_account_sync(ticket_doc: dict) -> str | None:
+        return await console.queue_staff_identity_context(mongo, ticket_doc)
+
+    account_identities = (
+        await account_sync.recover_pending_account_syncs(
+            mongo,
+            coc_client,
+            limit=ACCOUNT_SYNC_RECOVERY_LIMIT,
+            after_sync=queue_context_after_account_sync,
+        )
+        if coc_client is not None
+        else {"processed": 0, "completed": 0, "failed": 0}
+    )
+    # Account recovery can change the staff account/Chocolate panels, including
+    # for terminal denials. Queue those changes first, then drain the durable
+    # staff-context outbox in the same recovery pass.
+    staff_context = await console.recover_pending_staff_identity_contexts(
+        bot=bot, mongo=mongo, limit=STAFF_CONTEXT_RECOVERY_LIMIT
+    )
+    open_context: dict[str, int | str | bool | None] = {
+        "processed": 0,
+        "completed": 0,
+        "failed": 0,
+        "after_ticket_id": _staff_context_sweep_after,
+        "exhausted": True,
+    }
+    if not _staff_context_sweep_complete:
+        open_context = await console.recover_open_staff_identity_contexts(
+            bot=bot,
+            mongo=mongo,
+            after_ticket_id=_staff_context_sweep_after,
+            limit=STAFF_CONTEXT_RECOVERY_LIMIT,
+        )
+        advanced = open_context.get("after_ticket_id")
+        if advanced:
+            _staff_context_sweep_after = str(advanced)
+        _staff_context_sweep_complete = bool(open_context.get("exhausted"))
+    failed = sum(
+        int(result.get("failed", 0))
+        for result in (
+            creation,
+            migration,
+            staff_context,
+            account_identities,
+            open_context,
+            prior_denials,
+        )
+    )
+    print(
+        "[Tickets] startup_workflow_recovery "
+        f"creation={creation.get('completed', 0)}/{creation.get('processed', 0)} "
+        f"migration={migration.get('completed', 0)}/{migration.get('processed', 0)} "
+        f"staff_context={staff_context.get('completed', 0)}/"
+        f"{staff_context.get('processed', 0)} "
+        f"account_identities={account_identities.get('completed', 0)}/"
+        f"{account_identities.get('processed', 0)} "
+        f"open_context={open_context.get('completed', 0)}/"
+        f"{open_context.get('processed', 0)} "
+        f"prior_denials={prior_denials.get('created', 0)}/"
+        f"{prior_denials.get('checked', 0)} "
+        f"failed={failed}"
+    )
+    if failed:
+        raise RuntimeError(f"{failed} ticket workflow recovery item(s) remain pending")
+    if (
+        int(creation.get("processed", 0)) >= CREATION_RECOVERY_LIMIT
+        or int(migration.get("processed", 0)) >= MIGRATION_RECOVERY_LIMIT
+        or int(staff_context.get("processed", 0)) >= STAFF_CONTEXT_RECOVERY_LIMIT
+        or int(account_identities.get("processed", 0)) >= ACCOUNT_SYNC_RECOVERY_LIMIT
+        or not _staff_context_sweep_complete
+    ):
+        # A full bounded batch cannot prove that no later eligible rows remain.
+        # Let StartupReconciler schedule another background pass; the final
+        # exact-size batch conservatively causes one harmless empty pass.
+        raise RuntimeError("ticket workflow recovery has another bounded batch pending")
+    _thread_intake_ready = True
+
+
+def thread_intake_ready() -> bool:
+    """Whether shared durability and all thread workflow recovery completed."""
+    return _thread_intake_ready
+
+
+async def _recover_ticket_runtime(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    coc_client: coc.Client | None = None,
+) -> None:
+    """Prepare the thread runtime, then resume its durable workflows."""
+    global ticket_config, startup_index_errors, _startup_complete
+
+    if not _startup_complete:
+        loaded_config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+        index_errors = await prepare_ticket_runtime(mongo)
+        ticket_config = loaded_config
+        startup_index_errors = index_errors
+        if index_errors:
+            failed = ", ".join(sorted(index_errors))
+            raise RuntimeError(f"ticket startup indexes unavailable: {failed}")
+
+        _startup_complete = True
+        configured = sum(
+            bool(ticket_config.get(f"{kind}_{field}"))
+            for kind in ("main", "fwa")
+            for field in (
+                "candidate_parent",
+                "staff_parent",
+                "thread_recruiter_role",
+            )
+        )
+        print(
+            f"[Tickets] thread_runtime_ready configured_fields={configured}/6 "
+            "index_errors=0"
+        )
+
+    if coc_client is None:
+        await recover_ticket_workflows(bot, mongo)
+    else:
+        await recover_ticket_workflows(bot, mongo, coc_client)
+    # This is written only by a booted runtime that has completed ticket
+    # recovery.  The offline emoji-backfill tool refuses writes without it,
+    # so a newer checkout cannot accidentally rename threads while an older
+    # deployed process still exact-validates unprefixed recovery names.
+    await mongo.ticket_setup.update_one(
+        {"_id": "config"},
+        {"$set": {
+            "thread_name_capability_version": thread_service.THREAD_NAME_CAPABILITY_VERSION,
+            "thread_name_capability_booted_at": datetime.now(timezone.utc),
+            "thread_name_capability_boot_id": _THREAD_NAME_CAPABILITY_BOOT_ID,
+            "thread_name_capability_heartbeat_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+
+
+async def _heartbeat_thread_name_capability(mongo: MongoClient) -> None:
+    """Keep the offline rename guard tied to this live prefix-aware process."""
+    while True:
+        await asyncio.sleep(60)
+        await mongo.ticket_setup.update_one(
+            {"_id": "config", "thread_name_capability_boot_id": _THREAD_NAME_CAPABILITY_BOOT_ID},
+            {"$set": {"thread_name_capability_heartbeat_at": datetime.now(timezone.utc)}},
+        )
+
+
+def start_ticket_workflow_recovery(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    coc_client: coc.Client | None = None,
+) -> StartupReconciler:
+    """Start one self-healing background recovery task."""
+    global _workflow_recovery
+    if coc_client is None:
+        coc_client = account_sync.configured_coc_client()
+    if _workflow_recovery is None:
+        _workflow_recovery = StartupReconciler(
+            "ticket-workflows",
+            lambda: _recover_ticket_runtime(bot, mongo, coc_client),
+        )
+    _workflow_recovery.start()
+    return _workflow_recovery
+
+
 @loader.listener(hikari.StartedEvent)
 @lightbulb.di.with_di
 async def on_started(
-        event: hikari.StartedEvent,
-        mongo: MongoClient = lightbulb.di.INJECTED,
+    _: hikari.StartedEvent,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
 ) -> None:
-    """Load ticket configuration from database on startup - ONCE"""
-    global ticket_config, _config_loaded
-
-    # Guard against multiple loads
-    if _config_loaded:
-        return
-    _config_loaded = True
-
-    config = await mongo.ticket_setup.find_one({"_id": "config"})
-    if config:
-        ticket_config = config
-        print(f"[Tickets] Loaded configuration from database")
-        print(f"[Tickets] Main Role: {config.get('main_recruiter_role')}")
-        print(f"[Tickets] FWA Role: {config.get('fwa_recruiter_role')}")
-        print(f"[Tickets] Admin: {config.get('admin_to_notify')}")
-        print(f"[Tickets] Categories: Main={config.get('main_category')}, FWA={config.get('fwa_category')}")
-        print(
-            f"[Tickets] Counters: Main={config.get('main_ticket_counter', 0)}, FWA={config.get('fwa_ticket_counter', 0)}")
-    else:
-        print(f"[Tickets] No configuration found in database, using defaults")
+    """Start retrying runtime preparation and workflow recovery."""
+    global _capability_heartbeat_task
+    start_ticket_workflow_recovery(bot, mongo)
+    if _capability_heartbeat_task is None or _capability_heartbeat_task.done():
+        _capability_heartbeat_task = asyncio.create_task(
+            _heartbeat_thread_name_capability(mongo), name="ticket-name-capability-heartbeat",
+        )
 
 
-# Import all ticket modules.
-# Order matters: migrate imports a helper from manage, so manage must land first.
+@loader.listener(hikari.StoppingEvent)
+async def on_stopping(_: hikari.StoppingEvent) -> None:
+    """Await every ticket-owned worker before shared REST/Mongo shutdown."""
+    global _startup_complete, _staff_context_sweep_after, _staff_context_sweep_complete
+    global _thread_intake_ready, _capability_heartbeat_task
+    try:
+        if _capability_heartbeat_task is not None:
+            _capability_heartbeat_task.cancel()
+            await asyncio.gather(_capability_heartbeat_task, return_exceptions=True)
+            _capability_heartbeat_task = None
+        if _workflow_recovery is not None:
+            await _workflow_recovery.stop()
+    finally:
+        _startup_complete = False
+        _staff_context_sweep_after = None
+        _staff_context_sweep_complete = False
+        _thread_intake_ready = False
+        # Do not leave an offline maintenance tool believing this process is
+        # still the deployed prefix-aware runtime after a rollback or stop.
+        try:
+            await mongo.ticket_setup.update_one(
+                {"_id": "config", "thread_name_capability_boot_id": _THREAD_NAME_CAPABILITY_BOOT_ID},
+                {"$unset": {"thread_name_capability_heartbeat_at": ""}},
+            )
+        except Exception:
+            _log.exception("ticket status-name capability shutdown marker clear failed")
+        try:
+            await resolve.stop_resolution_reconciler()
+        finally:
+            try:
+                await legacy_bulk.stop_migration_overview_publisher()
+            finally:
+                await console.stop_hub_refresh_workers()
+
+
+# Durable domain modules first; registration modules may safely import them.
+from . import schema
+from . import store
+from . import flag_store
+from . import account_sync
+from . import thread_service
+
+# User and interaction surfaces.
 from . import setup
 from . import config
-from . import manage
 from . import handlers
-# resolve holds the shared side effects and the ticket_override action; close
-# imports it too, but registering it explicitly keeps the action's origin obvious.
 from . import resolve
 from . import close
 from . import migrate
-from . import claim
+from . import console
+from . import flags
+from . import legacy_migration
+from . import legacy_bulk
+from . import rollout
 
-# Register the ticket group with the loader
-loader.command(ticket)
 
-__all__ = ["loader", "ticket", "ticket_config"]
+loader.command(ticket, guilds=[tickets_guild_id()])
+
+__all__ = [
+    "loader",
+    "ticket",
+    "ticket_config",
+    "startup_index_errors",
+    "prepare_ticket_runtime",
+    "recover_ticket_workflows",
+    "start_ticket_workflow_recovery",
+    "thread_intake_ready",
+]

@@ -12,8 +12,8 @@ as recorded in Mongo. A claim nobody can see is a claim nobody respects.
 import hikari
 import lightbulb
 
-from extensions.commands.tickets import loader, ticket
-from extensions.commands.tickets import perms, store
+from extensions.commands.tickets_legacy import loader, ticket
+from extensions.commands.tickets_legacy import perms, store
 from utils.mongo import MongoClient
 
 

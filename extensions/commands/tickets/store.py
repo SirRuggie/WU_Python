@@ -1,336 +1,1404 @@
-"""The single seam between ticket documents and the collection that holds them.
+"""Durable ticket repository, indexes, and compare-and-swap transitions."""
 
-Ticket documents were originally written into `button_store` - the same
-collection the component dispatcher uses for ephemeral component kwargs. Durable
-business records interleaved with throwaway UI state, unindexed, by accident
-rather than by design. See docs/ticket-data-model.md.
-
-Phase 1 moves them into a dedicated `tickets` collection. Every ticket-document
-read and write in the bot goes through this module, so the transition has exactly
-one home.
-
-READS follow the `ticket_store` flag on ticket_setup/_id="config", defaulting to
-`button_store`. WRITES always go to BOTH collections for the duration of the
-transition, so flipping the flag either way strands nothing.
-
-Making the read switch a config value rather than a deploy is deliberate: it
-means the backfill and the code repoint cannot land in the wrong order. The code
-can ship first and change nothing, and the moment of risk becomes a single Mongo
-write that reverses in a second.
-
-DO NOT ADD A TTL INDEX TO `tickets`. Ticket history is permanent and referred
-back to. The pruning problem that motivated part of this move belongs to the
-ephemeral collection, not this one - see docs/ticket-data-model.md.
-"""
+from __future__ import annotations
 
 import dataclasses
 import logging
-from collections import Counter
+import re
+import time
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from typing import Iterable, Mapping
 
 from pymongo import ReturnDocument
+from pymongo.errors import (
+    DuplicateKeyError,
+    ExecutionTimeout,
+    OperationFailure,
+    WriteConcernError,
+    WTimeoutError,
+)
 
+from extensions.commands import ticket_runtime
+from extensions.commands.tickets import schema
 from utils.mongo import MongoClient
+
 
 _log = logging.getLogger(__name__)
 
-# Ticket documents carry this discriminator. It is redundant inside `tickets`,
-# where every document is a ticket, but keeping it means a document copied in
-# either direction is still valid, and the queries do not have to fork.
+RUNTIME_FILTER = {
+    "type": "ticket",
+    "venue": "thread",
+    "runtime": ticket_runtime.THREAD_RUNTIME,
+}
 TICKET_FILTER = {"type": "ticket"}
-
+ACCOUNT_RECOVERY_BOOLEAN_FIELDS = (
+    "linked_accounts.retry_required",
+    "linked_accounts.context_refresh_required",
+    "linked_accounts.flag_refresh_required",
+)
 STORE_BUTTON = "button_store"
 STORE_TICKETS = "tickets"
-DEFAULT_STORE = STORE_BUTTON
+CANONICAL_ACTIVATION_VERSION = 3
+# `audit` and `account_identity_audit` are unbounded per-action history on a
+# collection that may never carry a TTL; every $push into either one must
+# slice to this bound at the push site (rule 8).
+MAX_AUDIT_ENTRIES = 200
+# Coexistence has two explicit authorities: this v2 repository always owns
+# ``tickets`` and the namespaced legacy repository always owns ``button_store``.
+DEFAULT_STORE = STORE_TICKETS
+
+WON = "won"
+LOST = "lost"
+MISSING = "missing"
+BLOCKED = "blocked"
+UNAUTHORIZED = "unauthorized"
+EFFECT_FAILED = "effect_failed"
+
+
+class TicketStoreError(RuntimeError):
+    pass
+
+
+class TicketConflictError(TicketStoreError):
+    """An idempotency key already belongs to a different ticket."""
+
+
+class GuardedFieldWriteError(TicketStoreError):
+    """A generic update tried to set one half of a duplicated identity field."""
+
+
+class OpenTicketExistsError(TicketConflictError):
+    def __init__(self, existing: dict | None = None):
+        super().__init__("an open ticket already exists for this applicant and type")
+        self.existing = existing
+
+
+class IndexConflictError(TicketStoreError):
+    def __init__(self, conflicts: Mapping[str, list]):
+        super().__init__("ticket index conflicts must be repaired before index creation")
+        self.conflicts = dict(conflicts)
+
+
+# One conflicting row makes `ensure_indexes` fail every time it runs, and it
+# runs on the hot path of ticket creation (`thread_service.ensure_creation_indexes`
+# never caches its own failure). Without a retry window, every interaction
+# repeats the full-collection preflight scan and 13 create_index round trips.
+# Cache the failure like `utils/clan_history.py:ensure_indexes` does and let
+# it retry only after the window (rules 4, 12).
+INDEX_RETRY_SECONDS = 60 * 60
+_indexes_failed = False
+_index_retry_at = 0.0
+_last_index_error: Exception | None = None
 
 
 def utcnow() -> datetime:
-    """One source of truth for resolution timestamps."""
     return datetime.now(timezone.utc)
 
 
 def as_int(value) -> int:
-    """Channel/user ids have been stored as both int and str across schema versions.
-
-    Canonical home; manage.py imports this as its `_as_int`.
-    """
     try:
         return int(value)
     except (TypeError, ValueError):
         return 0
 
 
-async def active_store(mongo: MongoClient) -> str:
-    """Which collection reads currently come from.
+new_ticket_document = schema.new_ticket_document
+normalize_ticket_document = schema.normalize_ticket_document
 
-    Read fresh every call rather than cached at startup. The `ticket_config`
-    global in __init__.py is the cautionary tale: it is loaded once on
-    StartedEvent and read by nothing, while every real consumer re-queries. A
-    cached flag here would mean a flip needed a restart, which defeats the point
-    of it being a flag.
-    """
-    config = await mongo.ticket_setup.find_one({"_id": "config"}, {"ticket_store": 1})
-    return (config or {}).get("ticket_store", DEFAULT_STORE)
+
+def is_markerless_legacy_terminal(ticket: Mapping) -> bool:
+    """Whether a terminal import has no live resolution worker to wait for."""
+    effects = ticket.get("resolution_effects")
+    return bool(
+        ticket.get("venue") == "thread"
+        and ticket.get("status") in schema.TERMINAL_STATUSES
+        and ticket.get("source")
+        and not effects
+        and any(
+            isinstance(item, Mapping)
+            and item.get("event") in {
+                "legacy_ticket_imported",
+                "legacy_location_replaced",
+            }
+            for item in (ticket.get("audit") or ())
+        )
+    )
+
+
+async def active_store(mongo: MongoClient) -> str:
+    return STORE_TICKETS
 
 
 async def _reader(mongo: MongoClient):
-    return mongo.tickets if await active_store(mongo) == STORE_TICKETS else mongo.button_store
+    return mongo.tickets
 
 
-async def _both(mongo: MongoClient):
-    """(primary, secondary) with primary being whatever reads come from.
+def _normalized(document: Mapping | None) -> dict | None:
+    """Apply the current schema shape to a document read off the wire.
 
-    Ordering matters on partial failure: if the second write raises, the
-    collection actually being READ from is already correct, so the symptom is
-    divergence visible in /ticket diagnostics rather than a ticket that appears
-    not to exist.
+    `schema_version` is written on every insert, but nothing enforced it on
+    read, so callers kept special-casing historical shapes (`_mixed_id`)
+    instead of trusting the canonical one. Normalising here makes every
+    reader see schema-version-3 shape regardless of what is actually stored.
     """
-    if await active_store(mongo) == STORE_TICKETS:
-        return mongo.tickets, mongo.button_store
-    return mongo.button_store, mongo.tickets
+    if document is None:
+        return None
+    return normalize_ticket_document(document)
 
 
-# --- reads -------------------------------------------------------------------
+def _normalized_many(documents: Iterable[Mapping]) -> list[dict]:
+    return [normalize_ticket_document(document) for document in documents]
+
 
 async def find_one(mongo: MongoClient, filt: dict):
-    return await (await _reader(mongo)).find_one(filt)
+    raw = await (await _reader(mongo)).find_one({**dict(filt), **RUNTIME_FILTER})
+    return _normalized(raw)
 
 
-async def find(mongo: MongoClient, filt: dict) -> list[dict]:
-    """All matching ticket documents. Callers all wanted a list anyway."""
-    return await (await _reader(mongo)).find(filt).to_list(length=None)
+async def find(
+    mongo: MongoClient,
+    filt: dict,
+    *,
+    include_legacy: bool = False,
+    sort: list[tuple[str, int]] | None = None,
+    limit: int | None = None,
+) -> list[dict]:
+    """Read ticket documents, thread-runtime only by default.
 
+    RUNTIME_FILTER's own ``venue``/``runtime`` keys are merged in last, so
+    they always win over anything the caller passed for those keys -- a
+    caller filtering for channel-era rows (``venue`` != ``thread``) would
+    silently get zero results. Pass ``include_legacy=True`` for a
+    diagnostics-only read that must also see those rows; it drops
+    RUNTIME_FILTER down to the bare ``type`` check so the caller's own venue
+    filter is honoured. Every ticket-lifecycle reader keeps the default.
 
-# --- writes (always both) ----------------------------------------------------
+    ``include_legacy=True`` also skips schema normalisation and returns raw
+    documents as stored: ``normalize_ticket_document`` raises
+    ``TicketSchemaError`` on a legacy row with ``status == "closed"``, and
+    such rows exist in production. The only caller (manage.py's diagnostics
+    reconciliation) wants raw statuses, not the canonical shape.
 
-async def insert_one(mongo: MongoClient, doc: dict) -> None:
-    """Idempotently persist a new ticket to the primary and best-effort mirror.
-
-    A secondary write cannot roll back the primary. Treating that divergence as
-    total failure made callers retry an already-created Discord ticket. The
-    primary is the configured read source, so it is the commit point; diagnostics
-    already expose and repair mirror divergence.
+    ``sort``/``limit`` push the ordering and bound down to the database
+    instead of the caller reading every match into memory -- pass both for
+    any read whose match count can grow with the collection.
     """
-    primary, secondary = await _both(mongo)
-    ticket_id = doc["_id"]
-    await primary.replace_one({"_id": ticket_id}, dict(doc), upsert=True)
-    try:
-        await secondary.replace_one({"_id": ticket_id}, dict(doc), upsert=True)
-    except Exception:
-        _log.exception(
-            "ticket insert mirror failed for %s - primary remains authoritative",
-            ticket_id,
+    base = TICKET_FILTER if include_legacy else RUNTIME_FILTER
+    cursor = (await _reader(mongo)).find({**dict(filt), **base})
+    if sort:
+        cursor = cursor.sort(sort)
+    if limit:
+        cursor = cursor.limit(limit)
+    raw = await cursor.to_list(length=limit)
+    if include_legacy:
+        return raw
+    return _normalized_many(raw)
+
+
+def _mixed_id(value) -> list:
+    normalized = as_int(value)
+    return [normalized, str(normalized)] if normalized else []
+
+
+async def find_by_location(mongo: MongoClient, location_id) -> dict | None:
+    # `channel_id`/`thread_id` are the guarded compatibility aliases of
+    # `location.id`/`location.staff_space_id` for every thread-runtime
+    # document (see GUARDED_IDENTITY_FIELDS) -- they are always equal, so
+    # matching on the two `location.*` fields already covers both aliases.
+    #
+    # A single `$or` across both fields cannot use either unique partial
+    # index (their `partialFilterExpression` requires that one field to
+    # exist, which the `$or`'s other branch does not imply), so it falls
+    # back to a collection scan on every guild message. Two sequential
+    # single-field lookups each stay on their own unique partial index.
+    ids = _mixed_id(location_id)
+    if not ids:
+        return None
+    candidate = await find_one(mongo, {"location.id": {"$in": ids}})
+    if candidate is not None:
+        return candidate
+    return await find_one(mongo, {"location.staff_space_id": {"$in": ids}})
+
+
+async def find_open_for_applicant(
+    mongo: MongoClient,
+    user_id,
+    ticket_type: str,
+) -> dict | None:
+    ids = _mixed_id(user_id)
+    if not ids:
+        return None
+    return await find_one(mongo, {
+        **RUNTIME_FILTER,
+        "user_id": {"$in": ids},
+        "ticket_type": schema.ticket_type(ticket_type),
+        "status": "open",
+    })
+
+
+async def list_open(mongo: MongoClient, *, limit: int = 25) -> list[dict]:
+    """Open tickets, oldest first -- the console hub picker only ever shows
+    the first `limit`, and it must be the longest-waiting applicants that
+    stay visible, not the ones who just opened a ticket."""
+    amount = max(1, min(int(limit), 25))
+    cursor = (await _reader(mongo)).find({**RUNTIME_FILTER, "status": "open"})
+    raw = await cursor.sort([("created_at", 1), ("_id", 1)]).limit(amount).to_list(
+        length=amount
+    )
+    return _normalized_many(raw)
+
+
+class SearchQueryError(ValueError):
+    pass
+
+
+def _search_identity(query: str) -> dict:
+    value = str(query or "").strip()
+    if not value:
+        return {}
+    if value.isdecimal():
+        if not 17 <= len(value) <= 20:
+            raise SearchQueryError("Discord IDs must contain 17 to 20 numbers")
+        return {"user_id": {"$in": [int(value), value]}}
+    if value.startswith("#"):
+        try:
+            tag = schema.player_tag(value)
+        except schema.TicketSchemaError as exc:
+            raise SearchQueryError(str(exc)) from exc
+        if not 3 <= len(tag.removeprefix("#")) <= 9:
+            raise SearchQueryError("player tags must contain 3 to 9 letters or numbers")
+        return {"$or": [
+            {"player_tags": tag},
+            {"mentioned_tags": tag},
+            {"player_tag": tag},
+            {"tag": tag},
+        ]}
+    if not 2 <= len(value) <= 32 or re.fullmatch(r"[\w .-]+", value) is None:
+        raise SearchQueryError(
+            "Use a Discord ID, player tag, or a 2-32 character username"
         )
+    # A bare tag typed without "#" (recruiters do this constantly) is both a
+    # plausible tag and a plausible username, so match either.
+    if re.fullmatch(r"[0289PYLQGRJCVUOo]{3,9}", value, re.IGNORECASE):
+        try:
+            tag = schema.player_tag("#" + value)
+        except schema.TicketSchemaError:
+            tag = None
+        if tag:
+            return {"$or": [
+                {"player_tags": tag},
+                {"mentioned_tags": tag},
+                {"player_tag": tag},
+                {"tag": tag},
+                {"username_search": schema.username_search(value)},
+            ]}
+    # `username_search` is pre-normalized (casefolded, whitespace-collapsed)
+    # the same way on write and here, and thread_v2_username_created indexes
+    # exactly that field. A case-insensitive $regex on the raw `username`
+    # cannot use that index (no collation), so a query landing here would
+    # scan the whole collection for no matches the indexed field would not
+    # already catch (rule 12).
+    return {"username_search": schema.username_search(value)}
+
+
+def _search_filter(
+    query: str, statuses: Iterable[str] | None, ticket_types: Iterable[str] | None
+) -> dict:
+    filt: dict = {**RUNTIME_FILTER, **_search_identity(query)}
+    if statuses:
+        filt["status"] = {"$in": [schema.ticket_status(value) for value in statuses]}
+    if ticket_types:
+        filt["ticket_type"] = {
+            "$in": [schema.ticket_type(value) for value in ticket_types]
+        }
+    return filt
+
+
+async def search(
+    mongo: MongoClient,
+    query: str = "",
+    *,
+    statuses: Iterable[str] | None = None,
+    ticket_types: Iterable[str] | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    filt = _search_filter(query, statuses, ticket_types)
+    amount = max(1, min(int(limit), 10))
+    cursor = (await _reader(mongo)).find(filt)
+    raw = await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
+        length=amount
+    )
+    return _normalized_many(raw)
+
+
+async def search_count(
+    mongo: MongoClient,
+    query: str = "",
+    *,
+    statuses: Iterable[str] | None = None,
+    ticket_types: Iterable[str] | None = None,
+) -> int:
+    """How many tickets `search` matches in total, ignoring its own limit.
+
+    Lets the search panel tell a recruiter "newest 10 of 27" instead of a
+    fixed "newest 10 matches" that hides how many results are not shown.
+    """
+    filt = _search_filter(query, statuses, ticket_types)
+    return int(await (await _reader(mongo)).count_documents(filt))
+
+
+# Browse rows render number, applicant, status and age only; never pull the
+# audit array or other large fields for a list page (rule 12).
+BROWSE_PROJECTION = {
+    "_id": 1, "type": 1, "venue": 1, "runtime": 1, "ticket_type": 1,
+    "ticket_number": 1, "user_id": 1, "username": 1, "status": 1,
+    "created_at": 1, "guild_id": 1, "location": 1, "schema_version": 1,
+}
+
+
+def _browse_filter(
+    statuses: Iterable[str] | None,
+    ticket_types: Iterable[str] | None,
+    since,
+    until=None,
+    *,
+    identity_discord_ids: Iterable | None = None,
+    identity_player_tags: Iterable[str] | None = None,
+) -> dict:
+    """Build the console Browse filter.
+
+    `status`/`ticket_type` are only added when the caller actually restricts
+    them; an empty/`None` value leaves the key out entirely (the console's
+    "All" option) rather than an `$in` over every known value, so a bare
+    "All status" browse still implies `thread_v2_created`'s partial filter
+    (RUNTIME_FILTER) instead of one it cannot serve a sort from -- see
+    `ensure_indexes` for why that distinction has its own index.
+
+    `until` (exclusive, `$lt`) pairs with `since` (inclusive, `$gte`) to
+    express the console's Custom range -- both land in the same `created_at`
+    sub-document so `thread_v2_created`'s sort still applies.
+    """
+    filt: dict = dict(RUNTIME_FILTER)
+    statuses = tuple(statuses or ())
+    ticket_types = tuple(ticket_types or ())
+    if statuses:
+        filt["status"] = {"$in": [schema.ticket_status(value) for value in statuses]}
+    if ticket_types:
+        filt["ticket_type"] = {
+            "$in": [schema.ticket_type(value) for value in ticket_types]
+        }
+    if since is not None or until is not None:
+        created_at: dict = {}
+        if since is not None:
+            created_at["$gte"] = since
+        if until is not None:
+            created_at["$lt"] = until
+        filt["created_at"] = created_at
+    # ``None`` means no applicant-flag filter. Empty iterables mean the
+    # selected flag currently has no active identities and must match zero
+    # tickets, rather than accidentally widening back to every ticket.
+    if identity_discord_ids is not None or identity_player_tags is not None:
+        identities: list[dict] = []
+        ids = [item for value in (identity_discord_ids or ()) for item in _mixed_id(value)]
+        tags = schema.player_tags(identity_player_tags or ())
+        if ids:
+            identities.append({"user_id": {"$in": ids}})
+        if tags:
+            identities.append({"player_tags": {"$in": tags}})
+        filt["$or"] = identities or [{"_id": {"$in": []}}]
+    return filt
+
+
+async def browse(
+    mongo: MongoClient,
+    *,
+    statuses: Iterable[str] | None = None,
+    ticket_types: Iterable[str] | None = None,
+    since=None,
+    until=None,
+    page: int = 1,
+    page_size: int = 10,
+    identity_discord_ids: Iterable | None = None,
+    identity_player_tags: Iterable[str] | None = None,
+) -> list[dict]:
+    """One page of the console's Browse tickets list, newest first."""
+    filt = _browse_filter(
+        statuses, ticket_types, since, until,
+        identity_discord_ids=identity_discord_ids,
+        identity_player_tags=identity_player_tags,
+    )
+    amount = max(1, min(int(page_size), 25))
+    skip = max(0, int(page) - 1) * amount
+    cursor = (await _reader(mongo)).find(filt, BROWSE_PROJECTION)
+    raw = await cursor.sort([("created_at", -1), ("_id", -1)]).skip(skip).limit(
+        amount
+    ).to_list(length=amount)
+    return _normalized_many(raw)
+
+
+async def browse_count(
+    mongo: MongoClient,
+    *,
+    statuses: Iterable[str] | None = None,
+    ticket_types: Iterable[str] | None = None,
+    since=None,
+    until=None,
+    identity_discord_ids: Iterable | None = None,
+    identity_player_tags: Iterable[str] | None = None,
+) -> int:
+    """How many tickets `browse` matches in total, ignoring page/page_size."""
+    filt = _browse_filter(
+        statuses, ticket_types, since, until,
+        identity_discord_ids=identity_discord_ids,
+        identity_player_tags=identity_player_tags,
+    )
+    return int(await (await _reader(mongo)).count_documents(filt))
+
+
+async def history_for(
+    mongo: MongoClient,
+    *,
+    user_id=None,
+    player_tags: Iterable[str] = (),
+    exclude_id=None,
+    limit: int = 10,
+) -> list[dict]:
+    identities: list[dict] = []
+    ids = _mixed_id(user_id)
+    if ids:
+        identities.append({"user_id": {"$in": ids}})
+    tags = schema.player_tags(player_tags)
+    if tags:
+        identities.extend([
+            {"player_tags": {"$in": tags}},
+            {"player_tag": {"$in": tags}},
+            {"tag": {"$in": tags}},
+        ])
+    if not identities:
+        return []
+    filt: dict = {**RUNTIME_FILTER, "$or": identities}
+    if exclude_id is not None:
+        filt["_id"] = {"$ne": exclude_id}
+    amount = max(1, min(int(limit), 10))
+    cursor = (await _reader(mongo)).find(filt)
+    raw = await cursor.sort([("created_at", -1), ("_id", -1)]).limit(amount).to_list(
+        length=amount
+    )
+    return _normalized_many(raw)
+
+
+async def denial_history_pair_for(
+    mongo: MongoClient, *, user_id=None, player_tags: Iterable[str] = (),
+) -> tuple[dict, dict] | None:
+    """Find an actual denial followed by another canonical ticket."""
+    identities: list[dict] = []
+    ids = [item for value in (user_id if isinstance(user_id, (list, tuple, set)) else (user_id,))
+           for item in _mixed_id(value)]
+    if ids:
+        identities.append({"user_id": {"$in": ids}})
+    tags = schema.player_tags(player_tags)
+    if tags:
+        identities.append({"player_tags": {"$in": tags}})
+    if not identities:
+        return None
+    reader = await _reader(mongo)
+    denied = await reader.find_one(
+        {**RUNTIME_FILTER, "status": "denied", "created_at": {"$type": "date"},
+         "$or": identities},
+        sort=[("created_at", 1), ("_id", 1)],
+    )
+    if not denied or not isinstance(denied.get("created_at"), datetime):
+        return None
+    later = await reader.find_one({
+        **RUNTIME_FILTER,
+        "_id": {"$ne": denied.get("_id")},
+        "created_at": {"$gt": denied["created_at"]},
+        "$or": identities,
+    }, sort=[("created_at", 1), ("_id", 1)])
+    if not later:
+        return None
+    return normalize_ticket_document(denied), normalize_ticket_document(later)
+
+
+async def console_counts(mongo: MongoClient) -> dict:
+    """Return chart totals as ``total/status/by_type`` dictionaries."""
+    pipeline = [
+        {"$match": {
+            **RUNTIME_FILTER,
+            "status": {"$in": sorted(schema.TICKET_STATUSES)},
+        }},
+        {"$group": {
+            "_id": {"status": "$status", "ticket_type": "$ticket_type"},
+            "count": {"$sum": 1},
+        }},
+    ]
+    cursor = await (await _reader(mongo)).aggregate(pipeline)
+    rows = await cursor.to_list(length=None)
+    status = {value: 0 for value in sorted(schema.TICKET_STATUSES)}
+    by_type = {
+        kind: {value: 0 for value in sorted(schema.TICKET_STATUSES)}
+        for kind in sorted(schema.TICKET_TYPES)
+    }
+    for row in rows:
+        state = (row.get("_id") or {}).get("status")
+        kind = (row.get("_id") or {}).get("ticket_type")
+        count = int(row.get("count") or 0)
+        if state in status:
+            status[state] += count
+        if kind in by_type and state in by_type[kind]:
+            by_type[kind][state] += count
+    return {"total": sum(status.values()), "status": status, "by_type": by_type}
+
+
+def _identity_fingerprint(doc: Mapping) -> tuple:
+    location = doc.get("location") or {}
+    source = doc.get("source") or {}
+    return (
+        str(doc.get("_id")),
+        doc.get("ticket_type"),
+        as_int(doc.get("ticket_number")),
+        as_int(doc.get("user_id")),
+        as_int(location.get("id")),
+        as_int(location.get("staff_space_id")),
+        as_int(source.get("guild_id")),
+        as_int(source.get("channel_id")),
+    )
+
+
+async def insert_one(mongo: MongoClient, doc: dict) -> dict:
+    """Create once; exact retries return the committed record without replacing it."""
+    normalized = normalize_ticket_document(
+        {**dict(doc), "runtime": ticket_runtime.THREAD_RUNTIME}
+    )
+    if normalized.get("venue") != "thread":
+        raise schema.TicketSchemaError("runtime ticket inserts must be thread tickets")
+    if normalized.get("status") == "open" and (
+        not normalized.get("open_slot_id")
+        or not normalized.get("creation_workflow_id")
+    ):
+        raise schema.TicketSchemaError(
+            "live thread tickets require a shared open-slot binding"
+        )
+    primary = mongo.tickets
+    try:
+        await primary.update_one(
+            {"_id": normalized["_id"]},
+            {"$setOnInsert": normalized},
+            upsert=True,
+        )
+    except DuplicateKeyError as exc:
+        existing = await primary.find_one({
+            **RUNTIME_FILTER,
+            "user_id": normalized.get("user_id"),
+            "ticket_type": normalized.get("ticket_type"),
+            "status": "open",
+        })
+        if existing is not None:
+            raise OpenTicketExistsError(existing) from exc
+        raise TicketConflictError("a unique ticket identity is already in use") from exc
+
+    committed = await primary.find_one(
+        {"_id": normalized["_id"], **RUNTIME_FILTER}
+    )
+    if committed is None:
+        if await primary.find_one({"_id": normalized["_id"]}) is not None:
+            raise TicketConflictError(
+                f"ticket id {normalized['_id']} belongs to another runtime"
+            )
+        raise TicketStoreError("primary ticket write was not readable after commit")
+    if _identity_fingerprint(committed) != _identity_fingerprint(normalized):
+        raise TicketConflictError(
+            f"ticket id {normalized['_id']} already belongs to another ticket"
+        )
+    return committed
+
+
+# location.id/channel_id, location.staff_space_id/thread_id,
+# location.guild_id/guild_id, and player_tags[0]/player_tag are each stored
+# twice (rule 5/6). `transition()` keeps its own writes off these by
+# stripping them out of `extra`; the generic `update_one`/`update_many`
+# passthrough has no such filter, so it is rejected here instead — a caller
+# that genuinely needs to change one of these goes through transition(),
+# compare_and_swap_linked_accounts(), or another dedicated setter that
+# writes both halves together under the `rev` CAS.
+GUARDED_IDENTITY_FIELDS = frozenset({
+    "location", "guild_id", "channel_id", "thread_id",
+    "player_tag", "player_tags",
+})
+
+
+def _reject_guarded_identity_writes(update: Mapping) -> None:
+    for operator, fields in update.items():
+        if not str(operator).startswith("$") or not isinstance(fields, Mapping):
+            continue
+        for key in fields:
+            if str(key).split(".", 1)[0] in GUARDED_IDENTITY_FIELDS:
+                raise GuardedFieldWriteError(
+                    f"update_one/update_many cannot write duplicated identity "
+                    f"field '{key}'; use transition() or a dedicated setter"
+                )
 
 
 async def update_one(mongo: MongoClient, filt: dict, update: dict):
-    """Returns the PRIMARY result, so matched_count still means what callers think.
-
-    close.py checks matched_count to catch silent no-op status writes
-    (_status_write_warning). That check has to be against the collection being
-    read from, or it reports on the wrong side of the transition.
-    """
-    primary, secondary = await _both(mongo)
-    result = await primary.update_one(filt, update)
-    await secondary.update_one(filt, update)
-    return result
+    _reject_guarded_identity_writes(update)
+    return await mongo.tickets.update_one(
+        {**dict(filt), **RUNTIME_FILTER}, update
+    )
 
 
 async def update_many(mongo: MongoClient, filt: dict, update: dict):
-    primary, secondary = await _both(mongo)
-    result = await primary.update_many(filt, update)
-    await secondary.update_many(filt, update)
-    return result
-
-
-# --- conditional writes ------------------------------------------------------
-#
-# Everything below exists because an unconditional $set loses updates. Two
-# recruiters resolving one ticket in the same second both used to succeed, both
-# ran their side effects, and the last write silently won. The pattern here is
-# the one already proven in manage.py's cleanup filter: re-assert the status you
-# believe you are transitioning FROM, inside the filter, so Mongo arbitrates
-# rather than the network.
-#
-# The rule that makes it worth anything: SIDE EFFECTS RUN ONLY ON "won".
-
-WON = "won"
-LOST = "lost"
-MISSING = "missing"
+    _reject_guarded_identity_writes(update)
+    return await mongo.tickets.update_many(
+        {**dict(filt), **RUNTIME_FILTER}, update
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Transition:
-    """Result of a conditional ticket write.
-
-    outcome == WON     -> this caller caused the change. `doc` is the post-image.
-                          Side effects are permitted, and only here.
-    outcome == LOST    -> the precondition did not hold. `doc` is the CURRENT
-                          document, so the caller can say who got there first and
-                          when. Nothing was written.
-    outcome == MISSING -> no such ticket. `doc` is None. Nothing was written.
-    """
-
     outcome: str
     doc: dict | None
+    reason: str | None = None
+    blocker: dict | None = None
 
     @property
     def won(self) -> bool:
         return self.outcome == WON
 
 
-async def _mirror(mongo: MongoClient, doc: dict) -> None:
-    """Copy a post-image onto the secondary collection, unconditionally.
-
-    Deliberately NOT conditional. The secondary is a copy kept so the
-    `ticket_store` flag stays reversible; it is not a second opinion. Re-applying
-    the precondition here would let a drifted secondary silently refuse and the
-    divergence would compound. Mirroring the post-image instead means a
-    conditional write HEALS drift rather than perpetuating it.
-
-    Safe because nothing else writes ticket documents to the secondary - every
-    path goes through this module - so there is no concurrent writer to clobber.
-    """
-    _, secondary = await _both(mongo)
-    try:
-        await secondary.replace_one({"_id": doc["_id"]}, doc, upsert=True)
-    except Exception:
-        # The primary has already committed and the primary is what reads come
-        # from, so the outcome stands. Divergence shows up in /ticket diagnostics.
-        _log.exception("ticket mirror failed for %s - collections have diverged", doc.get("_id"))
+def _rev_filter(rev: int) -> int | dict:
+    # Historical rows have no rev. They are logically revision zero.
+    return {"$in": [0, None]} if rev == 0 else rev
 
 
 async def _conditional(
-        mongo: MongoClient,
-        filt: dict,
-        update: dict,
-        ticket_id,
+    mongo: MongoClient,
+    filt: dict,
+    update: dict,
+    ticket_id,
 ) -> Transition:
-    """find_one_and_update against the primary, then mirror on success."""
-    primary, _ = await _both(mongo)
-    doc = await primary.find_one_and_update(
+    doc = await mongo.tickets.find_one_and_update(
         filt, update, return_document=ReturnDocument.AFTER
     )
     if doc is not None:
-        await _mirror(mongo, doc)
         return Transition(WON, doc)
-
-    # Nothing matched. Distinguish "someone beat me to it" from "no such ticket",
-    # because they need completely different things said to the user.
-    current = await primary.find_one({"_id": ticket_id})
+    current = await mongo.tickets.find_one({"_id": ticket_id, **RUNTIME_FILTER})
     return Transition(LOST, current) if current is not None else Transition(MISSING, None)
 
 
-async def transition(
-        mongo: MongoClient,
-        ticket_id,
-        *,
-        to_status: str,
-        actor_id: int,
-        actor_name: str,
-        expect: str | None = "open",
-        extra: dict | None = None,
-        overrides: dict | None = None,
+async def compare_and_swap_linked_accounts(
+    mongo: MongoClient,
+    ticket_id,
+    *,
+    expected_revision: int,
+    update: dict,
+    fetched_at: datetime | None = None,
 ) -> Transition:
-    """Move a ticket to `to_status`, only if it is currently `expect`.
+    """Atomically persist one linked-account observation without changing decision rev.
 
-    expect=None performs the write unconditionally. That is the override path -
-    a recruiter deliberately overturning a resolution someone else already made,
-    which is normal in recruiting (a mistaken deny, an appeal, a leader's call)
-    and should not require hand-editing Mongo.
+    Ticket ``rev`` protects recruiter decisions and the component state rendered from
+    them.  Account refreshes use their own revision so a background refresh cannot
+    invalidate an otherwise current Approve/Deny panel.  The CAS still prevents two
+    workers from replacing each other's complete account snapshots.
 
-    `overrides` is the prior resolution the actor was SHOWN before confirming.
-    It is recorded verbatim in the audit entry. Note the small TOCTOU: a third
-    write landing between the actor reading the warning and confirming it would
-    not be reflected. That is accepted deliberately - the audit records what the
-    human was told and acted on, which is the more useful record of a decision.
+    ``fetched_at``, when given, is the caller's lookup start time.  The revision
+    filter alone cannot stop a slower, older lookup from overwriting a faster,
+    newer one: both can observe the same revision, the newer one wins the CAS
+    first, and the older one's retry then re-reads the now-current revision and
+    matches it too.  Requiring the document's stored ``linked_accounts.fetched_at``
+    to be no newer than this lookup's rejects that stale write.
     """
-    now = datetime.now(timezone.utc)
+    revision = max(0, int(expected_revision))
+    revision_filter = (
+        {"$or": [
+            {"linked_accounts.revision": 0},
+            {"linked_accounts.revision": {"$exists": False}},
+        ]}
+        if revision == 0
+        else {"linked_accounts.revision": revision}
+    )
+    filt = {"_id": ticket_id, **RUNTIME_FILTER}
+    if fetched_at is None:
+        filt.update(revision_filter)
+    else:
+        filt["$and"] = [
+            revision_filter,
+            {"$or": [
+                {"linked_accounts.fetched_at": {"$exists": False}},
+                {"linked_accounts.fetched_at": {"$lte": fetched_at}},
+            ]},
+        ]
+    return await _conditional(mongo, filt, update, ticket_id)
 
+
+async def transition(
+    mongo: MongoClient,
+    ticket_id,
+    *,
+    to_status: str,
+    actor_id: int,
+    actor_name: str,
+    expect: str | None = "open",
+    expected_rev: int | None = None,
+    extra: dict | None = None,
+    overrides: dict | None = None,
+    effect_kind: str | None = None,
+    prior_effect_marker: str | None = None,
+    prior_effects_legacy_baseline: bool = False,
+    linked_account_snapshot: Mapping | None = None,
+    linked_account_retry: Mapping | None = None,
+    expected_linked_account_revision: int | None = None,
+    previous_notification_message_id: int | None = None,
+) -> Transition:
+    """CAS a ticket status using the status and revision the actor observed."""
+    target = schema.ticket_status(to_status)
+    if target == "open":
+        raise schema.TicketSchemaError("resolved tickets cannot be reopened")
+    actor = schema.snowflake(actor_id, field="actor_id")
+    name = str(actor_name or "").strip() or str(actor)
+
+    primary = mongo.tickets
+    current = await primary.find_one({"_id": ticket_id, **RUNTIME_FILTER})
+    if current is None:
+        return Transition(MISSING, None)
+
+    if expect is None:
+        expect = (overrides or {}).get("status")
+    expected_status = schema.ticket_status(expect)
+    if current.get("status") != expected_status:
+        return Transition(LOST, current)
+
+    current_rev = max(0, int(current.get("rev") or 0))
+    if expected_rev is None:
+        expected_rev = (overrides or {}).get("rev", current_rev)
+    expected_rev = max(0, int(expected_rev))
+    if current_rev != expected_rev:
+        return Transition(LOST, current)
+    if (
+        overrides is not None
+        and not prior_effect_marker
+        and not (
+            prior_effects_legacy_baseline
+            and is_markerless_legacy_terminal(current)
+        )
+    ):
+        return Transition(LOST, current)
+
+    now = utcnow()
+    marker = f"ticket-resolution:{ticket_id}:{expected_rev + 1}:{target}"
     audit = {
+        "event": "status_transition",
         "at": now,
-        "actor": actor_id,
-        "actor_name": actor_name,
-        "to": to_status,
-        "from": expect if expect is not None else (overrides or {}).get("status"),
+        "actor": actor,
+        "actor_name": name,
+        "from": expected_status,
+        "to": target,
         "override": overrides is not None,
+        "rev_before": expected_rev,
+        "rev_after": expected_rev + 1,
+        "effect_marker": marker,
     }
-    if overrides:
+    if overrides is not None:
+        # An override always overturns a prior terminal decision (open cannot
+        # be a `from` here - transition() below refuses re-opening). Record it
+        # under its own event name with the fields a reader would look for,
+        # alongside `overrode` which keeps the prior decision's own identity.
+        audit["event"] = "overturn"
+        audit["by"] = actor
+        audit["reason"] = str((extra or {}).get("denial_reason") or "") or None
         audit["overrode"] = {
-            "status": overrides.get("status"),
+            "status": expected_status,
             "by": overrides.get("by"),
             "by_name": overrides.get("by_name"),
             "at": overrides.get("at"),
+            "rev": expected_rev,
+        }
+    if linked_account_snapshot is not None:
+        audit["linked_accounts"] = {
+            "state": str(linked_account_snapshot.get("state") or "failed"),
+            "revision": max(0, int(linked_account_snapshot.get("revision") or 0)),
+            "current_tags": schema.player_tags(
+                linked_account_snapshot.get("current_tags") or ()
+            ),
+            "retry_required": bool(linked_account_snapshot.get("retry_required")),
         }
 
-    filt = {"_id": ticket_id}
-    if expect is not None:
-        filt["status"] = expect
+    protected = {
+        "_id", "type", "schema_version", "venue", "runtime", "location", "guild_id",
+        "channel_id", "thread_id", "category_id", "user_id", "ticket_type",
+        "ticket_number", "status", "rev", "audit", "created_at",
+    }
+    supplied = {key: value for key, value in dict(extra or {}).items() if key not in protected}
+    resolution_effects_doc = {
+        "version": 1,
+        "marker": marker,
+        "kind": str(effect_kind or ("approve" if target == "approved" else "deny_custom")),
+        "notification": {"state": "pending"},
+        "staff_context": {"state": "pending"},
+        "hub": {"state": "pending"},
+        "complete": False,
+        "updated_at": now,
+        # An overturn's replacement card must remove the decision it is
+        # replacing. Recorded on the resolution_effects document itself
+        # because this wholesale replacement is the last point that still
+        # has both the "is this an overturn" fact and the prior card's
+        # checkpointed message id in hand.
+        "overturn": overrides is not None,
+    }
+    if previous_notification_message_id:
+        resolution_effects_doc["previous_notification_message_id"] = int(
+            previous_notification_message_id
+        )
+    set_fields = {
+        "status": target,
+        "updated_at": now,
+        "handled_at": now,
+        "handled_by": actor,
+        "handled_by_name": name,
+        "resolution_effects": resolution_effects_doc,
+        **supplied,
+    }
+    if linked_account_retry is not None:
+        retry_source = str(linked_account_retry.get("source") or "final_denial")[:80]
+        retry_error = str(linked_account_retry.get("error") or "AccountSyncError")[:120]
+        set_fields.update({
+            "linked_accounts.version": 1,
+            "linked_accounts.state": "failed",
+            "linked_accounts.retry_required": True,
+            "linked_accounts.source": retry_source,
+            "linked_accounts.last_attempt_at": now,
+            "linked_accounts.error": retry_error,
+        })
+    unset_fields = {field: "" for field in schema.CLAIM_FIELDS}
+    if target == "approved":
+        set_fields.setdefault("approved_at", now)
+        set_fields.setdefault("approved_by", actor)
+        set_fields.setdefault("approved_by_name", name)
+        unset_fields.update({
+            "denied_at": "", "denied_by": "", "denied_by_name": "",
+            "denial_type": "", "denial_reason": "",
+        })
+    else:
+        set_fields.setdefault("denied_at", now)
+        set_fields.setdefault("denied_by", actor)
+        set_fields.setdefault("denied_by_name", name)
+        unset_fields.update({
+            "approved_at": "", "approved_by": "", "approved_by_name": "",
+        })
 
-    return await _conditional(
+    transition_filter = {
+        "_id": ticket_id,
+        **RUNTIME_FILTER,
+        "status": expected_status,
+        "rev": _rev_filter(expected_rev),
+    }
+    if expected_linked_account_revision is not None:
+        # A terminal decision is based on the just-refreshed account view.  Do
+        # not let a concurrent refresh replace that view between the flag gate
+        # and this write; callers must re-read and make a fresh decision.
+        account_revision = max(0, int(expected_linked_account_revision))
+        if account_revision == 0:
+            transition_filter["$or"] = [
+                {"linked_accounts.revision": 0},
+                {"linked_accounts.revision": {"$exists": False}},
+            ]
+        else:
+            transition_filter["linked_accounts.revision"] = account_revision
+    if overrides is not None:
+        # A terminal decision's Discord effects are part of the decision being
+        # overturned. Keep this in the same atomic predicate as status/rev so a
+        # superseded worker cannot still be preparing its applicant notice when
+        # the replacement decision commits.
+        if prior_effect_marker:
+            transition_filter.update({
+                "resolution_effects.marker": str(prior_effect_marker),
+                "resolution_effects.complete": True,
+            })
+        else:
+            # Terminal legacy imports predate live resolution workers. They are
+            # safe to override only while their provenance remains intact and
+            # no resolution marker/checkpoint appeared after the operator read
+            # the row.
+            transition_filter.update({
+                "source.guild_id": {"$exists": True},
+                "source.channel_id": {"$exists": True},
+                "audit.event": {"$in": [
+                    "legacy_ticket_imported",
+                    "legacy_location_replaced",
+                ]},
+                "resolution_effects.marker": {"$exists": False},
+                "resolution_effects.complete": {"$exists": False},
+            })
+
+    push_fields: dict = {
+        "audit": {"$each": [audit], "$slice": -MAX_AUDIT_ENTRIES},
+    }
+    increments = {"rev": 1}
+    if linked_account_retry is not None:
+        increments["linked_accounts.revision"] = 1
+        push_fields["account_identity_audit"] = {
+            "$each": [{
+                "event": "linked_accounts_sync_failed",
+                "at": now,
+                "source": set_fields["linked_accounts.source"],
+                "error": set_fields["linked_accounts.error"],
+                "retry_queued_with_decision": True,
+            }],
+            "$slice": -MAX_AUDIT_ENTRIES,
+        }
+
+    outcome = await _conditional(
         mongo,
-        filt,
-        {"$set": {"status": to_status, **(extra or {})}, "$push": {"audit": audit}},
-        ticket_id,
-    )
-
-
-async def claim(mongo: MongoClient, ticket_id, actor_id: int, actor_name: str) -> Transition:
-    """Advisory claim. Discord cannot enforce ownership inside a thread, so this
-    records and signals intent - it does not prevent anyone acting.
-
-    `{"claimed_by": None}` matches documents where the field is null OR absent,
-    which is every ticket written before this existed. No backfill needed.
-    """
-    now = datetime.now(timezone.utc)
-    return await _conditional(
-        mongo,
-        {"_id": ticket_id, "status": "open", "claimed_by": None},
+        transition_filter,
         {
-            "$set": {"claimed_by": actor_id, "claimed_by_name": actor_name, "claimed_at": now},
-            "$push": {"audit": {
-                "at": now, "actor": actor_id, "actor_name": actor_name, "to": "claimed",
-            }},
+            "$set": set_fields,
+            "$unset": unset_fields,
+            "$inc": increments,
+            "$push": push_fields,
         },
         ticket_id,
     )
+    if outcome.won:
+        try:
+            await ticket_runtime.mark_slot_release_pending(
+                mongo,
+                ticket_id=ticket_id,
+                terminal_status=target,
+            )
+        except ticket_runtime.SlotConflict as error:
+            if "no open slot" in str(error):
+                # Overturn (approved -> denied or back): the slot was already
+                # released by the first decision, so there is nothing to
+                # release. Normal, not an error.
+                _log.info(
+                    "ticket slot already released for %s (%s -> %s)",
+                    ticket_id, expected_status, target,
+                )
+            else:
+                _log.exception(
+                    "ticket slot terminal checkpoint failed for %s", ticket_id
+                )
+        except Exception:
+            # The decision is already authoritative. Startup reconciliation can
+            # observe the terminal row and repair/release its exact bound slot.
+            _log.exception("ticket slot terminal checkpoint failed for %s", ticket_id)
+        else:
+            try:
+                await ticket_runtime.release_open_slot(mongo, ticket_id=ticket_id)
+            except Exception:
+                _log.exception("ticket slot release deferred for %s", ticket_id)
+        # Thread-system state (ticket_creation_state) only exists for
+        # thread-venue tickets. transition() is also used by the legacy
+        # channel package, whose tickets carry venue "channel"; calling this
+        # for them would upsert a bogus row that nothing ever cleans up.
+        if str((outcome.doc or {}).get("venue") or "") == "thread":
+            # Local import: thread_service imports this module at top level,
+            # so a top-level import here would be circular.
+            from extensions.commands.tickets import thread_service
+
+            await thread_service.mark_creation_complete_for_terminal_ticket(
+                mongo, outcome.doc
+            )
+    return outcome
 
 
-async def release(
-        mongo: MongoClient,
-        ticket_id,
-        actor_id: int,
-        actor_name: str,
-        *,
-        force: bool = False,
+MAX_ANSWER_SNAPSHOTS = 50
+MAX_ANSWER_LENGTH = 2000
+
+
+async def append_candidate_activity(
+    mongo: MongoClient,
+    ticket_id,
+    *,
+    message_id,
+    author_id,
+    content: str,
+    mentioned_tags: Iterable[str] = (),
+    occurred_at: datetime | None = None,
+    kind: str = "answer",
 ) -> Transition:
-    """Give up a claim. `force` lets an admin release someone else's."""
-    now = datetime.now(timezone.utc)
-    filt = {"_id": ticket_id, "claimed_by": {"$ne": None}}
-    if not force:
-        filt["claimed_by"] = actor_id
+    """Idempotently append one bounded candidate answer and merge mentioned tags.
 
-    return await _conditional(
-        mongo,
-        filt,
-        {
-            "$set": {"claimed_by": None, "claimed_by_name": None, "claimed_at": None},
-            "$push": {"audit": {
-                "at": now, "actor": actor_id, "actor_name": actor_name,
-                "to": "released", "forced": force,
-            }},
+    Tags scraped from applicant messages are unverified — anyone can type any
+    tag. They are stored on ``mentioned_tags`` as a search/display hint only
+    and never join ``player_tags``, the verified identity used for flag and
+    blacklist matching.
+
+    This never touches ``rev``: ``rev`` is the console's resolution CAS
+    counter, and an applicant typing another answer while a recruiter has a
+    detail panel open must not make that recruiter's Approve/Deny look like
+    it raced someone else. Anything that needs to observe fresh activity
+    bumps ``activity_revision`` instead.
+    """
+    message = schema.snowflake(message_id, field="message_id")
+    author = schema.snowflake(author_id, field="author_id")
+    at = schema.normalize_datetime(occurred_at, field="occurred_at")
+    tags = schema.player_tags(mentioned_tags)
+    answer = {
+        "message_id": message,
+        "author_id": author,
+        "kind": str(kind or "answer").strip()[:40],
+        "content": str(content or "").strip()[:MAX_ANSWER_LENGTH],
+        "at": at,
+    }
+    primary = mongo.tickets
+    update: dict = {
+        "$push": {
+            "answers": {"$each": [answer], "$slice": -MAX_ANSWER_SNAPSHOTS}
         },
-        ticket_id,
+        "$max": {"last_activity_at": at},
+        "$set": {"updated_at": utcnow()},
+        "$inc": {"answer_count": 1, "activity_revision": 1},
+    }
+    if tags:
+        update["$addToSet"] = {"mentioned_tags": {"$each": tags}}
+    updated = await primary.find_one_and_update(
+        {
+            "_id": ticket_id,
+            **RUNTIME_FILTER,
+            "status": "open",
+            "answers.message_id": {"$ne": message},
+        },
+        update,
+        return_document=ReturnDocument.AFTER,
     )
+    if updated is None:
+        current = await primary.find_one({"_id": ticket_id, **RUNTIME_FILTER})
+        if current is None:
+            return Transition(MISSING, None)
+        if any(as_int(item.get("message_id")) == message for item in current.get("answers", [])):
+            return Transition(WON, current, "already recorded")
+        return Transition(LOST, current, "ticket is no longer open")
+    return Transition(WON, updated)
 
 
-# --- reconciliation helpers --------------------------------------------------
+async def mark_thread_missing(
+    mongo: MongoClient,
+    ticket_id,
+    *,
+    thread_role: str,
+) -> Transition:
+    """Record that one thread of a ticket's pair is gone from Discord.
+
+    A field, not a status -- ``status`` still reflects the recruiter's
+    decision (open/approved/denied). This only records that the candidate's
+    or staff's Discord thread itself was deleted, so re-click/My ticket can
+    let the applicant open a new one instead of pointing at a dead thread
+    forever, and resolution effects can skip instead of retrying every 60s.
+
+    ``thread_missing.roles`` accumulates additively (``$addToSet``): a
+    candidate-thread deletion followed by a staff-thread deletion (or the
+    reverse) must record both facts, not lose the first one -- every
+    consumer tests membership (``"candidate" in roles`` / ``"staff" in
+    roles``), not equality. A staff marker therefore never downgrades a
+    candidate marker: once "candidate" is in ``roles`` it can never be
+    removed, only added to.
+
+    ``thread_missing.thread_role`` is kept in sync as the first-recorded
+    role, for callers still on the old single-role shape. It is written
+    once, guarded by an ``$exists: False`` filter, so a later mark of the
+    other role can never overwrite it -- the old version's no-downgrade
+    behaviour falls out of that by construction.
+
+    Idempotent: re-marking an already-flagged ticket just refreshes the
+    timestamp, never raises.
+    """
+    role = str(thread_role or "").strip()
+    if role not in {"candidate", "staff"}:
+        raise ValueError("thread_role must be 'candidate' or 'staff'")
+    now = utcnow()
+    updated = await mongo.tickets.find_one_and_update(
+        {"_id": ticket_id, **RUNTIME_FILTER},
+        {
+            "$addToSet": {"thread_missing.roles": role},
+            "$set": {"thread_missing.detected_at": now, "updated_at": now},
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if updated is None:
+        return Transition(MISSING, None)
+    await mongo.tickets.find_one_and_update(
+        {
+            "_id": ticket_id,
+            **RUNTIME_FILTER,
+            "thread_missing.thread_role": {"$exists": False},
+        },
+        {"$set": {"thread_missing.thread_role": role}},
+    )
+    updated.setdefault("thread_missing", {}).setdefault("thread_role", role)
+    return Transition(WON, updated)
+
+
+async def claim_creation_dm(mongo: MongoClient, ticket_id) -> bool:
+    """CAS-claim the one-time send of the ticket creation DM.
+
+    A retried REST call after a crash between send and record must not DM
+    the applicant twice, so the marker is written before the DM is sent and
+    the filter only matches while it is still unset. Returns True when this
+    call won the claim (send the DM); False when it was already claimed.
+    """
+    updated = await mongo.tickets.find_one_and_update(
+        {"_id": ticket_id, **RUNTIME_FILTER, "creation_dm_sent_at": {"$exists": False}},
+        {"$set": {"creation_dm_sent_at": utcnow()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    return updated is not None
+
 
 async def status_counts(collection) -> dict[str, int]:
-    """{status: count} for ticket documents in one collection.
-
-    Takes a collection rather than the client because both /ticket diagnostics
-    and the backfill need to compare the two sides directly.
-    """
     docs = await collection.find(TICKET_FILTER, {"status": 1}).to_list(length=None)
-    return dict(Counter(d.get("status") or "(missing)" for d in docs))
+    return dict(Counter(doc.get("status") or "(missing)" for doc in docs))
+
+
+def _duplicates(values: Mapping[tuple, list[str]]) -> list[dict]:
+    return [
+        {"key": key, "ticket_ids": ids}
+        for key, ids in values.items()
+        if len(ids) > 1
+    ]
+
+
+def index_conflicts_for_documents(docs: Iterable[Mapping]) -> dict[str, list]:
+    """Preflight every unique index after mixed-ID/schema normalization."""
+    buckets: dict[str, defaultdict] = {
+        "location": defaultdict(list),
+        "staff_location": defaultdict(list),
+        "ticket_number": defaultdict(list),
+        "open_applicant": defaultdict(list),
+        "source": defaultdict(list),
+    }
+    schema_errors: list[dict] = []
+    for raw in docs:
+        if any(raw.get(key) != value for key, value in RUNTIME_FILTER.items()):
+            continue
+        try:
+            doc = normalize_ticket_document(raw)
+        except Exception as exc:
+            schema_errors.append({"ticket_id": str(raw.get("_id")), "error": str(exc)})
+            continue
+        ticket_id = str(doc["_id"])
+        location = doc.get("location") or {}
+        source = doc.get("source") or {}
+        if as_int(location.get("id")):
+            buckets["location"][as_int(location["id"])].append(ticket_id)
+        if as_int(location.get("staff_space_id")):
+            buckets["staff_location"][as_int(location["staff_space_id"])].append(ticket_id)
+        if doc.get("ticket_type") and as_int(doc.get("ticket_number")):
+            buckets["ticket_number"][(doc["ticket_type"], int(doc["ticket_number"]))].append(ticket_id)
+        if (
+            doc.get("venue") == "thread"
+            and doc.get("status") == "open"
+            and as_int(doc.get("user_id"))
+            and doc.get("ticket_type")
+        ):
+            buckets["open_applicant"][(int(doc["user_id"]), doc["ticket_type"])].append(ticket_id)
+        if as_int(source.get("guild_id")) and as_int(source.get("channel_id")):
+            buckets["source"][(int(source["guild_id"]), int(source["channel_id"]))].append(ticket_id)
+
+    conflicts = {name: _duplicates(values) for name, values in buckets.items()}
+    conflicts = {name: rows for name, rows in conflicts.items() if rows}
+    if schema_errors:
+        conflicts["schema"] = schema_errors
+    return conflicts
+
+
+async def index_conflicts(collection) -> dict[str, list]:
+    docs = await collection.find(RUNTIME_FILTER).to_list(length=None)
+    return index_conflicts_for_documents(docs)
+
+
+# Atlas failover raises a bare OperationFailure with one of these codes
+# (ExecutionTimeout, ShutdownInProgress, PrimarySteppedDown,
+# ExceededTimeLimit, InterruptedAtShutdown, InterruptedDueToReplStateChange).
+# These clear on their own once a primary is elected, so caching them would
+# block ticket intake for the retry window after Mongo has already recovered.
+# 6, 7, 89, 134, 9001 are pymongo's own retryable codes (HostUnreachable,
+# HostNotFound, NetworkTimeout, ReadConcernMajorityNotAvailableYet,
+# SocketException); a mongos-fronted deployment surfaces them as a bare
+# OperationFailure rather than a connection error.
+TRANSIENT_OPERATION_FAILURE_CODES = frozenset(
+    {6, 7, 50, 89, 91, 134, 189, 262, 9001, 11600, 11602}
+)
+
+
+def is_cacheable_index_error(exc: Exception) -> bool:
+    """Only an outcome that needs operator repair should be cached.
+
+    ``IndexConflictError`` (a conflicting row) and a stable pymongo
+    ``OperationFailure`` (an incompatible existing index) are stable until
+    someone fixes the data or the index definition, so caching them avoids
+    repeating the full-collection preflight scan on every interaction.
+
+    ``ExecutionTimeout``, ``WriteConcernError`` and ``WTimeoutError`` all
+    subclass ``OperationFailure`` but are transient, as is a bare
+    ``OperationFailure`` whose ``.code`` is in
+    ``TRANSIENT_OPERATION_FAILURE_CODES`` (Atlas failover/step-down). A
+    transient Atlas outage also raises ``ServerSelectionTimeoutError``,
+    ``AutoReconnect``, ``NetworkTimeout`` or another ``PyMongoError`` that is
+    not an ``OperationFailure`` at all -- none of these must be cached or
+    ticket intake would stay blocked for the retry window after Mongo has
+    already recovered.
+    """
+    if isinstance(exc, IndexConflictError):
+        return True
+    if not isinstance(exc, OperationFailure):
+        return False
+    if isinstance(exc, (ExecutionTimeout, WriteConcernError, WTimeoutError)):
+        return False
+    return exc.code not in TRANSIENT_OPERATION_FAILURE_CODES
+
+
+async def ensure_indexes(mongo: MongoClient) -> list[str]:
+    """Install v2-only indexes after preflight.
+
+    Mongo raises an index-options conflict if an old same-named definition is
+    broader. That failure is intentional and blocks intake for operator review;
+    this service never drops or silently replaces production indexes.
+
+    A failure here that needs operator repair (a conflicting row, an
+    incompatible existing index) is cached for ``INDEX_RETRY_SECONDS`` so a
+    caller on the ticket-creation hot path does not repeat the
+    full-collection preflight scan and every create_index round trip on each
+    interaction; it retries automatically once the window passes. A
+    transient connection failure is never cached -- see
+    ``is_cacheable_index_error`` -- so the next interaction retries
+    immediately instead of waiting out the window.
+    """
+    global _indexes_failed, _index_retry_at, _last_index_error
+    if _indexes_failed and time.monotonic() < _index_retry_at:
+        assert _last_index_error is not None
+        raise _last_index_error
+
+    try:
+        names = await _install_indexes(mongo)
+    except Exception as exc:
+        if is_cacheable_index_error(exc):
+            _indexes_failed = True
+            _index_retry_at = time.monotonic() + INDEX_RETRY_SECONDS
+            _last_index_error = exc
+        raise
+    _indexes_failed = False
+    _last_index_error = None
+    return names
+
+
+async def _install_indexes(mongo: MongoClient) -> list[str]:
+    conflicts = await index_conflicts(mongo.tickets)
+    if conflicts:
+        raise IndexConflictError(conflicts)
+    collection = mongo.tickets
+    specs = [
+        await collection.create_index(
+            [("location.id", 1)],
+            unique=True,
+            partialFilterExpression={
+                **RUNTIME_FILTER,
+                "location.id": {"$exists": True},
+            },
+            name="thread_v2_ticket_location_unique",
+        ),
+        await collection.create_index(
+            [("location.staff_space_id", 1)],
+            unique=True,
+            partialFilterExpression={
+                **RUNTIME_FILTER,
+                "location.staff_space_id": {"$exists": True},
+            },
+            name="thread_v2_ticket_staff_location_unique",
+        ),
+        # find_by_location resolves which ticket a channel/thread belongs to
+        # on every guild message via two sequential single-field lookups on
+        # location.id/location.staff_space_id, each with a non-null $in,
+        # which entails existence -- so the unique partial indexes above
+        # (whose partial filter is exactly RUNTIME_FILTER plus that field
+        # existing) already serve the read path; a separate non-unique index
+        # on the same keys would be redundant.
+        await collection.create_index(
+            [("ticket_type", 1), ("ticket_number", 1)],
+            unique=True,
+            partialFilterExpression={
+                **RUNTIME_FILTER,
+                "ticket_type": {"$exists": True},
+                "ticket_number": {"$exists": True},
+            },
+            name="thread_v2_ticket_number_unique",
+        ),
+        await collection.create_index(
+            [("user_id", 1), ("ticket_type", 1)],
+            unique=True,
+            partialFilterExpression={
+                **RUNTIME_FILTER,
+                "status": "open",
+                "user_id": {"$exists": True},
+                "ticket_type": {"$exists": True},
+            },
+            name="thread_v2_one_open_ticket_per_applicant_type",
+        ),
+        await collection.create_index(
+            [("source.guild_id", 1), ("source.channel_id", 1)],
+            unique=True,
+            partialFilterExpression={
+                **RUNTIME_FILTER,
+                "source.guild_id": {"$exists": True},
+                "source.channel_id": {"$exists": True},
+            },
+            name="thread_v2_ticket_source_unique",
+        ),
+        await collection.create_index(
+            [("status", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_status_created",
+        ),
+        # thread_v2_status_created's own partialFilterExpression is just
+        # RUNTIME_FILTER, not a specific status, so a browse query for one
+        # status still implies it and can use it -- but ESR needs equality on
+        # the index's leading field for the trailing `created_at` sort to be
+        # usable, and a bare "All status" browse (console.py's Browse
+        # tickets panel) has no equality on `status` at all, only the sort.
+        # Without a dedicated index, that query would fall back to an
+        # in-memory sort over the whole thread-ticket collection. This
+        # single-field index serves exactly that case (rule 12).
+        await collection.create_index(
+            # Key pattern must match browse()'s sort exactly (created_at, _id)
+            # or Mongo cannot serve the sort from the index.
+            [("created_at", -1), ("_id", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_created",
+        ),
+        await collection.create_index(
+            [("ticket_type", 1), ("status", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_type_status_created",
+        ),
+        await collection.create_index(
+            [("user_id", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_user_created",
+        ),
+        await collection.create_index(
+            [("player_tags", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_player_tags_created",
+        ),
+        await collection.create_index(
+            [("username_search", 1), ("created_at", -1)],
+            partialFilterExpression=RUNTIME_FILTER,
+            name="thread_v2_username_created",
+        ),
+    ]
+    for field in ACCOUNT_RECOVERY_BOOLEAN_FIELDS:
+        specs.append(await collection.create_index(
+            [(field, 1)],
+            partialFilterExpression={**RUNTIME_FILTER, field: True},
+            name="thread_v2_account_recovery_" + field.rsplit(".", 1)[-1],
+        ))
+    # account_sync.recover_pending_account_syncs sorts every sweep by this
+    # field, oldest first, to bound and order its batch at the database --
+    # without a supporting index that sort has nothing to use and every
+    # stuck row with no `last_attempt_at` sorts first unindexed.
+    specs.append(await collection.create_index(
+        [("linked_accounts.last_attempt_at", 1)],
+        partialFilterExpression=RUNTIME_FILTER,
+        name="thread_v2_account_recovery_last_attempt",
+    ))
+    return [str(name) for name in specs]

@@ -1,0 +1,806 @@
+# Ticket pilot and console operations
+
+This is the operator source of truth for the implemented thread-ticket runtime. It
+supersedes rollout and operating notes in the
+[console design](ticket-console.md),
+[thread proposal](thread-ticketing-proposal.md), and
+[legacy migration design](legacy-ticket-migration.md).
+
+For a plain-English explanation of every registered new-system command, use
+the [thread ticket command README](ticket-console/README.md).
+
+## Current delivery status
+
+As of 2026-08-24, the cross-server implementation is pushed on the feature
+branch but is **not deployed or configured live**. Production remains on the
+existing legacy runtime. Deploying the code does not switch intake by itself:
+the old panel stays authoritative until setup, preparation, pilot testing, and
+an explicit confirmed promotion are completed.
+
+## Coexistence contract
+
+- `/ticket` is the legacy channel-ticket runtime. Its authority remains
+  `button_store`.
+- `/tickets` is the thread-ticket v2 runtime. Its authority is `tickets`.
+- Do not copy, merge, or repoint those stores. Existing legacy tickets remain
+  live under `/ticket` while v2 is prepared, piloted, promoted, or rolled back.
+- Legacy recruiter claim/release remains only for operating channel tickets
+  during coexistence. Thread v2 has no recruiter claim, release, close, or
+  reopen action; its only terminal decisions are approved and denied.
+- The runtimes share one-open-ticket slots and ticket-number counters. An
+  applicant cannot bypass the guard, and the two runtimes cannot allocate the
+  same number, by racing the other intake path.
+- Legacy recruiter-role settings remain old-server-only. The target server has
+  separate Main and FWA thread-recruiter settings; neither runtime falls back to
+  the other server's role IDs.
+- A missing or invalid rollout configuration fails safely to legacy intake.
+- Rollout changes only where a **new** ticket opens. It never converts, closes,
+  or deletes an existing ticket.
+
+The command ownership is permanent during coexistence:
+
+| Command group | Runtime | Storage | Purpose |
+|---|---|---|---|
+| `/ticket` | Legacy channel tickets | `button_store` | Existing tickets and old-server intake |
+| `/tickets` | V2 thread tickets | `tickets` | Target-server setup, pilot, console, decisions, flags, and migration |
+
+Applicants create tickets from panel buttons, not slash commands. The v2 group
+has exactly 22 registered commands; the command README lists every one. V2 has
+no claim, release, close, reopen, or candidate-history command. Legacy
+claim/release remains registered only so legacy tickets keep their
+current operating behavior during coexistence.
+
+## Required two-server layout
+
+Keep the existing legacy intake channel and exact panel message in the old
+server. Do not move, replace, or delete either during setup or pilot.
+
+The target server uses three long-lived channels:
+
+1. A public candidate thread parent containing the separate public-v2 panel.
+2. A private recruiter-only staff thread parent. It must differ from the
+   candidate parent.
+3. A private recruiter console channel, separate from both parents.
+
+Main and FWA must share the public-v2 candidate parent and the recruiter-only
+staff parent. Separate Main/FWA candidate parents are invalid. Deny public access
+to the staff parent and console, and grant the bot and target-server
+thread-recruiter role every permission reported by command validation.
+
+Shared staff-parent use and console separation are operational release
+requirements, but current readiness code enforces only shared candidate-parent
+use. Manually compare both saved staff-parent IDs and verify console separation
+before pilot and again before promotion.
+
+The rollout binds three distinct intake messages: the old-server legacy panel,
+the target-server private pilot panel, and the target-server public-v2 panel.
+The pilot panel may share the private console channel only when every tester is
+already a recruiter, server owner, or Administrator and console privacy
+validation still passes. Otherwise use a temporary restricted target-server
+channel. The pilot channel is not a thread parent.
+
+## Rollout phases
+
+| Phase | Old-server legacy panel | Target public-v2 panel | Target private pilot panel |
+|---|---|---|---|
+| `legacy_only` | Legacy intake active | Disabled | Disabled |
+| `prepared` | Legacy intake active | Disabled | Disabled; validation has passed |
+| `pilot` | Legacy intake active | Disabled | V2 for an exact allowlisted user or role |
+| `thread_default` | Retired | V2 public intake active | Retired |
+| `rollback_legacy` | Legacy intake active | Disabled | Disabled; existing v2 tickets remain manageable |
+| `thread_only` | Retired | V2 public intake active | Retired; legacy drain is complete |
+
+Every route is bound to an exact guild, channel, and message. Copied, stale, and
+wrong-server panels are rejected. Promotion and rollback change only which
+exact panel accepts new tickets; they do not move or convert existing tickets.
+
+## Safe rollout sequence
+
+Run `/tickets` commands in the target guild as an Administrator. Initial
+setup establishes the target-guild binding and also verifies that the operator
+owns or is an Administrator in the old legacy guild.
+
+### 1. Bind all three exact intake panels
+
+Run setup **in the restricted target pilot-panel channel**. Select the target
+public-v2 channel that will also become the shared Main/FWA candidate parent:
+
+```text
+/tickets setup legacy-panel:<old message link or guild/channel/message IDs> public-channel:<target shared candidate-parent channel> tester:<user>
+```
+
+Use `tester-role:<role>` instead of, or in addition to, `tester:<user>`. First
+setup requires `legacy-panel`, `public-channel`, and at least one allowlisted
+user or role. It verifies the exact old-server legacy message, posts the
+public-v2 panel in `public-channel`, posts the private pilot panel in the
+invocation channel, and seeds the rollout in `legacy_only`. The operator and bot
+must have the required access in both servers.
+
+Target-panel movement is prohibited during `pilot`, `thread_default`, and
+`thread_only`. In `legacy_only`, `prepared`, or `rollback_legacy`, move both
+target panels in this order:
+
+1. From the private pilot/control channel, replace the target public and pilot
+   messages together:
+
+   ```text
+   /tickets setup replace:true public-channel:<new shared candidate-parent channel>
+   ```
+
+2. Reconfigure both types with that exact new public channel and the shared
+   recruiter-only staff parent:
+
+   ```text
+   /tickets configure-threads type:Main candidate-parent:<new shared candidate-parent channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+   /tickets configure-threads type:FWA candidate-parent:<new shared candidate-parent channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+   ```
+
+3. Re-run `rollout-prepare` readiness before enabling pilot or promotion:
+
+   ```text
+   /tickets rollout-prepare confirm:false
+   /tickets rollout-prepare confirm:true
+   ```
+
+Target intake remains disabled in these safe phases, and readiness remains
+blocked while either candidate-parent setting still points at the old channel.
+Replacement never rebinds the old legacy panel or modifies legacy ticket data;
+`/ticket setup` in the old server owns an intentional legacy-panel replacement.
+
+### 2. Configure and inspect the thread parents
+
+```text
+/tickets configure-threads type:Main candidate-parent:<same bound public-v2 channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+/tickets configure-threads type:FWA candidate-parent:<same bound public-v2 channel> staff-parent:<same recruiter-only staff channel> recruiter-role:<role>
+/tickets thread-config
+/tickets config
+```
+
+Both Main and FWA must use the exact `public-channel` bound by setup as their
+shared candidate parent and the same recruiter-only staff parent. The staff
+parent must differ from the candidate channel. These commands save target-server
+thread-recruiter roles and never overwrite old-server legacy recruiter roles.
+
+### 3. Create the private console
+
+```text
+/tickets console channel:<private recruiter channel>
+```
+
+Verify the returned message link, chart, open-ticket picker, and **Find** action.
+One console channel is durably bound. Re-running the command repairs or reuses
+that hub; it does not relocate it. If the saved channel is missing, the command
+reports its exact channel ID. A deleted channel cannot be restored by this
+command; use the approved maintenance path to repair the saved binding before
+retrying. If the channel still exists but the bot cannot access it, restore the
+bot's access and retry there. Do not create a second console elsewhere.
+
+Manage the allowlist and inspect all bindings with:
+
+```text
+/tickets pilot-user action:Allow member:<user>
+/tickets pilot-user action:Remove member:<user>
+/tickets pilot-role action:Allow role:<role>
+/tickets pilot-role action:Remove role:<role>
+/tickets rollout-status
+```
+
+### 4. Prepare without changing intake
+
+```text
+/tickets rollout-prepare confirm:false
+/tickets rollout-prepare confirm:true
+```
+
+The first command validates startup readiness, the non-empty allowlist, all
+three exact panel bindings, both target thread-parent configurations, separate
+target recruiter roles, and runtime indexes. Fix every reported problem before
+confirming. The confirmed command enters `prepared`; only the old-server legacy
+panel accepts new tickets.
+
+### 5. Enable the parallel pilot
+
+```text
+/tickets rollout-pilot confirm:false
+/tickets rollout-pilot confirm:true
+```
+
+In `pilot`, allowlisted testers use the restricted target-server panel for v2.
+Everyone using the old-server public panel still receives a legacy channel
+ticket. The target public-v2 panel remains disabled. Verify at least the
+following before promotion:
+
+- An allowlisted click creates the correct candidate and staff threads.
+- A non-allowlisted or copied-panel click is rejected.
+- The exact old-server public panel still creates a legacy ticket.
+- The target public-v2 panel remains disabled.
+- The shared open-ticket guard blocks a duplicate across the two runtimes.
+- The console, search, account context, flags, Chocolate links, approve, deny,
+  and overturn all work as expected, leaving both threads open afterward.
+
+### 6. Promote the target public-v2 panel
+
+```text
+/tickets rollout-promote confirm:false
+/tickets rollout-promote confirm:true
+```
+
+Promotion requires `pilot`. The dry run repeats readiness checks. Confirmation
+enters `thread_default`, disables new intake from the old legacy and private
+pilot panels, and enables the exact target public-v2 panel. Existing legacy
+tickets remain authoritative and must still be completed in the old server with
+`/ticket`.
+
+### 7. Roll back new intake when needed
+
+```text
+/tickets rollout-rollback confirm:true
+```
+
+Rollback disables the target public-v2 and pilot panels and re-enables the exact
+old-server legacy panel for **new** tickets. From `prepared` it returns to
+`legacy_only`; from a live v2 phase it enters `rollback_legacy`. It does not
+change existing thread tickets, which remain manageable through the target
+console and `/tickets` commands. Retry only through prepare, pilot, and
+promote with the same validation gates.
+
+### 8. Drain legacy only after promotion
+
+Resolve all remaining legacy tickets with `/ticket`. Preserve pending rows and
+Discord artifacts so startup recovery can finish them safely. Inspect the drain
+at any time with:
+
+```text
+/tickets rollout-status
+/tickets rollout-drain confirm:false
+```
+
+The drain reports every blocker that must clear:
+
+1. **Open legacy tickets** — approve or deny each authoritative `button_store`
+   ticket with `/ticket`.
+2. **Active legacy slots** — startup reconciliation releases a slot only after
+   it proves the bound authoritative ticket is terminal. Do not delete a slot
+   merely because its lease expired or its authority is temporarily missing.
+3. **Pending legacy creation workflows** — keep the workflow row and any Discord
+   resources; restart or allow recovery to resume the same workflow instead of
+   starting another ticket.
+4. **Pending legacy initial deliveries** — delivery checkpoints retry durably at
+   startup, including takeover of an expired processing lease. `rollout-status`
+   shows the pending count and reported delivery IDs. Preserve those rows and
+   fix the underlying Discord access or delivery error.
+5. **Unresolved shared open-ticket conflicts** — these are quarantined slots
+   where more than one authoritative ticket was open. `rollout-status` shows the
+   count and reported slot IDs. Review every referenced ticket and resolve the
+   duplicate authority; reconciliation binds the sole remaining open ticket or
+   releases the slot only after every recorded ticket is terminal.
+
+The displayed pending-workflow total includes pending initial deliveries; the
+dedicated delivery count is that actionable subset, so do not add the two
+figures together. Pending deliveries and unresolved conflicts fail closed at
+startup and prevent unsafe thread intake or promotion. Keep their IDs for the
+incident record, correct the underlying condition, restart recovery, and repeat
+both status commands. Never force the rollout phase or delete durable state to
+make a count disappear.
+
+Only from `thread_default`, and only when open tickets, active slots, creation
+workflows, initial deliveries, and conflicts are all cleared, enter the fully
+drained phase:
+
+```text
+/tickets rollout-drain confirm:true
+```
+
+## After legacy retirement
+
+`/tickets` is permanent and is never renamed to `/ticket`. Retiring legacy
+means deleting the `/ticket` command group, its panels, and its channel
+monitor once `rollout-drain confirm:true` is proven clean — not renaming or
+otherwise touching `/tickets`. Stop loading the legacy `/ticket` extension,
+unregister its setup panels, and remove its Discord command registration in
+one reviewed retirement release; `/tickets` and its data keep running
+unchanged before, during, and after that release.
+
+## Daily recruiter workflow
+
+Use `/ticket` for tickets that opened in the legacy runtime. Use the private
+console and `/tickets` for v2 tickets. The v2 console does not list
+un-cloned `button_store` tickets. Useful v2 fallbacks are:
+
+```text
+/tickets find query:<Discord ID, #player tag, or username>
+/tickets history member:<user>
+/tickets approve
+/tickets deny
+```
+
+In **Browse tickets**, the **Flag** selector defaults to **All tickets (no
+flag filter)**. Select **Blacklisted**, **Denied before**, **Not loyal to WU**, or
+**Ghosted** to show tickets whose applicant currently has that active flag.
+It combines with the status, clan-type, and date filters. The list and page
+total count matching tickets, not flag records; it includes both recruiter-set
+and automatic flags.
+
+### Understand account identity
+
+- At open, the bot force-refreshes every Clash account linked to the
+  applicant's Discord ID. Pending, failed, and confirmed-zero results are
+  distinct states; a failed lookup never means that the applicant has no
+  accounts.
+- **Currently linked** is the latest successful link-service snapshot. It
+  drives the current account count and automatic FWA Chocolate checklist.
+- **Verified** tags are permanent identity history: every linked tag seen in a
+  successful account snapshot, plus any tag a recruiter records through
+  **Manage flags**. Prior-ticket matching and flags use only this verified
+  set, even after an account is unlinked.
+- **Mentioned** tags are `#TAG`-shaped text the applicant typed in their
+  thread. They help search find the ticket and show on ticket detail, but
+  anyone can type any tag, so they never affect flags or the blacklist gate.
+- Approve and deny force-refresh all linked accounts immediately before the
+  decision.
+
+### Staff thread opening talking points
+
+Right after the staff opening card, the staff thread receives the same
+recruiter talking-point messages the legacy channel system posts (Main gets
+the role line, the "how did you hear about us" line, and the hook question;
+FWA also gets the donations/loot line), pinging the ticket's configured
+recruiter role only once — the staff opening card's own notification already
+pings it, so the talking-point role line does not ping a second time. Each
+message is delivered idempotently and, like the opening cards themselves, a
+delivery failure does not fail ticket creation; it is retried by the same
+delivery-recovery pass that retries the opening cards.
+
+### Review Chocolate and manage flags
+
+Each live FWA staff thread receives staff-only Chocolate pages after its linked-
+account snapshot, with one link for each currently linked account. The bot
+updates those pages when the current snapshot changes. Open each link and review
+the site yourself: the bot does not fetch, infer, or record a Chocolate verdict.
+
+In ticket detail, use **Manage flags** to add, update, or remove
+**Blacklisted**, **Previously denied**, **Not loyal to WU**, or **Ghosted**.
+Only
+**Blacklisted** blocks approval. Use these recruiter-only commands only when the
+ticket-detail flow is unavailable:
+
+```text
+/tickets flags identity:<Discord ID or #player tag>
+/tickets flag-add kind:<flag> reason:<reason> discord-ids:<IDs> player-tags:<tags>
+/tickets flag-remove flag-id:<exact ID> reason:<reason>
+```
+
+`flag-add` needs at least one Discord ID or player tag. Copy the exact flag ID
+from ticket detail or `flags` before removing it.
+
+### Automatic previously-denied warning
+
+The console also adds an applicant-wide **Previously denied** warning when a
+earlier canonical ticket for the same Discord ID or verified player tag has
+denied status and a later canonical ticket exists. Imported tickets use their
+original source `created_at` time for that comparison, so a later import does
+not change the applicant's history order. The warning is informational only:
+it never blocks approval.
+
+Automatic warnings keep their automatic source and the earlier-ticket reason;
+an existing recruiter-added reason is never overwritten. Removing an automatic
+warning is honored, and recovery does not recreate it. Startup reconciliation
+also checks existing canonical ticket history, so eligible records created or
+imported before this behavior was enabled are covered.
+
+### Approve or deny
+
+1. Read the staff account context, matching flags, earlier-ticket links, and,
+   for FWA, every current-account Chocolate link. Applicant activity in the
+   thread never bumps the ticket's resolution revision, so it cannot make an
+   otherwise-valid Approve/Deny look like a race with another recruiter.
+2. Choose **Approve** or **Deny** in private ticket detail. Approve opens a
+   one-step confirm ("Approve X for Main/FWA?"); Deny's reason modal is its
+   own confirm. The final linked account refresh runs before the decision
+   write. Clicking the confirm button immediately swaps it for a buttonless
+   "Saving the decision..." notice (best-effort; a stale interaction never
+   blocks the decision itself) so the confirm control never sits there
+   looking clickable while the decision and its follow-up work run.
+3. Approval stays blocked when the lookup fails, zero accounts are currently
+   linked, or an active blacklist matches the Discord ID or a verified player
+   tag. A tag the applicant only mentioned in chat never triggers this block.
+   Overlapping active flags on the same identity are surfaced as a yellow
+   notice on the detail panel, not a block — approval is gated only by the
+   blacklist check.
+4. If an FWA approval refresh finds a newly linked account, the ticket remains
+   open while the Chocolate pages update. Review the new link and approve
+   again. Pending checklist delivery also keeps approval blocked and retries.
+5. Denial is allowed after a failed or zero-account lookup. A failed denial
+   lookup is recorded and retried so staff context and Chocolate pages can
+   converge later.
+6. The only conflict check left on Approve/Deny is status: if someone else
+   already decided the ticket, the console shows who and when instead of
+   acting, with a button back to the refreshed detail panel. A decided
+   ticket's detail panel instead offers the opposite action (Deny on an
+   approved ticket, Approve on a denied one); confirming it asks "already
+   approved/denied by X, do the opposite anyway?" before continuing into the
+   normal approve/deny path. Any recruiter may overturn a decision, it always
+   runs the full normal effects (including, for deny-after-approve, removing
+   any roles the approval granted), and it is logged on the ticket as an
+   overturn. Before posting its fresh decision card, an overturn also deletes
+   the earlier decision card it is replacing from the candidate thread (by
+   the message id checkpointed on the resolution being overturned, or, for a
+   ticket resolved before that checkpoint existed, by scanning the thread for
+   the newest bot-authored card and deleting that instead) — the applicant
+   only ever sees the current decision. `/tickets approve`/`deny` never
+   offers an overturn — on a decided ticket it just names who decided it and
+   points to the console. While the previous decision's own follow-up work
+   (applicant notification, staff updates, console refresh) is still
+   running — a few seconds — an overturn is refused with "Nothing was
+   changed. Try this override again in a moment."
+7. The decision write (status, revision, audit) is the only part of
+   Approve/Deny/overturn on the click path. Applicant notification, staff
+   updates, and console refresh — the previous decision card's deletion on
+   an overturn included — are scheduled as a background task the instant the
+   decision commits and are not waited on; the click gets its result back
+   immediately. That follow-up work is idempotent and reconciled on its own
+   at startup, so a crash mid-task loses nothing. **Decision recorded;
+   updates retrying** means the terminal decision is safe and the remaining
+   work will retry. The three steps (applicant notification, staff context,
+   console/hub refresh) each checkpoint independently: a staff-context
+   delivery that is still pending only defers that one step and leaves
+   `resolution_effects.complete` false, it never holds back the applicant's
+   decision card. Each step's `resolution_effects.<step>.at` records when
+   that step itself actually delivered, even across retries — the pass that
+   finally clears every step only flips `complete`/`completed_at`, it does
+   not re-stamp the individual steps that already succeeded on an earlier
+   pass.
+
+The bot never archives or locks a ticket thread because of a decision.
+Approve, deny, and overturn all leave both the candidate and staff threads
+open and writable, so recruiters and applicants can keep talking in a
+decided ticket. If Discord had already auto-archived a thread (see below),
+delivering the decision notice or an overturn's fresh card briefly
+unarchives it to post, then leaves it open rather than re-archiving it.
+
+## Candidate return and follow-up status
+
+A self-service **My Tickets / Ask Follow-Up** action is **not implemented**.
+A candidate cannot currently use the console or search for their own past
+tickets. Staff can open ticket details and thread links through the private
+console, `/tickets find`, or `/tickets history`.
+
+The bot never archives or locks a ticket thread because of a decision, so a
+decided ticket's thread pair behaves like any other: Discord auto-archives it
+after seven days of silence, but it is never locked, so the applicant's next
+message (or a recruiter's) re-opens it on its own, and the thread stays
+reachable by its link the whole time. A panel re-click or the **My ticket**
+button on a still-**open** ticket also proactively restores full candidate
+access on demand. Once a ticket is approved or denied, **My ticket** hands
+back a jump link into the (never-locked) thread pair; posting in it is what
+un-archives it if Discord had already auto-archived it. This is not the same
+as the not-implemented follow-up flow below, which would proactively restore
+access and alert recruiters instead of relying on the next message.
+
+After approval or denial releases the shared open-ticket slot, the applicant
+may create a later **new** ticket and receive a new thread pair. That is repeat
+intake, not reopening or continuing the earlier conversation.
+
+The researched recommendation, pending explicit product approval and a future
+implementation, is a candidate-facing **My Tickets / Ask Follow-Up** action on
+the target public intake panel:
+
+1. Authenticate the click by Discord ID and show only that applicant's eligible
+   tickets.
+2. Let the applicant select the original ticket and submit the question in a
+   private modal.
+3. Durably unarchive the same candidate/staff thread pair if Discord had
+   auto-archived it, restore candidate membership, post an attributed
+   question, and alert recruiters once.
+4. Preserve the original `approved` or `denied` decision and track the
+   follow-up lifecycle separately. The pair is left open; Discord archives it
+   again only after its own seven-day inactivity window, same as any other
+   decided ticket.
+
+Do not tell candidates this exists and do not substitute a new ticket for the
+same-ticket follow-up until that design is approved and implemented.
+
+## Clone terminal legacy tickets
+
+Legacy cloning is optional and is separate from rollout. Resolve an old-server
+ticket there first; only terminal approved/denied tickets are eligible. Cloning
+is available only in `pilot`, `thread_default`, or `thread_only`, processes one
+source ticket at a time, and never alters or deletes the source channel, source
+staff thread, messages, roles, or attachments.
+
+Run a read-only preview in the destination guild:
+
+```text
+/tickets migrate-legacy source-guild:<server> source-channel:<ticket channel> target-guild:<destination server> candidate-parent:<channel> staff-parent:<channel> type:Auto status:Auto confirm:false
+```
+
+Choose `source-staff-thread` when detection is ambiguous. Use `type:Main` or
+`type:FWA`, `status:Approved` or `status:Denied`, `user-id`, `username`, or
+`player-tags` only as reviewed corrections. An override cannot make a source
+proven `open` or `new` eligible; a stored `closed` value needs an explicit
+approved or denied outcome. If the preview reports attachment risk, copy its
+exact `LOSS-...` token into `attachment-ack` on the confirmed rerun.
+
+When the preview is correct, rerun the same selections with `confirm:true`.
+The command creates or resumes the same destination thread pair, copies both
+histories, records the v2 ticket, and locks and archives the pair. Check message
+order, the ticket-level start/end source dates, attachments or loss notes, identity,
+outcome, console search, and both archived links. Confirm again that every
+source object is unchanged.
+
+Select and verify between one and five pilot migrations. Further migrations
+stay locked until every selected item is complete and an Administrator runs:
+
+```text
+/tickets approve-migration-pilot confirm:true
+```
+
+Migration is resumable. Re-run the same `migrate-legacy` selections with
+`confirm:true`, or allow startup recovery to resume the durable checkpoints.
+Keep partial destination threads, migration rows, and bot-authored markers;
+deleting them can defeat safe recovery.
+
+## Bulk legacy migration
+
+`/tickets migrate-all` drives many single-channel migrations from one source
+guild through the exact same `preview_legacy_ticket`/`migrate_legacy_ticket`
+path as `migrate-legacy` above; it only decides which legacy channels are in
+scope and in what order, and tracks progress durably so a restart resumes
+cleanly. Legacy channels stay read-only, same as the single-ticket command.
+
+Before the first bulk migration on any server, run the ticket-numbering reset
+in [deployment.md](deployment.md) ("Reset thread ticket numbering before
+go-live") so fresh numbers start at 1. Imported tickets always take a fresh
+number in import order — oldest legacy channel first — never their original
+legacy channel number.
+
+**Dry run** (`confirm:false`, read-only, nothing written):
+
+```text
+/tickets migrate-all source-guild:<server> category:<optional category> attachments:Copy confirm:false
+```
+
+Lists every `GUILD_TEXT` channel in the source guild (or just the chosen
+category) that qualifies as a legacy ticket channel — its category name
+contains "ticket", "main clan", "mainclan" or "fwa", or its name (after
+stripping leading emoji/dashes/spaces) starts with `main`, `fwa`,
+`mainclan` or `closed`; anything with "log" in its name is excluded. This
+covers server 1's un-numbered names (`main-<name>`, `fwa-<name>`) as well as
+the numbered `main-<n>`/`fwa-<n>` pattern the other servers use. Each match
+is previewed oldest-first and classified: `ready`, `already_copied` (a
+completed `ticket_migrations` row already exists — not re-previewed),
+`open` (still-open tickets are refused, same as `migrate-legacy`, except
+server 3 — see below), `no_applicant` (an overwrite or mention applicant
+candidate exists but could not be resolved to exactly one ID),
+`ambiguous_type`, `skipped_owner_test` (the owner's own test ticket — never
+migrated, except source guild `1024958361306927124` plus source channel
+`1045185178437423114` (`sir-ruggie1500`) together), `abandoned` (the applicant never wrote in the
+channel — skipped unless `include-abandoned:true`), `not_a_ticket` (a
+non-ticket channel swept up by the category/prefix match — only the exact
+observed support names `background-check`, `mainclan-commands`, `main-background-check`,
+`mainclan-background-check`, `fwa-background-check`, `league-team-background-check`,
+`mainclan-recruitment-process`, `fwa-recruitment-process`, `fwa-commands`,
+and exact typed operational logs such as `main-ticket-log`,
+`main-ticket-backup-log`, `mainclan-ticket-log`, `mainclan-ticket-backup-log`,
+`fwa-ticket-log`, and `fwa-ticket-backup-log`, plus exact type-prefixed
+role names such as `main-notes`, `fwa-log`, `main-rules`, `fwa-info`,
+`mainclan-general` and `fwa-chat`; or it has no permission-overwrite
+applicant and no welcome/mention message at all — never migrated; applicant
+suffixes are full-name matched conservatively, so `main-42-chatty` and
+`fwa-7-catalog` remain candidates), `deleted_applicant` (the applicant's Discord account no longer
+exists — REST `fetch_member` and `fetch_user` both 404, or it resolves to a
+confirmed, audited Discord deleted-account placeholder — never migrated,
+Owner rule 8; names alone never identify a deleted account, and a deleted
+welcome-poster account is irrelevant), or `error:<ExceptionName>`. The plan is saved to
+`ticket_migration_batches`
+(`_id: "batch:<source_guild_id>"`, capped at 1000 matching channels per
+category — narrow the category if it reports more) and the reply is a
+plain-English summary: totals per classification, per type, and per
+outcome (including `closed, no decision`), a dedicated `Not tickets: N`
+line counting the `not_a_ticket` entries (never migrated), a dedicated
+`Applicant account deleted: N` line counting the `deleted_applicant`
+entries (never migrated), the first 15 problem channels with a reason and
+a jump link, and the exact
+`confirm:true` command to run. Because each channel's own classification
+only needs the applicant
+mention/welcome message near the start and any decision embed near the
+end, the dry run reads a bounded head+tail slice of history (first/last 20
+messages per channel/staff-thread) instead of the full channel — a
+confirmed run always re-previews with full history, so a bounded-mode
+misread here (e.g. an applicant who only wrote outside that window,
+misclassified `abandoned`) is corrected at confirm time rather than
+affecting what actually gets copied.
+
+Saved plans retain their existing classifications. After deploying the
+owner-ticket exception, refresh the dry run before confirming that source
+guild's batch; this change does not alter any Mongo plan document.
+
+A source guild with many legacy channels can take minutes to scan, longer
+than the 15-minute life of the interaction token that started it, so the
+scan is durable and observable rather than a single all-or-nothing call:
+
+- The plan document is written immediately as `state: "planning"` with
+  empty `entries`/`counts`, then updated (CAS on `revision`) every 10
+  channels scanned, and finally to `state: "planned"` once the scan
+  completes. If the process dies mid-scan, `ticket_migration_batches` still
+  holds the last 10-channel checkpoint instead of nothing; a fresh dry run
+  replaces it from scratch.
+- The deferred command reply is immediately replaced with a short scanning
+  receipt before permission checks or source reads begin, so the operator does
+  not watch Discord's loading indicator. A bot-authored, unpinged status
+  message in the already-validated private ticket console then reports only
+  aggregate scan counts. It is reused for the later confirmed run, updates at
+  bounded count/time checkpoints, and receives a final planned, complete,
+  paused, or resume-needed state. This route does not use the interaction
+  webhook, so it continues after the webhook token expires; a missing or
+  inaccessible console status is logged but never stops migration work.
+- Console output logs `[Tickets] migrate_all_plan_start guild=<id>
+  candidates=<n>` once channels are discovered, `[Tickets]
+  migrate_all_plan_progress guild=<id> scanned=<i>/<n> ready=<r>
+  problems=<p>` every 10 channels, and `[Tickets] migrate_all_plan_done
+  guild=<id> scanned=<n> ready=<r> problems=<p> elapsed=<s>s` when it
+  finishes.
+- The finished summary is posted twice: once as the normal ephemeral
+  reply, and once as plain (unpinged) messages in the ticket console
+  channel (`ticket_setup` doc `ticket_console_hub`) so the result survives
+  even if the interaction token has already died. Both copies are split
+  at line boundaries into messages within Discord's 2000-character
+  content limit; unusually long individual lines are also split. If the reply
+  itself fails (`UnauthorizedError`/`NotFoundError`/`BadRequestError`), that is
+  logged as `[Tickets] migrate_all_reply_lost guild=<id>` and the console
+  post is the only record of the result.
+
+### Migration overview panel
+
+The private ticket console has one persistent **Legacy recruitment migration**
+panel in this fixed order: **Recruitment Server 1** (`1024958361306927124`),
+**Recruitment Server 2** (`1115678309389434901`), **Recruitment Server 3**
+(`1194706934926946457`), and **Recruitment Server 4** (`1078723854303756298`).
+It reads saved `ticket_migration_batches` checkpoints and completed migration
+records; it never starts a scan, resets a plan, or changes a migration.
+
+Each row says **Not started**, **Scanning**, **Ready to copy**, **Copying**,
+**Paused**, **Ready to resume**, **Copy interrupted**, or **Complete**, with
+copied/failed/skipped totals where a plan exists. A valid batch lease is
+required before the panel calls a run Copying; an expired owner lease is shown
+as interrupted instead. Completed rows do not suggest rerunning or resuming.
+The panel refreshes from existing dry-run/run checkpoints and around startup
+recovery, then reuses its saved message binding. It is observational: missing
+or inaccessible panel delivery is logged and never stops the migration.
+
+Applicant existence is checked even when a source record or admin override
+already supplies the name. A member who left the server still qualifies if
+the user lookup succeeds. An unknown user is classified as
+`deleted_applicant`; permissions and transient lookup failures are not
+treated as account deletion. If the applicant is deleted between planning
+and confirmation, the entry becomes skipped and does not count toward the
+ten-consecutive-failures pause.
+
+**Outcome when a channel has no ✅/❌ prefix:** the channel's history is
+scanned for an approval message/embed ("Welcome to the Family!",
+"Congratulations on being accepted", or content mentioning "accepted to
+Warriors United") or a denial one ("regret to inform", "has been denied", or
+an embed titled "Denied"). If neither is found the ticket still imports —
+as `closed`, with `decision_note: "No decision recorded"` — rather than
+being skipped; the console renders that status as "Closed · no decision
+recorded" with a grey accent everywhere a status shows. The decided date is
+the decision message's time when one was found, otherwise the channel's
+last message time. Server 3 (`1194706934926946457`) applies this same
+closed/no-decision treatment to its still-open tickets instead of refusing
+them; server 4 (`1078723854303756298`) keeps refusing open tickets. See
+`docs/handoff-legacy-migration.md` ("Owner rules") for the full rule set,
+including the owner-test-ticket skip and the abandoned-ticket option.
+
+**Run** (`confirm:true`): requires a plan from the last 24 hours (dry-run
+first if none exists, or if it is stale). Claims a lease on the batch so only
+one run proceeds per source guild at a time; a second admin confirming while
+a run is in progress is refused. Processes only `ready` channels,
+oldest-first, up to `limit` if given: each one is previewed again (cheap,
+catches anything that changed since the dry run) and then migrated exactly
+as `migrate-legacy` would. `attachments:Copy` accepts the preview's
+attachment-risk token automatically so attachments are copied where
+possible; `attachments:Skip` always migrates text-only. A confirmed bulk run
+is exempt from the five-ticket pilot cap that guards `migrate-legacy` (it has
+its own admin confirmation); every bypass logs
+`[Tickets] migration_pilot_cap_bypassed batch=... channel=...`.
+
+Each outbound temporary-webhook replay is conservatively paced across the
+process, including both public and staff histories and the acknowledged
+text-only fallback for an attachment payload. Hikari remains responsible for
+Discord's dynamic `Retry-After` handling; the pacing only prevents this
+operation from immediately starting another shared-route request after a
+webhook execution completes. While any ticket's preview or replay is in
+flight, its batch lease is renewed without changing the progress revision. If
+that owner lease cannot be renewed, the in-flight ticket is stopped and the
+batch does not begin another source channel.
+
+One progress message is posted in the ticket console channel at the start of
+a run and updated after each durable ticket checkpoint when at least ten
+seconds have elapsed since the last routine edit, and once more at the end:
+`Copying legacy tickets from {guild name}: {done}/{total} done, {failed}
+failed, {skipped} skipped · <relative time>`. Separately, console output logs
+`[Tickets] migrate_all_run_start guild=<id> total=<n>` at the start,
+`[Tickets] migrate_all_run_progress guild=<id> done=<d> failed=<f>
+skipped=<s> total=<n>` after every ticket, and `[Tickets] migrate_all_run_done
+guild=<id> done=<d> failed=<f> skipped=<s> total=<n> elapsed=<s>s` when the
+run stops (finished, paused, or limit-cut). As with the dry run, the final
+outcome is posted both as the ephemeral reply and as a plain message in the
+console channel — the durable copy that survives a dead interaction token,
+logged as `[Tickets] migrate_all_reply_lost guild=<id>` when that happens.
+
+**Resume and pause:** running `/tickets migrate-all confirm:true` again with
+the same `source-guild` resumes the same batch and skips every entry already
+marked `done`. Any `ready` entry whose status is `failed:*` remains retryable;
+the batch cannot complete until every `ready` entry is `done` — safe to repeat
+after a restart, a `limit` cutoff, a transient failure, or a lease timeout.
+After ten consecutive per-ticket failures the batch pauses itself
+(`state: "paused"`) rather than continuing to fail; confirming again resumes
+from the same point once the underlying problem (usually a destination
+configuration issue) is fixed. Per-ticket crash recovery still relies on the
+same `ticket_migrations` checkpoints `migrate-legacy` uses — the batch
+document only tracks which channel is next, never Discord/Mongo side effects
+directly.
+
+## Permanent thread status names
+
+Thread names show the ticket's durable status: `🆕` for open, `✅` for
+approved, and `❌` for denied. An overturn updates both the candidate and
+staff thread names to the new decision. `closed` stays unprefixed because it
+means no decision was recorded. These prefixes follow the saved ticket status;
+they do not indicate transient delivery or recovery work.
+
+The runtime accepts canonical names from before this feature as well as the
+prefixed spellings, so existing tickets and saved creation or migration
+checkpoints can still recover. New open tickets are created with `🆕` names.
+
+Use `python tools/rename_ticket_threads.py` to preview the one-time backfill
+for completed legacy imports. It lists each candidate and staff thread ID and
+target name without making changes. The tool excludes live tickets and
+unfinished imports. Only run the apply step after deploying code that supports
+prefixed-name recovery and confirming that the compatible bot deployment is
+running and publishing its live capability marker.
+
+```bash
+python tools/rename_ticket_threads.py --apply --run-id sep-2026
+```
+
+Choose a stable run ID to resume that same checkpoint after interruption.
+Apply requires `MONGODB_URI` and `DISCORD_TOKEN`, plus a fresh runtime marker in
+`settings.ticket_setup` showing the required capability version, boot ID, and
+heartbeat from the active bot process (heartbeat no older than 180 seconds).
+The bot publishes the marker after ticket recovery succeeds, refreshes its
+heartbeat every 60 seconds, and clears its own heartbeat on shutdown. The tool
+does not accept a manually supplied version as deployment proof. Completed
+thread edits are skipped on a repeat; failed phases resume from their saved
+checkpoint. Edits run serially, wait through Discord rate limits, and restore
+each thread's archived and locked state after renaming.
+
+## Recovery boundaries
+
+| Operation | What it changes | Safe recovery |
+|---|---|---|
+| Prepare, pilot, or promote with `confirm:false` | No phase or intake-routing change; readiness may idempotently ensure shared-runtime indexes | Correct the reported issue and repeat. |
+| Rollback or drain with `confirm:false` | No phase or intake-routing change; drain reads open tickets, slots, creation workflows, initial deliveries, and conflicts | Preserve reported IDs, recover every blocker, and repeat the dry run. |
+| Confirmed prepare, pilot, promote, rollback, or drain | Rollout phase, revision, and history; prepare, pilot, and promote may also idempotently ensure shared-runtime indexes | Inspect `rollout-status`; existing tickets stay with their original runtime. Drain confirmation fails closed unless every legacy blocker is clear. |
+| `migrate-legacy confirm:false` | Nothing; attachment URLs may be read | Correct the selections or metadata and repeat. |
+| `migrate-legacy confirm:true` | Destination threads/messages, ticket-number counter, migration checkpoints/markers, v2 ticket, pilot slot/index, staff-context outbox, and console-refresh state | Keep partial artifacts and repeat the same command or allow recovery to resume. Source Discord objects remain read-only. |
+
+For interrupted live v2 work, preserve both ticket threads, bot-authored marker
+messages, and automation-state rows. Startup recovery resumes setup messages,
+account snapshots, Chocolate pages, decision notices, and console refresh
+without creating a second ticket pair. Recovery may temporarily unarchive a
+terminal thread Discord had already auto-archived, to repair pending
+bot-owned work; it leaves the thread open afterward rather than re-archiving
+or re-locking it, without reopening the ticket status.
+
+Startup reconciles shared open-ticket slots and reports legacy blockers
+(pending legacy initial deliveries, legacy-vs-legacy open-ticket conflicts) in
+`rollout-status`, but they never gate v2 intake: legacy state is read-only
+source data and duplicate open channel tickets are normal legacy reality. When
+such blockers exist the bot prints one `[Tickets] legacy_blockers_ignored ...`
+line and continues recovery. The only blocker that still fails closed is an
+open-ticket conflict where the thread runtime owns one side (`route: thread`
+on the slot or inside `conflicting_tickets`); that raises
+`shared ticket recovery remains blocked by a thread-route conflict` naming the
+offending slot IDs, and the startup reconciler retries until it is repaired.
+Legacy blockers still matter for `rollout-drain`, which fails closed on them.

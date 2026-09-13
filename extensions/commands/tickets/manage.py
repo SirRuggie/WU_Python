@@ -24,8 +24,6 @@ from hikari.impl import (
 from utils.mongo import MongoClient
 from utils.component_state import insert_state
 from utils.constants import BLUE_ACCENT
-from extensions.components import register_action
-from extensions.commands.tickets import loader, ticket
 from extensions.commands.tickets import store
 from extensions.commands.tickets.store import as_int as _as_int
 
@@ -61,7 +59,6 @@ def safe_text_content(body: str, empty_fallback: str) -> str:
     return "\n".join(kept) + f"\n\n-# …truncated, {hidden} more line(s) not shown."
 
 
-@ticket.register()
 class ListTickets(
     lightbulb.SlashCommand,
     name="list",
@@ -78,8 +75,8 @@ class ListTickets(
 
         # Get config to check roles
         config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-        main_role = config.get("main_recruiter_role")
-        fwa_role = config.get("fwa_recruiter_role")
+        main_role = config.get("main_thread_recruiter_role")
+        fwa_role = config.get("fwa_thread_recruiter_role")
 
         # Check if user is a recruiter
         user_roles = ctx.member.role_ids
@@ -170,7 +167,6 @@ class ListTickets(
         )
 
 
-@ticket.register()
 class Dashboard(
     lightbulb.SlashCommand,
     name="dashboard",
@@ -204,7 +200,7 @@ class Dashboard(
                     ActionRow(
                         components=[
                             SelectMenu(
-                                custom_id=f"ticket_dashboard_action:{action_id}",
+                                custom_id=f"ticket_v2_dashboard_action:{action_id}",
                                 placeholder="Choose an action...",
                                 options=[
                                     SelectOption(
@@ -288,7 +284,6 @@ async def _active_thread_ids(bot: hikari.GatewayBot, guild_id: int) -> set[int]:
     return {_as_int(t.id) for t in threads}
 
 
-@ticket.register()
 class Diagnostics(
     lightbulb.SlashCommand,
     name="diagnostics",
@@ -315,7 +310,13 @@ class Diagnostics(
         # per-ticket fetch_channel loop - that is what got the startup orphan sweep
         # disabled in close.py for causing rate limits.
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
-        docs = await store.find(mongo, {"type": "ticket", **CHANNEL_ERA_ONLY})
+        # store.find defaults to thread-runtime rows (RUNTIME_FILTER), which
+        # would silently override CHANNEL_ERA_ONLY's venue filter and return
+        # zero rows here. This diagnostics view needs the channel-era rows,
+        # so opt in explicitly.
+        docs = await store.find(
+            mongo, {"type": "ticket", **CHANNEL_ERA_ONLY}, include_legacy=True
+        )
 
         live_ids = {_as_int(ch.id) for ch in guild_channels}
         live_ids |= await _active_thread_ids(bot, ctx.guild_id)
@@ -417,7 +418,6 @@ class Diagnostics(
         )
 
 
-@ticket.register()
 class CleanupGhosts(
     lightbulb.SlashCommand,
     name="cleanup-ghosts",
@@ -464,8 +464,12 @@ class CleanupGhosts(
             )
             return
 
+        # include_legacy keeps the store from overriding CHANNEL_ERA_ONLY's
+        # venue filter with the thread-only runtime filter.
         open_docs = await store.find(
-            mongo, {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
+            mongo,
+            {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY},
+            include_legacy=True,
         )
 
         ghosts = [d for d in open_docs if _as_int(d.get("channel_id")) not in live_ids]
@@ -556,7 +560,6 @@ class CleanupGhosts(
         )
 
 
-@ticket.register()
 class FixMismatched(
     lightbulb.SlashCommand,
     name="fix-mismatched",
@@ -588,9 +591,12 @@ class FixMismatched(
         guild_channels = await bot.rest.fetch_guild_channels(ctx.guild_id)
         live_names = {_as_int(ch.id): (ch.name or "") for ch in guild_channels}
         # Thread-era rows are excluded explicitly rather than relying on the
-        # `name is None` skip below to drop them by accident.
+        # `name is None` skip below to drop them by accident. include_legacy
+        # keeps the store from overriding that venue filter.
         open_docs = await store.find(
-            mongo, {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY}
+            mongo,
+            {"type": "ticket", "status": "open", **CHANNEL_ERA_ONLY},
+            include_legacy=True,
         )
 
         mismatched, legacy_open = [], 0
@@ -679,7 +685,6 @@ class FixMismatched(
         )
 
 
-@register_action("ticket_dashboard_action", opens_modal=False, requires_state=True)
 async def handle_dashboard_action(
         ctx: lightbulb.components.MenuContext,
         action_id: str,

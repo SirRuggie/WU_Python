@@ -1,0 +1,2578 @@
+"""Thread-only ticket creation and lifecycle services.
+
+Discord and MongoDB cannot participate in one transaction.  This module uses a
+durable, reusable applicant lease plus deterministic thread names to make every
+Discord side effect discoverable after a timeout or process restart.  Legacy
+channel tickets are deliberately not supported here; they are read-only inputs
+to :mod:`legacy_migration`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import time
+import uuid
+import weakref
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Iterable, Mapping, Sequence
+
+import hikari
+import coc
+from hikari.impl import (
+    ContainerComponentBuilder as Container,
+    LinkButtonBuilder as LinkButton,
+    MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem,
+    MessageActionRowBuilder as ActionRow,
+    SeparatorComponentBuilder as Separator,
+    SectionComponentBuilder as Section,
+    TextDisplayComponentBuilder as Text,
+    ThumbnailComponentBuilder as Thumbnail,
+)
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
+
+from extensions.commands import ticket_runtime
+from extensions.commands.tickets import account_sync, store
+from utils.constants import GOLDENROD_ACCENT
+from utils.mongo import MongoClient
+
+
+_log = logging.getLogger(__name__)
+
+CREATION_LEASE = timedelta(minutes=10)
+COMPLETE_STATE_RETENTION = timedelta(days=1)
+AUTO_ARCHIVE_MINUTES = 10080
+THREAD_NAME_CAPABILITY_VERSION = 1
+# A row whose opening delivery is still pending gets this many recovery
+# passes -- each one retries the existing redelivery -- before it is
+# retired as degraded. A Discord-level 404/403 means the thread itself is
+# gone, so those retire on the first pass instead of waiting out the count.
+DELIVERY_RETRY_ATTEMPTS = 3
+_IMMEDIATE_RETIRE_DELIVERY_ERRORS = frozenset({"NotFoundError", "ForbiddenError"})
+
+_creation_index_ready = False
+# Keyed by applicant user_id rather than one global lock: a global lock
+# serialised every applicant's Discord REST calls, link/CoC lookups and
+# delivery behind whichever applicant happened to be creating a ticket at
+# the time, even though nothing in the critical section touches another
+# applicant's data. The ticket-number counter itself is a durable Mongo
+# CAS (see ticket_runtime.reserve_ticket_number) and needs no lock of its
+# own. A weak-value dict lets each applicant's lock disappear once nothing
+# is waiting on it, instead of accumulating one entry per applicant for the
+# life of the process.
+_creation_locks: "weakref.WeakValueDictionary[int, asyncio.Lock]" = (
+    weakref.WeakValueDictionary()
+)
+
+
+def _creation_lock_for(user_id: int) -> asyncio.Lock:
+    """Return this applicant's creation lock, creating it if needed.
+
+    ``WeakValueDictionary.setdefault`` is one synchronous dict operation
+    with no ``await`` inside it, so two coroutines racing on the same
+    not-yet-seen ``user_id`` still resolve to the same ``Lock`` instance.
+    """
+    return _creation_locks.setdefault(int(user_id), asyncio.Lock())
+
+# `_creation_index_ready` is set only on success, so a conflicting row leaves
+# it False forever and every ticket-creation interaction retries the full
+# index install (`store.ensure_indexes` itself now caches its own failure,
+# but the `ticket_creation_state` TTL index below does not). Cache the
+# failure the same way so this hot path fails fast between retries instead
+# of repeating the work on every interaction (rules 4, 12).
+CREATION_INDEX_RETRY_SECONDS = 60 * 60
+_creation_index_failed = False
+_creation_index_retry_at = 0.0
+_creation_index_last_error: Exception | None = None
+
+_REQUIRED_BOT_PARENT_PERMISSIONS = (
+    hikari.Permissions.VIEW_CHANNEL
+    | hikari.Permissions.READ_MESSAGE_HISTORY
+    | hikari.Permissions.SEND_MESSAGES
+    | hikari.Permissions.SEND_MESSAGES_IN_THREADS
+    | hikari.Permissions.MANAGE_THREADS
+)
+_REQUIRED_CANDIDATE_PARENT_PERMISSIONS = (
+    _REQUIRED_BOT_PARENT_PERMISSIONS
+    | hikari.Permissions.CREATE_PRIVATE_THREADS
+    | hikari.Permissions.ATTACH_FILES
+)
+_REQUIRED_STAFF_PARENT_PERMISSIONS = (
+    _REQUIRED_BOT_PARENT_PERMISSIONS | hikari.Permissions.CREATE_PUBLIC_THREADS
+)
+
+
+class ThreadTicketError(RuntimeError):
+    """A safe, operator-actionable thread ticket failure."""
+
+
+class ThreadConfigurationError(ThreadTicketError):
+    """Thread parents, roles, or permissions are unsafe or incomplete."""
+
+
+class ThreadCreationBusy(ThreadTicketError):
+    """Another worker currently owns this applicant's creation lease."""
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadParents:
+    guild_id: int
+    candidate_parent_id: int
+    staff_parent_id: int
+    recruiter_role_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class CreatedThreadTicket:
+    ticket: dict
+    resumed: bool
+    delivery_pending: bool = False
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _as_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_markdown(value: Any, *, limit: int = 80) -> str:
+    """Render applicant-controlled text as inert Discord markdown."""
+
+    text = str(value or "").replace("\x00", "").strip()[:limit]
+    text = text.replace("@", "@\u200b")
+    for character in ("\\", "`", "*", "_", "~", "|", ">", "[", "]", "(", ")"):
+        text = text.replace(character, "\\" + character)
+    return text or "unknown"
+
+
+def _creation_id(_guild_id: int, user_id: int, ticket_type: str) -> str:
+    # One-open-ticket semantics are global after all source guilds consolidate.
+    # The durable lease must use the same key or two guilds could create two
+    # Discord pairs before Mongo's open-ticket index rejects the second record.
+    return f"thread:{int(user_id)}:{ticket_type}"
+
+
+def _validated_open_slot_claim(
+    claim: ticket_runtime.SlotClaim,
+    *,
+    guild_id: int,
+    user_id: int,
+    ticket_type: str,
+) -> Mapping[str, Any]:
+    """Fail before Discord work unless the router supplied the won sticky slot."""
+
+    if not isinstance(claim, ticket_runtime.SlotClaim) or not claim.won:
+        raise ThreadConfigurationError("a won shared ticket slot is required")
+    slot = claim.slot
+    workflow_id = _creation_id(guild_id, user_id, ticket_type)
+    if (
+        not claim.owner_token
+        or slot.get("state") != ticket_runtime.SLOT_RESERVED
+        or slot.get("route") != ticket_runtime.ROUTE_THREAD
+        or _as_int(slot.get("guild_id")) != int(guild_id)
+        or _as_int(slot.get("user_id")) != int(user_id)
+        or str(slot.get("ticket_type") or "") != ticket_type
+        or str(slot.get("workflow_id") or "") != workflow_id
+        or _as_int(slot.get("rollout_revision")) <= 0
+    ):
+        raise ThreadConfigurationError("the shared ticket slot binding is invalid")
+    return slot
+
+
+def _slug(value: str, *, fallback: str = "candidate", limit: int = 42) -> str:
+    value = re.sub(r"[^a-z0-9-]+", "-", value.casefold()).strip("-")
+    value = re.sub(r"-{2,}", "-", value)
+    return (value or fallback)[:limit].rstrip("-")
+
+
+_STATUS_NAME_PREFIXES = {
+    "open": "🆕 ",
+    "approved": "✅ ",
+    "denied": "❌ ",
+}
+_KNOWN_NAME_PREFIXES = tuple(_STATUS_NAME_PREFIXES.values())
+_CANONICAL_THREAD_NAME = re.compile(
+    r"^(?:staff-)?(?:main|fwa)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
+)
+
+
+def thread_names(
+    ticket_type: str,
+    ticket_number: int,
+    username: str,
+    *,
+    status: str = "open",
+) -> tuple[str, str]:
+    """Return the pair's canonical Discord names for one durable status.
+
+    ``closed`` deliberately has no prefix: it is a legacy/no-decision state,
+    while the three permanent v2 decisions remain visible in Discord.
+    """
+    suffix = f"{ticket_type}-{int(ticket_number)}-{_slug(username)}"
+    prefix = _STATUS_NAME_PREFIXES.get(str(status), "")
+    return (prefix + suffix)[:100], (prefix + f"staff-{suffix}")[:100]
+
+
+def _name_variants(name: str) -> frozenset[str]:
+    """Return only canonical legacy/current spellings of ``name``.
+
+    Creation and migration checkpoints created before status emojis must keep
+    recovering their stored unprefixed pair.  This accepts precisely those old
+    spellings and the three known prefixes; it never turns an arbitrary thread
+    name into a recovery candidate.
+    """
+    raw = str(name or "")
+    base = raw
+    for prefix in _KNOWN_NAME_PREFIXES:
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    if len(base) > 100 or not _CANONICAL_THREAD_NAME.fullmatch(base):
+        return frozenset({raw})
+    return frozenset({base, *(prefix + base for prefix in _KNOWN_NAME_PREFIXES)})
+
+
+def _permission_names(value: hikari.Permissions) -> str:
+    names = [permission.name for permission in hikari.Permissions if permission & value]
+    return ", ".join(names) or "unknown permissions"
+
+
+def _overwrite_values(overwrites: Any) -> Iterable[Any]:
+    if isinstance(overwrites, Mapping):
+        return overwrites.values()
+    return overwrites or ()
+
+
+def _effective_permissions(
+    *,
+    guild_id: int,
+    owner_id: int,
+    member: Any,
+    roles: Sequence[Any],
+    channel: Any,
+) -> hikari.Permissions:
+    """Calculate Discord channel permissions from REST models.
+
+    Hikari 2.3 does not expose a public permission calculator.  This follows
+    Discord's documented order: base roles, everyone overwrite, aggregate role
+    overwrites, then the member overwrite.
+    """
+    member_id = _as_int(getattr(member, "id", 0))
+    if member_id == owner_id:
+        return hikari.Permissions.all_permissions()
+
+    role_ids = {_as_int(item) for item in getattr(member, "role_ids", ())}
+    role_ids.add(guild_id)
+    permissions = hikari.Permissions.NONE
+    for role in roles:
+        if _as_int(getattr(role, "id", 0)) in role_ids:
+            permissions |= hikari.Permissions(getattr(role, "permissions", 0))
+    if permissions & hikari.Permissions.ADMINISTRATOR:
+        return hikari.Permissions.all_permissions()
+
+    overwrites = list(_overwrite_values(getattr(channel, "permission_overwrites", ())))
+
+    def apply(deny: hikari.Permissions, allow: hikari.Permissions) -> None:
+        nonlocal permissions
+        permissions &= ~deny
+        permissions |= allow
+
+    everyone = next(
+        (item for item in overwrites if _as_int(getattr(item, "id", 0)) == guild_id),
+        None,
+    )
+    if everyone is not None:
+        apply(
+            hikari.Permissions(getattr(everyone, "deny", 0)),
+            hikari.Permissions(getattr(everyone, "allow", 0)),
+        )
+
+    role_deny = hikari.Permissions.NONE
+    role_allow = hikari.Permissions.NONE
+    for item in overwrites:
+        if _as_int(getattr(item, "id", 0)) in role_ids and _as_int(getattr(item, "id", 0)) != guild_id:
+            role_deny |= hikari.Permissions(getattr(item, "deny", 0))
+            role_allow |= hikari.Permissions(getattr(item, "allow", 0))
+    apply(role_deny, role_allow)
+
+    member_overwrite = next(
+        (item for item in overwrites if _as_int(getattr(item, "id", 0)) == member_id),
+        None,
+    )
+    if member_overwrite is not None:
+        apply(
+            hikari.Permissions(getattr(member_overwrite, "deny", 0)),
+            hikari.Permissions(getattr(member_overwrite, "allow", 0)),
+        )
+    return permissions
+
+
+async def validate_thread_parents(
+    rest: hikari.api.RESTClient,
+    parents: ThreadParents,
+    *,
+    bot_user_id: int,
+    require_webhooks: bool = False,
+    applicant_user_id: int | None = None,
+) -> tuple[Any, Any]:
+    """Fail closed unless both parents and bot/recruiter access are safe."""
+    if parents.candidate_parent_id == parents.staff_parent_id:
+        raise ThreadConfigurationError("candidate and staff parents must be different channels")
+
+    candidate, staff = await asyncio.gather(
+        rest.fetch_channel(parents.candidate_parent_id),
+        rest.fetch_channel(parents.staff_parent_id),
+    )
+    for label, channel in (("candidate", candidate), ("staff", staff)):
+        if getattr(channel, "type", None) != hikari.ChannelType.GUILD_TEXT:
+            raise ThreadConfigurationError(f"{label} parent must be a guild text channel")
+        if _as_int(getattr(channel, "guild_id", 0)) != parents.guild_id:
+            raise ThreadConfigurationError(f"{label} parent is not in the configured guild")
+
+    guild, bot_member, roles = await asyncio.gather(
+        rest.fetch_guild(parents.guild_id),
+        rest.fetch_member(parents.guild_id, bot_user_id),
+        rest.fetch_roles(parents.guild_id),
+    )
+    owner_id = _as_int(getattr(guild, "owner_id", 0))
+    required_candidate = _REQUIRED_CANDIDATE_PARENT_PERMISSIONS
+    required_staff = _REQUIRED_STAFF_PARENT_PERMISSIONS
+    if require_webhooks:
+        required_candidate |= hikari.Permissions.MANAGE_WEBHOOKS | hikari.Permissions.ATTACH_FILES
+        required_staff |= hikari.Permissions.MANAGE_WEBHOOKS | hikari.Permissions.ATTACH_FILES
+
+    bot_parent_permissions: dict[str, hikari.Permissions] = {}
+    for label, channel, required in (
+        ("candidate", candidate, required_candidate),
+        ("staff", staff, required_staff),
+    ):
+        actual = _effective_permissions(
+            guild_id=parents.guild_id,
+            owner_id=owner_id,
+            member=bot_member,
+            roles=roles,
+            channel=channel,
+        )
+        bot_parent_permissions[label] = actual
+        missing = required & ~actual
+        if missing:
+            raise ThreadConfigurationError(
+                f"bot is missing {_permission_names(missing)} in the {label} parent"
+            )
+
+    recruiter_role = next(
+        (role for role in roles if _as_int(getattr(role, "id", 0)) == parents.recruiter_role_id),
+        None,
+    )
+    if recruiter_role is None:
+        raise ThreadConfigurationError("configured recruiter role is not in the target guild")
+    if (
+        not bool(getattr(recruiter_role, "is_mentionable", False))
+        and not bot_parent_permissions["staff"]
+        & hikari.Permissions.MENTION_ROLES
+    ):
+        raise ThreadConfigurationError(
+            "recruiter role must be mentionable or bot needs Mention Roles in the staff parent"
+        )
+    required_recruiter = (
+        hikari.Permissions.VIEW_CHANNEL
+        | hikari.Permissions.READ_MESSAGE_HISTORY
+        | hikari.Permissions.SEND_MESSAGES_IN_THREADS
+        | hikari.Permissions.MANAGE_THREADS
+    )
+    recruiter_member = type("RoleMember", (), {
+        "id": 0,
+        "role_ids": (parents.recruiter_role_id,),
+    })()
+    for label, channel in (("candidate", candidate), ("staff", staff)):
+        recruiter_permissions = _effective_permissions(
+            guild_id=parents.guild_id,
+            owner_id=owner_id,
+            member=recruiter_member,
+            roles=roles,
+            channel=channel,
+        )
+        missing = required_recruiter & ~recruiter_permissions
+        if missing:
+            raise ThreadConfigurationError(
+                f"recruiter role is missing {_permission_names(missing)} in the {label} parent"
+            )
+
+    everyone_role = next(
+        (role for role in roles if _as_int(getattr(role, "id", 0)) == parents.guild_id),
+        None,
+    )
+    if everyone_role is None:
+        raise ThreadConfigurationError("target guild @everyone role could not be verified")
+    everyone_member = type("EveryoneMember", (), {"id": 0, "role_ids": ()})()
+    everyone_permissions = _effective_permissions(
+        guild_id=parents.guild_id,
+        owner_id=owner_id,
+        member=everyone_member,
+        roles=(everyone_role,),
+        channel=staff,
+    )
+    if everyone_permissions & hikari.Permissions.VIEW_CHANNEL:
+        raise ThreadConfigurationError("staff parent is visible to @everyone")
+
+    roles_by_id = {
+        _as_int(getattr(role, "id", 0)): role
+        for role in roles
+        if _as_int(getattr(role, "id", 0))
+    }
+    bot_role_ids = {_as_int(value) for value in getattr(bot_member, "role_ids", ())}
+    for role_id, role in roles_by_id.items():
+        if role_id in {parents.guild_id, parents.recruiter_role_id}:
+            continue
+        role_permissions = hikari.Permissions(getattr(role, "permissions", 0))
+        if role_permissions & hikari.Permissions.ADMINISTRATOR:
+            continue
+        if role_id in bot_role_ids and bool(getattr(role, "is_managed", False)):
+            continue
+        effective = _effective_permissions(
+            guild_id=parents.guild_id,
+            owner_id=owner_id,
+            member=type("RoleMember", (), {"id": 0, "role_ids": (role_id,)})(),
+            roles=roles,
+            channel=staff,
+        )
+        if effective & hikari.Permissions.VIEW_CHANNEL:
+            raise ThreadConfigurationError(
+                f"non-recruiter role {role_id} can view the staff parent"
+            )
+
+    member_overwrite_ids: set[int] = set()
+    for overwrite in _overwrite_values(getattr(staff, "permission_overwrites", ())):
+        overwrite_id = _as_int(getattr(overwrite, "id", 0))
+        overwrite_type = getattr(overwrite, "type", None)
+        is_member = overwrite_type == hikari.PermissionOverwriteType.MEMBER
+        if overwrite_type is None:
+            is_member = overwrite_id not in roles_by_id
+        if (
+            is_member
+            and overwrite_id
+            and overwrite_id != _as_int(getattr(bot_member, "id", 0))
+            and hikari.Permissions(getattr(overwrite, "allow", 0))
+            & hikari.Permissions.VIEW_CHANNEL
+        ):
+            member_overwrite_ids.add(overwrite_id)
+
+    for member_id in sorted(member_overwrite_ids):
+        if member_id == owner_id:
+            continue
+        try:
+            member = await rest.fetch_member(parents.guild_id, member_id)
+        except hikari.NotFoundError:
+            continue
+        except Exception as error:
+            raise ThreadConfigurationError(
+                "staff parent member overwrites could not be inspected"
+            ) from error
+        role_ids = {_as_int(value) for value in getattr(member, "role_ids", ())}
+        authorized = bool(role_ids & {parents.recruiter_role_id}) or any(
+            hikari.Permissions(getattr(roles_by_id[role_id], "permissions", 0))
+            & hikari.Permissions.ADMINISTRATOR
+            for role_id in role_ids
+            if role_id in roles_by_id
+        )
+        effective = _effective_permissions(
+            guild_id=parents.guild_id,
+            owner_id=owner_id,
+            member=member,
+            roles=roles,
+            channel=staff,
+        )
+        if effective & hikari.Permissions.VIEW_CHANNEL and not authorized:
+            raise ThreadConfigurationError(
+                f"non-recruiter member {member_id} can view the staff parent"
+            )
+
+    if applicant_user_id is not None:
+        try:
+            applicant = await rest.fetch_member(parents.guild_id, int(applicant_user_id))
+        except (hikari.NotFoundError, hikari.ForbiddenError) as error:
+            raise ThreadConfigurationError(
+                "applicant is not an accessible member of the ticket guild"
+            ) from error
+        applicant_permissions = _effective_permissions(
+            guild_id=parents.guild_id,
+            owner_id=owner_id,
+            member=applicant,
+            roles=roles,
+            channel=candidate,
+        )
+        required_applicant = (
+            hikari.Permissions.VIEW_CHANNEL
+            | hikari.Permissions.READ_MESSAGE_HISTORY
+            | hikari.Permissions.SEND_MESSAGES_IN_THREADS
+        )
+        missing = required_applicant & ~applicant_permissions
+        if missing:
+            raise ThreadConfigurationError(
+                "applicant is missing "
+                f"{_permission_names(missing)} in the candidate parent"
+            )
+    return candidate, staff
+
+
+def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: str) -> ThreadParents:
+    prefix = "main" if ticket_type == "main" else "fwa"
+    target_guild = _as_int(config.get("ticket_target_guild_id"))
+    if not target_guild:
+        raise ThreadConfigurationError("missing ticket configuration: ticket_target_guild_id")
+    if target_guild != int(guild_id):
+        raise ThreadConfigurationError("thread ticketing is configured for a different guild")
+    candidate_parent = _as_int(config.get(f"{prefix}_candidate_parent"))
+    staff_parent = _as_int(config.get(f"{prefix}_staff_parent"))
+    recruiter_role = _as_int(config.get(f"{prefix}_thread_recruiter_role"))
+    missing = [
+        label
+        for label, value in (
+            (f"{prefix}_candidate_parent", candidate_parent),
+            (f"{prefix}_staff_parent", staff_parent),
+            (f"{prefix}_thread_recruiter_role", recruiter_role),
+        )
+        if not value
+    ]
+    if missing:
+        raise ThreadConfigurationError("missing ticket configuration: " + ", ".join(missing))
+    return ThreadParents(int(guild_id), candidate_parent, staff_parent, recruiter_role)
+
+
+async def ensure_creation_indexes(mongo: MongoClient) -> None:
+    global _creation_index_ready, _creation_index_failed
+    global _creation_index_retry_at, _creation_index_last_error
+    if _creation_index_ready:
+        return
+    if _creation_index_failed and time.monotonic() < _creation_index_retry_at:
+        assert _creation_index_last_error is not None
+        raise _creation_index_last_error
+    try:
+        # Install canonical uniqueness before the first Discord side effect.
+        # This is the final guard against duplicate pairs if multiple bot
+        # processes run.
+        await ensure_canonical_ticket_store(mongo)
+        await mongo.ticket_creation_state.create_index(
+            "expires_at", expireAfterSeconds=0, name="ttl_expires_at"
+        )
+    except Exception as exc:
+        # Only an outcome that needs operator repair is worth caching; a
+        # transient Atlas outage must not block ticket intake for the retry
+        # window after Mongo has already recovered. See
+        # store.is_cacheable_index_error.
+        if store.is_cacheable_index_error(exc):
+            _creation_index_failed = True
+            _creation_index_retry_at = time.monotonic() + CREATION_INDEX_RETRY_SECONDS
+            _creation_index_last_error = exc
+        raise
+    _creation_index_ready = True
+    _creation_index_failed = False
+    _creation_index_last_error = None
+
+
+async def ensure_canonical_ticket_store(mongo: MongoClient) -> None:
+    """Install indexes on the thread runtime's fixed authoritative store."""
+    await store.ensure_indexes(mongo)
+
+
+async def reserve_ticket_number(mongo: MongoClient, ticket_type: str) -> int:
+    """Use the cross-runtime allocator shared with the legacy runtime."""
+    if ticket_type not in {"main", "fwa"}:
+        raise ThreadConfigurationError("ticket type must be main or fwa")
+    return await ticket_runtime.reserve_ticket_number(mongo, ticket_type)
+
+
+async def _claim_creation(
+    mongo: MongoClient,
+    *,
+    guild_id: int,
+    user_id: int,
+    username: str,
+    display_name: str | None,
+    ticket_type: str,
+    parents: ThreadParents,
+    open_slot_claim: ticket_runtime.SlotClaim,
+    now: datetime,
+) -> tuple[str, dict, bool]:
+    """Acquire or resume a reusable applicant lease."""
+    await ensure_creation_indexes(mongo)
+    collection = mongo.ticket_creation_state
+    creation_id = _creation_id(guild_id, user_id, ticket_type)
+    slot = _validated_open_slot_claim(
+        open_slot_claim,
+        guild_id=guild_id,
+        user_id=user_id,
+        ticket_type=ticket_type,
+    )
+    owner = uuid.uuid4().hex
+    base = {
+        "schema_version": 2,
+        "kind": "thread_ticket_creation",
+        "guild_id": int(guild_id),
+        "user_id": int(user_id),
+        "username": username,
+        "display_name": display_name or username,
+        "ticket_type": ticket_type,
+        "candidate_parent_id": parents.candidate_parent_id,
+        "staff_parent_id": parents.staff_parent_id,
+        "recruiter_role_id": parents.recruiter_role_id,
+        "route": ticket_runtime.ROUTE_THREAD,
+        "runtime": ticket_runtime.THREAD_RUNTIME,
+        "open_slot_id": str(slot["_id"]),
+        "creation_workflow_id": str(slot["workflow_id"]),
+        "rollout_revision": int(slot["rollout_revision"]),
+        "state": "creating",
+        "lease_owner": owner,
+        "lease_until": now + CREATION_LEASE,
+        "updated_at": now,
+    }
+
+    while True:
+        current = await collection.find_one({"_id": creation_id})
+        if current is None:
+            try:
+                await collection.insert_one({"_id": creation_id, "created_at": now, **base})
+                return owner, {"_id": creation_id, "created_at": now, **base}, False
+            except DuplicateKeyError:
+                continue
+
+        if current.get("state") == "complete":
+            result = await collection.update_one(
+                {"_id": creation_id, "state": "complete", "ticket_id": current.get("ticket_id")},
+                {
+                    "$set": base,
+                    "$unset": {
+                        "ticket_id": "",
+                        "ticket_number": "",
+                        "candidate_thread_id": "",
+                        "staff_thread_id": "",
+                        "candidate_name": "",
+                        "staff_name": "",
+                        "completed_at": "",
+                        "expires_at": "",
+                        "delivery": "",
+                        "last_error": "",
+                    },
+                },
+            )
+            if getattr(result, "matched_count", 0):
+                return owner, {"_id": creation_id, **base}, False
+            continue
+
+        bound = bool(
+            current.get("ticket_number")
+            or current.get("candidate_thread_id")
+            or current.get("staff_thread_id")
+        )
+        if bound:
+            stored_binding = (
+                _as_int(current.get("guild_id")),
+                _as_int(current.get("candidate_parent_id")),
+                _as_int(current.get("staff_parent_id")),
+                _as_int(current.get("recruiter_role_id")),
+            )
+            requested_binding = (
+                int(guild_id),
+                parents.candidate_parent_id,
+                parents.staff_parent_id,
+                parents.recruiter_role_id,
+            )
+            if stored_binding != requested_binding:
+                raise ThreadConfigurationError(
+                    "an unfinished ticket is bound to its original validated thread parents"
+                )
+        stored_slot = current.get("open_slot_id")
+        stored_workflow = current.get("creation_workflow_id")
+        if (
+            (stored_slot and str(stored_slot) != str(slot["_id"]))
+            or (stored_workflow and str(stored_workflow) != str(slot["workflow_id"]))
+            or current.get("route") not in {None, ticket_runtime.ROUTE_THREAD}
+        ):
+            raise ThreadConfigurationError(
+                "an unfinished ticket is bound to a different shared slot"
+            )
+
+        lease_until = _aware(current.get("lease_until"))
+        if lease_until is not None and lease_until > now:
+            raise ThreadCreationBusy("this ticket is already being created")
+        resumed = bool(current.get("ticket_number") or current.get("candidate_thread_id"))
+        claimed = await collection.find_one_and_update(
+            {
+                "_id": creation_id,
+                "state": {"$ne": "complete"},
+                "$or": [
+                    {"lease_until": {"$lte": now}},
+                    {"lease_until": {"$exists": False}},
+                ],
+            },
+            {"$set": {**base, "last_resumed_at": now}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if claimed is not None:
+            return owner, claimed, resumed
+
+
+async def _state_update(mongo: MongoClient, creation_id: str, owner: str, **fields: Any) -> dict:
+    now = utcnow()
+    result = await mongo.ticket_creation_state.find_one_and_update(
+        {"_id": creation_id, "lease_owner": owner, "state": {"$ne": "complete"}},
+        {"$set": {**fields, "updated_at": now, "lease_until": now + CREATION_LEASE}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if result is None:
+        raise ThreadCreationBusy("ticket creation lease was lost")
+    return result
+
+
+async def _collect_rest_iterator(iterator) -> list:
+    """Collect a Hikari LazyIterator while retaining lightweight test doubles."""
+    collect = getattr(iterator, "collect", None)
+    if callable(collect):
+        return list(await collect(list))
+    to_list = getattr(iterator, "to_list", None)
+    if callable(to_list):
+        return list(await to_list())
+    return list(await iterator)
+
+
+async def _find_named_thread(
+    rest: hikari.api.RESTClient,
+    *,
+    guild_id: int,
+    parent_id: int,
+    name: str,
+    private: bool,
+    expected_owner_id: int,
+) -> Any | None:
+    active = await rest.fetch_active_threads(guild_id)
+    matches = [
+        item
+        for item in active
+        if _as_int(getattr(item, "parent_id", 0)) == parent_id
+        # Name discovery is intentionally exact.  A status-prefixed sibling
+        # must never be selected merely because it shares a canonical suffix.
+        and str(getattr(item, "name", "")) == name
+    ]
+    for item in matches:
+        _validate_recovered_thread(
+            item,
+            guild_id=guild_id,
+            parent_id=parent_id,
+            name=name,
+            private=private,
+            expected_owner_id=expected_owner_id,
+        )
+    archived_iter = (
+        rest.fetch_private_archived_threads(parent_id)
+        if private
+        else rest.fetch_public_archived_threads(parent_id)
+    )
+    archived = await _collect_rest_iterator(archived_iter)
+    for item in archived:
+        if str(getattr(item, "name", "")) != name:
+            continue
+        _validate_recovered_thread(
+            item,
+            guild_id=guild_id,
+            parent_id=parent_id,
+            name=name,
+            private=private,
+            expected_owner_id=expected_owner_id,
+        )
+        if all(
+            _as_int(getattr(item, "id", 0)) != _as_int(getattr(found, "id", 0))
+            for found in matches
+        ):
+            matches.append(item)
+    if len(matches) > 1:
+        raise ThreadTicketError(f"multiple destination threads match {name!r}; creation is blocked")
+    return matches[0] if matches else None
+
+
+def _validate_recovered_thread(
+    thread: Any,
+    *,
+    guild_id: int,
+    parent_id: int,
+    name: str,
+    private: bool,
+    expected_owner_id: int,
+) -> None:
+    """Bind a recovered Discord thread to its complete durable identity."""
+    if _as_int(getattr(thread, "guild_id", 0)) != int(guild_id):
+        raise ThreadTicketError("recovered destination thread is in the wrong guild")
+    if _as_int(getattr(thread, "parent_id", 0)) != int(parent_id):
+        raise ThreadTicketError("recovered destination thread has the wrong parent")
+    expected_type = (
+        hikari.ChannelType.GUILD_PRIVATE_THREAD
+        if private
+        else hikari.ChannelType.GUILD_PUBLIC_THREAD
+    )
+    if getattr(thread, "type", None) != expected_type:
+        raise ThreadTicketError("recovered destination thread has the wrong thread type")
+    if str(getattr(thread, "name", "")) not in _name_variants(name):
+        raise ThreadTicketError("recovered destination thread has the wrong name")
+    if _as_int(getattr(thread, "owner_id", 0)) != int(expected_owner_id):
+        raise ThreadTicketError("recovered destination thread has the wrong owner")
+
+
+async def _fetch_or_recover_thread(
+    rest: hikari.api.RESTClient,
+    *,
+    thread_id: int,
+    guild_id: int,
+    parent_id: int,
+    name: str,
+    private: bool,
+    expected_owner_id: int,
+) -> Any | None:
+    if thread_id:
+        try:
+            channel = await rest.fetch_channel(thread_id)
+        except hikari.NotFoundError:
+            channel = None
+        if channel is not None:
+            _validate_recovered_thread(
+                channel,
+                guild_id=guild_id,
+                parent_id=parent_id,
+                name=name,
+                private=private,
+                expected_owner_id=expected_owner_id,
+            )
+            return channel
+    return await _find_named_thread(
+        rest,
+        guild_id=guild_id,
+        parent_id=parent_id,
+        name=name,
+        private=private,
+        expected_owner_id=expected_owner_id,
+    )
+
+
+async def _unarchive_if_needed(rest: hikari.api.RESTClient, thread: Any) -> Any:
+    needs_unlock = bool(getattr(thread, "is_locked", False))
+    if bool(getattr(thread, "is_archived", False)):
+        edited = await rest.edit_channel(
+            thread.id, archived=False, reason="Resuming ticket creation"
+        )
+        thread = edited or thread
+    if needs_unlock or bool(getattr(thread, "is_locked", False)):
+        edited = await rest.edit_channel(
+            thread.id, locked=False, reason="Resuming ticket creation"
+        )
+        thread = edited or thread
+    return thread
+
+
+async def _quarantine_incomplete_creation_threads(
+    rest: hikari.api.RESTClient,
+    threads: Iterable[Any | None],
+) -> None:
+    """Best-effort quarantine for destination threads that are safe to resume."""
+    for thread in threads:
+        if thread is None:
+            continue
+        try:
+            await rest.edit_channel(
+                thread.id,
+                locked=True,
+                archived=True,
+                reason="Quarantining incomplete ticket creation for safe resume",
+            )
+        except Exception:
+            _log.exception("failed to quarantine incomplete ticket thread %s", thread.id)
+
+
+async def _mark_interrupted_creation_retry(
+    mongo: MongoClient,
+    state: Mapping[str, Any],
+    owner: str,
+    error: BaseException,
+) -> None:
+    """Release one owned creation lease without masking the workflow failure."""
+    try:
+        await mongo.ticket_creation_state.update_one(
+            {"_id": state["_id"], "lease_owner": owner},
+            {
+                "$set": {
+                    "state": "retry",
+                    "last_error": type(error).__name__,
+                    "updated_at": utcnow(),
+                },
+                "$unset": {
+                    "lease_owner": "",
+                    "lease_until": "",
+                    "expires_at": "",
+                },
+            },
+        )
+    except Exception:
+        _log.exception("failed to release interrupted ticket creation %s", state.get("_id"))
+
+
+async def _cleanup_interrupted_creation(
+    *,
+    rest: hikari.api.RESTClient,
+    mongo: MongoClient,
+    state: Mapping[str, Any],
+    owner: str,
+    threads: Iterable[Any | None],
+    error: BaseException,
+) -> None:
+    await _quarantine_incomplete_creation_threads(rest, threads)
+    await _mark_interrupted_creation_retry(mongo, state, owner, error)
+
+
+async def _ensure_live_thread_pair(
+    *,
+    rest: hikari.api.RESTClient,
+    mongo: MongoClient,
+    state: dict,
+    owner: str,
+    bot_user_id: int,
+) -> tuple[Any, Any, dict]:
+    creation_id = state["_id"]
+    ticket_number = state.get("ticket_number")
+    if not ticket_number:
+        ticket_number = await reserve_ticket_number(mongo, state["ticket_type"])
+        candidate_name, staff_name = thread_names(
+            state["ticket_type"], ticket_number, state["username"]
+        )
+        state = await _state_update(
+            mongo,
+            creation_id,
+            owner,
+            ticket_number=ticket_number,
+            candidate_name=candidate_name,
+            staff_name=staff_name,
+        )
+    candidate_name = state.get("candidate_name") or thread_names(
+        state["ticket_type"], ticket_number, state["username"]
+    )[0]
+    staff_name = state.get("staff_name") or thread_names(
+        state["ticket_type"], ticket_number, state["username"]
+    )[1]
+
+    candidate = staff = None
+    try:
+        candidate = await _fetch_or_recover_thread(
+            rest,
+            thread_id=_as_int(state.get("candidate_thread_id")),
+            guild_id=state["guild_id"],
+            parent_id=state["candidate_parent_id"],
+            name=candidate_name,
+            private=True,
+            expected_owner_id=bot_user_id,
+        )
+        if candidate is None:
+            candidate = await rest.create_thread(
+                state["candidate_parent_id"],
+                hikari.ChannelType.GUILD_PRIVATE_THREAD,
+                candidate_name,
+                auto_archive_duration=AUTO_ARCHIVE_MINUTES,
+                invitable=False,
+                reason=f"{state['ticket_type'].upper()} ticket {ticket_number}",
+            )
+        candidate = await _unarchive_if_needed(rest, candidate)
+        state = await _state_update(
+            mongo, creation_id, owner, candidate_thread_id=int(candidate.id)
+        )
+        await rest.add_thread_member(candidate.id, state["user_id"])
+
+        staff = await _fetch_or_recover_thread(
+            rest,
+            thread_id=_as_int(state.get("staff_thread_id")),
+            guild_id=state["guild_id"],
+            parent_id=state["staff_parent_id"],
+            name=staff_name,
+            private=False,
+            expected_owner_id=bot_user_id,
+        )
+        if staff is None:
+            staff = await rest.create_thread(
+                state["staff_parent_id"],
+                hikari.ChannelType.GUILD_PUBLIC_THREAD,
+                staff_name,
+                auto_archive_duration=AUTO_ARCHIVE_MINUTES,
+                reason=f"Recruiter workspace for {state['ticket_type'].upper()} ticket {ticket_number}",
+            )
+        staff = await _unarchive_if_needed(rest, staff)
+        state = await _state_update(mongo, creation_id, owner, staff_thread_id=int(staff.id))
+        return candidate, staff, state
+    except asyncio.CancelledError:
+        await _quarantine_incomplete_creation_threads(rest, (candidate, staff))
+        raise
+    except Exception:
+        await _quarantine_incomplete_creation_threads(rest, (candidate, staff))
+        raise
+
+
+async def _message_marker_exists(
+    rest: hikari.api.RESTClient,
+    channel_id: int,
+    marker: str,
+    *,
+    is_match: Callable[[Any], bool] | None = None,
+) -> bool:
+    """True if a prior delivery for ``marker`` is already in the channel.
+
+    Matched by the legacy ``-# {marker}`` bookkeeping line, kept so an
+    already-open ticket's earlier message is still recognised. ``is_match``
+    adds a structural fallback (e.g. the bot's own fixed card title) for
+    callers that no longer post that line at all.
+    """
+
+    messages = await _collect_rest_iterator(rest.fetch_messages(channel_id))
+
+    def contains(component: Any) -> bool:
+        if marker in str(getattr(component, "content", "") or ""):
+            return True
+        return any(contains(child) for child in getattr(component, "components", ()) or ())
+
+    for message in messages:
+        if marker in (getattr(message, "content", "") or ""):
+            return True
+        if any(contains(component) for component in getattr(message, "components", ()) or ()):
+            return True
+        if is_match is not None and is_match(message):
+            return True
+    return False
+
+
+async def _send_once(
+    rest: hikari.api.RESTClient,
+    channel_id: int,
+    marker: str,
+    content: str,
+    *,
+    user_mentions: bool | Sequence[int] = False,
+    role_mentions: bool | Sequence[int] = False,
+    post_marker: bool = True,
+    is_match: Callable[[Any], bool] | None = None,
+) -> None:
+    if await _message_marker_exists(rest, channel_id, marker, is_match=is_match):
+        return
+    await rest.create_message(
+        channel_id,
+        content=f"{content}\n-# {marker}" if post_marker else content,
+        mentions_everyone=False,
+        user_mentions=user_mentions,
+        role_mentions=role_mentions,
+    )
+
+
+async def _send_components_once(
+    rest: hikari.api.RESTClient,
+    channel_id: int,
+    marker: str,
+    components: Sequence,
+    *,
+    user_mentions: bool | Sequence[int] = False,
+    role_mentions: bool | Sequence[int] = False,
+    post_marker: bool = True,
+    is_match: Callable[[Any], bool] | None = None,
+) -> None:
+    """Deliver one recoverable Components V2 opening card.
+
+    ``post_marker`` controls whether a hidden ``-# {marker}`` bookkeeping
+    line is appended; callers with a structural title to fall back on
+    (``is_match``) pass ``post_marker=False`` so nothing is posted to
+    Discord for bookkeeping. A card posted before this existed still
+    carries the old marker line and is still recognised (see
+    `_message_marker_exists`).
+    """
+
+    if await _message_marker_exists(rest, channel_id, marker, is_match=is_match):
+        return
+    await rest.create_message(
+        channel_id,
+        components=(
+            list(components) if not post_marker
+            else [*components, Text(content=f"-# {marker}")]
+        ),
+        flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+        mentions_everyone=False,
+        user_mentions=user_mentions,
+        role_mentions=role_mentions,
+    )
+
+
+def _ticket_account_snapshot(ticket: Mapping[str, Any] | None):
+    """Thin presentation adapter over the account-sync ticket snapshot."""
+
+    if not ticket:
+        return None
+    from extensions.commands.tickets.account_sync import snapshot_from_ticket
+
+    return snapshot_from_ticket(ticket)
+
+
+def _candidate_account_copy(ticket: Mapping[str, Any] | None) -> str:
+    snapshot = _ticket_account_snapshot(ticket)
+    if snapshot is None or snapshot.state == "pending":
+        return (
+            "### 🔄 Linked Clash accounts\n"
+            "Your linked accounts are being checked automatically. You do not need "
+            "to reopen this ticket."
+        )
+    if snapshot.state == "failed":
+        return (
+            "### ⚠️ Linked Clash accounts\n"
+            "The account service could not be reached. Nothing was treated as "
+            "unlinked; staff will retry the check automatically."
+        )
+    if snapshot.state == "empty":
+        return (
+            "### 🔗 No linked accounts found\n"
+            "Please link your Clash accounts through ClashKing `/link`. Staff can "
+            "also help privately. Your complete account list will be checked again "
+            "before a decision."
+        )
+    count = len(snapshot.current_accounts)
+    noun = "account" if count == 1 else "accounts"
+    return (
+        "### ✅ Linked Clash accounts found\n"
+        f"We found **{count} linked {noun}**. The list will be checked again before "
+        "a decision so newly linked accounts are included automatically."
+    )
+
+
+# Fixed card text used to identify the opening cards structurally, instead
+# of a hidden marker line. Kept independent of the ticket type interpolated
+# into the middle of each title.
+_CANDIDATE_WELCOME_TITLE_PREFIX = "## 👋 Welcome to your "
+_CANDIDATE_WELCOME_TITLE_SUFFIX = " interest ticket"
+_STAFF_OPENING_TITLE_PREFIX = "## 🔒 "
+_STAFF_OPENING_TITLE_INFIX = " recruiter workspace · #"
+
+# Recruiter talking-point messages, carried over byte-for-byte from the
+# legacy channel ticket system (`extensions/commands/tickets_legacy/handlers.py`,
+# read-only). Posted as plain `content=` messages into the STAFF thread,
+# right after the staff opening card. The role line drops legacy's
+# second, legacy-server-only role mention; the staff opening card already
+# pings the recruiter role in its notification line, so this one does not
+# ping a second time.
+_STAFF_TALKING_POINTS_HOW_HEARD_MAIN = "Hello there 👋🏻...how you hear about Warriors United?"
+_STAFF_TALKING_POINTS_HOW_HEARD_FWA = "Hello there 👋🏻...how you hear about our FWA Operation?"
+_STAFF_TALKING_POINTS_HOOK = (
+    "What was the hook that reeled you in? The thing that said "
+    "\"yeah, I need to check these guys out!!!\""
+)
+_STAFF_TALKING_POINTS_FWA_DONATIONS = (
+    "Donations are better with the update allowing loot to be used "
+    "but clan chats are and can be sporadic."
+)
+
+
+def _bot_authored_content_match(bot_id: int, content: str) -> Callable[[Any], bool]:
+    """`is_match` factory for a plain-content talking-point message.
+
+    Recognises a prior delivery structurally (this exact text, from the
+    bot) instead of a hidden marker line, matching how the opening cards
+    are recognised on a retried delivery.
+    """
+
+    def match(message: Any) -> bool:
+        return (
+            int(getattr(getattr(message, "author", None), "id", 0)) == bot_id
+            and (getattr(message, "content", "") or "") == content
+        )
+
+    return match
+
+
+def _component_title_matches(
+    component: Any, *, prefix: str, suffix: str = "", infix: str = "",
+) -> bool:
+    content = str(getattr(component, "content", "") or "")
+    if (
+        content.startswith(prefix)
+        and (not suffix or content.endswith(suffix))
+        and (not infix or infix in content)
+    ):
+        return True
+    return any(
+        _component_title_matches(child, prefix=prefix, suffix=suffix, infix=infix)
+        for child in getattr(component, "components", ()) or ()
+    )
+
+
+def _is_candidate_welcome_card(message: Any) -> bool:
+    """True if this message is the candidate thread's own welcome card."""
+
+    return any(
+        _component_title_matches(
+            component,
+            prefix=_CANDIDATE_WELCOME_TITLE_PREFIX,
+            suffix=_CANDIDATE_WELCOME_TITLE_SUFFIX,
+        )
+        for component in getattr(message, "components", ()) or ()
+    )
+
+
+def _is_staff_opening_card(message: Any) -> bool:
+    """True if this message is the staff thread's own opening card."""
+
+    return any(
+        _component_title_matches(
+            component,
+            prefix=_STAFF_OPENING_TITLE_PREFIX,
+            infix=_STAFF_OPENING_TITLE_INFIX,
+        )
+        for component in getattr(message, "components", ()) or ()
+    )
+
+
+def _candidate_welcome_components(ticket: Mapping[str, Any]) -> list:
+    ticket_type = str(ticket.get("ticket_type") or "main").upper()
+    user_id = _as_int(ticket.get("user_id"))
+    return [Container(
+        accent_color=GOLDENROD_ACCENT,
+        components=[
+            Text(content=f"## 👋 Welcome to your {ticket_type} interest ticket"),
+            Text(content=(
+                f"<@{user_id}> Thank you for your interest in Warriors United. "
+                "A recruiter will reply soon. Please answer the questions below "
+                "while you wait."
+            )),
+        ],
+    )]
+
+
+def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
+    ticket_type = str(ticket.get("ticket_type") or "main").upper()
+    ticket_number = int(ticket.get("ticket_number") or 0)
+    public_id = _as_int(
+        (ticket.get("location") or {}).get("id") or ticket.get("channel_id")
+    )
+    recruiter_role = _as_int(ticket.get("recruiter_role_id"))
+    raw_username = ticket.get("username") or "unknown"
+    username = _safe_markdown(raw_username, limit=80)
+    display_name = _safe_markdown(
+        ticket.get("display_name") or raw_username, limit=80
+    )
+    user_id = _as_int(ticket.get("user_id"))
+    notification = (
+        f"<@&{recruiter_role}> a new applicant is ready for review."
+        if recruiter_role else
+        "A new applicant is ready for recruiter review."
+    )
+    return [Container(
+        accent_color=hikari.Color.from_hex_code("0066FF"),
+        components=[
+            Text(content=f"## 🔒 {ticket_type} recruiter workspace · #{ticket_number}"),
+            Text(content=notification),
+            Separator(divider=True),
+            Text(content=(
+                f"**Candidate:** {display_name} (`{username}`)\n"
+                f"**Discord ID:** `{user_id}`\n"
+                f"**Candidate thread:** <#{public_id}>"
+            )),
+            Text(content=(
+                "⚠️ **Recruiter-only:** The candidate cannot see this thread. "
+                "Do not mention or add them here."
+            )),
+        ],
+    )]
+
+
+def _questionnaire_components(
+    ticket_type: str,
+    guild_icon_url: str | None,
+    *,
+    ticket: Mapping[str, Any] | None = None,
+) -> list:
+    logo = guild_icon_url or "assets/branding/logo/WU_Logo.png"
+    is_fwa = ticket_type == "fwa"
+    title = (
+        "## **Warriors United FWA Clan Entry Ticket**"
+        if is_fwa
+        else "## **Warriors United Main Clan Entry Ticket**"
+    )
+    questions = (
+        "1) Your in-game name and player tag\n"
+        "2) Your age, time zone, and country\n"
+        "3) Do you have multiple accounts?\n"
+        "4) If yes, list every player tag.\n"
+        "5) What are you looking for in a clan?"
+        + (
+            "\n6) Are you familiar with LazyCWL and the daily FWA process?"
+            if is_fwa
+            else ""
+        )
+    )
+    how_heard = (
+        "Hello there 👋🏻...how you hear about our FWA Operation?"
+        if is_fwa else
+        "Hello there 👋🏻...how you hear about Warriors United?"
+    )
+    hooked = (
+        'What was the hook that reeled you in? The thing that said '
+        '"yeah, I need to check these guys out!!!"'
+    )
+    hero = "assets/tickets/static/WU_FWA_Ticket.jpg" if is_fwa else logo
+    return [
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                Section(
+                    components=[Text(content=title), Text(content=questions)],
+                    accessory=Thumbnail(media=logo),
+                ),
+                Separator(divider=True),
+                Text(content=f"### How did you hear about us?\n{how_heard}"),
+                Text(content=f"### What hooked you?\n{hooked}"),
+                *(
+                    [Text(content=(
+                        "### FWA expectations\n"
+                        "Donations are better with the update allowing loot to be "
+                        "used, but clan chats are and can be sporadic."
+                    ))]
+                    if is_fwa else []
+                ),
+                Text(content=_candidate_account_copy(ticket)),
+                Media(items=[MediaItem(media=hero)]),
+                Text(content="-# A recruiter will reply as soon as possible."),
+            ],
+        )
+    ]
+
+
+async def _questionnaire_exists(
+    rest: hikari.api.RESTClient,
+    channel_id: int,
+    ticket_type: str,
+) -> bool:
+    needle = (
+        "Warriors United FWA Clan Entry Ticket"
+        if ticket_type == "fwa"
+        else "Warriors United Main Clan Entry Ticket"
+    )
+    def contains(component: Any) -> bool:
+        if needle in str(getattr(component, "content", "")):
+            return True
+        return any(contains(child) for child in getattr(component, "components", ()) or ())
+
+    messages = await _collect_rest_iterator(rest.fetch_messages(channel_id))
+    return any(
+        any(contains(component) for component in getattr(message, "components", ()) or ())
+        for message in messages
+    )
+
+
+async def _deliver_opening_messages(
+    rest: hikari.api.RESTClient, ticket: dict, *, bot_id: int | None = None
+) -> None:
+    public_id = _as_int(ticket.get("location", {}).get("id") or ticket.get("channel_id"))
+    staff_id = _as_int(ticket.get("location", {}).get("staff_space_id") or ticket.get("thread_id"))
+    ticket_number = int(ticket["ticket_number"])
+    ticket_type = ticket["ticket_type"]
+    user_id = _as_int(ticket["user_id"])
+    recruiter_role = _as_int(ticket.get("recruiter_role_id"))
+    candidate_marker = f"ticket-setup:{public_id}:candidate"
+    staff_marker = f"ticket-setup:{public_id}:staff"
+    # Internal bookkeeping keys only -- never posted to Discord. Both opening
+    # cards are identified by their visible title text instead (see
+    # `_is_candidate_welcome_card` / `_is_staff_opening_card`); a card posted
+    # before this change still carries the old marker line and is still
+    # recognised by `_message_marker_exists`.
+    if bot_id is None:
+        # Callers pass the cached identity; this REST call is the fallback.
+        bot_id = int((await rest.fetch_my_user()).id)
+
+    def candidate_card_match(message: Any) -> bool:
+        return (
+            int(getattr(getattr(message, "author", None), "id", 0)) == bot_id
+            and _is_candidate_welcome_card(message)
+        )
+
+    def staff_card_match(message: Any) -> bool:
+        return (
+            int(getattr(getattr(message, "author", None), "id", 0)) == bot_id
+            and _is_staff_opening_card(message)
+        )
+
+    await _send_components_once(
+        rest,
+        public_id,
+        candidate_marker,
+        _candidate_welcome_components(ticket),
+        user_mentions=[user_id],
+        role_mentions=False,
+        post_marker=False,
+        is_match=candidate_card_match,
+    )
+    if not await _questionnaire_exists(rest, public_id, ticket_type):
+        guild = await rest.fetch_guild(_as_int(ticket.get("guild_id")))
+        icon = getattr(guild, "make_icon_url", lambda: None)()
+        await rest.create_message(
+            public_id,
+            components=_questionnaire_components(
+                ticket_type,
+                str(icon) if icon else None,
+                ticket=ticket,
+            ),
+            flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+            mentions_everyone=False,
+            user_mentions=False,
+            role_mentions=False,
+        )
+    await _send_components_once(
+        rest,
+        staff_id,
+        staff_marker,
+        _staff_opening_components(ticket),
+        user_mentions=False,
+        role_mentions=[recruiter_role] if recruiter_role else False,
+        post_marker=False,
+        is_match=staff_card_match,
+    )
+    await _deliver_staff_talking_points(
+        rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id
+    )
+
+
+async def _deliver_staff_talking_points(
+    rest: hikari.api.RESTClient,
+    staff_id: int,
+    ticket_type: str,
+    *,
+    recruiter_role: int,
+    bot_id: int,
+) -> None:
+    """Recruiter talking points, posted right after the staff opening card.
+
+    Each is a separate idempotent plain-content send (see
+    `_bot_authored_content_match`), so a retried delivery -- an outer
+    recovery pass rerunning `_deliver_opening_messages` after a crash --
+    never duplicates one already posted.
+    """
+
+    if recruiter_role:
+        role_line = (
+            f"<@&{recruiter_role}> "
+            "this is a private thread for the candidate. They cannot see this thread, "
+            "so DO NOT ping them, as it will add them.\n\n"
+        )
+        await _send_once(
+            rest,
+            staff_id,
+            "ticket-setup:staff:role-line",
+            role_line,
+            user_mentions=False,
+            role_mentions=False,
+            post_marker=False,
+            is_match=_bot_authored_content_match(bot_id, role_line),
+        )
+
+    how_heard = (
+        _STAFF_TALKING_POINTS_HOW_HEARD_FWA
+        if ticket_type == "fwa"
+        else _STAFF_TALKING_POINTS_HOW_HEARD_MAIN
+    )
+    await _send_once(
+        rest,
+        staff_id,
+        "ticket-setup:staff:how-heard",
+        how_heard,
+        user_mentions=False,
+        role_mentions=False,
+        post_marker=False,
+        is_match=_bot_authored_content_match(bot_id, how_heard),
+    )
+    await _send_once(
+        rest,
+        staff_id,
+        "ticket-setup:staff:hook",
+        _STAFF_TALKING_POINTS_HOOK,
+        user_mentions=False,
+        role_mentions=False,
+        post_marker=False,
+        is_match=_bot_authored_content_match(bot_id, _STAFF_TALKING_POINTS_HOOK),
+    )
+    if ticket_type == "fwa":
+        await _send_once(
+            rest,
+            staff_id,
+            "ticket-setup:staff:fwa-donations",
+            _STAFF_TALKING_POINTS_FWA_DONATIONS,
+            user_mentions=False,
+            role_mentions=False,
+            post_marker=False,
+            is_match=_bot_authored_content_match(
+                bot_id, _STAFF_TALKING_POINTS_FWA_DONATIONS
+            ),
+        )
+
+
+async def _send_ticket_creation_dm(
+    rest: hikari.api.RESTClient,
+    mongo: MongoClient,
+    ticket: Mapping[str, Any],
+    *,
+    bot: hikari.GatewayBot | None = None,
+) -> None:
+    """Best-effort DM pointing the candidate back to their new thread.
+
+    Nothing here may fail ticket creation: DMs are commonly closed, and the
+    in-thread welcome message plus the "My ticket" panel button are the
+    durable ways back in. Never retried -- a missed DM is covered by those.
+
+    Claims a one-time `creation_dm_sent_at` marker (CAS, set before sending)
+    so a retried REST call after a crash between send and record cannot
+    DM the applicant twice. A claim failure is swallowed like every other
+    failure here -- it must not fail ticket creation either.
+
+    ``bot`` is optional so callers without a cached identity still work: the
+    guild is looked up from ``bot.cache`` when available, falling back to a
+    REST fetch, and to the plain "Warriors United" name plus the branding
+    logo when neither resolves the guild.
+    """
+    user_id = _as_int(ticket.get("user_id"))
+    guild_id = _as_int(ticket.get("guild_id"))
+    location = ticket.get("location") or {}
+    candidate_id = _as_int(location.get("id") or ticket.get("channel_id"))
+    if not user_id or not guild_id or not candidate_id:
+        return
+    try:
+        if not await store.claim_creation_dm(mongo, ticket["_id"]):
+            return
+    except Exception:
+        _log.exception(
+            "ticket creation DM claim failed user=%s ticket=%s",
+            user_id, ticket.get("_id"),
+        )
+        return
+    jump_url = f"https://discord.com/channels/{guild_id}/{candidate_id}"
+    guild = bot.cache.get_guild(guild_id) if bot is not None else None
+    if guild is None:
+        try:
+            guild = await rest.fetch_guild(guild_id)
+        except (hikari.ForbiddenError, hikari.NotFoundError):
+            guild = None
+        except Exception:
+            _log.exception(
+                "ticket creation DM guild lookup failed guild=%s ticket=%s",
+                guild_id, ticket.get("_id"),
+            )
+            guild = None
+    guild_name = (
+        _safe_markdown(guild.name, limit=80) if guild is not None else "Warriors United"
+    )
+    icon_url = getattr(guild, "make_icon_url", lambda: None)() if guild is not None else None
+    logo = str(icon_url) if icon_url else "assets/branding/logo/WU_Logo.png"
+    components = [Container(
+        accent_color=GOLDENROD_ACCENT,
+        components=[
+            Section(
+                components=[
+                    Text(content=f"**{guild_name}**"),
+                    Text(content=(
+                        "A recruiter will reply in your ticket. Press the button to "
+                        "open it."
+                    )),
+                ],
+                accessory=Thumbnail(media=logo),
+            ),
+            ActionRow(components=[
+                LinkButton(label="Open my ticket", url=jump_url),
+            ]),
+        ],
+    )]
+    try:
+        dm_channel = await rest.create_dm_channel(user_id)
+        await rest.create_message(
+            channel=dm_channel,
+            components=components,
+            flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+            user_mentions=False,
+            role_mentions=False,
+            mentions_everyone=False,
+        )
+    except (hikari.ForbiddenError, hikari.NotFoundError):
+        _log.debug(
+            "ticket creation DM undeliverable user=%s ticket=%s",
+            user_id, ticket.get("_id"),
+        )
+    except Exception:
+        _log.exception(
+            "ticket creation DM failed unexpectedly user=%s ticket=%s",
+            user_id, ticket.get("_id"),
+        )
+
+
+async def _set_committed_creation_state(
+    mongo: MongoClient,
+    ticket: Mapping[str, Any],
+    *,
+    state: str,
+    error: Exception | None = None,
+) -> None:
+    """Make committed-ticket delivery progress durable across every crash boundary."""
+    location = ticket.get("location") or {}
+    creation_id = _creation_id(
+        _as_int(ticket.get("guild_id")),
+        _as_int(ticket.get("user_id")),
+        str(ticket.get("ticket_type")),
+    )
+    now = utcnow()
+    complete = state == "complete"
+    fields = {
+        "state": state,
+        "kind": "thread_ticket_creation",
+        "schema_version": 2,
+        "ticket_id": ticket["_id"],
+        "ticket_number": int(ticket["ticket_number"]),
+        "guild_id": _as_int(ticket.get("guild_id")),
+        "user_id": _as_int(ticket.get("user_id")),
+        "username": str(ticket.get("username") or "candidate"),
+        "display_name": str(
+            ticket.get("display_name") or ticket.get("username") or "candidate"
+        ),
+        "ticket_type": str(ticket.get("ticket_type")),
+        "candidate_parent_id": _as_int(location.get("public_parent_id")),
+        "staff_parent_id": _as_int(location.get("staff_parent_id")),
+        "recruiter_role_id": _as_int(ticket.get("recruiter_role_id")),
+        "candidate_thread_id": _as_int(location.get("id") or ticket.get("channel_id")),
+        "staff_thread_id": _as_int(
+            location.get("staff_space_id") or ticket.get("thread_id")
+        ),
+        "updated_at": now,
+        "delivery.state": "complete" if complete else "retry" if error else "pending",
+    }
+    if complete:
+        fields.update({
+            "completed_at": now,
+            "expires_at": now + COMPLETE_STATE_RETENTION,
+            "delivery.completed_at": now,
+        })
+    elif error is not None:
+        fields.update({
+            "last_error": type(error).__name__,
+            "delivery.last_error": type(error).__name__,
+        })
+    await mongo.ticket_creation_state.update_one(
+        {"_id": creation_id},
+        {
+            "$set": fields,
+            "$unset": {
+                "lease_owner": "",
+                "lease_until": "",
+                **({"last_error": "", "delivery.last_error": ""} if error is None else {}),
+                **({"expires_at": ""} if not complete else {}),
+            },
+        },
+        upsert=True,
+    )
+
+
+async def _mark_committed_creation_complete(
+    mongo: MongoClient, ticket: Mapping[str, Any]
+) -> None:
+    await _queue_staff_context_outbox(mongo, ticket)
+    await _set_committed_creation_state(mongo, ticket, state="complete")
+
+
+async def mark_creation_complete_for_terminal_ticket(
+    mongo: MongoClient, ticket: Mapping[str, Any] | None
+) -> None:
+    """Retire a terminal ticket's applicant lease so recovery stops reselecting it.
+
+    Called once a ticket reaches ``approved``/``denied`` (see
+    :func:`extensions.commands.tickets.store.transition`) so its open slot's
+    eventual deletion never resurfaces as a ``SlotConflict`` in
+    :func:`recover_pending_thread_ticket_creations`.
+    """
+    if ticket is None or str(ticket.get("status") or "") not in {"approved", "denied"}:
+        return
+    try:
+        await _set_committed_creation_state(mongo, ticket, state="complete")
+    except Exception:
+        _log.exception(
+            "failed to retire creation-state lease for terminal ticket %s",
+            ticket.get("_id"),
+        )
+
+
+async def _queue_staff_context_outbox(
+    mongo: MongoClient,
+    ticket: Mapping[str, Any],
+) -> str:
+    """Bind recoverable staff-context work before a workflow can complete."""
+    from extensions.commands.tickets import console  # local import avoids cycle
+
+    state_id = await console.queue_staff_identity_context(mongo, ticket)
+    expected = f"ticket_staff_context:{ticket.get('_id')}"
+    if state_id != expected:
+        raise ThreadTicketError(
+            "ticket staff-context work could not be bound before completion"
+        )
+    return state_id
+
+
+async def _finish_committed_creation(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    ticket: dict,
+    *,
+    reconcile_pair: bool,
+) -> bool:
+    """Deliver idempotent setup messages; never turn a committed row into failure."""
+    state_durable = True
+    try:
+        await _set_committed_creation_state(mongo, ticket, state="delivery_pending")
+    except Exception:
+        state_durable = False
+        _log.exception("ticket delivery-pending checkpoint failed for %s", ticket.get("_id"))
+    try:
+        if reconcile_pair:
+            await reconcile_ticket_pair(bot.rest, ticket)
+        get_me = getattr(bot, "get_me", None)
+        me = get_me() if callable(get_me) else None
+        await _deliver_opening_messages(
+            bot.rest, ticket, bot_id=int(me.id) if me is not None else None
+        )
+    except Exception as error:
+        try:
+            await _set_committed_creation_state(
+                mongo, ticket, state="delivery_retry", error=error
+            )
+        except Exception:
+            _log.exception("ticket delivery-retry checkpoint failed for %s", ticket.get("_id"))
+        _log.exception("ticket opening-message delivery failed for %s", ticket.get("_id"))
+        return False
+    try:
+        await _mark_committed_creation_complete(mongo, ticket)
+    except Exception:
+        _log.exception("ticket delivery completion checkpoint failed for %s", ticket.get("_id"))
+        return False
+    return state_durable
+
+
+async def _reconcile_existing_ticket(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    ticket: dict,
+    *,
+    coc_client: coc.Client | None = None,
+) -> CreatedThreadTicket:
+    """Heal every post-commit Discord/state step before returning an open ticket."""
+    snapshot = account_sync.snapshot_from_ticket(ticket)
+    if coc_client is not None and snapshot.retry_required:
+        synced = await account_sync.sync_ticket_accounts(
+            mongo,
+            coc_client,
+            ticket["_id"],
+            source=account_sync.SOURCE_OPEN_RETRY,
+        )
+        if synced.ticket is not None:
+            ticket = synced.ticket
+    delivery_complete = await _finish_committed_creation(
+        bot, mongo, ticket, reconcile_pair=True
+    )
+    await notify_console_after_change(
+        bot, mongo, ticket, reason="ticket creation reconciled"
+    )
+    return CreatedThreadTicket(
+        ticket, resumed=True, delivery_pending=not delivery_complete
+    )
+
+
+async def notify_console_after_change(
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    ticket: dict,
+    *,
+    reason: str,
+    force: bool = True,
+) -> None:
+    """Late import keeps the core ticket service independent from console UI.
+
+    ``force=False`` is for a change that never moves the console's own chart
+    counts or the open-ticket set (candidate activity) -- see
+    ``console._chart_signature``. Every other caller keeps the default.
+    """
+    try:
+        from extensions.commands.tickets import console  # local import avoids cycle
+    except (AttributeError, ImportError):
+        _log.info("ticket console integration is not loaded yet")
+        return
+    try:
+        await console.deliver_staff_identity_context(bot, mongo, ticket)
+    except Exception:
+        _log.exception("ticket staff-context update failed for %s", ticket.get("_id"))
+    try:
+        await console.request_hub_refresh_best_effort(
+            bot, mongo, reason=reason, force=force,
+        )
+    except Exception:
+        _log.exception("ticket hub refresh request failed for %s", ticket.get("_id"))
+
+
+async def _committed_ticket_for_creation_state(
+    mongo: MongoClient,
+    *,
+    guild_id: int,
+    user_id: int,
+    ticket_type: str,
+) -> dict | None:
+    """Resolve a committed row before any bound Discord pair is reused."""
+    state = await mongo.ticket_creation_state.find_one({
+        "_id": _creation_id(guild_id, user_id, ticket_type)
+    })
+    if state is None:
+        return None
+    ticket_id = state.get("ticket_id")
+    if ticket_id:
+        committed = await store.find_one(
+            mongo, {"_id": ticket_id, **store.RUNTIME_FILTER}
+        )
+        if committed is not None:
+            return committed
+    candidate_id = _as_int(state.get("candidate_thread_id"))
+    return (
+        await store.find_by_location(mongo, candidate_id)
+        if candidate_id
+        else None
+    )
+
+
+async def create_live_thread_ticket(
+    *,
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    guild_id: int,
+    user_id: int,
+    username: str,
+    display_name: str | None,
+    ticket_type: str,
+    config: Mapping[str, Any],
+    open_slot_claim: ticket_runtime.SlotClaim,
+    coc_client: coc.Client | None = None,
+) -> CreatedThreadTicket:
+    """Create or resume one live thread ticket without duplicating resources."""
+    if ticket_type not in {"main", "fwa"}:
+        raise ThreadConfigurationError("ticket type must be main or fwa")
+    slot = _validated_open_slot_claim(
+        open_slot_claim,
+        guild_id=guild_id,
+        user_id=user_id,
+        ticket_type=ticket_type,
+    )
+    # Everything through parent validation is pre-side-effect and therefore
+    # safe to cancel if configuration/readiness fails.
+    try:
+        if coc_client is None:
+            coc_client = account_sync.configured_coc_client()
+        await ensure_creation_indexes(mongo)
+        parents = parents_from_config(config, guild_id, ticket_type)
+        existing = await store.find_open_for_applicant(
+            mongo, user_id=int(user_id), ticket_type=ticket_type
+        )
+        if existing is not None and ticket_runtime.thread_missing_has_role(
+            existing, "candidate"
+        ):
+            # A dead-candidate-thread ticket must not block a genuinely new
+            # one -- that is the whole point of the applicant's slot being
+            # released. A staff-thread_missing ticket is still usable.
+            existing = None
+        if existing is not None:
+            await ticket_runtime.cancel_open_slot(
+                mongo,
+                slot_id=str(slot["_id"]),
+                owner_token=str(open_slot_claim.owner_token),
+                workflow_id=str(slot["workflow_id"]),
+            )
+            return await _reconcile_existing_ticket(
+                bot, mongo, existing, coc_client=coc_client
+            )
+
+        me = bot.get_me()
+        if me is None:
+            raise ThreadTicketError("bot identity is not available")
+        await validate_thread_parents(
+            bot.rest,
+            parents,
+            bot_user_id=int(me.id),
+            applicant_user_id=int(user_id),
+        )
+    except Exception:
+        await ticket_runtime.cancel_open_slot(
+            mongo,
+            slot_id=str(slot["_id"]),
+            owner_token=str(open_slot_claim.owner_token),
+            workflow_id=str(slot["workflow_id"]),
+        )
+        raise
+
+    async with _creation_lock_for(user_id):
+        # At most one iteration retires a terminal committed pair; the next
+        # iteration allocates a new number and pair for the repeat application.
+        for _pair_attempt in range(2):
+            existing = await store.find_open_for_applicant(
+                mongo, user_id=int(user_id), ticket_type=ticket_type
+            )
+            if existing is not None and ticket_runtime.thread_missing_has_role(
+                existing, "candidate"
+            ):
+                existing = None
+            if existing is not None:
+                await ticket_runtime.cancel_open_slot(
+                    mongo,
+                    slot_id=str(slot["_id"]),
+                    owner_token=str(open_slot_claim.owner_token),
+                    workflow_id=str(slot["workflow_id"]),
+                )
+                return await _reconcile_existing_ticket(
+                    bot, mongo, existing, coc_client=coc_client
+                )
+
+            bound_ticket = await _committed_ticket_for_creation_state(
+                mongo,
+                guild_id=guild_id,
+                user_id=user_id,
+                ticket_type=ticket_type,
+            )
+            if bound_ticket is not None:
+                if bound_ticket.get("status") == "open":
+                    return await _reconcile_existing_ticket(
+                        bot, mongo, bound_ticket, coc_client=coc_client
+                    )
+                await _mark_committed_creation_complete(mongo, bound_ticket)
+
+            try:
+                owner, state, resumed = await _claim_creation(
+                    mongo,
+                    guild_id=guild_id,
+                    user_id=user_id,
+                    username=username,
+                    display_name=display_name,
+                    ticket_type=ticket_type,
+                    parents=parents,
+                    open_slot_claim=open_slot_claim,
+                    now=utcnow(),
+                )
+            except Exception:
+                # A durable workflow row may already represent Discord work in
+                # flight, so only cancel when creation never became durable.
+                durable = await mongo.ticket_creation_state.find_one(
+                    {"_id": str(slot["workflow_id"])}
+                )
+                if durable is None:
+                    await ticket_runtime.cancel_open_slot(
+                        mongo,
+                        slot_id=str(slot["_id"]),
+                        owner_token=str(open_slot_claim.owner_token),
+                        workflow_id=str(slot["workflow_id"]),
+                    )
+                raise
+            candidate = staff = None
+            committed_ticket: dict | None = None
+            try:
+                candidate, staff, state = await _ensure_live_thread_pair(
+                    rest=bot.rest,
+                    mongo=mongo,
+                    state=state,
+                    owner=owner,
+                    bot_user_id=int(me.id),
+                )
+                ticket = store.new_ticket_document(
+                    ticket_type=ticket_type,
+                    ticket_number=int(state["ticket_number"]),
+                    guild_id=int(guild_id),
+                    public_thread_id=int(candidate.id),
+                    public_parent_id=parents.candidate_parent_id,
+                    staff_thread_id=int(staff.id),
+                    staff_parent_id=parents.staff_parent_id,
+                    user_id=int(user_id),
+                    username=username,
+                    display_name=display_name,
+                )
+                ticket["recruiter_role_id"] = parents.recruiter_role_id
+                ticket.update(ticket_runtime.thread_ticket_fields(slot))
+                try:
+                    ticket = await store.insert_one(mongo, ticket)
+                except Exception:
+                    committed = await store.find_by_location(mongo, int(candidate.id))
+                    if committed is None:
+                        raise
+                    ticket = committed
+                committed_ticket = ticket
+                try:
+                    await ticket_runtime.bind_open_slot(
+                        mongo,
+                        slot_id=str(slot["_id"]),
+                        owner_token=str(open_slot_claim.owner_token),
+                        ticket_id=ticket["_id"],
+                        location_id=int(candidate.id),
+                    )
+                except ticket_runtime.SlotConflict:
+                    bound_slot = await mongo.ticket_open_slots.find_one(
+                        {"_id": str(slot["_id"])}
+                    ) or {}
+                    if not (
+                        bound_slot.get("state") == ticket_runtime.SLOT_OPEN
+                        and str(bound_slot.get("ticket_id")) == str(ticket["_id"])
+                    ):
+                        raise
+
+                if ticket.get("status") != "open":
+                    await _mark_committed_creation_complete(mongo, ticket)
+                    continue
+
+                # The Discord pair and ticket row are durable before any external
+                # identity lookup. A timeout therefore resumes this exact pair.
+                if coc_client is not None:
+                    synced = await account_sync.sync_ticket_accounts(
+                        mongo,
+                        coc_client,
+                        ticket["_id"],
+                        source=account_sync.SOURCE_OPEN,
+                    )
+                    if synced.ticket is None:
+                        raise ThreadTicketError(
+                            "committed ticket disappeared during linked-account sync"
+                        )
+                    ticket = synced.ticket
+
+                delivery_complete = await _finish_committed_creation(
+                    bot, mongo, ticket, reconcile_pair=False
+                )
+                if delivery_complete:
+                    await _send_ticket_creation_dm(bot.rest, mongo, ticket, bot=bot)
+                await notify_console_after_change(
+                    bot, mongo, ticket, reason="ticket created"
+                )
+                return CreatedThreadTicket(
+                    ticket,
+                    resumed=resumed,
+                    delivery_pending=not delivery_complete,
+                )
+            except asyncio.CancelledError as error:
+                if committed_ticket is not None:
+                    await _set_committed_creation_state(
+                        mongo, committed_ticket, state="delivery_retry", error=error
+                    )
+                    raise
+                await _cleanup_interrupted_creation(
+                    rest=bot.rest,
+                    mongo=mongo,
+                    state=state,
+                    owner=owner,
+                    threads=(candidate, staff),
+                    error=error,
+                )
+                raise
+            except Exception as error:
+                if committed_ticket is not None:
+                    # The row binds this pair permanently.  A post-commit
+                    # lookup/delivery failure is recoverable work, not an
+                    # incomplete creation, so never quarantine the live pair.
+                    try:
+                        await _set_committed_creation_state(
+                            mongo, committed_ticket, state="delivery_retry", error=error
+                        )
+                    except Exception:
+                        _log.exception(
+                            "failed to checkpoint committed ticket retry for %s",
+                            committed_ticket.get("_id"),
+                        )
+                    raise
+                await _cleanup_interrupted_creation(
+                    rest=bot.rest,
+                    mongo=mongo,
+                    state=state,
+                    owner=owner,
+                    threads=(candidate, staff),
+                    error=error,
+                )
+                raise
+        raise ThreadTicketError("terminal ticket replay could not allocate a fresh pair")
+
+
+def _ticket_thread_ids(ticket: Mapping[str, Any]) -> tuple[int, int]:
+    location = ticket.get("location") or {}
+    public_id = _as_int(location.get("id") or ticket.get("channel_id"))
+    staff_id = _as_int(location.get("staff_space_id") or ticket.get("thread_id"))
+    if not public_id or not staff_id:
+        raise ThreadTicketError("ticket does not contain a complete thread pair")
+    return public_id, staff_id
+
+
+async def archive_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str, Any]) -> None:
+    """Lock and archive both terminal-ticket threads, idempotently.
+
+    Still raises on a 404: `_finish_committed_creation`'s pending-delivery
+    recovery (see `_retry_or_retire_pending_delivery`) depends on that to
+    recognize "the thread itself is gone" and retire the row immediately
+    instead of retrying it. Resolution-effect callers that must not retry a
+    known-missing thread forever check `ticket["thread_missing"]` (set by
+    the `GuildThreadDeleteEvent` listener in handlers.py) before calling in.
+    """
+    public_id, staff_id = _ticket_thread_ids(ticket)
+    errors: list[Exception] = []
+    for thread_id in (public_id, staff_id):
+        try:
+            channel = await rest.fetch_channel(thread_id)
+            if bool(getattr(channel, "is_archived", False)) and bool(getattr(channel, "is_locked", False)):
+                continue
+            await rest.edit_channel(
+                thread_id,
+                locked=True,
+                archived=True,
+                reason="Archiving resolved ticket",
+            )
+        except Exception as error:
+            errors.append(error)
+    if errors:
+        raise ThreadTicketError(
+            f"failed to archive {len(errors)} thread(s): {type(errors[0]).__name__}"
+        ) from errors[0]
+
+
+async def reconcile_ticket_pair(rest: hikari.api.RESTClient, ticket: Mapping[str, Any]) -> None:
+    """Make Discord state agree with the ticket's permanent Mongo status.
+
+    See `archive_ticket_pair` for why a deleted thread (404) still raises.
+    """
+    status = ticket.get("status")
+    public_id, staff_id = _ticket_thread_ids(ticket)
+    if status in {"approved", "denied"}:
+        # Decided tickets are never archived or locked by the bot; Discord's
+        # own inactivity archive is the only archiving. Nothing to reconcile.
+        return
+    if status != "open":
+        raise ThreadTicketError(f"unsupported ticket status {status!r}")
+    for thread_id in (public_id, staff_id):
+        channel = await rest.fetch_channel(thread_id)
+        if bool(getattr(channel, "is_archived", False)) or bool(getattr(channel, "is_locked", False)):
+            await rest.edit_channel(
+                thread_id,
+                locked=False,
+                archived=False,
+                reason="Restoring active open ticket",
+            )
+
+
+async def rename_ticket_pair_for_status(
+    rest: hikari.api.RESTClient,
+    ticket: Mapping[str, Any],
+    *,
+    roles: frozenset[str] = frozenset({"candidate", "staff"}),
+) -> None:
+    """Rename both bound threads without changing their archive/lock policy.
+
+    Discord requires an archived thread to be reopened before a rename.  The
+    original flags are restored after the edit.  The terminal resolution
+    effect retries a failed pair, including a later Discord edit failure.
+    """
+    status = str(ticket.get("status") or "")
+    if status not in {"open", "approved", "denied", "closed"}:
+        raise ThreadTicketError(f"unsupported ticket status {status!r}")
+    public_id, staff_id = _ticket_thread_ids(ticket)
+    public_name, staff_name = thread_names(
+        str(ticket.get("ticket_type") or ""),
+        _as_int(ticket.get("ticket_number")),
+        str(ticket.get("username") or "candidate"),
+        status=status,
+    )
+    targets = (
+        ("candidate", public_id, public_name),
+        ("staff", staff_id, staff_name),
+    )
+    errors: list[Exception] = []
+    for role, thread_id, name in targets:
+        if role not in roles:
+            continue
+        try:
+            await _rename_ticket_thread_for_status(rest, thread_id, name)
+        except Exception as error:
+            errors.append(error)
+    if errors:
+        raise ThreadTicketError(
+            f"failed to rename {len(errors)} ticket thread(s): {type(errors[0]).__name__}"
+        ) from errors[0]
+
+
+async def _rename_ticket_thread_for_status(
+    rest: hikari.api.RESTClient, thread_id: int, name: str,
+) -> None:
+    """Rename one thread, restoring the flags observed before the edit."""
+    thread = await rest.fetch_channel(thread_id)
+    if str(getattr(thread, "name", "")) == name:
+        return
+    archived = bool(getattr(thread, "is_archived", False))
+    locked = bool(getattr(thread, "is_locked", False))
+    if archived:
+        await rest.edit_channel(
+            thread_id, archived=False,
+            reason="Updating permanent ticket decision status",
+        )
+    await rest.edit_channel(
+        thread_id, name=name,
+        reason="Updating permanent ticket decision status",
+    )
+    if archived or locked:
+        await rest.edit_channel(
+            thread_id, archived=archived, locked=locked,
+            reason="Restoring ticket thread state after status update",
+        )
+
+
+async def rename_ticket_thread_for_status(
+    rest: hikari.api.RESTClient,
+    thread_id: int,
+    name: str,
+    *,
+    restore_state: Mapping[str, Any] | None = None,
+    checkpoint_flags: Callable[[dict[str, bool]], Any] | None = None,
+    before_mutation: Callable[[], Any] | None = None,
+) -> None:
+    """Rename one thread with a durable caller-owned flag checkpoint.
+
+    ``checkpoint_flags`` runs before the first write.  On a later retry,
+    ``restore_state`` restores the pre-unarchive flags even if the crash left
+    Discord showing an active thread with its new name.
+    """
+    thread = await rest.fetch_channel(thread_id)
+    observed = {
+        "archived": bool(getattr(thread, "is_archived", False)),
+        "locked": bool(getattr(thread, "is_locked", False)),
+    }
+    flags = {
+        key: bool(restore_state[key]) if restore_state and key in restore_state else value
+        for key, value in observed.items()
+    }
+    if checkpoint_flags is not None and not restore_state:
+        result = checkpoint_flags(flags)
+        if hasattr(result, "__await__"):
+            await result
+
+    async def mutate(**kwargs) -> None:
+        if before_mutation is not None:
+            result = before_mutation()
+            if hasattr(result, "__await__"):
+                await result
+        await rest.edit_channel(thread_id, **kwargs)
+
+    renamed = str(getattr(thread, "name", "")) != name
+    if renamed:
+        if observed["archived"]:
+            await mutate(archived=False, reason="Updating permanent ticket decision status")
+        await mutate(name=name, reason="Updating permanent ticket decision status")
+    if (renamed and observed["archived"]) or flags != observed:
+        await mutate(
+            archived=flags["archived"], locked=flags["locked"],
+            reason="Restoring ticket thread state after status update",
+        )
+
+
+async def ensure_candidate_thread_access(
+    rest: hikari.api.RESTClient,
+    ticket: Mapping[str, Any],
+    *,
+    user_id: int,
+) -> bool:
+    """Idempotently restore an applicant's own access to their candidate thread.
+
+    Called on every panel re-click and from the "My ticket" button so a
+    candidate who left the thread, or whose thread got archived, can always
+    get back in -- the same un-archive `reconcile_ticket_pair` does for an
+    open ticket, plus re-adding them as a thread member. Returns False when
+    the candidate thread itself is gone; callers fall through to the
+    deleted-thread handling instead of treating this as fatal.
+    """
+    location = ticket.get("location") or {}
+    candidate_id = _as_int(location.get("id") or ticket.get("channel_id"))
+    if not candidate_id:
+        return False
+    try:
+        channel = await rest.fetch_channel(candidate_id)
+    except hikari.NotFoundError:
+        return False
+    if bool(getattr(channel, "is_archived", False)) or bool(getattr(channel, "is_locked", False)):
+        try:
+            await rest.edit_channel(
+                candidate_id,
+                locked=False,
+                archived=False,
+                reason="Restoring candidate access to an open ticket",
+            )
+        except hikari.NotFoundError:
+            return False
+    try:
+        await rest.add_thread_member(candidate_id, int(user_id))
+    except hikari.NotFoundError:
+        return False
+    except hikari.BadRequestError:
+        # Discord's add-member is already idempotent; treat a rejection the
+        # same as "already a member" rather than surfacing it to the caller.
+        pass
+    return True
+
+
+async def _retire_degraded_creation_state(
+    mongo: MongoClient,
+    state: Mapping[str, Any],
+    ticket: Mapping[str, Any] | None,
+    reason: str,
+    *,
+    extra_fields: Mapping[str, Any] | None = None,
+) -> None:
+    """Log, annotate, and drop a per-ticket recovery problem out of the pending query.
+
+    A committed ticket's own problem (delivery still pending, its threads are
+    gone, or its slot was already released for a terminal decision) must never
+    keep re-selecting the row and blocking all new-ticket intake. This is
+    called at most once per row: the row is marked ``complete`` here, so the
+    next recovery pass no longer selects it. ``extra_fields`` lets a caller
+    persist extra bookkeeping (e.g. the final ``recovery_attempts`` count)
+    alongside the retirement in the same write.
+    """
+    now = utcnow()
+    _log.warning(
+        "ticket creation recovery degraded ticket=%s reason=%s",
+        (ticket or {}).get("_id") or state.get("ticket_id") or state.get("_id"),
+        reason,
+    )
+    if ticket is not None and ticket.get("_id") is not None:
+        try:
+            await store.update_one(
+                mongo,
+                {"_id": ticket["_id"]},
+                {"$set": {
+                    "creation_state.recovery_note": reason,
+                    "creation_state.recovery_noted_at": now,
+                }},
+            )
+        except Exception:
+            _log.exception(
+                "failed to record creation recovery note on ticket %s", ticket.get("_id")
+            )
+    try:
+        await mongo.ticket_creation_state.update_one(
+            {"_id": state["_id"]},
+            {
+                "$set": {
+                    "state": "complete",
+                    "recovery_note": reason,
+                    "recovery_noted_at": now,
+                    "updated_at": now,
+                    "expires_at": now + COMPLETE_STATE_RETENTION,
+                    **(dict(extra_fields) if extra_fields else {}),
+                },
+                "$unset": {"lease_owner": "", "lease_until": ""},
+            },
+        )
+    except Exception:
+        _log.exception(
+            "failed to retire degraded creation-state row %s", state.get("_id")
+        )
+
+
+async def _retry_or_retire_pending_delivery(
+    mongo: MongoClient,
+    state: Mapping[str, Any],
+    ticket: Mapping[str, Any] | None,
+) -> None:
+    """Give a still-pending opening delivery bounded retries before retiring it.
+
+    The redelivery attempt for this pass already ran (the caller just
+    resolved ``result`` via ``_reconcile_existing_ticket`` or
+    ``create_live_thread_ticket``); this only decides whether the row stays
+    selectable for another pass or gets retired. A Discord-level 404/403
+    recorded on the row by :func:`_set_committed_creation_state` means the
+    thread itself is gone -- retrying will not help, so that retires
+    immediately, matching the existing thread-gone/slot-gone-on-terminal
+    behaviour. Anything else is a transient delivery problem and gets up to
+    :data:`DELIVERY_RETRY_ATTEMPTS` passes before it is retired.
+    """
+    fresh = await mongo.ticket_creation_state.find_one({"_id": state["_id"]}) or state
+    last_error = str(fresh.get("last_error") or "")
+    if last_error in _IMMEDIATE_RETIRE_DELIVERY_ERRORS:
+        await _retire_degraded_creation_state(
+            mongo, state, ticket, "committed ticket delivery has not completed"
+        )
+        return
+    attempts = int(fresh.get("recovery_attempts") or 0) + 1
+    if attempts >= DELIVERY_RETRY_ATTEMPTS:
+        await _retire_degraded_creation_state(
+            mongo,
+            state,
+            ticket,
+            "committed ticket delivery has not completed after "
+            f"{DELIVERY_RETRY_ATTEMPTS} recovery attempts",
+            extra_fields={"recovery_attempts": attempts},
+        )
+        return
+    try:
+        await mongo.ticket_creation_state.update_one(
+            {"_id": state["_id"]},
+            {"$set": {"recovery_attempts": attempts, "updated_at": utcnow()}},
+        )
+    except Exception:
+        _log.exception(
+            "failed to record delivery recovery attempt for %s", state.get("_id")
+        )
+
+
+async def recover_pending_thread_ticket_creations(
+    *,
+    bot: hikari.GatewayBot,
+    mongo: MongoClient,
+    coc_client: coc.Client | None = None,
+    limit: int = 50,
+) -> dict[str, int]:
+    """Resume expired, operator-authorized live creation attempts at startup.
+
+    A committed ticket's own stuck delivery, a missing candidate/staff thread,
+    or a slot already released for a terminal decision are per-ticket
+    problems: they are reported as ``degraded`` (logged, annotated, and
+    retired so they are not reselected) and never counted toward ``failed``.
+    Only runtime-level errors -- missing/invalid binding data -- count as
+    ``failed`` and keep gating :func:`thread_intake_ready`.
+    """
+    await ensure_creation_indexes(mongo)
+    amount = max(1, min(int(limit), 100))
+    now = utcnow()
+    cursor = mongo.ticket_creation_state.find({
+        "kind": "thread_ticket_creation",
+        "state": {"$ne": "complete"},
+        "$or": [
+            {"lease_until": {"$lte": now}},
+            {"lease_until": {"$exists": False}},
+        ],
+    })
+    pending = await cursor.sort("updated_at", 1).limit(amount).to_list(length=amount)
+    counts = {"processed": 0, "completed": 0, "degraded": 0, "failed": 0}
+    for state in pending:
+        counts["processed"] += 1
+        ticket_type = str(state.get("ticket_type") or "")
+        state_guild_id = _as_int(state.get("guild_id"))
+        config = {
+            "ticket_target_guild_id": state_guild_id,
+            f"{ticket_type}_candidate_parent": state.get("candidate_parent_id"),
+            f"{ticket_type}_staff_parent": state.get("staff_parent_id"),
+            f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
+        }
+        result: CreatedThreadTicket | None = None
+        degraded_reason: str | None = None
+        try:
+            if not state_guild_id:
+                raise ThreadConfigurationError(
+                    "pending creation is missing its exact target guild binding"
+                )
+            slot_id = str(state.get("open_slot_id") or "")
+            workflow_id = str(state.get("creation_workflow_id") or "")
+            if not slot_id or workflow_id != str(state.get("_id") or ""):
+                raise ThreadConfigurationError(
+                    "pending creation is missing its exact shared slot binding"
+                )
+            slot = await mongo.ticket_open_slots.find_one({"_id": slot_id}) or {}
+            if (
+                slot.get("state") == ticket_runtime.SLOT_OPEN
+                and str(slot.get("workflow_id") or "") == workflow_id
+                and slot.get("route") == ticket_runtime.ROUTE_THREAD
+                and _as_int(slot.get("guild_id")) == state_guild_id
+            ):
+                committed = await _committed_ticket_for_creation_state(
+                    mongo,
+                    guild_id=state_guild_id,
+                    user_id=_as_int(state.get("user_id")),
+                    ticket_type=ticket_type,
+                )
+                if committed is None:
+                    # The row's bound ticket document is gone (or was never
+                    # written). Nothing can be reconciled or redelivered, but
+                    # this is the row's own per-ticket problem, not a runtime
+                    # binding failure -- retire it rather than gate intake.
+                    degraded_reason = "ticket document missing"
+                    await _retire_degraded_creation_state(
+                        mongo, state, None, degraded_reason
+                    )
+                elif str(slot.get("ticket_id")) != str(committed.get("_id")):
+                    raise ThreadConfigurationError(
+                        "open slot is not bound to the pending creation ticket"
+                    )
+                else:
+                    result = await _reconcile_existing_ticket(
+                        bot, mongo, committed, coc_client=coc_client
+                    )
+            else:
+                try:
+                    slot_claim = await ticket_runtime.resume_open_slot(
+                        mongo,
+                        slot_id=slot_id,
+                        workflow_id=workflow_id,
+                        route=ticket_runtime.ROUTE_THREAD,
+                        guild_id=state_guild_id,
+                        now=now,
+                    )
+                except ticket_runtime.SlotConflict:
+                    # The most common cause is a terminal ticket whose slot was
+                    # already released after approve/deny; that is a resolved
+                    # ticket, not a broken one.
+                    committed = await _committed_ticket_for_creation_state(
+                        mongo,
+                        guild_id=state_guild_id,
+                        user_id=_as_int(state.get("user_id")),
+                        ticket_type=ticket_type,
+                    )
+                    if committed is not None and str(
+                        committed.get("status") or ""
+                    ) in {"approved", "denied"}:
+                        degraded_reason = (
+                            "open slot already released for a terminal ticket"
+                        )
+                        await _retire_degraded_creation_state(
+                            mongo, state, committed, degraded_reason
+                        )
+                    else:
+                        raise
+                else:
+                    if not slot_claim.won:
+                        raise ThreadCreationBusy(
+                            "pending creation's sticky shared slot is not resumable"
+                        )
+                    result = await create_live_thread_ticket(
+                        bot=bot,
+                        mongo=mongo,
+                        guild_id=state_guild_id,
+                        user_id=_as_int(state.get("user_id")),
+                        username=str(state.get("username") or "candidate"),
+                        display_name=str(state.get("display_name") or "") or None,
+                        ticket_type=ticket_type,
+                        config=config,
+                        open_slot_claim=slot_claim,
+                        coc_client=coc_client,
+                    )
+        except Exception:
+            counts["failed"] += 1
+            _log.exception("startup ticket creation recovery failed for %s", state.get("_id"))
+            continue
+        if degraded_reason is not None:
+            counts["degraded"] += 1
+            continue
+        if result is not None and result.delivery_pending:
+            await _retry_or_retire_pending_delivery(mongo, state, result.ticket)
+            counts["degraded"] += 1
+            continue
+        counts["completed"] += 1
+    return counts

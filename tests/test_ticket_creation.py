@@ -1,20 +1,179 @@
 import asyncio
+import time
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from pymongo.errors import DuplicateKeyError
+import hikari
+import pytest
 
-from extensions.commands.tickets import handlers, store
+from extensions import components as dispatcher
+from extensions.commands import ticket_runtime
+from extensions.commands.tickets import (
+    account_sync,
+    handlers,
+    legacy_migration,
+    schema,
+    store,
+    thread_service,
+)
 
 
-class FakeCreationCollection:
+NOW = datetime(2026, 8, 20, 6, 0, tzinfo=timezone.utc)
+
+
+def test_migration_webhook_pacing_serializes_concurrent_sends(monkeypatch):
+    """Public and staff replay sends share one conservative process pacing gate."""
+    calls: list[float] = []
+
+    class Rest:
+        async def execute_webhook(self, *_args, **_kwargs):
+            calls.append(time.monotonic())
+
+    monkeypatch.setattr(legacy_migration, "WEBHOOK_SEND_INTERVAL_SECONDS", 0.02)
+    monkeypatch.setattr(legacy_migration, "_webhook_send_lock", None)
+    monkeypatch.setattr(legacy_migration, "_last_webhook_send_at", 0.0)
+
+    async def run() -> None:
+        webhook = SimpleNamespace(id=8, token="secret")
+        await asyncio.gather(
+            legacy_migration._execute_paced_webhook(Rest(), webhook, "public"),
+            legacy_migration._execute_paced_webhook(Rest(), webhook, "staff"),
+        )
+
+    asyncio.run(run())
+    assert len(calls) == 2
+    assert calls[1] - calls[0] >= 0.015
+
+
+def test_clone_part_routes_primary_webhook_send_through_pacing(monkeypatch):
+    marker = "migration-source:1:2:3:1/1"
+    routed: list[str] = []
+
+    async def paced(_rest, _webhook, content, **_kwargs):
+        routed.append(content)
+
+    monkeypatch.setattr(legacy_migration, "_execute_paced_webhook", paced)
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[], embeds=[],
+    )
+    rest = SimpleNamespace(fetch_messages=lambda _thread_id: EmptyLazyIterator())
+
+    losses = asyncio.run(legacy_migration._execute_clone_part(
+        rest=rest, webhook=SimpleNamespace(id=8, token="secret"), thread_id=9,
+        marker=marker, content=f"proof\n-# {marker}", message=message,
+        include_payload=True,
+    ))
+
+    assert losses == []
+    assert routed == [f"proof\n-# {marker}"]
+
+
+def _slot_claim(*, guild_id=10, user_id=30, ticket_type="main"):
+    workflow_id = f"thread:{user_id}:{ticket_type}"
+    return ticket_runtime.SlotClaim(
+        True,
+        "slot-owner",
+        {
+            "_id": f"ticket-open:{user_id}:{ticket_type}",
+            "state": ticket_runtime.SLOT_RESERVED,
+            "route": ticket_runtime.ROUTE_THREAD,
+            "guild_id": guild_id,
+            "user_id": user_id,
+            "ticket_type": ticket_type,
+            "workflow_id": workflow_id,
+            "rollout_revision": 1,
+        },
+    )
+
+
+@pytest.fixture(autouse=True)
+def _shared_slot_mutations(monkeypatch):
+    async def bind(_mongo, **kwargs):
+        return {"state": ticket_runtime.SLOT_OPEN, **kwargs}
+
+    async def cancel(_mongo, **_kwargs):
+        return True
+
+    monkeypatch.setattr(ticket_runtime, "bind_open_slot", bind)
+    monkeypatch.setattr(ticket_runtime, "cancel_open_slot", cancel)
+
+
+def _ticket(*, public=101, staff=102, number=1, status="open", source=None):
+    return schema.new_ticket_document(
+        ticket_type="main",
+        ticket_number=number,
+        guild_id=10,
+        public_thread_id=public,
+        public_parent_id=20,
+        staff_thread_id=staff,
+        staff_parent_id=21,
+        user_id=30,
+        username="Applicant",
+        created_at=NOW,
+        status=status,
+        source=source,
+    )
+
+
+class UpdateResult:
+    def __init__(self, matched_count=1):
+        self.matched_count = matched_count
+
+
+class AutomationStateCollection:
+    def __init__(self, *, fail_updates=0):
+        self.documents = {}
+        self.fail_updates = fail_updates
+        self.update_calls = 0
+
+    async def update_one(self, query, update, **_kwargs):
+        self.update_calls += 1
+        if self.fail_updates:
+            self.fail_updates -= 1
+            raise TimeoutError("staff context queue unavailable")
+        document = self.documents.setdefault(query["_id"], {"_id": query["_id"]})
+        for key, value in update.get("$setOnInsert", {}).items():
+            document.setdefault(key, value)
+        document.update(update.get("$set", {}))
+        for key, amount in update.get("$inc", {}).items():
+            document[key] = int(document.get(key, 0)) + int(amount)
+        for key in update.get("$unset", {}):
+            document.pop(key, None)
+        return UpdateResult(1)
+
+
+class TicketsDMCollection:
+    """Minimal `mongo.tickets` fake for the creation-DM CAS claim: a
+    `find_one_and_update` that only matches while `creation_dm_sent_at`
+    is unset, mirroring `store.claim_creation_dm`'s guard."""
+
+    def __init__(self, ticket):
+        self.documents = {ticket["_id"]: dict(ticket)}
+
+    async def find_one_and_update(self, query, update, **_kwargs):
+        document = self.documents.get(query["_id"])
+        if document is None or "creation_dm_sent_at" in document:
+            return None
+        document.update(update["$set"])
+        return dict(document)
+
+
+class EmptyLazyIterator:
+    async def to_list(self):
+        return []
+
+
+class CreationStateCollection:
     def __init__(self, document=None):
-        self.document = document
-        self.index_calls = 0
-        self.deleted = []
+        self.document = dict(document) if document else None
+        self.indexes = []
+        self.fail_complete_once = False
+        self.complete_failures = 0
 
     async def create_index(self, *args, **kwargs):
-        self.index_calls += 1
+        self.indexes.append((args, kwargs))
         return kwargs.get("name")
 
     async def find_one(self, query):
@@ -22,622 +181,3912 @@ class FakeCreationCollection:
             return dict(self.document)
         return None
 
-    async def find_one_and_update(self, query, update, **_kwargs):
-        now_limit = query["$or"][0]["lease_until"]["$lte"]
-        if self.document:
-            lease = self.document.get("lease_until")
-            if lease is not None and lease > now_limit:
-                return None
-        base = dict(self.document or {"_id": query["_id"]})
-        if self.document is None:
-            base.update(update.get("$setOnInsert", {}))
-        base.update(update.get("$set", {}))
+    async def insert_one(self, document):
+        if self.document is not None:
+            raise thread_service.DuplicateKeyError("duplicate")
+        self.document = dict(document)
+        return SimpleNamespace(inserted_id=document["_id"])
+
+    async def update_one(self, query, update, **_kwargs):
+        if (
+            self.fail_complete_once
+            and update.get("$set", {}).get("state") == "complete"
+            and self.complete_failures == 0
+        ):
+            self.complete_failures += 1
+            raise TimeoutError("completion acknowledgement lost")
+        if not self.document or self.document.get("_id") != query.get("_id"):
+            return UpdateResult(0)
+        if "state" in query and isinstance(query["state"], str):
+            if self.document.get("state") != query["state"]:
+                return UpdateResult(0)
+        if "lease_owner" in query and self.document.get("lease_owner") != query["lease_owner"]:
+            return UpdateResult(0)
+        self.document.update(update.get("$set", {}))
         for key in update.get("$unset", {}):
-            base.pop(key, None)
-        self.document = base
-        return dict(base)
+            self.document.pop(key, None)
+        return UpdateResult(1)
 
-    async def update_one(self, query, update):
-        matched = bool(self.document and self.document.get("_id") == query.get("_id"))
-        if matched and "state" in query:
-            matched = self.document.get("state") == query["state"]
-        if matched:
-            self.document.update(update.get("$set", {}))
-            for key in update.get("$unset", {}):
-                self.document.pop(key, None)
-        return SimpleNamespace(matched_count=int(matched))
-
-    async def delete_one(self, query):
-        self.deleted.append(query)
-        matched = bool(
-            self.document
-            and all(self.document.get(key) == value for key, value in query.items())
-        )
-        if matched:
-            self.document = None
-        return SimpleNamespace(deleted_count=int(matched))
+    async def find_one_and_update(self, query, update, **_kwargs):
+        result = await self.update_one(query, update)
+        return dict(self.document) if result.matched_count else None
 
 
-class FakeSetupCollection:
-    def __init__(self, config=None):
-        self.config = dict(config or {"_id": "config"})
+class SetupCollection:
+    def __init__(self, document=None):
+        self.document = {"_id": "config", **(document or {})}
 
-    async def find_one(self, _query, _projection=None):
-        return dict(self.config)
+    async def find_one(self, _query, *_args):
+        return dict(self.document)
 
     async def find_one_and_update(self, _query, update, **_kwargs):
         for field, amount in update.get("$inc", {}).items():
-            self.config[field] = self.config.get(field, 0) + amount
-        return dict(self.config)
+            self.document[field] = int(self.document.get(field, 0)) + amount
+        return dict(self.document)
+
+    async def update_one(self, _query, update, **_kwargs):
+        self.document.update(update.get("$set", {}))
+        for field, value in update.get("$max", {}).items():
+            self.document[field] = max(int(self.document.get(field, 0)), int(value))
+        return UpdateResult(1)
 
 
-class FakeReplaceCollection:
-    def __init__(self, *, fail=False):
-        self.fail = fail
-        self.documents = {}
-
-    async def replace_one(self, query, document, **_kwargs):
-        if self.fail:
-            raise RuntimeError("mirror unavailable")
-        self.documents[query["_id"]] = dict(document)
+def test_thread_names_encode_the_permanent_status_and_keep_closed_unprefixed():
+    public, staff = thread_service.thread_names("main", 7, "Shaun Example")
+    assert public == "🆕 main-7-shaun-example"
+    assert staff == "🆕 staff-main-7-shaun-example"
+    assert thread_service.thread_names("main", 7, "Shaun Example", status="approved")[0] == "✅ main-7-shaun-example"
+    assert thread_service.thread_names("main", 7, "Shaun Example", status="denied")[0] == "❌ main-7-shaun-example"
+    assert thread_service.thread_names("main", 7, "Shaun Example", status="closed")[0] == "main-7-shaun-example"
 
 
-def test_ticket_insert_commits_primary_when_mirror_fails(caplog):
-    primary = FakeReplaceCollection()
-    secondary = FakeReplaceCollection(fail=True)
-    mongo = SimpleNamespace(
-        ticket_setup=FakeSetupCollection({"ticket_store": store.STORE_BUTTON}),
-        button_store=primary,
-        tickets=secondary,
+def test_id_bound_recovery_accepts_only_known_status_prefixes():
+    base = "main-1-applicant"
+    identity = dict(
+        id=101, guild_id=10, parent_id=20,
+        type=hikari.ChannelType.GUILD_PRIVATE_THREAD, owner_id=999,
     )
-    ticket = {"_id": "ticket_42", "type": "ticket", "status": "open"}
-
-    asyncio.run(store.insert_one(mongo, ticket))
-
-    assert primary.documents["ticket_42"] == ticket
-    assert "primary remains authoritative" in caplog.text
-
-
-def test_creation_claim_is_atomic_bounded_and_blocks_duplicate(monkeypatch):
-    now = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
-    collection = FakeCreationCollection()
-    mongo = SimpleNamespace(ticket_creation_state=collection)
-    monkeypatch.setattr(handlers, "_creation_index_ready", False)
-
-    first_acquired, first = asyncio.run(handlers.claim_ticket_creation(
-        mongo, 1, 2, "main", now=now,
-    ))
-    second_acquired, second = asyncio.run(handlers.claim_ticket_creation(
-        mongo, 1, 2, "main", now=now + timedelta(seconds=1),
-    ))
-
-    assert first_acquired is True
-    assert second_acquired is False
-    assert first["lease_until"] == now + handlers.CREATION_LEASE
-    assert first["expires_at"] == now + handlers.CREATION_RETENTION
-    assert second["_id"] == "1:2:main"
-    assert collection.index_calls == 1
+    thread_service._validate_recovered_thread(
+        SimpleNamespace(**identity, name="✅ " + base),
+        guild_id=10, parent_id=20, name=base, private=True, expected_owner_id=999,
+    )
+    with pytest.raises(thread_service.ThreadTicketError, match="wrong name"):
+        thread_service._validate_recovered_thread(
+            SimpleNamespace(**identity, name="🚨 " + base),
+            guild_id=10, parent_id=20, name=base, private=True, expected_owner_id=999,
+        )
 
 
-def test_creation_state_with_discord_channel_cannot_be_reclaimed(monkeypatch):
-    now = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
-    collection = FakeCreationCollection({
-        "_id": "1:2:main",
-        "state": "cleanup_required",
-        "channel_id": 42,
-        "lease_until": now - timedelta(hours=1),
-    })
-    mongo = SimpleNamespace(ticket_creation_state=collection)
-    monkeypatch.setattr(handlers, "_creation_index_ready", True)
-
-    acquired, state = asyncio.run(handlers.claim_ticket_creation(
-        mongo, 1, 2, "main", now=now,
-    ))
-
-    assert acquired is False
-    assert state["channel_id"] == 42
-
-
-def test_naive_mongo_lease_does_not_raise_during_duplicate_claim(monkeypatch):
-    class Collection(FakeCreationCollection):
-        async def find_one_and_update(self, *_args, **_kwargs):
-            raise DuplicateKeyError("active lease owns the key")
-
-    collection = Collection({
-        "_id": "1:2:main",
-        "state": "creating",
-        # PyMongo returns naive UTC unless tz_aware=True.
-        "lease_until": datetime(2026, 8, 5, 12, 10),
-    })
-    mongo = SimpleNamespace(ticket_creation_state=collection)
-    monkeypatch.setattr(handlers, "_creation_index_ready", True)
-
-    acquired, state = asyncio.run(handlers.claim_ticket_creation(
-        mongo,
-        1,
-        2,
-        "main",
-        now=datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc),
-    ))
-
-    assert acquired is False
-    assert state["state"] == "creating"
-
-
-def test_ticket_number_reservation_is_atomic():
-    setup = FakeSetupCollection({"main_ticket_counter": 8})
-    mongo = SimpleNamespace(ticket_setup=setup)
-
-    first = asyncio.run(handlers.reserve_ticket_number(mongo, "main"))
-    second = asyncio.run(handlers.reserve_ticket_number(mongo, "main"))
-
-    assert (first, second) == (9, 10)
-
-
-def test_ticket_error_detail_redacts_credentials_and_tokens():
-    detail = handlers._error_detail(RuntimeError(
-        "mongodb://name:password@db.example/test?access_token=secret-value"
-    ))
-
-    assert "name:password" not in detail
-    assert "secret-value" not in detail
-    assert "mongodb://***@" in detail
-    assert "access_token=***" in detail
-
-
-def test_rollback_deletes_incomplete_channel_and_releases_claim():
+def test_status_rename_restores_archived_and_locked_flags():
     class Rest:
         def __init__(self):
-            self.deleted = []
+            self.thread = SimpleNamespace(id=9, name="🆕 main-1-applicant", is_archived=True, is_locked=True)
+            self.edits = []
 
-        async def delete_channel(self, channel_id, **_kwargs):
-            self.deleted.append(channel_id)
+        async def fetch_channel(self, _id):
+            return self.thread
 
-    collection = FakeCreationCollection({"_id": "claim", "state": "creating"})
-    mongo = SimpleNamespace(ticket_creation_state=collection)
-    bot = SimpleNamespace(rest=Rest())
+        async def edit_channel(self, _id, **kwargs):
+            self.edits.append(kwargs)
+            if "name" in kwargs:
+                self.thread.name = kwargs["name"]
+            if "archived" in kwargs:
+                self.thread.is_archived = kwargs["archived"]
+            if "locked" in kwargs:
+                self.thread.is_locked = kwargs["locked"]
 
-    result = asyncio.run(handlers.rollback_ticket_creation(
-        bot, mongo, "claim", 42, RuntimeError("thread failed"),
+    rest = Rest()
+    asyncio.run(thread_service._rename_ticket_thread_for_status(rest, 9, "✅ main-1-applicant"))
+    assert rest.thread.name == "✅ main-1-applicant"
+    assert rest.thread.is_archived is True
+    assert rest.thread.is_locked is True
+    assert [set(edit) & {"name", "archived", "locked"} for edit in rest.edits] == [
+        {"archived"}, {"name"}, {"archived", "locked"},
+    ]
+
+
+def test_status_rename_retry_restores_flags_checkpointed_before_crash():
+    class Rest:
+        def __init__(self):
+            # Simulates a crash after unarchive + rename but before restoration.
+            self.thread = SimpleNamespace(id=9, name="✅ main-1-applicant", is_archived=False, is_locked=False)
+            self.edits = []
+
+        async def fetch_channel(self, _id):
+            return self.thread
+
+        async def edit_channel(self, _id, **kwargs):
+            self.edits.append(kwargs)
+            self.thread.is_archived = kwargs.get("archived", self.thread.is_archived)
+            self.thread.is_locked = kwargs.get("locked", self.thread.is_locked)
+
+    rest = Rest()
+    asyncio.run(thread_service.rename_ticket_thread_for_status(
+        rest, 9, "✅ main-1-applicant",
+        restore_state={"archived": True, "locked": True},
+    ))
+    assert rest.thread.is_archived is True
+    assert rest.thread.is_locked is True
+    assert rest.edits[0]["archived"] is True
+
+
+def test_create_ticket_owns_acknowledgement_without_dispatcher_state_io():
+    action = dispatcher.registered_functions["ticket_v2_create"]
+    assert action.opens_modal is True
+    assert action.no_return is True
+    assert action.preload_state is False
+
+
+def test_creation_lease_is_global_across_source_guilds():
+    assert thread_service._creation_id(10, 30, "main") == "thread:30:main"
+    assert thread_service._creation_id(999, 30, "main") == "thread:30:main"
+
+
+def test_creation_lock_is_scoped_per_applicant_not_shared_globally():
+    thread_service._creation_locks.clear()
+    same_applicant_again = thread_service._creation_lock_for(30)
+    same_applicant = thread_service._creation_lock_for(30)
+    other_applicant = thread_service._creation_lock_for(31)
+
+    assert same_applicant is same_applicant_again
+    assert same_applicant is not other_applicant
+
+
+def test_two_applicants_creating_at_once_do_not_serialize_on_one_lock():
+    """The old single global _creation_lock meant a second applicant's
+    Discord/CoC/delivery work waited on the first applicant's, even though
+    neither touches the other's data. A per-applicant lock must let the
+    second applicant's lock be acquired immediately while the first is held."""
+    thread_service._creation_locks.clear()
+
+    async def run():
+        async with thread_service._creation_lock_for(30):
+            other_lock = thread_service._creation_lock_for(31)
+            await asyncio.wait_for(other_lock.acquire(), timeout=0.1)
+            other_lock.release()
+        return True
+
+    assert asyncio.run(run()) is True
+
+
+def test_creation_lock_is_garbage_collected_once_nothing_holds_it():
+    """A weak-value dict, not a plain dict keyed by ever-growing applicant
+    IDs, so a finished applicant's lock does not linger for the process
+    lifetime."""
+    import gc
+
+    thread_service._creation_locks.clear()
+    thread_service._creation_lock_for(99)
+    gc.collect()
+
+    assert 99 not in thread_service._creation_locks
+
+
+def test_only_owner_can_establish_initial_ticket_target():
+    assert handlers._can_configure_thread_target(
+        actor_id=handlers.TICKET_BOOTSTRAP_OWNER_ID,
+        guild_id=10,
+        config={},
+    )
+    assert not handlers._can_configure_thread_target(
+        actor_id=999,
+        guild_id=10,
+        config={},
+    )
+
+
+def test_bound_target_allows_local_admins_and_rejects_foreign_admins():
+    config = {"ticket_target_guild_id": 10}
+    assert handlers._can_configure_thread_target(
+        actor_id=999,
+        guild_id=10,
+        config=config,
+    )
+    assert not handlers._can_configure_thread_target(
+        actor_id=999,
+        guild_id=11,
+        config=config,
+    )
+
+
+def test_ticket_number_allocation_delegates_to_shared_cross_runtime_counter(monkeypatch):
+    mongo = SimpleNamespace()
+    values = iter((51, 52))
+    calls = []
+
+    async def shared_allocator(received_mongo, ticket_type):
+        calls.append((received_mongo, ticket_type))
+        return next(values)
+
+    monkeypatch.setattr(ticket_runtime, "reserve_ticket_number", shared_allocator)
+
+    async def allocate_pair():
+        return await asyncio.gather(
+            thread_service.reserve_ticket_number(mongo, "main"),
+            thread_service.reserve_ticket_number(mongo, "main"),
+        )
+
+    first, second = asyncio.run(allocate_pair())
+    assert {first, second} == {51, 52}
+    assert calls == [(mongo, "main"), (mongo, "main")]
+
+
+def test_thread_configuration_requires_both_parents_and_role():
+    with pytest.raises(thread_service.ThreadConfigurationError, match="candidate_parent"):
+        thread_service.parents_from_config({"ticket_target_guild_id": 10}, 10, "main")
+
+
+def test_thread_configuration_never_uses_the_legacy_recruiter_role():
+    config = {
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_recruiter_role": 30,
+    }
+    with pytest.raises(
+        thread_service.ThreadConfigurationError,
+        match="main_thread_recruiter_role",
+    ):
+        thread_service.parents_from_config(config, 10, "main")
+
+    config["main_thread_recruiter_role"] = 40
+    parents = thread_service.parents_from_config(config, 10, "main")
+    assert parents.recruiter_role_id == 40
+
+
+def test_staff_parent_must_be_distinct():
+    parents = thread_service.ThreadParents(10, 20, 20, 30)
+    with pytest.raises(thread_service.ThreadConfigurationError, match="different"):
+        asyncio.run(thread_service.validate_thread_parents(
+            SimpleNamespace(), parents, bot_user_id=40
+        ))
+
+
+def test_recruiter_must_manage_candidate_parent():
+    class Rest:
+        async def fetch_channel(self, channel_id):
+            return SimpleNamespace(
+                id=channel_id,
+                guild_id=10,
+                type=hikari.ChannelType.GUILD_TEXT,
+                permission_overwrites={},
+            )
+
+        async def fetch_guild(self, _guild_id):
+            return SimpleNamespace(owner_id=777)
+
+        async def fetch_member(self, _guild_id, _member_id):
+            return SimpleNamespace(id=99, role_ids=(99,))
+
+        async def fetch_roles(self, _guild_id):
+            recruiter = (
+                hikari.Permissions.VIEW_CHANNEL
+                | hikari.Permissions.READ_MESSAGE_HISTORY
+                | hikari.Permissions.SEND_MESSAGES_IN_THREADS
+            )
+            return [
+                SimpleNamespace(id=10, permissions=hikari.Permissions.NONE),
+                SimpleNamespace(id=99, permissions=hikari.Permissions.ADMINISTRATOR),
+                SimpleNamespace(id=40, permissions=recruiter),
+            ]
+
+    with pytest.raises(thread_service.ThreadConfigurationError, match="candidate parent"):
+        asyncio.run(thread_service.validate_thread_parents(
+            Rest(),
+            thread_service.ThreadParents(10, 20, 21, 40),
+            bot_user_id=99,
+        ))
+
+
+def _valid_parent_rest(
+    *,
+    mentionable: bool,
+    bot_can_mention: bool,
+    staff_role_leak: bool = False,
+    staff_member_leak: bool = False,
+    staff_admin_member: bool = False,
+):
+    class Rest:
+        async def fetch_channel(self, channel_id):
+            overwrites = []
+            if channel_id == 21:
+                if not staff_role_leak:
+                    overwrites.append(SimpleNamespace(
+                        id=50,
+                        type=hikari.PermissionOverwriteType.ROLE,
+                        allow=hikari.Permissions.NONE,
+                        deny=hikari.Permissions.VIEW_CHANNEL,
+                    ))
+                if staff_member_leak:
+                    overwrites.append(SimpleNamespace(
+                        id=60,
+                        type=hikari.PermissionOverwriteType.MEMBER,
+                        allow=hikari.Permissions.VIEW_CHANNEL,
+                        deny=hikari.Permissions.NONE,
+                    ))
+                if staff_admin_member:
+                    overwrites.append(SimpleNamespace(
+                        id=61,
+                        type=hikari.PermissionOverwriteType.MEMBER,
+                        allow=hikari.Permissions.VIEW_CHANNEL,
+                        deny=hikari.Permissions.NONE,
+                    ))
+            return SimpleNamespace(
+                id=channel_id,
+                guild_id=10,
+                type=hikari.ChannelType.GUILD_TEXT,
+                permission_overwrites=overwrites,
+            )
+
+        async def fetch_guild(self, _guild_id):
+            return SimpleNamespace(owner_id=777)
+
+        async def fetch_member(self, _guild_id, member_id):
+            role_ids = (
+                (99,) if member_id == 99 else
+                (70,) if member_id == 61 else
+                () if member_id == 60 else
+                (50,)
+            )
+            return SimpleNamespace(id=member_id, role_ids=role_ids)
+
+        async def fetch_roles(self, _guild_id):
+            bot_permissions = (
+                hikari.Permissions.VIEW_CHANNEL
+                | hikari.Permissions.READ_MESSAGE_HISTORY
+                | hikari.Permissions.SEND_MESSAGES
+                | hikari.Permissions.SEND_MESSAGES_IN_THREADS
+                | hikari.Permissions.MANAGE_THREADS
+                | hikari.Permissions.CREATE_PRIVATE_THREADS
+                | hikari.Permissions.CREATE_PUBLIC_THREADS
+                | hikari.Permissions.ATTACH_FILES
+            )
+            if bot_can_mention:
+                bot_permissions |= hikari.Permissions.MENTION_ROLES
+            recruiter_permissions = (
+                hikari.Permissions.VIEW_CHANNEL
+                | hikari.Permissions.READ_MESSAGE_HISTORY
+                | hikari.Permissions.SEND_MESSAGES_IN_THREADS
+                | hikari.Permissions.MANAGE_THREADS
+            )
+            return [
+                SimpleNamespace(
+                    id=10, permissions=hikari.Permissions.NONE, is_managed=False,
+                ),
+                SimpleNamespace(
+                    id=99, permissions=bot_permissions, is_managed=True,
+                ),
+                SimpleNamespace(
+                    id=40,
+                    permissions=recruiter_permissions,
+                    is_mentionable=mentionable,
+                    is_managed=False,
+                ),
+                SimpleNamespace(
+                    id=50,
+                    permissions=(
+                        hikari.Permissions.VIEW_CHANNEL
+                        | hikari.Permissions.READ_MESSAGE_HISTORY
+                    ),
+                    is_managed=False,
+                ),
+                SimpleNamespace(
+                    id=70,
+                    permissions=hikari.Permissions.ADMINISTRATOR,
+                    is_managed=False,
+                ),
+            ]
+
+    return Rest()
+
+
+@pytest.mark.parametrize(
+    ("mentionable", "bot_can_mention"),
+    [(True, False), (False, True)],
+)
+def test_recruiter_notification_has_a_valid_ping_path(mentionable, bot_can_mention):
+    asyncio.run(thread_service.validate_thread_parents(
+        _valid_parent_rest(
+            mentionable=mentionable, bot_can_mention=bot_can_mention
+        ),
+        thread_service.ThreadParents(10, 20, 21, 40),
+        bot_user_id=99,
+    ))
+
+
+def test_recruiter_notification_fails_without_a_ping_path():
+    with pytest.raises(thread_service.ThreadConfigurationError, match="mentionable"):
+        asyncio.run(thread_service.validate_thread_parents(
+            _valid_parent_rest(mentionable=False, bot_can_mention=False),
+            thread_service.ThreadParents(10, 20, 21, 40),
+            bot_user_id=99,
+        ))
+
+
+def test_staff_parent_rejects_non_recruiter_role_visibility():
+    with pytest.raises(thread_service.ThreadConfigurationError, match="non-recruiter role"):
+        asyncio.run(thread_service.validate_thread_parents(
+            _valid_parent_rest(
+                mentionable=True,
+                bot_can_mention=False,
+                staff_role_leak=True,
+            ),
+            thread_service.ThreadParents(10, 20, 21, 40),
+            bot_user_id=99,
+        ))
+
+
+def test_staff_parent_rejects_unrelated_member_overwrite():
+    with pytest.raises(thread_service.ThreadConfigurationError, match="non-recruiter member"):
+        asyncio.run(thread_service.validate_thread_parents(
+            _valid_parent_rest(
+                mentionable=True,
+                bot_can_mention=False,
+                staff_member_leak=True,
+            ),
+            thread_service.ThreadParents(10, 20, 21, 40),
+            bot_user_id=99,
+        ))
+
+
+def test_staff_parent_preserves_administrator_member_access():
+    asyncio.run(thread_service.validate_thread_parents(
+        _valid_parent_rest(
+            mentionable=True,
+            bot_can_mention=False,
+            staff_admin_member=True,
+        ),
+        thread_service.ThreadParents(10, 20, 21, 40),
+        bot_user_id=99,
+    ))
+
+
+def test_applicant_must_be_able_to_send_in_candidate_threads():
+    with pytest.raises(thread_service.ThreadConfigurationError, match="applicant is missing"):
+        asyncio.run(thread_service.validate_thread_parents(
+            _valid_parent_rest(mentionable=True, bot_can_mention=False),
+            thread_service.ThreadParents(10, 20, 21, 40),
+            bot_user_id=99,
+            applicant_user_id=30,
+        ))
+
+
+def test_questionnaire_preserves_copy_and_assets():
+    main = repr(thread_service._questionnaire_components("main", None))
+    fwa = repr(thread_service._questionnaire_components("fwa", None))
+    assert "Warriors United Main Clan Entry Ticket" in main
+    assert "Your age, time zone, and country" in main
+    assert "What are you looking for in a clan?" in main
+    assert "A recruiter will reply as soon as possible." in main
+    assert "WU_Logo.png" in main
+    assert "Warriors United FWA Clan Entry Ticket" in fwa
+    assert "LazyCWL and the daily FWA process?" in fwa
+    assert "WU_FWA_Ticket.jpg" in fwa
+
+
+def test_opening_message_mentions_only_candidate_and_recruiter(monkeypatch):
+    calls = []
+
+    async def send_once(*_args, **kwargs):
+        calls.append((_args, kwargs))
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    async def fetch_my_user():
+        return SimpleNamespace(id=7)
+
+    async def no_talking_points(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(thread_service, "_send_components_once", send_once)
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    # Out of scope here: the recruiter talking points are covered by their
+    # own tests below; this test isolates the two opening cards' mentions.
+    monkeypatch.setattr(thread_service, "_deliver_staff_talking_points", no_talking_points)
+    ticket_doc = _ticket()
+    ticket_doc["recruiter_role_id"] = 40
+    asyncio.run(thread_service._deliver_opening_messages(
+        SimpleNamespace(fetch_my_user=fetch_my_user), ticket_doc
+    ))
+    assert calls[0][1]["user_mentions"] == [30]
+    assert calls[0][1]["role_mentions"] is False
+    assert "<@30>" in repr(calls[0][0][3])
+    assert "<@&40>" not in repr(calls[0][0][3])
+    assert calls[1][1]["user_mentions"] is False
+    assert calls[1][1]["role_mentions"] == [40]
+    assert "<@&40>" in repr(calls[1][0][3])
+    assert "<@30>" not in repr(calls[1][0][3])
+
+
+def test_opening_cards_have_no_marker_text_and_recover_structurally(monkeypatch):
+    """Fresh candidate/staff opening cards carry no bookkeeping marker line;
+    a retried delivery (e.g. an outer recovery pass rerunning this after a
+    crash) must still find both by their visible title and not duplicate."""
+
+    class Rest:
+        def __init__(self):
+            self.channels = {101: [], 102: []}
+            self.creates = 0
+
+        def fetch_messages(self, channel_id):
+            messages = self.channels[channel_id]
+
+            async def to_list():
+                return list(messages)
+
+            return SimpleNamespace(to_list=to_list)
+
+        async def create_message(self, channel_id, **kwargs):
+            self.creates += 1
+            message = SimpleNamespace(
+                id=1000 + self.creates,
+                author=SimpleNamespace(id=7),
+                content=kwargs.get("content", ""),
+                components=kwargs.get("components", []),
+            )
+            self.channels[channel_id].append(message)
+            return message
+
+        async def fetch_my_user(self):
+            return SimpleNamespace(id=7)
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = Rest()
+    ticket_doc = _ticket()
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    # 2 opening cards + 2 recruiter talking points (`_ticket()` sets no
+    # `recruiter_role_id`, so the role line is skipped; how-heard and hook
+    # still post for a "main" ticket).
+    assert rest.creates == 4
+    assert len(rest.channels[101]) == 1
+    assert len(rest.channels[102]) == 3
+
+    def _flat_text(message):
+        texts = [str(getattr(message, "content", "") or "")]
+
+        def walk(component):
+            texts.append(str(getattr(component, "content", "") or ""))
+            for child in getattr(component, "components", ()) or ():
+                walk(child)
+
+        for component in getattr(message, "components", ()) or ():
+            walk(component)
+        return "\n".join(texts)
+
+    for message in (*rest.channels[101], *rest.channels[102]):
+        assert "ticket-setup:" not in _flat_text(message)
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    assert rest.creates == 4
+    assert len(rest.channels[101]) == 1
+    assert len(rest.channels[102]) == 3
+
+
+def test_legacy_opening_card_marker_messages_are_still_recognised(monkeypatch):
+    """A candidate/staff opening card posted before this change still
+    carries the old marker line; recovery must keep recognising it so an
+    already-open ticket never gets a duplicate card."""
+
+    candidate_marker = "ticket-setup:101:candidate"
+    staff_marker = "ticket-setup:101:staff"
+    legacy_candidate = SimpleNamespace(
+        id=1,
+        author=SimpleNamespace(id=7),
+        content="",
+        components=[thread_service.Text(content=f"-# {candidate_marker}")],
+    )
+    legacy_staff = SimpleNamespace(
+        id=2,
+        author=SimpleNamespace(id=7),
+        content="",
+        components=[thread_service.Text(content=f"-# {staff_marker}")],
+    )
+
+    class Rest:
+        def __init__(self):
+            self.channels = {101: [legacy_candidate], 102: [legacy_staff]}
+            self.creates = 0
+
+        def fetch_messages(self, channel_id):
+            messages = self.channels[channel_id]
+
+            async def to_list():
+                return list(messages)
+
+            return SimpleNamespace(to_list=to_list)
+
+        async def create_message(self, channel_id, **_kwargs):
+            self.creates += 1
+            return SimpleNamespace(id=999, author=SimpleNamespace(id=7))
+
+        async def fetch_my_user(self):
+            return SimpleNamespace(id=7)
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    async def no_talking_points(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    # Out of scope here: this test is about card recognition, not the
+    # recruiter talking points (covered by their own tests below).
+    monkeypatch.setattr(thread_service, "_deliver_staff_talking_points", no_talking_points)
+    rest = Rest()
+    ticket_doc = _ticket()
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    assert rest.creates == 0
+
+
+class _StaffThreadRest:
+    """`hikari.api.RESTClient` double recording every plain-content message
+    posted, so the recruiter talking points can be asserted in order."""
+
+    def __init__(self):
+        self.channels = {101: [], 102: []}
+        self.creates = 0
+
+    def fetch_messages(self, channel_id):
+        messages = self.channels[channel_id]
+
+        async def to_list():
+            return list(messages)
+
+        return SimpleNamespace(to_list=to_list)
+
+    async def create_message(self, channel_id, **kwargs):
+        self.creates += 1
+        message = SimpleNamespace(
+            id=1000 + self.creates,
+            author=SimpleNamespace(id=7),
+            content=kwargs.get("content", "") or "",
+            components=kwargs.get("components", []),
+            _kwargs=kwargs,
+        )
+        self.channels[channel_id].append(message)
+        return message
+
+    async def fetch_my_user(self):
+        return SimpleNamespace(id=7)
+
+
+def _staff_plain_messages(rest):
+    """Plain `content=` messages posted to the staff thread (102), in the
+    order they were sent, skipping the Components V2 opening card."""
+    return [
+        message
+        for message in rest.channels[102]
+        if message.content and not message.components
+    ]
+
+
+def test_main_ticket_staff_talking_points_match_legacy_byte_for_byte(monkeypatch):
+    """Legacy posts these into the staff thread's private setup
+    (`extensions/commands/tickets_legacy/handlers.py:779-821`, read-only).
+    The literals below are pasted from that file, not imported, so this
+    test also catches an accidental drift in either copy."""
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = _StaffThreadRest()
+    ticket_doc = _ticket()
+    ticket_doc["recruiter_role_id"] = 40
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+
+    messages = _staff_plain_messages(rest)
+    assert len(messages) == 3
+    assert messages[0].content == (
+        "<@&40> this is a private thread for the candidate. They cannot see "
+        "this thread, so DO NOT ping them, as it will add them.\n\n"
+    )
+    assert messages[0]._kwargs["role_mentions"] is False
+    assert messages[0]._kwargs["user_mentions"] is False
+    assert messages[1].content == "Hello there 👋🏻...how you hear about Warriors United?"
+    assert messages[2].content == (
+        "What was the hook that reeled you in? The thing that said "
+        "\"yeah, I need to check these guys out!!!\""
+    )
+
+
+def test_fwa_ticket_staff_talking_points_include_donations_line(monkeypatch):
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = _StaffThreadRest()
+    ticket_doc = schema.new_ticket_document(
+        ticket_type="fwa",
+        ticket_number=1,
+        guild_id=10,
+        public_thread_id=101,
+        public_parent_id=20,
+        staff_thread_id=102,
+        staff_parent_id=21,
+        user_id=30,
+        username="Applicant",
+        created_at=NOW,
+    )
+    ticket_doc["recruiter_role_id"] = 40
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+
+    messages = _staff_plain_messages(rest)
+    assert len(messages) == 4
+    assert messages[1].content == "Hello there 👋🏻...how you hear about our FWA Operation?"
+    assert messages[3].content == (
+        "Donations are better with the update allowing loot to be used "
+        "but clan chats are and can be sporadic."
+    )
+
+
+def test_staff_talking_points_are_not_duplicated_on_recovery_rerun(monkeypatch):
+    """A retried delivery (an outer recovery pass rerunning
+    `_deliver_opening_messages` after a crash) must not repost any of the
+    four talking-point messages."""
+
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = _StaffThreadRest()
+    ticket_doc = schema.new_ticket_document(
+        ticket_type="fwa",
+        ticket_number=1,
+        guild_id=10,
+        public_thread_id=101,
+        public_parent_id=20,
+        staff_thread_id=102,
+        staff_parent_id=21,
+        user_id=30,
+        username="Applicant",
+        created_at=NOW,
+    )
+    ticket_doc["recruiter_role_id"] = 40
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    first_pass_creates = rest.creates
+    assert len(_staff_plain_messages(rest)) == 4
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+
+    assert rest.creates == first_pass_creates
+    assert len(_staff_plain_messages(rest)) == 4
+
+
+def test_staff_talking_points_never_reach_the_candidate_thread(monkeypatch):
+    async def questionnaire_exists(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(thread_service, "_questionnaire_exists", questionnaire_exists)
+    rest = _StaffThreadRest()
+    ticket_doc = _ticket()
+    ticket_doc["recruiter_role_id"] = 40
+
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+
+    candidate_plain_messages = [
+        message
+        for message in rest.channels[101]
+        if message.content and not message.components
+    ]
+    assert candidate_plain_messages == []
+
+
+def _dm_section(components):
+    """Walk a components-v2 payload for the first Section, as
+    `_questionnaire_exists` walks messages for marker text."""
+    for component in components:
+        if isinstance(component, thread_service.Section):
+            return component
+        found = _dm_section(getattr(component, "components", ()) or ())
+        if found is not None:
+            return found
+    return None
+
+
+def test_creation_dm_sends_a_components_v2_container_with_a_link_button():
+    """No `bot` and no `fetch_guild` on the REST double: the guild cannot be
+    resolved, so the DM falls back to the plain server name and the branding
+    logo attachment."""
+    sent = []
+
+    class Rest:
+        async def create_dm_channel(self, user_id):
+            return SimpleNamespace(id=999, user_id=user_id)
+
+        async def create_message(self, **kwargs):
+            sent.append(kwargs)
+
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
+
+    assert len(sent) == 1
+    assert sent[0]["channel"].id == 999
+    # Components V2 messages never carry a `content=` alongside components.
+    assert "content" not in sent[0]
+    assert sent[0]["flags"] == hikari.MessageFlag.IS_COMPONENTS_V2
+    components = sent[0]["components"]
+    payload = repr(components)
+    assert "https://discord.com/channels/10/101" in payload
+    assert "Open my ticket" in payload
+
+    section = _dm_section(components[0].components)
+    assert section is not None
+    title, sentence = section.components
+    assert title.content == "**Warriors United**"
+    assert "A recruiter will reply in your ticket" in sentence.content
+    assert section.accessory.media == "assets/branding/logo/WU_Logo.png"
+
+
+def test_creation_dm_uses_the_guild_name_and_cached_icon():
+    """`bot.cache.get_guild` resolves the guild: the title becomes the
+    server name and the thumbnail accessory carries the icon URL."""
+    sent = []
+
+    class Rest:
+        async def create_dm_channel(self, user_id):
+            return SimpleNamespace(id=999, user_id=user_id)
+
+        async def create_message(self, **kwargs):
+            sent.append(kwargs)
+
+    guild = SimpleNamespace(
+        name="Warriors United FWA",
+        make_icon_url=lambda: "https://cdn.discordapp.com/icons/10/abc.png",
+    )
+    bot = SimpleNamespace(cache=SimpleNamespace(get_guild=lambda _gid: guild))
+
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    asyncio.run(
+        thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc, bot=bot)
+    )
+
+    assert len(sent) == 1
+    components = sent[0]["components"]
+    section = _dm_section(components[0].components)
+    assert section is not None
+    title, _sentence = section.components
+    assert title.content == "**Warriors United FWA**"
+    assert section.accessory.media == "https://cdn.discordapp.com/icons/10/abc.png"
+    payload = repr(components)
+    assert "https://discord.com/channels/10/101" in payload
+    assert "Open my ticket" in payload
+
+
+def test_creation_dm_second_call_is_a_no_op():
+    """A retried REST call after a crash between send and record must not
+    DM the applicant twice: the CAS marker set by the first call blocks it."""
+    sent = []
+
+    class Rest:
+        async def create_dm_channel(self, user_id):
+            return SimpleNamespace(id=999, user_id=user_id)
+
+        async def create_message(self, **kwargs):
+            sent.append(kwargs)
+
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
+
+    assert len(sent) == 1
+
+
+def test_creation_dm_failure_is_swallowed_and_never_raises():
+    class Rest:
+        async def create_dm_channel(self, _user_id):
+            raise hikari.ForbiddenError(
+                url="", headers={}, raw_body=b"", code=50007
+            )
+
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    # Must not raise; a closed-DM applicant still gets a fully created ticket.
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
+
+
+def test_creation_dm_unexpected_error_is_also_swallowed():
+    class Rest:
+        async def create_dm_channel(self, _user_id):
+            raise RuntimeError("boom")
+
+    ticket_doc = _ticket()
+    mongo = SimpleNamespace(tickets=TicketsDMCollection(ticket_doc))
+    asyncio.run(thread_service._send_ticket_creation_dm(Rest(), mongo, ticket_doc))
+
+
+def test_ensure_candidate_thread_access_unarchives_and_readds_member():
+    calls = {"edits": [], "adds": []}
+
+    class Rest:
+        async def fetch_channel(self, _channel_id):
+            return SimpleNamespace(is_archived=True, is_locked=True)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            calls["edits"].append((channel_id, kwargs))
+
+        async def add_thread_member(self, channel_id, user_id):
+            calls["adds"].append((channel_id, user_id))
+
+    ticket_doc = _ticket()
+    result = asyncio.run(thread_service.ensure_candidate_thread_access(
+        Rest(), ticket_doc, user_id=30,
     ))
 
     assert result is True
-    assert bot.rest.deleted == [42]
-    assert collection.document is None
+    assert calls["edits"] == [(101, {
+        "locked": False, "archived": False,
+        "reason": "Restoring candidate access to an open ticket",
+    })]
+    assert calls["adds"] == [(101, 30)]
 
 
-def test_failed_discord_rollback_retains_duplicate_blocker(capsys):
-    class Rest:
-        async def delete_channel(self, _channel_id, **_kwargs):
-            raise RuntimeError("Discord unavailable")
-
-    collection = FakeCreationCollection({"_id": "claim", "state": "creating"})
-    mongo = SimpleNamespace(ticket_creation_state=collection)
-    bot = SimpleNamespace(rest=Rest())
-
-    result = asyncio.run(handlers.rollback_ticket_creation(
-        bot, mongo, "claim", 42, RuntimeError("Mongo unavailable"),
-    ))
-
-    assert result is False
-    assert collection.document["state"] == "cleanup_required"
-    assert collection.document["channel_id"] == 42
-    assert "creation_rollback_failed" in capsys.readouterr().out
-
-
-def test_missing_incomplete_channel_releases_stale_blocker():
+def test_ensure_candidate_thread_access_returns_false_on_deleted_thread():
     class Rest:
         async def fetch_channel(self, _channel_id):
-            raise handlers.hikari.NotFoundError(
-                "https://discord.test/channels/42",
-                {},
-                b"",
-                "channel is gone",
+            raise hikari.NotFoundError(
+                url="", headers={}, raw_body=b"", code=10003
             )
 
-    collection = FakeCreationCollection({
-        "_id": "claim",
-        "state": "cleanup_required",
-        "channel_id": 42,
+    result = asyncio.run(thread_service.ensure_candidate_thread_access(
+        Rest(), _ticket(), user_id=30,
+    ))
+    assert result is False
+
+
+def test_creation_bypasses_an_existing_ticket_whose_thread_is_missing(monkeypatch):
+    """A thread_missing existing ticket must not shortcut to
+    _reconcile_existing_ticket -- that would keep pointing the applicant at
+    a dead thread forever instead of letting them open a new ticket.
+    """
+    mongo = SimpleNamespace(
+        ticket_creation_state=CreationStateCollection(),
+        ticket_automation_state=AutomationStateCollection(),
+    )
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def find_open(*_args, **_kwargs):
+        ticket = _ticket()
+        ticket["thread_missing"] = {"thread_role": "candidate"}
+        return ticket
+
+    async def no_bound(*_args, **_kwargs):
+        return None
+
+    class _ProceededPastExisting(Exception):
+        pass
+
+    async def claim(*_args, **_kwargs):
+        raise _ProceededPastExisting()
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", no_op)
+    monkeypatch.setattr(thread_service, "validate_thread_parents", no_op)
+    monkeypatch.setattr(thread_service.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(thread_service, "_committed_ticket_for_creation_state", no_bound)
+    monkeypatch.setattr(thread_service, "_claim_creation", claim)
+
+    bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=99), rest=SimpleNamespace())
+    config = {
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_thread_recruiter_role": 40,
+    }
+
+    with pytest.raises(_ProceededPastExisting):
+        asyncio.run(thread_service.create_live_thread_ticket(
+            bot=bot,
+            mongo=mongo,
+            guild_id=10,
+            user_id=30,
+            username="Applicant",
+            display_name="Applicant",
+            ticket_type="main",
+            config=config,
+            open_slot_claim=_slot_claim(),
+        ))
+
+
+def test_legacy_migration_help_explains_overrides_and_confirmation():
+    options = legacy_migration.MigrateLegacyTicket._command_data.options
+    assert options["type"].description == (
+        "Auto detects the type. Choose Main or FWA only to override the detected value"
+    )
+    assert "Open/new tickets are refused" in options["status"].description
+    assert "Override all player tags" in options["player-tags"].description
+    assert "accept listed attachment risks" in options["attachment-ack"].description
+    assert options["confirm"].description == (
+        "False previews only. True creates or resumes this ticket"
+    )
+    assert all(len(option.description) <= 100 for option in options.values())
+
+
+def test_player_tag_capture_is_normalized_and_deduplicated():
+    tags = handlers._PLAYER_TAG_RE.findall("#abc123 and #ABC123 then #PYLQ")
+    assert sorted({item.upper() for item in tags}) == ["#ABC123", "#PYLQ"]
+
+
+def test_message_snapshot_includes_attachment_names():
+    message = SimpleNamespace(
+        content="My answer",
+        attachments=[SimpleNamespace(filename="base.png")],
+    )
+    assert handlers._candidate_message_snapshot(message) == "My answer\nAttachments: base.png"
+
+
+def test_creation_reuses_naive_expired_lease(monkeypatch):
+    collection = CreationStateCollection({
+        "_id": "thread:30:main",
+        "state": "retry",
+        "lease_until": datetime(2026, 8, 20, 5, 0),
+        "ticket_number": 4,
+        "guild_id": 10,
+        "candidate_parent_id": 20,
+        "staff_parent_id": 21,
+        "recruiter_role_id": 40,
     })
     mongo = SimpleNamespace(ticket_creation_state=collection)
-    bot = SimpleNamespace(rest=Rest())
+    monkeypatch.setattr(thread_service, "_creation_index_ready", True)
+    parents = thread_service.ThreadParents(10, 20, 21, 40)
 
-    released = asyncio.run(handlers.release_missing_channel_blocker(
-        bot, mongo, dict(collection.document),
+    owner, state, resumed = asyncio.run(thread_service._claim_creation(
+        mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name=None,
+        ticket_type="main",
+        parents=parents,
+        open_slot_claim=_slot_claim(),
+        now=NOW,
     ))
 
-    assert released is True
-    assert collection.document is None
+    assert owner
+    assert resumed is True
+    assert state["ticket_number"] == 4
 
 
-def test_missing_named_channel_releases_uncertain_blocker():
+def test_creation_rejects_active_lease(monkeypatch):
+    collection = CreationStateCollection({
+        "_id": "thread:30:main",
+        "state": "creating",
+        "lease_until": NOW + timedelta(minutes=1),
+    })
+    mongo = SimpleNamespace(ticket_creation_state=collection)
+    monkeypatch.setattr(thread_service, "_creation_index_ready", True)
+    with pytest.raises(thread_service.ThreadCreationBusy):
+        asyncio.run(thread_service._claim_creation(
+            mongo,
+            guild_id=10,
+            user_id=30,
+            username="Applicant",
+            display_name=None,
+            ticket_type="main",
+            parents=thread_service.ThreadParents(10, 20, 21, 40),
+            open_slot_claim=_slot_claim(),
+            now=NOW,
+        ))
+
+
+def test_bound_creation_refuses_parent_change(monkeypatch):
+    collection = CreationStateCollection({
+        "_id": "thread:30:main",
+        "state": "retry",
+        "ticket_number": 4,
+        "guild_id": 10,
+        "candidate_parent_id": 20,
+        "staff_parent_id": 21,
+        "recruiter_role_id": 40,
+    })
+    mongo = SimpleNamespace(ticket_creation_state=collection)
+    monkeypatch.setattr(thread_service, "_creation_index_ready", True)
+    with pytest.raises(thread_service.ThreadConfigurationError, match="original"):
+        asyncio.run(thread_service._claim_creation(
+            mongo,
+            guild_id=10,
+            user_id=30,
+            username="Applicant",
+            display_name=None,
+            ticket_type="main",
+            parents=thread_service.ThreadParents(10, 200, 201, 40),
+            open_slot_claim=_slot_claim(),
+            now=NOW,
+        ))
+
+
+def test_crash_before_insert_recovery_reuses_exact_pair_and_shared_slot(monkeypatch):
+    state = {
+        "_id": "thread:30:main",
+        "kind": "thread_ticket_creation",
+        "state": "creating",
+        "lease_until": NOW - timedelta(minutes=1),
+        "updated_at": NOW - timedelta(minutes=1),
+        "guild_id": 10,
+        "user_id": 30,
+        "username": "Applicant",
+        "display_name": "Applicant",
+        "ticket_type": "main",
+        "candidate_parent_id": 20,
+        "staff_parent_id": 21,
+        "recruiter_role_id": 40,
+        "candidate_thread_id": 101,
+        "staff_thread_id": 102,
+        "open_slot_id": "ticket-open:30:main",
+        "creation_workflow_id": "thread:30:main",
+    }
+    slot = {
+        "_id": state["open_slot_id"],
+        "state": ticket_runtime.SLOT_RESERVED,
+        "route": ticket_runtime.ROUTE_THREAD,
+        "guild_id": state["guild_id"],
+        "workflow_id": state["creation_workflow_id"],
+    }
+
+    class Cursor:
+        def sort(self, *_args):
+            return self
+
+        def limit(self, _amount):
+            return self
+
+        async def to_list(self, *, length):
+            assert length == 50
+            return [dict(state)]
+
+    class CreationStates:
+        def find(self, query):
+            assert query["kind"] == "thread_ticket_creation"
+            return Cursor()
+
+    class OpenSlots:
+        async def find_one(self, query):
+            assert query == {"_id": slot["_id"]}
+            return dict(slot)
+
+    async def indexes(_mongo):
+        return None
+
+    async def resume(_mongo, **kwargs):
+        assert kwargs["slot_id"] == state["open_slot_id"]
+        assert kwargs["workflow_id"] == state["creation_workflow_id"]
+        assert kwargs["route"] == ticket_runtime.ROUTE_THREAD
+        assert kwargs["guild_id"] == state["guild_id"]
+        return _slot_claim()
+
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return thread_service.CreatedThreadTicket(
+            {"_id": "ticket_101"}, resumed=True
+        )
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", indexes)
+    monkeypatch.setattr(ticket_runtime, "resume_open_slot", resume)
+    monkeypatch.setattr(thread_service, "create_live_thread_ticket", create)
+    mongo = SimpleNamespace(
+        ticket_creation_state=CreationStates(),
+        ticket_open_slots=OpenSlots(),
+    )
+
+    result = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+        bot=object(), mongo=mongo
+    ))
+
+    assert result == {"processed": 1, "completed": 1, "degraded": 0, "failed": 0}
+    assert len(calls) == 1
+    assert calls[0]["open_slot_claim"].slot["_id"] == state["open_slot_id"]
+    assert calls[0]["config"]["main_thread_recruiter_role"] == 40
+    assert "main_recruiter_role" not in calls[0]["config"]
+    assert state["candidate_thread_id"] == 101
+    assert state["staff_thread_id"] == 102
+
+
+def test_startup_recovery_rejects_a_cross_guild_stale_open_slot(monkeypatch):
+    state = {
+        "_id": "thread:30:main",
+        "kind": "thread_ticket_creation",
+        "state": "creating",
+        "lease_until": NOW - timedelta(minutes=1),
+        "updated_at": NOW - timedelta(minutes=1),
+        "guild_id": 10,
+        "user_id": 30,
+        "username": "Applicant",
+        "ticket_type": "main",
+        "candidate_parent_id": 20,
+        "staff_parent_id": 21,
+        "recruiter_role_id": 40,
+        "open_slot_id": "ticket-open:30:main",
+        "creation_workflow_id": "thread:30:main",
+    }
+    stale_slot = {
+        "_id": state["open_slot_id"],
+        "state": ticket_runtime.SLOT_OPEN,
+        "route": ticket_runtime.ROUTE_THREAD,
+        "guild_id": 99,
+        "workflow_id": state["creation_workflow_id"],
+        "ticket_id": "ticket_101",
+    }
+
+    class Cursor:
+        def sort(self, *_args):
+            return self
+
+        def limit(self, _amount):
+            return self
+
+        async def to_list(self, *, length):
+            return [dict(state)]
+
+    class CreationStates:
+        def find(self, _query):
+            return Cursor()
+
+    class OpenSlots:
+        async def find_one(self, query):
+            assert query == {"_id": stale_slot["_id"]}
+            return dict(stale_slot)
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    calls = []
+
+    async def committed(*_args, **_kwargs):
+        calls.append(("committed", _kwargs.get("guild_id")))
+        return {"_id": "ticket_101"}
+
+    async def resume(_mongo, **kwargs):
+        calls.append(("resume", kwargs.get("guild_id")))
+        return ticket_runtime.SlotClaim(False, None, stale_slot)
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", no_op)
+    monkeypatch.setattr(
+        thread_service, "_committed_ticket_for_creation_state", committed
+    )
+    monkeypatch.setattr(ticket_runtime, "resume_open_slot", resume)
+    monkeypatch.setattr(thread_service._log, "exception", lambda *_args: None)
+    mongo = SimpleNamespace(
+        ticket_creation_state=CreationStates(),
+        ticket_open_slots=OpenSlots(),
+    )
+
+    result = asyncio.run(thread_service.recover_pending_thread_ticket_creations(
+        bot=object(), mongo=mongo
+    ))
+
+    assert result == {"processed": 1, "completed": 0, "degraded": 0, "failed": 1}
+    assert calls == [("resume", 10)]
+
+
+def test_partial_live_pair_is_quarantined_when_cancelled(monkeypatch):
+    state = {
+        "_id": "thread:30:main",
+        "guild_id": 10,
+        "user_id": 30,
+        "username": "Applicant",
+        "ticket_type": "main",
+        "candidate_parent_id": 20,
+        "staff_parent_id": 21,
+        "ticket_number": 1,
+        "candidate_name": "main-1-applicant",
+        "staff_name": "staff-main-1-applicant",
+    }
+
     class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def create_thread(self, *_args, **_kwargs):
+            return SimpleNamespace(id=101, is_archived=False, is_locked=False)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    async def missing(*_args, **_kwargs):
+        return None
+
+    async def unchanged(_rest, thread):
+        return thread
+
+    async def checkpoint_cancelled(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(thread_service, "_fetch_or_recover_thread", missing)
+    monkeypatch.setattr(thread_service, "_unarchive_if_needed", unchanged)
+    monkeypatch.setattr(thread_service, "_state_update", checkpoint_cancelled)
+    rest = Rest()
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(thread_service._ensure_live_thread_pair(
+            rest=rest,
+            mongo=SimpleNamespace(),
+            state=state,
+            owner="owner",
+            bot_user_id=999,
+        ))
+
+    assert rest.edits == [(101, {
+        "locked": True,
+        "archived": True,
+        "reason": "Quarantining incomplete ticket creation for safe resume",
+    })]
+
+
+def test_live_creation_cancellation_releases_retry_state(monkeypatch):
+    owner = "creation-owner"
+    state = {
+        "_id": "thread:30:main",
+        "lease_owner": owner,
+        "lease_until": NOW + timedelta(minutes=1),
+        "state": "creating",
+        "guild_id": 10,
+        "user_id": 30,
+        "username": "Applicant",
+        "display_name": "Applicant",
+        "ticket_type": "main",
+        "candidate_parent_id": 20,
+        "staff_parent_id": 21,
+        "recruiter_role_id": 40,
+        "ticket_number": 1,
+    }
+    creation_state = CreationStateCollection(state)
+    mongo = SimpleNamespace(ticket_creation_state=creation_state)
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def no_existing(*_args, **_kwargs):
+        return None
+
+    async def claim(*_args, **_kwargs):
+        return owner, dict(state), False
+
+    async def pair(*_args, **_kwargs):
+        return SimpleNamespace(id=101), SimpleNamespace(id=102), dict(state)
+
+    async def cancelled_insert(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", no_op)
+    monkeypatch.setattr(thread_service, "validate_thread_parents", no_op)
+    monkeypatch.setattr(thread_service.store, "find_open_for_applicant", no_existing)
+    monkeypatch.setattr(thread_service, "_committed_ticket_for_creation_state", no_existing)
+    monkeypatch.setattr(thread_service, "_claim_creation", claim)
+    monkeypatch.setattr(thread_service, "_ensure_live_thread_pair", pair)
+    monkeypatch.setattr(thread_service.store, "insert_one", cancelled_insert)
+    rest = Rest()
+    bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=99), rest=rest)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(thread_service.create_live_thread_ticket(
+            bot=bot,
+            mongo=mongo,
+            guild_id=10,
+            user_id=30,
+            username="Applicant",
+            display_name="Applicant",
+            ticket_type="main",
+            config={
+                "ticket_target_guild_id": 10,
+                "main_candidate_parent": 20,
+                "main_staff_parent": 21,
+                "main_thread_recruiter_role": 40,
+            },
+            open_slot_claim=_slot_claim(),
+        ))
+
+    assert [channel_id for channel_id, _kwargs in rest.edits] == [101, 102]
+    assert all(
+        kwargs["locked"] is True and kwargs["archived"] is True
+        for _channel_id, kwargs in rest.edits
+    )
+    assert creation_state.document["state"] == "retry"
+    assert creation_state.document["last_error"] == "CancelledError"
+    assert "lease_owner" not in creation_state.document
+    assert "lease_until" not in creation_state.document
+
+
+def test_post_commit_account_sync_failure_resumes_without_duplicate_pair(monkeypatch):
+    owner = "creation-owner"
+    creation_state = CreationStateCollection()
+    automation_states = AutomationStateCollection()
+    mongo = SimpleNamespace(
+        ticket_creation_state=creation_state,
+        ticket_automation_state=automation_states,
+    )
+    committed = {"doc": None}
+    calls = {"claim": 0, "pair": 0, "insert": 0, "sync": 0}
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def find_open(*_args, **_kwargs):
+        return dict(committed["doc"]) if committed["doc"] else None
+
+    async def no_bound(*_args, **_kwargs):
+        return None
+
+    async def claim(*_args, **_kwargs):
+        calls["claim"] += 1
+        state = {
+            "_id": "thread:30:main",
+            "lease_owner": owner,
+            "state": "creating",
+            "guild_id": 10,
+            "user_id": 30,
+            "username": "Applicant",
+            "display_name": "Applicant",
+            "ticket_type": "main",
+            "candidate_parent_id": 20,
+            "staff_parent_id": 21,
+            "recruiter_role_id": 40,
+            "ticket_number": 1,
+        }
+        creation_state.document = dict(state)
+        return owner, state, False
+
+    async def pair(*_args, **kwargs):
+        calls["pair"] += 1
+        return SimpleNamespace(id=101), SimpleNamespace(id=102), kwargs["state"]
+
+    async def insert(_mongo, document):
+        calls["insert"] += 1
+        committed["doc"] = dict(document)
+        return dict(document)
+
+    async def sync(_mongo, _client, ticket_id, *, source, **_kwargs):
+        calls["sync"] += 1
+        assert ticket_id == "ticket_101"
+        if calls["sync"] == 1:
+            raise account_sync.AccountSyncError("interrupted after commit")
+        updated = dict(committed["doc"])
+        updated["linked_accounts"] = {
+            "version": 1,
+            "state": account_sync.STATE_READY,
+            "current": [{
+                "tag": "#ABC123",
+                "name": "Applicant",
+                "town_hall": 17,
+                "profile_status": "loaded",
+            }],
+            "current_tags": ["#ABC123"],
+            "retry_required": False,
+            "source": source,
+            "revision": 1,
+        }
+        committed["doc"] = updated
+        return account_sync.AccountSyncResult(
+            updated,
+            account_sync.snapshot_from_ticket(updated),
+            added_tags=("#ABC123",),
+        )
+
+    monkeypatch.setattr(thread_service, "ensure_creation_indexes", no_op)
+    monkeypatch.setattr(thread_service, "validate_thread_parents", no_op)
+    monkeypatch.setattr(thread_service.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(thread_service, "_committed_ticket_for_creation_state", no_bound)
+    monkeypatch.setattr(thread_service, "_claim_creation", claim)
+    monkeypatch.setattr(thread_service, "_ensure_live_thread_pair", pair)
+    monkeypatch.setattr(thread_service.store, "insert_one", insert)
+    monkeypatch.setattr(thread_service.account_sync, "sync_ticket_accounts", sync)
+    monkeypatch.setattr(thread_service, "_deliver_opening_messages", no_op)
+    monkeypatch.setattr(thread_service, "reconcile_ticket_pair", no_op)
+    monkeypatch.setattr(thread_service, "notify_console_after_change", no_op)
+    rest = Rest()
+    bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=99), rest=rest)
+    config = {
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_thread_recruiter_role": 40,
+    }
+
+    with pytest.raises(account_sync.AccountSyncError):
+        asyncio.run(thread_service.create_live_thread_ticket(
+            bot=bot,
+            mongo=mongo,
+            guild_id=10,
+            user_id=30,
+            username="Applicant",
+            display_name="Applicant",
+            ticket_type="main",
+            config=config,
+            open_slot_claim=_slot_claim(),
+            coc_client=object(),
+        ))
+    resumed = asyncio.run(thread_service.create_live_thread_ticket(
+        bot=bot,
+        mongo=mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name="Applicant",
+        ticket_type="main",
+        config=config,
+        open_slot_claim=_slot_claim(),
+        coc_client=object(),
+    ))
+
+    assert resumed.resumed is True
+    assert resumed.ticket["linked_accounts"]["current_tags"] == ["#ABC123"]
+    assert calls == {"claim": 1, "pair": 1, "insert": 1, "sync": 2}
+    assert rest.edits == []
+    assert creation_state.document["state"] == "complete"
+
+
+def test_foreign_guild_click_is_rejected_before_global_ticket_lookup(monkeypatch):
+    called = False
+
+    async def find_open(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        return _ticket()
+
+    monkeypatch.setattr(thread_service, "_creation_index_ready", True)
+    monkeypatch.setattr(thread_service.store, "find_open_for_applicant", find_open)
+    with pytest.raises(thread_service.ThreadConfigurationError, match="different guild"):
+        asyncio.run(thread_service.create_live_thread_ticket(
+            bot=SimpleNamespace(),
+            mongo=SimpleNamespace(),
+            guild_id=11,
+            user_id=30,
+            username="Applicant",
+            display_name=None,
+            ticket_type="main",
+            config={
+                "ticket_target_guild_id": 10,
+                "main_candidate_parent": 20,
+                "main_staff_parent": 21,
+                "main_thread_recruiter_role": 40,
+            },
+            open_slot_claim=_slot_claim(guild_id=11),
+        ))
+    assert called is False
+
+
+def test_committed_ticket_heals_completion_then_terminal_user_gets_fresh_attempt(monkeypatch):
+    state_collection = CreationStateCollection()
+    state_collection.fail_complete_once = True
+    automation_states = AutomationStateCollection()
+    mongo = SimpleNamespace(
+        ticket_creation_state=state_collection,
+        ticket_setup=SetupCollection({"main_ticket_counter": 0}),
+        ticket_automation_state=automation_states,
+    )
+    committed = {"doc": None}
+    monkeypatch.setattr(thread_service, "_creation_index_ready", True)
+    claims = []
+    pairs = [
+        (SimpleNamespace(id=101), SimpleNamespace(id=102), 1),
+        (SimpleNamespace(id=201), SimpleNamespace(id=202), 2),
+    ]
+
+    async def no_validate(*_args, **_kwargs):
+        return None, None
+
+    async def find_open(_mongo, *, user_id, ticket_type):
+        doc = committed["doc"]
+        return dict(doc) if doc and doc["status"] == "open" else None
+
+    async def claim(_mongo, **kwargs):
+        index = len(claims)
+        claims.append(kwargs)
+        candidate, staff, number = pairs[index]
+        owner = f"owner-{number}"
+        doc = {
+            "_id": "thread:30:main",
+            "lease_owner": owner,
+            "state": "creating",
+            "guild_id": 10,
+            "user_id": 30,
+            "username": "Applicant",
+            "display_name": "Applicant",
+            "ticket_type": "main",
+            "candidate_parent_id": 20,
+            "staff_parent_id": 21,
+            "recruiter_role_id": 40,
+            "ticket_number": number,
+        }
+        state_collection.document = dict(doc)
+        return owner, doc, index > 0
+
+    async def pair(*, state, **_kwargs):
+        index = len(claims) - 1
+        candidate, staff, number = pairs[index]
+        state = {**state, "ticket_number": number}
+        return candidate, staff, state
+
+    async def insert(_mongo, document):
+        committed["doc"] = dict(document)
+        return dict(document)
+
+    async def by_location(_mongo, location):
+        doc = committed["doc"]
+        return dict(doc) if doc and doc["location"]["id"] == location else None
+
+    async def committed_for_state(*_args, **_kwargs):
+        doc = committed["doc"]
+        return dict(doc) if doc else None
+
+    async def no_messages(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(thread_service, "validate_thread_parents", no_validate)
+    monkeypatch.setattr(thread_service.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(thread_service, "_claim_creation", claim)
+    monkeypatch.setattr(thread_service, "_ensure_live_thread_pair", pair)
+    monkeypatch.setattr(thread_service.store, "insert_one", insert)
+    monkeypatch.setattr(thread_service.store, "find_by_location", by_location)
+    monkeypatch.setattr(
+        thread_service, "_committed_ticket_for_creation_state", committed_for_state
+    )
+    monkeypatch.setattr(thread_service, "_deliver_opening_messages", no_messages)
+    monkeypatch.setattr(thread_service, "reconcile_ticket_pair", no_messages)
+    monkeypatch.setattr(thread_service, "notify_console_after_change", no_messages)
+    bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=99), rest=SimpleNamespace())
+    config = {
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_thread_recruiter_role": 40,
+    }
+
+    first = asyncio.run(thread_service.create_live_thread_ticket(
+        bot=bot,
+        mongo=mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name=None,
+        ticket_type="main",
+        config=config,
+        open_slot_claim=_slot_claim(),
+    ))
+    assert first.ticket["location"]["id"] == 101
+    assert first.delivery_pending is True
+    assert committed["doc"]["location"]["id"] == 101
+
+    recovered = asyncio.run(thread_service.create_live_thread_ticket(
+        bot=bot,
+        mongo=mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name=None,
+        ticket_type="main",
+        config=config,
+        open_slot_claim=_slot_claim(),
+    ))
+    assert recovered.ticket["location"]["id"] == 101
+    assert state_collection.document["state"] == "complete"
+    assert len(claims) == 1
+
+    committed["doc"]["status"] = "denied"
+    later = asyncio.run(thread_service.create_live_thread_ticket(
+        bot=bot,
+        mongo=mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name=None,
+        ticket_type="main",
+        config=config,
+        open_slot_claim=_slot_claim(),
+    ))
+    assert later.ticket["location"]["id"] == 201
+    assert later.ticket["ticket_number"] == 2
+    assert len(claims) == 2
+    for ticket_id, staff_id in (("ticket_101", 102), ("ticket_201", 202)):
+        context = automation_states.documents[f"ticket_staff_context:{ticket_id}"]
+        assert context["ticket_id"] == ticket_id
+        assert context["staff_space_id"] == staff_id
+        assert context["delivery_state"] == "pending"
+
+
+def test_live_creation_queue_failure_resumes_without_duplicate_resources(monkeypatch):
+    creation_states = CreationStateCollection()
+    automation_states = AutomationStateCollection(fail_updates=1)
+    mongo = SimpleNamespace(
+        ticket_creation_state=creation_states,
+        ticket_automation_state=automation_states,
+    )
+    committed = {"doc": None}
+    calls = {"claim": 0, "pair": 0, "insert": 0, "opening": 0}
+    messages = set()
+
+    async def no_validate(*_args, **_kwargs):
+        return None, None
+
+    async def find_open(_mongo, *, user_id, ticket_type):
+        document = committed["doc"]
+        return dict(document) if document and document["status"] == "open" else None
+
+    async def no_bound_ticket(*_args, **_kwargs):
+        return None
+
+    async def claim(_mongo, **_kwargs):
+        calls["claim"] += 1
+        state = {
+            "_id": "thread:30:main",
+            "lease_owner": "owner",
+            "state": "creating",
+            "guild_id": 10,
+            "user_id": 30,
+            "username": "Applicant",
+            "display_name": "Applicant",
+            "ticket_type": "main",
+            "candidate_parent_id": 20,
+            "staff_parent_id": 21,
+            "recruiter_role_id": 40,
+            "ticket_number": 1,
+        }
+        creation_states.document = dict(state)
+        return "owner", state, False
+
+    async def pair(*, state, **_kwargs):
+        calls["pair"] += 1
+        return SimpleNamespace(id=101), SimpleNamespace(id=102), state
+
+    async def insert(_mongo, document):
+        calls["insert"] += 1
+        committed["doc"] = dict(document)
+        return dict(document)
+
+    async def opening_messages(_rest, ticket, **_kwargs):
+        calls["opening"] += 1
+        messages.update({
+            f"ticket-setup:{ticket['location']['id']}:candidate",
+            f"ticket-setup:{ticket['location']['id']}:staff",
+        })
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(thread_service, "_creation_index_ready", True)
+    monkeypatch.setattr(thread_service, "validate_thread_parents", no_validate)
+    monkeypatch.setattr(thread_service.store, "find_open_for_applicant", find_open)
+    monkeypatch.setattr(
+        thread_service, "_committed_ticket_for_creation_state", no_bound_ticket
+    )
+    monkeypatch.setattr(thread_service, "_claim_creation", claim)
+    monkeypatch.setattr(thread_service, "_ensure_live_thread_pair", pair)
+    monkeypatch.setattr(thread_service.store, "insert_one", insert)
+    monkeypatch.setattr(thread_service, "_deliver_opening_messages", opening_messages)
+    monkeypatch.setattr(thread_service, "reconcile_ticket_pair", no_op)
+    monkeypatch.setattr(thread_service, "notify_console_after_change", no_op)
+    bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=99), rest=SimpleNamespace())
+    config = {
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_thread_recruiter_role": 40,
+    }
+
+    first = asyncio.run(thread_service.create_live_thread_ticket(
+        bot=bot,
+        mongo=mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name="Applicant",
+        ticket_type="main",
+        config=config,
+        open_slot_claim=_slot_claim(),
+    ))
+    assert first.delivery_pending is True
+    assert creation_states.document["state"] == "delivery_pending"
+    assert automation_states.documents == {}
+
+    resumed = asyncio.run(thread_service.create_live_thread_ticket(
+        bot=bot,
+        mongo=mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name="Applicant",
+        ticket_type="main",
+        config=config,
+        open_slot_claim=_slot_claim(),
+    ))
+    assert resumed.ticket["_id"] == first.ticket["_id"] == "ticket_101"
+    assert resumed.resumed is True
+    assert resumed.delivery_pending is False
+    assert calls == {"claim": 1, "pair": 1, "insert": 1, "opening": 2}
+    assert messages == {
+        "ticket-setup:101:candidate",
+        "ticket-setup:101:staff",
+    }
+    assert creation_states.document["state"] == "complete"
+    context = automation_states.documents["ticket_staff_context:ticket_101"]
+    assert context["ticket_id"] == "ticket_101"
+    assert context["staff_space_id"] == 102
+    assert context["delivery_state"] == "pending"
+
+
+def test_archive_pair_is_idempotent():
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def fetch_channel(self, channel_id):
+            if channel_id == 101:
+                return SimpleNamespace(id=101, is_archived=True, is_locked=True)
+            return SimpleNamespace(id=102, is_archived=False, is_locked=False)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    rest = Rest()
+    asyncio.run(thread_service.archive_ticket_pair(rest, _ticket(status="denied", source={
+        "guild_id": 1, "channel_id": 2,
+    })))
+    assert [item[0] for item in rest.edits] == [102]
+    assert rest.edits[0][1]["locked"] is True
+    assert rest.edits[0][1]["archived"] is True
+
+
+def test_reconcile_open_unarchives_and_unlocks_both():
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def fetch_channel(self, channel_id):
+            return SimpleNamespace(id=channel_id, is_archived=True, is_locked=True)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    rest = Rest()
+    asyncio.run(thread_service.reconcile_ticket_pair(rest, _ticket()))
+    assert {item[0] for item in rest.edits} == {101, 102}
+    assert all(item[1]["archived"] is False for item in rest.edits)
+    assert all(item[1]["locked"] is False for item in rest.edits)
+
+
+@pytest.mark.parametrize(("source_ticket", "channel_name"), [
+    ({"status": "open"}, "main-9-applicant"),
+    ({"status": "new"}, "main-9-applicant"),
+    (None, "new-main-9-applicant"),
+    (None, "🆕main-9-applicant"),
+])
+def test_legacy_status_refuses_open_even_with_terminal_override(
+    source_ticket,
+    channel_name,
+):
+    with pytest.raises(legacy_migration.LegacyTicketStillOpen):
+        legacy_migration._infer_status(source_ticket, channel_name, "denied")
+
+
+@pytest.mark.parametrize(("stored", "selected"), [
+    ("approved", "denied"),
+    ("denied", "approved"),
+])
+def test_explicit_terminal_status_corrects_stored_terminal(stored, selected):
+    assert legacy_migration._infer_status(
+        {"status": stored}, "main-9-applicant", selected
+    ) == selected
+
+
+@pytest.mark.parametrize(("stored", "selected"), [
+    ("main", "fwa"),
+    ("fwa", "main"),
+])
+def test_explicit_ticket_type_corrects_stored_type(stored, selected):
+    assert legacy_migration._infer_ticket_type(
+        {"ticket_type": stored}, "ticket-9-applicant", selected
+    ) == selected
+
+
+def test_explicit_metadata_corrections_beat_channel_inference():
+    assert legacy_migration._infer_status(
+        None, "✅main-9-applicant", "denied"
+    ) == "denied"
+    assert legacy_migration._infer_ticket_type(
+        None, "approved-main-9-applicant", "fwa"
+    ) == "fwa"
+
+
+def test_stored_terminal_status_beats_stale_channel_prefix():
+    assert legacy_migration._infer_status(
+        {"status": "approved"}, "🆕main-9-applicant", None
+    ) == "approved"
+
+
+def test_stored_closed_status_requires_explicit_outcome():
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="explicit"):
+        legacy_migration._infer_status(
+            {"status": "closed"}, "✅main-9-applicant", None
+        )
+    assert legacy_migration._infer_status(
+        {"status": "closed"}, "✅main-9-applicant", "denied"
+    ) == "denied"
+    assert legacy_migration._infer_status(
+        {"status": "closed"}, "🆕main-9-applicant", "approved"
+    ) == "approved"
+
+
+@pytest.mark.parametrize(("candidate_parent_id", "staff_parent_id"), [
+    (99, 21),
+    (20, 99),
+    (99, 98),
+])
+def test_legacy_migration_rejects_any_unconfigured_parent_pair(
+    candidate_parent_id,
+    staff_parent_id,
+):
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1,
+        source_channel_id=2,
+        target_guild_id=10,
+        candidate_parent_id=candidate_parent_id,
+        staff_parent_id=staff_parent_id,
+    )
+    config = {
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_thread_recruiter_role": 40,
+    }
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="configured MAIN"):
+        legacy_migration._configured_destination(config, request, "main")
+
+
+def test_legacy_migration_accepts_only_the_configured_parent_pair():
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1,
+        source_channel_id=2,
+        target_guild_id=10,
+        candidate_parent_id=20,
+        staff_parent_id=21,
+    )
+    parents = legacy_migration._configured_destination({
+        "main_candidate_parent": 20,
+        "main_staff_parent": 21,
+        "main_thread_recruiter_role": 40,
+    }, request, "main")
+    assert (parents.candidate_parent_id, parents.staff_parent_id) == (20, 21)
+    assert parents.recruiter_role_id == 40
+
+
+def test_legacy_migration_never_uses_the_legacy_recruiter_role():
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1,
+        source_channel_id=2,
+        target_guild_id=10,
+        candidate_parent_id=20,
+        staff_parent_id=21,
+    )
+    with pytest.raises(
+        legacy_migration.LegacyMigrationError,
+        match="recruiter role",
+    ):
+        legacy_migration._configured_destination({
+            "main_candidate_parent": 20,
+            "main_staff_parent": 21,
+            "main_recruiter_role": 99,
+        }, request, "main")
+
+
+def test_parent_autocomplete_offers_only_configured_channels(monkeypatch):
+    class Rest:
+        def __init__(self):
+            self.fetched = []
+
+        async def fetch_channel(self, channel_id):
+            self.fetched.append(channel_id)
+            return SimpleNamespace(
+                id=channel_id,
+                guild_id=10,
+                type=hikari.ChannelType.GUILD_TEXT,
+                name=f"parent-{channel_id}",
+            )
+
+    class Context:
+        def __init__(self, rest):
+            self.interaction = SimpleNamespace(
+                guild_id=10,
+                user=SimpleNamespace(id=77),
+                member=SimpleNamespace(permissions=hikari.Permissions.ADMINISTRATOR),
+            )
+            self.client = SimpleNamespace(app=SimpleNamespace(rest=rest))
+            self.focused = SimpleNamespace(value="")
+            self.response = None
+
+        def get_option(self, name):
+            assert name == "target-guild"
+            return SimpleNamespace(value="10")
+
+        async def respond(self, choices):
+            self.response = choices
+
+    async def administrator(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(legacy_migration, "_guild_administrator", administrator)
+    rest = Rest()
+    ctx = Context(rest)
+    mongo = SimpleNamespace(ticket_setup=SetupCollection({
+        "ticket_target_guild_id": 10,
+        "main_candidate_parent": 20,
+        "fwa_candidate_parent": 22,
+        "main_staff_parent": 21,
+        "fwa_staff_parent": 23,
+    }))
+    asyncio.run(legacy_migration._configured_parent_choices(
+        ctx, mongo, field="candidate_parent"
+    ))
+    assert rest.fetched == [20, 22]
+    assert {value for _label, value in ctx.response} == {"20", "22"}
+
+
+def test_mention_clone_is_plain_and_non_pingable():
+    message = SimpleNamespace(
+        user_mentions={55: SimpleNamespace(display_name="Old User", username="old")}
+    )
+    content = legacy_migration._plain_mentions(
+        "<@55> <@&66> <#77> @everyone @here",
+        message,
+        {66: "Recruiters"},
+        {77: "tickets"},
+    )
+    assert content == "@Old User @Recruiters #tickets @\u200beveryone @\u200bhere"
+    assert "<@" not in content
+
+
+def test_long_clone_parts_fit_and_have_unique_durable_markers():
+    parts = legacy_migration._message_parts(
+        content="x" * 5000,
+        source_guild_id=1,
+        source_channel_id=2,
+        source_message_id=3,
+        timestamp=NOW,
+    )
+    assert len(parts) >= 3
+    assert all(len(content) <= 2000 for _marker, content in parts)
+    assert len({marker for marker, _content in parts}) == len(parts)
+    assert all(marker in legacy_migration._hidden_markers(content) for marker, content in parts)
+    assert all("migration-source:" not in content for _marker, content in parts)
+
+
+def test_lost_webhook_response_is_reconciled_without_duplicate():
+    marker = "migration-source:1:2:3:1/1"
+
+    class Rest:
+        def __init__(self):
+            self.executions = 0
+            self.scans = 0
+            self.kwargs = []
+
+        def fetch_messages(self, _thread_id):
+            rest = self
+
+            class Iterator:
+                def limit(self, _amount):
+                    return self
+
+                async def to_list(self):
+                    rest.scans += 1
+                    if rest.scans == 1:
+                        return []
+                    return [SimpleNamespace(content=f"copied\n-# {marker}")]
+
+            return Iterator()
+
+        async def execute_webhook(self, *_args, **_kwargs):
+            self.executions += 1
+            self.kwargs.append(_kwargs)
+            raise TimeoutError("response lost after commit")
+
+    rest = Rest()
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[],
+        embeds=[],
+    )
+    losses = asyncio.run(legacy_migration._execute_clone_part(
+        rest=rest,
+        webhook=SimpleNamespace(id=8, token="secret"),
+        thread_id=9,
+        marker=marker,
+        content=f"hello\n-# {marker}",
+        message=message,
+        include_payload=True,
+    ))
+    assert losses == []
+    assert rest.executions == 1
+    assert rest.kwargs[0]["mentions_everyone"] is False
+    assert rest.kwargs[0]["user_mentions"] is False
+    assert rest.kwargs[0]["role_mentions"] is False
+    assert rest.kwargs[0]["flags"] == hikari.MessageFlag.SUPPRESS_NOTIFICATIONS
+    assert "avatar_url" not in rest.kwargs[0]
+
+
+def test_public_and_staff_histories_resume_from_confirmed_checkpoints(monkeypatch):
+    messages = {
+        2: [
+            SimpleNamespace(
+                id=10, content="already copied", timestamp=NOW, user_mentions={}
+            ),
+            SimpleNamespace(id=11, content="candidate", timestamp=NOW, user_mentions={}),
+        ],
+        3: [SimpleNamespace(id=20, content="staff", timestamp=NOW, user_mentions={})],
+    }
+    copied = []
+    state = {
+        "_id": "legacy:1:2",
+        "source": {"guild_id": 1},
+        "progress": {
+            "public": {"last_source_message_id": 10, "copied": 1, "losses": []},
+            "staff": {"last_source_message_id": None, "copied": 0, "losses": []},
+        },
+    }
+
+    async def all_messages(_rest, channel_id):
+        return messages[channel_id]
+
+    async def clone_part(**kwargs):
+        copied.append((kwargs["thread_id"], kwargs["marker"]))
+        return []
+
+    async def update(_mongo, _migration_id, _owner, fields):
+        for path, value in fields.items():
+            cursor = state
+            parts = path.split(".")
+            for part in parts[:-1]:
+                cursor = cursor.setdefault(part, {})
+            cursor[parts[-1]] = value
+        return state
+
+    async def no_markers(_rest, _thread_id):
+        return set()
+
+    monkeypatch.setattr(legacy_migration, "_all_messages", all_messages)
+    monkeypatch.setattr(legacy_migration, "_execute_clone_part", clone_part)
+    monkeypatch.setattr(legacy_migration, "_migration_update", update)
+    monkeypatch.setattr(legacy_migration, "_destination_markers", no_markers)
+    monkeypatch.setattr(legacy_migration, "_copy_boundary", lambda **_kwargs: asyncio.sleep(0))
+
+    async def run_copy():
+        await legacy_migration._copy_space(
+            bot=SimpleNamespace(rest=SimpleNamespace()),
+            mongo=SimpleNamespace(),
+            state=state,
+            owner="owner",
+            space="public",
+            source_channel_id=2,
+            destination_thread_id=101,
+            webhook=SimpleNamespace(),
+            role_names={},
+            channel_names={},
+        )
+        await legacy_migration._copy_space(
+            bot=SimpleNamespace(rest=SimpleNamespace()),
+            mongo=SimpleNamespace(),
+            state=state,
+            owner="owner",
+            space="staff",
+            source_channel_id=3,
+            destination_thread_id=102,
+            webhook=SimpleNamespace(),
+            role_names={},
+            channel_names={},
+        )
+
+    asyncio.run(run_copy())
+    assert copied == [
+        (101, "migration-source:1:2:11:1/1"),
+        (102, "migration-source:1:3:20:1/1"),
+    ]
+    assert state["progress"]["public"]["last_source_message_id"] == 11
+    assert state["progress"]["staff"]["last_source_message_id"] == 20
+
+
+def test_attachment_fallback_retains_idempotency_marker():
+    marker = "migration-source:1:2:3:1/1"
+
+    class Rest:
+        def __init__(self):
+            self.payloads = []
+
+        def fetch_messages(self, _thread_id):
+            class Iterator:
+                def limit(self, _amount):
+                    return self
+
+                async def to_list(self):
+                    return []
+
+            return Iterator()
+
+        async def execute_webhook(self, *_args, **kwargs):
+            content = _args[2]
+            self.payloads.append(content)
+            if kwargs.get("attachments"):
+                raise FileNotFoundError("attachment URL unavailable")
+
+    rest = Rest()
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[SimpleNamespace(filename="proof.png")],
+        embeds=[],
+    )
+    known_markers = set()
+    losses = asyncio.run(legacy_migration._execute_clone_part(
+        rest=rest,
+        webhook=SimpleNamespace(id=8, token="secret"),
+        thread_id=9,
+        marker=marker,
+        content=("x" * 1950) + f"\n-# {marker}",
+        message=message,
+        include_payload=True,
+        allow_payload_loss=True,
+        known_markers=known_markers,
+    ))
+    assert losses == ["proof.png"]
+    assert marker in legacy_migration._hidden_markers(rest.payloads[-1])
+    assert len(rest.payloads[-1]) <= 2000
+    assert asyncio.run(legacy_migration._execute_clone_part(
+        rest=rest,
+        webhook=SimpleNamespace(id=8, token="secret"),
+        thread_id=9,
+        marker=marker,
+        content=("x" * 1950) + f"\n-# {marker}",
+        message=message,
+        include_payload=True,
+        allow_payload_loss=True,
+        known_markers=known_markers,
+    )) == []
+    assert len(rest.payloads) == 2
+
+
+def test_attachment_fallback_bounds_long_filenames_without_losing_marker_or_audit():
+    marker = "migration-source:1:2:3:1/1"
+    filenames = [f"proof-{index}-" + "x" * 900 + ".png" for index in range(10)]
+
+    class Rest:
+        def __init__(self):
+            self.payloads = []
+
+        async def execute_webhook(self, *_args, **kwargs):
+            self.payloads.append(_args[2])
+            if kwargs.get("attachments"):
+                raise FileNotFoundError("attachment URL unavailable")
+
+        def fetch_messages(self, _thread_id):
+            return EmptyLazyIterator()
+
+    rest = Rest()
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[SimpleNamespace(filename=name) for name in filenames],
+        embeds=[],
+    )
+    losses = asyncio.run(legacy_migration._execute_clone_part(
+        rest=rest,
+        webhook=SimpleNamespace(id=8, token="secret"),
+        thread_id=9,
+        marker=marker,
+        content=("x" * 1950) + f"\n-# {marker}",
+        message=message,
+        include_payload=True,
+        allow_payload_loss=True,
+    ))
+
+    fallback = rest.payloads[-1]
+    assert len(fallback) <= legacy_migration.DISCORD_MESSAGE_CONTENT_LIMIT
+    assert marker in legacy_migration._hidden_markers(fallback)
+    assert filenames[0] in fallback
+    assert filenames[1] not in fallback
+    assert "+9 filenames omitted" in fallback
+    assert losses == filenames
+
+
+def test_unaccepted_runtime_payload_loss_stops_without_fallback():
+    marker = "migration-source:1:2:3:1/1"
+
+    class Rest:
+        def __init__(self):
+            self.payloads = []
+
+        def fetch_messages(self, _thread_id):
+            return EmptyLazyIterator()
+
+        async def execute_webhook(self, *_args, **kwargs):
+            self.payloads.append(_args[2])
+            if kwargs.get("attachments"):
+                raise FileNotFoundError("attachment URL unavailable")
+
+    rest = Rest()
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[SimpleNamespace(filename="proof.png")],
+        embeds=[],
+    )
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="source message remains pending"):
+        asyncio.run(legacy_migration._execute_clone_part(
+            rest=rest,
+            webhook=SimpleNamespace(id=8, token="secret"),
+            thread_id=9,
+            marker=marker,
+            content=f"proof\n-# {marker}",
+            message=message,
+            include_payload=True,
+            allow_payload_loss=False,
+        ))
+    assert len(rest.payloads) == 1
+
+
+def test_hikari_http_rejection_reaches_the_acknowledged_attachment_fallback():
+    """hikari wraps a rejected upload (payload too large, unsupported media
+    type, unprocessable, etc.) as its own `ClientHTTPResponseError` family
+    -- `NotFoundError`/`ForbiddenError`/the generic 413/415/422 case -- not
+    a raw `aiohttp.ClientResponseError`. Only the aiohttp check meant this
+    fallback never actually fired for a real Discord rejection; it must
+    fire once the operator has acknowledged the loss."""
+    marker = "migration-source:1:2:3:1/1"
+
+    class Rest:
+        def __init__(self):
+            self.payloads = []
+
+        def fetch_messages(self, _thread_id):
+            return EmptyLazyIterator()
+
+        async def execute_webhook(self, *_args, **kwargs):
+            self.payloads.append(_args[2])
+            if kwargs.get("attachments"):
+                raise hikari.ClientHTTPResponseError(
+                    url="https://discord.com/api/webhooks",
+                    status=413,
+                    headers={},
+                    raw_body=b"",
+                )
+
+    rest = Rest()
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[SimpleNamespace(filename="proof.png")],
+        embeds=[],
+    )
+    losses = asyncio.run(legacy_migration._execute_clone_part(
+        rest=rest,
+        webhook=SimpleNamespace(id=8, token="secret"),
+        thread_id=9,
+        marker=marker,
+        content=f"proof\n-# {marker}",
+        message=message,
+        include_payload=True,
+        allow_payload_loss=True,
+    ))
+    assert losses == ["proof.png"]
+    assert len(rest.payloads) == 2
+    assert marker in legacy_migration._hidden_markers(rest.payloads[-1])
+    assert "proof" in rest.payloads[-1]
+
+
+def test_hikari_http_rejection_without_acknowledgement_still_raises():
+    marker = "migration-source:1:2:3:1/1"
+
+    class Rest:
+        def __init__(self):
+            self.payloads = []
+
+        def fetch_messages(self, _thread_id):
+            return EmptyLazyIterator()
+
+        async def execute_webhook(self, *_args, **kwargs):
+            self.payloads.append(_args[2])
+            if kwargs.get("attachments"):
+                raise hikari.NotFoundError(
+                    url="https://discord.com/api/webhooks",
+                    headers={},
+                    raw_body=b"",
+                )
+
+    rest = Rest()
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[SimpleNamespace(filename="proof.png")],
+        embeds=[],
+    )
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="source message remains pending"):
+        asyncio.run(legacy_migration._execute_clone_part(
+            rest=rest,
+            webhook=SimpleNamespace(id=8, token="secret"),
+            thread_id=9,
+            marker=marker,
+            content=f"proof\n-# {marker}",
+            message=message,
+            include_payload=True,
+            allow_payload_loss=False,
+        ))
+    assert len(rest.payloads) == 1
+
+
+def test_unaccepted_runtime_loss_does_not_advance_source_checkpoint(monkeypatch):
+    state = {
+        "_id": "legacy:1:2",
+        "source": {"guild_id": 1},
+        "progress": {
+            "public": {"last_source_message_id": None, "copied": 0, "losses": []},
+        },
+        "attachment_policy": {"accepted": False},
+    }
+    message = SimpleNamespace(
+        id=9,
+        timestamp=NOW,
+        content="proof",
+        user_mentions={},
+        attachments=[SimpleNamespace(filename="proof.png")],
+        embeds=[],
+    )
+    updates = []
+
+    async def messages(_rest, _channel_id):
+        return [message]
+
+    async def markers(_rest, _thread_id):
+        return set()
+
+    async def refuses_loss(**kwargs):
+        assert kwargs["allow_payload_loss"] is False
+        raise legacy_migration.LegacyMigrationError("checkpoint remains pending")
+
+    async def update(*args, **kwargs):
+        updates.append((args, kwargs))
+        return state
+
+    monkeypatch.setattr(legacy_migration, "_all_messages", messages)
+    monkeypatch.setattr(legacy_migration, "_destination_markers", markers)
+    monkeypatch.setattr(legacy_migration, "_execute_clone_part", refuses_loss)
+    monkeypatch.setattr(legacy_migration, "_migration_update", update)
+    monkeypatch.setattr(legacy_migration, "_copy_boundary", lambda **_kwargs: asyncio.sleep(0))
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="checkpoint"):
+        asyncio.run(legacy_migration._copy_space(
+            bot=SimpleNamespace(rest=SimpleNamespace()),
+            mongo=SimpleNamespace(),
+            state=state,
+            owner="owner",
+            space="public",
+            source_channel_id=2,
+            destination_thread_id=101,
+            webhook=SimpleNamespace(id=8, token="secret"),
+            role_names={},
+            channel_names={},
+        ))
+    assert updates == []
+    assert state["progress"]["public"]["last_source_message_id"] is None
+
+
+@pytest.mark.parametrize("failure", [
+    TimeoutError("timeout"),
+    ConnectionError("connection reset"),
+])
+def test_transient_failure_never_becomes_accepted_payload_loss(failure):
+    class Rest:
+        def fetch_messages(self, _thread_id):
+            return EmptyLazyIterator()
+
+        async def execute_webhook(self, *_args, **_kwargs):
+            raise failure
+
+    message = SimpleNamespace(
+        author=SimpleNamespace(display_name="A", username="a", display_avatar_url=None),
+        attachments=[SimpleNamespace(filename="proof.png")],
+        embeds=[],
+    )
+    with pytest.raises(type(failure)):
+        asyncio.run(legacy_migration._execute_clone_part(
+            rest=Rest(),
+            webhook=SimpleNamespace(id=8, token="secret"),
+            thread_id=9,
+            marker="migration-source:1:2:3:1/1",
+            content="proof\n-# migration-source:1:2:3:1/1",
+            message=message,
+            include_payload=True,
+            allow_payload_loss=True,
+        ))
+
+
+def test_legacy_player_tag_override_replaces_all_inference():
+    source_ticket = {
+        "player_tags": ["not a valid stored tag"],
+        "player_tag": "#OLD",
+    }
+    messages = [
+        SimpleNamespace(
+            author=SimpleNamespace(id=30),
+            content="Applicant supplied #FOUND before the correction.",
+        ),
+    ]
+
+    assert legacy_migration._player_tags(
+        source_ticket,
+        messages,
+        (" fixed ",),
+        applicant_user_id=30,
+    ) == ("#FIXED",)
+
+
+def test_legacy_player_tag_inference_uses_stored_fields_and_applicant_messages_only():
+    source_ticket = {
+        "player_tags": "#stored",
+        "player_tag": "abc",
+        "tag": "#XYZ",
+    }
+    messages = [
+        SimpleNamespace(author=SimpleNamespace(id=30), content="Mine is #app123."),
+        SimpleNamespace(author=SimpleNamespace(id=40), content="Staff tag #STAFF."),
+        SimpleNamespace(author=SimpleNamespace(id=31), content="Visitor tag #THIRD."),
+    ]
+
+    assert legacy_migration._player_tags(
+        source_ticket,
+        messages,
+        ("", "  "),
+        applicant_user_id=30,
+    ) == ("#STORED", "#ABC", "#XYZ", "#APP123")
+
+
+class MigrationCollection:
+    def __init__(self, docs=None):
+        self.docs = {doc["_id"]: dict(doc) for doc in (docs or [])}
+
+    async def create_index(self, *_args, **kwargs):
+        return kwargs.get("name")
+
+    async def find_one(self, query):
+        return self.docs.get(query.get("_id"))
+
+    async def count_documents(self, query):
+        return sum(
+            1 for doc in self.docs.values()
+            if all(doc.get(key) == value for key, value in query.items())
+        )
+
+    async def insert_one(self, doc):
+        if doc["_id"] in self.docs:
+            raise legacy_migration.DuplicateKeyError("duplicate")
+        self.docs[doc["_id"]] = dict(doc)
+
+
+def _preview(request=None):
+    request = request or legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1,
+        source_channel_id=2,
+        target_guild_id=10,
+        candidate_parent_id=20,
+        staff_parent_id=21,
+    )
+    return legacy_migration.LegacyMigrationPreview(
+        request=request,
+        source_channel=SimpleNamespace(id=2, name="approved-main-8-applicant"),
+        source_staff_thread=SimpleNamespace(id=3),
+        source_ticket=None,
+        ticket_type="main",
+        status="approved",
+        user_id=30,
+        username="Applicant",
+        display_name="Applicant",
+        player_tags=("#ABC",),
+        created_at=NOW,
+        original_ticket_number=8,
+        public_message_count=5,
+        staff_message_count=2,
+        attachment_count=0,
+        recruiter_role_id=40,
+    )
+
+
+def test_explicit_metadata_corrections_reach_preview_and_durable_state(monkeypatch):
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1,
+        source_channel_id=2,
+        target_guild_id=10,
+        candidate_parent_id=20,
+        staff_parent_id=21,
+        ticket_type_override="fwa",
+        status_override="denied",
+    )
+    source_ticket = {"ticket_type": "main", "status": "approved"}
+    preview = replace(
+        _preview(request),
+        source_ticket=source_ticket,
+        ticket_type=legacy_migration._infer_ticket_type(
+            source_ticket, "approved-main-8-applicant", request.ticket_type_override
+        ),
+        status=legacy_migration._infer_status(
+            source_ticket, "approved-main-8-applicant", request.status_override
+        ),
+    )
+    assert (preview.ticket_type, preview.status) == ("fwa", "denied")
+
+    mongo = SimpleNamespace(
+        ticket_migrations=MigrationCollection(),
+        ticket_setup=SetupCollection({
+            "ticket_target_guild_id": 10,
+            "legacy_migration_pilot_approved": True,
+        }),
+    )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", True)
+    _owner, state, resumed = asyncio.run(
+        legacy_migration._claim_migration(mongo, preview)
+    )
+    assert resumed is False
+    assert state["metadata"]["ticket_type"] == "fwa"
+    assert state["metadata"]["status"] == "denied"
+
+
+def _attachment_preview(status="live", *, request=None, message_id=9):
+    return replace(
+        _preview(request),
+        attachment_count=1,
+        attachment_audit=(legacy_migration.AttachmentAuditResult(
+            source_channel_id=2,
+            source_message_id=message_id,
+            filename="proof.png",
+            status=status,
+        ),),
+    )
+
+
+def test_safe_attachment_preview_needs_no_loss_acknowledgment():
+    assert legacy_migration._require_attachment_ack(
+        _attachment_preview("live")
+    ) is None
+
+
+def test_risky_attachment_preview_requires_exact_bound_acknowledgment():
+    preview = _attachment_preview("unknown")
+    token = legacy_migration._attachment_ack_token(preview)
+    assert token and token.startswith("LOSS-")
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="accept every"):
+        legacy_migration._require_attachment_ack(preview)
+
+    accepted = replace(
+        preview,
+        request=replace(preview.request, attachment_ack=token),
+    )
+    assert legacy_migration._require_attachment_ack(accepted) == token
+
+    changed = replace(accepted, user_id=31)
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="does not match"):
+        legacy_migration._require_attachment_ack(changed)
+
+
+def test_risky_attachment_claim_refuses_before_any_mongo_access():
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="accept every"):
+        asyncio.run(legacy_migration._claim_migration(
+            SimpleNamespace(), _attachment_preview("unknown")
+        ))
+
+
+def test_attachment_ack_token_survives_live_to_unrecoverable_status_change():
+    live = _attachment_preview("live")
+    dead = _attachment_preview("unrecoverable")
+    assert legacy_migration._attachment_ack_token(live) == (
+        legacy_migration._attachment_ack_token(dead)
+    )
+
+
+def test_loss_acceptance_escalates_same_migration_and_audits_actor(monkeypatch):
+    class ClaimableCollection(MigrationCollection):
+        async def find_one_and_update(self, query, update, **_kwargs):
+            document = self.docs.get(query["_id"])
+            if document is None:
+                return None
+            document.update(update.get("$set", {}))
+            return dict(document)
+
+    collection = ClaimableCollection()
+    mongo = SimpleNamespace(
+        ticket_migrations=collection,
+        ticket_setup=SetupCollection({
+            "ticket_target_guild_id": 10,
+            "legacy_migration_pilot_approved": True,
+        }),
+    )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", True)
+    preview = _attachment_preview("live")
+    _owner, created, resumed = asyncio.run(
+        legacy_migration._claim_migration(mongo, preview)
+    )
+    assert resumed is False
+    assert created["attachment_policy"]["accepted"] is False
+
+    durable = collection.docs[created["_id"]]
+    durable["state"] = "retry"
+    durable["lease_until"] = NOW - timedelta(minutes=1)
+    durable["progress"]["public"]["last_source_message_id"] = 55
+    token = legacy_migration._attachment_ack_token(preview)
+    accepted = replace(preview, request=replace(
+        preview.request,
+        attachment_ack=token,
+        attachment_ack_actor_id=77,
+        attachment_ack_actor_name="Operator",
+    ))
+    _owner, escalated, resumed = asyncio.run(
+        legacy_migration._claim_migration(mongo, accepted)
+    )
+    assert resumed is True
+    assert escalated["_id"] == created["_id"]
+    assert escalated["progress"]["public"]["last_source_message_id"] == 55
+    policy = escalated["attachment_policy"]
+    assert policy["accepted"] is True
+    assert policy["accepted_by"] == 77
+    assert policy["accepted_by_name"] == "Operator"
+    assert policy["acceptance_audit"][-1]["token"] == token
+
+    collection.docs[created["_id"]]["lease_until"] = NOW - timedelta(minutes=1)
+    _owner, preserved, resumed = asyncio.run(
+        legacy_migration._claim_migration(mongo, preview)
+    )
+    assert resumed is True
+    assert preserved["attachment_policy"]["accepted"] is True
+
+
+def test_accepted_policy_rejects_changed_attachment_manifest_without_new_ack():
+    original = _attachment_preview("unknown")
+    token = legacy_migration._attachment_ack_token(original)
+    accepted = replace(original, request=replace(original.request, attachment_ack=token))
+    current = {
+        "attachment_policy": legacy_migration._attachment_policy_for_claim(
+            accepted, None, NOW
+        )
+    }
+    changed = _attachment_preview("live", message_id=10)
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="attachments changed"):
+        legacy_migration._attachment_policy_for_claim(changed, current, NOW)
+
+
+def test_runtime_loss_acceptance_is_limited_to_previewed_attachments():
+    preview = _attachment_preview("unknown", message_id=9)
+    token = legacy_migration._attachment_ack_token(preview)
+    accepted = replace(preview, request=replace(preview.request, attachment_ack=token))
+    state = {
+        "attachment_policy": legacy_migration._attachment_policy_for_claim(
+            accepted, None, NOW
+        )
+    }
+    covered = SimpleNamespace(
+        id=9,
+        attachments=[SimpleNamespace(filename="proof.png")],
+    )
+    added_later = SimpleNamespace(
+        id=10,
+        attachments=[SimpleNamespace(filename="proof.png")],
+    )
+    renamed = SimpleNamespace(
+        id=9,
+        attachments=[SimpleNamespace(filename="different.png")],
+    )
+    assert legacy_migration._message_payload_loss_is_accepted(state, 2, covered)
+    assert not legacy_migration._message_payload_loss_is_accepted(state, 2, added_later)
+    assert not legacy_migration._message_payload_loss_is_accepted(state, 2, renamed)
+
+
+def test_pilot_hard_stops_after_five_completed(monkeypatch):
+    docs = [
+        {"_id": f"legacy:{index}:1", "kind": "legacy_thread_migration", "state": "complete"}
+        for index in range(5)
+    ]
+    mongo = SimpleNamespace(
+        ticket_migrations=MigrationCollection(docs),
+        ticket_setup=SetupCollection({
+            "ticket_target_guild_id": 10,
+            "legacy_migration_pilot_approved": False,
+        }),
+    )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", False)
+
+    async def indexes_ready(_mongo):
+        return []
+
+    monkeypatch.setattr(
+        legacy_migration.thread_service, "ensure_canonical_ticket_store", indexes_ready
+    )
+    with pytest.raises(legacy_migration.PilotLimitReached):
+        asyncio.run(legacy_migration._claim_migration(mongo, _preview()))
+
+
+def test_pilot_allows_the_fifth_confirmed_ticket(monkeypatch):
+    docs = [
+        {"_id": f"legacy:{index}:1", "kind": "legacy_thread_migration", "state": "complete"}
+        for index in range(4)
+    ]
+    collection = MigrationCollection(docs)
+    mongo = SimpleNamespace(
+        ticket_migrations=collection,
+        ticket_setup=SetupCollection({
+            "ticket_target_guild_id": 10,
+            "legacy_migration_pilot_approved": False,
+        }),
+    )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", False)
+
+    async def indexes_ready(_mongo):
+        return []
+
+    monkeypatch.setattr(
+        legacy_migration.thread_service, "ensure_canonical_ticket_store", indexes_ready
+    )
+    _owner, state, resumed = asyncio.run(
+        legacy_migration._claim_migration(mongo, _preview())
+    )
+    assert resumed is False
+    assert state["state"] == "creating"
+    assert "legacy:1:2" in collection.docs
+
+
+def test_atomic_pilot_reservation_refuses_a_concurrent_sixth(monkeypatch):
+    docs = [
+        {"_id": f"legacy:{index}:1", "kind": "legacy_thread_migration", "state": "complete"}
+        for index in range(4)
+    ]
+
+    class CappedSetup(SetupCollection):
+        def __init__(self):
+            super().__init__({
+                "ticket_target_guild_id": 10,
+                "legacy_migration_pilot_approved": False,
+                "legacy_migration_pilot_slots_reserved": 5,
+            })
+
+        async def update_one(self, _query, update, **_kwargs):
+            maximum = update.get("$max", {}).get(
+                "legacy_migration_pilot_slots_reserved", 0
+            )
+            self.document["legacy_migration_pilot_slots_reserved"] = max(
+                self.document["legacy_migration_pilot_slots_reserved"], maximum
+            )
+            return UpdateResult(1)
+
+        async def find_one_and_update(self, _query, update, **_kwargs):
+            if update.get("$inc", {}).get("legacy_migration_pilot_slots_reserved"):
+                return None
+            return await super().find_one_and_update(_query, update, **_kwargs)
+
+    mongo = SimpleNamespace(
+        ticket_migrations=MigrationCollection(docs),
+        ticket_setup=CappedSetup(),
+    )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", True)
+    with pytest.raises(legacy_migration.PilotLimitReached):
+        asyncio.run(legacy_migration._claim_migration(mongo, _preview()))
+
+
+def test_partial_migration_pair_is_archived_for_safe_resume(monkeypatch):
+    state = {
+        "_id": "legacy:1:2",
+        "metadata": {"ticket_type": "main", "username": "Applicant"},
+        "destination": {
+            "guild_id": 10,
+            "candidate_parent_id": 20,
+            "staff_parent_id": 21,
+            "ticket_number": 9,
+            "public_name": "main-9-applicant",
+            "staff_name": "staff-main-9-applicant",
+        },
+    }
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def create_thread(self, *_args, **_kwargs):
+            return SimpleNamespace(id=101, is_archived=False)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    async def missing(*_args, **_kwargs):
+        return None
+
+    async def unchanged(_rest, thread):
+        return thread
+
+    async def update_fails(*_args, **_kwargs):
+        raise TimeoutError("checkpoint acknowledgement lost")
+
+    monkeypatch.setattr(thread_service, "_fetch_or_recover_thread", missing)
+    monkeypatch.setattr(thread_service, "_unarchive_if_needed", unchanged)
+    monkeypatch.setattr(legacy_migration, "_migration_update", update_fails)
+    rest = Rest()
+    with pytest.raises(TimeoutError):
+        asyncio.run(legacy_migration._ensure_destination_pair(
+            SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=999)),
+            SimpleNamespace(),
+            state,
+            "owner",
+        ))
+    assert rest.edits == [(101, {
+        "locked": True,
+        "archived": True,
+        "reason": "Quarantining interrupted legacy migration for resume",
+    })]
+
+
+def test_partial_migration_pair_is_quarantined_when_cancelled(monkeypatch):
+    state = {
+        "_id": "legacy:1:2",
+        "metadata": {"ticket_type": "main", "username": "Applicant"},
+        "destination": {
+            "guild_id": 10,
+            "candidate_parent_id": 20,
+            "staff_parent_id": 21,
+            "ticket_number": 9,
+            "public_name": "main-9-applicant",
+            "staff_name": "staff-main-9-applicant",
+        },
+    }
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def create_thread(self, *_args, **_kwargs):
+            return SimpleNamespace(id=101, is_archived=False)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    async def missing(*_args, **_kwargs):
+        return None
+
+    async def unchanged(_rest, thread):
+        return thread
+
+    async def checkpoint_cancelled(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(thread_service, "_fetch_or_recover_thread", missing)
+    monkeypatch.setattr(thread_service, "_unarchive_if_needed", unchanged)
+    monkeypatch.setattr(legacy_migration, "_migration_update", checkpoint_cancelled)
+    rest = Rest()
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(legacy_migration._ensure_destination_pair(
+            SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=999)),
+            SimpleNamespace(),
+            state,
+            "owner",
+        ))
+
+    assert rest.edits == [(101, {
+        "locked": True,
+        "archived": True,
+        "reason": "Quarantining interrupted legacy migration for resume",
+    })]
+
+
+def test_migration_cancellation_cleans_destinations_and_releases_retry(monkeypatch):
+    owner = "migration-owner"
+    state = {
+        "_id": "legacy:1:2",
+        "lease_owner": owner,
+        "lease_until": NOW + timedelta(minutes=1),
+        "state": "copying",
+        "source": {
+            "guild_id": 1,
+            "channel_id": 2,
+            "staff_thread_id": 3,
+            "channel_name": "approved-main-8-applicant",
+            "ticket_number": 8,
+        },
+        "destination": {
+            "guild_id": 10,
+            "candidate_parent_id": 20,
+            "staff_parent_id": 21,
+            "ticket_number": 9,
+            "public_name": "main-9-applicant",
+            "staff_name": "staff-main-9-applicant",
+            "public_thread_id": 101,
+            "staff_thread_id": 102,
+        },
+        "metadata": {
+            "ticket_type": "main",
+            "status": "approved",
+            "user_id": 30,
+            "username": "Applicant",
+            "display_name": "Applicant",
+            "player_tags": ["#ABC"],
+            "created_at": NOW,
+        },
+        "webhooks": {"public_id": 401, "staff_id": 402},
+    }
+
+    class Collection:
+        def __init__(self, document):
+            self.document = dict(document)
+
+        async def update_one(self, query, update):
+            assert query == {"_id": state["_id"], "lease_owner": owner}
+            self.document.update(update.get("$set", {}))
+            for key in update.get("$unset", {}):
+                self.document.pop(key, None)
+            return UpdateResult(1)
+
+    class Rest:
+        def __init__(self):
+            self.deleted_webhooks = []
+            self.edits = []
+
+        async def fetch_roles(self, guild_id):
+            assert guild_id == 1
+            return []
+
+        async def fetch_guild_channels(self, guild_id):
+            assert guild_id == 1
+            return []
+
+        async def delete_webhook(self, webhook_id, **_kwargs):
+            self.deleted_webhooks.append(webhook_id)
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+
+    async def claim(*_args, **_kwargs):
+        return owner, dict(state), False
+
+    async def pair(*_args, **_kwargs):
+        return SimpleNamespace(id=101), SimpleNamespace(id=102), dict(state)
+
+    async def webhook(_rest, _parent_id, _migration_id, space):
+        return SimpleNamespace(id=401 if space == "public" else 402, token="token")
+
+    async def unchanged(_mongo, _migration_id, _owner, _fields):
+        return dict(state)
+
+    async def copy_cancelled(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    collection = Collection(state)
+    mongo = SimpleNamespace(ticket_migrations=collection)
+    rest = Rest()
+    bot = SimpleNamespace(rest=rest)
+    monkeypatch.setattr(legacy_migration, "_claim_migration", claim)
+    monkeypatch.setattr(legacy_migration, "_ensure_destination_pair", pair)
+    monkeypatch.setattr(legacy_migration, "_temporary_webhook", webhook)
+    monkeypatch.setattr(legacy_migration, "_migration_update", unchanged)
+    monkeypatch.setattr(legacy_migration, "_copy_space", copy_cancelled)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(legacy_migration.migrate_legacy_ticket(
+            bot=bot,
+            mongo=mongo,
+            preview=_preview(),
+        ))
+
+    assert sorted(rest.deleted_webhooks) == [401, 402]
+    assert [channel_id for channel_id, _kwargs in rest.edits] == [101, 102]
+    assert all(
+        kwargs["locked"] is True and kwargs["archived"] is True
+        for _channel_id, kwargs in rest.edits
+    )
+    assert collection.document["state"] == "retry"
+    assert collection.document["last_error"] == "CancelledError"
+    assert "lease_owner" not in collection.document
+    assert "lease_until" not in collection.document
+    assert "webhooks" not in collection.document
+
+
+def test_locked_archived_thread_is_sequentially_reopened_and_unlocked():
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+            return SimpleNamespace(
+                id=channel_id,
+                is_archived=False,
+                is_locked=kwargs.get("locked", True),
+            )
+
+    rest = Rest()
+    thread = SimpleNamespace(id=101, is_archived=True, is_locked=True)
+    asyncio.run(thread_service._unarchive_if_needed(rest, thread))
+    assert rest.edits[0][1] == {
+        "archived": False,
+        "reason": "Resuming ticket creation",
+    }
+    assert rest.edits[1][1] == {
+        "locked": False,
+        "reason": "Resuming ticket creation",
+    }
+
+
+@pytest.mark.parametrize(("field", "value", "message"), [
+    ("guild_id", 99, "wrong guild"),
+    ("type", hikari.ChannelType.GUILD_PUBLIC_THREAD, "wrong thread type"),
+    ("name", "other-ticket", "wrong name"),
+    ("owner_id", 998, "wrong owner"),
+])
+def test_stored_thread_recovery_rejects_identity_mismatch(field, value, message):
+    identity = {
+        "id": 101,
+        "guild_id": 10,
+        "parent_id": 20,
+        "name": "main-1-applicant",
+        "type": hikari.ChannelType.GUILD_PRIVATE_THREAD,
+        "owner_id": 999,
+    }
+    identity[field] = value
+
+    class Rest:
+        async def fetch_channel(self, _thread_id):
+            return SimpleNamespace(**identity)
+
+    with pytest.raises(thread_service.ThreadTicketError, match=message):
+        asyncio.run(thread_service._fetch_or_recover_thread(
+            Rest(),
+            thread_id=101,
+            guild_id=10,
+            parent_id=20,
+            name="main-1-applicant",
+            private=True,
+            expected_owner_id=999,
+        ))
+
+
+def test_named_thread_recovery_rejects_wrong_thread_type():
+    class EmptyArchived:
+        async def to_list(self):
+            return []
+
+    class Rest:
+        async def fetch_active_threads(self, _guild_id):
+            return [SimpleNamespace(
+                id=101,
+                guild_id=10,
+                parent_id=20,
+                name="main-1-applicant",
+                type=hikari.ChannelType.GUILD_PUBLIC_THREAD,
+                owner_id=999,
+            )]
+
+        def fetch_private_archived_threads(self, _parent_id):
+            return EmptyArchived()
+
+    with pytest.raises(thread_service.ThreadTicketError, match="wrong thread type"):
+        asyncio.run(thread_service._find_named_thread(
+            Rest(),
+            guild_id=10,
+            parent_id=20,
+            name="main-1-applicant",
+            private=True,
+            expected_owner_id=999,
+        ))
+
+
+def test_resumed_auto_detected_staff_thread_does_not_conflict(monkeypatch):
+    request = legacy_migration.LegacyMigrationRequest(
+        source_guild_id=1,
+        source_channel_id=2,
+        target_guild_id=10,
+        candidate_parent_id=20,
+        staff_parent_id=21,
+        source_staff_thread_id=None,
+    )
+    current = {
+        "_id": "legacy:1:2",
+        "kind": "legacy_thread_migration",
+        "state": "retry",
+        "source": {
+            "guild_id": 1,
+            "channel_id": 2,
+            "staff_thread_id": 3,
+            "channel_name": "approved-main-8-applicant",
+            "ticket_number": 8,
+        },
+        "destination": {"guild_id": 10, "candidate_parent_id": 20, "staff_parent_id": 21},
+        "metadata": {
+            "ticket_type": "main",
+            "status": "approved",
+            "user_id": 30,
+            "username": "Applicant",
+            "display_name": "Applicant",
+            "player_tags": ["#ABC"],
+            "created_at": NOW.replace(tzinfo=None),
+            "source_ticket_id": None,
+            "source_ticket_rev": 0,
+        },
+        "lease_until": NOW - timedelta(minutes=1),
+    }
+
+    class Collection(MigrationCollection):
+        async def find_one_and_update(self, query, update, **_kwargs):
+            doc = self.docs[query["_id"]]
+            doc.update(update["$set"])
+            return dict(doc)
+
+    mongo = SimpleNamespace(
+        ticket_migrations=Collection([current]),
+        ticket_setup=SetupCollection(),
+    )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", True)
+    _owner, state, resumed = asyncio.run(
+        legacy_migration._claim_migration(mongo, _preview(request))
+    )
+    assert resumed is True
+    assert state["source"]["staff_thread_id"] == 3
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("ticket_type", "fwa"),
+    ("status", "denied"),
+    ("user_id", 31),
+    ("player_tags", ("#DIFFERENT",)),
+])
+def test_migration_resume_rejects_changed_applicant_identity(monkeypatch, field, value):
+    collection = MigrationCollection()
+    mongo = SimpleNamespace(
+        ticket_migrations=collection,
+        ticket_setup=SetupCollection({
+            "ticket_target_guild_id": 10,
+            "legacy_migration_pilot_approved": True,
+        }),
+    )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", True)
+    preview = _preview()
+    asyncio.run(legacy_migration._claim_migration(mongo, preview))
+    collection.docs["legacy:1:2"]["state"] = "complete"
+
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="different source"):
+        asyncio.run(legacy_migration._claim_migration(
+            mongo, replace(preview, **{field: value})
+        ))
+
+
+def test_completed_terminal_migration_reentry_repairs_bound_context_without_delivery(
+    monkeypatch,
+):
+    ticket = _ticket(
+        status="approved",
+        source={"guild_id": 1, "channel_id": 2},
+    )
+    state = {
+        "_id": "legacy:1:2",
+        "kind": "legacy_thread_migration",
+        "state": "complete",
+        "ticket_id": ticket["_id"],
+    }
+    states = AutomationStateCollection(fail_updates=1)
+    state_id = f"ticket_staff_context:{ticket['_id']}"
+    states.documents[state_id] = {
+        "_id": state_id,
+        "kind": "ticket_staff_context",
+        "ticket_id": ticket["_id"],
+        "staff_space_id": 999,
+        "delivery_state": "delivered",
+    }
+    class Tickets:
+        async def find_one(self, query):
+            assert query == {"_id": ticket["_id"]}
+            return dict(ticket)
+
+    mongo = SimpleNamespace(
+        ticket_automation_state=states,
+        tickets=Tickets(),
+    )
+    claims = []
+
+    async def completed_claim(_mongo, preview):
+        claims.append(preview.request.source_channel_id)
+        return "unused-owner", dict(state), True
+
+    async def no_delivery(*_args, **_kwargs):
+        raise AssertionError("completed reentry must only bind durable context work")
+
+    monkeypatch.setattr(legacy_migration, "_claim_migration", completed_claim)
+    monkeypatch.setattr(
+        thread_service, "notify_console_after_change", no_delivery
+    )
+
+    with pytest.raises(TimeoutError, match="staff context queue unavailable"):
+        asyncio.run(legacy_migration.migrate_legacy_ticket(
+            bot=SimpleNamespace(rest=SimpleNamespace()),
+            mongo=mongo,
+            preview=_preview(),
+        ))
+    assert state["state"] == "complete"
+    assert states.documents[state_id]["staff_space_id"] == 999
+
+    result = asyncio.run(legacy_migration.migrate_legacy_ticket(
+        bot=SimpleNamespace(rest=SimpleNamespace()),
+        mongo=mongo,
+        preview=_preview(),
+    ))
+    assert claims == [2, 2]
+    assert result.resumed is True
+    assert result.migration["state"] == "complete"
+    context = states.documents[state_id]
+    assert context["ticket_id"] == ticket["_id"]
+    assert context["staff_space_id"] == ticket["location"]["staff_space_id"]
+    assert context["delivery_state"] == "pending"
+
+
+def test_source_backed_crash_preserves_legacy_record_and_completes_distinct_ticket(
+    monkeypatch,
+):
+    original = {
+        "_id": "legacy_ticket",
+        "type": "ticket",
+        "venue": "channel",
+        "status": "approved",
+        "ticket_type": "main",
+        "ticket_number": 42,
+        "user_id": 30,
+        "username": "Applicant",
+        "display_name": "Applicant",
+        "player_tags": ["#ABC"],
+        "created_at": NOW,
+        "rev": 0,
+    }
+    first_preview = replace(
+        _preview(),
+        source_ticket=original,
+        source_channel=SimpleNamespace(id=2, name="approved-main-42-applicant"),
+        original_ticket_number=42,
+    )
+
+    class Collection(MigrationCollection):
+        async def find_one_and_update(self, query, update, **_kwargs):
+            doc = self.docs.get(query["_id"])
+            if doc is None:
+                return None
+            if query.get("lease_owner") and doc.get("lease_owner") != query["lease_owner"]:
+                return None
+            doc.update(update.get("$set", {}))
+            for key in update.get("$unset", {}):
+                doc.pop(key, None)
+            return dict(doc)
+
+    collection = Collection()
+    automation_states = AutomationStateCollection()
+    mongo = SimpleNamespace(
+        ticket_migrations=collection,
+        ticket_automation_state=automation_states,
+        ticket_setup=SetupCollection({
+            "ticket_target_guild_id": 10,
+            "legacy_migration_pilot_approved": True,
+        }),
+    )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", True)
+    asyncio.run(legacy_migration._claim_migration(mongo, first_preview))
+    migration = collection.docs["legacy:1:2"]
+    migration["state"] = "retry"
+    migration["lease_until"] = NOW - timedelta(minutes=1)
+    migration["destination"].update({
+        "ticket_number": 362,
+        "public_name": "main-362-applicant",
+        "staff_name": "staff-main-362-applicant",
+        "public_thread_id": 101,
+        "staff_thread_id": 102,
+    })
+
+    source = {
+        "guild_id": 1,
+        "channel_id": 2,
+        "staff_thread_id": 3,
+        "channel_name": "approved-main-42-applicant",
+        "ticket_number": 42,
+    }
+    inserted = schema.new_ticket_document(
+        ticket_type="main",
+        ticket_number=362,
+        guild_id=10,
+        public_thread_id=101,
+        public_parent_id=20,
+        staff_thread_id=102,
+        staff_parent_id=21,
+        user_id=30,
+        username="Applicant",
+        player_tags=("#ABC",),
+        created_at=NOW,
+        status="approved",
+        source=source,
+    )
+    resumed_preview = first_preview
+    assert resumed_preview.original_ticket_number == 42
+    assert inserted["ticket_number"] == 362
+
+    async def pair(_bot, _mongo, state, _owner):
+        return SimpleNamespace(id=101), SimpleNamespace(id=102), state
+
+    async def webhook(_rest, _parent, _migration_id, space):
+        return SimpleNamespace(id=1 if space == "public" else 2, token="token")
+
+    async def unchanged(*_args, state, **_kwargs):
+        return state
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    source_checks = []
+
+    async def source_unchanged(_mongo, state):
+        source_checks.append(state["metadata"]["source_ticket_id"])
+        return original
+
+    async def insert_distinct(_mongo, canonical):
+        assert canonical["_id"] == "ticket_101"
+        assert canonical["_id"] != original["_id"]
+        return inserted
+
+    monkeypatch.setattr(legacy_migration, "_ensure_destination_pair", pair)
+    monkeypatch.setattr(legacy_migration, "_temporary_webhook", webhook)
+    monkeypatch.setattr(legacy_migration, "_copy_space", unchanged)
+    monkeypatch.setattr(legacy_migration, "_delete_webhook_safely", no_op)
+    monkeypatch.setattr(
+        legacy_migration, "_require_legacy_source_unchanged", source_unchanged
+    )
+    monkeypatch.setattr(legacy_migration, "_insert_migrated_ticket", insert_distinct)
+    monkeypatch.setattr(thread_service, "notify_console_after_change", no_op)
+    monkeypatch.setattr(thread_service, "archive_ticket_pair", no_op)
+
+    class Rest:
+        async def fetch_roles(self, _guild_id):
+            return []
+
         async def fetch_guild_channels(self, _guild_id):
             return []
 
-    collection = FakeCreationCollection({
-        "_id": "claim",
-        "state": "cleanup_required",
-        "guild_id": 11,
-        "category_id": 100,
-        "channel_name": "🆕main-1-Tester",
-    })
-    mongo = SimpleNamespace(ticket_creation_state=collection)
-    bot = SimpleNamespace(rest=Rest())
-
-    released = asyncio.run(handlers.release_missing_channel_blocker(
-        bot, mongo, dict(collection.document),
+    result = asyncio.run(legacy_migration.migrate_legacy_ticket(
+        bot=SimpleNamespace(rest=Rest()), mongo=mongo, preview=resumed_preview
     ))
+    assert result.ticket["_id"] == "ticket_101"
+    assert result.ticket["ticket_number"] == 362
+    assert result.migration["source"]["ticket_number"] == 42
+    assert result.migration["destination"]["ticket_number"] == 362
+    assert result.migration["state"] == "complete"
+    assert result.migration["metadata"]["source_ticket_rev"] == 0
+    assert source_checks == ["legacy_ticket"]
+    assert original["venue"] == "channel"
+    assert original["rev"] == 0
+    context = automation_states.documents["ticket_staff_context:ticket_101"]
+    assert context["ticket_id"] == "ticket_101"
+    assert context["staff_space_id"] == 102
+    assert context["delivery_state"] == "pending"
 
-    assert released is True
-    assert collection.document is None
-
-
-def test_uncertain_channel_lookup_retries_before_concluding_missing(monkeypatch):
-    class Rest:
-        def __init__(self):
-            self.calls = 0
-
-        async def fetch_guild_channels(self, _guild_id):
-            self.calls += 1
-            if self.calls < 3:
-                return []
-            return [SimpleNamespace(
-                id=42,
-                name="🆕MAIN-1-TESTER",
-                parent_id=100,
-            )]
-
-    sleeps = []
-
-    async def no_wait(delay):
-        sleeps.append(delay)
-
-    monkeypatch.setattr(handlers.asyncio, "sleep", no_wait)
-    bot = SimpleNamespace(rest=Rest())
-
-    channel = asyncio.run(handlers.locate_uncertain_channel(
-        bot, 11, 100, "🆕main-1-Tester",
-    ))
-
-    assert channel.id == 42
-    assert bot.rest.calls == 3
-    assert sleeps == [1, 1]
+    unrelated_drift = dict(original)
+    unrelated_drift["rev"] = 1
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="different source"):
+        asyncio.run(legacy_migration._claim_migration(
+            mongo, replace(resumed_preview, source_ticket=unrelated_drift)
+        ))
 
 
-class FakeInteraction:
-    def __init__(self):
-        self.responses = []
+def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
+    first_preview = replace(
+        _preview(),
+        source_channel=SimpleNamespace(id=2, name="approved-main-42-applicant"),
+        original_ticket_number=42,
+    )
 
-    async def edit_initial_response(self, *, content):
-        self.responses.append(content)
+    class Collection(MigrationCollection):
+        async def find_one_and_update(self, query, update, **_kwargs):
+            doc = self.docs.get(query["_id"])
+            if doc is None:
+                return None
+            if query.get("lease_owner") and doc.get("lease_owner") != query["lease_owner"]:
+                return None
+            doc.update(update.get("$set", {}))
+            for key in update.get("$unset", {}):
+                doc.pop(key, None)
+            return dict(doc)
 
+        async def update_one(self, query, update, **_kwargs):
+            doc = self.docs.get(query["_id"])
+            if doc is None:
+                return UpdateResult(0)
+            if query.get("lease_owner") and doc.get("lease_owner") != query["lease_owner"]:
+                return UpdateResult(0)
+            doc.update(update.get("$set", {}))
+            for key in update.get("$unset", {}):
+                doc.pop(key, None)
+            return UpdateResult(1)
 
-class FakeContext:
-    def __init__(self):
-        self.user = SimpleNamespace(id=22, username="Tester")
-        self.guild_id = 11
-        self.interaction = FakeInteraction()
-
-    async def defer(self, **_kwargs):
-        return None
-
-
-def _handler_mongo():
-    return SimpleNamespace(
-        ticket_setup=FakeSetupCollection({
-            "main_category": 100,
-            "main_ticket_counter": 0,
+    collection = Collection()
+    automation_states = AutomationStateCollection(fail_updates=1)
+    mongo = SimpleNamespace(
+        ticket_migrations=collection,
+        ticket_automation_state=automation_states,
+        ticket_setup=SetupCollection({
+            "ticket_target_guild_id": 10,
+            "legacy_migration_pilot_approved": True,
         }),
-        ticket_creation_state=FakeCreationCollection(),
     )
+    monkeypatch.setattr(legacy_migration, "_migration_index_ready", True)
+    asyncio.run(legacy_migration._claim_migration(mongo, first_preview))
+    migration = collection.docs["legacy:1:2"]
+    assert migration["metadata"]["source_ticket_id"] is None
+    migration["state"] = "retry"
+    migration["lease_until"] = NOW - timedelta(minutes=1)
+    migration["destination"].update({
+        "ticket_number": 362,
+        "public_name": "main-362-applicant",
+        "staff_name": "staff-main-362-applicant",
+        "public_thread_id": 101,
+        "staff_thread_id": 102,
+    })
 
+    source = {
+        "guild_id": 1,
+        "channel_id": 2,
+        "staff_thread_id": 3,
+        "channel_name": "approved-main-42-applicant",
+        "ticket_number": 42,
+    }
+    inserted = schema.new_ticket_document(
+        ticket_type="main",
+        ticket_number=362,
+        guild_id=10,
+        public_thread_id=101,
+        public_parent_id=20,
+        staff_thread_id=102,
+        staff_parent_id=21,
+        user_id=30,
+        username="Applicant",
+        display_name="Applicant",
+        player_tags=("#ABC",),
+        created_at=NOW,
+        status="approved",
+        source=source,
+    )
+    assert inserted["_id"] == "ticket_101"
+    resumed_preview = first_preview
+    assert resumed_preview.original_ticket_number == 42
+    assert inserted["ticket_number"] == 362
 
-def _patch_handler_dependencies(monkeypatch, *, existing=None):
-    async def category_space(*_args, **_kwargs):
-        return 49
+    pair_calls = []
 
-    async def find_open(*_args, **_kwargs):
-        return existing
+    async def pair(_bot, _mongo, state, _owner):
+        pair_calls.append((101, 102))
+        return SimpleNamespace(id=101), SimpleNamespace(id=102), state
 
-    async def claim(*_args, **_kwargs):
-        return True, {"_id": "11:22:main", "state": "creating"}
+    async def webhook(_rest, _parent, _migration_id, space):
+        return SimpleNamespace(id=1 if space == "public" else 2, token="token")
 
-    async def reserve(*_args, **_kwargs):
-        return 1
+    async def unchanged(*_args, state, **_kwargs):
+        return state
 
-    async def update_state(*_args, **_kwargs):
+    async def no_op(*_args, **_kwargs):
         return None
 
-    async def complete_state(*_args, **_kwargs):
+    insert_calls = []
+
+    async def source_remains_absent(_mongo, state):
+        assert state["metadata"]["source_ticket_id"] is None
         return None
 
-    async def no_sleep(_delay):
-        return None
+    async def insert_idempotently(_mongo, canonical):
+        insert_calls.append(canonical["_id"])
+        assert canonical["_id"] == "ticket_101"
+        return inserted
 
-    monkeypatch.setattr(handlers, "check_category_space", category_space)
-    monkeypatch.setattr(handlers, "find_open_ticket", find_open)
-    monkeypatch.setattr(handlers, "claim_ticket_creation", claim)
-    monkeypatch.setattr(handlers, "reserve_ticket_number", reserve)
-    monkeypatch.setattr(handlers, "update_creation_state", update_state)
-    monkeypatch.setattr(handlers, "complete_creation_state", complete_state)
-    monkeypatch.setattr(handlers.asyncio, "sleep", no_sleep)
-    monkeypatch.setattr(handlers, "user_cooldowns", {})
+    monkeypatch.setattr(legacy_migration, "_ensure_destination_pair", pair)
+    monkeypatch.setattr(legacy_migration, "_temporary_webhook", webhook)
+    monkeypatch.setattr(legacy_migration, "_copy_space", unchanged)
+    monkeypatch.setattr(legacy_migration, "_delete_webhook_safely", no_op)
+    monkeypatch.setattr(
+        legacy_migration, "_require_legacy_source_unchanged", source_remains_absent
+    )
+    monkeypatch.setattr(
+        legacy_migration, "_insert_migrated_ticket", insert_idempotently
+    )
+    monkeypatch.setattr(thread_service, "notify_console_after_change", no_op)
+    monkeypatch.setattr(thread_service, "archive_ticket_pair", no_op)
 
-
-def test_handler_rolls_back_channel_when_thread_creation_fails(monkeypatch):
     class Rest:
         def __init__(self):
-            self.deleted = []
+            self.archived = []
 
-        async def create_guild_text_channel(self, **_kwargs):
-            return SimpleNamespace(id=42)
-
-        async def create_thread(self, *_args, **_kwargs):
-            raise RuntimeError("thread unavailable")
-
-        async def delete_channel(self, channel_id, **_kwargs):
-            self.deleted.append(channel_id)
-
-    _patch_handler_dependencies(monkeypatch)
-    ctx = FakeContext()
-    bot = SimpleNamespace(rest=Rest())
-    mongo = _handler_mongo()
-
-    asyncio.run(handlers.handle_create_ticket(ctx, "main", bot=bot, mongo=mongo))
-
-    assert bot.rest.deleted == [42]
-    assert "Nothing was left behind" in ctx.interaction.responses[-1]
-
-
-def test_lost_discord_create_response_locates_and_rolls_back_channel(monkeypatch):
-    class Rest:
-        def __init__(self):
-            self.deleted = []
-
-        async def create_guild_text_channel(self, **_kwargs):
-            raise TimeoutError("Discord response lost")
+        async def fetch_roles(self, _guild_id):
+            return []
 
         async def fetch_guild_channels(self, _guild_id):
-            return [SimpleNamespace(
-                id=42,
-                name="🆕main-1-Tester",
-                parent_id=100,
-            )]
+            return []
 
-        async def delete_channel(self, channel_id, **_kwargs):
-            self.deleted.append(channel_id)
+        async def edit_channel(self, channel_id, **kwargs):
+            self.archived.append((channel_id, kwargs))
 
-    _patch_handler_dependencies(monkeypatch)
-    ctx = FakeContext()
-    bot = SimpleNamespace(rest=Rest())
+    rest = Rest()
+    bot = SimpleNamespace(rest=rest)
+    with pytest.raises(TimeoutError, match="staff context queue unavailable"):
+        asyncio.run(legacy_migration.migrate_legacy_ticket(
+            bot=bot, mongo=mongo, preview=resumed_preview
+        ))
+    assert collection.docs["legacy:1:2"]["state"] == "retry"
+    assert automation_states.documents == {}
+    assert [channel_id for channel_id, _kwargs in rest.archived] == [101, 102]
 
-    asyncio.run(handlers.handle_create_ticket(
-        ctx, "main", bot=bot, mongo=_handler_mongo(),
+    result = asyncio.run(legacy_migration.migrate_legacy_ticket(
+        bot=bot, mongo=mongo, preview=resumed_preview
     ))
+    assert insert_calls == ["ticket_101", "ticket_101"]
+    assert pair_calls == [(101, 102), (101, 102)]
+    assert result.ticket["_id"] == "ticket_101"
+    assert result.ticket["ticket_number"] == 362
+    assert result.migration["source"]["ticket_number"] == 42
+    assert result.migration["destination"]["ticket_number"] == 362
+    assert result.migration["metadata"]["source_ticket_id"] is None
+    assert result.migration["state"] == "complete"
+    context = automation_states.documents["ticket_staff_context:ticket_101"]
+    assert context["ticket_id"] == "ticket_101"
+    assert context["staff_space_id"] == 102
+    assert context["delivery_state"] == "pending"
 
-    assert bot.rest.deleted == [42]
-    assert "Nothing was left behind" in ctx.interaction.responses[-1]
+    unrelated = dict(inserted)
+    unrelated["audit"] = []
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="different source"):
+        asyncio.run(legacy_migration._claim_migration(
+            mongo, replace(resumed_preview, source_ticket=unrelated)
+        ))
 
 
-def test_unconfirmable_discord_create_keeps_duplicate_blocker(monkeypatch):
+def test_migration_thread_names_use_new_unique_target_number():
+    public, staff = legacy_migration._migration_thread_names("fwa", 99, "Applicant")
+    assert public == "🆕 fwa-99-applicant"
+    assert staff == "🆕 staff-fwa-99-applicant"
+
+
+def test_opening_delivery_scans_beyond_last_hundred_messages():
+    marker = "ticket-setup:101:candidate"
+    questionnaire = "Warriors United Main Clan Entry Ticket"
+
+    class Cursor:
+        def limit(self, _amount):
+            raise AssertionError("delivery reconciliation must not truncate history")
+
+        async def to_list(self):
+            old_marker = SimpleNamespace(content=f"-# {marker}", components=[])
+            old_questionnaire = SimpleNamespace(
+                content="",
+                components=[SimpleNamespace(
+                    content=questionnaire,
+                    components=[],
+                )],
+            )
+            newer = [SimpleNamespace(content="chat", components=[]) for _ in range(150)]
+            return [old_marker, old_questionnaire, *newer]
+
     class Rest:
         def __init__(self):
-            self.deleted = []
+            self.created = 0
 
-        async def create_guild_text_channel(self, **_kwargs):
-            raise TimeoutError("Discord response lost")
-
-        async def fetch_guild_channels(self, _guild_id):
-            raise RuntimeError("Discord still unavailable")
-
-        async def delete_channel(self, channel_id, **_kwargs):
-            self.deleted.append(channel_id)
-
-    _patch_handler_dependencies(monkeypatch)
-    ctx = FakeContext()
-    bot = SimpleNamespace(rest=Rest())
-    mongo = _handler_mongo()
-    mongo.ticket_creation_state.document = {
-        "_id": "11:22:main",
-        "state": "creating",
-    }
-
-    asyncio.run(handlers.handle_create_ticket(ctx, "main", bot=bot, mongo=mongo))
-
-    assert bot.rest.deleted == []
-    assert mongo.ticket_creation_state.document["state"] == "cleanup_required"
-    assert "could not confirm" in ctx.interaction.responses[-1]
-
-
-def test_handler_rolls_back_discord_when_primary_ticket_write_fails(monkeypatch):
-    class Rest:
-        def __init__(self):
-            self.deleted = []
-
-        async def create_guild_text_channel(self, **_kwargs):
-            return SimpleNamespace(id=42)
-
-        async def create_thread(self, *_args, **_kwargs):
-            return SimpleNamespace(id=43)
-
-        async def add_thread_member(self, *_args, **_kwargs):
-            return None
-
-        async def delete_channel(self, channel_id, **_kwargs):
-            self.deleted.append(channel_id)
-
-    async def failed_insert(_mongo, _document):
-        raise RuntimeError("primary Mongo unavailable")
-
-    async def not_committed(_mongo, _query):
-        return None
-
-    _patch_handler_dependencies(monkeypatch)
-    monkeypatch.setattr(handlers.store, "insert_one", failed_insert)
-    monkeypatch.setattr(handlers.store, "find_one", not_committed)
-    ctx = FakeContext()
-    bot = SimpleNamespace(
-        rest=Rest(),
-        get_me=lambda: SimpleNamespace(id=999),
-    )
-
-    asyncio.run(handlers.handle_create_ticket(
-        ctx, "main", bot=bot, mongo=_handler_mongo(),
-    ))
-
-    assert bot.rest.deleted == [42]
-    assert "Nothing was left behind" in ctx.interaction.responses[-1]
-
-
-def test_timed_out_primary_write_is_confirmed_before_discord_rollback(monkeypatch):
-    class Rest:
-        def __init__(self):
-            self.deleted = []
-
-        async def create_guild_text_channel(self, **_kwargs):
-            return SimpleNamespace(id=42)
-
-        async def create_thread(self, *_args, **_kwargs):
-            return SimpleNamespace(id=43)
-
-        async def add_thread_member(self, *_args, **_kwargs):
-            return None
-
-        async def delete_channel(self, channel_id, **_kwargs):
-            self.deleted.append(channel_id)
-
-    committed = {}
-
-    async def timed_out_insert(_mongo, document):
-        committed.update(document)
-        raise TimeoutError("response lost after commit")
-
-    async def find_committed(_mongo, query):
-        return dict(committed) if committed.get("_id") == query.get("_id") else None
-
-    _patch_handler_dependencies(monkeypatch)
-    monkeypatch.setattr(handlers.store, "insert_one", timed_out_insert)
-    monkeypatch.setattr(handlers.store, "find_one", find_committed)
-    ctx = FakeContext()
-    bot = SimpleNamespace(
-        rest=Rest(),
-        get_me=lambda: SimpleNamespace(id=999),
-    )
-
-    asyncio.run(handlers.handle_create_ticket(
-        ctx, "main", bot=bot, mongo=_handler_mongo(),
-    ))
-
-    assert committed["_id"] == "ticket_42"
-    assert bot.rest.deleted == []
-    assert "was created" in ctx.interaction.responses[-1]
-
-
-def test_unconfirmable_primary_write_keeps_channel_and_duplicate_blocker(monkeypatch):
-    class Rest:
-        def __init__(self):
-            self.deleted = []
-
-        async def create_guild_text_channel(self, **_kwargs):
-            return SimpleNamespace(id=42)
-
-        async def create_thread(self, *_args, **_kwargs):
-            return SimpleNamespace(id=43)
-
-        async def add_thread_member(self, *_args, **_kwargs):
-            return None
-
-        async def delete_channel(self, channel_id, **_kwargs):
-            self.deleted.append(channel_id)
-
-    async def timed_out_insert(_mongo, _document):
-        raise TimeoutError("write result unknown")
-
-    async def unavailable_confirmation(_mongo, _query):
-        raise RuntimeError("Mongo still unavailable")
-
-    _patch_handler_dependencies(monkeypatch)
-    monkeypatch.setattr(handlers.store, "insert_one", timed_out_insert)
-    monkeypatch.setattr(handlers.store, "find_one", unavailable_confirmation)
-    ctx = FakeContext()
-    bot = SimpleNamespace(
-        rest=Rest(),
-        get_me=lambda: SimpleNamespace(id=999),
-    )
-    mongo = _handler_mongo()
-    mongo.ticket_creation_state.document = {
-        "_id": "11:22:main",
-        "state": "creating",
-    }
-
-    asyncio.run(handlers.handle_create_ticket(ctx, "main", bot=bot, mongo=mongo))
-
-    assert bot.rest.deleted == []
-    assert mongo.ticket_creation_state.document["state"] == "cleanup_required"
-    assert mongo.ticket_creation_state.document["channel_id"] == 42
-    assert "could not be confirmed safely" in ctx.interaction.responses[-1]
-
-
-def test_handler_returns_existing_open_ticket_without_creating_channel(monkeypatch):
-    class Rest:
-        async def create_guild_text_channel(self, **_kwargs):
-            raise AssertionError("duplicate channel creation attempted")
-
-    _patch_handler_dependencies(
-        monkeypatch,
-        existing={"_id": "ticket_77", "channel_id": 77},
-    )
-    ctx = FakeContext()
-    bot = SimpleNamespace(rest=Rest())
-
-    asyncio.run(handlers.handle_create_ticket(
-        ctx, "main", bot=bot, mongo=_handler_mongo(),
-    ))
-
-    assert "already have an open" in ctx.interaction.responses[-1]
-    assert "<#77>" in ctx.interaction.responses[-1]
-
-
-def test_postcommit_message_failure_still_reports_created_ticket(monkeypatch, capsys):
-    class Rest:
-        def __init__(self):
-            self.deleted = []
-
-        async def create_guild_text_channel(self, **_kwargs):
-            return SimpleNamespace(id=42)
-
-        async def create_thread(self, *_args, **_kwargs):
-            return SimpleNamespace(id=43)
-
-        async def add_thread_member(self, *_args, **_kwargs):
-            return None
+        def fetch_messages(self, _channel_id):
+            return Cursor()
 
         async def create_message(self, *_args, **_kwargs):
-            raise RuntimeError("message unavailable")
+            self.created += 1
 
-        async def delete_channel(self, channel_id, **_kwargs):
-            self.deleted.append(channel_id)
+    rest = Rest()
+    asyncio.run(thread_service._send_once(rest, 101, marker, "welcome"))
+    assert asyncio.run(
+        thread_service._questionnaire_exists(rest, 101, "main")
+    ) is True
+    assert rest.created == 0
 
-    inserted = []
 
-    async def insert(_mongo, document):
-        inserted.append(document)
+def test_send_components_once_survives_a_retried_post_without_a_second_card():
+    """A retried delivery attempt (e.g. main.py's REST retry resending a
+    create_message whose response was lost) must not duplicate the card:
+    the marker-scan-before-post guard is what let bot-wide retries be
+    restored instead of leaving them disabled for every command.
+    """
+    marker = "ticket-setup:101:candidate"
 
-    _patch_handler_dependencies(monkeypatch)
-    monkeypatch.setattr(handlers.store, "insert_one", insert)
-    ctx = FakeContext()
-    bot = SimpleNamespace(
-        rest=Rest(),
-        get_me=lambda: SimpleNamespace(id=999),
+    class Rest:
+        def __init__(self):
+            self.messages = []
+            self.create_calls = 0
+
+        def fetch_messages(self, _channel_id):
+            async def to_list():
+                return list(self.messages)
+            return SimpleNamespace(to_list=to_list)
+
+        async def create_message(self, _channel_id, **kwargs):
+            self.create_calls += 1
+            self.messages.append(SimpleNamespace(
+                content="", components=kwargs.get("components", []),
+            ))
+
+    rest = Rest()
+    card = [thread_service.Text(content="Welcome to your ticket")]
+
+    asyncio.run(thread_service._send_components_once(rest, 101, marker, card))
+    # Simulates the same delivery attempt firing again (a lost-response retry,
+    # or an outer recovery pass re-running _deliver_opening_messages).
+    asyncio.run(thread_service._send_components_once(rest, 101, marker, card))
+
+    assert rest.create_calls == 1
+    assert len(rest.messages) == 1
+
+
+def test_destination_marker_scan_is_not_limited_to_recent_messages():
+    marker = "migration-source:1:2:3:1/1"
+
+    class Cursor:
+        def limit(self, _amount):
+            raise AssertionError("migration marker scan must inspect full history")
+
+        async def to_list(self):
+            return [SimpleNamespace(content=marker)] + [
+                SimpleNamespace(content="newer") for _ in range(150)
+            ]
+
+    rest = SimpleNamespace(fetch_messages=lambda _thread_id: Cursor())
+    assert asyncio.run(
+        legacy_migration._destination_has_marker(rest, 101, marker)
+    ) is True
+
+
+def test_console_hub_refresh_runs_even_when_staff_context_fails(monkeypatch):
+    from extensions.commands.tickets import console
+
+    calls = []
+
+    async def context_fails(*_args, **_kwargs):
+        raise RuntimeError("context unavailable")
+
+    async def hub_refresh(*_args, **_kwargs):
+        calls.append("hub")
+        return True
+
+    monkeypatch.setattr(console, "deliver_staff_identity_context", context_fails)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", hub_refresh)
+    asyncio.run(thread_service.notify_console_after_change(
+        SimpleNamespace(), SimpleNamespace(), {"_id": "ticket_101"}, reason="test"
+    ))
+    assert calls == ["hub"]
+
+
+def test_attachment_audit_is_bounded_and_reports_unknown(monkeypatch):
+    monkeypatch.setattr(legacy_migration, "ATTACHMENT_AUDIT_LIMIT", 1)
+    message = SimpleNamespace(
+        id=9,
+        attachments=[
+            SimpleNamespace(filename="missing.png", url=None),
+            SimpleNamespace(filename="later.png", url="https://invalid.example"),
+        ],
+    )
+    audit = asyncio.run(legacy_migration._audit_attachment_urls(((2, [message]),)))
+    assert [item.status for item in audit] == ["unknown", "not_audited"]
+    preview = replace(_preview(), attachment_count=2, attachment_audit=audit)
+    summary = legacy_migration._attachment_audit_summary(preview)
+    assert "unknown or not checked `2`" in summary
+
+
+def test_legacy_summary_bounds_many_tags_without_changing_preview_metadata():
+    tags = tuple(f"#TAG{index:06d}" for index in range(1000))
+    preview = replace(
+        _attachment_preview("unrecoverable"),
+        player_tags=tags,
     )
 
-    asyncio.run(handlers.handle_create_ticket(
-        ctx, "main", bot=bot, mongo=_handler_mongo(),
-    ))
+    summary = legacy_migration._migration_summary(preview)
+    dry_run = (
+        "🔎 **DRY RUN — nothing was written.**\n"
+        + summary
+        + "\nRe-run with `confirm: true` to create or resume this one ticket."
+    )
+    completed = (
+        "✅ **Legacy ticket migrated and archived.**\n"
+        + summary
+        + "\n**Candidate:** <#123456789012345678> • "
+        "**Staff:** <#223456789012345678>\n"
+        "Source channels and messages were not modified."
+    )
 
-    assert len(inserted) == 1
-    assert bot.rest.deleted == []
-    assert "has been created" in ctx.interaction.responses[-1]
-    assert "ticket_postcommit_setup_failed" in capsys.readouterr().out
+    assert len(summary) <= legacy_migration.MIGRATION_SUMMARY_LIMIT
+    assert len(dry_run) <= legacy_migration.DISCORD_MESSAGE_CONTENT_LIMIT
+    assert len(completed) <= legacy_migration.DISCORD_MESSAGE_CONTENT_LIMIT
+    assert "tags omitted" in summary
+    assert "LOSS-" in summary
+    assert preview.player_tags == tags
+
+
+def test_canonical_store_is_hardbound_to_thread_indexes(monkeypatch):
+    observed = []
+
+    async def indexes(mongo):
+        observed.append(mongo)
+
+    async def legacy_store(_mongo):
+        raise AssertionError("v2 readiness must not consult legacy activation")
+
+    monkeypatch.setattr(thread_service.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(thread_service.store, "active_store", legacy_store)
+    mongo = SimpleNamespace(tickets=object())
+    asyncio.run(thread_service.ensure_canonical_ticket_store(mongo))
+    assert observed == [mongo]
+
+
+def test_canonical_store_has_no_ticket_setup_activation_dependency(monkeypatch):
+    observed = []
+
+    async def indexes(mongo):
+        observed.append(mongo)
+
+    monkeypatch.setattr(thread_service.store, "ensure_indexes", indexes)
+    mongo = SimpleNamespace(tickets=object())
+    asyncio.run(thread_service.ensure_canonical_ticket_store(mongo))
+    assert observed == [mongo]
+
+
+def test_explicit_source_staff_thread_must_be_private():
+    rest = SimpleNamespace(fetch_channel=lambda _channel_id: None)
+
+    async def fetch_channel(_channel_id):
+        return SimpleNamespace(
+            id=3,
+            guild_id=1,
+            parent_id=2,
+            type=hikari.ChannelType.GUILD_PUBLIC_THREAD,
+        )
+
+    rest.fetch_channel = fetch_channel
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="private"):
+        asyncio.run(legacy_migration._discover_staff_thread(
+            rest,
+            source_guild_id=1,
+            source_channel_id=2,
+            explicit_id=3,
+            stored_id=None,
+        ))
+
+
+def test_conflicting_source_records_across_stores_fail_preview():
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def limit(self, _amount):
+            return self
+
+        async def to_list(self, **_kwargs):
+            return list(self.rows)
+
+    class Collection:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def find(self, _query):
+            return Cursor(self.rows)
+
+    mongo = SimpleNamespace(
+        tickets=Collection([{"_id": "canonical"}]),
+        button_store=Collection([{"_id": "legacy"}]),
+    )
+    with pytest.raises(legacy_migration.LegacyMigrationError, match="conflicting"):
+        asyncio.run(legacy_migration._legacy_source_ticket(mongo, 1, 2))

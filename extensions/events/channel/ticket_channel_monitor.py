@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from utils.mongo import MongoClient
-from extensions.commands.tickets import store
+from extensions.commands.tickets_legacy import store
 from utils.constants import RED_ACCENT, GOLD_ACCENT, GOLDENROD_ACCENT
 from utils.emoji import emojis
 

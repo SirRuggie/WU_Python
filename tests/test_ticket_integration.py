@@ -1,0 +1,876 @@
+import asyncio
+from pathlib import Path
+
+import pytest
+
+from extensions import components
+from extensions.commands import ticket_runtime
+from extensions.commands import help_catalog
+from extensions.commands import tickets as ticket_extension
+from extensions.commands import tickets_legacy as legacy_extension
+from extensions.commands.tickets import config, console, resolve
+from utils.startup import tickets_guild_id
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+EXPECTED_COMMANDS = {
+    "approve",
+    "approve-migration-pilot",
+    "config",
+    "configure-threads",
+    "console",
+    "deny",
+    "find",
+    "flag-add",
+    "flag-remove",
+    "flags",
+    "history",
+    "migrate-all",
+    "migrate-legacy",
+    "pilot-role",
+    "pilot-user",
+    "rollout-drain",
+    "rollout-pilot",
+    "rollout-prepare",
+    "rollout-promote",
+    "rollout-rollback",
+    "rollout-status",
+    "setup",
+    "thread-config",
+}
+
+EXPECTED_LEGACY_COMMANDS = {
+    "approve",
+    "change-category",
+    "claim",
+    "cleanup-ghosts",
+    "config",
+    "dashboard",
+    "deny",
+    "diagnostics",
+    "fix-mismatched",
+    "list",
+    "migrate-store",
+    "release",
+    "reset-counter",
+    "setup",
+}
+
+OBSOLETE_COMMANDS = {
+    "claim",
+    "release",
+    "close",
+    "dashboard",
+    "list",
+    "change-category",
+    "reset-counter",
+    "diagnostics",
+    "cleanup-ghosts",
+    "fix-mismatched",
+}
+
+
+@pytest.fixture(autouse=True)
+def _shared_runtime_recovery(monkeypatch):
+    async def recover(_mongo, **_kwargs):
+        return (
+            ticket_runtime.BackfillResult((), (), (), ()),
+            ticket_runtime.ReconcileResult((), (), (), ()),
+        )
+
+    async def blockers(_mongo):
+        return ticket_runtime.RuntimeBlockerStatus(0, 0)
+
+    monkeypatch.setattr(ticket_runtime, "recover_ticket_runtime", recover)
+    monkeypatch.setattr(ticket_runtime, "runtime_blocker_status", blockers)
+    monkeypatch.setattr(ticket_extension, "_thread_intake_ready", False)
+
+
+def test_ticket_package_registers_only_thread_runtime_commands():
+    registered = set(ticket_extension.ticket._commands)
+
+    assert registered == EXPECTED_COMMANDS
+    assert not registered & OBSOLETE_COMMANDS
+    assert ticket_extension.ticket.name == "tickets"
+    assert set(legacy_extension.ticket._commands) == EXPECTED_LEGACY_COMMANDS
+    assert legacy_extension.ticket.name == "ticket"
+    assert len(registered) <= 25
+
+
+def _command_loadable(loader, command):
+    """The registered ``_CommandLoadable`` wrapping one command group.
+
+    Lightbulb records each ``loader.command(...)`` call as a loadable holding
+    the exact ``guilds``/``global_`` it was registered with; this walks the
+    loader's private list to find the one for ``command``.
+    """
+    for loadable in loader._loadables:
+        if getattr(loadable, "_command", None) is command:
+            return loadable
+    raise AssertionError(f"no command loadable registered for {command!r}")
+
+
+def test_tickets_group_is_registered_only_in_the_configured_guild():
+    tickets_loadable = _command_loadable(ticket_extension.loader, ticket_extension.ticket)
+    assert tickets_loadable._guilds == [tickets_guild_id()]
+    assert tickets_loadable._global is None
+    assert tickets_loadable._defer_guilds is False
+
+    legacy_loadable = _command_loadable(legacy_extension.loader, legacy_extension.ticket)
+    assert legacy_loadable._guilds is None
+    assert legacy_loadable._global is None
+    assert legacy_loadable._defer_guilds is False
+
+
+def test_ticket_package_registers_console_and_creation_actions():
+    required = {
+        "ticket_v2_create",
+        "ticket_v2_console_pick",
+        "ticket_v2_console_find",
+        "ticket_v2_console_view",
+        "ticket_v2_console_approve",
+        "ticket_v2_console_deny",
+        "ticket_v2_console_deny_submit",
+    }
+
+    assert required <= set(components.registered_functions)
+    assert "ticket_v2_dashboard_action" not in components.registered_functions
+
+
+def test_main_loads_both_ticket_runtimes_and_the_legacy_monitor():
+    source = (ROOT / "main.py").read_text(encoding="utf-8")
+
+    assert '"extensions.commands.tickets"' in source
+    assert '"extensions.commands.tickets_legacy"' in source
+    assert '"extensions.events.channel.ticket_channel_monitor"' in source
+    # hikari's default REST retry is restored bot-wide; ticket message POSTs
+    # that motivated disabling it are made retry-safe individually instead
+    # (idempotent markers in thread_service.py), not by disabling retries
+    # for every /clan, /cards and /cwl interaction.
+    assert "max_retries=0" not in source
+    assert "max_retries=1" not in source
+
+
+def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch):
+    finalized = []
+
+    async def worker(name):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            finalized.append(name)
+
+    class Workflow:
+        def __init__(self):
+            self.stops = 0
+
+        async def stop(self):
+            self.stops += 1
+
+    async def run():
+        resolution_task = asyncio.create_task(worker("resolution"))
+        console_one = asyncio.create_task(worker("console-one"))
+        console_two = asyncio.create_task(worker("console-two"))
+        await asyncio.sleep(0)
+        workflow = Workflow()
+        console_startup = Workflow()
+        monkeypatch.setattr(ticket_extension, "_workflow_recovery", workflow)
+        monkeypatch.setattr(resolve, "_resolution_reconciler_task", resolution_task)
+        monkeypatch.setattr(console, "_refresh_tasks", {
+            1: console_one,
+            2: console_two,
+        })
+        monkeypatch.setattr(console, "_startup_recovery", console_startup)
+        monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", "ticket_9")
+        monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", True)
+
+        await ticket_extension.on_stopping(None)
+        assert workflow.stops == 1
+        assert console_startup.stops == 1
+        assert resolve._resolution_reconciler_task is None
+        assert console._refresh_tasks == {}
+        assert ticket_extension._staff_context_sweep_after is None
+        assert ticket_extension._staff_context_sweep_complete is False
+        assert ticket_extension.thread_intake_ready() is False
+        assert all(task.done() for task in (resolution_task, console_one, console_two))
+        assert sorted(finalized) == ["console-one", "console-two", "resolution"]
+
+        await ticket_extension.on_stopping(None)
+        assert workflow.stops == 2
+        assert console_startup.stops == 2
+        assert resolve._resolution_reconciler_task is None
+        assert console._refresh_tasks == {}
+
+    asyncio.run(run())
+
+
+def test_ticket_help_matches_the_registered_thread_commands():
+    paths = help_catalog.command_paths()
+    documented = {
+        path.removeprefix("/tickets ")
+        for path in paths
+        if path.startswith("/tickets ")
+    }
+
+    assert documented == EXPECTED_COMMANDS
+    assert not documented & OBSOLETE_COMMANDS
+    legacy = {
+        path.removeprefix("/ticket ")
+        for path in paths
+        if path.startswith("/ticket ")
+    }
+    assert legacy == EXPECTED_LEGACY_COMMANDS
+
+
+def test_config_summary_has_thread_parents_roles_and_console_only():
+    rollout = ticket_runtime.RolloutState(
+        phase=ticket_runtime.PHASE_PILOT,
+        revision=4,
+        valid=True,
+        legacy_intake=ticket_runtime.IntakeSource(10, 11, 12),
+        thread_intake=ticket_runtime.IntakeSource(20, 21, 22),
+        pilot_intake=ticket_runtime.IntakeSource(20, 31, 32),
+        pilot_user_ids=(50,),
+    )
+    summary = config.configuration_summary({
+        "legacy_ticket_guild_id": 10,
+        "ticket_target_guild_id": 20,
+        "main_candidate_parent": 101,
+        "main_staff_parent": 102,
+        "main_thread_recruiter_role": 103,
+        "main_recruiter_role": 901,
+        "fwa_candidate_parent": 201,
+        "fwa_staff_parent": 202,
+        "fwa_thread_recruiter_role": 203,
+        "fwa_recruiter_role": 902,
+        "ticket_console_channel_id": 301,
+        "main_category": 999,
+    }, rollout)
+
+    assert "Thread v2" in summary
+    assert "**Legacy guild:** `10`" in summary
+    assert "**Target guild:** `20`" in summary
+    assert "https://discord.com/channels/10/11/12" in summary
+    assert "https://discord.com/channels/20/21/22" in summary
+    assert "https://discord.com/channels/20/31/32" in summary
+    assert "<#101>" in summary
+    assert "<@&103>" in summary
+    assert "<@&203>" in summary
+    assert "<@&901>" not in summary
+    assert "<@&902>" not in summary
+    assert "<#301>" in summary
+    assert "category" not in summary.casefold()
+    assert "claim" not in summary.casefold()
+
+
+def test_startup_prepares_all_durable_ticket_indexes(monkeypatch):
+    calls = []
+
+    async def record(name):
+        calls.append(name)
+
+    monkeypatch.setattr(ticket_runtime, "ensure_indexes", lambda _mongo: record("shared_runtime"))
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", lambda _mongo: record("tickets"))
+    monkeypatch.setattr(ticket_extension.flag_store, "ensure_indexes", lambda _mongo: record("flags"))
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "ensure_creation_indexes",
+        lambda _mongo: record("creation"),
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "ensure_migration_indexes",
+        lambda _mongo: record("migration"),
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "ensure_staff_context_indexes",
+        lambda _mongo: record("staff_context"),
+    )
+
+    errors = asyncio.run(ticket_extension.prepare_ticket_runtime(object()))
+
+    assert errors == {}
+    assert calls == [
+        "shared_runtime", "tickets", "flags", "creation", "migration", "staff_context"
+    ]
+
+
+def test_effect_and_hub_startup_recovery_are_loaded():
+    assert callable(resolve.recover_resolution_effects)
+    assert callable(console.recover_ticket_console)
+    assert callable(console.queue_staff_identity_context)
+    assert callable(console.recover_pending_staff_identity_contexts)
+    assert callable(console.recover_open_staff_identity_contexts)
+
+
+def test_startup_resumes_confirmed_creation_and_migration_after_indexes(monkeypatch):
+    calls = []
+
+    async def indexes(_mongo):
+        calls.append("indexes")
+
+    async def creations(*, bot, mongo, limit):
+        calls.append(("creation", bot, mongo, limit))
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    async def migrations(*, bot, mongo, limit):
+        calls.append(("migration", bot, mongo, limit))
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    async def staff_contexts(*, bot, mongo, limit):
+        calls.append(("staff_context", bot, mongo, limit))
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    async def open_contexts(*, bot, mongo, after_ticket_id, limit):
+        calls.append(("open_context", bot, mongo, after_ticket_id, limit))
+        return {
+            "processed": 1,
+            "completed": 1,
+            "failed": 0,
+            "after_ticket_id": "ticket_1",
+            "exhausted": True,
+        }
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "recover_pending_thread_ticket_creations",
+        creations,
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "recover_pending_legacy_migrations",
+        migrations,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_pending_staff_identity_contexts",
+        staff_contexts,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_open_staff_identity_contexts",
+        open_contexts,
+    )
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+    bot = object()
+    mongo = object()
+
+    asyncio.run(ticket_extension.recover_ticket_workflows(bot, mongo))
+
+    assert calls == [
+        "indexes",
+        ("creation", bot, mongo, 50),
+        ("migration", bot, mongo, 5),
+        ("staff_context", bot, mongo, 25),
+        ("open_context", bot, mongo, None, 25),
+    ]
+
+
+class _FakeSlotCollection:
+    """Stands in for ``mongo.ticket_open_slots`` for the thread-route check."""
+
+    def __init__(self, thread_route_conflicts: int = 0):
+        self.thread_route_conflicts = thread_route_conflicts
+        self.queries: list[dict] = []
+
+    async def count_documents(self, query):
+        self.queries.append(query)
+        return self.thread_route_conflicts
+
+    def find(self, query):
+        self.queries.append(query)
+        ids = [
+            {"_id": f"ticket-open:thread-{index}:main"}
+            for index in range(self.thread_route_conflicts)
+        ]
+
+        class _Cursor:
+            def sort(self, _spec):
+                return self
+
+            def limit(self, _amount):
+                return self
+
+            async def to_list(self, length=None):
+                return ids[:length] if length else ids
+
+        return _Cursor()
+
+
+class _FakeMongo:
+    def __init__(self, thread_route_conflicts: int = 0):
+        self.ticket_open_slots = _FakeSlotCollection(thread_route_conflicts)
+
+
+def test_legacy_blockers_never_block_thread_intake_recovery(monkeypatch, capsys):
+    """Legacy deliveries and legacy-vs-legacy open-ticket conflicts (the real
+    live incident: one user with two open legacy FWA channel tickets) must
+    never block the new thread system -- recovery logs and continues."""
+
+    calls = []
+
+    async def indexes(_mongo):
+        return None
+
+    async def blockers(_mongo):
+        return ticket_runtime.RuntimeBlockerStatus(
+            1,
+            1,
+            pending_delivery_ids=("41",),
+            conflict_slot_ids=("ticket-open:7:main",),
+        )
+
+    async def creations(**_kwargs):
+        calls.append("creation")
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def migrations(**_kwargs):
+        calls.append("migration")
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def staff_contexts(**_kwargs):
+        calls.append("staff_context")
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def open_context(**_kwargs):
+        calls.append("open_context")
+        return {
+            "processed": 0,
+            "completed": 0,
+            "failed": 0,
+            "after_ticket_id": None,
+            "exhausted": True,
+        }
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(ticket_runtime, "runtime_blocker_status", blockers)
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "recover_pending_thread_ticket_creations",
+        creations,
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "recover_pending_legacy_migrations",
+        migrations,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_pending_staff_identity_contexts",
+        staff_contexts,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_open_staff_identity_contexts",
+        open_context,
+    )
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+
+    mongo = _FakeMongo(thread_route_conflicts=0)
+
+    asyncio.run(ticket_extension.recover_ticket_workflows(object(), mongo))
+
+    assert calls == ["creation", "migration", "staff_context", "open_context"]
+    assert ticket_extension.thread_intake_ready() is True
+    assert mongo.ticket_open_slots.queries, "thread-route conflict count was checked"
+
+    captured = capsys.readouterr()
+    assert "[Tickets] legacy_blockers_ignored" in captured.out
+    assert "legacy_deliveries=1" in captured.out
+    assert "open_ticket_conflicts=1" in captured.out
+    assert "remains blocked" not in captured.out
+
+
+def test_thread_route_conflict_still_blocks_recovery(monkeypatch):
+    """A conflict where the thread runtime itself owns one side of the
+    collision is not legacy-only and must keep blocking thread intake."""
+
+    async def indexes(_mongo):
+        return None
+
+    async def blockers(_mongo):
+        return ticket_runtime.RuntimeBlockerStatus(
+            0,
+            1,
+            conflict_slot_ids=("ticket-open:7:main",),
+        )
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(ticket_runtime, "runtime_blocker_status", blockers)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+
+    mongo = _FakeMongo(thread_route_conflicts=1)
+
+    with pytest.raises(RuntimeError, match="thread-route conflict.*ticket-open:thread-0:main"):
+        asyncio.run(ticket_extension.recover_ticket_workflows(object(), mongo))
+
+    assert ticket_extension.thread_intake_ready() is False
+
+
+def test_account_retry_queues_terminal_context_before_staff_recovery(monkeypatch):
+    calls = []
+    ticket = {
+        "_id": "ticket_101",
+        "type": "ticket",
+        "venue": "thread",
+        "status": "denied",
+        "location": {"staff_space_id": 102},
+    }
+
+    async def indexes(_mongo):
+        calls.append("indexes")
+
+    async def complete(**_kwargs):
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def account_recovery(_mongo, client, *, limit, after_sync):
+        calls.append(("account", client, limit))
+        assert await after_sync(ticket) == "ticket_staff_context:ticket_101"
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    async def queue_context(_mongo, document):
+        calls.append(("queue_context", document["_id"]))
+        return f"ticket_staff_context:{document['_id']}"
+
+    async def staff_contexts(**_kwargs):
+        calls.append("staff_context")
+        return {"processed": 1, "completed": 1, "failed": 0}
+
+    async def open_contexts(**_kwargs):
+        return {
+            "processed": 0,
+            "completed": 0,
+            "failed": 0,
+            "after_ticket_id": None,
+            "exhausted": True,
+        }
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "recover_pending_thread_ticket_creations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "recover_pending_legacy_migrations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.account_sync,
+        "recover_pending_account_syncs",
+        account_recovery,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "queue_staff_identity_context",
+        queue_context,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_pending_staff_identity_contexts",
+        staff_contexts,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_open_staff_identity_contexts",
+        open_contexts,
+    )
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+    coc_client = object()
+
+    asyncio.run(ticket_extension.recover_ticket_workflows(
+        object(), object(), coc_client
+    ))
+
+    assert calls == [
+        "indexes",
+        ("account", coc_client, 25),
+        ("queue_context", "ticket_101"),
+        "staff_context",
+    ]
+
+
+def test_startup_recovery_drains_records_beyond_all_batch_limits(monkeypatch):
+    remaining = {
+        "creation": 101,
+        "migration": 11,
+        "staff_context": 51,
+        "open_context": 51,
+    }
+    batches = {
+        "creation": [],
+        "migration": [],
+        "staff_context": [],
+        "open_context": [],
+    }
+
+    async def indexes(_mongo):
+        return None
+
+    async def recover(kind, limit):
+        processed = min(remaining[kind], limit)
+        remaining[kind] -= processed
+        batches[kind].append(processed)
+        return {"processed": processed, "completed": processed, "failed": 0}
+
+    async def creations(*, bot, mongo, limit):
+        return await recover("creation", limit)
+
+    async def migrations(*, bot, mongo, limit):
+        return await recover("migration", limit)
+
+    async def staff_contexts(*, bot, mongo, limit):
+        return await recover("staff_context", limit)
+
+    async def open_contexts(*, bot, mongo, after_ticket_id, limit):
+        processed = min(remaining["open_context"], limit)
+        remaining["open_context"] -= processed
+        batches["open_context"].append(processed)
+        offset = sum(batches["open_context"])
+        return {
+            "processed": processed,
+            "completed": processed,
+            "failed": 0,
+            "after_ticket_id": f"ticket_{offset}" if processed else after_ticket_id,
+            "exhausted": processed < limit,
+        }
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "recover_pending_thread_ticket_creations",
+        creations,
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "recover_pending_legacy_migrations",
+        migrations,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_pending_staff_identity_contexts",
+        staff_contexts,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_open_staff_identity_contexts",
+        open_contexts,
+    )
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+
+    async def scenario():
+        reconciler = ticket_extension.StartupReconciler(
+            "ticket-workflow-batches",
+            lambda: ticket_extension.recover_ticket_workflows(object(), object()),
+            retry_delays=(0,),
+            sleep=no_wait,
+        )
+        await reconciler.start()
+        return reconciler
+
+    reconciler = asyncio.run(scenario())
+
+    assert batches == {
+        "creation": [50, 50, 1],
+        "migration": [5, 5, 1],
+        "staff_context": [25, 25, 1],
+        "open_context": [25, 25, 1],
+    }
+    assert remaining == {
+        "creation": 0,
+        "migration": 0,
+        "staff_context": 0,
+        "open_context": 0,
+    }
+    assert reconciler.health.state == "healthy"
+    assert reconciler.health.attempts == 3
+
+
+def test_startup_recovery_retries_failed_staff_contexts(monkeypatch):
+    async def indexes(_mongo):
+        return None
+
+    async def complete(**_kwargs):
+        return {"processed": 0, "completed": 0, "failed": 0}
+
+    async def context_failed(**_kwargs):
+        return {"processed": 1, "completed": 0, "failed": 1}
+
+    monkeypatch.setattr(ticket_extension.store, "ensure_indexes", indexes)
+    monkeypatch.setattr(
+        ticket_extension.thread_service,
+        "recover_pending_thread_ticket_creations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.legacy_migration,
+        "recover_pending_legacy_migrations",
+        complete,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_pending_staff_identity_contexts",
+        context_failed,
+    )
+    monkeypatch.setattr(
+        ticket_extension.console,
+        "recover_open_staff_identity_contexts",
+        lambda **_kwargs: complete(),
+    )
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", None)
+    monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", False)
+
+    with pytest.raises(RuntimeError, match="1 ticket workflow recovery"):
+        asyncio.run(ticket_extension.recover_ticket_workflows(object(), object()))
+
+
+def test_ticket_runtime_startup_retries_config_indexes_and_workflow_once(monkeypatch):
+    attempts = {"config": 0, "indexes": 0, "workflow": 0, "marker": 0}
+
+    class Setup:
+        async def find_one(self, query):
+            assert query == {"_id": "config"}
+            attempts["config"] += 1
+            if attempts["config"] == 1:
+                raise TimeoutError("temporary config outage")
+            return {"main_candidate_parent": 123}
+
+        async def update_one(self, *_args, **_kwargs):
+            # Successful startup publishes the live status-name capability.
+            # This fake otherwise deliberately models only config reads.
+            attempts["marker"] += 1
+            if attempts["marker"] == 1:
+                raise TimeoutError("temporary capability marker outage")
+            return None
+
+    class Mongo:
+        ticket_setup = Setup()
+
+    async def prepare(_mongo):
+        attempts["indexes"] += 1
+        if attempts["indexes"] == 1:
+            return {"migration": "TimeoutError: temporary index outage"}
+        return {}
+
+    async def workflows(_bot, _mongo):
+        attempts["workflow"] += 1
+        if attempts["workflow"] == 1:
+            raise TimeoutError("temporary workflow outage")
+
+    async def no_wait(_delay):
+        return None
+
+    real_reconciler = ticket_extension.StartupReconciler
+    monkeypatch.setattr(
+        ticket_extension,
+        "StartupReconciler",
+        lambda name, operation: real_reconciler(
+            name,
+            operation,
+            retry_delays=(0,),
+            sleep=no_wait,
+        ),
+    )
+    monkeypatch.setattr(ticket_extension, "prepare_ticket_runtime", prepare)
+    monkeypatch.setattr(ticket_extension, "recover_ticket_workflows", workflows)
+    monkeypatch.setattr(ticket_extension, "_workflow_recovery", None)
+    monkeypatch.setattr(ticket_extension, "_startup_complete", False)
+    monkeypatch.setattr(ticket_extension, "ticket_config", None)
+    monkeypatch.setattr(ticket_extension, "startup_index_errors", {})
+
+    async def scenario():
+        mongo = Mongo()
+        bot = object()
+        await ticket_extension.on_started(None, mongo, bot)
+        reconciler = ticket_extension._workflow_recovery
+        first = reconciler.task
+        await ticket_extension.on_started(None, mongo, bot)
+        assert reconciler.task is first
+        await first
+        assert reconciler.health.state == "healthy"
+        assert reconciler.health.attempts == 5
+        assert ticket_extension.ticket_config == {"main_candidate_parent": 123}
+        assert ticket_extension.startup_index_errors == {}
+        assert ticket_extension._startup_complete is True
+        await reconciler.stop()
+        await reconciler.stop()
+        assert reconciler.task is None
+        assert reconciler.health.state == "stopped"
+
+    asyncio.run(scenario())
+
+    assert attempts == {"config": 3, "indexes": 2, "workflow": 3, "marker": 2}
+
+
+def test_console_startup_retries_hub_state_and_dirty_write_once(monkeypatch):
+    attempts = {"state": 0, "dirty": 0, "scheduled": 0}
+
+    async def hub_state(_mongo):
+        attempts["state"] += 1
+        if attempts["state"] == 1:
+            raise TimeoutError("temporary hub read outage")
+        return {"channel_id": 123}
+
+    async def mark_dirty(_mongo, *, reason):
+        assert reason == "startup recovery"
+        attempts["dirty"] += 1
+        if attempts["dirty"] == 1:
+            raise TimeoutError("temporary hub write outage")
+        return 1
+
+    def schedule(bot, mongo):
+        assert bot is test_bot
+        assert mongo is test_mongo
+        attempts["scheduled"] += 1
+
+    async def no_wait(_delay):
+        return None
+
+    real_reconciler = console.StartupReconciler
+    monkeypatch.setattr(
+        console,
+        "StartupReconciler",
+        lambda name, operation: real_reconciler(
+            name,
+            operation,
+            retry_delays=(0,),
+            sleep=no_wait,
+        ),
+    )
+    monkeypatch.setattr(console, "_hub_state", hub_state)
+    monkeypatch.setattr(console, "_mark_hub_dirty", mark_dirty)
+    monkeypatch.setattr(console, "_schedule_hub_refresh", schedule)
+    monkeypatch.setattr(console, "_startup_recovery", None)
+    monkeypatch.setattr(console, "_refresh_tasks", {})
+    test_bot = object()
+    test_mongo = object()
+
+    async def scenario():
+        await console.recover_ticket_console(None, test_mongo, test_bot)
+        reconciler = console._startup_recovery
+        first = reconciler.task
+        await console.recover_ticket_console(None, test_mongo, test_bot)
+        assert reconciler.task is first
+        await first
+        assert reconciler.health.state == "healthy"
+        assert reconciler.health.attempts == 3
+        await console.stop_hub_refresh_workers()
+        await console.stop_hub_refresh_workers()
+        assert reconciler.task is None
+        assert reconciler.health.state == "stopped"
+
+    asyncio.run(scenario())
+
+    assert attempts == {"state": 3, "dirty": 2, "scheduled": 1}

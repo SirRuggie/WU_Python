@@ -18,6 +18,7 @@
 
 import asyncio
 import random
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -25,6 +26,9 @@ import aiohttp
 import coc
 import hikari
 import lightbulb
+from hikari.impl import ContainerComponentBuilder as Container
+from hikari.impl import SeparatorComponentBuilder as Separator
+from hikari.impl import TextDisplayComponentBuilder as Text
 
 from utils import coc_maintenance
 from utils.mongo import MongoClient
@@ -77,6 +81,12 @@ coc_client = None
 detector_task = None
 startup_reconciler = None
 active_catchups = {}   # our_tag -> asyncio.Task
+board_publish_lock = asyncio.Lock()
+board_publish_task = None
+board_publish_dirty = False
+
+BOARD_ACCENT = 0x3498DB
+BOARD_TITLE = "## ⚔️ War board"
 
 
 # ---- Config helpers ----
@@ -84,7 +94,11 @@ async def load_config():
     doc = await mongo_client.fwa_points.find_one({"_id": "config"})
     if not doc:
         return {"enabled": DEFAULT_ENABLED, "watch_list": list(DEFAULT_WATCH_LIST)}
-    return {"enabled": doc.get("enabled", DEFAULT_ENABLED), "watch_list": doc.get("watch_list", [])}
+    return {
+        **doc,
+        "enabled": doc.get("enabled", DEFAULT_ENABLED),
+        "watch_list": doc.get("watch_list", []),
+    }
 
 
 async def feature_enabled():
@@ -159,8 +173,10 @@ async def get_current_war_info(our_tag):
 
     coc_maintenance.note_success()
     state = getattr(war, "state", None)
-    if state in (None, "notInWar"):
+    if state is None:
         return None
+    if state == "notInWar":
+        return state, None, None, None, None
     opponent = getattr(war, "opponent", None)
     opp_tag = sanitize_tag(getattr(opponent, "tag", "") or "")
     if not opp_tag:
@@ -235,14 +251,32 @@ async def store_record(our_tag, name, parsed, coc_opponent_tag, war_key, attempt
         "last_attempt_status": "caught_up",
         "last_attempt_war_key": war_key,
     }
-    await mongo_client.fwa_points.update_one(
-        {"_id": our_tag},
+    current = await mongo_client.fwa_points.find_one(
+        {"_id": our_tag}, {"current_war_key": 1, "current_war_state": 1},
+    ) or {}
+    if (
+        current.get("current_war_state") == "notInWar"
+        or (current.get("current_war_key") and current.get("current_war_key") != war_key)
+    ):
+        return False
+    result = await mongo_client.fwa_points.update_one(
+        {
+            "_id": our_tag,
+            "$or": [
+                {"current_war_key": war_key},
+                {"current_war_key": {"$exists": False}},
+            ],
+            "current_war_state": {"$ne": "notInWar"},
+        },
         {
             "$set": record,
             "$unset": {"retry_after": "", "last_attempt_error": ""},
         },
-        upsert=True,
+        upsert=not bool(current),
     )
+    if current and getattr(result, "matched_count", 1) == 0:
+        return False
+    return True
 
 
 async def mark_attempt(our_tag, status, war_key, error=None):
@@ -319,12 +353,240 @@ async def record_failed_catchup(our_tag, name, war_key, status, message):
 
 
 async def log_outcome(line):
+    print(f"[FWA Points] {line}")
+    request_points_board_publish()
+
+
+def _board_text(value):
+    text = str(value or "").replace("\\", "\\\\")
+    for token in ("*", "_", "`", "~", "|", "<", ">"):
+        text = text.replace(token, f"\\{token}")
+    return text[:100]
+
+
+def build_points_board(watch, records, *, updated_at=None):
+    """Render one compact board without exposing a previous war's verdict."""
+    rows = [Text(content=BOARD_TITLE), Separator(divider=True)]
+    clan_rows = []
+    for clan in watch:
+        tag = sanitize_tag(clan.get("tag", ""))
+        name = _board_text(clan.get("name") or tag)
+        rec = records.get(tag) or {}
+        current_key = rec.get("current_war_key")
+        verdict_key = rec.get("coc_war_key")
+        current_result = bool(
+            rec.get("raw_verdict")
+            and rec.get("status") == "caught_up"
+            and rec.get("current_war_state") != "notInWar"
+            and (not current_key or current_key == verdict_key)
+        )
+        if current_result:
+            outcome = str(rec.get("our_outcome") or "unknown").casefold()
+            label = (
+                "🚫 BLACKLISTED" if rec.get("opponent_blacklisted")
+                else "✅ WIN" if outcome == "win"
+                else "❌ LOSE" if outcome == "lose"
+                else "❔ UNKNOWN"
+            )
+            opponent = _board_text(
+                rec.get("coc_opponent_name") or rec.get("opponent_name") or "Unknown opponent"
+            )
+            score_match = re.search(r"\(([^()]*(?:<|>)[^()]*)\)", str(rec.get("raw_verdict") or ""))
+            points = score_match.group(1).strip() if score_match else str(rec.get("point_balance", "?"))
+            detail = f"- **{name}** · **{label}** — vs **{opponent}** · Points **{_board_text(points)}**"
+        elif current_key:
+            opponent = _board_text(rec.get("current_opponent_name") or "current opponent")
+            detail = f"- **{name}** · **⏳ WAITING** — vs **{opponent}**"
+        else:
+            detail = f"- **{name}** · **⏳ WAITING** — next war"
+        clan_rows.append(detail)
+    if not watch:
+        clan_rows.append("No FWA clans are currently watched.")
+    # Keep the component count fixed even when administrators add many watch
+    # entries. Discord limits Components V2 messages to 40 components.
+    chunk = ""
+    omitted = 0
+    for index, detail in enumerate(clan_rows):
+        candidate = f"{chunk}\n\n{detail}" if chunk else detail
+        if len(candidate) > 3300:
+            omitted = len(clan_rows) - index
+            break
+        chunk = candidate
+    if omitted:
+        chunk += f"\n\n- …and {omitted} more watched clan{'s' if omitted != 1 else ''}."
+    if chunk:
+        rows.append(Text(content=chunk))
+    stamp = updated_at or datetime.now(timezone.utc)
+    rows.extend([
+        Separator(divider=True),
+        Text(content=f"-# Updated <t:{int(stamp.timestamp())}:R>"),
+    ])
+    return [Container(accent_color=BOARD_ACCENT, components=rows)]
+
+
+async def _board_snapshot():
+    config = await load_config()
+    watch = await effective_watch_list(config)
+    tags = [sanitize_tag(clan.get("tag", "")) for clan in watch]
+    tags = [tag for tag in tags if tag]
+    records = {
+        str(row.get("_id")): row
+        for row in await mongo_client.fwa_points.find(
+            {"_id": {"$in": tags}},
+        ).to_list(length=None)
+    } if tags else {}
+    return config, watch, records
+
+
+def _contains_board_title(value):
+    if isinstance(value, str):
+        return BOARD_TITLE in value
+    if isinstance(value, dict):
+        return any(_contains_board_title(child) for child in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_board_title(child) for child in value)
+    for field in ("content", "components"):
+        child = getattr(value, field, None)
+        if child is not None and _contains_board_title(child):
+            return True
+    return False
+
+
+async def _recent_board_message(channel_id):
+    """Recover an own recent board if creation succeeded before binding did."""
+    own_id = int(bot_instance.get_me().id)
+    messages = bot_instance.rest.fetch_messages(channel_id).limit(25)
+    async for message in messages:
+        if int(getattr(getattr(message, "author", None), "id", 0)) == own_id and _contains_board_title(
+            getattr(message, "components", ())
+        ):
+            return message
+    return None
+
+
+async def publish_points_board():
+    """Edit the durable board, recreating its binding after a 404."""
     if not bot_instance:
         return
+    async with board_publish_lock:
+        try:
+            config, watch, records = await _board_snapshot()
+            components = build_points_board(watch, records)
+            channel_id = int(config.get("board_channel_id") or LOG_CHANNEL_ID)
+            message_id = config.get("board_message_id")
+            if not message_id:
+                recovered = await _recent_board_message(channel_id)
+                message_id = getattr(recovered, "id", None)
+            if message_id:
+                try:
+                    await bot_instance.rest.edit_message(
+                        channel_id, int(message_id), components=components,
+                        mentions_everyone=False, user_mentions=False, role_mentions=False,
+                    )
+                    if int(config.get("board_message_id") or 0) != int(message_id):
+                        await mongo_client.fwa_points.update_one(
+                            {"_id": "config"},
+                            {"$set": {"board_channel_id": channel_id, "board_message_id": int(message_id)}},
+                            upsert=True,
+                        )
+                    return
+                except hikari.NotFoundError:
+                    recovered = await _recent_board_message(channel_id)
+                    recovered_id = getattr(recovered, "id", None)
+                    if recovered_id and int(recovered_id) != int(message_id):
+                        await bot_instance.rest.edit_message(
+                            channel_id, int(recovered_id), components=components,
+                            mentions_everyone=False, user_mentions=False, role_mentions=False,
+                        )
+                        await mongo_client.fwa_points.update_one(
+                            {"_id": "config"},
+                            {"$set": {
+                                "board_channel_id": channel_id,
+                                "board_message_id": int(recovered_id),
+                            }},
+                            upsert=True,
+                        )
+                        return
+            message = await bot_instance.rest.create_message(
+                channel_id,
+                components=components,
+                flags=hikari.MessageFlag.IS_COMPONENTS_V2,
+                mentions_everyone=False,
+                user_mentions=False,
+                role_mentions=False,
+            )
+            try:
+                await mongo_client.fwa_points.update_one(
+                    {"_id": "config"},
+                    {"$set": {"board_channel_id": channel_id, "board_message_id": int(message.id)}},
+                    upsert=True,
+                )
+            except Exception:
+                try:
+                    await bot_instance.rest.delete_message(channel_id, int(message.id))
+                except Exception:
+                    pass
+                raise
+        except Exception as e:
+            print(f"[FWA Points] Failed to publish live board: {type(e).__name__}: {e}")
+
+
+async def _board_publish_worker():
+    global board_publish_task, board_publish_dirty
     try:
-        await bot_instance.rest.create_message(channel=LOG_CHANNEL_ID, content=line)
-    except Exception as e:
-        print(f"[FWA Points] Failed to log outcome: {e}")
+        while board_publish_dirty:
+            board_publish_dirty = False
+            await publish_points_board()
+    finally:
+        board_publish_task = None
+
+
+def request_points_board_publish():
+    """Coalesce refreshes without holding detector or catch-up work on REST."""
+    global board_publish_task, board_publish_dirty
+    if not bot_instance:
+        return
+    board_publish_dirty = True
+    if board_publish_task is None or board_publish_task.done():
+        board_publish_task = asyncio.create_task(
+            _board_publish_worker(), name="fwa-points-board-publisher",
+        )
+
+
+async def note_current_war(
+    our_tag, *, war_key, opponent_tag, opponent_name=None, war_end_time=None,
+):
+    """Persist a newly observed war before catch-up so stale verdicts vanish."""
+    rec = await mongo_client.fwa_points.find_one({"_id": our_tag}) or {}
+    if rec.get("current_war_key") == war_key:
+        return False
+    await mongo_client.fwa_points.update_one(
+        {"_id": our_tag},
+        {"$set": {
+            "current_war_key": war_key,
+            "current_war_state": "active",
+            "current_opponent_tag": opponent_tag,
+            "current_opponent_name": opponent_name,
+            "current_war_end_time": war_end_time,
+        }},
+        upsert=True,
+    )
+    request_points_board_publish()
+    return True
+
+
+async def note_no_current_war(our_tag):
+    """Clear the displayed verdict only after CoC explicitly says notInWar."""
+    rec = await mongo_client.fwa_points.find_one({"_id": our_tag}) or {}
+    if rec.get("current_war_state") == "notInWar" and not rec.get("current_war_key"):
+        return False
+    await mongo_client.fwa_points.update_one(
+        {"_id": our_tag},
+        {"$set": {"current_war_state": "notInWar", "current_war_key": None}},
+        upsert=True,
+    )
+    request_points_board_publish()
+    return True
 
 
 # ---- Catch-up task (the only thing that touches the points site) ----
@@ -392,12 +654,15 @@ async def run_catchup(clan_entry, coc_opponent_tag, war_key, coc_war_end_time=No
                         else:
                             print(f"[FWA Points] {name}: could not fetch opponent page for "
                                   f"Active FWA status, storing as unknown")
-                        await store_record(
+                        stored = await store_record(
                             our_tag, name, parsed, coc_opponent_tag, war_key, attempt,
                             opponent_active_fwa=opponent_active_fwa,
                             coc_war_end_time=coc_war_end_time,
                             coc_opponent_name=coc_opponent_name,
                         )
+                        if not stored:
+                            print(f"[FWA Points] {name}: discarded result for superseded war {war_key}")
+                            return
                         cname = parsed["clan_name"] or name
                         verdict = parsed["raw_verdict"] or ""
                         short = verdict[len(cname):].strip() if verdict.startswith(cname) else verdict
@@ -448,13 +713,29 @@ async def detector_loop():
                     our_tag = sanitize_tag(clan.get("tag", ""))
                     if not our_tag:
                         continue
-                    existing = active_catchups.get(our_tag)
-                    if existing and not existing.done():
-                        continue
                     info = await get_current_war_info(our_tag)
                     if info is None:
                         continue
-                    _state, coc_opp, war_key, coc_war_end_time, coc_opponent_name = info
+                    state, coc_opp, war_key, coc_war_end_time, coc_opponent_name = info
+                    if state == "notInWar":
+                        await note_no_current_war(our_tag)
+                        existing = active_catchups.get(our_tag)
+                        if existing and not existing.done():
+                            existing.cancel()
+                            await asyncio.gather(existing, return_exceptions=True)
+                        request_points_board_publish()
+                        continue
+                    changed = await note_current_war(
+                        our_tag, war_key=war_key, opponent_tag=coc_opp,
+                        opponent_name=coc_opponent_name, war_end_time=coc_war_end_time,
+                    )
+                    request_points_board_publish()
+                    existing = active_catchups.get(our_tag)
+                    if existing and not existing.done():
+                        if not changed:
+                            continue
+                        existing.cancel()
+                        await asyncio.gather(existing, return_exceptions=True)
                     rec = await mongo_client.fwa_points.find_one({"_id": our_tag})
                     if rec and rec.get("status") == "caught_up" and rec.get("coc_war_key") == war_key:
                         continue   # already have this exact war's verdict
@@ -472,6 +753,9 @@ async def detector_loop():
                     )
                     active_catchups[our_tag] = task
                     launched += 1
+                # Also repairs a failed/deleted board when every CoC lookup
+                # failed or the effective watch list became empty.
+                request_points_board_publish()
         except Exception as e:
             print(f"[FWA Points] Detector loop error: {type(e).__name__}: {e}")
         await asyncio.sleep(DETECTOR_INTERVAL_SECONDS)
@@ -491,6 +775,7 @@ async def _reconcile_points_startup() -> None:
         print("[FWA Points] Seeded config")
     if detector_task and not detector_task.done():
         return
+    request_points_board_publish()
     detector_task = asyncio.create_task(
         detector_loop(), name="fwa-points-detector"
     )
@@ -517,7 +802,7 @@ async def on_bot_started(event: hikari.StartedEvent,
 
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
-    global detector_task, startup_reconciler
+    global detector_task, startup_reconciler, board_publish_task, board_publish_dirty
     tasks = []
     if startup_reconciler is not None:
         await startup_reconciler.stop()
@@ -529,9 +814,14 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
         if not t.done():
             t.cancel()
             tasks.append(t)
+    if board_publish_task and not board_publish_task.done():
+        board_publish_task.cancel()
+        tasks.append(board_publish_task)
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
     detector_task = None
+    board_publish_task = None
+    board_publish_dirty = False
     active_catchups.clear()
     print("[FWA Points] Tasks cancelled")
 

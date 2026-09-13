@@ -67,7 +67,6 @@ bot = hikari.GatewayBot(
     ),
     # Fix hikari's overly aggressive rate limiting
     max_rate_limit=120.0,  # Guild channel-create bucket slides to a 60s window; 30s made those a user-facing error
-    max_retries=1,  # Fail fast instead of waiting
 )
 
 client = lightbulb.client_from_app(bot)
@@ -134,6 +133,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.band_sync_ical",
         "extensions.tasks.cards_sticky",
         "extensions.tasks.cards_deadlines",
+        "extensions.commands.tickets_legacy",
         "extensions.commands.tickets",
         "extensions.events.channel.ticket_channel_monitor",
         "extensions.events.message.message_events",  # Add message events handler
@@ -142,7 +142,9 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         explicit_extensions,
         load_cogs(
             disallowed={"example"},
-            disallowed_folders={"clan", "fwa", "recruit", "setup", "tickets"},
+            disallowed_folders={
+                "clan", "fwa", "recruit", "setup", "tickets", "tickets_legacy",
+            },
         ),
     )
     all_extensions = active_extensions(all_extensions)

@@ -18,12 +18,32 @@ from hikari.impl import (
 from extensions.commands.help_catalog import HELP_CATEGORIES
 from extensions.components import register_action
 from utils.constants import BLUE_ACCENT
+from utils.startup import tickets_guild_id
 
 
 loader = lightbulb.Loader()
 
 
-def _category_select(selected_category: str | None = None) -> ActionRow:
+def _visible_categories(guild_id: int | None) -> dict:
+    """``HELP_CATEGORIES`` filtered to what this guild can actually run.
+
+    ``tickets_v2`` documents the `/tickets` thread-ticket pilot, a group
+    lightbulb only registers in the configured pilot guild (see
+    ``utils.startup.tickets_guild_id``). ``/help`` is global, so every other
+    guild must not list commands Discord never offers them.
+    """
+    if guild_id == tickets_guild_id():
+        return HELP_CATEGORIES
+    return {
+        category_id: category
+        for category_id, category in HELP_CATEGORIES.items()
+        if category_id != "tickets_v2"
+    }
+
+
+def _category_select(
+        categories: dict, selected_category: str | None = None
+) -> ActionRow:
     options = [
         SelectOption(
             label=f"{category['name']} ({len(category['commands'])})",
@@ -32,7 +52,7 @@ def _category_select(selected_category: str | None = None) -> ActionRow:
             emoji=category["emoji"],
             is_default=category_id == selected_category,
         )
-        for category_id, category in HELP_CATEGORIES.items()
+        for category_id, category in categories.items()
     ]
     return ActionRow(
         components=[
@@ -46,14 +66,15 @@ def _category_select(selected_category: str | None = None) -> ActionRow:
     )
 
 
-async def create_help_view() -> list:
+async def create_help_view(guild_id: int | None = None) -> list:
+    categories = _visible_categories(guild_id)
     total_commands = sum(
         len(category["commands"])
-        for category in HELP_CATEGORIES.values()
+        for category in categories.values()
     )
     category_lines = "\n".join(
         f"{category['emoji']} **{category['name']}** — {category['description']}"
-        for category in HELP_CATEGORIES.values()
+        for category in categories.values()
     )
 
     return [
@@ -69,7 +90,7 @@ async def create_help_view() -> list:
                 Separator(divider=True),
                 Text(content=category_lines),
                 Separator(divider=True),
-                _category_select(),
+                _category_select(categories),
                 Text(content=(
                     "-# Fast starts: `/role` for member roles • `/recruit` for onboarding "
                     "• `/ticket` for tickets • `/fwa` for FWA tools "
@@ -81,10 +102,11 @@ async def create_help_view() -> list:
     ]
 
 
-async def create_category_view(category_id: str) -> list:
-    category = HELP_CATEGORIES.get(category_id)
+async def create_category_view(category_id: str, guild_id: int | None = None) -> list:
+    categories = _visible_categories(guild_id)
+    category = categories.get(category_id)
     if category is None:
-        return await create_help_view()
+        return await create_help_view(guild_id)
 
     command_text = "\n\n".join(
         f"**{command}**\n{description}"
@@ -106,7 +128,7 @@ async def create_category_view(category_id: str) -> list:
 
     components.extend([
         Separator(divider=True),
-        _category_select(category_id),
+        _category_select(categories, category_id),
         ActionRow(
             components=[
                 Button(
@@ -130,7 +152,7 @@ class HelpCommand(
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        await ctx.respond(components=await create_help_view(), ephemeral=True)
+        await ctx.respond(components=await create_help_view(ctx.guild_id), ephemeral=True)
 
 
 @register_action("help_category_select", ephemeral=True)
@@ -140,7 +162,7 @@ async def on_category_select(
         **kwargs,
 ):
     """Switch directly to the selected help category."""
-    return await create_category_view(ctx.interaction.values[0])
+    return await create_category_view(ctx.interaction.values[0], ctx.interaction.guild_id)
 
 
 @register_action("help_back", ephemeral=True)
@@ -150,7 +172,7 @@ async def on_help_back(
         **kwargs,
 ):
     """Return to the category overview."""
-    return await create_help_view()
+    return await create_help_view(ctx.interaction.guild_id)
 
 
 @register_action("help_refresh", ephemeral=True)
@@ -160,4 +182,4 @@ async def on_legacy_help_refresh(
         **kwargs,
 ):
     """Keep Refresh buttons on already-rendered help panels working."""
-    return await create_help_view()
+    return await create_help_view(ctx.interaction.guild_id)

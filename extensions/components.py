@@ -53,6 +53,7 @@ class Action:
     ephemeral: bool  # legacy metadata; message edits cannot change visibility
     opens_modal: bool
     requires_state: bool
+    preload_state: bool
     group: str | None
     declared_at: str  # "file:line" of the @register_action, for duplicate reporting
 
@@ -121,7 +122,21 @@ def register_action(
         group: str | None = None,
         aliases: tuple[str, ...] = (),
         requires_state: bool = False,
+        preload_state: bool = True,
 ):
+    if requires_state and not preload_state:
+        # _dispatch only checks requires_state inside the `if action.preload_state`
+        # branch (see the `else: kw = {}` right below it) -- with preload_state=False
+        # that check never runs, so requires_state=True is a silent no-op: an
+        # expired/missing state row is never refused, it is just handed to the
+        # handler as an empty dict. Fail at registration instead of at runtime.
+        raise ValueError(
+            f"register_action({name!r}): requires_state=True has no effect when "
+            "preload_state=False -- state is never loaded to check. Drop "
+            "requires_state, or drop preload_state=False if the handler does "
+            "need preloaded state before it runs."
+        )
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         sig = inspect.signature(func)
         hints = get_type_hints(func)
@@ -168,6 +183,7 @@ def register_action(
             ephemeral=ephemeral,
             opens_modal=opens_modal,
             requires_state=requires_state,
+            preload_state=preload_state,
             group=group,
             declared_at=declared_at,
         )
@@ -290,12 +306,19 @@ async def _dispatch(
                 raw, ctx.user.id,
             )
 
-    kw = await get_state(mongo, action_id, {"_id": 0})
-    if kw is None and action.requires_state:
-        _log.info("expired component state action=%s id=%s", action.name, action_id)
-        await _refuse(ctx, MSG_STALE_PANEL)
-        return
-    kw = kw or {}
+    if action.preload_state:
+        kw = await get_state(mongo, action_id, {"_id": 0})
+        if kw is None and action.requires_state:
+            _log.info("expired component state action=%s id=%s", action.name, action_id)
+            await _refuse(ctx, MSG_STALE_PANEL)
+            return
+        kw = kw or {}
+    else:
+        # Modal submissions cannot be deferred by the dispatcher in the
+        # general case: several legacy handlers answer by updating the source
+        # message, while others create a private response. Opted-in handlers
+        # acknowledge first, then load and validate their own state.
+        kw = {}
     kw = kw | {"color" : RED_ACCENT, "action_id" : action_id, "ctx": ctx}
     components = await action.fn(**kw)
 
@@ -308,6 +331,8 @@ async def _dispatch(
             if components is not None and message is not None:
                 await ctx.interaction.app.rest.edit_message(
                     message.channel_id, message.id, components=components,
+                    user_mentions=False, role_mentions=False,
+                    mentions_everyone=False,
                 )
         elif action.is_modal:
             # ModalContext inherits the plain response mixin, which has no edit=
@@ -319,7 +344,12 @@ async def _dispatch(
             # An edit preserves the existing message's visibility. Passing
             # ephemeral= here is ignored by Discord/lightbulb and suggests a
             # guarantee the dispatcher cannot make.
-            await ctx.respond(components=components, edit=True)
+            # components=None would strip every component from the source
+            # message (hikari documents None as "remove all"), which on a
+            # components-v2 message is a 400. A handler returning None means
+            # "leave the message exactly as it is".
+            if components is not None:
+                await ctx.respond(components=components, edit=True)
 
 
 @loader.listener(hikari.StartedEvent)

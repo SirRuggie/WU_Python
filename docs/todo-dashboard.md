@@ -263,28 +263,31 @@ incomplete. An empty result says that not every account could be checked and
 must never render as **All caught up**. Non-empty results keep the rows that
 were found and add a warning note.
 
-### FWA points suffix on the War view header
+### Compact verdict on the War view header
 
 When a clan is watched by the [FWA points monitor](fwa-points-monitor.md), its
-War view clan header can carry a one-line suffix on the **same line** as the
-clan name, e.g. `**Edrag Rush** vs DevilHarvesters (FWA) · <:Yes:…> WIN War`. `/todo`
+War view uses a bold clan-first heading, e.g. `**Edrag Rush · ✅ WIN**`,
+with `vs DevilHarvesters` on the next line in regular text. The smaller
+per-clan timing line follows, then the account rows. Logos remain on the right.
+The heading uses the existing custom Yes/No emojis. `/todo`
 loads the clans' `fwa_points` records with one batched
 `find({"_id": {"$in": [...]}})` keyed by the distinct clan tags already in the
 War view's rows, and hands the `{clan_tag: record}` mapping into the renderer.
 The Sync number is not shown here.
 
-The suffix is shown **only** when the record's `coc_war_end_time` matches the
+The verdict and opponent are shown **only** when the record's `coc_war_end_time` matches the
 war the rows are actually for — compared against `Row.ends_at`, tolerating up
 to 60 seconds of clock/parsing slack. A mismatch (the site hasn't caught up to
 the current war yet, or the stored record is from an older war against the
 same opponent) renders nothing rather than attaching a stale verdict to the
-wrong war. The opponent label is `(FWA)`, `(not FWA)`, or omitted, from the
-monitor's own scrape of the opponent's page; the verdict text is the shared Yes emoji + `WIN War` /
-the No emoji + `LOSE War` for a readable outcome, or the raw scraped verdict line when the
-outcome could not be determined.
+wrong war. Routine `(FWA)` and `(not FWA)` labels are omitted. The verdict is
+the shared Yes emoji + `WIN` or the No emoji + `LOSE`. An unknown points-site
+outcome leaves the verdict blank while retaining the opponent, rather than
+filling the compact header with raw scraped match text.
 
-If the opponent is on the [FWA blacklist](fwa-blacklist.md), the label becomes
-` 🚫 BLACKLISTED` instead of `(FWA)`/`(not FWA)` — re-checked on every load
+If the opponent is on the [FWA blacklist](fwa-blacklist.md), the sole verdict
+is `🚫 BLACKLISTED`, replacing win/lose or raw explanations such as
+"Not marked as an FWA match". Blacklist membership is re-checked on every load
 (via `_load_fwa_records`), not just what the points monitor saw at scrape
 time, so a clan blacklisted after the scrape still shows correctly.
 

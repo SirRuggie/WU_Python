@@ -6,6 +6,20 @@ FWA war and whether the opponent is itself an FWA clan — and stores the
 result in `mongo.fwa_points` so `/todo`'s War view can show it next to a
 clan's header (see [todo-dashboard.md](todo-dashboard.md)).
 
+The monitor maintains one blue Components V2 **FWA Points live board** in the
+same `LOG_CHANNEL_ID` channel that formerly received plain outcome-event
+messages. Each watched clan has one compact, clan-first bullet with its current
+**WIN**, **LOSE**, or **BLACKLISTED** result. The board is edited in place,
+rather than posting a new message for each scrape outcome.
+
+A detector observation of a new CoC war immediately replaces that clan's old
+result with **WAITING** until the new points verdict arrives. A confirmed
+`notInWar` state waits for the next war. Transient CoC/API errors do not treat
+the war as gone or clear a confirmed state. The durable config binding
+(`board_channel_id`, `board_message_id`) lets startup reuse the message and
+recreate it after a 404. Publication refreshes at startup, after detector
+observations, and after a new points result.
+
 ## Deploy history: why this shipped disabled, and isn't any more
 
 points.fwafarm.com sits behind Cloudflare, which hard-blocks requests from

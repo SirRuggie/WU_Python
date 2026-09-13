@@ -8,8 +8,8 @@ Durable project knowledge. One file per subject.
 > verification greps are there.
 
 Written because it is fundamental, non-obvious, by-design, or was discovered
-the hard way. The standing instruction that governs this folder is in
-[`../CLAUDE.md`](../CLAUDE.md).
+the hard way. Read this index and [editing-this-repo.md](editing-this-repo.md)
+before changing durable documentation.
 
 ## Stack & environment
 
@@ -68,6 +68,28 @@ the hard way. The standing instruction that governs this folder is in
   jobstore, Mongo-backed restore), the select-all + partial-failure pattern to
   copy, and four unguarded 25-option menus that are clear only at current scale.
 
+- [ticket-console-operations.md](ticket-console-operations.md) — the implemented
+  (not yet deployed) ticket operator source of truth: safe `/ticket` + `/tickets`
+  coexistence, channel setup, pilot, promotion, rollback, drain, daily
+  recruiting, terminal legacy cloning, and legacy retirement.
+
+- [ticket-console/README.md](ticket-console/README.md) — plain-English reference
+  for all 22 registered v2 commands, permissions, examples, applicant actions,
+  unbuilt candidate follow-up, and what changes when legacy is retired.
+
+- [ticket-console.md](ticket-console.md) — the implemented v2 console design.
+  Architecture, search, the binary flag system, ticket-history auto-detect,
+  the permanence model, the chart's palette and layout, and two corrections
+  against a mockup that briefly assumed things this stack cannot do.
+  **Reference artifacts live in
+  `docs/ticket-console/`** (`render_overview.py`, the clickable mockup) with
+  the five chart icons in `assets/tickets/`.
+
+- [legacy-ticket-migration.md](legacy-ticket-migration.md) — the implemented,
+  terminal-only legacy clone: read-only Discord sources, resumable destination
+  writes, staff-thread parity, immediate archive, and a one-to-five-ticket
+  pilot gate. Use the operations guide above for executable commands.
+
 ## Proposals
 
 - [todo-dashboard-proposal.md](todo-dashboard-proposal.md) — the pre-build
@@ -76,8 +98,10 @@ the hard way. The standing instruction that governs this folder is in
   for the reasoning behind the options that were not taken.
 
 - [thread-ticketing-proposal.md](thread-ticketing-proposal.md) — research and
-  design for thread-based ticketing + the console dashboard (2026-08-02).
-  Findings, dashboard design, migration plan, risks. **Not yet decided.**
+  historical design for thread-based ticketing + the console dashboard
+  (2026-08-02). Kept for research and component-budget reasoning; its rollout,
+  command, and migration plans are superseded by the
+  [operations guide](ticket-console-operations.md).
 
 - [media-hosting.md](media-hosting.md) — why `/todo` burned through
   Cloudinary's free bandwidth (hikari 2.3.5 downloaded every image URL on
@@ -93,8 +117,9 @@ the hard way. The standing instruction that governs this folder is in
   actually build vs. what Discord supports. **Modals are text-input only.**
 - [component-dispatcher.md](component-dispatcher.md) — how every button, select
   and modal is routed, plus the dispatcher's known defects.
-- [ticket-data-model.md](ticket-data-model.md) — where ticket documents live and
-  why that is not where you would expect.
+- [ticket-data-model.md](ticket-data-model.md) — historical pre-pilot store
+  notes. For the implemented split (`button_store` legacy, `tickets` v2), use the
+  ticket console operations guide.
 - [ticket-status-lifecycle.md](ticket-status-lifecycle.md) — the real status
   values, and why `closed` has one document and open tickets accumulated.
 - [ticket-channel-naming.md](ticket-channel-naming.md) — the ✅ → 🆕 prefix
