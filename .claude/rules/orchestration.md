@@ -17,7 +17,7 @@ delegating anything; `docs/agent-orchestration.md` has the install steps.
 
 | Work | Agent (`.claude/agents/`) | Model | Cost vs Sonnet |
 |---|---|---|---|
-| Find files, symbols, call sites; sweep the tree | `scout` | haiku | 0.5x |
+| Find files, symbols, call sites; sweep the tree | `scout` | sonnet | 1x |
 | Read docs or sources; report facts with citations | `researcher` | sonnet | 1x |
 | Write modules, tests, docs from an explicit spec; fixed-pattern refactors | `builder` | sonnet | 1x |
 | Refute a plan, review a diff, verify a "done" claim | `refuter` | opus | 2.5x |

@@ -36,7 +36,7 @@ the `docs.claude.com` redirect).
 
 | Task | Agent | Model | Why |
 |---|---|---|---|
-| Codebase search, file-location sweeps | `scout` | Haiku 4.5 | mechanical retrieval at the lowest rate; volume matters more than depth |
+| Codebase search, file-location sweeps | `scout` | Sonnet 5 | Haiku missed naming variants in this codebase (aliases, `custom_id` prefixes, string keys); Sonnet's judgment at 1x costs less than a second sweep |
 | Reading docs or library source, summarising with citations | `researcher` | Sonnet 5 | technical reading needs judgment; Haiku is fine for plain summaries |
 | New modules and tests from an explicit spec | `builder` | Sonnet 5 | production coding quality at 1x; a fully specified task needs no frontier reasoning |
 | Refactors across many files following a fixed pattern | `builder` | Sonnet 5 | per-file correctness judgment at volume; Haiku only for near-mechanical replacements |

@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Locates files, symbols, call sites, imports and references. Returns locations only, never file contents. Use when you need to know WHERE something is before deciding what to do about it.
-model: haiku
+model: sonnet
 effort: low
 tools: Read, Grep, Glob, Bash
 color: cyan
