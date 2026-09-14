@@ -1026,26 +1026,31 @@ def _accounts_by_war_clan(
     return by_clan
 
 
-def _ends_at(war) -> int | None:
-    end = getattr(war, "end_time", None)
-    inner = getattr(end, "time", None)
+def _utc_epoch(value) -> int | None:
+    """Return a coc.py timestamp or datetime as Unix seconds in UTC.
+
+    coc.py 3.10 parses Supercell's ``...Z`` API timestamps into naive
+    datetimes even though they represent UTC. ``datetime.timestamp()`` treats
+    a naive value as local time, which shifts every Discord deadline when the
+    bot host is not set to UTC.
+    """
+    inner = value if isinstance(value, datetime) else getattr(value, "time", None)
     if inner is None:
         return None
     try:
+        if inner.tzinfo is None:
+            inner = inner.replace(tzinfo=timezone.utc)
         return int(inner.timestamp())
     except Exception:  # noqa: BLE001
         return None
+
+
+def _ends_at(war) -> int | None:
+    return _utc_epoch(getattr(war, "end_time", None))
 
 
 def _starts_at(war) -> int | None:
-    start = getattr(war, "start_time", None)
-    inner = getattr(start, "time", None)
-    if inner is None:
-        return None
-    try:
-        return int(inner.timestamp())
-    except Exception:  # noqa: BLE001
-        return None
+    return _utc_epoch(getattr(war, "start_time", None))
 
 
 async def build_war_view(
@@ -1424,14 +1429,7 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
             continue
 
         any_started = True
-        ends = None
-        end_time = getattr(entry, "end_time", None)
-        inner = getattr(end_time, "time", None)
-        if inner is not None:
-            try:
-                ends = int(inner.timestamp())
-            except Exception:  # noqa: BLE001
-                ends = None
+        ends = _utc_epoch(getattr(entry, "end_time", None))
 
         for acct in members:
             member = None

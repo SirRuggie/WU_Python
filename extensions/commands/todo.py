@@ -744,8 +744,10 @@ def _fwa_header(first, fwa_records: dict | None) -> tuple[str, str]:
     if not end_time_raw or first.ends_at is None:
         return "", ""
     try:
-        record_ends_at = datetime.fromisoformat(end_time_raw).timestamp()
+        record_ends_at = todo_data._utc_epoch(datetime.fromisoformat(end_time_raw))
     except (ValueError, OverflowError, OSError):
+        return "", ""
+    if record_ends_at is None:
         return "", ""
     if abs(record_ends_at - first.ends_at) > 60:
         return "", ""

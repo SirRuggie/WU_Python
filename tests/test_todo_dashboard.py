@@ -1,6 +1,8 @@
 """Regression tests for /todo rendering and component routing."""
 
 import asyncio
+import os
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -1659,7 +1661,9 @@ def _war_row(*, clan_tag="#2PPCL2GYP", clan_name="Edrag Rush", ends_at=1_800_000
 def test_fwa_suffix_rendered_when_war_end_time_matches():
     row = _war_row()
     record = {
-        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "coc_war_end_time": datetime.fromtimestamp(
+            row.ends_at, tz=timezone.utc
+        ).replace(tzinfo=None).isoformat(),
         "sync_number": 558,
         "opponent_name": "DevilHarvesters",
         "opponent_active_fwa": True,
@@ -1678,12 +1682,42 @@ def test_fwa_suffix_rendered_when_war_end_time_matches():
     assert "(FWA)" not in text
 
 
+def test_fwa_suffix_matches_naive_utc_storage_on_every_host_timezone(monkeypatch):
+    row = _war_row(ends_at=1_800_000_000)
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(
+            row.ends_at, tz=timezone.utc
+        ).replace(tzinfo=None).isoformat(),
+        "opponent_name": "DevilHarvesters",
+        "our_outcome": "win",
+    }
+    saved_tz = os.environ.get("TZ")
+    try:
+        for host_tz in (
+            "UTC", "America/New_York", "Asia/Kolkata", "Asia/Tokyo", "Pacific/Auckland",
+        ):
+            monkeypatch.setenv("TZ", host_tz)
+            time.tzset()
+            verdict, opponent = todo._fwa_header(row, {row.clan_tag: record})
+            assert verdict == f"{todo.emojis.yes} WIN"
+            assert opponent == "vs DevilHarvesters"
+    finally:
+        if saved_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", saved_tz)
+        time.tzset()
+
+
+
 def test_fwa_suffix_omitted_when_war_end_time_does_not_match():
     row = _war_row()
     record = {
         # A different war's end time - over an hour off, well past the 60s
         # tolerance, so this must not be attributed to the current war.
-        "coc_war_end_time": datetime.fromtimestamp(row.ends_at + 3600).isoformat(),
+        "coc_war_end_time": datetime.fromtimestamp(
+            row.ends_at + 3600, tz=timezone.utc
+        ).replace(tzinfo=None).isoformat(),
         "sync_number": 558,
         "opponent_name": "DevilHarvesters",
         "opponent_active_fwa": True,
@@ -1723,7 +1757,9 @@ def test_fwa_suffix_falls_back_to_coc_opponent_name_when_scrape_has_none():
     # rather than dropping the "vs Opponent" part of the header entirely.
     row = _war_row()
     record = {
-        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "coc_war_end_time": datetime.fromtimestamp(
+            row.ends_at, tz=timezone.utc
+        ).replace(tzinfo=None).isoformat(),
         "sync_number": 558,
         "opponent_name": None,
         "coc_opponent_name": "DevilHarvesters",
@@ -1746,7 +1782,9 @@ def test_fwa_suffix_hides_raw_verdict_for_unknown_outcome():
     # small header clean: the opponent is still useful, but no verdict appears.
     row = _war_row()
     record = {
-        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "coc_war_end_time": datetime.fromtimestamp(
+            row.ends_at, tz=timezone.utc
+        ).replace(tzinfo=None).isoformat(),
         "sync_number": 558,
         "our_outcome": "unknown",
         "opponent_name": "DevilHarvesters",
@@ -1770,7 +1808,9 @@ def test_fwa_suffix_shows_blacklisted_and_hides_fwa_status(outcome):
     # or a verbose raw match explanation from the monitor.
     row = _war_row()
     record = {
-        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "coc_war_end_time": datetime.fromtimestamp(
+            row.ends_at, tz=timezone.utc
+        ).replace(tzinfo=None).isoformat(),
         "sync_number": 558,
         "opponent_name": "DevilHarvesters",
         "opponent_active_fwa": True,
@@ -1798,7 +1838,9 @@ def test_fwa_suffix_shows_blacklisted_and_hides_fwa_status(outcome):
 def test_war_header_lose_has_no_fwa_label_and_keeps_timing(active):
     row = _war_row()
     record = {
-        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "coc_war_end_time": datetime.fromtimestamp(
+            row.ends_at, tz=timezone.utc
+        ).replace(tzinfo=None).isoformat(),
         "opponent_name": "Other Clan",
         "opponent_active_fwa": active,
         "our_outcome": "lose",

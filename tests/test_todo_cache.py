@@ -1,10 +1,49 @@
 import asyncio
+import os
 import time
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import coc
 
 from utils import todo_data
+
+
+def test_coc_utc_timestamps_do_not_use_the_host_timezone(monkeypatch):
+    saved_tz = os.environ.get("TZ")
+
+    try:
+        for host_tz in (
+            "UTC", "America/New_York", "Asia/Kolkata", "Asia/Tokyo", "Pacific/Auckland",
+        ):
+            monkeypatch.setenv("TZ", host_tz)
+            time.tzset()
+            for start in (datetime(2026, 1, 15, 12), datetime(2026, 9, 14, 12)):
+                war = SimpleNamespace(
+                    start_time=SimpleNamespace(time=start),
+                    end_time=SimpleNamespace(time=start + timedelta(days=1)),
+                )
+                assert todo_data._starts_at(war) == int(
+                    start.replace(tzinfo=timezone.utc).timestamp()
+                )
+                assert todo_data._ends_at(war) == int(
+                    (start + timedelta(days=1)).replace(tzinfo=timezone.utc).timestamp()
+                )
+
+        aware = SimpleNamespace(
+            start_time=SimpleNamespace(
+                time=datetime(2026, 9, 14, 14, tzinfo=timezone(timedelta(hours=2)))
+            )
+        )
+        assert todo_data._starts_at(aware) == int(
+            datetime(2026, 9, 14, 12, tzinfo=timezone.utc).timestamp()
+        )
+    finally:
+        if saved_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", saved_tz)
+        time.tzset()
 
 
 def test_process_cache_is_bounded(monkeypatch):
