@@ -322,7 +322,11 @@ async def on_started(
 
 
 @loader.listener(hikari.StoppingEvent)
-async def on_stopping(_: hikari.StoppingEvent) -> None:
+@lightbulb.di.with_di
+async def on_stopping(
+    _: hikari.StoppingEvent,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+) -> None:
     """Await every ticket-owned worker before shared REST/Mongo shutdown."""
     global _startup_complete, _staff_context_sweep_after, _staff_context_sweep_complete
     global _thread_intake_ready, _capability_heartbeat_task

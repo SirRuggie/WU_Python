@@ -152,7 +152,7 @@ def test_main_loads_both_ticket_runtimes_and_the_legacy_monitor():
     assert "max_retries=1" not in source
 
 
-def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch):
+def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch, caplog):
     finalized = []
 
     async def worker(name):
@@ -168,14 +168,28 @@ def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch
         async def stop(self):
             self.stops += 1
 
+    class TicketSetup:
+        def __init__(self):
+            self.update_calls = []
+
+        async def update_one(self, query, update):
+            self.update_calls.append((query, update))
+
+    class Mongo:
+        def __init__(self):
+            self.ticket_setup = TicketSetup()
+
     async def run():
         resolution_task = asyncio.create_task(worker("resolution"))
         console_one = asyncio.create_task(worker("console-one"))
         console_two = asyncio.create_task(worker("console-two"))
+        heartbeat = asyncio.create_task(worker("heartbeat"))
         await asyncio.sleep(0)
         workflow = Workflow()
         console_startup = Workflow()
+        mongo = Mongo()
         monkeypatch.setattr(ticket_extension, "_workflow_recovery", workflow)
+        monkeypatch.setattr(ticket_extension, "_capability_heartbeat_task", heartbeat)
         monkeypatch.setattr(resolve, "_resolution_reconciler_task", resolution_task)
         monkeypatch.setattr(console, "_refresh_tasks", {
             1: console_one,
@@ -185,7 +199,7 @@ def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch
         monkeypatch.setattr(ticket_extension, "_staff_context_sweep_after", "ticket_9")
         monkeypatch.setattr(ticket_extension, "_staff_context_sweep_complete", True)
 
-        await ticket_extension.on_stopping(None)
+        await ticket_extension.on_stopping(None, mongo)
         assert workflow.stops == 1
         assert console_startup.stops == 1
         assert resolve._resolution_reconciler_task is None
@@ -193,16 +207,36 @@ def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch
         assert ticket_extension._staff_context_sweep_after is None
         assert ticket_extension._staff_context_sweep_complete is False
         assert ticket_extension.thread_intake_ready() is False
-        assert all(task.done() for task in (resolution_task, console_one, console_two))
-        assert sorted(finalized) == ["console-one", "console-two", "resolution"]
+        assert all(task.done() for task in (heartbeat, resolution_task, console_one, console_two))
+        assert sorted(finalized) == ["console-one", "console-two", "heartbeat", "resolution"]
+        assert mongo.ticket_setup.update_calls == [
+            (
+                {
+                    "_id": "config",
+                    "thread_name_capability_boot_id": ticket_extension._THREAD_NAME_CAPABILITY_BOOT_ID,
+                },
+                {"$unset": {"thread_name_capability_heartbeat_at": ""}},
+            )
+        ]
 
-        await ticket_extension.on_stopping(None)
+        await ticket_extension.on_stopping(None, mongo)
         assert workflow.stops == 2
         assert console_startup.stops == 2
         assert resolve._resolution_reconciler_task is None
         assert console._refresh_tasks == {}
 
+        assert mongo.ticket_setup.update_calls == [
+            (
+                {
+                    "_id": "config",
+                    "thread_name_capability_boot_id": ticket_extension._THREAD_NAME_CAPABILITY_BOOT_ID,
+                },
+                {"$unset": {"thread_name_capability_heartbeat_at": ""}},
+            ),
+        ] * 2
+
     asyncio.run(run())
+    assert "NameError" not in caplog.text
 
 
 def test_ticket_help_matches_the_registered_thread_commands():
