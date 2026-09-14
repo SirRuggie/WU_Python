@@ -65,7 +65,9 @@ class WarMessageTemplates:
                         f"**Second attack options:**\n\n"
                         f"**Option 1:** {stars_2} Base #1 or any base above you for loot\n\n"
                         f"**Option 2:** Wait for 8 hours left and clean up bases with a {stars_3} attack "
-                        f"(maximizing our star potential)"
+                        f"(maximizing our star potential)\n\n"
+                        f"**Option 3:** Check last war's stats. If someone skipped their attack, "
+                        f"their base is fair game for {stars_3}."
                     )),
                     Separator(divider=True),
                     Text(content="### 🎯 **Goal: 150 Stars**"),

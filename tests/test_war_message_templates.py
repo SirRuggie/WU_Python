@@ -53,6 +53,7 @@ def test_win_body_after_header():
     )
     assert "First attack" in combined
     assert "Goal: 150 Stars" in combined
+    assert "**Option 3:** Check last war's stats. If someone skipped their attack, their base is fair game for" in combined
     assert body[-1].content == "-# 📣 *War declaration by Author*"
 
 
