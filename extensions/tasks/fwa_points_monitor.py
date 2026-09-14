@@ -390,15 +390,26 @@ def build_points_board(watch, records, *, updated_at=None):
                 else "❌ LOSE" if outcome == "lose"
                 else "❔ UNKNOWN"
             )
-            opponent = _board_text(
-                rec.get("coc_opponent_name") or rec.get("opponent_name") or "Unknown opponent"
-            )
+            raw_opponent = rec.get("coc_opponent_name") or rec.get("opponent_name")
             score_match = re.search(r"\(([^()]*(?:<|>)[^()]*)\)", str(rec.get("raw_verdict") or ""))
             points = score_match.group(1).strip() if score_match else str(rec.get("point_balance", "?"))
-            detail = f"- **{name}** · **{label}** — vs **{opponent}** · Points **{_board_text(points)}**"
+            if raw_opponent:
+                copyable = raw_opponent.replace("`", "")
+                detail = (
+                    f"- **{name}** · **{label}** · Points **{_board_text(points)}**"
+                    f"\n```\n{copyable}\n```"
+                )
+            else:
+                opponent = _board_text("Unknown opponent")
+                detail = f"- **{name}** · **{label}** — vs **{opponent}** · Points **{_board_text(points)}**"
         elif current_key:
-            opponent = _board_text(rec.get("current_opponent_name") or "current opponent")
-            detail = f"- **{name}** · **⏳ WAITING** — vs **{opponent}**"
+            raw_opponent = rec.get("current_opponent_name")
+            if raw_opponent:
+                copyable = raw_opponent.replace("`", "")
+                detail = f"- **{name}** · **⏳ WAITING**\n```\n{copyable}\n```"
+            else:
+                opponent = _board_text("current opponent")
+                detail = f"- **{name}** · **⏳ WAITING** — vs **{opponent}**"
         else:
             detail = f"- **{name}** · **⏳ WAITING** — next war"
         clan_rows.append(detail)
