@@ -76,6 +76,20 @@ Environment=PYTHONUNBUFFERED=1
 
 ## Configuration
 
+The game-data client now connects directly to `https://api.clashofclans.com/v1`.
+Set `COC_API_TOKEN` in the runtime `.env` to a developer token whose allowed IP
+includes that runtime host's public egress IPv4. Startup fails if it is missing.
+Keep the token out of source control and restrict `.env` to its owner. The
+separate `CLASHKING_API_TOKEN` is still required for shared Discord links.
+
+On 2026-09-14, the official token was configured and verified in the development
+workspace on `agent-forge`. Both tested clans returned HTTP 200. Proxy requests
+returned 403, including cache-busted requests, so this test does not establish
+a simultaneous attack-count difference. The official responses still advertised
+72–120 second cache lifetimes; using the official API does not bypass coc.py's
+or ToDo's local caches. Production configuration and restart are separate from
+this workspace setup.
+
 `.env` at `/home/wubot/wu-bot/.env`, loaded by `load_dotenv()` in `main.py`.
 Appending to that file is the correct way to add an environment variable.
 A service restart is required for the process to read a changed value.

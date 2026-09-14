@@ -41,7 +41,12 @@ import lightbulb
 from dotenv import load_dotenv
 from utils.mongo import MongoClient
 import coc
-from utils.startup import active_extensions, create_clash_client, load_cogs, unique_extensions
+from utils.startup import (
+    active_extensions,
+    create_authenticated_clash_client,
+    load_cogs,
+    unique_extensions,
+)
 from utils.media_store import MediaStore
 from extensions.autocomplete import preload_autocomplete_cache
 from utils import bot_data
@@ -113,7 +118,9 @@ async def on_starting(_: hikari.StartingEvent) -> None:
     global clash_client
 
     # Build coc.py only after Hikari has installed and started its event loop.
-    clash_client = create_clash_client(loop=asyncio.get_running_loop())
+    clash_client = await create_authenticated_clash_client(
+        os.getenv("COC_API_TOKEN", ""), loop=asyncio.get_running_loop()
+    )
     bot_data.data["coc_client"] = clash_client
     registry.register_value(coc.Client, clash_client)
 
@@ -149,7 +156,6 @@ async def on_starting(_: hikari.StartingEvent) -> None:
 
     await client.load_extensions(*all_extensions)
     await client.start()
-    await clash_client.login_with_tokens("")
 
 
 @bot.listen(hikari.StoppingEvent)

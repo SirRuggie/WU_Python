@@ -1593,7 +1593,8 @@ def test_fwa_suffix_rendered_when_war_end_time_matches():
     )]
     text = _payload_text(payload)
 
-    assert "**Edrag Rush** vs DevilHarvesters (FWA) · <:Yes:1397096942907166831> WIN War" in text
+    assert "**Edrag Rush · <:Yes:1397096942907166831> WIN**\nvs DevilHarvesters" in text
+    assert "(FWA)" not in text
 
 
 def test_fwa_suffix_omitted_when_war_end_time_does_not_match():
@@ -1617,7 +1618,7 @@ def test_fwa_suffix_omitted_when_war_end_time_does_not_match():
 
     assert "**Edrag Rush**" in text
     assert "DevilHarvesters" not in text
-    assert "WIN War" not in text
+    assert " WIN" not in text
 
 
 def test_fwa_suffix_omitted_when_no_record_for_the_clan():
@@ -1632,7 +1633,7 @@ def test_fwa_suffix_omitted_when_no_record_for_the_clan():
 
     assert "**Edrag Rush**" in text
     assert "vs " not in text
-    assert "WIN War" not in text
+    assert " WIN" not in text
 
 
 def test_fwa_suffix_falls_back_to_coc_opponent_name_when_scrape_has_none():
@@ -1656,7 +1657,7 @@ def test_fwa_suffix_falls_back_to_coc_opponent_name_when_scrape_has_none():
     )]
     text = _payload_text(payload)
 
-    assert "**Edrag Rush** vs DevilHarvesters (FWA) · <:Yes:1397096942907166831> WIN War" in text
+    assert "**Edrag Rush · <:Yes:1397096942907166831> WIN**\nvs DevilHarvesters" in text
 
 
 def test_fwa_suffix_escapes_raw_verdict_for_unknown_outcome():
@@ -1683,10 +1684,10 @@ def test_fwa_suffix_escapes_raw_verdict_for_unknown_outcome():
     assert expected_escaped in text
 
 
-def test_fwa_suffix_shows_blacklisted_and_hides_fwa_status():
-    # opponent_blacklisted takes over the "(FWA)"/"(not FWA)" spot entirely -
-    # the two facts about the opponent (blacklisted vs Active FWA) are never
-    # shown side by side. The WIN/LOSE verdict half of the line is unchanged.
+@pytest.mark.parametrize("outcome", ["win", "lose", "unknown"])
+def test_fwa_suffix_shows_blacklisted_and_hides_fwa_status(outcome):
+    # Blacklisted is the sole instruction, even with a conflicting outcome
+    # or a verbose raw match explanation from the monitor.
     row = _war_row()
     record = {
         "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
@@ -1694,7 +1695,8 @@ def test_fwa_suffix_shows_blacklisted_and_hides_fwa_status():
         "opponent_name": "DevilHarvesters",
         "opponent_active_fwa": True,
         "opponent_blacklisted": True,
-        "our_outcome": "win",
+        "our_outcome": outcome,
+        "raw_verdict": "Not marked as an FWA match",
     }
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     data[todo.VIEW_WAR] = todo_data.ViewData(rows=[row])
@@ -1704,10 +1706,33 @@ def test_fwa_suffix_shows_blacklisted_and_hides_fwa_status():
     )]
     text = _payload_text(payload)
 
-    assert "vs DevilHarvesters 🚫 BLACKLISTED" in text
-    assert "<:Yes:1397096942907166831> WIN War" in text
+    assert "**Edrag Rush · 🚫 BLACKLISTED**\nvs DevilHarvesters" in text
+    assert " WIN" not in text
+    assert " LOSE" not in text
+    assert "Not marked" not in text
     assert "(FWA)" not in text
     assert "(not FWA)" not in text
+
+
+@pytest.mark.parametrize("active", [True, False, None])
+def test_war_header_lose_has_no_fwa_label_and_keeps_timing(active):
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(row.ends_at).isoformat(),
+        "opponent_name": "Other Clan",
+        "opponent_active_fwa": active,
+        "our_outcome": "lose",
+    }
+    payload = [component.build() for component in todo._render_rows(
+        [row], verb="Ends", stamp_of=lambda row: row.ends_at,
+        fwa_records={row.clan_tag: record},
+    )]
+    text = _payload_text(payload)
+    assert (
+        f"**Edrag Rush · {todo.emojis.no} LOSE**\nvs Other Clan\n"
+        f"-# Ends <t:{row.ends_at}:R>\n0/2 Acct1"
+    ) in text
+    assert "FWA" not in text
 
 
 # ---------------------------------------------------------------------------
