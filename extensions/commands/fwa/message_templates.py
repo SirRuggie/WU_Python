@@ -56,7 +56,8 @@ class WarMessageTemplates:
             Container(
                 accent_color=WAR_COLORS["win"],
                 components=[
-                    Text(content=f"## 💎 <@&{clan_role_id}> **War against `{opponent}` is a WIN war!**"),
+                    Text(content="# ✅ WIN ✅"),
+                    Text(content=f"## <@&{clan_role_id}> vs `{sanitize_opponent_for_header(opponent)}`"),
                     Separator(divider=True),
                     Text(content=f"**First attack:** {stars_3} star your mirror."),
                     Separator(divider=True),
@@ -87,7 +88,8 @@ class WarMessageTemplates:
             Container(
                 accent_color=WAR_COLORS["lose"],
                 components=[
-                    Text(content=f"## ❌ <@&{clan_role_id}> **War against `{opponent}` is a LOSE war!**"),
+                    Text(content="# ❌ LOSE ❌"),
+                    Text(content=f"## <@&{clan_role_id}> vs `{sanitize_opponent_for_header(opponent)}`"),
                     Separator(divider=True),
                     Text(content=f"**First attack:** {stars_2} star your mirror."),
                     Separator(divider=True),
@@ -117,14 +119,15 @@ class WarMessageTemplates:
                 accent_color=WAR_COLORS["blacklisted"],
                 components=[
                     # Main alert with emoji and better formatting
-                    Text(content=f"# 🚨 <@&{clan_role_id}> **BLACKLISTED CLAN ALERT!**"),
+                    Text(content="# 🛡️ BLACKLISTED CLAN 🛡️"),
+                    Text(content=f"## <@&{clan_role_id}> vs `{sanitize_opponent_for_header(opponent)}`"),
                     Text(content=f"## ⚔️ **Switch to War Bases NOW!**"),
                     Separator(divider=True),
 
                     # Context with visual emphasis
                     Text(content=(
                         f"### ⚠️ **Enemy Intel**\n"
-                        f"We're facing **`{opponent}`** - a clan that specifically targets FWA clans for easy wins.\n"
+                        f"We're facing **`{sanitize_opponent_for_header(opponent)}`** - a clan that specifically targets FWA clans for easy wins.\n"
                         f"They're dishonorable and out to destroy us. **Don't let them succeed!**"
                     )),
 
@@ -215,7 +218,8 @@ class WarMessageTemplates:
             Container(
                 accent_color=WAR_COLORS["mismatch"],
                 components=[
-                    Text(content=f"## 🎭 <@&{clan_role_id}> **War against {opponent} is a MISMATCH war!**"),
+                    Text(content="# 🤦 MISMATCH 🤦"),
+                    Text(content=f"## <@&{clan_role_id}> vs `{sanitize_opponent_for_header(opponent)}`"),
                     Separator(divider=True),
                     Text(content=(
                         f"**Attacking is optional** this war. You can:\n"
@@ -297,6 +301,12 @@ def sanitize_opponent_name(name: str) -> str:
     # Don't remove any characters - the name is wrapped in backticks in the templates
     # This preserves all special characters in clan names
     return name.strip()
+
+
+def sanitize_opponent_for_header(name: str) -> str:
+    """Strip backticks from an opponent name before it's wrapped in backticks
+    in a header line, so the code span doesn't break."""
+    return name.replace('`', '')
 
 
 # Component action for copy button (if needed)
