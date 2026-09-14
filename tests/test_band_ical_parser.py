@@ -150,7 +150,10 @@ def test_merge_dedupes_on_uid_across_calendars():
 def test_drop_past():
     events = parse_sync_events(FIXTURE, "Sync3")
     assert drop_past(events, SYNC_START - timedelta(minutes=1)) == events
-    assert drop_past(events, SYNC_START) == []              # starting now is past
+    # Kept through the 1h post-start grace (D011) so offset 0 can still fire and the
+    # poller can still find the event to purge.
+    assert drop_past(events, SYNC_START) == events
+    assert drop_past(events, SYNC_START + timedelta(minutes=59)) == events
     assert drop_past(events, SYNC_START + timedelta(hours=1)) == []
 
 
@@ -213,10 +216,46 @@ def test_reschedule_forces_elapsed_offsets_to_retire():
     assert retire == ["60"]
 
 
-@pytest.mark.parametrize("offsets", [[0], [-5], [0, -1]])
-def test_non_positive_offsets_are_ignored(offsets):
+@pytest.mark.parametrize("offsets", [[-5], [-1], [-5, -1]])
+def test_negative_offsets_are_ignored(offsets):
     send, retire = due_offsets(SYNC_START, SYNC_START - timedelta(minutes=1),
                                {DISCOVERY_OFFSET}, offsets)
+    assert send == []
+    assert retire == []
+
+
+# ---- offset 0 ("at sync time"), D011 ----
+
+def test_offset_zero_never_fires_before_start():
+    send, retire = due_offsets(SYNC_START, SYNC_START - timedelta(seconds=1),
+                               {DISCOVERY_OFFSET}, [0])
+    assert send == []
+    assert retire == []
+
+
+def test_offset_zero_fires_at_and_shortly_after_start():
+    send, retire = due_offsets(SYNC_START, SYNC_START, {DISCOVERY_OFFSET}, [0])
+    assert send == ["0"]
+    assert retire == []
+
+    send, retire = due_offsets(SYNC_START, SYNC_START + timedelta(minutes=9),
+                               {DISCOVERY_OFFSET}, [0])
+    assert send == ["0"]
+    assert retire == []
+
+
+def test_offset_zero_never_fires_after_ten_minutes_late():
+    send, retire = due_offsets(SYNC_START, SYNC_START + timedelta(minutes=10),
+                               {DISCOVERY_OFFSET}, [0])
+    assert send == []
+    assert retire == []
+
+
+def test_offset_zero_never_fires_twice():
+    # Already claimed (a prior poll sent it) - a poll still inside the window must not
+    # send it again.
+    send, retire = due_offsets(SYNC_START, SYNC_START + timedelta(minutes=1),
+                               {DISCOVERY_OFFSET, "0"}, [0])
     assert send == []
     assert retire == []
 

@@ -1,0 +1,271 @@
+"""Schema module for the FWA sync panel storage (docs/mongodb-refactor.md rule 5).
+
+Owns SCHEMA_VERSION, the constructor and `normalize_*` for each of the four
+`fwa_sync_*` collections declared in `utils/mongo.py`, plus the pure recipient
+helper shared by the poller and (in a later brief) the panel/DM UI. Nothing
+here touches Mongo or Discord - see extensions/tasks/band_sync_ical.py for the
+async shell that reads and writes through these shapes.
+
+Collections, each covered by TTL(expire_at) 7 days after the event starts
+(see docs/mongodb-refactor.md rule 11):
+  fwa_sync_config     - singleton, _id="config", permanent (no TTL)
+  fwa_sync_events     - _id="event:{uid}"
+  fwa_sync_responses  - _id="{uid}|{user_id}"
+  fwa_sync_deliveries - _id="delivery:{uid}|{event_version}|{offset}|{user_id}"
+"""
+
+from datetime import timedelta
+
+SCHEMA_VERSION = 1
+
+CONFIG_ID = "config"
+DEFAULT_OFFSETS = [60, 10, 0]
+EVENT_TTL_DAYS = 7
+
+RESPONSE_STATUSES = (None, "in", "maybe", "no")
+DELIVERY_TYPES = ("reminder", "once", "change")
+
+
+# ---- Ids ----
+def event_id(uid) -> str:
+    return f"event:{uid}"
+
+
+def event_version(event) -> str:
+    """Unix-second string of the (already normalized) start time.
+
+    `event["start"]` is expected to already be an aware UTC datetime - callers pass the
+    feed event dict, never a raw Mongo document, so no normalize_start() call happens
+    here (that would create an import cycle with band_ical_parser for no benefit).
+    """
+    return str(int(event["start"].timestamp()))
+
+
+def delivery_id(event, offset, user_id) -> str:
+    return f"delivery:{event['uid']}|{event_version(event)}|{offset}|{user_id}"
+
+
+def response_id(uid, user_id) -> str:
+    return f"{uid}|{user_id}"
+
+
+# ---- Constructors ----
+def new_config_doc(**overrides) -> dict:
+    """The fwa_sync_config singleton, defaults filled, overrides applied last."""
+    doc = {
+        "_id": CONFIG_ID,
+        "enabled": False,
+        "panel_channel_id": None,
+        # {uid, channel_id, message_id} of the panel currently posted, or None. Lives on
+        # the config singleton (not the event row) so it survives purge_finished_events()
+        # deleting the old event's row - see DECISIONS.md D013.
+        "current_panel": None,
+        # Open BAND link button target, settable via /fwasync set-band-url. Falls back
+        # to this BAND page whenever an event carries no url of its own (the iCal
+        # parser does not extract one today - see docs/band-sync-panel.md).
+        "band_url": "https://www.band.us/band/94643112",
+        "offsets": list(DEFAULT_OFFSETS),
+        "announce_on_discovery": True,
+        "legacy_broadcast": False,
+        "dm_user_ids": [],
+        # Kept for load_config()/poll_once() - not part of the panel design, but
+        # already-live operational knobs this schema must not drop.
+        "summary_filter": "sync",
+        "poll_seconds": 300,
+        "stale_hours": 26,
+        "schema_version": SCHEMA_VERSION,
+    }
+    doc.update(overrides)
+    return doc
+
+
+def normalize_config(doc) -> dict:
+    """Fill any missing field with its default; never trust a raw Mongo read."""
+    defaults = new_config_doc()
+    if not doc:
+        return defaults
+    merged = dict(defaults)
+    for key in defaults:
+        if key in doc:
+            merged[key] = doc[key]
+    merged["_id"] = CONFIG_ID
+    merged["schema_version"] = SCHEMA_VERSION
+    merged["dm_user_ids"] = list(merged.get("dm_user_ids") or [])
+    merged["offsets"] = list(merged.get("offsets") or DEFAULT_OFFSETS)
+    return merged
+
+
+def new_event_doc(event, closed_offsets=None, panel_channel_id=None,
+                   panel_message_id=None, first_seen=None, now=None) -> dict:
+    """One durable row per BAND sync event, replacing the old mixed event_state kind."""
+    now = now or event["start"]
+    return {
+        "_id": event_id(event["uid"]),
+        "uid": event["uid"],
+        "calendar": event.get("calendar"),
+        "summary": event.get("summary"),
+        "start_at": event["start"],
+        "event_version": event_version(event),
+        "panel_channel_id": panel_channel_id,
+        "panel_message_id": panel_message_id,
+        # The event_version last rendered into the panel message, or None until the
+        # first successful post/edit. process_event compares this to event_version on
+        # every poll and refreshes whenever they differ, so a refresh that failed or
+        # was interrupted (bot restart) simply retries on the next poll instead of
+        # depending on detect_reschedule firing again (refuter-06 must-fix).
+        "panel_version": None,
+        "closed_offsets": list(closed_offsets or ()),
+        "scheduled_offsets": [],
+        "first_seen": first_seen or now,
+        "updated_at": now,
+        "expire_at": event["start"] + timedelta(days=EVENT_TTL_DAYS),
+    }
+
+
+def normalize_event(doc) -> dict:
+    doc = dict(doc or {})
+    doc.setdefault("closed_offsets", [])
+    doc.setdefault("scheduled_offsets", [])
+    doc.setdefault("panel_channel_id", None)
+    doc.setdefault("panel_message_id", None)
+    doc.setdefault("panel_version", None)
+    return doc
+
+
+def new_response_doc(uid, user_id, start_at, event_version, status,
+                      reminders=None, dm_channel_id=None, dm_message_id=None,
+                      now=None) -> dict:
+    """One row per user per event. Replaced in place on every status change, never
+    appended - see docs/mongodb-refactor.md rule 10 for the CAS pattern the UI brief
+    must use when writing this doc from a button click."""
+    now = now or start_at
+    return {
+        "_id": response_id(uid, user_id),
+        "uid": uid,
+        "event_version": event_version,
+        "user_id": user_id,
+        "status": status,
+        "reminders": list(reminders or ()),
+        "dm_channel_id": dm_channel_id,
+        "dm_message_id": dm_message_id,
+        "updated_at": now,
+        "expire_at": start_at + timedelta(days=EVENT_TTL_DAYS),
+    }
+
+
+def normalize_response(doc) -> dict:
+    doc = dict(doc or {})
+    doc.setdefault("reminders", [])
+    doc.setdefault("status", None)  # "hasn't responded" - distinct from "no" (chose Deny)
+    doc.setdefault("dm_channel_id", None)
+    doc.setdefault("dm_message_id", None)
+    return doc
+
+
+def new_delivery_doc(event, offset, user_id, delivery_type="reminder",
+                      old_start=None, now=None) -> dict:
+    now = now or event["start"]
+    return {
+        "_id": delivery_id(event, offset, user_id),
+        "uid": event["uid"],
+        "event_version": event_version(event),
+        "offset": offset,
+        "recipient_id": user_id,
+        "delivery_type": delivery_type,
+        "calendar": event.get("calendar"),
+        "summary": event.get("summary"),
+        "start_at": event["start"],
+        "end_at": event.get("end"),
+        "old_start_at": old_start,
+        "status": "queued",
+        "failure_count": 0,
+        "queued_at": now,
+        "status_updated_at": now,
+        "expire_at": event["start"] + timedelta(days=EVENT_TTL_DAYS),
+    }
+
+
+def normalize_delivery(doc) -> dict:
+    doc = dict(doc or {})
+    doc.setdefault("failure_count", 0)
+    doc.setdefault("delivery_type", "reminder")
+    return doc
+
+
+# ---- Pure helpers ----
+def _legacy_recipients(config, seen) -> list:
+    """`config["dm_user_ids"]` valid/deduped against `seen`, only when
+    config["legacy_broadcast"] is true - the shared tail of recipients_for_offset and
+    change_recipients (refuter-02 carry-over: this used to be duplicated in both)."""
+    if not config.get("legacy_broadcast"):
+        return []
+    ids = []
+    for raw_id in config.get("dm_user_ids") or ():
+        try:
+            user_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id <= 0 or user_id in seen:
+            continue
+        seen.add(user_id)
+        ids.append(user_id)
+    return ids
+
+
+def recipients_for_offset(config, responses, offset) -> list:
+    """Who gets the reminder DM for this offset, in a stable order.
+
+    `responses` is an iterable of (already status=="in"-filtered or not) response docs;
+    only ones with status=="in" and this offset in their own `reminders` count. Legacy
+    broadcast recipients (`config["dm_user_ids"]`) are appended only when
+    `config["legacy_broadcast"]` is true - this is the flag that lets the automatic
+    broadcast be switched off while the panel is unverified in production (see
+    .claude/scratch/band-sync-panel/STATE.md).
+    """
+    ids = []
+    seen = set()
+    for response in responses or ():
+        if response.get("status") != "in":
+            continue
+        if offset not in (response.get("reminders") or ()):
+            continue
+        user_id = response.get("user_id")
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id <= 0 or user_id in seen:
+            continue
+        seen.add(user_id)
+        ids.append(user_id)
+
+    ids.extend(_legacy_recipients(config, seen))
+    return ids
+
+
+def change_recipients(config, responses) -> list:
+    """Who gets the reschedule change-alert DM, in a stable order.
+
+    Unlike recipients_for_offset, a response counts here purely by status=="in" -
+    the change alert is not one of the user's chosen reminders, so their `reminders`
+    list (including an empty one) never excludes them. Legacy broadcast recipients
+    (`config["dm_user_ids"]`) are appended only when `config["legacy_broadcast"]` is
+    true, same rule as recipients_for_offset.
+    """
+    ids = []
+    seen = set()
+    for response in responses or ():
+        if response.get("status") != "in":
+            continue
+        user_id = response.get("user_id")
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id <= 0 or user_id in seen:
+            continue
+        seen.add(user_id)
+        ids.append(user_id)
+
+    ids.extend(_legacy_recipients(config, seen))
+    return ids

@@ -111,6 +111,21 @@ class MongoClient(AsyncMongoClient):
         # Staff-maintained FWA opponent blacklist. Keyed by sanitized tag (no
         # '#'). See utils/fwa_blacklist.py and docs/fwa-blacklist.md.
         self.fwa_blacklist = self.__settings.get_collection("fwa_blacklist")
+        # FWA sync panel storage (extensions/tasks/band_sync_ical.py,
+        # extensions/tasks/band_sync_schema.py). Four collections replace the old
+        # single fwa_sync_alerts mixed-kind collection; that legacy collection is
+        # kept, read-once, for the startup config migration only - not declared here.
+        # Owner: FWA sync task. Singleton config, permanent (no TTL), _id="config".
+        self.fwa_sync_config = self.__settings.get_collection("fwa_sync_config")
+        # Owner: FWA sync task. One row per BAND event, TTL(expire_at) 7 days after
+        # start, _id="event:{uid}".
+        self.fwa_sync_events = self.__settings.get_collection("fwa_sync_events")
+        # Owner: FWA sync task. One row per user per event, TTL(expire_at) 7 days
+        # after start, _id="{uid}|{user_id}".
+        self.fwa_sync_responses = self.__settings.get_collection("fwa_sync_responses")
+        # Owner: FWA sync task. One row per queued/sent DM, TTL(expire_at) 7 days
+        # after start, _id="delivery:{uid}|{event_version}|{offset}|{user_id}".
+        self.fwa_sync_deliveries = self.__settings.get_collection("fwa_sync_deliveries")
 
 
 async def ensure_clan_tag_index(mongo: "MongoClient") -> bool:

@@ -23,6 +23,14 @@ import icalendar
 # numeric minute labels ("60", "10") so it can never collide with one.
 DISCOVERY_OFFSET = "new"
 
+# How long after start "at sync time" (offset 0) stays fireable, and how long an event
+# stays visible to the poller once its start has passed (see drop_past()). Matches the
+# 1h post-start purge grace in extensions/tasks/band_sync_ical.py:purge_finished_events
+# - drop_past must keep an event at least that long or purge could delete its data
+# before offset 0 ever gets a poll to fire on. See DECISIONS.md D011.
+AT_EVENT_TIME_WINDOW = timedelta(minutes=10)
+POST_START_GRACE = timedelta(hours=1)
+
 
 class BandIcalParseError(Exception):
     """Raised when a payload is not a usable VCALENDAR at all.
@@ -124,14 +132,17 @@ def merge_feeds(*event_lists) -> list:
 
 
 def drop_past(events, now) -> list:
-    """Keep only events that have not started yet.
+    """Keep events that have not started, plus ones inside POST_START_GRACE of start.
 
-    Consequence worth knowing: an offset of 0 ("alert at sync time") can never fire,
-    because an event reaching its start time is dropped on that same poll. Offsets must
-    be > 0 to be meaningful.
+    Used to drop an event the instant its start passed, which made offset 0 ("alert at
+    sync time") impossible: the same poll that first saw now >= start had already
+    removed the event from the merged feed, so due_offsets() never got a chance to fire
+    it (see DECISIONS.md D011). Events now stay visible through the same grace window
+    the poller purges their data on, so a poll landing inside [start, start+10m) can
+    still deliver offset 0 before purge_finished_events() removes the event.
     """
     cutoff = normalize_start(now)
-    return [e for e in events if e["start"] > cutoff]
+    return [e for e in events if e["start"] + POST_START_GRACE > cutoff]
 
 
 def detect_reschedule(stored_start, feed_start) -> bool:
@@ -168,6 +179,11 @@ def due_offsets(start, now, claimed, offsets, announce_on_discovery=True, first_
     `first_seen` can be forced True by the caller after a reschedule, so that offsets
     already elapsed against the NEW time are retired rather than fired - the recipients
     were just told the new time by the change alert.
+
+    Offset 0 ("at sync time") is the one exception to the rules above: it is due only
+    inside [start, start + AT_EVENT_TIME_WINDOW), regardless of first_seen, and a
+    missed window is simply left unclaimed rather than retired or sent late (D011).
+    Negative offsets are never meaningful and are always ignored.
     """
     claimed = set(claimed or ())
     if first_seen is None:
@@ -185,10 +201,21 @@ def due_offsets(start, now, claimed, offsets, announce_on_discovery=True, first_
         (to_send if announce_on_discovery else to_retire).append(DISCOVERY_OFFSET)
 
     for minutes in sorted({int(m) for m in offsets or ()}, reverse=True):
-        if minutes <= 0:
-            continue  # see drop_past(): a non-positive offset can never come due
         label = str(minutes)
         if label in claimed:
+            continue
+        if minutes < 0:
+            continue  # never meaningful; not a real reminder choice
+        if minutes == 0:
+            # "at sync time": due only in a tight window right at/after start (see
+            # drop_past(), which now keeps the event alive long enough for this to be
+            # reachable). Never fires before start, never late past the window, and -
+            # because it is only ever added to to_send, never claimed as "retired" -
+            # simply stops being offered once the window closes, exactly like a missed
+            # poll for any other offset would, but without a late catch-up (deliberate:
+            # "at sync time" said hours late is not useful).
+            if start <= now < start + AT_EVENT_TIME_WINDOW:
+                to_send.append(label)
             continue
         if now < start - timedelta(minutes=minutes):
             continue  # not due yet
