@@ -503,6 +503,80 @@ def test_live_board_bounds_long_watch_lists_without_exceeding_component_budget()
     assert "more watched clans" in _payload_text(built)
 
 
+def test_live_board_result_row_puts_raw_opponent_name_in_a_fenced_block():
+    watch = [{"tag": "#AAA", "name": "Alpha"}]
+    records = {"AAA": {
+        "status": "caught_up", "our_outcome": "win",
+        "raw_verdict": "Alpha should win by points (9 < 12)",
+        "coc_war_key": "WAR-A", "current_war_key": "WAR-A",
+        "coc_opponent_name": "Weird_*~Name",
+    }}
+    text = _payload_text([item.build() for item in monitor.build_points_board(watch, records)])
+    assert "```\nWeird_*~Name\n```" in text
+
+
+def test_live_board_strips_backticks_from_opponent_name_in_fenced_block():
+    watch = [{"tag": "#AAA", "name": "Alpha"}]
+    records = {"AAA": {
+        "status": "caught_up", "our_outcome": "win",
+        "raw_verdict": "Alpha should win by points (9 < 12)",
+        "coc_war_key": "WAR-A", "current_war_key": "WAR-A",
+        "coc_opponent_name": "Ba`d`Clan",
+    }}
+    text = _payload_text([item.build() for item in monitor.build_points_board(watch, records)])
+    assert "```\nBadClan\n```" in text
+
+
+def test_live_board_waiting_row_with_current_opponent_has_fenced_block():
+    watch = [{"tag": "#AAA", "name": "Alpha"}]
+    records = {"AAA": {
+        "coc_war_key": "OLD", "current_war_key": "NEW",
+        "current_opponent_name": "Beta_Clan",
+    }}
+    text = _payload_text([item.build() for item in monitor.build_points_board(watch, records)])
+    assert "```\nBeta_Clan\n```" in text
+
+
+def test_live_board_placeholders_have_no_fenced_block():
+    watch = [
+        {"tag": "#AAA", "name": "Alpha"},
+        {"tag": "#BBB", "name": "Bravo"},
+    ]
+    records = {
+        "AAA": {
+            "status": "caught_up", "our_outcome": "win",
+            "raw_verdict": "Alpha should win by points (9 < 12)",
+            "coc_war_key": "WAR-A", "current_war_key": "WAR-A",
+        },
+        "BBB": {
+            "coc_war_key": "OLD", "current_war_key": "NEW",
+        },
+    }
+    text = _payload_text([item.build() for item in monitor.build_points_board(watch, records)])
+    assert "```" not in text
+    assert "vs **Unknown opponent**" in text
+    assert "vs **current opponent**" in text
+
+
+def test_live_board_chunking_still_caps_at_3300_with_fenced_blocks():
+    watch = [{"tag": f"#{index}", "name": "Clan " + ("x" * 40)} for index in range(100)]
+    records = {
+        f"{index}": {
+            "status": "caught_up", "our_outcome": "win",
+            "raw_verdict": "Clan should win by points (9 < 12)",
+            "coc_war_key": "WAR", "current_war_key": "WAR",
+            "coc_opponent_name": "Opponent " + ("y" * 40),
+        }
+        for index in range(100)
+    }
+    built = [item.build() for item in monitor.build_points_board(watch, records)]
+    for node in _walk(built):
+        content = node.get("content")
+        if content and content.startswith("- **"):
+            assert len(content) <= 3300
+    assert "more watched clan" in _payload_text(built)
+
+
 def test_observing_new_war_persists_rollover_before_publishing(monkeypatch):
     collection = _PointsCollection(find_result={"current_war_key": "OLD"})
     published = []
