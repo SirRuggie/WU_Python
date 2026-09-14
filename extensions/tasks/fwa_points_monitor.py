@@ -17,6 +17,8 @@
 # IP-reputation blocks, so they would not have helped here anyway.
 
 import asyncio
+import hashlib
+import json
 import random
 import re
 import time
@@ -424,6 +426,26 @@ def build_points_board(watch, records, *, updated_at=None):
     return [Container(accent_color=BOARD_ACCENT, components=rows)]
 
 
+def _board_signature(components) -> str:
+    """Fingerprint what members can act on, excluding only the clock footer."""
+    payload = [component.build()[0] for component in components]
+
+    def scrub(value):
+        if isinstance(value, dict):
+            return {
+                str(key): scrub(child)
+                for key, child in value.items()
+                if not (key == "content" and isinstance(child, str)
+                        and child.startswith("-# Updated <t:"))
+            }
+        if isinstance(value, (list, tuple)):
+            return [scrub(child) for child in value]
+        return int(value) if hasattr(value, "value") else value
+
+    canonical = json.dumps(scrub(payload), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 async def _board_snapshot():
     config = await load_config()
     watch = await effective_watch_list(config)
@@ -472,8 +494,34 @@ async def publish_points_board():
         try:
             config, watch, records = await _board_snapshot()
             components = build_points_board(watch, records)
+            signature = _board_signature(components)
             channel_id = int(config.get("board_channel_id") or LOG_CHANNEL_ID)
             message_id = config.get("board_message_id")
+            verify_pending = bool(config.get("board_verify_pending"))
+            if (
+                message_id
+                and signature == config.get("board_signature")
+                and not verify_pending
+                and int(config.get("board_bound_channel_id") or 0) == channel_id
+            ):
+                return
+            if (
+                message_id
+                and signature == config.get("board_signature")
+                and verify_pending
+                and int(config.get("board_bound_channel_id") or 0) == channel_id
+            ):
+                try:
+                    await bot_instance.rest.fetch_message(channel_id, int(message_id))
+                except hikari.NotFoundError:
+                    message_id = None
+                else:
+                    await mongo_client.fwa_points.update_one(
+                        {"_id": "config"},
+                        {"$set": {"board_verify_pending": False}},
+                        upsert=True,
+                    )
+                    return
             if not message_id:
                 recovered = await _recent_board_message(channel_id)
                 message_id = getattr(recovered, "id", None)
@@ -486,7 +534,23 @@ async def publish_points_board():
                     if int(config.get("board_message_id") or 0) != int(message_id):
                         await mongo_client.fwa_points.update_one(
                             {"_id": "config"},
-                            {"$set": {"board_channel_id": channel_id, "board_message_id": int(message_id)}},
+                            {"$set": {
+                                "board_channel_id": channel_id,
+                                "board_bound_channel_id": channel_id,
+                                "board_message_id": int(message_id),
+                                "board_signature": signature,
+                                "board_verify_pending": False,
+                            }},
+                            upsert=True,
+                        )
+                    else:
+                        await mongo_client.fwa_points.update_one(
+                            {"_id": "config"},
+                            {"$set": {
+                                "board_bound_channel_id": channel_id,
+                                "board_signature": signature,
+                                "board_verify_pending": False,
+                            }},
                             upsert=True,
                         )
                     return
@@ -502,7 +566,10 @@ async def publish_points_board():
                             {"_id": "config"},
                             {"$set": {
                                 "board_channel_id": channel_id,
+                                "board_bound_channel_id": channel_id,
                                 "board_message_id": int(recovered_id),
+                                "board_signature": signature,
+                                "board_verify_pending": False,
                             }},
                             upsert=True,
                         )
@@ -518,7 +585,13 @@ async def publish_points_board():
             try:
                 await mongo_client.fwa_points.update_one(
                     {"_id": "config"},
-                    {"$set": {"board_channel_id": channel_id, "board_message_id": int(message.id)}},
+                    {"$set": {
+                        "board_channel_id": channel_id,
+                        "board_bound_channel_id": channel_id,
+                        "board_message_id": int(message.id),
+                        "board_signature": signature,
+                        "board_verify_pending": False,
+                    }},
                     upsert=True,
                 )
             except Exception:
@@ -775,6 +848,9 @@ async def _reconcile_points_startup() -> None:
         print("[FWA Points] Seeded config")
     if detector_task and not detector_task.done():
         return
+    await mongo_client.fwa_points.update_one(
+        {"_id": "config"}, {"$set": {"board_verify_pending": True}}, upsert=True,
+    )
     request_points_board_publish()
     detector_task = asyncio.create_task(
         detector_loop(), name="fwa-points-detector"

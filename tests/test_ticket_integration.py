@@ -823,8 +823,10 @@ def test_console_startup_retries_hub_state_and_dirty_write_once(monkeypatch):
             raise TimeoutError("temporary hub read outage")
         return {"channel_id": 123}
 
-    async def mark_dirty(_mongo, *, reason):
+    async def mark_dirty(_mongo, *, reason, force, verify_message):
         assert reason == "startup recovery"
+        assert force is False
+        assert verify_message is True
         attempts["dirty"] += 1
         if attempts["dirty"] == 1:
             raise TimeoutError("temporary hub write outage")

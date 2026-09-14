@@ -13,6 +13,8 @@ resumes cleanly. Legacy channels themselves are never modified.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import time
 import uuid
@@ -36,6 +38,7 @@ from utils.mongo import MongoClient
 _log = logging.getLogger(__name__)
 _overview_publish_task: asyncio.Task | None = None
 _overview_publish_again = False
+_overview_verify_pending = False
 
 BATCH_LEASE = timedelta(seconds=45)
 BATCH_LEASE_RENEW_SECONDS = 15
@@ -157,6 +160,26 @@ def build_migration_overview_components(
             components.append(Separator(divider=True))
     components.extend([Separator(divider=True), Text(content=f"-# Updated <t:{int(now.timestamp())}:R>")])
     return [Container(accent_color=0x2F80ED, components=components)]
+
+
+def _overview_signature(components: list[Container]) -> str:
+    """Fingerprint visible migration state, but not the cosmetic update clock."""
+    payload = [component.build()[0] for component in components]
+
+    def scrub(value):
+        if isinstance(value, dict):
+            return {
+                str(key): scrub(child)
+                for key, child in value.items()
+                if not (key == "content" and isinstance(child, str)
+                        and child.startswith("-# Updated <t:"))
+            }
+        if isinstance(value, (list, tuple)):
+            return [scrub(child) for child in value]
+        return int(value) if hasattr(value, "value") else value
+
+    canonical = json.dumps(scrub(payload), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _entry(
@@ -589,10 +612,14 @@ async def _recover_migration_overview_message(bot: hikari.GatewayBot, channel_id
     return None
 
 
-async def _publish_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient) -> None:
+async def _publish_migration_overview(
+    bot: hikari.GatewayBot, mongo: MongoClient, *, verify_message: bool = False,
+) -> bool:
     """Publish while holding the overview lease through create and binding."""
+    verify_message = verify_message or _overview_verify_pending
     owner = uuid.uuid4().hex
     now = utcnow()
+    completed = False
     try:
         binding = await mongo.ticket_setup.find_one_and_update(
             {"_id": OVERVIEW_BINDING_ID, "$or": [
@@ -603,7 +630,7 @@ async def _publish_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient
             upsert=True, return_document=ReturnDocument.AFTER,
         )
         if not binding or binding.get("lease_owner") != owner:
-            return
+            return False
         if binding:
             # Fetch batches after acquiring the shared lease so a concurrent
             # publisher cannot overwrite a newer checkpoint with an old view.
@@ -621,14 +648,36 @@ async def _publish_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient
             binding = await mongo.ticket_setup.find_one({"_id": OVERVIEW_BINDING_ID}) or binding
             channel_id = _as_int(binding.get("channel_id")) or await _console_channel_id(mongo)
             if not channel_id:
-                return
+                return False
             components = build_migration_overview_components(
                 batches, now=utcnow(), recovered_done=recovered_done,
             )
+            signature = _overview_signature(components)
             message_id = _as_int(binding.get("message_id"))
+            if message_id and signature == binding.get("overview_signature"):
+                if verify_message:
+                    try:
+                        await bot.rest.fetch_message(channel_id, message_id)
+                    except hikari.NotFoundError:
+                        message_id = 0
+                    else:
+                        await mongo.ticket_setup.update_one(
+                            {"_id": OVERVIEW_BINDING_ID, "lease_owner": owner},
+                            {"$set": {"overview_verify_pending": False}},
+                        )
+                        return True
+                else:
+                    return True
             try:
                 if message_id:
                     await bot.rest.edit_message(channel_id, message_id, components=components)
+                    await mongo.ticket_setup.update_one(
+                        {"_id": OVERVIEW_BINDING_ID, "lease_owner": owner},
+                        {"$set": {
+                            "overview_signature": signature,
+                            "overview_verify_pending": False,
+                        }},
+                    )
                 else:
                     message = await _recover_migration_overview_message(bot, channel_id)
                     if message is not None:
@@ -640,7 +689,11 @@ async def _publish_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient
                         )
                     await mongo.ticket_setup.update_one(
                         {"_id": OVERVIEW_BINDING_ID, "lease_owner": owner},
-                        {"$set": {"channel_id": channel_id, "message_id": int(message.id)}},
+                        {"$set": {
+                            "channel_id": channel_id, "message_id": int(message.id),
+                            "overview_signature": signature,
+                            "overview_verify_pending": False,
+                        }},
                     )
             except hikari.NotFoundError:
                 await mongo.ticket_setup.update_one(
@@ -657,8 +710,13 @@ async def _publish_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient
                     await bot.rest.edit_message(channel_id, message.id, components=components)
                 await mongo.ticket_setup.update_one(
                     {"_id": OVERVIEW_BINDING_ID, "lease_owner": owner},
-                    {"$set": {"channel_id": channel_id, "message_id": int(message.id)}},
+                    {"$set": {
+                        "channel_id": channel_id, "message_id": int(message.id),
+                        "overview_signature": signature,
+                        "overview_verify_pending": False,
+                    }},
                 )
+            completed = True
     except Exception as error:
         _log.warning("[Tickets] migration_overview_refresh_failed error=%s", type(error).__name__)
     finally:
@@ -669,20 +727,28 @@ async def _publish_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient
             )
         except Exception:
             pass
+    return completed
 
 
-async def refresh_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient) -> None:
+async def refresh_migration_overview(
+    bot: hikari.GatewayBot, mongo: MongoClient, *, verify_message: bool = False,
+) -> None:
     """Bounded observational refresh that cannot cancel create-before-bind."""
-    global _overview_publish_task, _overview_publish_again
+    global _overview_publish_task, _overview_publish_again, _overview_verify_pending
+    if verify_message:
+        _overview_verify_pending = True
     task = _overview_publish_task
     if task is not None and not task.done():
         _overview_publish_again = True
     else:
         async def _coalesced_publish() -> None:
-            global _overview_publish_again
+            global _overview_publish_again, _overview_verify_pending
             while True:
                 _overview_publish_again = False
-                await _publish_migration_overview(bot, mongo)
+                verify = _overview_verify_pending
+                completed = await _publish_migration_overview(bot, mongo)
+                if verify and completed:
+                    _overview_verify_pending = False
                 if not _overview_publish_again:
                     return
 
@@ -705,9 +771,15 @@ async def refresh_migration_overview(bot: hikari.GatewayBot, mongo: MongoClient)
         return
 
 
+def request_migration_overview_startup_verification() -> None:
+    """Require one bound-message readback before a startup skip can settle."""
+    global _overview_verify_pending
+    _overview_verify_pending = True
+
+
 async def stop_migration_overview_publisher() -> None:
     """Drain the owned publisher before the shared REST and Mongo clients close."""
-    global _overview_publish_task, _overview_publish_again
+    global _overview_publish_task, _overview_publish_again, _overview_verify_pending
     task = _overview_publish_task
     if task is None:
         return
@@ -720,6 +792,7 @@ async def stop_migration_overview_publisher() -> None:
     finally:
         _overview_publish_task = None
         _overview_publish_again = False
+        _overview_verify_pending = False
 
 
 async def _console_status_link(mongo: MongoClient) -> str | None:

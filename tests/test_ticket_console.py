@@ -4541,6 +4541,10 @@ def test_hub_skips_render_when_chart_signature_is_unchanged_and_not_forced(
     async def flags(_mongo):
         return {"blacklisted": 1}
 
+    async def open_tickets(_mongo, *, limit):
+        assert limit == console.MAX_OPEN_PICKER
+        return [{"_id": "ticket-a", "user_id": 1, "type": "main"}]
+
     async def valid(*_args, **_kwargs):
         return object()
 
@@ -4552,6 +4556,7 @@ def test_hub_skips_render_when_chart_signature_is_unchanged_and_not_forced(
             raise AssertionError("hub edited despite an unchanged signature")
 
     monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.store, "list_open", open_tickets)
     monkeypatch.setattr(console.flag_store, "count_active", flags)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     monkeypatch.setattr(console, "_hub_payload", forbidden_payload)
@@ -4569,6 +4574,26 @@ def test_hub_skips_render_when_chart_signature_is_unchanged_and_not_forced(
     assert message_id == 456
 
 
+def test_hub_signature_detects_changed_picker_with_same_counts(monkeypatch):
+    rows = [{"_id": "older", "user_id": 1, "type": "main"}]
+
+    async def open_tickets(_mongo, *, limit):
+        return rows
+
+    async def counts(_mongo):
+        return {"statuses": {"open": 1}, "by_type": {"main": {"open": 1}}}
+
+    async def flags(_mongo):
+        return {}
+
+    monkeypatch.setattr(console.store, "list_open", open_tickets)
+    monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.flag_store, "count_active", flags)
+    first = asyncio.run(console._chart_signature(object()))
+    rows[:] = [{"_id": "newer", "user_id": 1, "type": "main"}]
+    assert asyncio.run(console._chart_signature(object())) != first
+
+
 def test_hub_forces_a_redraw_when_force_pending_even_if_counts_would_match(
     monkeypatch,
 ):
@@ -4582,6 +4607,9 @@ def test_hub_forces_a_redraw_when_force_pending_even_if_counts_would_match(
 
     async def flags(_mongo):
         return {}
+
+    async def open_tickets(_mongo, *, limit):
+        return []
 
     async def valid(*_args, **_kwargs):
         return object()
@@ -4604,6 +4632,7 @@ def test_hub_forces_a_redraw_when_force_pending_even_if_counts_would_match(
             self.edits += 1
 
     monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.store, "list_open", open_tickets)
     monkeypatch.setattr(console.flag_store, "count_active", flags)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     monkeypatch.setattr(console, "_hub_payload", payload)
@@ -4641,6 +4670,9 @@ def test_force_raised_mid_publish_survives_the_settle_write(monkeypatch):
     async def flags(_mongo):
         return {}
 
+    async def open_tickets(_mongo, *, limit):
+        return []
+
     async def valid(*_args, **_kwargs):
         return object()
 
@@ -4666,6 +4698,7 @@ def test_force_raised_mid_publish_survives_the_settle_write(monkeypatch):
             self.edits += 1
 
     monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.store, "list_open", open_tickets)
     monkeypatch.setattr(console.flag_store, "count_active", flags)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     monkeypatch.setattr(console, "_hub_payload", payload)

@@ -195,6 +195,26 @@ def test_migration_overview_is_fixed_order_and_never_calls_an_expired_lease_runn
     assert "Copying ·" not in expired_content
 
 
+def test_overview_signature_ignores_footer_clock_but_keeps_lease_transition():
+    batch = _batch_document(
+        1024958361306927124, [_ready(1)], state="running",
+        lease_owner="runner", lease_until=NOW + timedelta(seconds=30),
+    )
+    running = legacy_bulk._overview_signature(
+        legacy_bulk.build_migration_overview_components({batch["source_guild_id"]: batch}, now=NOW)
+    )
+    assert running == legacy_bulk._overview_signature(
+        legacy_bulk.build_migration_overview_components(
+            {batch["source_guild_id"]: batch}, now=NOW + timedelta(seconds=1),
+        )
+    )
+    assert running != legacy_bulk._overview_signature(
+        legacy_bulk.build_migration_overview_components(
+            {batch["source_guild_id"]: batch}, now=NOW + timedelta(seconds=31),
+        )
+    )
+
+
 def test_recovered_completed_channels_remain_source_scoped():
     rows = [
         {"source": {"guild_id": 1, "channel_id": 10}},
@@ -289,6 +309,30 @@ def test_overview_timeout_does_not_cancel_create_before_bind(monkeypatch):
         assert finished.is_set()
 
     asyncio.run(scenario())
+
+
+def test_overview_startup_verification_survives_a_failed_publish(monkeypatch):
+    seen = []
+
+    async def publish(_bot, _mongo):
+        seen.append(legacy_bulk._overview_verify_pending)
+        return len(seen) == 2
+
+    monkeypatch.setattr(legacy_bulk, "_publish_migration_overview", publish)
+    legacy_bulk._overview_publish_task = None
+    legacy_bulk._overview_publish_again = False
+    legacy_bulk._overview_verify_pending = False
+
+    async def scenario():
+        await legacy_bulk.refresh_migration_overview(
+            object(), object(), verify_message=True,
+        )
+        assert legacy_bulk._overview_verify_pending is True
+        await legacy_bulk.refresh_migration_overview(object(), object())
+
+    asyncio.run(scenario())
+    assert seen == [True, True]
+    assert legacy_bulk._overview_verify_pending is False
 
 
 def test_overview_404_recovers_recent_owned_panel_without_duplicate_create():

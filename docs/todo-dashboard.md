@@ -1039,6 +1039,14 @@ can therefore contribute at most one regular automatic edit; a full 30-day
 window is 4,320 checks. A deleted or inaccessible Discord message removes its
 exact generation; transient errors postpone only that generation.
 
+Automatic checks save a semantic render signature with the session. The
+cosmetic **Checked** clock is ignored when deciding whether to edit, but each
+successful check still advances `last_checked_at` and `next_refresh_at`. When
+the dashboard is otherwise unchanged, its visible **Checked** time remains at
+the last edit even as background checks continue. The first unchanged check for
+a panel generation reads the bound Discord message to confirm it still exists;
+meaningful dashboard changes still edit it, including timer/state transitions.
+
 Rows written by `7ca8a33` used the numeric message ID as `_id` and promised a
 24–72-hour window. The scheduler continues honoring those rows until their
 original deadline, so deploying this owner model cannot silently break a

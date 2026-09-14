@@ -20,6 +20,13 @@ the war as gone or clear a confirmed state. The durable config binding
 recreate it after a 404. Publication refreshes at startup, after detector
 observations, and after a new points result.
 
+The board stores a semantic signature and skips edits when the watched-clan
+rows are unchanged; only the cosmetic **Updated** clock is excluded. On startup,
+the monitor checks that the bound Discord message still exists before trusting
+an unchanged signature, and recreates the board if it was deleted. An unchanged
+board can therefore keep an older **Updated** time while detector and points
+checks continue. Changes to a clan's war state or verdict still update its row.
+
 ## Deploy history: why this shipped disabled, and isn't any more
 
 points.fwafarm.com sits behind Cloudflare, which hard-blocks requests from

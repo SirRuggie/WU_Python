@@ -574,6 +574,68 @@ def test_board_publisher_edits_bound_message_instead_of_creating(monkeypatch):
     ]
 
 
+def test_board_signature_ignores_refresh_clock_but_keeps_war_state():
+    watch = [{"tag": "AAA", "name": "Alpha"}]
+    waiting = monitor._board_signature(monitor.build_points_board(
+        watch, {}, updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    ))
+    assert waiting == monitor._board_signature(monitor.build_points_board(
+        watch, {}, updated_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+    ))
+    caught_up = monitor._board_signature(monitor.build_points_board(
+        watch, {"AAA": {
+            "current_war_key": "war", "coc_war_key": "war",
+            "current_war_state": "active", "raw_verdict": "WIN (1 > 0)",
+            "status": "caught_up", "our_outcome": "win",
+        }}, updated_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+    ))
+    assert caught_up != waiting
+
+
+def test_board_publisher_skips_unchanged_bound_board_after_success(monkeypatch):
+    components = monitor.build_points_board([], {})
+    signature = monitor._board_signature(components)
+    calls = []
+
+    class Rest:
+        async def edit_message(self, *_args, **_kwargs):
+            calls.append("edit")
+
+    async def snapshot():
+        return {
+            "board_channel_id": 7, "board_bound_channel_id": 7,
+            "board_message_id": 8, "board_signature": signature,
+        }, [], {}
+
+    monkeypatch.setattr(monitor, "bot_instance", type("Bot", (), {"rest": Rest()})())
+    monkeypatch.setattr(monitor, "_board_snapshot", snapshot)
+    asyncio.run(monitor.publish_points_board())
+    assert calls == []
+
+
+def test_board_publisher_failed_edit_does_not_advance_signature(monkeypatch):
+    collection = _PointsCollection()
+
+    class Rest:
+        async def edit_message(self, *_args, **_kwargs):
+            raise RuntimeError("temporary Discord failure")
+
+    async def snapshot():
+        return {
+            "board_channel_id": 7,
+            "board_bound_channel_id": 7,
+            "board_message_id": 8,
+            "board_signature": "previous-success",
+        }, [], {}
+
+    monkeypatch.setattr(monitor, "bot_instance", type("Bot", (), {"rest": Rest()})())
+    monkeypatch.setattr(monitor, "mongo_client", _Mongo(collection))
+    monkeypatch.setattr(monitor, "_board_snapshot", snapshot)
+    asyncio.run(monitor.publish_points_board())
+
+    assert collection.updates == []
+
+
 def test_board_publisher_recreates_missing_binding_and_persists_it(monkeypatch):
     class Missing(Exception):
         pass
@@ -616,9 +678,12 @@ def test_board_publisher_recreates_missing_binding_and_persists_it(monkeypatch):
     monkeypatch.setattr(monitor, "_board_snapshot", snapshot)
     asyncio.run(monitor.publish_points_board())
 
-    assert collection.updates[-1][1] == {"$set": {
-        "board_channel_id": 7, "board_message_id": 99,
-    }}
+    saved = collection.updates[-1][1]["$set"]
+    assert saved["board_channel_id"] == 7
+    assert saved["board_bound_channel_id"] == 7
+    assert saved["board_message_id"] == 99
+    assert saved["board_signature"]
+    assert saved["board_verify_pending"] is False
 
 
 def test_board_publisher_does_not_create_when_reconciliation_read_fails(monkeypatch):

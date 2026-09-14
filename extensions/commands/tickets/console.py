@@ -894,15 +894,14 @@ HUB_LAYOUT_VERSION = 8
 
 async def _chart_signature(mongo: MongoClient) -> str:
     """A stable fingerprint of the hub chart's own inputs: console_counts
-    plus flag counts.
+    plus the exact visible open-ticket picker inputs and flag counts.
 
-    The open-ticket picker's *set membership* is deliberately not part of
-    this -- two different open-ticket sets can have identical totals. That
-    case is covered separately by ``force_pending``, which every ticket
-    create/decide/flag change sets regardless of whether this signature
-    happens to net out unchanged.
+    ``force_pending`` still forces live create/decide/flag changes through,
+    but picker identity is included too: work completed while the bot was
+    offline can preserve aggregate counts while changing the oldest options.
     """
-    raw_counts, flag_counts = await asyncio.gather(
+    open_tickets, raw_counts, flag_counts = await asyncio.gather(
+        store.list_open(mongo, limit=MAX_OPEN_PICKER),
         store.console_counts(mongo), flag_store.count_active(mongo),
     )
     statuses, by_type = _coerce_counts(raw_counts)
@@ -911,6 +910,16 @@ async def _chart_signature(mongo: MongoClient) -> str:
         {
             "layout": HUB_LAYOUT_VERSION,
             "statuses": statuses, "by_type": by_type, "flags": flags,
+            "picker": [
+                {
+                    "id": _ticket_id(ticket_doc),
+                    "label": _ticket_label(ticket_doc, username=True, markdown=False),
+                    "user_id": _int(ticket_doc.get("user_id")),
+                    "type": _ticket_type(ticket_doc),
+                }
+                for ticket_doc in open_tickets[:MAX_OPEN_PICKER]
+                if _ticket_id(ticket_doc) and len(_ticket_id(ticket_doc)) <= 100
+            ],
         },
         sort_keys=True, separators=(",", ":"),
     )
@@ -956,7 +965,9 @@ async def _ensure_hub_state(mongo: MongoClient) -> None:
     )
 
 
-async def _mark_hub_dirty(mongo: MongoClient, *, reason: str, force: bool = True) -> int:
+async def _mark_hub_dirty(
+    mongo: MongoClient, *, reason: str, force: bool = True, verify_message: bool = False,
+) -> int:
     """Bump the durable dirty revision. ``force=True`` (the default) means a
     create/decide/flag-style change: the next publish must fully redraw even
     if the chart signature happens to look unchanged (open-ticket set
@@ -971,6 +982,8 @@ async def _mark_hub_dirty(mongo: MongoClient, *, reason: str, force: bool = True
     }
     if force:
         update["$set"]["force_pending"] = True
+    if verify_message:
+        update["$set"]["verify_message_pending"] = True
     state = await mongo.ticket_setup.find_one_and_update(
         {"_id": HUB_STATE_ID},
         update,
@@ -1141,18 +1154,38 @@ async def _publish_hub(
     if message_id and not state.get("force_pending", True):
         signature = await _chart_signature(mongo)
         if signature == state.get("chart_signature"):
-            # Every applicant message dirties the hub, but the chart and
-            # open-ticket picker only ever change on a create/decide/flag
-            # event -- those always set force_pending, so an unchanged
-            # signature here means there is nothing new to draw. Skip the
-            # Pillow render and Discord PNG re-upload.
-            return message_id
+            if state.get("verify_message_pending"):
+                try:
+                    await bot.rest.fetch_message(channel_id, message_id)
+                except hikari.NotFoundError:
+                    message_id = 0
+                else:
+                    await mongo.ticket_setup.update_one(
+                        {"_id": HUB_STATE_ID, "desired_revision": entry_revision},
+                        {"$set": {
+                            "force_pending": False,
+                            "verify_message_pending": False,
+                            "chart_signature": signature,
+                        }},
+                    )
+                    return message_id
+            else:
+                # Every applicant message dirties the hub, but the chart and
+                # open-ticket picker only ever change on a create/decide/flag
+                # event -- those always set force_pending, so an unchanged
+                # signature here means there is nothing new to draw. Skip the
+                # Pillow render and Discord PNG re-upload.
+                return message_id
     # Always store the signature of what is actually drawn (the forced path
     # used to leave it unwritten), so a later non-forced publish compares
     # against the right baseline instead of stale or missing data.
     if signature is None:
         signature = await _chart_signature(mongo)
-    settle_fields: dict = {"force_pending": False, "chart_signature": signature}
+    settle_fields: dict = {
+        "force_pending": False,
+        "verify_message_pending": False,
+        "chart_signature": signature,
+    }
 
     async def _settle() -> None:
         # Conditioned on the revision read at entry: if a ticket change
@@ -6795,7 +6828,9 @@ async def _recover_ticket_console_once(
     state = await _hub_state(mongo)
     if not _int(state.get("channel_id")):
         return
-    await _mark_hub_dirty(mongo, reason="startup recovery")
+    await _mark_hub_dirty(
+        mongo, reason="startup recovery", force=False, verify_message=True,
+    )
     _schedule_hub_refresh(bot, mongo)
 
 

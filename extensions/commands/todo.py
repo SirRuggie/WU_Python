@@ -58,6 +58,9 @@ Design rules enforced here, each of which cost real investigation to establish:
 
 import asyncio
 import contextlib
+import hashlib
+import json
+import re
 import time
 import weakref
 from collections import OrderedDict
@@ -98,6 +101,7 @@ _auto_refresh_task: asyncio.Task | None = None
 _refresh_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
+_refresh_readbacks: set[tuple[str, int, str | None]] = set()
 
 # Keep the complete four-view result that was used to render each live panel.
 # Component routing remains stateless: a cache miss still performs the normal
@@ -188,6 +192,24 @@ def _refresh_lock(owner_id: str) -> asyncio.Lock:
         lock = asyncio.Lock()
         _refresh_locks[owner_id] = lock
     return lock
+
+
+def _refresh_signature(components: list) -> str:
+    """Keep the panel's checked clock out of automatic edit decisions."""
+    payload = [component.build()[0] for component in components]
+
+    def scrub(value):
+        if isinstance(value, dict):
+            return {str(key): scrub(child) for key, child in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [scrub(child) for child in value]
+        if isinstance(value, str):
+            return re.sub(r"^(-# Checked )<t:\d+:R>", r"\1<t:clock:R>", value)
+        return int(value) if hasattr(value, "value") else value
+
+    return hashlib.sha256(json.dumps(
+        scrub(payload), sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest()
 
 # ---------------------------------------------------------------------------
 # THE COMPONENT BUDGET. This is what pages are measured in - NOT rows.
@@ -2173,9 +2195,17 @@ async def _refresh_session(
                 refresh_until=latest.get("refresh_until"),
                 fwa_records=fwa_map,
             )
-            await bot.rest.edit_message(
-                channel_id, message_id, components=rendered
-            )
+            signature = _refresh_signature(rendered)
+            readback_key = (owner_id, int(message_id), generation)
+            unchanged = signature == latest.get("render_signature")
+            if unchanged and readback_key not in _refresh_readbacks:
+                await bot.rest.fetch_message(channel_id, message_id)
+                _refresh_readbacks.add(readback_key)
+            if not unchanged:
+                await bot.rest.edit_message(
+                    channel_id, message_id, components=rendered
+                )
+                _refresh_readbacks.add(readback_key)
             _snapshot_put(
                 user_id,
                 channel_id,
@@ -2189,6 +2219,7 @@ async def _refresh_session(
                 mongo, owner_id, message_id, generation,
                 checked_at=checked_at,
                 kind="notice" if problem else "dashboard",
+                render_signature=signature,
             )
             if recorded:
                 return "updated"
@@ -2291,4 +2322,5 @@ async def stop_auto_refresh(_: hikari.StoppingEvent) -> None:
             pass
     _auto_refresh_task = None
     _refresh_locks.clear()
+    _refresh_readbacks.clear()
     print("[todo-refresh] stopped")

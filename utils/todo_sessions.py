@@ -354,21 +354,25 @@ async def update_navigation(
 async def mark_refreshed(mongo, owner_id: str, message_id: int,
                          generation: str | None, *,
                          checked_at: datetime | None = None,
-                         kind: str = "dashboard") -> bool:
+                         kind: str = "dashboard",
+                         render_signature: str | None = None) -> bool:
     """Schedule the next check without extending the panel's lifetime."""
     if mongo is None:
         return False
     checked = _utc(checked_at)
     try:
+        fields = {
+            "kind": kind,
+            "last_checked_at": checked,
+            "next_refresh_at": checked + timedelta(seconds=REFRESH_INTERVAL_SECONDS),
+            "updated_at": checked.timestamp(),
+            "last_trigger": "automatic",
+        }
+        if render_signature is not None:
+            fields["render_signature"] = str(render_signature)
         result = await _coll(mongo).update_one(
             _identity(owner_id, message_id, generation),
-            {"$set": {
-                "kind": kind,
-                "last_checked_at": checked,
-                "next_refresh_at": checked + timedelta(seconds=REFRESH_INTERVAL_SECONDS),
-                "updated_at": checked.timestamp(),
-                "last_trigger": "automatic",
-            }},
+            {"$set": fields},
         )
         return int(getattr(result, "matched_count", 0) or 0) == 1
     except Exception as exc:  # noqa: BLE001

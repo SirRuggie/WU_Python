@@ -1224,6 +1224,75 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     assert snapshot.checked_at != 100
 
 
+def test_automatic_refresh_reads_back_unchanged_panel_without_edit(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    calls = []
+
+    class Rest:
+        async def fetch_message(self, channel_id, message_id):
+            calls.append(("fetch", channel_id, message_id))
+
+        async def edit_message(self, *_args, **_kwargs):
+            raise AssertionError("unchanged panel was edited")
+
+    async def fake_load(*_args, **_kwargs):
+        return data, None, None
+
+    async def fake_get(*_args):
+        return True, {"view": todo.VIEW_WAR, "page": 0, "render_signature": "same"}
+
+    async def fake_mark(*_args, **kwargs):
+        calls.append(("mark", kwargs["render_signature"]))
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo, "_refresh_signature", lambda _components: "same")
+    monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
+    monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", fake_mark)
+    todo._refresh_locks.clear()
+    todo._refresh_readbacks.clear()
+    assert asyncio.run(todo._refresh_session(
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77},
+        SimpleNamespace(rest=Rest()), object(), object(),
+    )) == "updated"
+    assert calls == [("fetch", 66, 55), ("mark", "same")]
+
+
+def test_automatic_refresh_failed_edit_does_not_record_render_signature(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    postponed = []
+
+    class Rest:
+        async def edit_message(self, *_args, **_kwargs):
+            raise RuntimeError("temporary Discord failure")
+
+    async def fake_load(*_args, **_kwargs):
+        return data, None, None
+
+    async def fake_get(*_args):
+        return True, {"view": todo.VIEW_WAR, "page": 0}
+
+    async def forbidden_mark(*_args, **_kwargs):
+        raise AssertionError("failed REST edit recorded a fingerprint")
+
+    async def fake_postpone(*args, **_kwargs):
+        postponed.append(args[1:4])
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
+    monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", forbidden_mark)
+    monkeypatch.setattr(todo.todo_sessions, "postpone", fake_postpone)
+    todo._refresh_locks.clear()
+    assert asyncio.run(todo._refresh_session(
+        {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
+         "channel_id": 66, "user_id": 77},
+        SimpleNamespace(rest=Rest()), object(), object(),
+    )) == "failed"
+    assert postponed == [("dm:77:66", 55, "gen")]
+
+
 def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
     until = datetime(2026, 8, 6, 15, tzinfo=timezone.utc)
     rest = _Rest()
@@ -1422,6 +1491,18 @@ def test_malformed_due_row_is_deleted_without_loading(monkeypatch):
     assert result == "removed"
     assert discarded == ["wrong-key"]
     assert todo._snapshot_get(77, 66, 55) is None
+
+
+def test_auto_refresh_signature_ignores_checked_clock_but_keeps_deadline():
+    first = todo._refresh_signature(todo._panel([
+        todo.Text(content="-# Checked <t:1:R> · Stops <t:100:R>"),
+    ]))
+    assert first == todo._refresh_signature(todo._panel([
+        todo.Text(content="-# Checked <t:2:R> · Stops <t:100:R>"),
+    ]))
+    assert first != todo._refresh_signature(todo._panel([
+        todo.Text(content="-# Checked <t:2:R> · Stops <t:101:R>"),
+    ]))
 
 
 def test_automatic_refresh_removes_missing_message_session(monkeypatch):

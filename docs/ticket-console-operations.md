@@ -175,6 +175,14 @@ command; use the approved maintenance path to repair the saved binding before
 retrying. If the channel still exists but the bot cannot access it, restore the
 bot's access and retry there. Do not create a second console elsewhere.
 
+The hub compares its saved semantic signature (counts, flags, and the visible
+open-ticket picker) before rendering and editing. Startup also reads the bound
+Discord message once when the signature is unchanged; a missing message is
+recreated. Applicant activity or a restart can therefore trigger a check
+without changing the hub. When the visible hub is unchanged, its **Updated**
+footer stays at the last edit time. Ticket counts, picker choices, or meaningful
+visible state changes still publish a new hub.
+
 Manage the allowlist and inspect all bindings with:
 
 ```text
@@ -667,6 +675,12 @@ as interrupted instead. Completed rows do not suggest rerunning or resuming.
 The panel refreshes from existing dry-run/run checkpoints and around startup
 recovery, then reuses its saved message binding. It is observational: missing
 or inaccessible panel delivery is logged and never stops the migration.
+Before editing, it compares the saved semantic overview state; the cosmetic
+**Updated** clock alone does not trigger an edit. Startup verifies the bound
+message once when that state is unchanged and recreates it if missing. Thus
+**Updated** can remain old while startup/recovery checks continue. Meaningful
+row changes still edit the panel, including a scan becoming stale or a live
+copy lease ending.
 
 Applicant existence is checked even when a source record or admin override
 already supplies the name. A member who left the server still qualifies if
