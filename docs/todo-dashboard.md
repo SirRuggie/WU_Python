@@ -112,7 +112,7 @@ mean that player owes all five attacks.
 | What | Source | Auth |
 |---|---|---|
 | Discord ID ↔ player tags | `POST https://api.clashk.ing/v2/links/shared` | developer bearer token |
-| Player, clan, war, CWL, raid log | coc.py via `proxy.clashk.ing` | proxy handles it |
+| Player, clan, war, CWL, raid log | coc.py via `api.clashofclans.com/v1` | `COC_API_TOKEN` |
 | Recent player → clan candidates | Mongo `player_clan_candidates` | bot-owned, 30-day TTL |
 | Clan logos | Mongo `clans` collection, field `logo` | existing client |
 
@@ -431,8 +431,8 @@ button.
 
 "Checked" is deliberate wording. The bot may satisfy a lookup from its bounded
 cache; "fetched" would incorrectly promise that every source was bypassed. Check
-now still drops wu-bot's render caches, while coc.py and the upstream proxy may
-legitimately satisfy the resulting request from their own TTL caches.
+now still drops wu-bot's render caches, while coc.py and the official API
+upstream may legitimately satisfy the resulting request from their TTL caches.
 
 `oldest_fill()` remains a cache diagnostic, and `DATA_PREFIXES` remains the
 single source for manual cache-drop coverage, but neither drives user-facing
@@ -440,8 +440,8 @@ freshness text now.
 
 ### API deadline timestamps are UTC instants
 
-**Finding recorded 2026-09-13; the fix was local-only and not yet deployed at
-that point.** coc.py 3.10 parses Supercell API values ending in `Z` into
+**Finding recorded 2026-09-13; fixed and deployed in `e151010`.** coc.py 3.10
+parses Supercell API values ending in `Z` into
 *naive* Python datetimes exposed through `Timestamp.time`. Those values are
 nevertheless UTC instants. Calling `datetime.timestamp()` on one makes Python
 interpret it in the bot host's timezone. On an EDT host this made a live 10 h

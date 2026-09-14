@@ -25,12 +25,10 @@ TWO THINGS THIS DELIBERATELY DOES NOT DO
    minutes" the bot showed would be invented. `started_at()` is offered
    because elapsed time is real; there is no `ends_at()` because it is not.
 
-2. It does not distinguish Supercell from the proxy. We talk to
-   proxy.clashk.ing (utils/startup.py:78), so a 503 means "Clash is down OR
-   ClashKing's proxy is" and the exception cannot tell them apart. The user
-   facing copy says "Clash is in maintenance" because that is what it is the
-   large majority of the time and it is what members understand - accepted
-   deliberately, not overlooked.
+2. It does not manufacture a more specific status than the official API's 503.
+   The direct client talks to `api.clashofclans.com/v1`, and the user-facing
+   copy says "Clash is in maintenance" because that is the actionable message
+   members understand.
 """
 
 from datetime import datetime, timezone

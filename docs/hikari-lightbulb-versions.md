@@ -112,8 +112,8 @@ It never existed. PyPI has 3.9.0, 3.9.1, 3.10.0, 4.0.0.
   recorded attacks, because `max(int)` is not iterable. A live crash in the
   `/todo` raid path.
 - **`coc/http.py`**: `(await resp.json())["keys"]` → `.get("keys", {})`.
-  Hardens login against a non-JSON response — relevant because every call goes
-  through the `proxy.clashk.ing` third party.
+  Hardens login against a non-JSON response — at the time of this upgrade
+  analysis, every call went through the `proxy.clashk.ing` third party.
 - `coc/enums.py` adds new troop/spell/equipment names to the ordering lists
   (additive only). `coc/abc.py` gains day/minute/second upgrade-time precision.
 - Everything else is static game-data JSON, **inert here**: `main.py` sets

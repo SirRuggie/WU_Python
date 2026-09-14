@@ -2,13 +2,13 @@
 
 This is a rollback plan, not an instruction to deploy or restart the bot.
 
-## Verified production baseline
+## Verified proxy-compatible rollback baseline
 
-The active production checkout is the clean commit
-`a9653af2db9690476aa1157c88b4ccef194e63ad` at
-`/home/botrunner/wu-bot`. It uses `https://proxy.clashk.ing/v1` and already
-calls `login_with_tokens("")`. That empty placeholder is the established
-proxy-compatible baseline; it is not a new compatibility commit.
+The direct-API migration's parent is the clean commit
+`a9653af2db9690476aa1157c88b4ccef194e63ad`. It used
+`https://proxy.clashk.ing/v1` and already called `login_with_tokens("")`. That
+empty placeholder is the established proxy-compatible rollback baseline, not
+the active production revision or a new compatibility commit.
 
 The development workspace revision `ba08d65` is an older ancestor of this
 baseline. Never reset, check out, or deploy that workspace revision as a
@@ -21,8 +21,11 @@ features still require the ClashKing token.
 ## Rollback sequence
 
 The direct-official-API change is one isolated commit above the verified
-baseline. If it needs to be rolled back, confirm the checkout and working tree
-first, then revert only that migration commit as `botrunner`:
+baseline. Current production also contains later timezone and documentation
+commits, so inspect the deployed graph before reverting and do not assume one
+reverse commit restores every historical detail. To revert the API migration
+itself, confirm the checkout and working tree first, then revert its verified
+commit as `botrunner`:
 
 ```bash
 sudo -n -u botrunner -- git -C /home/botrunner/wu-bot status --short

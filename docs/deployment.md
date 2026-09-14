@@ -1,13 +1,27 @@
 # Deployment topology
 
-None of this is discoverable from the repo — the systemd unit is not tracked and
-the venv path is invisible from the code. Verified 2026-08-02.
+The service unit is tracked at `deploy/wu-bot.service`; the runtime venv path
+and host configuration are not discoverable from the code.
 
-## The box
+## Current runtime
 
-A move to Ruggie's Zone is in progress — see
-[Moving to Ruggie's Zone (September 2026)](#moving-to-ruggies-zone-september-2026)
-below; this section still describes the old Hetzner box as of writing.
+The running service uses the `botrunner` account and this checkout:
+
+| | |
+|---|---|
+| Repo | `/home/botrunner/wu-bot`, branch `main` |
+| Python | `/home/botrunner/wu-bot/venv/bin/python` |
+| Entrypoint | `main.py` |
+| Service | `wu-bot.service` |
+
+Use that path for current operator work. The direct official Clash API client
+requires `COC_API_TOKEN`; shared ClashKing link features separately require
+`CLASHKING_API_TOKEN`.
+
+## Historical Hetzner box (before the September 2026 move)
+
+This preserved reference describes the old `wubot` Hetzner host. It is not the
+current deployment path or service identity.
 
 Hetzner VPS:
 
@@ -26,7 +40,7 @@ On 2026-08-02 the host reported that a restart was pending for a kernel update.
 That is a dated observation, not proof that a restart is still pending. A host
 restart will bounce the bot and should be scheduled deliberately.
 
-## venv
+## Historical Hetzner venv
 
 `/home/wubot/wu-bot/venv` — and it is **not activated in a plain ssh session**.
 Always call the interpreter or pip by explicit path:
@@ -38,7 +52,7 @@ Always call the interpreter or pip by explicit path:
 Never hand back a bare `pip install` for this project; it will hit the system
 Python and silently do nothing useful.
 
-## systemd
+## Historical Hetzner systemd unit
 
 Verified unit at `/etc/systemd/system/wu-bot.service`:
 
@@ -86,7 +100,8 @@ separate `CLASHKING_API_TOKEN` remains required for shared Discord links.
 Appending to that file is the correct way to add an environment variable.
 A service restart is required for the process to read a changed value.
 
-Names present when inspected on 2026-08-02 (values deliberately omitted):
+Historical names present when inspected on 2026-08-02 (values deliberately
+omitted):
 
 ```text
 DISCORD_TOKEN
@@ -96,6 +111,9 @@ CLOUDINARY_API_KEY
 CLOUDINARY_API_SECRET
 CLASHKING_API_TOKEN
 ```
+
+That snapshot predates the direct-API migration. Current production also
+requires `COC_API_TOKEN`; never infer its absence from this historical list.
 
 The two `CLOUDINARY_*` names are retired: since the September 2026 move to
 Cloudflare R2 nothing reads them, and image uploads need the `R2_*` names in
@@ -469,20 +487,20 @@ Ruggie, not Codex, performs deployments. These are commands to hand to the
 operator when appropriate:
 
 ```bash
-cd /home/wubot/wu-bot
-git pull origin main
-/home/wubot/wu-bot/venv/bin/pip install -r requirements.txt
-sudo systemctl restart wu-bot
+cd /home/botrunner/wu-bot
+sudo -n -u botrunner -- git pull --ff-only
+sudo -n -u botrunner -- /home/botrunner/wu-bot/venv/bin/pip install -r /home/botrunner/wu-bot/requirements.txt
+sudo /usr/bin/systemctl restart wu-bot.service
 ```
 
 Useful read-only checks:
 
 ```bash
-sudo systemctl status wu-bot
-sudo systemctl cat wu-bot.service
-sudo journalctl -u wu-bot -f --lines=60
-sudo journalctl -u wu-bot --since "1 hour ago" | grep -i error
-/home/wubot/wu-bot/venv/bin/python --version
+sudo /usr/bin/systemctl status wu-bot.service
+sudo /usr/bin/systemctl cat wu-bot.service
+sudo journalctl -u wu-bot.service -f --lines=60
+sudo journalctl -u wu-bot.service --since "1 hour ago" | grep -i error
+/home/botrunner/wu-bot/venv/bin/python --version
 ```
 
 After a restart, the historical scheduler check was:

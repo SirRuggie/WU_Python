@@ -141,25 +141,18 @@ i.e. `GET {base_url}/players/%23JY9J2Y99`. Cheapest possible call, one object,
 no war-log permission needed, and the tag is a real account the library
 hardcodes for this purpose.
 
-**But our `base_url` is not Supercell.** `utils/startup.py:76-82`:
+**Our client now talks directly to Supercell.** `utils/startup.py` sets its
+base URL to `https://api.clashofclans.com/v1` and authenticates with
+`COC_API_TOKEN` before extensions load. A 503 therefore comes from the
+official API path rather than the retired ClashKing proxy:
 
 ```python
-return coc.Client(
-    loop=active_loop,
-    base_url="https://proxy.clashk.ing/v1",
-    ...
-)
+return coc.Client(..., base_url="https://api.clashofclans.com/v1", ...)
 ```
 
-So a 503 means **either** "Supercell is in maintenance" **or** "proxy.clashk.ing
-is down / returning 503 of its own". `coc.Maintenance` cannot distinguish them,
-and neither can we without a second, independent probe. The user-facing copy
-says "Clash is in maintenance" anyway — a deliberate call, taken 2026-08-06, on
-the grounds that it is what members recognise and what it is the large majority
-of the time. The cost is accepted and known: during a ClashKing proxy outage the
-bot will say "maintenance" and be wrong. Getting a direct read on
-`api.clashofclans.com` would require our own API key and IP allow-listing, which
-we do not have on the bot box; the proxy is the whole point of the pin.
+A `coc.Maintenance` exception now reflects an HTTP 503 from that official API
+path. The user-facing copy says "Clash is in maintenance", which is the
+actionable explanation for members.
 
 ## The events client we are not using
 
@@ -294,21 +287,16 @@ Wired into `/todo` and the FWA points monitor:
 | `extensions/commands/todo.py` | 1226 | the all-dead notice gets a maintenance variant |
 | `extensions/tasks/fwa_points_monitor.py` | 91 | split; usually the first thing to notice a break, since it runs on a timer |
 
-**The proxy question is instrumented, not answered.** It is still unverified
-whether `proxy.clashk.ing` forwards a Supercell 503 *as* a 503 — and if it
-rewrites it to 500/502, coc.py raises `HTTPException`/`GatewayError`, the
-maintenance path never fires, and it fails silently. `_http_detail()`
-(`todo_data.py:429`) logs the raw `status=` and `reason=` on every non-
-maintenance HTTP failure, so the next window diagnoses itself rather than
-costing two. What to grep for after the next break:
+`_http_detail()` logs the raw `status=` and `reason=` on every non-maintenance
+HTTP failure. What to grep for after the next break:
 
 ```bash
 sudo journalctl -u wu-bot --since "2 hours ago" --no-pager | grep -iE "maintenance|lookup failed"
 ```
 
-A `[maintenance]` line means it worked. A `status=502`/`status=500` on the
-`lookup failed` lines instead means the proxy rewrites it and the `except`
-clauses need to widen.
+A `[maintenance]` line means the 503 path worked. A `status=502`/`status=500`
+on `lookup failed` lines is a separate upstream or network failure, not evidence
+that a proxy rewrote a Supercell response.
 
 Recovery needs no special handling: `TTL_ERROR` is 60s
 (`todo_data.py:105`), so one **Check now** clears the cached errors once the API
@@ -336,11 +324,8 @@ All read 2026-08-06 from the `coc.py==3.10.0` wheel.
 - `coc/events.py:422-423, 449, 908` — `_in_maintenance_event` and the pollers gated on it
 - `coc/events.py:671-673`, `coc/events.pyi:175-177` — the two client events
 - `coc/client.py` (every method) — `Maintenance` in the `Raises` block
-- `utils/startup.py:68-82` — our client: plain `coc.Client`, ClashKing base URL
+- `utils/startup.py:140-165` — official client base URL and token authentication
 
-Live verification against `proxy.clashk.ing` / `api.clashofclans.com` was **not**
-possible from this session — outbound HTTPS to both hosts is blocked by the
-agent proxy (`CONNECT tunnel failed, 403`). Everything above is read from
-library source, which is where the behaviour is decided anyway; the one thing
-worth confirming on the box during a real window is what the **proxy's** 503
-body looks like, since that is the only part Supercell does not control.
+The older proxy verification note above was written before the direct-official
+API migration. For current behavior, inspect the official API response in the
+runtime network path during a real maintenance window.
