@@ -27,6 +27,20 @@ an unchanged signature, and recreates the board if it was deleted. An unchanged
 board can therefore keep an older **Updated** time while detector and points
 checks continue. Changes to a clan's war state or verdict still update its row.
 
+`/fwa war-plans`' `opponent` option (`extensions/commands/fwa/war_plans.py`)
+autocompletes from these same records via `war_plan_opponents` in
+`extensions/autocomplete.py`, which reuses `_board_snapshot()` instead of
+querying `mongo.fwa_points` itself. Which name applies to a record is decided
+by the shared `current_opponent_name_for()` helper in `fwa_points_monitor.py`
+- the same rule the board renders from: a caught-up verdict for the current
+war (or no new war noted yet) wins with `coc_opponent_name`/`opponent_name`;
+a merely-noted new war that hasn't caught up yet falls back to
+`current_opponent_name`; otherwise there is no current opponent to offer.
+This keeps the autocomplete from surfacing a previous war's opponent while
+catch-up is still pending. The clan already chosen in the `clan` option is
+listed first; the option stays free text, so a rep can still type a name the
+monitor hasn't recorded yet.
+
 ## Deploy history: why this shipped disabled, and isn't any more
 
 points.fwafarm.com sits behind Cloudflare, which hard-blocks requests from

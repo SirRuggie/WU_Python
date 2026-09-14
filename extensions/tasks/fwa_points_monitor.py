@@ -366,6 +366,29 @@ def _board_text(value):
     return text[:100]
 
 
+def current_opponent_name_for(rec: dict) -> str | None:
+    """Which opponent name currently applies to one fwa_points record, or None.
+
+    Same predicate build_points_board renders from: a caught-up verdict for
+    the current war (or no war noted yet) wins with the CoC/scrape name;
+    a merely-noted new war (not yet caught up) falls back to the
+    waiting-state name; otherwise there is nothing current to show.
+    """
+    current_key = rec.get("current_war_key")
+    verdict_key = rec.get("coc_war_key")
+    current_result = bool(
+        rec.get("raw_verdict")
+        and rec.get("status") == "caught_up"
+        and rec.get("current_war_state") != "notInWar"
+        and (not current_key or current_key == verdict_key)
+    )
+    if current_result:
+        return rec.get("coc_opponent_name") or rec.get("opponent_name")
+    elif current_key:
+        return rec.get("current_opponent_name")
+    return None
+
+
 def build_points_board(watch, records, *, updated_at=None):
     """Render one compact board without exposing a previous war's verdict."""
     rows = [Text(content=BOARD_TITLE), Separator(divider=True)]
@@ -390,7 +413,7 @@ def build_points_board(watch, records, *, updated_at=None):
                 else "❌ LOSE" if outcome == "lose"
                 else "❔ UNKNOWN"
             )
-            raw_opponent = rec.get("coc_opponent_name") or rec.get("opponent_name")
+            raw_opponent = current_opponent_name_for(rec)
             score_match = re.search(r"\(([^()]*(?:<|>)[^()]*)\)", str(rec.get("raw_verdict") or ""))
             points = score_match.group(1).strip() if score_match else str(rec.get("point_balance", "?"))
             if raw_opponent:
@@ -403,7 +426,7 @@ def build_points_board(watch, records, *, updated_at=None):
                 opponent = _board_text("Unknown opponent")
                 detail = f"- **{name}** · **{label}** — vs **{opponent}** · Points **{_board_text(points)}**"
         elif current_key:
-            raw_opponent = rec.get("current_opponent_name")
+            raw_opponent = current_opponent_name_for(rec)
             if raw_opponent:
                 copyable = raw_opponent.replace("`", "")
                 detail = f"- **{name}** · **⏳ WAITING**\n```\n{copyable}\n```"
