@@ -195,7 +195,7 @@ def _refresh_lock(owner_id: str) -> asyncio.Lock:
 
 
 def _refresh_signature(components: list) -> str:
-    """Keep the panel's checked clock out of automatic edit decisions."""
+    """Keep the panel's visible-update clock out of automatic edit decisions."""
     payload = [component.build()[0] for component in components]
 
     def scrub(value):
@@ -204,7 +204,13 @@ def _refresh_signature(components: list) -> str:
         if isinstance(value, (list, tuple)):
             return [scrub(child) for child in value]
         if isinstance(value, str):
-            return re.sub(r"^(-# Checked )<t:\d+:R>", r"\1<t:clock:R>", value)
+            # Old panels said "Checked".  Either label carries the one
+            # cosmetic timestamp that changes without a meaningful repaint.
+            return re.sub(
+                r"^(-# (?:Checked|Updated) )<t:\d+:R>",
+                r"-# Updated <t:clock:R>",
+                value,
+            )
         return int(value) if hasattr(value, "value") else value
 
     return hashlib.sha256(json.dumps(
@@ -358,7 +364,7 @@ def _manual_fallback_panel(components: list, *, checked_at: int | None = None) -
     """Copy a panel with a concise footer that promises no scheduler."""
     checked_at = int(checked_at if checked_at is not None else time.time())
     manual_status = Text(content=(
-        f"-# Checked <t:{checked_at}:R> · Use Check now to update"
+        f"-# Updated <t:{checked_at}:R> · Use Check now to update"
     ))
     rebuilt = []
     for container in components:
@@ -366,7 +372,9 @@ def _manual_fallback_panel(components: list, *, checked_at: int | None = None) -
         replaced = False
         for child in container.components:
             content = getattr(child, "content", None)
-            if isinstance(content, str) and content.startswith("-# Checked "):
+            if isinstance(content, str) and content.startswith(
+                ("-# Checked ", "-# Updated ")
+            ):
                 children.append(manual_status)
                 replaced = True
             else:
@@ -397,7 +405,7 @@ def _automatic_status_panel(
     else:
         refresh_until = refresh_until.astimezone(timezone.utc)
     status = Text(content=(
-        f"-# Checked <t:{int(checked_at)}:R> · Rechecks about every "
+        f"-# Updated <t:{int(checked_at)}:R> · Rechecks about every "
         f"{todo_sessions.REFRESH_INTERVAL_SECONDS // 60} min · "
         f"Stops <t:{int(refresh_until.timestamp())}:R>"
     ))
@@ -407,7 +415,9 @@ def _automatic_status_panel(
         replaced = False
         for child in container.components:
             content = getattr(child, "content", None)
-            if isinstance(content, str) and content.startswith("-# Checked "):
+            if isinstance(content, str) and content.startswith(
+                ("-# Checked ", "-# Updated ")
+            ):
                 children.append(status)
                 replaced = True
             else:
@@ -539,12 +549,12 @@ def _nav_block(view: str, counts: dict, pager=None, *,
         if until.tzinfo is None:
             until = until.replace(tzinfo=timezone.utc)
         stamp = (
-            f"-# Checked <t:{checked_at}:R> · Rechecks about every "
+            f"-# Updated <t:{checked_at}:R> · Rechecks about every "
             f"{todo_sessions.REFRESH_INTERVAL_SECONDS // 60} min · "
             f"Stops <t:{int(until.timestamp())}:R>"
         )
     else:
-        stamp = f"-# Checked <t:{checked_at}:R> · DM /todo for auto-checks"
+        stamp = f"-# Updated <t:{checked_at}:R> · DM /todo for auto-checks"
 
     return [
         Separator(divider=True, spacing=hikari.SpacingType.LARGE),
@@ -2224,7 +2234,7 @@ async def _refresh_session(
                 render_signature=signature,
             )
             if recorded:
-                return "updated"
+                return "unchanged" if unchanged else "edited"
             await todo_sessions.postpone(
                 mongo, owner_id, message_id, generation,
                 observed_at=checked_at,
@@ -2258,8 +2268,8 @@ async def run_auto_refresh_cycle(bot, coc_client, mongo) -> dict[str, int]:
     # minute for popular clans.
     negative_cutoff = time.time() - todo_sessions.REFRESH_INTERVAL_SECONDS
     sessions = await todo_sessions.due(mongo)
-    counts = {"panels": len(sessions), "updated": 0, "removed": 0,
-              "failed": 0, "skipped": 0}
+    counts = {"panels": len(sessions), "checked": 0, "edited": 0,
+              "unchanged": 0, "removed": 0, "failed": 0, "skipped": 0}
     if not sessions:
         return counts
 
@@ -2275,6 +2285,8 @@ async def run_auto_refresh_cycle(bot, coc_client, mongo) -> dict[str, int]:
     outcomes = await asyncio.gather(*(bounded(session) for session in sessions))
     for outcome in outcomes:
         counts[outcome] = counts.get(outcome, 0) + 1
+        if outcome in {"edited", "unchanged"}:
+            counts["checked"] += 1
     print("[todo-refresh] cycle " + " ".join(
         f"{name}={value}" for name, value in counts.items()
     ), flush=True)

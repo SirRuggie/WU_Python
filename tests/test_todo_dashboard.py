@@ -175,7 +175,7 @@ def test_footer_explains_dm_auto_refresh_with_exact_check_time():
     )]
     text = _payload_text(payload)
 
-    assert "Checked <t:1725000000:R>" in text
+    assert "Updated <t:1725000000:R>" in text
     assert "Rechecks about every 10 min" in text
     assert f"Stops <t:{int(until.timestamp())}:R>" in text
     assert "cached, fetched" not in text
@@ -654,7 +654,7 @@ def test_neutral_footer_preserves_dashboard_controls():
         }
 
     assert ids(neutral_payload) == ids(active_payload)
-    assert "Checked <t:1725000000:R> · Use Check now to update" in _payload_text(
+    assert "Updated <t:1725000000:R> · Use Check now to update" in _payload_text(
         neutral_payload
     )
 
@@ -707,7 +707,7 @@ def test_navigation_preserves_deadline_and_retired_panel_stays_manual(monkeypatc
         for component in active_ctx.responses[0]["components"]
     ]
     assert f"Stops <t:{int(until.timestamp())}:R>" in _payload_text(active_payload)
-    assert f"Checked <t:{checked_at}:R>" in _payload_text(active_payload)
+    assert f"Updated <t:{checked_at}:R>" in _payload_text(active_payload)
     assert updates[0]["page"] == 2
     assert updates[0]["checked_at"] is None
     assert "refresh_until" not in updates[0]
@@ -786,7 +786,7 @@ def test_notice_navigation_reuses_snapshot_without_rechecking(monkeypatch):
     ]
     text = _payload_text(payload)
     assert "Temporary problem" in text
-    assert f"Checked <t:{checked_at}:R>" in text
+    assert f"Updated <t:{checked_at}:R>" in text
     assert updates[0]["checked_at"] is None
 
 
@@ -1051,7 +1051,7 @@ def test_manual_edit_holds_owner_lock_until_discord_then_auto_uses_new_view(monk
         assert edit_order == []
         release_manual.set()
         await manual
-        assert await automatic == "updated"
+        assert await automatic == "edited"
 
     asyncio.run(exercise())
 
@@ -1121,7 +1121,7 @@ def test_auto_edit_holds_owner_lock_until_discord_then_manual_wins(monkeypatch):
         await asyncio.sleep(0)
         assert edit_order == []
         release_auto.set()
-        assert await automatic == "updated"
+        assert await automatic == "edited"
         await manual
 
     asyncio.run(exercise())
@@ -1215,7 +1215,7 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
         SimpleNamespace(rest=rest), object(), object(),
     ))
 
-    assert result == "updated"
+    assert result == "edited"
     assert [(channel, message) for channel, message, _ in rest.edits] == [(66, 55)]
     payload = [component.build() for component in rest.edits[0][2]["components"]]
     assert "Private War Logs" in _payload_text(payload)
@@ -1257,8 +1257,115 @@ def test_automatic_refresh_reads_back_unchanged_panel_without_edit(monkeypatch):
         {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
          "channel_id": 66, "user_id": 77},
         SimpleNamespace(rest=Rest()), object(), object(),
-    )) == "updated"
+    )) == "unchanged"
     assert calls == [("fetch", 66, 55), ("mark", "same")]
+
+
+def test_manual_refresh_clears_old_signature_so_changed_auto_data_edits(monkeypatch):
+    manual_data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    changed_data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    changed_data[todo.VIEW_WAR] = todo_data.ViewData(rows=_private_rows(1))
+    until = datetime(2026, 9, 4, tzinfo=timezone.utc)
+    old_signature = todo._refresh_signature(todo.render_dashboard(
+        todo.VIEW_WAR, 0, changed_data, checked_at=1,
+        auto_refresh=True, refresh_until=until,
+    ))
+    owner = {
+        "_id": "dm:77:66", "message_id": 55, "generation": "old",
+        "channel_id": 66, "user_id": 77, "view": todo.VIEW_WAR,
+        "page": 0, "refresh_until": until, "render_signature": old_signature,
+    }
+    loads = iter((manual_data, changed_data))
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(message=SimpleNamespace(id=55))
+
+        def __init__(self):
+            self.responses = []
+
+        async def respond(self, **kwargs):
+            self.responses.append(kwargs)
+            return None
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def edit_message(self, channel_id, message_id, **kwargs):
+            self.edits.append((channel_id, message_id, kwargs))
+
+    async def fake_load(*_args, **_kwargs):
+        return next(loads), None, None
+
+    async def takeover(*_args, **_kwargs):
+        owner["generation"] = "new"
+        owner.pop("render_signature", None)
+        return "new", until
+
+    async def get_owner(*_args):
+        return True, dict(owner)
+
+    async def mark(*_args, **kwargs):
+        owner["render_signature"] = kwargs["render_signature"]
+        return True
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo, "_takeover_locked", takeover)
+    monkeypatch.setattr(todo.todo_sessions, "get", get_owner)
+    monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", mark)
+    todo._refresh_locks.clear()
+
+    ctx = Ctx()
+    asyncio.run(todo._switch(
+        ctx, todo.VIEW_WAR, "war|0", object(), object(), force=True,
+        mongo=object(), trigger="refresh",
+    ))
+    assert todo._refresh_signature(ctx.responses[0]["components"]) != old_signature
+    assert "render_signature" not in owner
+    rest = Rest()
+    result = asyncio.run(todo._refresh_session(
+        dict(owner), SimpleNamespace(rest=rest), object(), object(),
+    ))
+
+    assert result == "edited"
+    assert [(channel, message) for channel, message, _ in rest.edits] == [(66, 55)]
+    assert owner["render_signature"] == old_signature
+
+
+def test_failed_manual_refresh_publish_keeps_takeover_signature_invalidated(monkeypatch):
+    data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
+    owner = {"render_signature": "previous-success"}
+
+    class Ctx:
+        guild_id = None
+        channel_id = 66
+        user = SimpleNamespace(id=77)
+        interaction = SimpleNamespace(message=SimpleNamespace(id=55))
+
+        async def respond(self, **_kwargs):
+            raise RuntimeError("Discord unavailable")
+
+    async def fake_load(*_args, **_kwargs):
+        return data, None, None
+
+    async def takeover(*_args, **_kwargs):
+        owner.pop("render_signature", None)
+        return "new", datetime(2026, 9, 4, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(todo, "_load", fake_load)
+    monkeypatch.setattr(todo, "_takeover_locked", takeover)
+    todo._refresh_locks.clear()
+
+    with pytest.raises(RuntimeError, match="Discord unavailable"):
+        asyncio.run(todo._switch(
+            Ctx(), todo.VIEW_WAR, "war|0", object(), object(), force=True,
+            mongo=object(), trigger="refresh",
+        ))
+
+    assert "render_signature" not in owner
 
 
 def test_automatic_refresh_failed_edit_does_not_record_render_signature(monkeypatch):
@@ -1329,7 +1436,7 @@ def test_automatic_notice_keeps_the_stored_stop_time(monkeypatch):
     ))
 
     payload = [component.build() for component in rest.edits[0][2]["components"]]
-    assert result == "updated"
+    assert result == "edited"
     assert f"Stops <t:{int(until.timestamp())}:R>" in _payload_text(payload)
     snapshot = todo._snapshot_get(77, 66, 55)
     assert snapshot.data is None
@@ -1432,7 +1539,7 @@ def test_deployed_legacy_panel_keeps_refreshing_until_its_old_deadline(monkeypat
         SimpleNamespace(rest=_Rest()), object(), object(),
     ))
 
-    assert result == "updated"
+    assert result == "edited"
     assert marked == [("dm:77:66", 55, None)]
 
 
@@ -1500,10 +1607,10 @@ def test_auto_refresh_signature_ignores_checked_clock_but_keeps_deadline():
         todo.Text(content="-# Checked <t:1:R> · Stops <t:100:R>"),
     ]))
     assert first == todo._refresh_signature(todo._panel([
-        todo.Text(content="-# Checked <t:2:R> · Stops <t:100:R>"),
+        todo.Text(content="-# Updated <t:2:R> · Stops <t:100:R>"),
     ]))
     assert first != todo._refresh_signature(todo._panel([
-        todo.Text(content="-# Checked <t:2:R> · Stops <t:101:R>"),
+        todo.Text(content="-# Updated <t:2:R> · Stops <t:101:R>"),
     ]))
 
 
@@ -1627,7 +1734,7 @@ def test_auto_refresh_cycle_shares_one_negative_cache_cutoff(monkeypatch):
 
     async def fake_refresh(*args, **kwargs):
         cutoffs.append(kwargs["recheck_negative_after"])
-        return "updated"
+        return "edited"
 
     monkeypatch.setattr(todo.todo_sessions, "due", fake_due)
     monkeypatch.setattr(todo, "_refresh_session", fake_refresh)
@@ -1637,13 +1744,34 @@ def test_auto_refresh_cycle_shares_one_negative_cache_cutoff(monkeypatch):
     counts = asyncio.run(todo.run_auto_refresh_cycle(object(), object(), object()))
     after = datetime.now(timezone.utc).timestamp()
 
-    assert counts["updated"] == 2
+    assert counts["checked"] == 2
+    assert counts["edited"] == 2
     assert pruned == [True]
     assert len(cutoffs) == 2
     assert cutoffs[0] == cutoffs[1]
     expected_min = before - todo.todo_sessions.REFRESH_INTERVAL_SECONDS
     expected_max = after - todo.todo_sessions.REFRESH_INTERVAL_SECONDS
     assert expected_min - 0.01 <= cutoffs[0] <= expected_max + 0.01
+
+
+def test_auto_refresh_cycle_reports_checked_edits_unchanged_and_skips_separately(monkeypatch):
+    async def fake_due(_mongo):
+        return [{"_id": index} for index in range(4)]
+
+    outcomes = iter(("edited", "unchanged", "skipped", "failed"))
+
+    async def fake_refresh(*_args, **_kwargs):
+        return next(outcomes)
+
+    monkeypatch.setattr(todo.todo_sessions, "due", fake_due)
+    monkeypatch.setattr(todo, "_refresh_session", fake_refresh)
+
+    counts = asyncio.run(todo.run_auto_refresh_cycle(object(), object(), object()))
+
+    assert counts == {
+        "panels": 4, "checked": 2, "edited": 1, "unchanged": 1,
+        "removed": 0, "failed": 1, "skipped": 1,
+    }
 
 
 # ---------------------------------------------------------------------------

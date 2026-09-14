@@ -179,6 +179,28 @@ def test_claim_uses_generation_cas_and_reports_lost_race(monkeypatch):
     assert upsert is False
 
 
+def test_claim_takeover_invalidates_prior_render_signature_with_generation_cas(monkeypatch):
+    mongo = _Mongo()
+    monkeypatch.setattr(todo_sessions, "_index_ready", True)
+
+    claimed = asyncio.run(todo_sessions.claim(
+        mongo, user_id=1, channel_id=2, message_id=8, view="war",
+        expected_owner={
+            "generation": "old", "message_id": 7,
+            "render_signature": "stale-panel",
+        },
+    ))
+
+    assert claimed is not None
+    query, update, upsert = mongo.todo_sessions.updates[0]
+    assert query == {
+        "_id": "dm:1:2", "generation": "old", "message_id": 7,
+    }
+    assert update["$unset"] == {"render_signature": ""}
+    assert "render_signature" not in update["$set"]
+    assert upsert is False
+
+
 def test_owner_read_failure_is_distinct_from_no_existing_owner():
     mongo = _Mongo()
     mongo.todo_sessions.find_failure = RuntimeError("Mongo unavailable")

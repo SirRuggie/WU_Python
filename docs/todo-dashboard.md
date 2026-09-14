@@ -416,12 +416,13 @@ the panel being read.
 An active DM panel renders one compact line:
 
 ```text
-Checked 2 minutes ago · Rechecks about every 10 min · Stops in 22 hours
+Updated 2 minutes ago · Rechecks about every 10 min · Stops in 22 hours
 ```
 
-Both times use Discord timestamps, so they remain localized and advance without
-another message edit. `Checked` changes only after the dashboard data was
-computed and the Discord message edit succeeded. The stop time is the stored
+Both times use Discord timestamps, so they remain localized and their relative
+text advances without another message edit. `Updated` is the last visible dashboard update; background
+checks continue on their ten-minute cadence even when no Discord edit is needed.
+The stop time is the stored
 session deadline, so a panel that has aged out never continues claiming it is
 live.
 
@@ -429,7 +430,7 @@ Guild panels are ephemeral and never scheduled. Their footer says
 `DM /todo for auto-checks`. Both contexts keep the labelled **Check now**
 button.
 
-"Checked" is deliberate wording. The bot may satisfy a lookup from its bounded
+"Updated" is deliberate wording. The bot may satisfy a lookup from its bounded
 cache; "fetched" would incorrectly promise that every source was bypassed. Check
 now still drops wu-bot's render caches, while coc.py and the official API
 upstream may legitimately satisfy the resulting request from their TTL caches.
@@ -1050,10 +1051,11 @@ panels remain ephemeral, manual, and unstored.
 
 New `/todo` and **Check now** start an exact 30-day window. Ordinary navigation
 updates only the stored view and page: it reuses the panel's coherent four-view
-snapshot, preserves the displayed `Checked` time, and does not postpone the next
+snapshot, preserves the displayed `Updated` time, and does not postpone the next
 automatic check. Initial loads, snapshot-miss recovery, Check now, and automatic
-checks are actual data checks; those update the checked time and next run but
-never extend the deadline. A newer `/todo` replaces the previous automatic
+checks are actual data checks; those advance the internal check time and next run
+but never extend the deadline. `Updated` changes only when a panel edit succeeds.
+A newer `/todo` replaces the previous automatic
 panel; the older message becomes a small manual panel whose Check now button can
 make it current again.
 
@@ -1065,9 +1067,9 @@ window is 4,320 checks. A deleted or inaccessible Discord message removes its
 exact generation; transient errors postpone only that generation.
 
 Automatic checks save a semantic render signature with the session. The
-cosmetic **Checked** clock is ignored when deciding whether to edit, but each
+cosmetic **Updated** clock is ignored when deciding whether to edit, but each
 successful check still advances `last_checked_at` and `next_refresh_at`. When
-the dashboard is otherwise unchanged, its visible **Checked** time remains at
+the dashboard is otherwise unchanged, its visible **Updated** time remains at
 the last edit even as background checks continue. The first unchanged check for
 a panel generation reads the bound Discord message to confirm it still exists;
 meaningful dashboard changes still edit it, including timer/state transitions.
@@ -1150,7 +1152,7 @@ component-state document.
 
 The process-local panel snapshot is an optional rendering optimization, not
 routing state or durable storage. A hit makes a dropdown or pager click reuse
-the original result and `Checked` timestamp; only the small session-metadata
+the original result and `Updated` timestamp; only the small session-metadata
 read/write and Discord edit remain. A miss — including after restart, expiry,
 LRU eviction, or on a year-old panel — performs `_load()` and re-seeds it.
 `todo_sessions` remains ownership and scheduling metadata only; `ViewData` and

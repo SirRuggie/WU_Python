@@ -211,6 +211,10 @@ async def claim(
             query,
             {
                 "$set": fields,
+                # The candidate Discord panel is about to replace this owner.
+                # Its contents have not been published yet, so the old panel's
+                # fingerprint must never suppress that first automatic edit.
+                "$unset": {"render_signature": ""},
                 "$inc": {"interactions": 1},
             },
             upsert=False,
