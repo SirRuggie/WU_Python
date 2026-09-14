@@ -438,6 +438,31 @@ legitimately satisfy the resulting request from their own TTL caches.
 single source for manual cache-drop coverage, but neither drives user-facing
 freshness text now.
 
+### API deadline timestamps are UTC instants
+
+**Finding recorded 2026-09-13; the fix was local-only and not yet deployed at
+that point.** coc.py 3.10 parses Supercell API values ending in `Z` into
+*naive* Python datetimes exposed through `Timestamp.time`. Those values are
+nevertheless UTC instants. Calling `datetime.timestamp()` on one makes Python
+interpret it in the bot host's timezone. On an EDT host this made a live 10 h
+45 m war-preparation countdown render about four hours late (rounded to 15 h).
+
+`utils/todo_data.py:_utc_epoch()` is the shared conversion rule for these known
+API-UTC values: attach `timezone.utc` to a naive value before getting its epoch;
+leave an aware value's timezone intact. It is used for war and CWL start/end
+times, raid end times, and the naive ISO `coc_war_end_time` stored by the FWA
+monitor before `extensions/commands/todo.py:_fwa_header()` compares it with a
+row. Do not apply this rule to every arbitrary naive application date: it is
+only valid where the source contract is known to mean UTC.
+
+The rendered value remains Discord `<t:epoch:R>` or `<t:epoch:F>`, so Discord
+renders it in each viewer's own locale; the bot must not map host or user
+timezones itself. Cache freshness is unrelated to this instant conversion.
+Regression coverage lives in `tests/test_todo_cache.py` and
+`tests/test_todo_dashboard.py`: UTC, New York winter and daylight time,
+Kolkata's fractional offset, Tokyo, and Auckland date rollover all produce the
+same epoch for naive API UTC values while aware values retain their offset.
+
 ### It happened a second time: `cwlwar:`
 
 Found by auditing every `cache_put` key against `DATA_PREFIXES`, not by anyone

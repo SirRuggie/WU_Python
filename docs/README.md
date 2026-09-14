@@ -53,7 +53,8 @@ before changing durable documentation.
 - [todo-dashboard.md](todo-dashboard.md) — `/todo`, as built. Data sources, the
   four views, layout rules and why, the freshness stamp, emoji slots, verified
   vs inferred. **Contains the `str()`-on-a-coc.py-enum trap — read it before
-  touching any Clash state comparison anywhere in this repo.**
+  touching any Clash state comparison anywhere in this repo; also the coc.py
+  naive-UTC timestamp rule for every Clash deadline.**
 
 - [fwa-points-monitor.md](fwa-points-monitor.md) — the points.fwafarm.com
   scraper that watches every FWA clan, the watch-list rule, stored record
