@@ -250,7 +250,7 @@ nobody should have to remember:
 | --- | --- | --- |
 | Discord gateway | [hikari](https://github.com/hikari-py/hikari) 2.6.0 | Pinned deliberately — hikari and lightbulb are upgraded only as a coupled pair. See [`docs/hikari-lightbulb-versions.md`](docs/hikari-lightbulb-versions.md). |
 | Command framework | [hikari-lightbulb](https://github.com/tandemdude/hikari-lightbulb) 3.2.6 | Slash commands, dependency injection, and extension loading. |
-| Clash of Clans API | [coc.py](https://github.com/mathsman5133/coc.py) 3.10.0 | Routed through a hosted API proxy, so no Clash developer key is needed. The pin rationale is documented line by line in [`requirements.txt`](requirements.txt). |
+| Clash of Clans API | [coc.py](https://github.com/mathsman5133/coc.py) 3.10.0 | Connects directly to the official API using `COC_API_TOKEN`. The pin rationale is documented line by line in [`requirements.txt`](requirements.txt). |
 | Database | MongoDB via pymongo `AsyncMongoClient` | Native async driver (not motor), remote deployment. Collection handles live in [`utils/mongo.py`](utils/mongo.py). |
 | Scheduling | APScheduler + stored timestamps | Schedules and deadlines are persisted in MongoDB and re-seeded by a startup reconciler rather than held in memory. |
 | Media | Cloudflare R2 + Pillow | Uploaded clan logos, banners, and base images, served size-capped through Cloudflare image transformations. Static art ships under [`assets/`](assets), mirroring the bucket layout. Why and how: [`docs/media-hosting.md`](docs/media-hosting.md). |

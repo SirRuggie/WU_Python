@@ -1,8 +1,96 @@
+import ast
 import asyncio
 import warnings
+from unittest.mock import patch
 from pathlib import Path
 
 from utils import startup
+
+
+def test_game_client_uses_official_api():
+    async def create():
+        with patch.object(startup.coc, "Client") as constructor:
+            startup.create_clash_client()
+            assert constructor.call_args.kwargs["base_url"] == "https://api.clashofclans.com/v1"
+
+    asyncio.run(create())
+
+
+def test_authenticated_client_fails_before_constructing_for_missing_or_blank_token():
+    async def create():
+        with patch.object(startup, "create_clash_client") as constructor:
+            for token in ("", "   "):
+                try:
+                    await startup.create_authenticated_clash_client(token)
+                except RuntimeError as exc:
+                    assert str(exc) == "COC_API_TOKEN is required for the official Clash API."
+                else:
+                    raise AssertionError("missing token must stop startup")
+            constructor.assert_not_called()
+
+    asyncio.run(create())
+
+
+def test_authenticated_client_strips_token_and_waits_for_login_before_returning():
+    async def create():
+        events = []
+        release_login = asyncio.Event()
+
+        class Client:
+            async def login_with_tokens(self, token):
+                events.append(("login", token))
+                await release_login.wait()
+                events.append(("logged-in", token))
+
+        client = Client()
+        with patch.object(startup, "create_clash_client", return_value=client):
+            task = asyncio.create_task(
+                startup.create_authenticated_clash_client("  official-token  ")
+            )
+            await asyncio.sleep(0)
+            assert events == [("login", "official-token")]
+            assert not task.done()
+
+            release_login.set()
+            assert await task is client
+
+        assert events == [("login", "official-token"), ("logged-in", "official-token")]
+
+    asyncio.run(create())
+
+
+def test_startup_authenticates_before_registering_or_loading_extensions():
+    tree = ast.parse(Path("main.py").read_text(encoding="utf-8"))
+    handler = next(
+        node for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "on_starting"
+    )
+
+    def calls(statement, name):
+        return [
+            node for node in ast.walk(statement)
+            if isinstance(node, ast.Call)
+            and (
+                isinstance(node.func, ast.Attribute) and node.func.attr == name
+                or isinstance(node.func, ast.Name) and node.func.id == name
+            )
+        ]
+
+    authenticated_at = next(
+        index for index, statement in enumerate(handler.body)
+        if calls(statement, "create_authenticated_clash_client")
+    )
+    registered_at = next(
+        index for index, statement in enumerate(handler.body)
+        if calls(statement, "register_value")
+    )
+    extensions_at = next(
+        index for index, statement in enumerate(handler.body)
+        if calls(statement, "load_extensions")
+    )
+
+    assert isinstance(handler.body[authenticated_at].value, ast.Await)
+    assert authenticated_at < registered_at < extensions_at
 
 
 def test_extension_discovery_only_returns_loader_entry_points():

@@ -147,8 +147,20 @@ def create_clash_client(*, loop: asyncio.AbstractEventLoop | None = None) -> coc
     active_loop = loop or asyncio.get_running_loop()
     return coc.Client(
         loop=active_loop,
-        base_url="https://proxy.clashk.ing/v1",
-        key_count=10,
+        base_url="https://api.clashofclans.com/v1",
         load_game_data=coc.LoadGameData(default=False),
         raw_attribute=True,
     )
+
+
+async def create_authenticated_clash_client(
+    api_token: str, *, loop: asyncio.AbstractEventLoop | None = None
+) -> coc.Client:
+    """Create and authenticate the official API client before boot continues."""
+    token = api_token.strip()
+    if not token:
+        raise RuntimeError("COC_API_TOKEN is required for the official Clash API.")
+
+    client = create_clash_client(loop=loop)
+    await client.login_with_tokens(token)
+    return client

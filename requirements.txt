@@ -43,8 +43,7 @@ pendulum
 #      in the /todo raid path, not a theoretical one.
 #   3. coc/http.py: (await resp.json())["keys"] -> .get("keys", {}). Hardens
 #      login against a response that is not the expected JSON - directly
-#      relevant, since every call here goes through the proxy.clashk.ing
-#      third party, which can return an error page during an outage.
+#      relevant when an upstream error page is returned during an outage.
 #
 # Safe as a drop-in: nothing was removed from the public API, the six client
 # methods used here all still exist, and the bulk of the diff is static game

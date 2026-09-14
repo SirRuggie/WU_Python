@@ -76,7 +76,13 @@ Environment=PYTHONUNBUFFERED=1
 
 ## Configuration
 
-`.env` at `/home/wubot/wu-bot/.env`, loaded by `load_dotenv()` in `main.py`.
+The game-data client connects directly to `https://api.clashofclans.com/v1`.
+Set `COC_API_TOKEN` in the runtime `.env` to a developer token whose allowed IP
+includes the runtime host's public egress IPv4. Startup fails if it is missing.
+Keep the token out of source control and restrict `.env` to its owner. The
+separate `CLASHKING_API_TOKEN` remains required for shared Discord links.
+
+`.env` at `/home/botrunner/wu-bot/.env`, loaded by `load_dotenv()` in `main.py`.
 Appending to that file is the correct way to add an environment variable.
 A service restart is required for the process to read a changed value.
 
