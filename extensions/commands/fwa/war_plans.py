@@ -12,11 +12,11 @@ from typing import Optional, Dict, List
 
 from extensions.commands.fwa import loader, fwa
 from extensions.components import register_action
-from extensions.autocomplete import fwa_clans
+from extensions.autocomplete import fwa_clans, war_plan_opponents
 
 from utils.mongo import MongoClient
 from utils.classes import Clan
-from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT
+from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, MAX_OPPONENT_NAME_LENGTH
 from utils.fwa_blacklist import add_blacklisted
 from utils.fwa_points_parser import sanitize_tag
 from .message_templates import (
@@ -39,7 +39,7 @@ from hikari.impl import (
 # Configuration
 FWA_WAR_PLANS_CONFIG = {
     "fwa_clan_rep_role_id": 769130325460254740,
-    "max_opponent_name_length": 50,
+    "max_opponent_name_length": MAX_OPPONENT_NAME_LENGTH,
 }
 
 BLACKLIST_UNREADABLE_NOTE = (
@@ -140,7 +140,8 @@ class WarPlans(
     opponent = lightbulb.string(
         "opponent",
         "Enter the opponent clan name",
-        max_length=FWA_WAR_PLANS_CONFIG["max_opponent_name_length"]
+        max_length=FWA_WAR_PLANS_CONFIG["max_opponent_name_length"],
+        autocomplete=war_plan_opponents  # Suggest current opponents; free text still allowed
     )
 
     @lightbulb.invoke
