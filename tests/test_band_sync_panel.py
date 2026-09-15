@@ -575,7 +575,9 @@ def test_dm_container_is_slim():
         f"**Your response:** {str(emojis.yes)} Available",
     ]
     rows = [c for c in components[0].components if isinstance(c, ActionRow)]
+    assert len(rows) == 2  # Yes/Maybe/No + reminders only; no BAND link row in a DM
     assert [b.label for b in rows[-2].components] == ["Yes", "Maybe", "No"]
+    assert not any(hasattr(b, "url") for row in rows for b in row.components)
     custom_ids = [getattr(b, "custom_id", "") for row in rows for b in row.components]
     assert not any(c.startswith("fwa_sync_dm_once:") for c in custom_ids)
     assert "**Sync Time:**" not in _texts(panel.panel_container(event, url, [])[0])

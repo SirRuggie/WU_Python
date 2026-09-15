@@ -316,8 +316,8 @@ def panel_container(event, url, responses):
 
 def dm_container(event, url, response, old_start=None):
     """Slim DM (user rule 2026-09-15): title, sync time (+ Was on a change alert), the
-    BAND link button, the reader's own status, then Yes / Maybe / No and the reminder
-    select. No role ping, no instructions, no availability list, no DM-me button."""
+    reader's own status, then Yes / Maybe / No and the reminder select. No role ping,
+    no BAND link, no instructions, no availability list, no DM-me button."""
     start = _start_of(event)
     title = CHANGE_ALERT_TITLE if old_start is not None else POSTED_TITLE
     components = [
@@ -328,9 +328,7 @@ def dm_container(event, url, response, old_start=None):
         components.append(Text(
             content=f"**Was:** {discord_timestamp(normalize_start(old_start), 'F')}"
         ))
-    components.append(ActionRow(components=[
-        LinkButton(url=url, label=BAND_LINK_LABEL, emoji="🕐"),
-    ]))
+    # No BAND link in the DM (user rule 2026-09-15): the DM already carries the time.
     components.append(Separator(divider=True))
     status = (response or {}).get("status")
     components.append(Text(content=f"**Your response:** {STATUS_LINE.get(status, STATUS_LINE[None])}"))
