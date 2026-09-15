@@ -259,8 +259,7 @@ def _header_components(event, url, include_role_ping, old_start=None, include_ti
                                       label="DM me the time", emoji="📩"))
     components.append(time_row)
     components.append(Text(content=(
-        "Please review the **FWA Sync Time** and confirm your availability by selecting the "
-        "corresponding button below:"
+        "Review the **FWA Sync Time** and select your availability below."
     )))
     components.append(Separator(divider=True))
     components.append(Text(content=f"{str(emojis.yes)} - If you are available to start."))
