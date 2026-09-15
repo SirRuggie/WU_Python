@@ -1,9 +1,7 @@
 import asyncio
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-import os
 from types import SimpleNamespace
-import uuid
 
 import hikari
 import pytest
@@ -15,6 +13,7 @@ from pymongo import AsyncMongoClient, ReturnDocument
 
 from extensions.commands.fwa.chocolate_links import chocolate_url, is_valid_tag
 from extensions.commands.tickets import console, thread_service
+from tests import mongo_test_support
 
 
 def _walk(value):
@@ -497,7 +496,7 @@ def test_chocolate_delivery_stops_after_takeover_during_slow_rest_call(monkeypat
 
 
 def test_real_mongo_slow_page_takeover_fences_remaining_rest_writes(monkeypatch):
-    uri = os.getenv("TICKET_TEST_MONGODB_URI")
+    uri = mongo_test_support.test_mongodb_uri()
     if not uri:
         pytest.skip("TICKET_TEST_MONGODB_URI is required for the real-Mongo regression")
 
@@ -509,13 +508,18 @@ def test_real_mongo_slow_page_takeover_fences_remaining_rest_writes(monkeypatch)
 
     async def scenario():
         client = AsyncMongoClient(uri, serverSelectionTimeoutMS=5_000)
-        database_name = f"wu_staff_context_lease_{uuid.uuid4().hex}"
-        database = client.get_database(database_name)
+        database = client.get_database(mongo_test_support.TEST_DATABASE)
+        state_collection_name = mongo_test_support.test_collection_name(
+            "staff_context_state"
+        )
+        states = database.get_collection(state_collection_name)
         mongo = SimpleNamespace(
-            ticket_automation_state=database.ticket_automation_state,
+            ticket_automation_state=states,
         )
         started = asyncio.Event()
         release = asyncio.Event()
+        delivery = None
+        access_verified = False
 
         class SlowRest(_Rest):
             async def create_message(self, **kwargs):
@@ -529,20 +533,22 @@ def test_real_mongo_slow_page_takeover_fences_remaining_rest_writes(monkeypatch)
         state_id = "ticket_staff_context:ticket_501"
         try:
             await client.admin.command("ping")
+            await mongo_test_support.verify_test_mongodb_access(client)
+            access_verified = True
             delivery = asyncio.create_task(console.deliver_staff_identity_context(
                 bot, mongo, _ticket(count=37)
             ))
-            await started.wait()
-            active = await database.ticket_automation_state.find_one({"_id": state_id})
+            await asyncio.wait_for(started.wait(), timeout=5)
+            active = await states.find_one({"_id": state_id})
             stale_owner = active["lease_owner"]
             expired = datetime.now(timezone.utc) - timedelta(seconds=1)
-            result = await database.ticket_automation_state.update_one(
+            result = await states.update_one(
                 {"_id": state_id, "lease_owner": stale_owner},
                 {"$set": {"lease_until": expired}},
             )
             assert result.matched_count == 1
             takeover_at = datetime.now(timezone.utc)
-            winner = await database.ticket_automation_state.find_one_and_update(
+            winner = await states.find_one_and_update(
                 {
                     "_id": state_id,
                     "kind": "ticket_staff_context",
@@ -557,16 +563,24 @@ def test_real_mongo_slow_page_takeover_fences_remaining_rest_writes(monkeypatch)
             assert winner["lease_owner"] == "takeover-owner"
             release.set()
 
-            assert await delivery is None
+            assert await asyncio.wait_for(delivery, timeout=5) is None
             assert rest.creates == 2
-            durable = await database.ticket_automation_state.find_one({"_id": state_id})
+            durable = await states.find_one({"_id": state_id})
             assert durable["lease_owner"] == "takeover-owner"
             assert durable["delivery_state"] == "pending"
             assert "delivered_at" not in durable
         finally:
             release.set()
-            await client.drop_database(database_name)
-            await client.close()
+            if delivery is not None and not delivery.done():
+                delivery.cancel()
+                await asyncio.gather(delivery, return_exceptions=True)
+            try:
+                if access_verified:
+                    await mongo_test_support.cleanup_test_collections(
+                        database, [state_collection_name]
+                    )
+            finally:
+                await client.close()
 
     asyncio.run(scenario())
 

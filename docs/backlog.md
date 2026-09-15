@@ -86,6 +86,25 @@ No active items.
   or thread. Define durable cleanup/retry behavior before implementation so a
   restart cannot leave test artifacts indistinguishable from live tickets.
 
+### P2 — MongoDB organization and test isolation
+
+- **`DB-001` — Set up isolated real-Mongo regression testing.** Preferred name:
+  `wubot_test`, created on the existing cluster on 2026-09-14. Test isolation
+  changes now use per-run collections instead of creating and dropping
+  databases; local validation passed (64 tests, two live checks skipped).
+  A dedicated user with only `readWrite` on
+  `wubot_test` and its local `TICKET_TEST_MONGODB_URI` are still pending.
+  Scope test credentials and cleanup so they cannot modify production data.
+  This is automated backend testing, separate from `TICKET-001` Discord test
+  tickets. Verify both currently skipped Mongo regressions once configured.
+- **`DB-002` — Improve production database naming and organization.** Review
+  replacing the misleading `settings` database name with `wubot`, and document
+  consistent collection names grouped by feature (MongoDB has no collection
+  folders). Inventory code/configuration references, indexes, and permissions;
+  prepare a backed-up migration, verification, and rollback plan before any
+  production change. Keep this separate from test database setup and preserve
+  ticket numbers, migration checkpoints, and existing records.
+
 ## Completed hardening
 
 ### `REL-003` — Bounded BAND calendar DM delivery

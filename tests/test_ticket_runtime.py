@@ -1,15 +1,14 @@
 import asyncio
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-import os
 from types import SimpleNamespace
-import uuid
 
 import pytest
 from pymongo import AsyncMongoClient
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import ticket_runtime as runtime
+from tests import mongo_test_support
 
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
@@ -904,7 +903,7 @@ def test_reconcile_terminal_delete_preserves_reused_live_slot_in_memory():
 
 
 def test_reconcile_terminal_delete_preserves_reused_live_slot_on_mongodb7():
-    uri = os.getenv("TICKET_TEST_MONGODB_URI")
+    uri = mongo_test_support.test_mongodb_uri()
     if not uri:
         pytest.skip("TICKET_TEST_MONGODB_URI is required for the real-Mongo regression")
 
@@ -914,8 +913,15 @@ def test_reconcile_terminal_delete_preserves_reused_live_slot_on_mongodb7():
             serverSelectionTimeoutMS=5_000,
             tz_aware=True,
         )
-        database_name = f"wu_ticket_runtime_slot_race_{uuid.uuid4().hex}"
-        database = client.get_database(database_name)
+        database = client.get_database(mongo_test_support.TEST_DATABASE)
+        collection_names = {
+            "button_store": mongo_test_support.test_collection_name("slot_race_button_store"),
+            "ticket_open_slots": mongo_test_support.test_collection_name("slot_race_open_slots"),
+            "tickets": mongo_test_support.test_collection_name("slot_race_tickets"),
+        }
+        button_store = database.get_collection(collection_names["button_store"])
+        ticket_open_slots = database.get_collection(collection_names["ticket_open_slots"])
+        tickets = database.get_collection(collection_names["tickets"])
         slot_id = "ticket-open:105:main"
         terminal = _ticket(
             "legacy-terminal-mongo-race",
@@ -958,26 +964,34 @@ def test_reconcile_terminal_delete_preserves_reused_live_slot_on_mongodb7():
                 )
                 return await self.collection.delete_one(query)
 
+        access_verified = False
         try:
             await client.admin.command("ping")
-            await database.button_store.insert_one(terminal)
-            await database.ticket_open_slots.insert_one(stale)
+            await mongo_test_support.verify_test_mongodb_access(client)
+            access_verified = True
+            await button_store.insert_one(terminal)
+            await ticket_open_slots.insert_one(stale)
             mongo = SimpleNamespace(
                 ticket_open_slots=ReplaceBeforeDelete(
-                    database.ticket_open_slots
+                    ticket_open_slots
                 ),
-                button_store=database.button_store,
-                tickets=database.tickets,
+                button_store=button_store,
+                tickets=tickets,
             )
             result = await runtime.reconcile_open_slots(mongo, now=NOW)
-            durable = await database.ticket_open_slots.find_one({"_id": slot_id})
+            durable = await ticket_open_slots.find_one({"_id": slot_id})
 
             assert result.released_slot_ids == ()
             assert result.unchanged_slot_ids == (slot_id,)
             assert durable == replacement
         finally:
-            await client.drop_database(database_name)
-            await client.close()
+            try:
+                if access_verified:
+                    await mongo_test_support.cleanup_test_collections(
+                        database, collection_names.values()
+                    )
+            finally:
+                await client.close()
 
     asyncio.run(scenario())
 

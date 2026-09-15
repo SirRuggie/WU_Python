@@ -106,22 +106,26 @@ the only pre-commit check, and a real syntax check happens on the box at deploy.
 
 ## Real-Mongo regression tests
 
-Eight tests, spread across `tests/test_ticket_channel_monitor.py` and four
-other `tests/test_ticket_*.py` files, exercise index-dependent behaviour
-(upsert/takeover races, CAS-style atomic updates) that a mocked collection
-cannot reproduce faithfully. Each is gated on the `TICKET_TEST_MONGODB_URI`
-environment variable and calls `pytest.skip(...)` when it is unset, so the
-normal `pytest -q` run above passes without it. To run them, point the
-variable at a real, disposable MongoDB deployment (a local `mongod` or a
-scratch Atlas cluster — never production) and re-run the normal suite; each
-of the eight tests only runs instead of skipping once the variable is set:
+The ticket regressions in `tests/test_ticket_runtime.py` and
+`tests/test_ticket_opening_chocolate.py` exercise race behavior that a mocked
+collection cannot reproduce faithfully. They are gated on
+`TICKET_TEST_MONGODB_URI`, so the normal suite skips them when it is unset.
+The URI must explicitly name `wubot_test`; a URI naming any other database is
+rejected before a Mongo client is created:
 
 ```bash
-TICKET_TEST_MONGODB_URI="mongodb://localhost:27017" pytest -q
+TICKET_TEST_MONGODB_URI="mongodb://localhost:27017/wubot_test" pytest -q
 ```
 
-Each test creates its own randomly-named database and drops it in a
-`finally` block, so runs do not collide or leave data behind.
+Use a dedicated MongoDB user with only the `readWrite` role on `wubot_test`.
+Never reuse `MONGODB_URI` or a production credential. Each test creates
+UUID-prefixed collections in `wubot_test` and drops only those exact
+collections in a `finally` block; it never drops the database.
+
+For the two focused regressions, set `TICKET_TEST_MONGODB_URI` in the ignored
+local `.env` file and run `.venv/bin/python tools/run_ticket_real_mongo_tests.py`.
+The runner reads only that variable from `.env`; it never falls back to
+`MONGODB_URI`.
 
 ## Recovery
 
