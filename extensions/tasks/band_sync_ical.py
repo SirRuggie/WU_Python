@@ -848,7 +848,43 @@ async def poll_once(mongo):
     except Exception as e:
         # Purge failing must never stop the next poll; TTL is the backstop anyway.
         print(f"[FWA Sync ICS] Purge error: {type(e).__name__}: {e}")
+
+    try:
+        await sweep_dm_deletions(mongo, now)
+    except Exception as e:
+        # Same isolation as purge above: the in-process timer is the fast path anyway.
+        print(f"[FWA Sync ICS] DM sweep error: {type(e).__name__}: {e}")
     return interval
+
+
+async def sweep_dm_deletions(mongo, now):
+    """Restart backstop for DECISIONS.md D006: delete any DM whose dm_delete_at has
+    passed. band_sync_panel._schedule_dm_delete's in-process timer is the fast path for
+    this; a bot restart drops every pending asyncio task with it, so this poll-cycle
+    sweep is what actually guarantees the 10-minute TTL when the process was down.
+    """
+    projection = {"dm_channel_id": 1, "dm_message_id": 1, "dm_delete_at": 1}
+    query = {"dm_message_id": {"$exists": True}, "dm_delete_at": {"$lte": now}}
+    async for response in mongo.fwa_sync_responses.find(query, projection).limit(200):
+        channel_id = response.get("dm_channel_id")
+        message_id = response.get("dm_message_id")
+        if channel_id and message_id and bot_instance:
+            try:
+                await bot_instance.rest.delete_message(channel_id, message_id)
+            except hikari.NotFoundError:
+                pass  # already gone - not an error
+            except Exception as e:
+                # Transient failure: leave the tracking fields so this response is
+                # picked up again on the next poll instead of being orphaned
+                # (refuter-03 noted).
+                print(f"[FWA Sync ICS] dm sweep: could not delete DM id={response['_id']} "
+                      f"channel={channel_id} message={message_id}: {type(e).__name__}: {e}")
+                continue
+        # Status and reminders stay - only the DM tracking fields go.
+        await mongo.fwa_sync_responses.update_one(
+            {"_id": response["_id"]},
+            {"$unset": {"dm_channel_id": "", "dm_message_id": "", "dm_delete_at": ""}},
+        )
 
 
 async def purge_finished_events(mongo, now):
@@ -950,6 +986,10 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
         poller_task.cancel()
         await asyncio.gather(poller_task, return_exceptions=True)
     poller_task = None
+    # panel.py owns the DM auto-delete timers (D006) but has no loader/listener of its
+    # own to catch StoppingEvent - cancel them here so shutdown never leaves a bare
+    # sleeping task behind.
+    await panel.cancel_dm_delete_tasks()
     print("[FWA Sync ICS] Poller cancelled")
 
 

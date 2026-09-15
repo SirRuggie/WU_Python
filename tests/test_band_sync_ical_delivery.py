@@ -182,6 +182,12 @@ class FakeRest:
             raise remaining
 
     async def delete_message(self, channel_id, message_id):
+        remaining = self.failures.get(message_id, 0)
+        if isinstance(remaining, BaseException):
+            raise remaining
+        if remaining:
+            self.failures[message_id] = remaining - 1
+            raise RuntimeError("temporary Discord failure")
         self.deleted_messages.append((channel_id, message_id))
 
 
@@ -786,6 +792,73 @@ def test_purge_ignores_not_found_when_deleting_the_dm(monkeypatch):
     asyncio.run(sync.purge_finished_events(mongo, now))  # must not raise
 
     assert mongo.fwa_sync_events.documents == {}
+
+
+# ---- D006 restart backstop: sweep_dm_deletions ----
+def test_sweep_dm_deletions_deletes_overdue_and_leaves_future_ones(monkeypatch):
+    rest = FakeRest()
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 5, 18, 20, tzinfo=timezone.utc)
+    overdue = schema.new_response_doc(
+        "sync-1", 1, start, "v1", "in",
+        dm_channel_id=10, dm_message_id=20, dm_delete_at=now - timedelta(minutes=1),
+    )
+    future = schema.new_response_doc(
+        "sync-1", 2, start, "v1", "in",
+        dm_channel_id=30, dm_message_id=40, dm_delete_at=now + timedelta(minutes=5),
+    )
+    mongo = FakeMongo(responses=[overdue, future])
+
+    asyncio.run(sync.sweep_dm_deletions(mongo, now))
+
+    assert (10, 20) in rest.deleted_messages
+    assert (30, 40) not in rest.deleted_messages
+    overdue_stored = mongo.fwa_sync_responses.documents[overdue["_id"]]
+    assert "dm_message_id" not in overdue_stored
+    assert overdue_stored["status"] == "in"  # status/reminders untouched
+    future_stored = mongo.fwa_sync_responses.documents[future["_id"]]
+    assert future_stored["dm_message_id"] == 40  # not touched
+
+
+def test_sweep_dm_deletions_ignores_not_found(monkeypatch):
+    rest = FakeRest()
+    async def raise_not_found(channel_id, message_id):
+        raise sync.hikari.NotFoundError("https://discord.test", {}, {}, "unknown message")
+    rest.delete_message = raise_not_found
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 5, 18, 20, tzinfo=timezone.utc)
+    response = schema.new_response_doc(
+        "sync-1", 1, start, "v1", "in",
+        dm_channel_id=10, dm_message_id=20, dm_delete_at=now - timedelta(minutes=1),
+    )
+    mongo = FakeMongo(responses=[response])
+
+    asyncio.run(sync.sweep_dm_deletions(mongo, now))  # must not raise
+
+    stored = mongo.fwa_sync_responses.documents[response["_id"]]
+    assert "dm_message_id" not in stored
+
+
+def test_sweep_dm_deletions_leaves_fields_on_transient_failure(monkeypatch):
+    rest = FakeRest()
+    async def raise_runtime_error(channel_id, message_id):
+        raise RuntimeError("temporary Discord failure")
+    rest.delete_message = raise_runtime_error
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 5, 18, 20, tzinfo=timezone.utc)
+    response = schema.new_response_doc(
+        "sync-1", 1, start, "v1", "in",
+        dm_channel_id=10, dm_message_id=20, dm_delete_at=now - timedelta(minutes=1),
+    )
+    mongo = FakeMongo(responses=[response])
+
+    asyncio.run(sync.sweep_dm_deletions(mongo, now))  # must not raise
+
+    stored = mongo.fwa_sync_responses.documents[response["_id"]]
+    assert stored["dm_message_id"] == 20  # retried next pass, not orphaned
 
 
 # ---- Migration ----

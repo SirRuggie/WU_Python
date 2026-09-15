@@ -152,10 +152,15 @@ def normalize_event(doc) -> dict:
 
 def new_response_doc(uid, user_id, start_at, event_version, status,
                       reminders=None, dm_channel_id=None, dm_message_id=None,
-                      now=None) -> dict:
+                      dm_delete_at=None, now=None) -> dict:
     """One row per user per event. Replaced in place on every status change, never
     appended - see docs/mongodb-refactor.md rule 10 for the CAS pattern the UI brief
-    must use when writing this doc from a button click."""
+    must use when writing this doc from a button click.
+
+    dm_delete_at (DECISIONS.md D006) is the UTC instant the current dm_message_id
+    auto-deletes at - set alongside dm_channel_id/dm_message_id whenever a DM is sent,
+    unset (along with them) once it is deleted.
+    """
     now = now or start_at
     return {
         "_id": response_id(uid, user_id),
@@ -166,6 +171,7 @@ def new_response_doc(uid, user_id, start_at, event_version, status,
         "reminders": list(reminders or ()),
         "dm_channel_id": dm_channel_id,
         "dm_message_id": dm_message_id,
+        "dm_delete_at": dm_delete_at,
         "updated_at": now,
         "expire_at": start_at + timedelta(days=EVENT_TTL_DAYS),
     }
@@ -177,6 +183,7 @@ def normalize_response(doc) -> dict:
     doc.setdefault("status", None)  # "hasn't responded" - distinct from "no" (chose Deny)
     doc.setdefault("dm_channel_id", None)
     doc.setdefault("dm_message_id", None)
+    doc.setdefault("dm_delete_at", None)  # D006: set only while a sent DM is still live
     return doc
 
 

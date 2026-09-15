@@ -459,6 +459,26 @@ def test_apply_status_from_dm_edits_dm_and_refreshes_channel_panel():
     assert (777, 888) in rest.edits  # and the channel panel was refreshed too
 
 
+# ---- refuter-03 must-fix: _render_after_change must keep the D006 footer on re-render ----
+def test_apply_status_from_dm_keeps_delete_footer_on_reedit():
+    rest = FakeRest()
+    bot = SimpleNamespace(rest=rest)
+    event = _event_row(panel_channel_id=777, panel_message_id=888)
+    mongo = FakeMongo(events=[event])
+    delete_at = datetime(2026, 8, 5, 18, 10, tzinfo=timezone.utc)
+    existing = schema.new_response_doc(
+        "sync-1", 42, event["start_at"], event["event_version"], "in",
+        dm_channel_id=111, dm_message_id=222, dm_delete_at=delete_at,
+    )
+    mongo.fwa_sync_responses.documents[existing["_id"]] = existing
+    ctx = FakeCtx(user_id=42, guild_id=None)  # clicked from the DM, not the channel
+
+    asyncio.run(panel.fwa_sync_maybe(ctx, "sync-1", bot=bot, mongo=mongo))
+
+    texts = _texts(ctx.responses[0]["components"][0])
+    assert texts[-1] == f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"
+
+
 # ---- status_rows: exact button styles/custom_ids/labels/emoji, select present ----
 def test_status_rows_buttons_and_select():
     row1, row2 = panel.status_rows("sync-1")
@@ -581,6 +601,159 @@ def test_dm_container_is_slim():
     custom_ids = [getattr(b, "custom_id", "") for row in rows for b in row.components]
     assert not any(c.startswith("fwa_sync_dm_once:") for c in custom_ids)
     assert "**Sync Time:**" not in _texts(panel.panel_container(event, url, [])[0])
+
+
+# ---- D006: DM auto-delete footer ----
+async def _instant_sleep(_seconds):
+    return None
+
+
+def test_dm_container_footer_present_and_last_text_when_delete_at_given():
+    event = _event_row()
+    url = _url_for(event)
+    delete_at = datetime(2026, 8, 5, 18, 10, tzinfo=timezone.utc)
+
+    components = panel.dm_container(event, url, {"status": "in"}, delete_at=delete_at)
+    texts = _texts(components[0])
+
+    assert texts[-1] == f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"
+    # buttons still come last overall - the footer sits before the rows, not after them
+    rows = [c for c in components[0].components if isinstance(c, ActionRow)]
+    assert isinstance(components[0].components[-1], ActionRow)
+    assert len(rows) == 2
+
+
+def test_dm_container_no_footer_when_delete_at_omitted():
+    event = _event_row()
+    url = _url_for(event)
+    components = panel.dm_container(event, url, {"status": "in"})
+    assert not any(t.startswith("-#") for t in _texts(components[0]))
+
+
+def test_send_dm_stores_dm_delete_at_about_ttl_from_now(monkeypatch):
+    monkeypatch.setattr(panel.asyncio, "sleep", _instant_sleep)
+    panel._dm_delete_tasks.clear()
+    rest = FakeRest()
+    bot = SimpleNamespace(rest=rest)
+    mongo = FakeMongo()
+    event = {"uid": "sync-1", "start": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc),
+             "summary": "FWA high sync", "calendar": "Sync3"}
+    response = schema.new_response_doc("sync-1", 42, event["start"], "v1", "in")
+    mongo.fwa_sync_responses.documents[response["_id"]] = response
+
+    async def run():
+        before = datetime.now(timezone.utc)
+        result = await panel.send_dm(mongo, bot, event, response, "https://band.us", "once")
+        stored = mongo.fwa_sync_responses.documents[response["_id"]]
+        delta = (stored["dm_delete_at"] - before).total_seconds()
+        assert result.sent is True
+        assert abs(delta - panel.DM_TTL_SECONDS) < 10
+        assert stored["dm_message_id"] is not None
+        # drain the timer task this scheduled (instant sleep) so it doesn't leak
+        await asyncio.gather(*panel._dm_delete_tasks)
+
+    asyncio.run(run())
+    # the timer that send_dm scheduled ran (instant sleep) and cleared the DM fields,
+    # leaving status untouched - same contract as _delete_dm_after tested directly below.
+    stored = mongo.fwa_sync_responses.documents[response["_id"]]
+    assert "dm_message_id" not in stored
+    assert stored["status"] == "in"
+
+
+def test_send_dm_schedules_timer_at_real_ttl_delay(monkeypatch):
+    """refuter-03 noted: every other test monkeypatches asyncio.sleep to a no-op, so
+    nothing asserted the timer's actual delay - only that dm_delete_at was stored close
+    to TTL. Record the seconds asyncio.sleep is called with here instead of skipping it."""
+    recorded = []
+
+    async def _record_sleep(seconds):
+        recorded.append(seconds)
+
+    monkeypatch.setattr(panel.asyncio, "sleep", _record_sleep)
+    panel._dm_delete_tasks.clear()
+    rest = FakeRest()
+    bot = SimpleNamespace(rest=rest)
+    mongo = FakeMongo()
+    event = {"uid": "sync-1", "start": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc),
+             "summary": "FWA high sync", "calendar": "Sync3"}
+    response = schema.new_response_doc("sync-1", 42, event["start"], "v1", "in")
+    mongo.fwa_sync_responses.documents[response["_id"]] = response
+
+    async def run():
+        result = await panel.send_dm(mongo, bot, event, response, "https://band.us", "once")
+        assert result.sent is True
+        await asyncio.gather(*panel._dm_delete_tasks)
+
+    asyncio.run(run())
+    assert len(recorded) == 1
+    assert 590 <= recorded[0] <= 600
+
+
+def test_delete_dm_after_deletes_when_message_id_still_matches(monkeypatch):
+    monkeypatch.setattr(panel.asyncio, "sleep", _instant_sleep)
+    rest = FakeRest()
+    bot = SimpleNamespace(rest=rest)
+    mongo = FakeMongo()
+    response = schema.new_response_doc(
+        "sync-1", 42, datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc), "v1", "in",
+        dm_channel_id=111, dm_message_id=222,
+        dm_delete_at=datetime(2026, 8, 5, 18, 10, tzinfo=timezone.utc),
+    )
+    mongo.fwa_sync_responses.documents[response["_id"]] = response
+
+    asyncio.run(panel._delete_dm_after(
+        mongo, bot, response["_id"], 111, 222, response["dm_delete_at"],
+    ))
+
+    assert (111, 222) in rest.deleted_messages
+    stored = mongo.fwa_sync_responses.documents[response["_id"]]
+    assert "dm_message_id" not in stored
+    assert "dm_channel_id" not in stored
+    assert "dm_delete_at" not in stored
+    assert stored["status"] == "in"  # status/reminders untouched
+
+
+def test_delete_dm_after_leaves_fields_on_transient_failure(monkeypatch):
+    monkeypatch.setattr(panel.asyncio, "sleep", _instant_sleep)
+    rest = FakeRest()
+    async def raise_runtime_error(channel_id, message_id):
+        raise RuntimeError("temporary Discord failure")
+    rest.delete_message = raise_runtime_error
+    bot = SimpleNamespace(rest=rest)
+    mongo = FakeMongo()
+    response = schema.new_response_doc(
+        "sync-1", 42, datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc), "v1", "in",
+        dm_channel_id=111, dm_message_id=222,
+        dm_delete_at=datetime(2026, 8, 5, 18, 10, tzinfo=timezone.utc),
+    )
+    mongo.fwa_sync_responses.documents[response["_id"]] = response
+
+    asyncio.run(panel._delete_dm_after(
+        mongo, bot, response["_id"], 111, 222, response["dm_delete_at"],
+    ))
+
+    stored = mongo.fwa_sync_responses.documents[response["_id"]]
+    assert stored["dm_message_id"] == 222  # left in place for the sweep to retry
+
+
+def test_delete_dm_after_skips_when_message_id_was_replaced(monkeypatch):
+    monkeypatch.setattr(panel.asyncio, "sleep", _instant_sleep)
+    rest = FakeRest()
+    bot = SimpleNamespace(rest=rest)
+    mongo = FakeMongo()
+    response = schema.new_response_doc(
+        "sync-1", 42, datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc), "v1", "in",
+        dm_channel_id=111, dm_message_id=999,  # a newer DM already replaced 222
+    )
+    mongo.fwa_sync_responses.documents[response["_id"]] = response
+
+    asyncio.run(panel._delete_dm_after(
+        mongo, bot, response["_id"], 111, 222, datetime.now(timezone.utc),
+    ))
+
+    assert rest.deleted_messages == []
+    stored = mongo.fwa_sync_responses.documents[response["_id"]]
+    assert stored["dm_message_id"] == 999  # untouched
 
 
 def test_panel_time_row_holds_band_link_and_dm_me_button():

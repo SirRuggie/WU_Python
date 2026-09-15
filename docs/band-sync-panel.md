@@ -104,6 +104,37 @@ needs an explicit Yes/Maybe/No click to get one (refuter-03 must-fix 3).
 Clicking a button inside a DM edits that DM in place and also re-renders the channel
 panel (two different messages); a channel click only edits the panel.
 
+### DM auto-delete (D006)
+
+Every sync DM `send_dm` sends deletes itself `DM_TTL_SECONDS` (600s / 10 minutes) after
+it is sent, and carries a footer line - `-# This message will be deleted <t:{epoch}:R>` -
+as the last `Text` component, placed right after the "**Your response:**" line and
+before the Yes/Maybe/No/reminders rows so the buttons a reader clicks stay at the
+bottom of the DM. `fwa_sync_responses.dm_delete_at` (a UTC datetime, alongside
+`dm_channel_id`/`dm_message_id`) records when. `_render_after_change` re-reads
+`dm_delete_at` and passes it back into `dm_container` on every click, so the footer
+survives every RSVP/reminder edit of the DM, not just the initial send.
+
+Two independent mechanisms enforce the TTL:
+- **In-process timer** - `send_dm` schedules an `asyncio` task
+  (`band_sync_panel._schedule_dm_delete`) that sleeps until `dm_delete_at`, then deletes
+  the DM only if the response row still holds that exact `dm_message_id` (a newer DM
+  replacing it has already deleted the old one and stored its own id). Every scheduled
+  task is tracked in a module-level set and cancelled cleanly in
+  `band_sync_ical.py`'s `on_bot_stopping` (this module has no listener of its own, so
+  the poller module calls `panel.cancel_dm_delete_tasks()` directly).
+- **Restart backstop** - `band_sync_ical.sweep_dm_deletions`, called at the end of every
+  `poll_once` alongside `purge_finished_events`, finds any response row with
+  `dm_delete_at` in the past and `dm_message_id` still set (a bot restart drops every
+  pending in-process timer with it) and deletes it there.
+
+Either path unsets the DM tracking fields (`dm_channel_id`/`dm_message_id`/
+`dm_delete_at`) only after the delete succeeds or Discord reports the message already
+gone (`NotFoundError`); any other exception (rate limit, timeout, ...) leaves the fields
+in place so the next `sweep_dm_deletions` pass retries instead of orphaning a DM that is
+still live. A response's `status` and `reminders` are untouched either way, so a deleted
+DM never changes someone's RSVP or scheduled reminders.
+
 ## The reminder rule (D002)
 
 Reminders are only selectable once a response's status is `"in"` for THAT event -
@@ -140,7 +171,8 @@ Four collections, all declared in `utils/mongo.py`, owned by
 - `fwa_sync_events` - one row per BAND event, now also carrying `panel_channel_id` /
   `panel_message_id`.
 - `fwa_sync_responses` - one row per `(uid, user)`, replaced in place on every status
-  or reminder change, carrying `dm_channel_id`/`dm_message_id` for the DM-replace rule.
+  or reminder change, carrying `dm_channel_id`/`dm_message_id` for the DM-replace rule
+  and `dm_delete_at` for the auto-delete TTL (D006, see above).
 - `fwa_sync_deliveries` - one row per queued/sent reminder or change alert.
 
 `purge_finished_events` (in `band_sync_ical.py`, run at the end of every poll) deletes
