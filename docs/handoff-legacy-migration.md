@@ -67,6 +67,11 @@ channel 1547244294757425212 (`recruiter-desk`).
    Always verify the applicant, even with a saved username/display name or
    an admin override. If the applicant disappears after planning, the
    confirmed run reclassifies the entry as skipped, not failed.
+9. A leading `👻` channel-name prefix is a ghosting marker. It imports as
+   **closed** with **GHOSTED** attached to the applicant's canonical identity;
+   it never invents an approved or denied outcome. If stored or explicit
+   outcome data conflicts with the marker, the preview reports a problem for
+   review. Existing completed imports are not automatically backfilled.
 
 ## How a channel is read (rules that work across all four eras)
 
@@ -111,6 +116,11 @@ channel 1547244294757425212 (`recruiter-desk`).
 - Outcome: ✅ → approved, ❌ → denied; else an approval embed in history
   ("Welcome to the Family!", "Congratulations on being accepted"); else a
   denial embed ("regret to inform", "Denied"); else closed/no decision.
+  A leading `👻` prefix additionally marks the imported applicant as
+  **GHOSTED** while retaining `closed`/no-decision semantics; it does not
+  convert the ticket to approved or denied. No-message tickets remain subject
+  to the abandoned-ticket rule above, and the marker is applied only when the
+  ticket is actually imported.
 - Dates: created = channel snowflake; decided = decision message time.
 - Tags: `#[0289PYLQGRJCVUO]{3,9}` in the applicant's messages.
 

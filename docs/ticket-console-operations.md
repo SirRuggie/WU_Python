@@ -619,6 +619,15 @@ misread here (e.g. an applicant who only wrote outside that window,
 misclassified `abandoned`) is corrected at confirm time rather than
 affecting what actually gets copied.
 
+A leading `👻` channel-name prefix is shown in the dry-run outcome summary as
+`closed` with a **GHOSTED** identity flag. It does not create an approved or
+denied decision. If stored or explicitly selected decision data conflicts with
+the marker, the preview reports a problem for review. No-message ghost tickets
+remain `abandoned` and are skipped unless `include-abandoned:true` is used;
+only an imported ticket receives the flag. Channels already represented by a
+completed `ticket_migrations` row remain `already_copied`; completed imports
+are not automatically backfilled.
+
 Saved plans retain their existing classifications. After deploying the
 owner-ticket exception, refresh the dry run before confirming that source
 guild's batch; this change does not alter any Mongo plan document.

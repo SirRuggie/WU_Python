@@ -27,7 +27,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import ticket_runtime
-from extensions.commands.tickets import schema, store, thread_service, ticket
+from extensions.commands.tickets import flag_store, schema, store, thread_service, ticket
 from utils.mongo import MongoClient
 
 
@@ -102,6 +102,11 @@ _TICKET_NUMBER_RE = re.compile(r"(?:main|fwa)[-_ ]?(\d+)", re.IGNORECASE)
 _LEGACY_CATEGORY_KEYWORDS = ("ticket", "main clan", "mainclan", "fwa")
 _LEGACY_NAME_PREFIXES = ("main", "fwa", "mainclan", "closed")
 _LEADING_NON_ALNUM_RE = re.compile(r"^[^A-Za-z0-9]+")
+
+
+def _has_legacy_ghost_marker(name: str) -> bool:
+    """Whether a legacy channel has the explicit leading ghost disposition."""
+    return str(name or "").lstrip().startswith("👻")
 
 
 def _stripped_channel_name(name: str) -> str:
@@ -183,6 +188,10 @@ class LegacyMigrationError(RuntimeError):
 
 class LegacyTicketStillOpen(LegacyMigrationError):
     pass
+
+
+class LegacyGhostStatusConflict(LegacyMigrationError):
+    """A ghost marker cannot replace a recorded terminal decision."""
 
 
 class LegacyMigrationBusy(LegacyMigrationError):
@@ -277,6 +286,7 @@ class LegacyMigrationPreview:
     # override) rather than read straight off the channel name/stored status.
     decided_at: datetime | None = None
     decision_note: str | None = None
+    ghosted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -665,6 +675,7 @@ def _migration_identity(document: Mapping[str, Any]) -> dict[str, Any]:
         "metadata.source_ticket_fingerprint": str(
             metadata.get("source_ticket_fingerprint") or ""
         ),
+        "metadata.ghosted": bool(metadata.get("ghosted", False)),
     }
 
 
@@ -1080,6 +1091,7 @@ def _infer_status_detail(
 ) -> _LegacyStatusDetail:
     stored = str((source_ticket or {}).get("status") or "").casefold()
     selected = str(override or "").casefold()
+    ghosted = _has_legacy_ghost_marker(channel_name)
     open_imports_as_closed = (
         source_guild_id is not None
         and int(source_guild_id) in _OPEN_TICKET_IMPORT_AS_CLOSED_GUILDS
@@ -1092,6 +1104,17 @@ def _infer_status_detail(
                 decision_note="No decision recorded",
             )
         raise LegacyTicketStillOpen("still-open legacy tickets cannot be migrated")
+    if ghosted:
+        if stored in {"approved", "denied"} or selected in {"approved", "denied"}:
+            raise LegacyGhostStatusConflict(
+                "legacy 👻 marker conflicts with an approved or denied outcome; "
+                "review the source before migrating"
+            )
+        return _LegacyStatusDetail(
+            "closed",
+            decided_at=_legacy_decided_at(messages, None),
+            decision_note="No decision recorded (legacy 👻 marker)",
+        )
     if stored == "closed":
         if selected in {"approved", "denied"}:
             return _LegacyStatusDetail(selected)
@@ -1553,6 +1576,7 @@ async def preview_legacy_ticket(
         attachment_audit=attachment_audit,
         decided_at=status_detail.decided_at,
         decision_note=status_detail.decision_note,
+        ghosted=_has_legacy_ghost_marker(channel_name),
     )
 
 
@@ -1607,6 +1631,7 @@ async def _claim_migration(
             ),
             "decided_at": preview.decided_at,
             "decision_note": preview.decision_note,
+            "ghosted": preview.ghosted,
         },
     }
     if current:
@@ -2423,6 +2448,18 @@ async def migrate_legacy_ticket(
                 "migration destination identity collides with the legacy source"
             )
         ticket_doc = await _insert_migrated_ticket(mongo, canonical)
+        if metadata.get("ghosted"):
+            me = bot.get_me()
+            if me is None:
+                raise LegacyMigrationError("bot identity is unavailable for ghost flag")
+            await flag_store.ensure_legacy_ghosted_flag(
+                mongo,
+                ticket_doc,
+                source_channel_id=int(source["channel_id"]),
+                source_channel_name=str(source["channel_name"]),
+                actor_id=int(me.id),
+                actor_name=str(getattr(me, "username", "") or me.id),
+            )
         # The durable context outbox is a required pre-completion boundary.
         # Delivery remains best-effort while this terminal pair is still active.
         await thread_service._queue_staff_context_outbox(mongo, ticket_doc)
@@ -2598,7 +2635,12 @@ def _migration_summary(preview: LegacyMigrationPreview) -> str:
         f"staff `{preview.staff_message_count}`\n"
         f"**Attachments:** `{preview.attachment_count}` • **Tags:** `"
     )
-    after_tags = "`\n" + _attachment_audit_summary(preview)
+    ghost_note = (
+        "\n**Ghost marker:** closed with no decision; a GHOSTED flag will be "
+        "recorded after confirmed import."
+        if preview.ghosted else ""
+    )
+    after_tags = "`" + ghost_note + "\n" + _attachment_audit_summary(preview)
     tag_budget = MIGRATION_SUMMARY_LIMIT - len(before_tags) - len(after_tags)
     tag_display = (
         _bounded_display_join(preview.player_tags, limit=tag_budget, noun="tag")

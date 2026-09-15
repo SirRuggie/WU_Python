@@ -189,6 +189,7 @@ def _entry(
     detail: str,
     ticket_type: str | None,
     ticket_status: str | None = None,
+    ghosted: bool = False,
 ) -> dict[str, Any]:
     return {
         "channel_id": int(channel_id),
@@ -200,6 +201,7 @@ def _entry(
         # with -- distinct from "status" below, which is this *run's*
         # pending/done/failed/skipped progress.
         "ticket_status": ticket_status,
+        "ghosted": bool(ghosted),
         "status": "pending" if classification == CLASS_READY else "skipped",
     }
 
@@ -254,34 +256,37 @@ async def _classify(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
     request: legacy_migration.LegacyMigrationRequest,
-) -> tuple[str, str, str | None]:
+) -> tuple[str, str, str | None, bool]:
     try:
         preview = await legacy_migration.preview_legacy_ticket(
             bot=bot, mongo=mongo, request=request
         )
     except legacy_migration.NotALegacyTicketChannel as error:
-        return CLASS_NOT_A_TICKET, str(error), None
+        return CLASS_NOT_A_TICKET, str(error), None, False
     except legacy_migration.SkippedOwnerTestTicket as error:
-        return CLASS_SKIPPED_OWNER_TEST, str(error), None
+        return CLASS_SKIPPED_OWNER_TEST, str(error), None, False
     except legacy_migration.AbandonedLegacyTicket as error:
-        return CLASS_ABANDONED, str(error), None
+        return CLASS_ABANDONED, str(error), None, False
     except legacy_migration.LegacyTicketStillOpen as error:
-        return CLASS_OPEN, str(error), None
+        return CLASS_OPEN, str(error), None, False
     except legacy_migration.DeletedApplicant as error:
-        return CLASS_DELETED_APPLICANT, str(error), None
+        return CLASS_DELETED_APPLICANT, str(error), None, False
     except legacy_migration.LegacyMigrationError as error:
         message = str(error)
         if "candidate Discord ID could not be detected" in message:
-            return CLASS_NO_APPLICANT, message, None
+            return CLASS_NO_APPLICANT, message, None, False
         if "ticket type could not be detected" in message:
-            return CLASS_AMBIGUOUS_TYPE, message, None
-        return f"error:{type(error).__name__}", message, None
+            return CLASS_AMBIGUOUS_TYPE, message, None, False
+        return f"error:{type(error).__name__}", message, None, False
     except Exception as error:  # pragma: no cover - defensive, logged below
         _log.exception(
             "[Tickets] bulk_migration_preview_failed channel=%s", request.source_channel_id
         )
-        return f"error:{type(error).__name__}", str(error), None
-    return CLASS_READY, "", getattr(preview, "status", None)
+        return f"error:{type(error).__name__}", str(error), None, False
+    return (
+        CLASS_READY, "", getattr(preview, "status", None),
+        bool(getattr(preview, "ghosted", False)),
+    )
 
 
 async def build_plan(
@@ -449,9 +454,14 @@ async def build_plan(
             include_abandoned=include_abandoned,
             history_limit=BULK_PLAN_HISTORY_LIMIT,
         )
-        classification, detail, ticket_status = await _classify(bot=bot, mongo=mongo, request=request)
+        classification, detail, ticket_status, ghosted = await _classify(
+            bot=bot, mongo=mongo, request=request
+        )
         entries.append(
-            _entry(channel_id, channel_name, classification, detail, ticket_type, ticket_status)
+            _entry(
+                channel_id, channel_name, classification, detail, ticket_type,
+                ticket_status, ghosted,
+            )
         )
         await _checkpoint(index)
         await asyncio.sleep(PREVIEW_SLEEP_SECONDS)
@@ -515,6 +525,16 @@ def dry_run_summary(document: dict[str, Any], *, guild_name: str) -> str:
             for key, value in sorted(by_outcome.items())
         ]
         lines.append("**By outcome:** " + ", ".join(outcome_bits))
+    ghosted = sum(
+        bool(entry.get("ghosted"))
+        for entry in entries
+        if entry["classification"] == CLASS_READY
+    )
+    if ghosted:
+        lines.append(
+            f"**Leading 👻 markers:** `{ghosted}` — GHOSTED flags will be "
+            "recorded only after each confirmed import."
+        )
     other = {key: value for key, value in counts.items() if key != CLASS_READY}
     if other:
         lines.append(

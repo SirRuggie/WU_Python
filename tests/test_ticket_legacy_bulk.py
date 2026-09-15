@@ -480,9 +480,15 @@ def test_build_plan_document_shape(monkeypatch):
     bot = SimpleNamespace(rest=SimpleNamespace(fetch_guild_channels=fetch_guild_channels))
 
     async def fake_preview(*, bot, mongo, request):
-        return SimpleNamespace()
+        return SimpleNamespace(ghosted=True)
+
+    async def forbidden_flag_write(*_args, **_kwargs):
+        raise AssertionError("dry run must not write GHOSTED flags")
 
     monkeypatch.setattr(legacy_migration, "preview_legacy_ticket", fake_preview)
+    monkeypatch.setattr(
+        legacy_migration.flag_store, "ensure_legacy_ghosted_flag", forbidden_flag_write,
+    )
 
     mongo = _mongo()
     document = asyncio.run(legacy_bulk.build_plan(
@@ -499,9 +505,10 @@ def test_build_plan_document_shape(monkeypatch):
     assert document["revision"] >= 1
     assert len(document["entries"]) == 1
     entry = document["entries"][0]
+    assert entry["ghosted"] is True
     assert set(entry) == {
         "channel_id", "channel_name", "classification", "detail", "ticket_type",
-        "ticket_status", "status",
+        "ticket_status", "ghosted", "status",
     }
 
 
@@ -1615,11 +1622,12 @@ def test_classify_maps_not_a_legacy_ticket_channel(monkeypatch):
         source_guild_id=1, source_channel_id=2, target_guild_id=10,
         candidate_parent_id=20, staff_parent_id=21,
     )
-    classification, _detail, ticket_status = asyncio.run(
+    classification, _detail, ticket_status, ghosted = asyncio.run(
         legacy_bulk._classify(bot=SimpleNamespace(), mongo=SimpleNamespace(), request=request)
     )
     assert classification == legacy_bulk.CLASS_NOT_A_TICKET
     assert ticket_status is None
+    assert ghosted is False
 
 
 def test_classify_maps_deleted_applicant(monkeypatch):
@@ -1631,11 +1639,12 @@ def test_classify_maps_deleted_applicant(monkeypatch):
         source_guild_id=1, source_channel_id=2, target_guild_id=10,
         candidate_parent_id=20, staff_parent_id=21,
     )
-    classification, _detail, ticket_status = asyncio.run(
+    classification, _detail, ticket_status, ghosted = asyncio.run(
         legacy_bulk._classify(bot=SimpleNamespace(), mongo=SimpleNamespace(), request=request)
     )
     assert classification == legacy_bulk.CLASS_DELETED_APPLICANT
     assert ticket_status is None
+    assert ghosted is False
 
 
 def test_build_plan_classifies_non_ticket_channel_names_without_previewing():
@@ -1882,6 +1891,31 @@ def test_infer_status_defaults_to_closed_with_no_decision_note():
     assert detail.decided_at == NOW
 
 
+@pytest.mark.parametrize("channel_name", ["👻main-applicant", " 👻\ufe0f  main-applicant"])
+def test_leading_ghost_marker_imports_as_closed_no_decision(channel_name):
+    detail = legacy_migration._infer_status_detail(
+        None, channel_name, None, messages=[_history_message(content="hello")],
+    )
+    assert legacy_migration._has_legacy_ghost_marker(channel_name) is True
+    assert detail.status == "closed"
+    assert detail.decision_note == "No decision recorded (legacy 👻 marker)"
+
+
+@pytest.mark.parametrize(
+    ("source_ticket", "override"),
+    [({"status": "approved"}, None), ({"status": "denied"}, "approved"), (None, "denied")],
+)
+def test_ghost_marker_conflicts_with_terminal_decision(source_ticket, override):
+    with pytest.raises(legacy_migration.LegacyGhostStatusConflict, match="conflicts"):
+        legacy_migration._infer_status_detail(
+            source_ticket, "👻main-applicant", override,
+        )
+
+
+def test_ghost_marker_does_not_infer_from_a_name_that_merely_contains_ghost():
+    assert legacy_migration._has_legacy_ghost_marker("main-ghost-applicant") is False
+
+
 # ---------------------------------------------------------------------------
 # Follow-up: server 3/4 open-ticket import policy (owner rules #2-#3)
 # ---------------------------------------------------------------------------
@@ -2032,11 +2066,12 @@ def test_classify_maps_skipped_owner_test(monkeypatch):
         source_guild_id=1, source_channel_id=2, target_guild_id=10,
         candidate_parent_id=20, staff_parent_id=21,
     )
-    classification, _detail, ticket_status = asyncio.run(
+    classification, _detail, ticket_status, ghosted = asyncio.run(
         legacy_bulk._classify(bot=SimpleNamespace(), mongo=SimpleNamespace(), request=request)
     )
     assert classification == legacy_bulk.CLASS_SKIPPED_OWNER_TEST
     assert ticket_status is None
+    assert ghosted is False
 
 
 # ---------------------------------------------------------------------------
@@ -2061,11 +2096,12 @@ def test_classify_maps_abandoned_ticket(monkeypatch):
         source_guild_id=1, source_channel_id=2, target_guild_id=10,
         candidate_parent_id=20, staff_parent_id=21,
     )
-    classification, _detail, ticket_status = asyncio.run(
+    classification, _detail, ticket_status, ghosted = asyncio.run(
         legacy_bulk._classify(bot=SimpleNamespace(), mongo=SimpleNamespace(), request=request)
     )
     assert classification == legacy_bulk.CLASS_ABANDONED
     assert ticket_status is None
+    assert ghosted is False
 
 
 def test_build_plan_passes_include_abandoned_through_to_each_request(monkeypatch):
@@ -2105,3 +2141,14 @@ def test_dry_run_summary_reports_closed_no_decision_and_abandoned_counts():
     assert "Abandoned (applicant never wrote):** `1`" in summary
     assert f"{legacy_bulk.CLASS_ABANDONED}: `1`" in summary
     assert f"{legacy_bulk.CLASS_SKIPPED_OWNER_TEST}: `1`" in summary
+
+
+def test_dry_run_summary_reports_leading_ghost_marker_count_without_flag_write():
+    entries = [
+        legacy_bulk._entry(
+            1, "👻main-1", legacy_bulk.CLASS_READY, "", "main", "closed", True,
+        ),
+    ]
+    summary = legacy_bulk.dry_run_summary(_batch_document(9, entries), guild_name="Legacy Nine")
+    assert "Leading 👻 markers:** `1`" in summary
+    assert "only after each confirmed import" in summary

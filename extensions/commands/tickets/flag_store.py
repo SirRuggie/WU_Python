@@ -36,6 +36,7 @@ FLAG_SOURCES = {
     FLAG_GHOSTED: "Warriors United recruiter ghosting report",
 }
 AUTOMATIC_PRIOR_DENIAL_SOURCE = "Automatic earlier denied ticket history"
+AUTOMATIC_LEGACY_GHOSTED_SOURCE = "Automatic legacy ghost marker"
 IDENTITY_LOCK_LEASE = timedelta(minutes=3)
 IDENTITY_LOCK_WAIT_SECONDS = 5.0
 IDENTITY_LOCK_POLL_SECONDS = 0.05
@@ -632,6 +633,47 @@ async def ensure_prior_denial_flag(
             automatic_rule="prior_denial",
         )
         return document, document.get("automatic_rule") == "prior_denial"
+
+
+async def ensure_legacy_ghosted_flag(
+    mongo: MongoClient,
+    ticket_doc: dict,
+    *,
+    source_channel_id: int,
+    source_channel_name: str,
+    actor_id,
+    actor_name: str,
+) -> tuple[dict | None, bool]:
+    """Record an imported ghost marker without rewriting recruiter flag state."""
+    ids = _discord_ids(ticket_doc.get("user_id"))
+    tags = schema.player_tags(ticket_doc.get("player_tags") or ())
+    if not ids and not tags:
+        return None, False
+    async with identity_guard(mongo, discord_ids=ids, player_tags=tags):
+        matching = await mongo.ticket_flags.find({
+            "kind": FLAG_GHOSTED,
+            "$or": _identity_query(ids, tags),
+        }).limit(2).to_list(length=2)
+        if matching:
+            return matching[0], False
+        document = await _set_flag_unlocked(
+            mongo,
+            kind=FLAG_GHOSTED,
+            discord_ids=ids,
+            player_tags=tags,
+            source=(
+                f"{AUTOMATIC_LEGACY_GHOSTED_SOURCE}: "
+                f"#{int(source_channel_id)} {str(source_channel_name).strip()}"
+            ),
+            added_by=actor_id,
+            added_by_name=actor_name,
+            reason=(
+                "Imported from a legacy ticket whose channel name begins with "
+                "the 👻 ghost marker."
+            ),
+            automatic_rule="legacy_ghosted",
+        )
+        return document, document.get("automatic_rule") == "legacy_ghosted"
 
 
 async def set_flag_if_current_authorized(

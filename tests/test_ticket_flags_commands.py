@@ -86,6 +86,73 @@ def test_existing_prior_denial_flag_is_preserved_without_automation_write(monkey
     assert not created
 
 
+@pytest.mark.parametrize("active", [True, False])
+def test_legacy_ghosted_flag_preserves_existing_recruiter_state(monkeypatch, active):
+    @asynccontextmanager
+    async def guard(*_args, **_kwargs):
+        yield
+
+    existing = {"_id": "manual", "active": active, "reason": "Keep me"}
+
+    class Cursor:
+        def limit(self, _count):
+            return self
+
+        async def to_list(self, *, length):
+            return [existing]
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("existing recruiter state must not be rewritten")
+
+    monkeypatch.setattr(flag_store, "identity_guard", guard)
+    monkeypatch.setattr(flag_store, "_set_flag_unlocked", forbidden)
+    mongo = SimpleNamespace(ticket_flags=SimpleNamespace(find=lambda _query: Cursor()))
+
+    document, created = asyncio.run(flag_store.ensure_legacy_ghosted_flag(
+        mongo, {"user_id": 5, "player_tags": ["#ABC123"]},
+        source_channel_id=123, source_channel_name="👻 main-applicant",
+        actor_id=999, actor_name="WU Wizard",
+    ))
+
+    assert document == existing
+    assert not created
+
+
+def test_legacy_ghosted_flag_records_source_and_bot_actor(monkeypatch):
+    @asynccontextmanager
+    async def guard(*_args, **_kwargs):
+        yield
+
+    class Cursor:
+        def limit(self, _count):
+            return self
+
+        async def to_list(self, *, length):
+            return []
+
+    captured = {}
+
+    async def set_unlocked(_mongo, **kwargs):
+        captured.update(kwargs)
+        return {"_id": "auto", "automatic_rule": kwargs["automatic_rule"]}
+
+    monkeypatch.setattr(flag_store, "identity_guard", guard)
+    monkeypatch.setattr(flag_store, "_set_flag_unlocked", set_unlocked)
+    mongo = SimpleNamespace(ticket_flags=SimpleNamespace(find=lambda _query: Cursor()))
+
+    _document, created = asyncio.run(flag_store.ensure_legacy_ghosted_flag(
+        mongo, {"user_id": 5, "player_tags": ["#ABC123"]},
+        source_channel_id=123, source_channel_name="👻 main-applicant",
+        actor_id=999, actor_name="WU Wizard",
+    ))
+
+    assert created
+    assert captured["automatic_rule"] == "legacy_ghosted"
+    assert captured["added_by"] == 999
+    assert "#123" in captured["source"]
+    assert "ghost marker" in captured["reason"]
+
+
 def test_flag_command_normalizes_multiple_identities_without_duplicates():
     assert flags._discord_ids(
         "223456789012345678, 223456789012345678 323456789012345678"

@@ -3688,8 +3688,9 @@ def test_source_backed_crash_preserves_legacy_record_and_completes_distinct_tick
 def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
     first_preview = replace(
         _preview(),
-        source_channel=SimpleNamespace(id=2, name="approved-main-42-applicant"),
+        source_channel=SimpleNamespace(id=2, name="👻 approved-main-42-applicant"),
         original_ticket_number=42,
+        ghosted=True,
     )
 
     class Collection(MigrationCollection):
@@ -3716,7 +3717,7 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
             return UpdateResult(1)
 
     collection = Collection()
-    automation_states = AutomationStateCollection(fail_updates=1)
+    automation_states = AutomationStateCollection()
     mongo = SimpleNamespace(
         ticket_migrations=collection,
         ticket_automation_state=automation_states,
@@ -3743,7 +3744,7 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
         "guild_id": 1,
         "channel_id": 2,
         "staff_thread_id": 3,
-        "channel_name": "approved-main-42-applicant",
+        "channel_name": "👻 approved-main-42-applicant",
         "ticket_number": 42,
     }
     inserted = schema.new_ticket_document(
@@ -3782,6 +3783,20 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
     async def no_op(*_args, **_kwargs):
         return None
 
+    ghost_attempts = []
+
+    async def set_ghosted(*_args, **_kwargs):
+        ghost_attempts.append(True)
+        if len(ghost_attempts) == 1:
+            raise TimeoutError("ghost flag write unavailable")
+        return {"_id": "flag_ghosted"}, True
+
+    notified = []
+
+    async def notify(*_args, **_kwargs):
+        assert len(ghost_attempts) == 2
+        notified.append(True)
+
     insert_calls = []
 
     async def source_remains_absent(_mongo, state):
@@ -3803,7 +3818,10 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
     monkeypatch.setattr(
         legacy_migration, "_insert_migrated_ticket", insert_idempotently
     )
-    monkeypatch.setattr(thread_service, "notify_console_after_change", no_op)
+    monkeypatch.setattr(
+        legacy_migration.flag_store, "ensure_legacy_ghosted_flag", set_ghosted
+    )
+    monkeypatch.setattr(thread_service, "notify_console_after_change", notify)
     monkeypatch.setattr(thread_service, "archive_ticket_pair", no_op)
 
     class Rest:
@@ -3820,8 +3838,10 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
             self.archived.append((channel_id, kwargs))
 
     rest = Rest()
-    bot = SimpleNamespace(rest=rest)
-    with pytest.raises(TimeoutError, match="staff context queue unavailable"):
+    bot = SimpleNamespace(
+        rest=rest, get_me=lambda: SimpleNamespace(id=99, username="WU Wizard"),
+    )
+    with pytest.raises(TimeoutError, match="ghost flag write unavailable"):
         asyncio.run(legacy_migration.migrate_legacy_ticket(
             bot=bot, mongo=mongo, preview=resumed_preview
         ))
@@ -3840,6 +3860,8 @@ def test_post_insert_crash_resumes_same_new_record_and_completes(monkeypatch):
     assert result.migration["destination"]["ticket_number"] == 362
     assert result.migration["metadata"]["source_ticket_id"] is None
     assert result.migration["state"] == "complete"
+    assert ghost_attempts == [True, True]
+    assert notified == [True]
     context = automation_states.documents["ticket_staff_context:ticket_101"]
     assert context["ticket_id"] == "ticket_101"
     assert context["staff_space_id"] == 102
