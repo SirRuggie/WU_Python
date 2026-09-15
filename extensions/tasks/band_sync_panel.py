@@ -262,9 +262,9 @@ def _header_components(event, url, include_role_ping, old_start=None, include_ti
         "Review the **FWA Sync Time** and select your availability below."
     )))
     components.append(Separator(divider=True))
-    components.append(Text(content=f"{str(emojis.yes)} - If you are available to start."))
-    components.append(Text(content=f"{str(emojis.maybe)} - If you may be available to start."))
-    components.append(Text(content=f"{str(emojis.no)} - If you are unavailable to start."))
+    components.append(Text(content=f"{str(emojis.yes)} - Available to Start"))
+    components.append(Text(content=f"{str(emojis.maybe)} - Maybe Available"))
+    components.append(Text(content=f"{str(emojis.no)} - Unavailable to Start"))
     components.append(Separator(divider=True))
     components.append(Text(content=(
         "*Please note that if your availability changes, you can update your response by "
