@@ -407,6 +407,87 @@ def test_todo_actions_own_their_response_through_the_lock():
         assert components.registered_functions[name].no_return is True
 
 
+def test_load_runs_independent_views_concurrently_then_reuses_regular_war(monkeypatch):
+    """A cold dashboard must not add CWL and raid tails to regular-war time."""
+    todo_data._cache.clear()
+    account = todo_data.Account("#PLAYER", "Player", "#CLAN", "Clan")
+    release = asyncio.Event()
+    entered = set()
+    semaphores = {}
+    war_ready = False
+
+    async def linked_tags(_discord_id):
+        return ["#PLAYER"]
+
+    async def accounts(*_args, **_kwargs):
+        return ([account], [])
+
+    async def candidates(*_args, **_kwargs):
+        return {}
+
+    async def watched(*_args, **_kwargs):
+        return None
+
+    async def presence(*_args, **_kwargs):
+        return None
+
+    async def view(name):
+        nonlocal war_ready
+        entered.add(name)
+        await release.wait()
+        if name == "war":
+            war_ready = True
+        return todo_data.ViewData()
+
+    async def war(*_args, **kwargs):
+        semaphores["war"] = kwargs["sem"]
+        return await view("war")
+
+    async def cwl(*_args, **kwargs):
+        semaphores["cwl"] = kwargs["sem"]
+        return await view("cwl")
+
+    async def raid(*_args, **kwargs):
+        semaphores["raid"] = kwargs["sem"]
+        return await view("raid")
+
+    async def fwa(*_args, **_kwargs):
+        assert war_ready
+        return {"#CLAN": {}}
+
+    async def blocked(*_args, **_kwargs):
+        assert war_ready
+        return todo_data.ViewData()
+
+    monkeypatch.setattr(todo, "resolve_tags", linked_tags)
+    monkeypatch.setattr(todo_data, "fetch_accounts", accounts)
+    monkeypatch.setattr(todo.clan_history, "load_candidates", candidates)
+    monkeypatch.setattr(todo.clan_history, "watch_players", watched)
+    monkeypatch.setattr(todo.clan_history, "record_presence", presence)
+    monkeypatch.setattr(todo_data, "build_war_view", war)
+    monkeypatch.setattr(todo_data, "build_cwl_view", cwl)
+    monkeypatch.setattr(todo_data, "build_raid_view", raid)
+    monkeypatch.setattr(todo, "_load_fwa_records", fwa)
+    monkeypatch.setattr(todo_data, "build_blocked_view", blocked)
+
+    async def exercise():
+        load = asyncio.create_task(todo._load(object(), object(), 77, mongo=None))
+        for _ in range(20):
+            if entered == {"war", "cwl", "raid"}:
+                break
+            await asyncio.sleep(0)
+        assert entered == {"war", "cwl", "raid"}
+        release.set()
+        return await load
+
+    data, problem, fwa_map = asyncio.run(exercise())
+    assert problem is None
+    assert fwa_map == {"#CLAN": {}}
+    assert set(data) == set(todo.VIEW_ORDER)
+    assert len({id(sem) for sem in semaphores.values()}) == 1
+    todo_data._cache.clear()
+
+
 def test_panel_is_promoted_only_after_session_registration(monkeypatch):
     rest = _Rest()
     ctx = SimpleNamespace(channel_id=99, user=SimpleNamespace(id=7))

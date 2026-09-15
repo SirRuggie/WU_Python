@@ -1586,24 +1586,25 @@ async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=Non
         mongo, clan_history.presences_from_accounts(accounts)
     ))
 
-    # All four view builds together: they share the per-clan fetches, so timing
-    # them separately would just show the first one paying for the rest.
-    # The four builders still run in SEQUENCE, deliberately. They share the
-    # per-clan caches - build_blocked_view re-reads the same war: keys
-    # build_war_view just filled - so running them concurrently would turn those
-    # cache hits back into duplicate in-flight requests. The win is inside each
-    # builder, where the clans now fan out.
+    # Regular war, CWL, and raid use disjoint cache keys/endpoints. Start those
+    # independent views together under the one shared semaphore: on a cold
+    # 46-account dashboard, serial builders turned a slow proxy tail into a
+    # minute-long wait. Blocked-war remains after regular war because it
+    # deliberately reuses the populated ``war:`` entries rather than issuing a
+    # duplicate request. FWA enrichment likewise depends on regular-war rows.
     with perf.timing("views"):
-        war = await todo_data.build_war_view(
-            coc_client, accounts, sem=sem, candidates=candidates,
-            recheck_negative_after=recheck_negative_after,
+        war, cwl, raid = await asyncio.gather(
+            todo_data.build_war_view(
+                coc_client, accounts, sem=sem, candidates=candidates,
+                recheck_negative_after=recheck_negative_after,
+            ),
+            todo_data.build_cwl_view(
+                coc_client, accounts, sem=sem, candidates=candidates,
+                recheck_negative_after=recheck_negative_after,
+            ),
+            todo_data.build_raid_view(coc_client, accounts, sem=sem),
         )
         fwa_map = await _load_fwa_records(mongo, war.rows)
-        cwl = await todo_data.build_cwl_view(
-            coc_client, accounts, sem=sem, candidates=candidates,
-            recheck_negative_after=recheck_negative_after,
-        )
-        raid = await todo_data.build_raid_view(coc_client, accounts, sem=sem)
         blocked = await todo_data.build_blocked_view(
             coc_client, accounts, sem=sem, candidates=candidates,
             recheck_negative_after=recheck_negative_after,
