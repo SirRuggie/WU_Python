@@ -267,8 +267,7 @@ def _header_components(event, url, include_role_ping, old_start=None, include_ti
     components.append(Text(content=f"{str(emojis.no)} - Unavailable to Start"))
     components.append(Separator(divider=True))
     components.append(Text(content=(
-        "*Please note that if your availability changes, you can update your response by "
-        "selecting the appropriate button.*"
+        "*Your availability changed? Select another button to update your response.*"
     )))
     components.append(Separator(divider=True))
     return components
