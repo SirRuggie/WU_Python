@@ -286,6 +286,28 @@ def test_post_or_replace_panel_deletes_previous_events_panel():
     assert stored["panel_message_id"] is not None
 
 
+# ---- builder-06 must-fix: a reschedule reposts the SAME uid's panel, and the old
+# message for that uid must still be deleted - not skipped because the uid matches ----
+def test_post_or_replace_panel_deletes_previous_panel_of_the_same_uid_on_reschedule():
+    rest = FakeRest()
+    bot = SimpleNamespace(rest=rest)
+    event = _event_row(uid="sync-1")  # handle_reschedule clears panel_message_id first
+    mongo = FakeMongo(events=[event])
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(
+        panel_channel_id=777,
+        current_panel={"uid": "sync-1", "channel_id": 777, "message_id": 888},
+    )
+
+    asyncio.run(panel.post_or_replace_panel(mongo, bot, event))
+
+    assert (777, 888) in rest.deleted_messages
+    stored = mongo.fwa_sync_events.documents[schema.event_id("sync-1")]
+    assert stored["panel_message_id"] is not None
+    assert stored["panel_message_id"] != 888
+    assert mongo.fwa_sync_config.documents["config"]["current_panel"]["message_id"] == \
+        stored["panel_message_id"]
+
+
 # ---- NotFound repost once ----
 def test_refresh_panel_reposts_once_on_not_found():
     class NotFoundOnEditRest(FakeRest):
@@ -569,34 +591,20 @@ def test_dm_container_status_line_per_status():
         assert expect_fragment in line
 
 
-# ---- dm_container: change alert carries a "Was" line under Sync Time ----
-def test_dm_container_change_alert_adds_was_line():
+# ---- dm_container: no "change" variant exists (DECISIONS.md D009) ----
+def test_dm_container_has_no_old_start_parameter():
+    """A reschedule is handled like a new sync - old panel deleted, fresh one posted,
+    never a change-alert DM - so dm_container never renders a "Was" line or the old
+    CHANGE_ALERT_TITLE; its title is always POSTED_TITLE."""
     event = _event_row()
     url = _url_for(event)
-    old_start = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
 
-    components = panel.dm_container(event, url, None, old_start=old_start)
+    components = panel.dm_container(event, url, None)
     texts = _texts(components[0])
 
-    was_line = next(t for t in texts if t.startswith("**Was:**"))
-    assert panel.discord_timestamp(old_start, "F") in was_line
-    sync_index = texts.index(next(t for t in texts if t.startswith("**Sync Time:**")))
-    assert texts[sync_index + 1] == was_line  # directly under Sync Time
-    assert len(components[0].components) <= 40
-
-
-# ---- dm_container: change-alert DM title, DECISIONS.md D003 (restores old dm_embed
-# behaviour, refuter-01 noted) ----
-def test_dm_container_change_alert_title():
-    event = _event_row()
-    url = _url_for(event)
-    old_start = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
-
-    changed = panel.dm_container(event, url, None, old_start=old_start)
-    posted = panel.dm_container(event, url, None)
-
-    assert _texts(changed[0])[0] == "## ⏰ FWA Sync Time CHANGED"
-    assert _texts(posted[0])[0] == panel.POSTED_TITLE
+    assert texts[0] == panel.POSTED_TITLE
+    assert not any(t.startswith("**Was:**") for t in texts)
+    assert not hasattr(panel, "CHANGE_ALERT_TITLE")
 
 
 # ---- band_monitor no longer posts a panel of its own (band-sync-panel-restyle) ----

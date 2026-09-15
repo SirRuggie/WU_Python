@@ -217,23 +217,20 @@ def _availability_lines(responses, max_chars=_LINES_MAX_CHARS) -> str:
     return _cap_lines(lines, max_chars)
 
 
-CHANGE_ALERT_TITLE = "## ⏰ FWA Sync Time CHANGED"  # DECISIONS.md D003
 POSTED_TITLE = "## <a:alarm_clock:1549521421841997836> FWA Sync Time Posted"
 
 
-def _header_components(event, url, include_role_ping, old_start=None, include_time=True):
+def _header_components(event, url, include_role_ping, include_time=True):
     """Items 1-11 of the mockup (DECISIONS.md D001): title, optional role ping, the new
-    Sync Time line (and, in a change-alert DM, the old time under it), the "Check FWA
-    Sync Time" link, and the yes/maybe/no legend - verbatim wording from band_monitor's
-    original Container. Shared by the channel panel and every DM; only the role ping
-    differs between them.
+    Sync Time line, the "Check FWA Sync Time" link, and the yes/maybe/no legend -
+    verbatim wording from band_monitor's original Container. Shared by the channel
+    panel and every DM; only the role ping differs between them.
 
-    `old_start` is only ever passed for a reschedule "change" alert DM (the only
-    delivery_type send_dm passes it for) - that's also the signal for D003's distinct
-    title, so a change DM reads "FWA Sync Time CHANGED" instead of "has been posted.".
+    A reschedule never re-renders this title (DECISIONS.md D009: it is handled like a
+    new sync - old panel deleted, fresh one posted) - there is no "change" variant.
     """
     start = _start_of(event)
-    title = CHANGE_ALERT_TITLE if old_start is not None else POSTED_TITLE
+    title = POSTED_TITLE
     if include_role_ping:
         # Channel panel: role ping on the title line itself, joined by an em dash
         # (user rule 2026-09-15). DMs never ping a role.
@@ -245,10 +242,6 @@ def _header_components(event, url, include_role_ping, old_start=None, include_ti
         # for it, and only the DM carries the timestamp.
         components.append(Text(
             content=f"**Sync Time:** {discord_timestamp(start, 'F')} · {discord_timestamp(start, 'R')}"
-        ))
-    if old_start is not None:
-        components.append(Text(
-            content=f"**Was:** {discord_timestamp(normalize_start(old_start), 'F')}"
         ))
     time_row = ActionRow(components=[
         LinkButton(url=url, label=BAND_LINK_LABEL, emoji=BAND_LINK_EMOJI.partial_emoji),
@@ -329,10 +322,11 @@ def panel_container(event, url, responses):
     return [Container(accent_color=RED_ACCENT, components=components)]
 
 
-def dm_container(event, url, response, old_start=None, delete_at=None):
-    """Slim DM (user rule 2026-09-15): title, sync time (+ Was on a change alert), the
-    reader's own status, then Yes / Maybe / No and the reminder select. No role ping,
-    no BAND link, no instructions, no availability list, no DM-me button.
+def dm_container(event, url, response, delete_at=None):
+    """Slim DM (user rule 2026-09-15): title, sync time, the reader's own status, then
+    Yes / Maybe / No and the reminder select. No role ping, no BAND link, no
+    instructions, no availability list, no DM-me button. No "change" variant exists -
+    a reschedule is handled like a new sync (DECISIONS.md D009), never a DM here.
 
     `delete_at` (DECISIONS.md D006, only ever passed by send_dm) is an aware UTC
     datetime; when set, its footer Text is appended right after the status line and
@@ -341,15 +335,10 @@ def dm_container(event, url, response, old_start=None, delete_at=None):
     buttons a reader actually clicks stay at the bottom of the DM.
     """
     start = _start_of(event)
-    title = CHANGE_ALERT_TITLE if old_start is not None else POSTED_TITLE
     components = [
-        Text(content=title),
+        Text(content=POSTED_TITLE),
         Text(content=f"**Sync Time:** {discord_timestamp(start, 'F')} · {discord_timestamp(start, 'R')}"),
     ]
-    if old_start is not None:
-        components.append(Text(
-            content=f"**Was:** {discord_timestamp(normalize_start(old_start), 'F')}"
-        ))
     # No BAND link in the DM (user rule 2026-09-15): the DM already carries the time.
     components.append(Separator(divider=True))
     status = (response or {}).get("status")
@@ -420,7 +409,7 @@ async def cancel_dm_delete_tasks() -> None:
 
 
 # ---- DM delivery (D001: one DM per user per event, replaced not appended) ----
-async def send_dm(mongo, bot, event, response, url, delivery_type, old_start=None):
+async def send_dm(mongo, bot, event, response, url, delivery_type):
     """Deliver one interactive DM for (uid, user), deleting any previous DM tracked on
     `response` first. `event` needs uid/summary/start_at (or start)/calendar. Never
     raises - failures come back as a DmSendResult so the caller can decide on retry.
@@ -448,7 +437,7 @@ async def send_dm(mongo, bot, event, response, url, delivery_type, old_start=Non
     try:
         user = await bot.rest.fetch_user(user_id)
         channel = await bot.rest.create_dm_channel(user.id)
-        components = dm_container(event, url, response, old_start, delete_at=delete_at)
+        components = dm_container(event, url, response, delete_at=delete_at)
         message = await bot.rest.create_message(channel=channel, components=components)
     except Exception as exc:
         return DmSendResult(
@@ -471,15 +460,19 @@ async def send_dm(mongo, bot, event, response, url, delivery_type, old_start=Non
 
 # ---- Channel panel lifecycle (D003) ----
 async def post_or_replace_panel(mongo, bot, event):
-    """Post `event`'s panel to the configured channel, deleting whichever OTHER
-    event's panel is currently there first (events never overlap across the three
-    feeds, D003). No-op if no panel channel is configured or the bot is unavailable.
-    `event` is a normalized fwa_sync_events row (already inserted/updated).
+    """Post `event`'s panel to the configured channel, deleting whichever panel is
+    currently tracked there first. No-op if no panel channel is configured or the bot
+    is unavailable. `event` is a normalized fwa_sync_events row (already
+    inserted/updated).
 
     The previous panel's ids come from fwa_sync_config.current_panel, not from the
     event row - the event row that posted it may already be gone by the time the NEXT
     event is discovered (purge_finished_events() deletes it, D003/D013), so the config
-    singleton is the only place that survives to tell us what to delete.
+    singleton is the only place that survives to tell us what to delete. The delete is
+    unconditional on uid (not only "some OTHER event's panel"): a reschedule reposts
+    the SAME uid's panel fresh (DECISIONS.md D009), and current_panel still points at
+    the old message for that uid at that point, so gating on uid mismatch would skip
+    deleting it (builder-06 must-fix).
     """
     config = await config_row(mongo)
     channel_id = config.get("panel_channel_id")
@@ -487,17 +480,16 @@ async def post_or_replace_panel(mongo, bot, event):
         return
 
     previous = config.get("current_panel") or {}
-    if previous.get("uid") != event["uid"]:
-        prev_channel = previous.get("channel_id")
-        prev_message = previous.get("message_id")
-        if prev_channel and prev_message:
-            try:
-                await bot.rest.delete_message(prev_channel, prev_message)
-            except hikari.NotFoundError:
-                pass
-            except Exception as exc:
-                print(f"[FWA Sync Panel] could not delete previous panel "
-                      f"uid={previous.get('uid')}: {type(exc).__name__}: {exc}")
+    prev_channel = previous.get("channel_id")
+    prev_message = previous.get("message_id")
+    if prev_channel and prev_message:
+        try:
+            await bot.rest.delete_message(prev_channel, prev_message)
+        except hikari.NotFoundError:
+            pass
+        except Exception as exc:
+            print(f"[FWA Sync Panel] could not delete previous panel "
+                  f"uid={previous.get('uid')}: {type(exc).__name__}: {exc}")
 
     responses = await load_responses(mongo, event["uid"])
     url = band_url(event, config)

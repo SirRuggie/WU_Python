@@ -4,7 +4,11 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+
+from extensions.tasks import band_monitor
 from extensions.tasks import band_sync_ical as sync
+from extensions.tasks import band_sync_panel as panel
 from extensions.tasks import band_sync_schema as schema
 
 
@@ -316,236 +320,12 @@ def test_stale_pending_lease_is_reclaimed(monkeypatch):
     assert rest.attempts == [7]
 
 
-def test_reschedule_change_alert_retries_after_a_transient_send_failure(monkeypatch):
-    rest = FakeRest({9: 1})
-    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
-    old_event = _event(start=datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc))
-    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
-    mongo = FakeMongo(events=[state])
-    # A pure delivery-queue test - see test_partial_delivery_retries_only_failed_recipient.
-    # 0, not None: normalize_config now treats a stored None as "not yet configured"
-    # and falls back to NOTIFICATION_CHANNEL_ID (refuter-01 must-fix 3); 0 is the one
-    # value post_or_replace_panel's `if not channel_id` still reads as "no panel".
-    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
-    moved = _event(start=old_event["start"] + timedelta(hours=1))
-    now = moved["start"] - timedelta(hours=2)
-
-    asyncio.run(sync.process_event(mongo, moved, _config([9]), now))
-
-    state_after_failure = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
-    delivery = _deliveries(mongo)[0]
-    assert sync.normalize_start(state_after_failure["start_at"]) == moved["start"]
-    assert delivery["delivery_type"] == "change"
-    assert delivery["status"] == "failed"
-    assert rest.attempts == [9]
-
-    asyncio.run(sync.process_event(
-        mongo, moved, _config([9]), now + timedelta(minutes=5)
-    ))
-
-    assert mongo.fwa_sync_deliveries.documents[delivery["_id"]]["status"] == "sent"
-    assert rest.attempts == [9, 9]
-
-
-def test_reschedule_delivers_change_alert_and_rearms_matching_reminder_offset(monkeypatch):
-    """refuter-01 bug 1+2 (test a): flag off, user 77 opted in with reminders=[60].
-    Before the fix, change-alert recipients were computed via recipients_for_offset with
-    key "change:<ver>", which never matches a numeric reminders list, so recipients came
-    back empty, handle_reschedule returned False, and start_at never moved. Also proves
-    the re-armed 60-min reminder only fires once it is actually due, not immediately."""
+def test_reschedule_clears_responses_deliveries_and_reposts_panel_no_change_alert(monkeypatch):
+    """builder-06 (DECISIONS.md D009): a time change is handled like a new sync - both
+    responses for this uid (with reminders in and maybe alike) and every delivery are
+    wiped, their tracked DMs deleted, no "change" delivery is ever enqueued, the old
+    panel is deleted, and a fresh one is posted with the role ping."""
     rest = FakeRest()
-    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
-    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
-    old_event = _event(start=old_start)
-    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
-    response = schema.new_response_doc(
-        old_event["uid"], 77, old_start, "v0", "in", reminders=[60],
-    )
-    mongo = FakeMongo(events=[state], responses=[response])
-    new_start = old_start + timedelta(hours=1)
-    moved = _event(start=new_start)
-    config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
-              "legacy_broadcast": False}
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))  # ~14:00
-
-    stored = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
-    assert sync.normalize_start(stored["start_at"]) == new_start
-    change_deliveries = [d for d in _deliveries(mongo) if d["delivery_type"] == "change"]
-    assert len(change_deliveries) == 1
-    assert change_deliveries[0]["recipient_id"] == 77
-    assert change_deliveries[0]["status"] == "sent"
-    assert [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"] == []
-
-    asyncio.run(sync.process_event(  # 18:00, exactly 60 minutes before the new start
-        mongo, moved, config, new_start - timedelta(minutes=60)
-    ))
-
-    reminder_deliveries = [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"]
-    assert len(reminder_deliveries) == 1
-    assert reminder_deliveries[0]["recipient_id"] == 77
-    assert reminder_deliveries[0]["status"] == "sent"
-
-
-def test_reschedule_change_alert_only_when_reminders_list_is_empty(monkeypatch):
-    """Test b: same as above but the opted-in user chose no reminders. They still get
-    the change alert (status=="in" is enough) but never a numeric reminder."""
-    rest = FakeRest()
-    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
-    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
-    old_event = _event(start=old_start)
-    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
-    response = schema.new_response_doc(old_event["uid"], 77, old_start, "v0", "in", reminders=[])
-    mongo = FakeMongo(events=[state], responses=[response])
-    new_start = old_start + timedelta(hours=1)
-    moved = _event(start=new_start)
-    config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
-              "legacy_broadcast": False}
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
-
-    change_deliveries = [d for d in _deliveries(mongo) if d["delivery_type"] == "change"]
-    assert len(change_deliveries) == 1
-    assert change_deliveries[0]["recipient_id"] == 77
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=60)))
-
-    assert [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"] == []
-
-
-def test_reschedule_legacy_broadcast_gets_change_alert_and_due_reminders(monkeypatch):
-    """Test c: flag on, dm_user_ids=[9], no responses at all - legacy broadcast alone
-    still gets both the change alert and, once due, the reminder."""
-    rest = FakeRest()
-    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
-    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
-    old_event = _event(start=old_start)
-    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
-    mongo = FakeMongo(events=[state])
-    new_start = old_start + timedelta(hours=1)
-    moved = _event(start=new_start)
-    config = {"dm_user_ids": [9], "offsets": [60], "announce_on_discovery": True,
-              "legacy_broadcast": True}
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
-
-    change_deliveries = [d for d in _deliveries(mongo) if d["delivery_type"] == "change"]
-    assert len(change_deliveries) == 1
-    assert change_deliveries[0]["recipient_id"] == 9
-    assert [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"] == []
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=60)))
-
-    reminder_deliveries = [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"]
-    assert len(reminder_deliveries) == 1
-    assert reminder_deliveries[0]["recipient_id"] == 9
-
-
-def test_reschedule_with_no_legacy_broadcast_and_no_responses_updates_without_retry(monkeypatch):
-    """Test d: flag off, no responses - nobody to tell is not a failure. start_at still
-    updates and the next poll must not re-trigger a reschedule (no retry loop)."""
-    rest = FakeRest()
-    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
-    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
-    old_event = _event(start=old_start)
-    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
-    mongo = FakeMongo(events=[state])
-    new_start = old_start + timedelta(hours=1)
-    moved = _event(start=new_start)
-    config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
-              "legacy_broadcast": False}
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
-
-    stored = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
-    assert sync.normalize_start(stored["start_at"]) == new_start
-    assert _deliveries(mongo) == []
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=59)))
-
-    stored_again = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
-    assert sync.normalize_start(stored_again["start_at"]) == new_start
-    assert _deliveries(mongo) == []  # no change alert re-queued: detect_reschedule is False now
-
-
-def test_reschedule_edits_the_existing_channel_panel_in_place(monkeypatch):
-    """builder-06: after a reschedule the channel panel must show the new time without
-    waiting for a button click. Before the fix, process_event only posts a panel when
-    panel_message_id is unset (extensions/tasks/band_sync_ical.py:717), so a panel that
-    already exists is left showing the old time - no edit, no repost."""
-    rest = FakeRest()
-    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
-    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
-    old_event = _event(start=old_start)
-    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
-    state["panel_channel_id"] = 555
-    state["panel_message_id"] = 111
-    mongo = FakeMongo(events=[state])
-    mongo.fwa_sync_config.documents["config"] = {"_id": "config", "current_panel": {
-        "uid": old_event["uid"], "channel_id": 555, "message_id": 111,
-    }}
-    new_start = old_start + timedelta(hours=2)
-    moved = _event(start=new_start)
-    config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
-              "legacy_broadcast": False}
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
-
-    assert rest.edits == [(555, 111)]
-    from utils.band_ical_parser import discord_timestamp
-    new_tag = discord_timestamp(new_start, "F")
-    values = _panel_texts(rest.edit_components[-1])
-    # The channel panel carries no time at all (user rule 2026-09-15); the re-render
-    # is proven by the edit itself and by panel_version catching up below.
-    assert not any("**Sync Time:**" in value for value in values)
-    assert not any(new_tag in value for value in values)
-    assert 555 not in rest.attempts  # no new panel posted to the channel
-
-    stored = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
-    assert stored["panel_channel_id"] == 555
-    assert stored["panel_message_id"] == 111  # unchanged - the same message was edited
-    assert stored["panel_version"] == stored["event_version"]
-    current_panel = mongo.fwa_sync_config.documents["config"]["current_panel"]
-    assert current_panel == {"uid": old_event["uid"], "channel_id": 555, "message_id": 111}
-
-
-def test_reschedule_reposts_the_panel_once_if_it_was_hand_deleted(monkeypatch):
-    """The NotFound repost path (D003) must still work when the reschedule is what
-    triggers the refresh: edit_message raises NotFound, refresh_panel_message reposts
-    once and current_panel is updated to the new message id."""
-    rest = FakeRest({111: sync.hikari.NotFoundError("https://discord.test", {}, {}, "gone")})
-    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
-    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
-    old_event = _event(start=old_start)
-    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
-    state["panel_channel_id"] = 555
-    state["panel_message_id"] = 111
-    mongo = FakeMongo(events=[state])
-    mongo.fwa_sync_config.documents["config"] = {"_id": "config", "current_panel": {
-        "uid": old_event["uid"], "channel_id": 555, "message_id": 111,
-    }}
-    new_start = old_start + timedelta(hours=2)
-    moved = _event(start=new_start)
-    config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
-              "legacy_broadcast": False}
-
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
-
-    assert rest.attempts.count(555) == 1  # reposted exactly once
-
-    stored = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
-    assert stored["panel_channel_id"] == 555
-    assert stored["panel_message_id"] != 111
-    current_panel = mongo.fwa_sync_config.documents["config"]["current_panel"]
-    assert current_panel["message_id"] == stored["panel_message_id"]
-
-
-def test_reschedule_refresh_retries_on_next_poll_after_a_transient_edit_failure(monkeypatch):
-    """refuter-06 must-fix: edit_message raising a non-NotFound error must not leave the
-    panel stuck on the old time forever. panel_version stays behind event_version when
-    the edit fails, so the very next poll retries the refresh - it does not depend on
-    detect_reschedule firing again (which is False once start_at has already moved)."""
-    rest = FakeRest({111: RuntimeError("temporary Discord failure")})
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
     old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
     old_event = _event(start=old_start)
@@ -553,11 +333,19 @@ def test_reschedule_refresh_retries_on_next_poll_after_a_transient_edit_failure(
     state["panel_channel_id"] = 555
     state["panel_message_id"] = 111
     state["panel_version"] = sync._event_version(old_event)
-    response = schema.new_response_doc(old_event["uid"], 77, old_start, "v0", "in", reminders=[])
-    mongo = FakeMongo(events=[state], responses=[response])
-    mongo.fwa_sync_config.documents["config"] = {"_id": "config", "current_panel": {
-        "uid": old_event["uid"], "channel_id": 555, "message_id": 111,
-    }}
+    response_in = schema.new_response_doc(
+        old_event["uid"], 77, old_start, "v0", "in", reminders=[60],
+        dm_channel_id=10, dm_message_id=20,
+    )
+    response_maybe = schema.new_response_doc(
+        old_event["uid"], 78, old_start, "v0", "maybe", reminders=[0],
+        dm_channel_id=30, dm_message_id=40,
+    )
+    mongo = FakeMongo(events=[state], responses=[response_in, response_maybe])
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(
+        panel_channel_id=555,
+        current_panel={"uid": old_event["uid"], "channel_id": 555, "message_id": 111},
+    )
     new_start = old_start + timedelta(hours=2)
     moved = _event(start=new_start)
     config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
@@ -565,28 +353,115 @@ def test_reschedule_refresh_retries_on_next_poll_after_a_transient_edit_failure(
 
     asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
 
-    stored = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
-    assert rest.edits == [(555, 111)]  # the failed attempt still happened
-    assert sync.normalize_start(stored["start_at"]) == new_start  # reschedule still applied
-    assert stored["panel_version"] != stored["event_version"]  # refresh failed, stays retryable
-    change_deliveries = [d for d in _deliveries(mongo) if d["delivery_type"] == "change"]
-    assert len(change_deliveries) == 1
-    assert change_deliveries[0]["recipient_id"] == 77
-    assert change_deliveries[0]["status"] == "sent"
+    assert mongo.fwa_sync_responses.documents == {}
+    assert mongo.fwa_sync_deliveries.documents == {}
+    assert (10, 20) in rest.deleted_messages
+    assert (30, 40) in rest.deleted_messages
+    assert (555, 111) in rest.deleted_messages  # old panel deleted
 
-    rest.failures = {}  # transient failure clears; the next poll's edit succeeds
-    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=59)))
+    stored = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
+    assert sync.normalize_start(stored["start_at"]) == new_start
+    assert stored["panel_message_id"] is not None
+    assert stored["panel_message_id"] != 111
+    assert stored["panel_version"] == stored["event_version"]
+
+    channel, role_mentions, user_mentions = rest.create_calls[-1]
+    assert channel == 555
+    assert role_mentions == [band_monitor.ALLOWED_ROLE_ID]
+    assert user_mentions is True
+
+    current_panel = mongo.fwa_sync_config.documents["config"]["current_panel"]
+    assert current_panel["uid"] == moved["uid"]
+    assert current_panel["message_id"] == stored["panel_message_id"]
+
+
+def test_reschedule_then_no_reminder_fires_until_someone_opts_in_again(monkeypatch):
+    """Responses are wiped by the reschedule, so a poll landing on the offset that used
+    to be due for the old responder must send nothing - nobody is opted in yet."""
+    rest = FakeRest()
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
+    old_event = _event(start=old_start)
+    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
+    response = schema.new_response_doc(old_event["uid"], 77, old_start, "v0", "in", reminders=[60])
+    mongo = FakeMongo(events=[state], responses=[response])
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
+    new_start = old_start + timedelta(hours=2)
+    moved = _event(start=new_start)
+    config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
+              "legacy_broadcast": False}
+
+    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
+    assert [d for d in _deliveries(mongo) if d["delivery_type"] == "change"] == []
+
+    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=60)))
+
+    assert [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"] == []
+
+
+def test_user_who_opts_in_after_reschedule_repost_gets_reminder_at_new_time(monkeypatch):
+    """A user opting in against the reposted panel (fresh event_version) still gets
+    their chosen reminder once it comes due against the NEW start time."""
+    rest = FakeRest()
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
+    old_event = _event(start=old_start)
+    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
+    mongo = FakeMongo(events=[state])
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
+    new_start = old_start + timedelta(hours=2)
+    moved = _event(start=new_start)
+    config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
+              "legacy_broadcast": False}
+
+    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
+
+    stored_event = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
+    asyncio.run(panel.upsert_response(mongo, moved["uid"], stored_event, 99, "in", [60]))
+
+    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=60)))
+
+    reminders = [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"]
+    assert [d["recipient_id"] for d in reminders] == [99]
+
+
+def test_reschedule_crash_before_event_update_leaves_old_start_next_poll_completes(monkeypatch):
+    """Crash-safety: responses/deliveries are cleared BEFORE start_at moves, so a crash
+    raised out of the event-state update leaves the old start_at in place with the
+    clearing already done - and simply re-running handle_reschedule (as the next poll
+    would, since detect_reschedule still sees the move) completes it."""
+    rest = FakeRest()
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
+    old_event = _event(start=old_start)
+    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
+    response = schema.new_response_doc(old_event["uid"], 77, old_start, "v0", "in", reminders=[60])
+    mongo = FakeMongo(events=[state], responses=[response])
+    new_start = old_start + timedelta(hours=2)
+    moved = _event(start=new_start)
+
+    real_update_one = mongo.fwa_sync_events.update_one
+    calls = {"n": 0}
+
+    async def flaky_update_one(query, update, upsert=False):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("simulated crash mid-reschedule")
+        return await real_update_one(query, update, upsert=upsert)
+    mongo.fwa_sync_events.update_one = flaky_update_one
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(sync.handle_reschedule(mongo, moved, state))
+
+    assert mongo.fwa_sync_responses.documents == {}  # cleared before the failing write
+    assert mongo.fwa_sync_deliveries.documents == {}
+    stored = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
+    assert sync.normalize_start(stored["start_at"]) == old_start  # not yet moved
+
+    asyncio.run(sync.handle_reschedule(mongo, moved, stored))  # next poll retries, completes
 
     stored_again = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
-    assert rest.edits == [(555, 111), (555, 111)]
-    assert stored_again["panel_version"] == stored_again["event_version"]
-    from utils.band_ical_parser import discord_timestamp
-    new_tag = discord_timestamp(new_start, "F")
-    values = _panel_texts(rest.edit_components[-1])
-    # The channel panel carries no time at all (user rule 2026-09-15); the re-render
-    # is proven by the edit itself and by panel_version catching up below.
-    assert not any("**Sync Time:**" in value for value in values)
-    assert not any(new_tag in value for value in values)
+    assert sync.normalize_start(stored_again["start_at"]) == new_start
 
 
 def test_normal_poll_does_not_refresh_the_panel_when_panel_version_matches(monkeypatch):
@@ -736,16 +611,6 @@ def test_recipients_for_offset_no_user_never_counts():
     config = {"dm_user_ids": [], "legacy_broadcast": False}
     responses = [_response(8, "no", [60])]
     assert schema.recipients_for_offset(config, responses, 60) == []
-
-
-def test_change_recipients_includes_maybe():
-    config = {"dm_user_ids": [], "legacy_broadcast": False}
-    responses = [
-        _response(1, "in"),
-        _response(2, "maybe"),
-        _response(3, "no"),
-    ]
-    assert schema.change_recipients(config, responses) == [1, 2]
 
 
 def test_recipients_for_offset_legacy_flag_gates_dm_user_ids():
@@ -1033,9 +898,11 @@ def test_shutdown_awaits_poller_cancellation(monkeypatch):
     asyncio.run(scenario())
 
 
-def test_maybe_user_gets_change_alert_and_due_reminder_end_to_end(monkeypatch):
+def test_maybe_user_gets_due_reminder_end_to_end_after_reopting_in(monkeypatch):
     """D007 end to end: the poller's response pre-filter must include "maybe", not
-    just "in", or the schema helpers never see the row (builder-05 finding)."""
+    just "in", or the schema helpers never see the row (builder-05 finding). A
+    reschedule wipes the old response (D009), so the maybe user has to opt back in
+    against the reposted panel before their reminder can fire again."""
     rest = FakeRest()
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
     old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
@@ -1043,14 +910,18 @@ def test_maybe_user_gets_change_alert_and_due_reminder_end_to_end(monkeypatch):
     state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
     response = schema.new_response_doc(old_event["uid"], 78, old_start, "v0", "maybe", reminders=[60])
     mongo = FakeMongo(events=[state], responses=[response])
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
     new_start = old_start + timedelta(hours=1)
     moved = _event(start=new_start)
     config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
               "legacy_broadcast": False}
 
     asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
-    change_deliveries = [d for d in _deliveries(mongo) if d["delivery_type"] == "change"]
-    assert [d["recipient_id"] for d in change_deliveries] == [78]
+    assert mongo.fwa_sync_responses.documents == {}  # wiped, no change alert either
+    assert [d for d in _deliveries(mongo) if d["delivery_type"] == "change"] == []
+
+    stored_event = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
+    asyncio.run(panel.upsert_response(mongo, moved["uid"], stored_event, 78, "maybe", [60]))
 
     asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=60)))
     reminders = [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"]

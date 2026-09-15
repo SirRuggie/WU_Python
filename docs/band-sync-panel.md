@@ -28,27 +28,30 @@ a working panel channel without an admin having to run `/fwasync set-channel` fi
 (refuter-01 must-fix 3; `0` is the one value that stays "no panel"). Posted by the
 poller the first poll it discovers a new event (`process_event`, when the event's
 `panel_message_id` is still unset).
-Only one panel exists at a time: posting a new event's panel deletes whichever other
-event's panel is currently in that channel first (events never overlap across the
-three BAND feeds - D003 in `.claude/scratch/band-sync-panel/DECISIONS.md`). That
-panel comes from `fwa_sync_config.current_panel` (`{uid, channel_id,
-message_id}`), not the old event's row - `purge_finished_events` deletes that row
-long before the next event is discovered days later, so the config singleton is the
-only place the id survives to (D013). `fwa_sync_config.current_panel` is authoritative;
-the event row's `panel_channel_id`/`panel_message_id` are only a mirror, kept for
-convenience on that event's own doc - nothing reads them as the source of truth for
-what to delete next.
+Only one panel exists at a time: posting a panel deletes whichever panel is currently
+tracked in that channel first, unconditionally - not only when it belonged to a
+different event. That panel comes from `fwa_sync_config.current_panel` (`{uid,
+channel_id, message_id}`), not the old event's row - `purge_finished_events` deletes
+that row long before the next event is discovered days later, so the config singleton
+is the only place the id survives to (D013). `fwa_sync_config.current_panel` is
+authoritative; the event row's `panel_channel_id`/`panel_message_id` are only a
+mirror, kept for convenience on that event's own doc - nothing reads them as the
+source of truth for what to delete next.
 
-Once posted, the panel is edited in place whenever the event row's `panel_version`
-lags its `event_version` - most often a reschedule, which changes `event_version`
-without touching `panel_message_id`. `process_event` checks this on every poll (not
-only right after a detected reschedule), so an edit that raised, or a bot restart
-between the reschedule's Mongo write and the edit, simply retries on the next poll
-instead of leaving the panel on the old time forever; `panel_version` is only set to
-the new `event_version` after the REST call actually succeeds. A hand-deleted panel is
-reposted once, the next time anything tries to edit it and gets `NotFoundError`; the
-new message id replaces the old one on both the event doc and `current_panel`, and
-`panel_version` is set there too.
+A BAND time change is handled like a brand new sync (DECISIONS.md D009), not an
+in-place edit: `handle_reschedule` (`extensions/tasks/band_sync_ical.py`) keeps the
+uid but deletes every DM tracked on its responses, clears `fwa_sync_responses` and
+`fwa_sync_deliveries` for that uid, and resets the event row's `panel_message_id`/
+`panel_version` to `None` alongside the new `start_at`/`event_version` - clearing
+happens before the state write so a crash between the two just repeats the clearing
+on the next poll instead of leaving stale answers pinned against the new time.
+`process_event`'s "post when `panel_message_id` is unset" branch then posts a fresh
+panel with the role ping, deleting the old message for that same uid via
+`current_panel` above. No DM is ever sent for a reschedule; a rep who wants a
+reminder has to opt back in against the reposted panel. A hand-deleted panel (outside
+a reschedule) is reposted once, the next time anything tries to edit it and gets
+`NotFoundError`; the new message id replaces the old one on both the event doc and
+`current_panel`, and `panel_version` is set there too.
 
 Content (band-sync-panel-restyle, DECISIONS.md D001): a Components V2 Container styled
 like band_monitor's old post-monitor panel (red accent, `## ⚔️ War Sync Event has been
@@ -86,15 +89,18 @@ One DM per user per event, replaced rather than appended: before sending any DM 
 `(uid, user)`, the previous message recorded on that user's `fwa_sync_responses` row
 (`dm_channel_id`/`dm_message_id`) is deleted (`NotFoundError` ignored - already gone is
 not an error), the new one is sent, and its id is stored. This applies to "DM me the
-time" (one-time, no schedule, available without opting in), opted-in reminders, and
-reschedule "change" alerts - anyone with a response row gets the interactive DM (the
+time" (one-time, no schedule, available without opting in) and opted-in reminders -
+the only two DMs that exist. Anyone with a response row gets the interactive DM (the
 same Container as the panel, minus the role ping and the Rep Availability list, with
-a "**Your response:**" line and the same Yes/Maybe/No/DM Me the Sync Time/reminders row in
-their place - a reschedule alert also carries a "**Was:**" line under Sync Time and,
-per DECISIONS.md D003, swaps the title for `## ⏰ FWA Sync Time CHANGED`). A
-`legacy_broadcast` recipient (`dm_user_ids`, no response row - see below) still gets
-the old plain, buttonless embed; they never opted in through the panel, so there is
-nowhere to store a replaceable message id for them.
+a "**Your response:**" line and the same Yes/Maybe/No/DM Me the Sync Time/reminders
+row in their place). A `legacy_broadcast` recipient (`dm_user_ids`, no response row -
+see below) still gets the old plain, buttonless embed; they never opted in through the
+panel, so there is nowhere to store a replaceable message id for them.
+
+There is no reschedule "change" DM (DECISIONS.md D009 supersedes the old D003 change-
+alert behaviour and the earlier restyle's D003 change-DM title): a time change deletes
+the panel and every response/delivery for that uid instead, so nobody gets DMed about
+it - see the reschedule paragraph above.
 
 "DM Me the Sync Time" never sets a status: a first-time clicker with no response row yet
 gets one created with `status: None` (`response.status` is one of `None`/`"in"`/
@@ -140,10 +146,10 @@ DM never changes someone's RSVP or scheduled reminders.
 
 Reminders are selectable once a response's status is `"in"` or `"maybe"`
 (`band_sync_schema.REMINDER_STATUSES`) for THAT event - opting in never carries over to
-the next sync. Choosing "All" sets `[60, 10, 0]`. Switching between `"in"` and
-`"maybe"` keeps the reminders list; only switching to `"no"` clears it. Change alerts
-(reschedules) go to `"in"` and `"maybe"` alike, same set. Times are always Discord
-timestamps; no per-user timezone is stored anywhere.
+the next sync, and a reschedule (D009) clears it too, so a rep re-opts in against the
+reposted panel. Choosing "All" sets `[60, 10, 0]`. Switching between `"in"` and
+`"maybe"` keeps the reminders list; only switching to `"no"` clears it. Times are
+always Discord timestamps; no per-user timezone is stored anywhere.
 
 Offset `0` ("at sync time", D011) is due only in the ten minutes starting at the
 event's start - `due_offsets()` in `utils/band_ical_parser.py` now treats it specially
@@ -176,7 +182,7 @@ Four collections, all declared in `utils/mongo.py`, owned by
 - `fwa_sync_responses` - one row per `(uid, user)`, replaced in place on every status
   or reminder change, carrying `dm_channel_id`/`dm_message_id` for the DM-replace rule
   and `dm_delete_at` for the auto-delete TTL (D006, see above).
-- `fwa_sync_deliveries` - one row per queued/sent reminder or change alert.
+- `fwa_sync_deliveries` - one row per queued/sent reminder or DM-once delivery.
 
 `purge_finished_events` (in `band_sync_ical.py`, run at the end of every poll) deletes
 an event's responses, deliveries, and each response's last DM one hour after the event

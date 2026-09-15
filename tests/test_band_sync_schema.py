@@ -166,9 +166,11 @@ def test_new_delivery_doc_shape_and_default_type_is_reminder():
     assert doc["expire_at"] == event["start"] + timedelta(days=schema.EVENT_TTL_DAYS)
 
 
-def test_new_delivery_doc_accepts_change_and_once_types():
+def test_new_delivery_doc_accepts_reminder_and_once_types():
+    """D009: "change" deliveries no longer exist; only the two types in DELIVERY_TYPES."""
     event = _event()
-    assert schema.new_delivery_doc(event, "change:1", 1, "change")["delivery_type"] == "change"
+    assert set(schema.DELIVERY_TYPES) == {"reminder", "once"}
+    assert schema.new_delivery_doc(event, "60", 1, "reminder")["delivery_type"] == "reminder"
     assert schema.new_delivery_doc(event, "new", 1, "once")["delivery_type"] == "once"
 
 
