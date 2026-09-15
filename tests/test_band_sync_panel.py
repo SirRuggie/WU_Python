@@ -70,8 +70,7 @@ def test_panel_container_exact_layout_zero_responses():
         f"{str(emojis.yes)} - Available to Start",
         f"{str(emojis.maybe)} - Maybe Available",
         f"{str(emojis.no)} - Unavailable to Start",
-        "*Please note that if your availability changes, you can update your response by "
-        "selecting the appropriate button.*",
+        "*Your availability changed? Select another button to update your response.*",
         "## Rep Availability",
         "*No responses yet...*",
     ]
