@@ -1,13 +1,15 @@
 import asyncio
-import warnings
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import hikari
 
+from extensions.tasks import band_monitor
 from extensions.tasks import band_sync_panel as panel
 from extensions.tasks import band_sync_schema as schema
 from tests.test_band_sync_ical_delivery import FakeMongo, FakeRest
+from utils.constants import RED_ACCENT
+from utils.emoji import emojis
 
 
 class FakeInteraction:
@@ -39,29 +41,63 @@ def _event_row(uid="sync-1", start=None, panel_channel_id=None, panel_message_id
     return row
 
 
-# ---- panel_embed: lists by status ----
-def test_panel_embed_lists_users_by_status():
+def _texts(container):
+    """Text.content of every direct child of a Container that has one, in order -
+    what "exact Text contents and order" (brief) means to check against."""
+    return [child.content for child in container.components if hasattr(child, "content")]
+
+
+def _url_for(event):
+    return panel.band_url(event, schema.new_config_doc())
+
+
+# ---- panel_container: exact layout, DECISIONS.md D001 mockup, zero responses ----
+def test_panel_container_exact_layout_zero_responses():
     event = _event_row()
+    url = _url_for(event)
+    components = panel.panel_container(event, url, [])
+
+    assert len(components) == 1
+    container = components[0]
+    assert container.accent_color == RED_ACCENT
+
+    start = panel._start_of(event)
+    assert _texts(container) == [
+        "## ⚔️ War Sync Event has been posted.",
+        f"<@&{band_monitor.ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!",
+        f"**Sync Time:** {panel.discord_timestamp(start, 'F')} · {panel.discord_timestamp(start, 'R')}",
+        "Please review the **FWA Sync Time** and confirm your availability by selecting the "
+        "corresponding button below:",
+        f"{str(emojis.yes)} - If you are available to start.",
+        f"{str(emojis.maybe)} - If you may be available to start.",
+        f"{str(emojis.no)} - If you are unavailable to start.",
+        "*Please note that if your availability changes, you can update your response by "
+        "selecting the appropriate button.*",
+        "## Rep Availability",
+        "*No responses yet...*",
+    ]
+    assert len(container.components) <= 40
+
+
+# ---- panel_container: exact layout with 3 responses, in -> maybe -> no order ----
+def test_panel_container_exact_layout_three_responses():
+    event = _event_row()
+    url = _url_for(event)
     responses = [
         schema.normalize_response({"user_id": 1, "status": "in"}),
-        schema.normalize_response({"user_id": 2, "status": "in"}),
-        schema.normalize_response({"user_id": 3, "status": "maybe"}),
-        schema.normalize_response({"user_id": 4, "status": "no"}),
+        schema.normalize_response({"user_id": 2, "status": "maybe"}),
+        schema.normalize_response({"user_id": 3, "status": "no"}),
     ]
-    embed = panel.panel_embed(event, responses)
-    fields = {f.name: f.value for f in embed.fields}
-    assert fields["✅ Going"] == "<@1>, <@2>"
-    assert fields["❔ Maybe"] == "<@3>"
-    assert fields["❌ Not going"] == "<@4>"
+    components = panel.panel_container(event, url, responses)
+    texts = _texts(components[0])
 
-
-def test_panel_embed_empty_group_says_nobody_yet():
-    event = _event_row()
-    embed = panel.panel_embed(event, [])
-    fields = {f.name: f.value for f in embed.fields}
-    assert fields["✅ Going"] == "nobody yet"
-    assert fields["❔ Maybe"] == "nobody yet"
-    assert fields["❌ Not going"] == "nobody yet"
+    assert texts[-1] == (
+        f"{str(emojis.yes)} **Available** - <@1>\n"
+        f"{str(emojis.maybe)} **Maybe** - <@2>\n"
+        f"{str(emojis.no)} **Unavailable** - <@3>"
+    )
+    assert texts[-2] == "## Rep Availability"
+    assert len(components[0].components) <= 40
 
 
 # ---- status handler: upserts and clears reminders on leaving "in" ----
@@ -155,6 +191,41 @@ def test_unknown_uid_gets_passed_message():
 
     assert ctx.interaction.executed == [panel.MSG_PASSED]
     assert ctx.responses == []
+
+
+# ---- role ping must notify: create_message needs role_mentions/user_mentions
+# (refuter-01 must-fix 1) ----
+def test_post_or_replace_panel_pings_the_allowed_role():
+    rest = FakeRest()
+    bot = SimpleNamespace(rest=rest)
+    event = _event_row()
+    mongo = FakeMongo(events=[event])
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=777)
+
+    asyncio.run(panel.post_or_replace_panel(mongo, bot, event))
+
+    channel, role_mentions, user_mentions = rest.create_calls[-1]
+    assert channel == 777
+    assert role_mentions == [band_monitor.ALLOWED_ROLE_ID]
+    assert user_mentions is True
+
+
+def test_refresh_panel_repost_on_not_found_also_pings_the_allowed_role():
+    class NotFoundOnEditRest(FakeRest):
+        async def edit_message(self, channel_id, message_id, embed=None, components=None):
+            raise hikari.NotFoundError("https://discord.test", {}, {}, "unknown message")
+
+    rest = NotFoundOnEditRest()
+    bot = SimpleNamespace(rest=rest)
+    event = _event_row(panel_channel_id=777, panel_message_id=888)
+    mongo = FakeMongo(events=[event])
+
+    asyncio.run(panel.refresh_panel_message(mongo, bot, event, [], "https://band.us"))
+
+    channel, role_mentions, user_mentions = rest.create_calls[-1]
+    assert channel == 777
+    assert role_mentions == [band_monitor.ALLOWED_ROLE_ID]
+    assert user_mentions is True
 
 
 # ---- panel replacement deletes previous panel id ----
@@ -262,19 +333,17 @@ def test_panel_survives_purge_and_old_panel_is_deleted_on_next_discovery():
 
 
 # ---- times normalize through Mongo round trip (refuter-03 must-fix 2) ----
-def test_panel_embed_times_agree_after_mongo_round_trip():
+def test_panel_container_times_agree_after_mongo_round_trip():
     aware_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
     event = _event_row(start=aware_start)
     event["start_at"] = event["start_at"].replace(tzinfo=None)  # mimic a Mongo read
+    url = _url_for(event)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")  # HikariWarning on a naive Embed timestamp must raise
-        embed = panel.panel_embed(event, [])
+    components = panel.panel_container(event, url, [])
 
-    assert embed.timestamp == aware_start
-    sync_field = next(f for f in embed.fields if f.name == "Sync Time")
-    assert panel.discord_timestamp(aware_start, "F") in sync_field.value
-    assert panel.discord_timestamp(aware_start, "R") in sync_field.value
+    sync_line = next(t for t in _texts(components[0]) if t.startswith("**Sync Time:**"))
+    assert panel.discord_timestamp(aware_start, "F") in sync_line
+    assert panel.discord_timestamp(aware_start, "R") in sync_line
 
 
 # ---- DM-once never sets a status (refuter-03 must-fix 3) ----
@@ -290,21 +359,69 @@ def test_dm_once_for_fresh_user_sets_no_status_and_is_unlisted():
     stored = mongo.fwa_sync_responses.documents[schema.response_id("sync-1", 42)]
     assert stored["status"] is None
 
-    embed = panel.panel_embed(event, [schema.normalize_response(stored)])
-    fields = {f.name: f.value for f in embed.fields}
-    assert "<@42>" not in fields["✅ Going"]
-    assert "<@42>" not in fields["❔ Maybe"]
-    assert "<@42>" not in fields["❌ Not going"]
+    lines = panel._availability_lines([schema.normalize_response(stored)])
+    assert "<@42>" not in lines
 
 
-# ---- _mentions caps at 1024 chars (noted, non-blocking) ----
-def test_mentions_caps_at_1024_chars_with_more_suffix():
-    user_ids = [100000000000000000 + i for i in range(60)]
-    result = panel._mentions(user_ids)
+# ---- _availability_lines caps at 4000 chars (Text component hard cap) ----
+def test_availability_lines_caps_at_4000_chars_with_more_suffix():
+    responses = [
+        schema.normalize_response({"user_id": 100000000000000000 + i, "status": "in"})
+        for i in range(200)
+    ]
+    result = panel._availability_lines(responses)
 
-    assert len(result) <= 1024
-    assert result.endswith("more")
-    assert result.count("<@") < 60
+    assert len(result) <= 4000
+    assert result.rstrip().split("\n")[-1].endswith("more*")
+
+
+# ---- whole container stays under Discord's 4000-char-per-message-of-Text ceiling with
+# a big roster, not just the availability Text on its own (refuter-01 must-fix 2) ----
+def test_panel_container_total_text_chars_stay_under_4000_with_200_responders():
+    event = _event_row()
+    url = _url_for(event)
+    responses = [
+        schema.normalize_response({"user_id": 100000000000000000 + i, "status": "in"})
+        for i in range(200)
+    ]
+
+    components = panel.panel_container(event, url, responses)
+    texts = _texts(components[0])
+    total_chars = sum(len(t) for t in texts)
+
+    assert total_chars <= 4000
+    assert texts[-1].rstrip().split("\n")[-1].endswith("more*")
+
+
+# ---- a button click must never crash when an edit is rejected as too large
+# (refuter-01 must-fix 2) ----
+def test_apply_status_from_channel_survives_badrequest_on_edit():
+    class RaisingCtx(FakeCtx):
+        async def respond(self, *, embed=None, components=None, edit=False):
+            raise hikari.BadRequestError("https://discord.test", {}, {}, "too long")
+
+    event = _event_row()
+    mongo = FakeMongo(events=[event])
+    ctx = RaisingCtx(user_id=42, guild_id=555)
+
+    asyncio.run(panel.fwa_sync_in(ctx, "sync-1", bot=None, mongo=mongo))
+
+    stored = mongo.fwa_sync_responses.documents[schema.response_id("sync-1", 42)]
+    assert stored["status"] == "in"  # the RSVP itself still landed
+
+
+def test_refresh_panel_message_survives_badrequest_on_edit():
+    class BadRequestOnEditRest(FakeRest):
+        async def edit_message(self, channel_id, message_id, embed=None, components=None):
+            raise hikari.BadRequestError("https://discord.test", {}, {}, "too long")
+
+    rest = BadRequestOnEditRest()
+    bot = SimpleNamespace(rest=rest)
+    event = _event_row(panel_channel_id=777, panel_message_id=888)
+    mongo = FakeMongo(events=[event])
+
+    asyncio.run(panel.refresh_panel_message(mongo, bot, event, [], "https://band.us"))
+    # no exception -> handler completed
 
 
 # ---- real BAND uid shape driven through a handler and its custom_id (noted) ----
@@ -339,3 +456,107 @@ def test_apply_status_from_dm_edits_dm_and_refreshes_channel_panel():
     assert len(ctx.responses) == 1
     assert ctx.responses[0]["edit"] is True  # the DM message itself was edited
     assert (777, 888) in rest.edits  # and the channel panel was refreshed too
+
+
+# ---- status_rows: exact button styles/custom_ids/labels/emoji, select present ----
+def test_status_rows_buttons_and_select():
+    row1, row2 = panel.status_rows("sync-1")
+
+    buttons = row1.components
+    assert [b.custom_id for b in buttons] == [
+        "fwa_sync_in:sync-1", "fwa_sync_maybe:sync-1",
+        "fwa_sync_no:sync-1", "fwa_sync_dm_once:sync-1",
+    ]
+    assert [b.label for b in buttons] == ["Yes", "Maybe", "No", "DM me the time"]
+    assert [b.style for b in buttons] == [
+        hikari.ButtonStyle.SUCCESS, hikari.ButtonStyle.SECONDARY,
+        hikari.ButtonStyle.DANGER, hikari.ButtonStyle.SECONDARY,
+    ]
+    assert buttons[0].emoji == emojis.yes.partial_emoji
+    assert buttons[1].emoji == emojis.maybe.partial_emoji
+    assert buttons[2].emoji == emojis.no.partial_emoji
+    assert buttons[3].emoji == "📩"
+
+    select = row2.components[0]
+    assert select.custom_id == "fwa_sync_reminders:sync-1"
+    assert select.placeholder == "Reminders (opt in first)…"
+    assert [option.value for option in select.options] == ["60", "10", "0", "all"]
+
+
+# ---- dm_container: role ping and Rep Availability list are gone; status line instead ----
+def test_dm_container_has_no_role_ping_or_availability_list():
+    event = _event_row()
+    url = _url_for(event)
+    components = panel.dm_container(event, url, None)
+    texts = _texts(components[0])
+
+    assert not any(str(band_monitor.ALLOWED_ROLE_ID) in t for t in texts)
+    assert "## Rep Availability" not in texts
+    assert texts[0] == "## ⚔️ War Sync Event has been posted."
+    assert texts[-1].startswith("**Your response:**")
+
+
+# ---- dm_container: "Your response" line for every status and unanswered ----
+def test_dm_container_status_line_per_status():
+    event = _event_row()
+    url = _url_for(event)
+    cases = [
+        (None, "*not answered yet*"),
+        ("in", str(emojis.yes)),
+        ("maybe", str(emojis.maybe)),
+        ("no", str(emojis.no)),
+    ]
+    for status, expect_fragment in cases:
+        response = None if status is None else schema.normalize_response({"status": status})
+        components = panel.dm_container(event, url, response)
+        line = next(t for t in _texts(components[0]) if t.startswith("**Your response:**"))
+        assert expect_fragment in line
+
+
+# ---- dm_container: change alert carries a "Was" line under Sync Time ----
+def test_dm_container_change_alert_adds_was_line():
+    event = _event_row()
+    url = _url_for(event)
+    old_start = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
+
+    components = panel.dm_container(event, url, None, old_start=old_start)
+    texts = _texts(components[0])
+
+    was_line = next(t for t in texts if t.startswith("**Was:**"))
+    assert panel.discord_timestamp(old_start, "F") in was_line
+    sync_index = texts.index(next(t for t in texts if t.startswith("**Sync Time:**")))
+    assert texts[sync_index + 1] == was_line  # directly under Sync Time
+    assert len(components[0].components) <= 40
+
+
+# ---- dm_container: change-alert DM title, DECISIONS.md D003 (restores old dm_embed
+# behaviour, refuter-01 noted) ----
+def test_dm_container_change_alert_title():
+    event = _event_row()
+    url = _url_for(event)
+    old_start = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
+
+    changed = panel.dm_container(event, url, None, old_start=old_start)
+    posted = panel.dm_container(event, url, None)
+
+    assert _texts(changed[0])[0] == "## ⏰ FWA Sync Time CHANGED"
+    assert _texts(posted[0])[0] == "## ⚔️ War Sync Event has been posted."
+
+
+# ---- band_monitor no longer posts a panel of its own (band-sync-panel-restyle) ----
+def test_band_monitor_posts_nothing_when_a_sync_post_is_seen():
+    rest = FakeRest()
+    bot = SimpleNamespace(rest=rest)
+    # send_war_sync_to_discord reads the module-global bot_instance directly rather than
+    # taking one as a parameter, so patch that global for the call.
+    original_bot = band_monitor.bot_instance
+    band_monitor.bot_instance = bot
+    try:
+        delivered = asyncio.run(band_monitor.send_war_sync_to_discord(
+            {"post_key": "sync", "content": band_monitor.WAR_SYNC_MARKER}
+        ))
+    finally:
+        band_monitor.bot_instance = original_bot
+
+    assert delivered is True
+    assert rest.attempts == []

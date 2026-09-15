@@ -33,7 +33,10 @@ def test_new_config_doc_defaults():
     doc = schema.new_config_doc()
     assert doc["_id"] == "config"
     assert doc["enabled"] is False
-    assert doc["panel_channel_id"] is None
+    # band-sync-panel-restyle: defaults to the post-monitor's old notification channel
+    # so a brand-new install has a working panel channel with no /fwasync set-channel.
+    from extensions.tasks import band_monitor
+    assert doc["panel_channel_id"] == band_monitor.NOTIFICATION_CHANNEL_ID
     assert doc["current_panel"] is None
     assert doc["offsets"] == [60, 10, 0]
     assert doc["legacy_broadcast"] is False
@@ -66,6 +69,23 @@ def test_normalize_config_fills_missing_fields_and_pins_schema_version():
 def test_normalize_config_of_empty_doc_returns_defaults():
     assert schema.normalize_config(None) == schema.new_config_doc()
     assert schema.normalize_config({}) == schema.new_config_doc()
+
+
+# ---- an existing doc stored with panel_channel_id: None (or the key absent) must
+# still fall back to NOTIFICATION_CHANNEL_ID - the default in new_config_doc() only
+# ever applies to brand-new docs (refuter-01 must-fix 3) ----
+def test_normalize_config_falls_back_to_notification_channel_when_panel_channel_id_is_none():
+    from extensions.tasks import band_monitor
+    stored = {"_id": "config", "panel_channel_id": None}
+    normalized = schema.normalize_config(stored)
+    assert normalized["panel_channel_id"] == band_monitor.NOTIFICATION_CHANNEL_ID
+
+
+def test_normalize_config_falls_back_to_notification_channel_when_key_absent():
+    from extensions.tasks import band_monitor
+    stored = {"_id": "config", "enabled": True}
+    normalized = schema.normalize_config(stored)
+    assert normalized["panel_channel_id"] == band_monitor.NOTIFICATION_CHANNEL_ID
 
 
 # ---- Event ----

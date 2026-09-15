@@ -1,9 +1,9 @@
 # Channel panel and DM interactions for the FWA sync panel (docs/band-sync-panel.md).
 #
 # Owns every component builder and register_action handler this brief adds: the one
-# channel message per event that lists Going / Maybe / Not going and carries
-# Opt in / Maybe / Deny / Open BAND / DM me the time (D003 in DECISIONS.md), plus the
-# same buttons and a reminder select carried into a DM (D001, D002).
+# Components V2 Container per event, styled like band_monitor's old red panel (D001),
+# carrying Yes / Maybe / No / DM me the time and a reminder select in the channel and,
+# identically, in every DM (D002, D003).
 #
 # Deliberately does NOT import extensions.tasks.band_sync_ical - that module imports
 # THIS one (to post/replace the panel on discovery and to render DM content from
@@ -16,30 +16,36 @@ from datetime import datetime, timezone
 import hikari
 import lightbulb
 from hikari.impl import (
+    ContainerComponentBuilder as Container,
     InteractiveButtonBuilder as Button,
     LinkButtonBuilder as LinkButton,
     MessageActionRowBuilder as ActionRow,
     SelectOptionBuilder as SelectOption,
+    SeparatorComponentBuilder as Separator,
+    TextDisplayComponentBuilder as Text,
     TextSelectMenuBuilder as TextSelectMenu,
 )
 
 from extensions.components import register_action
+from extensions.tasks import band_monitor
 from extensions.tasks import band_sync_schema as schema
 from utils.band_ical_parser import discord_timestamp, normalize_start
+from utils.constants import RED_ACCENT
+from utils.emoji import emojis
 from utils.mongo import MongoClient
-
-PANEL_COLOR = 0x5865F2
 
 STATUS_ANSWER = {
     "in": "You're in. Pick reminders below if you want them.",
     "maybe": "You're marked maybe.",
     "no": "You're marked not going.",
 }
+# The DM's "**Your response:**" line (item 13's DM substitute in the brief mockup,
+# DECISIONS.md D001) - unlike STATUS_ANSWER above, this is rendered, not spoken once.
 STATUS_LINE = {
-    "in": "You're in.",
-    "maybe": "You're marked maybe.",
-    "no": "You're marked not going.",
-    None: "You haven't responded yet.",
+    "in": f"{str(emojis.yes)} Available",
+    "maybe": f"{str(emojis.maybe)} Maybe",
+    "no": f"{str(emojis.no)} Unavailable",
+    None: "*not answered yet*",
 }
 REMINDER_LABEL = {
     "60": "1 hour before",
@@ -147,47 +153,34 @@ def _start_of(event):
     return normalize_start(event.get("start_at", event.get("start")))
 
 
-def _summary_embed(event, title=None):
-    embed = hikari.Embed(
-        description=event.get("summary") or "FWA Sync",
-        color=PANEL_COLOR,
-        timestamp=_start_of(event),
-    )
-    if title:
-        embed.title = title
-    start = _start_of(event)
-    embed.add_field(
-        name="Sync Time",
-        value=f"{discord_timestamp(start, 'F')}\n{discord_timestamp(start, 'R')}",
-        inline=False,
-    )
-    return embed
+_LINES_MAX_CHARS = 4000  # Text component hard cap (was 1024, an embed field cap, pre-restyle)
+_CONTAINER_MAX_CHARS = 4000  # Discord's per-message Text-content ceiling (refuter-01 must-fix 2)
+_CAP_SAFETY_MARGIN = 100  # headroom below the ceiling so rounding/emoji width never tips it over
 
 
-_MENTIONS_MAX_CHARS = 1024  # Discord's hard field-value cap
-
-
-def _mentions(user_ids) -> str:
-    mentions = [f"<@{u}>" for u in user_ids]
-    if not mentions:
-        return "nobody yet"
+def _cap_lines(lines, max_chars=_LINES_MAX_CHARS) -> str:
+    """Join lines with newlines, capping total length and summarizing the rest as a
+    trailing "+N more" line rather than truncating mid-line - same idea the old
+    embed-field _mentions() cap used, now sized for a Components V2 Text block."""
     kept = []
-    for index, mention in enumerate(mentions):
-        candidate = ", ".join([*kept, mention])
-        remaining_after = len(mentions) - (index + 1)
-        suffix = f" +{remaining_after} more" if remaining_after else ""
-        if len(candidate) + len(suffix) > _MENTIONS_MAX_CHARS:
-            remaining = len(mentions) - len(kept)
-            joined = ", ".join(kept)
-            return f"{joined} +{remaining} more" if joined else f"+{remaining} more"
-        kept.append(mention)
-    return ", ".join(kept)
+    for index, line in enumerate(lines):
+        candidate = "\n".join([*kept, line])
+        remaining_after = len(lines) - (index + 1)
+        suffix = f"\n*+{remaining_after} more*" if remaining_after else ""
+        if len(candidate) + len(suffix) > max_chars:
+            remaining = len(lines) - len(kept)
+            joined = "\n".join(kept)
+            return f"{joined}\n*+{remaining} more*" if joined else f"*+{remaining} more*"
+        kept.append(line)
+    return "\n".join(kept)
 
 
-def panel_embed(event, responses):
-    """event is a normalized fwa_sync_events row; responses are this uid's
-    normalize_response()'d rows."""
-    embed = _summary_embed(event)
+def _availability_lines(responses, max_chars=_LINES_MAX_CHARS) -> str:
+    """"Rep Availability" body text, in -> maybe -> no order, verbatim wording from
+    band_monitor's on_war_response (band-sync-panel-restyle, DECISIONS.md D001).
+    `max_chars` is the budget left for THIS Text after every other Text in the
+    container (panel_container measures that, rather than this function assuming it
+    owns the whole 4000-char ceiling - refuter-01 must-fix 2)."""
     groups = {"in": [], "maybe": [], "no": []}
     for response in responses:
         status = response.get("status")
@@ -195,40 +188,87 @@ def panel_embed(event, responses):
         # an RSVP, so it must not appear in any of the three groups.
         if status in groups:
             groups[status].append(response["user_id"])
-    embed.add_field(name="✅ Going", value=_mentions(groups.get("in", [])), inline=False)
-    embed.add_field(name="❔ Maybe", value=_mentions(groups.get("maybe", [])), inline=False)
-    embed.add_field(name="❌ Not going", value=_mentions(groups.get("no", [])), inline=False)
-    return embed
+
+    lines = []
+    for uid in groups["in"]:
+        lines.append(f"{str(emojis.yes)} **Available** - <@{uid}>")
+    for uid in groups["maybe"]:
+        lines.append(f"{str(emojis.maybe)} **Maybe** - <@{uid}>")
+    for uid in groups["no"]:
+        lines.append(f"{str(emojis.no)} **Unavailable** - <@{uid}>")
+    if not lines:
+        return "*No responses yet...*"
+    return _cap_lines(lines, max_chars)
 
 
-def dm_embed(event, response, old_start=None):
+CHANGE_ALERT_TITLE = "## ⏰ FWA Sync Time CHANGED"  # DECISIONS.md D003
+POSTED_TITLE = "## ⚔️ War Sync Event has been posted."
+
+
+def _header_components(event, url, include_role_ping, old_start=None):
+    """Items 1-11 of the mockup (DECISIONS.md D001): title, optional role ping, the new
+    Sync Time line (and, in a change-alert DM, the old time under it), the "Check FWA
+    Sync Time" link, and the yes/maybe/no legend - verbatim wording from band_monitor's
+    original Container. Shared by the channel panel and every DM; only the role ping
+    differs between them.
+
+    `old_start` is only ever passed for a reschedule "change" alert DM (the only
+    delivery_type send_dm passes it for) - that's also the signal for D003's distinct
+    title, so a change DM reads "FWA Sync Time CHANGED" instead of "has been posted.".
+    """
+    start = _start_of(event)
+    title = CHANGE_ALERT_TITLE if old_start is not None else POSTED_TITLE
+    components = [Text(content=title)]
+    if include_role_ping:
+        components.append(Text(
+            content=f"<@&{band_monitor.ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!"
+        ))
+    components.append(Separator(divider=True))
+    components.append(Text(
+        content=f"**Sync Time:** {discord_timestamp(start, 'F')} · {discord_timestamp(start, 'R')}"
+    ))
     if old_start is not None:
-        embed = _summary_embed(event, title="⏰ FWA Sync Time CHANGED")
-        embed.add_field(name="Was", value=discord_timestamp(normalize_start(old_start), "F"),
-                         inline=False)
-    else:
-        embed = _summary_embed(event)
-    status = (response or {}).get("status")
-    embed.add_field(name="Your status", value=STATUS_LINE.get(status, STATUS_LINE["no"]),
-                     inline=False)
-    return embed
+        components.append(Text(
+            content=f"**Was:** {discord_timestamp(normalize_start(old_start), 'F')}"
+        ))
+    components.append(ActionRow(components=[
+        LinkButton(url=url, label="Check FWA Sync Time", emoji="🕐"),
+    ]))
+    components.append(Text(content=(
+        "Please review the **FWA Sync Time** and confirm your availability by selecting the "
+        "corresponding button below:"
+    )))
+    components.append(Separator(divider=True))
+    components.append(Text(content=f"{str(emojis.yes)} - If you are available to start."))
+    components.append(Text(content=f"{str(emojis.maybe)} - If you may be available to start."))
+    components.append(Text(content=f"{str(emojis.no)} - If you are unavailable to start."))
+    components.append(Separator(divider=True))
+    components.append(Text(content=(
+        "*Please note that if your availability changes, you can update your response by "
+        "selecting the appropriate button.*"
+    )))
+    components.append(Separator(divider=True))
+    return components
 
 
-def status_rows(uid, url):
-    """Row 1 (Opt in / Maybe / Deny / Open BAND / DM me the time) and Row 2 (reminder
-    select). Identical shape in the channel panel and every DM.
+def status_rows(uid):
+    """Row 1 (Yes / Maybe / No / DM me the time) and Row 2 (reminder select). Identical
+    shape in the channel panel and every DM. "Check FWA Sync Time" (item 5) already
+    carries the BAND link, so this row no longer repeats it as "Open BAND".
 
     The reminder select is always present - components are per-message, not per-user,
     so there is no way to hide it only from users who have not opted in. The handler
     (fwa_sync_reminders) rejects it ephemerally instead.
     """
     row1 = ActionRow(components=[
-        Button(style=hikari.ButtonStyle.SUCCESS, custom_id=f"fwa_sync_in:{uid}", label="Opt in"),
-        Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"fwa_sync_maybe:{uid}", label="Maybe"),
-        Button(style=hikari.ButtonStyle.DANGER, custom_id=f"fwa_sync_no:{uid}", label="Deny"),
-        LinkButton(url=url, label="Open BAND"),
+        Button(style=hikari.ButtonStyle.SUCCESS, custom_id=f"fwa_sync_in:{uid}", label="Yes",
+               emoji=emojis.yes.partial_emoji),
+        Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"fwa_sync_maybe:{uid}", label="Maybe",
+               emoji=emojis.maybe.partial_emoji),
+        Button(style=hikari.ButtonStyle.DANGER, custom_id=f"fwa_sync_no:{uid}", label="No",
+               emoji=emojis.no.partial_emoji),
         Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"fwa_sync_dm_once:{uid}",
-               label="DM me the time"),
+               label="DM me the time", emoji="📩"),
     ])
     row2 = ActionRow(components=[
         TextSelectMenu(
@@ -245,6 +285,35 @@ def status_rows(uid, url):
         ),
     ])
     return [row1, row2]
+
+
+def panel_container(event, url, responses):
+    """The channel panel (items 1-15, DECISIONS.md D001): event is a normalized
+    fwa_sync_events row; responses are this uid's normalize_response()'d rows.
+
+    The availability list's budget is measured against the OTHER Text content already
+    in the container, not hardcoded at 4000 on its own - the header alone runs ~600
+    chars, so a message-wide 4000 ceiling meant a full availability list could still
+    push the whole container over it and 400 on edit (refuter-01 must-fix 2)."""
+    components = _header_components(event, url, include_role_ping=True)
+    heading = Text(content="## Rep Availability")
+    components.append(heading)
+    other_chars = sum(len(c.content) for c in components if hasattr(c, "content"))
+    budget = max(0, _CONTAINER_MAX_CHARS - other_chars - _CAP_SAFETY_MARGIN)
+    components.append(Text(content=_availability_lines(responses, budget)))
+    components.extend(status_rows(event["uid"]))
+    return [Container(accent_color=RED_ACCENT, components=components)]
+
+
+def dm_container(event, url, response, old_start=None):
+    """Same Container as panel_container minus the role ping and the Rep Availability
+    list, plus a one-line "Your response" status in their place (DECISIONS.md D001).
+    A reschedule alert additionally carries the old time under Sync Time."""
+    components = _header_components(event, url, include_role_ping=False, old_start=old_start)
+    status = (response or {}).get("status")
+    components.append(Text(content=f"**Your response:** {STATUS_LINE.get(status, STATUS_LINE[None])}"))
+    components.extend(status_rows(event["uid"]))
+    return [Container(accent_color=RED_ACCENT, components=components)]
 
 
 # ---- DM delivery (D001: one DM per user per event, replaced not appended) ----
@@ -271,9 +340,8 @@ async def send_dm(mongo, bot, event, response, url, delivery_type, old_start=Non
     try:
         user = await bot.rest.fetch_user(user_id)
         channel = await bot.rest.create_dm_channel(user.id)
-        embed = dm_embed(event, response, old_start)
-        rows = status_rows(event["uid"], url)
-        message = await bot.rest.create_message(channel=channel, embed=embed, components=rows)
+        components = dm_container(event, url, response, old_start)
+        message = await bot.rest.create_message(channel=channel, components=components)
     except Exception as exc:
         return DmSendResult(
             False,
@@ -324,7 +392,8 @@ async def post_or_replace_panel(mongo, bot, event):
     url = band_url(event, config)
     try:
         message = await bot.rest.create_message(
-            channel_id, embed=panel_embed(event, responses), components=status_rows(event["uid"], url),
+            channel_id, components=panel_container(event, url, responses),
+            role_mentions=[band_monitor.ALLOWED_ROLE_ID], user_mentions=True,
         )
     except Exception as exc:
         print(f"[FWA Sync Panel] could not post panel uid={event['uid']}: "
@@ -354,13 +423,15 @@ async def refresh_panel_message(mongo, bot, event, responses, url):
     message_id = event.get("panel_message_id")
     if not (channel_id and message_id and bot):
         return
-    embed = panel_embed(event, responses)
-    rows = status_rows(event["uid"], url)
+    components = panel_container(event, url, responses)
     try:
-        await bot.rest.edit_message(channel_id, message_id, embed=embed, components=rows)
+        await bot.rest.edit_message(channel_id, message_id, components=components)
     except hikari.NotFoundError:
         try:
-            message = await bot.rest.create_message(channel_id, embed=embed, components=rows)
+            message = await bot.rest.create_message(
+                channel_id, components=components,
+                role_mentions=[band_monitor.ALLOWED_ROLE_ID], user_mentions=True,
+            )
         except Exception as exc:
             print(f"[FWA Sync Panel] repost after NotFound failed uid={event['uid']}: "
                   f"{type(exc).__name__}: {exc}")
@@ -383,6 +454,12 @@ async def refresh_panel_message(mongo, bot, event, responses, url):
             }}},
             upsert=True,
         )
+    except (hikari.BadRequestError, hikari.HTTPError) as exc:
+        # e.g. the edit was rejected as too large - never let it escape and crash the
+        # button handler that triggered this refresh (refuter-01 must-fix 2).
+        print(f"[FWA Sync Panel] panel refresh failed uid={event['uid']}: "
+              f"{type(exc).__name__}: {exc}")
+        return
     except Exception as exc:
         print(f"[FWA Sync Panel] panel refresh failed uid={event['uid']}: "
               f"{type(exc).__name__}: {exc}")
@@ -408,16 +485,25 @@ async def _answer(ctx, text: str) -> None:
 async def _render_after_change(ctx, mongo, bot, uid, event, url, user_id):
     """Edit the message that was actually clicked (channel panel or DM), then, if the
     click came from a DM, also refresh the channel panel - the two are different
-    messages and only one of them is `ctx.interaction.message`."""
+    messages and only one of them is `ctx.interaction.message`.
+
+    ctx.respond(edit=True) is a raw interaction response, not a refresh_panel_message
+    call, so it needs its own BadRequestError/HTTPError guard - the RSVP itself has
+    already been written by the time this runs, so a click must never crash even if
+    Discord rejects the render (refuter-01 must-fix 2)."""
     responses = await load_responses(mongo, uid)
     if ctx.interaction.guild_id is None:
         my_response = await response_row(mongo, uid, user_id)
-        await ctx.respond(embed=dm_embed(event, my_response), components=status_rows(uid, url),
-                          edit=True)
+        try:
+            await ctx.respond(components=dm_container(event, url, my_response), edit=True)
+        except (hikari.BadRequestError, hikari.HTTPError) as exc:
+            print(f"[FWA Sync Panel] DM render failed uid={uid}: {type(exc).__name__}: {exc}")
         await refresh_panel_message(mongo, bot, event, responses, url)
     else:
-        await ctx.respond(embed=panel_embed(event, responses), components=status_rows(uid, url),
-                          edit=True)
+        try:
+            await ctx.respond(components=panel_container(event, url, responses), edit=True)
+        except (hikari.BadRequestError, hikari.HTTPError) as exc:
+            print(f"[FWA Sync Panel] panel render failed uid={uid}: {type(exc).__name__}: {exc}")
 
 
 async def _apply_status(ctx, mongo, bot, uid, status):
