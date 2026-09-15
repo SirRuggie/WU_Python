@@ -218,85 +218,23 @@ async def fetch_band_posts():
 
 
 async def send_war_sync_to_discord(post):
-    """Send a War Sync reminder to Discord channel using Components V2"""
+    """No longer posts a panel of its own (band-sync-panel-restyle, DECISIONS.md D001):
+    extensions/tasks/band_sync_panel.py now owns the single sync panel, posted by
+    fwa_sync_ical when it discovers the matching BAND event. This still returns True on
+    success so process_band_posts() advances its checkpoint exactly as before - only the
+    Discord side effect moved elsewhere.
+
+    on_war_response() below and the Container/Button builders it uses are kept as-is:
+    they only serve panels already posted by this function before the restyle, which
+    must keep working (DO NOT delete legacy handlers)."""
     global bot_instance
 
     if not bot_instance:
         debug_print("[BAND Monitor] Bot instance not available!")
         return False
 
-    # Create message ID for tracking responses.
-    message_id = str(datetime.now().timestamp())
-    components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Text(content="## ⚔️ War Sync Event has been posted."),
-                Text(content=f"<@&{ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!"),
-                Separator(divider=True),
-                ActionRow(
-                    components=[
-                        LinkButton(
-                            url=f"https://www.band.us/band/{TARGET_BAND_NO}",
-                            label="Check FWA Sync Time",
-                            emoji="🕐",
-                        )
-                    ]
-                ),
-                Text(content=(
-                    "Please review the **FWA Sync Time** and confirm your availability by selecting the "
-                    "corresponding button below:"
-                )),
-                Separator(divider=True),
-                Text(content=f"{str(emojis.yes)} - If you are available to start."),
-                Text(content=f"{str(emojis.maybe)} - If you may be available to start."),
-                Text(content=f"{str(emojis.no)} - If you are unavailable to start."),
-                Separator(divider=True),
-                Text(content=(
-                    "*Please note that if your availability changes, you can update your response by "
-                    "selecting the appropriate button.*"
-                )),
-                Separator(divider=True),
-                Text(content="## Rep Availability"),
-                Text(content="*No responses yet...*"),
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SUCCESS,
-                            label="Yes",
-                            emoji=emojis.yes.partial_emoji,
-                            custom_id=f"war_response:yes_{message_id}",
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            label="Maybe",
-                            emoji=emojis.maybe.partial_emoji,
-                            custom_id=f"war_response:maybe_{message_id}",
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.DANGER,
-                            label="No",
-                            emoji=emojis.no.partial_emoji,
-                            custom_id=f"war_response:no_{message_id}",
-                        ),
-                    ]
-                ),
-            ],
-        )
-    ]
-
-    try:
-        await bot_instance.rest.create_message(
-            channel=NOTIFICATION_CHANNEL_ID,
-            components=components,
-            user_mentions=True,
-            role_mentions=[ALLOWED_ROLE_ID],
-        )
-        debug_print("[BAND Monitor] Sent War Sync reminder to Discord")
-        return True
-    except Exception as e:
-        print(f"[BAND Monitor] Failed to send Discord message: {e}")
-        return False
+    debug_print("[BAND Monitor] panel now posted by fwa_sync_ical")
+    return True
 
 
 def posts_after_checkpoint(posts: list[dict], last_processed_key: str | None) -> list[dict]:

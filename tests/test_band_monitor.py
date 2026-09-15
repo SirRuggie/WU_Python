@@ -116,7 +116,9 @@ def test_checkpoint_advances_through_nonmatching_posts(monkeypatch):
     ]
 
 
-def test_sync_delivery_builds_and_sends_components(monkeypatch):
+def test_sync_delivery_posts_nothing_but_still_reports_delivered(monkeypatch):
+    """band-sync-panel-restyle: extensions/tasks/band_sync_panel.py now owns the one
+    sync panel, so this must no longer call create_message - only checkpoint."""
     class _Rest:
         def __init__(self):
             self.calls = []
@@ -133,9 +135,7 @@ def test_sync_delivery_builds_and_sends_components(monkeypatch):
     delivered = asyncio.run(band_monitor.send_war_sync_to_discord(_post("sync")))
 
     assert delivered is True
-    assert len(bot.rest.calls) == 1
-    assert bot.rest.calls[0]["channel"] == band_monitor.NOTIFICATION_CHANNEL_ID
-    assert bot.rest.calls[0]["components"]
+    assert bot.rest.calls == []
 
 
 def test_startup_recovers_key_and_creates_one_monitor_task(monkeypatch):

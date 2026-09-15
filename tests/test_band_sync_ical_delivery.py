@@ -150,6 +150,8 @@ class FakeRest:
         self.deleted_messages = []
         self.edits = []
         self.edit_embeds = []
+        self.edit_components = []
+        self.create_calls = []  # (channel, role_mentions, user_mentions) per create_message
         self._next_message_id = 9000
 
     async def fetch_user(self, user_id):
@@ -158,8 +160,10 @@ class FakeRest:
     async def create_dm_channel(self, user_id):
         return user_id
 
-    async def create_message(self, channel, embed=None, components=None):
+    async def create_message(self, channel, embed=None, components=None,
+                              role_mentions=None, user_mentions=None):
         self.attempts.append(channel)
+        self.create_calls.append((channel, role_mentions, user_mentions))
         remaining = self.failures.get(channel, 0)
         if isinstance(remaining, BaseException):
             raise remaining
@@ -172,12 +176,21 @@ class FakeRest:
     async def edit_message(self, channel_id, message_id, embed=None, components=None):
         self.edits.append((channel_id, message_id))
         self.edit_embeds.append(embed)
+        self.edit_components.append(components)
         remaining = self.failures.get(message_id, 0)
         if isinstance(remaining, BaseException):
             raise remaining
 
     async def delete_message(self, channel_id, message_id):
         self.deleted_messages.append((channel_id, message_id))
+
+
+def _panel_texts(components):
+    """The rendered Text content of a panel/DM Container edit - band-sync-panel-restyle
+    replaced the plain embed with a Components V2 Container, so an "edited panel says
+    the new time" assertion now reads Text.content off the Container's children."""
+    container = components[0]
+    return [child.content for child in container.components if hasattr(child, "content")]
 
 
 def _event(uid="sync-1", start=None):
@@ -244,6 +257,13 @@ def test_partial_delivery_retries_only_failed_recipient(monkeypatch):
     rest = FakeRest({2: 1})
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
     mongo = FakeMongo()
+    # A pure delivery-queue test - explicitly unconfigure the panel channel so
+    # process_event's discovery-time panel post (band-sync-panel-restyle default,
+    # schema.new_config_doc) does not add an unrelated create_message to rest.attempts.
+    # 0, not None: normalize_config now treats a stored None as "not yet configured"
+    # and falls back to NOTIFICATION_CHANNEL_ID (refuter-01 must-fix 3); 0 is the one
+    # value post_or_replace_panel's `if not channel_id` still reads as "no panel".
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
     event = _event()
     now = event["start"] - timedelta(hours=2)
 
@@ -296,6 +316,11 @@ def test_reschedule_change_alert_retries_after_a_transient_send_failure(monkeypa
     old_event = _event(start=datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc))
     state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
     mongo = FakeMongo(events=[state])
+    # A pure delivery-queue test - see test_partial_delivery_retries_only_failed_recipient.
+    # 0, not None: normalize_config now treats a stored None as "not yet configured"
+    # and falls back to NOTIFICATION_CHANNEL_ID (refuter-01 must-fix 3); 0 is the one
+    # value post_or_replace_panel's `if not channel_id` still reads as "no panel".
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
     moved = _event(start=old_event["start"] + timedelta(hours=1))
     now = moved["start"] - timedelta(hours=2)
 
@@ -463,8 +488,7 @@ def test_reschedule_edits_the_existing_channel_panel_in_place(monkeypatch):
     assert rest.edits == [(555, 111)]
     from utils.band_ical_parser import discord_timestamp
     new_tag = discord_timestamp(new_start, "F")
-    embed = rest.edit_embeds[-1]
-    values = [field.value for field in embed.fields]
+    values = _panel_texts(rest.edit_components[-1])
     assert any(new_tag in value for value in values)
     assert 555 not in rest.attempts  # no new panel posted to the channel
 
@@ -549,8 +573,7 @@ def test_reschedule_refresh_retries_on_next_poll_after_a_transient_edit_failure(
     assert stored_again["panel_version"] == stored_again["event_version"]
     from utils.band_ical_parser import discord_timestamp
     new_tag = discord_timestamp(new_start, "F")
-    embed = rest.edit_embeds[-1]
-    values = [field.value for field in embed.fields]
+    values = _panel_texts(rest.edit_components[-1])
     assert any(new_tag in value for value in values)
 
 
@@ -606,6 +629,11 @@ def test_permanent_dm_failure_is_abandoned_immediately(monkeypatch):
     event = _event()
     now = event["start"] - timedelta(hours=2)
     mongo = FakeMongo()
+    # A pure delivery-queue test - see test_partial_delivery_retries_only_failed_recipient.
+    # 0, not None: normalize_config now treats a stored None as "not yet configured"
+    # and falls back to NOTIFICATION_CHANNEL_ID (refuter-01 must-fix 3); 0 is the one
+    # value post_or_replace_panel's `if not channel_id` still reads as "no panel".
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
 
     asyncio.run(sync.process_event(mongo, event, _config([7]), now))
 

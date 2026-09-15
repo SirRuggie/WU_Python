@@ -16,6 +16,13 @@ Collections, each covered by TTL(expire_at) 7 days after the event starts
 
 from datetime import timedelta
 
+# Only used for its NOTIFICATION_CHANNEL_ID constant, so a brand-new fwa_sync_config
+# doc defaults its panel to the channel the old post-monitor panel used to post in
+# (band-sync-panel-restyle) - band_monitor has no import back to this module, so this
+# does not cycle. Pulling in the rest of band_monitor's Discord/aiohttp surface for one
+# int is a real cost, but a second copy of the id would drift from it silently.
+from extensions.tasks.band_monitor import NOTIFICATION_CHANNEL_ID
+
 SCHEMA_VERSION = 1
 
 CONFIG_ID = "config"
@@ -55,7 +62,10 @@ def new_config_doc(**overrides) -> dict:
     doc = {
         "_id": CONFIG_ID,
         "enabled": False,
-        "panel_channel_id": None,
+        # Defaults to the post-monitor's old notification channel so a brand-new
+        # install posts the one restyled panel somewhere sane without an admin having
+        # to run /fwasync set-channel first (band-sync-panel-restyle).
+        "panel_channel_id": NOTIFICATION_CHANNEL_ID,
         # {uid, channel_id, message_id} of the panel currently posted, or None. Lives on
         # the config singleton (not the event row) so it survives purge_finished_events()
         # deleting the old event's row - see DECISIONS.md D013.
@@ -92,6 +102,14 @@ def normalize_config(doc) -> dict:
     merged["schema_version"] = SCHEMA_VERSION
     merged["dm_user_ids"] = list(merged.get("dm_user_ids") or [])
     merged["offsets"] = list(merged.get("offsets") or DEFAULT_OFFSETS)
+    # new_config_doc()'s NOTIFICATION_CHANNEL_ID default only ever lands on a
+    # brand-new doc; an existing doc stored with panel_channel_id: None (or the key
+    # missing) would otherwise stay None forever and never post a panel
+    # (refuter-01 must-fix 3). `is None` specifically (not falsy) so an admin/test
+    # that deliberately stores 0 to opt a doc out of panel posting still can -
+    # post_or_replace_panel's `if not channel_id` already treats 0 the same as None.
+    if merged.get("panel_channel_id") is None:
+        merged["panel_channel_id"] = defaults["panel_channel_id"]
     return merged
 
 

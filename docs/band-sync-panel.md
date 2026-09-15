@@ -21,8 +21,13 @@ Owning modules:
 ## The panel
 
 One message per event, posted to the channel set by `/fwasync set-channel`
-(`fwa_sync_config.panel_channel_id`). Posted by the poller the first poll it discovers
-a new event (`process_event`, when the event's `panel_message_id` is still unset).
+(`fwa_sync_config.panel_channel_id`). `normalize_config` falls back to
+`NOTIFICATION_CHANNEL_ID` whenever the stored value is `None` or the key is missing,
+not only on a brand-new doc, so an existing config that predates this field still gets
+a working panel channel without an admin having to run `/fwasync set-channel` first
+(refuter-01 must-fix 3; `0` is the one value that stays "no panel"). Posted by the
+poller the first poll it discovers a new event (`process_event`, when the event's
+`panel_message_id` is still unset).
 Only one panel exists at a time: posting a new event's panel deletes whichever other
 event's panel is currently in that channel first (events never overlap across the
 three BAND feeds - D003 in `.claude/scratch/band-sync-panel/DECISIONS.md`). That
@@ -45,13 +50,29 @@ reposted once, the next time anything tries to edit it and gets `NotFoundError`;
 new message id replaces the old one on both the event doc and `current_panel`, and
 `panel_version` is set there too.
 
-Content: the sync summary, start time as `<t:...:F>`/`<t:...:R>`, then three lists -
-Going / Maybe / Not going - built from `fwa_sync_responses` fresh on every render
-(never from memory). Row 1: **Opt in** / **Maybe** / **Deny** / **Open BAND** (link) /
-**DM me the time**. Row 2: a reminder select, always present. It is rejected
-ephemerally ("Opt in first...") unless the clicker's own response status is `"in"` -
-components are per-message, not per-user, so there is no way to hide it from anyone
-who has not opted in; the handler is the only gate.
+Content (band-sync-panel-restyle, DECISIONS.md D001): a Components V2 Container styled
+like band_monitor's old post-monitor panel (red accent, `## ⚔️ War Sync Event has been
+posted.`), with a role ping (`create_message(role_mentions=[ALLOWED_ROLE_ID],
+user_mentions=True)`, on both the initial post and the NotFound-repost path - same as
+the old post-monitor panel), a **Sync Time** line (`<t:...:F>`/`<t:...:R>`), a "Check
+FWA Sync Time" link button, the yes/maybe/no legend, and a "Rep Availability" list -
+one line per responder, in → maybe → no order - built from `fwa_sync_responses` fresh
+on every render (never from memory). The list's char budget is measured against every
+other Text already in the container (not hardcoded at 4000 on its own), so a big
+roster truncates with "+N more" instead of risking a whole-container 400 on edit; that
+edit's BadRequestError/HTTPError is also caught so a button click never crashes.
+Row 1: **Yes** / **Maybe** / **No** / **DM me the time**
+(no separate "Open BAND" button - the link button above already carries that URL).
+Row 2: a reminder select, always present. It is rejected ephemerally ("Opt in
+first...") unless the clicker's own response status is `"in"` - components are
+per-message, not per-user, so there is no way to hide it from anyone who has not
+opted in; the handler is the only gate.
+
+`extensions/tasks/band_monitor.py`'s old post-monitor panel (`send_war_sync_to_discord`)
+no longer posts anything of its own - this Container is the only sync panel posted
+per event. `band_monitor.on_war_response` and its Container builder are kept only to
+keep already-posted legacy panels (posted before this restyle) working; they are not
+reachable from any new post.
 
 Every button/select uses a stateless custom_id, `fwa_sync_<action>:<uid>` (one colon,
 the BAND event UID as the whole action_id) - no `component_state` row, so the panel
@@ -65,8 +86,11 @@ One DM per user per event, replaced rather than appended: before sending any DM 
 (`dm_channel_id`/`dm_message_id`) is deleted (`NotFoundError` ignored - already gone is
 not an error), the new one is sent, and its id is stored. This applies to "DM me the
 time" (one-time, no schedule, available without opting in), opted-in reminders, and
-reschedule "change" alerts - anyone with a response row gets the interactive DM
-(status line + the same Opt in/Maybe/Deny/Open BAND/reminders as the panel). A
+reschedule "change" alerts - anyone with a response row gets the interactive DM (the
+same Container as the panel, minus the role ping and the Rep Availability list, with
+a "**Your response:**" line and the same Yes/Maybe/No/DM me the time/reminders row in
+their place - a reschedule alert also carries a "**Was:**" line under Sync Time and,
+per DECISIONS.md D003, swaps the title for `## ⏰ FWA Sync Time CHANGED`). A
 `legacy_broadcast` recipient (`dm_user_ids`, no response row - see below) still gets
 the old plain, buttonless embed; they never opted in through the panel, so there is
 nowhere to store a replaceable message id for them.
@@ -74,8 +98,8 @@ nowhere to store a replaceable message id for them.
 "DM me the time" never sets a status: a first-time clicker with no response row yet
 gets one created with `status: None` (`response.status` is one of `None`/`"in"`/
 `"maybe"`/`"no"`) purely so the DM's message id has somewhere to live - it does not
-mark them Not going, does not appear in any of the panel's three lists, and still
-needs an explicit Opt in/Maybe/Deny click to get one (refuter-03 must-fix 3).
+mark them Not going, does not appear in the panel's Rep Availability list, and still
+needs an explicit Yes/Maybe/No click to get one (refuter-03 must-fix 3).
 
 Clicking a button inside a DM edits that DM in place and also re-renders the channel
 panel (two different messages); a channel click only edits the panel.
@@ -99,7 +123,7 @@ poll landing right at start still has the event to act on.
 |---|---|
 | `enable` / `disable` | Turn the poller's delivery on/off |
 | `set-channel` | Set the invoking channel as the panel channel |
-| `set-band-url` | Set the Open BAND link button's fallback URL (`fwa_sync_config.band_url`) - used whenever an event carries no `url` of its own, which is always today (the iCal parser does not extract one) |
+| `set-band-url` | Set the "Check FWA Sync Time" link button's fallback URL (`fwa_sync_config.band_url`) - used whenever an event carries no `url` of its own, which is always today (the iCal parser does not extract one) |
 | `set-recipients` | Replace the legacy broadcast list (`dm_user_ids`) |
 | `set-offsets` | Replace the reminder offsets available config-wide |
 | `legacy-broadcast on\|off` | Gate the old fixed-list broadcast (see Deploy note) |
