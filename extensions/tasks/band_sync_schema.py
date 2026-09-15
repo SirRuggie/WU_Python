@@ -32,6 +32,12 @@ EVENT_TTL_DAYS = 7
 RESPONSE_STATUSES = (None, "in", "maybe", "no")
 DELIVERY_TYPES = ("reminder", "once", "change")
 
+# DECISIONS.md D007: reminders (and change alerts) go to Yes and Maybe alike, not only
+# Yes - the single set both recipients_for_offset/change_recipients below and the panel
+# handler/status-change clearing in band_sync_panel.py import, so the rule lives in one
+# place.
+REMINDER_STATUSES = {"in", "maybe"}
+
 
 # ---- Ids ----
 def event_id(uid) -> str:
@@ -240,17 +246,17 @@ def _legacy_recipients(config, seen) -> list:
 def recipients_for_offset(config, responses, offset) -> list:
     """Who gets the reminder DM for this offset, in a stable order.
 
-    `responses` is an iterable of (already status=="in"-filtered or not) response docs;
-    only ones with status=="in" and this offset in their own `reminders` count. Legacy
-    broadcast recipients (`config["dm_user_ids"]`) are appended only when
-    `config["legacy_broadcast"]` is true - this is the flag that lets the automatic
-    broadcast be switched off while the panel is unverified in production (see
-    .claude/scratch/band-sync-panel/STATE.md).
+    `responses` is an iterable of (already status-filtered or not) response docs; only
+    ones with status in REMINDER_STATUSES ("in" or "maybe", D007) and this offset in
+    their own `reminders` count. Legacy broadcast recipients (`config["dm_user_ids"]`)
+    are appended only when `config["legacy_broadcast"]` is true - this is the flag that
+    lets the automatic broadcast be switched off while the panel is unverified in
+    production (see .claude/scratch/band-sync-panel/STATE.md).
     """
     ids = []
     seen = set()
     for response in responses or ():
-        if response.get("status") != "in":
+        if response.get("status") not in REMINDER_STATUSES:
             continue
         if offset not in (response.get("reminders") or ()):
             continue
@@ -271,16 +277,16 @@ def recipients_for_offset(config, responses, offset) -> list:
 def change_recipients(config, responses) -> list:
     """Who gets the reschedule change-alert DM, in a stable order.
 
-    Unlike recipients_for_offset, a response counts here purely by status=="in" -
-    the change alert is not one of the user's chosen reminders, so their `reminders`
-    list (including an empty one) never excludes them. Legacy broadcast recipients
-    (`config["dm_user_ids"]`) are appended only when `config["legacy_broadcast"]` is
-    true, same rule as recipients_for_offset.
+    Unlike recipients_for_offset, a response counts here purely by status in
+    REMINDER_STATUSES ("in" or "maybe", D007) - the change alert is not one of the
+    user's chosen reminders, so their `reminders` list (including an empty one) never
+    excludes them. Legacy broadcast recipients (`config["dm_user_ids"]`) are appended
+    only when `config["legacy_broadcast"]` is true, same rule as recipients_for_offset.
     """
     ids = []
     seen = set()
     for response in responses or ():
-        if response.get("status") != "in":
+        if response.get("status") not in REMINDER_STATUSES:
             continue
         user_id = response.get("user_id")
         try:

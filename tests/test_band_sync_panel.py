@@ -68,11 +68,11 @@ def test_panel_container_exact_layout_zero_responses():
         f"{panel.POSTED_TITLE} — <@&{band_monitor.ALLOWED_ROLE_ID}>",
         "Review the **FWA Sync Time** and select your availability below.",
         f"{str(emojis.yes)} - Available to Start",
-        f"{str(emojis.maybe)} - Maybe Available",
+        f"{str(emojis.maybe)} - Maybe Available to Start",
         f"{str(emojis.no)} - Unavailable to Start",
-        "*Your availability changed? Select another button to update your response.*",
         "## Rep Availability",
         "*No responses yet...*",
+        panel.CHANGED_NOTE,
     ]
     assert len(container.components) <= 40
 
@@ -89,12 +89,13 @@ def test_panel_container_exact_layout_three_responses():
     components = panel.panel_container(event, url, responses)
     texts = _texts(components[0])
 
-    assert texts[-1] == (
+    assert texts[-1] == panel.CHANGED_NOTE
+    assert texts[-2] == (
         f"{str(emojis.yes)} **Available** - <@1>\n"
         f"{str(emojis.maybe)} **Maybe** - <@2>\n"
         f"{str(emojis.no)} **Unavailable** - <@3>"
     )
-    assert texts[-2] == "## Rep Availability"
+    assert texts[-3] == "## Rep Availability"
     assert len(components[0].components) <= 40
 
 
@@ -118,7 +119,29 @@ def test_opting_in_then_leaving_clears_reminders():
     assert stored["reminders"] == []
 
 
-# ---- reminder select: rejected unless "in" ----
+# ---- status handler: switching in <-> maybe keeps reminders (DECISIONS.md D007) ----
+def test_switching_in_to_maybe_keeps_reminders():
+    mongo = FakeMongo(events=[_event_row()])
+    ctx = FakeCtx(user_id=42, guild_id=555)
+
+    asyncio.run(panel.fwa_sync_in(ctx, "sync-1", bot=None, mongo=mongo))
+    asyncio.run(panel.upsert_response(
+        mongo, "sync-1", mongo.fwa_sync_events.documents[schema.event_id("sync-1")],
+        42, "in", [60],
+    ))
+
+    asyncio.run(panel.fwa_sync_maybe(ctx, "sync-1", bot=None, mongo=mongo))
+    stored = mongo.fwa_sync_responses.documents[schema.response_id("sync-1", 42)]
+    assert stored["status"] == "maybe"
+    assert stored["reminders"] == [60]
+
+    asyncio.run(panel.fwa_sync_in(ctx, "sync-1", bot=None, mongo=mongo))
+    stored = mongo.fwa_sync_responses.documents[schema.response_id("sync-1", 42)]
+    assert stored["status"] == "in"
+    assert stored["reminders"] == [60]
+
+
+# ---- reminder select: rejected unless "in" or "maybe" (D007) ----
 def test_reminders_rejected_unless_opted_in():
     mongo = FakeMongo(events=[_event_row()])
     ctx = FakeCtx(user_id=42, guild_id=555, values=["60"])
@@ -127,6 +150,21 @@ def test_reminders_rejected_unless_opted_in():
 
     assert schema.response_id("sync-1", 42) not in mongo.fwa_sync_responses.documents
     assert ctx.interaction.executed == [panel.MSG_OPT_IN_FIRST]
+
+
+def test_reminders_accepted_for_maybe():
+    event = _event_row()
+    response = schema.new_response_doc(
+        "sync-1", 42, event["start_at"], event["event_version"], "maybe",
+    )
+    mongo = FakeMongo(events=[event], responses=[response])
+    ctx = FakeCtx(user_id=42, guild_id=555, values=["60"])
+
+    asyncio.run(panel.fwa_sync_reminders(ctx, "sync-1", bot=None, mongo=mongo))
+
+    stored = mongo.fwa_sync_responses.documents[schema.response_id("sync-1", 42)]
+    assert stored["status"] == "maybe"  # unchanged - the select never touches status
+    assert stored["reminders"] == [60]
 
 
 def test_reminders_accepted_once_opted_in():
@@ -389,7 +427,7 @@ def test_panel_container_total_text_chars_stay_under_4000_with_200_responders():
     total_chars = sum(len(t) for t in texts)
 
     assert total_chars <= 4000
-    assert texts[-1].rstrip().split("\n")[-1].endswith("more*")
+    assert texts[-2].rstrip().split("\n")[-1].endswith("more*")
 
 
 # ---- a button click must never crash when an edit is rejected as too large
@@ -497,7 +535,7 @@ def test_status_rows_buttons_and_select():
 
     select = row2.components[0]
     assert select.custom_id == "fwa_sync_reminders:sync-1"
-    assert select.placeholder == "Reminders (opt in first)…"
+    assert select.placeholder == "Reminders (choose Yes or Maybe first)…"
     assert [option.value for option in select.options] == ["60", "10", "0", "all"]
 
 
@@ -763,6 +801,6 @@ def test_panel_time_row_holds_band_link_and_dm_me_button():
     url = _url_for(event)
     rows = [c for c in panel.panel_container(event, url, [])[0].components if isinstance(c, ActionRow)]
     time_row = rows[0]
-    assert [getattr(b, "label", None) for b in time_row.components] == [panel.BAND_LINK_LABEL, "DM me the time"]
+    assert [getattr(b, "label", None) for b in time_row.components] == [panel.BAND_LINK_LABEL, panel.DM_ME_LABEL]
     assert getattr(time_row.components[1], "custom_id", "") == "fwa_sync_dm_once:sync-1"
     assert "BAND" in panel.BAND_LINK_LABEL

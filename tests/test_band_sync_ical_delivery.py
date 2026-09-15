@@ -713,15 +713,39 @@ def _response(user_id, status, reminders=()):
 
 
 def test_recipients_for_offset_only_counts_opted_in_users_with_that_reminder():
+    """DECISIONS.md D007: maybe counts too, same as in - only no and a not-chosen
+    offset exclude a user."""
     config = {"dm_user_ids": [], "legacy_broadcast": False}
     responses = [
         _response(1, "in", [60, 10]),
-        _response(2, "maybe", [60]),   # maybe never counts, even with the offset chosen
+        _response(2, "maybe", [60]),   # maybe counts, same as in (D007)
         _response(3, "no", [60]),      # no never counts
         _response(4, "in", [10]),      # in, but this offset not chosen
     ]
-    assert schema.recipients_for_offset(config, responses, 60) == [1]
+    assert schema.recipients_for_offset(config, responses, 60) == [1, 2]
     assert schema.recipients_for_offset(config, responses, 10) == [1, 4]
+
+
+def test_recipients_for_offset_maybe_user_counts_like_in():
+    config = {"dm_user_ids": [], "legacy_broadcast": False}
+    responses = [_response(7, "maybe", [60])]
+    assert schema.recipients_for_offset(config, responses, 60) == [7]
+
+
+def test_recipients_for_offset_no_user_never_counts():
+    config = {"dm_user_ids": [], "legacy_broadcast": False}
+    responses = [_response(8, "no", [60])]
+    assert schema.recipients_for_offset(config, responses, 60) == []
+
+
+def test_change_recipients_includes_maybe():
+    config = {"dm_user_ids": [], "legacy_broadcast": False}
+    responses = [
+        _response(1, "in"),
+        _response(2, "maybe"),
+        _response(3, "no"),
+    ]
+    assert schema.change_recipients(config, responses) == [1, 2]
 
 
 def test_recipients_for_offset_legacy_flag_gates_dm_user_ids():
@@ -1007,3 +1031,27 @@ def test_shutdown_awaits_poller_cancellation(monkeypatch):
         assert sync.poller_task is None
 
     asyncio.run(scenario())
+
+
+def test_maybe_user_gets_change_alert_and_due_reminder_end_to_end(monkeypatch):
+    """D007 end to end: the poller's response pre-filter must include "maybe", not
+    just "in", or the schema helpers never see the row (builder-05 finding)."""
+    rest = FakeRest()
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    old_start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
+    old_event = _event(start=old_start)
+    state = sync._event_state_doc(old_event, [sync.DISCOVERY_OFFSET])
+    response = schema.new_response_doc(old_event["uid"], 78, old_start, "v0", "maybe", reminders=[60])
+    mongo = FakeMongo(events=[state], responses=[response])
+    new_start = old_start + timedelta(hours=1)
+    moved = _event(start=new_start)
+    config = {"dm_user_ids": [], "offsets": [60], "announce_on_discovery": True,
+              "legacy_broadcast": False}
+
+    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(hours=5)))
+    change_deliveries = [d for d in _deliveries(mongo) if d["delivery_type"] == "change"]
+    assert [d["recipient_id"] for d in change_deliveries] == [78]
+
+    asyncio.run(sync.process_event(mongo, moved, config, new_start - timedelta(minutes=60)))
+    reminders = [d for d in _deliveries(mongo) if d["delivery_type"] == "reminder"]
+    assert [d["recipient_id"] for d in reminders] == [78]
