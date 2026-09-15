@@ -14,6 +14,11 @@ def _event(uid="sync-1", start=None):
     }
 
 
+# ---- REMINDER_STATUSES (DECISIONS.md D007) ----
+def test_reminder_statuses_is_in_and_maybe_only():
+    assert schema.REMINDER_STATUSES == {"in", "maybe"}
+
+
 # ---- Ids ----
 def test_event_id_and_version_and_delivery_id():
     event = _event()

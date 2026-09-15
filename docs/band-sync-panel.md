@@ -61,10 +61,11 @@ on every render (never from memory). The list's char budget is measured against 
 other Text already in the container (not hardcoded at 4000 on its own), so a big
 roster truncates with "+N more" instead of risking a whole-container 400 on edit; that
 edit's BadRequestError/HTTPError is also caught so a button click never crashes.
-Row 1: **Yes** / **Maybe** / **No** / **DM me the time**
+Row 1: **Yes** / **Maybe** / **No** / **DM Me the Sync Time**
 (no separate "Open BAND" button - the link button above already carries that URL).
-Row 2: a reminder select, always present. It is rejected ephemerally ("Opt in
-first...") unless the clicker's own response status is `"in"` - components are
+Row 2: a reminder select, always present. It is rejected ephemerally ("Choose Yes or
+Maybe first...") unless the clicker's own response status is in
+`band_sync_schema.REMINDER_STATUSES` (`"in"` or `"maybe"`, D007) - components are
 per-message, not per-user, so there is no way to hide it from anyone who has not
 opted in; the handler is the only gate.
 
@@ -88,14 +89,14 @@ not an error), the new one is sent, and its id is stored. This applies to "DM me
 time" (one-time, no schedule, available without opting in), opted-in reminders, and
 reschedule "change" alerts - anyone with a response row gets the interactive DM (the
 same Container as the panel, minus the role ping and the Rep Availability list, with
-a "**Your response:**" line and the same Yes/Maybe/No/DM me the time/reminders row in
+a "**Your response:**" line and the same Yes/Maybe/No/DM Me the Sync Time/reminders row in
 their place - a reschedule alert also carries a "**Was:**" line under Sync Time and,
 per DECISIONS.md D003, swaps the title for `## ⏰ FWA Sync Time CHANGED`). A
 `legacy_broadcast` recipient (`dm_user_ids`, no response row - see below) still gets
 the old plain, buttonless embed; they never opted in through the panel, so there is
 nowhere to store a replaceable message id for them.
 
-"DM me the time" never sets a status: a first-time clicker with no response row yet
+"DM Me the Sync Time" never sets a status: a first-time clicker with no response row yet
 gets one created with `status: None` (`response.status` is one of `None`/`"in"`/
 `"maybe"`/`"no"`) purely so the DM's message id has somewhere to live - it does not
 mark them Not going, does not appear in the panel's Rep Availability list, and still
@@ -135,12 +136,14 @@ in place so the next `sweep_dm_deletions` pass retries instead of orphaning a DM
 still live. A response's `status` and `reminders` are untouched either way, so a deleted
 DM never changes someone's RSVP or scheduled reminders.
 
-## The reminder rule (D002)
+## The reminder rule (D002, superseded in part by D007)
 
-Reminders are only selectable once a response's status is `"in"` for THAT event -
-opting in never carries over to the next sync. Choosing "All" sets `[60, 10, 0]`.
-Changing status away from `"in"` (Maybe/Deny) clears the reminders list. Times are
-always Discord timestamps; no per-user timezone is stored anywhere.
+Reminders are selectable once a response's status is `"in"` or `"maybe"`
+(`band_sync_schema.REMINDER_STATUSES`) for THAT event - opting in never carries over to
+the next sync. Choosing "All" sets `[60, 10, 0]`. Switching between `"in"` and
+`"maybe"` keeps the reminders list; only switching to `"no"` clears it. Change alerts
+(reschedules) go to `"in"` and `"maybe"` alike, same set. Times are always Discord
+timestamps; no per-user timezone is stored anywhere.
 
 Offset `0` ("at sync time", D011) is due only in the ten minutes starting at the
 event's start - `due_offsets()` in `utils/band_ical_parser.py` now treats it specially

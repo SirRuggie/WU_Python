@@ -44,6 +44,8 @@ STATUS_ANSWER = {
 # DECISIONS.md D001) - unlike STATUS_ANSWER above, this is rendered, not spoken once.
 BAND_LINK_LABEL = "Check Sync Time on BAND"
 BAND_LINK_EMOJI = EmojiType("<:BAND:1549523677337358436>")
+DM_ME_EMOJI = EmojiType("<a:mail:1549528319760924722>")
+DM_ME_LABEL = "DM Me the Sync Time"
 STATUS_LINE = {
     "in": f"{str(emojis.yes)} Available",
     "maybe": f"{str(emojis.maybe)} Maybe",
@@ -56,7 +58,7 @@ REMINDER_LABEL = {
     "0": "at sync time",
 }
 MSG_PASSED = "This sync has passed."
-MSG_OPT_IN_FIRST = "Opt in first, then pick your reminders below."
+MSG_OPT_IN_FIRST = "Choose Yes or Maybe first, then pick reminders."
 
 # DECISIONS.md D006: every sync DM auto-deletes this long after it is sent.
 DM_TTL_SECONDS = 600
@@ -256,21 +258,20 @@ def _header_components(event, url, include_role_ping, old_start=None, include_ti
         # 2026-09-15). The DM already IS the time, so it gets no DM-me button.
         time_row.add_component(Button(style=hikari.ButtonStyle.SECONDARY,
                                       custom_id=f"fwa_sync_dm_once:{event['uid']}",
-                                      label="DM me the time", emoji="📩"))
+                                      label=DM_ME_LABEL, emoji=DM_ME_EMOJI.partial_emoji))
     components.append(time_row)
     components.append(Text(content=(
         "Review the **FWA Sync Time** and select your availability below."
     )))
     components.append(Separator(divider=True))
     components.append(Text(content=f"{str(emojis.yes)} - Available to Start"))
-    components.append(Text(content=f"{str(emojis.maybe)} - Maybe Available"))
+    components.append(Text(content=f"{str(emojis.maybe)} - Maybe Available to Start"))
     components.append(Text(content=f"{str(emojis.no)} - Unavailable to Start"))
     components.append(Separator(divider=True))
-    components.append(Text(content=(
-        "*Your availability changed? Select another button to update your response.*"
-    )))
-    components.append(Separator(divider=True))
     return components
+
+
+CHANGED_NOTE = "*Availability changed? Select another button to update your response.*"
 
 
 def status_rows(uid):
@@ -293,7 +294,7 @@ def status_rows(uid):
     row2 = ActionRow(components=[
         TextSelectMenu(
             custom_id=f"fwa_sync_reminders:{uid}",
-            placeholder="Reminders (opt in first)…",
+            placeholder="Reminders (choose Yes or Maybe first)…",
             min_values=0,
             max_values=4,
             options=[
@@ -322,6 +323,9 @@ def panel_container(event, url, responses):
     budget = max(0, _CONTAINER_MAX_CHARS - other_chars - _CAP_SAFETY_MARGIN)
     components.append(Text(content=_availability_lines(responses, budget)))
     components.extend(status_rows(event["uid"]))
+    # Note at the very bottom under its own separator (user rule 2026-09-15).
+    components.append(Separator(divider=True))
+    components.append(Text(content=CHANGED_NOTE))
     return [Container(accent_color=RED_ACCENT, components=components)]
 
 
@@ -625,11 +629,11 @@ async def _apply_status(ctx, mongo, bot, uid, status):
 
     user_id = int(ctx.user.id)
     reminders = []
-    if status == "in":
+    if status in schema.REMINDER_STATUSES:
         existing = await response_row(mongo, uid, user_id)
-        if existing and existing.get("status") == "in":
+        if existing and existing.get("status") in schema.REMINDER_STATUSES:
             reminders = existing.get("reminders") or []
-    # Any other status clears reminders - they imply attendance (DECISIONS.md D002).
+    # "no" clears reminders - only Yes/Maybe count as attending (DECISIONS.md D007).
     await upsert_response(mongo, uid, event, user_id, status, reminders)
 
     config = await config_row(mongo)
@@ -722,7 +726,7 @@ async def fwa_sync_reminders(
 
     user_id = int(ctx.user.id)
     response = await response_row(mongo, uid, user_id)
-    if response is None or response.get("status") != "in":
+    if response is None or response.get("status") not in schema.REMINDER_STATUSES:
         await _answer(ctx, MSG_OPT_IN_FIRST)
         return
 
@@ -731,7 +735,7 @@ async def fwa_sync_reminders(
         reminders = [60, 10, 0]
     else:
         reminders = sorted({int(v) for v in values if v != "all"}, reverse=True)
-    await upsert_response(mongo, uid, event, user_id, "in", reminders)
+    await upsert_response(mongo, uid, event, user_id, response["status"], reminders)
 
     config = await config_row(mongo)
     url = band_url(event, config)

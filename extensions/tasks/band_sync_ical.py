@@ -406,7 +406,8 @@ def _offset_key(offset):
 async def _responses_for_uid(mongo, uid, status=None):
     query = {"uid": uid}
     if status:
-        query["status"] = status
+        # A set/tuple means "any of these" (D007: reminders for Yes OR Maybe).
+        query["status"] = {"$in": sorted(status)} if isinstance(status, (set, tuple, frozenset)) else status
     projection = {"user_id": 1, "status": 1, "reminders": 1, "event_version": 1,
                   "dm_channel_id": 1, "dm_message_id": 1}
     results = []
@@ -707,7 +708,7 @@ async def process_event(mongo, event, config, now):
     forced_first_seen = None
 
     if existing and detect_reschedule(existing.get("start_at"), event["start"]):
-        responses = await _responses_for_uid(mongo, event["uid"], status="in")
+        responses = await _responses_for_uid(mongo, event["uid"], status=schema.REMINDER_STATUSES)
         await handle_reschedule(mongo, event, existing, config, responses)
         # State was just rebuilt against the new time; treat elapsed offsets as missed
         # rather than firing them behind the change alert.
@@ -753,7 +754,7 @@ async def process_event(mongo, event, config, now):
     # Recipients are computed per offset: legacy dm_user_ids broadcast to every offset
     # (gated by config["legacy_broadcast"]) plus, per offset, whoever opted in and chose
     # that reminder - see band_sync_schema.recipients_for_offset.
-    responses = await _responses_for_uid(mongo, event["uid"], status="in")
+    responses = await _responses_for_uid(mongo, event["uid"], status=schema.REMINDER_STATUSES)
     recipients_by_offset = {
         offset: schema.recipients_for_offset(config, responses, _offset_key(offset))
         for offset in to_send
