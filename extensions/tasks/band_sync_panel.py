@@ -232,11 +232,11 @@ def _header_components(event, url, include_role_ping, old_start=None, include_ti
     """
     start = _start_of(event)
     title = CHANGE_ALERT_TITLE if old_start is not None else POSTED_TITLE
-    components = [Text(content=title)]
     if include_role_ping:
-        components.append(Text(
-            content=f"<@&{band_monitor.ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!"
-        ))
+        # Channel panel: role ping on the title line itself, joined by an em dash
+        # (user rule 2026-09-15). DMs never ping a role.
+        title = f"{title} — <@&{band_monitor.ALLOWED_ROLE_ID}>"
+    components = [Text(content=title)]
     components.append(Separator(divider=True))
     if include_time:
         # The channel panel never shows the time (user rule 2026-09-15): reps open BAND
