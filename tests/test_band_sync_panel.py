@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import hikari
+from hikari.impl import MessageActionRowBuilder as ActionRow
 
 from extensions.tasks import band_monitor
 from extensions.tasks import band_sync_panel as panel
@@ -65,7 +66,6 @@ def test_panel_container_exact_layout_zero_responses():
     assert _texts(container) == [
         "## ⚔️ War Sync Event has been posted.",
         f"<@&{band_monitor.ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!",
-        f"**Sync Time:** {panel.discord_timestamp(start, 'F')} · {panel.discord_timestamp(start, 'R')}",
         "Please review the **FWA Sync Time** and confirm your availability by selecting the "
         "corresponding button below:",
         f"{str(emojis.yes)} - If you are available to start.",
@@ -339,7 +339,8 @@ def test_panel_container_times_agree_after_mongo_round_trip():
     event["start_at"] = event["start_at"].replace(tzinfo=None)  # mimic a Mongo read
     url = _url_for(event)
 
-    components = panel.panel_container(event, url, [])
+    assert not any(t.startswith("**Sync Time:**") for t in _texts(panel.panel_container(event, url, [])[0]))
+    components = panel.dm_container(event, url, None)
 
     sync_line = next(t for t in _texts(components[0]) if t.startswith("**Sync Time:**"))
     assert panel.discord_timestamp(aware_start, "F") in sync_line
@@ -465,17 +466,16 @@ def test_status_rows_buttons_and_select():
     buttons = row1.components
     assert [b.custom_id for b in buttons] == [
         "fwa_sync_in:sync-1", "fwa_sync_maybe:sync-1",
-        "fwa_sync_no:sync-1", "fwa_sync_dm_once:sync-1",
+        "fwa_sync_no:sync-1",
     ]
-    assert [b.label for b in buttons] == ["Yes", "Maybe", "No", "DM me the time"]
+    assert [b.label for b in buttons] == ["Yes", "Maybe", "No"]
     assert [b.style for b in buttons] == [
         hikari.ButtonStyle.SUCCESS, hikari.ButtonStyle.SECONDARY,
-        hikari.ButtonStyle.DANGER, hikari.ButtonStyle.SECONDARY,
+        hikari.ButtonStyle.DANGER,
     ]
     assert buttons[0].emoji == emojis.yes.partial_emoji
     assert buttons[1].emoji == emojis.maybe.partial_emoji
     assert buttons[2].emoji == emojis.no.partial_emoji
-    assert buttons[3].emoji == "📩"
 
     select = row2.components[0]
     assert select.custom_id == "fwa_sync_reminders:sync-1"
@@ -560,3 +560,32 @@ def test_band_monitor_posts_nothing_when_a_sync_post_is_seen():
 
     assert delivered is True
     assert rest.attempts == []
+
+
+# ---- dm_container is slim (user rule 2026-09-15): no instructions, no DM-me button ----
+def test_dm_container_is_slim():
+    event = _event_row()
+    url = _url_for(event)
+    start = panel._start_of(event)
+    components = panel.dm_container(event, url, {"status": "in"})
+    texts = _texts(components[0])
+    assert texts == [
+        "## ⚔️ War Sync Event has been posted.",
+        f"**Sync Time:** {panel.discord_timestamp(start, 'F')} · {panel.discord_timestamp(start, 'R')}",
+        f"**Your response:** {str(emojis.yes)} Available",
+    ]
+    rows = [c for c in components[0].components if isinstance(c, ActionRow)]
+    assert [b.label for b in rows[-2].components] == ["Yes", "Maybe", "No"]
+    custom_ids = [getattr(b, "custom_id", "") for row in rows for b in row.components]
+    assert not any(c.startswith("fwa_sync_dm_once:") for c in custom_ids)
+    assert "**Sync Time:**" not in _texts(panel.panel_container(event, url, [])[0])
+
+
+def test_panel_time_row_holds_band_link_and_dm_me_button():
+    event = _event_row()
+    url = _url_for(event)
+    rows = [c for c in panel.panel_container(event, url, [])[0].components if isinstance(c, ActionRow)]
+    time_row = rows[0]
+    assert [getattr(b, "label", None) for b in time_row.components] == [panel.BAND_LINK_LABEL, "DM me the time"]
+    assert getattr(time_row.components[1], "custom_id", "") == "fwa_sync_dm_once:sync-1"
+    assert "BAND" in panel.BAND_LINK_LABEL
