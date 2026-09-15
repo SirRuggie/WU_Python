@@ -32,7 +32,7 @@ from extensions.tasks import band_monitor
 from extensions.tasks import band_sync_schema as schema
 from utils.band_ical_parser import discord_timestamp, normalize_start
 from utils.constants import RED_ACCENT
-from utils.emoji import emojis
+from utils.emoji import EmojiType, emojis
 from utils.mongo import MongoClient
 
 STATUS_ANSWER = {
@@ -43,6 +43,7 @@ STATUS_ANSWER = {
 # The DM's "**Your response:**" line (item 13's DM substitute in the brief mockup,
 # DECISIONS.md D001) - unlike STATUS_ANSWER above, this is rendered, not spoken once.
 BAND_LINK_LABEL = "Check Sync Time on BAND"
+BAND_LINK_EMOJI = EmojiType("<:BAND:1549523677337358436>")
 STATUS_LINE = {
     "in": f"{str(emojis.yes)} Available",
     "maybe": f"{str(emojis.maybe)} Maybe",
@@ -248,7 +249,7 @@ def _header_components(event, url, include_role_ping, old_start=None, include_ti
             content=f"**Was:** {discord_timestamp(normalize_start(old_start), 'F')}"
         ))
     time_row = ActionRow(components=[
-        LinkButton(url=url, label=BAND_LINK_LABEL, emoji="🕐"),
+        LinkButton(url=url, label=BAND_LINK_LABEL, emoji=BAND_LINK_EMOJI.partial_emoji),
     ])
     if include_role_ping:
         # Channel panel only: both time actions sit together on this row (user rule
