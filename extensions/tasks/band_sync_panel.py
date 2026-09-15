@@ -231,11 +231,12 @@ def _header_components(event, url, include_role_ping, include_time=True):
     """
     start = _start_of(event)
     title = POSTED_TITLE
-    if include_role_ping:
-        # Channel panel: role ping on the title line itself, joined by an em dash
-        # (user rule 2026-09-15). DMs never ping a role.
-        title = f"{title} — <@&{band_monitor.ALLOWED_ROLE_ID}>"
     components = [Text(content=title)]
+    if include_role_ping:
+        # Channel panel: role ping on its own normal-size line right under the title
+        # (user rule 2026-09-15: the heading-size ping wrapped badly on mobile). DMs
+        # never ping a role.
+        components.append(Text(content=f"<@&{band_monitor.ALLOWED_ROLE_ID}>"))
     components.append(Separator(divider=True))
     if include_time:
         # The channel panel never shows the time (user rule 2026-09-15): reps open BAND

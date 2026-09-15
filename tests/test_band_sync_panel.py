@@ -65,7 +65,8 @@ def test_panel_container_exact_layout_zero_responses():
 
     start = panel._start_of(event)
     assert _texts(container) == [
-        f"{panel.POSTED_TITLE} — <@&{band_monitor.ALLOWED_ROLE_ID}>",
+        panel.POSTED_TITLE,
+        f"<@&{band_monitor.ALLOWED_ROLE_ID}>",
         "Review the **FWA Sync Time** and select your availability below.",
         f"{str(emojis.yes)} - Available to Start",
         f"{str(emojis.maybe)} - Maybe Available to Start",
