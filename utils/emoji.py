@@ -46,7 +46,7 @@ class Emojis:
         self.gold_arrow_right = EmojiType("<:Arrow_Gold:1395728112725266492>")
         self.yes = EmojiType("<:Yes:1397096942907166831>")
         self.no = EmojiType("<:No:1397096986506825778>")
-        self.maybe = EmojiType("<a:Maybe:1397097100256219267>")
+        self.maybe = EmojiType("<a:maybe:1549520861206155358>")
 
         #NEEDS UPDATE
         self.add = EmojiType("<:Add:1387844836916199466>")
