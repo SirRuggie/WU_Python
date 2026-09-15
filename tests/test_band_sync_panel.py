@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import hikari
 from hikari.impl import MessageActionRowBuilder as ActionRow
+from hikari.impl import SeparatorComponentBuilder as Separator
 
 from extensions.tasks import band_monitor
 from extensions.tasks import band_sync_panel as panel
@@ -614,10 +615,14 @@ def test_dm_container_footer_present_and_last_text_when_delete_at_given():
     texts = _texts(components[0])
 
     assert texts[-1] == f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"
-    # buttons still come last overall - the footer sits before the rows, not after them
-    rows = [c for c in components[0].components if isinstance(c, ActionRow)]
-    assert isinstance(components[0].components[-1], ActionRow)
+    # Footer is the very last component, under its own separator, after the rows
+    # (user rule 2026-09-15).
+    inner = components[0].components
+    rows = [c for c in inner if isinstance(c, ActionRow)]
     assert len(rows) == 2
+    assert inner[-1].content == texts[-1]
+    assert isinstance(inner[-2], Separator)
+    assert isinstance(inner[-3], ActionRow)
 
 
 def test_dm_container_no_footer_when_delete_at_omitted():

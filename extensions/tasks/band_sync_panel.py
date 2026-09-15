@@ -350,11 +350,13 @@ def dm_container(event, url, response, old_start=None, delete_at=None):
     components.append(Separator(divider=True))
     status = (response or {}).get("status")
     components.append(Text(content=f"**Your response:** {STATUS_LINE.get(status, STATUS_LINE[None])}"))
+    components.extend(status_rows(event["uid"]))
     if delete_at is not None:
+        # Very bottom, under its own separator (user rule 2026-09-15).
+        components.append(Separator(divider=True))
         components.append(Text(
             content=f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"
         ))
-    components.extend(status_rows(event["uid"]))
     return [Container(accent_color=RED_ACCENT, components=components)]
 
 
