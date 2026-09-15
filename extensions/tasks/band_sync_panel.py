@@ -215,7 +215,7 @@ def _availability_lines(responses, max_chars=_LINES_MAX_CHARS) -> str:
 
 
 CHANGE_ALERT_TITLE = "## ⏰ FWA Sync Time CHANGED"  # DECISIONS.md D003
-POSTED_TITLE = "## ⚔️ War Sync Event has been posted."
+POSTED_TITLE = "## <a:alarm_clock:1549521421841997836> FWA War Sync Posted"
 
 
 def _header_components(event, url, include_role_ping, old_start=None, include_time=True):

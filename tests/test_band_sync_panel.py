@@ -64,7 +64,7 @@ def test_panel_container_exact_layout_zero_responses():
 
     start = panel._start_of(event)
     assert _texts(container) == [
-        "## ⚔️ War Sync Event has been posted.",
+        panel.POSTED_TITLE,
         f"<@&{band_monitor.ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!",
         "Please review the **FWA Sync Time** and confirm your availability by selecting the "
         "corresponding button below:",
@@ -512,7 +512,7 @@ def test_dm_container_has_no_role_ping_or_availability_list():
 
     assert not any(str(band_monitor.ALLOWED_ROLE_ID) in t for t in texts)
     assert "## Rep Availability" not in texts
-    assert texts[0] == "## ⚔️ War Sync Event has been posted."
+    assert texts[0] == panel.POSTED_TITLE
     assert texts[-1].startswith("**Your response:**")
 
 
@@ -560,7 +560,7 @@ def test_dm_container_change_alert_title():
     posted = panel.dm_container(event, url, None)
 
     assert _texts(changed[0])[0] == "## ⏰ FWA Sync Time CHANGED"
-    assert _texts(posted[0])[0] == "## ⚔️ War Sync Event has been posted."
+    assert _texts(posted[0])[0] == panel.POSTED_TITLE
 
 
 # ---- band_monitor no longer posts a panel of its own (band-sync-panel-restyle) ----
@@ -590,7 +590,7 @@ def test_dm_container_is_slim():
     components = panel.dm_container(event, url, {"status": "in"})
     texts = _texts(components[0])
     assert texts == [
-        "## ⚔️ War Sync Event has been posted.",
+        panel.POSTED_TITLE,
         f"**Sync Time:** {panel.discord_timestamp(start, 'F')} · {panel.discord_timestamp(start, 'R')}",
         f"**Your response:** {str(emojis.yes)} Available",
     ]
