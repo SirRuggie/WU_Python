@@ -857,7 +857,11 @@ async def _get_cwl_round(
             cache_put(key, result, TTL_CWL_ABSENT)
             return result
 
-    # Prefer an inWar round over a preparation one; remember the fallback.
+    # Prefer a currently actionable Battle Day round over preparation; remember
+    # the newest preparation fallback.  A league response can briefly retain
+    # the previous round as ``inWar`` after its end timestamp, and returning
+    # that stale object used to hide the newly drawn preparation round once the
+    # view correctly suppressed its expired deadline.
         fallback = None
 
         for war_tag in candidates:
@@ -898,16 +902,21 @@ async def _get_cwl_round(
                     or (theirs is not None and theirs.tag == clan_tag)):
                 continue
 
-            if _state(war) == "inWar":
+            starts = _starts_at(war)
+            ends = _ends_at(war)
+            actionable_state = _actionable_war_state(
+                _state(war), starts, ends,
+            )
+            if actionable_state == "inWar":
                 result = ("war", war)
                 cache_put(key, result, TTL_CWL_ACTIVE)
                 return result
-            if fallback is None:
+            if actionable_state == "preparation" and fallback is None:
                 fallback = war
 
         if fallback is not None:
-            # Our war exists but is not inWar (preparation, or already ended).
-            # Hand it back and let the view decide - it filters on state.
+            # No live round remains, but the latest preparation war is still
+            # actionable and must not be buried by an expired previous round.
             result = ("war", fallback)
             cache_put(key, result, TTL_CWL_ACTIVE)
             return result
@@ -977,6 +986,28 @@ def _war_member(war, player_tag: str):
         return war.get_member(player_tag)
     except Exception:  # noqa: BLE001 - defensive; get_member should not raise
         return None
+
+
+def _side_member(side, player_tag: str):
+    """Return a member only when they belong to the selected war side.
+
+    ``ClanWar.get_member`` searches both its clan and opponent.  That is useful
+    for a general lookup, but wrong for a recent-clan candidate: a player now
+    fighting *against* that candidate clan must not be shown as owing attacks
+    for it or inherit its deadline.  ``WarClan.get_member`` is side-scoped in
+    coc.py, which is exactly the membership assertion this dashboard needs.
+    """
+    try:
+        return side.get_member(player_tag)
+    except Exception:  # noqa: BLE001 - tolerate lightweight test/API shapes
+        target = str(player_tag or "").upper()
+        return next(
+            (
+                member for member in (getattr(side, "members", None) or [])
+                if str(getattr(member, "tag", "")).upper() == target
+            ),
+            None,
+        )
 
 
 def _accounts_by_war_clan(
@@ -1053,6 +1084,31 @@ def _starts_at(war) -> int | None:
     return _utc_epoch(getattr(war, "start_time", None))
 
 
+def _actionable_war_state(
+    state: str,
+    starts_at: int | None,
+    ends_at: int | None,
+    *,
+    observed_at: int | None = None,
+) -> str:
+    """Return the displayable phase for a war that still has a deadline.
+
+    The API phase and its UTC timestamps normally move together.  During an
+    upstream/proxy transition they can briefly disagree, and trusting the
+    phase alone exposed "ends 2 hours ago" as an actionable Battle Day row.
+    A passed end timestamp is conclusive: never display an attack that can no
+    longer be made.  Conversely, a preparation timestamp that has arrived is
+    more useful as Battle Day than "starts ago" while the state catches up.
+    Missing timestamps retain the API state because there is no stronger fact.
+    """
+    now = int(time.time()) if observed_at is None else int(observed_at)
+    if ends_at is not None and ends_at <= now:
+        return ""
+    if state == "preparation" and starts_at is not None and starts_at <= now:
+        return "inWar"
+    return state
+
+
 async def build_war_view(
     coc_client: coc.Client,
     accounts: list[Account],
@@ -1092,7 +1148,9 @@ async def build_war_view(
         if kind == "none" or war is None:
             continue
 
-        state = _state(war)
+        ends = _ends_at(war)
+        starts = _starts_at(war)
+        state = _actionable_war_state(_state(war), starts, ends)
         # preparation counts. You cannot attack yet, but the attack is owed and
         # the deadline is already set - "you have a war starting" is exactly the
         # thing a to-do list should tell you.
@@ -1100,12 +1158,11 @@ async def build_war_view(
             continue
 
         limit = getattr(war, "attacks_per_member", None) or 2
-        ends = _ends_at(war)
-        starts = _starts_at(war)
-        if _side_for(war, clan_tag) is None:
+        side = _side_for(war, clan_tag)
+        if side is None:
             continue
         for acct in members:
-            member = _war_member(war, acct.tag)
+            member = _side_member(side, acct.tag)
             if member is None:
                 continue
             used = len(getattr(member, "attacks", None) or [])
@@ -1168,7 +1225,9 @@ async def build_cwl_view(
         if kind == "none" or war is None:
             continue
 
-        state = _state(war)
+        ends = _ends_at(war)
+        starts = _starts_at(war)
+        state = _actionable_war_state(_state(war), starts, ends)
         # THIS LINE USED TO READ `if state != "inWar": continue` AND IT WAS THE
         # BUG. A CWL round sits in `preparation` for a full day before battle
         # day, and the group state is `preparation` for the whole first round.
@@ -1182,12 +1241,11 @@ async def build_cwl_view(
         # real season: zero occurrences in 358KB, and again on the live prep
         # war). coc.py hardcodes 1 for CWL, which is why this renders (0/1).
         limit = getattr(war, "attacks_per_member", None) or 1
-        ends = _ends_at(war)
-        starts = _starts_at(war)
-        if _side_for(war, clan_tag) is None:
+        side = _side_for(war, clan_tag)
+        if side is None:
             continue
         for acct in members:
-            member = _war_member(war, acct.tag)
+            member = _side_member(side, acct.tag)
             if member is None:
                 continue
             used = len(getattr(member, "attacks", None) or [])

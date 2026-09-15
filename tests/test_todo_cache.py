@@ -46,6 +46,23 @@ def test_coc_utc_timestamps_do_not_use_the_host_timezone(monkeypatch):
         time.tzset()
 
 
+def test_actionable_war_state_reconciles_phase_with_authoritative_deadlines():
+    now = 1_800_000_000
+
+    assert todo_data._actionable_war_state(
+        "inWar", now - 86_400, now - 1, observed_at=now,
+    ) == ""
+    assert todo_data._actionable_war_state(
+        "preparation", now - 1, now + 86_400, observed_at=now,
+    ) == "inWar"
+    assert todo_data._actionable_war_state(
+        "preparation", now + 1, now + 86_400, observed_at=now,
+    ) == "preparation"
+    assert todo_data._actionable_war_state(
+        "inWar", None, None, observed_at=now,
+    ) == "inWar"
+
+
 def test_process_cache_is_bounded(monkeypatch):
     monkeypatch.setattr(todo_data, "CACHE_MAX_ENTRIES", 2)
     todo_data._cache.clear()

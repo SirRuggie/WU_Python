@@ -166,10 +166,12 @@ Current plus candidate clan tags are deduplicated before the existing bounded
 war/CWL fan-out.
 
 **A candidate is not proof that the player is in this war.** Both builders must
-call `war.get_member(player_tag)` and skip `None` before calculating attacks.
-Historically `_used_attacks()` returned zero for both "not rostered" and
-"rostered with zero attacks"; using it as the membership test creates false
-0/2 rows for every recent clan.
+look up the player on the selected `WarClan` side and skip `None` before
+calculating attacks. `ClanWar.get_member(player_tag)` searches both sides, so
+using it after choosing a historical candidate can falsely assign an opponent's
+war and deadline to that candidate. Historically `_used_attacks()` returned
+zero for both "not rostered" and "rostered with zero attacks"; using it as the
+membership test creates false 0/2 rows for every recent clan.
 
 The tracker deliberately does **not** poll every linked alt of every current
 family member forever. At 1,000 accounts that would be 144,000 player requests
@@ -241,6 +243,10 @@ nothing outstanding is not a row.
 **Preparation-phase rows are real work.** You cannot attack yet, but you owe the
 attack and the deadline is fixed. Dropping them was half of the "all caught up"
 bug.
+
+During a CWL round transition, the selector checks the newest drawn round and
+the previous one. A Battle Day row wins only while its end timestamp is still
+future; an expired `inWar` response cannot hide the newest preparation row.
 
 **Private War Logs is excluded from the landing-view logic** (`VIEW_OPENING_ORDER`)
 and from the "still to do elsewhere" hint. Its count is usually the largest
@@ -420,8 +426,9 @@ Updated 2 minutes ago · Rechecks about every 10 min · Stops in 22 hours
 ```
 
 Both times use Discord timestamps, so they remain localized and their relative
-text advances without another message edit. `Updated` is the last visible dashboard update; background
-checks continue on their ten-minute cadence even when no Discord edit is needed.
+text advances naturally. Every successful automatic check edits the panel,
+therefore `Updated` is the last completed dashboard check, not merely the last
+visible content change.
 The stop time is the stored
 session deadline, so a panel that has aged out never continues claiming it is
 live.
@@ -1053,8 +1060,9 @@ New `/todo` and **Check now** start an exact 30-day window. Ordinary navigation
 updates only the stored view and page: it reuses the panel's coherent four-view
 snapshot, preserves the displayed `Updated` time, and does not postpone the next
 automatic check. Initial loads, snapshot-miss recovery, Check now, and automatic
-checks are actual data checks; those advance the internal check time and next run
-but never extend the deadline. `Updated` changes only when a panel edit succeeds.
+checks are actual data checks. An automatic check first edits its panel; only a
+successful edit advances the internal check time and next run, and neither action
+extends the deadline. A failed Discord edit is retried on the next interval.
 A newer `/todo` replaces the previous automatic
 panel; the older message becomes a small manual panel whose Check now button can
 make it current again.
@@ -1066,13 +1074,13 @@ can therefore contribute at most one regular automatic edit; a full 30-day
 window is 4,320 checks. A deleted or inaccessible Discord message removes its
 exact generation; transient errors postpone only that generation.
 
-Automatic checks save a semantic render signature with the session. The
-cosmetic **Updated** clock is ignored when deciding whether to edit, but each
-successful check still advances `last_checked_at` and `next_refresh_at`. When
-the dashboard is otherwise unchanged, its visible **Updated** time remains at
-the last edit even as background checks continue. The first unchanged check for
-a panel generation reads the bound Discord message to confirm it still exists;
-meaningful dashboard changes still edit it, including timer/state transitions.
+Automatic checks save a semantic render signature with the session for
+diagnostics, excluding the cosmetic **Updated** clock. Each successful check
+still advances `last_checked_at` and `next_refresh_at` and edits the bound
+Discord message, so the visible **Updated** time remains evidence of the last
+completed check even when the dashboard content is otherwise unchanged. That
+edit also detects a deleted or inaccessible panel through Discord's normal
+error response.
 
 Rows written by `7ca8a33` used the numeric message ID as `_id` and promised a
 24–72-hour window. The scheduler continues honoring those rows until their

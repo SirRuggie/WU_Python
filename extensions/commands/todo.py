@@ -101,7 +101,6 @@ _auto_refresh_task: asyncio.Task | None = None
 _refresh_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
-_refresh_readbacks: set[tuple[str, int, str | None]] = set()
 
 # Keep the complete four-view result that was used to render each live panel.
 # Component routing remains stateless: a cache miss still performs the normal
@@ -195,7 +194,14 @@ def _refresh_lock(owner_id: str) -> asyncio.Lock:
 
 
 def _refresh_signature(components: list) -> str:
-    """Keep the panel's visible-update clock out of automatic edit decisions."""
+    """Fingerprint panel content for session diagnostics and persistence.
+
+    The successful-check clock is deliberately excluded: it changes on every
+    automatic check.  Unlike the previous implementation, that does *not*
+    suppress the Discord edit.  The visible clock is the user's evidence that
+    the scheduled check happened, so every successful automatic check must
+    publish it.
+    """
     payload = [component.build()[0] for component in components]
 
     def scrub(value):
@@ -2208,16 +2214,15 @@ async def _refresh_session(
                 fwa_records=fwa_map,
             )
             signature = _refresh_signature(rendered)
-            readback_key = (owner_id, int(message_id), generation)
-            unchanged = signature == latest.get("render_signature")
-            if unchanged and readback_key not in _refresh_readbacks:
-                await bot.rest.fetch_message(channel_id, message_id)
-                _refresh_readbacks.add(readback_key)
-            if not unchanged:
-                await bot.rest.edit_message(
-                    channel_id, message_id, components=rendered
-                )
-                _refresh_readbacks.add(readback_key)
+            # The footer reports when this particular panel was checked.  It
+            # is part of the dashboard's contract, so publish the new footer
+            # even when rows and controls are otherwise identical.  An edit
+            # also gives the normal NotFound/Forbidden cleanup path reliable
+            # evidence after a process restart; a one-time fetch cannot keep
+            # the displayed freshness truthful.
+            await bot.rest.edit_message(
+                channel_id, message_id, components=rendered
+            )
             _snapshot_put(
                 user_id,
                 channel_id,
@@ -2234,7 +2239,7 @@ async def _refresh_session(
                 render_signature=signature,
             )
             if recorded:
-                return "unchanged" if unchanged else "edited"
+                return "edited"
             await todo_sessions.postpone(
                 mongo, owner_id, message_id, generation,
                 observed_at=checked_at,
@@ -2336,5 +2341,4 @@ async def stop_auto_refresh(_: hikari.StoppingEvent) -> None:
             pass
     _auto_refresh_task = None
     _refresh_locks.clear()
-    _refresh_readbacks.clear()
     print("[todo-refresh] stopped")

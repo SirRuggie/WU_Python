@@ -3,7 +3,7 @@
 import asyncio
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -326,6 +326,77 @@ def test_initial_delivery_seeds_exact_panel_snapshot(monkeypatch, notice):
     assert snapshot.data is (None if notice else data)
     assert snapshot.problem is (problem if notice else None)
     assert len(activations) == 1
+
+
+def test_load_pipeline_preserves_preparation_start_timestamp_to_render(monkeypatch):
+    """Exercise links → player → war/CWL/raid builds → dashboard rendering."""
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    starts = now + timedelta(minutes=30)
+    ends = starts + timedelta(days=1)
+    member = SimpleNamespace(tag="#PLAYER", attacks=[])
+
+    class Side:
+        tag = "#HOME"
+        name = "Home"
+        badge = None
+        members = [member]
+
+        @staticmethod
+        def get_member(tag):
+            return member if tag == "#PLAYER" else None
+
+    war = SimpleNamespace(
+        state="preparation",
+        clan=Side(),
+        opponent=SimpleNamespace(tag="#OPPONENT", name="Opponent", members=[]),
+        attacks_per_member=2,
+        start_time=SimpleNamespace(time=starts),
+        end_time=SimpleNamespace(time=ends),
+    )
+
+    class Client:
+        async def get_player(self, tag):
+            assert tag == "#PLAYER"
+            return SimpleNamespace(
+                tag=tag, name="Player", town_hall=17,
+                clan=SimpleNamespace(tag="#HOME", name="Home", badge=None),
+            )
+
+        async def get_clan_war(self, tag):
+            assert tag == "#HOME"
+            return war
+
+        async def get_league_group(self, tag):
+            assert tag == "#HOME"
+            return SimpleNamespace(state="notInWar", rounds=[])
+
+        async def get_raid_log(self, tag, *, limit):
+            assert (tag, limit) == ("#HOME", 1)
+            return []
+
+    async def linked_tags(discord_id):
+        assert discord_id == 77
+        return ["#PLAYER"]
+
+    todo_data._cache.clear()
+    monkeypatch.setattr(todo, "resolve_tags", linked_tags)
+    try:
+        data, problem, fwa_map = asyncio.run(todo._load(
+            object(), Client(), 77, mongo=None,
+        ))
+    finally:
+        todo_data._cache.clear()
+
+    assert problem is None
+    assert fwa_map == {}
+    assert len(data[todo.VIEW_WAR].rows) == 1
+    expected = int(starts.timestamp())
+    assert data[todo.VIEW_WAR].rows[0].starts_at == expected
+    rendered = _payload_text([component.build() for component in todo.render_dashboard(
+        todo.VIEW_WAR, 0, data,
+    )])
+    assert "Prep Day" in rendered
+    assert f"starts <t:{expected}:R>" in rendered
 
 
 def test_todo_actions_own_their_response_through_the_lock():
@@ -1226,16 +1297,13 @@ def test_automatic_refresh_uses_latest_stored_view(monkeypatch):
     assert snapshot.checked_at != 100
 
 
-def test_automatic_refresh_reads_back_unchanged_panel_without_edit(monkeypatch):
+def test_automatic_refresh_publishes_the_freshness_clock_when_rows_are_unchanged(monkeypatch):
     data = {view: todo_data.ViewData() for view in todo.VIEW_ORDER}
     calls = []
 
     class Rest:
-        async def fetch_message(self, channel_id, message_id):
-            calls.append(("fetch", channel_id, message_id))
-
-        async def edit_message(self, *_args, **_kwargs):
-            raise AssertionError("unchanged panel was edited")
+        async def edit_message(self, channel_id, message_id, **kwargs):
+            calls.append(("edit", channel_id, message_id, kwargs))
 
     async def fake_load(*_args, **_kwargs):
         return data, None, None
@@ -1252,13 +1320,13 @@ def test_automatic_refresh_reads_back_unchanged_panel_without_edit(monkeypatch):
     monkeypatch.setattr(todo.todo_sessions, "get", fake_get)
     monkeypatch.setattr(todo.todo_sessions, "mark_refreshed", fake_mark)
     todo._refresh_locks.clear()
-    todo._refresh_readbacks.clear()
     assert asyncio.run(todo._refresh_session(
         {"_id": "dm:77:66", "message_id": 55, "generation": "gen",
          "channel_id": 66, "user_id": 77},
         SimpleNamespace(rest=Rest()), object(), object(),
-    )) == "unchanged"
-    assert calls == [("fetch", 66, 55), ("mark", "same")]
+    )) == "edited"
+    assert calls[0][:3] == ("edit", 66, 55)
+    assert calls[1:] == [("mark", "same")]
 
 
 def test_manual_refresh_clears_old_signature_so_changed_auto_data_edits(monkeypatch):
@@ -1772,6 +1840,35 @@ def test_auto_refresh_cycle_reports_checked_edits_unchanged_and_skips_separately
         "panels": 4, "checked": 2, "edited": 1, "unchanged": 1,
         "removed": 0, "failed": 1, "skipped": 1,
     }
+
+
+def test_started_listener_creates_one_persistent_auto_refresh_task(monkeypatch):
+    created = []
+
+    async def loop(*_args):
+        await asyncio.sleep(0)
+
+    def create_task(coro, *, name):
+        coro.close()
+        task = SimpleNamespace(done=lambda: False)
+        created.append((task, name))
+        return task
+
+    monkeypatch.setattr(todo, "_auto_refresh_loop", loop)
+    monkeypatch.setattr(todo.asyncio, "create_task", create_task)
+    monkeypatch.setattr(todo.todo_sessions, "AUTO_REFRESH_ENABLED", True)
+    previous = todo._auto_refresh_task
+    todo._auto_refresh_task = None
+    try:
+        asyncio.run(todo.start_auto_refresh(
+            object(), bot=object(), coc_client=object(), mongo=object(),
+        ))
+        asyncio.run(todo.start_auto_refresh(
+            object(), bot=object(), coc_client=object(), mongo=object(),
+        ))
+        assert [name for _task, name in created] == ["todo-auto-refresh"]
+    finally:
+        todo._auto_refresh_task = previous
 
 
 # ---------------------------------------------------------------------------
