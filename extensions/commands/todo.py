@@ -101,6 +101,9 @@ _auto_refresh_task: asyncio.Task | None = None
 _refresh_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
+# Only coordinates work already in this process. A restart cancels in-flight
+# command work, so it does not need persistent storage.
+_dm_history_clear_cutoffs: dict[str, int] = {}
 
 # Keep the complete four-view result that was used to render each live panel.
 # Component routing remains stateless: a cache miss still performs the normal
@@ -191,6 +194,57 @@ def _refresh_lock(owner_id: str) -> asyncio.Lock:
         lock = asyncio.Lock()
         _refresh_locks[owner_id] = lock
     return lock
+
+
+async def stop_dm_auto_refresh_for_clear(
+    mongo: MongoClient, *, user_id: int, channel_id: int
+) -> bool:
+    """Retire every active automatic panel before a DM-history clear.
+
+    The clear command holds this same per-DM lock as the scheduler.  A refresh
+    that was loading waits here and then observes no owner row; one that had
+    reached its Discord edit completes before the clear begins.  This makes it
+    safe to remove the panel message without a later scheduler edit recreating
+    it.  It intentionally does not block a future explicit ``/todo`` command.
+    """
+    owner_id = todo_sessions.session_id(user_id, channel_id)
+    async with _refresh_lock(owner_id):
+        return await _stop_dm_auto_refresh_for_clear_locked(
+            mongo, user_id=user_id, channel_id=channel_id
+        )
+
+
+async def _stop_dm_auto_refresh_for_clear_locked(
+    mongo: MongoClient, *, user_id: int, channel_id: int
+) -> bool:
+    """Locked portion of :func:`stop_dm_auto_refresh_for_clear`."""
+    panels_ok, panels = await todo_sessions.active_panels(
+        mongo, user_id=user_id, channel_id=channel_id
+    )
+    if not panels_ok:
+        return False
+    for panel in panels:
+        document_id = panel.get("_id")
+        if document_id is None or not await todo_sessions.discard(mongo, document_id):
+            return False
+        _snapshot_drop(user_id, channel_id, todo_sessions.panel_message_id(panel))
+    return True
+
+
+async def clear_dm_history_through(
+    mongo: MongoClient, *, user_id: int, channel_id: int, cutoff_id: int, purge
+):
+    """Stop automatic work and run one fixed-cutoff purge under its DM lock."""
+    owner_id = todo_sessions.session_id(user_id, channel_id)
+    async with _refresh_lock(owner_id):
+        if not await _stop_dm_auto_refresh_for_clear_locked(
+            mongo, user_id=user_id, channel_id=channel_id
+        ):
+            return False, None
+        # An already-delivered /todo can be waiting for this lock. Do not let a
+        # pre-clear panel become automatic after the history sweep deletes it.
+        _dm_history_clear_cutoffs[owner_id] = int(cutoff_id)
+        return True, await purge()
 
 
 def _refresh_signature(components: list) -> str:
@@ -1625,6 +1679,14 @@ async def _activate_auto_panel(
         return False
     owner_id = todo_sessions.session_id(user_id, channel_id)
     async with _refresh_lock(owner_id):
+        cutoff_id = _dm_history_clear_cutoffs.get(owner_id, 0)
+        if message_id <= cutoff_id:
+            # This panel was delivered before a concurrent /clear-my-dms
+            # confirmation and was removed by that fixed history sweep.
+            return False
+        # A later explicit /todo is allowed normally and proves that any
+        # in-flight pre-clear delivery has already passed the same FIFO lock.
+        _dm_history_clear_cutoffs.pop(owner_id, None)
         claimed = await _takeover_locked(
             bot, mongo,
             user_id=user_id,
@@ -1942,7 +2004,11 @@ async def _switch(ctx, view: str, action_id: str, coc_client, bot, force: bool =
     async with lock_context:
         automatic = False
         exact_until = None
-        if force:
+        # A partially failed clear can leave an old Discord message behind.
+        # It remains manually readable, but its Check now button must not turn
+        # it back into an automatic panel; only a post-cutoff /todo may do so.
+        cleared_panel = message_id <= _dm_history_clear_cutoffs.get(owner_id or "", 0)
+        if force and not cleared_panel:
             claimed = await _takeover_locked(
                 bot, mongo,
                 user_id=user_id,

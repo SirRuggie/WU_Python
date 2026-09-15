@@ -19,6 +19,7 @@ HELP_CATEGORIES = {
             ("/accounts", "Show every Clash account linked to your Discord."),
             ("/cards", "Update your card collection and find family trade matches."),
             ("/todo", "Show what your linked Clash accounts still need to do."),
+            ("/clear-my-dms", "Delete this bot's past messages from your private DM."),
             ("/family-links", "Manage your own family roles and open clan links."),
             ("/slap", "Send a playful slap GIF to another member."),
         ],
