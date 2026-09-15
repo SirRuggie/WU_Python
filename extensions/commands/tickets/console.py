@@ -743,12 +743,7 @@ def build_hub_components(
     total = sum(_int(value) for value in counts.statuses.values())
     updated = int(counts.updated_at.timestamp()) if counts.updated_at else None
     freshness = f"Updated <t:{updated}:R>" if updated else "Updated just now"
-    closed = _int(counts.statuses.get("closed"))
-    main_total = sum(_int(value) for value in counts.by_type.get("main", {}).values())
-    fwa_total = sum(_int(value) for value in counts.by_type.get("fwa", {}).values())
-    total_copy = f"**{total} tickets** · Main {main_total} · FWA {fwa_total} · {freshness}"
-    if closed:
-        total_copy += f" · **{closed} closed**"
+    total_copy = f"{freshness} · **{total:,} tickets**"
     def clan_line(kind: str, label: str, icon: str) -> str:
         values = counts.by_type.get(kind, {})
         line = (
@@ -889,7 +884,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 8
+HUB_LAYOUT_VERSION = 9
 
 
 async def _chart_signature(mongo: MongoClient) -> str:

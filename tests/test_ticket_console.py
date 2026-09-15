@@ -290,7 +290,7 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
     ]
     assert buttons[1]["label"] == "Browse tickets"
     assert container["components"][-2]["type"] == hikari.ComponentType.SEPARATOR
-    assert "tickets** · Main" in container["components"][-1]["content"]
+    assert container["components"][-1]["content"] == "Updated just now · **0 tickets**"
     flag_indices = [
         index for index, child in enumerate(container["components"])
         if child["type"] == hikari.ComponentType.MEDIA_GALLERY
