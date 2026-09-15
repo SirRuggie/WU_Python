@@ -30,12 +30,11 @@ DEFAULT_OFFSETS = [60, 10, 0]
 EVENT_TTL_DAYS = 7
 
 RESPONSE_STATUSES = (None, "in", "maybe", "no")
-DELIVERY_TYPES = ("reminder", "once", "change")
+DELIVERY_TYPES = ("reminder", "once")
 
-# DECISIONS.md D007: reminders (and change alerts) go to Yes and Maybe alike, not only
-# Yes - the single set both recipients_for_offset/change_recipients below and the panel
-# handler/status-change clearing in band_sync_panel.py import, so the rule lives in one
-# place.
+# DECISIONS.md D007: reminders go to Yes and Maybe alike, not only Yes - the single set
+# both recipients_for_offset below and the panel handler/status-change clearing in
+# band_sync_panel.py import, so the rule lives in one place.
 REMINDER_STATUSES = {"in", "maybe"}
 
 
@@ -226,8 +225,8 @@ def normalize_delivery(doc) -> dict:
 # ---- Pure helpers ----
 def _legacy_recipients(config, seen) -> list:
     """`config["dm_user_ids"]` valid/deduped against `seen`, only when
-    config["legacy_broadcast"] is true - the shared tail of recipients_for_offset and
-    change_recipients (refuter-02 carry-over: this used to be duplicated in both)."""
+    config["legacy_broadcast"] is true (refuter-02 carry-over: this used to be
+    duplicated across every recipient helper that needed it)."""
     if not config.get("legacy_broadcast"):
         return []
     ids = []
@@ -259,34 +258,6 @@ def recipients_for_offset(config, responses, offset) -> list:
         if response.get("status") not in REMINDER_STATUSES:
             continue
         if offset not in (response.get("reminders") or ()):
-            continue
-        user_id = response.get("user_id")
-        try:
-            user_id = int(user_id)
-        except (TypeError, ValueError):
-            continue
-        if user_id <= 0 or user_id in seen:
-            continue
-        seen.add(user_id)
-        ids.append(user_id)
-
-    ids.extend(_legacy_recipients(config, seen))
-    return ids
-
-
-def change_recipients(config, responses) -> list:
-    """Who gets the reschedule change-alert DM, in a stable order.
-
-    Unlike recipients_for_offset, a response counts here purely by status in
-    REMINDER_STATUSES ("in" or "maybe", D007) - the change alert is not one of the
-    user's chosen reminders, so their `reminders` list (including an empty one) never
-    excludes them. Legacy broadcast recipients (`config["dm_user_ids"]`) are appended
-    only when `config["legacy_broadcast"]` is true, same rule as recipients_for_offset.
-    """
-    ids = []
-    seen = set()
-    for response in responses or ():
-        if response.get("status") not in REMINDER_STATUSES:
             continue
         user_id = response.get("user_id")
         try:

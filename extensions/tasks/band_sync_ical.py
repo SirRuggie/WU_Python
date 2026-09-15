@@ -81,7 +81,6 @@ CALENDAR_COLORS = {
     "Sync3": 0x7F51F9,
 }
 FALLBACK_COLOR = 0x5865F2
-CHANGE_COLOR = 0xE67E22
 
 LEGACY_COLLECTION_NAME = "fwa_sync_alerts"  # pre-panel single collection; read-once, never written
 CONFIG_ID = schema.CONFIG_ID
@@ -248,16 +247,6 @@ def build_embed(event, offset_label):
     embed.description = f"{lead}\n\n**{event['summary'] or 'FWA Sync'}**"
     if event.get("end"):
         embed.add_field(name="Window Ends", value=discord_timestamp(event["end"], "t"), inline=True)
-    return embed
-
-
-def build_change_embed(event, old_start):
-    embed = _base_embed(event, CHANGE_COLOR)
-    embed.title = "⏰ FWA Sync Time CHANGED"
-    embed.description = (
-        f"The sync has moved. Re-check your war timing.\n\n**{event['summary'] or 'FWA Sync'}**"
-    )
-    embed.add_field(name="Was", value=discord_timestamp(old_start, "F"), inline=False)
     return embed
 
 
@@ -491,24 +480,15 @@ async def deliver_outstanding(mongo, event, now=None):
             if config is None:
                 config = await load_config(mongo)
             response = schema.normalize_response(response)
-            old_start = (
-                normalize_start(delivery.get("old_start_at"))
-                if delivery.get("delivery_type") == "change" else None
-            )
             panel_result = await panel.send_dm(
                 mongo, bot_instance, delivery_event, response,
                 panel.band_url(delivery_event, config),
-                delivery.get("delivery_type"), old_start,
+                delivery.get("delivery_type"),
             )
             result = _DmResult(panel_result.sent, panel_result.permanent,
                                panel_result.error_type, panel_result.detail)
         else:
-            if delivery.get("delivery_type") == "change":
-                embed = build_change_embed(
-                    delivery_event, normalize_start(delivery.get("old_start_at"))
-                )
-            else:
-                embed = build_embed(delivery_event, delivery["offset"])
+            embed = build_embed(delivery_event, delivery["offset"])
             result = await _try_dm(user_id, embed)
 
         if result.sent:
@@ -655,49 +635,59 @@ async def _migrate_legacy_config(mongo):
 
 
 # ---- The poll ----
-async def handle_reschedule(mongo, event, existing, config, responses):
-    """Durably queue a moved-sync alert, then re-anchor timing to the new event.
+async def handle_reschedule(mongo, event, existing):
+    """A BAND time change is handled like a new sync (DECISIONS.md D009): the uid stays
+    the same, but every response and delivery for it is wiped, any DM still tracked on
+    a response is deleted, and the panel is dropped so process_event posts a fresh one
+    with the role ping. No change-alert DM is ever sent.
 
-    `responses` are this uid's status=="in" rows. The change alert goes to every
-    opted-in user regardless of their chosen reminders (see
-    band_sync_schema.change_recipients), plus config["dm_user_ids"] when
-    legacy_broadcast is on. Nobody to tell (flag off, no opted-in users) is not a
-    failure - start_at/event_version still update; only an exception raised while
-    queuing an alert that does have recipients leaves the old state in place, so
-    detect_reschedule finds the move again and retries on the next poll.
+    Write ordering is crash-safe: responses/deliveries (and their DMs) are cleared
+    BEFORE start_at/event_version move. delete_many is idempotent, so a crash before
+    the state update just repeats the same clearing on the next poll (detect_reschedule
+    still finds the move, since start_at has not changed yet) instead of leaving stale
+    answers pinned against the new time.
     """
     old_start = normalize_start(existing.get("start_at"))
-    change_offset = f"change:{_event_version(event)}"
-    recipients = schema.change_recipients(config, responses)
+    uid = event["uid"]
 
-    deliveries_coll = mongo.fwa_sync_deliveries
-    if recipients:
-        # Queue before the state update. A crash before this update repeats the insert
-        # harmlessly (dupe key is caught in enqueue_deliveries); updating state first
-        # could lose the change alert permanently.
-        await enqueue_deliveries(
-            deliveries_coll, event, change_offset, recipients, "change", old_start
-        )
+    async for response in mongo.fwa_sync_responses.find(
+        {"uid": uid}, {"dm_channel_id": 1, "dm_message_id": 1}
+    ).limit(500):
+        channel_id = response.get("dm_channel_id")
+        message_id = response.get("dm_message_id")
+        if channel_id and message_id and bot_instance:
+            try:
+                await bot_instance.rest.delete_message(channel_id, message_id)
+            except hikari.NotFoundError:
+                pass  # already gone - not an error
+            except Exception as e:
+                print(f"[FWA Sync ICS] reschedule: could not delete DM uid={uid} "
+                      f"channel={channel_id} message={message_id}: {type(e).__name__}: {e}")
+
+    await mongo.fwa_sync_responses.delete_many({"uid": uid})
+    await mongo.fwa_sync_deliveries.delete_many({"uid": uid})
 
     coll = mongo.fwa_sync_events
     await coll.update_one(
-        {"_id": _event_state_id(event["uid"])},
+        {"_id": _event_state_id(uid)},
         {"$set": {
             "calendar": event["calendar"],
             "summary": event["summary"],
             "start_at": event["start"],
             "event_version": _event_version(event),
-            # The change alert replaces a second discovery alert, so "new" stays closed.
-            # Every numeric offset re-arms against the new start_at: due_offsets() below
-            # decides on later polls what is actually due.
+            # Like a new sync: "new" stays closed (no second discovery alert), the
+            # panel is dropped so process_event's "post when unset" branch below posts
+            # a fresh one, and every numeric offset re-arms against the new start_at.
             "closed_offsets": [DISCOVERY_OFFSET],
-            "scheduled_offsets": [change_offset],
+            "scheduled_offsets": [],
+            "panel_message_id": None,
+            "panel_version": None,
             "updated_at": datetime.now(timezone.utc),
             "expire_at": event["start"] + timedelta(days=schema.EVENT_TTL_DAYS),
         }},
     )
-    print(f"[FWA Sync ICS] RESCHEDULE {event['calendar']} {event['uid']}: "
-          f"{old_start} -> {event['start']} ({len(recipients)} change-alert recipient(s))")
+    print(f"[FWA Sync ICS] RESCHEDULE {event['calendar']} {uid}: "
+          f"{old_start} -> {event['start']} (responses/deliveries cleared, panel reposts)")
     return True
 
 
@@ -708,10 +698,9 @@ async def process_event(mongo, event, config, now):
     forced_first_seen = None
 
     if existing and detect_reschedule(existing.get("start_at"), event["start"]):
-        responses = await _responses_for_uid(mongo, event["uid"], status=schema.REMINDER_STATUSES)
-        await handle_reschedule(mongo, event, existing, config, responses)
-        # State was just rebuilt against the new time; treat elapsed offsets as missed
-        # rather than firing them behind the change alert.
+        await handle_reschedule(mongo, event, existing)
+        # State was just rebuilt against the new time (D009: handled like a new sync);
+        # treat elapsed offsets as missed rather than firing them immediately.
         forced_first_seen = True
         existing = await events_coll.find_one({"_id": _event_state_id(event["uid"])})
 
