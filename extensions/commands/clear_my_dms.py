@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import logging
+import time
 import uuid
 
 import hikari
@@ -24,10 +26,14 @@ from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
+_log = logging.getLogger(__name__)
 
 STATE_TYPE = "clear_my_dms"
 STATE_TTL = timedelta(minutes=10)
 RECEIPT_SECONDS = 15
+# Discord's delete-message bucket is dynamic. Keep this intentionally below a
+# request per second, while Hikari still honours any stricter server Retry-After.
+DELETE_INTERVAL_SECONDS = 1.1
 
 
 class _PurgeFailure(RuntimeError):
@@ -42,6 +48,11 @@ def _as_int(value) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _monotonic() -> float:
+    """Local seam for deterministic pacing tests without altering asyncio's clock."""
+    return time.monotonic()
 
 
 async def _requester_dm(ctx, bot, *, user_id: int, channel_id: int) -> bool:
@@ -132,6 +143,7 @@ def _confirmation(action_id: str) -> list:
 async def _delete_through_cutoff(bot, *, channel_id: int, cutoff_id: int) -> int:
     """Stream and remove this application's messages up to one fixed snowflake."""
     deleted = 0
+    last_delete_finished_at: float | None = None
     # ``before`` is exclusive.  The next numeric snowflake includes the visible
     # confirmation itself while the fixed cutoff excludes later notifications.
     try:
@@ -146,16 +158,27 @@ async def _delete_through_cutoff(bot, *, channel_id: int, cutoff_id: int) -> int
             author_id = _as_int(getattr(getattr(message, "author", None), "id", None))
             if author_id != bot_id:
                 continue
+            # A cooperative delay after each completed eligible request keeps
+            # the next deletion at least 1.1s away. It is deliberately not a
+            # 429 retry: Hikari owns Discord's bucket and Retry-After handling,
+            # including a longer wait when the server requires one.
+            if last_delete_finished_at is not None:
+                delay = DELETE_INTERVAL_SECONDS - (
+                    _monotonic() - last_delete_finished_at
+                )
+                if delay > 0:
+                    await asyncio.sleep(delay)
             try:
                 await bot.rest.delete_message(channel_id, message.id)
             except hikari.NotFoundError:
                 # Another client may already have removed it; it is no longer
                 # part of the requested history, so continue the complete scan.
                 continue
+            finally:
+                # Anchor the next pacing interval to the completed REST call,
+                # including a Hikari-managed 429 retry or a NotFound response.
+                last_delete_finished_at = _monotonic()
             deleted += 1
-            # REST performs Discord's rate-limit handling. Yield between
-            # individual deletes so a long DM does not monopolize the event loop.
-            await asyncio.sleep(0)
     except Exception as exc:  # preserve accurate partial progress for the receipt
         raise _PurgeFailure(deleted, exc) from exc
     return deleted
@@ -243,6 +266,8 @@ async def clear_my_dms_confirm(
     if cutoff_id is None:
         await ctx.respond("The confirmation was not ready. Run `/clear-my-dms` again.", ephemeral=True)
         return
+    audit_id = action_id[:8]
+    _log.info("clear-my-dms purge started action=%s", audit_id)
     try:
         stopped, outcome = await todo.clear_dm_history_through(
             mongo,
@@ -254,6 +279,10 @@ async def clear_my_dms_confirm(
             ),
         )
     except _PurgeFailure as exc:
+        _log.warning(
+            "clear-my-dms purge failed action=%s deleted=%s error=%s",
+            audit_id, exc.deleted, type(exc.cause).__name__,
+        )
         await mongo.component_state.update_one(
             {"_id": action_id, "status": "running"},
             {"$set": {
@@ -268,6 +297,7 @@ async def clear_my_dms_confirm(
         )
         return
     if not stopped:
+        _log.warning("clear-my-dms purge stopped before deletion action=%s", audit_id)
         await mongo.component_state.update_one(
             {"_id": action_id, "status": "running"},
             {"$set": {"status": "failed"}},
@@ -278,6 +308,7 @@ async def clear_my_dms_confirm(
         )
         return
     deleted = outcome
+    _log.info("clear-my-dms purge completed action=%s deleted=%s", audit_id, deleted)
     await mongo.component_state.update_one(
         {"_id": action_id, "status": "running"},
         {"$set": {"status": "complete", "deleted_count": deleted}},

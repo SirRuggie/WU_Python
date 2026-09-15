@@ -40,7 +40,7 @@ def _bot_with_history(pages, *, bot_id=9001):
     )
 
 
-def test_history_sweep_exhausts_pages_and_preserves_every_non_bot_message():
+def test_history_sweep_exhausts_pages_and_preserves_every_non_bot_message(monkeypatch):
     # More than Discord's usual 100-message page size, split across pages and
     # with IDs old enough that bulk-delete's 14-day constraint would be unsafe.
     old_bot = [_message(i, 9001) for i in range(1, 121)]
@@ -48,6 +48,7 @@ def test_history_sweep_exhausts_pages_and_preserves_every_non_bot_message():
     other_bot = [_message(300 + i, 8008) for i in range(4)]
     confirmation = _message(500, 9001)
     bot = _bot_with_history([old_bot[:100], old_bot[100:] + user, other_bot + [confirmation]])
+    monkeypatch.setattr(clear_my_dms.asyncio, "sleep", AsyncMock())
 
     deleted = asyncio.run(clear_my_dms._delete_through_cutoff(
         bot, channel_id=77, cutoff_id=500
@@ -59,7 +60,7 @@ def test_history_sweep_exhausts_pages_and_preserves_every_non_bot_message():
     ]
 
 
-def test_fixed_cutoff_is_passed_to_history_and_newer_bot_message_survives():
+def test_fixed_cutoff_is_passed_to_history_and_newer_bot_message_survives(monkeypatch):
     seen = {}
     older = _message(499, 9001)
     confirmation = _message(500, 9001)
@@ -75,6 +76,7 @@ def test_fixed_cutoff_is_passed_to_history_and_newer_bot_message_survives():
             return _History([[older, confirmation]])
 
     bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=9001), rest=Rest())
+    monkeypatch.setattr(clear_my_dms.asyncio, "sleep", AsyncMock())
     assert asyncio.run(clear_my_dms._delete_through_cutoff(
         bot, channel_id=77, cutoff_id=confirmation.id
     )) == 2
@@ -82,16 +84,48 @@ def test_fixed_cutoff_is_passed_to_history_and_newer_bot_message_survives():
     assert newer.id not in [call.args[1] for call in bot.rest.delete_message.await_args_list]
 
 
-def test_other_failure_reports_partial_progress():
+def test_other_failure_reports_partial_progress(monkeypatch):
     messages = [_message(1, 9001), _message(2, 9001), _message(3, 9001)]
     bot = _bot_with_history([messages])
     bot.rest.delete_message.side_effect = [None, RuntimeError("rate path")]
+    monkeypatch.setattr(clear_my_dms.asyncio, "sleep", AsyncMock())
 
     with pytest.raises(clear_my_dms._PurgeFailure) as raised:
         asyncio.run(clear_my_dms._delete_through_cutoff(bot, channel_id=77, cutoff_id=3))
 
     assert raised.value.deleted == 1
     assert isinstance(raised.value.__cause__, RuntimeError)
+
+
+def test_pacing_waits_after_a_slow_hikari_managed_retry(monkeypatch):
+    clock = [10.0]
+    starts = []
+
+    class Rest:
+        def fetch_messages(self, _channel_id, **_kwargs):
+            return _History([[_message(2, 9001), _message(1, 9001)]])
+
+        async def delete_message(self, _channel_id, _message_id):
+            starts.append(clock[0])
+            if len(starts) == 1:
+                # Represents Hikari waiting on Retry-After before returning.
+                clock[0] += 5.0
+
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(clear_my_dms, "_monotonic", lambda: clock[0])
+    monkeypatch.setattr(clear_my_dms.asyncio, "sleep", sleep)
+    bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=9001), rest=Rest())
+
+    assert asyncio.run(clear_my_dms._delete_through_cutoff(
+        bot, channel_id=77, cutoff_id=2
+    )) == 2
+    assert sleeps == pytest.approx([clear_my_dms.DELETE_INTERVAL_SECONDS])
+    assert starts == pytest.approx([10.0, 16.1])
 
 
 def test_dm_guard_requires_exact_dm_recipient_and_channel():

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import hikari
+import pytest
 
 from extensions.commands import clear_my_dms, todo
 from utils import todo_sessions
@@ -52,6 +53,32 @@ def test_purge_streams_only_bot_messages_through_fixed_confirmation_cutoff(monke
     assert deleted == 3
     assert rest.before == 502
     assert [message_id for _channel, message_id in rest.deleted] == [501, 500, 498]
+
+
+def test_purge_spaces_only_eligible_delete_requests(monkeypatch):
+    rest = _Rest([
+        _message(503, 100),
+        _message(502, 200),  # preserved requester message must not add a delay
+        _message(501, 100),
+        _message(500, 100),
+    ])
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=100))
+    sleeps = []
+
+    async def paced_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(clear_my_dms, "_monotonic", lambda: 100.0)
+    monkeypatch.setattr(clear_my_dms.asyncio, "sleep", paced_sleep)
+    assert asyncio.run(clear_my_dms._delete_through_cutoff(
+        bot, channel_id=77, cutoff_id=503
+    )) == 3
+
+    # First delete starts immediately; each further bot-authored delete waits.
+    assert sleeps == pytest.approx([
+        clear_my_dms.DELETE_INTERVAL_SECONDS,
+        clear_my_dms.DELETE_INTERVAL_SECONDS,
+    ])
 
 
 def test_confirmation_makes_scope_and_todo_effect_explicit():
