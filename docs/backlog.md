@@ -88,15 +88,16 @@ No active items.
 
 ### P2 — MongoDB organization and test isolation
 
-- **`DB-001` — Set up isolated real-Mongo regression testing.** Preferred name:
-  `wubot_test`, created on the existing cluster on 2026-09-14. Test isolation
-  changes now use per-run collections instead of creating and dropping
-  databases; local validation passed (64 tests, two live checks skipped).
-  A dedicated user with only `readWrite` on
-  `wubot_test` and its local `TICKET_TEST_MONGODB_URI` are still pending.
-  Scope test credentials and cleanup so they cannot modify production data.
+- **`DB-001` — Set up isolated real-Mongo regression testing. Completed
+  2026-09-15.** Configured the local ignored `TICKET_TEST_MONGODB_URI` for
+  `wubot_test_runner`, restricted to `readWrite` on `wubot_test`.
+  Both real-Mongo regressions passed using
+  `.venv/bin/python tools/run_ticket_real_mongo_tests.py` (2 passed).
+  Verified zero generated test collections remained and the starter collection
+  was preserved. Tests use per-run collections, never database drops.
+  Production configuration was unchanged; no bot restart was needed.
   This is automated backend testing, separate from `TICKET-001` Discord test
-  tickets. Verify both currently skipped Mongo regressions once configured.
+  tickets.
 - **`DB-002` — Improve production database naming and organization.** Review
   replacing the misleading `settings` database name with `wubot`, and document
   consistent collection names grouped by feature (MongoDB has no collection
