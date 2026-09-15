@@ -66,8 +66,7 @@ def test_panel_container_exact_layout_zero_responses():
     assert _texts(container) == [
         panel.POSTED_TITLE,
         f"<@&{band_monitor.ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!",
-        "Please review the **FWA Sync Time** and confirm your availability by selecting the "
-        "corresponding button below:",
+        "Review the **FWA Sync Time** and select your availability below.",
         f"{str(emojis.yes)} - If you are available to start.",
         f"{str(emojis.maybe)} - If you may be available to start.",
         f"{str(emojis.no)} - If you are unavailable to start.",
