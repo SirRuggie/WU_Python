@@ -135,6 +135,18 @@ def test_normalize_response_fills_missing_fields():
     assert normalized["status"] is None
     assert normalized["dm_channel_id"] is None
     assert normalized["dm_message_id"] is None
+    assert normalized["dm_delete_at"] is None
+
+
+# ---- D006: dm_delete_at round trips like the other dm tracking fields ----
+def test_new_response_doc_carries_dm_delete_at():
+    start = datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)
+    delete_at = start + timedelta(minutes=10)
+    doc = schema.new_response_doc(
+        "sync-1", 42, start, "v1", "in",
+        dm_channel_id=1, dm_message_id=2, dm_delete_at=delete_at,
+    )
+    assert doc["dm_delete_at"] == delete_at
 
 
 # ---- Delivery ----

@@ -10,8 +10,9 @@
 # deliver_outstanding), so the reverse import would cycle. Everything this module needs
 # from Mongo is read directly through the four fwa_sync_* collections.
 
+import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import hikari
 import lightbulb
@@ -55,6 +56,16 @@ REMINDER_LABEL = {
 }
 MSG_PASSED = "This sync has passed."
 MSG_OPT_IN_FIRST = "Opt in first, then pick your reminders below."
+
+# DECISIONS.md D006: every sync DM auto-deletes this long after it is sent.
+DM_TTL_SECONDS = 600
+
+# Tasks scheduled by _schedule_dm_delete, kept alive here (not by the caller) so they
+# are never garbage-collected mid-sleep - same pattern as
+# extensions/commands/recruit/questions.py's _warning_delete_tasks. This module has no
+# loader/listener of its own (see the note above), so band_sync_ical.py's
+# on_bot_stopping calls cancel_dm_delete_tasks() directly for a clean shutdown.
+_dm_delete_tasks: set = set()
 
 PERMANENT_DM_ERRORS = (
     hikari.BadRequestError,
@@ -127,6 +138,7 @@ async def upsert_response(mongo, uid, event, user_id, status, reminders):
         reminders=reminders,
         dm_channel_id=existing.get("dm_channel_id") if existing else None,
         dm_message_id=existing.get("dm_message_id") if existing else None,
+        dm_delete_at=existing.get("dm_delete_at") if existing else None,
         now=datetime.now(timezone.utc),
     )
     await mongo.fwa_sync_responses.update_one({"_id": doc["_id"]}, {"$set": doc}, upsert=True)
@@ -314,10 +326,17 @@ def panel_container(event, url, responses):
     return [Container(accent_color=RED_ACCENT, components=components)]
 
 
-def dm_container(event, url, response, old_start=None):
+def dm_container(event, url, response, old_start=None, delete_at=None):
     """Slim DM (user rule 2026-09-15): title, sync time (+ Was on a change alert), the
     reader's own status, then Yes / Maybe / No and the reminder select. No role ping,
-    no BAND link, no instructions, no availability list, no DM-me button."""
+    no BAND link, no instructions, no availability list, no DM-me button.
+
+    `delete_at` (DECISIONS.md D006, only ever passed by send_dm) is an aware UTC
+    datetime; when set, its footer Text is appended right after the status line and
+    before the Yes/Maybe/No + reminder rows - the brief allowed either "last component
+    overall" or "last Text, buttons stay last"; this module picks the latter so the
+    buttons a reader actually clicks stay at the bottom of the DM.
+    """
     start = _start_of(event)
     title = CHANGE_ALERT_TITLE if old_start is not None else POSTED_TITLE
     components = [
@@ -332,15 +351,78 @@ def dm_container(event, url, response, old_start=None):
     components.append(Separator(divider=True))
     status = (response or {}).get("status")
     components.append(Text(content=f"**Your response:** {STATUS_LINE.get(status, STATUS_LINE[None])}"))
+    if delete_at is not None:
+        components.append(Text(
+            content=f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"
+        ))
     components.extend(status_rows(event["uid"]))
     return [Container(accent_color=RED_ACCENT, components=components)]
+
+
+async def _delete_dm_after(mongo, bot, response_id, channel_id, message_id, delete_at):
+    """Sleep until `delete_at`, then delete (channel_id, message_id) - but only if
+    `response_id` still holds that exact dm_message_id (D006's in-process timer). A
+    newer DM (send_dm called again) already deleted this one and stored its own id, so
+    finding a mismatch here means there is nothing left for this task to do."""
+    delay = max(0.0, (delete_at - datetime.now(timezone.utc)).total_seconds())
+    await asyncio.sleep(delay)
+
+    try:
+        current = await mongo.fwa_sync_responses.find_one({"_id": response_id})
+    except Exception as exc:
+        print(f"[FWA Sync Panel] dm auto-delete lookup failed id={response_id}: "
+              f"{type(exc).__name__}: {exc}")
+        return
+    if not current or current.get("dm_message_id") != message_id:
+        return  # replaced by a newer DM, or the response row itself is gone
+
+    try:
+        await bot.rest.delete_message(channel_id, message_id)
+    except hikari.NotFoundError:
+        pass  # already gone - not an error
+    except Exception as exc:
+        # Transient failure (rate limit, timeout, ...): leave the tracking fields so
+        # band_sync_ical.sweep_dm_deletions retries next pass instead of orphaning the
+        # still-live DM (refuter-03 noted).
+        print(f"[FWA Sync Panel] dm auto-delete failed id={response_id}: "
+              f"{type(exc).__name__}: {exc}")
+        return
+
+    # Status and reminders stay - only the DM tracking fields go (brief DO NOT).
+    await mongo.fwa_sync_responses.update_one(
+        {"_id": response_id},
+        {"$unset": {"dm_channel_id": "", "dm_message_id": "", "dm_delete_at": ""}},
+    )
+
+
+def _schedule_dm_delete(mongo, bot, response_id, channel_id, message_id, delete_at):
+    task = asyncio.create_task(
+        _delete_dm_after(mongo, bot, response_id, channel_id, message_id, delete_at)
+    )
+    _dm_delete_tasks.add(task)
+    task.add_done_callback(_dm_delete_tasks.discard)
+
+
+async def cancel_dm_delete_tasks() -> None:
+    """Called from band_sync_ical.py's on_bot_stopping (this module has no listener of
+    its own) so shutdown never leaves a bare sleeping task behind."""
+    tasks = list(_dm_delete_tasks)
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    _dm_delete_tasks.clear()
 
 
 # ---- DM delivery (D001: one DM per user per event, replaced not appended) ----
 async def send_dm(mongo, bot, event, response, url, delivery_type, old_start=None):
     """Deliver one interactive DM for (uid, user), deleting any previous DM tracked on
     `response` first. `event` needs uid/summary/start_at (or start)/calendar. Never
-    raises - failures come back as a DmSendResult so the caller can decide on retry."""
+    raises - failures come back as a DmSendResult so the caller can decide on retry.
+
+    Every DM sent here carries DECISIONS.md D006's auto-delete: it schedules an
+    in-process timer for DM_TTL_SECONDS from now (band_sync_ical.sweep_dm_deletions is
+    the restart backstop for that timer)."""
     if not bot:
         return DmSendResult(False, error_type="BotUnavailable",
                             detail="bot instance unavailable")
@@ -357,10 +439,11 @@ async def send_dm(mongo, bot, event, response, url, delivery_type, old_start=Non
             print(f"[FWA Sync Panel] could not delete previous DM uid={event.get('uid')} "
                   f"user={user_id}: {type(exc).__name__}: {exc}")
 
+    delete_at = datetime.now(timezone.utc) + timedelta(seconds=DM_TTL_SECONDS)
     try:
         user = await bot.rest.fetch_user(user_id)
         channel = await bot.rest.create_dm_channel(user.id)
-        components = dm_container(event, url, response, old_start)
+        components = dm_container(event, url, response, old_start, delete_at=delete_at)
         message = await bot.rest.create_message(channel=channel, components=components)
     except Exception as exc:
         return DmSendResult(
@@ -371,10 +454,13 @@ async def send_dm(mongo, bot, event, response, url, delivery_type, old_start=Non
         )
 
     channel_id = int(getattr(channel, "id", channel))
+    message_id = int(message.id)
     await mongo.fwa_sync_responses.update_one(
         {"_id": response["_id"]},
-        {"$set": {"dm_channel_id": channel_id, "dm_message_id": int(message.id)}},
+        {"$set": {"dm_channel_id": channel_id, "dm_message_id": message_id,
+                   "dm_delete_at": delete_at}},
     )
+    _schedule_dm_delete(mongo, bot, response["_id"], channel_id, message_id, delete_at)
     return DmSendResult(True)
 
 
@@ -514,8 +600,12 @@ async def _render_after_change(ctx, mongo, bot, uid, event, url, user_id):
     responses = await load_responses(mongo, uid)
     if ctx.interaction.guild_id is None:
         my_response = await response_row(mongo, uid, user_id)
+        delete_at = my_response.get("dm_delete_at") if my_response else None
         try:
-            await ctx.respond(components=dm_container(event, url, my_response), edit=True)
+            await ctx.respond(
+                components=dm_container(event, url, my_response, delete_at=delete_at),
+                edit=True,
+            )
         except (hikari.BadRequestError, hikari.HTTPError) as exc:
             print(f"[FWA Sync Panel] DM render failed uid={uid}: {type(exc).__name__}: {exc}")
         await refresh_panel_message(mongo, bot, event, responses, url)
