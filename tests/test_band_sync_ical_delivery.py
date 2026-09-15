@@ -489,7 +489,10 @@ def test_reschedule_edits_the_existing_channel_panel_in_place(monkeypatch):
     from utils.band_ical_parser import discord_timestamp
     new_tag = discord_timestamp(new_start, "F")
     values = _panel_texts(rest.edit_components[-1])
-    assert any(new_tag in value for value in values)
+    # The channel panel carries no time at all (user rule 2026-09-15); the re-render
+    # is proven by the edit itself and by panel_version catching up below.
+    assert not any("**Sync Time:**" in value for value in values)
+    assert not any(new_tag in value for value in values)
     assert 555 not in rest.attempts  # no new panel posted to the channel
 
     stored = mongo.fwa_sync_events.documents[sync._event_state_id(moved["uid"])]
@@ -574,7 +577,10 @@ def test_reschedule_refresh_retries_on_next_poll_after_a_transient_edit_failure(
     from utils.band_ical_parser import discord_timestamp
     new_tag = discord_timestamp(new_start, "F")
     values = _panel_texts(rest.edit_components[-1])
-    assert any(new_tag in value for value in values)
+    # The channel panel carries no time at all (user rule 2026-09-15); the re-render
+    # is proven by the edit itself and by panel_version catching up below.
+    assert not any("**Sync Time:**" in value for value in values)
+    assert not any(new_tag in value for value in values)
 
 
 def test_normal_poll_does_not_refresh_the_panel_when_panel_version_matches(monkeypatch):

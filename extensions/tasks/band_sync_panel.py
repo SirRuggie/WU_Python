@@ -41,6 +41,7 @@ STATUS_ANSWER = {
 }
 # The DM's "**Your response:**" line (item 13's DM substitute in the brief mockup,
 # DECISIONS.md D001) - unlike STATUS_ANSWER above, this is rendered, not spoken once.
+BAND_LINK_LABEL = "Check Sync Time on BAND"
 STATUS_LINE = {
     "in": f"{str(emojis.yes)} Available",
     "maybe": f"{str(emojis.maybe)} Maybe",
@@ -205,7 +206,7 @@ CHANGE_ALERT_TITLE = "## ⏰ FWA Sync Time CHANGED"  # DECISIONS.md D003
 POSTED_TITLE = "## ⚔️ War Sync Event has been posted."
 
 
-def _header_components(event, url, include_role_ping, old_start=None):
+def _header_components(event, url, include_role_ping, old_start=None, include_time=True):
     """Items 1-11 of the mockup (DECISIONS.md D001): title, optional role ping, the new
     Sync Time line (and, in a change-alert DM, the old time under it), the "Check FWA
     Sync Time" link, and the yes/maybe/no legend - verbatim wording from band_monitor's
@@ -224,16 +225,26 @@ def _header_components(event, url, include_role_ping, old_start=None):
             content=f"<@&{band_monitor.ALLOWED_ROLE_ID}> - A new FWA War Sync has been scheduled!"
         ))
     components.append(Separator(divider=True))
-    components.append(Text(
-        content=f"**Sync Time:** {discord_timestamp(start, 'F')} · {discord_timestamp(start, 'R')}"
-    ))
+    if include_time:
+        # The channel panel never shows the time (user rule 2026-09-15): reps open BAND
+        # for it, and only the DM carries the timestamp.
+        components.append(Text(
+            content=f"**Sync Time:** {discord_timestamp(start, 'F')} · {discord_timestamp(start, 'R')}"
+        ))
     if old_start is not None:
         components.append(Text(
             content=f"**Was:** {discord_timestamp(normalize_start(old_start), 'F')}"
         ))
-    components.append(ActionRow(components=[
-        LinkButton(url=url, label="Check FWA Sync Time", emoji="🕐"),
-    ]))
+    time_row = ActionRow(components=[
+        LinkButton(url=url, label=BAND_LINK_LABEL, emoji="🕐"),
+    ])
+    if include_role_ping:
+        # Channel panel only: both time actions sit together on this row (user rule
+        # 2026-09-15). The DM already IS the time, so it gets no DM-me button.
+        time_row.add_component(Button(style=hikari.ButtonStyle.SECONDARY,
+                                      custom_id=f"fwa_sync_dm_once:{event['uid']}",
+                                      label="DM me the time", emoji="📩"))
+    components.append(time_row)
     components.append(Text(content=(
         "Please review the **FWA Sync Time** and confirm your availability by selecting the "
         "corresponding button below:"
@@ -252,9 +263,9 @@ def _header_components(event, url, include_role_ping, old_start=None):
 
 
 def status_rows(uid):
-    """Row 1 (Yes / Maybe / No / DM me the time) and Row 2 (reminder select). Identical
-    shape in the channel panel and every DM. "Check FWA Sync Time" (item 5) already
-    carries the BAND link, so this row no longer repeats it as "Open BAND".
+    """Row 1 (Yes / Maybe / No) and Row 2 (reminder select). Identical shape in the
+    channel panel and every DM. The BAND link and "DM me the time" live on the time row
+    in the header (user rule 2026-09-15: both are times, keep them together).
 
     The reminder select is always present - components are per-message, not per-user,
     so there is no way to hide it only from users who have not opted in. The handler
@@ -267,8 +278,6 @@ def status_rows(uid):
                emoji=emojis.maybe.partial_emoji),
         Button(style=hikari.ButtonStyle.DANGER, custom_id=f"fwa_sync_no:{uid}", label="No",
                emoji=emojis.no.partial_emoji),
-        Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"fwa_sync_dm_once:{uid}",
-               label="DM me the time", emoji="📩"),
     ])
     row2 = ActionRow(components=[
         TextSelectMenu(
@@ -295,7 +304,7 @@ def panel_container(event, url, responses):
     in the container, not hardcoded at 4000 on its own - the header alone runs ~600
     chars, so a message-wide 4000 ceiling meant a full availability list could still
     push the whole container over it and 400 on edit (refuter-01 must-fix 2)."""
-    components = _header_components(event, url, include_role_ping=True)
+    components = _header_components(event, url, include_role_ping=True, include_time=False)
     heading = Text(content="## Rep Availability")
     components.append(heading)
     other_chars = sum(len(c.content) for c in components if hasattr(c, "content"))
@@ -306,10 +315,23 @@ def panel_container(event, url, responses):
 
 
 def dm_container(event, url, response, old_start=None):
-    """Same Container as panel_container minus the role ping and the Rep Availability
-    list, plus a one-line "Your response" status in their place (DECISIONS.md D001).
-    A reschedule alert additionally carries the old time under Sync Time."""
-    components = _header_components(event, url, include_role_ping=False, old_start=old_start)
+    """Slim DM (user rule 2026-09-15): title, sync time (+ Was on a change alert), the
+    BAND link button, the reader's own status, then Yes / Maybe / No and the reminder
+    select. No role ping, no instructions, no availability list, no DM-me button."""
+    start = _start_of(event)
+    title = CHANGE_ALERT_TITLE if old_start is not None else POSTED_TITLE
+    components = [
+        Text(content=title),
+        Text(content=f"**Sync Time:** {discord_timestamp(start, 'F')} · {discord_timestamp(start, 'R')}"),
+    ]
+    if old_start is not None:
+        components.append(Text(
+            content=f"**Was:** {discord_timestamp(normalize_start(old_start), 'F')}"
+        ))
+    components.append(ActionRow(components=[
+        LinkButton(url=url, label=BAND_LINK_LABEL, emoji="🕐"),
+    ]))
+    components.append(Separator(divider=True))
     status = (response or {}).get("status")
     components.append(Text(content=f"**Your response:** {STATUS_LINE.get(status, STATUS_LINE[None])}"))
     components.extend(status_rows(event["uid"]))
