@@ -4763,6 +4763,12 @@ async def _refresh_after_flag_mutation(
     mongo: MongoClient,
     flag_doc: Mapping,
 ) -> None:
+    # The flag write is already durable.  Naming has its own checkpoint and
+    # recovery pass, so a Discord failure here never rolls the flag back.
+    try:
+        await thread_service.reconcile_thread_names_for_flag(bot, mongo, flag_doc)
+    except Exception:
+        _log.exception("ticket thread-name reconciliation deferred flag=%s", flag_doc.get("_id"))
     await refresh_open_staff_contexts_for_flag_best_effort(bot, mongo, flag_doc)
     await request_hub_refresh_best_effort(bot, mongo, reason="flag changed")
 

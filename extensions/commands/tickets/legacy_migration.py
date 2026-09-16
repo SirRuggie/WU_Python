@@ -1772,12 +1772,13 @@ async def _migration_update(
 
 
 def _migration_thread_names(
-    ticket_type: str, ticket_number: int, username: str, *, status: str = "open"
+    ticket_type: str, ticket_number: int, username: str, *, status: str = "open",
+    ghosted: bool = False,
 ) -> tuple[str, str]:
     # Migrated pairs intentionally match all future pairs. Their source identity
     # lives in Mongo, not in a one-off Discord naming convention.
     return thread_service.thread_names(
-        ticket_type, ticket_number, username, status=status,
+        ticket_type, ticket_number, username, status=status, ghosted=ghosted,
     )
 
 
@@ -1819,6 +1820,7 @@ async def _ensure_destination_pair(
         public_name, staff_name = _migration_thread_names(
             state["metadata"]["ticket_type"], number, state["metadata"]["username"],
             status=str(state["metadata"].get("status") or "closed"),
+            ghosted=bool(state["metadata"].get("ghosted")),
         )
         state = await _migration_update(mongo, migration_id, owner, {
             "destination.ticket_number": number,
@@ -2452,7 +2454,7 @@ async def migrate_legacy_ticket(
             me = bot.get_me()
             if me is None:
                 raise LegacyMigrationError("bot identity is unavailable for ghost flag")
-            await flag_store.ensure_legacy_ghosted_flag(
+            ghost_flag, _created = await flag_store.ensure_legacy_ghosted_flag(
                 mongo,
                 ticket_doc,
                 source_channel_id=int(source["channel_id"]),
@@ -2460,6 +2462,8 @@ async def migrate_legacy_ticket(
                 actor_id=int(me.id),
                 actor_name=str(getattr(me, "username", "") or me.id),
             )
+            if ghost_flag is not None:
+                await thread_service.reconcile_thread_names_for_flag(bot, mongo, ghost_flag)
         # The durable context outbox is a required pre-completion boundary.
         # Delivery remains best-effort while this terminal pair is still active.
         await thread_service._queue_staff_context_outbox(mongo, ticket_doc)

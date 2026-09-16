@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import logging
 
 import hikari
 import lightbulb
@@ -13,7 +14,7 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
 )
 
-from extensions.commands.tickets import flag_store, store, ticket
+from extensions.commands.tickets import flag_store, store, thread_service, ticket
 from extensions.commands.tickets.console import (
     refresh_open_staff_contexts_for_flag_best_effort,
     request_hub_refresh_best_effort,
@@ -25,6 +26,14 @@ ACCENT_BLUE = 0x4A90F5
 ACCENT_GREEN = 0x4BCE7A
 ACCENT_RED = 0xF0555A
 DISCORD_MESSAGE_TEXT_LIMIT = 4000
+_log = logging.getLogger(__name__)
+
+
+async def _reconcile_ghost_names_best_effort(bot, mongo, flag_doc) -> None:
+    try:
+        await thread_service.reconcile_thread_names_for_flag(bot, mongo, flag_doc)
+    except Exception:
+        _log.exception("ticket thread-name reconciliation deferred flag=%s", flag_doc.get("_id"))
 
 FLAG_LABELS = {
     flag_store.FLAG_BLACKLISTED: "Blacklisted",
@@ -164,6 +173,7 @@ class FlagAddCommand(
             )
             return
         document = result.doc or {}
+        await _reconcile_ghost_names_best_effort(bot, mongo, document)
         await refresh_open_staff_contexts_for_flag_best_effort(bot, mongo, document)
         await request_hub_refresh_best_effort(bot, mongo, reason="flag changed")
         ids = ", ".join(f"`{value}`" for value in document.get("discord_ids") or ()) or "none"
@@ -244,6 +254,7 @@ class FlagRemoveCommand(
                 accent=ACCENT_RED,
             )
             return
+        await _reconcile_ghost_names_best_effort(bot, mongo, result.doc or {})
         await refresh_open_staff_contexts_for_flag_best_effort(
             bot, mongo, result.doc or {}
         )

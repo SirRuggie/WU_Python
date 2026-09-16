@@ -28,12 +28,28 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
-def desired_names(ticket: Mapping[str, Any]):
+def desired_names(ticket: Mapping[str, Any], *, ghosted: bool = False):
     return thread_service.thread_names(
         str(ticket.get("ticket_type") or ""), int(ticket.get("ticket_number") or 0),
         str(ticket.get("username") or "candidate"),
         status=str(ticket.get("status") or "closed"),
+        ghosted=ghosted,
     )
+
+
+async def desired_names_current(db, ticket: Mapping[str, Any]):
+    """Keep an active identity-wide ghost report ahead of status backfill."""
+    from extensions.commands.tickets import flag_store
+    ids = flag_store._discord_ids(ticket.get("user_id"))
+    tags = flag_store.schema.player_tags([
+        *(ticket.get("player_tags") or ticket.get("playerTags") or ()),
+        ticket.get("player_tag") or ticket.get("tag"),
+    ])
+    clauses = flag_store._identity_query(ids, tags)
+    ghosted = bool(clauses and await db.ticket_flags.find_one({
+        "kind": flag_store.FLAG_GHOSTED, "active": True, "$or": clauses,
+    }))
+    return desired_names(ticket, ghosted=ghosted)
 
 
 def is_completed_import(ticket: Mapping[str, Any], completed_ids: set[str]):
@@ -179,7 +195,7 @@ async def run(args):
         async with aiohttp.ClientSession() as session:
             if not args.apply:
                 for ticket in tickets:
-                    loc, names = ticket.get("location") or {}, desired_names(ticket)
+                    loc, names = ticket.get("location") or {}, await desired_names_current(db, ticket)
                     for role, tid, target in (("public", int(loc.get("id") or 0), names[0]),
                                               ("staff", int(loc.get("staff_space_id") or 0), names[1])):
                         current = "<missing id>" if not tid else str((await _discord_json(
@@ -221,7 +237,7 @@ async def run(args):
                             and isinstance(current_until, datetime)
                             and current_until > utcnow()):
                         skipped += 1; continue
-                    pair_names = desired_names(latest)
+                    pair_names = await desired_names_current(db, latest)
                     target = pair_names[0] if role == "public" else pair_names[1]
                     await _renew_lease(runs, owner)
                     path = f"threads.{ticket['_id']}.{role}"

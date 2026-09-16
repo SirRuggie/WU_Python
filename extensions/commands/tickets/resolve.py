@@ -647,10 +647,7 @@ async def _process_resolution_effects_owned(
                     mongo, ticket["_id"], marker, step=step, state="skipped",
                 )
                 continue
-            public_name, staff_name = thread_service.thread_names(
-                str(ticket.get("ticket_type") or ""), int(ticket.get("ticket_number") or 0),
-                str(ticket.get("username") or "candidate"), status=str(ticket.get("status") or ""),
-            )
+            public_name, staff_name = await thread_service.thread_names_for_ticket(mongo, ticket)
             target = public_name if role == "candidate" else staff_name
 
             async def save_flags(flags, *, _step=step):
@@ -662,10 +659,16 @@ async def _process_resolution_effects_owned(
 
             async def current_marker():
                 latest = await store.find_one(mongo, {"_id": ticket["_id"], **store.RUNTIME_FILTER})
+                name_reconcile = (latest or {}).get("thread_name_reconcile") or {}
+                name_lease_until = name_reconcile.get("lease_until")
                 if (
                     latest is None
                     or str((latest.get("resolution_effects") or {}).get("marker") or "") != marker
                     or str(latest.get("status") or "") != str(ticket.get("status") or "")
+                    or (await thread_service.thread_names_for_ticket(mongo, latest))[0 if role == "candidate" else 1] != target
+                    or (name_reconcile.get("lease_owner")
+                        and isinstance(name_lease_until, datetime)
+                        and name_lease_until > datetime.now(timezone.utc))
                 ):
                     raise RuntimeError("ticket decision was overturned before thread rename")
 
@@ -1005,12 +1008,15 @@ async def _resolution_reconciler(bot: hikari.GatewayBot, mongo: MongoClient) -> 
     while True:
         try:
             counts = await reconcile_pending_resolution_effects(bot, mongo)
+            name_counts = await thread_service.recover_pending_thread_name_reconciles(bot, mongo)
             account_counts = await _recover_live_account_syncs(mongo, bot=bot)
             if (
                 account_counts.get("failed")
                 or account_counts.get("context_failed")
                 or account_counts.get("processed", 0) >= 25
                 or account_counts.get("context_processed", 0) >= 25
+                or name_counts.get("failed")
+                or name_counts.get("processed", 0) >= 50
             ):
                 counts["pending"] = 1
         except asyncio.CancelledError:

@@ -36,7 +36,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import ticket_runtime
-from extensions.commands.tickets import account_sync, store
+from extensions.commands.tickets import account_sync, schema, store
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
 
@@ -205,7 +205,9 @@ _STATUS_NAME_PREFIXES = {
     "approved": "✅ ",
     "denied": "❌ ",
 }
-_KNOWN_NAME_PREFIXES = tuple(_STATUS_NAME_PREFIXES.values())
+_GHOSTED_NAME_PREFIX = "👻 "
+_KNOWN_NAME_PREFIXES = (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX)
+THREAD_NAME_RECONCILE_LEASE = timedelta(minutes=10)
 _CANONICAL_THREAD_NAME = re.compile(
     r"^(?:staff-)?(?:main|fwa)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
@@ -217,6 +219,7 @@ def thread_names(
     username: str,
     *,
     status: str = "open",
+    ghosted: bool = False,
 ) -> tuple[str, str]:
     """Return the pair's canonical Discord names for one durable status.
 
@@ -224,8 +227,34 @@ def thread_names(
     while the three permanent v2 decisions remain visible in Discord.
     """
     suffix = f"{ticket_type}-{int(ticket_number)}-{_slug(username)}"
-    prefix = _STATUS_NAME_PREFIXES.get(str(status), "")
+    # A current ghost report is deliberately more visible than the durable
+    # decision. Removing it immediately restores the status prefix.
+    prefix = _GHOSTED_NAME_PREFIX if ghosted else _STATUS_NAME_PREFIXES.get(str(status), "")
     return (prefix + suffix)[:100], (prefix + f"staff-{suffix}")[:100]
+
+
+async def thread_names_for_ticket(mongo: MongoClient, ticket: Mapping[str, Any]) -> tuple[str, str]:
+    """Resolve names from the current durable status and identity-wide ghost flag."""
+    from extensions.commands.tickets import flag_store
+
+    snapshot = account_sync.snapshot_from_ticket(ticket)
+    tags = tuple(snapshot.observed_tags) or tuple(schema.player_tags([
+        *(ticket.get("player_tags") or ticket.get("playerTags") or ()),
+        ticket.get("player_tag") or ticket.get("tag"),
+    ]))
+    # Small unit-test and offline callers can supply only ticket storage; in
+    # production the flag collection is always present after runtime setup.
+    flags = [] if not hasattr(mongo, "ticket_flags") else await flag_store.list_for_identity(
+        mongo, discord_ids=ticket.get("user_id"), player_tags=tags,
+    )
+    ghosted = any(str(flag.get("kind") or "") == flag_store.FLAG_GHOSTED for flag in flags)
+    return thread_names(
+        str(ticket.get("ticket_type") or ""),
+        _as_int(ticket.get("ticket_number")),
+        str(ticket.get("username") or "candidate"),
+        status=str(ticket.get("status") or ""),
+        ghosted=ghosted,
+    )
 
 
 def _name_variants(name: str) -> frozenset[str]:
@@ -952,9 +981,11 @@ async def _ensure_live_thread_pair(
     ticket_number = state.get("ticket_number")
     if not ticket_number:
         ticket_number = await reserve_ticket_number(mongo, state["ticket_type"])
-        candidate_name, staff_name = thread_names(
-            state["ticket_type"], ticket_number, state["username"]
-        )
+        candidate_name, staff_name = await thread_names_for_ticket(mongo, {
+            "ticket_type": state["ticket_type"], "ticket_number": ticket_number,
+            "username": state["username"], "status": "open",
+            "user_id": state.get("user_id"), "player_tags": state.get("player_tags") or (),
+        })
         state = await _state_update(
             mongo,
             creation_id,
@@ -2282,6 +2313,214 @@ async def rename_ticket_thread_for_status(
             archived=flags["archived"], locked=flags["locked"],
             reason="Restoring ticket thread state after status update",
         )
+
+
+async def reconcile_thread_names_for_flag(
+    bot: hikari.GatewayBot, mongo: MongoClient, flag_doc: Mapping[str, Any],
+) -> None:
+    """Durably rename every ticket reached by a changed GHOSTED identity.
+
+    The flag mutation has already won before this runs.  Each ticket records
+    its own checkpoint so an archived/locked pair is restored on the next
+    pass if Discord fails between reopening and relocking it.
+    """
+    from extensions.commands.tickets import flag_store
+
+    if str(flag_doc.get("kind") or "") != flag_store.FLAG_GHOSTED:
+        return
+    ids = [*flag_store._discord_ids(flag_doc.get("discord_ids")),
+           *flag_store._discord_ids(flag_doc.get("discordIds"))]
+    tags = flag_store.schema.player_tags([
+        *(flag_doc.get("player_tags") or ()), *(flag_doc.get("playerTags") or ()),
+    ])
+    clauses: list[dict] = []
+    if ids:
+        mixed = [item for value in ids for item in (value, str(value))]
+        clauses.append({"user_id": {"$in": mixed}})
+    if tags:
+        clauses.extend(({"player_tags": {"$in": tags}}, {"playerTags": {"$in": tags}},
+                        {"player_tag": {"$in": tags}}, {"tag": {"$in": tags}}))
+    if not clauses:
+        return
+    tickets = await mongo.tickets.find({**store.RUNTIME_FILTER, "$or": clauses}).to_list(length=None)
+    for ticket in tickets:
+        prior = ticket.get("thread_name_reconcile") or {}
+        # Do not replace a checkpoint that may be holding the original
+        # archived/locked state from an interrupted edit. Its worker resolves
+        # the latest flag before every write, so it naturally converges on the
+        # new target.
+        marker = str(prior.get("marker") or "") if not prior.get("complete") else ""
+        if not marker:
+            marker = uuid.uuid4().hex
+            observed_marker = str(prior.get("marker") or "")
+            replace_filter = {"_id": ticket["_id"], **store.RUNTIME_FILTER}
+            if observed_marker:
+                replace_filter["thread_name_reconcile.marker"] = observed_marker
+                replace_filter["thread_name_reconcile.complete"] = True
+            else:
+                replace_filter["thread_name_reconcile"] = {"$exists": False}
+            replaced = await mongo.tickets.update_one(
+                replace_filter,
+                {"$set": {"thread_name_reconcile": {
+                    "marker": marker, "complete": False, "request_rev": 1,
+                }}},
+            )
+            if not getattr(replaced, "matched_count", 0):
+                # A concurrent caller installed an active generation after
+                # our read.  Preserve its lease and flag baseline; only ask
+                # that generation to converge once more.
+                current = await mongo.tickets.find_one({"_id": ticket["_id"], **store.RUNTIME_FILTER})
+                marker = str(((current or {}).get("thread_name_reconcile") or {}).get("marker") or "")
+                if not marker:
+                    return
+                await mongo.tickets.update_one(
+                    {"_id": ticket["_id"], **store.RUNTIME_FILTER,
+                     "thread_name_reconcile.marker": marker},
+                    {"$inc": {"thread_name_reconcile.request_rev": 1},
+                     "$set": {"thread_name_reconcile.complete": False}},
+                )
+        else:
+            await mongo.tickets.update_one(
+                {"_id": ticket["_id"], **store.RUNTIME_FILTER,
+                 "thread_name_reconcile.marker": marker},
+                {"$inc": {"thread_name_reconcile.request_rev": 1},
+                 "$set": {"thread_name_reconcile.complete": False}},
+            )
+        latest = await mongo.tickets.find_one({"_id": ticket["_id"], **store.RUNTIME_FILTER})
+        if latest is not None:
+            await _reconcile_ticket_thread_names(bot, mongo, latest, marker)
+
+
+async def _reconcile_ticket_thread_names(
+    bot: hikari.GatewayBot, mongo: MongoClient, ticket: Mapping[str, Any], marker: str,
+) -> None:
+    """Run one checkpointed pair rename, aborting when status or flags race."""
+    resolution = ticket.get("resolution_effects") or {}
+    until = resolution.get("lease_until")
+    if resolution.get("lease_owner") and isinstance(until, datetime) and until > datetime.now(timezone.utc):
+        # Resolution uses the same desired-name resolver and will retry its
+        # own checkpoint; leave this flag generation pending for its next pass.
+        return
+    owner = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    leased = await mongo.tickets.find_one_and_update(
+        {"_id": ticket["_id"], **store.RUNTIME_FILTER,
+         "thread_name_reconcile.marker": marker,
+         "thread_name_reconcile.complete": {"$ne": True},
+         "$and": [
+             {"$or": [{"thread_name_reconcile.lease_until": {"$exists": False}},
+                       {"thread_name_reconcile.lease_until": {"$lte": now}}]},
+             {"$or": [{"resolution_effects.lease_until": {"$exists": False}},
+                       {"resolution_effects.lease_until": {"$lte": now}}]},
+         ]},
+        {"$set": {"thread_name_reconcile.lease_owner": owner,
+                  "thread_name_reconcile.lease_until": now + THREAD_NAME_RECONCILE_LEASE}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if leased is None:
+        return
+    try:
+        await _reconcile_ticket_thread_names_owned(bot, mongo, leased, marker, owner)
+    finally:
+        await mongo.tickets.update_one(
+            {"_id": ticket["_id"], "thread_name_reconcile.marker": marker,
+             "thread_name_reconcile.lease_owner": owner},
+            {"$unset": {"thread_name_reconcile.lease_owner": "",
+                        "thread_name_reconcile.lease_until": ""}},
+        )
+
+
+async def _reconcile_ticket_thread_names_owned(
+    bot: hikari.GatewayBot, mongo: MongoClient, ticket: Mapping[str, Any], marker: str, owner: str,
+) -> None:
+    state = ticket.get("thread_name_reconcile") or {}
+    request_rev = int(state.get("request_rev") or 0)
+    for role, thread_id, index in (
+        ("candidate", _ticket_thread_ids(ticket)[0], 0),
+        ("staff", _ticket_thread_ids(ticket)[1], 1),
+    ):
+        saved = (state.get(role) or {})
+        if ticket_runtime.thread_missing_has_role(ticket, role) or not thread_id:
+            await mongo.tickets.update_one(
+                {"_id": ticket["_id"], "thread_name_reconcile.marker": marker,
+                 "thread_name_reconcile.lease_owner": owner},
+                {"$set": {f"thread_name_reconcile.{role}": {"skipped": True}}},
+            )
+            continue
+        latest = await mongo.tickets.find_one({
+            "_id": ticket["_id"], **store.RUNTIME_FILTER,
+            "thread_name_reconcile.marker": marker,
+            "thread_name_reconcile.lease_owner": owner,
+        })
+        if latest is None:
+            return
+        target = (await thread_names_for_ticket(mongo, latest))[index]
+
+        async def checkpoint(flags, *, _role=role, _target=target):
+            await mongo.tickets.update_one(
+                {"_id": ticket["_id"], "thread_name_reconcile.marker": marker,
+                 "thread_name_reconcile.lease_owner": owner},
+                {"$set": {f"thread_name_reconcile.{_role}": {
+                    "target": _target, **flags,
+                }}},
+            )
+
+        async def current_target(*, _target=target):
+            current = await mongo.tickets.find_one({
+                "_id": ticket["_id"], **store.RUNTIME_FILTER,
+                "thread_name_reconcile.marker": marker,
+                "thread_name_reconcile.lease_owner": owner,
+            })
+            if current is None or (await thread_names_for_ticket(mongo, current))[index] != _target:
+                raise RuntimeError("ticket status or GHOSTED flag changed before thread rename")
+
+        try:
+            await rename_ticket_thread_for_status(
+                bot.rest, thread_id, target,
+                restore_state=saved if "archived" in saved else None,
+                checkpoint_flags=checkpoint,
+                before_mutation=current_target,
+            )
+        except hikari.NotFoundError:
+            await mongo.tickets.update_one(
+                {"_id": ticket["_id"], "thread_name_reconcile.marker": marker,
+                 "thread_name_reconcile.lease_owner": owner},
+                {"$set": {f"thread_name_reconcile.{role}": {"skipped": True}}},
+            )
+            continue
+        await mongo.tickets.update_one(
+            {"_id": ticket["_id"], "thread_name_reconcile.marker": marker,
+             "thread_name_reconcile.lease_owner": owner},
+            {"$set": {f"thread_name_reconcile.{role}.delivered": True}},
+        )
+    await mongo.tickets.update_one(
+        {"_id": ticket["_id"], "thread_name_reconcile.marker": marker,
+         "thread_name_reconcile.lease_owner": owner,
+         "thread_name_reconcile.request_rev": request_rev},
+        {"$set": {"thread_name_reconcile.complete": True}},
+    )
+
+
+async def recover_pending_thread_name_reconciles(
+    bot: hikari.GatewayBot, mongo: MongoClient, *, limit: int = 50,
+) -> dict[str, int]:
+    """Resume flag-driven thread-name edits that were interrupted by Discord."""
+    rows = await mongo.tickets.find({
+        **store.RUNTIME_FILTER,
+        "thread_name_reconcile.marker": {"$exists": True},
+        "thread_name_reconcile.complete": {"$ne": True},
+    }).limit(limit).to_list(length=limit)
+    failed = 0
+    for ticket in rows:
+        marker = str((ticket.get("thread_name_reconcile") or {}).get("marker") or "")
+        if not marker:
+            continue
+        try:
+            await _reconcile_ticket_thread_names(bot, mongo, ticket, marker)
+        except Exception:
+            failed += 1
+            _log.exception("ticket thread-name reconciliation pending ticket=%s", ticket.get("_id"))
+    return {"processed": len(rows), "completed": len(rows) - failed, "failed": failed}
 
 
 async def ensure_candidate_thread_access(

@@ -381,6 +381,13 @@ ticket-detail flow is unavailable:
 `flag-add` needs at least one Discord ID or player tag. Copy the exact flag ID
 from ticket detail or `flags` before removing it.
 
+An active **GHOSTED** flag gives matching ticket threads a `👻` prefix on both
+the applicant and staff threads. It takes precedence over the status emoji;
+removing the flag restores the ticket's status prefix without changing its
+decision. Renames preserve archived/locked state and retry interrupted work.
+Deploying this behavior without restarting leaves the running bot on its
+previous behavior until the next restart.
+
 ### Automatic previously-denied warning
 
 The console also adds an applicant-wide **Previously denied** warning when a

@@ -11,6 +11,7 @@ from extensions import components as dispatcher
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import (
     account_sync,
+    flag_store,
     handlers,
     legacy_migration,
     schema,
@@ -240,6 +241,86 @@ def test_thread_names_encode_the_permanent_status_and_keep_closed_unprefixed():
     assert thread_service.thread_names("main", 7, "Shaun Example", status="closed")[0] == "main-7-shaun-example"
 
 
+def test_ghosted_thread_names_override_status_for_both_ticket_threads():
+    public, staff = thread_service.thread_names(
+        "main", 7, "Shaun Example", status="denied", ghosted=True,
+    )
+    assert public == "👻 main-7-shaun-example"
+    assert staff == "👻 staff-main-7-shaun-example"
+    assert thread_service.thread_names("main", 7, "Shaun Example", status="denied")[0] == "❌ main-7-shaun-example"
+
+
+def test_active_ghost_flag_name_resolution_reverts_to_each_ticket_status(monkeypatch):
+    """One identity-wide flag changes both pair names; removal restores status."""
+    ticket = {
+        "ticket_type": "main", "ticket_number": 8, "username": "Applicant",
+        "status": "approved", "user_id": 123, "player_tags": ["#ABC123"],
+    }
+    active = [{"kind": "ghosted", "active": True}]
+
+    async def flags(*_args, **_kwargs):
+        return list(active)
+
+    monkeypatch.setattr(flag_store, "list_for_identity", flags)
+    mongo = SimpleNamespace(ticket_flags=object())
+    public, staff = asyncio.run(thread_service.thread_names_for_ticket(mongo, ticket))
+    assert (public, staff) == ("👻 main-8-applicant", "👻 staff-main-8-applicant")
+    active.clear()
+    public, staff = asyncio.run(thread_service.thread_names_for_ticket(mongo, ticket))
+    assert (public, staff) == ("✅ main-8-applicant", "✅ staff-main-8-applicant")
+
+
+def test_ghost_reconcile_stale_completed_init_preserves_active_checkpoint(monkeypatch):
+    """A second flag click cannot replace an in-flight archive/lock baseline."""
+    original = {
+        "_id": "ticket_8", "runtime": "thread_v2", "user_id": 123,
+        "thread_name_reconcile": {"marker": "old", "complete": True},
+    }
+    active = {
+        **original,
+        "thread_name_reconcile": {
+            "marker": "in-flight", "complete": False, "request_rev": 4,
+            "lease_owner": "worker", "candidate": {"archived": True, "locked": True},
+        },
+    }
+
+    class Cursor:
+        async def to_list(self, *, length):
+            return [dict(original)]
+
+    class Tickets:
+        def __init__(self):
+            self.updates = []
+
+        def find(self, _query):
+            return Cursor()
+
+        async def update_one(self, query, update):
+            self.updates.append((query, update))
+            # The exact completed-marker CAS lost to the first caller.
+            return SimpleNamespace(matched_count=0 if len(self.updates) == 1 else 1)
+
+        async def find_one(self, _query):
+            return dict(active)
+
+    tickets = Tickets()
+    called = []
+
+    async def reconcile(_bot, _mongo, ticket, marker):
+        called.append((ticket, marker))
+
+    monkeypatch.setattr(thread_service, "_reconcile_ticket_thread_names", reconcile)
+    asyncio.run(thread_service.reconcile_thread_names_for_flag(
+        SimpleNamespace(), SimpleNamespace(tickets=tickets),
+        {"kind": "ghosted", "discord_ids": [123]},
+    ))
+    # The losing caller increments the live generation instead of `$set`ing a
+    # replacement object that would erase its saved archived/locked flags.
+    assert tickets.updates[1][1]["$inc"] == {"thread_name_reconcile.request_rev": 1}
+    assert called[0][1] == "in-flight"
+    assert called[0][0]["thread_name_reconcile"]["candidate"] == {"archived": True, "locked": True}
+
+
 def test_id_bound_recovery_accepts_only_known_status_prefixes():
     base = "main-1-applicant"
     identity = dict(
@@ -248,6 +329,10 @@ def test_id_bound_recovery_accepts_only_known_status_prefixes():
     )
     thread_service._validate_recovered_thread(
         SimpleNamespace(**identity, name="✅ " + base),
+        guild_id=10, parent_id=20, name=base, private=True, expected_owner_id=999,
+    )
+    thread_service._validate_recovered_thread(
+        SimpleNamespace(**identity, name="👻 " + base),
         guild_id=10, parent_id=20, name=base, private=True, expected_owner_id=999,
     )
     with pytest.raises(thread_service.ThreadTicketError, match="wrong name"):
