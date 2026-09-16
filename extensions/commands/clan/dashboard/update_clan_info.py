@@ -36,10 +36,16 @@ from utils.mongo import MongoClient, ensure_clan_tag_index
 from utils.url_safety import is_safe_public_url
 from extensions.commands.clan.dashboard.dashboard import dashboard_page
 from extensions.commands.clan.dashboard import update_clan_info_general
+from extensions.commands.clan.dashboard.permissions import require_dashboard_role
 
 CLAN_MANAGEMENT_ROLE_ID = 993015846442127420
 
 IMG_RE = re.compile(r"^https?://\S+\.(?:png|jpe?g|gif|webp)$", re.IGNORECASE)
+
+
+async def _require_clan_management(ctx) -> bool:
+    """Recheck the existing Clan Management role on persistent controls."""
+    return await require_dashboard_role(ctx, CLAN_MANAGEMENT_ROLE_ID, "Clan Management")
 
 
 @register_action("update_clan_information", group="clan_database")
@@ -184,12 +190,14 @@ async def add_clan_page(
     return components
 
 
-@register_action("add_clan", no_return=True, is_modal=True)
+@register_action("add_clan", no_return=True, opens_modal=True)
 @lightbulb.di.with_di
 async def add_clan(
         ctx: lightbulb.components.MenuContext,
         **kwargs
 ):
+    if not await _require_clan_management(ctx):
+        return
     tag = ModalActionRow().add_text_input(
         "clantag",
         "Clan Tag",
@@ -211,6 +219,8 @@ async def add_clan_modal(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
+    if not await _require_clan_management(ctx):
+        return
     def get_modal_item(ctx: lightbulb.components.ModalContext, custom_id: str):
         for row in ctx.interaction.components:
             for component in row:
@@ -220,6 +230,8 @@ async def add_clan_modal(
     clan_tag = get_modal_item(ctx, "clantag")
     if not clan_tag:
         return await ctx.respond("⚠️ You must enter a clan tag!", ephemeral=True)
+
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
 
     clan = await coc_client.get_clan(tag=clan_tag)
     await ensure_clan_tag_index(mongo)
@@ -249,7 +261,6 @@ async def add_clan_modal(
         upsert=True,
     )
 
-    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
     new_components = await clan_edit_menu(ctx, action_id=clan.tag, mongo=mongo, tag=clan.tag)
     await ctx.interaction.edit_initial_response(components=new_components)
 
@@ -854,13 +865,15 @@ async def logo_upload_guide(
     return components
 
 
-@register_action("logo_url_modal", no_return=True, is_modal=True)
+@register_action("logo_url_modal", no_return=True, opens_modal=True)
 @lightbulb.di.with_di
 async def logo_url_modal_handler(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         **kwargs
 ):
+    if not await _require_clan_management(ctx):
+        return
     # When a button with custom_id="logo_url_modal:TAG" is clicked,
     # the system splits it into command_name="logo_url_modal" and action_id="TAG"
 
@@ -891,6 +904,8 @@ async def update_logo_modal(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ):
+    if not await _require_clan_management(ctx):
+        return
     tag = action_id
 
     # Helper function to extract values from modal components
@@ -1238,13 +1253,15 @@ async def update_emoji_button(
     return components
 
 
-@register_action("emoji_url_modal", no_return=True, is_modal=True)
+@register_action("emoji_url_modal", no_return=True, opens_modal=True)
 @lightbulb.di.with_di
 async def emoji_url_modal_handler(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         **kwargs
 ):
+    if not await _require_clan_management(ctx):
+        return
     tag = action_id
 
     emoji_input = ModalActionRow().add_text_input(
@@ -1270,6 +1287,8 @@ async def emoji_from_logo(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ):
+    if not await _require_clan_management(ctx):
+        return
     tag = action_id
 
     # Get clan data
@@ -1525,6 +1544,8 @@ async def update_emoji_modal(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         **kwargs
 ):
+    if not await _require_clan_management(ctx):
+        return
     tag = action_id
 
     # Get modal input

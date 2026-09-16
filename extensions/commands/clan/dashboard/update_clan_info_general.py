@@ -53,6 +53,7 @@ async def update_general_info_panel(
     raw = await mongo.clans.find_one({"tag": tag})
     if not raw:
         await ctx.respond("❌ Clan not found!", ephemeral=True)
+        return None
 
     db_clan = Clan(data=raw)
     components = [

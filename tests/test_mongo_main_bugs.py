@@ -109,6 +109,7 @@ class _FakeInteraction:
 class _FakeCtx:
     def __init__(self, clan_tag):
         self.interaction = _FakeInteraction(clan_tag)
+        self.member = SimpleNamespace(get_roles=lambda: (SimpleNamespace(id=update_clan_info.CLAN_MANAGEMENT_ROLE_ID),))
         self.responded = []
 
     async def respond(self, *args, **kwargs):

@@ -10,6 +10,7 @@ import uuid
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
+from utils.mongo import MongoClient
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -26,25 +27,16 @@ STRIKE_SYSTEM_ROLE_ID = 1078723854303756302  # Strike system accepted role
 FAMILY_PARTICULARS_CHANNEL_ID = 1078723854316355603  # Channel to direct users to
 
 
-@setup.register()
-class RecruitStrikeSystem(
-    lightbulb.SlashCommand,
-    name="recruit-strikesystem",
-    description="Display Warriors United strike system and rules"
-):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(
-        self,
-        ctx: lightbulb.Context,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    ) -> None:
-        await ctx.defer()
-        
-        action_id = str(uuid.uuid4())
-        
-        # Create all embeds
-        components = [
+def build_strikesystem(sections=None, *, action_id="preview", preview=False):
+    """Render the Strike System post for publishing or dashboard previews."""
+    if sections is not None and len(sections) != 12:
+        raise ValueError("Strike System requires exactly twelve editable text fields.")
+    values = iter(sections) if sections is not None else None
+
+    def text(default):
+        return Text(content=next(values) if values is not None else default)
+
+    components = [
             # Image at the top
             Media(
                 items=[
@@ -58,9 +50,9 @@ class RecruitStrikeSystem(
             Container(
                 accent_color=GOLDENROD_ACCENT,
                 components=[
-                    Text(content="## 📜 **Warriors United Basic Rules** 📜"),
+                    text("## 📜 **Warriors United Basic Rules** 📜"),
                     Separator(divider=True),
-                    Text(content=(
+                    text((
                         "🛡️**WARRIORS UNITED**🛡️ is an adult community with good morals and ethics. A little banter and cutting up "
                         "is acceptable however, there are some things that just won't be tolerated...\n\n"
                         "**1.** No form of sexism, racism, religious discrimination, gender discrimination will be tolerated. "
@@ -85,9 +77,9 @@ class RecruitStrikeSystem(
             Container(
                 accent_color=GOLDENROD_ACCENT,
                 components=[
-                    Text(content="## ❌ **Warrior's United Strike System** ❌"),
+                    text("## ❌ **Warrior's United Strike System** ❌"),
                     Separator(divider=True),
-                    Text(content=(
+                    text((
                         "Our Strike System is a penalty system in which strikes are given to members who violate the rules and "
                         "principles implemented within the Warrior's United Clan Family.\n\n"
                         "Violations have different set strikes that go along with them. It's not the amount violations you develop "
@@ -110,9 +102,9 @@ class RecruitStrikeSystem(
             Container(
                 accent_color=GOLDENROD_ACCENT,
                 components=[
-                    Text(content="## ❌ **MAIN CLAN STRIKE SYSTEM** ❌"),
+                    text("## ❌ **MAIN CLAN STRIKE SYSTEM** ❌"),
                     Separator(divider=True),
-                    Text(content="Check below for the main clan strike system rules."),
+                    text("Check below for the main clan strike system rules."),
                     Media(
                         items=[
                             MediaItem(
@@ -127,9 +119,9 @@ class RecruitStrikeSystem(
             Container(
                 accent_color=GOLDENROD_ACCENT,
                 components=[
-                    Text(content="## ❌ **FWA STRIKE SYSTEM** ❌"),
+                    text("## ❌ **FWA STRIKE SYSTEM** ❌"),
                     Separator(divider=True),
-                    Text(content="Check below for fwa clan strike system rules."),
+                    text("Check below for fwa clan strike system rules."),
                     Media(
                         items=[
                             MediaItem(
@@ -144,9 +136,9 @@ class RecruitStrikeSystem(
             Container(
                 accent_color=GOLDENROD_ACCENT,
                 components=[
-                    Text(content="## ❌ **Terms and conditions** ❌"),
+                    text("## ❌ **Terms and conditions** ❌"),
                     Separator(divider=True),
-                    Text(content=(
+                    text((
                         "• All offenses except those that reside in the Red Zone can have warnings issued before strikes are given. "
                         "Issuing warnings is up to the leadership team, and warnings will be logged.\n\n"
                         "• Strikes can be withdrawn by leadership majority.\n\n"
@@ -160,9 +152,9 @@ class RecruitStrikeSystem(
             Container(
                 accent_color=GOLDENROD_ACCENT,
                 components=[
-                    Text(content="## 📜 **ACKNOWLEDGMENT**"),
+                    text("## 📜 **ACKNOWLEDGMENT**"),
                     Separator(divider=True),
-                    Text(content=(
+                    text((
                         "To acknowledge you have read and agree to abide by the Warriors United Strike System, "
                         "react to the ✅ below and follow this link...\n\n"
                         "https://discord.com/channels/1078723854303756298/1078723854316355603\n\n"
@@ -181,16 +173,42 @@ class RecruitStrikeSystem(
                     )
                 ]
             ),
-        ]
-        
-        # Delete the deferred response
-        await ctx.interaction.delete_initial_response()
-        
-        # Send message to channel
+    ]
+    if preview:
+        components[-1].components[-1].components[0].set_is_disabled(True)
+    return components
+
+
+@setup.register()
+class RecruitStrikeSystem(
+    lightbulb.SlashCommand,
+    name="recruit-strikesystem",
+    description="Display Warriors United strike system and rules"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+        saved = await mongo.bot_config.find_one({"_id": f"content:strike-system:{ctx.guild_id}"})
+        if saved:
+            from extensions.commands.content import DOCUMENTS, render
+            try:
+                components = await render(DOCUMENTS["strike-system"], saved["sections"], action_id=str(uuid.uuid4()))
+            except (KeyError, ValueError):
+                saved = None
+        if not saved:
+            components = build_strikesystem(action_id=str(uuid.uuid4()))
         await bot.rest.create_message(
             channel=ctx.channel_id,
             components=components,
+            user_mentions=False, role_mentions=False, mentions_everyone=False,
         )
+        await ctx.respond("WU Strike System posted.", ephemeral=True)
 
 
 @register_action("strikesystem_acknowledge", no_return=True)

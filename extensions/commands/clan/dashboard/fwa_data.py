@@ -17,6 +17,7 @@ from utils.media_urls import DETAIL, optimized
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 from utils.emoji import emojis
 from extensions.commands.clan.dashboard.dashboard import dashboard_page
+from extensions.commands.clan.dashboard.permissions import require_dashboard_role
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -34,6 +35,11 @@ from hikari.impl import (
 )
 
 FWA_REP_ROLE_ID = 993015846442127420
+
+
+async def _require_fwa_representative(ctx) -> bool:
+    """Recheck the existing FWA Representative role on persistent controls."""
+    return await require_dashboard_role(ctx, FWA_REP_ROLE_ID, "FWA Representative")
 
 # TH levels we support for FWA (ordered from highest to lowest)
 FWA_TH_LEVELS = ["th18_new", "th18", "th17_new", "th17", "th16_new", "th16", "th15", "th14", "th13", "th12", "th11", "th10", "th9"]
@@ -426,12 +432,14 @@ async def fwa_th_select(
     return build_th_edit_components(th_level, base_link, base_info, upgrade_notes, war_image, active_image)
 
 
-@register_action("fwa_update_link", no_return=True, is_modal=True)
+@register_action("fwa_update_link", no_return=True, opens_modal=True)
 async def fwa_update_link(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         **kwargs
 ):
+    if not await _require_fwa_representative(ctx):
+        return
     """Modal for updating base link"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
@@ -459,6 +467,8 @@ async def fwa_link_submit(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
+    if not await _require_fwa_representative(ctx):
+        return
     """Process base link update"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
@@ -480,6 +490,8 @@ async def fwa_link_submit(
         )
         return
 
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+
     # Update in database
     await mongo.fwa_data.update_one(
         {"_id": "fwa_config"},
@@ -488,8 +500,7 @@ async def fwa_link_submit(
     )
 
     # Success response
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.MESSAGE_UPDATE,
+    await ctx.interaction.edit_initial_response(
         components=[
             Container(
                 accent_color=GREEN_ACCENT,
@@ -584,12 +595,14 @@ async def fwa_update_images(
     return components
 
 
-@register_action("fwa_image_urls", no_return=True, is_modal=True)
+@register_action("fwa_image_urls", no_return=True, opens_modal=True)
 async def fwa_image_urls(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
         **kwargs
 ):
+    if not await _require_fwa_representative(ctx):
+        return
     """Modal for updating image URLs"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
@@ -626,6 +639,8 @@ async def fwa_images_submit(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
+    if not await _require_fwa_representative(ctx):
+        return
     """Process image URL updates"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
@@ -772,7 +787,7 @@ async def fwa_images_submit(
             ]
         )
 
-@register_action("fwa_update_descriptions", no_return=True, is_modal=True)
+@register_action("fwa_update_descriptions", no_return=True, opens_modal=True)
 @lightbulb.di.with_di
 async def fwa_update_descriptions(
         ctx: lightbulb.components.MenuContext,
@@ -780,6 +795,8 @@ async def fwa_update_descriptions(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
+    if not await _require_fwa_representative(ctx):
+        return
     """Modal for updating base descriptions"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
@@ -841,6 +858,8 @@ async def fwa_descriptions_submit(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
+    if not await _require_fwa_representative(ctx):
+        return
     """Process description updates"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
@@ -863,6 +882,8 @@ async def fwa_descriptions_submit(
         )
         return
 
+    await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+
     # Update in database
     update_fields = {}
     if base_info:
@@ -877,8 +898,7 @@ async def fwa_descriptions_submit(
     )
 
     # Initial response - show loading screen immediately
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.MESSAGE_UPDATE,
+    await ctx.interaction.edit_initial_response(
         components=[
             Container(
                 accent_color=BLUE_ACCENT,

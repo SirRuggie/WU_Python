@@ -285,6 +285,11 @@ async def _dispatch(
         await _refuse(ctx, MSG_STALE_PANEL)
         return
 
+    from extensions.commands.clan.dashboard.permissions import dashboard_guard_for, require_dashboard_role
+    dashboard_guard = dashboard_guard_for(command_name)
+    if dashboard_guard and not await require_dashboard_role(ctx, *dashboard_guard):
+        return
+
     # Only defer if not a modal AND not opening a modal. The defer comes
     # before ANY other await (state load, handler) on purpose: it is the
     # 3-second acknowledgement, and everything after it has 15 minutes.

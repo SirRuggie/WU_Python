@@ -39,6 +39,7 @@ HELP_CATEGORIES = {
             ("/recruit questions", "Send the recruitment questionnaire to a recruit."),
             ("/recruit dashboard", "Open the complete new-member onboarding dashboard."),
             ("/setup recruit-aboutus", "Post the family overview and onboarding flow."),
+            ("/content dashboard", "Edit About Us, WU Strike System, and Family Particulars with private Markdown forms and previews."),
             ("/setup recruit-familyparticulars", "Post family particulars and war rules."),
             ("/setup recruit-strikesystem", "Post the strike-system rules."),
         ],

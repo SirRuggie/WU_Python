@@ -10,6 +10,7 @@ import uuid
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
+from utils.mongo import MongoClient
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -26,25 +27,12 @@ CLAN_RULES_READ_ROLE_ID = 1078723854303756303  # Clan Rules Read role
 APPLY_HERE_CHANNEL_ID = 1078723854635110530  # Apply Here channel
 
 
-@setup.register()
-class RecruitFamilyParticulars(
-    lightbulb.SlashCommand,
-    name="recruit-familyparticulars",
-    description="Display Warriors United family particulars and war rules"
-):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(
-        self,
-        ctx: lightbulb.Context,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    ) -> None:
-        await ctx.defer()
-        
-        action_id = str(uuid.uuid4())
-        
-        # Create all embeds
-        components = [
+def build_familyparticulars(sections=None, *, action_id="preview", preview=False):
+    """Render Family Particulars for publishing or dashboard previews."""
+    if sections is not None and len(sections) != 28:
+        raise ValueError("Family Particulars requires exactly twenty-eight text fields.")
+
+    components = [
             # Image at the top
             Media(
                 items=[
@@ -181,16 +169,54 @@ class RecruitFamilyParticulars(
                     )
                 ]
             ),
+    ]
+    if sections is not None:
+        values = iter(sections)
+        components = [
+            Container(
+                accent_color=component.accent_color,
+                components=[
+                    Text(content=next(values)) if isinstance(child, Text) else child
+                    for child in component.components
+                ],
+            ) if isinstance(component, Container) else component
+            for component in components
         ]
-        
-        # Delete the deferred response
-        await ctx.interaction.delete_initial_response()
-        
-        # Send message to channel
+    if preview:
+        components[-1].components[-1].components[0].set_is_disabled(True)
+    return components
+
+
+@setup.register()
+class RecruitFamilyParticulars(
+    lightbulb.SlashCommand,
+    name="recruit-familyparticulars",
+    description="Display Warriors United family particulars and war rules"
+):
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx: lightbulb.Context,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+        saved = await mongo.bot_config.find_one({"_id": f"content:family-particulars:{ctx.guild_id}"})
+        if saved:
+            from extensions.commands.content import DOCUMENTS, render
+            try:
+                components = await render(DOCUMENTS["family-particulars"], saved["sections"], action_id=str(uuid.uuid4()))
+            except (KeyError, ValueError):
+                saved = None
+        if not saved:
+            components = build_familyparticulars(action_id=str(uuid.uuid4()))
         await bot.rest.create_message(
             channel=ctx.channel_id,
             components=components,
+            user_mentions=False, role_mentions=False, mentions_everyone=False,
         )
+        await ctx.respond("Family Particulars posted.", ephemeral=True)
 
 
 @register_action("familyparticulars_acknowledge", no_return=True)

@@ -80,7 +80,7 @@ rules, and the strike system. A background task removes the temporary New
 Recruit role automatically two hours after assignment.
 
 <details>
-<summary><strong>Command reference — Roles &amp; Recruits (8 commands)</strong></summary>
+<summary><strong>Command reference — Roles &amp; Recruits (9 commands)</strong></summary>
 <br>
 
 | Command | Description |
@@ -91,6 +91,7 @@ Recruit role automatically two hours after assignment.
 | `/recruit questions` | Send the recruitment questionnaire to a recruit. |
 | `/recruit dashboard` | Open the complete new-member onboarding dashboard. |
 | `/setup recruit-aboutus` | Post the family overview and onboarding flow. |
+| `/content dashboard` | Privately edit per-server About Us, WU Strike System, and Family Particulars; preview, save future wording, or update a linked post. |
 | `/setup recruit-familyparticulars` | Post family particulars and war rules. |
 | `/setup recruit-strikesystem` | Post the strike-system rules. |
 

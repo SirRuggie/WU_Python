@@ -10,6 +10,7 @@ import uuid
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
+from utils.mongo import MongoClient
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -26,6 +27,155 @@ ABOUT_US_ROLE_ID = 1078723854303756301  # Role to assign when user acknowledges
 STRIKE_SYSTEM_CHANNEL_ID = 1078723854316355602  # Channel to direct users to
 
 
+def build_aboutus(sections=None, *, action_id="preview", preview=False):
+    """Single renderer for published messages and private editor previews."""
+    if sections is not None and len(sections) != 12:
+        raise ValueError("About Us requires exactly twelve editable text fields.")
+    values = iter(sections) if sections is not None else None
+
+    def text(default):
+        # TextDisplayComponentBuilder has no set_content method in hikari 2.6.
+        # Construct each display with its draft value so the pinned SDK can
+        # render both editor previews and saved posts.
+        return Text(content=next(values) if values is not None else default)
+
+    # Create all embeds
+    components = [
+        # Image at the top
+        Media(
+            items=[
+                MediaItem(
+                    media="assets/branding/banners/Warriors_United.gif"
+                )
+            ]
+        ),
+
+        # Embed 1: Welcome and Overview
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                text("## :shield: **Welcome to Warriors United!!** :shield:"),
+                Separator(divider=True),
+                text((
+                    "We're an English-speaking Clan Family based in the USA but have Clasher's from all over the Globe. "
+                    "We've developed system of game play that allows you to war no matter what the upgrade status of your base is.\n\n"
+                    "**Note of mention** None of our clans are Family Friendly Clans. So if you know your account(s) will require "
+                    "this; need to look elsewhere...👍🏼\n\n"
+                    "Here's what we will provide:\n"
+                    ":shield: 2 High Level Tactical Clans\n"
+                    ":shield: 3 Flexible Fun War Clans\n"
+                    ":shield: 5 Official FWA Clans for Farmers\n"
+                    ":shield: CWL chances for everyone\n"
+                    ":shield: An Experienced Base Building Team\n"
+                    ":shield: Experienced Attack Trainers"
+                )),
+                Separator(divider=True),
+                text("## ☠️ **High Level Tactical Clans** ☠️"),
+                text((
+                    "**Funnies (#2Q9RLRCG)**\n"
+                    "**WeAreBrother (#YQPYJCQ2)**\n\n"
+                    "Our High Level Tactical Clans are TH13+ full maxed previous TH Level and always strive to obtain 3 ⭐'s in war. "
+                    "Not to worry if you fail; they can't all be perfect; but we expect our members to follow the War Format set in place "
+                    "and are committed to winning every war as part of an overall team effort.\n\n"
+                    "Wars are always full strength, meaning no Heroes upgrading."
+                )),
+            ]
+        ),
+
+        # Embed 2: Flexible Fun War Clans
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                text("## 🪖 **Flexible Fun War Clans** 🪖"),
+                text((
+                    "**Warriors United (#2YRVY8YCP)**\n"
+                    "**Noahs Ark (#8VPQCR2R)**\n"
+                    "**Morning Woods! (#8VQP9VQ9)**\n\n"
+                    "Our \"Flexible Fun\" Clans are relaxed Farm/War Clans that do 50v50 wars or highest amount possible. "
+                    "You will be held accountable to make your first attack here but we won't hold you liable for performance. "
+                    "No Heroes necessary!!\n\n"
+                    "These clans are designed for lower level/more chill players. If your in a Tactical Clan and drop a Hero; "
+                    "or more; upgrading and still want some war loot. Slide over to a Flexible Fun Clan and move back to Tactical "
+                    "when upgrades are done.\n\n"
+                    "Don't mistake these to be Camping Clans and not competitive. Like anyone we strive to win!!\n\n"
+                    "No War Activity = No Clan Membership EzPz"
+                )),
+            ]
+        ),
+
+        # Embed 3: FWA Clans
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                text("## 💰 **FWA Clans** 💰"),
+                text((
+                    "**Clash of Thrones (#Q889GPL)**\n"
+                    "**CoT Wildlings (#2YJVQUCYJ)**\n"
+                    "**Four and Twenty (#8CV0GPPR)**\n"
+                    "**The Horde (#2RRCJCI0)**\n"
+                    "**PlaneClashers (#9UGQ0GL)**\n\n"
+                    "FWA (Farm War Alliance) is an alliance of clans who have back to back organized wars for loot. "
+                    "The war outcome is predetermined and simple War Plans are posted regarding the needed outcome. "
+                    "Also a place with no Heroes necessary.\n\n"
+                    "Minimum requirements: TH12 and above with war weight equal to or greater than 115 with all buildings "
+                    "built for your current TH Level."
+                )),
+                Separator(divider=True),
+                text("### **Disclaimer**"),
+                text((
+                    "Each new recruit is viewed on a case by case scenario and more details on each Clan Category will be "
+                    "provided in your interview. The above requirements are a benchmark and are subject to Leadership's discretion."
+                )),
+            ]
+        ),
+
+        # Embed 4: Next Steps
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                text("## ⏩ **NEXT STEP**"),
+                text((
+                    "Now react to the ✅ below and follow this link...\n\n"
+                    "https://discord.com/channels/1078723854303756298/1078723854316355602\n\n"
+                    "over to the WU Strike System Channel. Read through and follow the next prompt"
+                )),
+                ActionRow(
+                    components=[
+                        Button(
+                            style=hikari.ButtonStyle.SUCCESS,
+                            custom_id=f"aboutus_acknowledge:{action_id}",
+                            label="I understand - Continue",
+                            emoji="✅"
+                        )
+                    ]
+                )
+            ]
+        ),
+    ]
+
+    if preview:
+        components[-1].components[-1].components[0].set_is_disabled(True)
+    return components
+
+
+def default_sections():
+    return [child.content for item in build_aboutus() if isinstance(item, Container)
+            for child in item.components if isinstance(child, Text)]
+
+
+def configured_sections(document):
+    """Return a valid per-server template or the unchanged built-in copy."""
+    sections = document.get("sections") if document else None
+    if (
+        not isinstance(sections, list)
+        or len(sections) != 12
+        or any(not isinstance(section, str) or not section.strip() for section in sections)
+        or sum(map(len, sections)) > 4000
+    ):
+        return default_sections()
+    return list(sections)
+
+
 @setup.register()
 class RecruitAboutUs(
     lightbulb.SlashCommand,
@@ -38,133 +188,25 @@ class RecruitAboutUs(
         self,
         ctx: lightbulb.Context,
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
-        await ctx.defer()
-        
-        action_id = str(uuid.uuid4())
-        
-        # Create all embeds
-        components = [
-            # Image at the top
-            Media(
-                items=[
-                    MediaItem(
-                        media="assets/branding/banners/Warriors_United.gif"
-                    )
-                ]
-            ),
-            
-            # Embed 1: Welcome and Overview
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content="## :shield: **Welcome to Warriors United!!** :shield:"),
-                    Separator(divider=True),
-                    Text(content=(
-                        "We're an English-speaking Clan Family based in the USA but have Clasher's from all over the Globe. "
-                        "We've developed system of game play that allows you to war no matter what the upgrade status of your base is.\n\n"
-                        "**Note of mention** None of our clans are Family Friendly Clans. So if you know your account(s) will require "
-                        "this; need to look elsewhere...👍🏼\n\n"
-                        "Here's what we will provide:\n"
-                        ":shield: 2 High Level Tactical Clans\n"
-                        ":shield: 3 Flexible Fun War Clans\n"
-                        ":shield: 5 Official FWA Clans for Farmers\n"
-                        ":shield: CWL chances for everyone\n"
-                        ":shield: An Experienced Base Building Team\n"
-                        ":shield: Experienced Attack Trainers"
-                    )),
-                    Separator(divider=True),
-                    Text(content="## ☠️ **High Level Tactical Clans** ☠️"),
-                    Text(content=(
-                        "**Funnies (#2Q9RLRCG)**\n"
-                        "**WeAreBrother (#YQPYJCQ2)**\n\n"
-                        "Our High Level Tactical Clans are TH13+ full maxed previous TH Level and always strive to obtain 3 ⭐'s in war. "
-                        "Not to worry if you fail; they can't all be perfect; but we expect our members to follow the War Format set in place "
-                        "and are committed to winning every war as part of an overall team effort.\n\n"
-                        "Wars are always full strength, meaning no Heroes upgrading."
-                    )),
-                ]
-            ),
-            
-            # Embed 2: Flexible Fun War Clans
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content="## 🪖 **Flexible Fun War Clans** 🪖"),
-                    Text(content=(
-                        "**Warriors United (#2YRVY8YCP)**\n"
-                        "**Noahs Ark (#8VPQCR2R)**\n"
-                        "**Morning Woods! (#8VQP9VQ9)**\n\n"
-                        "Our \"Flexible Fun\" Clans are relaxed Farm/War Clans that do 50v50 wars or highest amount possible. "
-                        "You will be held accountable to make your first attack here but we won't hold you liable for performance. "
-                        "No Heroes necessary!!\n\n"
-                        "These clans are designed for lower level/more chill players. If your in a Tactical Clan and drop a Hero; "
-                        "or more; upgrading and still want some war loot. Slide over to a Flexible Fun Clan and move back to Tactical "
-                        "when upgrades are done.\n\n"
-                        "Don't mistake these to be Camping Clans and not competitive. Like anyone we strive to win!!\n\n"
-                        "No War Activity = No Clan Membership EzPz"
-                    )),
-                ]
-            ),
-            
-            # Embed 3: FWA Clans
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content="## 💰 **FWA Clans** 💰"),
-                    Text(content=(
-                        "**Clash of Thrones (#Q889GPL)**\n"
-                        "**CoT Wildlings (#2YJVQUCYJ)**\n"
-                        "**Four and Twenty (#8CV0GPPR)**\n"
-                        "**The Horde (#2RRCJCI0)**\n"
-                        "**PlaneClashers (#9UGQ0GL)**\n\n"
-                        "FWA (Farm War Alliance) is an alliance of clans who have back to back organized wars for loot. "
-                        "The war outcome is predetermined and simple War Plans are posted regarding the needed outcome. "
-                        "Also a place with no Heroes necessary.\n\n"
-                        "Minimum requirements: TH12 and above with war weight equal to or greater than 115 with all buildings "
-                        "built for your current TH Level."
-                    )),
-                    Separator(divider=True),
-                    Text(content="### **Disclaimer**"),
-                    Text(content=(
-                        "Each new recruit is viewed on a case by case scenario and more details on each Clan Category will be "
-                        "provided in your interview. The above requirements are a benchmark and are subject to Leadership's discretion."
-                    )),
-                ]
-            ),
-            
-            # Embed 4: Next Steps
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content="## ⏩ **NEXT STEP**"),
-                    Text(content=(
-                        "Now react to the ✅ below and follow this link...\n\n"
-                        "https://discord.com/channels/1078723854303756298/1078723854316355602\n\n"
-                        "over to the WU Strike System Channel. Read through and follow the next prompt"
-                    )),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SUCCESS,
-                                custom_id=f"aboutus_acknowledge:{action_id}",
-                                label="I understand - Continue",
-                                emoji="✅"
-                            )
-                        ]
-                    )
-                ]
-            ),
-        ]
-        
-        # Delete the deferred response
-        await ctx.interaction.delete_initial_response()
-        
-        # Send message to channel
+        await ctx.defer(ephemeral=True)
+        document = await mongo.bot_config.find_one({"_id": f"content:about-us:{ctx.guild_id}"})
+        if document:
+            from extensions.commands.content import DOCUMENTS, render
+            try:
+                components = await render(DOCUMENTS["about-us"], document["sections"], action_id=str(uuid.uuid4()))
+            except (KeyError, ValueError):
+                document = None
+        if not document:
+            legacy = await mongo.bot_config.find_one({"_id": f"recruit_aboutus:{ctx.guild_id}"})
+            components = build_aboutus(configured_sections(legacy), action_id=str(uuid.uuid4()))
         await bot.rest.create_message(
             channel=ctx.channel_id,
             components=components,
+            user_mentions=False, role_mentions=False, mentions_everyone=False,
         )
+        await ctx.respond("About Us posted.", ephemeral=True)
 
 
 @register_action("aboutus_acknowledge", no_return=True)
