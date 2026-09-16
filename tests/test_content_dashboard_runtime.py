@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import itertools
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -7,6 +8,7 @@ import hikari
 import pytest
 from pymongo.errors import DuplicateKeyError
 
+from extensions import components
 from extensions.commands import content
 from extensions.commands.setup import (
     recruit_aboutus,
@@ -76,6 +78,52 @@ def _as_discord_models(builders):
     return tuple(convert(item) for item in builders)
 
 
+def _custom_ids(items):
+    return [
+        child.custom_id
+        for item in items
+        for child in getattr(item, "components", ())
+        if getattr(child, "custom_id", None)
+    ] + [
+        custom_id
+        for item in items
+        for child in getattr(item, "components", ())
+        for custom_id in _custom_ids((child,))
+    ]
+
+
+class _PanelContext:
+    """Interaction context that records the real dispatcher edit contract."""
+    def __init__(self, custom_id, values=()):
+        self.user = SimpleNamespace(id=10)
+        self.events = []
+        self.interaction = SimpleNamespace(
+            custom_id=custom_id,
+            values=values,
+            member=SimpleNamespace(permissions=hikari.Permissions.MANAGE_GUILD),
+            message=SimpleNamespace(channel_id=30, id=40),
+            app=SimpleNamespace(rest=SimpleNamespace(edit_message=AsyncMock())),
+            guild_id=20,
+            application_id=999,
+        )
+
+    async def defer(self, *, edit=False):
+        self.events.append(("defer", edit))
+
+    async def respond(self, *args, **kwargs):
+        self.events.append(("respond", args, kwargs))
+
+
+def _dispatch_content_action(monkeypatch, name, function, mongo):
+    """Exercise the real dispatcher while supplying this test's explicit DI."""
+    action = components.registered_functions[name]
+
+    async def invoke(**kwargs):
+        return await function(mongo=mongo, **kwargs)
+
+    monkeypatch.setitem(components.registered_functions, name, dataclasses.replace(action, fn=invoke))
+
+
 class _ConfigCollection:
     def __init__(self, documents=None, *, lease_busy=False):
         self.documents = dict(documents or {})
@@ -119,6 +167,7 @@ class _Context:
             guild_id=guild_id,
             application_id=application_id,
             member=SimpleNamespace(permissions=hikari.Permissions.MANAGE_GUILD),
+            edit_initial_response=self._edit_initial_response,
         )
         self.events = []
 
@@ -127,6 +176,9 @@ class _Context:
 
     async def respond(self, *args, **kwargs):
         self.events.append(("respond", args, kwargs))
+
+    async def _edit_initial_response(self, *args, **kwargs):
+        self.events.append(("edit_initial_response", args, kwargs))
 
 
 def test_real_hikari_models_adopt_existing_post_and_keep_template_revision(monkeypatch):
@@ -164,6 +216,7 @@ def test_real_hikari_models_adopt_existing_post_and_keep_template_revision(monke
             "channel_id": 30, "message_id": 40, "original": sections
         }
         assert ctx.events[0] == ("defer", {"ephemeral": True})
+        assert ctx.events[-1][0] == "edit_initial_response"
 
     _run(check())
 
@@ -183,8 +236,13 @@ def test_adoption_rejects_real_model_with_noncanonical_type_tree(monkeypatch):
                 if child.type != hikari.ComponentType.SEPARATOR
             ),
         )
-        create_draft = AsyncMock()
-        monkeypatch.setattr(content, "new_draft", create_draft)
+        created = []
+
+        async def capture_draft(_mongo, state):
+            created.append(state)
+            return dict(state, _id="draft")
+
+        monkeypatch.setattr(content, "new_draft", capture_draft)
         command = content.ContentDashboard()
         command.message_link = "https://discord.com/channels/20/30/40"
         ctx = _Context()
@@ -199,11 +257,11 @@ def test_adoption_rejects_real_model_with_noncanonical_type_tree(monkeypatch):
             )),
         )
 
-        create_draft.assert_not_awaited()
-        assert any(
-            event[0] == "respond"
-            and event[1] == ("That post's structure is not a supported content document.",)
-            for event in ctx.events
+        assert created
+        edited = next(event for event in ctx.events if event[0] == "edit_initial_response")
+        assert "That post's structure is not a supported content document." in "\n".join(
+            item.content for item in edited[2]["components"][0].components
+            if isinstance(item, hikari.impl.TextDisplayComponentBuilder)
         )
 
     _run(check())
@@ -227,7 +285,7 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
         }
 
         async def load_state(*_args):
-            return state
+            return state, None
 
         async def next_draft(_mongo, value):
             return dict(value, _id="next")
@@ -244,7 +302,7 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
             edit_message=edit_message,
         )
         ctx = _Context()
-        await content.publish.__wrapped__._func(
+        panel = await content.publish.__wrapped__._func(
             ctx=ctx,
             action_id="draft",
             mongo=SimpleNamespace(bot_config=config),
@@ -262,8 +320,7 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
         assert rendered_text == edited
         assert content.acknowledgement_id(kwargs["components"], document)
         assert config.deletes and config.deletes[-1]["token"]
-        assert any(event[0] == "respond" and event[1] == ("Selected post updated.",)
-                   for event in ctx.events)
+        assert "Selected post updated." in panel[0].components[2].content
 
     _run(check())
 
@@ -273,13 +330,13 @@ def test_publish_refuses_cross_guild_and_active_lease_without_edit(monkeypatch):
         document = content.DOCUMENTS["about-us"]
         original = [node.content for node in content.text_nodes(await content.baseline(document))]
         state = {
-            "user_id": 10, "guild_id": 20, "document": "about-us",
+            "_id": "draft", "user_id": 10, "guild_id": 20, "document": "about-us",
             "sections": original, "revision": 0,
             "target": {"channel_id": 30, "message_id": 40, "original": original},
         }
 
         async def load_state(*_args):
-            return state
+            return state, None
 
         monkeypatch.setattr(content, "load", load_state)
         edit = AsyncMock()
@@ -328,13 +385,13 @@ def test_publish_refuses_stale_real_model_without_edit(monkeypatch):
             components=tuple(changed_children),
         )
         state = {
-            "user_id": 10, "guild_id": 20, "document": document.key,
+            "_id": "draft", "user_id": 10, "guild_id": 20, "document": document.key,
             "sections": original, "revision": 0,
             "target": {"channel_id": 30, "message_id": 40, "original": original},
         }
 
         async def load_state(*_args):
-            return state
+            return state, None
 
         monkeypatch.setattr(content, "load", load_state)
         edit = AsyncMock()
@@ -503,5 +560,215 @@ def test_setup_posters_fall_back_from_malformed_saved_template(
         assert create["user_mentions"] is False
         assert create["role_mentions"] is False
         assert create["mentions_everyone"] is False
+
+    _run(check())
+
+
+def test_document_select_and_back_edit_the_same_ephemeral_panel(monkeypatch):
+    async def check():
+        root = {"_id": "root", "user_id": 10, "guild_id": 20, "view": "root"}
+        document = content.DOCUMENTS["about-us"]
+        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+
+        async def state_for(_mongo, sid):
+            return root if sid == "root" else dict(
+                root, _id="document", view="document", document=document.key,
+                sections=sections, revision=0,
+            )
+
+        async def draft_for(_mongo, state):
+            return dict(state, _id="document" if state.get("view") == "document" else "root-next")
+
+        monkeypatch.setattr(content, "get_state", state_for)
+        monkeypatch.setattr(content, "new_draft", draft_for)
+        mongo = SimpleNamespace(bot_config=_ConfigCollection())
+        _dispatch_content_action(monkeypatch, "content_document", content.choose_document.__wrapped__._func, mongo)
+        _dispatch_content_action(monkeypatch, "content_back_root", content.back_to_root.__wrapped__._func, mongo)
+        ctx = _PanelContext("content_document:root", ("about-us",))
+        await components._dispatch(ctx, mongo=mongo)
+
+        assert ctx.events[0] == ("defer", True)
+        assert len(ctx.events) == 2 and ctx.events[-1][2]["edit"] is True
+        document_panel = ctx.events[-1][2]["components"]
+        assert document_panel[0].components[0].content == "## About Us"
+        ids = _custom_ids(document_panel)
+        assert any(custom_id.startswith("content_block:document") for custom_id in ids)
+        assert any(custom_id.startswith("content_back_root:document") for custom_id in ids)
+        assert not any(custom_id.startswith("content_document:") for custom_id in ids)
+        assert ctx.interaction.app.rest.edit_message.await_count == 0
+
+        back = _PanelContext("content_back_root:document")
+        await components._dispatch(back, mongo=mongo)
+        root_panel = back.events[-1][2]["components"]
+        root_ids = _custom_ids(root_panel)
+        assert any(custom_id.startswith("content_document:root-next") for custom_id in root_ids)
+        assert not any(custom_id.startswith("content_block:") for custom_id in root_ids)
+
+    _run(check())
+
+
+def test_preview_reuses_the_acknowledgement_slot_for_back_at_the_component_limit(monkeypatch):
+    async def check():
+        document = content.DOCUMENTS["family-particulars"]
+        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        state = {
+            "_id": "family", "user_id": 10, "guild_id": 20,
+            "view": "document", "document": document.key,
+            "sections": sections, "revision": 0,
+        }
+
+        async def state_for(_mongo, _sid):
+            return state
+
+        monkeypatch.setattr(content, "get_state", state_for)
+        mongo = SimpleNamespace(bot_config=_ConfigCollection())
+        _dispatch_content_action(monkeypatch, "content_preview", content.preview.__wrapped__._func, mongo)
+        _dispatch_content_action(monkeypatch, "content_back_document", content.back_to_document.__wrapped__._func, mongo)
+        ctx = _PanelContext("content_preview:family")
+        await components._dispatch(ctx, mongo=mongo)
+
+        preview = ctx.events[-1][2]["components"]
+        assert content.component_count(preview) == 40
+        ids = _custom_ids(preview)
+        assert "content_back_document:family" in ids
+        assert not any(custom_id.startswith(document.acknowledgement + ":") for custom_id in ids)
+        assert ctx.interaction.app.rest.edit_message.await_count == 0
+
+        back = _PanelContext("content_back_document:family")
+        await components._dispatch(back, mongo=mongo)
+        assert back.events[-1][2]["components"][0].components[0].content == "## Family Particulars"
+
+    _run(check())
+
+
+def test_modal_submit_updates_its_source_panel_without_a_followup(monkeypatch):
+    async def check():
+        document = content.DOCUMENTS["about-us"]
+        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        state = {
+            "_id": "modal", "user_id": 10, "guild_id": 20,
+            "view": "document", "document": document.key, "sections": sections,
+            "revision": 0, "selected_block": 0,
+        }
+        events = []
+
+        async def state_for(_mongo, _sid):
+            return state
+
+        async def draft_for(_mongo, value):
+            return dict(value, _id="updated")
+
+        async def acknowledge(response_type):
+            events.append(("ack", response_type))
+
+        async def edit_initial_response(**kwargs):
+            events.append(("edit", kwargs))
+
+        ctx = SimpleNamespace(
+            user=SimpleNamespace(id=10),
+            interaction=SimpleNamespace(
+                guild_id=20,
+                message=SimpleNamespace(id=40),
+                member=SimpleNamespace(permissions=hikari.Permissions.MANAGE_GUILD),
+                components=((SimpleNamespace(custom_id="content", value=sections[0] + " edited"),),),
+                create_initial_response=acknowledge,
+                edit_initial_response=edit_initial_response,
+            ),
+            defer=AsyncMock(),
+            respond=AsyncMock(),
+        )
+        monkeypatch.setattr(content, "get_state", state_for)
+        monkeypatch.setattr(content, "new_draft", draft_for)
+        await content.submit_block.__wrapped__._func(ctx=ctx, action_id="modal", mongo=SimpleNamespace())
+
+        assert events[0] == ("ack", hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+        assert events[1][0] == "edit"
+        assert "Block updated." in events[1][1]["components"][0].components[2].content
+        ctx.respond.assert_not_awaited()
+        ctx.defer.assert_not_awaited()
+
+    _run(check())
+
+
+def test_link_error_replaces_the_initial_ephemeral_response(monkeypatch):
+    async def check():
+        captured = []
+
+        async def draft_for(_mongo, state):
+            return dict(state, _id="root")
+
+        async def edit_initial_response(**kwargs):
+            captured.append(kwargs)
+
+        ctx = _Context()
+        ctx.interaction.edit_initial_response = edit_initial_response
+        monkeypatch.setattr(content, "new_draft", draft_for)
+        command = content.ContentDashboard()
+        command.message_link = "https://discord.com/channels/21/30/40"
+        await command.invoke(ctx, mongo=SimpleNamespace(), bot=SimpleNamespace(rest=SimpleNamespace()))
+
+        assert ctx.events == [("defer", {"ephemeral": True})]
+        assert "Paste a message link from this server." in captured[0]["components"][0].components[1].content
+
+    _run(check())
+
+
+def test_save_and_publish_navigate_with_dispatcher_edits_not_followups(monkeypatch):
+    async def check():
+        document = content.DOCUMENTS["about-us"]
+        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        saved_state = {
+            "_id": "save", "user_id": 10, "guild_id": 20,
+            "view": "document", "document": document.key,
+            "sections": sections, "revision": 0,
+        }
+        mongo = SimpleNamespace(bot_config=_ConfigCollection())
+
+        async def saved_state_for(_mongo, _sid):
+            return saved_state
+
+        async def next_draft(_mongo, value):
+            return dict(value, _id="next")
+
+        monkeypatch.setattr(content, "get_state", saved_state_for)
+        monkeypatch.setattr(content, "new_draft", next_draft)
+        _dispatch_content_action(monkeypatch, "content_save", content.save.__wrapped__._func, mongo)
+        save = _PanelContext("content_save:save")
+        await components._dispatch(save, mongo=mongo)
+        assert save.events[0] == ("defer", True)
+        assert len(save.events) == 2 and save.events[-1][2]["edit"] is True
+        assert "Template saved for future posts in this server." in save.events[-1][2]["components"][0].components[2].content
+        assert save.interaction.app.rest.edit_message.await_count == 0
+
+        models = _as_discord_models(await content.baseline(document))
+        linked_state = dict(
+            saved_state, _id="publish", revision=1,
+            target={"channel_id": 30, "message_id": 40, "original": sections},
+        )
+
+        async def linked_state_for(_mongo, _sid):
+            return linked_state
+
+        monkeypatch.setattr(content, "get_state", linked_state_for)
+        public_edit = AsyncMock()
+        bot = SimpleNamespace(rest=SimpleNamespace(
+            fetch_channel=AsyncMock(return_value=SimpleNamespace(guild_id=20)),
+            fetch_message=AsyncMock(return_value=SimpleNamespace(
+                author=SimpleNamespace(id=999), components=models
+            )),
+            edit_message=public_edit,
+        ))
+        action = components.registered_functions["content_publish"]
+
+        async def publish_with_explicit_di(**kwargs):
+            return await content.publish.__wrapped__._func(mongo=mongo, bot=bot, **kwargs)
+
+        monkeypatch.setitem(components.registered_functions, "content_publish", dataclasses.replace(action, fn=publish_with_explicit_di))
+        publish = _PanelContext("content_publish:publish")
+        await components._dispatch(publish, mongo=mongo)
+        assert publish.events[0] == ("defer", True)
+        assert len(publish.events) == 2 and publish.events[-1][2]["edit"] is True
+        assert public_edit.await_count == 1
+        assert publish.interaction.app.rest.edit_message.await_count == 0
 
     _run(check())

@@ -159,30 +159,102 @@ async def new_draft(mongo, state):
     return state
 
 
-def panel(state):
+def panel(state, notice=None):
     sid = state["_id"]
-    choose = hikari.impl.MessageActionRowBuilder()
-    menu = choose.add_text_menu(f"content_document:{sid}", min_values=1, placeholder="Choose content to edit")
-    for document in DOCUMENTS.values(): menu.add_option(document.label, document.key)
-    rows = [hikari.impl.TextDisplayComponentBuilder(content="## :shield: Warriors United Content Dashboard\nPrivate drafts preserve Markdown, media, separators, and acknowledgement buttons. Saved wording is per server."), choose]
-    if not state.get("document"):
+    notice = notice or state.get("notice")
+    if state.get("view") == "root" or not state.get("document"):
+        choose = hikari.impl.MessageActionRowBuilder()
+        menu = choose.add_text_menu(f"content_document:{sid}", min_values=1, placeholder="Choose content to edit")
+        for document in DOCUMENTS.values():
+            menu.add_option(document.label, document.key)
+        rows = [
+            hikari.impl.TextDisplayComponentBuilder(
+                content="## :shield: Warriors United Content Dashboard\nChoose the published document to edit. Drafts preserve Markdown, media, separators, and acknowledgement buttons."
+            ),
+        ]
+        if notice:
+            rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
+        rows.append(choose)
         return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows)]
+
+    document = DOCUMENTS[state["document"]]
+    rows = [
+        hikari.impl.TextDisplayComponentBuilder(content=f"## {document.label}"),
+        hikari.impl.TextDisplayComponentBuilder(
+            content=f"{sum(map(len, state['sections']))}/4,000 characters · draft expires in 30 minutes."
+        ),
+    ]
+    if notice:
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     blocks = hikari.impl.MessageActionRowBuilder()
     menu = blocks.add_text_menu(f"content_block:{sid}", min_values=1, placeholder="Choose a block to edit")
-    document = DOCUMENTS[state["document"]]
-    for index, label in editable_blocks(document, state["sections"]): menu.add_option(label, str(index))
+    for index, label in editable_blocks(document, state["sections"]):
+        menu.add_option(label, str(index))
     buttons = hikari.impl.MessageActionRowBuilder()
-    for action, label in (("preview", "Preview"), ("save", "Save template")):
-        buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_{action}:{sid}", label=label)
-    if state.get("target"): buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update selected post")
-    return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows + [hikari.impl.TextDisplayComponentBuilder(content=f"**{DOCUMENTS[state['document']].label}** · {sum(map(len, state['sections']))}/4,000 characters · draft expires in 30 minutes."), blocks, buttons])]
+    buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_preview:{sid}", label="Preview")
+    buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_save:{sid}", label="Save template")
+    if state.get("target"):
+        buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update selected post")
+    buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
+    return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows + [blocks, buttons])]
+
+
+def error_panel(message):
+    return [hikari.impl.ContainerComponentBuilder(
+        accent_color=0xAA4444,
+        components=[hikari.impl.TextDisplayComponentBuilder(content=f"## Content Dashboard\n{message}")],
+    )]
+
+
+async def preview_panel(state):
+    """Keep the post layout intact while turning its inert CTA into Back."""
+    document = DOCUMENTS[state["document"]]
+    components = await render(document, state["sections"], preview=True)
+    for component in components:
+        for child in getattr(component, "components", ()):
+            if isinstance(child, hikari.impl.MessageActionRowBuilder):
+                for button in child.components:
+                    if getattr(button, "custom_id", "").startswith(document.acknowledgement + ":"):
+                        # Family Particulars already reaches Discord's 40-component
+                        # ceiling. Reusing this preview-only, disabled CTA slot keeps
+                        # all text/media/separators visible and makes Back available.
+                        button.set_custom_id(f"content_back_document:{state['_id']}")
+                        button.set_label("Back to editor")
+                        button.set_emoji("↩️")
+                        button.set_is_disabled(False)
+                        return components
+    raise ValueError("This preview is missing its acknowledgement control.")
+
+
+def state_problem(ctx, state):
+    if not state:
+        return "This draft expired. Run `/content dashboard` again."
+    if not can_edit(ctx):
+        return "You need Manage Server permission to edit published content."
+    if state.get("user_id") != int(ctx.user.id) or state.get("guild_id") != int(ctx.interaction.guild_id):
+        return "Open your own `/content dashboard`."
+    return None
+
+
+async def edit_modal_source(ctx, components):
+    """Acknowledge a modal by replacing its source panel, never following up."""
+    interaction = ctx.interaction
+    if getattr(interaction, "message", None) is not None:
+        await interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    else:
+        await ctx.defer(ephemeral=True)
+    await interaction.edit_initial_response(components=components, **NO_MENTIONS)
+
+
+async def initial_panel(ctx, mongo, state, notice=None):
+    draft = await new_draft(mongo, state)
+    await ctx.interaction.edit_initial_response(components=panel(draft, notice), **NO_MENTIONS)
+    return draft
 
 
 async def load(ctx, mongo, sid):
     state = await get_state(mongo, sid)
-    if not state:
-        await ctx.respond("This draft expired. Run `/content dashboard` again.", ephemeral=True); return None
-    return state if await require_editor(ctx, state) else None
+    return state, state_problem(ctx, state)
 
 
 @content.register()
@@ -193,52 +265,77 @@ class ContentDashboard(lightbulb.SlashCommand, name="dashboard", description="Ed
     async def invoke(self, ctx, mongo: MongoClient = lightbulb.di.INJECTED, bot: hikari.GatewayBot = lightbulb.di.INJECTED):
         if not await require_editor(ctx): return
         await ctx.defer(ephemeral=True)
-        state = {"user_id": int(ctx.user.id), "guild_id": int(ctx.interaction.guild_id)}
+        state = {"user_id": int(ctx.user.id), "guild_id": int(ctx.interaction.guild_id), "view": "root"}
         if self.message_link:
             match = MESSAGE_LINK.fullmatch(self.message_link.strip())
             if not match or int(match[1]) != state["guild_id"]:
-                await ctx.respond("Paste a message link from this server.", ephemeral=True); return
+                await initial_panel(ctx, mongo, state, "Paste a message link from this server."); return
             try:
                 channel = await bot.rest.fetch_channel(int(match[2]))
                 if int(getattr(channel, "guild_id", 0)) != state["guild_id"]:
                     raise ValueError("Paste a message link from this server.")
                 message = await bot.rest.fetch_message(int(match[2]), int(match[3]))
             except (ValueError, hikari.NotFoundError, hikari.ForbiddenError) as exc:
-                await ctx.respond(str(exc) if isinstance(exc, ValueError) else "The bot cannot read that message.", ephemeral=True); return
+                await initial_panel(ctx, mongo, state, str(exc) if isinstance(exc, ValueError) else "The bot cannot read that message."); return
             document = next((item for item in DOCUMENTS.values() if int(message.author.id) == int(ctx.interaction.application_id) and acknowledgement_id(message.components, item)), None)
             if not document:
-                await ctx.respond("Choose a supported post created by this bot.", ephemeral=True); return
+                await initial_panel(ctx, mongo, state, "Choose a supported post created by this bot."); return
             sections = [node.content for node in text_nodes(message.components)]
             try:
                 if component_shape(message.components) != component_shape(await baseline(document)):
                     raise ValueError("That post's layout is not a supported content document.")
                 await render(document, sections)
             except ValueError:
-                await ctx.respond("That post's structure is not a supported content document.", ephemeral=True); return
+                await initial_panel(ctx, mongo, state, "That post's structure is not a supported content document."); return
             _template, revision = await sections_for(mongo, document, state["guild_id"])
-            state.update(document=document.key, sections=sections, revision=revision, target={"channel_id": int(match[2]), "message_id": int(match[3]), "original": sections})
-        await ctx.respond(components=panel(await new_draft(mongo, state)), ephemeral=True, **NO_MENTIONS)
+            state.update(view="document", document=document.key, sections=sections, revision=revision, target={"channel_id": int(match[2]), "message_id": int(match[3]), "original": sections})
+        await initial_panel(ctx, mongo, state)
 
 
-@register_action("content_document", no_return=True, preload_state=False)
+@register_action("content_document", preload_state=False)
 @lightbulb.di.with_di
 async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
-    state = await load(ctx, mongo, action_id)
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
     value = getattr(ctx.interaction, "values", ())
-    if not state or len(value) != 1 or value[0] not in DOCUMENTS: return
+    if len(value) != 1 or value[0] not in DOCUMENTS:
+        return panel(state, "Choose one supported document.")
     document = DOCUMENTS[value[0]]; sections, revision = await sections_for(mongo, document, state["guild_id"])
     target = state.get("target") if state.get("document") == document.key else None
-    await ctx.respond(components=panel(await new_draft(mongo, dict(state, document=document.key, sections=sections, revision=revision, target=target))), ephemeral=True, **NO_MENTIONS)
+    return panel(await new_draft(mongo, dict(state, view="document", document=document.key, sections=sections, revision=revision, target=target)))
+
+
+@register_action("content_back_root", preload_state=False)
+@lightbulb.di.with_di
+async def back_to_root(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    return panel(await new_draft(mongo, dict(state, view="root")))
+
+
+@register_action("content_back_document", preload_state=False)
+@lightbulb.di.with_di
+async def back_to_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    return panel(state)
 
 
 @register_action("content_block", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def choose_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
-    state = await load(ctx, mongo, action_id); values = getattr(ctx.interaction, "values", ())
-    if not state or len(values) != 1 or not values[0].isdigit() or int(values[0]) >= len(state["sections"]): return
+    state, problem = await load(ctx, mongo, action_id); values = getattr(ctx.interaction, "values", ())
+    if problem:
+        await edit_modal_source(ctx, error_panel(problem)); return
+    if len(values) != 1 or not values[0].isdigit() or int(values[0]) >= len(state["sections"]):
+        await edit_modal_source(ctx, panel(state, "Choose one editable block.")); return
     index = int(values[0]); document = DOCUMENTS[state["document"]]
     choices = dict(editable_blocks(document, state["sections"]))
-    if index not in choices: return
+    if index not in choices:
+        await edit_modal_source(ctx, panel(state, "Choose one editable block.")); return
     title = choices[index]
     draft = await new_draft(mongo, dict(state, selected_block=index))
     await ctx.respond_with_modal(title=title[:45], custom_id=f"content_submit:{draft['_id']}", components=[hikari.impl.ModalActionRowBuilder().add_text_input("content", "Markdown", value=state["sections"][index], required=True, min_length=1, max_length=4000, style=hikari.TextInputStyle.PARAGRAPH)])
@@ -247,13 +344,22 @@ async def choose_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
 @register_action("content_submit", is_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def submit_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
-    await ctx.defer(ephemeral=True); state = await load(ctx, mongo, action_id)
-    if not state or not isinstance(state.get("selected_block"), int): return
+    interaction = ctx.interaction
+    if getattr(interaction, "message", None) is not None:
+        await interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    else:
+        await ctx.defer(ephemeral=True)
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        await interaction.edit_initial_response(components=error_panel(problem), **NO_MENTIONS); return
+    if not isinstance(state.get("selected_block"), int):
+        await interaction.edit_initial_response(components=panel(state, "Choose a block before submitting an edit."), **NO_MENTIONS); return
     value = next((str(item.value) for row in ctx.interaction.components for item in row if item.custom_id == "content"), "")
     sections = list(state["sections"]); sections[state["selected_block"]] = value
     try: await render(DOCUMENTS[state["document"]], sections)
-    except ValueError as exc: await ctx.respond(str(exc), ephemeral=True); return
-    await ctx.respond(components=panel(await new_draft(mongo, dict(state, sections=sections))), ephemeral=True, **NO_MENTIONS)
+    except ValueError as exc:
+        await interaction.edit_initial_response(components=panel(state, str(exc)), **NO_MENTIONS); return
+    await interaction.edit_initial_response(components=panel(await new_draft(mongo, dict(state, sections=sections)), "Block updated."), **NO_MENTIONS)
 
 
 async def _save(ctx, state, mongo):
@@ -265,35 +371,47 @@ async def _save(ctx, state, mongo):
     except DuplicateKeyError: return False
 
 
-@register_action("content_save", no_return=True, preload_state=False)
+@register_action("content_save", preload_state=False)
 @lightbulb.di.with_di
 async def save(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
-    state = await load(ctx, mongo, action_id)
-    if not state or not state.get("document"): return
-    if not await _save(ctx, state, mongo): await ctx.respond("The template changed. Reopen the dashboard to avoid overwriting it.", ephemeral=True); return
-    await ctx.respond("Template saved for future posts in this server.", ephemeral=True)
-    await ctx.respond(components=panel(await new_draft(mongo, dict(state, revision=state["revision"] + 1))), ephemeral=True, **NO_MENTIONS)
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if not state.get("document"):
+        return panel(state, "Choose a document before saving.")
+    if not await _save(ctx, state, mongo):
+        return panel(state, "The template changed. Reopen the dashboard to avoid overwriting it.")
+    return panel(await new_draft(mongo, dict(state, revision=state["revision"] + 1)), "Template saved for future posts in this server.")
 
 
-@register_action("content_preview", no_return=True, preload_state=False)
+@register_action("content_preview", preload_state=False)
 @lightbulb.di.with_di
 async def preview(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
-    state = await load(ctx, mongo, action_id)
-    if state and state.get("document"):
-        await ctx.respond(components=await render(DOCUMENTS[state["document"]], state["sections"], preview=True), ephemeral=True, **NO_MENTIONS)
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if not state.get("document"):
+        return panel(state, "Choose a document before previewing.")
+    try:
+        return await preview_panel(state)
+    except ValueError as exc:
+        return panel(state, str(exc))
 
 
-@register_action("content_publish", no_return=True, preload_state=False)
+@register_action("content_publish", preload_state=False)
 @lightbulb.di.with_di
 async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_):
-    state = await load(ctx, mongo, action_id)
-    if not state or not state.get("target") or not state.get("document"): return
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if not state.get("target") or not state.get("document"):
+        return panel(state, "Choose a linked post before updating it.")
     target = state["target"]; document = DOCUMENTS[state["document"]]; token = uuid.uuid4().hex
     lease_key = f"content_publish:{target['channel_id']}:{target['message_id']}"
     try:
         await mongo.bot_config.update_one({"_id": lease_key, "until": {"$lte": utcnow()}}, {"$set": {"until": utcnow() + timedelta(minutes=1), "token": token}}, upsert=True)
     except DuplicateKeyError:
-        await ctx.respond("Another update is in progress. Try again shortly.", ephemeral=True); return
+        return panel(state, "Another update is in progress. Try again shortly.")
     try:
         channel = await bot.rest.fetch_channel(target["channel_id"])
         if int(getattr(channel, "guild_id", 0)) != state["guild_id"]: raise ValueError("The selected post is not in this server.")
@@ -304,11 +422,13 @@ async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bo
         if not acknowledgement: raise ValueError("That is not the selected content type.")
         await bot.rest.edit_message(target["channel_id"], target["message_id"], components=await render(document, state["sections"], action_id=acknowledgement), **NO_MENTIONS)
     except (ValueError, hikari.NotFoundError, hikari.ForbiddenError) as exc:
-        await ctx.respond(str(exc) if isinstance(exc, ValueError) else "The bot cannot update that message. Your draft is still available.", ephemeral=True); return
+        return panel(state, str(exc) if isinstance(exc, ValueError) else "The bot cannot update that message. Your draft is still available.")
     finally:
         await mongo.bot_config.delete_one({"_id": lease_key, "token": token})
-    await ctx.respond("Selected post updated.", ephemeral=True)
-    await ctx.respond(components=panel(await new_draft(mongo, dict(state, target=dict(target, original=state["sections"])))), ephemeral=True, **NO_MENTIONS)
+    return panel(
+        await new_draft(mongo, dict(state, target=dict(target, original=state["sections"]))),
+        "Selected post updated.",
+    )
 
 
 loader.command(content)

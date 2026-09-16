@@ -94,14 +94,15 @@ def test_render_rejects_a_full_document_over_discord_limit():
 
 def test_content_actions_use_modal_and_state_contracts():
     expected = {
-        "content_document": (False, False), "content_block": (True, False),
-        "content_submit": (False, True), "content_preview": (False, False),
-        "content_save": (False, False), "content_publish": (False, False),
+        "content_document": (False, False, False), "content_block": (True, False, True),
+        "content_submit": (False, True, True), "content_preview": (False, False, False),
+        "content_save": (False, False, False), "content_publish": (False, False, False),
+        "content_back_root": (False, False, False), "content_back_document": (False, False, False),
     }
-    for name, flags in expected.items():
+    for name, (*flags, no_return) in expected.items():
         action = registered_functions[name]
-        assert (action.opens_modal, action.is_modal) == flags
-        assert action.no_return is True and action.preload_state is False
+        assert (action.opens_modal, action.is_modal) == tuple(flags)
+        assert action.no_return is no_return and action.preload_state is False
 
 
 def test_dashboard_command_description_matches_the_published_server_scope():
