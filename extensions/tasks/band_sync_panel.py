@@ -345,6 +345,10 @@ def dm_container(event, url, response, delete_at=None):
     status = (response or {}).get("status")
     components.append(Text(content=f"**Your response:** {STATUS_LINE.get(status, STATUS_LINE[None])}"))
     components.extend(status_rows(event["uid"]))
+    # Mongo returns BSON datetimes as naive UTC values. Rendering a naive value with
+    # datetime.timestamp() interprets it as the host's local time, which changes the
+    # displayed countdown after an interaction re-reads the stored deadline.
+    delete_at = normalize_start(delete_at)
     if delete_at is not None:
         # Very bottom, under its own separator (user rule 2026-09-15).
         components.append(Separator(divider=True))

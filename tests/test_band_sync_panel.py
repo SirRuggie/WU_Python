@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import hikari
+import pytest
 from hikari.impl import MessageActionRowBuilder as ActionRow
 from hikari.impl import SeparatorComponentBuilder as Separator
 
@@ -518,24 +519,63 @@ def test_apply_status_from_dm_edits_dm_and_refreshes_channel_panel():
     assert (777, 888) in rest.edits  # and the channel panel was refreshed too
 
 
-# ---- refuter-03 must-fix: _render_after_change must keep the D006 footer on re-render ----
-def test_apply_status_from_dm_keeps_delete_footer_on_reedit():
+# ---- D006: DM rerenders preserve the stored UTC deletion deadline ----
+class _NaiveMongoUtcDate(datetime):
+    """Fail if a Mongo-style naive UTC date reaches footer rendering unnormalized.
+
+    This makes the regression independent of the machine's configured time zone. The
+    production bug called timestamp() while the value was naive; normalize_start()
+    gives it UTC before this method can be reached.
+    """
+    def timestamp(self):
+        if self.tzinfo is None:
+            raise AssertionError("naive Mongo UTC date rendered without normalization")
+        return super().timestamp()
+
+
+def _naive_mongo_utc(year, month, day, hour, minute):
+    return _NaiveMongoUtcDate(year, month, day, hour, minute)
+
+
+@pytest.mark.parametrize(
+    ("handler", "values"),
+    [
+        (panel.fwa_sync_in, None),
+        (panel.fwa_sync_maybe, None),
+        (panel.fwa_sync_no, None),
+        (panel.fwa_sync_reminders, ["60"]),
+    ],
+    ids=["yes", "maybe", "no", "reminders"],
+)
+@pytest.mark.parametrize(
+    "delete_at",
+    [
+        datetime(2026, 8, 5, 18, 10, tzinfo=timezone.utc),
+        _naive_mongo_utc(2026, 8, 5, 18, 10),
+    ],
+    ids=["aware-utc", "naive-mongo-utc"],
+)
+def test_dm_actions_keep_delete_footer_and_deadline(handler, values, delete_at):
     rest = FakeRest()
     bot = SimpleNamespace(rest=rest)
     event = _event_row(panel_channel_id=777, panel_message_id=888)
     mongo = FakeMongo(events=[event])
-    delete_at = datetime(2026, 8, 5, 18, 10, tzinfo=timezone.utc)
     existing = schema.new_response_doc(
         "sync-1", 42, event["start_at"], event["event_version"], "in",
         dm_channel_id=111, dm_message_id=222, dm_delete_at=delete_at,
     )
     mongo.fwa_sync_responses.documents[existing["_id"]] = existing
-    ctx = FakeCtx(user_id=42, guild_id=None)  # clicked from the DM, not the channel
+    ctx = FakeCtx(user_id=42, guild_id=None, values=values)  # clicked from the DM
 
-    asyncio.run(panel.fwa_sync_maybe(ctx, "sync-1", bot=bot, mongo=mongo))
+    asyncio.run(handler(ctx, "sync-1", bot=bot, mongo=mongo))
 
     texts = _texts(ctx.responses[0]["components"][0])
-    assert texts[-1] == f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"
+    expected = datetime(2026, 8, 5, 18, 10, tzinfo=timezone.utc)
+    assert texts[-1] == f"-# This message will be deleted <t:{int(expected.timestamp())}:R>"
+    stored = mongo.fwa_sync_responses.documents[existing["_id"]]
+    assert stored["dm_delete_at"] == delete_at
+    assert stored["dm_channel_id"] == 111
+    assert stored["dm_message_id"] == 222
 
 
 # ---- status_rows: exact button styles/custom_ids/labels/emoji, select present ----
