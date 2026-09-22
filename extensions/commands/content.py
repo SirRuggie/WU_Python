@@ -318,14 +318,14 @@ def panel(state, notice=None):
     images = hikari.impl.MessageActionRowBuilder()
     selected_slot = state.get("selected_media_slot")
     image_menu = images.add_text_menu(
-        f"content_media:{sid}", min_values=1, placeholder="Choose an image to replace or reset"
+        f"content_media:{sid}", min_values=1, placeholder="Choose an image to edit"
     )
     for slot, label in media_slots(document):
         source = "custom image" if slot in overrides else "default image"
         image_menu.add_option(f"{label} ({source})", slot, is_default=slot == selected_slot)
     buttons = hikari.impl.MessageActionRowBuilder()
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_preview:{sid}", label="Preview")
-    buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_save:{sid}", label="Save template")
+    buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_save:{sid}", label="Save template")
     if state.get("target"):
         buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update selected post")
     selected_buttons = None
@@ -335,7 +335,8 @@ def panel(state, notice=None):
             hikari.ButtonStyle.PRIMARY, f"content_upload:{sid}", label="Upload replacement"
         )
         selected_buttons.add_interactive_button(
-            hikari.ButtonStyle.DANGER, f"content_reset_media:{sid}", label="Reset selected image"
+            hikari.ButtonStyle.SECONDARY, f"content_reset_media:{sid}", label="Restore default image",
+            is_disabled=selected_slot not in overrides,
         )
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
     controls = [blocks, images]
@@ -350,6 +351,9 @@ def panel(state, notice=None):
                 content=f"### {slots[selected_slot]}\n-# Current image in this draft"
             ),
             gallery,
+            hikari.impl.TextDisplayComponentBuilder(
+                content="-# Restore default image brings back the original artwork. Use Save template to keep your changes."
+            ),
         ])
     controls.append(buttons)
     if selected_buttons is not None:
@@ -587,7 +591,7 @@ async def choose_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
     draft = await new_draft(mongo, dict(state, selected_media_slot=values[0]))
     return panel(
         draft,
-        f"{label} selected. Upload a replacement or reset it to the default image.",
+        f"{label} selected. Upload a replacement or restore the original artwork.",
     )
 
 
@@ -721,7 +725,7 @@ async def reset_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED
     label = dict(media_slots(document))[slot]
     return panel(
         await new_draft(mongo, dict(state, media=media, selected_media_slot=slot)),
-        f"{label} reset to its default image. Save or update the selected post to apply it.",
+        f"Original artwork restored for {label}. Use Save template to keep this change, or Update selected post to apply it to the linked message.",
     )
 
 

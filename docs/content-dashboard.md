@@ -25,8 +25,9 @@ save a template, and update a selected existing bot post.
 authorization: the uploader must still be its owner, in the same guild, with
 Manage Server.
 
-To restore the original artwork, select the image and click **Reset selected
-image**, then preview and save or update the selected post.
+To restore the original artwork, select the image and click **Restore default
+image**, then preview and use the green **Save template** button or update the selected post.
+The restore button is disabled when the draft already uses the default image.
 The selection stays active and the editor immediately shows the restored default.
 
 | Document | Editable images |
