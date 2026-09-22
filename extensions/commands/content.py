@@ -5,6 +5,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import hikari
 import lightbulb
@@ -12,7 +13,9 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state, utcnow
+from utils.media_store import MediaStore, MediaStoreError, recruit_content_folder
 from utils.mongo import MongoClient
+from utils.url_safety import MAX_IMAGE_BYTES
 
 
 loader = lightbulb.Loader()
@@ -39,6 +42,22 @@ BLOCK_LABELS = {
     "strike-system": ("Basic rules heading", "Basic rules", "Strike overview heading", "Strike overview", "Main clan heading", "Main clan note", "FWA heading", "FWA note", "Terms heading", "Terms", "Acknowledgement heading", "Acknowledgement"),
     "family-particulars": ("Family heading", "Golden rule heading", "Golden rule", "Friendly challenges heading", "Friendly challenges", "Clan games heading", "Clan games", "War rules heading", "War eligibility heading", "War eligibility", "Prep day heading", "Prep day", "Battle day heading", "Battle day", "CWL heading", "CWL overview", "CWL principles heading", "CWL principles", "Acknowledgement heading", "Acknowledgement"),
 }
+MEDIA_SLOTS = {
+    "about-us": (("welcome", "Welcome banner"),),
+    "strike-system": (
+        ("rules", "Basic rules banner"),
+        ("main-strikes", "Main clan strike chart"),
+        ("fwa-strikes", "FWA strike chart"),
+    ),
+    "family-particulars": (("welcome", "Welcome banner"), ("cwl", "CWL banner")),
+}
+MEDIA_SLOT_CHOICES = (
+    lightbulb.Choice(name="Welcome banner", value="welcome"),
+    lightbulb.Choice(name="Basic rules banner", value="rules"),
+    lightbulb.Choice(name="Main clan strike chart", value="main-strikes"),
+    lightbulb.Choice(name="FWA strike chart", value="fwa-strikes"),
+    lightbulb.Choice(name="CWL banner", value="cwl"),
+)
 _baselines: dict[str, list] = {}
 
 
@@ -73,6 +92,84 @@ def component_shape(items):
     return tuple((int(item.type), component_shape(getattr(item, "components", ()))) for item in items)
 
 
+def media_galleries(items):
+    """Return galleries in their rendered order, including galleries in cards."""
+    result = []
+    for item in items:
+        if getattr(item, "type", None) == hikari.ComponentType.MEDIA_GALLERY:
+            result.append(item)
+        result.extend(media_galleries(getattr(item, "components", ())))
+    return result
+
+
+def media_url(item):
+    value = getattr(item, "media", None)
+    url = getattr(value, "url", value)
+    return str(url) if url is not None else ""
+
+
+def canonical_media_url(value: str) -> str:
+    """Ignore Discord's rotating attachment signatures, and nothing else."""
+    parsed = urlparse(value)
+    if (
+        parsed.hostname in {"cdn.discordapp.com", "media.discordapp.net", "cdn.discordapp.net"}
+        and parsed.path.startswith("/attachments/")
+    ):
+        query = urlencode([
+            (key, item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+            if key not in {"ex", "is", "hm"}
+        ])
+        return urlunparse(parsed._replace(query=query))
+    return value
+
+
+def discord_attachment_id(value: str) -> str | None:
+    """The stable Discord attachment id behind a CDN or media-proxy URL."""
+    parsed = urlparse(value)
+    parts = parsed.path.strip("/").split("/")
+    if (
+        parsed.hostname in {"cdn.discordapp.com", "media.discordapp.net", "cdn.discordapp.net"}
+        and len(parts) >= 4
+        and parts[0] == "attachments"
+        and parts[2].isdigit()
+    ):
+        return parts[2]
+    return None
+
+
+def media_snapshot(components):
+    """The one image URL in each named gallery, in schema order."""
+    values = []
+    for gallery in media_galleries(components):
+        items = getattr(gallery, "items", ())
+        if len(items) != 1:
+            raise ValueError("This post's media layout is not supported by the content dashboard.")
+        value = canonical_media_url(media_url(items[0]))
+        if not value:
+            raise ValueError("This post has an empty media slot.")
+        values.append(value)
+    return values
+
+
+def normal_media(document: Document, media):
+    """Validate sparse saved overrides; omitted slots retain the native art."""
+    if media is None:
+        return {}
+    if not isinstance(media, dict):
+        raise ValueError("Saved image settings are invalid. Reopen the dashboard.")
+    names = {name for name, _label in MEDIA_SLOTS[document.key]}
+    if set(media) - names or any(
+        not isinstance(url, str) or urlparse(url).scheme != "https" or not urlparse(url).netloc
+        for url in media.values()
+    ):
+        raise ValueError("Saved image settings are invalid. Reopen the dashboard.")
+    return {name: url.strip() for name, url in media.items()}
+
+
+def media_slots(document: Document):
+    return MEDIA_SLOTS[document.key]
+
+
 async def baseline(document: Document):
     if document.key in _baselines:
         return copy.deepcopy(_baselines[document.key])
@@ -86,37 +183,42 @@ async def baseline(document: Document):
     return copy.deepcopy(_baselines[document.key])
 
 
-async def render(document: Document, sections, *, action_id="preview", preview=False):
-    components = await baseline(document)
-    if component_count(components) > 40:
+def document_renderer(document: Document):
+    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem
+    return {
+        "about-us": recruit_aboutus.build_aboutus,
+        "strike-system": recruit_strikesystem.build_strikesystem,
+        "family-particulars": recruit_familyparticulars.build_familyparticulars,
+    }[document.key]
+
+
+async def render(document: Document, sections, *, media=None, action_id="preview", preview=False):
+    baseline_components = await baseline(document)
+    if component_count(baseline_components) > 40:
         raise ValueError("This document exceeds Discord's 40-component message limit.")
-    nodes = text_nodes(components)
+    nodes = text_nodes(baseline_components)
     if len(sections) != len(nodes) or any(not isinstance(value, str) or not value.strip() for value in sections):
         raise ValueError("This saved content is incomplete. Reopen the dashboard and correct every block.")
     if sum(map(len, sections)) > 4000:
-        raise ValueError("This document must fit Discord's 4,000-character total.")
-    values = iter(sections)
-    for position, component in enumerate(components):
-        if isinstance(component, hikari.impl.ContainerComponentBuilder):
-            children = [hikari.impl.TextDisplayComponentBuilder(content=next(values)) if isinstance(child, hikari.impl.TextDisplayComponentBuilder) else child for child in component.components]
-            components[position] = hikari.impl.ContainerComponentBuilder(accent_color=component.accent_color, components=children)
-    for component in components:
-        for child in getattr(component, "components", ()):
-            if isinstance(child, hikari.impl.MessageActionRowBuilder):
-                for button in child.components:
-                    if getattr(button, "custom_id", "").startswith(document.acknowledgement + ":"):
-                        button.set_custom_id(f"{document.acknowledgement}:{action_id}")
-                        if preview:
-                            button.set_is_disabled(True)
+        raise ValueError("This document exceeds the editor's 4,000-character total.")
+    overrides = normal_media(document, media)
+    components = document_renderer(document)(
+        sections, media=overrides, action_id=action_id, preview=preview
+    )
+    galleries = media_galleries(components)
+    if len(galleries) != len(media_slots(document)):
+        raise ValueError("This document's media layout is not supported by the content dashboard.")
     return components
 
 
-async def sections_for(mongo, document, guild_id):
+async def template_for(mongo, document: Document, guild_id: int):
+    """Read text, image overrides, and revision from the same stored version."""
     saved = await mongo.bot_config.find_one({"_id": f"content:{document.key}:{guild_id}"})
     if saved and isinstance(saved.get("sections"), list):
         try:
-            await render(document, saved["sections"])
-            return list(saved["sections"]), int(saved.get("revision", 0))
+            media = normal_media(document, saved.get("media"))
+            await render(document, saved["sections"], media=media)
+            return list(saved["sections"]), media, int(saved.get("revision", 0))
         except ValueError:
             pass
     if document.legacy_key:
@@ -126,11 +228,23 @@ async def sections_for(mongo, document, guild_id):
                 await render(document, legacy["sections"])
                 # Migration writes a new content key, so legacy revision cannot
                 # participate in that key's compare-and-swap predicate.
-                return list(legacy["sections"]), 0
+                return list(legacy["sections"]), {}, 0
             except ValueError:
                 pass
     components = await baseline(document)
-    return [node.content for node in text_nodes(components)], 0
+    return [node.content for node in text_nodes(components)], {}, 0
+
+
+async def sections_for(mongo, document, guild_id):
+    """Compatibility wrapper for setup and older callers that need only text."""
+    sections, _media, revision = await template_for(mongo, document, guild_id)
+    return sections, revision
+
+
+async def saved_media_for(mongo, document: Document, guild_id: int):
+    """Return valid saved overrides without allowing a bad row to break setup."""
+    _sections, media, _revision = await template_for(mongo, document, guild_id)
+    return media
 
 
 def editable_blocks(document, sections):
@@ -178,6 +292,7 @@ def panel(state, notice=None):
         return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows)]
 
     document = DOCUMENTS[state["document"]]
+    overrides = normal_media(document, state.get("media"))
     rows = [
         hikari.impl.TextDisplayComponentBuilder(content=f"## {document.label}"),
         hikari.impl.TextDisplayComponentBuilder(
@@ -190,13 +305,22 @@ def panel(state, notice=None):
     menu = blocks.add_text_menu(f"content_block:{sid}", min_values=1, placeholder="Choose a block to edit")
     for index, label in editable_blocks(document, state["sections"]):
         menu.add_option(label, str(index))
+    images = hikari.impl.MessageActionRowBuilder()
+    image_menu = images.add_text_menu(
+        f"content_media:{sid}", min_values=1, placeholder="Choose an image to replace or reset"
+    )
+    for slot, label in media_slots(document):
+        source = "custom image" if slot in overrides else "default image"
+        image_menu.add_option(f"{label} ({source})", slot)
     buttons = hikari.impl.MessageActionRowBuilder()
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_preview:{sid}", label="Preview")
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_save:{sid}", label="Save template")
     if state.get("target"):
         buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update selected post")
+    if state.get("selected_media_slot"):
+        buttons.add_interactive_button(hikari.ButtonStyle.DANGER, f"content_reset_media:{sid}", label="Reset selected image")
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
-    return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows + [blocks, buttons])]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows + [blocks, images, buttons])]
 
 
 def error_panel(message):
@@ -209,7 +333,7 @@ def error_panel(message):
 async def preview_panel(state):
     """Keep the post layout intact while turning its inert CTA into Back."""
     document = DOCUMENTS[state["document"]]
-    components = await render(document, state["sections"], preview=True)
+    components = await render(document, state["sections"], media=state.get("media"), preview=True)
     for component in components:
         for child in getattr(component, "components", ()):
             if isinstance(child, hikari.impl.MessageActionRowBuilder):
@@ -284,12 +408,82 @@ class ContentDashboard(lightbulb.SlashCommand, name="dashboard", description="Ed
             try:
                 if component_shape(message.components) != component_shape(await baseline(document)):
                     raise ValueError("That post's layout is not a supported content document.")
+                original_media = media_snapshot(message.components)
+                if len(original_media) != len(media_slots(document)):
+                    raise ValueError("That post's media layout is not supported by the content dashboard.")
                 await render(document, sections)
             except ValueError:
                 await initial_panel(ctx, mongo, state, "That post's structure is not a supported content document."); return
-            _template, revision = await sections_for(mongo, document, state["guild_id"])
-            state.update(view="document", document=document.key, sections=sections, revision=revision, target={"channel_id": int(match[2]), "message_id": int(match[3]), "original": sections})
+            _template, _media, revision = await template_for(mongo, document, state["guild_id"])
+            state.update(
+                view="document", document=document.key, sections=sections, revision=revision,
+                media=dict(zip((slot for slot, _label in media_slots(document)), original_media, strict=True)),
+                target={
+                    "channel_id": int(match[2]), "message_id": int(match[3]),
+                    "original": sections, "original_media": original_media,
+                },
+            )
         await initial_panel(ctx, mongo, state)
+
+
+@content.register()
+class ContentImageUpload(lightbulb.SlashCommand, name="image-upload", description="Replace one recruit content image"):
+    draft = lightbulb.string("draft", "Draft ID shown after selecting an image slot")
+    image = lightbulb.attachment("image", "PNG, JPG, GIF, or WEBP image")
+    slot = lightbulb.string(
+        "slot", "Optional slot; defaults to the slot selected in the draft",
+        choices=MEDIA_SLOT_CHOICES, default=None,
+    )
+
+    @lightbulb.invoke
+    @lightbulb.di.with_di
+    async def invoke(
+        self,
+        ctx,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        media: MediaStore = lightbulb.di.INJECTED,
+    ):
+        if not await require_editor(ctx):
+            return
+        if getattr(self.image, "size", 0) > MAX_IMAGE_BYTES:
+            await ctx.respond(
+                f"Images must be under {MAX_IMAGE_BYTES // (1024 * 1024)} MB.", ephemeral=True
+            )
+            return
+        await ctx.defer(ephemeral=True)
+        state, problem = await load(ctx, mongo, self.draft)
+        if problem:
+            await ctx.respond(problem, ephemeral=True)
+            return
+        document = DOCUMENTS.get(state.get("document"))
+        requested_slot = self.slot if isinstance(self.slot, str) else None
+        slot = requested_slot or state.get("selected_media_slot")
+        if not document or slot not in {name for name, _label in media_slots(document)}:
+            await ctx.respond("Choose an image slot supported by this draft.", ephemeral=True)
+            return
+        try:
+            data = await self.image.read()
+        except hikari.HTTPError:
+            await ctx.respond("I could not download that attachment. Your draft is unchanged; try again shortly.", ephemeral=True)
+            return
+        try:
+            url = await media.upload_bytes(
+                data,
+                folder=recruit_content_folder(int(ctx.interaction.guild_id), document.key),
+                name=slot,
+            )
+        except MediaStoreError as exc:
+            await ctx.respond(str(exc), ephemeral=True)
+            return
+        draft = await new_draft(mongo, dict(
+            state, media=normal_media(document, state.get("media")) | {slot: url},
+            selected_media_slot=slot,
+        ))
+        label = dict(media_slots(document))[slot]
+        await ctx.respond(
+            components=panel(draft, f"{label} uploaded to this draft. Preview, save, or update the selected post."),
+            ephemeral=True, **NO_MENTIONS,
+        )
 
 
 @register_action("content_document", preload_state=False)
@@ -301,9 +495,13 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
     value = getattr(ctx.interaction, "values", ())
     if len(value) != 1 or value[0] not in DOCUMENTS:
         return panel(state, "Choose one supported document.")
-    document = DOCUMENTS[value[0]]; sections, revision = await sections_for(mongo, document, state["guild_id"])
+    document = DOCUMENTS[value[0]]
+    sections, media, revision = await template_for(mongo, document, state["guild_id"])
     target = state.get("target") if state.get("document") == document.key else None
-    return panel(await new_draft(mongo, dict(state, view="document", document=document.key, sections=sections, revision=revision, target=target)))
+    return panel(await new_draft(mongo, dict(
+        state, view="document", document=document.key, sections=sections,
+        revision=revision, media=media, target=target, selected_media_slot=None,
+    )))
 
 
 @register_action("content_back_root", preload_state=False)
@@ -341,6 +539,43 @@ async def choose_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
     await ctx.respond_with_modal(title=title[:45], custom_id=f"content_submit:{draft['_id']}", components=[hikari.impl.ModalActionRowBuilder().add_text_input("content", "Markdown", value=state["sections"][index], required=True, min_length=1, max_length=4000, style=hikari.TextInputStyle.PARAGRAPH)])
 
 
+@register_action("content_media", preload_state=False)
+@lightbulb.di.with_di
+async def choose_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    values = getattr(ctx.interaction, "values", ())
+    document = DOCUMENTS.get(state.get("document"))
+    if not document or len(values) != 1 or values[0] not in {slot for slot, _label in media_slots(document)}:
+        return panel(state, "Choose one image slot.")
+    label = dict(media_slots(document))[values[0]]
+    draft = await new_draft(mongo, dict(state, selected_media_slot=values[0]))
+    return panel(
+        draft,
+        f"{label} selected. Run `/content image-upload draft:{draft['_id']}` with an attachment, or reset it to the default image.",
+    )
+
+
+@register_action("content_reset_media", preload_state=False)
+@lightbulb.di.with_di
+async def reset_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    document = DOCUMENTS.get(state.get("document"))
+    slot = state.get("selected_media_slot")
+    if not document or slot not in {name for name, _label in media_slots(document)}:
+        return panel(state, "Choose an image slot before resetting it.")
+    media = normal_media(document, state.get("media"))
+    media.pop(slot, None)
+    label = dict(media_slots(document))[slot]
+    return panel(
+        await new_draft(mongo, dict(state, media=media, selected_media_slot=None)),
+        f"{label} reset to its default image. Save or update the selected post to apply it.",
+    )
+
+
 @register_action("content_submit", is_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def submit_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
@@ -364,7 +599,11 @@ async def submit_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
 
 async def _save(ctx, state, mongo):
     key = f"content:{state['document']}:{state['guild_id']}"; revision = state["revision"]
-    update = {"sections": state["sections"], "revision": revision + 1, "updated_by": int(ctx.user.id), "updated_at": utcnow()}
+    document = DOCUMENTS[state["document"]]
+    update = {
+        "sections": state["sections"], "media": normal_media(document, state.get("media")),
+        "revision": revision + 1, "updated_by": int(ctx.user.id), "updated_at": utcnow(),
+    }
     try:
         if revision == 0: await mongo.bot_config.insert_one(dict(update, _id=key)); return True
         return (await mongo.bot_config.update_one({"_id": key, "revision": revision}, {"$set": update})).matched_count == 1
@@ -416,17 +655,47 @@ async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bo
         channel = await bot.rest.fetch_channel(target["channel_id"])
         if int(getattr(channel, "guild_id", 0)) != state["guild_id"]: raise ValueError("The selected post is not in this server.")
         message = await bot.rest.fetch_message(target["channel_id"], target["message_id"])
-        if int(message.author.id) != int(ctx.interaction.application_id) or [node.content for node in text_nodes(message.components)] != target["original"]:
+        if (
+            int(message.author.id) != int(ctx.interaction.application_id)
+            or component_shape(message.components) != component_shape(await baseline(document))
+            or [node.content for node in text_nodes(message.components)] != target["original"]
+            or (
+                target.get("original_media") is not None
+                and media_snapshot(message.components) != target["original_media"]
+            )
+        ):
             raise ValueError("That post changed since this draft opened. Reopen the dashboard to review it.")
         acknowledgement = acknowledgement_id(message.components, document)
         if not acknowledgement: raise ValueError("That is not the selected content type.")
-        await bot.rest.edit_message(target["channel_id"], target["message_id"], components=await render(document, state["sections"], action_id=acknowledgement), **NO_MENTIONS)
+        rendered = await render(
+            document, state["sections"], media=state.get("media"), action_id=acknowledgement
+        )
+        referenced_attachment_ids = {
+            attachment_id for url in media_snapshot(rendered)
+            if (attachment_id := discord_attachment_id(url)) is not None
+        }
+        retained_attachments = [
+            attachment for attachment in getattr(message, "attachments", ())
+            if str(attachment.id) in referenced_attachment_ids
+        ]
+        updated_message = await bot.rest.edit_message(
+            target["channel_id"], target["message_id"],
+            components=rendered,
+            attachments=retained_attachments,
+            **NO_MENTIONS,
+        )
     except (ValueError, hikari.NotFoundError, hikari.ForbiddenError) as exc:
         return panel(state, str(exc) if isinstance(exc, ValueError) else "The bot cannot update that message. Your draft is still available.")
     finally:
         await mongo.bot_config.delete_one({"_id": lease_key, "token": token})
     return panel(
-        await new_draft(mongo, dict(state, target=dict(target, original=state["sections"]))),
+        await new_draft(mongo, dict(
+            state,
+            target=dict(
+                target, original=state["sections"],
+                original_media=media_snapshot(getattr(updated_message, "components", ())),
+            ),
+        )),
         "Selected post updated.",
     )
 

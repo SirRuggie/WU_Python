@@ -8,5 +8,6 @@ setup = lightbulb.Group("setup", "Server setup and configuration commands")
 from . import recruit_aboutus
 from . import recruit_strikesystem
 from . import recruit_familyparticulars
+from . import recruit_check
 
 __all__ = ["loader", "setup"]

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import hikari
 import pytest
 from pymongo.errors import DuplicateKeyError
+from hikari.impl.rest import RESTClientImpl
 
 from extensions import components
 from extensions.commands import content
@@ -42,9 +43,20 @@ def _as_discord_models(builders):
                 type=item.type, id=component_id, spacing=spacing, divider=divider
             )
         if item.type == hikari.ComponentType.MEDIA_GALLERY:
-            # The dashboard compares the component tree, not media item payloads.
-            # This is still the concrete model Discord's entity factory returns.
-            return hikari.MediaGalleryComponent(type=item.type, id=component_id, items=())
+            media = hikari.MediaResource(
+                resource=hikari.files.URL(
+                    f"https://cdn.discordapp.com/attachments/20/30/{component_id}.png?ex=abc&is=def&hm=ghi"
+                ),
+                proxy_resource=None,
+                width=hikari.UNDEFINED,
+                height=hikari.UNDEFINED,
+                content_type=hikari.UNDEFINED,
+                loading_state=hikari.UNDEFINED,
+            )
+            return hikari.MediaGalleryComponent(
+                type=item.type, id=component_id,
+                items=(hikari.MediaGalleryItem(media=media, description=None, is_spoiler=False),),
+            )
         if item.type == hikari.ComponentType.BUTTON:
             return hikari.ButtonComponent(
                 type=item.type,
@@ -212,9 +224,12 @@ def test_real_hikari_models_adopt_existing_post_and_keep_template_revision(monke
         assert captured[-1]["document"] == "about-us"
         assert captured[-1]["sections"] == sections
         assert captured[-1]["revision"] == 7
-        assert captured[-1]["target"] == {
-            "channel_id": 30, "message_id": 40, "original": sections
-        }
+        assert captured[-1]["target"]["channel_id"] == 30
+        assert captured[-1]["target"]["message_id"] == 40
+        assert captured[-1]["target"]["original"] == sections
+        assert captured[-1]["target"]["original_media"] == [
+            "https://cdn.discordapp.com/attachments/20/30/1.png"
+        ]
         assert ctx.events[0] == ("defer", {"ephemeral": True})
         assert ctx.events[-1][0] == "edit_initial_response"
 
@@ -272,32 +287,46 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
         document = content.DOCUMENTS["strike-system"]
         models = _as_discord_models(await content.baseline(document))
         original = [node.content for node in content.text_nodes(models)]
+        original_media = content.media_snapshot(models)
         edited = list(original)
         edited[0] = edited[0] + " edited"
+        retained = SimpleNamespace(id=30, filename="rules.png", url=original_media[0])
+        replaced = SimpleNamespace(
+            id=102, filename="old-main.png",
+            url="https://cdn.discordapp.com/attachments/20/30/old-main.png",
+        )
         state = {
             "_id": "draft",
             "user_id": 10,
             "guild_id": 20,
             "document": "strike-system",
             "sections": edited,
+            "media": {"rules": original_media[0]},
             "revision": 1,
-            "target": {"channel_id": 30, "message_id": 40, "original": original},
+            "target": {
+                "channel_id": 30, "message_id": 40, "original": original,
+                "original_media": original_media,
+            },
         }
 
         async def load_state(*_args):
             return state, None
 
+        published = []
+
         async def next_draft(_mongo, value):
+            published.append(value)
             return dict(value, _id="next")
 
         monkeypatch.setattr(content, "load", load_state)
         monkeypatch.setattr(content, "new_draft", next_draft)
         config = _ConfigCollection()
-        edit_message = AsyncMock()
+        edit_message = AsyncMock(return_value=SimpleNamespace(components=models))
         rest = SimpleNamespace(
             fetch_channel=AsyncMock(return_value=SimpleNamespace(guild_id=20)),
             fetch_message=AsyncMock(return_value=SimpleNamespace(
-                author=SimpleNamespace(id=999), components=models
+                author=SimpleNamespace(id=999), components=models,
+                attachments=(retained, replaced),
             )),
             edit_message=edit_message,
         )
@@ -316,9 +345,11 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
         assert kwargs["user_mentions"] is False
         assert kwargs["role_mentions"] is False
         assert kwargs["mentions_everyone"] is False
+        assert kwargs["attachments"] == [retained]
         rendered_text = [node.content for node in content.text_nodes(kwargs["components"])]
         assert rendered_text == edited
         assert content.acknowledgement_id(kwargs["components"], document)
+        assert published[-1]["target"]["original_media"] == content.media_snapshot(models)
         assert config.deletes and config.deletes[-1]["token"]
         assert "Selected post updated." in panel[0].components[2].content
 
@@ -414,6 +445,52 @@ def test_publish_refuses_stale_real_model_without_edit(monkeypatch):
     _run(check())
 
 
+def test_publish_refuses_an_image_changed_since_the_linked_draft_opened(monkeypatch):
+    async def check():
+        document = content.DOCUMENTS["about-us"]
+        models = list(_as_discord_models(await content.baseline(document)))
+        original = [node.content for node in content.text_nodes(models)]
+        original_media = content.media_snapshot(models)
+        models[0] = hikari.MediaGalleryComponent(
+            type=models[0].type, id=models[0].id,
+            items=(hikari.MediaGalleryItem(
+                media=hikari.MediaResource(
+                    resource=hikari.files.URL("https://cdn.discordapp.com/attachments/20/30/replaced.png?ex=x&is=y&hm=z"),
+                    proxy_resource=None, width=hikari.UNDEFINED, height=hikari.UNDEFINED,
+                    content_type=hikari.UNDEFINED, loading_state=hikari.UNDEFINED,
+                ),
+                description=None, is_spoiler=False,
+            ),),
+        )
+        state = {
+            "_id": "draft", "user_id": 10, "guild_id": 20, "document": document.key,
+            "sections": original, "revision": 0,
+            "target": {
+                "channel_id": 30, "message_id": 40, "original": original,
+                "original_media": original_media,
+            },
+        }
+
+        async def load_state(*_args):
+            return state, None
+
+        monkeypatch.setattr(content, "load", load_state)
+        edit = AsyncMock()
+        await content.publish.__wrapped__._func(
+            ctx=_Context(), action_id="draft", mongo=SimpleNamespace(bot_config=_ConfigCollection()),
+            bot=SimpleNamespace(rest=SimpleNamespace(
+                fetch_channel=AsyncMock(return_value=SimpleNamespace(guild_id=20)),
+                fetch_message=AsyncMock(return_value=SimpleNamespace(
+                    author=SimpleNamespace(id=999), components=tuple(models)
+                )),
+                edit_message=edit,
+            )),
+        )
+        edit.assert_not_awaited()
+
+    _run(check())
+
+
 def test_legacy_about_sections_migrate_with_new_key_revision_zero():
     async def check():
         document = content.DOCUMENTS["about-us"]
@@ -462,20 +539,36 @@ def test_template_save_uses_revision_compare_and_swap():
     ],
 )
 def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
-    key, command_type
+    key, command_type, monkeypatch
 ):
     async def check():
+        module = {
+            "about-us": recruit_aboutus,
+            "strike-system": recruit_strikesystem,
+            "family-particulars": recruit_familyparticulars,
+        }[key]
+        monkeypatch.setattr(module, "require_ready", AsyncMock(return_value=True))
         document = content.DOCUMENTS[key]
         sections = [node.content for node in content.text_nodes(await content.baseline(document))]
         sections[0] = sections[0] + " saved"
+        media = {
+            slot: f"https://img.example.com/{key}-{slot}.png"
+            for slot, _label in content.media_slots(document)
+        }
         events = []
 
         class Collection:
             async def find_one(self, query):
                 events.append(("find", query["_id"]))
-                return {"_id": query["_id"], "sections": sections, "revision": 1}
+                return {
+                    "_id": query["_id"], "sections": sections, "media": media,
+                    "revision": 1,
+                }
 
         class Interaction:
+            guild_id = 20
+            member = SimpleNamespace(permissions=hikari.Permissions.MANAGE_GUILD)
+
             async def delete_initial_response(self):
                 events.append(("delete",))
 
@@ -504,6 +597,7 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
         assert events[1][0] == "find"
         create = next(event[1] for event in events if event[0] == "create")
         assert content.text_nodes(create["components"])[0].content == sections[0]
+        assert content.media_snapshot(create["components"]) == list(media.values())
         assert create["user_mentions"] is False
         assert create["role_mentions"] is False
         assert create["mentions_everyone"] is False
@@ -520,9 +614,15 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
     ],
 )
 def test_setup_posters_fall_back_from_malformed_saved_template(
-    key, command_type, expected_total
+    key, command_type, expected_total, monkeypatch
 ):
     async def check():
+        module = {
+            "about-us": recruit_aboutus,
+            "strike-system": recruit_strikesystem,
+            "family-particulars": recruit_familyparticulars,
+        }[key]
+        monkeypatch.setattr(module, "require_ready", AsyncMock(return_value=True))
         events = []
 
         class Collection:
@@ -532,6 +632,9 @@ def test_setup_posters_fall_back_from_malformed_saved_template(
                 return None
 
         class Interaction:
+            guild_id = 20
+            member = SimpleNamespace(permissions=hikari.Permissions.MANAGE_GUILD)
+
             async def delete_initial_response(self):
                 events.append(("delete",))
 
@@ -750,7 +853,7 @@ def test_save_and_publish_navigate_with_dispatcher_edits_not_followups(monkeypat
             return linked_state
 
         monkeypatch.setattr(content, "get_state", linked_state_for)
-        public_edit = AsyncMock()
+        public_edit = AsyncMock(return_value=SimpleNamespace(components=models))
         bot = SimpleNamespace(rest=SimpleNamespace(
             fetch_channel=AsyncMock(return_value=SimpleNamespace(guild_id=20)),
             fetch_message=AsyncMock(return_value=SimpleNamespace(
@@ -772,3 +875,150 @@ def test_save_and_publish_navigate_with_dispatcher_edits_not_followups(monkeypat
         assert publish.interaction.app.rest.edit_message.await_count == 0
 
     _run(check())
+
+
+def test_render_uses_named_media_overrides_without_changing_the_native_shape():
+    async def check():
+        document = content.DOCUMENTS["strike-system"]
+        baseline = await content.baseline(document)
+        sections = [node.content for node in content.text_nodes(baseline)]
+        rendered = await content.render(
+            document, sections,
+            media={"main-strikes": "https://img.example.com/main.123.jpg"},
+        )
+        assert content.component_shape(rendered) == content.component_shape(baseline)
+        media = content.media_snapshot(rendered)
+        assert media[1] == "https://img.example.com/main.123.jpg"
+        assert len(media) == 3
+
+    _run(check())
+
+
+def test_discord_attachment_signature_refresh_does_not_make_media_stale():
+    previous = "https://cdn.discordapp.com/attachments/20/30/banner.png?ex=old&is=old&hm=old"
+    refreshed = "https://cdn.discordapp.com/attachments/20/30/banner.png?ex=new&is=new&hm=new"
+    changed = "https://cdn.discordapp.com/attachments/20/30/other.png?ex=new&is=new&hm=new"
+    assert content.canonical_media_url(previous) == content.canonical_media_url(refreshed)
+    assert content.canonical_media_url(previous) != content.canonical_media_url(changed)
+    assert content.discord_attachment_id(previous) == "30"
+    assert content.discord_attachment_id(
+        "https://media.discordapp.net/attachments/20/30/banner.png?width=400&format=webp"
+    ) == "30"
+    assert content.discord_attachment_id("https://img.example.com/banner.png") is None
+
+
+def test_attachment_upload_creates_a_new_draft_without_saving_or_publishing(monkeypatch):
+    async def check():
+        state = {
+            "_id": "selected", "user_id": 10, "guild_id": 20,
+            "view": "document", "document": "about-us", "revision": 4,
+            "sections": [node.content for node in content.text_nodes(
+                await content.baseline(content.DOCUMENTS["about-us"])
+            )],
+            "media": {}, "selected_media_slot": "welcome",
+            "target": {"channel_id": 30, "message_id": 40, "original": ["old"]},
+        }
+        created = []
+
+        async def load_state(*_args):
+            return state, None
+
+        async def draft_for(_mongo, value):
+            created.append(value)
+            return dict(value, _id="uploaded")
+
+        async def allowed(_ctx):
+            return True
+
+        monkeypatch.setattr(content, "load", load_state)
+        monkeypatch.setattr(content, "new_draft", draft_for)
+        monkeypatch.setattr(content, "require_editor", allowed)
+        upload = content.ContentImageUpload()
+        upload.draft = "selected"
+        upload.slot = None
+        upload.image = SimpleNamespace(
+            size=8, read=AsyncMock(return_value=b"image-bytes"), filename="banner.png"
+        )
+        store = SimpleNamespace(upload_bytes=AsyncMock(return_value="https://img.example.com/welcome.abc.png"))
+        ctx = _Context()
+        await upload.invoke(ctx, mongo=SimpleNamespace(), media=store)
+
+        store.upload_bytes.assert_awaited_once_with(
+            b"image-bytes", folder="content/recruit/20/about-us", name="welcome"
+        )
+        assert created[0]["media"] == {"welcome": "https://img.example.com/welcome.abc.png"}
+        assert created[0]["target"] == state["target"]
+        assert any(event[0] == "respond" for event in ctx.events)
+
+    _run(check())
+
+
+@pytest.mark.parametrize("case", ("expired", "foreign-owner", "foreign-guild", "invalid-slot", "oversize"))
+def test_attachment_upload_refuses_invalid_drafts_before_read_or_upload(monkeypatch, case):
+    async def check():
+        sections = [node.content for node in content.text_nodes(
+            await content.baseline(content.DOCUMENTS["about-us"])
+        )]
+        state = {
+            "_id": "draft", "user_id": 10, "guild_id": 20, "document": "about-us",
+            "sections": sections, "media": {}, "selected_media_slot": "welcome", "revision": 0,
+        }
+        problem = {
+            "expired": "This draft expired.",
+            "foreign-owner": "Open your own `/content dashboard`.",
+            "foreign-guild": "Open your own `/content dashboard`.",
+        }.get(case)
+
+        async def load_state(*_args):
+            return state, problem
+
+        async def allowed(_ctx):
+            return True
+
+        monkeypatch.setattr(content, "load", load_state)
+        monkeypatch.setattr(content, "require_editor", allowed)
+        upload = content.ContentImageUpload()
+        upload.draft = "draft"
+        upload.slot = "rules" if case == "invalid-slot" else None
+        upload.image = SimpleNamespace(
+            size=content.MAX_IMAGE_BYTES + 1 if case == "oversize" else 8,
+            read=AsyncMock(return_value=b"image-bytes"),
+        )
+        store = SimpleNamespace(upload_bytes=AsyncMock())
+        ctx = _Context()
+        await upload.invoke(ctx, mongo=SimpleNamespace(), media=store)
+        upload.image.read.assert_not_awaited()
+        store.upload_bytes.assert_not_awaited()
+
+    _run(check())
+
+
+def test_hikari_edit_payload_retains_existing_attachments_with_reset_local_media():
+    previous = hikari.Attachment(
+        id=123,
+        url="https://cdn.discordapp.com/attachments/20/30/old.png",
+        filename="old.png",
+        title=None,
+        description=None,
+        media_type="image/png",
+        size=1,
+        proxy_url="https://cdn.discordapp.com/attachments/20/30/old.png",
+        height=None,
+        width=None,
+        is_ephemeral=False,
+        duration=None,
+        waveform=None,
+    )
+    rest = object.__new__(RESTClientImpl)
+    body, form = rest._build_message_payload(
+        components=[hikari.impl.MediaGalleryComponentBuilder(items=[
+            hikari.impl.MediaGalleryItemBuilder(media="assets/recruit/static/WU_FamilyParticulars.gif")
+        ])],
+        attachments=[previous],
+        edit=True,
+    )
+    assert dict(body)["attachments"] == [
+        {"id": 123, "filename": "old.png"},
+        {"id": 0, "filename": "WU_FamilyParticulars.gif"},
+    ]
+    assert form is not None

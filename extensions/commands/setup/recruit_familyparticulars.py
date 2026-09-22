@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.recruit_setup_checks import require_manage_server, require_ready
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -27,17 +28,22 @@ CLAN_RULES_READ_ROLE_ID = 1078723854303756303  # Clan Rules Read role
 APPLY_HERE_CHANNEL_ID = 1078723854635110530  # Apply Here channel
 
 
-def build_familyparticulars(sections=None, *, action_id="preview", preview=False):
+def build_familyparticulars(sections=None, *, media=None, action_id="preview", preview=False):
     """Render Family Particulars for publishing or dashboard previews."""
     if sections is not None and len(sections) != 28:
         raise ValueError("Family Particulars requires exactly twenty-eight text fields.")
+
+    media = media or {}
+
+    def image(slot, default):
+        return media.get(slot, default)
 
     components = [
             # Image at the top
             Media(
                 items=[
                     MediaItem(
-                        media="assets/recruit/static/WU_FamilyParticulars.gif"
+                        media=image("welcome", "assets/recruit/static/WU_FamilyParticulars.gif")
                     )
                 ]
             ),
@@ -139,7 +145,7 @@ def build_familyparticulars(sections=None, *, action_id="preview", preview=False
                     Media(
                         items=[
                             MediaItem(
-                                media="assets/branding/banners/warriors_united_.gif"
+                                media=image("cwl", "assets/branding/banners/warriors_united_.gif")
                             )
                         ]
                     ),
@@ -201,12 +207,21 @@ class RecruitFamilyParticulars(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
+        if not await require_manage_server(ctx):
+            return
         await ctx.defer(ephemeral=True)
+        if not await require_ready(
+            ctx, bot, role_id=CLAN_RULES_READ_ROLE_ID, next_channel_id=APPLY_HERE_CHANNEL_ID
+        ):
+            return
         saved = await mongo.bot_config.find_one({"_id": f"content:family-particulars:{ctx.guild_id}"})
         if saved:
             from extensions.commands.content import DOCUMENTS, render
             try:
-                components = await render(DOCUMENTS["family-particulars"], saved["sections"], action_id=str(uuid.uuid4()))
+                components = await render(
+                    DOCUMENTS["family-particulars"], saved["sections"], media=saved.get("media"),
+                    action_id=str(uuid.uuid4()),
+                )
             except (KeyError, ValueError):
                 saved = None
         if not saved:

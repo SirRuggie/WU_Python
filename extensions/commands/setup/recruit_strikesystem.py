@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.recruit_setup_checks import require_manage_server, require_ready
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -27,21 +28,25 @@ STRIKE_SYSTEM_ROLE_ID = 1078723854303756302  # Strike system accepted role
 FAMILY_PARTICULARS_CHANNEL_ID = 1078723854316355603  # Channel to direct users to
 
 
-def build_strikesystem(sections=None, *, action_id="preview", preview=False):
+def build_strikesystem(sections=None, *, media=None, action_id="preview", preview=False):
     """Render the Strike System post for publishing or dashboard previews."""
     if sections is not None and len(sections) != 12:
         raise ValueError("Strike System requires exactly twelve editable text fields.")
     values = iter(sections) if sections is not None else None
+    media = media or {}
 
     def text(default):
         return Text(content=next(values) if values is not None else default)
+
+    def image(slot, default):
+        return media.get(slot, default)
 
     components = [
             # Image at the top
             Media(
                 items=[
                     MediaItem(
-                        media="assets/recruit/strikes/WU_Strikes.gif"
+                        media=image("rules", "assets/recruit/strikes/WU_Strikes.gif")
                     )
                 ]
             ),
@@ -108,7 +113,7 @@ def build_strikesystem(sections=None, *, action_id="preview", preview=False):
                     Media(
                         items=[
                             MediaItem(
-                                media="assets/recruit/strikes/WU_Main_Strikes.jpg"
+                                media=image("main-strikes", "assets/recruit/strikes/WU_Main_Strikes.jpg")
                             )
                         ]
                     ),
@@ -125,7 +130,7 @@ def build_strikesystem(sections=None, *, action_id="preview", preview=False):
                     Media(
                         items=[
                             MediaItem(
-                                media="assets/recruit/strikes/WU_FWA_Strikes.jpg"
+                                media=image("fwa-strikes", "assets/recruit/strikes/WU_FWA_Strikes.jpg")
                             )
                         ]
                     ),
@@ -193,12 +198,22 @@ class RecruitStrikeSystem(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
+        if not await require_manage_server(ctx):
+            return
         await ctx.defer(ephemeral=True)
+        if not await require_ready(
+            ctx, bot, role_id=STRIKE_SYSTEM_ROLE_ID,
+            next_channel_id=FAMILY_PARTICULARS_CHANNEL_ID,
+        ):
+            return
         saved = await mongo.bot_config.find_one({"_id": f"content:strike-system:{ctx.guild_id}"})
         if saved:
             from extensions.commands.content import DOCUMENTS, render
             try:
-                components = await render(DOCUMENTS["strike-system"], saved["sections"], action_id=str(uuid.uuid4()))
+                components = await render(
+                    DOCUMENTS["strike-system"], saved["sections"], media=saved.get("media"),
+                    action_id=str(uuid.uuid4()),
+                )
             except (KeyError, ValueError):
                 saved = None
         if not saved:

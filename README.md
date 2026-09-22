@@ -91,7 +91,9 @@ Recruit role automatically two hours after assignment.
 | `/recruit questions` | Send the recruitment questionnaire to a recruit. |
 | `/recruit dashboard` | Open the complete new-member onboarding dashboard. |
 | `/setup recruit-aboutus` | Post the family overview and onboarding flow. |
-| `/content dashboard` | Privately edit per-server About Us, WU Strike System, and Family Particulars; preview, save future wording, or update a linked post. |
+| `/content dashboard` | Privately edit recruit text and images; preview, save a template, or update a linked post. See [the content editor guide](docs/content-dashboard.md). |
+| `/content image-upload` | Upload an attachment to the selected draft image slot in R2; preview before saving or publishing. |
+| `/setup recruit-check` | Privately check recruit posting permissions, acknowledgement roles, next channels, and R2 configuration (Manage Server). |
 | `/setup recruit-familyparticulars` | Post family particulars and war rules. |
 | `/setup recruit-strikesystem` | Post the strike-system rules. |
 

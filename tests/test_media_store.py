@@ -19,6 +19,7 @@ from utils.media_store import (
     CLAN_LOGO,
     FWA_ACTIVE_BASE_NAME,
     FWA_WAR_BASE_NAME,
+    MAX_DECODED_IMAGE_PIXELS,
     STATIC_CACHE_CONTROL,
     MediaStore,
     MediaStoreConfig,
@@ -28,6 +29,7 @@ from utils.media_store import (
     detect_image,
     fwa_base_folder,
     object_key,
+    recruit_content_folder,
 )
 from utils.url_safety import MAX_IMAGE_BYTES
 
@@ -102,6 +104,30 @@ def test_detect_image_rejects_non_image_bytes():
         detect_image(b"<html>definitely not a picture</html>")
 
 
+def test_detect_image_rejects_a_truncated_file_with_a_valid_header():
+    with pytest.raises(MediaStoreError, match="not an image"):
+        detect_image(image_bytes("PNG")[:-8])
+
+
+def test_detect_image_rejects_excessive_dimensions_before_loading_pixels(monkeypatch):
+    class FakeImage:
+        format = "PNG"
+        size = (MAX_DECODED_IMAGE_PIXELS + 1, 1)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def verify(self):
+            raise AssertionError("oversized image must be rejected before verification")
+
+    monkeypatch.setattr(media_store.Image, "open", lambda _data: FakeImage())
+    with pytest.raises(MediaStoreError, match="pixels"):
+        detect_image(b"a small fake header")
+
+
 def test_detect_image_rejects_formats_discord_will_not_render():
     with pytest.raises(MediaStoreError, match="Unsupported image format: BMP"):
         detect_image(image_bytes("BMP"))
@@ -125,6 +151,7 @@ def test_bucket_layout_helpers_and_name_constants():
     assert clan_folder("Arcane Angels!") == "clans/Arcane_Angels"
     assert clan_folder("Воины") == "clans/unnamed"
     assert fwa_base_folder("th16_new") == "fwa/bases/th16_new"
+    assert recruit_content_folder(20, "about-us") == "content/recruit/20/about-us"
     assert (CLAN_LOGO, CLAN_BANNER, FWA_WAR_BASE_NAME, FWA_ACTIVE_BASE_NAME) == (
         "logo", "banner", "war", "active",
     )

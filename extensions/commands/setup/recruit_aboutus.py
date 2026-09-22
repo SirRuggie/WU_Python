@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.recruit_setup_checks import require_manage_server, require_ready
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -27,11 +28,12 @@ ABOUT_US_ROLE_ID = 1078723854303756301  # Role to assign when user acknowledges
 STRIKE_SYSTEM_CHANNEL_ID = 1078723854316355602  # Channel to direct users to
 
 
-def build_aboutus(sections=None, *, action_id="preview", preview=False):
+def build_aboutus(sections=None, *, media=None, action_id="preview", preview=False):
     """Single renderer for published messages and private editor previews."""
     if sections is not None and len(sections) != 12:
         raise ValueError("About Us requires exactly twelve editable text fields.")
     values = iter(sections) if sections is not None else None
+    media = media or {}
 
     def text(default):
         # TextDisplayComponentBuilder has no set_content method in hikari 2.6.
@@ -39,13 +41,16 @@ def build_aboutus(sections=None, *, action_id="preview", preview=False):
         # render both editor previews and saved posts.
         return Text(content=next(values) if values is not None else default)
 
+    def image(slot, default):
+        return media.get(slot, default)
+
     # Create all embeds
     components = [
         # Image at the top
         Media(
             items=[
                 MediaItem(
-                    media="assets/branding/banners/Warriors_United.gif"
+                    media=image("welcome", "assets/branding/banners/Warriors_United.gif")
                 )
             ]
         ),
@@ -190,12 +195,21 @@ class RecruitAboutUs(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED,
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
+        if not await require_manage_server(ctx):
+            return
         await ctx.defer(ephemeral=True)
+        if not await require_ready(
+            ctx, bot, role_id=ABOUT_US_ROLE_ID, next_channel_id=STRIKE_SYSTEM_CHANNEL_ID
+        ):
+            return
         document = await mongo.bot_config.find_one({"_id": f"content:about-us:{ctx.guild_id}"})
         if document:
             from extensions.commands.content import DOCUMENTS, render
             try:
-                components = await render(DOCUMENTS["about-us"], document["sections"], action_id=str(uuid.uuid4()))
+                components = await render(
+                    DOCUMENTS["about-us"], document["sections"], media=document.get("media"),
+                    action_id=str(uuid.uuid4()),
+                )
             except (KeyError, ValueError):
                 document = None
         if not document:

@@ -47,6 +47,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import warnings
 from dataclasses import dataclass
 from io import BytesIO
 from urllib.parse import quote, unquote, urlparse
@@ -80,6 +81,7 @@ _FORMATS = {
     "GIF": ("gif", "image/gif"),
     "WEBP": ("webp", "image/webp"),
 }
+MAX_DECODED_IMAGE_PIXELS = 40_000_000
 
 
 class MediaStoreError(Exception):
@@ -120,15 +122,27 @@ class MediaStoreConfig:
 def detect_image(data: bytes) -> tuple[str, str]:
     """`(extension, content_type)` for image bytes, else MediaStoreError.
 
-    Pillow only reads the header here, so this is cheap even for a 10 MB
-    file. The check exists because the slash commands validate the attachment
-    NAME, and a renamed non-image would otherwise be served with an image
-    extension and break silently inside Discord.
+    Decode and verify a displayable image. Attachment names are only hints; a
+    renamed HTML response, truncated header, or decompression bomb must never
+    become a public R2 object that fails only when Discord renders it.
     """
     try:
-        with Image.open(BytesIO(data)) as image:
-            fmt = image.format
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(data)) as image:
+                fmt = image.format
+                width, height = image.size
+                if width * height > MAX_DECODED_IMAGE_PIXELS:
+                    raise MediaStoreError(
+                        f"Images must contain at most {MAX_DECODED_IMAGE_PIXELS:,} pixels."
+                    )
+                image.verify()
+            with Image.open(BytesIO(data)) as image:
+                image.load()
+    except (
+        UnidentifiedImageError, OSError, ValueError, SyntaxError,
+        Image.DecompressionBombError, Image.DecompressionBombWarning,
+    ) as exc:
         raise MediaStoreError("That file is not an image I can read.") from exc
     try:
         return _FORMATS[fmt or ""]
@@ -163,6 +177,14 @@ def clan_folder(clan_name: str) -> str:
 def fwa_base_folder(th_level: str) -> str:
     """fwa/bases/<th>: the folder holding a Town Hall's war and active base images."""
     return f"fwa/bases/{th_level}"
+
+
+def recruit_content_folder(guild_id: int, document: str) -> str:
+    """Per-server folder for the editable recruit-post media slots."""
+    # Callers validate document against the dashboard's fixed keys. Keep those
+    # keys readable in R2 (for example ``about-us``), rather than collapsing
+    # punctuation through the general filename sanitizer.
+    return f"content/recruit/{int(guild_id)}/{document.strip('/')}"
 
 
 def check_static_bytes(data: bytes, key: str) -> tuple[str, str]:
