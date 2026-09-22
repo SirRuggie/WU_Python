@@ -316,12 +316,13 @@ def panel(state, notice=None):
     for index, label in editable_blocks(document, state["sections"]):
         menu.add_option(label, str(index))
     images = hikari.impl.MessageActionRowBuilder()
+    selected_slot = state.get("selected_media_slot")
     image_menu = images.add_text_menu(
         f"content_media:{sid}", min_values=1, placeholder="Choose an image to replace or reset"
     )
     for slot, label in media_slots(document):
         source = "custom image" if slot in overrides else "default image"
-        image_menu.add_option(f"{label} ({source})", slot)
+        image_menu.add_option(f"{label} ({source})", slot, is_default=slot == selected_slot)
     buttons = hikari.impl.MessageActionRowBuilder()
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_preview:{sid}", label="Preview")
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_save:{sid}", label="Save template")
@@ -337,7 +338,20 @@ def panel(state, notice=None):
             hikari.ButtonStyle.DANGER, f"content_reset_media:{sid}", label="Reset selected image"
         )
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
-    controls = [blocks, images, buttons]
+    controls = [blocks, images]
+    slots = dict(media_slots(document))
+    if selected_slot in slots:
+        # Use the public renderer's exact slot/default resolution so linked,
+        # saved, newly uploaded, and reset images all match the current draft.
+        galleries = media_galleries(document_renderer(document)(media=overrides, preview=True))
+        gallery = galleries[list(slots).index(selected_slot)]
+        controls.extend([
+            hikari.impl.TextDisplayComponentBuilder(
+                content=f"### {slots[selected_slot]}\n-# Current image in this draft"
+            ),
+            gallery,
+        ])
+    controls.append(buttons)
     if selected_buttons is not None:
         controls.append(selected_buttons)
     return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows + controls)]
@@ -706,7 +720,7 @@ async def reset_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED
     media.pop(slot, None)
     label = dict(media_slots(document))[slot]
     return panel(
-        await new_draft(mongo, dict(state, media=media, selected_media_slot=None)),
+        await new_draft(mongo, dict(state, media=media, selected_media_slot=slot)),
         f"{label} reset to its default image. Save or update the selected post to apply it.",
     )
 

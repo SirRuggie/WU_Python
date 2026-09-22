@@ -10,10 +10,12 @@ save a template, and update a selected existing bot post.
 1. Open `/content dashboard`. To update an existing post, supply its Discord
    message link in `message-link`.
 2. Choose the document if it was not selected by the message link.
-3. Select the image in the image menu, then click **Upload replacement**.
+3. Select the image in the image menu. The editor shows its current draft image
+   beneath the menu so you can confirm the selection, then click **Upload replacement**.
 4. Choose a PNG, JPG, GIF, or WEBP in Discord's upload modal. It must fit the
    bot's 10 MB byte and 40-million-pixel limits.
-5. Continue in the same private editor. The image is uploaded to R2 but is still
+5. The preview refreshes to the uploaded image in the same private editor.
+   The image is uploaded to R2 but is still
    a draft; the template and public post have not changed.
 6. Use **Preview**, then **Save template** for future setup posts and/or
    **Update selected post** for the linked message. These are separate actions;
@@ -25,6 +27,7 @@ Manage Server.
 
 To restore the original artwork, select the image and click **Reset selected
 image**, then preview and save or update the selected post.
+The selection stays active and the editor immediately shows the restored default.
 
 | Document | Editable images |
 | --- | --- |

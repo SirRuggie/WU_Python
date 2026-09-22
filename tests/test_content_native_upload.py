@@ -221,6 +221,70 @@ def test_selected_image_panel_never_exceeds_discord_action_row_limit():
     assert all(len(row.components) <= 5 for row in rows)
 
 
+@pytest.mark.parametrize("document,slot,expected", [
+    ("about-us", "welcome", "assets/branding/banners/Warriors_United.gif"),
+    ("strike-system", "rules", "assets/recruit/strikes/WU_Strikes.gif"),
+    ("strike-system", "main-strikes", "assets/recruit/strikes/WU_Main_Strikes.jpg"),
+    ("strike-system", "fwa-strikes", "assets/recruit/strikes/WU_FWA_Strikes.jpg"),
+    ("family-particulars", "welcome", "assets/recruit/static/WU_FamilyParticulars.gif"),
+    ("family-particulars", "cwl", "assets/branding/banners/warriors_united_.gif"),
+])
+def test_selected_image_shows_default_or_current_override(document, slot, expected):
+    definition = content.DOCUMENTS[document]
+    rendered = content.document_renderer(definition)()
+    state = _state(document=document, selected_media_slot=slot,
+                   sections=[node.content for node in content.text_nodes(rendered)])
+    dashboard = content.panel(state)
+    galleries = content.media_galleries(dashboard)
+    assert len(galleries) == 1
+    assert content.media_url(galleries[0].items[0]) == expected
+    assert content.component_count(dashboard) <= 40
+    menus = [child for row in dashboard[0].components
+             for child in getattr(row, "components", ())
+             if getattr(child, "custom_id", "").startswith("content_media:")]
+    assert [option.value for option in menus[0].options if option.is_default] == [slot]
+    state["media"] = {slot: "https://media.example/current.png"}
+    galleries = content.media_galleries(content.panel(state))
+    assert content.media_url(galleries[0].items[0]) == "https://media.example/current.png"
+
+
+def test_reset_keeps_selection_and_shows_restored_image():
+    async def check():
+        state = _state(media={"welcome": "https://media.example/custom.png"})
+        mongo = _mongo(state)
+        ctx = _ModalContext(_ModalInteraction(540, "content_reset_media:draft"))
+        dashboard = await content.reset_media(ctx=ctx, action_id="draft", mongo=mongo)
+        gallery = content.media_galleries(dashboard)[0]
+        assert content.media_url(gallery.items[0]) == "assets/branding/banners/Warriors_United.gif"
+        updated = [row for key, row in mongo.component_state.documents.items() if key != "draft"][-1]
+        assert updated["selected_media_slot"] == "welcome"
+        assert updated["media"] == {}
+
+    asyncio.run(check())
+
+
+def test_each_uploaded_replacement_refreshes_the_visible_selected_image(monkeypatch):
+    async def check():
+        mongo = _mongo(_state(media={"welcome": "https://media.example/original.png"}))
+        monkeypatch.setattr(hikari.Attachment, "read", AsyncMock(return_value=b"image"))
+        current_draft = "draft"
+        for interaction_id, url in [(541, "https://media.example/first.png"),
+                                    (542, "https://media.example/latest.png")]:
+            custom_id = f"content_upload_submit:{current_draft}"
+            _capture(_raw_payload(interaction_id, custom_id))
+            interaction = _ModalInteraction(interaction_id, custom_id)
+            await content.submit_upload(
+                ctx=_ModalContext(interaction), action_id=current_draft, mongo=mongo,
+                media=SimpleNamespace(upload_bytes=AsyncMock(return_value=url)),
+            )
+            galleries = content.media_galleries(interaction.edits[-1]["components"])
+            assert len(galleries) == 1
+            assert content.media_url(galleries[0].items[0]) == url
+            current_draft = next(reversed(mongo.component_state.documents))
+
+    asyncio.run(check())
+
+
 def test_documented_payload_survives_hikari_26_deserialization_loss_and_is_one_shot():
     payload = _raw_payload(501, "content_upload_submit:draft")
     _capture(payload)
