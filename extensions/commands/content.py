@@ -1,5 +1,6 @@
 """Private, schema-driven editor for published Warriors United content."""
 
+import asyncio
 import copy
 import re
 import uuid
@@ -13,6 +14,11 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state, utcnow
+from utils.discord_file_upload import (
+    FileUploadModalComponentBuilder,
+    install_file_upload_capture,
+    pop_file_upload,
+)
 from utils.media_store import MediaStore, MediaStoreError, recruit_content_folder
 from utils.mongo import MongoClient
 from utils.url_safety import MAX_IMAGE_BYTES
@@ -59,6 +65,10 @@ MEDIA_SLOT_CHOICES = (
     lightbulb.Choice(name="CWL banner", value="cwl"),
 )
 _baselines: dict[str, list] = {}
+
+# Hikari 2.6 predates Discord's modal Label/File Upload models. Install the
+# narrow deserialization adapter before the gateway receives interactions.
+install_file_upload_capture()
 
 
 def can_edit(ctx):
@@ -317,10 +327,20 @@ def panel(state, notice=None):
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_save:{sid}", label="Save template")
     if state.get("target"):
         buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update selected post")
+    selected_buttons = None
     if state.get("selected_media_slot"):
-        buttons.add_interactive_button(hikari.ButtonStyle.DANGER, f"content_reset_media:{sid}", label="Reset selected image")
+        selected_buttons = hikari.impl.MessageActionRowBuilder()
+        selected_buttons.add_interactive_button(
+            hikari.ButtonStyle.PRIMARY, f"content_upload:{sid}", label="Upload replacement"
+        )
+        selected_buttons.add_interactive_button(
+            hikari.ButtonStyle.DANGER, f"content_reset_media:{sid}", label="Reset selected image"
+        )
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
-    return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows + [blocks, images, buttons])]
+    controls = [blocks, images, buttons]
+    if selected_buttons is not None:
+        controls.append(selected_buttons)
+    return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows + controls)]
 
 
 def error_panel(message):
@@ -553,7 +573,122 @@ async def choose_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
     draft = await new_draft(mongo, dict(state, selected_media_slot=values[0]))
     return panel(
         draft,
-        f"{label} selected. Run `/content image-upload draft:{draft['_id']}` with an attachment, or reset it to the default image.",
+        f"{label} selected. Upload a replacement or reset it to the default image.",
+    )
+
+
+@register_action("content_upload", opens_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def open_upload_modal(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        await edit_modal_source(ctx, error_panel(problem)); return
+    document = DOCUMENTS.get(state.get("document"))
+    slot = state.get("selected_media_slot")
+    if not document or slot not in {name for name, _label in media_slots(document)}:
+        await edit_modal_source(ctx, panel(state, "Choose an image slot before uploading.")); return
+    draft = await new_draft(mongo, state)
+    await ctx.respond_with_modal(
+        title="Upload replacement image",
+        custom_id=f"content_upload_submit:{draft['_id']}",
+        components=[FileUploadModalComponentBuilder(
+            custom_id="image",
+            label=dict(media_slots(document))[slot],
+            description="PNG, JPG, GIF, or WEBP; maximum 10 MB",
+        )],
+    )
+
+
+def _modal_attachment(payload):
+    """Convert Discord's resolved attachment payload to Hikari's URL resource."""
+    try:
+        size = int(payload["size"])
+        if size < 0:
+            return None
+        return hikari.Attachment(
+            id=hikari.Snowflake(payload["id"]),
+            filename=payload["filename"],
+            title=payload.get("title"),
+            description=payload.get("description"),
+            media_type=payload.get("content_type"),
+            size=size,
+            url=payload["url"],
+            proxy_url=payload.get("proxy_url", payload["url"]),
+            height=payload.get("height"),
+            width=payload.get("width"),
+            is_ephemeral=payload.get("ephemeral", False),
+            duration=payload.get("duration_secs"),
+            waveform=payload.get("waveform"),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+@register_action("content_upload_submit", is_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def submit_upload(
+    ctx,
+    action_id,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    media: MediaStore = lightbulb.di.INJECTED,
+    **_,
+):
+    interaction = ctx.interaction
+    # Consume the raw payload even when the draft is invalid, so it cannot be
+    # reused and the compatibility cache cannot retain rejected submissions.
+    payload = pop_file_upload(interaction.id, interaction.custom_id, "image")
+    if getattr(interaction, "message", None) is not None:
+        await interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    else:
+        # This should only occur for a forged/out-of-band modal submit. It still
+        # gets a private response instead of failing the interaction silently.
+        await ctx.defer(ephemeral=True)
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        await interaction.edit_initial_response(components=error_panel(problem), **NO_MENTIONS); return
+    document = DOCUMENTS.get(state.get("document"))
+    slot = state.get("selected_media_slot")
+    if not document or slot not in {name for name, _label in media_slots(document)}:
+        await interaction.edit_initial_response(
+            components=panel(state, "Choose an image slot before uploading."), **NO_MENTIONS
+        ); return
+    attachment = _modal_attachment(payload) if payload is not None else None
+    if attachment is None:
+        await interaction.edit_initial_response(
+            components=panel(state, "No valid attachment was submitted. Your draft is unchanged."),
+            **NO_MENTIONS,
+        ); return
+    if attachment.size > MAX_IMAGE_BYTES:
+        await interaction.edit_initial_response(
+            components=panel(state, f"Images must be under {MAX_IMAGE_BYTES // (1024 * 1024)} MB. Your draft is unchanged."),
+            **NO_MENTIONS,
+        ); return
+    try:
+        data = await attachment.read()
+    except (hikari.HTTPError, OSError, asyncio.TimeoutError):
+        await interaction.edit_initial_response(
+            components=panel(state, "I could not download that attachment. Your draft is unchanged; try again shortly."),
+            **NO_MENTIONS,
+        ); return
+    try:
+        url = await media.upload_bytes(
+            data,
+            folder=recruit_content_folder(int(interaction.guild_id), document.key),
+            name=slot,
+        )
+    except MediaStoreError as exc:
+        await interaction.edit_initial_response(
+            components=panel(state, f"{exc} Your draft is unchanged."), **NO_MENTIONS
+        ); return
+    draft = await new_draft(mongo, dict(
+        state,
+        media=normal_media(document, state.get("media")) | {slot: url},
+        selected_media_slot=slot,
+    ))
+    label = dict(media_slots(document))[slot]
+    await interaction.edit_initial_response(
+        components=panel(draft, f"{label} uploaded to this draft. Preview, save, or update the selected post."),
+        **NO_MENTIONS,
     )
 
 
