@@ -318,13 +318,13 @@ def test_main_manual_reminder_refreshes_links_and_never_enables_schedule(monkeyp
     assert sent["user_mentions"] == [123456789]
     assert sent["role_mentions"] == []
     parts = sent["components"][0].components
-    assert parts[0].content == "## ⚔️ Return home for the next war"
+    assert parts[0].content == "## ⚔️ Want to join the next war?"
     assert parts[2].content == (
-        "Our next war is coming soon. Please return to **Alpha** to take part "
-        "and earn more ore and loot."
+        "Our next war is coming soon. If you would like to participate and earn "
+        "extra ore and loot, please return to **Alpha**."
     )
-    assert parts[4].content == "**Players to return:**"
-    assert parts[5].content == "**Away** · <@123456789>"
+    assert parts[4].content == "**Players currently away:**"
+    assert parts[5].content == "**Away** · `#AWAY` · <@123456789>"
     assert "Home" not in parts[5].content
     refreshed = asyncio.run(store.get_by_id(mongo, "main-list"))
     assert refreshed["reminders"]["sent_count"] == 1
@@ -382,7 +382,7 @@ def test_fwa_reminder_preserves_clan_link_player_tags_and_workflow(monkeypatch):
     assert components[3].content == "Please return to **Alpha** `#ABC` for sync war!"
     assert components[5].content == "**Workflow: Join CWL Clan ⇨ Attack ⇨ Return to FWA Clan (15-30min tops)**"
     assert components[7].content == "**Players to return:**"
-    assert components[8].content == "**Two** - `#P2` - <@123456789>"
+    assert components[8].content == "**Two** · `#P2` · <@123456789>"
     assert components[10].content == "**Total missing:** 1/2 players"
     assert components[12].components[0].label == "Open Alpha in-Game"
     assert components[12].components[0].url == (
@@ -399,7 +399,7 @@ def test_reminder_message_splits_large_roster_and_whitelists_mentions(monkeypatc
     bot = FakeBot()
     _wire(monkeypatch, mongo=mongo, bot=bot, links={})
     away = [
-        {"tag": f"#P{i}", "name": f"Player {i} @everyone " + "x" * 100,
+        {"tag": f"#P{i}", "name": f"Player {i} @everyone " + "x" * (600 if i == 0 else 100),
          "discord_id": str(1000 + i) if i % 2 == 0 else None}
         for i in range(50)
     ]
@@ -422,6 +422,9 @@ def test_reminder_message_splits_large_roster_and_whitelists_mentions(monkeypatc
         assert all(isinstance(user_id, int) for user_id in message["user_mentions"])
     assert len(rows) == 50
     assert all("`#P" in row for row in rows)
+    assert any(row.endswith(" · no Discord link") for row in rows)
+    assert rows[0].endswith(" · `#P0` · <@1000>")
+    assert len(rows[0]) <= 500
 
 
 def test_remind_now_no_active_list(monkeypatch):

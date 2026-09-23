@@ -349,13 +349,11 @@ async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
         except (TypeError, ValueError):
             discord_id = None
         recipient = f"<@{discord_id}>" if discord_id else "no Discord link"
-        if section == "FWA":
-            line = f"**{safe_name}** - `{player['tag']}` - {recipient}"
-        else:
-            line = f"**{safe_name}** · {recipient}"
-        # Reserve room for header and footer.  A very long name cannot make a
-        # component invalid; Discord receives a shortened display name.
-        line = line[:500]
+        suffix = f" · `{player['tag']}` · {recipient}"
+        # Reserve room for header and footer. Shorten only the display name so
+        # a long name cannot hide the player tag or Discord recipient.
+        safe_name = safe_name[:max(0, 500 - len(suffix) - 4)]
+        line = f"**{safe_name}**{suffix}"
         if lines and size + len(line) + 1 > 3000:
             chunks.append((lines, recipient_ids))
             lines, recipient_ids, size = [], [], 0
@@ -395,11 +393,11 @@ async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
             ]
         else:
             lines = [
-                Text(content="## ⚔️ Return home for the next war"),
+                Text(content="## ⚔️ Want to join the next war?"),
                 Separator(),
-                Text(content=f"Our next war is coming soon. Please return to **{doc['clan_name']}** to take part and earn more ore and loot."),
+                Text(content=f"Our next war is coming soon. If you would like to participate and earn extra ore and loot, please return to **{doc['clan_name']}**."),
                 Separator(),
-                Text(content="**Players to return:**"),
+                Text(content="**Players currently away:**"),
                 Text(content="\n".join(chunk_lines)),
             ]
         await bot_instance.rest.create_message(
