@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import quote
 
 import coc
 import hikari
@@ -27,6 +28,8 @@ from hikari.impl import (
     ContainerComponentBuilder as Container,
     TextDisplayComponentBuilder as Text,
     SeparatorComponentBuilder as Separator,
+    MessageActionRowBuilder as ActionRow,
+    LinkButtonBuilder as LinkButton,
 )
 
 from utils import lazy_cwl_store as store
@@ -337,6 +340,7 @@ async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
     lines: list[str] = []
     recipient_ids: list[int] = []
     size = 0
+    section = store.normalize_section(doc.get("section"))
     for player in away:
         raw_name = str(player.get("name") or "Unknown")
         safe_name = raw_name.replace("@", "@\u200b")
@@ -345,7 +349,10 @@ async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
         except (TypeError, ValueError):
             discord_id = None
         recipient = f"<@{discord_id}>" if discord_id else "no Discord link"
-        line = f"**{safe_name}** · {recipient}"
+        if section == "FWA":
+            line = f"**{safe_name}** - `{player['tag']}` - {recipient}"
+        else:
+            line = f"**{safe_name}** · {recipient}"
         # Reserve room for header and footer.  A very long name cannot make a
         # component invalid; Discord receives a shortened display name.
         line = line[:500]
@@ -365,17 +372,35 @@ async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
         parsed_role_id = None
 
     for index, (chunk_lines, chunk_recipient_ids) in enumerate(chunks):
-        section = store.normalize_section(doc.get("section"))
-        footer = ("Please return to your Main home clan when you are able."
-                  if section == "MAIN" else
-                  "Go back to your home clan for the war. Train, join, attack, return. About 15 to 30 minutes.")
-        lines = [
-            Text(content=f"## 🚪 Time to go back to {doc['clan_name']}"),
-            Separator(),
-            Text(content="\n".join(chunk_lines)),
-            Separator(),
-            Text(content=footer),
-        ]
+        if section == "FWA":
+            clan_name = doc["clan_name"]
+            clan_tag = doc["clan_tag"]
+            lines = [
+                Text(content=f"## 📢 FWA Sync War - Return to {clan_name}"),
+                Separator(),
+                Text(content="⚔️ **FWA SYNC WAR TIME** ⚔️"),
+                Text(content=f"Please return to **{clan_name}** `{clan_tag}` for sync war!"),
+                Separator(),
+                Text(content="**Workflow: Join CWL Clan ⇨ Attack ⇨ Return to FWA Clan (15-30min tops)**"),
+                Separator(),
+                Text(content="**Players to return:**"),
+                Text(content="\n".join(chunk_lines)),
+                Separator(),
+                Text(content=f"**Total missing:** {len(away)}/{len(doc.get('players', []))} players"),
+                Separator(),
+                ActionRow(components=[LinkButton(
+                    url=f"https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(clan_tag, safe='')}",
+                    label=f"Open {clan_name} in-Game",
+                )]),
+            ]
+        else:
+            lines = [
+                Text(content=f"## 🚪 Time to go back to {doc['clan_name']}"),
+                Separator(),
+                Text(content="\n".join(chunk_lines)),
+                Separator(),
+                Text(content="Please return to your Main home clan when you are able."),
+            ]
         await bot_instance.rest.create_message(
             channel=channel,
             components=[Container(accent_color=GOLD_ACCENT, components=lines)],

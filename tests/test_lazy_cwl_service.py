@@ -356,8 +356,37 @@ def test_main_manual_reminder_fails_closed_when_link_lookup_fails(monkeypatch):
     assert bot.rest.sent == []
 
 
+def test_fwa_reminder_preserves_clan_link_player_tags_and_workflow(monkeypatch):
+    doc = _list_doc("list-1", clan_tag="ABC", clan_name="Alpha")
+    doc["players"] = [{"tag": "#P1"}, {"tag": "#P2"}]
+    mongo = _fake_mongo([doc], clans=[{"_id": "c1", "tag": "#ABC", "role_id": "555"}])
+    bot = FakeBot()
+    _wire(monkeypatch, mongo=mongo, bot=bot, links={})
+
+    asyncio.run(service._send_reminder_message(
+        doc, [{"tag": "#P2", "name": "Two", "discord_id": 123456789}]
+    ))
+
+    sent = bot.rest.sent[0]
+    components = sent["components"][0].components
+    assert components[0].content == "## 📢 FWA Sync War - Return to Alpha"
+    assert components[2].content == "⚔️ **FWA SYNC WAR TIME** ⚔️"
+    assert components[3].content == "Please return to **Alpha** `#ABC` for sync war!"
+    assert components[5].content == "**Workflow: Join CWL Clan ⇨ Attack ⇨ Return to FWA Clan (15-30min tops)**"
+    assert components[7].content == "**Players to return:**"
+    assert components[8].content == "**Two** - `#P2` - <@123456789>"
+    assert components[10].content == "**Total missing:** 1/2 players"
+    assert components[12].components[0].label == "Open Alpha in-Game"
+    assert components[12].components[0].url == (
+        "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23ABC"
+    )
+    assert sent["user_mentions"] == [123456789]
+    assert sent["role_mentions"] == [555]
+
+
 def test_reminder_message_splits_large_roster_and_whitelists_mentions(monkeypatch):
     doc = _list_doc("list-1", clan_tag="ABC", clan_name="Alpha")
+    doc["players"] = [{"tag": f"#P{i}"} for i in range(50)]
     mongo = _fake_mongo([doc], clans=[{"_id": "c1", "tag": "#ABC", "role_id": "555"}])
     bot = FakeBot()
     _wire(monkeypatch, mongo=mongo, bot=bot, links={})
@@ -372,11 +401,19 @@ def test_reminder_message_splits_large_roster_and_whitelists_mentions(monkeypatc
     assert len(bot.rest.sent) >= 2
     assert bot.rest.sent[0]["role_mentions"] == [555]
     assert all(message["role_mentions"] == [] for message in bot.rest.sent[1:])
+    rows = []
     for message in bot.rest.sent:
-        recipient_text = message["components"][0].components[2].content
+        components = message["components"][0].components
+        recipient_text = components[8].content
+        rows.extend(recipient_text.splitlines())
         assert "@\u200beveryone" in recipient_text
         assert len(recipient_text) <= 3000
+        assert len(components) <= 40
+        assert components[10].content == "**Total missing:** 50/50 players"
+        assert components[12].components[0].url.endswith("tag=%23ABC")
         assert all(isinstance(user_id, int) for user_id in message["user_mentions"])
+    assert len(rows) == 50
+    assert all("`#P" in row for row in rows)
 
 
 def test_remind_now_no_active_list(monkeypatch):
