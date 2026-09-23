@@ -53,4 +53,4 @@ def test_review_describes_sequence_settings_even_when_dates_match():
     after["reminder_sequence"]["interval_hours"] = 744
     summary = change_summary(before, after, "2026-09")
     assert "every 744 hours" in summary
-    assert "3 hours before closing" in summary
+    assert "3 hours before signups close" in summary

@@ -5,8 +5,9 @@ It replaces the need to edit individual reminder commands when changing a
 message, its Main/Lazy copy, artwork, button links, timing, destination, or
 role ping.
 
-The dashboard opens a durable draft for the selected CWL cycle. Reopening it
-resumes that administrator's saved draft rather than starting over. Closing
+The dashboard opens a durable draft for the selected CWL cycle. With no month
+selected, it opens the current month, never an older month's draft. Reopening it
+resumes that administrator's saved draft for that month rather than starting over. Closing
 Discord does not discard edits. Every button rechecks that the clicker has
 Manage Server or Administrator permission, owns that draft, and is still in the
 originating guild.
@@ -32,11 +33,17 @@ replacement** to replace it; the preview refreshes as soon as the upload saves
 to the draft. **Restore default image** explains that it returns the native
 artwork and is disabled when that artwork is already selected.
 
-Open **Schedule** to set a message to run monthly, after signups open, before
-the signup deadline, at one specific date and time, manually, or using a legacy
-reminder chain. The panel shows the next resolved occurrences in the configured
-timezone. **Settings** holds the single campaign signup deadline and timezone;
-deadline-aware reminders follow that one value.
+Open **Schedule** and follow the steps: **Signups open**, **Signups close**, then
+**Reminders**. Opening and closing controls are together, and the upcoming list
+shows only future draft messages. Advanced controls retain other message timing
+options. The configured timezone is shown beside the dates; Discord date labels
+render in each viewer's local timezone.
+
+Overview separates the **draft plan** from **live delivery status**. Editing a
+draft immediately changes its preview, but only Review and Apply changes the
+live scheduler. Both drafts and applied settings are stored in MongoDB and
+survive bot restarts. A configured signup time that has already passed remains
+the reminder anchor; applying the draft does not replay that signup post.
 
 ### Reminder sequence
 
@@ -48,8 +55,16 @@ because interval timing determines how many slots can fit. The recommended
 starting plan is four evenly spread reminders, with the final call three hours
 before signup close and a three-hour minimum gap. The panel resolves and shows
 signup opening, deadline, final reminder, and **View all send times** before
-anything is applied. If a new opening or deadline would make the sequence
-impossible, the dashboard explains why and leaves the durable draft unchanged.
+anything is applied. The reminder count includes the final reminder. If a new
+opening or closing date temporarily makes the plan impossible, the date edit
+still saves to the draft with a warning. Complete both date edits before Review
+and Apply; an invalid plan cannot become live.
+
+Reminders always calculate from the configured signup opening and closing
+dates. A delivered signup post does not freeze the opening date: an explicit
+date edit moves the remaining reminders while preserving delivered content and
+preventing duplicate sends. Old compatibility schedule fields cannot silently
+override an explicitly edited date.
 
 Configuring a sequence preserves the text and artwork of numbered reminder
 slots. It activates only the slots that have a resolved send time; unused slots
@@ -75,6 +90,8 @@ audiences, schedule dates, and deadline before presenting the final apply
 button. Confirmation reloads the draft and refuses to apply if it changed after
 review. Applying uses a revision check so an older editor cannot silently
 overwrite a newer saved campaign. This-month applies protect already-sent posts.
+Monthly defaults reviews show the first affected future month, and saving them
+keeps the current month's live campaign unchanged.
 If an apply reports that another administrator saved first, use **Reload saved
 version** in Settings. It asks for a second confirmation, discards only your
 owned draft, and opens a fresh draft from the current saved campaign. It never

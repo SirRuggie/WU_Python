@@ -291,7 +291,8 @@ def _monthly_parts(schedule: dict) -> tuple[int, int, int]:
 
 
 def _schedule_for(campaign: dict, message_id: str, message: dict) -> dict:
-    transitional = campaign.get("schedules", {}).get(message_id)
+    transitional_schedules = campaign.get("schedules") or {}
+    transitional = transitional_schedules.get(message_id)
     return transitional if isinstance(transitional, dict) and transitional else message.get("schedule", {})
 
 
@@ -377,22 +378,35 @@ def validate_campaign(campaign: dict) -> None:
         pendulum.timezone(campaign.get("timezone", DEFAULT_TIMEZONE))
     except Exception as exc:
         raise ValueError("Campaign timezone is invalid") from exc
+    timezone_name = campaign.get("timezone", DEFAULT_TIMEZONE)
     deadline_rule = campaign.get("signup_deadline", {})
     try:
         if isinstance(deadline_rule, str):
-            pendulum.parse(deadline_rule, tz=campaign.get("timezone", DEFAULT_TIMEZONE))
+            pendulum.parse(deadline_rule, tz=timezone_name)
         elif isinstance(deadline_rule, dict):
             hour, minute = int(deadline_rule.get("hour", 17)), int(deadline_rule.get("minute", 0))
             if not 0 <= hour <= 23 or not 0 <= minute <= 59:
                 raise ValueError
-            if "day" in deadline_rule and not 1 <= int(deadline_rule["day"]) <= 31:
-                raise ValueError
-            if int(deadline_rule.get("month_end_offset_days", 0)) < 0:
+            if "at" in deadline_rule:
+                if not isinstance(deadline_rule["at"], str) or not deadline_rule["at"].strip():
+                    raise ValueError
+                pendulum.parse(deadline_rule["at"], tz=timezone_name)
+            elif "day" in deadline_rule:
+                if isinstance(deadline_rule["day"], bool) or not 1 <= int(deadline_rule["day"]) <= 31:
+                    raise ValueError
+            elif "month_end_offset_days" in deadline_rule:
+                offset = deadline_rule["month_end_offset_days"]
+                if isinstance(offset, bool) or not 0 <= int(offset) <= 27:
+                    raise ValueError
+            else:
                 raise ValueError
         else:
             raise ValueError
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError("Signup deadline is invalid") from exc
+    transitional_schedules = campaign.get("schedules")
+    if transitional_schedules is not None and not isinstance(transitional_schedules, dict):
+        raise ValueError("Legacy campaign schedules are invalid")
     for message_id, message in campaign["messages"].items():
         if not isinstance(message_id, str) or not re.fullmatch(r"[A-Za-z0-9:_-]{1,64}", message_id):
             raise ValueError("A campaign message id is invalid")
@@ -436,6 +450,8 @@ def validate_campaign(campaign: dict) -> None:
                     except (TypeError, ValueError) as exc:
                         raise ValueError(f"{message_id}/{variant} button emoji is invalid") from exc
         schedule = _schedule_for(campaign, message_id, message)
+        if not isinstance(schedule, dict):
+            raise ValueError(f"{message_id} schedule is invalid")
         mode = schedule.get("mode", "manual")
         if mode not in {"monthly", "after_open", "before_close", "specific", "manual", "legacy_chain"}:
             raise ValueError(f"{message_id} schedule mode is invalid")
@@ -595,6 +611,31 @@ async def find_draft(
     return rows[0] if rows else None
 
 
+def _drop_superseded_transitional_schedules(previous: dict, candidate: dict) -> dict:
+    """Make an explicit canonical schedule edit win over old top-level data.
+
+    Early dashboard drafts stored timing under ``campaign.schedules``.  That
+    compatibility value must continue to win until an editor actually changes
+    the corresponding message schedule; otherwise merely loading and saving an
+    old campaign would replace its real timing with merged default fields.
+    """
+    result = copy.deepcopy(candidate)
+    transitional = result.get("schedules")
+    if not isinstance(transitional, dict):
+        return result
+    old_messages = previous.get("messages", {}) if isinstance(previous, dict) else {}
+    for message_id, message in result.get("messages", {}).items():
+        if not isinstance(message, dict) or "schedule" not in message:
+            continue
+        old_message = old_messages.get(message_id, {})
+        old_schedule = old_message.get("schedule") if isinstance(old_message, dict) else None
+        if message["schedule"] != old_schedule:
+            transitional.pop(message_id, None)
+    if not transitional:
+        result.pop("schedules", None)
+    return result
+
+
 async def patch_draft(mongo, draft: str, patch: dict) -> dict:
     row = await load_draft(mongo, draft)
     if not row:
@@ -604,8 +645,11 @@ async def patch_draft(mongo, draft: str, patch: dict) -> dict:
         raise ValueError("Draft patch contains unsupported fields")
     updated = copy.deepcopy(row)
     if "campaign" in patch:
-        validate_campaign(patch["campaign"])
-        updated["campaign"] = copy.deepcopy(patch["campaign"])
+        campaign = _drop_superseded_transitional_schedules(
+            row.get("campaign", {}), patch["campaign"],
+        )
+        validate_campaign(campaign)
+        updated["campaign"] = campaign
     if "scope" in patch:
         if patch["scope"] not in {"cycle", "defaults"}:
             raise ValueError("scope must be cycle or defaults")
@@ -631,6 +675,13 @@ def _sent_ids(deliveries, sent_occurrences=()):
 
 
 def _protect_sent(candidate: dict, current: dict, cycle: str, deliveries: list[dict], sent_occurrences=()):
+    """Keep delivered audience content immutable without freezing event timing.
+
+    A message schedule is shared by both audiences and is also the signup
+    opening anchor for reminder sequences.  Delivery protects the rendered
+    variant that was posted; it does not turn the event's configured start
+    time into immutable content.
+    """
     protected = []
     for oid in _sent_ids(deliveries, sent_occurrences):
         try:
@@ -641,7 +692,6 @@ def _protect_sent(candidate: dict, current: dict, cycle: str, deliveries: list[d
             continue
         old_message = current["messages"][message_id]
         new_message = candidate.setdefault("messages", {}).setdefault(message_id, {})
-        new_message["schedule"] = copy.deepcopy(old_message.get("schedule", {"mode": "manual"}))
         new_message.setdefault("variants", {})[variant] = copy.deepcopy(old_message.get("variants", {}).get(variant, {}))
         protected.append(oid)
     return protected
@@ -679,15 +729,17 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
         candidate, live["campaign"], cycle, live["deliveries"],
         live.get("sent_occurrences", ()),
     ) if scope == "cycle" else []
-    resolve_schedule(candidate, cycle)
-    if scope == "defaults" and candidate.get("reminder_sequence", {}).get("enabled"):
-        # Reject a rule that fits this month but would overfill a longer month
-        # or bunch reminders in February when monthly defaults roll forward.
-        month = _month(cycle, candidate.get("timezone", DEFAULT_TIMEZONE))
+    active_cycle = cycle_key(timezone_name=candidate.get("timezone", DEFAULT_TIMEZONE))
+    if scope == "defaults":
+        # Defaults begin after the actual active cycle, regardless of which
+        # month the editor happened to browse when opening the draft. Validate
+        # the same next 12 cycles that can inherit this rule in production.
+        month = _month(active_cycle, candidate.get("timezone", DEFAULT_TIMEZONE))
         for offset in range(1, 13):
             resolve_schedule(candidate, month.add(months=offset).format("YYYY-MM"))
+    else:
+        resolve_schedule(candidate, cycle)
     target_id = defaults_id(guild_id) if scope == "defaults" else cycle_id(guild_id, cycle)
-    active_cycle = cycle_key(timezone_name=candidate.get("timezone", DEFAULT_TIMEZONE))
     if scope == "defaults":
         # Monthly defaults begin with the next cycle. Materialize the current
         # effective campaign before changing its base so unsent current-month

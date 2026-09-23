@@ -9,9 +9,9 @@ def change_summary(before_campaign, after_campaign, cycle):
     if before_campaign.get("reminder_sequence") != after_campaign.get("reminder_sequence"):
         sequence = after_campaign.get("reminder_sequence") or {}
         if sequence.get("enabled"):
-            spacing = (f"{sequence['count']} reminders, evenly spread" if sequence.get("mode") == "evenly"
-                       else f"one reminder every {sequence['interval_hours']} hours")
-            lines.append(f"• Reminder sequence: **{spacing}**. Final reminder **{sequence['final_hours']} hours before closing**; at least **{sequence['min_gap_hours']} hours apart**.")
+            spacing = (f"{sequence['count']} evenly spread reminders total, including the final reminder" if sequence.get("mode") == "evenly"
+                       else f"every {sequence['interval_hours']} hours after signups open, plus a final reminder")
+            lines.append(f"• Reminders: **{spacing}**. Final reminder **{sequence['final_hours']} hours before signups close**; at least **{sequence['min_gap_hours']} hours apart**.")
         else:
             lines.append("• Reminders use individual schedules.")
     if before_campaign.get("timezone") != after_campaign.get("timezone"):

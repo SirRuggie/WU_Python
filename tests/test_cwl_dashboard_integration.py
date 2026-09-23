@@ -463,7 +463,7 @@ def test_sent_audience_is_immutable_while_unsent_audience_can_change(monkeypatch
         lazy = result["campaign"]["messages"]["signup"]["variants"]["lazy"]
         assert main["title"] != "Must not replace sent"
         assert lazy["title"] == "Lazy remains editable"
-        assert result["campaign"]["messages"]["signup"]["schedule"]["day"] == 20
+        assert result["campaign"]["messages"]["signup"]["schedule"]["day"] == 25
         assert result["protected_sent"] == ["2026-10|signup|main"]
 
     run(scenario())

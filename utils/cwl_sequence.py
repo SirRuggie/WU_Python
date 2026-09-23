@@ -38,7 +38,12 @@ def validate(campaign: dict) -> None:
     if not isinstance(campaign, dict) or not isinstance(campaign.get("messages"), dict):
         raise ValueError("Campaign messages are missing.")
     settings = _settings(campaign)
-    if settings is None or settings.get("enabled") is not True:
+    if settings is None:
+        return
+    enabled = settings.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ValueError("Reminder sequence enabled must be true or false.")
+    if not enabled:
         return
     mode = settings.get("mode")
     if mode not in MODES:

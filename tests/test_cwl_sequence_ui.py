@@ -110,7 +110,7 @@ def test_interval_modal_uses_only_interval_lead_and_gap_and_keeps_internal_count
     }
 
 
-def test_invalid_deadline_does_not_save_or_make_sequence_editor_unopenable(monkeypatch):
+def test_intermediate_invalid_deadline_saves_so_sequence_can_be_repaired(monkeypatch):
     from utils import cwl_sequence
 
     draft = _draft() | {
@@ -119,17 +119,16 @@ def test_invalid_deadline_does_not_save_or_make_sequence_editor_unopenable(monke
         ),
     }
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", AsyncMock(return_value=draft))
-    save = AsyncMock()
+    save = AsyncMock(return_value=draft)
     monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", save)
     context = _ctx({"date": "2026-10-20", "time": "17:30", "timezone": "America/New_York"})
 
     asyncio.run(dashboard.submit_settings(context, "a" * 32 + "|specific", mongo=object()))
 
-    save.assert_not_awaited()
+    save.assert_awaited_once()
     rendered = _component_text(context.interaction.edit_initial_response.call_args.kwargs["components"])
-    assert "Reminder sequence was not changed" in rendered
-    # The unchanged valid campaign still renders a usable sequence panel.
-    assert "Final reminder" in _component_text(dashboard.sequence_panel(draft))
+    assert "Signup closing and timezone saved" in rendered
+    assert "Reminder timing needs attention before Review" in rendered
 
 
 def test_stale_numbered_schedule_submit_redirects_without_saving(monkeypatch):
@@ -151,22 +150,22 @@ def test_stale_numbered_schedule_submit_redirects_without_saving(monkeypatch):
     )
 
 
-def test_manual_signup_opening_cannot_bypass_sequence_validation(monkeypatch):
+def test_manual_signup_opening_saves_intermediate_sequence_repair(monkeypatch):
     from utils import cwl_sequence
 
     draft = _draft() | {
         "campaign": cwl_sequence.configure(cwl_campaign.default_campaign(), "evenly", count=4),
     }
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", AsyncMock(return_value=draft))
-    save = AsyncMock()
+    save = AsyncMock(return_value=draft)
     monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", save)
     context = _ctx()
     context.interaction.values = ("manual",)
 
     asyncio.run(dashboard.edit_schedule(context, "a" * 32 + "|signup", mongo=object()))
 
-    save.assert_not_awaited()
-    assert "Reminder sequence was not changed" in _component_text(
+    save.assert_awaited_once()
+    assert "Reminder timing needs attention before Review" in _component_text(
         context.interaction.edit_initial_response.call_args.kwargs["components"]
     )
 
