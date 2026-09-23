@@ -395,11 +395,12 @@ async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
             ]
         else:
             lines = [
-                Text(content=f"## 🚪 Time to go back to {doc['clan_name']}"),
+                Text(content="## ⚔️ Return home for the next war"),
                 Separator(),
+                Text(content=f"Our next war is coming soon. Please return to **{doc['clan_name']}** to take part and earn more ore and loot."),
+                Separator(),
+                Text(content="**Players to return:**"),
                 Text(content="\n".join(chunk_lines)),
-                Separator(),
-                Text(content="Please return to your Main home clan when you are able."),
             ]
         await bot_instance.rest.create_message(
             channel=channel,

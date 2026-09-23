@@ -317,7 +317,15 @@ def test_main_manual_reminder_refreshes_links_and_never_enables_schedule(monkeyp
     assert sent["channel"] == service.MAIN_CWL_CHANNEL
     assert sent["user_mentions"] == [123456789]
     assert sent["role_mentions"] == []
-    assert "Please return to your Main home clan" in sent["components"][0].components[-1].content
+    parts = sent["components"][0].components
+    assert parts[0].content == "## ⚔️ Return home for the next war"
+    assert parts[2].content == (
+        "Our next war is coming soon. Please return to **Alpha** to take part "
+        "and earn more ore and loot."
+    )
+    assert parts[4].content == "**Players to return:**"
+    assert parts[5].content == "**Away** · <@123456789>"
+    assert "Home" not in parts[5].content
     refreshed = asyncio.run(store.get_by_id(mongo, "main-list"))
     assert refreshed["reminders"]["sent_count"] == 1
     assert refreshed["reminders"]["enabled"] is False
