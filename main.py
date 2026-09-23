@@ -48,10 +48,15 @@ from utils.startup import (
     unique_extensions,
 )
 from utils.media_store import MediaStore
+from utils.discord_file_upload import install_file_upload_capture
 from extensions.autocomplete import preload_autocomplete_cache
 from utils import bot_data
 
 load_dotenv()
+
+# Hikari 2.6 caches modal deserializers while GatewayBot is constructed. Install
+# support for Discord's newer file-upload modal payload before that cache exists.
+install_file_upload_capture()
 
 # Create a GatewayBot instance with intents and custom rate limit settings
 #

@@ -14,23 +14,25 @@ timing are managed together there; see [CWL dashboard](cwl-dashboard.md).
 1. Open `/content dashboard`. To update an existing post, supply its Discord
    message link in `message-link`.
 2. Choose the document if it was not selected by the message link.
-3. Select the image in the image menu. The panel gives you a command containing
-   the selected draft ID.
-4. Run `/content image-upload draft:<shown ID> image:<attachment>`. Use a PNG,
-   JPG, GIF, or WEBP within the bot's 10 MB byte and 40-million-pixel limits.
-5. Continue in the **new private editor returned by the upload command**. The
-   image is uploaded to R2 but is still a draft; the template and public post
-   have not changed.
+3. Select the image in the image menu. The editor shows its current draft image
+   beneath the menu so you can confirm the selection, then click **Upload replacement**.
+4. Choose a PNG, JPG, GIF, or WEBP in Discord's upload modal. It must fit the
+   bot's 10 MB byte and 40-million-pixel limits.
+5. The preview refreshes to the uploaded image in the same private editor.
+   The image is uploaded to R2 but is still
+   a draft; the template and public post have not changed.
 6. Use **Preview**, then **Save template** for future setup posts and/or
    **Update selected post** for the linked message. These are separate actions;
    saving a template does not update all previously published messages.
 
-The original editor remains an older draft. Continue in the newest one to keep
-the uploaded image and any edits together. A draft ID is not authorization:
-the uploader must still be its owner, in the same guild, with Manage Server.
+`/content image-upload` remains available as a fallback. A draft ID is not
+authorization: the uploader must still be its owner, in the same guild, with
+Manage Server.
 
-To restore the original artwork, select the image and click **Reset selected
-image**, then preview and save or update the selected post.
+To restore the original artwork, select the image and click **Restore default
+image**, then preview and use the green **Save template** button or update the selected post.
+The restore button is disabled when the draft already uses the default image.
+The selection stays active and the editor immediately shows the restored default.
 
 | Document | Editable images |
 | --- | --- |
@@ -85,3 +87,32 @@ step. Validate that with a test member during deployment.
 
 See [research, architecture decision, and evidence](recruit-content-improvements.md)
 for the primary sources and remaining design work.
+
+## Native upload compatibility and verification
+
+Discord's [File Upload component](https://docs.discord.com/developers/components/reference#file-upload)
+uses a Label (type 18) containing a File Upload (type 19). Submission values
+identify entries in `data.resolved.attachments`. The pinned Hikari 2.6.0 does
+not expose those modal fields, so `utils/discord_file_upload.py` preserves only
+`content_upload_submit:` submissions for one-shot consumption. Its cache is
+bounded to 256 entries and expires entries after 20 minutes. `main.py` installs
+the adapter before constructing `GatewayBot`, which caches its deserializers.
+
+Verification on 2026-09-22:
+
+- 18 native-upload tests cover documented payload deserialization, startup
+  ordering, modal construction, dispatcher routing, same-editor updates,
+  permissions/ownership/expiry, invalid files, upload failures, row limits,
+  and the existing text-modal path.
+- 141 focused upload, dashboard, dispatcher, state, startup, storage, and
+  recruit-setup tests passed. Compilation and diff/encoding/structure checks
+  passed.
+- The full suite produced 2,320 passes, 2 skips, and 3 failures. All three
+  failures were reproduced from unchanged baseline commit `1580736`: two
+  clan-logo error-response fixtures lack the required role/context shape,
+  and the help-catalog test expects 104 paths where the baseline has 105.
+- A sandbox-only asyncio stall was isolated: the same card-trading test
+  completed outside the sandbox. The full suite above ran outside it.
+
+These tests exercise application/SDK behavior with simulated Discord uploads;
+they do not establish a successful upload from a live Discord client.
