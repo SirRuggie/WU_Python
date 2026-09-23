@@ -92,7 +92,6 @@ Recruit role automatically two hours after assignment.
 | `/recruit dashboard` | Open the complete new-member onboarding dashboard. |
 | `/setup recruit-aboutus` | Post the family overview and onboarding flow. |
 | `/content dashboard` | Privately edit recruit text and images; preview, save a template, or update a linked post. See [the content editor guide](docs/content-dashboard.md). |
-| `/content image-upload` | Upload an attachment to the selected draft image slot in R2; preview before saving or publishing. |
 | `/setup recruit-check` | Privately check recruit posting permissions, acknowledgement roles, next channels, and R2 configuration (Manage Server). |
 | `/setup recruit-familyparticulars` | Post family particulars and war rules. |
 | `/setup recruit-strikesystem` | Post the strike-system rules. |
@@ -104,12 +103,12 @@ Recruit role automatically two hours after assignment.
 Clan administration and the family's FWA toolkit: clan dashboards and info
 hubs, logo and banner uploads, FWA base layouts, FWA Chocolate lookups, war
 weight calculation, Town Hall upgrade notes, and one-command war plans for
-win, loss, blacklist, and mismatch scenarios. The LazyCWL suite snapshots FWA
-rosters during CWL, pings players who still need to return for sync wars, and
-can run those pings automatically on a schedule.
+win, loss, blacklist, and mismatch scenarios. The `/lazycwl` dashboard captures
+FWA rosters during CWL, tracks returning players, and manages manual and
+scheduled return reminders. Older `/fwa lazycwl-*` commands open this dashboard.
 
 <details>
-<summary><strong>Command reference — Clans &amp; FWA (21 commands)</strong></summary>
+<summary><strong>Command reference — Clans &amp; FWA (16 commands)</strong></summary>
 <br>
 
 | Command | Description |
@@ -129,15 +128,7 @@ can run those pings automatically on a schedule.
 | `/fwa upload-images` | Upload FWA war and active base images. |
 | `/fwa war-plans` | Generate a war plan for win, loss, blacklist, or mismatch. |
 | `/fwa weight` | Calculate war weight from a storage value. |
-| `/fwa lazycwl-snapshot` | Snapshot FWA rosters for LazyCWL tracking. |
-| `/fwa lazycwl-ping` | Ping missing players to return for FWA sync. |
-| `/fwa lazycwl-status` | List active LazyCWL snapshots. |
-| `/fwa lazycwl-roster` | View a LazyCWL snapshot roster. |
-| `/fwa lazycwl-reset` | Deactivate completed LazyCWL snapshots. |
-| `/fwa lazycwl-autopings-start` | Start periodic missing-player pings. |
-| `/fwa lazycwl-autopings-stop` | Stop periodic pings for a snapshot. |
-| `/fwa lazycwl-autopings-status` | Show active auto-ping schedules. |
-| `/fwa lazycwl-remove-player` | Remove players from snapshot tracking. |
+| `/lazycwl` | Manage FWA saved rosters, players, and return reminders in one dashboard. |
 
 </details>
 

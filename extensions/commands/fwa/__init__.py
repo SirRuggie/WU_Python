@@ -4,7 +4,7 @@ import lightbulb
 # `from extensions.commands.fwa import loader, fwa`). lightbulb re-adds this loader to
 # the client once per fwa module that loads, so ANY `@loader.listener(...)` attached to
 # it fires once PER fwa module (~9x), not once. If you add a listener here, guard it to
-# run a single time (see on_bot_started in lazy_cwl.py) or put it on a module-local
+# run a single time or put it on a module-local
 # Loader instead. Commands and components are fine; event listeners are the trap.
 loader = lightbulb.Loader()
 fwa = lightbulb.Group("fwa", "All FWA-related commands")

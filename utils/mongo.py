@@ -80,7 +80,9 @@ class MongoClient(AsyncMongoClient):
         # separate from durable walkthrough records in recruit_onboarding so a
         # TTL index cannot remove role-cleanup history.
         self.recruit_challenges = self.__settings.get_collection("recruit_challenges")
+        # Keep legacy snapshots available for the idempotent dashboard migration.
         self.lazy_cwl_snapshots = self.__settings.get_collection("lazy_cwl_snapshots")
+        self.lazy_cwl_lists = self.__settings.get_collection("lazy_cwl_lists")
         # CWL reminder scheduling. cwl_reminder holds one singleton "schedule"
         # document (base time, followups, delivery_issues); cwl_pending_reminders
         # holds one row per outstanding job, keyed by job_id. Keep them separate:

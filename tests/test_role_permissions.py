@@ -53,7 +53,7 @@ class FakeCollection:
 
 def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     paths = command_paths()
-    expected_catalog_total = 95
+    expected_catalog_total = 87
 
     # /cards is retired along with the Clash of Cards event (see
     # utils.startup.RETIRED_EXTENSIONS) and hidden from the catalog, so the
@@ -73,6 +73,8 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     assert {"/poll create", "/poll view", "/poll active"} <= paths
     assert not any(path == "/cwl-announcement" or path.startswith("/cwl-reminder ") for path in paths)
     assert "/lazyprep" not in paths
+    assert "/lazycwl" in paths
+    assert not any(path.startswith("/fwa lazycwl-") for path in paths)
 
 
 def test_role_group_registers_the_three_public_subcommands():

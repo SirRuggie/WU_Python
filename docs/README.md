@@ -65,9 +65,9 @@ before changing durable documentation.
   `/fwa blacklist add`), and how it shows up on `/todo` and in the points
   monitor's records.
 
-- [lazycwl-autopings.md](lazycwl-autopings.md) — the auto-ping scheduler (no
-  jobstore, Mongo-backed restore), the select-all + partial-failure pattern to
-  copy, and four unguarded 25-option menus that are clear only at current scale.
+- [lazycwl-dashboard.md](lazycwl-dashboard.md) — saved FWA rosters, player
+  management, and return reminders. [lazycwl-autopings.md](lazycwl-autopings.md)
+  redirects older scheduler documentation to the dashboard guide.
 
 - [ticket-console-operations.md](ticket-console-operations.md) — the implemented
   (not yet deployed) ticket operator source of truth: safe `/ticket` + `/tickets`
