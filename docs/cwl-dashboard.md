@@ -1,6 +1,7 @@
 # CWL Dashboard
 
-`/cwl dashboard` is the administrator-only workspace for CWL signup posts,
+`/cwl dashboard` opens the current month with no command options. It is the
+administrator-only workspace for CWL signup posts,
 reminders, and rosters. The CWL button in `/content dashboard` opens the same
 workspace. Every interaction rechecks Administrator permission, draft ownership,
 and server membership. Manage Server alone does not grant access.

@@ -613,15 +613,13 @@ def _modal_value(ctx: Any, custom_id: str) -> str:
 
 @cwl.register()
 class CWLDashboard(lightbulb.SlashCommand, name="dashboard", description="Edit CWL messages, schedules, and delivery settings"):
-    cycle = lightbulb.string("cycle", "Optional cycle in YYYY-MM; defaults to the active CWL cycle", default=None)
-
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: Any, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         if not await require_editor(ctx):
             return
         await ctx.defer(ephemeral=True)
-        selected_cycle = (await cwl_campaign.load_campaign(mongo, int(ctx.interaction.guild_id), self.cycle))["cycle"]
+        selected_cycle = (await cwl_campaign.load_campaign(mongo, int(ctx.interaction.guild_id)))["cycle"]
         draft = await cwl_campaign.find_draft(mongo, int(ctx.interaction.guild_id), int(ctx.user.id), cycle=selected_cycle)
         resumed = draft is not None
         if draft is None:
