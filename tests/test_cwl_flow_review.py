@@ -17,7 +17,7 @@ def run(coroutine):
 def context(*, guild_id=22, user_id=11):
     interaction = SimpleNamespace(
         guild_id=guild_id,
-        member=SimpleNamespace(permissions=hikari.Permissions.MANAGE_GUILD),
+        member=SimpleNamespace(permissions=hikari.Permissions.ADMINISTRATOR),
         edit_initial_response=AsyncMock(),
     )
     return SimpleNamespace(
@@ -85,7 +85,7 @@ def test_overview_shows_edited_signup_time_without_competing_send_times(monkeypa
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
     assert dashboard._discord_time(draft_time) in content
     assert dashboard._discord_time(live_time) not in content
-    assert "Some edits are not in use yet" in content
+    assert "Unsaved changes" in content
     assert "Next message" not in content
     assert "CWL announcements" in content
     assert "delivery" not in content.lower()
@@ -119,7 +119,7 @@ def test_overview_shows_one_next_message_only_for_settings_already_in_use(monkey
     }
     monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value=saved))
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
-    assert "These settings are saved." in content
+    assert "Saved." in content
     assert content.count("### Next message") == 1
     assert dashboard._discord_time(when) in content
     assert "delivery" not in content.lower()

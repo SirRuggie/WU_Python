@@ -141,7 +141,7 @@ def test_invalid_closing_stays_in_draft_with_not_scheduled_notice_and_live_plan_
         assert after["campaign"] == before["campaign"]
         assert _planned(after["schedule"]) == _planned(before["schedule"])
         assert "NOT SCHEDULED:" in _rendered_notice(context)
-        assert "previous sending schedule is unchanged" in _rendered_notice(context)
+        assert "Previous schedule kept" in _rendered_notice(context)
 
     _run(scenario())
 

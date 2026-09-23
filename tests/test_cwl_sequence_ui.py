@@ -21,7 +21,7 @@ def _ctx(values=None):
     return SimpleNamespace(
         user=SimpleNamespace(id=1),
         interaction=SimpleNamespace(
-            guild_id=2, member=SimpleNamespace(permissions=hikari.Permissions.MANAGE_GUILD),
+            guild_id=2, member=SimpleNamespace(permissions=hikari.Permissions.ADMINISTRATOR),
             message=None, components=[[SimpleNamespace(custom_id=key, value=value)] for key, value in values.items()],
             edit_initial_response=AsyncMock(),
         ),

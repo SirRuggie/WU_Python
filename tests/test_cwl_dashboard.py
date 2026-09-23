@@ -30,7 +30,7 @@ def _draft():
     return {"_id": "cwl:draft:2:" + "f" * 32, "token": "f" * 32, "user_id": 1, "guild_id": 2, "cycle": "2026-10", "base_revision": 4, "campaign": _campaign()}
 
 
-def _ctx(user_id=1, permissions=hikari.Permissions.MANAGE_GUILD):
+def _ctx(user_id=1, permissions=hikari.Permissions.ADMINISTRATOR):
     return SimpleNamespace(
         user=SimpleNamespace(id=user_id),
         interaction=SimpleNamespace(guild_id=2, member=SimpleNamespace(permissions=permissions)),
@@ -57,14 +57,14 @@ def test_dashboard_actions_use_modal_and_state_contracts():
         assert action.is_modal and action.no_return and not action.preload_state
 
 
-def test_panel_has_four_workspaces_without_duplicate_settings(monkeypatch):
+def test_panel_has_three_workspaces_without_duplicate_settings(monkeypatch):
     monkeypatch.setattr(dashboard.cwl_campaign, "resolve_schedule", lambda *_args, **_kwargs: [])
     built = asyncio.run(dashboard.panel(_draft()))[0].build()[0]
     encoded = str(built)
-    for label in ("Overview", "Messages", "Schedule", "History"):
+    for label in ("Overview", "Messages", "Schedule"):
         assert label in encoded
     assert "'label': 'Settings'" not in encoded
-    assert "Save message changes" in encoded
+    assert "Save posts" in encoded
 
 
 def test_discord_component_nesting_for_all_dashboard_panels():
@@ -105,7 +105,7 @@ def test_discord_component_nesting_for_all_dashboard_panels():
 def test_message_editor_exposes_copy_artwork_buttons_delivery_and_safe_preview():
     built = dashboard.message_editor(_draft(), "signup", "main")[0].build()[0]
     encoded = str(built)
-    for label in ("Edit text", "Upload replacement", "Edit buttons", "Choose a channel", "Choose roles to ping", "Preview", "Current image in this draft"):
+    for label in ("Edit text", "Upload replacement", "Edit buttons", "Choose a channel", "Choose roles to ping", "Preview", "Post image"):
         assert label in encoded
 
 
@@ -138,7 +138,7 @@ def test_every_dashboard_load_rechecks_permission_owner_and_guild(monkeypatch):
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", AsyncMock(return_value=_draft()))
     denied = _ctx(permissions=hikari.Permissions.NONE)
     draft, problem = asyncio.run(dashboard._load(denied, object(), "draft"))
-    assert draft is None and "Manage Server" in problem
+    assert draft is None and "administrators" in problem
     wrong_user = _ctx(user_id=99)
     draft, problem = asyncio.run(dashboard._load(wrong_user, object(), "draft"))
     assert draft is None and "own" in problem

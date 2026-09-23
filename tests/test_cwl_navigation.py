@@ -64,7 +64,7 @@ def test_schedule_has_four_controls_and_legacy_settings_links_still_work():
         draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2030-10")
         components = await ui.panel(draft, "schedule")
         buttons = [node for node in nodes(components) if node.get("type") == 2]
-        assert len(buttons) == 8  # Four tabs, four task controls.
+        assert len(buttons) == 7  # Three tabs, four task controls.
         assert all(not node.get("disabled") for node in buttons)
         assert all(node.get("label") != "Settings" for node in buttons)
         legacy = await ui.tab(modal_context(), draft["token"] + "|settings", mongo=mongo)

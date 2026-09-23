@@ -173,8 +173,8 @@ ghost tickets, repair mismatches, and migrate legacy data.
 
 ### 📅 CWL & reminders
 
-CWL announcement text, artwork, destinations, timing, previews, and delivery
-history live in one private dashboard. A separate bonus-medal lottery selects
+CWL announcement text, artwork, destinations, timing, and previews live in one
+administrator-only dashboard. A separate bonus-medal lottery selects
 named LazyCWL recipients.
 
 <details>

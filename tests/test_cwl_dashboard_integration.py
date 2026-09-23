@@ -268,7 +268,7 @@ def modal_context(*, values=None, selections=(), guild_id=22, user_id=11):
     values = values or {}
     interaction = SimpleNamespace(
         guild_id=guild_id,
-        member=SimpleNamespace(permissions=hikari.Permissions.MANAGE_GUILD),
+        member=SimpleNamespace(permissions=hikari.Permissions.ADMINISTRATOR),
         components=[
             [SimpleNamespace(custom_id=custom_id, value=value)]
             for custom_id, value in values.items()
