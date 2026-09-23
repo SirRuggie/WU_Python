@@ -171,16 +171,34 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
         body.append(Text(content=note))
     docs = _selected_docs(lists, chosen)
     if tab == "overview":
+        missing = sum(_tag(clan["tag"]) not in by_tag for clan in clans)
+        capture_disabled = not chosen or (chosen != "ALL" and bool(docs)) or (chosen == "ALL" and missing == 0)
+        capture_label = "Capture current roster"
         if chosen == "ALL":
-            missing = sum(_tag(clan["tag"]) not in by_tag for clan in clans)
-            body.append(Text(content=f"### All clans\n{len(docs)} active saved rosters · {missing} clans without a roster.\nCapture creates missing rosters. Other actions affect active saved rosters. Review the exact clans before confirming."))
+            if not clans:
+                capture_label = "No clans to capture"
+                summary = "No FWA clans are configured for capture."
+            elif missing == 0:
+                capture_label = "All rosters already saved"
+                saved_summary = "This clan already has a saved roster." if len(clans) == 1 else f"All {len(clans)} clans already have a saved roster."
+                summary = f"**{saved_summary}**\nNothing new to capture. Choose a clan above to see its saved players and capture date."
+            else:
+                capture_label = f"Capture missing rosters ({missing})"
+                summary = f"Saved rosters: {len(docs)} · **Clans to capture: {missing}.**\nCapture saves the current members of the clans without a roster. Existing rosters are kept."
+            if docs:
+                if any(doc.get("legacy_snapshot_id") for doc in docs):
+                    summary += "\nYour previous snapshots were carried over to this dashboard."
+                summary += "\n**Need a fresh roster?** Select that clan, close its saved list, then capture again. Closing also stops its reminders."
+            body.append(Text(content=f"### All clans\n{summary}"))
         elif not chosen:
+            capture_label = "Choose a clan first"
             body.append(Text(content="### Choose a clan\nChoose one clan above to inspect its saved-list status."))
         else:
             doc = docs[0] if docs else None
             if not doc:
                 body.append(Text(content="### No saved list\nCapture the current clan members to start tracking who returns."))
             else:
+                capture_label = "Roster already saved"
                 away = away_counts.get(doc.get("clan_tag")); away_text = "unavailable" if away is None else str(away)
                 status = "Return status unavailable" if away is None else ("Players still away" if away else "Everyone returned")
                 if not doc.get("players"):
@@ -189,11 +207,11 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
                 reminders = f"On · every {settings.get('every_minutes')} minutes" if settings.get("enabled") else "Off"
                 body.append(Text(content=(f"### {_name(doc.get('clan_name') or chosen)}\nCaptured: {_fmt_time(doc.get('saved_at'))}\n"
                     f"Players captured: {len(doc.get('players', []))}\nAway now: {away_text}\n"
-                    f"Status: {status}\nReminders: {reminders}\nExpires: {_fmt_time(doc.get('expires_at'))}\nClose this saved list before capturing a new roster.")))
+                    f"Status: {status}\nReminders: {reminders}\nExpires: {_fmt_time(doc.get('expires_at'))}\n\n**Capture is unavailable because this clan already has a saved roster.** To capture its current members again, close this saved list first. Closing also stops its reminders.")))
         body.append(ActionRow(components=[
-            Button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_capture", token, chosen), label="Capture current roster", is_disabled=not chosen or (chosen != "ALL" and bool(docs)) or (chosen == "ALL" and not any(_tag(c["tag"]) not in by_tag for c in clans))),
+            Button(style=hikari.ButtonStyle.SECONDARY if capture_disabled else hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_capture", token, chosen), label=capture_label, is_disabled=capture_disabled),
             Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen), label="Send reminders", is_disabled=not docs),
-            Button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_close", token, chosen), label="Close saved list", is_disabled=not docs),
+            Button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_close", token, chosen), label="Close all saved rosters" if chosen == "ALL" else "Close saved list", is_disabled=not docs),
         ]))
     elif tab == "players":
         if chosen == "ALL" or not docs:
