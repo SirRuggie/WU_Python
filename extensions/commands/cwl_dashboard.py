@@ -446,7 +446,7 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
         if not changed:
             rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"### Next message\n{live_text}"))
             if live_next and live_next.get("id") and not paused:
-                rows.append(_button(f"cwl_skip:{draft_id}|{live_next['id']}", "Skip this message", style=hikari.ButtonStyle.SECONDARY))
+                rows.append(_button(f"cwl_skip:{draft_id}|{live_next['id']}", "Skip this message", style=hikari.ButtonStyle.DANGER))
 
     elif tab == "messages":
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Messages\nChoose a Main Clan or Lazy CWL post."))
@@ -1761,8 +1761,53 @@ async def skip(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJEC
     draft, problem = await _load(ctx, mongo, ref[0])
     if problem:
         return error_panel(problem)
-    await cwl_campaign.skip_occurrence(mongo, int(draft["guild_id"]), ref[1], cycle=_cycle(draft), user_id=int(ctx.user.id))
-    return await panel(draft, "overview", "Post skipped.", mongo=mongo)
+    live = await cwl_campaign.load_campaign(mongo, int(draft["guild_id"]), _cycle(draft))
+    occurrence = _pending_skip(live, ref[1])
+    if not occurrence:
+        return await panel(draft, "overview", "This post is no longer scheduled.", mongo=mongo)
+    state_id = uuid.uuid4().hex
+    await insert_state(mongo, {
+        "_id": state_id, "type": "cwl_skip_review", "user_id": int(ctx.user.id),
+        "guild_id": int(draft["guild_id"]), "draft_id": _draft_token(draft),
+        "occurrence_id": ref[1], "run_at": occurrence["run_at"],
+        "revision": live["revision"], "defaults_revision": live["defaults_revision"],
+        "recurring_version": live.get("recurring_version"),
+    }, ttl=timedelta(minutes=10))
+    audience = "Main Clan" if occurrence.get("variant") == "main" else "Lazy CWL"
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ERROR, components=[
+        hikari.impl.TextDisplayComponentBuilder(content=f"### Skip this message?\n**{_message_label(occurrence['message_id'])} · {audience}**\n{_discord_time(occurrence['run_at'])}\nOnly this post will be skipped."),
+        _button_group(
+            (f"cwl_skip_confirm:{state_id}", "Yes, skip", hikari.ButtonStyle.DANGER),
+            (f"cwl_tab:{_draft_token(draft)}|overview", "Cancel", hikari.ButtonStyle.SECONDARY),
+        ),
+    ])]
+
+
+def _pending_skip(live: dict, occurrence_id: str) -> dict | None:
+    completed = set(live.get("skipped", ())) | set(live.get("sent_occurrences", ())) | {
+        item.get("occurrence_id") for item in live.get("deliveries", ()) if item.get("status") == "sent"
+    }
+    return next((item for item in live["schedule"] if item["id"] == occurrence_id and item["id"] not in completed and _future(item.get("run_at"))), None)
+
+
+@register_action("cwl_skip_confirm", preload_state=False)
+@lightbulb.di.with_di
+async def confirm_skip(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
+    state = await get_state(mongo, action_id)
+    if not state or state.get("type") != "cwl_skip_review":
+        return error_panel("Confirmation expired. Open the dashboard and try again.")
+    if not can_edit(ctx) or int(state.get("user_id", 0)) != int(ctx.user.id) or int(state.get("guild_id", 0)) != int(ctx.interaction.guild_id):
+        return error_panel("Open your own administrator CWL dashboard.")
+    draft, problem = await _load(ctx, mongo, state["draft_id"])
+    if problem:
+        return error_panel(problem)
+    live = await cwl_campaign.load_campaign(mongo, int(draft["guild_id"]), _cycle(draft))
+    occurrence = _pending_skip(live, state["occurrence_id"])
+    if not occurrence or occurrence["run_at"] != state["run_at"] or any(live.get(key) != state.get(key) for key in ("revision", "defaults_revision", "recurring_version")):
+        return await panel(draft, "overview", "Schedule changed. Check the post and try again.", mongo=mongo)
+    result = await cwl_campaign.skip_occurrence(mongo, int(draft["guild_id"]), state["occurrence_id"], cycle=_cycle(draft), user_id=int(ctx.user.id))
+    notice = "Post skipped." if not result.get("schedule_sync_pending") else "Skip saved. Queue update pending."
+    return await panel(draft, "overview", notice, mongo=mongo)
 
 
 @register_action("cwl_retry", preload_state=False)

@@ -12,6 +12,9 @@ and server membership. Manage Server alone does not grant access.
 - **Messages**: Main Clan and Lazy CWL text, artwork, links, channels, and pings.
 - **Schedule**: signup opening, signup closing, and reminder timing.
 
+The red **Skip this message** button asks for confirmation. **Yes, skip** cancels
+only the displayed post; **Cancel** returns without changing the schedule.
+
 History, revision restore, and published-post editing controls are removed.
 Buttons left on older panels cannot run those actions. Delivery receipts remain
 in MongoDB to prevent duplicate posts and restore jobs after a reboot.
