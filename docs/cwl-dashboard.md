@@ -39,9 +39,11 @@ shows only future draft messages. Advanced controls retain other message timing
 options. The configured timezone is shown beside the dates; Discord date labels
 render in each viewer's local timezone.
 
-Overview separates the **draft plan** from **live delivery status**. Editing a
-draft immediately changes its preview, but only Review and Apply changes the
-live scheduler. Both drafts and applied settings are stored in MongoDB and
+Overview shows signup opening, closing, and reminder settings. If edits differ
+from the settings in use, it explains that the bot keeps the previous settings
+until **Review and save**. It does not show competing draft/live send times.
+Only when the displayed settings match those in use does it show one **Next
+message**. Both drafts and applied settings are stored in MongoDB and
 survive bot restarts. A configured signup time that has already passed remains
 the reminder anchor; applying the draft does not replay that signup post.
 

@@ -63,7 +63,7 @@ def test_panel_has_all_five_private_workspaces(monkeypatch):
     encoded = str(built)
     for label in ("Overview", "Messages", "Schedule", "Settings", "History"):
         assert label in encoded
-    assert "Pause campaign" in encoded
+    assert "Review and save" in encoded
 
 
 def test_discord_component_nesting_for_all_dashboard_panels():
@@ -104,7 +104,7 @@ def test_discord_component_nesting_for_all_dashboard_panels():
 def test_message_editor_exposes_copy_artwork_buttons_delivery_and_safe_preview():
     built = dashboard.message_editor(_draft(), "signup", "main")[0].build()[0]
     encoded = str(built)
-    for label in ("Edit text", "Upload replacement", "Edit buttons", "Delivery", "Preview", "Current image in this draft"):
+    for label in ("Edit text", "Upload replacement", "Edit buttons", "Channel & mentions", "Preview", "Current image in this draft"):
         assert label in encoded
 
 

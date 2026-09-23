@@ -20,7 +20,7 @@ def change_summary(before_campaign, after_campaign, cycle):
         close = cwl_campaign.signup_deadline(after_campaign, cycle)
         lines.append(f"• Signup deadline: <t:{int(close.timestamp())}:F>")
     if bool(before_campaign.get("paused")) != bool(after_campaign.get("paused")):
-        lines.append("• Campaign will be **paused**." if after_campaign.get("paused") else "• Campaign will be **active**.")
+        lines.append("• Automatic messages will be **paused**." if after_campaign.get("paused") else "• Automatic messages will be **on**.")
     next_times = {}
     for item in cwl_campaign.resolve_schedule(after_campaign, cycle):
         next_times.setdefault(item["message_id"], item.get("run_at"))

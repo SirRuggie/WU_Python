@@ -235,18 +235,18 @@ def _sequence_occurrences(campaign: dict, cycle: str) -> list[dict]:
 def _sequence_summary(campaign: dict, cycle: str) -> str:
     config = campaign.get("reminder_sequence")
     if not isinstance(config, dict) or not config.get("enabled"):
-        return "No reminder sequence configured. Individual reminder timing remains in use."
+        return "Each reminder uses its own time."
     try:
         all_occurrences = cwl_campaign.resolve_schedule(campaign, cycle)
         occurrences = _sequence_occurrences(campaign, cycle)
         opening = next((item.get("run_at") for item in all_occurrences if item.get("message_id") == "signup"), None)
         deadline = cwl_campaign.signup_deadline(campaign, cycle).isoformat()
     except ValueError as exc:
-        return f"⚠️ This sequence needs attention before it can be applied: {exc}"
+        return f"⚠️ Check these reminder settings before saving: {exc}"
     final = occurrences[-1].get("run_at") if occurrences else None
     mode = "Evenly spread" if config.get("mode") == "evenly" else f"Every {config.get('interval_hours')} hours"
     return (
-        f"**{mode}** · {len(occurrences)} draft-planned reminders\n"
+        f"**{mode}** · {len(occurrences)} reminders in total, including the final reminder\n"
         f"Signups open: {_discord_time(opening)}\n"
         f"Signup deadline: {_discord_time(deadline)}\n"
         f"Final reminder: {_discord_time(final)} · {config.get('final_hours', 3)} hours before close"
@@ -338,14 +338,14 @@ def error_panel(message: str) -> list:
 
 def _header(draft: dict, tab: str, notice: str | None = None) -> list:
     campaign = _campaign(draft)
-    paused = "⏸ Paused" if campaign.get("paused") else "● Active"
     scope = str(draft.get("scope") or "cycle")
     target = _scope_cycle(draft, scope)
-    target_label = f"Monthly defaults → **{target}**" if scope == "defaults" else f"Cycle → **{target}**"
+    month = datetime.strptime(target, "%Y-%m").strftime("%B %Y")
+    target_label = f"For future months, starting **{month}**" if scope == "defaults" else f"For **{month}**"
     rows: list = [
-        hikari.impl.TextDisplayComponentBuilder(content="## <:CWL:1399013745598009375> CWL Campaign"),
+        hikari.impl.TextDisplayComponentBuilder(content="## <:CWL:1399013745598009375> CWL announcements"),
         hikari.impl.TextDisplayComponentBuilder(
-            content=f"Draft: **{_cycle(draft)}** · Target: {target_label} · {paused}\nTimezone: **{campaign.get('timezone', 'America/New_York')}**"
+            content=f"{target_label}\nTimezone: **{campaign.get('timezone', 'America/New_York')}**"
         ),
     ]
     if notice:
@@ -369,42 +369,48 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
         }
         skipped = set((live or {}).get("skipped", ()))
         now = utcnow()
-        try:
-            draft_schedule = cwl_campaign.resolve_schedule(campaign, display_cycle, now=now)
-        except (TypeError, ValueError):
-            draft_schedule = []
-        draft_pending = [
-            entry for entry in draft_schedule
-            if entry.get("id") not in sent | skipped and _future(entry.get("run_at"), now=now)
-        ]
-        draft_next = draft_pending[0] if draft_pending else None
         draft_problem = _sequence_problem(campaign, display_cycle)
-        draft_text = "Draft timing needs attention. Fix the opening, closing, or reminder timing in Schedule." if draft_problem else "No remaining planned message in this draft."
-        if draft_next:
-            draft_text = f"**{_message_label(str(draft_next.get('message_id', draft_next.get('message_key', 'message'))))}** · {_discord_time(draft_next.get('run_at', draft_next.get('at')))}"
-
         live_pending = [
             entry for entry in (live or {}).get("schedule", ())
             if entry.get("id") not in sent | skipped and _future(entry.get("run_at"), now=now)
         ]
         live_next = live_pending[0] if live_pending else None
-        live_text = "Live delivery status is unavailable." if live is None else "No remaining live delivery."
+        live_text = "No more messages are scheduled for this month."
         live_campaign = (live or {}).get("campaign", {})
         paused = bool(live_campaign.get("paused", campaign.get("paused")))
         if live_next:
             live_text = f"**{_message_label(str(live_next.get('message_id', live_next.get('message_key', 'message'))))}** · {_discord_time(live_next.get('run_at', live_next.get('at')))}"
         if live is not None and paused:
-            live_text = "The live campaign is paused. No live message will send until it is resumed."
+            live_text = "Automatic messages are paused."
+        saved_campaign = (await _saved_defaults_campaign(mongo, int(draft["guild_id"]))) if mongo is not None and draft.get("scope") == "defaults" else live_campaign
+        changed = live is None or campaign != saved_campaign
+        status = "Review and save your changes before the bot uses them. Until then, it keeps the previous settings." if changed else "These settings are saved."
+        if live is None:
+            status = "Review and save your changes before the bot uses them."
+        if draft_problem:
+            status = "Check the dates in Schedule before saving: " + draft_problem
+        opening = _signup_opening(campaign, display_cycle)
+        closing = cwl_campaign.signup_deadline(campaign, display_cycle).isoformat()
+        sequence = campaign.get("reminder_sequence", {})
+        if sequence.get("enabled"):
+            timing = f"{sequence['count']} reminders, evenly spaced" if sequence.get("mode") == "evenly" else f"Every {sequence['interval_hours']} hours after signups open"
+            reminder_text = f"{timing}. Final reminder {sequence['final_hours']} hours before signups close."
+        else:
+            reminder_text = "Each reminder uses its own time. Check Schedule to change it."
         rows.extend([
             hikari.impl.SeparatorComponentBuilder(divider=True),
-            hikari.impl.TextDisplayComponentBuilder(content=f"### Draft signup deadline\n{_deadline(campaign)}"),
-            hikari.impl.TextDisplayComponentBuilder(content=f"### Next delivery · Draft plan\n{draft_text}"),
-            hikari.impl.TextDisplayComponentBuilder(content=f"### Live delivery status\n{live_text}"),
-            hikari.impl.TextDisplayComponentBuilder(content="-# Draft changes stay private until you review and apply them."),
-            _button(f"cwl_pause:{draft_id}", "Resume campaign" if paused else "Pause campaign", style=hikari.ButtonStyle.DANGER if not paused else hikari.ButtonStyle.SUCCESS),
+            hikari.impl.TextDisplayComponentBuilder(content=status),
+            hikari.impl.TextDisplayComponentBuilder(content=f"### Signups open\n{_discord_time(opening)}\n### Signups close\n{_discord_time(closing)}\n### Reminders\n{reminder_text}"),
+            _button_group(
+                (f"cwl_apply_review:{draft_id}|{draft.get('scope', 'cycle')}", "Review and save", hikari.ButtonStyle.SUCCESS),
+            ),
         ])
-        if live_next and live_next.get("id"):
-            rows.append(_button(f"cwl_skip:{draft_id}|{live_next['id']}", "Skip next live occurrence", style=hikari.ButtonStyle.SECONDARY))
+        if live is not None:
+            rows.append(_button(f"cwl_pause:{draft_id}", "Resume automatic messages" if paused else "Pause automatic messages", style=hikari.ButtonStyle.SUCCESS if paused else hikari.ButtonStyle.SECONDARY))
+        if not changed:
+            rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"### Next message\n{live_text}"))
+            if live_next and live_next.get("id") and not paused:
+                rows.append(_button(f"cwl_skip:{draft_id}|{live_next['id']}", "Skip this message", style=hikari.ButtonStyle.SECONDARY))
 
     elif tab == "messages":
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Messages\nChoose a message and its Main or Lazy version. Text, artwork, buttons, destination, and pings stay together."))
@@ -424,17 +430,17 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
             for audience in AUDIENCES:
                 template = _template(campaign, key, audience)
                 if _is_sequence_reminder(key) and campaign.get("reminder_sequence", {}).get("enabled") and key not in active_sequence:
-                    suffix = "unused this cycle"
+                    suffix = "not used this month"
                 else:
                     suffix = "disabled" if template.get("enabled") is False else _short(template.get("title") or template.get("body") or "Untitled", 45)
                 menu.add_option(f"{label} · {audience.title()}", f"{key}|{audience}", description=suffix)
         rows.append(menu_row)
         rows.append(_button(f"cwl_add_reminder:{draft_id}", "Configure reminders" if campaign.get("reminder_sequence", {}).get("enabled") else "Add reminder from signup", style=hikari.ButtonStyle.PRIMARY))
-        rows.append(hikari.impl.TextDisplayComponentBuilder(content="Changes are drafts until you apply them. Use Preview to see the scheduler's exact rendered post with pings suppressed."))
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content="Preview shows what players will see, without notifying anyone. Review and save when you finish editing."))
 
     elif tab == "schedule":
         timezone = str(campaign.get("timezone") or "America/New_York")
-        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"### Schedule\nFollow these steps. All dates and times use **{timezone}**."))
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"### Schedule\nEnter times in **{timezone}**. Discord shows the dates below in your local time."))
         unique: dict[str, dict] = {}
         timeline_error = None
         try:
@@ -477,7 +483,7 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
                 ),
             ])
         if timeline_error:
-            rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# Reminder timing needs attention before Review and Apply: {timeline_error} You can still save Steps 1 and 2 while you fix it."))
+            rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# Reminder timing needs attention before saving: {timeline_error} You can still save Steps 1 and 2 while you fix it."))
         menu_row = hikari.impl.MessageActionRowBuilder()
         menu = menu_row.add_text_menu(
             f"cwl_schedule:{draft_id}", min_values=1, placeholder="Advanced: edit another message timing"
@@ -490,7 +496,7 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
                 pass
         for key, label in _message_items(campaign)[:25]:
             if _is_sequence_reminder(key) and campaign.get("reminder_sequence", {}).get("enabled"):
-                description = "Managed by reminder sequence" if key in active_sequence else "Not scheduled this cycle"
+                description = "Time calculated from signup dates" if key in active_sequence else "Not used this month"
             else:
                 description = _time_description(_schedule(campaign, key))
             menu.add_option(label, key, description=description[:100])
@@ -500,12 +506,12 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
             rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# The signup time {_discord_time(opening)} is in the past. Applying will not send that missed post; future reminders still use this opening time."))
         if occurrences:
             lines = [f"• {_message_label(str(item.get('message_id', item.get('message_key', 'message'))))}: {_discord_time(item.get('run_at', item.get('at')))}" for item in occurrences]
-            rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Upcoming · Remaining draft messages\n" + "\n".join(lines)))
+            rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Message times after saving\n" + "\n".join(lines)))
         rows.extend([
-            hikari.impl.TextDisplayComponentBuilder(content="### 4. Review and apply\nReview the changes before they become live."),
+            hikari.impl.TextDisplayComponentBuilder(content="### 4. Save your changes\nChoose whether these settings are for this month or future months."),
             _button_group(
-                (f"cwl_apply_review:{draft_id}|cycle", "Review this cycle", hikari.ButtonStyle.SUCCESS),
-                (f"cwl_apply_review:{draft_id}|defaults", "Review monthly defaults", hikari.ButtonStyle.PRIMARY),
+                (f"cwl_apply_review:{draft_id}|cycle", "Save for this month", hikari.ButtonStyle.SUCCESS),
+                (f"cwl_apply_review:{draft_id}|defaults", "Save for future months", hikari.ButtonStyle.PRIMARY),
             ),
         ])
 
@@ -518,12 +524,12 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
         for value, label in (("month_end", "Before month end"), ("day", "Day of month"), ("specific", "Specific date")):
             deadline_modes.add_option(label, value, is_default=value == active_deadline)
         rows.extend([
-            hikari.impl.TextDisplayComponentBuilder(content=f"### Campaign settings\nSignup deadline: **{_deadline(campaign)}**\nTimezone: **{campaign.get('timezone', 'America/New_York')}**"),
+            hikari.impl.TextDisplayComponentBuilder(content=f"### Settings\nSignups close: **{_deadline(campaign)}**\nTimezone: **{campaign.get('timezone', 'America/New_York')}**"),
             _button(f"cwl_settings:{draft_id}", "Edit deadline & timezone", style=hikari.ButtonStyle.PRIMARY),
             deadline_row,
-            hikari.impl.TextDisplayComponentBuilder(content="### Apply changes\nThis month changes only unsent occurrences. Monthly defaults become the starting point for future CWL cycles."),
-            _button(f"cwl_apply_review:{draft_id}|cycle", "Review this month", style=hikari.ButtonStyle.SUCCESS),
-            _button(f"cwl_apply_review:{draft_id}|defaults", "Review monthly defaults", style=hikari.ButtonStyle.PRIMARY),
+            hikari.impl.TextDisplayComponentBuilder(content="### Save your changes\nChoose this month to update messages that have not been sent. Choose future months to repeat these settings starting next month."),
+            _button(f"cwl_apply_review:{draft_id}|cycle", "Save for this month", style=hikari.ButtonStyle.SUCCESS),
+            _button(f"cwl_apply_review:{draft_id}|defaults", "Save for future months", style=hikari.ButtonStyle.PRIMARY),
             hikari.impl.TextDisplayComponentBuilder(content="-# If another administrator saved CWL changes first, discard this draft and explicitly reload the current saved configuration."),
             _button(f"cwl_discard_review:{draft_id}", "Reload saved version", style=hikari.ButtonStyle.DANGER),
         ])
@@ -533,17 +539,17 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
         if mongo is not None:
             history = await cwl_campaign.history(mongo, int(draft["guild_id"]), _cycle(draft), limit=25)
         if not isinstance(history, list) or not history:
-            rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Delivery history\nNo delivery attempts recorded for this cycle."))
+            rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Message history\nNo messages have been sent this month."))
         else:
             lines = []
             for item in history[:8]:
                 state = "✓" if item.get("status") in {"sent", "success"} else "⚠"
                 link = f" · [Post]({item['message_url']})" if item.get("message_url") else ""
                 lines.append(f"{state} **{_message_label(str(item.get('message_id', item.get('message_key', 'message'))))}** · {_short(item.get('status', item.get('action', 'unknown')))} · {_short(item.get('at', item.get('created_at', '')))}{link}")
-            rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Delivery history\n" + "\n".join(lines)))
+            rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Message history\n" + "\n".join(lines)))
             failed = next((item for item in history if item.get("status") in {"failed", "error"} and item.get("occurrence_id")), None)
             if failed:
-                rows.append(_button(f"cwl_retry:{draft_id}|{failed['occurrence_id']}", "Retry latest failed delivery", style=hikari.ButtonStyle.PRIMARY))
+                rows.append(_button(f"cwl_retry:{draft_id}|{failed['occurrence_id']}", "Try sending again", style=hikari.ButtonStyle.PRIMARY))
             published = next((item for item in history if item.get("status") == "sent" and item.get("occurrence_id")), None)
             if published:
                 rows.append(_button(f"cwl_update_start:{draft_id}|{published['occurrence_id']}", "Update published post"))
@@ -567,7 +573,7 @@ def message_editor(draft: dict, key: str, audience: str, notice: str | None = No
     destination = hikari.impl.MessageActionRowBuilder()
     destination.add_channel_menu(
         f"cwl_channel:{ref}", channel_types=(hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS),
-        placeholder="Choose delivery channel", min_values=1, max_values=1,
+        placeholder="Choose a channel", min_values=1, max_values=1,
     )
     ping_roles = hikari.impl.MessageActionRowBuilder()
     ping_roles.add_select_menu(
@@ -584,7 +590,7 @@ def message_editor(draft: dict, key: str, audience: str, notice: str | None = No
             (f"cwl_text:{ref}", "Edit text", hikari.ButtonStyle.PRIMARY),
             (f"cwl_image:{ref}", "Upload replacement", hikari.ButtonStyle.PRIMARY),
             (f"cwl_links:{ref}", "Edit buttons", hikari.ButtonStyle.PRIMARY),
-            (f"cwl_delivery:{ref}", "Delivery", hikari.ButtonStyle.SECONDARY),
+            (f"cwl_delivery:{ref}", "Channel & mentions", hikari.ButtonStyle.SECONDARY),
         ),
         _button_group(
             (f"cwl_copy_text:{ref}", "Copy text", hikari.ButtonStyle.SECONDARY),
@@ -605,7 +611,7 @@ def message_editor(draft: dict, key: str, audience: str, notice: str | None = No
         ]))
         rows.insert(5, hikari.impl.TextDisplayComponentBuilder(content="### Current image in this draft"))
         rows.insert(7, hikari.impl.TextDisplayComponentBuilder(
-            content="-# Restore default image brings back the original artwork. Draft changes stay private until reviewed and applied."
+            content="-# Restore default image brings back the original artwork. Review and save your changes before the bot uses them."
         ))
     return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
 
@@ -721,7 +727,7 @@ async def edit_opening(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
     if problem:
         return error_panel(problem)
     if "signup" not in _campaign(draft).get("messages", {}):
-        return error_panel("This campaign has no signup-opening message to schedule.")
+        return error_panel("Add a signup message before choosing its time.")
     return monthly_editor(draft, "signup")
 
 
@@ -771,7 +777,7 @@ def sequence_panel(draft: dict, notice: str | None = None) -> list:
     rows = _header(draft, "schedule", notice)
     rows.extend([
         hikari.impl.SeparatorComponentBuilder(divider=True),
-        hikari.impl.TextDisplayComponentBuilder(content="### Reminder sequence\n" + _sequence_summary(campaign, _scope_cycle(draft))),
+        hikari.impl.TextDisplayComponentBuilder(content="### Reminders\n" + _sequence_summary(campaign, _scope_cycle(draft))),
         hikari.impl.TextDisplayComponentBuilder(content="Reminder artwork and text remain editable in Messages. This panel controls when active numbered reminders send."),
         _button_group(
             (f"cwl_sequence_even:{draft_id}", "Evenly spread reminders", hikari.ButtonStyle.PRIMARY),
@@ -845,7 +851,7 @@ async def submit_sequence(ctx: Any, action_id: str, mongo: MongoClient = lightbu
         saved = await _save_campaign(mongo, draft, campaign)
     except (TypeError, ValueError) as exc:
         await _modal_source(ctx, sequence_panel(draft, str(exc))); return
-    await _modal_source(ctx, sequence_panel(saved, "Reminder sequence draft saved. Review the resolved send times before applying."))
+    await _modal_source(ctx, sequence_panel(saved, "Reminder times updated. Review and save when you are ready."))
 
 
 @register_action("cwl_sequence_disable", preload_state=False)
@@ -882,7 +888,7 @@ async def sequence_times(ctx: Any, action_id: str, mongo: MongoClient = lightbul
     lines = [f"• **{_message_label(str(item['message_id']))}**: {_discord_time(item.get('run_at'))}" for item in occurrences]
     return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_header(draft, "schedule") + [
         hikari.impl.TextDisplayComponentBuilder(content="### All reminder send times\n" + ("\n".join(lines) or "No active reminder send times.")),
-        hikari.impl.TextDisplayComponentBuilder(content="-# These are this draft's planned times. Already-sent or skipped occurrences will not send again."),
+        hikari.impl.TextDisplayComponentBuilder(content="-# These times will be used after you save. Messages already sent or skipped will not be sent again."),
         _button(f"cwl_tab:{_draft_token(draft)}|schedule", "Back"),
     ])]
 
@@ -951,7 +957,7 @@ async def _open_message_modal(ctx: Any, action_id: str, mongo: MongoClient, kind
             hikari.impl.ModalActionRowBuilder().add_text_input("channel", "Destination channel ID", value=str(template.get("destination_channel_id") or ""), required=False, max_length=30),
             hikari.impl.ModalActionRowBuilder().add_text_input("roles", "Role IDs to ping (comma separated)", value=", ".join(map(str, template.get("role_ids") or ())), required=False, max_length=500),
         ]
-        title = "Edit CWL delivery"
+        title = "Edit channel and mentions"
     await ctx.respond_with_modal(title=title, custom_id=f"cwl_submit_{kind}:{action_id}", components=components)
 
 
@@ -1304,7 +1310,7 @@ async def duplicate_message(ctx: Any, action_id: str, mongo: MongoClient = light
         return error_panel(problem)
     campaign = _campaign(draft)
     if len(campaign.get("messages", {})) >= 12:
-        return message_editor(draft, ref[1], ref[2], "This campaign already has 12 messages, the dashboard's one-screen limit.")
+        return message_editor(draft, ref[1], ref[2], "You can have up to 12 messages. Remove one before adding another.")
     key = _duplicate_key(campaign, ref[1])
     source = copy.deepcopy(campaign["messages"][ref[1]])
     source["label"] = f"{source.get('label', _message_label(ref[1]))} copy"
@@ -1322,9 +1328,9 @@ async def add_reminder(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
         return error_panel(problem)
     campaign = _campaign(draft)
     if campaign.get("reminder_sequence", {}).get("enabled"):
-        return sequence_panel(draft, "This campaign uses numbered reminder slots. Edit the reminder sequence to change how many are active.")
+        return sequence_panel(draft, "Open Reminders to change how many messages are sent.")
     if len(campaign.get("messages", {})) >= 12:
-        return await panel(draft, "messages", "This campaign already has 12 messages, the dashboard's one-screen limit.")
+        return await panel(draft, "messages", "You can have up to 12 messages. Remove one before adding another.")
     key = _duplicate_key(campaign, "reminder")
     source = copy.deepcopy(campaign["messages"]["signup"])
     source.update(label="New reminder", schedule={"mode": "manual"})
@@ -1380,7 +1386,7 @@ async def queue_manual(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
     await cwl_campaign.queue_manual_occurrence(
         mongo, int(draft["guild_id"]), ref[1], ref[2], _cycle(draft), int(ctx.user.id)
     )
-    return message_editor(draft, ref[1], ref[2], "Roster delivery queued. It uses the applied campaign template.")
+    return message_editor(draft, ref[1], ref[2], "The roster message is queued. It will use the saved text and image.")
 
 
 @register_action("cwl_preview", preload_state=False)
@@ -1600,7 +1606,7 @@ async def _apply_scope(ctx: Any, mongo: MongoClient, draft: dict, scope: str) ->
         mongo, int(draft["guild_id"]), int(ctx.user.id),
         cycle=_scope_cycle(draft, scope), scope="defaults" if scope == "defaults" else "cycle",
     )
-    notice = "Monthly defaults saved for future CWL cycles." if scope == "defaults" else "This month's unsent messages were updated."
+    notice = "Settings saved for future months." if scope == "defaults" else "Settings saved. Messages already sent will not be sent again."
     if isinstance(result, dict) and result.get("schedule_sync_pending"):
         notice += " The schedule sync is pending and will retry automatically."
     return await panel(
@@ -1637,12 +1643,12 @@ async def review_apply(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
         "guild_id": int(draft["guild_id"]), "draft_id": _draft_token(draft),
         "draft_updated_at": draft.get("updated_at"), "scope": ref[1], "affected_cycle": affected_cycle,
     }, ttl=timedelta(minutes=10))
-    scope_label = f"monthly defaults beginning {affected_cycle}; existing future cycle overrides stay unchanged" if ref[1] == "defaults" else f"unsent { _cycle(draft) } occurrences"
+    scope_label = f"future months, starting {affected_cycle}. Months you edited separately keep their own settings" if ref[1] == "defaults" else f"messages not yet sent for {_cycle(draft)}"
     return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=[
         hikari.impl.TextDisplayComponentBuilder(content=f"## Review CWL changes\nApplies to **{scope_label}**."),
         hikari.impl.TextDisplayComponentBuilder(content=summary),
         _button_group(
-            (f"cwl_apply_confirm:{review_id}", "Apply these changes", hikari.ButtonStyle.SUCCESS),
+            (f"cwl_apply_confirm:{review_id}", "Save changes", hikari.ButtonStyle.SUCCESS),
             (f"cwl_tab:{_draft_token(draft)}|settings", "Back", hikari.ButtonStyle.SECONDARY),
         ),
     ])]
@@ -1680,7 +1686,7 @@ async def review_discard(ctx: Any, action_id: str, mongo: MongoClient = lightbul
         "draft_updated_at": draft.get("updated_at"), "cycle": _cycle(draft),
     }, ttl=timedelta(minutes=10))
     return [hikari.impl.ContainerComponentBuilder(accent_color=ERROR, components=[
-        hikari.impl.TextDisplayComponentBuilder(content="## Discard CWL draft?\nThis permanently discards your unsaved CWL edits and opens the currently saved campaign. It will not merge or overwrite another administrator's work."),
+        hikari.impl.TextDisplayComponentBuilder(content="## Discard your changes?\nThis removes your edits and opens the settings the bot is currently using."),
         _button_group(
             (f"cwl_discard_confirm:{review_id}", "Discard and reload", hikari.ButtonStyle.DANGER),
             (f"cwl_tab:{_draft_token(draft)}|settings", "Keep editing", hikari.ButtonStyle.SECONDARY),
@@ -1740,7 +1746,7 @@ async def pause(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     if rebased:
         patch.update(cycle_base_revision=live["revision"], base_revision=live["revision"])
     saved = await cwl_campaign.patch_draft(mongo, _draft_token(draft), patch)
-    notice = "Campaign resumed." if not campaign["paused"] else "Campaign paused. No future CWL delivery will run until resumed."
+    notice = "Automatic messages resumed." if not campaign["paused"] else "Automatic messages paused. Resume them when you are ready."
     if not rebased:
         notice += " This draft was already stale; reload the saved version before applying other edits."
     return await panel(saved, "overview", notice, mongo=mongo)
@@ -1756,7 +1762,7 @@ async def skip(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJEC
     if problem:
         return error_panel(problem)
     await cwl_campaign.skip_occurrence(mongo, int(draft["guild_id"]), ref[1], cycle=_cycle(draft), user_id=int(ctx.user.id))
-    return await panel(draft, "overview", "Occurrence skipped. It remains visible in delivery history.", mongo=mongo)
+    return await panel(draft, "overview", "Message skipped. You can see it in History.", mongo=mongo)
 
 
 @register_action("cwl_retry", preload_state=False)
@@ -1769,7 +1775,7 @@ async def retry(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     if problem:
         return error_panel(problem)
     await cwl_campaign.retry_occurrence(mongo, int(draft["guild_id"]), ref[1], cycle=_cycle(draft), user_id=int(ctx.user.id))
-    return await panel(draft, "history", "Retry queued. It will use the saved campaign template.", mongo=mongo)
+    return await panel(draft, "history", "Trying again with the saved message.", mongo=mongo)
 
 
 @register_action("cwl_restore", preload_state=False)
@@ -1813,7 +1819,7 @@ async def start_post_update(
         "occurrence_id": ref[1], "target": target,
     }, ttl=timedelta(minutes=10))
     return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=[
-        hikari.impl.TextDisplayComponentBuilder(content="### Update published CWL post\nThe live post was checked and fingerprinted. This will replace its content with the current draft, without sending pings."),
+        hikari.impl.TextDisplayComponentBuilder(content="### Update published CWL post\nThis replaces the text and image in the message already posted. It will not notify anyone."),
         _button(f"cwl_update_confirm:{state_id}", "Update published post", style=hikari.ButtonStyle.DANGER),
         _button(f"cwl_tab:{_draft_token(draft)}|history", "Cancel"),
     ])]

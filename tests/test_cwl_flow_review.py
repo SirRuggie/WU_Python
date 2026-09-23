@@ -53,7 +53,7 @@ def text_content(components):
     return output
 
 
-def test_overview_next_delivery_uses_draft_timing_with_live_delivery_state(monkeypatch):
+def test_overview_shows_edited_signup_time_without_competing_send_times(monkeypatch):
     item = draft()
     draft_time = pendulum.now("America/New_York").add(days=2).isoformat()
     live_time = pendulum.now("America/New_York").add(days=1).isoformat()
@@ -61,8 +61,8 @@ def test_overview_next_delivery_uses_draft_timing_with_live_delivery_state(monke
         dashboard.cwl_campaign,
         "resolve_schedule",
         lambda *_args, **_kwargs: [{
-            "id": "2026-10|roster|main",
-            "message_id": "roster",
+            "id": "2026-10|signup|main",
+            "message_id": "signup",
             "variant": "main",
             "run_at": draft_time,
         }],
@@ -83,11 +83,12 @@ def test_overview_next_delivery_uses_draft_timing_with_live_delivery_state(monke
     )
 
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
-    assert "Rosters released" in content
-    assert "Signups open" not in next(
-        value for value in text_content(run(dashboard.panel(item, "overview", mongo=object())))
-        if value.startswith("### Next delivery")
-    )
+    assert dashboard._discord_time(draft_time) in content
+    assert dashboard._discord_time(live_time) not in content
+    assert "Review and save your changes before the bot uses them" in content
+    assert "Next message" not in content
+    assert "Campaign" not in content
+    assert "delivery" not in content.lower()
 
 
 def test_default_dashboard_open_does_not_resume_a_draft_from_an_old_cycle(monkeypatch):
@@ -106,6 +107,27 @@ def test_default_dashboard_open_does_not_resume_a_draft_from_an_old_cycle(monkey
 
     opened = run(dashboard.open_dashboard(context(), object()))
     assert opened["cycle"] == "2026-09"
+
+
+def test_overview_shows_one_next_message_only_for_settings_already_in_use(monkeypatch):
+    item = draft()
+    when = pendulum.now("UTC").add(days=2).isoformat()
+    saved = {
+        "campaign": deepcopy(item["campaign"]),
+        "schedule": [{"id": "2026-10|signup|main", "message_id": "signup", "run_at": when}],
+        "deliveries": [], "skipped": [],
+    }
+    monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value=saved))
+    content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
+    assert "These settings are saved." in content
+    assert content.count("### Next message") == 1
+    assert dashboard._discord_time(when) in content
+    assert "delivery" not in content.lower()
+    saved["campaign"]["paused"] = True
+    item["campaign"]["paused"] = True
+    content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
+    assert "Automatic messages are paused." in content
+    assert dashboard._discord_time(when) not in content
 
 
 def test_schedule_upcoming_list_excludes_past_occurrences(monkeypatch):
@@ -127,7 +149,7 @@ def test_schedule_upcoming_list_excludes_past_occurrences(monkeypatch):
     )
 
     content = text_content(run(dashboard.panel(item, "schedule")))
-    upcoming = next(value for value in content if value.startswith("### Upcoming"))
+    upcoming = next(value for value in content if value.startswith("### Message times after saving"))
     assert "Signups open" not in upcoming
     assert "Reminder 1" in upcoming
 
@@ -278,6 +300,6 @@ def test_defaults_scoped_draft_header_and_timeline_use_next_active_cycle():
     opening_timestamp = int(pendulum.parse(opening).timestamp())
 
     content = "\n".join(text_content(run(dashboard.panel(item, "schedule"))))
-    assert f"Monthly defaults → **{following}**" in content
+    assert "For future months, starting" in content
     assert f"<t:{opening_timestamp}:F>" in content
-    assert f"Cycle → **{current}**" not in content
+    assert "Cycle →" not in content
