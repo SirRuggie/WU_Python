@@ -25,9 +25,9 @@ timing are managed together there; see [CWL dashboard](cwl-dashboard.md).
    **Update selected post** for the linked message. These are separate actions;
    saving a template does not update all previously published messages.
 
-`/content image-upload` remains available as a fallback. A draft ID is not
-authorization: the uploader must still be its owner, in the same guild, with
-Manage Server.
+Images are uploaded through the dashboard's **Upload replacement** button;
+there is no separate upload command. The uploader must still own the draft,
+be in the same guild, and have Manage Server permission.
 
 To restore the original artwork, select the image and click **Restore default
 image**, then preview and use the green **Save template** button or update the selected post.

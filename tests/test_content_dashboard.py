@@ -109,10 +109,10 @@ def test_dashboard_command_description_matches_the_published_server_scope():
     assert content.ContentDashboard._command_data.description == "Edit published server content"
 
 
-def test_image_upload_declares_required_options_before_its_optional_slot():
-    options = content.ContentImageUpload._command_data.options
-    assert list(options) == ["draft", "image", "slot"]
-    assert options["slot"].default is None
+def test_content_group_only_registers_the_dashboard_command():
+    assert set(content.content.subcommands) == {"dashboard"}
+    assert "content_upload" in registered_functions
+    assert "content_upload_submit" in registered_functions
 
 
 def test_every_dashboard_interaction_rechecks_permission_and_owner():

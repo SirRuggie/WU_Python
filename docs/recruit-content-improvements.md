@@ -32,7 +32,7 @@ shared bucket object.
 | Setup lacks an invocation permission check | The three `extensions/commands/setup/recruit_*.py` `invoke` methods | Apply the same Manage Server rule as the editor before public posting. |
 | Onboarding dependencies are hardcoded | Each setup module's acknowledgement role and next-channel constants | Check that they exist in the current guild and that the bot can assign the role before posting. |
 | R2 already uses immutable version URLs | `utils/media_store.py`: `object_key`, `upload_bytes_blocking`, `CACHE_CONTROL` | Reuse this implementation and namespace replacement uploads by guild/document. |
-| Native upload modal models are unavailable in the installed SDK | `.venv/bin/python`: Hikari reports `2.6.0`; `hikari.impl` exposes no names containing `Upload` or `Label` | Use a narrow raw-component/deserialization adapter for Discord's types 18 and 19; retain the slash-command attachment as a fallback without forcing an unrelated framework upgrade. |
+| Native upload modal models are unavailable in the installed SDK | `.venv/bin/python`: Hikari reports `2.6.0`; `hikari.impl` exposes no names containing `Upload` or `Label` | Use a narrow raw-component/deserialization adapter for Discord's types 18 and 19. Uploads are available directly in the dashboard without a separate slash command or framework upgrade. |
 
 ## Primary-source research
 

@@ -57,13 +57,6 @@ MEDIA_SLOTS = {
     ),
     "family-particulars": (("welcome", "Welcome banner"), ("cwl", "CWL banner")),
 }
-MEDIA_SLOT_CHOICES = (
-    lightbulb.Choice(name="Welcome banner", value="welcome"),
-    lightbulb.Choice(name="Basic rules banner", value="rules"),
-    lightbulb.Choice(name="Main clan strike chart", value="main-strikes"),
-    lightbulb.Choice(name="FWA strike chart", value="fwa-strikes"),
-    lightbulb.Choice(name="CWL banner", value="cwl"),
-)
 _baselines: dict[str, list] = {}
 
 # Hikari 2.6 predates Discord's modal Label/File Upload models. Install the
@@ -469,64 +462,6 @@ class ContentDashboard(lightbulb.SlashCommand, name="dashboard", description="Ed
         await initial_panel(ctx, mongo, state)
 
 
-@content.register()
-class ContentImageUpload(lightbulb.SlashCommand, name="image-upload", description="Replace one recruit content image"):
-    draft = lightbulb.string("draft", "Draft ID shown after selecting an image slot")
-    image = lightbulb.attachment("image", "PNG, JPG, GIF, or WEBP image")
-    slot = lightbulb.string(
-        "slot", "Optional slot; defaults to the slot selected in the draft",
-        choices=MEDIA_SLOT_CHOICES, default=None,
-    )
-
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(
-        self,
-        ctx,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        media: MediaStore = lightbulb.di.INJECTED,
-    ):
-        if not await require_editor(ctx):
-            return
-        if getattr(self.image, "size", 0) > MAX_IMAGE_BYTES:
-            await ctx.respond(
-                f"Images must be under {MAX_IMAGE_BYTES // (1024 * 1024)} MB.", ephemeral=True
-            )
-            return
-        await ctx.defer(ephemeral=True)
-        state, problem = await load(ctx, mongo, self.draft)
-        if problem:
-            await ctx.respond(problem, ephemeral=True)
-            return
-        document = DOCUMENTS.get(state.get("document"))
-        requested_slot = self.slot if isinstance(self.slot, str) else None
-        slot = requested_slot or state.get("selected_media_slot")
-        if not document or slot not in {name for name, _label in media_slots(document)}:
-            await ctx.respond("Choose an image slot supported by this draft.", ephemeral=True)
-            return
-        try:
-            data = await self.image.read()
-        except hikari.HTTPError:
-            await ctx.respond("I could not download that attachment. Your draft is unchanged; try again shortly.", ephemeral=True)
-            return
-        try:
-            url = await media.upload_bytes(
-                data,
-                folder=recruit_content_folder(int(ctx.interaction.guild_id), document.key),
-                name=slot,
-            )
-        except MediaStoreError as exc:
-            await ctx.respond(str(exc), ephemeral=True)
-            return
-        draft = await new_draft(mongo, dict(
-            state, media=normal_media(document, state.get("media")) | {slot: url},
-            selected_media_slot=slot,
-        ))
-        label = dict(media_slots(document))[slot]
-        await ctx.respond(
-            components=panel(draft, f"{label} uploaded to this draft. Preview, save, or update the selected post."),
-            ephemeral=True, **NO_MENTIONS,
-        )
 
 
 @register_action("content_cwl", preload_state=False, no_return=True)
