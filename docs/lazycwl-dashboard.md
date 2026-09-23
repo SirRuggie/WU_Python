@@ -6,8 +6,9 @@ old command names are no longer registered; use `/cwl rosters` directly.
 
 ## Dashboard flow
 
-Open `/cwl rosters` and choose **FWA** or **Main**, then choose a clan.
-The selected section stays visible in the heading. FWA uses clan type `FWA`;
+Open `/cwl rosters` to the FWA overview, then choose a clan. Use the
+**FWA** and **Main** buttons at the top to switch sections. The selected
+section stays visible in the heading. FWA uses clan type `FWA`;
 Main uses `Tactical` and `Flexible Fun` war clans, plus the legacy
 `Competitive` category. Dedicated `CWL` hosting clans are not treated as
 home rosters. Each section has its own
@@ -17,8 +18,8 @@ Clan menus show up to 24 clans plus the bulk option per page; additional
 clans remain reachable with the clan navigation buttons.
 
 - **Overview** shows capture time, CWL season, player count, and expiry.
-  FWA additionally shows players away and return reminder status. Main
-  manages saved rosters without FWA return tracking or return reminders.
+  FWA additionally shows players away and scheduled return reminder status.
+  Main offers **Send Reminders Now** for a reviewed manual send.
 - **Capture current roster** reviews the selected clan first. Bulk capture
   names only clans without a saved roster in that section.
 - **Replace roster…** appears for a selected saved roster. Its review explains
@@ -32,6 +33,9 @@ clans remain reachable with the clan navigation buttons.
 - **Return reminders** is available only for FWA. It shows the configured
   destination, on/off state, frequency, and next run. Enabling, disabling,
   and sending require review; recipients are checked again before sending.
+  Main has no reminder schedule or Return reminders tab. Its manual send
+  reviews saved players still away, refreshes their Discord links, and posts
+  to the Main CWL channel after confirmation.
 
 Confirmation buttons apply changes immediately; there is no separate Save
 step. Discord timestamps use the viewer's timezone; dropdown dates use UTC.
@@ -67,18 +71,21 @@ The clan dropdown shows saved and expiry dates in UTC for active rosters.
 Section policies independently specify expiry day and reminder destination.
 Both sections initially retain the 16th-day expiry rule. CWL season is the
 expiry month, so captures on/after the 16th belong to the next season.
-Main has no return reminder destination or scheduled return reminders.
+Main sends manual return reminders to the Main CWL channel and has no
+scheduled reminder jobs.
 
 ## Reminders
 
-An enabled reminder runs at its chosen interval for up to seven days. The
+An enabled FWA reminder runs at its chosen interval for up to seven days. The
 scheduler records successful sends and restores the next future run after a
 restart, without replaying missed intervals. A scheduler registration failure
 is retried by the startup reconciler; the database never claims that a newly
 enabled reminder is running when its job could not be registered.
 
-Manual reminders and scheduled reminders recompute the current away players
-from the Clash API. If nobody is away, no Discord message is sent.
+Manual reminders in both sections and scheduled FWA reminders recompute the
+current away players from the Clash API. Main also refreshes Discord links at
+review and again at send, so older Main captures can mention linked players.
+If nobody is away, no Discord message is sent.
 
 ## Safe dashboard actions
 
@@ -109,9 +116,9 @@ reminders: {
 
 Each player records tag, name, Town Hall, optional Discord id, whether it was
 added manually, and its UTC add time. A failed Discord-link lookup is kept
-distinct from a successful lookup with no linked players: saving a new list
-stops when the lookup fails, while a manual addition proceeds and reports
-that its link could not be checked.
+distinct from a successful lookup with no linked players. FWA capture stops
+when the lookup fails. Main capture remains available during a link-service
+outage; its manual reminder waits for a successful lookup before sending.
 
 ## MongoDB contract and deployment
 

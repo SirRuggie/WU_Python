@@ -39,6 +39,8 @@ _log = logging.getLogger(__name__)
 
 # Hard-coded ping channel, unchanged from the old feature; out of scope here.
 PING_CHANNEL = 1424256751913668770
+# Main CWL channel, matching extensions.tasks.cwl_reminder.CWL_CHANNEL_ID.
+MAIN_CWL_CHANNEL = 1072714594625257502
 
 JOB_DEFAULTS = {
     "coalesce": True,
@@ -59,7 +61,7 @@ startup_reconciler: Optional[StartupReconciler] = None
 def reminder_channel(section: str = store.DEFAULT_SECTION) -> int | None:
     """Configured return-reminder destination for a roster section."""
     destination = store.SECTION_POLICY[store.normalize_section(section)]["reminder_destination"]
-    return PING_CHANNEL if destination == "fwa_return" else None
+    return {"fwa_return": PING_CHANNEL, "main_cwl": MAIN_CWL_CHANNEL}.get(destination)
 
 
 async def get_discord_ids(player_tags: list[str]) -> Optional[dict[str, Optional[str]]]:
@@ -226,8 +228,8 @@ async def save_list(clan_tag: str, saved_by: int, *, section: str = store.DEFAUL
         return {**_SAVE_LIST_DEFAULTS, "error": f"Clan {clan_tag} not found."}
 
     tags = [member.tag for member in clan.members]
-    # MAIN is an ordinary CWL member roster. It has no return workflow, so a
-    # link-service outage cannot prevent staff from capturing it.
+    # Main links are resolved when staff manually review or send reminders,
+    # so a link-service outage cannot prevent staff from capturing its roster.
     links = await get_discord_ids(tags) if section == "FWA" else {}
     if section == "FWA" and links is None:
         return {
@@ -306,10 +308,24 @@ async def away_players(doc: dict) -> list[dict]:
     ]
 
 
+async def reminder_recipients(doc: dict) -> list[dict]:
+    """Refresh away status and Main Discord links before review or send."""
+    away = await away_players(doc)
+    if store.normalize_section(doc.get("section")) != "MAIN" or not away:
+        return away
+    links = await get_discord_ids([player["tag"] for player in away])
+    if links is None:
+        raise RuntimeError("Could not reach the link service. Nothing was sent.")
+    return [
+        {**player, "discord_id": int(links[player["tag"]]) if links.get(player["tag"]) else None}
+        for player in away
+    ]
+
+
 async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
     channel = reminder_channel(doc.get("section", store.DEFAULT_SECTION))
     if channel is None:
-        raise ValueError("MAIN rosters do not support return reminders")
+        raise ValueError("No reminder destination is configured for this section")
     clan_data = await mongo_client.clans.find_one({"tag": doc["clan_tag"]})
     role_id = clan_data.get("role_id") if clan_data else None
 
@@ -349,21 +365,22 @@ async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
         parsed_role_id = None
 
     for index, (chunk_lines, chunk_recipient_ids) in enumerate(chunks):
+        section = store.normalize_section(doc.get("section"))
+        footer = ("Please return to your Main home clan when you are able."
+                  if section == "MAIN" else
+                  "Go back to your home clan for the war. Train, join, attack, return. About 15 to 30 minutes.")
         lines = [
             Text(content=f"## 🚪 Time to go back to {doc['clan_name']}"),
             Separator(),
             Text(content="\n".join(chunk_lines)),
             Separator(),
-            Text(content=(
-                "Go back to your home clan for the war. Train, join, attack, return. "
-                "About 15 to 30 minutes."
-            )),
+            Text(content=footer),
         ]
         await bot_instance.rest.create_message(
             channel=channel,
             components=[Container(accent_color=GOLD_ACCENT, components=lines)],
             user_mentions=chunk_recipient_ids,
-            role_mentions=[parsed_role_id] if parsed_role_id and index == 0 else [],
+            role_mentions=[parsed_role_id] if section == "FWA" and parsed_role_id and index == 0 else [],
         )
 
 
@@ -381,14 +398,14 @@ async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = sto
     """Send an away-players reminder for clan_tag's active saved list."""
     section = store.normalize_section(section)
     if reminder_channel(section) is None:
-        return {**_REMIND_NOW_DEFAULTS, "error": "Main CWL rosters do not send return reminders."}
+        return {**_REMIND_NOW_DEFAULTS, "error": "No reminder destination is configured."}
     doc = await store.get_active(mongo_client, clan_tag, section=section)
     if doc is None or (expected_list_id is not None and doc.get("_id") != expected_list_id):
         if expected_list_id is not None:
             return {**_REMIND_NOW_DEFAULTS, **_stale_result()}
         return {**_REMIND_NOW_DEFAULTS, "error": "No saved list for this clan."}
 
-    away = await away_players(doc)
+    away = await reminder_recipients(doc)
     total_count = len(doc.get("players", []))
     if not away:
         return {
@@ -409,6 +426,8 @@ async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = sto
     ):
         return {**_REMIND_NOW_DEFAULTS, **_stale_result()}
 
+    # Recipient lookup above can take time; the active-list check immediately
+    # before this send prevents a finish or replacement during that lookup.
     await _send_reminder_message(current, away)
     await store.record_reminder_sent(mongo_client, current["_id"])
 
@@ -497,8 +516,8 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None, s
 async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[int] = None, *, expected_list_id=None, section: str = store.DEFAULT_SECTION) -> dict:
     """Turn a clan's reminders on or off and (un)schedule its job."""
     section = store.normalize_section(section)
-    if reminder_channel(section) is None:
-        return {"ok": False, "error": "Main CWL rosters do not support return reminders."}
+    if section == "MAIN":
+        return {"ok": False, "error": "Main CWL reminders are manual only."}
     if enabled and every_minutes is None:
         return {"ok": False, "error": "Choose how often."}
 
@@ -550,7 +569,7 @@ async def reminder_job(list_id) -> None:
         doc = await store.get_by_id(mongo_client, list_id)
         job_id = _reminder_job_id(list_id)
 
-        if doc is None or doc.get("status") != "active" or not doc.get("reminders", {}).get("enabled"):
+        if doc is None or store.normalize_section(doc.get("section")) == "MAIN" or doc.get("status") != "active" or not doc.get("reminders", {}).get("enabled"):
             _remove_job(job_id)
             return
 

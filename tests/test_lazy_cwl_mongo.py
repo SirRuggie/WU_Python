@@ -146,6 +146,23 @@ def test_sections_have_independent_active_rosters_and_main_reminders_are_refused
     asyncio.run(scenario())
 
 
+def test_main_manual_send_record_preserves_disabled_schedule_under_strict_schema():
+    async def scenario():
+        async with sandbox() as (mongo, collection):
+            await apply_schema(collection)
+            main = await store.save_list(mongo, clan_tag='#ABC', clan_name='Clan',
+                                         players=[player('#P1')], saved_by=1, section='MAIN')
+            assert main['reminders']['enabled'] is False
+            await store.record_reminder_sent(mongo, main['_id'])
+            recorded = await collection.find_one({'_id': main['_id']})
+            assert recorded['reminders']['sent_count'] == 1
+            assert recorded['reminders']['last_sent_at'] is not None
+            assert recorded['reminders']['enabled'] is False
+            assert recorded['reminders']['every_minutes'] is None
+            assert await store.list_reminder_enabled(mongo, section='MAIN') == []
+    asyncio.run(scenario())
+
+
 def test_replace_is_transactional_when_new_roster_fails_validation():
     async def scenario():
         async with sandbox() as (mongo, collection):

@@ -264,8 +264,9 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
                 body.append(Text(content=details))
         buttons = [Button(style=hikari.ButtonStyle.SECONDARY if capture_disabled else hikari.ButtonStyle.PRIMARY,
             custom_id=_id("lazycwl_replace" if chosen != "ALL" and docs else "lazycwl_capture", token, chosen), label=capture_label, is_disabled=capture_disabled)]
-        if section == "FWA":
-            buttons.append(Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen), label="Send return reminders", is_disabled=not docs))
+        buttons.append(Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen),
+                              label="Send return reminders" if section == "FWA" else "Send Reminders Now",
+                              is_disabled=not docs))
         buttons.append(Button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_close", token, chosen), label=f"Close all {label} rosters" if chosen == "ALL" else "Close roster", is_disabled=not docs))
         body.append(ActionRow(components=buttons))
     elif tab == "players":
@@ -299,9 +300,6 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
 
 
 async def build_home(mongo: MongoClient, selected_tag: Optional[str] = None, note: Optional[str] = None, *, token: str | None = None, tab: str = "overview") -> list:
-    if _section(token) is None:
-        return [Container(accent_color=BLUE_ACCENT, components=[Text(content="## CWL Rosters"),
-            Text(content="Choose a section. FWA tracks player returns and reminders. Main manages saved CWL rosters."), _section_buttons(token)])]
     clans, lists = await _clans(mongo, token), await _active(mongo, token)
     if _section(token) == "MAIN" and tab == "reminders": tab = "overview"
     valid_tags = {_tag(c["tag"]) for c in clans} | {_tag(d["clan_tag"]) for d in lists}
@@ -326,13 +324,13 @@ async def open_dashboard(ctx: lightbulb.Context, mongo: MongoClient, note: str |
         return
     await ctx.defer(ephemeral=True)
     token = _session(ctx.user.id, ctx.interaction.guild_id)
-    _sessions[token]["section"] = None
+    _sessions[token]["section"] = "FWA"
     await ctx.interaction.edit_initial_response(components=await build_home(mongo, note=note, token=token))
 
 
 async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None = None) -> list:
-    if _section(token) == "MAIN" and kind in {"send", "enable", "disable"}:
-        return _notice("FWA only", "Return reminders are available in the FWA section.", token, tag)
+    if _section(token) == "MAIN" and kind in {"enable", "disable"}:
+        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
     docs = _selected_docs(await _active(mongo, token), tag)
     if kind == "replace":
         if tag == "ALL" or len(docs) != 1:
@@ -359,7 +357,7 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
     if kind == "send":
         recipients = []
         for d in docs:
-            try: recipients.append((d, await service.away_players(d)))
+            try: recipients.append((d, await (service.reminder_recipients(d) if _section(token) == "MAIN" else service.away_players(d))))
             except Exception: recipients.append((d, None))
         if any(away is None for _, away in recipients):
             return _notice("Could not check recipients", "Nothing was sent. Refresh and try again when player status is available.", token, tag, accent=GOLD_ACCENT)
@@ -376,7 +374,7 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
 def _confirm(title, lines, action, token, value, accent):
     bound = _sessions.get(token, {}).get("pending", {}).get(value, {})
     tag = bound.get("tag", value)
-    tab = "players" if bound.get("operation") == "remove" else ("reminders" if bound.get("operation") in {"send", "enable", "disable"} else "overview")
+    tab = "players" if bound.get("operation") == "remove" else ("reminders" if bound.get("operation") in {"send", "enable", "disable"} and _section(token) == "FWA" else "overview")
     bound["tab"] = tab
     return [Container(accent_color=accent, components=[Text(content=f"## {title} · {SECTION_LABELS[_section(token)]}"), Text(content="\n".join(lines)), Separator(), ActionRow(components=[Button(style=hikari.ButtonStyle.SUCCESS if accent != RED_ACCENT else hikari.ButtonStyle.DANGER, custom_id=_id(action, token, value), label="Confirm"), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_cancel", token, value), label="Cancel")])])]
 
@@ -405,8 +403,8 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
     if bound.get("operation") != operation or bound.get("section", "FWA") != _section(token):
         return _notice("Review expired", "This confirmation does not match that action.", token, "", accent=RED_ACCENT)
     tag, ids, minutes = bound["tag"], bound["ids"], bound["minutes"]
-    if _section(token) == "MAIN" and operation in {"send", "enable", "disable"}:
-        return _notice("FWA only", "Return reminders are available in the FWA section.", token, tag)
+    if _section(token) == "MAIN" and operation in {"enable", "disable"}:
+        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
     docs = _selected_docs(await _active(mongo, token), tag)
     current = {_list_id(d): d for d in docs}
     if {str(item) for item in ids} != set(current):
@@ -430,7 +428,7 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
     note = f"{verbs[operation]} for {len(results)} saved list(s)."
     if operation == "send":
         note = f"Sent reminders for {sum(bool(result.get('sent')) for _, result in results)} clans. Clans with everyone home were skipped."
-    return await build_home(mongo, tag, note, token=token, tab="overview" if operation in {"close", "replace"} else "reminders")
+    return await build_home(mongo, tag, note, token=token, tab="reminders" if operation in {"send", "enable", "disable"} and _section(token) == "FWA" else "overview")
 
 
 async def _player_page(mongo, token: str, tag: str, page: int, note: str | None = None) -> list:
@@ -571,7 +569,7 @@ async def handle_enable(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
     token, tag = await _handler_ok(ctx, action_id)
     if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
     if _section(token) != "FWA":
-        return _notice("FWA only", "Return reminders are available in the FWA section.", token, tag)
+        return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
     return [Container(accent_color=BLUE_ACCENT, components=[Text(content="## Enable reminders"), Text(content=f"Destination: <#{service.reminder_channel(_section(token))}>. Choose an explicit frequency."), ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_frequency", token, tag), placeholder="Choose frequency", max_values=1, options=[SelectOption(label=f"Every {m} minutes", value=str(m)) for m in REMINDER_FREQUENCIES])]), Separator(), _back(token, tag, "reminders")])]
 
 @register_action("lazycwl_frequency", preload_state=False)

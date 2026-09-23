@@ -31,11 +31,10 @@ STATUS_EXPIRES_INDEX = "lazycwl_status_expires"
 LEGACY_SNAPSHOT_INDEX = "lazycwl_legacy_snapshot"
 
 # Section policy is stored here so capture, expiry, and scheduler restoration
-# all use the same rules.  MAIN deliberately has no reminder destination;
-# its roster is a normal CWL roster rather than a return-to-home workflow.
+# all use the same rules. Main has a manual destination but no scheduled jobs.
 SECTION_POLICY = {
     "FWA": {"expiry_day": 16, "reminder_destination": "fwa_return"},
-    "MAIN": {"expiry_day": 16, "reminder_destination": None},
+    "MAIN": {"expiry_day": 16, "reminder_destination": "main_cwl"},
 }
 DEFAULT_SECTION = "FWA"
 
@@ -439,7 +438,7 @@ async def set_reminders(
     now = _utc(now)
     section = normalize_section(section)
     if section == "MAIN":
-        raise ValueError("MAIN rosters do not support return reminders")
+        raise ValueError("MAIN rosters do not support scheduled reminders")
     clan_tag = _normalize_tag(clan_tag)
 
     update: dict[str, Any] = {
@@ -461,9 +460,6 @@ async def set_reminders(
 async def record_reminder_sent(mongo: MongoClient, list_id, now: datetime | None = None) -> None:
     """Record that a reminder was just sent for one saved list."""
     now = _utc(now)
-    document = await _coll(mongo).find_one({"_id": list_id})
-    if document is not None and normalize_section(document.get("section")) == "MAIN":
-        raise ValueError("MAIN rosters do not support return reminders")
     await _coll(mongo).find_one_and_update(
         {"_id": list_id},
         {

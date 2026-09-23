@@ -214,7 +214,7 @@ def test_save_list_already_saved(monkeypatch):
     assert result["existing_saved_at"] == existing["saved_at"]
 
 
-def test_main_capture_does_not_require_link_service_and_reminders_are_rejected(monkeypatch):
+def test_main_capture_does_not_require_link_service_and_scheduled_reminders_are_rejected(monkeypatch):
     clan = FakeClan("#ABC", "Alpha", [FakeMember("#PQ8GR", "One", 15)])
     mongo = _fake_mongo()
     _wire(monkeypatch, mongo=mongo, coc_client=FakeCoc(clan=clan), links=None)
@@ -226,8 +226,8 @@ def test_main_capture_does_not_require_link_service_and_reminders_are_rejected(m
     assert doc["section"] == "MAIN"
     assert doc["players"][0]["discord_id"] is None
     denied = asyncio.run(service.set_reminders("#ABC", True, 60, section="MAIN"))
-    assert denied["ok"] is False and "do not support" in denied["error"]
-    assert service.reminder_channel("MAIN") is None
+    assert denied["ok"] is False and "manual only" in denied["error"]
+    assert service.reminder_channel("MAIN") == service.MAIN_CWL_CHANNEL
 
 
 def test_main_add_player_skips_link_and_away_clan_lookups(monkeypatch):
@@ -294,6 +294,66 @@ def test_remind_now_some_away_sends_once_and_records(monkeypatch):
     refreshed = asyncio.run(store.get_by_id(mongo, "list-1"))
     assert refreshed["reminders"]["sent_count"] == 1
     assert refreshed["reminders"]["last_sent_at"] is not None
+
+
+def test_main_manual_reminder_refreshes_links_and_never_enables_schedule(monkeypatch):
+    doc = _list_doc("main-list", clan_tag="ABC", clan_name="Alpha")
+    doc["section"] = "MAIN"
+    doc["players"] = [
+        {"tag": "#HOME", "name": "Home", "discord_id": None},
+        {"tag": "#AWAY", "name": "Away", "discord_id": None},
+    ]
+    clan = FakeClan("#ABC", "Alpha", [FakeMember("#HOME", "Home", 16)])
+    mongo = _fake_mongo([doc], clans=[{"_id": "main-clan", "tag": "#ABC", "role_id": "555"}])
+    bot = FakeBot()
+    _wire(monkeypatch, mongo=mongo, coc_client=FakeCoc(clan=clan), bot=bot,
+          scheduler=FakeScheduler(), links={"#AWAY": "123456789"})
+
+    result = asyncio.run(service.remind_now("#ABC", expected_list_id="main-list", section="MAIN"))
+
+    assert result["ok"] and result["sent"] and result["away_count"] == 1
+    assert len(bot.rest.sent) == 1
+    sent = bot.rest.sent[0]
+    assert sent["channel"] == service.MAIN_CWL_CHANNEL
+    assert sent["user_mentions"] == [123456789]
+    assert sent["role_mentions"] == []
+    assert "Please return to your Main home clan" in sent["components"][0].components[-1].content
+    refreshed = asyncio.run(store.get_by_id(mongo, "main-list"))
+    assert refreshed["reminders"]["sent_count"] == 1
+    assert refreshed["reminders"]["enabled"] is False
+    assert service.scheduler.add_job_calls == []
+
+
+def test_main_manual_reminder_does_not_send_if_roster_closes_during_link_lookup(monkeypatch):
+    doc = _list_doc("main-list", clan_tag="ABC", clan_name="Alpha")
+    doc["section"] = "MAIN"
+    doc["players"] = [{"tag": "#AWAY", "name": "Away", "discord_id": None}]
+    mongo = _fake_mongo([doc])
+    bot = FakeBot()
+    _wire(monkeypatch, mongo=mongo, coc_client=FakeCoc(clan=FakeClan("#ABC", "Alpha", [])),
+          bot=bot, links={})
+
+    async def close_during_lookup(tags):
+        await store.finish(mongo, "#ABC", expected_list_id="main-list", section="MAIN")
+        return {"#AWAY": "123456789"}
+
+    monkeypatch.setattr(service, "get_discord_ids", close_during_lookup)
+    result = asyncio.run(service.remind_now("#ABC", expected_list_id="main-list", section="MAIN"))
+    assert result["ok"] is False and result["stale"] is True
+    assert bot.rest.sent == []
+
+
+def test_main_manual_reminder_fails_closed_when_link_lookup_fails(monkeypatch):
+    doc = _list_doc("main-list", clan_tag="ABC", clan_name="Alpha")
+    doc["section"] = "MAIN"
+    doc["players"] = [{"tag": "#AWAY", "name": "Away", "discord_id": None}]
+    mongo = _fake_mongo([doc])
+    bot = FakeBot()
+    _wire(monkeypatch, mongo=mongo, coc_client=FakeCoc(clan=FakeClan("#ABC", "Alpha", [])),
+          bot=bot, links=None)
+    with pytest.raises(RuntimeError, match="link service"):
+        asyncio.run(service.remind_now("#ABC", section="MAIN"))
+    assert bot.rest.sent == []
 
 
 def test_reminder_message_splits_large_roster_and_whitelists_mentions(monkeypatch):

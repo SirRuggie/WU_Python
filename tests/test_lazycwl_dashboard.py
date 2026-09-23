@@ -18,6 +18,26 @@ def _nodes(components):
             yield from getattr(component, "components", [])
 def _text(components): return "\n".join(getattr(node, "content", "") for node in _nodes(components))
 
+def test_rosters_command_opens_fwa_dashboard_directly(monkeypatch):
+    seen = []
+    async def home(mongo, selected_tag=None, note=None, *, token, tab="overview"):
+        seen.append(dashboard._sessions[token]["section"])
+        return ["dashboard"]
+    monkeypatch.setattr(dashboard, "build_home", home)
+
+    class Ctx:
+        member = SimpleNamespace(permissions=hikari.Permissions.ADMINISTRATOR)
+        user = SimpleNamespace(id=44)
+        interaction = SimpleNamespace(guild_id=55)
+        async def defer(self, **kwargs): pass
+    ctx = Ctx()
+    async def edit_initial_response(**kwargs):
+        assert kwargs["components"] == ["dashboard"]
+    ctx.interaction.edit_initial_response = edit_initial_response
+    asyncio.run(dashboard.open_dashboard(ctx, object()))
+    assert seen == ["FWA"]
+
+
 def test_dashboard_starts_without_a_clan_or_implicit_bulk_scope():
     rendered = dashboard.render_home([_doc()], [_clan(1)], None, NOW, token="preview")
     assert "Choose a clan" in _text(rendered)
@@ -197,7 +217,7 @@ def test_clan_dropdown_normalizes_dates_to_utc():
     assert dashboard._roster_description(doc) == "Saved 12 Sep 2026 · expires 16 Sep 2026 (UTC)"
 
 
-def test_main_rendering_is_scoped_and_omits_return_workflow():
+def test_main_rendering_is_scoped_and_has_manual_reminders_only():
     token = dashboard._session(44, 55)
     dashboard._sessions[token]["section"] = "MAIN"
     fwa, main = _doc(1), _doc(2)
@@ -209,7 +229,39 @@ def test_main_rendering_is_scoped_and_omits_return_workflow():
     assert "CWL Rosters · Main · Overview" in text
     assert "Clan 2" in text and "Clan 1" not in text
     assert "Players away:" not in text and "Return reminders" not in labels
-    assert "Send return reminders" not in labels
+    assert "Send Reminders Now" in labels
+    assert "Enable reminders" not in labels and "Disable reminders" not in labels
+
+
+def test_main_send_review_and_confirmation_are_section_scoped(monkeypatch):
+    token = dashboard._session(44, 55)
+    dashboard._sessions[token]["section"] = "MAIN"
+    doc = _doc()
+    doc["section"] = "MAIN"
+    async def active(mongo, *, section):
+        assert section == "MAIN"
+        return [doc]
+    async def recipients(saved):
+        return [{"tag": "#P1", "discord_id": 123}]
+    calls = []
+    async def remind(tag, *, expected_list_id, section):
+        calls.append((tag, expected_list_id, section))
+        return {"ok": True, "sent": True}
+    async def home(mongo, selected_tag=None, note=None, **kwargs):
+        assert kwargs["tab"] == "overview"
+        return [note]
+    monkeypatch.setattr(dashboard.store, "list_active", active)
+    monkeypatch.setattr(dashboard.service, "reminder_recipients", recipients)
+    monkeypatch.setattr(dashboard.service, "remind_now", remind)
+    monkeypatch.setattr(dashboard, "build_home", home)
+
+    review = asyncio.run(dashboard._review(object(), token, "#A1", "send"))
+    assert f"Destination: <#{dashboard.service.MAIN_CWL_CHANNEL}>" in _text(review)
+    assert "1 linked Discord accounts" in _text(review)
+    nonce = next(iter(dashboard._sessions[token]["pending"]))
+    result = asyncio.run(dashboard._apply_bound(object(), token, nonce, "send", _Ctx(token)))
+    assert calls == [("#A1", doc["_id"], "MAIN")]
+    assert "Sent reminders for 1 clans" in result[0]
 
 
 def test_switching_section_rotates_token_and_invalidates_old_confirmation(monkeypatch):
