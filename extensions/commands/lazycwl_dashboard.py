@@ -267,7 +267,7 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
         buttons.append(Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen),
                               label="Send return reminders" if section == "FWA" else "Send Reminders Now",
                               is_disabled=not docs))
-        buttons.append(Button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_close", token, chosen), label=f"Close all {label} rosters" if chosen == "ALL" else "Close roster", is_disabled=not docs))
+        buttons.append(Button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_close", token, chosen), label=f"Clear all {label} Rosters" if chosen == "ALL" else "Clear roster", is_disabled=not docs))
         body.append(ActionRow(components=buttons))
     elif tab == "players":
         if chosen == "ALL" or not docs:
@@ -364,7 +364,7 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
         detail = [f"Destination: <#{service.reminder_channel(_section(token))}>", "Recipients are checked again when you confirm."] + [f"{_name(d.get('clan_name'))}: {len(a)} away · {len({p.get('discord_id') for p in a if p.get('discord_id')})} linked Discord accounts" for d,a in recipients]
         return _confirm("Send reminders?", [f"Affected lists: {len(docs)}"] + detail, "lazycwl_send_yes", token, _bind(token, tag, docs, operation="send"), GREEN_ACCENT)
     if kind == "close":
-        return _confirm("Close saved list?", ["This closes these rosters and stops any return reminders. Closed records remain until their retention deadline.", f"Affected lists: {len(docs)}"] + names, "lazycwl_close_yes", token, _bind(token, tag, docs, operation="close"), RED_ACCENT)
+        return _confirm("Clear saved rosters?", ["This removes the selected rosters from active tracking and stops their return reminders. Their records remain until the retention deadline.", f"Affected rosters: {len(docs)}"] + names, "lazycwl_close_yes", token, _bind(token, tag, docs, operation="close"), RED_ACCENT)
     verb = "Enable" if kind == "enable" else "Disable"
     lines = [f"Destination: <#{service.reminder_channel(_section(token))}>", f"Affected lists: {len(docs)}"] + names
     if minutes: lines.insert(0, f"Frequency: every {minutes} minutes. Next run is calculated after applying.")
@@ -424,7 +424,7 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
     failed = [_name(d.get("clan_name")) for d,r in results if not r.get("ok")]
     if failed:
         return _notice("Some changes were not applied", "Failed: " + ", ".join(failed) + ". Refresh before trying again.", token, tag, accent=RED_ACCENT)
-    verbs = {"replace": "Roster replaced", "send": "Reminder check completed", "close": "Saved lists closed", "enable": "Reminders enabled", "disable": "Reminders disabled"}
+    verbs = {"replace": "Roster replaced", "send": "Reminder check completed", "close": "Saved rosters cleared", "enable": "Reminders enabled", "disable": "Reminders disabled"}
     note = f"{verbs[operation]} for {len(results)} saved list(s)."
     if operation == "send":
         note = f"Sent reminders for {sum(bool(result.get('sent')) for _, result in results)} clans. Clans with everyone home were skipped."

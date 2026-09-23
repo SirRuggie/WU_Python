@@ -27,7 +27,7 @@ clans remain reachable with the clan navigation buttons.
   form the replacement. Manual roster edits are not copied. Fetching happens
   before replacing; an atomic database transaction keeps the old roster if
   the replacement cannot be saved.
-- **Close roster** reviews the affected rosters and stops their reminders.
+- **Clear roster** or **Clear all FWA Rosters** / **Clear all Main Rosters** reviews the affected rosters, removes them from active tracking, and stops their reminders. Their records remain until the retention deadline.
 - **Players** displays 20 players per page, with reviewed add/remove actions.
   Only FWA shows Away/Returned status.
 - **Return reminders** is available only for FWA. It shows the configured
