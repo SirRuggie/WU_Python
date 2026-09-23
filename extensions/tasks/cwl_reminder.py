@@ -294,7 +294,8 @@ def _campaign_job_id(guild_id: int, cycle: str, message_id: str, variant: str) -
 
 
 def _campaign_generation(loaded: dict) -> str:
-    return f"{int(loaded.get('defaults_revision', 0))}:{int(loaded.get('revision', 0))}"
+    version = f"{int(loaded.get('defaults_revision', 0))}:{int(loaded.get('revision', 0))}"
+    return f"{version}:{loaded['recurring_version']}" if loaded.get("recurring_version") else version
 
 
 def _add_campaign_job(

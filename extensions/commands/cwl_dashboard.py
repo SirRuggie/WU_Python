@@ -292,10 +292,12 @@ async def _save_campaign(mongo: MongoClient, draft: dict, campaign: dict, **extr
 async def _save_timing(ctx: Any, mongo: MongoClient, draft: dict, campaign: dict) -> tuple[dict, str]:
     """A submitted timing form updates the actual scheduler, not just an editor."""
     saved = await _save_campaign(mongo, draft, campaign)
+    if saved.get("scope") != "cycle":
+        saved = await cwl_campaign.patch_draft(mongo, _draft_token(saved), {"scope": "cycle"})
     try:
         result = await cwl_campaign.apply_draft(
             mongo, _draft_token(saved), int(ctx.user.id),
-            expected_revision=saved.get("base_revision"), keep_draft=True, require_future_signup=True,
+            expected_revision=saved.get("base_revision"), keep_draft=True, require_future_signup=True, repeat_monthly=True,
         )
     except (ValueError, RuntimeError) as exc:
         return saved, f"NOT SCHEDULED: {exc} Previous schedule kept. Fix the dates and try again."
@@ -373,7 +375,7 @@ def _header(draft: dict, tab: str, notice: str | None = None, *, navigation: boo
     rows: list = [
         hikari.impl.TextDisplayComponentBuilder(content="## <:CWL:1399013745598009375> CWL announcements"),
         hikari.impl.TextDisplayComponentBuilder(
-            content=f"{target_label}\nTimezone: **{campaign.get('timezone', 'America/New_York')}**"
+            content=f"{target_label} · **{campaign.get('timezone', 'America/New_York')}**\nRepeats monthly until changed."
         ),
     ]
     if notice:
@@ -417,7 +419,7 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
         if live is not None and paused:
             live_text = "Automatic messages are paused."
         saved_campaign = (await _saved_defaults_campaign(mongo, int(draft["guild_id"]))) if mongo is not None and draft.get("scope") == "defaults" else live_campaign
-        changed = live is None or campaign != saved_campaign
+        changed = campaign != (saved_campaign if live is not None else draft.get("saved_campaign", campaign))
         status = "Unsaved changes. Save posts below, or submit a schedule to save all edits." if changed else "Saved."
         if live is None:
             status = "Save posts below. Schedule changes save all edits."
@@ -436,7 +438,7 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
             hikari.impl.TextDisplayComponentBuilder(content=status),
             hikari.impl.TextDisplayComponentBuilder(content=f"### Signups open\n{_discord_time(opening)}\n### Signups close\n{_discord_time(closing)}\n### Reminders\n{reminder_text}"),
             _button_group(
-                (f"cwl_save_options:{draft_id}|overview", "Save posts", hikari.ButtonStyle.SUCCESS),
+                (f"cwl_save_options:{draft_id}|overview", "Save posts", hikari.ButtonStyle.SUCCESS, not changed),
             ),
         ])
         if live is not None:
@@ -674,16 +676,13 @@ async def save_options(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
     draft, problem = await _load(ctx, mongo, ref[0])
     if problem:
         return error_panel(problem)
-    month = datetime.strptime(_cycle(draft), "%Y-%m").strftime("%B %Y")
-    rows = _header(draft, ref[1]) + [
-        hikari.impl.TextDisplayComponentBuilder(content=f"### Use these settings for…\n**{month}:** update messages that have not been sent.\n**Future months:** repeat these settings starting next month."),
-        _button_group(
-            (f"cwl_apply_review:{ref[0]}|cycle|{ref[1]}", month, hikari.ButtonStyle.PRIMARY),
-            (f"cwl_apply_review:{ref[0]}|defaults|{ref[1]}", "Future months", hikari.ButtonStyle.PRIMARY),
-        ),
-        _button(f"cwl_tab:{ref[0]}|{ref[1]}", f"Back to {ref[1].title()}"),
-    ]
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    live = await cwl_campaign.load_campaign(mongo, int(draft["guild_id"]), _cycle(draft))
+    if _campaign(draft) == live["campaign"]:
+        return await panel(draft, "overview", "No changes to save.", mongo=mongo)
+    saved, notice = await _save_timing(ctx, mongo, draft, _campaign(draft))
+    if notice.startswith("Scheduled."):
+        notice = "Saved. Repeats monthly until changed."
+    return await panel(saved, "overview", notice, mongo=mongo)
 
 
 @register_action("cwl_sequence_open", preload_state=False)
@@ -707,7 +706,6 @@ async def advanced(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.I
         menu.add_option(label, key)
     rows.extend([
         menu_row,
-        _button(f"cwl_apply_review:{action_id}|defaults|schedule", "Repeat for future months", style=hikari.ButtonStyle.PRIMARY),
         _button(f"cwl_discard_review:{action_id}", "Discard changes…", style=hikari.ButtonStyle.DANGER),
         _button(f"cwl_tab:{action_id}|schedule", "Back to Schedule"),
     ])
@@ -1746,7 +1744,7 @@ async def pause(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     patch = {"campaign": campaign}
     rebased = prior_revision == int(live["revision"]) - 1
     if rebased:
-        patch.update(cycle_base_revision=live["revision"], base_revision=live["revision"])
+        patch.update(cycle_base_revision=live["revision"], base_revision=live["revision"], recurring_base_version=live.get("recurring_version"))
     saved = await cwl_campaign.patch_draft(mongo, _draft_token(draft), patch)
     notice = "Automatic messages resumed." if not campaign["paused"] else "Automatic messages paused. Resume them when you are ready."
     if not rebased:

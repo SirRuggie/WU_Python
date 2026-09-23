@@ -86,7 +86,7 @@ def test_future_signup_timing_autosaves_live_campaign_reanchors_reminders_and_jo
         }).to_list(length=None)
         assert {row["message_id"] for row in pending} == set(expected)
         assert {row["message_id"]: row["run_time"] for row in pending} == expected
-        assert len([job_id for job_id in scheduler.jobs if job_id.startswith(cwl_reminder.CAMPAIGN_JOB_PREFIX)]) == len(pending)
+        assert len([job_id for job_id in scheduler.jobs if job_id.startswith(f"{cwl_reminder.CAMPAIGN_JOB_PREFIX}22:{cycle}:")]) == len(pending)
         assert {
             (row["message_id"], tuple(row["variants"])) for row in pending
         } == {(message_id, (variant,)) for message_id in expected for variant in cwl_campaign.AUDIENCES}

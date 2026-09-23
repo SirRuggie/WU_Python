@@ -214,6 +214,8 @@ def signup_deadline(campaign: dict, cycle: str):
     tz = campaign.get("timezone", DEFAULT_TIMEZONE)
     month = _month(cycle, tz)
     rule = campaign.get("signup_deadline", {})
+    if isinstance(rule, dict):
+        month = month.add(months=int(rule.get("month_offset", 0)))
     if isinstance(rule, str):
         return pendulum.parse(rule, tz=tz).in_timezone(tz)
     if rule.get("at"):
@@ -231,6 +233,7 @@ def _resolve_one(schedule: dict, *, month, deadline, resolved):
     if mode == "manual":
         return None
     if mode == "monthly":
+        month = month.add(months=int(schedule.get("month_offset", 0)))
         day, hour, minute = _monthly_parts(schedule)
         if "month_end_offset_days" in schedule:
             day = month.end_of("month").day - int(schedule["month_end_offset_days"])
@@ -536,6 +539,15 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     selected_cycle = cycle or cycle_key(now, base.get("timezone", DEFAULT_TIMEZONE))
     row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, selected_cycle)})
     override = copy.deepcopy(row.get("campaign")) if row else None
+    recurring_rows = await mongo.bot_config.find({
+        "kind": "cwl_campaign_cycle", "guild_id": guild_id,
+        "recurring_campaign": {"$exists": True},
+    }).to_list(length=None)
+    recurring_rows = [item for item in recurring_rows if item.get("cycle", "") <= selected_cycle]
+    recurring = max(recurring_rows, key=lambda item: item.get("recurring_updated_at", ""), default=None)
+    if recurring and recurring["_id"] != (row or {}).get("_id"):
+        if recurring.get("recurring_updated_at", "") >= (row or {}).get("updated_at", ""):
+            override = copy.deepcopy(recurring["recurring_campaign"])
     if isinstance(override, dict):
         # Older saved cycle snapshots predate the sequence feature. They keep
         # their individual schedules when future defaults adopt a sequence.
@@ -552,7 +564,8 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         "cycle": selected_cycle,
         "revision": int((row or {}).get("revision", 0)),
         "defaults_revision": int((saved or {}).get("revision", 0)),
-        "activated": bool((row or {}).get("activated") or (saved or {}).get("activated")),
+        "activated": bool((row or {}).get("activated") or (saved or {}).get("activated") or recurring),
+        "recurring_version": (recurring or {}).get("recurring_updated_at"),
         "campaign": campaign,
         "deliveries": deliveries,
         "sent_occurrences": sent_occurrences,
@@ -585,7 +598,9 @@ async def new_draft(mongo, guild_id: int, user_id: int, cycle: str | None = None
         "base_revision": loaded["defaults_revision"] if scope == "defaults" else loaded["revision"],
         "cycle_base_revision": loaded["revision"],
         "defaults_base_revision": loaded["defaults_revision"],
+        "recurring_base_version": loaded.get("recurring_version"),
         "campaign": copy.deepcopy(campaign), "created_at": now, "updated_at": now,
+        "saved_campaign": copy.deepcopy(campaign),
     }
     await mongo.bot_config.update_one({"_id": draft["_id"]}, {"$set": draft}, upsert=True)
     return copy.deepcopy(draft)
@@ -641,7 +656,7 @@ async def patch_draft(mongo, draft: str, patch: dict) -> dict:
     row = await load_draft(mongo, draft)
     if not row:
         raise ValueError("Draft expired or does not exist")
-    allowed = {"campaign", "scope", "cycle", "base_revision", "cycle_base_revision"}
+    allowed = {"campaign", "scope", "cycle", "base_revision", "cycle_base_revision", "recurring_base_version"}
     if set(patch) - allowed:
         raise ValueError("Draft patch contains unsupported fields")
     updated = copy.deepcopy(row)
@@ -711,7 +726,29 @@ def _validate_future_signup(candidate: dict, live: dict, cycle: str) -> None:
         raise ValueError("The signup time has already passed. Choose a future date and time.")
 
 
-async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | None = None, *, keep_draft: bool = False, require_future_signup: bool = False) -> dict:
+def monthly_campaign(campaign: dict, cycle: str) -> dict:
+    """Convert dated rules to their monthly equivalents for subsequent cycles."""
+    result = copy.deepcopy(campaign)
+    timezone = result.get("timezone", DEFAULT_TIMEZONE)
+    origin = _month(cycle, timezone)
+    def parts(at):
+        offset = (at.year - origin.year) * 12 + at.month - origin.month
+        return {"day": at.day, "hour": at.hour, "minute": at.minute, **({"month_offset": offset} if offset else {})}
+    overrides = result.pop("schedules", {})
+    for key, message in result.get("messages", {}).items():
+        schedule = overrides.get(key, message.get("schedule", {}))
+        message["schedule"] = copy.deepcopy(schedule)
+        if schedule.get("mode") == "specific":
+            at = pendulum.parse(schedule["at"], tz=timezone).in_timezone(timezone)
+            message["schedule"] = {"mode": "monthly", **parts(at)}
+    deadline = result.get("signup_deadline", {})
+    if isinstance(deadline, str) or deadline.get("at"):
+        at = pendulum.parse(deadline if isinstance(deadline, str) else deadline["at"], tz=timezone).in_timezone(timezone)
+        result["signup_deadline"] = parts(at)
+    return result
+
+
+async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | None = None, *, keep_draft: bool = False, require_future_signup: bool = False, repeat_monthly: bool = False) -> dict:
     row = await load_draft(mongo, draft)
     if not row:
         raise ValueError("Draft expired or does not exist")
@@ -720,6 +757,8 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
     guild_id, cycle, scope = int(row["guild_id"]), row["cycle"], row["scope"]
     validate_campaign(row["campaign"])
     live = await load_campaign(mongo, guild_id, cycle)
+    if repeat_monthly and row.get("recurring_base_version") != live.get("recurring_version"):
+        raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
     current_revision = live["defaults_revision"] if scope == "defaults" else live["revision"]
     scope_revision = row.get(f"{scope}_base_revision", row.get("base_revision", 0))
     # UI callers created before separate scope revisions pass the draft's
@@ -732,6 +771,10 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
     if current_revision != wanted_revision:
         raise RuntimeError("CWL campaign changed while this draft was open")
     candidate = copy.deepcopy(row["campaign"])
+    recurring_candidate = monthly_campaign(candidate, cycle) if repeat_monthly else None
+    if recurring_candidate:
+        for offset in range(1, 13):
+            resolve_schedule(recurring_candidate, _month(cycle, candidate.get("timezone", DEFAULT_TIMEZONE)).add(months=offset).format("YYYY-MM"))
     try:
         from extensions.tasks import cwl_reminder
         runtime_bot = getattr(cwl_reminder, "bot_instance", None)
@@ -793,6 +836,9 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
     }, "$push": {"revisions": {"$each": [revision_entry], "$slice": -20}}}
     if scope == "cycle":
         update["$set"]["cycle"] = cycle
+        if recurring_candidate:
+            # Current settings and the monthly rule commit in one Mongo write.
+            update["$set"].update(recurring_campaign=recurring_candidate, recurring_updated_at=now)
     try:
         write = await mongo.bot_config.update_one(
             {"_id": target_id, "revision": current_revision}, update,
@@ -815,9 +861,11 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
         # Do not replace a newer edit submitted while this save was running.
         fields = {
             "campaign": copy.deepcopy(candidate), "updated_at": _utcnow(),
+            "saved_campaign": copy.deepcopy(candidate),
             "base_revision": new_revision,
             "cycle_base_revision": result["revision"],
             "defaults_base_revision": result["defaults_revision"],
+            "recurring_base_version": result.get("recurring_version"),
         }
         refreshed = await mongo.bot_config.update_one(
             {"_id": row["_id"], "updated_at": row.get("updated_at")}, {"$set": fields},
@@ -827,7 +875,7 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
     try:
         from extensions.tasks import cwl_reminder
         if getattr(cwl_reminder, "mongo_client", None) is mongo:
-            if scope == "defaults":
+            if scope == "defaults" or repeat_monthly:
                 await cwl_reminder._sync_all_campaigns()
             else:
                 await cwl_reminder.sync_campaign_schedule(guild_id, cycle)
@@ -857,6 +905,11 @@ async def set_paused(mongo, guild_id: int, paused: bool, cycle: str | None = Non
         "actions": {"$each": [{"action": "paused" if paused else "resumed", "at": now, "by": user_id}], "$slice": -HISTORY_LIMIT},
         "revisions": {"$each": [{"revision": new_revision, "at": now, "by": user_id, "action": "paused" if paused else "resumed", "campaign": copy.deepcopy(campaign)}], "$slice": -20},
     }}
+    if loaded.get("recurring_version"):
+        source = await mongo.bot_config.find_one({"guild_id": int(guild_id), "recurring_updated_at": loaded["recurring_version"]})
+        recurring = copy.deepcopy(source["recurring_campaign"])
+        recurring["paused"] = bool(paused)
+        update["$set"].update(recurring_campaign=recurring, recurring_updated_at=now)
     try:
         write = await mongo.bot_config.update_one(
             {"_id": cycle_id(guild_id, loaded["cycle"]), "revision": old_revision},
@@ -874,7 +927,10 @@ async def set_paused(mongo, guild_id: int, paused: bool, cycle: str | None = Non
     try:
         from extensions.tasks import cwl_reminder
         if getattr(cwl_reminder, "mongo_client", None) is mongo:
-            await cwl_reminder.sync_campaign_schedule(guild_id, loaded["cycle"])
+            if loaded.get("recurring_version"):
+                await cwl_reminder._sync_all_campaigns()
+            else:
+                await cwl_reminder.sync_campaign_schedule(guild_id, loaded["cycle"])
     except Exception as exc:
         result["schedule_sync_pending"] = True
         result["schedule_sync_error"] = type(exc).__name__

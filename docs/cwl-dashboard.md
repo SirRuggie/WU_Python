@@ -20,7 +20,8 @@ in MongoDB to prevent duplicate posts and restore jobs after a reboot.
 
 Choose a post and its Main or Lazy version. Edit text, upload artwork, change
 buttons, and select the channel and ping roles. Preview never pings players.
-**Save posts** on Overview reviews and saves the changes. **Send roster** queues
+**Save posts** on Overview saves directly and is disabled when nothing has changed.
+There is no month-selection or extra review step. **Send roster** queues
 the saved roster post; only administrators can use it.
 
 **Upload replacement** uses Discord's native upload modal and the bot's media
@@ -45,8 +46,10 @@ minimum spacing. Moving signup dates recalculates unsent reminders. A newly
 chosen signup time must be in the future; an existing past opening can still
 anchor future reminders without repeating the signup post.
 
-**Schedule → More options → Repeat for future months** saves recurring defaults
-without changing the current month. **Discard changes** reloads saved settings.
+The saved setup **repeats monthly until changed**. Saving updates unsent posts
+and carries the same text, artwork, destinations, and timing into later months.
+Previously sent posts are not resent. Dated rules repeat on the corresponding
+day and time in later months. **Discard changes** reloads saved settings.
 Drafts, active settings, and pending jobs survive restarts in MongoDB. Revision
 checks prevent an older editor from overwriting a newer save. Submenus provide
 Back buttons; old History links return to Overview.

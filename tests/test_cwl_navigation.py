@@ -47,14 +47,10 @@ def test_submenu_back_buttons_invoke_working_handlers_without_duplicate_tabs(mon
             result = await click_back(submenu, ctx, mongo)
             assert result
             assert "out of date" not in str(result[0].build()[0])
-        monkeypatch.setattr(ui, "insert_state", AsyncMock())
         for origin in ("overview", "schedule"):
-            choices = await ui.save_options(ctx, token + "|" + origin, mongo=mongo)
-            result = await click_back(choices, ctx, mongo)
-            assert any(node.get("custom_id") == f"cwl_tab:{token}|{origin}" for node in nodes(result))
-            review = await ui.review_apply(ctx, token + "|cycle|" + origin, mongo=mongo)
-            back_to_choices = await click_back(review, ctx, mongo)
-            assert "Use these settings for" in str(back_to_choices[0].build()[0])
+            result = await ui.save_options(ctx, token + "|" + origin, mongo=mongo)
+            assert any(node.get("custom_id") == f"cwl_tab:{token}|overview" for node in nodes(result))
+            assert "Use these settings for" not in str(result[0].build()[0])
     asyncio.run(scenario())
 
 
