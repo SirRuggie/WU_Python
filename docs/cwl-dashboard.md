@@ -7,8 +7,10 @@ role ping.
 
 The dashboard opens a durable draft for the selected CWL cycle. With no month
 selected, it opens the current month, never an older month's draft. Reopening it
-resumes that administrator's saved draft for that month rather than starting over. Closing
-Discord does not discard edits. Every button rechecks that the clicker has
+resumes that administrator's saved draft for that month rather than starting over.
+Closing Discord does not discard edits. A successful timing change keeps the
+same draft open and refreshes it to the saved revision, so the next form can use
+the same dashboard session. Every button rechecks that the clicker has
 Manage Server or Administrator permission, owns that draft, and is still in the
 originating guild.
 
@@ -42,15 +44,27 @@ Open **Schedule** and follow the steps: **Signups open**, **Signups close**, the
 **Reminders**. Opening and closing controls are together, and the upcoming list
 shows only future draft messages. Advanced controls retain other message timing
 options. The configured timezone is shown beside the dates; Discord date labels
-render in each viewer's local timezone.
+render in each viewer's local timezone. Submitting a valid timing form saves it
+immediately and updates the durable delivery queue. That save applies the whole
+current draft atomically, including any text, artwork, buttons, destinations,
+or ping changes already in it. Review those edits before submitting a timing
+form. There is no separate Review, Save, or Start button for current timing
+changes.
 
-Overview shows signup opening, closing, and reminder settings. If edits differ
-from the settings in use, it explains that the bot keeps the previous settings
-until **Review and save**. It does not show competing draft/live send times.
-Only when the displayed settings match those in use does it show one **Next
-message**. Both drafts and applied settings are stored in MongoDB and
-survive bot restarts. A configured signup time that has already passed remains
-the reminder anchor; applying the draft does not replay that signup post.
+Overview shows signup opening, closing, and reminder settings. Valid timing
+forms are already in use. Use **Save message changes** from Overview when those
+content or delivery edits should be saved without changing timing. A later valid
+timing submission also saves them as part of the complete draft. The panel shows
+one **Next message** when the displayed settings match those in use. Both drafts
+and active settings are stored in MongoDB and survive bot restarts.
+
+If a timing edit cannot produce a valid plan, the dashboard keeps the edit in
+the draft and labels it **NOT SCHEDULED**. The previously active sending plan
+and its queued jobs remain unchanged while the dates are corrected. A newly
+chosen signup opening in the past is rejected from scheduling in the same way.
+An opening that was already active and has since passed remains a valid reminder
+anchor; changing its future closing date or reminders does not replay the old
+signup post.
 
 ### Reminder sequence
 
@@ -62,10 +76,12 @@ because interval timing determines how many slots can fit. The recommended
 starting plan is four evenly spread reminders, with the final call three hours
 before signup close and a three-hour minimum gap. The panel resolves and shows
 signup opening, deadline, final reminder, and **View all send times** before
-anything is applied. The reminder count includes the final reminder. If a new
-opening or closing date temporarily makes the plan impossible, the date edit
-still saves to the draft with a warning. Complete both date edits before Review
-and Apply; an invalid plan cannot become live.
+the form is submitted. A valid submission saves the sequence and updates its
+queued delivery jobs immediately. The reminder count includes the final
+reminder. If a new opening or closing date temporarily makes the plan
+impossible, the date edit still saves to the draft with a **NOT SCHEDULED**
+warning. Complete the other date edit to make the plan valid; the previous live
+plan stays in place until then.
 
 Reminders always calculate from the configured signup opening and closing
 dates. A delivered signup post does not freeze the opening date: an explicit
@@ -85,24 +101,30 @@ Choosing **Monthly** requires a choice of **Day of the month** (1–31) or
 **Days before month end** (0–27), followed by a required number and delivery
 time. Zero means the month's last day; two means two days before that day.
 Dates 29–31 use the last day in shorter months. Existing schedules are kept
-until a new rule is reviewed and applied.
+when the submitted rule is invalid. A valid rule saves and replaces the active
+timing immediately.
 
 Use **Preview** from a message version to render the same Components V2 message
 the scheduler will use. Previews suppress every user, role, and everyone ping.
 They never send a post or alter delivery history.
 
-When ready, select **Review and save**, choose the displayed month or **Future
-months**, then review the exact changed messages, artwork, links,
-audiences, schedule dates, and deadline before presenting the final apply
-button. Confirmation reloads the draft and refuses to apply if it changed after
-review. Applying uses a revision check so an older editor cannot silently
-overwrite a newer saved campaign. This-month applies protect already-sent posts.
-Monthly defaults reviews show the first affected future month, and saving them
-keeps the current month's live campaign unchanged.
-If an apply reports that another administrator saved first, use **Reload saved
-version** through **Schedule → More options → Discard changes…**. It asks for a second confirmation, discards only your
-owned draft, and opens a fresh draft from the current saved campaign. It never
-automatically rebases or merges conflicting edits.
+When message content or delivery settings are ready, select **Save message
+changes** on Overview, choose the displayed month or **Future months**, then
+review the exact changed text, artwork, links, audiences, and destinations
+before the final save. Confirmation reloads the draft and refuses to save if it
+changed after review. Saving uses a revision check so an older editor cannot
+silently overwrite a newer campaign. This-month saves protect already-sent
+posts.
+
+To reuse the current draft's settings in later cycles, open **Schedule → More
+options → Repeat for future months** and review the first affected future month.
+Saving future-month defaults leaves the current month's active campaign
+unchanged.
+If a save reports that another administrator saved first, use **Schedule → More
+options → Discard changes… → Discard and reload**. It asks for a second
+confirmation, discards only your owned draft, and opens a fresh draft from the
+current saved campaign. It never automatically rebases or merges conflicting
+edits.
 
 The overview can pause/resume the campaign and skip the next scheduled
 occurrence. **History** records sends, skips, failures, revision restores, and
@@ -118,6 +140,10 @@ send a production message.
   panel resumes the prior draft.
 - Edit Main and Lazy copy, artwork, links, channel, roles, schedule, and
   deadline; preview both audiences and confirm previews contain no role pings.
+- Submit valid opening, closing, and reminder forms and verify the dashboard
+  immediately shows **Scheduled** without a second save step. Submit an invalid
+  combination and verify **NOT SCHEDULED** appears while the previous queue is
+  unchanged.
 - Review both scope choices and verify the summary matches the selected target.
   Edit the draft after review and verify confirmation refuses it.
 - Verify history links, retry, revision restore, and published-post update use
@@ -132,3 +158,7 @@ configuration changes.
 The **CWL announcements** button in `/content dashboard` opens the same private
 CWL draft editor. It is intended as the main entry point for administrators who
 already use the content dashboard for published posts.
+
+`/cwl dashboard` and that content-dashboard button are the only announcement
+editing entry points. Main and Lazy messages, signup posts, reminder sequences,
+and roster announcements are all configured and delivered from this dashboard.

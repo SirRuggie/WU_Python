@@ -71,12 +71,12 @@ def test_sequence_submit_configures_numbered_slots_and_validates_resolved_plan(m
         return draft
 
     saved = []
-    async def patch(_mongo, _token, patch):
-        saved.append(patch["campaign"])
-        return draft | {"campaign": patch["campaign"]}
+    async def autosave(_ctx, _mongo, _draft, campaign):
+        saved.append(campaign)
+        return draft | {"campaign": campaign}, "Scheduled."
 
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", load)
-    monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", patch)
+    monkeypatch.setattr(dashboard, "_save_timing", autosave)
     asyncio.run(dashboard.submit_sequence(context, "a" * 32 + "|evenly", mongo=object()))
     campaign = saved[0]
     assert campaign["reminder_sequence"] == {
@@ -99,11 +99,11 @@ def test_interval_modal_uses_only_interval_lead_and_gap_and_keeps_internal_count
 
     saved = []
 
-    async def patch(_mongo, _token, patch):
-        saved.append(patch["campaign"])
-        return draft | {"campaign": patch["campaign"]}
+    async def autosave(_ctx, _mongo, _draft, campaign):
+        saved.append(campaign)
+        return draft | {"campaign": campaign}, "Scheduled."
 
-    monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", patch)
+    monkeypatch.setattr(dashboard, "_save_timing", autosave)
     submit_context = _ctx({"interval_hours": "48", "final_hours": "1", "min_gap_hours": "3"})
     asyncio.run(dashboard.submit_sequence(submit_context, "a" * 32 + "|interval", mongo=object()))
     assert saved[0]["reminder_sequence"] == {
@@ -121,16 +121,19 @@ def test_intermediate_invalid_deadline_saves_so_sequence_can_be_repaired(monkeyp
         ),
     }
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", AsyncMock(return_value=draft))
-    save = AsyncMock(return_value=draft)
-    monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", save)
+    saved = []
+    async def autosave(_ctx, _mongo, _draft, campaign):
+        saved.append(campaign)
+        return draft | {"campaign": campaign}, "NOT SCHEDULED: Signup deadline must be after signups open. Your previous sending schedule is unchanged."
+    monkeypatch.setattr(dashboard, "_save_timing", autosave)
     context = _ctx({"date": "2026-10-20", "time": "17:30", "timezone": "America/New_York"})
 
     asyncio.run(dashboard.submit_settings(context, "a" * 32 + "|specific", mongo=object()))
 
-    save.assert_awaited_once()
+    assert len(saved) == 1
     rendered = _component_text(context.interaction.edit_initial_response.call_args.kwargs["components"])
-    assert "Signup closing and timezone saved" in rendered
-    assert "Reminder timing needs attention before Review" in rendered
+    assert "NOT SCHEDULED:" in rendered
+    assert "previous sending schedule is unchanged" in rendered
 
 
 def test_stale_numbered_schedule_submit_redirects_without_saving(monkeypatch):
@@ -159,15 +162,18 @@ def test_manual_signup_opening_saves_intermediate_sequence_repair(monkeypatch):
         "campaign": cwl_sequence.configure(cwl_campaign.default_campaign(), "evenly", count=4),
     }
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", AsyncMock(return_value=draft))
-    save = AsyncMock(return_value=draft)
-    monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", save)
+    saved = []
+    async def autosave(_ctx, _mongo, _draft, campaign):
+        saved.append(campaign)
+        return draft | {"campaign": campaign}, "NOT SCHEDULED: Choose a signup opening time before automatic reminders. Your previous sending schedule is unchanged."
+    monkeypatch.setattr(dashboard, "_save_timing", autosave)
     context = _ctx()
     context.interaction.values = ("manual",)
 
     asyncio.run(dashboard.edit_schedule(context, "a" * 32 + "|signup", mongo=object()))
 
-    save.assert_awaited_once()
-    assert "Reminder timing needs attention before Review" in _component_text(
+    assert len(saved) == 1
+    assert "NOT SCHEDULED:" in _component_text(
         context.interaction.edit_initial_response.call_args.kwargs["components"]
     )
 

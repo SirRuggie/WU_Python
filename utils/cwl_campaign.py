@@ -552,6 +552,7 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         "cycle": selected_cycle,
         "revision": int((row or {}).get("revision", 0)),
         "defaults_revision": int((saved or {}).get("revision", 0)),
+        "activated": bool((row or {}).get("activated") or (saved or {}).get("activated")),
         "campaign": campaign,
         "deliveries": deliveries,
         "sent_occurrences": sent_occurrences,
@@ -697,7 +698,20 @@ def _protect_sent(candidate: dict, current: dict, cycle: str, deliveries: list[d
     return protected
 
 
-async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | None = None) -> dict:
+def _validate_future_signup(candidate: dict, live: dict, cycle: str) -> None:
+    """Do not accept a newly selected signup time that cannot be scheduled."""
+    planned = [item for item in resolve_schedule(candidate, cycle) if item["message_id"] == "signup" and item.get("run_at")]
+    previous = [item for item in live.get("schedule", ()) if item["message_id"] == "signup" and item.get("run_at")]
+    changed = {(item["id"], item["run_at"]) for item in planned} != {(item["id"], item["run_at"]) for item in previous}
+    if not changed and live.get("activated"):
+        return
+    sent = _sent_ids(live.get("deliveries", ()), live.get("sent_occurrences", ()))
+    now = pendulum.now("UTC")
+    if any(item["id"] not in sent and pendulum.parse(item["run_at"]) <= now for item in planned):
+        raise ValueError("The signup time has already passed. Choose a future date and time.")
+
+
+async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | None = None, *, keep_draft: bool = False, require_future_signup: bool = False) -> dict:
     row = await load_draft(mongo, draft)
     if not row:
         raise ValueError("Draft expired or does not exist")
@@ -729,6 +743,8 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
         candidate, live["campaign"], cycle, live["deliveries"],
         live.get("sent_occurrences", ()),
     ) if scope == "cycle" else []
+    if require_future_signup and scope == "cycle":
+        _validate_future_signup(candidate, live, cycle)
     active_cycle = cycle_key(timezone_name=candidate.get("timezone", DEFAULT_TIMEZONE))
     if scope == "defaults":
         # Defaults begin after the actual active cycle, regardless of which
@@ -790,9 +806,24 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
     won = matched == 1 or upserted is not None or (matched is None and modified == 1)
     if not won:
         raise RuntimeError("CWL campaign changed while this draft was being applied")
-    await mongo.bot_config.delete_one({"_id": row["_id"]})
+    if not keep_draft:
+        await mongo.bot_config.delete_one({"_id": row["_id"]})
     result = await load_campaign(mongo, guild_id, cycle)
     result["protected_sent"] = protected
+    if keep_draft:
+        # Keep existing dashboard buttons usable after a timing form saves.
+        # Do not replace a newer edit submitted while this save was running.
+        fields = {
+            "campaign": copy.deepcopy(candidate), "updated_at": _utcnow(),
+            "base_revision": new_revision,
+            "cycle_base_revision": result["revision"],
+            "defaults_base_revision": result["defaults_revision"],
+        }
+        refreshed = await mongo.bot_config.update_one(
+            {"_id": row["_id"], "updated_at": row.get("updated_at")}, {"$set": fields},
+        )
+        result["draft_refresh_pending"] = getattr(refreshed, "matched_count", 0) != 1
+        result["draft"] = await load_draft(mongo, row["_id"])
     try:
         from extensions.tasks import cwl_reminder
         if getattr(cwl_reminder, "mongo_client", None) is mongo:

@@ -85,9 +85,9 @@ def test_overview_shows_edited_signup_time_without_competing_send_times(monkeypa
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
     assert dashboard._discord_time(draft_time) in content
     assert dashboard._discord_time(live_time) not in content
-    assert "Review and save your changes before the bot uses them" in content
+    assert "Some edits are not in use yet" in content
     assert "Next message" not in content
-    assert "Campaign" not in content
+    assert "CWL announcements" in content
     assert "delivery" not in content.lower()
 
 
@@ -149,7 +149,7 @@ def test_schedule_upcoming_list_excludes_past_occurrences(monkeypatch):
     )
 
     content = text_content(run(dashboard.panel(item, "schedule")))
-    upcoming = next(value for value in content if value.startswith("### Message times after saving"))
+    upcoming = next(value for value in content if value.startswith("### Message times"))
     assert "Signups open" not in upcoming
     assert "Reminder 1" in upcoming
 
@@ -237,7 +237,11 @@ def test_turning_off_sequence_does_not_restore_old_automatic_reminder_times(monk
         result["campaign"] = deepcopy(update["campaign"])
         return result
 
-    monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", patch)
+    async def autosave(_ctx, _mongo, _draft, updated_campaign):
+        result = await patch(_mongo, _draft["token"], {"campaign": updated_campaign})
+        return result, "Scheduled."
+
+    monkeypatch.setattr(dashboard, "_save_timing", autosave)
     monkeypatch.setattr(dashboard, "panel", AsyncMock(return_value=[]))
 
     run(dashboard.disable_sequence(context(), item["token"], mongo=object()))
@@ -279,8 +283,9 @@ def test_review_routes_temporarily_invalid_sequence_back_to_timing_steps(monkeyp
         context(), item["token"] + "|cycle", mongo=object()
     ))
     content = "\n".join(text_content(output))
-    assert "needs attention" in content.lower()
+    assert "review is not ready" in content.lower()
     assert "signups" in content.lower()
+    assert "previous sending schedule stays unchanged" in content.lower()
     insert.assert_not_awaited()
 
 

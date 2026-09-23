@@ -125,6 +125,9 @@ def configure(
     failing_channels=None,
     channel_errors=None,
 ):
+    # These tests retain coverage for the read-only migration helpers. The
+    # production module default keeps the legacy runtime permanently disabled.
+    monkeypatch.setattr(cwl, "LEGACY_RUNTIME_DISABLED", False)
     mongo = FakeMongo(schedule=schedule, pending=pending)
     scheduler = FakeScheduler()
     rest = FakeRest(failing_channels, channel_errors)
@@ -317,6 +320,7 @@ def test_invalid_stored_channel_is_terminal_and_cannot_restore(monkeypatch):
 
 def test_success_without_mongo_logs_missing_accounting(monkeypatch, capsys):
     rest = FakeRest()
+    monkeypatch.setattr(cwl, "LEGACY_RUNTIME_DISABLED", False)
     monkeypatch.setattr(cwl, "mongo_client", None)
     monkeypatch.setattr(cwl, "scheduler", FakeScheduler())
     monkeypatch.setattr(cwl, "bot_instance", SimpleNamespace(rest=rest))
@@ -385,10 +389,13 @@ def test_startup_restores_current_pending_before_next_base_schedule(monkeypatch)
 
     asyncio.run(start_and_wait())
 
-    assert set(scheduler.jobs) == {cwl.cwl_base_job_id, "cwl_followup_1"}
+    assert set(scheduler.jobs) == {
+        cwl.cwl_base_job_id, "cwl_followup_1", cwl.CAMPAIGN_ROLLOVER_JOB_ID,
+    }
     assert [call[1]["id"] for call in scheduler.add_calls] == [
         "cwl_followup_1",
         cwl.cwl_base_job_id,
+        cwl.CAMPAIGN_ROLLOVER_JOB_ID,
     ]
     restored_run = scheduler.jobs["cwl_followup_1"].next_run_time
     assert restored_run == run_time
@@ -486,7 +493,9 @@ def test_startup_reconciles_after_temporary_mongo_failure(monkeypatch):
 
     assert reconciler.health.state == "healthy"
     assert reconciler.health.attempts == 2
-    assert set(scheduler.jobs) == {cwl.cwl_base_job_id}
+    assert set(scheduler.jobs) == {
+        cwl.cwl_base_job_id, cwl.CAMPAIGN_ROLLOVER_JOB_ID,
+    }
 
 
 def test_remove_followup_deletes_memory_and_durable_pending_state(monkeypatch):
@@ -635,6 +644,7 @@ def test_reminder_writes_never_touch_the_stray_database_attribute(monkeypatch):
     mongo = TripwireMongo(schedule={"_id": "schedule"})
     scheduler = FakeScheduler()
     rest = FakeRest()
+    monkeypatch.setattr(cwl, "LEGACY_RUNTIME_DISABLED", False)
     monkeypatch.setattr(cwl, "mongo_client", mongo)
     monkeypatch.setattr(cwl, "scheduler", scheduler)
     monkeypatch.setattr(cwl, "bot_instance", SimpleNamespace(rest=rest))

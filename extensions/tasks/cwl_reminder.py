@@ -46,6 +46,9 @@ cwl_followup_job_prefix = "cwl_followup_"
 cwl_initial_retry_job_id = "cwl_initial_retry"
 CAMPAIGN_JOB_PREFIX = "cwl_campaign:"
 CAMPAIGN_ROLLOVER_JOB_ID = "cwl_campaign_rollover"
+# Kept only for importing historic timing and sent markers. Production
+# delivery and command control belong exclusively to /cwl dashboard.
+LEGACY_RUNTIME_DISABLED = True
 CAMPAIGN_CLAIM_MINUTES = 15
 DELIVERY_RETRY_DELAYS_MINUTES = (5, 15, 30, 60, 180)
 # Kept for command text and backwards compatibility. The first retry remains
@@ -1063,6 +1066,10 @@ async def send_cwl_reminder(
     """Send a reminder and mutate production state only after full delivery."""
     global bot_instance, mongo_client
 
+    if LEGACY_RUNTIME_DISABLED:
+        print("[CWL Reminder] Legacy delivery suppressed; /cwl dashboard owns delivery")
+        return False
+
     if not bot_instance:
         print("[CWL Reminder] Bot instance not available!")
         return False
@@ -1227,9 +1234,6 @@ async def restore_pending_reminders():
     restored_count = 0
     expired_count = 0
     failed_count = 0
-    legacy_schedule = await mongo_client.cwl_reminder.find_one({"_id": "schedule"}) or {}
-    campaign_managed = bool(legacy_schedule.get("campaign_managed"))
-
     for reminder in pending_reminders:
         reminder_id = reminder.get("_id")
         run_time_str = reminder.get("run_time")
@@ -1304,7 +1308,7 @@ async def restore_pending_reminders():
                 failed_count += 1
             continue
 
-        if campaign_managed:
+        if LEGACY_RUNTIME_DISABLED:
             await mongo_client.cwl_pending_reminders.delete_one({"_id": reminder_id})
             if reminder_id and scheduler.get_job(reminder_id):
                 scheduler.remove_job(reminder_id)
@@ -1389,6 +1393,8 @@ async def restore_missed_base_reminder(
     now: datetime | None = None,
 ) -> bool:
     """Create a durable near-term retry for a recently missed monthly base run."""
+    if LEGACY_RUNTIME_DISABLED:
+        return False
     current = pendulum.instance(now, tz=DEFAULT_TIMEZONE) if now else pendulum.now(DEFAULT_TIMEZONE)
     scheduled_time = _month_run(
         current.year,
@@ -1432,6 +1438,8 @@ async def schedule_cwl_reminder(
 ):
     """Schedule or reschedule the CWL reminder"""
     global scheduler, mongo_client
+    if LEGACY_RUNTIME_DISABLED:
+        raise RuntimeError("Legacy CWL scheduling is retired; use /cwl dashboard")
     if mongo_client:
         legacy_state = await mongo_client.cwl_reminder.find_one({"_id": "schedule"}) or {}
         if legacy_state.get("campaign_managed"):
@@ -1482,6 +1490,37 @@ async def _reconcile_cwl_startup() -> None:
     if not getattr(scheduler, "running", True):
         scheduler.start()
 
+    if LEGACY_RUNTIME_DISABLED:
+        # APScheduler currently uses an in-memory job store, but clearing every
+        # known id and non-campaign durable row also makes hot reloads and old
+        # database state fail closed.
+        for job_id in [
+            cwl_base_job_id, cwl_initial_retry_job_id,
+            *(f"{cwl_followup_job_prefix}{number}" for number in range(1, 6)),
+        ]:
+            if scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
+        pending = await mongo_client.cwl_pending_reminders.find().to_list(length=None)
+        for row in pending:
+            if row.get("kind") == "campaign":
+                continue
+            job_id = row.get("_id")
+            if job_id and scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
+            if job_id:
+                await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
+
+        await restore_pending_reminders()
+        await _sync_all_campaigns()
+        scheduler.add_job(
+            _sync_all_campaigns,
+            trigger=CronTrigger(day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE),
+            id=CAMPAIGN_ROLLOVER_JOB_ID,
+            replace_existing=True,
+            **JOB_OPTIONS,
+        )
+        return
+
     # Current-cycle date jobs are the authoritative pending state. Restore
     # them before installing the next recurring base schedule so a restart
     # cannot replace them with next month's calculated follow-ups.
@@ -1520,14 +1559,14 @@ async def _reconcile_cwl_startup() -> None:
                                 delay_display = f"{minutes} minutes"
                         print(f"  - Reminder #{f.get('number')}: {delay_display or 'unknown delay'}")
 
-    if await _sync_all_campaigns():
-        scheduler.add_job(
-            _sync_all_campaigns,
-            trigger=CronTrigger(day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE),
-            id=CAMPAIGN_ROLLOVER_JOB_ID,
-            replace_existing=True,
-            **JOB_OPTIONS,
-        )
+    await _sync_all_campaigns()
+    scheduler.add_job(
+        _sync_all_campaigns,
+        trigger=CronTrigger(day=1, hour=0, minute=5, timezone=DEFAULT_TIMEZONE),
+        id=CAMPAIGN_ROLLOVER_JOB_ID,
+        replace_existing=True,
+        **JOB_OPTIONS,
+    )
 
 
 async def _sync_all_campaigns() -> bool:
@@ -1598,6 +1637,12 @@ async def _legacy_campaign_guard(ctx, mongo) -> bool:
     permissions = getattr(getattr(interaction, "member", None), "permissions", hikari.Permissions.NONE)
     if not permissions & hikari.Permissions.ADMINISTRATOR:
         await ctx.respond("You need Administrator permission to use legacy CWL controls.", ephemeral=True)
+        return True
+    if LEGACY_RUNTIME_DISABLED:
+        await ctx.respond(
+            "Legacy CWL controls are retired. Use `/cwl dashboard` to edit, preview, "
+            "schedule, pause, or send CWL announcements.", ephemeral=True,
+        )
         return True
     if int(getattr(interaction, "guild_id", 0) or 0) != cwl_campaign.LEGACY_WU_GUILD_ID:
         await ctx.respond("Use `/cwl dashboard` to manage CWL in this server.", ephemeral=True)
@@ -2151,5 +2196,6 @@ class SendNow(
         )
 
 
-# Register the group with the loader
-loader.command(cwl_reminder)
+# Intentionally not registered: /cwl dashboard is the sole CWL announcement
+# command surface. The classes stay importable during migration so any stale
+# callback fails through _legacy_campaign_guard without sending.

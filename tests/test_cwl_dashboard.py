@@ -64,7 +64,7 @@ def test_panel_has_four_workspaces_without_duplicate_settings(monkeypatch):
     for label in ("Overview", "Messages", "Schedule", "History"):
         assert label in encoded
     assert "'label': 'Settings'" not in encoded
-    assert "Review and save" in encoded
+    assert "Save message changes" in encoded
 
 
 def test_discord_component_nesting_for_all_dashboard_panels():

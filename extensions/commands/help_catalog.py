@@ -126,21 +126,10 @@ HELP_CATEGORIES = {
     "cwl": {
         "name": "CWL & Reminders",
         "emoji": "📅",
-        "description": "CWL announcements, schedules, and bonuses",
+        "description": "One CWL announcement dashboard plus the separate bonus lottery",
         "commands": [
             ("/cwl dashboard", "Edit CWL text, artwork, links, schedules, and delivery settings in one private dashboard."),
-            ("/cwl-announcement", "Post a CWL announcement."),
             ("/lazycwl-bonuses", "Randomly select LazyCWL bonus recipients."),
-            ("/lazyprep", "Post LazyCWL preparation announcements."),
-            ("/cwl-reminder schedule", "Schedule the monthly CWL reminder."),
-            ("/cwl-reminder status", "Show the active reminder schedule."),
-            ("/cwl-reminder cancel", "Cancel the scheduled reminder."),
-            ("/cwl-reminder test", "Send a test reminder."),
-            ("/cwl-reminder add-followup", "Add or update a follow-up reminder."),
-            ("/cwl-reminder remove-followup", "Remove a follow-up reminder."),
-            ("/cwl-reminder list", "List every configured reminder."),
-            ("/cwl-reminder test-all", "Test all reminders in sequence. Admin only."),
-            ("/cwl-reminder send-now", "Send all reminders immediately. Admin only."),
         ],
     },
     "admin": {

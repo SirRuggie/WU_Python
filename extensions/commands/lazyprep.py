@@ -12,7 +12,6 @@ from hikari.impl import (
     SeparatorComponentBuilder as Separator,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
-    ModalActionRowBuilder as ModalActionRow,
 )
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
@@ -145,55 +144,10 @@ class LazyPrep(
             )
             return
 
-        # For declaration type, open a modal to get lazy clan numbers
-        if self.type == "declaration":
-            lazy_clans_input = ModalActionRow().add_text_input(
-                "lazy_clans",
-                "Lazy Clan Numbers",
-                placeholder="e.g., 84, 83, 82, 81",
-                min_length=1,
-                max_length=50,
-                required=True
-            )
-
-            await ctx.respond_with_modal(
-                title="Declaration Complete - Lazy Clans",
-                custom_id="lazyprep_modal:",
-                components=[lazy_clans_input]
-            )
-            return
-
-        # For other types, proceed normally
-        await ctx.defer(ephemeral=True)
-
-        if self.type == "closed":
-            # Closed message
-            components = create_closed_message()
-            role_to_ping = LAZY_CWL_ROLE
-
-        else:  # open
-            # Open message
-            components = create_open_message()
-            role_to_ping = LAZY_CWL_ROLE
-
-        # Send to Lazy CWL channel
-        try:
-            await bot.rest.create_message(
-                channel=LAZY_CWL_CHANNEL,
-                components=components,
-                role_mentions=[role_to_ping]
-            )
-
-            await ctx.respond(
-                f"✅ Lazy CWL {self.type} announcement sent to <#{LAZY_CWL_CHANNEL}>!",
-                ephemeral=True
-            )
-
-        except Exception as e:
-            await ctx.respond(
-                f"❌ Failed to send announcement: {str(e)}",
-                ephemeral=True
-            )
+        await ctx.respond(
+            "This command is retired. Use `/cwl dashboard` for CWL announcements.",
+            ephemeral=True,
+        )
 
 
 @register_action("lazyprep_modal", is_modal=True, no_return=True)
@@ -203,49 +157,15 @@ async def lazyprep_modal_handler(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs
 ):
-    """Handle modal submission for lazy clan numbers"""
-
-    # Extract lazy clan numbers from modal
-    def get_modal_value(custom_id: str) -> str:
-        for row in ctx.interaction.components:
-            for component in row:
-                if component.custom_id == custom_id:
-                    return component.value
-        return "84, 83, 82, 81"  # Default fallback
-
-    lazy_clans = get_modal_value("lazy_clans")
-
-    # Defer the response - since this modal came from a slash command,
-    # we need to create a new response, not update an existing one
+    """Fail closed for a modal submitted from a pre-retirement message."""
     await ctx.interaction.create_initial_response(
         hikari.ResponseType.DEFERRED_MESSAGE_CREATE,
         flags=hikari.MessageFlag.EPHEMERAL
     )
-
-    # Create declaration complete message with custom lazy clans
-    components = create_declaration_complete_message(lazy_clans=lazy_clans)
-
-    # Send to Lazy CWL channel
-    try:
-        await bot.rest.create_message(
-            channel=LAZY_CWL_CHANNEL,
-            components=components,
-            role_mentions=[FWA_FAMILY_ROLE]
-        )
-
-        # Update the interaction with success message
-        await ctx.interaction.edit_initial_response(
-            content=f"✅ Lazy CWL declaration announcement sent to <#{LAZY_CWL_CHANNEL}> with lazy clans: {lazy_clans}",
-            components=[]
-        )
-
-    except Exception as e:
-        print(f"[LazyPrep] Failed to send declaration announcement: {e}")
-        await ctx.interaction.edit_initial_response(
-            content=f"❌ Failed to send announcement: {str(e)}",
-            components=[]
-        )
+    await ctx.interaction.edit_initial_response(
+        content="This announcement flow is retired. Use `/cwl dashboard`.",
+        components=[],
+    )
 
 
-# Register the command with the loader
-loader.command(LazyPrep)
+# Intentionally not registered. /cwl dashboard is the only announcement UI.

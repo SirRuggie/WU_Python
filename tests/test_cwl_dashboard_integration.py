@@ -335,7 +335,7 @@ def test_ui_edit_apply_reload_and_render_share_one_schema(monkeypatch):
         assert "October signups" in encoded
         assert "<@&1080521665584308286>" in encoded
         assert "{signup_deadline}" not in encoded
-        assert applied["revision"] == 1
+        assert applied["revision"] == 3  # Two timing saves, then message content.
         assert await cwl_campaign.load_draft(mongo, token) is None
 
     run(scenario())

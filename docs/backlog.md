@@ -249,9 +249,9 @@ the reconciliation tasks. BAND calendar poller cancellation is now awaited as
 part of the same lifecycle fix, completing `REL-005` as well.
 
 Relevant status commands now show actual runtime state in addition to stored
-configuration:
+configuration. The former `/cwl-reminder status` command was retired when CWL
+announcement control moved to `/cwl dashboard`:
 
-- `/cwl-reminder status`
 - `/fwa lazycwl-autopings-status`
 - `/fwasync status`
 - `/fwapoints status`
@@ -265,16 +265,18 @@ sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "startup_recon
 
 ### `CWL-RETRY-001` — Monthly CWL reminder delivery
 
-**Status:** Implemented and tested locally on 2026-08-05; deployment pending.
+**Status:** Superseded by the CWL campaign dashboard and its durable delivery
+ledger on 2026-09-23. The notes below describe the retired legacy sender.
 
 The normal send path, monthly schedule, follow-up ownership, and first retry at
 five minutes are unchanged. Failed deliveries now persist their attempt count
 and original failure time, use 5/15/30/60/180-minute backoff, and stop after six
 failures or 24 hours. Discord bad-request, unauthorized, forbidden, and
 not-found responses stop immediately because operator action is required.
-Terminal state is removed from the pending queue so a restart cannot revive it;
-one bounded diagnostic per reminder number remains in the schedule document and
-is shown by `/cwl-reminder status`. A later successful delivery clears it.
+Terminal state was removed from the pending queue so a restart could not revive
+it; one bounded diagnostic per reminder number remained in the schedule
+document and was shown by the former `/cwl-reminder status` command. A later
+successful delivery cleared it.
 
 Search the bot journal with:
 

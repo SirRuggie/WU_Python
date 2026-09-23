@@ -58,13 +58,13 @@ def test_submenu_back_buttons_invoke_working_handlers_without_duplicate_tabs(mon
     asyncio.run(scenario())
 
 
-def test_schedule_has_five_controls_and_legacy_settings_links_still_work():
+def test_schedule_has_four_controls_and_legacy_settings_links_still_work():
     async def scenario():
         mongo = MemoryMongo()
         draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2030-10")
         components = await ui.panel(draft, "schedule")
         buttons = [node for node in nodes(components) if node.get("type") == 2]
-        assert len(buttons) == 9  # Four tabs, five task controls.
+        assert len(buttons) == 8  # Four tabs, four task controls.
         assert all(not node.get("disabled") for node in buttons)
         assert all(node.get("label") != "Settings" for node in buttons)
         legacy = await ui.tab(modal_context(), draft["token"] + "|settings", mongo=mongo)

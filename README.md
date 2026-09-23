@@ -173,28 +173,18 @@ ghost tickets, repair mismatches, and migrate legacy data.
 
 ### 📅 CWL & reminders
 
-CWL logistics on autopilot: announcement posts, LazyCWL preparation notices, a
-bonus-medal lottery with named recipients, and a monthly reminder schedule with
-configurable follow-ups that survives bot restarts.
+CWL announcement text, artwork, destinations, timing, previews, and delivery
+history live in one private dashboard. A separate bonus-medal lottery selects
+named LazyCWL recipients.
 
 <details>
-<summary><strong>Command reference — CWL &amp; Reminders (12 commands)</strong></summary>
+<summary><strong>Command reference — CWL &amp; Reminders (2 commands)</strong></summary>
 <br>
 
 | Command | Description |
 | --- | --- |
-| `/cwl-announcement` | Post a CWL announcement. |
+| `/cwl dashboard` | Edit CWL text, artwork, links, schedules, and delivery settings in one private dashboard. See [the CWL dashboard guide](docs/cwl-dashboard.md). |
 | `/lazycwl-bonuses` | Randomly select LazyCWL bonus recipients. |
-| `/lazyprep` | Post LazyCWL preparation announcements. |
-| `/cwl-reminder schedule` | Schedule the monthly CWL reminder. |
-| `/cwl-reminder status` | Show the active reminder schedule. |
-| `/cwl-reminder cancel` | Cancel the scheduled reminder. |
-| `/cwl-reminder test` | Send a test reminder. |
-| `/cwl-reminder add-followup` | Add or update a follow-up reminder. |
-| `/cwl-reminder remove-followup` | Remove a follow-up reminder. |
-| `/cwl-reminder list` | List every configured reminder. |
-| `/cwl-reminder test-all` | Test all reminders in sequence. Admin only. |
-| `/cwl-reminder send-now` | Send all reminders immediately. Admin only. |
 
 </details>
 
