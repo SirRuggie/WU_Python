@@ -5,11 +5,59 @@ from unittest.mock import AsyncMock
 
 import hikari
 import pendulum
+import pytest
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import cwl_dashboard as dashboard
 from extensions.tasks import cwl_reminder
 from utils import cwl_campaign, cwl_media
+
+
+@pytest.mark.parametrize("cycle,offset,expected", [
+    ("2026-02", 2, "2026-02-26T17:00:00-05:00"),
+    ("2028-02", 2, "2028-02-27T17:00:00-05:00"),
+    ("2026-04", 2, "2026-04-28T17:00:00-04:00"),
+    ("2026-03", 2, "2026-03-29T17:00:00-04:00"),
+    ("2026-02", 0, "2026-02-28T17:00:00-05:00"),
+    ("2026-02", 27, "2026-02-01T17:00:00-05:00"),
+])
+def test_month_end_delivery_uses_calendar_month_and_local_time(cycle, offset, expected):
+    campaign = cwl_campaign.default_campaign()
+    campaign["messages"]["signup"]["schedule"] = {
+        "mode": "monthly", "month_end_offset_days": offset, "hour": 17, "minute": 0,
+    }
+    cwl_campaign.validate_campaign(campaign)
+    entry = next(item for item in cwl_campaign.resolve_schedule(campaign, cycle) if item["message_id"] == "signup")
+    assert entry["run_at"] == expected
+
+
+def test_monthly_choice_survives_apply_reload_and_switch_back(monkeypatch):
+    async def scenario():
+        mongo = MemoryMongo()
+        monkeypatch.setattr(cwl_reminder, "mongo_client", None)
+        draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-10")
+        choice = modal_context()
+        await dashboard.choose_monthly(choice, f"{draft['token']}|signup|end", mongo=mongo)
+        custom_id = choice.respond_with_modal.await_args.kwargs["custom_id"]
+        await dashboard.submit_schedule(modal_context(values={"offset_days": "2", "time": "5:00 PM"}), custom_id.partition(":")[2], mongo=mongo)
+        await cwl_campaign.apply_draft(mongo, draft["token"], 11)
+        loaded = await cwl_campaign.load_campaign(mongo, 22, "2026-10")
+        rule = loaded["campaign"]["messages"]["signup"]["schedule"]
+        assert rule == {"mode": "monthly", "month_end_offset_days": 2, "hour": 17, "minute": 0}
+        assert "2 days before month end" in dashboard._time_description(rule)
+        draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-10")
+        await dashboard.submit_schedule(modal_context(values={"day": "20", "time": "17:00"}), f"{draft['token']}|signup|monthly_day", mongo=mongo)
+        await cwl_campaign.apply_draft(mongo, draft["token"], 11)
+        loaded = await cwl_campaign.load_campaign(mongo, 22, "2026-10")
+        assert loaded["campaign"]["messages"]["signup"]["schedule"] == {"mode": "monthly", "day": 20, "hour": 17, "minute": 0}
+    asyncio.run(scenario())
+
+
+def test_monthly_rule_rejects_both_date_choices():
+    campaign = cwl_campaign.default_campaign()
+    campaign["messages"]["signup"]["schedule"]["month_end_offset_days"] = 2
+    with pytest.raises(ValueError, match="either"):
+        cwl_campaign.validate_campaign(campaign)
 
 
 class MemoryCollection:
@@ -246,6 +294,10 @@ def test_ui_edit_apply_reload_and_render_share_one_schema(monkeypatch):
 
         schedule_picker = modal_context(selections=("monthly",))
         await dashboard.edit_schedule(schedule_picker, f"{token}|signup", mongo=mongo)
+        schedule_picker.respond_with_modal.assert_not_awaited()
+        assert "Days before month end" in str(schedule_picker.interaction.edit_initial_response.await_args)
+        schedule_picker = modal_context()
+        await dashboard.choose_monthly(schedule_picker, f"{token}|signup|day", mongo=mongo)
         schedule_custom_id = schedule_picker.respond_with_modal.await_args.kwargs["custom_id"]
         await dashboard.submit_schedule(
             modal_context(values={"day": "21", "time": "18:30"}),

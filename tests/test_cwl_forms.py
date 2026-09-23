@@ -18,6 +18,23 @@ def test_relative_form_round_trip_preserves_chain_anchor():
     assert parse_schedule_fields("legacy_chain", values, previous=schedule) == schedule
 
 
+def test_monthly_choices_require_a_number_and_never_keep_both_rules():
+    previous = {"mode": "monthly", "day": 20, "hour": 17, "minute": 0}
+    _, fields = schedule_form(previous | {"mode": "monthly_end"})
+    assert fields[0].components[0].is_required
+    assert fields[0].components[0].value == ""
+    end_rule = parse_schedule_fields("monthly_end", {"offset_days": "2", "time": "5:00 PM"}, previous=previous)
+    assert end_rule == {"mode": "monthly", "month_end_offset_days": 2, "hour": 17, "minute": 0}
+    day_rule = parse_schedule_fields("monthly_day", {"day": "25", "time": "17:00"}, previous=end_rule)
+    assert day_rule == {"mode": "monthly", "day": 25, "hour": 17, "minute": 0}
+
+
+@pytest.mark.parametrize("offset", ["", "-1", "28", "1.5"])
+def test_month_end_number_is_required_and_bounded(offset):
+    with pytest.raises(ValueError):
+        parse_schedule_fields("monthly_end", {"offset_days": offset, "time": "17:00"})
+
+
 def test_deadline_month_end_form_round_trip():
     original = {"month_end_offset_days": 2, "hour": 17, "minute": 0}
     fields = deadline_form(original, "America/New_York")

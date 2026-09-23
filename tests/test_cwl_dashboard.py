@@ -91,6 +91,7 @@ def test_discord_component_nesting_for_all_dashboard_panels():
     )]
     for key in draft["campaign"]["messages"]:
         panels.append(dashboard.schedule_editor(draft, key))
+        panels.append(dashboard.monthly_editor(draft, key))
         for audience in dashboard.AUDIENCES:
             panels.append(dashboard.message_editor(draft, key, audience))
             panels.append(dashboard.links_editor(draft, key, audience))

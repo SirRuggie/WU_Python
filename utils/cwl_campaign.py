@@ -160,7 +160,11 @@ def default_campaign() -> dict:
 def _deep_merge(base: dict, override: dict | None) -> dict:
     result = copy.deepcopy(base)
     for key, value in (override or {}).items():
-        if isinstance(value, dict) and isinstance(result.get(key), dict):
+        if key == "schedule" and isinstance(value, dict) and "mode" in value:
+            # A complete timing rule replaces the prior choice: never blend a
+            # saved day-of-month rule with a new before-month-end rule.
+            result[key] = copy.deepcopy(value)
+        elif isinstance(value, dict) and isinstance(result.get(key), dict):
             result[key] = _deep_merge(result[key], value)
         else:
             result[key] = copy.deepcopy(value)
@@ -227,6 +231,8 @@ def _resolve_one(schedule: dict, *, month, deadline, resolved):
         return None
     if mode == "monthly":
         day, hour, minute = _monthly_parts(schedule)
+        if "month_end_offset_days" in schedule:
+            day = month.end_of("month").day - int(schedule["month_end_offset_days"])
         if day > month.end_of("month").day:
             if schedule.get("missing_day") == "skip":
                 return _SKIP_OCCURRENCE
@@ -263,6 +269,12 @@ def _offset_minutes(schedule: dict) -> int:
 
 
 def _monthly_parts(schedule: dict) -> tuple[int, int, int]:
+    if "month_end_offset_days" in schedule:
+        if "day" in schedule or schedule.get("time"):
+            raise ValueError("Choose either a day of month or days before month end, not both.")
+        offset = schedule["month_end_offset_days"]
+        if isinstance(offset, bool) or not str(offset).isdigit() or not 0 <= int(offset) <= 27:
+            raise ValueError("Days before month end must be a whole number from 0 to 27.")
     if schedule.get("time"):
         match = re.fullmatch(r"\s*(\d{1,2})\s+(\d{1,2}):(\d{2})\s*", str(schedule["time"]))
         if not match:

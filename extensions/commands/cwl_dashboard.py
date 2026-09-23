@@ -137,6 +137,10 @@ def _deadline_input(campaign: dict) -> str:
 def _time_description(schedule: dict) -> str:
     mode = str(schedule.get("mode") or "manual")
     if mode == "monthly":
+        if "month_end_offset_days" in schedule:
+            days = int(schedule["month_end_offset_days"])
+            when = "last day of the month" if days == 0 else f"{days} day{'s' if days != 1 else ''} before month end"
+            return f"Monthly · {when} at {int(schedule.get('hour', 0)):02}:{int(schedule.get('minute', 0)):02}"
         return f"Monthly · day {schedule.get('day', '?')} at {int(schedule.get('hour', 0)):02}:{int(schedule.get('minute', 0)):02}"
     if mode == "after_open":
         return f"{schedule.get('offset_minutes', 0)} minutes after signups open"
@@ -519,6 +523,23 @@ def schedule_editor(draft: dict, key: str, notice: str | None = None) -> list:
     for value, label in (("monthly", "Monthly"), ("after_open", "After signups open"), ("before_close", "Before signup deadline"), ("specific", "One-time date"), ("legacy_chain", "After previous reminder"), ("manual", "Manual")):
         modes.add_option(label, value, is_default=value == schedule.get("mode", "manual"))
     rows.insert(-1, modes_row)
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+
+
+def monthly_editor(draft: dict, key: str) -> list:
+    ref = f"{_draft_token(draft)}|{key}"
+    rows = _header(draft, "schedule") + [
+        hikari.impl.TextDisplayComponentBuilder(content=(
+            f"### Monthly · {_message_label(key)}\nChoose one way to set the monthly date. Then enter the number and delivery time.\n"
+            "**Day of the month:** a date from 1–31. Shorter months use their last day.\n"
+            "**Days before month end:** 0–27 days before the month's last day. 0 means the last day itself."
+        )),
+        _button_group(
+            (f"cwl_monthly_choice:{ref}|day", "Day of the month", hikari.ButtonStyle.PRIMARY),
+            (f"cwl_monthly_choice:{ref}|end", "Days before month end", hikari.ButtonStyle.PRIMARY),
+        ),
+        _button(f"cwl_tab:{_draft_token(draft)}|schedule", "Back"),
+    ]
     return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
 
 
@@ -1036,6 +1057,8 @@ async def edit_schedule(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
         await _modal_source(ctx, schedule_editor(draft, ref[1], "Choose a timing option.")); return
     mode = values[0]
     schedule = _schedule(_campaign(draft), ref[1])
+    if mode == "monthly":
+        await _modal_source(ctx, monthly_editor(draft, ref[1])); return
     if mode == "manual":
         campaign = _campaign(draft); _schedule(campaign, ref[1]).clear(); _schedule(campaign, ref[1])["mode"] = "manual"
         saved = await _save_campaign(mongo, draft, campaign)
@@ -1044,6 +1067,22 @@ async def edit_schedule(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
         title=cwl_forms.schedule_form(schedule | {"mode": mode})[0][:45], custom_id=f"cwl_submit_schedule:{action_id}|{mode}",
         components=cwl_forms.schedule_form(schedule | {"mode": mode})[1],
     )
+
+
+@register_action("cwl_monthly_choice", opens_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def choose_monthly(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
+    ref = _parse_ref(action_id, 3)
+    if not ref or ref[2] not in {"day", "end"}:
+        await _modal_source(ctx, error_panel("Choose a monthly date option.")); return
+    draft, problem = await _load(ctx, mongo, ref[0])
+    if problem:
+        await _modal_source(ctx, error_panel(problem)); return
+    if ref[1] not in _campaign(draft).get("messages", {}):
+        await _modal_source(ctx, error_panel("Choose an existing CWL message.")); return
+    mode = "monthly_day" if ref[2] == "day" else "monthly_end"
+    title, fields = cwl_forms.schedule_form(_schedule(_campaign(draft), ref[1]) | {"mode": mode})
+    await ctx.respond_with_modal(title=title, custom_id=f"cwl_submit_schedule:{ref[0]}|{ref[1]}|{ref[2]}", components=fields)
 
 
 @register_action("cwl_submit_schedule", is_modal=True, no_return=True, preload_state=False)
@@ -1061,6 +1100,7 @@ async def submit_schedule(ctx: Any, action_id: str, mongo: MongoClient = lightbu
     if problem:
         await _modal_source(ctx, error_panel(problem)); return
     mode = _modal_value(ctx, "mode").strip() if legacy else ref[2]
+    mode = {"day": "monthly_day", "end": "monthly_end"}.get(mode, mode)
     values = {item.custom_id: str(item.value or "") for row in ctx.interaction.components for item in row}
     if legacy:
         raw = _modal_value(ctx, "value").strip()

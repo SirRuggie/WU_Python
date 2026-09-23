@@ -38,6 +38,12 @@ reminder chain. The panel shows the next resolved occurrences in the configured
 timezone. **Settings** holds the single campaign signup deadline and timezone;
 deadline-aware reminders follow that one value.
 
+Choosing **Monthly** requires a choice of **Day of the month** (1–31) or
+**Days before month end** (0–27), followed by a required number and delivery
+time. Zero means the month's last day; two means two days before that day.
+Dates 29–31 use the last day in shorter months. Existing schedules are kept
+until a new rule is reviewed and applied.
+
 Use **Preview** from a message version to render the same Components V2 message
 the scheduler will use. Previews suppress every user, role, and everyone ping.
 They never send a post or alter delivery history.

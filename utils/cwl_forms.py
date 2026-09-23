@@ -45,9 +45,12 @@ def _clock(rule):
 
 def schedule_form(schedule):
     mode = schedule.get("mode", "manual")
-    if mode == "monthly":
-        return "Monthly delivery", [
-            _field("day", "Day of month (1–31)", schedule.get("day", 20)),
+    if mode in {"monthly", "monthly_day", "monthly_end"}:
+        before_end = mode == "monthly_end" or (mode == "monthly" and "month_end_offset_days" in schedule)
+        field = (_field("offset_days", "Days before month end (0–27)", schedule.get("month_end_offset_days", ""))
+                 if before_end else _field("day", "Day of month (1–31)", schedule.get("day", "")))
+        return "Monthly · Before month end" if before_end else "Monthly · Day of month", [
+            field,
             _field("time", "Time (5:00 PM or 17:00)", _clock(schedule)),
         ]
     if mode == "specific":
@@ -66,9 +69,13 @@ def schedule_form(schedule):
 
 def parse_schedule_fields(mode, values, *, previous=None):
     rule = {"mode": mode}
-    if mode == "monthly":
+    if mode in {"monthly", "monthly_day", "monthly_end"}:
         hour, minute = _time(values.get("time", ""))
-        rule.update(day=_integer(values.get("day", ""), "Day", 1, 31), hour=hour, minute=minute)
+        rule.update(mode="monthly", hour=hour, minute=minute)
+        if mode == "monthly_end":
+            rule["month_end_offset_days"] = _integer(values.get("offset_days", ""), "Days before month end", 0, 27)
+        else:
+            rule["day"] = _integer(values.get("day", ""), "Day", 1, 31)
     elif mode == "specific":
         hour, minute = _time(values.get("time", ""))
         rule["at"] = f"{_date(values.get('date', ''))}T{hour:02d}:{minute:02d}:00"
