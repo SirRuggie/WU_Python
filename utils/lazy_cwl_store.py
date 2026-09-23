@@ -18,6 +18,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from utils.mongo import MongoClient
+from utils.lazy_cwl_schema import SCHEMA_VERSION
 
 _log = logging.getLogger(__name__)
 
@@ -168,6 +169,7 @@ async def save_list(
 
     expires_at = expires_at_for(now)
     document = {
+        "schema_version": SCHEMA_VERSION,
         "clan_tag": clan_tag,
         "clan_name": clan_name,
         "status": "active",
@@ -460,6 +462,7 @@ async def migrate_legacy_active_snapshots(mongo: MongoClient, now: datetime | No
             enabled = bool(snapshot.get("auto_ping_enabled"))
             started_at = _utc(snapshot.get("auto_ping_started_at") or saved_at) if enabled else None
             document = {
+                "schema_version": SCHEMA_VERSION,
                 "clan_tag": _normalize_tag(clan_tag),
                 "clan_name": snapshot.get("clan_name") or _normalize_tag(clan_tag),
                 "status": "active",

@@ -119,3 +119,57 @@ added manually, and its UTC add time. A failed Discord-link lookup is kept
 distinct from a successful lookup with no linked players: saving a new list
 stops when the lookup fails, while a manual addition proceeds and reports
 that its link could not be checked.
+
+## MongoDB contract and deployment
+
+The schema is versioned in `utils/lazy_cwl_schema.py`. New captures and legacy
+imports write `schema_version: 1`. Strict database validation rejects malformed
+field types, invalid statuses, repeated player tags, invalid expiry ordering,
+and enabled reminders without a valid start time/interval. The existing
+partial unique index still enforces one active roster per clan; validation
+additionally enforces uniqueness *inside* each roster's player array.
+
+The feature's collection uses `w="majority"` with a 10-second write-concern
+wait bound. A write-concern timeout is an uncertain acknowledgement, not proof
+that the write did not occur; refresh before retrying. The unique active-roster
+index and conditional player updates remain the duplicate-write safeguards.
+
+Apply schema changes as a deployment operation, not inside button handlers:
+
+1. Run `venv/bin/python tools/lazycwl_mongo.py` for a read-only audit.
+2. Stop the bot and deploy code that writes the new schema version.
+3. Run `venv/bin/python tools/lazycwl_mongo.py --apply-schema`.
+4. Restart the bot and rerun the read-only audit.
+
+Use `.venv/bin/python` in the development checkout. The tool uses `MONGODB_URI`
+from the environment or the checkout's `.env`; it does not print credentials
+or player records. It adds a version field to compatible existing documents
+and installs the validator without deleting rosters or changing player data.
+Unknown versions or validators require explicit review instead of downgrade.
+
+Real database tests are in `tests/test_lazy_cwl_mongo.py`. Set
+`LAZYCWL_TEST_MONGODB_URI` to a test-capable connection and run that file. Tests
+always select `wubot_test`, use unique collection names, and remove only their
+own temporary collections. They never use the `settings` database.
+
+Audit on 2026-09-23: MongoDB 8.0.32, replica-set deployment, seven rosters,
+maximum 50 players and 6,390 BSON bytes per roster before version backfill.
+All four application indexes were installed. An active-clan lookup examined
+one index key and one document. The prior collection had no validator; all
+seven records passed the proposed additive schema preflight. Embedded players
+fit this access pattern: the dashboard loads the roster together, and its
+updates can remain atomic within a single document. No sharding or roster /
+player collection split is warranted by the measured workload.
+
+TTL remains retention cleanup, not a backup or an exact expiry timer. The
+service's logical expiry job remains separate. Backup schedule, retention,
+restore drills, and account-wide least-privilege settings require a separate
+hosting/account audit; this application-level audit does not verify them.
+
+References checked against current MongoDB documentation:
+
+- [Single-document atomicity and conditional updates](https://www.mongodb.com/docs/manual/core/write-operations-atomicity/)
+- [Schema validation](https://www.mongodb.com/docs/manual/core/schema-validation/)
+- [Unique indexes versus uniqueness within arrays](https://www.mongodb.com/docs/manual/tutorial/unique-indexes-schema-validation/)
+- [TTL behavior and limitations](https://www.mongodb.com/docs/manual/core/index-ttl/)
+- [Write concern](https://www.mongodb.com/docs/manual/reference/write-concern/)

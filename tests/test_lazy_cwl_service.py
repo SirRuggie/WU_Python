@@ -923,7 +923,7 @@ def test_only_store_mongo_and_tests_reference_lazy_cwl_lists():
         line for line in result.stdout.splitlines()
         if not line.startswith("./.worktrees/") and not line.startswith("./.claude/")
     ]
-    allowed_exact = {"./utils/lazy_cwl_store.py", "./utils/mongo.py"}
+    allowed_exact = {"./utils/lazy_cwl_store.py", "./utils/mongo.py", "./tools/lazycwl_mongo.py"}
     disallowed = [
         hit for hit in hits
         if hit not in allowed_exact and not hit.startswith("./tests/")

@@ -3,8 +3,10 @@ import time
 
 from pymongo import AsyncMongoClient
 from pymongo.errors import DuplicateKeyError
+from pymongo.write_concern import WriteConcern
 
 _log = logging.getLogger(__name__)
+LAZYCWL_WRITE_CONCERN = WriteConcern(w="majority", wtimeout=10000)
 
 # Retry at most hourly rather than on every /clan add. A transient startup
 # outage must not disable the guard until restart, but repeated failures
@@ -82,7 +84,9 @@ class MongoClient(AsyncMongoClient):
         self.recruit_challenges = self.__settings.get_collection("recruit_challenges")
         # Keep legacy snapshots available for the idempotent dashboard migration.
         self.lazy_cwl_snapshots = self.__settings.get_collection("lazy_cwl_snapshots")
-        self.lazy_cwl_lists = self.__settings.get_collection("lazy_cwl_lists")
+        self.lazy_cwl_lists = self.__settings.get_collection(
+            "lazy_cwl_lists", write_concern=LAZYCWL_WRITE_CONCERN
+        )
         # CWL reminder scheduling. cwl_reminder holds one singleton "schedule"
         # document (base time, followups, delivery_issues); cwl_pending_reminders
         # holds one row per outstanding job, keyed by job_id. Keep them separate:
