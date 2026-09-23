@@ -175,7 +175,7 @@ def _header(clans, lists, chosen, tab, token):
     logo = clan.get("logo")
     if isinstance(logo, str) and logo.startswith("https://"):
         heading = Section(components=[heading], accessory=Thumbnail(media=logo))
-    body = [heading, _section_buttons(token), ActionRow(components=[TextSelectMenu(
+    body = [heading, _section_buttons(token), Separator(), ActionRow(components=[TextSelectMenu(
         custom_id=_id("lazycwl_pick", token, tab), placeholder="Choose a clan",
         max_values=1, options=options)]), ActionRow(components=[
             _tab_button(label, key, tab, token, chosen)
