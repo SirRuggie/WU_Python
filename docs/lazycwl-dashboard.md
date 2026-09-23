@@ -128,14 +128,17 @@ wait bound. A write-concern timeout is an uncertain acknowledgement, not proof
 that the write did not occur; refresh before retrying. The unique active-roster
 index and conditional player updates remain the duplicate-write safeguards.
 
-Apply schema changes as a deployment operation, not inside button handlers:
+Apply schema changes as a deployment operation, not inside button handlers.
+Run the first command from the development checkout. After stopping the bot,
+run the migration and final audit from the production checkout
+(`/home/botrunner/wu-bot`), where the Python environment is `venv`:
 
-1. Run `venv/bin/python tools/lazycwl_mongo.py` for a read-only audit.
+1. Run `.venv/bin/python tools/lazycwl_mongo.py` for a read-only audit.
 2. Stop the bot and deploy code that writes the new schema version.
 3. Run `venv/bin/python tools/lazycwl_mongo.py --apply-schema`.
-4. Restart the bot and rerun the read-only audit.
+4. Restart the bot and run `venv/bin/python tools/lazycwl_mongo.py`.
 
-Use `.venv/bin/python` in the development checkout. The tool uses `MONGODB_URI`
+The tool uses `MONGODB_URI`
 from the environment or the checkout's `.env`; it does not print credentials
 or player records. It adds a version field to compatible existing documents
 and installs the validator without deleting rosters or changing player data.
