@@ -38,6 +38,27 @@ reminder chain. The panel shows the next resolved occurrences in the configured
 timezone. **Settings** holds the single campaign signup deadline and timezone;
 deadline-aware reminders follow that one value.
 
+### Reminder sequence
+
+The Schedule tab also offers a reminder sequence for numbered sign-up reminders.
+Choose **Evenly spread reminders** to set the number of reminders, final-call
+lead time, and minimum gap. Choose **Every X hours** to set only the interval,
+final-call lead time, and minimum gap; it keeps the existing count internally
+because interval timing determines how many slots can fit. The recommended
+starting plan is four evenly spread reminders, with the final call three hours
+before signup close and a three-hour minimum gap. The panel resolves and shows
+signup opening, deadline, final reminder, and **View all send times** before
+anything is applied. If a new opening or deadline would make the sequence
+impossible, the dashboard explains why and leaves the durable draft unchanged.
+
+Configuring a sequence preserves the text and artwork of numbered reminder
+slots. It activates only the slots that have a resolved send time; unused slots
+are explicitly marked in Messages. Main and Lazy versions share each slot's
+time. While a sequence is active, individual numbered schedule controls lead
+back to the sequence editor so there is no hidden, ignored timing. Existing
+legacy individual reminder timing remains unchanged until an administrator
+explicitly configures a sequence.
+
 Choosing **Monthly** requires a choice of **Day of the month** (1–31) or
 **Days before month end** (0–27), followed by a required number and delivery
 time. Zero means the month's last day; two means two days before that day.

@@ -26,6 +26,7 @@ from utils import cwl_media
 from utils import cwl_publishing
 from utils import cwl_forms
 from utils import cwl_review
+from utils import cwl_sequence
 
 
 loader = lightbulb.Loader()
@@ -153,6 +154,52 @@ def _time_description(schedule: dict) -> str:
     return "Manual"
 
 
+def _is_sequence_reminder(key: str) -> bool:
+    return bool(re.fullmatch(r"reminder:\d+", key))
+
+
+def _discord_time(value: Any) -> str:
+    if not value:
+        return "Not scheduled"
+    try:
+        return f"<t:{int(datetime.fromisoformat(str(value)).timestamp())}:F>"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _sequence_occurrences(campaign: dict, cycle: str) -> list[dict]:
+    """One occurrence per numbered reminder; Main/Lazy variants share its time."""
+    seen: set[str] = set()
+    result = []
+    for occurrence in cwl_campaign.resolve_schedule(campaign, cycle):
+        key = str(occurrence.get("message_id", ""))
+        if _is_sequence_reminder(key) and key not in seen:
+            seen.add(key)
+            result.append(occurrence)
+    return result
+
+
+def _sequence_summary(campaign: dict, cycle: str) -> str:
+    config = campaign.get("reminder_sequence")
+    if not isinstance(config, dict) or not config.get("enabled"):
+        return "No reminder sequence configured. Individual reminder timing remains in use."
+    try:
+        all_occurrences = cwl_campaign.resolve_schedule(campaign, cycle)
+        occurrences = _sequence_occurrences(campaign, cycle)
+        opening = next((item.get("run_at") for item in all_occurrences if item.get("message_id") == "signup"), None)
+        deadline = cwl_campaign.signup_deadline(campaign, cycle).isoformat()
+    except ValueError as exc:
+        return f"⚠️ This sequence needs attention before it can be applied: {exc}"
+    final = occurrences[-1].get("run_at") if occurrences else None
+    mode = "Evenly spread" if config.get("mode") == "evenly" else f"Every {config.get('interval_hours')} hours"
+    return (
+        f"**{mode}** · {len(occurrences)} draft-planned reminders\n"
+        f"Signups open: {_discord_time(opening)}\n"
+        f"Signup deadline: {_discord_time(deadline)}\n"
+        f"Final reminder: {_discord_time(final)} · {config.get('final_hours', 3)} hours before close"
+    )
+
+
 def _draft_token(draft: dict) -> str:
     """Discord custom ids are capped at 100 characters; use backend UUID token."""
     return str(draft.get("token") or draft["_id"])
@@ -263,7 +310,7 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
         next_item = pending[0] if pending else None
         next_text = "No pending scheduled message."
         if next_item:
-            next_text = f"**{_message_label(str(next_item.get('message_id', next_item.get('message_key', 'message'))))}** · {_short(next_item.get('run_at', next_item.get('at', 'manual')))}"
+            next_text = f"**{_message_label(str(next_item.get('message_id', next_item.get('message_key', 'message'))))}** · {_discord_time(next_item.get('run_at', next_item.get('at')))}"
         rows.extend([
             hikari.impl.SeparatorComponentBuilder(divider=True),
             hikari.impl.TextDisplayComponentBuilder(content=f"### Signup deadline\n{_deadline(campaign)}"),
@@ -279,30 +326,73 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
         menu = menu_row.add_text_menu(
             f"cwl_message:{draft_id}", min_values=1, placeholder="Choose a message version"
         )
+        active_sequence = set()
+        if campaign.get("reminder_sequence", {}).get("enabled"):
+            try:
+                active_sequence = {item["message_id"] for item in _sequence_occurrences(campaign, _cycle(draft))}
+            except ValueError:
+                # The Schedule panel explains how to repair an invalid sequence;
+                # Messages must remain usable so the artwork/copy can be fixed.
+                pass
         for key, label in _message_items(campaign)[:12]:
             for audience in AUDIENCES:
                 template = _template(campaign, key, audience)
-                suffix = "disabled" if template.get("enabled") is False else _short(template.get("title") or template.get("body") or "Untitled", 45)
+                if _is_sequence_reminder(key) and campaign.get("reminder_sequence", {}).get("enabled") and key not in active_sequence:
+                    suffix = "unused this cycle"
+                else:
+                    suffix = "disabled" if template.get("enabled") is False else _short(template.get("title") or template.get("body") or "Untitled", 45)
                 menu.add_option(f"{label} · {audience.title()}", f"{key}|{audience}", description=suffix)
         rows.append(menu_row)
-        rows.append(_button(f"cwl_add_reminder:{draft_id}", "Add reminder from signup", style=hikari.ButtonStyle.PRIMARY))
+        rows.append(_button(f"cwl_add_reminder:{draft_id}", "Configure reminders" if campaign.get("reminder_sequence", {}).get("enabled") else "Add reminder from signup", style=hikari.ButtonStyle.PRIMARY))
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="Changes are drafts until you apply them. Use Preview to see the scheduler's exact rendered post with pings suppressed."))
 
     elif tab == "schedule":
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Schedule\nUse recognizable event-based timing. The resolved dates below follow this draft's timezone."))
+        sequence = campaign.get("reminder_sequence")
+        if isinstance(sequence, dict) and sequence.get("enabled"):
+            rows.extend([
+                hikari.impl.TextDisplayComponentBuilder(content="### Reminder sequence\n" + _sequence_summary(campaign, _cycle(draft))),
+                _button_group(
+                    (f"cwl_sequence_even:{draft_id}", "Evenly spread reminders", hikari.ButtonStyle.PRIMARY),
+                    (f"cwl_sequence_interval:{draft_id}", "Every X hours", hikari.ButtonStyle.PRIMARY),
+                    (f"cwl_sequence_times:{draft_id}", "View all send times", hikari.ButtonStyle.SECONDARY),
+                ),
+            ])
+        else:
+            rows.extend([
+                hikari.impl.TextDisplayComponentBuilder(content="### Reminder sequence\nRecommended: **4 evenly spread reminders**, final reminder **3 hours before close**, with a **3 hour minimum gap**."),
+                _button_group(
+                    (f"cwl_sequence_even:{draft_id}", "Evenly spread reminders", hikari.ButtonStyle.PRIMARY),
+                    (f"cwl_sequence_interval:{draft_id}", "Every X hours", hikari.ButtonStyle.PRIMARY),
+                ),
+            ])
         menu_row = hikari.impl.MessageActionRowBuilder()
         menu = menu_row.add_text_menu(
             f"cwl_schedule:{draft_id}", min_values=1, placeholder="Choose a message schedule"
         )
+        active_sequence = set()
+        if campaign.get("reminder_sequence", {}).get("enabled"):
+            try:
+                active_sequence = {item["message_id"] for item in _sequence_occurrences(campaign, _cycle(draft))}
+            except ValueError:
+                pass
         for key, label in _message_items(campaign)[:25]:
-            menu.add_option(label, key, description=_time_description(_schedule(campaign, key))[:100])
+            if _is_sequence_reminder(key) and campaign.get("reminder_sequence", {}).get("enabled"):
+                description = "Managed by reminder sequence" if key in active_sequence else "Not scheduled this cycle"
+            else:
+                description = _time_description(_schedule(campaign, key))
+            menu.add_option(label, key, description=description[:100])
         rows.append(menu_row)
         try:
-            occurrences = cwl_campaign.resolve_schedule(campaign, _cycle(draft), now=utcnow())[:5]
+            unique = {}
+            for item in cwl_campaign.resolve_schedule(campaign, _cycle(draft), now=utcnow()):
+                if item.get("run_at"):
+                    unique.setdefault(item["message_id"], item)
+            occurrences = list(unique.values())[:5]
         except (TypeError, ValueError):
             occurrences = []
         if occurrences:
-            lines = [f"• {_message_label(str(item.get('message_id', item.get('message_key', 'message'))))}: {_short(item.get('run_at', item.get('at', 'manual')))}" for item in occurrences]
+            lines = [f"• {_message_label(str(item.get('message_id', item.get('message_key', 'message'))))}: {_discord_time(item.get('run_at', item.get('at')))}" for item in occurrences]
             rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Upcoming\n" + "\n".join(lines)))
 
     elif tab == "settings":
@@ -503,7 +593,109 @@ async def choose_schedule(ctx: Any, action_id: str, mongo: MongoClient = lightbu
     if len(values) != 1 or values[0] not in _campaign(draft).get("messages", {}):
         return await panel(draft, "schedule", "Choose one message schedule.")
     key = values[0]
+    if _is_sequence_reminder(key) and _campaign(draft).get("reminder_sequence", {}).get("enabled"):
+        return sequence_panel(draft, "Numbered reminders are timed by the reminder sequence. Edit the sequence instead of an individual time.")
     return schedule_editor(draft, key)
+
+
+def sequence_panel(draft: dict, notice: str | None = None) -> list:
+    campaign = _campaign(draft)
+    draft_id = _draft_token(draft)
+    rows = _header(draft, "schedule", notice)
+    rows.extend([
+        hikari.impl.SeparatorComponentBuilder(divider=True),
+        hikari.impl.TextDisplayComponentBuilder(content="### Reminder sequence\n" + _sequence_summary(campaign, _cycle(draft))),
+        hikari.impl.TextDisplayComponentBuilder(content="Reminder artwork and text remain editable in Messages. This panel controls when active numbered reminders send."),
+        _button_group(
+            (f"cwl_sequence_even:{draft_id}", "Evenly spread reminders", hikari.ButtonStyle.PRIMARY),
+            (f"cwl_sequence_interval:{draft_id}", "Every X hours", hikari.ButtonStyle.PRIMARY),
+            (f"cwl_sequence_times:{draft_id}", "View all send times", hikari.ButtonStyle.SECONDARY),
+            (f"cwl_tab:{draft_id}|schedule", "Back", hikari.ButtonStyle.SECONDARY),
+        ),
+    ])
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+
+
+def _sequence_modal_components(mode: str, config: dict | None = None) -> list:
+    config = config or {}
+    items = []
+    if mode == "evenly":
+        items.append(hikari.impl.ModalActionRowBuilder().add_text_input("count", "How many reminders? (recommended 4)", value=str(config.get("count", 4)), required=True, max_length=2))
+    else:
+        items.append(hikari.impl.ModalActionRowBuilder().add_text_input("interval_hours", "Every how many hours?", value=str(config.get("interval_hours", 48)), required=True, max_length=4))
+    items.extend([
+        hikari.impl.ModalActionRowBuilder().add_text_input("final_hours", "Final reminder hours before close", value=str(config.get("final_hours", 3)), required=True, max_length=3),
+        hikari.impl.ModalActionRowBuilder().add_text_input("min_gap_hours", "Minimum gap between reminders (hours)", value=str(config.get("min_gap_hours", 3)), required=True, max_length=3),
+    ])
+    return items
+
+
+@register_action("cwl_sequence_even", opens_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def sequence_even(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
+    draft, problem = await _load(ctx, mongo, action_id)
+    if problem:
+        await _modal_source(ctx, error_panel(problem)); return
+    config = _campaign(draft).get("reminder_sequence")
+    await ctx.respond_with_modal(title="Evenly spread reminders", custom_id=f"cwl_sequence_submit:{action_id}|evenly", components=_sequence_modal_components("evenly", config if isinstance(config, dict) else None))
+
+
+@register_action("cwl_sequence_interval", opens_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def sequence_interval(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
+    draft, problem = await _load(ctx, mongo, action_id)
+    if problem:
+        await _modal_source(ctx, error_panel(problem)); return
+    config = _campaign(draft).get("reminder_sequence")
+    await ctx.respond_with_modal(title="Reminder interval", custom_id=f"cwl_sequence_submit:{action_id}|interval", components=_sequence_modal_components("interval", config if isinstance(config, dict) else None))
+
+
+@register_action("cwl_sequence_submit", is_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def submit_sequence(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
+    await _ack_modal(ctx)
+    ref = _parse_ref(action_id, 2)
+    if not ref or ref[1] not in {"evenly", "interval"}:
+        await _modal_source(ctx, error_panel("This reminder sequence form is out of date.")); return
+    draft, problem = await _load(ctx, mongo, ref[0])
+    if problem:
+        await _modal_source(ctx, error_panel(problem)); return
+    values = {item.custom_id: str(item.value or "") for row in ctx.interaction.components for item in row}
+    try:
+        existing = _campaign(draft).get("reminder_sequence", {})
+        count = cwl_forms._integer(values.get("count", existing.get("count", 4)), "Reminder count", 1, 10)
+        interval = cwl_forms._integer(values.get("interval_hours", existing.get("interval_hours", 48)), "Interval hours", 1, 744)
+        final = cwl_forms._integer(values.get("final_hours", ""), "Final reminder hours", 1, 744)
+        gap = cwl_forms._integer(values.get("min_gap_hours", ""), "Minimum gap hours", 1, 24)
+        campaign = cwl_sequence.configure(
+            _campaign(draft), mode=ref[1], count=count, interval_hours=interval,
+            final_hours=final, min_gap_hours=gap,
+        )
+        # Configure validates the plan, and this resolves again before the
+        # durable save so malformed custom templates never become a draft.
+        _sequence_occurrences(campaign, _cycle(draft))
+        saved = await _save_campaign(mongo, draft, campaign)
+    except (TypeError, ValueError) as exc:
+        await _modal_source(ctx, sequence_panel(draft, str(exc))); return
+    await _modal_source(ctx, sequence_panel(saved, "Reminder sequence draft saved. Review the resolved send times before applying."))
+
+
+@register_action("cwl_sequence_times", preload_state=False)
+@lightbulb.di.with_di
+async def sequence_times(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
+    draft, problem = await _load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    try:
+        occurrences = _sequence_occurrences(_campaign(draft), _cycle(draft))
+    except ValueError as exc:
+        return sequence_panel(draft, str(exc))
+    lines = [f"• **{_message_label(str(item['message_id']))}**: {_discord_time(item.get('run_at'))}" for item in occurrences]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_header(draft, "schedule") + [
+        hikari.impl.TextDisplayComponentBuilder(content="### All reminder send times\n" + ("\n".join(lines) or "No active reminder send times.")),
+        hikari.impl.TextDisplayComponentBuilder(content="-# These are this draft's planned times. Already-sent or skipped occurrences will not send again."),
+        _button(f"cwl_tab:{_draft_token(draft)}|schedule", "Back"),
+    ])]
 
 
 def schedule_editor(draft: dict, key: str, notice: str | None = None) -> list:
@@ -940,6 +1132,8 @@ async def add_reminder(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
     if problem:
         return error_panel(problem)
     campaign = _campaign(draft)
+    if campaign.get("reminder_sequence", {}).get("enabled"):
+        return sequence_panel(draft, "This campaign uses numbered reminder slots. Edit the reminder sequence to change how many are active.")
     if len(campaign.get("messages", {})) >= 12:
         return await panel(draft, "messages", "This campaign already has 12 messages, the dashboard's one-screen limit.")
     key = _duplicate_key(campaign, "reminder")
@@ -1052,6 +1246,8 @@ async def edit_schedule(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
     draft, problem = await _load(ctx, mongo, ref[0])
     if problem:
         await _modal_source(ctx, error_panel(problem)); return
+    if _is_sequence_reminder(ref[1]) and _campaign(draft).get("reminder_sequence", {}).get("enabled"):
+        await _modal_source(ctx, sequence_panel(draft, "Numbered reminders are timed by the reminder sequence. Edit the sequence instead of an individual time.")); return
     values = getattr(ctx.interaction, "values", ())
     if len(values) != 1 or values[0] not in {"monthly", "after_open", "before_close", "specific", "legacy_chain", "manual"}:
         await _modal_source(ctx, schedule_editor(draft, ref[1], "Choose a timing option.")); return
@@ -1061,6 +1257,11 @@ async def edit_schedule(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
         await _modal_source(ctx, monthly_editor(draft, ref[1])); return
     if mode == "manual":
         campaign = _campaign(draft); _schedule(campaign, ref[1]).clear(); _schedule(campaign, ref[1])["mode"] = "manual"
+        if campaign.get("reminder_sequence", {}).get("enabled"):
+            try:
+                _sequence_occurrences(campaign, _cycle(draft))
+            except ValueError as exc:
+                await _modal_source(ctx, schedule_editor(draft, ref[1], f"Reminder sequence was not changed: {exc}")); return
         saved = await _save_campaign(mongo, draft, campaign)
         await _modal_source(ctx, schedule_editor(saved, ref[1], "This message is now manual.")); return
     await ctx.respond_with_modal(
@@ -1099,6 +1300,8 @@ async def submit_schedule(ctx: Any, action_id: str, mongo: MongoClient = lightbu
     draft, problem = await _load(ctx, mongo, ref[0])
     if problem:
         await _modal_source(ctx, error_panel(problem)); return
+    if _is_sequence_reminder(ref[1]) and _campaign(draft).get("reminder_sequence", {}).get("enabled"):
+        await _modal_source(ctx, sequence_panel(draft, "Numbered reminders are timed by the reminder sequence. Edit the sequence instead of an individual time.")); return
     mode = _modal_value(ctx, "mode").strip() if legacy else ref[2]
     mode = {"day": "monthly_day", "end": "monthly_end"}.get(mode, mode)
     values = {item.custom_id: str(item.value or "") for row in ctx.interaction.components for item in row}
@@ -1119,6 +1322,11 @@ async def submit_schedule(ctx: Any, action_id: str, mongo: MongoClient = lightbu
     if mode == "legacy_chain":
         schedule["after"] = "signup" if ref[1] == "reminder:1" else previous.get("after", "signup")
     campaign["messages"][ref[1]]["schedule"] = schedule
+    if campaign.get("reminder_sequence", {}).get("enabled"):
+        try:
+            _sequence_occurrences(campaign, _cycle(draft))
+        except ValueError as exc:
+            await _modal_source(ctx, schedule_editor(draft, ref[1], f"Reminder sequence was not changed: {exc}")); return
     saved = await _save_campaign(mongo, draft, campaign)
     await _modal_source(ctx, schedule_editor(saved, ref[1], "Schedule draft saved."))
 
@@ -1182,6 +1390,11 @@ async def submit_settings(ctx: Any, action_id: str, mongo: MongoClient = lightbu
     except ValueError as exc:
         await _modal_source(ctx, await panel(draft, "settings", str(exc))); return
     campaign = _campaign(draft); campaign.update(signup_deadline=rule, timezone=timezone)
+    if campaign.get("reminder_sequence", {}).get("enabled"):
+        try:
+            _sequence_occurrences(campaign, _cycle(draft))
+        except ValueError as exc:
+            await _modal_source(ctx, await panel(draft, "settings", f"Reminder sequence was not changed: {exc}")); return
     saved = await _save_campaign(mongo, draft, campaign)
     await _modal_source(ctx, await panel(saved, "settings", "Settings draft saved."))
 

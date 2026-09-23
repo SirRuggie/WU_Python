@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import re
 import lightbulb
 import hikari
 from datetime import datetime, timezone, timedelta
@@ -412,6 +413,7 @@ async def _schedule_campaign_retry(
     generation: str,
     errors: list[tuple[str, Exception]],
 ) -> None:
+    loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     for variant, exc in errors:
         job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
         pending = await mongo_client.cwl_pending_reminders.find_one({"_id": job_id}) or {}
@@ -431,11 +433,54 @@ async def _schedule_campaign_retry(
         run_time = pendulum.now(DEFAULT_TIMEZONE).add(
             minutes=DELIVERY_RETRY_DELAYS_MINUTES[failure_count - 1]
         )
+        if _sequence_delivery_blocked(loaded, message_id, run_time):
+            await cwl_campaign.record_delivery(mongo_client, guild_id, cycle, {
+                "occurrence_id": cwl_campaign.occurrence_id(cycle, message_id, variant),
+                "message_key": message_id, "variant": variant, "status": "skipped",
+                "reason": "The retry would run after signup closes or outside the reminder sequence.",
+            })
+            await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
+            if scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
+            continue
         await _persist_campaign_job(
             job_id, run_time, guild_id, cycle, message_id, [variant], generation,
             failure_count=failure_count, job_kind="retry",
         )
         _add_campaign_job(job_id, run_time, guild_id, cycle, message_id, [variant], generation)
+
+
+def _is_sequence_message(loaded, message_id):
+    return bool(loaded["campaign"].get("reminder_sequence", {}).get("enabled") and re.fullmatch(r"reminder:(?:[1-9]|10)", message_id))
+
+
+def _sequence_delivery_blocked(loaded, message_id, now):
+    if not _is_sequence_message(loaded, message_id):
+        return False
+    return now >= pendulum.parse(loaded["deadline"]) or not any(
+        row["message_id"] == message_id and row.get("run_at") for row in loaded.get("schedule", ())
+    )
+
+
+def _sequence_spacing_blocked(loaded, message_id, variant, now):
+    if not _is_sequence_message(loaded, message_id):
+        return False
+    # Scheduled HTTP sends naturally drift by a few seconds. A one-minute
+    # tolerance avoids dropping an on-time reminder at the exact gap boundary.
+    gap = max(0, int(loaded["campaign"]["reminder_sequence"]["min_gap_hours"]) * 3600 - 60)
+    times = {row["message_id"]: pendulum.parse(row["run_at"]) for row in loaded.get("schedule", ()) if row.get("run_at") and row.get("variant") == variant and _is_sequence_message(loaded, row["message_id"])}
+    current = times.get(message_id)
+    # An overdue job must not crowd a newer reminder, including after restart.
+    if current and any(when > current and (when - now).total_seconds() < gap for when in times.values()):
+        return True
+    for row in loaded.get("deliveries", ()):
+        key = row.get("message_key") or row.get("message_id_key")
+        if not key and row.get("occurrence_id"):
+            key = str(row["occurrence_id"]).split("|")[1]
+        if row.get("status") == "sent" and row.get("variant") == variant and key != message_id and (key == "signup" or _is_sequence_message(loaded, str(key))):
+            if row.get("at") and (now - pendulum.parse(row["at"])).total_seconds() < gap:
+                return True
+    return False
 
 
 async def send_campaign_message(
@@ -456,7 +501,7 @@ async def send_campaign_message(
         return False
     campaign = loaded["campaign"]
     message = campaign.get("messages", {}).get(message_id)
-    if campaign.get("paused") or not message or not message.get("enabled", True):
+    if campaign.get("paused") or not message or not message.get("enabled", True) or _sequence_delivery_blocked(loaded, message_id, pendulum.now(DEFAULT_TIMEZONE)):
         for variant in variants or cwl_campaign.AUDIENCES:
             job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
             await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
@@ -469,6 +514,13 @@ async def send_campaign_message(
     for variant in selected:
         item = message.get("variants", {}).get(variant)
         if not item or not item.get("enabled", True):
+            continue
+        if _sequence_spacing_blocked(loaded, message_id, variant, pendulum.now(DEFAULT_TIMEZONE)):
+            await cwl_campaign.record_delivery(mongo_client, guild_id, cycle, {
+                "occurrence_id": cwl_campaign.occurrence_id(cycle, message_id, variant),
+                "message_key": message_id, "variant": variant, "status": "skipped",
+                "reason": "Skipped an overdue reminder to preserve the minimum spacing.",
+            })
             continue
         occurrence = cwl_campaign.occurrence_id(cycle, message_id, variant)
         if not await _claim_campaign_occurrence(guild_id, cycle, occurrence, current_generation):
@@ -485,6 +537,9 @@ async def send_campaign_message(
             nonce = hashlib.blake2s(
                 f"{guild_id}|{occurrence}".encode("utf-8"), digest_size=10,
             ).hexdigest()
+            if _sequence_delivery_blocked(loaded, message_id, pendulum.now(DEFAULT_TIMEZONE)):
+                await _release_campaign_claim(guild_id, cycle, occurrence)
+                continue
             result = await bot_instance.rest.create_message(
                 channel=channel_id, components=components,
                 role_mentions=item.get("role_ids", []),
@@ -641,6 +696,7 @@ async def sync_campaign_schedule(guild_id: int, cycle: str) -> None:
             and row.get("generation") == generation
         )
     }
+    desired = {key: row for key, row in desired.items() if row.get("status") == "ledger_pending" or not _sequence_delivery_blocked(loaded, row.get("message_id", ""), pendulum.now(DEFAULT_TIMEZONE))}
     sent = set(loaded.get("sent_occurrences", [])) | {
         item.get("occurrence_id") for item in loaded.get("deliveries", [])
         if item.get("status") == "sent"
@@ -683,6 +739,8 @@ async def queue_campaign_retry(guild_id: int, cycle: str, occurrence: str) -> No
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     generation = _campaign_generation(loaded)
     run_time = pendulum.now(DEFAULT_TIMEZONE).add(seconds=2)
+    if _sequence_delivery_blocked(loaded, message_id, run_time):
+        raise ValueError("This reminder is no longer scheduled or signups have closed.")
     job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
     await _persist_campaign_job(
         job_id, run_time, guild_id, cycle, message_id, [variant], generation,
@@ -697,6 +755,8 @@ async def queue_manual_campaign_occurrence(
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
     generation = _campaign_generation(loaded)
     run_time = pendulum.now(DEFAULT_TIMEZONE).add(seconds=2)
+    if _sequence_delivery_blocked(loaded, message_id, run_time):
+        raise ValueError("This reminder is no longer scheduled or signups have closed.")
     job_ids = []
     for variant in variants:
         job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
@@ -1200,6 +1260,7 @@ async def restore_pending_reminders():
                 if (
                     not variants
                     or loaded["campaign"].get("paused")
+                    or _sequence_delivery_blocked(loaded, message_id, max(now, run_time))
                     or reminder.get("generation") != generation
                 ):
                     await mongo_client.cwl_pending_reminders.delete_one({"_id": reminder_id})

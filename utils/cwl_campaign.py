@@ -152,6 +152,7 @@ def default_campaign() -> dict:
         "schema_version": SCHEMA_VERSION,
         "timezone": DEFAULT_TIMEZONE,
         "paused": False,
+        "reminder_sequence": {"enabled": False},
         "signup_deadline": {"month_end_offset_days": 2, "hour": 17, "minute": 0},
         "messages": {key: messages[key] for key in MESSAGE_ORDER},
     }
@@ -304,6 +305,13 @@ def resolve_schedule(campaign: dict, cycle: str, now=None) -> list[dict]:
     tz = campaign.get("timezone", DEFAULT_TIMEZONE)
     month = _month(cycle, tz)
     deadline = signup_deadline(campaign, cycle)
+    sequence_times = {}
+    if campaign.get("reminder_sequence", {}).get("enabled"):
+        from utils import cwl_sequence
+        opening = _resolve_one(_schedule_for(campaign, "signup", campaign["messages"]["signup"]), month=month, deadline=deadline, resolved={})
+        if opening is None or opening is _SKIP_OCCURRENCE:
+            raise ValueError("Choose a signup opening date before configuring reminders.")
+        sequence_times = cwl_sequence.plan(campaign, opening, deadline)
     resolved = {}
     output = []
     pending = list(campaign.get("messages", {}))
@@ -318,7 +326,7 @@ def resolve_schedule(campaign: dict, cycle: str, now=None) -> list[dict]:
                 except ValueError:
                     number = 1
                 schedule = {**schedule, "after": "signup" if number <= 1 else f"reminder:{number - 1}"}
-            when = _resolve_one(schedule, month=month, deadline=deadline, resolved=resolved)
+            when = (_SKIP_OCCURRENCE if sequence_times[message_id] is None else sequence_times[message_id]) if message_id in sequence_times else _resolve_one(schedule, month=month, deadline=deadline, resolved=resolved)
             mode = schedule.get("mode", "manual")
             if when is None and mode != "manual":
                 continue
@@ -363,6 +371,8 @@ def validate_campaign(campaign: dict) -> None:
         raise ValueError("Campaign messages are missing")
     if not 1 <= len(campaign["messages"]) <= 25:
         raise ValueError("A campaign must contain between 1 and 25 messages")
+    from utils import cwl_sequence
+    cwl_sequence.validate(campaign)
     try:
         pendulum.timezone(campaign.get("timezone", DEFAULT_TIMEZONE))
     except Exception as exc:
@@ -509,7 +519,14 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         base = _deep_merge(base, _legacy_override(legacy))
     selected_cycle = cycle or cycle_key(now, base.get("timezone", DEFAULT_TIMEZONE))
     row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, selected_cycle)})
-    campaign = _deep_merge(base, row.get("campaign") if row else None)
+    override = copy.deepcopy(row.get("campaign")) if row else None
+    if isinstance(override, dict):
+        # Older saved cycle snapshots predate the sequence feature. They keep
+        # their individual schedules when future defaults adopt a sequence.
+        override.setdefault("reminder_sequence", {"enabled": False})
+    # Full cycle snapshots are independent of future monthly defaults,
+    # including newly provisioned sequence templates and sequence settings.
+    campaign = _deep_merge(default_campaign() if isinstance(override, dict) and "schema_version" in override else base, override)
     validate_campaign(campaign)
     deliveries = copy.deepcopy((row or {}).get("deliveries", []))
     sent_occurrences = list((row or {}).get("sent_occurrences", []))
@@ -662,6 +679,13 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
         candidate, live["campaign"], cycle, live["deliveries"],
         live.get("sent_occurrences", ()),
     ) if scope == "cycle" else []
+    resolve_schedule(candidate, cycle)
+    if scope == "defaults" and candidate.get("reminder_sequence", {}).get("enabled"):
+        # Reject a rule that fits this month but would overfill a longer month
+        # or bunch reminders in February when monthly defaults roll forward.
+        month = _month(cycle, candidate.get("timezone", DEFAULT_TIMEZONE))
+        for offset in range(1, 13):
+            resolve_schedule(candidate, month.add(months=offset).format("YYYY-MM"))
     target_id = defaults_id(guild_id) if scope == "defaults" else cycle_id(guild_id, cycle)
     active_cycle = cycle_key(timezone_name=candidate.get("timezone", DEFAULT_TIMEZONE))
     if scope == "defaults":
