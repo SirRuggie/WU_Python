@@ -6,6 +6,7 @@ wubot_test and each test drops only its own randomly named collection.
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -135,4 +136,29 @@ def test_invalid_existing_data_prevents_schema_change_without_rewriting_data():
                 await apply_schema(collection)
             assert await collection.find_one({}) == before
             assert not (await collection.options()).get('validator')
+    asyncio.run(scenario())
+
+
+def test_overdue_import_repair_obeys_schema_and_frees_active_roster_slot():
+    async def scenario():
+        async with sandbox() as (mongo, collection):
+            old = await store.save_list(mongo, clan_tag='#ABC', clan_name='Clan', players=[player()], saved_by=1,
+                                        now=datetime(2026, 9, 1, tzinfo=timezone.utc))
+            bad_expiry = datetime(2026, 10, 16, tzinfo=timezone.utc)
+            await collection.update_one({'_id': old['_id']}, {'$set': {
+                'legacy_snapshot_id': 'old-source', 'expires_at': bad_expiry,
+                'purge_at': bad_expiry + store.PURGE_RETENTION,
+            }})
+            await apply_schema(collection)
+            original_players = (await collection.find_one({'_id': old['_id']}))['players']
+            today = datetime(2026, 9, 23, tzinfo=timezone.utc)
+            assert await store.repair_imported_expiry(mongo, today) == 1
+            assert await store.get_active(mongo, '#ABC') is None
+            assert await store.repair_imported_expiry(mongo, today) == 0
+            replacement = await save(mongo)
+            assert replacement['_id'] != old['_id']
+            assert (await collection.find_one({'_id': old['_id']}))['players'] == original_players
+            assert await collection.count_documents({}) == 2
+            assert await collection.count_documents({'status': 'active'}) == 1
+            assert (await collection.find_one({'_id': old['_id']}))['status'] == 'expired'
     asyncio.run(scenario())

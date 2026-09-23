@@ -160,3 +160,19 @@ def test_player_add_button_uses_a_live_add_nonce(monkeypatch):
     received_token, nonce = dashboard._split(payload)
     bound = dashboard._sessions[received_token]["pending"][nonce]
     assert bound["operation"] == "add" and bound["ids"] == [doc["_id"]]
+
+
+def test_clan_dropdown_shows_saved_and_expiry_dates_in_plain_text():
+    rendered = dashboard.render_home([_doc()], [_clan(1), _clan(2)], "ALL", NOW, token="preview")
+    select = next(node for node in _nodes(rendered) if hasattr(node, "options"))
+    descriptions = {option.value: option.description for option in select.options}
+    assert descriptions["#A1"] == "Saved 12 Sep 2026 · expires 19 Sep 2026 (UTC)"
+    assert descriptions["#A2"] == "No saved roster"
+    assert all(len(description) <= 100 for description in descriptions.values())
+
+
+def test_clan_dropdown_normalizes_dates_to_utc():
+    doc = _doc()
+    doc["saved_at"] = datetime(2026, 9, 11, 23, tzinfo=timezone(timedelta(hours=-4)))
+    doc["expires_at"] = datetime(2026, 9, 16)
+    assert dashboard._roster_description(doc) == "Saved 12 Sep 2026 · expires 16 Sep 2026 (UTC)"

@@ -114,6 +114,19 @@ def _name(value: Any) -> str:
     return str(value or "Unknown")[:40].replace("@", "@\u200b").replace("\n", " ")
 
 
+def _roster_description(doc: dict | None) -> str:
+    if not doc:
+        return "No saved roster"
+    saved = doc.get("saved_at")
+    expiry = doc.get("expires_at")
+    if not isinstance(saved, datetime):
+        return "Saved roster · capture date unavailable"
+    description = f"Saved {store._utc(saved):%d %b %Y}"
+    if isinstance(expiry, datetime):
+        description += f" · expires {store._utc(expiry):%d %b %Y}"
+    return description + " (UTC)"
+
+
 def _header(clans, lists, chosen, tab, token):
     by_tag = {_tag(doc.get("clan_tag")): doc for doc in lists}
     # Keep retired-clan rosters reachable whenever there is a free selector slot.
@@ -126,7 +139,7 @@ def _header(clans, lists, chosen, tab, token):
     for clan in entries[:MAX_CLANS]:
         tag = _tag(clan["tag"])
         options.append(SelectOption(label=_name(clan.get("name") or tag), value=tag,
-                                    description="Saved roster" if tag in by_tag else "No saved roster",
+                                    description=_roster_description(by_tag.get(tag)),
                                     is_default=tag == chosen))
     heading = Text(content=f"## CWL Rosters · {tab.title()}")
     clan = next((clan for clan in clans if _tag(clan["tag"]) == chosen), {})

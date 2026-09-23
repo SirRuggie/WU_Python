@@ -68,13 +68,13 @@ repeating startup never creates a second list. The legacy row is retired only
 after its destination is present, preserving existing active rosters and
 their reminder configuration through the transition.
 
-Legacy snapshots did not have an expiry date. A live snapshot imported at
-startup receives the current CWL expiry window: midnight UTC on the next
-applicable 16th. This avoids immediately expiring a previously active list
-solely because it was created in an earlier month.
-
-New lists expire at midnight UTC on the 16th of their saved month. A list
-saved on or after the 16th expires on the 16th of the following month.
+All lists, including imported legacy snapshots, expire at midnight UTC on
+the 16th of their original saved month. A list saved on or after the 16th
+expires on the 16th of the following month. Importing never renews that
+deadline: overdue snapshots are imported as expired with reminders disabled.
+Startup also idempotently corrects imported records whose expiry was
+previously calculated from the migration date instead of the capture date.
+The clan dropdown shows saved and expiry dates in UTC for active rosters.
 
 ## Reminders
 

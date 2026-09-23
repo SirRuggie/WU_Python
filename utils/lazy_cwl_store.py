@@ -385,6 +385,34 @@ async def list_reminder_enabled(mongo: MongoClient) -> list[dict]:
     return await cursor.to_list(length=None)
 
 
+async def repair_imported_expiry(mongo: MongoClient, now: datetime | None = None) -> int:
+    """Correct the original migration's renewed expiry using capture time.
+
+    Only imported rows with an incorrect expiry are changed. Conditional
+    updates protect a concurrent close/edit, and repeated startup is a no-op.
+    Past-due imports become inactive in the same write as the date correction.
+    """
+    now = _utc(now)
+    repaired = 0
+    documents = await _coll(mongo).find({"legacy_snapshot_id": {"$exists": True}}).to_list(length=None)
+    for document in documents:
+        if not document.get("legacy_snapshot_id") or not isinstance(document.get("saved_at"), datetime):
+            continue
+        expiry = expires_at_for(_utc(document["saved_at"]))
+        if document.get("expires_at") and _utc(document["expires_at"]) == expiry:
+            continue
+        changes = {"expires_at": expiry, "purge_at": expiry + PURGE_RETENTION}
+        if document.get("status") == "active" and expiry <= now:
+            changes.update({"status": "expired", "reminders.enabled": False})
+        result = await _coll(mongo).update_one(
+            {"_id": document["_id"], "saved_at": document["saved_at"],
+             "expires_at": document.get("expires_at"), "status": document["status"]},
+            {"$set": changes},
+        )
+        repaired += result.modified_count
+    return repaired
+
+
 async def migrate_legacy_active_snapshots(mongo: MongoClient, now: datetime | None = None) -> int:
     """Move active rows from the retired ``lazy_cwl_snapshots`` collection.
 
@@ -393,15 +421,15 @@ async def migrate_legacy_active_snapshots(mongo: MongoClient, now: datetime | No
     list.  Only after a destination exists do we retire the legacy row, which
     keeps its auto-ping schedule alive if an insert temporarily fails.
 
-    Legacy snapshots had no monthly expiry.  A migrated live snapshot gets
-    the current expiry window, rather than being immediately expired because
-    it was created in an earlier month.
+    Expiry is calculated from the original capture time. Importing an old
+    snapshot must never renew its lifetime or restart its reminders.
     """
+    now = _utc(now)
+    await repair_imported_expiry(mongo, now)
     legacy = getattr(mongo, "lazy_cwl_snapshots", None)
     if legacy is None:
         return 0
 
-    now = _utc(now)
     snapshots = await legacy.find({"active": True}).to_list(length=None)
     # The retired implementation repaired duplicate active snapshots by
     # retaining the newest one.  Do the same before importing: otherwise the
@@ -439,7 +467,7 @@ async def migrate_legacy_active_snapshots(mongo: MongoClient, now: datetime | No
         existing = await _coll(mongo).find_one({"legacy_snapshot_id": legacy_id})
         if existing is None:
             saved_at = _utc(snapshot.get("snapshot_date") or now)
-            expiry = expires_at_for(now)
+            expiry = expires_at_for(saved_at)
             players = []
             for player in snapshot.get("players", []):
                 tag = player.get("tag")
@@ -459,13 +487,13 @@ async def migrate_legacy_active_snapshots(mongo: MongoClient, now: datetime | No
                     "added_at": saved_at,
                 }, now=saved_at, added_manually_default=False))
 
-            enabled = bool(snapshot.get("auto_ping_enabled"))
+            enabled = bool(snapshot.get("auto_ping_enabled")) and expiry > now
             started_at = _utc(snapshot.get("auto_ping_started_at") or saved_at) if enabled else None
             document = {
                 "schema_version": SCHEMA_VERSION,
                 "clan_tag": _normalize_tag(clan_tag),
                 "clan_name": snapshot.get("clan_name") or _normalize_tag(clan_tag),
-                "status": "active",
+                "status": "active" if expiry > now else "expired",
                 "saved_at": saved_at,
                 "saved_by": int(snapshot.get("saved_by", snapshot.get("created_by", 0)) or 0),
                 "expires_at": expiry,

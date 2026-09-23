@@ -650,7 +650,7 @@ def test_add_player_write_filter_rejects_a_player_added_after_the_precheck(monke
 def test_migrate_legacy_active_snapshot_preserves_reminder_and_is_idempotent():
     legacy = {
         "_id": "legacy-1", "clan_tag": "abc", "clan_name": "Alpha",
-        "snapshot_date": NOW - timedelta(days=45), "created_by": "42",
+        "snapshot_date": NOW - timedelta(days=1), "created_by": "42",
         "active": True, "auto_ping_enabled": True,
         "auto_ping_interval_minutes": 30, "auto_ping_started_at": NOW - timedelta(hours=2),
         "last_auto_ping_at": NOW - timedelta(minutes=30), "auto_ping_count": 4,
@@ -671,6 +671,39 @@ def test_migrate_legacy_active_snapshot_preserves_reminder_and_is_idempotent():
 
     assert asyncio.run(lazy_cwl_store.migrate_legacy_active_snapshots(mongo, now=NOW)) == 0
     assert len(mongo.lazy_cwl_lists.documents) == 1
+
+
+def test_importing_old_snapshot_does_not_renew_it_or_enable_reminders():
+    captured = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    today = datetime(2026, 9, 23, tzinfo=timezone.utc)
+    legacy = {"_id": "old", "clan_tag": "#ABC", "clan_name": "Old clan",
+              "snapshot_date": captured, "created_by": "42", "active": True,
+              "players": [], "auto_ping_enabled": True, "auto_ping_interval_minutes": 60}
+    mongo = _Mongo(legacy_documents=[legacy])
+    assert asyncio.run(lazy_cwl_store.migrate_legacy_active_snapshots(mongo, now=today)) == 1
+    assert asyncio.run(lazy_cwl_store.get_active(mongo, "#ABC")) is None
+    imported = next(iter(mongo.lazy_cwl_lists.documents.values()))
+    assert imported["expires_at"] == datetime(2026, 9, 16, tzinfo=timezone.utc)
+    assert imported["status"] == "expired"
+    assert imported["reminders"]["enabled"] is False
+
+
+def test_repair_existing_import_is_idempotent_and_leaves_new_captures_alone():
+    today = datetime(2026, 9, 23, tzinfo=timezone.utc)
+    bad_expiry = datetime(2026, 10, 16, tzinfo=timezone.utc)
+    imported = _list_doc("imported", expires_at=bad_expiry)
+    imported.update({"legacy_snapshot_id": "source", "saved_at": datetime(2026, 9, 3, tzinfo=timezone.utc)})
+    imported["reminders"]["enabled"] = True
+    fresh = _list_doc("fresh", clan_tag="#NEW", expires_at=bad_expiry)
+    fresh["saved_at"] = today
+    mongo = _Mongo([imported, fresh])
+    assert asyncio.run(lazy_cwl_store.repair_imported_expiry(mongo, today)) == 1
+    corrected = mongo.lazy_cwl_lists.documents["imported"]
+    assert corrected["status"] == "expired" and corrected["reminders"]["enabled"] is False
+    assert corrected["expires_at"] == datetime(2026, 9, 16, tzinfo=timezone.utc)
+    assert corrected["purge_at"] == corrected["expires_at"] + lazy_cwl_store.PURGE_RETENTION
+    assert mongo.lazy_cwl_lists.documents["fresh"] == fresh
+    assert asyncio.run(lazy_cwl_store.repair_imported_expiry(mongo, today)) == 0
 
 
 def test_migration_keeps_legacy_row_when_an_unrelated_active_list_conflicts():
