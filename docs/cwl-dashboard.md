@@ -22,7 +22,9 @@ in MongoDB to prevent duplicate posts and restore jobs after a reboot.
 
 ## Posts and artwork
 
-Choose a post and its Main or Lazy version. Edit text, upload artwork, change
+Switch between **Main Clan** and **Lazy CWL**, then choose a post. Each post
+appears once with a plain description; unused automatic reminder slots are hidden.
+Edit text, upload artwork, change
 buttons, and select the channel and ping roles. Preview never pings players.
 **Save posts** on Overview saves directly and is disabled when nothing has changed.
 There is no month-selection or extra review step. **Send roster** queues

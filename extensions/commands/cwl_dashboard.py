@@ -83,7 +83,14 @@ def _message_items(campaign: dict) -> list[tuple[str, str]]:
     messages = campaign.get("messages", {}) if isinstance(campaign.get("messages"), dict) else {}
     known = [(key, messages.get(key, {}).get("label", label)) for key, label in MESSAGE_CHOICES if key in messages]
     extras = [(key, value.get("label", _message_label(key))) for key, value in messages.items() if key not in dict(MESSAGE_CHOICES) and isinstance(value, dict)]
-    return known + sorted(extras, key=lambda item: item[1].lower())
+    def order(item):
+        key, label = item
+        if key == "signup":
+            return (0, 0, "")
+        if re.fullmatch(r"reminder:\d+", key):
+            return (1, int(key.split(":")[1]), "")
+        return (2 if key == "roster" else 3, 0, label.lower())
+    return sorted(known + extras, key=order)
 
 
 def _template(campaign: dict, key: str, audience: str) -> dict:
@@ -387,6 +394,9 @@ def _header(draft: dict, tab: str, notice: str | None = None, *, navigation: boo
 
 async def panel(draft: dict, tab: str = "overview", notice: str | None = None, mongo: MongoClient | None = None) -> list:
     """Render a compact mobile-friendly editor panel from a durable draft."""
+    audience = "lazy" if tab == "messages_lazy" else "main"
+    if tab in {"messages_main", "messages_lazy"}:
+        tab = "messages"
     # Old messages may still link to Settings. Keep those links working.
     if tab == "settings":
         tab = "schedule"
@@ -449,27 +459,38 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
                 rows.append(_button(f"cwl_skip:{draft_id}|{live_next['id']}", "Skip this message", style=hikari.ButtonStyle.DANGER))
 
     elif tab == "messages":
-        rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Messages\nChoose a Main Clan or Lazy CWL post."))
+        audience_label = "Main Clan" if audience == "main" else "Lazy CWL"
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"### {audience_label} posts"))
+        rows.append(_button_group(
+            (f"cwl_tab:{draft_id}|messages_main", "Main Clan", hikari.ButtonStyle.PRIMARY if audience == "main" else hikari.ButtonStyle.SECONDARY),
+            (f"cwl_tab:{draft_id}|messages_lazy", "Lazy CWL", hikari.ButtonStyle.PRIMARY if audience == "lazy" else hikari.ButtonStyle.SECONDARY),
+        ))
         menu_row = hikari.impl.MessageActionRowBuilder()
         menu = menu_row.add_text_menu(
-            f"cwl_message:{draft_id}", min_values=1, placeholder="Choose a message version"
+            f"cwl_message:{draft_id}", min_values=1, placeholder=f"Choose a {audience_label} post"
         )
         active_sequence = set()
+        sequence_valid = False
         if campaign.get("reminder_sequence", {}).get("enabled"):
             try:
                 active_sequence = {item["message_id"] for item in _sequence_occurrences(campaign, display_cycle)}
+                sequence_valid = True
             except ValueError:
                 # The Schedule panel explains how to repair an invalid sequence;
                 # Messages must remain usable so the artwork/copy can be fixed.
                 pass
-        for key, label in _message_items(campaign)[:12]:
-            for audience in AUDIENCES:
-                template = _template(campaign, key, audience)
-                if _is_sequence_reminder(key) and campaign.get("reminder_sequence", {}).get("enabled") and key not in active_sequence:
-                    suffix = "not used this month"
-                else:
-                    suffix = "disabled" if template.get("enabled") is False else _short(template.get("title") or template.get("body") or "Untitled", 45)
-                menu.add_option(f"{label} · {audience.title()}", f"{key}|{audience}", description=suffix)
+        for key, label in _message_items(campaign)[:25]:
+            if sequence_valid and _is_sequence_reminder(key) and key not in active_sequence:
+                continue
+            template = _template(campaign, key, audience)
+            # Select descriptions are plain text: custom Discord emoji and
+            # message markdown otherwise show as raw codes on mobile.
+            label = re.sub(r"<a?:[^:>]+:\d+>", "", label).strip() or _message_label(key)
+            label = re.sub(r"^Sign-up reminder (\d+)$", r"Reminder \1", label, flags=re.I)
+            suffix = "Open CWL signups" if key == "signup" else "Share clan rosters" if key == "roster" else "Remind players to sign up"
+            if not campaign["messages"][key].get("enabled", True) or template.get("enabled") is False:
+                suffix = "Off"
+            menu.add_option(_short(label, 100), f"{key}|{audience}", description=suffix)
         rows.append(menu_row)
         rows.append(_button(f"cwl_add_reminder:{draft_id}", "Configure reminders" if campaign.get("reminder_sequence", {}).get("enabled") else "Add reminder from signup", style=hikari.ButtonStyle.PRIMARY))
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="Preview has no pings. Save edits from Overview."))
@@ -564,7 +585,7 @@ def message_editor(draft: dict, key: str, audience: str, notice: str | None = No
             (f"cwl_preview:{ref}", "Preview", hikari.ButtonStyle.SUCCESS),
             (f"cwl_toggle:{ref}", "Enable" if template.get("enabled") is False else "Disable", hikari.ButtonStyle.DANGER if template.get("enabled") is not False else hikari.ButtonStyle.SUCCESS),
             *((f"cwl_manual:{ref}", "Send roster", hikari.ButtonStyle.SUCCESS),) if key == "roster" else (),
-            (f"cwl_tab:{_draft_token(draft)}|messages", "Back to Messages", hikari.ButtonStyle.SECONDARY),
+            (f"cwl_tab:{_draft_token(draft)}|messages_{audience}", "Back to Messages", hikari.ButtonStyle.SECONDARY),
         ),
     ])
     if template.get("media_url"):
