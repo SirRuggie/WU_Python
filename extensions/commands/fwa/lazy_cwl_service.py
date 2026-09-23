@@ -56,6 +56,12 @@ mongo_client: Optional[MongoClient] = None
 startup_reconciler: Optional[StartupReconciler] = None
 
 
+def reminder_channel(section: str = store.DEFAULT_SECTION) -> int | None:
+    """Configured return-reminder destination for a roster section."""
+    destination = store.SECTION_POLICY[store.normalize_section(section)]["reminder_destination"]
+    return PING_CHANNEL if destination == "fwa_return" else None
+
+
 async def get_discord_ids(player_tags: list[str]) -> Optional[dict[str, Optional[str]]]:
     """
     Call ClashKing API to get Discord IDs for player tags.
@@ -207,20 +213,23 @@ async def reconcile() -> None:
 _SAVE_LIST_DEFAULTS = {
     "ok": False, "clan_name": None, "clan_tag": None, "player_count": 0,
     "linked_count": 0, "already_saved": False, "existing_saved_at": None,
-    "error": None,
+    "section": None, "cwl_season": None, "list_id": None, "error": None,
 }
 
 
-async def save_list(clan_tag: str, saved_by: int) -> dict:
+async def save_list(clan_tag: str, saved_by: int, *, section: str = store.DEFAULT_SECTION, expected_list_id=None) -> dict:
     """Save clan_tag's current roster as its active saved list."""
+    section = store.normalize_section(section)
     try:
         clan = await coc_client.get_clan(clan_tag)
     except coc.NotFound:
         return {**_SAVE_LIST_DEFAULTS, "error": f"Clan {clan_tag} not found."}
 
     tags = [member.tag for member in clan.members]
-    links = await get_discord_ids(tags)
-    if links is None:
+    # MAIN is an ordinary CWL member roster. It has no return workflow, so a
+    # link-service outage cannot prevent staff from capturing it.
+    links = await get_discord_ids(tags) if section == "FWA" else {}
+    if section == "FWA" and links is None:
         return {
             **_SAVE_LIST_DEFAULTS,
             "clan_name": clan.name,
@@ -243,13 +252,12 @@ async def save_list(clan_tag: str, saved_by: int) -> dict:
         })
 
     try:
-        document = await store.save_list(
-            mongo_client,
-            clan_tag=clan.tag,
-            clan_name=clan.name,
-            players=players,
-            saved_by=saved_by,
-        )
+        kwargs = dict(clan_tag=clan.tag, clan_name=clan.name, players=players,
+                      saved_by=saved_by, section=section)
+        document = await (store.replace_list(mongo_client, expected_list_id=expected_list_id, **kwargs)
+                          if expected_list_id is not None else store.save_list(mongo_client, **kwargs))
+    except store.StaleListError:
+        return {**_SAVE_LIST_DEFAULTS, **_stale_result()}
     except store.AlreadySavedError as exc:
         existing = exc.existing_doc
         return {
@@ -261,6 +269,8 @@ async def save_list(clan_tag: str, saved_by: int) -> dict:
             "error": "This clan already has a saved list.",
         }
 
+    if expected_list_id is not None:
+        _remove_job(expected_list_id and _reminder_job_id(expected_list_id))
     return {
         "ok": True,
         "clan_name": document["clan_name"],
@@ -269,8 +279,21 @@ async def save_list(clan_tag: str, saved_by: int) -> dict:
         "linked_count": linked_count,
         "already_saved": False,
         "existing_saved_at": None,
+        "section": document["section"],
+        "cwl_season": document["cwl_season"],
+        "list_id": document["_id"],
         "error": None,
     }
+
+
+async def replace_list(clan_tag: str, saved_by: int, *, expected_list_id, section: str = store.DEFAULT_SECTION) -> dict:
+    """Capture a replacement roster from the currently displayed list.
+
+    This explicit form is useful to dashboard callers; it delegates to
+    :func:`save_list` so link lookup, normal member capture, and result shape
+    stay identical while the store performs the transactional swap.
+    """
+    return await save_list(clan_tag, saved_by, section=section, expected_list_id=expected_list_id)
 
 
 async def away_players(doc: dict) -> list[dict]:
@@ -284,6 +307,9 @@ async def away_players(doc: dict) -> list[dict]:
 
 
 async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
+    channel = reminder_channel(doc.get("section", store.DEFAULT_SECTION))
+    if channel is None:
+        raise ValueError("MAIN rosters do not support return reminders")
     clan_data = await mongo_client.clans.find_one({"tag": doc["clan_tag"]})
     role_id = clan_data.get("role_id") if clan_data else None
 
@@ -334,7 +360,7 @@ async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
             )),
         ]
         await bot_instance.rest.create_message(
-            channel=PING_CHANNEL,
+            channel=channel,
             components=[Container(accent_color=GOLD_ACCENT, components=lines)],
             user_mentions=chunk_recipient_ids,
             role_mentions=[parsed_role_id] if parsed_role_id and index == 0 else [],
@@ -351,9 +377,12 @@ def _stale_result() -> dict:
     return {"ok": False, "stale": True, "error": "This saved list changed. Refresh and try again."}
 
 
-async def remind_now(clan_tag: str, *, expected_list_id=None) -> dict:
+async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = store.DEFAULT_SECTION) -> dict:
     """Send an away-players reminder for clan_tag's active saved list."""
-    doc = await store.get_active(mongo_client, clan_tag)
+    section = store.normalize_section(section)
+    if reminder_channel(section) is None:
+        return {**_REMIND_NOW_DEFAULTS, "error": "Main CWL rosters do not send return reminders."}
+    doc = await store.get_active(mongo_client, clan_tag, section=section)
     if doc is None or (expected_list_id is not None and doc.get("_id") != expected_list_id):
         if expected_list_id is not None:
             return {**_REMIND_NOW_DEFAULTS, **_stale_result()}
@@ -393,8 +422,9 @@ async def remind_now(clan_tag: str, *, expected_list_id=None) -> dict:
     }
 
 
-async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None) -> dict:
+async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None, section: str = store.DEFAULT_SECTION) -> dict:
     """Add one player, found by tag, to clan_tag's active saved list."""
+    section = store.normalize_section(section)
     tag = store._normalize_tag(tag)
     if not coc.utils.is_valid_tag(tag):
         return {
@@ -411,7 +441,7 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None) -
             "away_now": None, "error": "Player not found.", "reason": "not_found",
         }
 
-    links = await get_discord_ids([player.tag])
+    links = await get_discord_ids([player.tag]) if section == "FWA" else {}
     reason = None
     discord_id = None
     if links is None:
@@ -426,7 +456,7 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None) -
             clan_tag,
             {"tag": player.tag, "name": player.name, "town_hall": player.town_hall, "discord_id": discord_id},
             added_manually=True,
-            expected_list_id=expected_list_id,
+            expected_list_id=expected_list_id, section=section,
         )
     except store.StaleListError:
         return {
@@ -446,9 +476,12 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None) -
             "reason": "already_listed",
         }
 
-    clan = await coc_client.get_clan(doc["clan_tag"])
-    current = {member.tag.upper() for member in clan.members}
-    away_now = player.tag.upper() not in current
+    if section == "FWA":
+        clan = await coc_client.get_clan(doc["clan_tag"])
+        current = {member.tag.upper() for member in clan.members}
+        away_now = player.tag.upper() not in current
+    else:
+        away_now = None
 
     return {
         "ok": True,
@@ -461,14 +494,17 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None) -
     }
 
 
-async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[int] = None, *, expected_list_id=None) -> dict:
+async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[int] = None, *, expected_list_id=None, section: str = store.DEFAULT_SECTION) -> dict:
     """Turn a clan's reminders on or off and (un)schedule its job."""
+    section = store.normalize_section(section)
+    if reminder_channel(section) is None:
+        return {"ok": False, "error": "Main CWL rosters do not support return reminders."}
     if enabled and every_minutes is None:
         return {"ok": False, "error": "Choose how often."}
 
     doc = await store.set_reminders(
         mongo_client, clan_tag, enabled=enabled, every_minutes=every_minutes,
-        expected_list_id=expected_list_id,
+        expected_list_id=expected_list_id, section=section,
     )
     if doc is None:
         if expected_list_id is not None:
@@ -494,7 +530,7 @@ async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[in
         # scheduler could not actually create the job.
         await store.set_reminders(
             mongo_client, clan_tag, enabled=False, every_minutes=every_minutes,
-            expected_list_id=doc["_id"],
+            expected_list_id=doc["_id"], section=section,
         )
         _log.error("lazycwl_service.set_reminders: add_job failed clan_tag=%s error=%s", clan_tag, exc)
         return {"ok": False, "error": "Could not schedule reminders. Try again."}
@@ -588,9 +624,9 @@ async def expire_due_and_stop_jobs(now: Optional[datetime] = None) -> int:
     return len(docs)
 
 
-async def finish(clan_tag: str, *, expected_list_id=None) -> dict:
+async def finish(clan_tag: str, *, expected_list_id=None, section: str = store.DEFAULT_SECTION) -> dict:
     """Mark a clan's saved list finished and stop its reminder job."""
-    doc = await store.finish(mongo_client, clan_tag, expected_list_id=expected_list_id)
+    doc = await store.finish(mongo_client, clan_tag, expected_list_id=expected_list_id, section=section)
     if doc is None:
         if expected_list_id is not None:
             return _stale_result()

@@ -85,8 +85,12 @@ class _Collection:
         field, partial = self.unique_partial_field
         if not all(document.get(key) == value for key, value in partial.items()):
             return False
+        def key_for(row):
+            if isinstance(field, list):
+                return tuple(row.get(name) for name, _ in field)
+            return row.get(field)
         for existing in self.documents.values():
-            if existing.get(field) == document.get(field) and all(
+            if key_for(existing) == key_for(document) and all(
                 existing.get(key) == value for key, value in partial.items()
             ):
                 return True
@@ -147,6 +151,23 @@ class _Collection:
             return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
+    async def update_many(self, query, update, **kwargs):
+        # The store's deployment backfill uses an aggregation pipeline. Unit
+        # fakes only need its additive defaults, not the server expressions.
+        changed = 0
+        for document in self.documents.values():
+            if not _matches(document, query):
+                continue
+            if isinstance(update, list):
+                document.setdefault("section", "FWA")
+                document.setdefault("cwl_season", lazy_cwl_store.cwl_season_for(document["saved_at"]))
+                document["schema_version"] = lazy_cwl_store.SCHEMA_VERSION
+            else:
+                for path, value in update.get("$set", {}).items():
+                    _set_path(document, path, value)
+            changed += 1
+        return SimpleNamespace(matched_count=changed, modified_count=changed)
+
 
 class _Mongo:
     def __init__(self, documents=(), legacy_documents=()):
@@ -157,6 +178,9 @@ class _Mongo:
 def _list_doc(list_id, *, clan_tag="ABC", clan_name="Alpha", status="active", expires_at=None):
     return {
         "_id": list_id,
+        "schema_version": lazy_cwl_store.SCHEMA_VERSION,
+        "section": "FWA",
+        "cwl_season": lazy_cwl_store.cwl_season_for(NOW),
         "clan_tag": lazy_cwl_store._normalize_tag(clan_tag),
         "clan_name": clan_name,
         "status": status,
@@ -206,7 +230,7 @@ def test_ensure_indexes_creates_named_indexes():
         lazy_cwl_store.LEGACY_SNAPSHOT_INDEX,
     ]
     keys, kwargs = mongo.lazy_cwl_lists.index_calls[0]
-    assert keys == "clan_tag"
+    assert keys == [("section", 1), ("clan_tag", 1)]
     assert kwargs["unique"] is True
     assert kwargs["partialFilterExpression"] == {"status": "active"}
     ttl_keys, ttl_kwargs = mongo.lazy_cwl_lists.index_calls[1]
@@ -283,7 +307,7 @@ def test_save_list_duplicate_via_index_reaches_insert_one_and_recovers(monkeypat
     real_get_active = lazy_cwl_store.get_active
     calls = {"n": 0}
 
-    async def racing_get_active(mongo_arg, clan_tag):
+    async def racing_get_active(mongo_arg, clan_tag, *, section="FWA"):
         calls["n"] += 1
         if calls["n"] == 1:
             return None
@@ -317,7 +341,7 @@ def test_already_saved_error_survives_missing_existing_doc(monkeypatch):
     mongo = _Mongo()
     mongo.lazy_cwl_lists.unique_partial_field = ("clan_tag", {"status": "active"})
 
-    async def missing_get_active(mongo_arg, clan_tag):
+    async def missing_get_active(mongo_arg, clan_tag, *, section="FWA"):
         return None
 
     monkeypatch.setattr(lazy_cwl_store, "get_active", missing_get_active)

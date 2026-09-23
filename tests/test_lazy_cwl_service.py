@@ -214,6 +214,43 @@ def test_save_list_already_saved(monkeypatch):
     assert result["existing_saved_at"] == existing["saved_at"]
 
 
+def test_main_capture_does_not_require_link_service_and_reminders_are_rejected(monkeypatch):
+    clan = FakeClan("#ABC", "Alpha", [FakeMember("#PQ8GR", "One", 15)])
+    mongo = _fake_mongo()
+    _wire(monkeypatch, mongo=mongo, coc_client=FakeCoc(clan=clan), links=None)
+
+    result = asyncio.run(service.save_list("#ABC", saved_by=42, section="MAIN"))
+
+    assert result["ok"] is True
+    doc = asyncio.run(store.get_active(mongo, "#ABC", section="MAIN"))
+    assert doc["section"] == "MAIN"
+    assert doc["players"][0]["discord_id"] is None
+    denied = asyncio.run(service.set_reminders("#ABC", True, 60, section="MAIN"))
+    assert denied["ok"] is False and "do not support" in denied["error"]
+    assert service.reminder_channel("MAIN") is None
+
+
+def test_main_add_player_skips_link_and_away_clan_lookups(monkeypatch):
+    doc = _list_doc("main-list", clan_tag="ABC", clan_name="Alpha")
+    doc["section"] = "MAIN"
+    mongo = _fake_mongo([doc])
+    coc_client = FakeCoc(player=FakeMember("#P2", "Two", 14))
+    _wire(monkeypatch, mongo=mongo, coc_client=coc_client, links={})
+
+    async def unexpected_links(tags):
+        raise AssertionError("MAIN player additions must not query links")
+
+    monkeypatch.setattr(service, "get_discord_ids", unexpected_links)
+    result = asyncio.run(service.add_player_by_tag("#ABC", "#P2", section="MAIN"))
+
+    assert result["ok"] is True
+    assert result["away_now"] is None
+    assert coc_client.get_clan_calls == []
+    persisted = asyncio.run(store.get_active(mongo, "#ABC", section="MAIN"))
+    assert persisted is not None
+    assert persisted["players"][0]["discord_id"] is None
+
+
 # ------------------------------------------------------------ remind_now ----
 
 
@@ -816,7 +853,7 @@ def test_calculate_next_run_uses_start_time_before_first_send():
 
 SAVE_LIST_KEYS = {
     "ok", "clan_name", "clan_tag", "player_count", "linked_count",
-    "already_saved", "existing_saved_at", "error",
+    "already_saved", "existing_saved_at", "section", "cwl_season", "list_id", "error",
 }
 REMIND_NOW_KEYS = {"ok", "clan_name", "away_count", "total_count", "sent", "error"}
 ADD_PLAYER_KEYS = {"ok", "name", "town_hall", "discord_id", "away_now", "error", "reason"}

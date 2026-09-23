@@ -15,9 +15,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
-from utils.mongo import MongoClient
+from utils.mongo import MongoClient, LAZYCWL_WRITE_CONCERN
 from utils.lazy_cwl_schema import SCHEMA_VERSION
 
 _log = logging.getLogger(__name__)
@@ -25,10 +25,19 @@ _log = logging.getLogger(__name__)
 
 PURGE_RETENTION = timedelta(days=90)
 
-ONE_ACTIVE_PER_CLAN_INDEX = "lazycwl_one_active_per_clan"
+ONE_ACTIVE_PER_CLAN_INDEX = "lazycwl_one_active_per_section_clan"
 TTL_PURGE_INDEX = "lazycwl_ttl_purge_at"
 STATUS_EXPIRES_INDEX = "lazycwl_status_expires"
 LEGACY_SNAPSHOT_INDEX = "lazycwl_legacy_snapshot"
+
+# Section policy is stored here so capture, expiry, and scheduler restoration
+# all use the same rules.  MAIN deliberately has no reminder destination;
+# its roster is a normal CWL roster rather than a return-to-home workflow.
+SECTION_POLICY = {
+    "FWA": {"expiry_day": 16, "reminder_destination": "fwa_return"},
+    "MAIN": {"expiry_day": 16, "reminder_destination": None},
+}
+DEFAULT_SECTION = "FWA"
 
 
 class AlreadySavedError(Exception):
@@ -82,6 +91,23 @@ def _normalize_tag(tag: str) -> str:
     return tag
 
 
+def normalize_section(section: str | None = None) -> str:
+    """Return the canonical persisted roster section or reject unknown ones."""
+    value = str(section or DEFAULT_SECTION).strip().upper()
+    if value not in SECTION_POLICY:
+        raise ValueError(f"unknown CWL section: {section!r}")
+    return value
+
+
+def cwl_season_for(saved_at: datetime, *, section: str = DEFAULT_SECTION) -> str:
+    """CWL season key for a capture, using the section's expiry month.
+
+    A roster saved from the 16th onwards belongs to the following CWL season.
+    """
+    expiry = expires_at_for(saved_at, section=section)
+    return expiry.strftime("%Y-%m")
+
+
 def _normalize_player(player: dict, *, now: datetime, added_manually_default: bool) -> dict:
     """Shape one player entry the way it is stored: tag '#'-prefixed and
     upper, name and town_hall as given, discord_id defaulted,
@@ -97,30 +123,62 @@ def _normalize_player(player: dict, *, now: datetime, added_manually_default: bo
     }
 
 
-def expires_at_for(saved_at: datetime) -> datetime:
+def expires_at_for(saved_at: datetime, *, section: str = DEFAULT_SECTION) -> datetime:
     """00:00 UTC on the 16th of saved_at's month, or the next month's 16th
     if saved_at falls on or after the 16th."""
     saved_at = _utc(saved_at)
+    expiry_day = SECTION_POLICY[normalize_section(section)]["expiry_day"]
     year = saved_at.year
     month = saved_at.month
-    if saved_at.day >= 16:
+    if saved_at.day >= expiry_day:
         month += 1
         if month > 12:
             month = 1
             year += 1
-    return datetime(year, month, 16, tzinfo=timezone.utc)
+    return datetime(year, month, expiry_day, tzinfo=timezone.utc)
 
 
 async def ensure_indexes(mongo: MongoClient) -> None:
     """Install indexes for the one-active-list guard, TTL purge, and the
     expiry job's scan."""
     collection = _coll(mongo)
+    # Existing documents predate sections.  Backfill before creating the new
+    # compound unique index so an old row cannot coexist with a new FWA row.
+    # `$dateToString` is a server-side operation and retains the original
+    # capture's UTC month even when this runs in a later CWL season.
+    try:
+        await collection.update_many({"section": {"$exists": False}}, [{"$set": {
+            "section": DEFAULT_SECTION,
+            "cwl_season": {"$ifNull": ["$cwl_season", {"$dateToString": {
+                "format": "%Y-%m", "timezone": "UTC", "date": {"$cond": [
+                    {"$gte": [{"$dayOfMonth": {"date": "$saved_at", "timezone": "UTC"}}, 16]},
+                    {"$dateAdd": {"startDate": "$saved_at", "unit": "month", "amount": 1}}, "$saved_at",
+                ]},
+            }}]},
+        }}])
+    except AttributeError:
+        # Minimal in-memory fakes used by unit tests do not implement
+        # update_many; production collections always do.
+        pass
     await collection.create_index(
-        "clan_tag",
+        [("section", 1), ("clan_tag", 1)],
         unique=True,
         partialFilterExpression={"status": "active"},
         name=ONE_ACTIVE_PER_CLAN_INDEX,
     )
+    # Older deployments used a clan-only guard.  Remove it only once the new
+    # section+clan guard has been acknowledged, otherwise a failed index build
+    # could permit duplicate active rosters.  Missing is normal on fresh DBs.
+    try:
+        await collection.drop_index("lazycwl_one_active_per_clan")
+    except AttributeError:
+        pass
+    except OperationFailure as exc:
+        # NamespaceNotFound/IndexNotFound is expected on fresh databases;
+        # authorization, connectivity, and every other index error must stop
+        # reconciliation rather than leave a hidden clan-only guard in place.
+        if exc.code != 27:
+            raise
     await collection.create_index(
         "purge_at",
         expireAfterSeconds=0,
@@ -138,8 +196,8 @@ async def ensure_indexes(mongo: MongoClient) -> None:
     )
 
 
-def _active_query(clan_tag: str, expected_list_id=None) -> dict:
-    query = {"clan_tag": _normalize_tag(clan_tag), "status": "active"}
+def _active_query(clan_tag: str, expected_list_id=None, *, section: str = DEFAULT_SECTION) -> dict:
+    query = {"clan_tag": _normalize_tag(clan_tag), "section": normalize_section(section), "status": "active"}
     if expected_list_id is not None:
         query["_id"] = expected_list_id
     return query
@@ -152,6 +210,8 @@ async def save_list(
     clan_name: str,
     players: list[dict],
     saved_by: int,
+    section: str = DEFAULT_SECTION,
+    cwl_season: str | None = None,
     now: datetime | None = None,
 ) -> dict:
     """Insert a new active saved list for a clan.
@@ -161,15 +221,18 @@ async def save_list(
     rejects the insert.
     """
     now = _utc(now)
+    section = normalize_section(section)
     clan_tag = _normalize_tag(clan_tag)
 
-    existing = await get_active(mongo, clan_tag)
+    existing = await get_active(mongo, clan_tag, section=section)
     if existing is not None:
         raise AlreadySavedError(existing)
 
-    expires_at = expires_at_for(now)
+    expires_at = expires_at_for(now, section=section)
     document = {
         "schema_version": SCHEMA_VERSION,
+        "section": section,
+        "cwl_season": cwl_season or cwl_season_for(now, section=section),
         "clan_tag": clan_tag,
         "clan_name": clan_name,
         "status": "active",
@@ -193,22 +256,81 @@ async def save_list(
     try:
         result = await _coll(mongo).insert_one(document)
     except DuplicateKeyError:
-        existing = await get_active(mongo, clan_tag)
+        existing = await get_active(mongo, clan_tag, section=section)
         raise AlreadySavedError(existing) from None
 
     document["_id"] = result.inserted_id
     return document
 
 
-async def get_active(mongo: MongoClient, clan_tag: str) -> dict | None:
+async def replace_list(
+    mongo: MongoClient,
+    *,
+    clan_tag: str,
+    clan_name: str,
+    players: list[dict],
+    saved_by: int,
+    expected_list_id,
+    section: str = DEFAULT_SECTION,
+    cwl_season: str | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """Atomically close the displayed active roster and insert its successor.
+
+    The expected id is mandatory: replacement from a stale dashboard view must
+    never close a roster somebody else has just captured.  The insert happens
+    inside the same Mongo transaction as closing the old row, so a validation
+    or duplicate-key failure leaves the old roster and its reminder settings
+    untouched.
+    """
+    if expected_list_id is None:
+        raise ValueError("expected_list_id is required when replacing a roster")
+    if not hasattr(mongo, "start_session"):
+        raise RuntimeError("Mongo sessions are required for safe roster replacement")
+    now = _utc(now)
+    section = normalize_section(section)
+    clan_tag = _normalize_tag(clan_tag)
+    expires_at = expires_at_for(now, section=section)
+    document = {
+        "schema_version": SCHEMA_VERSION, "section": section,
+        "cwl_season": cwl_season or cwl_season_for(now, section=section),
+        "clan_tag": clan_tag, "clan_name": clan_name, "status": "active",
+        "saved_at": now, "saved_by": int(saved_by), "expires_at": expires_at,
+        "purge_at": expires_at + PURGE_RETENTION,
+        "players": [_normalize_player(player, now=now, added_manually_default=False) for player in players],
+        "reminders": {"enabled": False, "every_minutes": None, "started_at": None,
+                      "last_sent_at": None, "sent_count": 0},
+    }
+    # PyMongo's asynchronous session and transaction context managers ensure
+    # abort on every exception, including insert validation failures.
+    async with mongo.start_session() as session:
+        async with await session.start_transaction(write_concern=LAZYCWL_WRITE_CONCERN):
+            old = await _coll(mongo).find_one(
+                _active_query(clan_tag, expected_list_id, section=section), session=session
+            )
+            if old is None:
+                raise StaleListError()
+            closed = await _coll(mongo).find_one_and_update(
+                _active_query(clan_tag, expected_list_id, section=section),
+                {"$set": {"status": "finished", "finished_at": now, "reminders.enabled": False}},
+                return_document=ReturnDocument.AFTER, session=session,
+            )
+            if closed is None:
+                raise StaleListError()
+            result = await _coll(mongo).insert_one(document, session=session)
+    document["_id"] = result.inserted_id
+    return document
+
+
+async def get_active(mongo: MongoClient, clan_tag: str, *, section: str = DEFAULT_SECTION) -> dict | None:
     """Return the active list for one clan, if any."""
     clan_tag = _normalize_tag(clan_tag)
-    return await _coll(mongo).find_one({"clan_tag": clan_tag, "status": "active"})
+    return await _coll(mongo).find_one(_active_query(clan_tag, section=section))
 
 
-async def list_active(mongo: MongoClient) -> list[dict]:
+async def list_active(mongo: MongoClient, *, section: str = DEFAULT_SECTION) -> list[dict]:
     """Return every active list, sorted by clan name."""
-    cursor = _coll(mongo).find({"status": "active"}).sort("clan_name", 1)
+    cursor = _coll(mongo).find({"status": "active", "section": normalize_section(section)}).sort("clan_name", 1)
     return await cursor.to_list(length=None)
 
 
@@ -225,6 +347,7 @@ async def add_player(
     *,
     added_manually: bool = True,
     expected_list_id=None,
+    section: str = DEFAULT_SECTION,
     now: datetime | None = None,
 ) -> dict:
     """Append one player to a clan's active list.
@@ -239,7 +362,8 @@ async def add_player(
     clan_tag = _normalize_tag(clan_tag)
     tag = _normalize_tag(player["tag"])
 
-    active = await _coll(mongo).find_one(_active_query(clan_tag, expected_list_id))
+    section = normalize_section(section)
+    active = await _coll(mongo).find_one(_active_query(clan_tag, expected_list_id, section=section))
     if active is None:
         if expected_list_id is not None:
             raise StaleListError()
@@ -248,7 +372,7 @@ async def add_player(
         raise PlayerAlreadyListedError(tag)
 
     entry = _normalize_player(player, now=now, added_manually_default=added_manually)
-    query = _active_query(clan_tag, expected_list_id)
+    query = _active_query(clan_tag, expected_list_id, section=section)
     # The read above gives a useful error in the normal case, but it cannot
     # make the check atomic. Keep the tag absence in the write filter so two
     # simultaneous modal submissions cannot append the same player twice.
@@ -260,7 +384,7 @@ async def add_player(
         return_document=ReturnDocument.AFTER,
     )
     if updated is None:
-        current = await _coll(mongo).find_one(_active_query(clan_tag, expected_list_id))
+        current = await _coll(mongo).find_one(_active_query(clan_tag, expected_list_id, section=section))
         if current is not None and any(
             _normalize_tag(existing.get("tag", "")) == tag
             for existing in current.get("players", [])
@@ -272,7 +396,7 @@ async def add_player(
     return updated
 
 
-async def remove_players(mongo: MongoClient, clan_tag: str, tags: list[str], *, expected_list_id=None) -> int:
+async def remove_players(mongo: MongoClient, clan_tag: str, tags: list[str], *, expected_list_id=None, section: str = DEFAULT_SECTION) -> int:
     """Remove players by tag from a clan's active list. Returns the number
     of tags that were present and removed, derived from the single
     find_one_and_update's BEFORE image (no second read, so nothing else can
@@ -287,7 +411,7 @@ async def remove_players(mongo: MongoClient, clan_tag: str, tags: list[str], *, 
         return 0
 
     before = await _coll(mongo).find_one_and_update(
-        _active_query(clan_tag, expected_list_id),
+        _active_query(clan_tag, expected_list_id, section=section),
         {"$pull": {"players": {"tag": {"$in": list(wanted)}}}},
         return_document=ReturnDocument.BEFORE,
     )
@@ -306,12 +430,16 @@ async def set_reminders(
     enabled: bool,
     every_minutes: int | None,
     expected_list_id=None,
+    section: str = DEFAULT_SECTION,
     now: datetime | None = None,
 ) -> dict | None:
     """Turn a clan's reminders on or off. Enabling resets started_at,
     last_sent_at, and sent_count; disabling keeps sent_count for history.
     Returns None if the clan has no active list."""
     now = _utc(now)
+    section = normalize_section(section)
+    if section == "MAIN":
+        raise ValueError("MAIN rosters do not support return reminders")
     clan_tag = _normalize_tag(clan_tag)
 
     update: dict[str, Any] = {
@@ -324,7 +452,7 @@ async def set_reminders(
         update["reminders.sent_count"] = 0
 
     return await _coll(mongo).find_one_and_update(
-        _active_query(clan_tag, expected_list_id),
+        _active_query(clan_tag, expected_list_id, section=section),
         {"$set": update},
         return_document=ReturnDocument.AFTER,
     )
@@ -333,6 +461,9 @@ async def set_reminders(
 async def record_reminder_sent(mongo: MongoClient, list_id, now: datetime | None = None) -> None:
     """Record that a reminder was just sent for one saved list."""
     now = _utc(now)
+    document = await _coll(mongo).find_one({"_id": list_id})
+    if document is not None and normalize_section(document.get("section")) == "MAIN":
+        raise ValueError("MAIN rosters do not support return reminders")
     await _coll(mongo).find_one_and_update(
         {"_id": list_id},
         {
@@ -343,12 +474,12 @@ async def record_reminder_sent(mongo: MongoClient, list_id, now: datetime | None
     )
 
 
-async def finish(mongo: MongoClient, clan_tag: str, now: datetime | None = None, *, expected_list_id=None) -> dict | None:
+async def finish(mongo: MongoClient, clan_tag: str, now: datetime | None = None, *, expected_list_id=None, section: str = DEFAULT_SECTION) -> dict | None:
     """Mark a clan's active list finished and turn off its reminders."""
     now = _utc(now)
     clan_tag = _normalize_tag(clan_tag)
     return await _coll(mongo).find_one_and_update(
-        _active_query(clan_tag, expected_list_id),
+        _active_query(clan_tag, expected_list_id, section=section),
         {"$set": {
             "status": "finished",
             "finished_at": now,
@@ -378,10 +509,13 @@ async def expire_due(mongo: MongoClient, now: datetime | None = None) -> list[di
     return flipped
 
 
-async def list_reminder_enabled(mongo: MongoClient) -> list[dict]:
+async def list_reminder_enabled(mongo: MongoClient, *, section: str = "FWA") -> list[dict]:
     """Return every active list with reminders currently enabled, for
     restoring scheduler jobs at startup."""
-    cursor = _coll(mongo).find({"status": "active", "reminders.enabled": True})
+    section = normalize_section(section)
+    if section == "MAIN":
+        return []
+    cursor = _coll(mongo).find({"status": "active", "section": section, "reminders.enabled": True})
     return await cursor.to_list(length=None)
 
 
@@ -398,7 +532,7 @@ async def repair_imported_expiry(mongo: MongoClient, now: datetime | None = None
     for document in documents:
         if not document.get("legacy_snapshot_id") or not isinstance(document.get("saved_at"), datetime):
             continue
-        expiry = expires_at_for(_utc(document["saved_at"]))
+        expiry = expires_at_for(_utc(document["saved_at"]), section=document.get("section", DEFAULT_SECTION))
         if document.get("expires_at") and _utc(document["expires_at"]) == expiry:
             continue
         changes = {"expires_at": expiry, "purge_at": expiry + PURGE_RETENTION}
@@ -491,6 +625,8 @@ async def migrate_legacy_active_snapshots(mongo: MongoClient, now: datetime | No
             started_at = _utc(snapshot.get("auto_ping_started_at") or saved_at) if enabled else None
             document = {
                 "schema_version": SCHEMA_VERSION,
+                "section": DEFAULT_SECTION,
+                "cwl_season": cwl_season_for(saved_at),
                 "clan_tag": _normalize_tag(clan_tag),
                 "clan_name": snapshot.get("clan_name") or _normalize_tag(clan_tag),
                 "status": "active" if expiry > now else "expired",

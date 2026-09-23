@@ -41,6 +41,7 @@ def _walk_text(value):
 
 def _active(list_id, tag):
     document = _list_doc(list_id, clan_tag=tag)
+    document["section"] = "FWA"
     document["expires_at"] = datetime.now(timezone.utc) + timedelta(days=3)
     return document
 
@@ -48,6 +49,35 @@ def _active(list_id, tag):
 def _session():
     dashboard._sessions.clear()
     return dashboard._session(owner=10, guild=20)
+
+
+def test_section_clan_queries_use_live_main_categories_and_keep_fwa_strict(monkeypatch):
+    mongo = _fake_mongo(clans=[
+        {"_id": 1, "tag": "#FWA", "name": "FWA", "type": "FWA"},
+        {"_id": 2, "tag": "#TAC", "name": "Tactical", "type": "Tactical"},
+        {"_id": 3, "tag": "#FUN", "name": "Fun", "type": "Flexible Fun"},
+        {"_id": 4, "tag": "#OLD", "name": "Legacy", "type": "Competitive"},
+        {"_id": 5, "tag": "#HOST", "name": "Host", "type": "CWL Hosting"},
+        {"_id": 6, "name": "No tag", "type": "Tactical"},
+    ])
+    queries = []
+    original_find = mongo.clans.find
+    def find(query):
+        queries.append(query)
+        return original_find(query)
+    monkeypatch.setattr(mongo.clans, "find", find)
+
+    token = _session()
+    fwa = asyncio.run(dashboard._clans(mongo, token))
+    dashboard._sessions[token]["section"] = "MAIN"
+    main = asyncio.run(dashboard._clans(mongo, token))
+
+    assert queries == [
+        {"type": "FWA"},
+        {"type": {"$in": ["Tactical", "Flexible Fun", "Competitive"]}},
+    ]
+    assert [clan["tag"] for clan in fwa] == ["#FWA"]
+    assert [clan["tag"] for clan in main] == ["#FUN", "#OLD", "#TAC"]
 
 
 def test_serialized_24_clan_and_50_player_panels_fit_discord_and_do_not_silently_truncate():
@@ -84,7 +114,8 @@ def test_bound_confirmation_uses_raw_bson_id_and_is_one_shot(monkeypatch):
     nonce = dashboard._bind(token, "#ABC", [document], operation="send")
     calls = []
 
-    async def remind(tag, *, expected_list_id=None):
+    async def remind(tag, *, expected_list_id=None, section=None):
+        assert section == "FWA"
         calls.append((tag, expected_list_id))
         return {"ok": True}
 
@@ -136,7 +167,8 @@ def test_modal_submission_dispatches_real_shape_and_passes_raw_object_id(monkeyp
     nonce = dashboard._bind(token, "#ABC", [_active(object_id, "#ABC")], operation="add")
     calls = []
 
-    async def add(tag, player, *, expected_list_id=None):
+    async def add(tag, player, *, expected_list_id=None, section=None):
+        assert section == "FWA"
         calls.append((tag, player, expected_list_id))
         return {"ok": True, "error": None}
 
@@ -225,7 +257,8 @@ def test_remove_entire_page_passes_exact_list_and_returns_to_same_page(monkeypat
     confirm = next(node['custom_id'] for node in _nodes([item.build() for item in reviewed])
                    if str(node.get('custom_id', '')).startswith('lazycwl_remove_yes:'))
     calls, pages = [], []
-    async def remove(mongo, tag, players, *, expected_list_id):
+    async def remove(mongo, tag, players, *, expected_list_id, section):
+        assert section == "FWA"
         calls.append((tag, players, expected_list_id))
         return len(players)
     async def page(mongo, token, tag, page, note=None):
@@ -247,7 +280,9 @@ def test_full_bulk_review_and_reminders_fit_text_budget(monkeypatch):
     panel = dashboard.render_home(docs, clans, 'ALL', token=token, tab='reminders')
     payload = [item.build() for item in panel]
     assert sum(len(text) for text in _walk_text(payload)) <= 4000
-    async def active(mongo): return docs
+    async def active(mongo, *, section):
+        assert section == "FWA"
+        return docs
     monkeypatch.setattr(dashboard.store, 'list_active', active)
     review = asyncio.run(dashboard._review(object(), token, 'ALL', 'close'))
     review_payload = [item.build() for item in review]
