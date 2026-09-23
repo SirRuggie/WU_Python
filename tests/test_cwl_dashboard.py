@@ -66,6 +66,36 @@ def test_panel_has_all_five_private_workspaces(monkeypatch):
     assert "Pause campaign" in encoded
 
 
+def test_discord_component_nesting_for_all_dashboard_panels():
+    draft = _draft()
+    draft["campaign"] = dashboard.cwl_campaign.default_campaign()
+
+    def validate(node):
+        kind = node["type"]
+        children = node.get("components", ())
+        if kind == 17:
+            assert all(child["type"] in {1, 9, 10, 12, 13, 14} for child in children)
+        elif kind == 1:
+            assert 1 <= len(children) <= 5
+            assert all(child["type"] in {2, 3, 5, 6, 7, 8} for child in children)
+            if any(child["type"] != 2 for child in children):
+                assert len(children) == 1
+        for child in children:
+            validate(child)
+
+    panels = [asyncio.run(dashboard.panel(draft, tab)) for tab in (
+        "overview", "messages", "schedule", "settings", "history",
+    )]
+    for key in draft["campaign"]["messages"]:
+        panels.append(dashboard.schedule_editor(draft, key))
+        for audience in dashboard.AUDIENCES:
+            panels.append(dashboard.message_editor(draft, key, audience))
+            panels.append(dashboard.links_editor(draft, key, audience))
+    for components in panels:
+        for component in components:
+            validate(component.build()[0])
+
+
 def test_message_editor_exposes_copy_artwork_buttons_delivery_and_safe_preview():
     built = dashboard.message_editor(_draft(), "signup", "main")[0].build()[0]
     encoded = str(built)

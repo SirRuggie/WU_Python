@@ -270,7 +270,8 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
 
     elif tab == "messages":
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Messages\nChoose a message and its Main or Lazy version. Text, artwork, buttons, destination, and pings stay together."))
-        menu = hikari.impl.MessageActionRowBuilder().add_text_menu(
+        menu_row = hikari.impl.MessageActionRowBuilder()
+        menu = menu_row.add_text_menu(
             f"cwl_message:{draft_id}", min_values=1, placeholder="Choose a message version"
         )
         for key, label in _message_items(campaign)[:12]:
@@ -278,18 +279,19 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
                 template = _template(campaign, key, audience)
                 suffix = "disabled" if template.get("enabled") is False else _short(template.get("title") or template.get("body") or "Untitled", 45)
                 menu.add_option(f"{label} · {audience.title()}", f"{key}|{audience}", description=suffix)
-        rows.append(menu)
+        rows.append(menu_row)
         rows.append(_button(f"cwl_add_reminder:{draft_id}", "Add reminder from signup", style=hikari.ButtonStyle.PRIMARY))
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="Changes are drafts until you apply them. Use Preview to see the scheduler's exact rendered post with pings suppressed."))
 
     elif tab == "schedule":
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Schedule\nUse recognizable event-based timing. The resolved dates below follow this draft's timezone."))
-        menu = hikari.impl.MessageActionRowBuilder().add_text_menu(
+        menu_row = hikari.impl.MessageActionRowBuilder()
+        menu = menu_row.add_text_menu(
             f"cwl_schedule:{draft_id}", min_values=1, placeholder="Choose a message schedule"
         )
         for key, label in _message_items(campaign)[:25]:
             menu.add_option(label, key, description=_time_description(_schedule(campaign, key))[:100])
-        rows.append(menu)
+        rows.append(menu_row)
         try:
             occurrences = cwl_campaign.resolve_schedule(campaign, _cycle(draft), now=utcnow())[:5]
         except (TypeError, ValueError):
@@ -299,7 +301,8 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
             rows.append(hikari.impl.TextDisplayComponentBuilder(content="### Upcoming\n" + "\n".join(lines)))
 
     elif tab == "settings":
-        deadline_modes = hikari.impl.MessageActionRowBuilder().add_text_menu(
+        deadline_row = hikari.impl.MessageActionRowBuilder()
+        deadline_modes = deadline_row.add_text_menu(
             f"cwl_deadline_mode:{draft_id}", min_values=1, placeholder="Choose signup deadline rule"
         )
         active_deadline = cwl_forms.deadline_mode(campaign.get("signup_deadline", {}))
@@ -308,7 +311,7 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
         rows.extend([
             hikari.impl.TextDisplayComponentBuilder(content=f"### Campaign settings\nSignup deadline: **{_deadline(campaign)}**\nTimezone: **{campaign.get('timezone', 'America/New_York')}**"),
             _button(f"cwl_settings:{draft_id}", "Edit deadline & timezone", style=hikari.ButtonStyle.PRIMARY),
-            deadline_modes,
+            deadline_row,
             hikari.impl.TextDisplayComponentBuilder(content="### Apply changes\nThis month changes only unsent occurrences. Monthly defaults become the starting point for future CWL cycles."),
             _button(f"cwl_apply_review:{draft_id}|cycle", "Review this month", style=hikari.ButtonStyle.SUCCESS),
             _button(f"cwl_apply_review:{draft_id}|defaults", "Review monthly defaults", style=hikari.ButtonStyle.PRIMARY),
@@ -352,11 +355,13 @@ def message_editor(draft: dict, key: str, audience: str, notice: str | None = No
     can_restore_artwork = bool(default_artwork and template.get("media_url") != default_artwork)
     ref = f"{_draft_token(draft)}|{key}|{audience}"
     rows = _header(draft, "messages", notice)
-    destination = hikari.impl.MessageActionRowBuilder().add_channel_menu(
+    destination = hikari.impl.MessageActionRowBuilder()
+    destination.add_channel_menu(
         f"cwl_channel:{ref}", channel_types=(hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS),
         placeholder="Choose delivery channel", min_values=1, max_values=1,
     )
-    ping_roles = hikari.impl.MessageActionRowBuilder().add_select_menu(
+    ping_roles = hikari.impl.MessageActionRowBuilder()
+    ping_roles.add_select_menu(
         hikari.ComponentType.ROLE_SELECT_MENU, f"cwl_roles:{ref}",
         placeholder="Choose roles to ping", min_values=0, max_values=10,
     )
@@ -506,12 +511,13 @@ def schedule_editor(draft: dict, key: str, notice: str | None = None) -> list:
         hikari.impl.TextDisplayComponentBuilder(content="Choose how this message is timed. The form uses calendar dates and ordinary minutes, hours, or days."),
         _button(f"cwl_tab:{_draft_token(draft)}|schedule", "Back"),
     ])
-    modes = hikari.impl.MessageActionRowBuilder().add_text_menu(
+    modes_row = hikari.impl.MessageActionRowBuilder()
+    modes = modes_row.add_text_menu(
         f"cwl_schedule_mode:{_draft_token(draft)}|{key}", min_values=1, placeholder="Choose delivery timing"
     )
     for value, label in (("monthly", "Monthly"), ("after_open", "After signups open"), ("before_close", "Before signup deadline"), ("specific", "One-time date"), ("legacy_chain", "After previous reminder"), ("manual", "Manual")):
         modes.add_option(label, value, is_default=value == schedule.get("mode", "manual"))
-    rows.insert(-1, modes)
+    rows.insert(-1, modes_row)
     return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
 
 
@@ -589,10 +595,11 @@ def links_editor(draft: dict, key: str, audience: str, notice: str | None = None
     rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"### Buttons · {_message_label(key)} · {audience.title()}\nChoose one to edit it, or add a new link button."))
     buttons = template.get("buttons", [])
     if buttons:
-        menu = hikari.impl.MessageActionRowBuilder().add_text_menu(f"cwl_button_choose:{ref}", min_values=1, placeholder="Choose a button")
+        menu_row = hikari.impl.MessageActionRowBuilder()
+        menu = menu_row.add_text_menu(f"cwl_button_choose:{ref}", min_values=1, placeholder="Choose a button")
         for index, button in enumerate(buttons):
             menu.add_option(str(button.get("label") or f"Button {index + 1}")[:100], str(index), description=_short(button.get("url"), 90))
-        rows.append(menu)
+        rows.append(menu_row)
     rows.append(_button(f"cwl_button_add:{ref}", "Add button", style=hikari.ButtonStyle.PRIMARY))
     rows.append(_button(f"cwl_open_message:{ref}", "Back"))
     return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
