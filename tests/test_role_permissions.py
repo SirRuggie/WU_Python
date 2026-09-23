@@ -73,7 +73,7 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     assert {"/poll create", "/poll view", "/poll active"} <= paths
     assert not any(path == "/cwl-announcement" or path.startswith("/cwl-reminder ") for path in paths)
     assert "/lazyprep" not in paths
-    assert "/lazycwl" in paths
+    assert "/cwl rosters" in paths
     assert not any(path.startswith("/fwa lazycwl-") for path in paths)
 
 

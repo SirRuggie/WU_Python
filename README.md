@@ -103,9 +103,10 @@ Recruit role automatically two hours after assignment.
 Clan administration and the family's FWA toolkit: clan dashboards and info
 hubs, logo and banner uploads, FWA base layouts, FWA Chocolate lookups, war
 weight calculation, Town Hall upgrade notes, and one-command war plans for
-win, loss, blacklist, and mismatch scenarios. The `/lazycwl` dashboard captures
+win, loss, blacklist, and mismatch scenarios. The `/cwl rosters` dashboard captures
 FWA rosters during CWL, tracks returning players, and manages manual and
-scheduled return reminders. Older `/fwa lazycwl-*` commands open this dashboard.
+scheduled return reminders. The old `/lazycwl` and `/fwa lazycwl-*` commands
+have been removed.
 
 <details>
 <summary><strong>Command reference — Clans &amp; FWA (16 commands)</strong></summary>
@@ -128,7 +129,7 @@ scheduled return reminders. Older `/fwa lazycwl-*` commands open this dashboard.
 | `/fwa upload-images` | Upload FWA war and active base images. |
 | `/fwa war-plans` | Generate a war plan for win, loss, blacklist, or mismatch. |
 | `/fwa weight` | Calculate war weight from a storage value. |
-| `/lazycwl` | Manage FWA saved rosters, players, and return reminders in one dashboard. |
+| `/cwl rosters` | Manage FWA saved rosters, players, and return reminders in one dashboard. |
 
 </details>
 

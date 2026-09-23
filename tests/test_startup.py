@@ -103,7 +103,7 @@ def test_extension_discovery_only_returns_loader_entry_points():
     assert "extensions.commands.ping" in discovered
     assert "extensions.commands.poll" in discovered
     assert "extensions.commands.todo" in discovered
-    assert "extensions.commands.fwa.lazy_cwl" in discovered
+    assert "extensions.commands.fwa.lazy_cwl" not in discovered
     assert "extensions.commands.lazycwl_dashboard" in discovered
     assert "extensions.commands.fwa.lazy_cwl_service" not in discovered
     assert "extensions.commands.clan.dashboard.dashboard" in discovered

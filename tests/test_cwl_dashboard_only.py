@@ -25,7 +25,7 @@ def _loader_command_names(loader) -> set[str]:
 
 def test_only_dashboard_registers_as_a_cwl_announcement_entrypoint():
     assert _loader_command_names(cwl_dashboard.loader) == {"cwl"}
-    assert set(cwl_dashboard.cwl.subcommands) == {"dashboard"}
+    assert set(cwl_dashboard.cwl.subcommands) == {"dashboard", "rosters"}
 
     assert "cwl-announcement" not in _loader_command_names(cwl_announcement.loader)
     assert "lazyprep" not in _loader_command_names(lazyprep.loader)
@@ -52,7 +52,7 @@ def test_unrelated_cwl_operational_tools_remain_registered():
         "lazycwl-autopings-stop",
         "lazycwl-autopings-status",
         "lazycwl-remove-player",
-    } <= set(fwa.fwa.subcommands)
+    }.isdisjoint(fwa.fwa.subcommands)
 
 
 def test_legacy_reminder_runtime_is_explicitly_fail_closed():

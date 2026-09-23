@@ -30,7 +30,7 @@ from utils import cwl_sequence
 
 loader = lightbulb.Loader()
 cwl = lightbulb.Group(
-    "cwl", "Configure CWL announcements and reminders",
+    "cwl", "Manage CWL announcements, rosters, and reminders",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
 )
 
@@ -1839,4 +1839,9 @@ async def retired_history_action(ctx: Any, action_id: str, **_: Any):
 
 
 loader.listener(hikari.ShardPayloadEvent)(cwl_media.capture_upload_payload)
+# Register both subcommands before installing the group on the client. The
+# roster module retains its own loader for its scheduler lifecycle listeners.
+from extensions.commands.lazycwl_dashboard import CWLRosters
+
+cwl.register(CWLRosters)
 loader.command(cwl)

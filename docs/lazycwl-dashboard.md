@@ -1,12 +1,12 @@
-# LazyCWL dashboard
+# CWL rosters dashboard
 
-`/lazycwl` is the administrator dashboard for CWL saved player lists. It
-replaces the retired `/fwa lazycwl-*` workflow; those commands open the
-dashboard so existing command habits still lead to the supported screen.
+`/cwl rosters` is the administrator dashboard for CWL saved player lists. It
+replaces `/lazycwl` and the nine retired `/fwa lazycwl-*` commands. Those
+old command names are no longer registered; use `/cwl rosters` directly.
 
 ## Dashboard flow
 
-Open `/lazycwl`, choose a clan, then use **Overview**, **Players**, or
+Open `/cwl rosters`, choose a clan, then use **Overview**, **Players**, or
 **Reminders**. The dashboard does not preselect a clan. The selector retains
 the existing maximum of 24 clans plus the explicit bulk choice.
 
@@ -29,13 +29,13 @@ the existing maximum of 24 clans plus the explicit bulk choice.
 
 Green confirmation buttons apply changes immediately; there is no separate
 unsaved dashboard draft or final Save template step. Discord timestamps show
-dates in the viewer's local time. Old slash command names are redirect aliases.
+dates in the viewer's local time.
 
 Panels are private, expire after 20 minutes, and belong to the opening user
 and server. Every interaction rechecks Administrator permission. Confirmation
 payloads are kept server-side, bound to the operation and specific roster ids,
 and consumed once. Cancel invalidates the pending action. Restarting the bot
-expires open panels; reopen `/lazycwl` without losing saved rosters.
+expires open panels; reopen `/cwl rosters` without losing saved rosters.
 
 The dashboard has one active saved list per clan. A list contains the saved
 players, their Discord links when available, optional repeating reminders,

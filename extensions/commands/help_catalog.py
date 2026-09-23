@@ -61,7 +61,7 @@ HELP_CATEGORIES = {
             ("/fwa upload-images", "Upload FWA war and active base images."),
             ("/fwa war-plans", "Generate a war plan for win, loss, blacklist, or mismatch."),
             ("/fwa weight", "Calculate war weight from a storage value."),
-            ("/lazycwl", "Manage FWA saved rosters and return reminders. Admins only."),
+            ("/cwl rosters", "Manage FWA saved rosters and return reminders. Admins only."),
         ],
     },
     "tickets": {

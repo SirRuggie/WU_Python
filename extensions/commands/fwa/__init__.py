@@ -13,7 +13,6 @@ fwa = lightbulb.Group("fwa", "All FWA-related commands")
 from . import bases
 from . import blacklist
 from . import chocolate
-from . import lazy_cwl
 from . import links
 from . import new_th_upgrade
 from . import points

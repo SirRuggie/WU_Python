@@ -1,6 +1,6 @@
 # LazyCWL return reminders
 
-The old `/fwa lazycwl-*` commands now open `/lazycwl`.
+The old `/fwa lazycwl-*` commands and `/lazycwl` have been removed. Use `/cwl rosters`.
 See [the dashboard guide](lazycwl-dashboard.md) for current operation and storage.
 
 The dashboard uses a dedicated reminder service and Mongo-backed saved rosters.
