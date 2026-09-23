@@ -63,6 +63,9 @@ def test_clan_list_missing_selection_edits_deferred_response():
 )
 def test_logo_emoji_errors_edit_deferred_response(document, message):
     ctx = _Context("#NOLOGO")
+    ctx.member = SimpleNamespace(get_roles=lambda: [
+        SimpleNamespace(id=update_clan_info.CLAN_MANAGEMENT_ROLE_ID)
+    ])
 
     result = asyncio.run(update_clan_info.emoji_from_logo(
         ctx=ctx, action_id="#NOLOGO", mongo=_Mongo(document), bot=object()

@@ -128,6 +128,7 @@ HELP_CATEGORIES = {
         "emoji": "📅",
         "description": "CWL announcements, schedules, and bonuses",
         "commands": [
+            ("/cwl dashboard", "Edit CWL text, artwork, links, schedules, and delivery settings in one private dashboard."),
             ("/cwl-announcement", "Post a CWL announcement."),
             ("/lazycwl-bonuses", "Randomly select LazyCWL bonus recipients."),
             ("/lazyprep", "Post LazyCWL preparation announcements."),

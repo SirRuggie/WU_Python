@@ -1,5 +1,9 @@
 import hikari
 
+# The production Warriors United Discord server. Features that migrate older
+# globally keyed configuration use this as their guild boundary.
+WARRIORS_UNITED_GUILD_ID = 644963518025826315
+
 RED_ACCENT = hikari.Color.from_hex_code("#AA0000")
 GOLD_ACCENT = hikari.Color.from_hex_code("FFD700")
 BLUE_ACCENT = hikari.Color.from_hex_code("0066FF")

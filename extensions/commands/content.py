@@ -283,12 +283,17 @@ def panel(state, notice=None):
             menu.add_option(document.label, document.key)
         rows = [
             hikari.impl.TextDisplayComponentBuilder(
-                content="## :shield: Warriors United Content Dashboard\nChoose the published document to edit. Drafts preserve Markdown, media, separators, and acknowledgement buttons."
+                content="## :shield: Warriors United Content Dashboard\nChoose a document to edit, or open CWL announcements to manage messages and schedules."
             ),
         ]
         if notice:
             rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
         rows.append(choose)
+        campaigns = hikari.impl.MessageActionRowBuilder()
+        campaigns.add_interactive_button(
+            hikari.ButtonStyle.PRIMARY, f"content_cwl:{sid}", label="CWL announcements"
+        )
+        rows.append(campaigns)
         return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows)]
 
     document = DOCUMENTS[state["document"]]
@@ -484,6 +489,17 @@ class ContentImageUpload(lightbulb.SlashCommand, name="image-upload", descriptio
             components=panel(draft, f"{label} uploaded to this draft. Preview, save, or update the selected post."),
             ephemeral=True, **NO_MENTIONS,
         )
+
+
+@register_action("content_cwl", preload_state=False, no_return=True)
+@lightbulb.di.with_di
+async def open_cwl(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        await ctx.interaction.edit_initial_response(components=error_panel(problem), **NO_MENTIONS)
+        return
+    from extensions.commands.cwl_dashboard import open_dashboard
+    await open_dashboard(ctx, mongo)
 
 
 @register_action("content_document", preload_state=False)
