@@ -70,7 +70,10 @@ def test_discord_component_nesting_for_all_dashboard_panels():
     draft = _draft()
     draft["campaign"] = dashboard.cwl_campaign.default_campaign()
 
-    def validate(node):
+    def validate(node, custom_ids):
+        if "custom_id" in node:
+            assert node["custom_id"] not in custom_ids
+            custom_ids.add(node["custom_id"])
         kind = node["type"]
         children = node.get("components", ())
         if kind == 17:
@@ -81,7 +84,7 @@ def test_discord_component_nesting_for_all_dashboard_panels():
             if any(child["type"] != 2 for child in children):
                 assert len(children) == 1
         for child in children:
-            validate(child)
+            validate(child, custom_ids)
 
     panels = [asyncio.run(dashboard.panel(draft, tab)) for tab in (
         "overview", "messages", "schedule", "settings", "history",
@@ -92,8 +95,9 @@ def test_discord_component_nesting_for_all_dashboard_panels():
             panels.append(dashboard.message_editor(draft, key, audience))
             panels.append(dashboard.links_editor(draft, key, audience))
     for components in panels:
+        custom_ids = set()
         for component in components:
-            validate(component.build()[0])
+            validate(component.build()[0], custom_ids)
 
 
 def test_message_editor_exposes_copy_artwork_buttons_delivery_and_safe_preview():

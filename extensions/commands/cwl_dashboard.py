@@ -207,7 +207,8 @@ def _tabs(draft_id: str, active: str) -> hikari.impl.MessageActionRowBuilder:
     for tab, label in (("overview", "Overview"), ("messages", "Messages"), ("schedule", "Schedule"), ("settings", "Settings"), ("history", "History")):
         row.add_interactive_button(
             hikari.ButtonStyle.PRIMARY if tab == active else hikari.ButtonStyle.SECONDARY,
-            f"cwl_tab:{draft_id}|{tab}", label=label, is_disabled=tab == active,
+            f"cwl_tab:{draft_id}|{tab}" + ("|active" if tab == active else ""),
+            label=label, is_disabled=tab == active,
         )
     return row
 
