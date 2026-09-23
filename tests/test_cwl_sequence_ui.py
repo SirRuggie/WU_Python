@@ -54,9 +54,11 @@ def _schema_stats(components):
 def test_schedule_panel_offers_recommended_sequence_choices_without_changing_legacy_timing(monkeypatch):
     draft = _draft()
     text = _component_text(asyncio.run(dashboard.panel(draft, "schedule")))
-    assert "Evenly spread reminders" in text
-    assert "Every X hours" in text
-    assert "4 evenly spread reminders" in text.lower()
+    assert "Edit reminders" in text
+    assert "Evenly spread reminders" not in text
+    choices = _component_text(dashboard.sequence_panel(draft))
+    assert "Evenly spread reminders" in choices
+    assert "Every X hours" in choices
     assert draft["campaign"]["reminder_sequence"]["enabled"] is False
 
 

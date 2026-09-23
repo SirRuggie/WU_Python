@@ -57,12 +57,13 @@ def test_dashboard_actions_use_modal_and_state_contracts():
         assert action.is_modal and action.no_return and not action.preload_state
 
 
-def test_panel_has_all_five_private_workspaces(monkeypatch):
+def test_panel_has_four_workspaces_without_duplicate_settings(monkeypatch):
     monkeypatch.setattr(dashboard.cwl_campaign, "resolve_schedule", lambda *_args, **_kwargs: [])
     built = asyncio.run(dashboard.panel(_draft()))[0].build()[0]
     encoded = str(built)
-    for label in ("Overview", "Messages", "Schedule", "Settings", "History"):
+    for label in ("Overview", "Messages", "Schedule", "History"):
         assert label in encoded
+    assert "'label': 'Settings'" not in encoded
     assert "Review and save" in encoded
 
 
@@ -104,7 +105,7 @@ def test_discord_component_nesting_for_all_dashboard_panels():
 def test_message_editor_exposes_copy_artwork_buttons_delivery_and_safe_preview():
     built = dashboard.message_editor(_draft(), "signup", "main")[0].build()[0]
     encoded = str(built)
-    for label in ("Edit text", "Upload replacement", "Edit buttons", "Channel & mentions", "Preview", "Current image in this draft"):
+    for label in ("Edit text", "Upload replacement", "Edit buttons", "Choose a channel", "Choose roles to ping", "Preview", "Current image in this draft"):
         assert label in encoded
 
 

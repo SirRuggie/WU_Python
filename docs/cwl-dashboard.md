@@ -14,6 +14,11 @@ originating guild.
 
 ## Workflow
 
+The main navigation has four tabs: **Overview**, **Messages**, **Schedule**, and
+**History**. Schedule includes all timing settings; old Settings links redirect
+there. Submenus omit the main tabs and provide an enabled Back button naming
+the destination. The main tabs remain clickable, including the selected tab.
+
 Open **Messages**, choose an announcement and its **Main** or **Lazy** version,
 then use the focused controls to rename the dashboard item, edit text, upload
 an image, update buttons, or change delivery settings. **Copy text** preserves
@@ -49,7 +54,7 @@ the reminder anchor; applying the draft does not replay that signup post.
 
 ### Reminder sequence
 
-The Schedule tab also offers a reminder sequence for numbered sign-up reminders.
+Use **Edit reminders** in Schedule to configure numbered sign-up reminders.
 Choose **Evenly spread reminders** to set the number of reminders, final-call
 lead time, and minimum gap. Choose **Every X hours** to set only the interval,
 final-call lead time, and minimum gap; it keeps the existing count internally
@@ -86,8 +91,8 @@ Use **Preview** from a message version to render the same Components V2 message
 the scheduler will use. Previews suppress every user, role, and everyone ping.
 They never send a post or alter delivery history.
 
-When the draft is ready, select **Review this month** or **Review monthly
-defaults**. The review shows the exact changed messages, artwork, links,
+When ready, select **Review and save**, choose the displayed month or **Future
+months**, then review the exact changed messages, artwork, links,
 audiences, schedule dates, and deadline before presenting the final apply
 button. Confirmation reloads the draft and refuses to apply if it changed after
 review. Applying uses a revision check so an older editor cannot silently
@@ -95,7 +100,7 @@ overwrite a newer saved campaign. This-month applies protect already-sent posts.
 Monthly defaults reviews show the first affected future month, and saving them
 keeps the current month's live campaign unchanged.
 If an apply reports that another administrator saved first, use **Reload saved
-version** in Settings. It asks for a second confirmation, discards only your
+version** through **Schedule → More options → Discard changes…**. It asks for a second confirmation, discards only your
 owned draft, and opens a fresh draft from the current saved campaign. It never
 automatically rebases or merges conflicting edits.
 
