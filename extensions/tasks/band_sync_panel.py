@@ -2,8 +2,9 @@
 #
 # Owns every component builder and register_action handler this brief adds: the one
 # Components V2 Container per event, styled like band_monitor's old red panel (D001),
-# carrying Yes / Maybe / No / DM me the time and a reminder select in the channel and,
-# identically, in every DM (D002, D003).
+# carrying Yes / Maybe / No / DM me the time and a reminder select in the channel
+# (D002, D003). Interactive DMs mirror the response controls; scheduled reminder DMs
+# are passive timestamp notices.
 #
 # Deliberately does NOT import extensions.tasks.band_sync_ical - that module imports
 # THIS one (to post/replace the panel on discovery and to render DM content from
@@ -323,19 +324,31 @@ def panel_container(event, url, responses):
     return [Container(accent_color=RED_ACCENT, components=components)]
 
 
-def dm_container(event, url, response, delete_at=None):
-    """Slim DM (user rule 2026-09-15): title, sync time, the reader's own status, then
-    Yes / Maybe / No and the reminder select. No role ping, no BAND link, no
-    instructions, no availability list, no DM-me button. No "change" variant exists -
-    a reschedule is handled like a new sync (DECISIONS.md D009), never a DM here.
+def dm_container(event, url, response, delete_at=None, delivery_type=None):
+    """Interactive DM (user rule 2026-09-15): title, sync time, the reader's own
+    status, then Yes / Maybe / No and the reminder select. Timed reminder DMs use a
+    passive timestamp-only layout. No "change" variant exists - a reschedule is
+    handled like a new sync (DECISIONS.md D009), never a DM here.
 
     `delete_at` (DECISIONS.md D006, only ever passed by send_dm) is an aware UTC
-    datetime; when set, its footer Text is appended right after the status line and
-    before the Yes/Maybe/No + reminder rows - the brief allowed either "last component
-    overall" or "last Text, buttons stay last"; this module picks the latter so the
-    buttons a reader actually clicks stay at the bottom of the DM.
+    datetime. Scheduled reminder DMs are passive time notices; other DM types keep
+    the interactive response layout below.
     """
     start = _start_of(event)
+    if delivery_type == "timed_reminder":
+        timestamp = int(start.timestamp())
+        components = [
+            Text(content="## <a:alarm_clock:1549521421841997836> FWA SYNC TIME REMINDER"),
+            Text(content=f"# <t:{timestamp}:R>"),
+            Text(content=f"-# <t:{timestamp}:F>"),
+        ]
+        delete_at = normalize_start(delete_at)
+        if delete_at is not None:
+            components.extend([
+                Separator(divider=True),
+                Text(content=f"-# This message will be deleted <t:{int(delete_at.timestamp())}:R>"),
+            ])
+        return [Container(accent_color=RED_ACCENT, components=components)]
     components = [
         Text(content=POSTED_TITLE),
         Text(content=f"**Sync Time:** {discord_timestamp(start, 'F')} · {discord_timestamp(start, 'R')}"),
@@ -415,7 +428,7 @@ async def cancel_dm_delete_tasks() -> None:
 
 # ---- DM delivery (D001: one DM per user per event, replaced not appended) ----
 async def send_dm(mongo, bot, event, response, url, delivery_type):
-    """Deliver one interactive DM for (uid, user), deleting any previous DM tracked on
+    """Deliver one DM for (uid, user), deleting any previous DM tracked on
     `response` first. `event` needs uid/summary/start_at (or start)/calendar. Never
     raises - failures come back as a DmSendResult so the caller can decide on retry.
 
@@ -442,7 +455,9 @@ async def send_dm(mongo, bot, event, response, url, delivery_type):
     try:
         user = await bot.rest.fetch_user(user_id)
         channel = await bot.rest.create_dm_channel(user.id)
-        components = dm_container(event, url, response, delete_at=delete_at)
+        components = dm_container(
+            event, url, response, delete_at=delete_at, delivery_type=delivery_type
+        )
         message = await bot.rest.create_message(channel=channel, components=components)
     except Exception as exc:
         return DmSendResult(

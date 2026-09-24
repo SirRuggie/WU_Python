@@ -615,6 +615,26 @@ def test_dm_container_has_no_role_ping_or_availability_list():
     assert texts[-1].startswith("**Your response:**")
 
 
+# ---- timed scheduled reminders are passive DMs without response controls ----
+def test_timed_reminder_dm_container_has_live_time_and_no_controls():
+    event = _event_row()
+    start = panel._start_of(event)
+    timestamp = int(start.timestamp())
+
+    components = panel.dm_container(
+        event, _url_for(event), None, delivery_type="timed_reminder"
+    )
+    texts = _texts(components[0])
+
+    assert texts == [
+        "## <a:alarm_clock:1549521421841997836> FWA SYNC TIME REMINDER",
+        f"# <t:{timestamp}:R>",
+        f"-# <t:{timestamp}:F>",
+    ]
+    assert not any(isinstance(component, ActionRow) for component in components[0].components)
+    assert not any(word in "\n".join(texts) for word in ("Yes", "Maybe", "No", "Reminders"))
+
+
 # ---- dm_container: "Your response" line for every status and unanswered ----
 def test_dm_container_status_line_per_status():
     event = _event_row()
@@ -747,6 +767,54 @@ def test_send_dm_stores_dm_delete_at_about_ttl_from_now(monkeypatch):
     stored = mongo.fwa_sync_responses.documents[response["_id"]]
     assert "dm_message_id" not in stored
     assert stored["status"] == "in"
+
+
+def test_send_timed_reminder_dm_is_passive_and_keeps_response_state(monkeypatch):
+    class RecordingRest(FakeRest):
+        async def create_message(self, channel, embed=None, components=None,
+                                 role_mentions=None, user_mentions=None):
+            self.sent_components = components
+            return await super().create_message(
+                channel, embed=embed, components=components,
+                role_mentions=role_mentions, user_mentions=user_mentions,
+            )
+
+    monkeypatch.setattr(panel.asyncio, "sleep", _instant_sleep)
+    panel._dm_delete_tasks.clear()
+    rest = RecordingRest()
+    bot = SimpleNamespace(rest=rest)
+    mongo = FakeMongo()
+    event = {"uid": "sync-1", "start": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc),
+             "summary": "FWA high sync", "calendar": "Sync3"}
+    response = schema.new_response_doc(
+        "sync-1", 42, event["start"], "v1", "in", reminders=[60],
+        dm_channel_id=111, dm_message_id=222,
+    )
+    mongo.fwa_sync_responses.documents[response["_id"]] = response
+
+    async def run():
+        before = datetime.now(timezone.utc)
+        result = await panel.send_dm(
+            mongo, bot, event, response, "https://band.us", "timed_reminder"
+        )
+        stored = mongo.fwa_sync_responses.documents[response["_id"]]
+        delta = (stored["dm_delete_at"] - before).total_seconds()
+        texts = _texts(rest.sent_components[0])
+        assert result.sent is True
+        assert abs(delta - panel.DM_TTL_SECONDS) < 10
+        assert (111, 222) in rest.deleted_messages
+        assert texts[0].endswith("FWA SYNC TIME REMINDER")
+        assert "<t:" in texts[1] and ":R>" in texts[1]
+        assert "<t:" in texts[2] and ":F>" in texts[2]
+        assert not any(isinstance(c, ActionRow) for c in rest.sent_components[0].components)
+        assert stored["status"] == "in"
+        assert stored["reminders"] == [60]
+        await asyncio.gather(*panel._dm_delete_tasks)
+
+    asyncio.run(run())
+    stored = mongo.fwa_sync_responses.documents[response["_id"]]
+    assert stored["status"] == "in"
+    assert stored["reminders"] == [60]
 
 
 def test_send_dm_schedules_timer_at_real_ttl_delay(monkeypatch):

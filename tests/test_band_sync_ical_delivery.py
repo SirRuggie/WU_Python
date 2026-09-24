@@ -303,6 +303,41 @@ def test_partial_delivery_retries_only_failed_recipient(monkeypatch):
     assert rest.attempts == [1, 2, 2]
 
 
+def test_only_numeric_reminder_delivery_uses_countdown_dm(monkeypatch):
+    event = _event()
+    responses = [
+        schema.new_response_doc(
+            event["uid"], user_id, event["start"], schema.event_version(event),
+            "in", reminders=[10, 0],
+        )
+        for user_id in (7, 8)
+    ]
+    deliveries = [
+        sync._delivery_doc(event, sync.DISCOVERY_OFFSET, 7),
+        sync._delivery_doc(event, "10", 7),
+        sync._delivery_doc(event, "0", 7),
+        sync._delivery_doc(event, "0", 8, delivery_type="once"),
+    ]
+    mongo = FakeMongo(responses=responses, deliveries=deliveries)
+    render_types = []
+
+    async def fake_load_config(_mongo):
+        return {}
+
+    async def fake_send_dm(_mongo, _bot, _event, _response, _url, render_type):
+        render_types.append(render_type)
+        return SimpleNamespace(sent=True, permanent=False, error_type=None, detail=None)
+
+    monkeypatch.setattr(sync, "load_config", fake_load_config)
+    monkeypatch.setattr(panel, "band_url", lambda _event, _config: "https://band.us")
+    monkeypatch.setattr(panel, "send_dm", fake_send_dm)
+
+    asyncio.run(sync.deliver_outstanding(mongo, event, event["start"]))
+
+    assert render_types == ["reminder", "timed_reminder", "timed_reminder", "once"]
+    assert all(delivery["status"] == "sent" for delivery in _deliveries(mongo))
+
+
 def test_stale_pending_lease_is_reclaimed(monkeypatch):
     rest = FakeRest()
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))

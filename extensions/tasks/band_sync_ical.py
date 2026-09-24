@@ -480,10 +480,15 @@ async def deliver_outstanding(mongo, event, now=None):
             if config is None:
                 config = await load_config(mongo)
             response = schema.normalize_response(response)
+            # Discovery is also stored with delivery_type="reminder". Only numeric
+            # offsets are scheduled countdown DMs; discovery keeps its current UI.
+            render_type = delivery.get("delivery_type")
+            if render_type == "reminder" and str(delivery["offset"]).isdigit():
+                render_type = "timed_reminder"
             panel_result = await panel.send_dm(
                 mongo, bot_instance, delivery_event, response,
                 panel.band_url(delivery_event, config),
-                delivery.get("delivery_type"),
+                render_type,
             )
             result = _DmResult(panel_result.sent, panel_result.permanent,
                                panel_result.error_type, panel_result.detail)
