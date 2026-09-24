@@ -19,12 +19,8 @@ from utils.classes import Clan
 from utils.constants import GREEN_ACCENT, RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, MAX_OPPONENT_NAME_LENGTH
 from utils.fwa_blacklist import add_blacklisted
 from utils.fwa_points_parser import sanitize_tag
-from .message_templates import (
-    WarMessageTemplates,
-    WarCopyTexts,
-    validate_opponent_name,
-    sanitize_opponent_name
-)
+from .message_templates import sanitize_opponent_name
+from utils import fwa_war_content
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -211,41 +207,25 @@ class WarPlans(
         # Get author name
         author_name = ctx.member.display_name if ctx.member else ctx.user.username
 
-        # Generate appropriate message components using templates
-        templates = WarMessageTemplates()
-        message_components = None
-
-        if self.war_result == "win":
-            message_components = templates.win_message(opponent_name, author_name, clan_role_id)
-        elif self.war_result == "lose":
-            message_components = templates.lose_message(opponent_name, author_name, clan_role_id)
-        elif self.war_result == "blacklisted":
-            message_components = templates.blacklisted_message(
-                opponent_name, author_name, clan_role_id,
-                FWA_WAR_PLANS_CONFIG["fwa_clan_rep_role_id"]
-            )
-        elif self.war_result == "mismatch":
-            message_components = templates.mismatch_message(opponent_name, author_name, clan_role_id)
-
-        # Get the appropriate copy text
-        copy_texts = WarCopyTexts()
-        copy_text = ""
-        if self.war_result == "win":
-            copy_text = copy_texts.win_copy(opponent_name)
-        elif self.war_result == "lose":
-            copy_text = copy_texts.lose_copy(opponent_name)
-        elif self.war_result == "blacklisted":
-            copy_text = copy_texts.blacklisted_copy(opponent_name)
-        elif self.war_result == "mismatch":
-            copy_text = copy_texts.mismatch_copy(opponent_name)
-
-        # Send main message to target channel
+        # Load the guild's reviewed template before posting. Invalid stored
+        # content fails closed, so a broken edit cannot silently publish.
         try:
-            # Create message with components only (no content field for Components V2)
-            message = await ctx.client.rest.create_message(
-                channel=target_channel,  # Now uses the clan's announcement channel
+            template = await fwa_war_content.load_template(
+                mongo, int(ctx.interaction.guild_id), self.war_result,
+            )
+            message_components, copy_text = fwa_war_content.render_template(
+                template, opponent=opponent_name, author=author_name,
+                clan_role_id=clan_role_id,
+                fwa_rep_role_id=FWA_WAR_PLANS_CONFIG["fwa_clan_rep_role_id"],
+            )
+            # Components V2 posts have no plain content. Only the selected clan
+            # role may ping; template text cannot notify users or everyone.
+            await ctx.client.rest.create_message(
+                channel=target_channel,
                 components=message_components,
-                role_mentions=[int(clan_role_id)]
+                role_mentions=[int(clan_role_id)],
+                user_mentions=False,
+                mentions_everyone=False,
             )
 
             final_copy_text = copy_text
@@ -259,7 +239,10 @@ class WarPlans(
             # Send ephemeral response with just the copy text as plain text
             await ctx.respond(
                 content=final_copy_text,
-                ephemeral=True
+                ephemeral=True,
+                user_mentions=False,
+                role_mentions=False,
+                mentions_everyone=False,
             )
 
         except Exception as e:

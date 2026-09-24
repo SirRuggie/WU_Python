@@ -22,6 +22,7 @@ FWA_REP_ROLE_ID = 993015846442127420
 DESTINATIONS = (
     ("Recruit Gauntlet", "recruit", "Onboarding messages, rules, and artwork"),
     ("FWA", "fwa", "Base links, images, and Town Hall guidance"),
+    ("FWA War Messages", "fwa_war_messages", "Win, lose, mismatch, and blacklist announcements"),
     ("CWL", "cwl", "Announcements, schedules, and delivery"),
     ("CWL Rosters", "cwl_rosters", "Saved rosters and return reminders"),
 )
@@ -29,12 +30,14 @@ SECTION_CHOICES = (
     lightbulb.Choice("Server", "server"),
     lightbulb.Choice("Recruit Gauntlet", "recruit-gauntlet"),
     lightbulb.Choice("FWA", "fwa"),
+    lightbulb.Choice("FWA War Messages", "fwa-war-messages"),
     lightbulb.Choice("CWL", "cwl"),
     lightbulb.Choice("CWL Rosters", "cwl-rosters"),
 )
 SECTION_DESTINATION = {
     "recruit-gauntlet": "recruit",
     "fwa": "fwa",
+    "fwa-war-messages": "fwa_war_messages",
     "cwl": "cwl",
     "cwl-rosters": "cwl_rosters",
 }
@@ -60,6 +63,10 @@ def _allowed(ctx: Any, destination: str) -> bool:
     admin = bool(permissions & hikari.Permissions.ADMINISTRATOR)
     if destination == "recruit":
         return admin or bool(permissions & hikari.Permissions.MANAGE_GUILD)
+    if destination == "fwa_war_messages":
+        roles = member.get_roles() if member and hasattr(member, "get_roles") else ()
+        role_ids = {int(role.id) for role in roles} | {int(role) for role in getattr(member, "role_ids", ())}
+        return 769130325460254740 in role_ids
     if destination == "fwa":
         roles = member.get_roles() if member and hasattr(member, "get_roles") else ()
         return any(int(role.id) == FWA_REP_ROLE_ID for role in roles)
@@ -102,6 +109,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
     requirements = {
         "recruit": "Manage Server permission",
         "fwa": "FWA Representative role",
+        "fwa_war_messages": "FWA Clan Rep role",
         "cwl": "Administrator permission",
         "cwl_rosters": "Administrator permission",
     }
@@ -156,6 +164,9 @@ async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
             components=await fwa_data.build_fwa_management_screen(ctx, mongo, manage_token=token),
             **NO_MENTIONS,
         )
+    elif destination == "fwa_war_messages":
+        from extensions.commands import fwa_war_messages
+        await fwa_war_messages.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
     elif destination == "cwl":
         from extensions.commands import cwl_dashboard
         if not deferred:

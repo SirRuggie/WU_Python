@@ -53,11 +53,12 @@ def test_single_manage_command_has_optional_section_and_is_loaded():
     choices = manage.Manage._command_data.options['section'].choices
     assert [(choice.name, choice.value) for choice in choices] == [
         ("Server", "server"), ("Recruit Gauntlet", "recruit-gauntlet"),
-        ("FWA", "fwa"), ("CWL", "cwl"), ("CWL Rosters", "cwl-rosters"),
+        ("FWA", "fwa"), ("FWA War Messages", "fwa-war-messages"),
+        ("CWL", "cwl"), ("CWL Rosters", "cwl-rosters"),
     ]
 
 
-def test_home_has_four_sections_valid_discord_shape_and_access(monkeypatch):
+def test_home_has_five_sections_valid_discord_shape_and_access(monkeypatch):
     token = "x" * 32
     ctx = context(permissions=hikari.Permissions.MANAGE_GUILD)
     built = run(manage.manage_home_components(ctx, object(), token=token))[0].build()[0]
@@ -67,12 +68,12 @@ def test_home_has_four_sections_valid_discord_shape_and_access(monkeypatch):
     assert built["type"] == hikari.ComponentType.CONTAINER
     assert built["accent_color"] == manage.GOLD_ACCENT
     assert len(nodes) <= 40
-    assert len(sections) == 4
+    assert len(sections) == 5
     assert [button["custom_id"] for button in buttons] == [
-        f"manage_recruit:{token}", f"manage_fwa:{token}",
+        f"manage_recruit:{token}", f"manage_fwa:{token}", f"manage_fwa_war_messages:{token}",
         f"manage_cwl:{token}", f"manage_cwl_rosters:{token}",
     ]
-    assert [button["disabled"] for button in buttons] == [False, True, True, True]
+    assert [button["disabled"] for button in buttons] == [False, True, True, True, True]
     assert all(len(button["custom_id"]) <= 100 for button in buttons)
 
 

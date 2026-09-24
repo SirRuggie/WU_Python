@@ -11,6 +11,7 @@ on one command, not separate subcommands.
 | `/manage` | Server Management | Choose a management workspace |
 | `/manage section:Recruit Gauntlet` | Recruit Gauntlet | Edit onboarding messages and artwork: About Us, WU Strike System, and Family Particulars |
 | `/manage section:FWA` | FWA | Manage base links, images, descriptions, and Town Hall upgrade notes |
+| `/manage section:FWA War Messages` | FWA War Messages | Edit Win, Lose, Mismatch, and Blacklisted war-plan templates |
 | `/manage section:CWL` | CWL | Manage campaign messages, schedules, and delivery settings |
 | `/manage section:CWL Rosters` | CWL Rosters | Manage saved Main/FWA rosters and FWA return reminders |
 
@@ -21,12 +22,13 @@ available for compatibility.
 
 ## Permissions and interaction design
 
-The home shows four named workspaces with separators and Open buttons.
+The home shows five named workspaces with separators and Open buttons.
 Workspaces outside the current member's access are locked. Back returns to
 the previous screen; Management Home returns to the central dashboard. Each
 workspace rechecks its existing authorization rules: Manage Server or
 Administrator for onboarding content, Administrator for CWL campaigns and
-rosters, and the FWA Representative role for FWA data. Opening the management
+rosters, the FWA Representative role for FWA data, and the FWA Clan Rep role
+used by `/fwa war-plans` for FWA War Messages. Opening the management
 home does not grant new privileges.
 
 Normal management screens use the bot's gold accent. Labels and explanatory
@@ -56,3 +58,6 @@ The implementation follows Discord's native interaction model:
 The existing editor guides document publication, drafts, and operational behavior:
 [onboarding content](content-dashboard.md), [CWL campaigns](cwl-dashboard.md),
 and [CWL rosters](lazycwl-dashboard.md).
+
+[FWA War Messages](fwa-war-messages.md) documents the war-template editor,
+preview behavior, and how saved changes reach future war-plan posts.
