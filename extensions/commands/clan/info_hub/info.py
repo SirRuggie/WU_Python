@@ -43,18 +43,18 @@ class Info(
                     Media(items=[MediaItem(media=banner_url)]),
                     Separator(divider=True, spacing=hikari.SpacingType.LARGE),
                     Text(content=(
-                        "Kings Alliance aims to provide a top tier and personalized clashing "
+                        "Warrior's United aims to provide a top tier and personalized clashing "
                         "experience. We offer a variety of clans to suit your needs, whether "
                         "you're a top-tier eSports player looking to prove your skills and "
                         "climb the leaderboards or just want to relax, farm and have fun. "
-                        "Look no further than Kings and join one of our clans below."
+                        "Look no further than Warrior's United and join one of our clans below."
                     )),
                     Separator(divider=True, spacing=hikari.SpacingType.SMALL),
 
                     # Main Clans Button
                     Text(content=(
                         f"## __<a:AngryGiant:1393193559921918002> **Main**__\n"
-                        "Our Main Clans host King's most competitive players. A "
+                        "Our Main Clans host the most competitive players in Warrior's United. A "
                         "combination of trophy pushing giveaways and B2B wars provide for "
                         "a competitive experience.\n\n"
                     )),
@@ -62,7 +62,7 @@ class Info(
                     # Feeder Clans Button
                     Text(content=(
                         f"## __<a:Chill:1393193145927340073> **Feeder**__\n"
-                        "Main Clans full? Try one of our Feeder Clans. King's feeder clans "
+                        "Main Clans full? Try one of our Feeder Clans. Warrior's United feeder clans "
                         "encapsulate the same attitude of our Main Clan system whilst you "
                         "wait."
                     )),
@@ -81,7 +81,7 @@ class Info(
                     # FWA Button
                     Text(content=(
                         f"## __<a:FWA:1387882523358527608> **FWA**__\n"
-                        "King's FWA Clans, part of the Farm War Alliance, offer a unique "
+                        "Warrior's United FWA Clans, part of the Farm War Alliance, offer a unique "
                         "clashing experience. Focused on strategic farming and no-hero "
                         "wars, these clans help you grow your base. Once you're upgraded "
                         "here, join one of our main clans to unleash your competitive side."
@@ -90,7 +90,7 @@ class Info(
                     # Clans on Trial Button
                     Text(content=(
                         f"## __<:PepeJail:1393193768454459463> **Clans on Trial**__\n"
-                        "As part of King's goal to provide a top tier clashing experience, new "
+                        "As part of our goal at Warrior's United to provide a top tier clashing experience, new "
                         "clans are trialed before entering our ranks permanently. If one of "
                         "these clans catches your attention, join!"
                     )),

@@ -373,7 +373,7 @@ async def primary_questions(
                             "Thank you for completing your application! 🎉\n\n"
                             "Our leadership team is now reviewing your responses to find the perfect clan match. "
                             "Please sit tight, we’ll be with you shortly! ⏳\n\n"
-                            "We truly appreciate your interest in the Kings Alliance and can’t wait to welcome you aboard!"
+                            "We truly appreciate your interest in Warrior's United and can’t wait to welcome you aboard!"
                         )
                     ),
                     Media(
@@ -1463,7 +1463,7 @@ async def recruit_questions_page(
                     f"{emojis.red_arrow_right} Explanations: Summarise FWA\n"
                     f"{emojis.red_arrow_right} FWA Questions: Send core FWA questions.\n"
                     f"{emojis.red_arrow_right} Keep It Moving: Send quick “hurry up” GIFs.\n\n"
-                    "Stay organized, efficient, and aligned with Kings recruitment standards.\n\n"
+                    "Stay organized, efficient, and aligned with Warrior's United recruitment standards.\n\n"
                 )),
                 ActionRow(
                     components=[
