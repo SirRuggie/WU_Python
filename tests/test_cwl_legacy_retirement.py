@@ -39,7 +39,7 @@ def test_direct_legacy_delivery_and_scheduling_fail_closed(monkeypatch):
         before = deepcopy(mongo.cwl_reminder.documents)
         assert await cwl_reminder.send_cwl_reminder(0) is False
         assert await cwl_reminder.send_cwl_reminder(0, test_mode=True) is False
-        with pytest.raises(RuntimeError, match="/cwl dashboard"):
+        with pytest.raises(RuntimeError, match="/manage section:CWL"):
             await cwl_reminder.schedule_cwl_reminder(24, 7, 0)
 
         rest.create_message.assert_not_awaited()
@@ -102,7 +102,7 @@ def test_stale_standalone_command_callback_only_redirects(monkeypatch, command):
         else:
             await command.invoke(SimpleNamespace(type="open"), ctx, bot=SimpleNamespace(rest=rest))
 
-        assert "/cwl dashboard" in ctx.respond.await_args.args[0]
+        assert "/manage section:CWL" in ctx.respond.await_args.args[0]
         rest.create_message.assert_not_awaited()
         ctx.defer.assert_not_awaited()
         ctx.respond_with_modal.assert_not_awaited()

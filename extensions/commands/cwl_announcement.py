@@ -41,6 +41,6 @@ class CWLAnnouncement(
             return
 
         await ctx.respond(
-            "This command is retired. Use `/cwl dashboard` to preview or send the saved roster announcement.",
+            "This command is retired. Use `/manage section:CWL` to preview or send the saved roster announcement.",
             ephemeral=True,
         )

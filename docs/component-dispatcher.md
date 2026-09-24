@@ -157,7 +157,7 @@ The affected button is labelled **"Back to Main Menu"** and lives only on the
 image-upload success screen:
 
 ```
-/clan dashboard → Manage FWA Data → select a Town Hall
+/manage → FWA → select a Town Hall
   → Update Images → submit the modal with image URLs
   → "TH{n} Images Updated!" screen
      → "Back to Main Menu"   (grey/secondary)   ← the affected button

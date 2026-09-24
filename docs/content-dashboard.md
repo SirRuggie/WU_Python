@@ -4,19 +4,18 @@ The shared management home is `/manage`; choose **Recruit Gauntlet** for this
 onboarding editor, or use the optional `section` choice to open it directly.
 See [Server Management](manage-dashboard.md) for navigation and permissions.
 
-`/content dashboard` is a private, per-server Components V2 editor for About Us,
+Recruit Gauntlet is a private, per-server Components V2 editor for About Us,
 WU Strike System, and Family Particulars. Administrators with Manage Server can
 edit named Markdown blocks, replace images in R2, preview the public layout,
-save a template, and update a selected existing bot post.
+and save a template for future posts.
 
 Manage CWL messages, artwork, destinations, and timing through **CWL** in
 `/manage` (or its optional `section` choice); see [CWL dashboard](cwl-dashboard.md).
 
 ## Replace an image
 
-1. Open `/content dashboard`. To update an existing post, supply its Discord
-   message link in `message-link`.
-2. Choose the document if it was not selected by the message link.
+1. Open `/manage` and choose **Recruit Gauntlet**.
+2. Choose the document to edit.
 3. Select the image in the image menu. The editor shows its current draft image
    beneath the menu so you can confirm the selection, then click **Upload replacement**.
 4. Choose a PNG, JPG, GIF, or WEBP in Discord's upload modal. It must fit the
@@ -24,16 +23,15 @@ Manage CWL messages, artwork, destinations, and timing through **CWL** in
 5. The preview refreshes to the uploaded image in the same private editor.
    The image is uploaded to R2 but is still
    a draft; the template and public post have not changed.
-6. Use **Preview**, then **Save template** for future setup posts and/or
-   **Update selected post** for the linked message. These are separate actions;
-   saving a template does not update all previously published messages.
+6. Use **Preview**, then **Save template** for future setup posts. Saving a
+   template does not update previously published messages.
 
 Images are uploaded through the dashboard's **Upload replacement** button;
 there is no separate upload command. The uploader must still own the draft,
 be in the same guild, and have Manage Server permission.
 
 To restore the original artwork, select the image and click **Restore default
-image**, then preview and use the green **Save template** button or update the selected post.
+image**, then preview and use the green **Save template** button.
 The restore button is disabled when the draft already uses the default image.
 The selection stays active and the editor immediately shows the restored default.
 

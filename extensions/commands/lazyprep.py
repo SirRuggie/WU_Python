@@ -145,7 +145,7 @@ class LazyPrep(
             return
 
         await ctx.respond(
-            "This command is retired. Use `/cwl dashboard` for CWL announcements.",
+            "This command is retired. Use `/manage section:CWL` for CWL announcements.",
             ephemeral=True,
         )
 
@@ -163,9 +163,9 @@ async def lazyprep_modal_handler(
         flags=hikari.MessageFlag.EPHEMERAL
     )
     await ctx.interaction.edit_initial_response(
-        content="This announcement flow is retired. Use `/cwl dashboard`.",
+        content="This announcement flow is retired. Use `/manage section:CWL`.",
         components=[],
     )
 
 
-# Intentionally not registered. /cwl dashboard is the only announcement UI.
+# Intentionally not registered. /manage section:CWL is the only announcement UI.

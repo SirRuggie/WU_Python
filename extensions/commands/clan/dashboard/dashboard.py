@@ -82,7 +82,6 @@ async def dashboard_page(
     return components
 
 
-@clan.register()
 class DashboardCommand(
     lightbulb.SlashCommand,
     name="dashboard",

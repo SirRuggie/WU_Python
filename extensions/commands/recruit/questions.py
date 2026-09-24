@@ -1040,7 +1040,7 @@ async def th_select(
         await ctx.respond(
             "❌ **FWA Data Not Found**\n\n"
             "The FWA data is not in the database yet. "
-            "Please use the `/clan dashboard` command to add all FWA data first.",
+            "Please use the `/manage section:FWA` command to add all FWA data first.",
             ephemeral=True
         )
         return
@@ -1071,7 +1071,7 @@ async def th_select(
         await ctx.respond(
             f"❌ **FWA Base Link Not Found**\n\n"
             f"The FWA base link for {display_name} is not configured in the database. "
-            "Please use the `/clan dashboard` command to add all FWA base links.",
+            "Please use the `/manage section:FWA` command to add all FWA base links.",
             ephemeral=True
         )
         return

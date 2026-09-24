@@ -315,7 +315,7 @@ async def dashboard_image_submit(
     target = _consume(action_id)
     await _ack_modal(ctx)
     if target is None:
-        await _edit(interaction, _problem_panel("This upload expired or was already used. Run /clan dashboard and open a new upload."))
+        await _edit(interaction, _problem_panel("This upload expired or was already used. Run /manage and open a new upload from the FWA workspace."))
         return
     try:
         guild_id = int(interaction.guild_id)

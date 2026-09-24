@@ -278,11 +278,11 @@ def _split_ref(action_id: str) -> tuple[str, str] | None:
 async def _load(ctx: Any, mongo: MongoClient, draft_id: str) -> tuple[dict | None, str | None]:
     draft = await cwl_campaign.load_draft(mongo, draft_id)
     if not draft:
-        return None, "This draft is no longer available. Run `/cwl dashboard` to resume or create one."
+        return None, "This draft is no longer available. Run `/manage` and choose CWL to resume or create one."
     if not can_edit(ctx):
         return None, "Only administrators can manage CWL posts."
     if int(draft.get("user_id", draft.get("owner_id", 0))) != int(ctx.user.id):
-        return None, "Open your own `/cwl dashboard`."
+        return None, "Open your own CWL editor from `/manage`."
     if int(draft.get("guild_id", 0)) != int(ctx.interaction.guild_id):
         return None, "This CWL draft belongs to another server."
     return draft, None
@@ -634,7 +634,6 @@ def _modal_value(ctx: Any, custom_id: str) -> str:
     return ""
 
 
-@cwl.register()
 class CWLDashboard(lightbulb.SlashCommand, name="dashboard", description="Edit CWL messages, schedules, and delivery settings"):
     @lightbulb.invoke
     @lightbulb.di.with_di
@@ -1842,13 +1841,11 @@ async def confirm_skip(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
 @register_action("cwl_update_confirm", preload_state=False)
 async def retired_history_action(ctx: Any, action_id: str, **_: Any):
     """Old Discord controls must not restore settings or publish messages."""
-    return error_panel("This control was removed. Open `/cwl dashboard`.")
+    return error_panel("This control was removed. Open CWL from `/manage`.")
 
 
 loader.listener(hikari.ShardPayloadEvent)(cwl_media.capture_upload_payload)
-# Register both subcommands before installing the group on the client. The
-# roster module retains its own loader for its scheduler lifecycle listeners.
+# The dashboard and roster editors remain importable for /manage, while this
+# loader still installs CWL media lifecycle handling above. No /cwl group is
+# installed now that its old dashboard entry points have moved to /manage.
 from extensions.commands.lazycwl_dashboard import CWLRosters
-
-cwl.register(CWLRosters)
-loader.command(cwl)

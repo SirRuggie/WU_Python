@@ -109,8 +109,9 @@ def test_dashboard_command_description_matches_the_published_server_scope():
     assert content.ContentDashboard._command_data.description == "Edit published server content"
 
 
-def test_content_group_only_registers_the_dashboard_command():
-    assert set(content.content.subcommands) == {"dashboard"}
+def test_content_editor_remains_available_without_old_slash_group():
+    assert not content.content.subcommands
+    assert not any(getattr(item, "_command", None) for item in content.loader._loadables)
     assert "content_upload" in registered_functions
     assert "content_upload_submit" in registered_functions
 

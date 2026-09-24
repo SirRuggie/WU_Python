@@ -16,9 +16,9 @@ on one command, not separate subcommands.
 | `/manage section:CWL Rosters` | CWL Rosters | Manage saved Main/FWA rosters and FWA return reminders |
 
 Recruit Gauntlet is the onboarding **content editor**. The member-specific
-`/recruit dashboard` workflow remains separate. Existing `/content dashboard`,
-`/cwl dashboard`, `/cwl rosters`, and `/clan dashboard` entry points remain
-available for compatibility.
+`/recruit dashboard` workflow remains separate. The old `/content dashboard`,
+`/cwl dashboard`, `/cwl rosters`, and `/clan dashboard` slash-command entry
+points have been removed. Open these management workspaces through `/manage`.
 
 ## Permissions and interaction design
 

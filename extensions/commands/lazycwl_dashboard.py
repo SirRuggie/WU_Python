@@ -73,7 +73,7 @@ async def _allow(ctx, token: str | None) -> bool:
     if state is None or state["created"] < datetime.now(timezone.utc) - _SESSION_TTL:
         _sessions.pop(token, None)
         if ctx is not None:
-            await ctx.respond("This dashboard has expired. Run /cwl rosters again.", ephemeral=True)
+            await ctx.respond("This dashboard has expired. Run /manage and choose CWL Rosters again.", ephemeral=True)
         return False
     guild = getattr(getattr(ctx, "interaction", None), "guild_id", None)
     user = _ctx_user(ctx)
@@ -316,7 +316,7 @@ async def build_home(mongo: MongoClient, selected_tag: Optional[str] = None, not
 
 async def open_dashboard(ctx: lightbulb.Context, mongo: MongoClient, note: str | None = None,
                          *, manage_token: str | None = None, deferred: bool = False) -> None:
-    """Open an owner- and guild-bound dashboard for /cwl rosters."""
+    """Open an owner- and guild-bound dashboard for CWL Rosters from /manage."""
     if not is_admin(ctx.member):
         await ctx.respond("Only server administrators can manage CWL rosters.", ephemeral=True)
         return
@@ -476,7 +476,7 @@ async def _handler_ok(ctx, action_id):
 async def handle_section(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, section = await _handler_ok(ctx, action_id)
     if not token or section not in SECTION_LABELS:
-        return _notice("Choose a section", "Run /cwl rosters again.", "preview", "")
+        return _notice("Choose a section", "Run /manage and choose CWL Rosters again.", "preview", "")
     previous = _sessions.pop(token)
     new_token = _session(previous["owner"], previous["guild"])
     _sessions[new_token]["section"] = section
@@ -490,7 +490,7 @@ async def handle_section(ctx=None, action_id="", mongo: MongoClient = lightbulb.
 async def handle_clans_page(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
     if not token:
-        return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+        return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     try:
         _sessions[token]["clan_page"] = max(0, int(value))
     except ValueError:
@@ -502,7 +502,7 @@ async def handle_clans_page(ctx=None, action_id="", mongo: MongoClient = lightbu
 @lightbulb.di.with_di
 async def handle_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, tab = await _handler_ok(ctx, action_id); values = getattr(ctx.interaction, "values", []) or []
-    return await build_home(mongo, values[0] if values else None, token=token, tab=tab if tab in {"overview", "players", "reminders"} else "overview") if token else _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    return await build_home(mongo, values[0] if values else None, token=token, tab=tab if tab in {"overview", "players", "reminders"} else "overview") if token else _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
 
 
 @register_action("lazycwl_cancel", preload_state=False)
@@ -510,7 +510,7 @@ async def handle_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.
 async def handle_cancel(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
     if not token:
-        return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+        return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     bound = _sessions[token]["pending"].pop(nonce, {})
     if bound.get("operation") == "remove":
         return await _player_page(mongo, token, bound["tag"], bound.get("page", 0))
@@ -520,26 +520,26 @@ async def handle_cancel(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
 @lightbulb.di.with_di
 async def handle_tab(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     tab, tag = value.split(",", 1); return await build_home(mongo, tag, token=token, tab=tab)
 
 @register_action("lazycwl_home", aliases=("lazycwl_refresh",), preload_state=False)
 @lightbulb.di.with_di
 async def handle_home(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     tab, tag = (value.split(",", 1) if "," in value else ("overview", value)); return await build_home(mongo, tag, token=token, tab=tab)
 
 @register_action("lazycwl_capture", preload_state=False)
 @lightbulb.di.with_di
 async def handle_capture(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-    token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, "capture") if token else _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, "capture") if token else _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
 
 @register_action("lazycwl_capture_yes", preload_state=False)
 @lightbulb.di.with_di
 async def handle_capture_yes(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     bound = _sessions.get(token, {}).get("pending", {}).pop(nonce, None)
     if not bound or bound.get("operation") != "capture":
         return _notice("Review expired", "Refresh and review the capture again.", token, "", accent=RED_ACCENT)
@@ -561,7 +561,7 @@ def _review_action(name, kind):
     @register_action(name, preload_state=False)
     @lightbulb.di.with_di
     async def handler(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-        token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, kind) if token else _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+        token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, kind) if token else _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     return handler
 handle_send = _review_action("lazycwl_send", "send")
 handle_replace = _review_action("lazycwl_replace", "replace")
@@ -572,7 +572,7 @@ handle_disable = _review_action("lazycwl_disable", "disable")
 @lightbulb.di.with_di
 async def handle_enable(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, tag = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     if _section(token) != "FWA":
         return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
     return [Container(accent_color=GOLD_ACCENT, components=[Text(content="## Enable reminders"), Text(content=f"Destination: <#{service.reminder_channel(_section(token))}>. Choose an explicit frequency."), ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_frequency", token, tag), placeholder="Choose frequency", max_values=1, options=[SelectOption(label=f"Every {m} minutes", value=str(m)) for m in REMINDER_FREQUENCIES])]), Separator(), _back(token, tag, "reminders")])]
@@ -589,7 +589,7 @@ def _apply_action(name, operation):
     @register_action(name, preload_state=False)
     @lightbulb.di.with_di
     async def handler(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-        token, value = await _handler_ok(ctx, action_id); return await _apply_bound(mongo, token, value, operation, ctx) if token else _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+        token, value = await _handler_ok(ctx, action_id); return await _apply_bound(mongo, token, value, operation, ctx) if token else _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     return handler
 handle_send_yes = _apply_action("lazycwl_send_yes", "send")
 handle_replace_yes = _apply_action("lazycwl_replace_yes", "replace")
@@ -628,7 +628,7 @@ async def handle_add_submit(ctx=None, action_id="", mongo: MongoClient = lightbu
 @lightbulb.di.with_di
 async def handle_players_page(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     tag, page = value.rsplit(",", 1)
     try: page = int(page)
     except ValueError: page = 0
@@ -638,7 +638,7 @@ async def handle_players_page(ctx=None, action_id="", mongo: MongoClient = light
 @lightbulb.di.with_di
 async def handle_remove(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     tag, page = value.rsplit(",", 1)
     return await _player_page(mongo, token, tag, int(page))
 
@@ -646,7 +646,7 @@ async def handle_remove(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
 @lightbulb.di.with_di
 async def handle_remove_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     tag, page = value.rsplit(",", 1); values = getattr(ctx.interaction, "values", []) or []
     doc = await store.get_active(mongo, tag, section=_section(token))
     if not doc or not values: return await _player_page(mongo, token, tag, int(page), "Choose at least one player.")
@@ -658,7 +658,7 @@ async def handle_remove_pick(ctx=None, action_id="", mongo: MongoClient = lightb
 @lightbulb.di.with_di
 async def handle_remove_yes(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /cwl rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     bound = _sessions.get(token, {}).get("pending", {}).pop(nonce, None)
     if not bound or bound.get("operation") != "remove" or len(bound["ids"]) != 1: return _notice("Review expired", "Refresh and choose the players again.", token, "", accent=RED_ACCENT)
     try:

@@ -47,7 +47,7 @@ cwl_initial_retry_job_id = "cwl_initial_retry"
 CAMPAIGN_JOB_PREFIX = "cwl_campaign:"
 CAMPAIGN_ROLLOVER_JOB_ID = "cwl_campaign_rollover"
 # Kept only for importing historic timing and sent markers. Production
-# delivery and command control belong exclusively to /cwl dashboard.
+# delivery and command control belong exclusively to /manage section:CWL.
 LEGACY_RUNTIME_DISABLED = True
 CAMPAIGN_CLAIM_MINUTES = 15
 DELIVERY_RETRY_DELAYS_MINUTES = (5, 15, 30, 60, 180)
@@ -1068,7 +1068,7 @@ async def send_cwl_reminder(
     global bot_instance, mongo_client
 
     if LEGACY_RUNTIME_DISABLED:
-        print("[CWL Reminder] Legacy delivery suppressed; /cwl dashboard owns delivery")
+        print("[CWL Reminder] Legacy delivery suppressed; /manage section:CWL owns delivery")
         return False
 
     if not bot_instance:
@@ -1440,7 +1440,7 @@ async def schedule_cwl_reminder(
     """Schedule or reschedule the CWL reminder"""
     global scheduler, mongo_client
     if LEGACY_RUNTIME_DISABLED:
-        raise RuntimeError("Legacy CWL scheduling is retired; use /cwl dashboard")
+        raise RuntimeError("Legacy CWL scheduling is retired; use /manage section:CWL")
     if mongo_client:
         legacy_state = await mongo_client.cwl_reminder.find_one({"_id": "schedule"}) or {}
         if legacy_state.get("campaign_managed"):
@@ -1641,12 +1641,12 @@ async def _legacy_campaign_guard(ctx, mongo) -> bool:
         return True
     if LEGACY_RUNTIME_DISABLED:
         await ctx.respond(
-            "Legacy CWL controls are retired. Use `/cwl dashboard` to edit, preview, "
+            "Legacy CWL controls are retired. Use `/manage section:CWL` to edit, preview, "
             "schedule, pause, or send CWL announcements.", ephemeral=True,
         )
         return True
     if int(getattr(interaction, "guild_id", 0) or 0) != cwl_campaign.LEGACY_WU_GUILD_ID:
-        await ctx.respond("Use `/cwl dashboard` to manage CWL in this server.", ephemeral=True)
+        await ctx.respond("Use `/manage section:CWL` to manage CWL in this server.", ephemeral=True)
         return True
     if mongo is None:
         await ctx.respond("The CWL scheduler is still starting. Try again shortly.", ephemeral=True)
@@ -1654,7 +1654,7 @@ async def _legacy_campaign_guard(ctx, mongo) -> bool:
     schedule = await mongo.cwl_reminder.find_one({"_id": "schedule"}) or {}
     if schedule.get("campaign_managed"):
         await ctx.respond(
-            "CWL is now managed in `/cwl dashboard`. Open it to edit messages, change timing, "
+            "CWL is now managed in `/manage section:CWL`. Open it to edit messages, change timing, "
             "pause delivery, or preview without sending a test ping.", ephemeral=True,
         )
         return True
@@ -2197,6 +2197,6 @@ class SendNow(
         )
 
 
-# Intentionally not registered: /cwl dashboard is the sole CWL announcement
+# Intentionally not registered: /manage section:CWL is the sole CWL announcement
 # command surface. The classes stay importable during migration so any stale
 # callback fails through _legacy_campaign_guard without sending.

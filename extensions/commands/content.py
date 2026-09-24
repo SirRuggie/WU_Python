@@ -78,7 +78,7 @@ async def require_editor(ctx, state=None):
         await ctx.respond("You need Manage Server permission to edit published content.", ephemeral=True)
         return False
     if state and (state["user_id"] != int(ctx.user.id) or state["guild_id"] != int(ctx.interaction.guild_id)):
-        await ctx.respond("Open your own `/content dashboard`.", ephemeral=True)
+        await ctx.respond("Open your own Recruit Gauntlet editor from `/manage`.", ephemeral=True)
         return False
     return True
 
@@ -390,11 +390,11 @@ async def preview_panel(state):
 
 def state_problem(ctx, state):
     if not state:
-        return "This draft expired. Run `/content dashboard` again."
+        return "This draft expired. Run `/manage` and choose Recruit Gauntlet again."
     if not can_edit(ctx):
         return "You need Manage Server permission to edit published content."
     if state.get("user_id") != int(ctx.user.id) or state.get("guild_id") != int(ctx.interaction.guild_id):
-        return "Open your own `/content dashboard`."
+        return "Open your own Recruit Gauntlet editor from `/manage`."
     return None
 
 
@@ -419,7 +419,6 @@ async def load(ctx, mongo, sid):
     return state, state_problem(ctx, state)
 
 
-@content.register()
 class ContentDashboard(lightbulb.SlashCommand, name="dashboard", description="Edit published server content"):
     message_link = lightbulb.string("message-link", "Optional existing content message link", default=None)
     @lightbulb.invoke
@@ -847,6 +846,3 @@ async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bo
         )),
         "Selected post updated.",
     )
-
-
-loader.command(content)

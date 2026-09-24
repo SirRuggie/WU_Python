@@ -28,7 +28,7 @@ def test_adopted_campaign_redirects_every_legacy_command_before_mutation(monkeyp
         )
         kwargs = {} if command in {runtime.Schedule, runtime.Test} else {"mongo": mongo}
         await command.invoke(SimpleNamespace(), ctx, **kwargs)
-        assert "/cwl dashboard" in ctx.respond.call_args.args[0]
+        assert "/manage section:CWL" in ctx.respond.call_args.args[0]
         collection.update_one.assert_not_awaited()
         pending.delete_many.assert_not_awaited()
         send.assert_not_awaited()

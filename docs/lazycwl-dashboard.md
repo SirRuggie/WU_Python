@@ -3,13 +3,13 @@
 Open this workspace from `/manage` by choosing **CWL Rosters**, or select it
 in the command's optional `section` choice. See [Server Management](manage-dashboard.md).
 
-`/cwl rosters` is the administrator dashboard for CWL saved player lists. It
+`/manage section:CWL Rosters` is the administrator dashboard for CWL saved player lists. It
 replaces `/lazycwl` and the nine retired `/fwa lazycwl-*` commands. Those
-old command names are no longer registered; use `/cwl rosters` directly.
+old command names are no longer registered; use `/manage section:CWL Rosters` directly.
 
 ## Dashboard flow
 
-Open `/cwl rosters` to the FWA overview, then choose a clan. Use the
+Open `/manage section:CWL Rosters` to the FWA overview, then choose a clan. Use the
 **FWA** and **Main** buttons at the top to switch sections. The selected
 section stays visible in the heading. FWA uses clan type `FWA`;
 Main uses `Tactical` and `Flexible Fun` war clans, plus the legacy
@@ -47,7 +47,7 @@ Panels are private, expire after 20 minutes, and belong to the opening user
 and server. Every interaction rechecks Administrator permission. Confirmations
 are bound to section, operation, and roster ids and consumed once. Switching
 sections invalidates the previous panel and its pending confirmations. A bot
-restart also expires open panels; reopen `/cwl rosters` to continue.
+restart also expires open panels; reopen `/manage section:CWL Rosters` to continue.
 
 ## Storage and lifecycle
 

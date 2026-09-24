@@ -271,3 +271,22 @@ def test_fwa_war_messages_home_button_routes_through_dispatcher(monkeypatch):
     assert ctx.events[-1][0] == "edit"
     rendered = ctx.events[-1][1]["components"][0].build()[0]
     assert rendered["components"][0]["content"] == "## FWA War Messages"
+
+
+def test_old_dashboard_slash_entries_are_absent_but_manage_and_actions_remain():
+    from extensions.commands import content, cwl_dashboard, lazycwl_dashboard, clan
+    command_names = {
+        loadable._command._command_data.name
+        for loader in (content.loader, cwl_dashboard.loader)
+        for loadable in loader._loadables
+        if hasattr(loadable, "_command")
+    }
+    assert command_names == set()
+    assert not content.content.subcommands
+    assert not cwl_dashboard.cwl.subcommands
+    assert set(clan.clan.subcommands) == {"info", "list"}
+    assert manage.Manage._command_data.name == "manage"
+    assert {
+        "content_document", "content_save", "cwl_tab", "cwl_apply_review",
+        "lazycwl_home", "manage_recruit", "manage_cwl", "manage_cwl_rosters",
+    } <= components.registered_functions.keys()

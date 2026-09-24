@@ -23,18 +23,20 @@ def _loader_command_names(loader) -> set[str]:
     return names
 
 
-def test_only_dashboard_registers_as_a_cwl_announcement_entrypoint():
-    assert _loader_command_names(cwl_dashboard.loader) == {"cwl"}
-    assert set(cwl_dashboard.cwl.subcommands) == {"dashboard", "rosters"}
+def test_manage_replaces_old_cwl_dashboard_and_roster_slash_entries():
+    assert _loader_command_names(cwl_dashboard.loader) == set()
+    assert not cwl_dashboard.cwl.subcommands
 
     assert "cwl-announcement" not in _loader_command_names(cwl_announcement.loader)
     assert "lazyprep" not in _loader_command_names(lazyprep.loader)
     assert "cwl-reminder" not in _loader_command_names(cwl_reminder.loader)
 
 
-def test_help_only_advertises_dashboard_for_cwl_announcements():
+def test_help_only_advertises_manage_for_cwl_announcements():
     paths = help_catalog.command_paths()
-    assert "/cwl dashboard" in paths
+    assert "/manage" in paths
+    assert "/cwl dashboard" not in paths
+    assert "/cwl rosters" not in paths
     assert "/cwl-announcement" not in paths
     assert "/lazyprep" not in paths
     assert not any(path.startswith("/cwl-reminder ") for path in paths)
