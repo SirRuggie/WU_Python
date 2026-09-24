@@ -30,7 +30,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils.constants import BLUE_ACCENT, GREEN_ACCENT, RED_ACCENT, FWA_ACTIVE_WAR_BASE, FWA_WAR_BASE
+from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT, FWA_ACTIVE_WAR_BASE, FWA_WAR_BASE
 from utils.discord_file_upload import FileUploadModalComponentBuilder, pop_file_upload
 from utils.image_fetch import download_image_blocking
 from utils.media_store import (
@@ -67,6 +67,7 @@ class UploadTarget:
     source_message_id: int
     clan_name: str | None = None
     clan_id: object | None = None
+    manage_token: str | None = None
 
 
 def _prune_pending() -> None:
@@ -118,10 +119,16 @@ def _navigation(target: UploadTarget) -> ActionRow:
         else f"fwa_image_upload:{target.slot}:{target.key}"
     )
     back_id = f"back_to_clan_edit:{target.key}" if target.kind == "clan" else f"fwa_update_images:{target.key}"
-    return ActionRow(components=[
+    buttons = [
         Button(style=hikari.ButtonStyle.PRIMARY, label="Upload another", custom_id=upload_id),
         Button(style=hikari.ButtonStyle.SECONDARY, label="Back to editor", custom_id=back_id),
-    ])
+    ]
+    if target.kind == "fwa" and target.manage_token:
+        buttons.append(Button(
+            style=hikari.ButtonStyle.SECONDARY, label="Management Home",
+            custom_id=f"manage_home:{target.manage_token}",
+        ))
+    return ActionRow(components=buttons)
 
 
 def _problem_panel(message: str, target: UploadTarget | None = None) -> list[Container]:
@@ -139,7 +146,7 @@ def _success_panel(target: UploadTarget, url: str) -> list[Container]:
     )
     width = DETAIL if target.kind == "fwa" else (THUMBNAIL if target.slot == "logo" else GALLERY)
     return [Container(
-        accent_color=GREEN_ACCENT,
+        accent_color=GOLD_ACCENT if target.kind == "fwa" else GREEN_ACCENT,
         components=[
             Text(content=f"## ✅ {subject} saved"),
             Text(content="The replacement was saved immediately."),
@@ -223,13 +230,19 @@ async def _open(ctx: Any, action_id: str, mongo: MongoClient, kind: str) -> None
         old_value = current.get(f"{slot}_base_images", {}).get(key)
         clan_name = None
         clan_id = None
+    manage_token = None
+    if kind == "fwa":
+        # Managed FWA panels carry their Home control on the source message.
+        # Legacy clan uploads deliberately have no management provenance.
+        from extensions.commands.clan.dashboard.fwa_data import _management_token
+        manage_token = _management_token(ctx)
     token = secrets.token_urlsafe(18)
     _prune_pending()
     _PENDING[token] = (time.monotonic(), UploadTarget(
         kind=kind, slot=slot, key=key, old_value=old_value,
         guild_id=guild_id, owner_id=owner_id,
         source_channel_id=source_channel_id, source_message_id=source_message_id,
-        clan_name=clan_name, clan_id=clan_id,
+        clan_name=clan_name, clan_id=clan_id, manage_token=manage_token,
     ))
     _prune_pending()
     title = f"Upload {slot.title()} image"

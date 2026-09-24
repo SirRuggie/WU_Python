@@ -35,7 +35,7 @@ cwl = lightbulb.Group(
 )
 
 NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
-ACCENT = 0xD4AF37
+ACCENT = 0xFFD700
 ERROR = 0xB94444
 AUDIENCES = ("main", "lazy")
 MESSAGE_CHOICES = (
@@ -389,6 +389,8 @@ def _header(draft: dict, tab: str, notice: str | None = None, *, navigation: boo
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     if navigation:
         rows.append(_tabs(_draft_token(draft), tab))
+    if draft.get("manage_token"):
+        rows.append(_button(f"manage_home:{draft['manage_token']}", "Management Home", style=hikari.ButtonStyle.SECONDARY))
     return rows
 
 
@@ -648,7 +650,8 @@ class CWLDashboard(lightbulb.SlashCommand, name="dashboard", description="Edit C
         await ctx.respond(components=await panel(draft, "overview", "Resumed your saved CWL draft." if resumed else None, mongo=mongo), ephemeral=True, **NO_MENTIONS)
 
 
-async def open_dashboard(ctx: Any, mongo: MongoClient, *, bot: Any = None, cycle: str | None = None) -> dict | None:
+async def open_dashboard(ctx: Any, mongo: MongoClient, *, bot: Any = None, cycle: str | None = None,
+                         manage_token: str | None = None) -> dict | None:
     """Open a CWL draft from another already-deferred private dashboard panel."""
     if not await require_editor(ctx):
         return None
@@ -657,6 +660,10 @@ async def open_dashboard(ctx: Any, mongo: MongoClient, *, bot: Any = None, cycle
     resumed = draft is not None
     if draft is None:
         draft = await cwl_campaign.new_draft(mongo, int(ctx.interaction.guild_id), int(ctx.user.id), cycle=selected_cycle)
+    if manage_token:
+        await mongo.bot_config.update_one({"_id": draft["_id"], "user_id": int(ctx.user.id), "guild_id": int(ctx.interaction.guild_id)},
+                                          {"$set": {"manage_token": manage_token}})
+        draft["manage_token"] = manage_token
     await ctx.interaction.edit_initial_response(components=await panel(draft, "overview", "Resumed your saved CWL draft." if resumed else None, mongo=mongo), **NO_MENTIONS)
     return draft
 

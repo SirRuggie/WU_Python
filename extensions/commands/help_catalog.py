@@ -44,6 +44,12 @@ HELP_CATEGORIES = {
             ("/setup recruit-strikesystem", "Post the strike-system rules."),
         ],
     },
+    "manage": {
+        "name": "Management", "emoji": "🛡️", "description": "Private dashboards for server staff",
+        "commands": [
+            ("/manage", "Open management home or choose Server, Recruit Gauntlet, FWA, CWL, or CWL Rosters."),
+        ],
+    },
     "clan_fwa": {
         "name": "Clans & FWA",
         "emoji": "⚔️",

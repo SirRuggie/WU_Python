@@ -122,3 +122,39 @@ def test_old_instruction_buttons_redirect_to_native_upload_controls(kind):
     rows = [c for c in payload["components"] if c["type"] == 1]
     assert expected <= {b["custom_id"] for row in rows for b in row["components"]}
     assert "upload-images" not in str(payload)
+
+
+def test_managed_fwa_upload_modal_carries_home_through_return_navigation():
+    from extensions.commands.clan.dashboard import image_uploads
+
+    source = SimpleNamespace(components=(
+        __import__("hikari").impl.ContainerComponentBuilder(components=[
+            __import__("hikari").impl.MessageActionRowBuilder(components=[
+                __import__("hikari").impl.InteractiveButtonBuilder(
+                    style=__import__("hikari").ButtonStyle.SECONDARY,
+                    custom_id="manage_home:shared-token", label="Management Home",
+                )
+            ])
+        ]),
+    ))
+    member = SimpleNamespace(get_roles=lambda: (SimpleNamespace(id=image_uploads.ROLE_ID),))
+    interaction = SimpleNamespace(guild_id=2, user=SimpleNamespace(id=1), channel_id=3, message=SimpleNamespace(id=4, components=source.components))
+    ctx = SimpleNamespace(interaction=interaction, member=member, respond=AsyncMock(), respond_with_modal=AsyncMock())
+    mongo = SimpleNamespace(fwa_data=SimpleNamespace(find_one=AsyncMock(return_value={"war_base_images": {}, "base_upgrade_notes": {}})))
+
+    asyncio.run(image_uploads._open(ctx, "war:th16", mongo, "fwa"))
+    modal_id = ctx.respond_with_modal.await_args.kwargs["custom_id"]
+    target = image_uploads._consume(modal_id.partition(":")[2])
+    assert target is not None and target.manage_token == "shared-token"
+    payload = image_uploads._success_panel(target, "https://img.example.com/war.png")[0].build()[0]
+    buttons = [button for row in payload["components"] if row["type"] == 1 for button in row["components"]]
+    assert {button["custom_id"] for button in buttons} >= {"fwa_update_images:th16", "manage_home:shared-token"}
+    assert payload["accent_color"] == int(image_uploads.GOLD_ACCENT)
+
+
+def test_legacy_clan_upload_navigation_does_not_add_management_home():
+    from extensions.commands.clan.dashboard.image_uploads import UploadTarget, _navigation
+
+    target = UploadTarget("clan", "logo", "#ABC", None, 2, 1, 3, 4)
+    payload = _navigation(target).build()[0]
+    assert all(not button["custom_id"].startswith("manage_home:") for button in payload["components"])

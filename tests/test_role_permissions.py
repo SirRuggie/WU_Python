@@ -53,7 +53,7 @@ class FakeCollection:
 
 def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     paths = command_paths()
-    expected_catalog_total = 85
+    expected_catalog_total = 86
 
     # /cards is retired along with the Clash of Cards event (see
     # utils.startup.RETIRED_EXTENSIONS) and hidden from the catalog, so the
@@ -65,7 +65,7 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
         == expected_catalog_total
     )
     assert "/accounts" in paths
-    assert {"/content dashboard", "/cwl dashboard"} <= paths
+    assert {"/content dashboard", "/cwl dashboard", "/manage"} <= paths
     assert "/cards" not in paths
     assert "/ping" in paths
     assert "/clear-my-dms" in paths

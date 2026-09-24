@@ -43,6 +43,9 @@ before changing durable documentation.
 
 ## Features
 
+- [manage-dashboard.md](manage-dashboard.md) — `/manage`, the private
+  management home for Recruit Gauntlet, FWA, CWL campaigns, and CWL rosters.
+
 - [accounts.md](accounts.md) — `/accounts`, the private linked-player inventory:
   row fields, ordering, pagination, stale-link policy, and failure accounting.
 

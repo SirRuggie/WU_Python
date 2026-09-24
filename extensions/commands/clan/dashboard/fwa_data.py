@@ -35,6 +35,31 @@ from hikari.impl import (
 )
 
 FWA_REP_ROLE_ID = 993015846442127420
+def _management_token(ctx) -> str | None:
+    interaction = getattr(ctx, "interaction", None)
+    message = getattr(interaction, "message", None)
+    for container in getattr(message, "components", ()):
+        for row in getattr(container, "components", ()):
+            for button in getattr(row, "components", ()):
+                custom_id = getattr(button, "custom_id", "") or ""
+                if custom_id.startswith("manage_home:"):
+                    return custom_id.partition(":")[2]
+    return None
+
+
+def _return_to_th_id(ctx, th_level: str) -> str:
+    token = _management_token(ctx)
+    return f"fwa_th_select_return:{th_level}" + (f"|{token}" if token else "")
+
+
+def _return_to_fwa_id(ctx) -> str:
+    return f"fwa_back_to_main:{_management_token(ctx) or 'main'}"
+
+
+def _home_button(ctx) -> list[Button]:
+    token = _management_token(ctx)
+    return [Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{token}",
+                   label="Management Home")] if token else []
 
 
 async def _require_fwa_representative(ctx) -> bool:
@@ -103,13 +128,16 @@ async def get_fwa_data(mongo: MongoClient) -> Dict:
 
 async def build_fwa_management_screen(
         ctx: lightbulb.components.MenuContext,
-        mongo: MongoClient
+        mongo: MongoClient,
+        manage_token: str | None = None,
 ) -> List[Container]:
     """Build the FWA management screen components
 
     Returns:
         List of Container components for the FWA management screen
     """
+    # Keep managed navigation available after TH edits and modal submissions.
+    manage_token = manage_token or _management_token(ctx)
     # Get current FWA data
     fwa_data = await get_fwa_data(mongo)
     base_links = fwa_data.get("fwa_base_links", {})
@@ -171,7 +199,7 @@ async def build_fwa_management_screen(
 
     components = [
         Container(
-            accent_color=BLUE_ACCENT,
+            accent_color=GOLD_ACCENT,
             components=[
                 Text(content="## 🏰 **FWA Data Management**"),
                 Text(content="Manage base links and images for each Town Hall level"),
@@ -190,7 +218,7 @@ async def build_fwa_management_screen(
                 ActionRow(
                     components=[
                         TextSelectMenu(
-                            custom_id="fwa_th_select:main",
+                            custom_id=f"fwa_th_select:{manage_token or 'main'}",
                             placeholder="Select a Town Hall to edit...",
                             max_values=1,
                             options=options,
@@ -203,6 +231,12 @@ async def build_fwa_management_screen(
         )
     ]
 
+    if manage_token:
+        components[0].add_component(ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"manage_home:{manage_token}",
+            label="Management Home",
+        )]))
     return components
 
 
@@ -241,7 +275,8 @@ def format_th_status(th_level: str, base_link: Optional[str], war_image: Optiona
 
 
 def build_th_edit_components(th_level: str, base_link: str, base_info: str,
-                             upgrade_notes: str, war_image: str, active_image: str) -> List[Container]:
+                             upgrade_notes: str, war_image: str, active_image: str,
+                             manage_token: str | None = None) -> List[Container]:
     """Build the TH edit screen components
 
     Args:
@@ -329,7 +364,7 @@ def build_th_edit_components(th_level: str, base_link: str, base_info: str,
                     style=hikari.ButtonStyle.SECONDARY,
                     label="Back",
                     emoji="◀️",
-                    custom_id="fwa_back_to_main:main",
+                    custom_id=f"fwa_back_to_main:{manage_token or 'main'}",
                 ),
             ]
         ),
@@ -337,11 +372,17 @@ def build_th_edit_components(th_level: str, base_link: str, base_info: str,
 
     components = [
         Container(
-            accent_color=BLUE_ACCENT,
+            accent_color=GOLD_ACCENT,
             components=component_list
         )
     ]
 
+    if manage_token:
+        components[0].add_component(ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"manage_home:{manage_token}",
+            label="Management Home",
+        )]))
     return components
 
 
@@ -401,7 +442,8 @@ async def fwa_back_to_main(
         **kwargs
 ):
     """Return to FWA management main screen from TH edit or other sub-screens"""
-    return await build_fwa_management_screen(ctx, mongo)
+    token = kwargs.get("action_id")
+    return await build_fwa_management_screen(ctx, mongo, manage_token=token if token and token != "main" else _management_token(ctx))
 
 
 @register_action("fwa_th_select", ephemeral=True)
@@ -425,7 +467,10 @@ async def fwa_th_select(
     active_image = FWA_ACTIVE_WAR_BASE.get(th_level, "")
 
     # Build and return the TH edit screen
-    return build_th_edit_components(th_level, base_link, base_info, upgrade_notes, war_image, active_image)
+    token = kwargs.get("manage_token") or kwargs.get("action_id")
+    token = token if token and token != "main" else _management_token(ctx)
+    return build_th_edit_components(th_level, base_link, base_info, upgrade_notes, war_image, active_image,
+                                    manage_token=token)
 
 
 @register_action("fwa_update_link", no_return=True, opens_modal=True)
@@ -499,7 +544,7 @@ async def fwa_link_submit(
     await ctx.interaction.edit_initial_response(
         components=[
             Container(
-                accent_color=GREEN_ACCENT,
+                accent_color=GOLD_ACCENT,
                 components=[
                     Text(content=f"## ✅ TH{th_num} Base Link Updated!"),
                     Text(content=f"```\n{base_link}\n```"),
@@ -509,13 +554,14 @@ async def fwa_link_submit(
                             Button(
                                 style=hikari.ButtonStyle.PRIMARY,
                                 label=f"Back to TH{th_num} Edit",
-                                custom_id=f"fwa_th_select_return:{th_level}",
+                                custom_id=_return_to_th_id(ctx, th_level),
                             ),
                             Button(
                                 style=hikari.ButtonStyle.SECONDARY,
                                 label="Back to Main Menu",
-                                custom_id="fwa_back_to_main:main",
-                            )
+                                custom_id=_return_to_fwa_id(ctx),
+                            ),
+                            *_home_button(ctx),
                         ]
                     )
                 ]
@@ -565,8 +611,9 @@ async def fwa_update_images(
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Back",
                             emoji="◀️",
-                            custom_id=f"fwa_th_select_return:{th_level}",
-                        )
+                            custom_id=_return_to_th_id(ctx, th_level),
+                        ),
+                        *_home_button(ctx),
                     ]
                 ),
 
@@ -665,7 +712,7 @@ async def fwa_images_submit(
         hikari.ResponseType.MESSAGE_UPDATE,
         components=[
             Container(
-                accent_color=BLUE_ACCENT,
+                accent_color=GOLD_ACCENT,
                 components=[
                     Text(content="## ⏳ Uploading Images..."),
                     Text(content="Please wait while we fetch and store your images...")
@@ -723,7 +770,7 @@ async def fwa_images_submit(
         await ctx.interaction.edit_initial_response(
             components=[
                 Container(
-                    accent_color=GREEN_ACCENT,
+                    accent_color=GOLD_ACCENT,
                     components=[
                         Text(content=f"## ✅ TH{th_num} Images Updated!"),
                         Text(content="\n".join(updates)),
@@ -734,13 +781,14 @@ async def fwa_images_submit(
                                 Button(
                                     style=hikari.ButtonStyle.PRIMARY,
                                     label=f"Back to TH{th_num} Edit",
-                                    custom_id=f"fwa_th_select_return:{th_level}",
+                                    custom_id=_return_to_th_id(ctx, th_level),
                                 ),
                                 Button(
                                     style=hikari.ButtonStyle.SECONDARY,
                                     label="Back to Main Menu",
-                                    custom_id="manage_fwa_data:main",
-                                )
+                                    custom_id=_return_to_fwa_id(ctx),
+                                ),
+                                *_home_button(ctx),
                             ]
                         )
                     ]
@@ -761,7 +809,7 @@ async def fwa_images_submit(
                                 Button(
                                     style=hikari.ButtonStyle.SECONDARY,
                                     label="Back",
-                                    custom_id=f"fwa_th_select_return:{th_level}",
+                                    custom_id=_return_to_th_id(ctx, th_level),
                                 )
                             ]
                         )
@@ -827,10 +875,12 @@ async def fwa_th_select_return(
 ):
     """Return to TH edit view"""
     # Manually set the interaction values to simulate selection
-    ctx.interaction.values = [action_id]
+    th_level, _, token = action_id.partition("|")
+    ctx.interaction.values = [th_level]
 
     # Call fwa_th_select and get its components
-    return await fwa_th_select(ctx=ctx, mongo=mongo, media=media, **kwargs)
+    return await fwa_th_select(ctx=ctx, mongo=mongo, media=media,
+                               manage_token=token or _management_token(ctx), **kwargs)
 
 
 @register_action("fwa_descriptions_submit", no_return=True, is_modal=True)
@@ -884,7 +934,7 @@ async def fwa_descriptions_submit(
     await ctx.interaction.edit_initial_response(
         components=[
             Container(
-                accent_color=BLUE_ACCENT,
+                accent_color=GOLD_ACCENT,
                 components=[
                     Text(content="## ⏳ Updating Descriptions..."),
                     Text(content="Please wait while we update the descriptions...")
@@ -903,7 +953,8 @@ async def fwa_descriptions_submit(
 
     # Build TH edit screen with updated descriptions
     components = build_th_edit_components(
-        th_level, base_link, updated_base_info, updated_upgrade_notes, war_image, active_image
+        th_level, base_link, updated_base_info, updated_upgrade_notes, war_image, active_image,
+        manage_token=_management_token(ctx),
     )
 
     # Edit the response to show the updated TH edit screen

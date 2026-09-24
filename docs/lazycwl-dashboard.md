@@ -1,5 +1,8 @@
 # CWL rosters dashboard
 
+Open this workspace from `/manage` by choosing **CWL Rosters**, or select it
+in the command's optional `section` choice. See [Server Management](manage-dashboard.md).
+
 `/cwl rosters` is the administrator dashboard for CWL saved player lists. It
 replaces `/lazycwl` and the nine retired `/fwa lazycwl-*` commands. Those
 old command names are no longer registered; use `/cwl rosters` directly.

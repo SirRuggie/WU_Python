@@ -21,6 +21,7 @@ from utils.discord_file_upload import (
 )
 from utils.media_store import MediaStore, MediaStoreError, recruit_content_folder
 from utils.mongo import MongoClient
+from utils.constants import GOLD_ACCENT
 from utils.url_safety import MAX_IMAGE_BYTES
 
 
@@ -286,7 +287,7 @@ def panel(state, notice=None):
             menu.add_option(document.label, document.key)
         rows = [
             hikari.impl.TextDisplayComponentBuilder(
-                content="## :shield: Warriors United Content Dashboard\nChoose a document to edit, or open CWL announcements to manage messages and schedules."
+                content=("## Recruit Gauntlet\nManage onboarding content." if state.get("manage_token") else "## :shield: Warriors United Content Dashboard\nChoose a document to edit, or open CWL announcements to manage messages and schedules.")
             ),
         ]
         if notice:
@@ -297,7 +298,11 @@ def panel(state, notice=None):
             hikari.ButtonStyle.PRIMARY, f"content_cwl:{sid}", label="CWL announcements"
         )
         rows.append(campaigns)
-        return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows)]
+        if state.get("manage_token"):
+            home = hikari.impl.MessageActionRowBuilder()
+            home.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{state['manage_token']}", label="Management Home")
+            rows.append(home)
+        return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=rows)]
 
     document = DOCUMENTS[state["document"]]
     overrides = normal_media(document, state.get("media"))
@@ -337,6 +342,8 @@ def panel(state, notice=None):
             is_disabled=selected_slot not in overrides,
         )
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
+    if state.get("manage_token"):
+        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_manage_review:{sid}", label="Management Home")
     controls = [blocks, images]
     slots = dict(media_slots(document))
     if selected_slot in slots:
@@ -356,7 +363,7 @@ def panel(state, notice=None):
     controls.append(buttons)
     if selected_buttons is not None:
         controls.append(selected_buttons)
-    return [hikari.impl.ContainerComponentBuilder(accent_color=0xEEEEAA, components=rows + controls)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=rows + controls)]
 
 
 def error_panel(message):
@@ -423,11 +430,19 @@ class ContentDashboard(lightbulb.SlashCommand, name="dashboard", description="Ed
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx, mongo: MongoClient = lightbulb.di.INJECTED, bot: hikari.GatewayBot = lightbulb.di.INJECTED):
+        await open_dashboard(ctx, mongo, bot=bot, message_link=self.message_link)
+
+
+async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | None = None,
+                         message_link: str | None = None, manage_token: str | None = None, deferred: bool = False):
         if not await require_editor(ctx): return
-        await ctx.defer(ephemeral=True)
+        if not deferred and not getattr(ctx.interaction, "custom_id", None):
+            await ctx.defer(ephemeral=True)
         state = {"user_id": int(ctx.user.id), "guild_id": int(ctx.interaction.guild_id), "view": "root"}
-        if self.message_link:
-            match = MESSAGE_LINK.fullmatch(self.message_link.strip())
+        if manage_token:
+            state["manage_token"] = manage_token
+        if message_link:
+            match = MESSAGE_LINK.fullmatch(message_link.strip())
             if not match or int(match[1]) != state["guild_id"]:
                 await initial_panel(ctx, mongo, state, "Paste a message link from this server."); return
             try:
@@ -462,6 +477,23 @@ class ContentDashboard(lightbulb.SlashCommand, name="dashboard", description="Ed
         await initial_panel(ctx, mongo, state)
 
 
+@register_action("content_manage_review", preload_state=False)
+@lightbulb.di.with_di
+async def manage_review(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    token = state.get("manage_token")
+    if not token:
+        return panel(state)
+    buttons = hikari.impl.MessageActionRowBuilder()
+    buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing")
+    buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Leave without saving")
+    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=[
+        hikari.impl.TextDisplayComponentBuilder(content="## Leave content editor?"),
+        hikari.impl.TextDisplayComponentBuilder(content="Reopening Recruit Gauntlet starts a new draft. Unsaved edits in this draft will not be restored. Save the template before leaving if you want to keep them."),
+        buttons,
+    ])]
 
 
 @register_action("content_cwl", preload_state=False, no_return=True)
@@ -472,7 +504,7 @@ async def open_cwl(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, *
         await ctx.interaction.edit_initial_response(components=error_panel(problem), **NO_MENTIONS)
         return
     from extensions.commands.cwl_dashboard import open_dashboard
-    await open_dashboard(ctx, mongo)
+    await open_dashboard(ctx, mongo, manage_token=state.get("manage_token"))
 
 
 @register_action("content_document", preload_state=False)
@@ -496,6 +528,24 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
 @register_action("content_back_root", preload_state=False)
 @lightbulb.di.with_di
 async def back_to_root(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if state.get("manage_token") and state.get("document"):
+        buttons = hikari.impl.MessageActionRowBuilder()
+        buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing")
+        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root_confirm:{state['_id']}", label="Leave without saving")
+        return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=[
+            hikari.impl.TextDisplayComponentBuilder(content="## Return to Recruit Gauntlet?"),
+            hikari.impl.TextDisplayComponentBuilder(content="Reopening this document starts a new draft. Unsaved edits in this draft will not be restored. Save the template first if you want to keep them."),
+            buttons,
+        ])]
+    return panel(await new_draft(mongo, dict(state, view="root")))
+
+
+@register_action("content_back_root_confirm", preload_state=False)
+@lightbulb.di.with_di
+async def back_to_root_confirm(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     state, problem = await load(ctx, mongo, action_id)
     if problem:
         return error_panel(problem)

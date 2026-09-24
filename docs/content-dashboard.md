@@ -1,5 +1,9 @@
 # Content dashboard
 
+The shared management home is `/manage`; choose **Recruit Gauntlet** for this
+onboarding editor, or use the optional `section` choice to open it directly.
+See [Server Management](manage-dashboard.md) for navigation and permissions.
+
 `/content dashboard` is a private, per-server Components V2 editor for About Us,
 WU Strike System, and Family Particulars. Administrators with Manage Server can
 edit named Markdown blocks, replace images in R2, preview the public layout,
