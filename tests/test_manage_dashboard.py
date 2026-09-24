@@ -230,3 +230,44 @@ def test_managed_content_back_and_home_warn_before_unsaved_edits_are_left(monkey
         assert "Unsaved edits" in str(prompt[0].build()[0])
         assert "Keep editing" in str(prompt[0].build()[0])
     new_draft.assert_not_awaited()
+
+
+def test_every_management_home_button_has_registered_action():
+    panel = run(manage.manage_home_components(context(), object(), token="token"))
+    button_actions = {
+        custom_id.partition(":")[0]
+        for custom_id in (
+            node["custom_id"] for node in walk([item.build()[0] for item in panel])
+            if node.get("type") == hikari.ComponentType.BUTTON
+        )
+    }
+    assert button_actions <= components.registered_functions.keys()
+
+
+def test_fwa_war_messages_home_button_routes_through_dispatcher(monkeypatch):
+    ctx = context(
+        permissions=hikari.Permissions.NONE,
+        roles=(769130325460254740,),
+        custom_id="manage_fwa_war_messages:token",
+    )
+    source = components.registered_functions["manage_fwa_war_messages"]
+    monkeypatch.setitem(
+        components.registered_functions, "manage_fwa_war_messages",
+        replace(source, fn=source.fn.__wrapped__._func),
+    )
+    monkeypatch.setattr(manage, "get_state", AsyncMock(return_value={
+        "view": "home", "guild_id": 2, "user_id": 1,
+    }))
+    from extensions.commands import fwa_war_messages
+    stored = AsyncMock()
+    monkeypatch.setattr(fwa_war_messages, "insert_state", stored)
+    run(components._dispatch(ctx, mongo=object()))
+    assert ctx.events[0] == ("defer", {"edit": True})
+    assert ctx.defer.await_count == 1
+    stored.assert_awaited_once()
+    saved = stored.await_args.args[1]
+    assert saved["manage_token"] == "token"
+    assert saved["user_id"] == 1 and saved["guild_id"] == 2
+    assert ctx.events[-1][0] == "edit"
+    rendered = ctx.events[-1][1]["components"][0].build()[0]
+    assert rendered["components"][0]["content"] == "## FWA War Messages"

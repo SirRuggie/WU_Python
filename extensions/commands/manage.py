@@ -237,6 +237,7 @@ def _register_destination(name: str, destination: str):
 
 recruit_destination = _register_destination("manage_recruit", "recruit")
 fwa_destination = _register_destination("manage_fwa", "fwa")
+fwa_war_messages_destination = _register_destination("manage_fwa_war_messages", "fwa_war_messages")
 cwl_destination = _register_destination("manage_cwl", "cwl")
 cwl_rosters_destination = _register_destination("manage_cwl_rosters", "cwl_rosters")
 
