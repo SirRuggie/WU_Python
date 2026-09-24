@@ -49,6 +49,7 @@ def test_single_manage_command_has_optional_section_and_is_loaded():
     }
     assert command_names == {"manage"}
     assert manage.Manage._command_data.name == "manage"
+    assert set(manage.Manage._command_data.options) == {"section"}
     choices = manage.Manage._command_data.options['section'].choices
     assert [(choice.name, choice.value) for choice in choices] == [
         ("Server", "server"), ("Recruit Gauntlet", "recruit-gauntlet"),
@@ -98,8 +99,8 @@ def test_command_defers_before_storage_and_opens_requested_section(monkeypatch):
     async def create(_ctx, _mongo):
         order.append("state")
         return {"_id": "token"}
-    async def open_target(_ctx, _mongo, destination, token, *, deferred, message_link):
-        order.append(("open", destination, token, deferred, message_link))
+    async def open_target(_ctx, _mongo, destination, token, *, deferred):
+        order.append(("open", destination, token, deferred))
     async def defer(**kw):
         order.append("defer")
     ctx.defer = AsyncMock(side_effect=defer)
@@ -107,9 +108,8 @@ def test_command_defers_before_storage_and_opens_requested_section(monkeypatch):
     monkeypatch.setattr(manage, "_open", open_target)
     command = manage.Manage()
     command.section = "cwl"
-    command.message_link = None
     run(command.invoke(ctx, mongo=object()))
-    assert order == ["defer", "state", ("open", "cwl", "token", True, None)]
+    assert order == ["defer", "state", ("open", "cwl", "token", True)]
     assert ctx.defer.await_count == 1
 
 
@@ -186,7 +186,6 @@ def test_bare_manage_defers_once_and_edits_home(monkeypatch):
     monkeypatch.setattr(manage, "manage_home_components", home_panel)
     command = manage.Manage()
     command.section = None
-    command.message_link = None
     run(command.invoke(ctx, mongo=object()))
     assert order == ["defer", "state", ("home", "home-token")]
     assert ctx.defer.await_count == 1
@@ -194,7 +193,7 @@ def test_bare_manage_defers_once_and_edits_home(monkeypatch):
     assert ctx.interaction.edit_initial_response.await_args.kwargs["components"] == ["HOME"]
 
 
-def test_open_shortcuts_forward_deferred_context_and_content_link(monkeypatch):
+def test_open_shortcuts_forward_deferred_context(monkeypatch):
     from extensions.commands import content, lazycwl_dashboard
     ctx = context()
     app = object()
@@ -203,10 +202,9 @@ def test_open_shortcuts_forward_deferred_context_and_content_link(monkeypatch):
     roster_open = AsyncMock()
     monkeypatch.setattr(content, "open_dashboard", content_open)
     monkeypatch.setattr(lazycwl_dashboard, "open_dashboard", roster_open)
-    run(manage._open(ctx, object(), "recruit", "token", deferred=True, message_link="https://discord.com/channels/1/2/3"))
+    run(manage._open(ctx, object(), "recruit", "token", deferred=True))
     assert content_open.await_args.kwargs == {
-        "bot": app, "manage_token": "token",
-        "message_link": "https://discord.com/channels/1/2/3", "deferred": True,
+        "bot": app, "manage_token": "token", "deferred": True,
     }
     run(manage._open(ctx, object(), "cwl_rosters", "token", deferred=True))
     assert roster_open.await_args.kwargs == {"manage_token": "token", "deferred": True}

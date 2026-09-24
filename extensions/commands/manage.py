@@ -141,12 +141,12 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
 
 
 async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
-                deferred: bool, message_link: str | None = None) -> None:
+                deferred: bool) -> None:
     if destination == "recruit":
         from extensions.commands import content
         await content.open_dashboard(
             ctx, mongo, bot=getattr(ctx.interaction, "app", None),
-            manage_token=token, message_link=message_link, deferred=deferred,
+            manage_token=token, deferred=deferred,
         )
     elif destination == "fwa":
         from extensions.commands.clan.dashboard import fwa_data
@@ -170,14 +170,9 @@ async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
 
 class Manage(lightbulb.SlashCommand, name="manage", description="Open Warriors United management tools"):
     section = lightbulb.string("section", "Optional management workspace", default=None, choices=SECTION_CHOICES)
-    message_link = lightbulb.string("message-link", "Optional published recruit post to edit", default=None)
-
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: Any, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        if self.message_link and self.section != "recruit-gauntlet":
-            await ctx.respond("`message-link` is available with Recruit Gauntlet.", ephemeral=True)
-            return
         if self.section not in {None, "server", *SECTION_DESTINATION}:
             await ctx.respond("Choose one of the available management sections.", ephemeral=True)
             return
@@ -197,7 +192,7 @@ class Manage(lightbulb.SlashCommand, name="manage", description="Open Warriors U
             components = await manage_home_components(ctx, mongo, token=token)
             await ctx.interaction.edit_initial_response(components=components, **NO_MENTIONS)
         else:
-            await _open(ctx, mongo, destination, token, deferred=True, message_link=self.message_link)
+            await _open(ctx, mongo, destination, token, deferred=True)
 
 
 @register_action("manage_home", preload_state=False)
