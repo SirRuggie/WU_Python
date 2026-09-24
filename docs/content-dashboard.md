@@ -9,9 +9,8 @@ WU Strike System, and Family Particulars. Administrators with Manage Server can
 edit named Markdown blocks, replace images in R2, preview the public layout,
 save a template, and update a selected existing bot post.
 
-The root panel also includes **CWL announcements**, which opens the private
-`/cwl dashboard` campaign editor. CWL messages, artwork, destinations, and
-timing are managed together there; see [CWL dashboard](cwl-dashboard.md).
+Manage CWL messages, artwork, destinations, and timing through **CWL** in
+`/manage` (or its optional `section` choice); see [CWL dashboard](cwl-dashboard.md).
 
 ## Replace an image
 

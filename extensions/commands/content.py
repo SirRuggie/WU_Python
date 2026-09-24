@@ -287,17 +287,12 @@ def panel(state, notice=None):
             menu.add_option(document.label, document.key)
         rows = [
             hikari.impl.TextDisplayComponentBuilder(
-                content=("## Recruit Gauntlet\nManage onboarding content." if state.get("manage_token") else "## :shield: Warriors United Content Dashboard\nChoose a document to edit, or open CWL announcements to manage messages and schedules.")
+                content=("## Recruit Gauntlet\nManage onboarding content." if state.get("manage_token") else "## :shield: Warriors United Content Dashboard\nChoose an onboarding document to edit.")
             ),
         ]
         if notice:
             rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
         rows.append(choose)
-        campaigns = hikari.impl.MessageActionRowBuilder()
-        campaigns.add_interactive_button(
-            hikari.ButtonStyle.PRIMARY, f"content_cwl:{sid}", label="CWL announcements"
-        )
-        rows.append(campaigns)
         if state.get("manage_token"):
             home = hikari.impl.MessageActionRowBuilder()
             home.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{state['manage_token']}", label="Management Home")
