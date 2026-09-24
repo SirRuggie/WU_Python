@@ -15,15 +15,12 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
     SeparatorComponentBuilder as Separator,
     ThumbnailComponentBuilder as Thumbnail,
-    MediaGalleryComponentBuilder as Media,
-    MediaGalleryItemBuilder as MediaItem,
     ModalActionRowBuilder as ModalActionRow
 )
 
 from utils.constants import RED_ACCENT
 from utils.emoji import emojis
 from utils.mongo import MongoClient
-from utils.classes import Clan
 
 # Main Clan Dashboard Management
 @lightbulb.di.with_di
@@ -33,24 +30,20 @@ async def dashboard_page(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    clan_data = await mongo.clans.find().to_list(length=None)
-    clans = [Clan(data=data) for data in clan_data]
+    clan_count = await mongo.clans.count_documents({})
+    guild = bot.cache.get_guild(ctx.guild_id)
+    icon_url = guild.make_icon_url(size=256) if guild else None
+    heading = Text(content=(
+        "### Clan Management Dashboard\n"
+        "Welcome to Warrior's United Clan Management Dashboard\n\n"
+        f"{emojis.white_arrow_right}**Clans in System:** `{clan_count}`\n"
+    ))
     components = [
         Container(
             accent_color=RED_ACCENT,
             components=[
-                Section(
-                    accessory=Thumbnail(
-                        media=bot.cache.get_guild(ctx.guild_id).make_icon_url()
-                    ),
-                    components=[
-                        Text(content=(
-                            "### Clan Management Dashboard\n"
-                            "welcome to the Kings Alliance Clan Management Dashboard\n\n"
-                            f"{emojis.white_arrow_right}**Clans in System:** `{len(clans)}`\n\n"
-                        )),
-                    ]
-                ),
+                Section(accessory=Thumbnail(media=icon_url), components=[heading])
+                if icon_url else heading,
                 Separator(divider=True, spacing=hikari.SpacingType.SMALL),
                 Text(content=(
                     "Use the dropdown menu below to:\n"
@@ -82,10 +75,7 @@ async def dashboard_page(
                                     value="manage_fwa_data"),
                             ]),
                     ]),
-                Media(
-                    items=[
-                        MediaItem(media="assets/Red_Footer.png")
-                    ]),
+                Separator(divider=True),
             ]
         )
     ]

@@ -45,8 +45,8 @@ venv against the exact pinned version and is not in doubt.
 | Class | Count | Written by | Rendered where | Needs |
 |---|---|---|---|---|
 | **Static art** | 20 fixed URLs, hard-coded in code (`WU_Logo.png`, six `server_banners/*.png`, seven `misc_images` GIF/JPG/PNG, `Default_FWA_Base.jpg`, `TH_Weight.png`, `CW_Leagues.png`, `Denied.png`, `FWA.png`, `WU_FWA_Ticket.jpg`) | nobody, they never change | recruit questions, setup posts, info hub, ticket panels, `/family-links` | full size in galleries; the logo also as a thumbnail |
-| **Clan logos and banners** | one each per family clan, `clan_data.logo` / `clan_data.banner` | `/clan upload` (bytes from a Discord attachment) or a pasted URL in the clan dashboard | `/todo` thumbnail (**the hot path**), clan dashboard thumbnail, `/family-links` gallery, `/clan list` | thumbnail size almost everywhere; full size rarely |
-| **FWA base images** | two per Town Hall level, `fwa_data` document `fwa_config`, maps `war_base_images` / `active_base_images`, copied into `utils.constants` at startup | `/fwa upload-images` (bytes) or the FWA dashboard (from URL) | `/fwa bases`, new-TH upgrade flow, recruit questions | full resolution, rarely viewed |
+| **Clan logos and banners** | one each per family clan, `clan_data.logo` / `clan_data.banner` | Clan dashboard native logo/banner upload modals or a pasted logo URL | `/todo` thumbnail (**the hot path**), clan dashboard thumbnail, `/family-links` gallery, `/clan list` | thumbnail size almost everywhere; full size rarely |
+| **FWA base images** | two per Town Hall level, `fwa_data` document `fwa_config`, maps `war_base_images` / `active_base_images`, copied into `utils.constants` at startup | FWA dashboard native war/active upload modals or image URL controls | `/fwa bases`, new-TH upgrade flow, recruit questions | full resolution, rarely viewed |
 
 Everything together is well under 1 GB. Storage is irrelevant; **egress and
 request counts decide every option below.**
@@ -324,7 +324,13 @@ card, no egress anywhere; the price is an upload per send and edit, a
 ten-files-per-message ceiling on every view, and render sites that pass bytes
 instead of URLs. Sound, but more code than the R2 swap.
 
-## 7. Migration plan
+## 7. Original migration plan (historical)
+
+This section records the original proposal, not current deployment steps.
+As of 2026-09-23, the legacy clan/FWA upload command modules named below have
+been removed. Native uploads now live in
+`extensions/commands/clan/dashboard/image_uploads.py`; AUTH-002/003 are closed.
+See [the dashboard workflow](clan-dashboard-improvements.md) for current usage.
 
 **Phase 0, host-agnostic, small.** Install the shim at startup. Add the
 thumbnail variant to `/clan upload` and the dashboard logo path; backfill

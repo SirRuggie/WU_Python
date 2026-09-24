@@ -165,7 +165,8 @@ def test_builder_emits_discord_label_wrapping_one_required_image_upload():
     }
 
 
-def test_installation_before_factory_construction_captures_gateway_payload():
+@pytest.mark.parametrize("prefix", ["content_upload_submit", "dashboard_image_submit"])
+def test_installation_before_factory_construction_captures_gateway_payload(prefix):
     """main.py installs the adapter before GatewayBot constructs this factory."""
     script = """
 import json
@@ -178,7 +179,7 @@ payload = json.loads(%r)
 interaction = factory.deserialize_interaction(payload)
 assert interaction.id == 509
 assert upload.pop_file_upload(509, payload['data']['custom_id'], 'image')['id'] == '777'
-""" % json.dumps(_raw_payload(509, "content_upload_submit:before"))
+""" % json.dumps(_raw_payload(509, f"{prefix}:before"))
     subprocess.run([sys.executable, "-c", script], check=True)
 
 
@@ -474,5 +475,54 @@ def test_existing_text_modal_submission_still_reads_hikari_action_rows(monkeypat
         assert interaction.initial_responses == [hikari.ResponseType.DEFERRED_MESSAGE_UPDATE]
         inserted = [row for key, row in mongo.component_state.documents.items() if key != "draft"]
         assert inserted[-1]["sections"][0] == "Updated native text path"
+
+    asyncio.run(check())
+
+
+def test_clan_raw_upload_routes_through_dispatcher_and_previews_saved_banner(monkeypatch):
+    from extensions.commands.clan.dashboard import image_uploads
+
+    async def check():
+        custom_id = "dashboard_image_submit:clan-native"
+        _capture(_raw_payload(601, custom_id))
+        interaction = _ModalInteraction(601, custom_id)
+        interaction.channel_id = 30
+        interaction.member = SimpleNamespace(
+            get_roles=lambda: [SimpleNamespace(id=image_uploads.ROLE_ID)]
+        )
+        ctx = _ModalContext(interaction)
+        target = image_uploads.UploadTarget(
+            kind="clan", slot="banner", key="#ABC", old_value=None,
+            guild_id=20, owner_id=10, source_channel_id=30, source_message_id=40,
+            clan_name="Test Clan", clan_id="clan-row",
+        )
+        monkeypatch.setitem(image_uploads._PENDING, "clan-native", (
+            image_uploads.time.monotonic(), target,
+        ))
+        mongo = SimpleNamespace(clans=SimpleNamespace(
+            find_one=AsyncMock(return_value={"_id": "clan-row", "tag": "#ABC", "name": "Test Clan"}),
+            update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
+        ))
+        media = SimpleNamespace(upload_bytes=AsyncMock(return_value="https://media.example/banner.png"))
+        action = components.registered_functions["dashboard_image_submit"]
+
+        async def invoke(**kwargs):
+            return await image_uploads.dashboard_image_submit(mongo=mongo, media=media, **kwargs)
+
+        monkeypatch.setitem(components.registered_functions, "dashboard_image_submit",
+                            dataclasses.replace(action, fn=invoke))
+        monkeypatch.setattr(image_uploads, "download_image_blocking", lambda url: b"valid-image")
+        await components._dispatch(ctx, mongo)
+        assert interaction.initial_responses == [hikari.ResponseType.DEFERRED_MESSAGE_UPDATE]
+        media.upload_bytes.assert_awaited_once_with(b"valid-image", folder="clans/Test_Clan", name="banner")
+        mongo.clans.update_one.assert_awaited_once_with(
+            {"_id": "clan-row", "tag": "#ABC", "banner": None},
+            {"$set": {"banner": "https://media.example/banner.png"}},
+        )
+        payload = interaction.edits[-1]["components"][0].build()[0]
+        galleries = [c for c in payload["components"] if c["type"] == 12]
+        assert galleries[0]["items"][0]["media"]["url"] == "https://media.example/banner.png"
+        assert discord_file_upload.pop_file_upload(601, custom_id, "image") is None
+        assert "clan-native" not in image_uploads._PENDING
 
     asyncio.run(check())

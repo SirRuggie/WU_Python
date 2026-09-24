@@ -53,7 +53,7 @@ so it now lives once in `utils/media_store.py` (`clan_folder`,
 tests pin the migration's keys (`4812f86`). Judged real but left alone:
 two clans whose names sanitize to the same string share one
 `clans/<Name>/` folder (content-hashed keys keep the objects apart);
-`/fwa upload-images` and the dashboard never delete a replaced object
+the then-current `/fwa upload-images` command and the dashboard never delete a replaced object
 (orphans, free at this scale).
 
 **R2**: account `d2b2bdb589030d8ddd698e2f62af5dc5`, bucket `wu-media`,
@@ -159,9 +159,9 @@ already in the repo or legacy content that must not move.
 - Cloudinary is in dynamic-folder mode: 132 assets have public_ids that no
   longer match their folder. The migration downloads the URLs Mongo holds,
   so folders are irrelevant, but a renamed active asset is a dead URL.
-- `/clan upload-images` deletes the previous R2 object of a replaced image
-  (`MediaStore.delete_url`); the first upload after migration deletes
-  nothing because the old URL is Cloudinary's.
+- Historical behavior: `/clan upload-images` deleted the previous R2 object
+  of a replaced image. That command was removed on 2026-09-23; dashboard
+  uploads retain previous objects so existing posts can still display them.
 - The cloud session's scratch files are gone; everything needed is in the
   repo and in this file.
 - Project agents in `.claude/agents/` are registered when a session

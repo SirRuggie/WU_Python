@@ -101,7 +101,7 @@ Recruit role automatically two hours after assignment.
 ### ⚔️ Clans & FWA
 
 Clan administration and the family's FWA toolkit: clan dashboards and info
-hubs, logo and banner uploads, FWA base layouts, FWA Chocolate lookups, war
+hubs, dashboard image uploads, FWA base layouts, FWA Chocolate lookups, war
 weight calculation, Town Hall upgrade notes, and one-command war plans for
 win, loss, blacklist, and mismatch scenarios. The `/cwl rosters` dashboard captures
 FWA rosters during CWL, tracks returning players, and manages manual and
@@ -109,15 +109,14 @@ scheduled return reminders. The old `/lazycwl` and `/fwa lazycwl-*` commands
 have been removed.
 
 <details>
-<summary><strong>Command reference — Clans &amp; FWA (16 commands)</strong></summary>
+<summary><strong>Command reference — Clans &amp; FWA (14 commands)</strong></summary>
 <br>
 
 | Command | Description |
 | --- | --- |
-| `/clan dashboard` | Open clan administration and FWA data tools. |
+| `/clan dashboard` | Open clan administration, FWA tools, and image uploads. |
 | `/clan info` | View information about every family clan. |
 | `/clan list` | Pick a clan to view or assign to a recruit. |
-| `/clan upload-images` | Upload a clan logo and banner. |
 | `/fwa bases` | Select and display an FWA base layout. |
 | `/fwa blacklist list` | Show every clan on the FWA blacklist. |
 | `/fwa blacklist add` | Add a clan to the FWA blacklist. |
@@ -126,7 +125,6 @@ have been removed.
 | `/fwa links` | Open FWA verification and war-weight links. |
 | `/fwa new-th-upgrade` | Display FWA Town Hall upgrade notes. |
 | `/fwa points` | Show the latest stored FWA points verdicts. |
-| `/fwa upload-images` | Upload FWA war and active base images. |
 | `/fwa war-plans` | Generate a war plan for win, loss, blacklist, or mismatch. |
 | `/fwa weight` | Calculate war weight from a storage value. |
 | `/cwl rosters` | Manage FWA saved rosters, players, and return reminders in one dashboard. |

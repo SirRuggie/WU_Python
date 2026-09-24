@@ -24,6 +24,7 @@ _SUBMISSIONS: OrderedDict[int, tuple[float, dict[str, Any]]] = OrderedDict()
 _INSTALLED = False
 _MAX_SUBMISSIONS = 256
 _SUBMISSION_TTL_SECONDS = 20 * 60
+_UPLOAD_PREFIXES = ("content_upload_submit:", "dashboard_image_submit:")
 
 
 @dataclass(frozen=True)
@@ -55,7 +56,7 @@ class FileUploadModalComponentBuilder:
 
 
 def install_file_upload_capture() -> None:
-    """Retain raw content-upload submissions before Hikari drops new fields."""
+    """Retain supported upload submissions before Hikari drops new fields."""
 
     global _INSTALLED
     if _INSTALLED:
@@ -68,7 +69,7 @@ def install_file_upload_capture() -> None:
         data = payload.get("data", {}) if isinstance(payload, dict) else {}
         data = data if isinstance(data, dict) else {}
         custom_id = data.get("custom_id", "")
-        if isinstance(custom_id, str) and custom_id.startswith("content_upload_submit:"):
+        if isinstance(custom_id, str) and custom_id.startswith(_UPLOAD_PREFIXES):
             try:
                 interaction_id = int(payload["id"])
             except (KeyError, TypeError, ValueError):

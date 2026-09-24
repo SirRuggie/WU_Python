@@ -30,7 +30,7 @@ from PIL import Image
 from utils.constants import RED_ACCENT
 from utils.classes import Clan
 from utils.image_fetch import download_image_blocking
-from utils.media_urls import THUMBNAIL, optimized
+from utils.media_urls import GALLERY, THUMBNAIL, optimized
 from utils.emoji import emojis
 from utils.mongo import MongoClient, ensure_clan_tag_index
 from utils.url_safety import is_safe_public_url
@@ -78,11 +78,7 @@ async def update_clan_information(
                         "This feature is restricted to users with the Clan Management role.\n"
                         "If you believe you should have access, please contact an administrator."
                     )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Red_Footer.png")
-                        ]
-                    ),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -147,10 +143,7 @@ async def update_clan_information(
                         custom_id="remove_clan_select:",
                     ),
                 ),
-                Media(
-                    items=[
-                        MediaItem(media="assets/Red_Footer.png"),
-                    ])
+                Separator(divider=True)
             ]
         )
     ]
@@ -301,7 +294,7 @@ async def remove_clan_select(
                         )
                     ]
                 ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                Separator(divider=True),
             ],
         )
     ]
@@ -347,7 +340,7 @@ async def clan_remove_menu(
             ),
 
             # Clan Roles
-            Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            Separator(divider=True),
         ],
     )]
     return components
@@ -398,7 +391,7 @@ async def on_remove_clan_field(
                     Text(content=f"Welp, `{db_clan.name}` has been deleted! <:SadTrash:1387846121094774854>\n"
                                  "Hopefully you didn't make an oopsie..."),
                     Text(content=f"✅ Associated emoji has been removed from the bot." if db_clan.emoji else ""),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -442,7 +435,7 @@ async def choose_clan_select(
                         )
                     ]
                 ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                Separator(divider=True),
             ],
         )
     ]
@@ -560,7 +553,7 @@ async def clan_edit_menu(
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         custom_id=f"update_logo:{db_clan.tag}",
-                        label="Update Logo",
+                        label="Manage Images",
                     ),
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
@@ -587,8 +580,7 @@ async def clan_edit_menu(
                 ]
             ),
 
-            # Footer image
-            Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            Separator(divider=True),
         ],
     )]
     return components
@@ -726,7 +718,7 @@ async def update_logo_button(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content="❌ Clan not found in database."),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -734,63 +726,39 @@ async def update_logo_button(
 
     clan_name = clan_data.get("name", "Unknown Clan")
 
-    # Create a helpful instruction panel that explains both options
-    components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Text(content=f"## 📸 Update Logo for {clan_name}"),
-                Separator(divider=True),
-                Text(content=(
-                    "Choose how you'd like to provide your clan logo:\n\n"
-                    "**🔗 Option 1: Image URL**\n"
-                    "Perfect if your logo is already hosted online (Imgur, Discord, etc.)\n"
-                    "• Quick and easy\n"
-                    "• No file size limits\n"
-                    "• Works with any image host\n\n"
-                    "**📤 Option 2: Upload File**\n"
-                    "Best if you have the logo saved on your device\n"
-                    "• Drag and drop support\n"
-                    "• Automatic cloud storage\n"
-                    "• Max 8MB per file (Discord limit)\n"
-                )),
-                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+    previews = []
+    for slot, label in (("logo", "Logo"), ("banner", "Banner")):
+        url = clan_data.get(slot)
+        previews.append(Text(content=f"### Current {label}"))
+        if isinstance(url, str) and url.startswith(("https://", "http://")):
+            previews.append(Media(items=[MediaItem(
+                media=optimized(url, width=THUMBNAIL if slot == "logo" else GALLERY),
+                description=f"{clan_name} {label.lower()}",
+            )]))
+        else:
+            previews.append(Text(content="No image saved yet."))
 
-                # Action buttons for each option
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.PRIMARY,
-                            custom_id=f"logo_url_modal:{tag}",
-                            label="Use Image URL",
-                            emoji="🔗"
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.PRIMARY,
-                            custom_id=f"logo_upload_guide:{tag}",
-                            label="Upload File",
-                            emoji="📤"
-                        ),
-                    ]
-                ),
-
-                # Cancel button to return to the edit menu
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            custom_id=f"back_to_clan_edit:{tag}",
-                            label="← Back to Edit Menu",
-                        )
-                    ]
-                ),
-
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-            ]
-        )
-    ]
-
-    return components
+    return [Container(accent_color=RED_ACCENT, components=[
+        Text(content=f"## 📸 Images for {clan_name}"),
+        Text(content=(
+            "Choose a logo or banner to replace. Submitting the upload saves it "
+            "immediately and shows the new image here.\n"
+            "PNG, JPG, GIF or WEBP; maximum 10 MB per image."
+        )),
+        *previews,
+        ActionRow(components=[
+            Button(style=hikari.ButtonStyle.PRIMARY,
+                   custom_id=f"clan_image_upload:logo:{tag}", label="Upload Logo"),
+            Button(style=hikari.ButtonStyle.PRIMARY,
+                   custom_id=f"clan_image_upload:banner:{tag}", label="Upload Banner"),
+        ]),
+        ActionRow(components=[
+            Button(style=hikari.ButtonStyle.SECONDARY,
+                   custom_id=f"logo_url_modal:{tag}", label="Use Logo URL"),
+            Button(style=hikari.ButtonStyle.SECONDARY,
+                   custom_id=f"back_to_clan_edit:{tag}", label="Back to Clan Editor"),
+        ]),
+    ])]
 
 
 @register_action("logo_upload_guide", ephemeral=True)
@@ -801,68 +769,8 @@ async def logo_upload_guide(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    tag = action_id
-
-    # Get clan data for personalized instructions
-    clan_data = await mongo.clans.find_one({"tag": tag})
-    clan_name = clan_data.get("name", "Unknown Clan")
-
-    # Create the instruction guide with copyable command
-    components = [
-        Container(
-            accent_color=RED_ACCENT,
-            components=[
-                Text(content="## 📤 Upload Files Instructions"),
-                Separator(divider=True),
-
-                # Step-by-step instructions
-                Text(content=(
-                    f"To upload images for **{clan_name}**, follow these steps:\n\n"
-                    "**Step 1:** Copy this command:\n"
-                    f"```/clan upload-images clan:{clan_name} | {tag}```\n\n"
-                    "**Step 2:** Paste it in any channel where you can use bot commands\n\n"
-                    "**Step 3:** Attach your images:\n"
-                    "• Click the ➕ button when typing the command\n"
-                    "• Select your logo and/or banner files\n"
-                    "• You can upload both at once or separately\n\n"
-                    "**File Requirements:**\n"
-                    "• Formats: PNG, JPG, GIF, or WEBP\n"
-                    "• Maximum size: 8MB per file\n"
-                    "• Logo: First attachment\n"
-                    "• Banner: Second attachment (if uploading both)\n"
-                )),
-
-                # Visual separator
-                Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-
-                # Helpful tip
-                Text(content=(
-                    "💡 **Pro Tip:** You can also type `/clan upload-images` and "
-                    "select the clan from the dropdown menu that appears!"
-                )),
-
-                # Navigation buttons
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            custom_id=f"update_logo:{tag}",
-                            label="← Back to Options",
-                        ),
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            custom_id=f"back_to_clan_edit:{tag}",
-                            label="← Back to Edit Menu",
-                        )
-                    ]
-                ),
-
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
-            ]
-        )
-    ]
-
-    return components
+    """Old persistent buttons now open the native image editor."""
+    return await update_logo_button(ctx=ctx, action_id=action_id, mongo=mongo)
 
 
 @register_action("logo_url_modal", no_return=True, opens_modal=True)
@@ -977,7 +885,7 @@ async def update_logo_modal(
                             )
                         ]
                     ),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -1073,7 +981,7 @@ async def edit_roles(
                         )
                     ]
                 ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                Separator(divider=True),
             ]
         )
     ]
@@ -1161,7 +1069,7 @@ async def edit_channels(
                         )
                     ]
                 ),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                Separator(divider=True),
             ]
         )
     ]
@@ -1186,7 +1094,7 @@ async def update_emoji_button(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content="❌ Clan not found in database."),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -1210,7 +1118,7 @@ async def update_emoji_button(
                     "• Will be automatically resized to 128x128\n"
                     "• Uploaded to Discord as a bot emoji\n\n"
                     "**🛡️ Option 2: From the clan logo**\n"
-                    "• Uses the logo uploaded with /clan upload-images\n"
+                    "• Uses the logo saved through Clan Management → Manage Images\n"
                     "• Resized to 128x128 automatically\n"
                     "• One-click solution\n"
                 )),
@@ -1245,7 +1153,7 @@ async def update_emoji_button(
                     ]
                 ),
 
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                Separator(divider=True),
             ]
         )
     ]
@@ -1299,7 +1207,7 @@ async def emoji_from_logo(
                 accent_color=RED_ACCENT,
                 components=[
                     Text(content="❌ Clan not found!"),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -1328,7 +1236,7 @@ async def emoji_from_logo(
                             )
                         ]
                     ),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -1363,7 +1271,7 @@ async def process_emoji_upload(
             components=[
                 Text(content="## ⏳ Processing Emoji..."),
                 Text(content="Downloading and resizing image..."),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                Separator(divider=True),
             ]
         )
     ]
@@ -1491,7 +1399,7 @@ async def process_emoji_upload(
                             )
                         ]
                     ),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -1527,7 +1435,7 @@ async def process_emoji_upload(
                             )
                         ]
                     ),
-                    Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                    Separator(divider=True),
                 ]
             )
         ]

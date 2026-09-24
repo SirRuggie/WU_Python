@@ -3,9 +3,8 @@ import lightbulb
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
+    SeparatorComponentBuilder as Separator,
     TextDisplayComponentBuilder as Text,
-    MediaGalleryComponentBuilder as Media,
-    MediaGalleryItemBuilder as MediaItem,
 )
 
 from utils.constants import RED_ACCENT
@@ -37,10 +36,7 @@ async def view_clan_list(
                     "### Current Clan List\n\n"
                     f"{clan_list}"
                 )),
-                Media(
-                    items=[
-                        MediaItem(media="assets/Red_Footer.png"),
-                    ])
+                Separator(divider=True)
             ]
         )
     ]

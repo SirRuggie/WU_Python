@@ -18,7 +18,7 @@ ROLE_ID = 993015846442127420
 
 
 EXPECTED_CLAN_CHILDREN = frozenset({
-    "add_clan_page", "add_clan", "add_clan_modal", "remove_clan_select",
+    "clan_image_upload", "dashboard_image_submit", "add_clan_page", "add_clan", "add_clan_modal", "remove_clan_select",
     "clan_remove_menu", "remove_clan", "choose_clan_select", "clan_edit_menu",
     "edit_clan", "edit_thread", "update_logo", "logo_upload_guide",
     "logo_url_modal", "update_logo_modal", "back_to_clan_edit", "edit_roles",
@@ -26,7 +26,7 @@ EXPECTED_CLAN_CHILDREN = frozenset({
     "update_emoji_modal", "update_general_info", "edit_general",
 })
 EXPECTED_FWA_CHILDREN = frozenset({
-    "fwa_back_to_main", "fwa_th_select", "fwa_update_link", "fwa_link_submit",
+    "fwa_image_upload", "fwa_back_to_main", "fwa_th_select", "fwa_update_link", "fwa_link_submit",
     "fwa_update_images", "fwa_image_urls", "fwa_images_submit",
     "fwa_update_descriptions", "fwa_th_select_return", "fwa_descriptions_submit",
     "fwa_upload_guide",
@@ -58,7 +58,7 @@ def test_guard_action_sets_exactly_cover_every_persistent_child():
     assert CLAN_CHILD_ACTIONS | FWA_CHILD_ACTIONS <= components.registered_functions.keys()
 
 
-@pytest.mark.parametrize("action", ["remove_clan", "add_clan", "add_clan_modal"])
+@pytest.mark.parametrize("action", ["remove_clan", "add_clan", "add_clan_modal", "clan_image_upload", "fwa_image_upload", "dashboard_image_submit"])
 def test_dispatch_refuses_revoked_role_before_any_child_handler(monkeypatch, action):
     calls = []
 
@@ -108,6 +108,7 @@ def test_dispatch_allows_current_role_for_nonmodal_opener_and_submit(
 
 def test_all_six_legacy_modal_openers_have_opener_metadata():
     for action in (
+        "clan_image_upload", "fwa_image_upload",
         "add_clan", "logo_url_modal", "emoji_url_modal",
         "fwa_update_link", "fwa_image_urls", "fwa_update_descriptions",
     ):

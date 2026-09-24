@@ -198,7 +198,7 @@ async def build_fwa_management_screen(
                     ]
                 ),
 
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
+                Separator(divider=True),
             ]
         )
     ]
@@ -378,11 +378,7 @@ async def manage_fwa_data(
                         "This feature is restricted to users with the FWA Rep role.\n"
                         "If you believe you should have access, please contact an administrator."
                     )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Red_Footer.png")
-                        ]
-                    ),
+                    Separator(divider=True),
                 ]
             )
         ]
@@ -546,35 +542,22 @@ async def fwa_update_images(
                 Text(content="Choose how to update the base images:"),
                 Separator(divider=True),
 
-                Section(
-                    components=[
-                        Text(content=(
-                            "**Option 1: Image URLs**\n"
-                            "Provide direct links to images already hosted online"
-                        ))
-                    ],
-                    accessory=Button(
-                        style=hikari.ButtonStyle.PRIMARY,
-                        label="Use URLs",
-                        emoji="🔗",
-                        custom_id=f"fwa_image_urls:{th_level}",
-                    )
-                ),
-
-                Section(
-                    components=[
-                        Text(content=(
-                            "**Option 2: Upload Command**\n"
-                            "Use `/fwa upload-images` to upload files directly"
-                        ))
-                    ],
-                    accessory=Button(
-                        style=hikari.ButtonStyle.PRIMARY,
-                        label="Instructions",
-                        emoji="📤",
-                        custom_id=f"fwa_upload_guide:{th_level}",
-                    )
-                ),
+                Text(content=(
+                    "Upload a war or active base image. Submitting saves the "
+                    "replacement immediately and shows a preview.\n"
+                    "PNG, JPG, GIF or WEBP; maximum 10 MB per image."
+                )),
+                ActionRow(components=[
+                    Button(style=hikari.ButtonStyle.PRIMARY,
+                           custom_id=f"fwa_image_upload:war:{th_level}",
+                           label="Upload War Base"),
+                    Button(style=hikari.ButtonStyle.PRIMARY,
+                           custom_id=f"fwa_image_upload:active:{th_level}",
+                           label="Upload Active Base"),
+                    Button(style=hikari.ButtonStyle.SECONDARY,
+                           custom_id=f"fwa_image_urls:{th_level}",
+                           label="Use Image URLs"),
+                ]),
 
                 ActionRow(
                     components=[
@@ -587,7 +570,7 @@ async def fwa_update_images(
                     ]
                 ),
 
-                Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+                Separator(divider=True),
             ]
         )
     ]
@@ -934,46 +917,5 @@ async def fwa_upload_guide(
         action_id: str,  # th_level
         **kwargs
 ):
-    """Show upload instructions"""
-    th_level = action_id
-    th_num = th_level.upper().replace("TH", "")
-
-    components = [
-        Container(
-            accent_color=BLUE_ACCENT,
-            components=[
-                Text(content=f"## 📤 **Upload Images for TH{th_num}**"),
-                Separator(divider=True),
-
-                Text(content=(
-                    "**To upload images using the command:**\n\n"
-                    "1. Copy this command:\n"
-                    f"```/fwa upload-images town-hall:Town Hall {th_num[2:]}```\n\n"
-                    "2. Paste it in any channel\n\n"
-                    "3. Attach your images:\n"
-                    "   • Click the ➕ button\n"
-                    "   • Select war base image\n"
-                    "   • Select active base image\n\n"
-                    "4. Press Enter to upload\n\n"
-                    "**File Requirements:**\n"
-                    "• Formats: PNG, JPG, GIF, or WEBP\n"
-                    "• Maximum size: 8MB per file"
-                )),
-
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SECONDARY,
-                            label="Back",
-                            emoji="◀️",
-                            custom_id=f"fwa_update_images:{th_level}",
-                        )
-                    ]
-                ),
-
-                Media(items=[MediaItem(media="assets/Blue_Footer.png")]),
-            ]
-        )
-    ]
-
-    return components
+    """Old persistent buttons now open the native FWA image controls."""
+    return await fwa_update_images(ctx=ctx, action_id=action_id)

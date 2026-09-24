@@ -21,12 +21,10 @@ the commit message when the item is completed so the fix remains traceable.
   paths can change that member's nickname, Town Hall roles, and clan roles or
   post onboarding messages. Add both command visibility permissions and a
   runtime recruiter/admin check shared by every mutating component.
-- **`AUTH-002` — Restrict `/clan upload-images`.** It can replace clan
-  images in the R2 bucket and MongoDB references. Require the clan-management role at
-  invocation time.
-- **`AUTH-003` — Restrict `/fwa upload-images`.** It can replace shared FWA base
-  images and MongoDB references. Require the FWA-management role at invocation
-  time.
+- **`AUTH-002` / `AUTH-003` — Closed 2026-09-23.** Removed the legacy
+  `/clan upload-images` and `/fwa upload-images` commands. Their replacements
+  are dashboard upload dialogs with the existing management-role checks on
+  opening and submission.
 
 ### P1 — unrestricted operational commands
 

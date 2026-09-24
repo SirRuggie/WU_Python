@@ -20,8 +20,6 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
     SeparatorComponentBuilder as Separator,
     ThumbnailComponentBuilder as Thumbnail,
-    MediaGalleryComponentBuilder as Media,
-    MediaGalleryItemBuilder as MediaItem,
     ModalActionRowBuilder as ModalActionRow
 )
 from lightbulb import channel
@@ -101,7 +99,7 @@ async def update_general_info_panel(
                         label="← Back to Edit Menu",
                     )
                 ]),
-                Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+                Separator(divider=True),
             ],
         )
     ]

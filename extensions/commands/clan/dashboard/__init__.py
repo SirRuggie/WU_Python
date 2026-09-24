@@ -7,5 +7,6 @@ from . import fwa_data
 # clan folder, so without this their actions never enter the registry.
 from . import update_clan_info  # also pulls in update_clan_info_general
 from . import view_clan_list
+from . import image_uploads
 
 __all__ = ["dashboard_page"]
