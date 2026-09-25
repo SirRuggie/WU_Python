@@ -69,7 +69,7 @@ def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
     buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
     sections = [node for node in nodes if node.get("type") == hikari.ComponentType.SECTION]
     assert built["type"] == hikari.ComponentType.CONTAINER
-    assert built["accent_color"] == manage.GOLD_ACCENT
+    assert built["accent_color"] == manage.GOLDENROD_ACCENT
     assert len(nodes) <= 40
     assert len(sections) == 6
     assert [button["custom_id"] for button in buttons] == [

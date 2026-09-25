@@ -128,3 +128,6 @@ Legacy fixed-recipient broadcasts and their two settings are removed. Old saved
 recipient fields are ignored; no historical data is deleted. Queued deliveries
 without a current opt-in, or whose reminder was withdrawn, are abandoned without
 sending. Existing signup responses and explicit **DM me the time** remain intact.
+
+Management dashboards use the shared `GOLDENROD_ACCENT` (`#EEEEAA`), matching
+the About Us onboarding message.

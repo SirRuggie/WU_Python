@@ -25,7 +25,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from extensions.commands.fwa import lazy_cwl_service as service
 from utils.mongo import MongoClient
-from utils.constants import BLUE_ACCENT, GREEN_ACCENT, GOLD_ACCENT, RED_ACCENT
+from utils.constants import BLUE_ACCENT, GREEN_ACCENT, GOLDENROD_ACCENT, RED_ACCENT
 from utils import lazy_cwl_store as store
 
 loader = lightbulb.Loader()
@@ -293,7 +293,7 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
     if manage_token := _sessions.get(token, {}).get("manage_token"):
         footer_buttons.append(Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}", label="Management Home"))
     body.append(ActionRow(components=footer_buttons))
-    return [Container(accent_color=GOLD_ACCENT, components=body)]
+    return [Container(accent_color=GOLDENROD_ACCENT, components=body)]
 
 
 async def build_home(mongo: MongoClient, selected_tag: Optional[str] = None, note: Optional[str] = None, *, token: str | None = None, tab: str = "overview") -> list:
@@ -341,7 +341,7 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
             f"Current capture: {_fmt_time(docs[0].get('saved_at'))}",
             "This closes the current roster and stops its reminders. A new roster will contain the clan’s current members; manual edits are not copied.",
             "If the new roster cannot be saved, the current roster is kept."],
-            "lazycwl_replace_yes", token, _bind(token, tag, docs, operation="replace"), GOLD_ACCENT)
+            "lazycwl_replace_yes", token, _bind(token, tag, docs, operation="replace"), GOLDENROD_ACCENT)
     names = [_name(d.get('clan_name') or d.get('clan_tag')) for d in docs]
     if kind == "capture":
         clans = await _clans(mongo, token)
@@ -361,7 +361,7 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
             try: recipients.append((d, await (service.reminder_recipients(d) if _section(token) == "MAIN" else service.away_players(d))))
             except Exception: recipients.append((d, None))
         if any(away is None for _, away in recipients):
-            return _notice("Could not check recipients", "Nothing was sent. Refresh and try again when player status is available.", token, tag, accent=GOLD_ACCENT)
+            return _notice("Could not check recipients", "Nothing was sent. Refresh and try again when player status is available.", token, tag, accent=GOLDENROD_ACCENT)
         detail = [f"Destination: <#{service.reminder_channel(_section(token))}>", "Recipients are checked again when you confirm."] + [f"{_name(d.get('clan_name'))}: {len(a)} away · {len({p.get('discord_id') for p in a if p.get('discord_id')})} linked Discord accounts" for d,a in recipients]
         return _confirm("Send reminders?", [f"Affected lists: {len(docs)}"] + detail, "lazycwl_send_yes", token, _bind(token, tag, docs, operation="send"), GREEN_ACCENT)
     if kind == "close":
@@ -380,7 +380,7 @@ def _confirm(title, lines, action, token, value, accent):
     return [Container(accent_color=accent, components=[Text(content=f"## {title} · {SECTION_LABELS[_section(token)]}"), Text(content="\n".join(lines)), Separator(), ActionRow(components=[Button(style=hikari.ButtonStyle.SUCCESS if accent != RED_ACCENT else hikari.ButtonStyle.DANGER, custom_id=_id(action, token, value), label="Confirm"), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_cancel", token, value), label="Cancel")])])]
 
 
-def _notice(title, text, token, tag, *, accent=GOLD_ACCENT):
+def _notice(title, text, token, tag, *, accent=GOLDENROD_ACCENT):
     return [Container(accent_color=accent, components=[Text(content=f"## {title}"), Text(content=text), Separator(), _back(token, tag)])]
 
 
@@ -457,7 +457,7 @@ async def _player_page(mongo, token: str, tag: str, page: int, note: str | None 
     body.append(ActionRow(components=[Button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_add", token, nonce), label="Add player"), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page - 1}"), label="Previous", is_disabled=page == 0), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page + 1}"), label="Next", is_disabled=page >= pages - 1), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page}"), label="Refresh")]))
     if manage_token := _sessions.get(token, {}).get("manage_token"):
         body.append(ActionRow(components=[Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}", label="Management Home")]))
-    return [Container(accent_color=GOLD_ACCENT, components=body)]
+    return [Container(accent_color=GOLDENROD_ACCENT, components=body)]
 
 
 class CWLRosters(lightbulb.SlashCommand, name="rosters", description="Manage saved CWL rosters and return reminders"):
@@ -575,7 +575,7 @@ async def handle_enable(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
     if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
     if _section(token) != "FWA":
         return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
-    return [Container(accent_color=GOLD_ACCENT, components=[Text(content="## Enable reminders"), Text(content=f"Destination: <#{service.reminder_channel(_section(token))}>. Choose an explicit frequency."), ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_frequency", token, tag), placeholder="Choose frequency", max_values=1, options=[SelectOption(label=f"Every {m} minutes", value=str(m)) for m in REMINDER_FREQUENCIES])]), Separator(), _back(token, tag, "reminders")])]
+    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content="## Enable reminders"), Text(content=f"Destination: <#{service.reminder_channel(_section(token))}>. Choose an explicit frequency."), ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_frequency", token, tag), placeholder="Choose frequency", max_values=1, options=[SelectOption(label=f"Every {m} minutes", value=str(m)) for m in REMINDER_FREQUENCIES])]), Separator(), _back(token, tag, "reminders")])]
 
 @register_action("lazycwl_frequency", preload_state=False)
 @lightbulb.di.with_di

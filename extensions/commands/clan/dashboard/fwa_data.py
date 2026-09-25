@@ -14,7 +14,7 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.media_store import FWA_ACTIVE_BASE_NAME, FWA_WAR_BASE_NAME, MediaStore, fwa_base_folder
 from utils.media_urls import DETAIL, optimized
-from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLD_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
+from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLDENROD_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 from utils.emoji import emojis
 from extensions.commands.clan.dashboard.dashboard import dashboard_page
 from extensions.commands.clan.dashboard.permissions import require_dashboard_role
@@ -199,7 +199,7 @@ async def build_fwa_management_screen(
 
     components = [
         Container(
-            accent_color=GOLD_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content="## 🏰 **FWA Bases & Guidance**"),
                 Text(content="Manage base links and images for each Town Hall level"),
@@ -372,7 +372,7 @@ def build_th_edit_components(th_level: str, base_link: str, base_info: str,
 
     components = [
         Container(
-            accent_color=GOLD_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=component_list
         )
     ]
@@ -544,7 +544,7 @@ async def fwa_link_submit(
     await ctx.interaction.edit_initial_response(
         components=[
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content=f"## ✅ TH{th_num} Base Link Updated!"),
                     Text(content=f"```\n{base_link}\n```"),
@@ -582,7 +582,7 @@ async def fwa_update_images(
 
     components = [
         Container(
-            accent_color=GOLD_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=f"## 🖼️ **Update TH{th_num} Images**"),
                 Text(content="Choose how to update the base images:"),
@@ -712,7 +712,7 @@ async def fwa_images_submit(
         hikari.ResponseType.MESSAGE_UPDATE,
         components=[
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content="## ⏳ Uploading Images..."),
                     Text(content="Please wait while we fetch and store your images...")
@@ -770,7 +770,7 @@ async def fwa_images_submit(
         await ctx.interaction.edit_initial_response(
             components=[
                 Container(
-                    accent_color=GOLD_ACCENT,
+                    accent_color=GOLDENROD_ACCENT,
                     components=[
                         Text(content=f"## ✅ TH{th_num} Images Updated!"),
                         Text(content="\n".join(updates)),
@@ -934,7 +934,7 @@ async def fwa_descriptions_submit(
     await ctx.interaction.edit_initial_response(
         components=[
             Container(
-                accent_color=GOLD_ACCENT,
+                accent_color=GOLDENROD_ACCENT,
                 components=[
                     Text(content="## ⏳ Updating Descriptions..."),
                     Text(content="Please wait while we update the descriptions...")

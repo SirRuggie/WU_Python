@@ -11,7 +11,7 @@ import lightbulb
 
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state
-from utils.constants import GOLD_ACCENT
+from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
 
 
@@ -174,7 +174,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         hikari.impl.TextDisplayComponentBuilder(content="-# Private to you · expires after 30 minutes"),
     ]
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=children)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=children)]
 
 
 FWA_SECTIONS = (
@@ -199,7 +199,7 @@ def fwa_home_components(ctx: Any, token: str) -> list:
             hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Management Home",
         ),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=children)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=children)]
 
 
 async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
