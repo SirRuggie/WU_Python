@@ -216,3 +216,27 @@ ticket there; this does not imply acceptance into the family. The acknowledgemen
 uses the same persistent, fresh-member role checks as the other Gauntlet steps.
 The application-channel role overwrite allows View Channel and Read Message
 History and denies Send Messages, preserving other permission settings.
+
+## Gauntlet help and inactivity reminders
+
+`/manage` → Recruit Gauntlet → **Help & reminders** controls the reminder delay
+in whole minutes from 1 to 10,080 (default 30). Changes also retime pending
+reminders from each recruit’s latest completed step. The lounge is `1553128653645160479`; all four
+Gauntlet roles can view it, read its history, and send questions there. The
+read-only convention for the instructional channels still applies.
+
+A successful confirmation records the recruit's new stage in MongoDB. Further
+progress replaces the pending timer; replaying an older step does not move the
+recruit backward. A stalled stage gets one personal help ping, automatically
+removed after 10 minutes. The text asks the recruit to ping assistance role
+`1003797104088592444`; reminders notify only the recruit, not the assistance role.
+Opening a main or FWA application ticket completes the journey and cancels further
+reminders. No historical members are enrolled when the feature starts.
+
+The general help sticky returns to the bottom after 30 minutes without human
+conversation. Bot messages do not reset that quiet period. A sticky already at
+the bottom stays in place. Settings, progress, message references, and pending
+deletions live in `settings.bot_config` with `gauntlet_help` namespaces so normal
+restarts preserve timers and message cleanup. The worker checks roughly once a
+minute. Failed message deletions are retried; uncertain sends are reconciled
+without blindly repeating recruit pings.

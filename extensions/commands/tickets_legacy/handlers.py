@@ -764,6 +764,8 @@ async def handle_create_ticket(
             }
             await store.insert_one(mongo, ticket_data)
             ticket_persisted = True
+            from utils.gauntlet_tracking import ticket_opened
+            await ticket_opened(mongo, ticket_data)
             await complete_creation_state(
                 mongo,
                 creation_id,

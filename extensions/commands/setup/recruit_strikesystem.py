@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.gauntlet_tracking import track_progress
 from utils.manage_ui import ICONS
 from utils.recruit_setup_checks import require_manage_server, require_ready
 
@@ -263,6 +264,7 @@ async def _private_error(ctx, message: str) -> None:
 async def on_strikesystem_acknowledge(
     action_id: str,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> None:
     """Grant Family Particulars access and privately offer the Family Particulars link."""
@@ -301,6 +303,7 @@ async def on_strikesystem_acknowledge(
         return
 
     if STRIKE_SYSTEM_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
+        await track_progress(mongo, guild_id, user_id, 3)
         await _private_continue(ctx, guild_id, "You already have access to Family Particulars. Continue to Family Particulars for the next Recruit Gauntlet step.")
         return
 
@@ -313,6 +316,7 @@ async def on_strikesystem_acknowledge(
         await _private_error(ctx, "I could not grant access to Family Particulars right now. Please try again shortly.")
         return
 
+    await track_progress(mongo, guild_id, user_id, 3)
     await _private_continue(ctx, guild_id, "Continue to Family Particulars for the next Recruit Gauntlet step.")
 
 

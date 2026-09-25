@@ -29,7 +29,12 @@ def _bot(*, member_roles=(), target_guild=GUILD_ID, cache_member=None):
 
 
 def _run(ctx, bot):
-    return asyncio.run(join_family.on_aboutus_acknowledge("any-published-id", ctx=ctx, bot=bot))
+    mongo = SimpleNamespace(bot_config=SimpleNamespace(
+        find_one=AsyncMock(return_value=None),
+        update_one=AsyncMock(return_value=SimpleNamespace(matched_count=0)),
+        insert_one=AsyncMock(),
+    ))
+    return asyncio.run(join_family.on_aboutus_acknowledge("any-published-id", ctx=ctx, bot=bot, mongo=mongo))
 
 
 def test_aboutus_next_step_and_target_are_updated():

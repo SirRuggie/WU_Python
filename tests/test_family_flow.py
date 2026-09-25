@@ -28,7 +28,12 @@ def _bot(*, member_roles=(), target_guild=GUILD_ID):
 
 
 def _run(ctx, bot):
-    return asyncio.run(family_particulars.on_familyparticulars_acknowledge("published-id", ctx=ctx, bot=bot))
+    mongo = SimpleNamespace(bot_config=SimpleNamespace(
+        find_one=AsyncMock(return_value=None),
+        update_one=AsyncMock(return_value=SimpleNamespace(matched_count=0)),
+        insert_one=AsyncMock(),
+    ))
+    return asyncio.run(family_particulars.on_familyparticulars_acknowledge("published-id", ctx=ctx, bot=bot, mongo=mongo))
 
 
 def test_family_particulars_default_copy_and_target_are_updated():

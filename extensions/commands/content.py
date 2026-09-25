@@ -518,6 +518,12 @@ def panel(state, notice=None):
         if notice:
             rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
         rows.append(choose)
+        help_settings = hikari.impl.MessageActionRowBuilder()
+        help_settings.add_interactive_button(
+            hikari.ButtonStyle.SECONDARY, f"gauntlet_help:{sid}",
+            label="Help & reminders", emoji=button_emoji("Settings"),
+        )
+        rows.append(help_settings)
         if state.get("manage_token"):
             home = hikari.impl.MessageActionRowBuilder()
             home.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{state['manage_token']}", label="Management Home", emoji=button_emoji("Management Home"))

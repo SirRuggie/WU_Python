@@ -8,6 +8,8 @@ import lightbulb
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.manage_ui import ICONS
+from utils.mongo import MongoClient
+from utils.gauntlet_tracking import track_progress
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -113,6 +115,7 @@ async def _private_error(ctx, message: str) -> None:
 async def on_join_family_acknowledge(
     action_id: str,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> None:
     """Grant the join role and privately offer the About Us channel link."""
@@ -155,6 +158,7 @@ async def on_join_family_acknowledge(
         return
 
     if JOIN_FAMILY_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
+        await track_progress(mongo, guild_id, user_id, 1)
         await _private_continue(ctx, guild_id, "You already have access to the Recruit Gauntlet. Continue to About Us to work through the required steps.")
         return
 
@@ -167,4 +171,5 @@ async def on_join_family_acknowledge(
         await _private_error(ctx, "I could not grant family access right now. Please try again shortly.")
         return
 
+    await track_progress(mongo, guild_id, user_id, 1)
     await _private_continue(ctx, guild_id, "Continue to About Us to begin the Recruit Gauntlet and work through the required steps.")

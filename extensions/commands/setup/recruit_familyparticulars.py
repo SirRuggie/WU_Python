@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.gauntlet_tracking import track_progress
 from utils.manage_ui import ICONS
 from utils.recruit_setup_checks import require_manage_server, require_ready
 
@@ -272,6 +273,7 @@ async def _private_error(ctx, message: str) -> None:
 async def on_familyparticulars_acknowledge(
     action_id: str,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ):
     """Grant application-ticket access and privately offer the Apply link."""
@@ -321,6 +323,7 @@ async def on_familyparticulars_acknowledge(
             await _private_error(ctx, "I could not grant application-ticket access right now. Please try again shortly.")
             return
 
+    await track_progress(mongo, guild_id, user_id, 4)
     await _private_continue(ctx, guild_id)
 
 

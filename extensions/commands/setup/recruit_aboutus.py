@@ -12,6 +12,7 @@ from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.manage_ui import ICONS
 from utils.mongo import MongoClient
+from utils.gauntlet_tracking import track_progress
 from utils.recruit_setup_checks import require_manage_server, require_ready
 
 from hikari.impl import (
@@ -262,6 +263,7 @@ async def _private_error(ctx, message: str) -> None:
 async def on_aboutus_acknowledge(
     action_id: str,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    mongo: MongoClient = lightbulb.di.INJECTED,
     **kwargs,
 ) -> None:
     """Grant Strike System access and offer the WU Strike System link privately."""
@@ -300,6 +302,7 @@ async def on_aboutus_acknowledge(
         return
 
     if ABOUT_US_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
+        await track_progress(mongo, guild_id, user_id, 2)
         await _private_continue(ctx, guild_id, "You already have access to WU Strike System. Continue to the WU Strike System and work through the required Recruit Gauntlet steps.")
         return
 
@@ -312,6 +315,7 @@ async def on_aboutus_acknowledge(
         await _private_error(ctx, "I could not grant access to WU Strike System right now. Please try again shortly.")
         return
 
+    await track_progress(mongo, guild_id, user_id, 2)
     await _private_continue(ctx, guild_id, "Continue to the WU Strike System and work through the required Recruit Gauntlet steps.")
 
 loader.command(setup)

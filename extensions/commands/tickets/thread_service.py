@@ -2046,6 +2046,8 @@ async def create_live_thread_ticket(
                         raise
                     ticket = committed
                 committed_ticket = ticket
+                from utils.gauntlet_tracking import ticket_opened
+                await ticket_opened(mongo, ticket)
                 try:
                     await ticket_runtime.bind_open_slot(
                         mongo,
