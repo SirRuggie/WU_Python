@@ -7,7 +7,7 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
 )
 
-from utils.constants import RED_ACCENT
+from utils.constants import GOLDENROD_ACCENT
 from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.classes import Clan
@@ -30,7 +30,7 @@ async def view_clan_list(
     # View Clan List message here
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=(
                     "### Current Clan List\n\n"

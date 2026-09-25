@@ -27,7 +27,7 @@ from extensions.components import register_action
 from io import BytesIO
 from PIL import Image
 
-from utils.constants import RED_ACCENT
+from utils.constants import BLUE_ACCENT, GOLDENROD_ACCENT, GREEN_ACCENT, RED_ACCENT
 from utils.classes import Clan
 from utils.image_fetch import download_image_blocking
 from utils.media_urls import GALLERY, THUMBNAIL, optimized
@@ -88,7 +88,7 @@ async def update_clan_information(
     # If we get here, user has permission - show your normal menu
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=(
                     "### Update Clan Information\n\n"
@@ -161,7 +161,7 @@ async def add_clan_page(
 ):
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=(
                     "### Add a New Clan\n\n"
@@ -281,7 +281,7 @@ async def remove_clan_select(
 
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content="📋 **Select a clan**"),
                 ActionRow(
@@ -386,7 +386,7 @@ async def on_remove_clan_field(
 
         return [
             Container(
-                accent_color=RED_ACCENT,
+                accent_color=GREEN_ACCENT,
                 components=[
                     Text(content=f"Welp, `{db_clan.name}` has been deleted! <:SadTrash:1387846121094774854>\n"
                                  "Hopefully you didn't make an oopsie..."),
@@ -422,7 +422,7 @@ async def choose_clan_select(
 
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content="📋 **Select a clan**"),
                 ActionRow(
@@ -493,7 +493,7 @@ async def clan_edit_menu(
         ])
 
     components = [Container(
-        accent_color=RED_ACCENT,
+        accent_color=GOLDENROD_ACCENT,
         components=[
             Text(content=f"## ✏️ **Editing {db_clan.name}** (`{db_clan.tag}`)"),
             Separator(divider=True, spacing=hikari.SpacingType.LARGE),
@@ -738,7 +738,7 @@ async def update_logo_button(
         else:
             previews.append(Text(content="No image saved yet."))
 
-    return [Container(accent_color=RED_ACCENT, components=[
+    return [Container(accent_color=GOLDENROD_ACCENT, components=[
         Text(content=f"## 📸 Images for {clan_name}"),
         Text(content=(
             "Choose a logo or banner to replace. Submitting the upload saves it "
@@ -926,7 +926,7 @@ async def edit_roles(
 
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=f"## 👤 **Edit Roles - {db_clan.name}**"),
                 Separator(divider=True),
@@ -1002,7 +1002,7 @@ async def edit_channels(
 
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=f"## 💬 **Edit Channels - {db_clan.name}**"),
                 Separator(divider=True),
@@ -1106,7 +1106,7 @@ async def update_emoji_button(
     # Create instruction panel for emoji upload
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=f"## 😊 Update Emoji for {clan_name}"),
                 Separator(divider=True),
@@ -1267,7 +1267,7 @@ async def process_emoji_upload(
     # Create loading message
     loading_components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=BLUE_ACCENT,
             components=[
                 Text(content="## ⏳ Processing Emoji..."),
                 Text(content="Downloading and resizing image..."),
@@ -1380,7 +1380,7 @@ async def process_emoji_upload(
         # Success message
         success_components = [
             Container(
-                accent_color=0x00FF00,  # Green
+                accent_color=GREEN_ACCENT,
                 components=[
                     Text(content="## ✅ Emoji Updated Successfully!"),
                     Separator(divider=True),

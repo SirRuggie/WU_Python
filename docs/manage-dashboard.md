@@ -149,3 +149,8 @@ Editors distinguish Saved from Unsaved changes using the existing saved baseline
 Save retains the template; Send posts the current draft to the selected channel.
 Posting targets remain visible beside the channel picker. Navigation stays below
 editing actions, and leaving an unsaved template still requires confirmation.
+
+Clan management uses the same goldenrod accent for home, lists, and editors.
+Completed save/upload notices are green, processing notices are blue, and errors
+or destructive removal confirmations are red. These visual changes do not
+register the retired clan slash commands.

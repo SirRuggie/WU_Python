@@ -549,7 +549,7 @@ async def fwa_link_submit(
     await ctx.interaction.edit_initial_response(
         components=[
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=GREEN_ACCENT,
                 components=[
                     Text(content=f"## ✅ TH{th_num} Base Link Updated!"),
                     Text(content=f"```\n{base_link}\n```"),
@@ -717,7 +717,7 @@ async def fwa_images_submit(
         hikari.ResponseType.MESSAGE_UPDATE,
         components=[
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=BLUE_ACCENT,
                 components=[
                     Text(content="## ⏳ Uploading Images..."),
                     Text(content="Please wait while we fetch and store your images...")
@@ -775,7 +775,7 @@ async def fwa_images_submit(
         await ctx.interaction.edit_initial_response(
             components=[
                 Container(
-                    accent_color=GOLDENROD_ACCENT,
+                    accent_color=GREEN_ACCENT,
                     components=[
                         Text(content=f"## ✅ TH{th_num} Images Updated!"),
                         Text(content="\n".join(updates)),
@@ -939,7 +939,7 @@ async def fwa_descriptions_submit(
     await ctx.interaction.edit_initial_response(
         components=[
             Container(
-                accent_color=GOLDENROD_ACCENT,
+                accent_color=BLUE_ACCENT,
                 components=[
                     Text(content="## ⏳ Updating Descriptions..."),
                     Text(content="Please wait while we update the descriptions...")

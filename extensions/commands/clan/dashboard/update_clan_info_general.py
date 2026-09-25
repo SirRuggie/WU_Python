@@ -26,7 +26,7 @@ from lightbulb import channel
 from lightbulb.components import MenuContext, ModalContext
 from utils.emoji import EmojiType
 from extensions.autocomplete import clan_types
-from utils.constants import RED_ACCENT ,CLAN_TYPES ,TH_LEVELS
+from utils.constants import GOLDENROD_ACCENT, CLAN_TYPES, TH_LEVELS
 from utils.emoji import emojis
 from extensions.components import register_action
 from utils.mongo import MongoClient
@@ -56,7 +56,7 @@ async def update_general_info_panel(
     db_clan = Clan(data=raw)
     components = [
         Container(
-            accent_color=RED_ACCENT,
+            accent_color=GOLDENROD_ACCENT,
             components=[
                 Text(content=f"## ✏️ **Editing {db_clan.name}** (`{db_clan.tag}`)"),
                 Separator(divider=True, spacing=hikari.SpacingType.LARGE),

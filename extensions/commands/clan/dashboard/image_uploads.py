@@ -30,7 +30,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT, FWA_ACTIVE_WAR_BASE, FWA_WAR_BASE
+from utils.constants import BLUE_ACCENT, GREEN_ACCENT, RED_ACCENT, FWA_ACTIVE_WAR_BASE, FWA_WAR_BASE
 from utils.discord_file_upload import FileUploadModalComponentBuilder, pop_file_upload
 from utils.image_fetch import download_image_blocking
 from utils.media_store import (
@@ -146,7 +146,7 @@ def _success_panel(target: UploadTarget, url: str) -> list[Container]:
     )
     width = DETAIL if target.kind == "fwa" else (THUMBNAIL if target.slot == "logo" else GALLERY)
     return [Container(
-        accent_color=GOLD_ACCENT if target.kind == "fwa" else GREEN_ACCENT,
+        accent_color=GREEN_ACCENT,
         components=[
             Text(content=f"## ✅ {subject} saved"),
             Text(content="The replacement was saved immediately."),

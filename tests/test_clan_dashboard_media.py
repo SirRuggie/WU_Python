@@ -149,7 +149,7 @@ def test_managed_fwa_upload_modal_carries_home_through_return_navigation():
     payload = image_uploads._success_panel(target, "https://img.example.com/war.png")[0].build()[0]
     buttons = [button for row in payload["components"] if row["type"] == 1 for button in row["components"]]
     assert {button["custom_id"] for button in buttons} >= {"fwa_update_images:th16", "manage_home:shared-token"}
-    assert payload["accent_color"] == int(image_uploads.GOLD_ACCENT)
+    assert payload["accent_color"] == int(image_uploads.GREEN_ACCENT)
 
 
 def test_legacy_clan_upload_navigation_does_not_add_management_home():
