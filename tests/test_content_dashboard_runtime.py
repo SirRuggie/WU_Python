@@ -230,6 +230,7 @@ def test_real_hikari_models_adopt_existing_post_and_keep_template_revision(monke
         assert captured[-1]["target"]["original_media"] == [
             "https://cdn.discordapp.com/attachments/20/30/1.png"
         ]
+        assert captured[-1]["saved_snapshot"] == content.draft_snapshot(captured[-1])
         assert ctx.events[0] == ("defer", {"ephemeral": True})
         assert ctx.events[-1][0] == "edit_initial_response"
 
