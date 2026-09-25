@@ -71,7 +71,8 @@ def bot(*, destination_guild=20, destination_type=hikari.ChannelType.GUILD_TEXT,
     rest = SimpleNamespace(
         fetch_channel=AsyncMock(side_effect=fetch_channel),
         fetch_roles=AsyncMock(return_value=roles),
-        fetch_my_member=AsyncMock(return_value=SimpleNamespace(id=999, role_ids=(100,))),
+        fetch_my_user=AsyncMock(return_value=SimpleNamespace(id=999)),
+        fetch_member=AsyncMock(return_value=SimpleNamespace(id=999, role_ids=(100,))),
         create_message=create or AsyncMock(return_value=SimpleNamespace(id=777)),
     )
     return SimpleNamespace(rest=rest)
@@ -172,3 +173,16 @@ def test_retires_only_three_setup_posts_and_keeps_acknowledgements():
     assert set(setup.subcommands) == {"recruit-check"}
     for name in ("aboutus_acknowledge", "strikesystem_acknowledge", "familyparticulars_acknowledge"):
         assert name in registered_functions
+
+
+def test_admin_destination_uses_bot_member_endpoint_and_bypasses_overwrites():
+    app = bot()
+    app.rest.fetch_roles.return_value = (
+        SimpleNamespace(id=20, permissions=hikari.Permissions.NONE),
+        SimpleNamespace(id=100, permissions=hikari.Permissions.ADMINISTRATOR),
+    )
+    channel = SimpleNamespace(permission_overwrites=None)
+    permissions = run(content.destination_permissions(app, 20, channel))
+    assert permissions & hikari.Permissions.ADMINISTRATOR
+    app.rest.fetch_my_user.assert_awaited_once_with()
+    app.rest.fetch_member.assert_awaited_once_with(20, 999)

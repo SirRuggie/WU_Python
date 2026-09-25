@@ -65,7 +65,8 @@ def _bot(*, roles=None, member=None, channel=None):
     )
     rest = SimpleNamespace(
         fetch_roles=AsyncMock(return_value=roles),
-        fetch_my_member=AsyncMock(return_value=member or SimpleNamespace(role_ids=(100,))),
+        fetch_my_user=AsyncMock(return_value=SimpleNamespace(id=999)),
+        fetch_member=AsyncMock(return_value=member or SimpleNamespace(role_ids=(100,))),
         fetch_channel=AsyncMock(return_value=channel or SimpleNamespace(
             guild_id=1, type=hikari.ChannelType.GUILD_TEXT,
         )),
@@ -81,9 +82,9 @@ def test_inspect_ready_uses_only_read_calls_and_includes_everyone_role():
 
     assert check.ready
     assert bot.rest.fetch_roles.await_args.args == (1,)
-    assert bot.rest.fetch_my_member.await_args.args == (1,)
+    assert bot.rest.fetch_member.await_args.args == (1, 999)
     assert bot.rest.fetch_channel.await_args.args == (300,)
-    assert set(vars(bot.rest)) == {"fetch_roles", "fetch_my_member", "fetch_channel"}
+    assert set(vars(bot.rest)) == {"fetch_roles", "fetch_my_user", "fetch_member", "fetch_channel"}
 
 
 def test_inspect_administrator_does_not_bypass_role_hierarchy():
@@ -203,7 +204,7 @@ def test_recruit_check_is_registered_and_denies_before_reading():
         "You need Manage Server permission to use recruit setup.", {"ephemeral": True},
     )]
     bot.rest.fetch_roles.assert_not_awaited()
-    bot.rest.fetch_my_member.assert_not_awaited()
+    bot.rest.fetch_member.assert_not_awaited()
     bot.rest.fetch_channel.assert_not_awaited()
 
 
@@ -239,7 +240,7 @@ def test_recruit_post_commands_deny_before_defer_storage_or_discord_reads():
                 "You need Manage Server permission to use recruit setup.", {"ephemeral": True},
             )]
             bot.rest.fetch_roles.assert_not_awaited()
-            bot.rest.fetch_my_member.assert_not_awaited()
+            bot.rest.fetch_member.assert_not_awaited()
             bot.rest.fetch_channel.assert_not_awaited()
             bot.rest.create_message.assert_not_awaited()
             mongo.bot_config.find_one.assert_not_awaited()
@@ -272,5 +273,5 @@ def test_recruit_check_returns_private_components_v2_result_after_reads():
     assert kwargs["ephemeral"] is True
     assert kwargs["components"][0].type == hikari.ComponentType.CONTAINER
     assert bot.rest.fetch_roles.await_count == 4
-    assert bot.rest.fetch_my_member.await_count == 4
+    assert bot.rest.fetch_member.await_count == 4
     assert bot.rest.fetch_channel.await_count == 4

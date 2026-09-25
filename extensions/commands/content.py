@@ -24,7 +24,7 @@ from utils.media_store import MediaStore, MediaStoreError, recruit_content_folde
 from utils.mongo import MongoClient
 from utils.constants import GOLDENROD_ACCENT
 from utils.url_safety import MAX_IMAGE_BYTES
-from utils.recruit_setup_checks import require_ready
+from utils.recruit_setup_checks import fetch_bot_member, require_ready
 from utils.manage_ui import breadcrumb, button_emoji
 
 
@@ -326,7 +326,7 @@ def _apply_overwrite(base: hikari.Permissions, overwrite) -> hikari.Permissions:
 async def destination_permissions(bot, guild_id: int, channel) -> hikari.Permissions:
     """Resolve the bot's permissions in the selected channel, including overwrites."""
     roles = tuple(await bot.rest.fetch_roles(guild_id))
-    member = await bot.rest.fetch_my_member(guild_id)
+    member = await fetch_bot_member(bot, guild_id)
     role_ids = {int(value) for value in getattr(member, "role_ids", ())}
     role_ids.add(guild_id)
     roles_by_id = {int(role.id): role for role in roles}

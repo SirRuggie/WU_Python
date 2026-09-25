@@ -56,6 +56,12 @@ def _as_int(value: object) -> int:
         return 0
 
 
+async def fetch_bot_member(bot: Any, guild_id: int) -> Any:
+    """Fetch this bot's guild member through the bot-supported member endpoint."""
+    me = await bot.rest.fetch_my_user()
+    return await bot.rest.fetch_member(guild_id, me.id)
+
+
 def can_manage_server(ctx: Any) -> bool:
     """Whether the invoking member may publish or inspect recruit setup."""
     interaction = getattr(ctx, "interaction", None)
@@ -171,7 +177,7 @@ async def inspect_recruit_setup(
 
     try:
         roles = tuple(await bot.rest.fetch_roles(guild_id))
-        bot_member = await bot.rest.fetch_my_member(guild_id)
+        bot_member = await fetch_bot_member(bot, guild_id)
     except hikari.HTTPError:
         issues.append("I could not read my server roles. Check my server access and try again.")
     except Exception:
