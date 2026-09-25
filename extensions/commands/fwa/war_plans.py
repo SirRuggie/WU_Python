@@ -40,7 +40,7 @@ FWA_WAR_PLANS_CONFIG = {
 
 BLACKLIST_UNREADABLE_NOTE = (
     "Could not read the current war, so nothing was added to the blacklist; "
-    "use /fwa blacklist add."
+    "use /manage → FWA → Blacklist → Add clan."
 )
 
 
@@ -87,7 +87,7 @@ async def _add_war_opponent_to_blacklist(
         return (
             f"Nothing was added to the blacklist: the current war opponent "
             f"is \"{opponent_name}\", but \"{typed_opponent_name}\" was typed; "
-            f"use /fwa blacklist add."
+            f"use /manage → FWA → Blacklist → Add clan."
         )
 
     end = getattr(war, "end_time", None)

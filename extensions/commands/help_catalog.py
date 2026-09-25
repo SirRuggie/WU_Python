@@ -40,7 +40,7 @@ HELP_CATEGORIES = {
     "manage": {
         "name": "Management", "emoji": "🛡️", "description": "Private dashboards for server staff",
         "commands": [
-            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA (bases, war messages, points, sync reminders), Recruitment Questions, CWL, or CWL Rosters."),
+            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA (bases, war messages, blacklist, points, sync reminders), Recruitment Questions, CWL, or CWL Rosters."),
         ],
     },
     "clan_fwa": {

@@ -75,7 +75,7 @@ before changing durable documentation.
 
 - [fwa-blacklist.md](fwa-blacklist.md) — the staff-maintained FWA opponent
   blacklist: stored fields, how entries get in (`/fwa war-plans` Blacklisted,
-  `/fwa blacklist add`), and how it shows up on `/todo` and in the points
+  `/manage → FWA → Blacklist`), and how it shows up on `/todo` and in the points
   monitor's records.
 
 - [lazycwl-dashboard.md](lazycwl-dashboard.md) — saved FWA rosters, player

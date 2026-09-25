@@ -1,7 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
-from extensions.commands.fwa import blacklist, war_plans
+from extensions.commands.fwa import war_plans
 from utils import fwa_blacklist
 
 
@@ -243,129 +243,10 @@ def test_add_war_opponent_to_blacklist_name_mismatch_adds_nothing():
     assert collection.docs == {}
     assert "Previous Opponent" in note
     assert "New Opponent" in note
-    assert "/fwa blacklist add" in note
+    assert "/manage → FWA → Blacklist → Add clan" in note
 
 
-# ---------------------------------------------------------------------------
-# extensions/commands/fwa/blacklist.py - the /fwa blacklist list/add/remove
-# command bodies themselves, exercised with fake ctx/mongo/coc objects.
-# lightbulb's Option descriptor has no __set__, so a plain instance attribute
-# (cmd.tag = "...") shadows it without needing full option resolution.
-# ---------------------------------------------------------------------------
 
-class _Member:
-    def __init__(self, role_ids, display_name="Staffer"):
-        self.role_ids = tuple(role_ids)
-        self.display_name = display_name
-
-
-class _BlacklistContext:
-    def __init__(self, member=None, user_id=999, username="Someone"):
-        self.member = member
-        self.user = SimpleNamespace(id=user_id, username=username)
-        self.responses = []
-
-    async def defer(self, **kwargs):
-        pass
-
-    async def respond(self, *args, **kwargs):
-        self.responses.append((args, kwargs))
-
-
-class _FakeCocClientForAdd:
-    def __init__(self, name=None, error=None):
-        self.name = name
-        self.error = error
-
-    async def get_clan(self, tag):
-        if self.error is not None:
-            raise self.error
-        return SimpleNamespace(name=self.name)
-
-
-def _container_text(container) -> str:
-    return "\n".join(c.content for c in container.components if hasattr(c, "content"))
-
-
-def test_blacklist_add_denies_member_without_role():
-    collection = _FakeCollection()
-    mongo = _Mongo(collection)
-    ctx = _BlacklistContext(member=_Member(role_ids=[1]))
-    cmd = blacklist.BlacklistAdd()
-    cmd.tag = "ABC123"
-    cmd.name = ""
-
-    asyncio.run(cmd.invoke(ctx, mongo=mongo, coc_client=_FakeCocClientForAdd()))
-
-    assert len(ctx.responses) == 1
-    args, _ = ctx.responses[0]
-    assert "FWA Clan Rep role" in args[0]
-    assert collection.docs == {}
-
-
-def test_blacklist_add_invalid_tag_replies_error_and_writes_nothing():
-    collection = _FakeCollection()
-    mongo = _Mongo(collection)
-    ctx = _BlacklistContext(member=_Member(role_ids=[blacklist.FWA_CLAN_REP_ROLE_ID]))
-    cmd = blacklist.BlacklistAdd()
-    cmd.tag = "!!!"
-    cmd.name = ""
-
-    asyncio.run(cmd.invoke(ctx, mongo=mongo, coc_client=_FakeCocClientForAdd()))
-
-    args, _ = ctx.responses[0]
-    assert "Invalid tag" in args[0]
-    assert collection.docs == {}
-
-
-def test_blacklist_add_without_name_fetches_clan_name_from_coc_client():
-    collection = _FakeCollection()
-    mongo = _Mongo(collection)
-    ctx = _BlacklistContext(member=_Member(role_ids=[blacklist.FWA_CLAN_REP_ROLE_ID]))
-    cmd = blacklist.BlacklistAdd()
-    cmd.tag = "#abc123"
-    cmd.name = ""
-
-    asyncio.run(cmd.invoke(ctx, mongo=mongo, coc_client=_FakeCocClientForAdd(name="Looked Up Clan")))
-
-    assert collection.docs["ABC123"]["name"] == "Looked Up Clan"
-    assert collection.docs["ABC123"]["source"] == "manual"
-    args, _ = ctx.responses[0]
-    assert "Looked Up Clan" in args[0]
-
-
-def test_blacklist_list_pagination_shows_page_footer():
-    docs = [
-        {
-            "_id": f"TAG{i:03d}",
-            "name": f"Clan {i:03d}",
-            "source": "manual",
-            "added_at": "2026-09-01T00:00:00+00:00",
-        }
-        for i in range(30)
-    ]
-    collection = _FakeCollection(docs)
-    mongo = _Mongo(collection)
-    ctx = _BlacklistContext()
-    cmd = blacklist.BlacklistList()
-    cmd.page = 1
-
-    asyncio.run(cmd.invoke(ctx, mongo=mongo))
-
-    _, kwargs = ctx.responses[0]
-    text = _container_text(kwargs["components"][0])
-    assert "page 1 of 2, 30 total" in text
-    assert text.count("Clan ") == 25  # one page's worth of entries rendered
-
-
-def test_blacklist_remove_missing_tag_replies_not_on_the_list():
-    collection = _FakeCollection()
-    mongo = _Mongo(collection)
-    ctx = _BlacklistContext(member=_Member(role_ids=[blacklist.FWA_CLAN_REP_ROLE_ID]))
-    cmd = blacklist.BlacklistRemove()
-    cmd.tag = "#NOTHERE"
-
-    asyncio.run(cmd.invoke(ctx, mongo=mongo))
-
-    args, _ = ctx.responses[0]
-    assert "not on the FWA blacklist" in args[0]
+def test_blacklist_slash_group_is_retired():
+    from extensions.commands.fwa import fwa
+    assert "blacklist" not in fwa.subcommands

@@ -24,7 +24,7 @@ DESTINATIONS = (
     ("Roles", "roles", "Add or remove roles and see who has each role"),
     ("Recruit Gauntlet", "recruit", "Edit onboarding messages and choose where to post them"),
     ("Recruitment Questions", "recruitment_questions", "Edit reusable questions, explanations, and quick prompts"),
-    ("FWA", "fwa", "Bases, war messages, points, and sync reminders"),
+    ("FWA", "fwa", "Bases, war messages, blacklist, points, and sync reminders"),
     ("CWL", "cwl", "Edit announcements and manage scheduled delivery"),
     ("CWL Rosters", "cwl_rosters", "Manage saved rosters and player return reminders"),
 )
@@ -75,7 +75,9 @@ def _allowed(ctx: Any, destination: str) -> bool:
         role_ids = {int(role.id) for role in roles} | {int(role) for role in getattr(member, "role_ids", ())}
         return 769130325460254740 in role_ids
     if destination == "fwa":
-        return any(_allowed(ctx, section) for section in ("fwa_bases", "fwa_war_messages", "fwa_points", "fwa_sync"))
+        return any(_allowed(ctx, section) for section in ("fwa_bases", "fwa_war_messages", "fwa_points", "fwa_sync", "fwa_blacklist"))
+    if destination == "fwa_blacklist":
+        return member is not None and _guild_id(ctx) is not None
     if destination in {"fwa_points", "fwa_sync"}:
         return admin
     if destination == "fwa_bases":
@@ -137,6 +139,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
         "recruitment_questions": "Manage Server permission",
         "fwa": "Access to an FWA section",
         "fwa_bases": "FWA Representative role",
+        "fwa_blacklist": "Server membership to view; FWA Clan Rep role to edit",
         "fwa_points": "Administrator permission",
         "fwa_sync": "Administrator permission",
         "fwa_war_messages": "FWA Clan Rep role",
@@ -189,6 +192,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
 FWA_SECTIONS = (
     ("Bases & Guidance", "fwa_bases", "Base links, artwork, Town Hall instructions, and upgrade notes"),
     ("War Messages", "fwa_war_messages", "Edit win, lose, mismatch, and blacklist announcements"),
+    ("Blacklist", "fwa_blacklist", "Browse blacklisted clans; FWA Clan Reps can add or remove entries"),
     ("Points Monitor", "fwa_points", "Monitor status, watched clans, and latest points results"),
     ("Sync & Reminders", "fwa_sync", "BAND sync schedules, signup channel, and reminder settings"),
 )
@@ -232,6 +236,9 @@ async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
     elif destination == "fwa_sync":
         from extensions.commands import fwa_sync_dashboard
         await fwa_sync_dashboard.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
+    elif destination == "fwa_blacklist":
+        from extensions.commands import fwa_blacklist_dashboard
+        await fwa_blacklist_dashboard.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
     elif destination == "fwa_points":
         from extensions.commands import fwa_points_dashboard
         await fwa_points_dashboard.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
@@ -319,6 +326,7 @@ recruit_destination = _register_destination("manage_recruit", "recruit")
 recruitment_questions_destination = _register_destination("manage_recruitment_questions", "recruitment_questions")
 fwa_destination = _register_destination("manage_fwa", "fwa")
 fwa_bases_destination = _register_destination("manage_fwa_bases", "fwa_bases")
+fwa_blacklist_destination = _register_destination("manage_fwa_blacklist", "fwa_blacklist")
 fwa_points_destination = _register_destination("manage_fwa_points", "fwa_points")
 fwa_sync_destination = _register_destination("manage_fwa_sync", "fwa_sync")
 fwa_war_messages_destination = _register_destination("manage_fwa_war_messages", "fwa_war_messages")

@@ -76,7 +76,7 @@ def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
         f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}",
         f"manage_cwl:{token}", f"manage_cwl_rosters:{token}", f"manage_server_roles:{token}",
     ]
-    assert [button["disabled"] for button in buttons] == [False, False, True, True, True, True]
+    assert [button["disabled"] for button in buttons] == [False, False, False, True, True, True]
     assert all(len(button["custom_id"]) <= 100 for button in buttons)
 
 
@@ -379,10 +379,10 @@ def test_fwa_hub_preserves_distinct_section_permissions(permissions, roles, unlo
     nodes = list(walk([item.build()[0] for item in panel]))
     choices = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON
                and node.get("custom_id") != "manage_home:home-token"]
-    assert len(choices) == 4
-    assert {item["custom_id"].split(":")[0] for item in choices if not item["disabled"]} == unlocked
+    assert len(choices) == 5
+    assert {item["custom_id"].split(":")[0] for item in choices if not item["disabled"]} == unlocked | {"manage_fwa_blacklist"}
     assert all(item["custom_id"].split(":")[0] in components.registered_functions for item in choices)
-    assert manage._allowed(ctx, "fwa") == bool(unlocked)
+    assert manage._allowed(ctx, "fwa") is True
     assert len(nodes) <= 40
 
 
@@ -456,3 +456,29 @@ def test_sync_button_opens_real_admin_panel_with_private_native_channel_picker(m
     assert any(node.get("type") == hikari.ComponentType.CHANNEL_SELECT_MENU for node in nodes)
     assert all(node["custom_id"].split(":")[0] in components.registered_functions
                for node in nodes if "custom_id" in node)
+
+
+def test_blacklist_button_opens_workspace_for_read_only_member(monkeypatch):
+    from extensions.commands import fwa_blacklist_dashboard as blacklist
+    ctx = context(permissions=hikari.Permissions.NONE, custom_id="manage_fwa_blacklist:token")
+    source = components.registered_functions["manage_fwa_blacklist"]
+    async def route(**kwargs):
+        kwargs["mongo"] = mongo
+        return await source.fn.__wrapped__._func(**kwargs)
+    monkeypatch.setitem(components.registered_functions, "manage_fwa_blacklist",
+                        replace(source, fn=route))
+    monkeypatch.setattr(manage, "get_state", AsyncMock(return_value={
+        "view": "home", "guild_id": 2, "user_id": 1,
+    }))
+    opened = AsyncMock()
+    monkeypatch.setattr(blacklist, "open_dashboard", opened)
+    mongo = object()
+    run(components._dispatch(ctx, mongo=mongo))
+    ctx.defer.assert_awaited_once()
+    opened.assert_awaited_once_with(ctx, mongo, manage_token="token", deferred=True)
+
+
+def test_blacklist_workspace_is_not_available_outside_a_guild():
+    ctx = context()
+    ctx.interaction.guild_id = None
+    assert manage._allowed(ctx, "fwa_blacklist") is False

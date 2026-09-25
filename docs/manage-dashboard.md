@@ -12,7 +12,7 @@ on one command, not separate subcommands.
 | `/manage section:Roles` | Roles | Add or remove roles for a member; browse a role’s complete member list and count |
 | `/manage section:Recruit Gauntlet` | Recruit Gauntlet | Edit onboarding text and artwork, choose each section’s channel, and send About Us, WU Strike System, or Family Particulars |
 | `/manage section:Recruitment Questions` | Recruitment Questions | Edit all Primary, FWA, Explanation, and Keep It Moving messages |
-| `/manage section:FWA` | FWA | Choose Bases & Guidance, War Messages, Points Monitor, or Sync & Reminders |
+| `/manage section:FWA` | FWA | Choose Bases & Guidance, War Messages, Blacklist, Points Monitor, or Sync & Reminders |
 | `/manage section:CWL` | CWL | Manage campaign messages, schedules, and delivery settings |
 | `/manage section:CWL Rosters` | CWL Rosters | Manage saved Main/FWA rosters and FWA return reminders |
 
@@ -32,7 +32,7 @@ rosters, the FWA Representative role for FWA data, and the FWA Clan Rep role
 used by `/fwa war-plans` for War Messages, and Administrator for Points Monitor and Sync & Reminders. Opening the management
 home does not grant new privileges.
 
-Normal management screens use the bot's gold accent. Labels and explanatory
+Normal management screens use the bot's pale goldenrod accent. Labels and explanatory
 text communicate state without relying on color. Destructive actions retain
 their explicit warning and confirmation flows. Management responses are private;
 publishing content or sending announcements still requires the destination
@@ -93,14 +93,15 @@ navigation, and expire after 30 minutes.
 
 ## FWA
 
-FWA opens a gold submenu with four sections. **Bases & Guidance** is the existing
+FWA opens a goldenrod submenu with five sections. **Bases & Guidance** is the existing
 base-link, image, description, and Town Hall editor. **War Messages** edits the
-four reusable war-announcement templates. **Points Monitor** controls automatic
+four reusable war-announcement templates. **Blacklist** browses the shared
+blacklist and lets FWA Clan Reps add or remove clans. **Points Monitor** controls automatic
 points monitoring and shows current status and watched-clan results.
 **Sync & Reminders** controls the BAND calendar poller and signup-panel destination.
 
-The FWA entry is available when staff can access at least one of its sections;
-other sections remain locked. Each section returns with **Back to FWA** and the
+The FWA entry is available to server members for read-only Blacklist access;
+other sections remain locked unless their existing role or permission gate is met. Each section returns with **Back to FWA** and the
 submenu has **Management Home**. War-message drafts still warn before abandoning
 unsaved edits.
 
@@ -154,3 +155,11 @@ Clan management uses the same goldenrod accent for home, lists, and editors.
 Completed save/upload notices are green, processing notices are blue, and errors
 or destructive removal confirmations are red. These visual changes do not
 register the retired clan slash commands.
+
+### FWA Blacklist
+
+`/manage → FWA → Blacklist` replaces `/fwa blacklist list`, `add`, and `remove`.
+Server members retain read-only list access through the FWA hub. The FWA Clan
+Rep role is still required to add/remove entries, checked on each action; an
+Administrator flag alone does not bypass that role gate. The dashboard uses
+`mongo.fwa_blacklist`, preserving the war-plan and points integrations.

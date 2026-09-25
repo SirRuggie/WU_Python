@@ -5,7 +5,7 @@ Staff-maintained: ChocolateClash is Cloudflare-blocked with no API (see
 docs/fwa-sites-access.md style notes), so there is no automated way to detect
 "this opponent is a known blacklisted clan" - entries only get in when staff
 pick "Blacklisted" in /fwa war-plans (which records the opponent CoC returns
-for the current war) or add one by hand with /fwa blacklist add.
+for the current war) or add one by hand in /manage → FWA → Blacklist.
 
 Documents are keyed by the sanitized tag (no '#', uppercase - see
 utils.fwa_points_parser.sanitize_tag) and stored in mongo.fwa_blacklist:
@@ -71,12 +71,18 @@ async def add_blacklisted(
     return t
 
 
-async def remove_blacklisted(mongo, tag: str) -> bool:
-    """Remove a blacklist entry. Returns False if it was not there."""
+_UNSET = object()
+
+
+async def remove_blacklisted(mongo, tag: str, *, expected_added_at=_UNSET) -> bool:
+    """Remove an entry, optionally only if its original insertion still matches."""
     t = sanitize_tag(tag)
     if not t:
         return False
-    result = await mongo.fwa_blacklist.delete_one({"_id": t})
+    query = {"_id": t}
+    if expected_added_at is not _UNSET:
+        query["added_at"] = expected_added_at
+    result = await mongo.fwa_blacklist.delete_one(query)
     return bool(getattr(result, "deleted_count", 0))
 
 

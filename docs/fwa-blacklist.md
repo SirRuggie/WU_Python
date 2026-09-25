@@ -42,13 +42,16 @@ name) round out the module.
   free-text opponent name staff typed — with `source: "war-plans"`. If the
   war cannot be read (private log, no active war, any API error), the war
   plan still posts; the ephemeral confirmation says nothing was added and to
-  use `/fwa blacklist add` instead. This never fails the command.
-- **`/fwa blacklist add <tag> [name]`** — manual entry, `source: "manual"`.
-  If `name` is left blank it is looked up from the CoC API. Gated by the same
-  FWA Clan Rep role check as `/fwa war-plans`.
-- **`/fwa blacklist remove <tag>`** — same role gate.
-- **`/fwa blacklist list`** — read-only, no gate; says "empty" when there is
-  nothing on the list.
+  use `/manage → FWA → Blacklist → Add clan` instead. This never fails the command.
+- **`/manage → FWA → Blacklist`** replaces the old `/fwa blacklist` commands.
+  The private dashboard lists the same MongoDB entries with a total count,
+  pagination, search by name or tag, and Refresh. Server members can browse;
+  additions and removals require the same FWA Clan Rep role as `/fwa war-plans`.
+- **Add clan** accepts a tag and optional name. A blank name is looked up through
+  the CoC API; manual additions use `source: "manual"`.
+- Select an entry and choose **Remove selected** to review and confirm removal.
+  Back to FWA and Management Home return through the shared management flow.
+
 
 ## How it shows up elsewhere
 
