@@ -4,7 +4,7 @@ from __future__ import annotations
 import hikari
 
 ICONS = {
-    "open": 1553088187902071034,
+    "open": 1553090771542868080,
     "yes": 1397096942907166831,
     "no": 1397096986506825778,
     "back": 1536796427198668911,
