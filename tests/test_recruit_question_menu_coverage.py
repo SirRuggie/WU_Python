@@ -66,7 +66,9 @@ def test_every_group_choice_opens_an_editable_draft_without_saving(monkeypatch):
             assert drafts[-1]["variant"] == variant
             assert drafts[-1]["view"] == "editor"
             assert drafts[-1]["template"] == drafts[-1]["saved_template"]
-            assert len(text_menus(panel)[0]["options"]) == len(drafts[-1]["template"]["sections"])
+            options = text_menus(panel)[0]["options"]
+            indexes = [int(index) for option in options for index in option["value"].split(",")]
+            assert sorted(indexes) == list(range(len(drafts[-1]["template"]["sections"])))
     assert len(drafts) == 20
     assert not db.bot_config.rows
 

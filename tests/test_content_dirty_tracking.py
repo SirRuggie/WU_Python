@@ -28,7 +28,7 @@ def test_document_open_records_saved_copy_and_clean_back_skips_warning(monkeypat
     monkeypatch.setattr(content, "load", AsyncMock(return_value=(root, None)))
     monkeypatch.setattr(content, "new_draft", AsyncMock(side_effect=lambda _db, row: dict(row, _id="opened")))
     db = SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None)))
-    run(content.choose_document(ctx=context(), action_id="root", mongo=db))
+    run(content.choose_document(ctx=context(), action_id="root", mongo=db, bot=SimpleNamespace()))
     opened = content.new_draft.await_args.args[1]
     assert opened["saved_snapshot"] == content.draft_snapshot(opened)
     assert not content.has_unsaved_edits(opened)

@@ -287,6 +287,44 @@ def editable_blocks(document, sections):
     return tuple(zip(indexes, labels, strict=True))
 
 
+def editable_groups(document, sections):
+    """Keep a section's heading and body in the same modal."""
+    blocks = editable_blocks(document, sections)
+    if document.key == "join-family":
+        return (
+            ("Welcome", ((blocks[0][0], "Heading", "full"), (blocks[1][0], "Body", "full"))),
+            ("What happens next", ((blocks[2][0], "Title", "title"), (blocks[2][0], "Body", "body"))),
+            ("Call to action", ((blocks[3][0], "Title", "title"), (blocks[3][0], "Body", "body"))),
+        )
+    groups = []
+    position = 0
+    while position < len(blocks):
+        index, label = blocks[position]
+        if label.lower().endswith("heading") and position + 1 < len(blocks) and not blocks[position + 1][1].lower().endswith("heading"):
+            body_index, _ = blocks[position + 1]
+            groups.append((label.rsplit(" ", 1)[0], ((index, "Heading / Title", "full"), (body_index, "Body", "full"))))
+            position += 2
+        else:
+            groups.append((label, ((index, "Heading / Title" if label.lower().endswith("heading") else "Body", "full"),)))
+            position += 1
+    return tuple(groups)
+
+
+def modal_field_value(section, part):
+    if part == "full":
+        return section
+    title, separator, body = section.partition("\n")
+    if not separator:
+        raise ValueError("This section needs a title and body separated by a line break.")
+    return title if part == "title" else body
+
+
+def target_matches_destination(state):
+    target = state.get("target")
+    channel_id = state.get("destination_channel_id")
+    return bool(target) and (channel_id is None or int(target["channel_id"]) == int(channel_id))
+
+
 def acknowledgement_id(components, document):
     for component in components:
         for child in getattr(component, "components", ()):
@@ -314,6 +352,58 @@ async def destination_for(mongo, guild_id: int, document_key: str) -> int | None
     if row.get("guild_id") != int(guild_id) or row.get("document") != document_key or channel_id <= 0:
         return None
     return channel_id
+
+
+def published_key(guild_id: int, document_key: str) -> str:
+    if document_key not in DOCUMENTS or int(guild_id) <= 0:
+        raise ValueError("Choose a Recruit Gauntlet document in this server.")
+    return f"content_published:{int(guild_id)}:{document_key}"
+
+
+async def published_for(mongo, guild_id: int, document_key: str):
+    row = await mongo.bot_config.find_one({"_id": published_key(guild_id, document_key)})
+    if not row:
+        return None
+    try:
+        channel_id, message_id = int(row["channel_id"]), int(row["message_id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if row.get("guild_id") != int(guild_id) or row.get("document") != document_key or channel_id <= 0 or message_id <= 0:
+        return None
+    return {"channel_id": channel_id, "message_id": message_id}
+
+
+async def remember_published(mongo, guild_id: int, document_key: str, channel_id: int, message_id: int, user_id: int):
+    await mongo.bot_config.update_one(
+        {"_id": published_key(guild_id, document_key)},
+        {"$set": {
+            "guild_id": guild_id, "document": document_key,
+            "channel_id": channel_id, "message_id": message_id,
+            "updated_by": user_id, "updated_at": utcnow(),
+        }},
+        upsert=True,
+    )
+
+
+async def loaded_published_target(bot, guild_id: int, document: Document, coordinates, application_id: int):
+    """Validate the saved pointer and snapshot its live text/media for stale checks."""
+    try:
+        channel = await bot.rest.fetch_channel(coordinates["channel_id"])
+        if int(getattr(channel, "guild_id", 0)) != guild_id:
+            raise ValueError("The saved post is outside this server. Check the channel, then use Send to channel if a replacement is needed.")
+        message = await bot.rest.fetch_message(coordinates["channel_id"], coordinates["message_id"])
+        if int(message.author.id) != application_id or component_shape(message.components) != component_shape(await baseline(document)) or not acknowledgement_id(message.components, document):
+            raise ValueError("The saved message is no longer this bot's supported post. Check the channel, then use Send to channel if a replacement is needed.")
+        sections = [node.content for node in text_nodes(message.components)]
+        original_media = media_snapshot(message.components)
+        if len(original_media) != len(media_slots(document)):
+            raise ValueError("The saved post's images changed. Check the channel, then use Send to channel if a replacement is needed.")
+        await render(document, sections)
+    except (hikari.NotFoundError, hikari.ForbiddenError):
+        raise ValueError("The saved post is missing or inaccessible. Check the channel, then use Send to channel if a replacement is needed.") from None
+    except (hikari.HTTPError, OSError):
+        raise ValueError("I cannot read the saved post right now. Your draft is still available.") from None
+    return dict(coordinates, original=sections, original_media=original_media)
 
 
 def _apply_overwrite(base: hikari.Permissions, overwrite) -> hikari.Permissions:
@@ -446,8 +536,8 @@ def panel(state, notice=None):
     if notice:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     blocks = hikari.impl.MessageActionRowBuilder()
-    menu = blocks.add_text_menu(f"content_block:{sid}", min_values=1, placeholder="Choose a block to edit")
-    for index, label in editable_blocks(document, state["sections"]):
+    menu = blocks.add_text_menu(f"content_block:{sid}", min_values=1, placeholder="Choose a section to edit")
+    for index, (label, _fields) in enumerate(editable_groups(document, state["sections"])):
         menu.add_option(label, str(index))
     images = hikari.impl.MessageActionRowBuilder()
     selected_slot = state.get("selected_media_slot")
@@ -477,8 +567,8 @@ def panel(state, notice=None):
     buttons = hikari.impl.MessageActionRowBuilder()
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_preview:{sid}", label="Preview", emoji=button_emoji("Preview"))
     buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_save:{sid}", label="Save template", emoji=button_emoji("Save template"))
-    if state.get("target"):
-        buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update selected post", emoji=button_emoji("Update selected post"))
+    if target_matches_destination(state):
+        buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update published post", emoji=button_emoji("Update selected post"))
     selected_buttons = None
     if state.get("selected_media_slot"):
         selected_buttons = hikari.impl.MessageActionRowBuilder()
@@ -494,9 +584,16 @@ def panel(state, notice=None):
     if state.get("manage_token"):
         footer.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_manage_review:{sid}", label="Management Home", emoji=button_emoji("Management Home"))
     target = state.get("target")
-    if target:
+    if target and target_matches_destination(state):
         target_url = f"https://discord.com/channels/{state['guild_id']}/{target['channel_id']}/{target['message_id']}"
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"Selected post to update: [View post]({target_url}) in <#{target['channel_id']}>."))
+        if state["sections"] != target["original"]:
+            rows.append(hikari.impl.TextDisplayComponentBuilder(content="The saved template differs from the published post. This draft currently shows the saved template. Load the published copy before editing if you want to start from the text people see now."))
+            load_buttons = hikari.impl.MessageActionRowBuilder()
+            load_buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_load_published:{sid}", label="Load published copy")
+            rows.append(load_buttons)
+    if target and not target_matches_destination(state):
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content="The saved post is in a different channel. Sending here will create a new post; choose its original channel to update it."))
     controls = [
         blocks, images,
         hikari.impl.SeparatorComponentBuilder(divider=True),
@@ -673,7 +770,8 @@ async def open_cwl(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, *
 
 @register_action("content_document", preload_state=False)
 @lightbulb.di.with_di
-async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
+                          bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_):
     state, problem = await load(ctx, mongo, action_id)
     if problem:
         return error_panel(problem)
@@ -684,13 +782,48 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
     sections, media, revision = await template_for(mongo, document, state["guild_id"])
     destination_channel_id = await destination_for(mongo, state["guild_id"], document.key)
     target = state.get("target") if state.get("document") == document.key else None
+    notice = None
+    if target is None:
+        coordinates = await published_for(mongo, state["guild_id"], document.key)
+        if coordinates:
+            try:
+                target = await loaded_published_target(
+                    bot, state["guild_id"], document, coordinates, int(ctx.interaction.application_id)
+                )
+            except ValueError as exc:
+                notice = str(exc)
+                target = None
+            if destination_channel_id is None:
+                destination_channel_id = coordinates["channel_id"]
     draft_state = dict(
         state, view="document", document=document.key, sections=sections,
         revision=revision, media=media, target=target,
         destination_channel_id=destination_channel_id, selected_media_slot=None,
     )
     draft_state["saved_snapshot"] = draft_snapshot(draft_state)
-    return panel(await new_draft(mongo, draft_state))
+    return panel(await new_draft(mongo, draft_state), notice)
+
+
+@register_action("content_load_published", preload_state=False)
+@lightbulb.di.with_di
+async def load_published_copy(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if not target_matches_destination(state) or state.get("document") not in DOCUMENTS:
+        return panel(state, "The published post is unavailable in this posting channel.")
+    document = DOCUMENTS[state["document"]]
+    target = state["target"]
+    sections = list(target["original"])
+    media = dict(zip((slot for slot, _ in media_slots(document)), target["original_media"], strict=True))
+    try:
+        await render(document, sections, media=media)
+    except ValueError as exc:
+        return panel(state, str(exc))
+    # Keep the original saved snapshot so loading live text remains an unsaved
+    # draft until the editor explicitly saves it.
+    draft = await new_draft(mongo, dict(state, sections=sections, media=media))
+    return panel(draft, "Published text and images loaded into this draft. Save the template to keep them for future edits.")
 
 
 @register_action("content_destination", preload_state=False)
@@ -788,9 +921,23 @@ async def send_to_channel(
     except (hikari.HTTPError, OSError):
         draft = await new_draft(mongo, state)
         return panel(draft, "I could not confirm the post. Check the channel before sending again; this draft is still available.")
-    draft = await new_draft(mongo, state)
+    try:
+        await remember_published(mongo, state["guild_id"], document_key, channel_id, int(message.id), int(ctx.user.id))
+        remembered = True
+    except Exception:
+        # The post exists. Never offer an automatic second send when persistence
+        # fails; the administrator can reconnect using its link.
+        remembered = False
+    target = {
+        "channel_id": channel_id, "message_id": int(message.id),
+        "original": list(state["sections"]), "original_media": media_snapshot(rendered),
+    }
+    draft = await new_draft(mongo, dict(state, target=target))
     link = f"https://discord.com/channels/{state['guild_id']}/{channel_id}/{message.id}"
-    return panel(draft, f"Sent the current draft to <#{channel_id}>: [View posted message]({link}).")
+    notice = (f"Sent the current draft to <#{channel_id}>: [View posted message]({link})."
+              if remembered else
+              f"Sent the current draft to <#{channel_id}>: [View posted message]({link}). I could not remember its ID; reopen with this message link before updating it.")
+    return panel(draft, notice)
 
 
 @register_action("content_back_root", preload_state=False)
@@ -833,18 +980,28 @@ async def back_to_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
 @register_action("content_block", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def choose_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
-    state, problem = await load(ctx, mongo, action_id); values = getattr(ctx.interaction, "values", ())
+    state, problem = await load(ctx, mongo, action_id)
+    values = getattr(ctx.interaction, "values", ())
     if problem:
         await edit_modal_source(ctx, error_panel(problem)); return
-    if len(values) != 1 or not values[0].isdigit() or int(values[0]) >= len(state["sections"]):
-        await edit_modal_source(ctx, panel(state, "Choose one editable block.")); return
-    index = int(values[0]); document = DOCUMENTS[state["document"]]
-    choices = dict(editable_blocks(document, state["sections"]))
-    if index not in choices:
-        await edit_modal_source(ctx, panel(state, "Choose one editable block.")); return
-    title = choices[index]
-    draft = await new_draft(mongo, dict(state, selected_block=index))
-    await ctx.respond_with_modal(title=title[:45], custom_id=f"content_submit:{draft['_id']}", components=[hikari.impl.ModalActionRowBuilder().add_text_input("content", "Markdown", value=state["sections"][index], required=True, min_length=1, max_length=4000, style=hikari.TextInputStyle.PARAGRAPH)])
+    document = DOCUMENTS.get(state.get("document"))
+    groups = editable_groups(document, state["sections"]) if document else ()
+    if len(values) != 1 or not values[0].isdigit() or int(values[0]) >= len(groups):
+        await edit_modal_source(ctx, panel(state, "Choose one editable section.")); return
+    title, fields = groups[int(values[0])]
+    try:
+        modal_rows = [
+            hikari.impl.ModalActionRowBuilder().add_text_input(
+                f"content_{position}", label, value=modal_field_value(state["sections"][index], part),
+                required=True, min_length=1, max_length=4000,
+                style=hikari.TextInputStyle.PARAGRAPH if label == "Body" else hikari.TextInputStyle.SHORT,
+            )
+            for position, (index, label, part) in enumerate(fields)
+        ]
+    except ValueError as exc:
+        await edit_modal_source(ctx, panel(state, str(exc))); return
+    draft = await new_draft(mongo, dict(state, selected_fields=[list(field) for field in fields]))
+    await ctx.respond_with_modal(title=title[:45], custom_id=f"content_submit:{draft['_id']}", components=modal_rows)
 
 
 @register_action("content_media", preload_state=False)
@@ -1010,14 +1167,57 @@ async def submit_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
     state, problem = await load(ctx, mongo, action_id)
     if problem:
         await interaction.edit_initial_response(components=error_panel(problem), **NO_MENTIONS); return
-    if not isinstance(state.get("selected_block"), int):
-        await interaction.edit_initial_response(components=panel(state, "Choose a block before submitting an edit."), **NO_MENTIONS); return
-    value = next((str(item.value) for row in ctx.interaction.components for item in row if item.custom_id == "content"), "")
-    sections = list(state["sections"]); sections[state["selected_block"]] = value
-    try: await render(DOCUMENTS[state["document"]], sections)
+    fields = state.get("selected_fields")
+    if not fields and isinstance(state.get("selected_block"), int):
+        # Modals opened before the rollout may still be submitted.
+        fields = [[state["selected_block"], "Body", "full"]]
+        field_ids = ["content"]
+    else:
+        field_ids = [f"content_{position}" for position in range(len(fields or ())) ]
+    if not fields or len(fields) > 2:
+        await interaction.edit_initial_response(components=panel(state, "Choose a section before submitting an edit."), **NO_MENTIONS); return
+    submitted = {item.custom_id: str(item.value) for row in interaction.components for item in row}
+    if set(field_ids) - submitted.keys() or any(not submitted[key].strip() for key in field_ids):
+        await interaction.edit_initial_response(components=panel(state, "Complete all fields before saving this section."), **NO_MENTIONS); return
+    sections = list(state["sections"])
+    replacements = {}
+    for field_id, (index, _label, part) in zip(field_ids, fields, strict=True):
+        if not isinstance(index, int) or index < 0 or index >= len(sections) or part not in {"full", "title", "body"}:
+            await interaction.edit_initial_response(components=panel(state, "This section is no longer valid. Reopen the editor."), **NO_MENTIONS); return
+        replacements.setdefault(index, {})[part] = submitted[field_id]
+    for index, parts in replacements.items():
+        if "full" in parts:
+            sections[index] = parts["full"]
+        else:
+            try:
+                title = parts.get("title", modal_field_value(sections[index], "title"))
+                body = parts.get("body", modal_field_value(sections[index], "body"))
+            except ValueError as exc:
+                await interaction.edit_initial_response(components=panel(state, str(exc)), **NO_MENTIONS); return
+            sections[index] = f"{title}\n{body}"
+    try:
+        await render(DOCUMENTS[state["document"]], sections, media=state.get("media"))
     except ValueError as exc:
         await interaction.edit_initial_response(components=panel(state, str(exc)), **NO_MENTIONS); return
-    await interaction.edit_initial_response(components=panel(await new_draft(mongo, dict(state, sections=sections)), "Block updated."), **NO_MENTIONS)
+    draft = await new_draft(mongo, dict(state, sections=sections))
+    if target_matches_destination(draft):
+        await interaction.edit_initial_response(components=update_prompt(draft), **NO_MENTIONS)
+    else:
+        await interaction.edit_initial_response(components=panel(draft, "Section updated."), **NO_MENTIONS)
+
+
+def update_prompt(state):
+    target = state["target"]
+    link = f"https://discord.com/channels/{state['guild_id']}/{target['channel_id']}/{target['message_id']}"
+    buttons = hikari.impl.MessageActionRowBuilder()
+    buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_save_publish:{state['_id']}", label="Save and update post", emoji=button_emoji("Confirm"))
+    buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_document:{state['_id']}", label="Keep editing", emoji=button_emoji("Keep editing"))
+    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", DOCUMENTS[state["document"]].label)),
+        hikari.impl.TextDisplayComponentBuilder(content="## Section updated"),
+        hikari.impl.TextDisplayComponentBuilder(content=f"Save this draft as the template and apply it to the [published post]({link})?"),
+        buttons,
+    ])]
 
 
 async def _save(ctx, state, mongo):
@@ -1062,6 +1262,21 @@ async def preview(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **
         return panel(state, str(exc))
 
 
+@register_action("content_save_publish", preload_state=False)
+@lightbulb.di.with_di
+async def save_and_publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if not state.get("document") or not target_matches_destination(state):
+        return panel(state, "The saved post is unavailable in this posting channel. Your draft is unchanged.")
+    if not await _save(ctx, state, mongo):
+        return panel(state, "The template changed. Reopen the dashboard to avoid overwriting it; the post was not updated.")
+    saved_state = dict(state, revision=state["revision"] + 1)
+    saved_state["saved_snapshot"] = draft_snapshot(saved_state)
+    return await publish_state(ctx, saved_state, mongo, bot, saved_template=True)
+
+
 @register_action("content_publish", preload_state=False)
 @lightbulb.di.with_di
 async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_):
@@ -1070,6 +1285,12 @@ async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bo
         return error_panel(problem)
     if not state.get("target") or not state.get("document"):
         return panel(state, "Choose a linked post before updating it.")
+    return await publish_state(ctx, state, mongo, bot)
+
+
+async def publish_state(ctx, state, mongo, bot, *, saved_template=False):
+    if not target_matches_destination(state):
+        return panel(state, "The posting channel differs from this post's channel. Select its original channel before updating it.")
     target = state["target"]; document = DOCUMENTS[state["document"]]; token = uuid.uuid4().hex
     lease_key = f"content_publish:{target['channel_id']}:{target['message_id']}"
     try:
@@ -1109,8 +1330,9 @@ async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bo
             attachments=retained_attachments,
             **NO_MENTIONS,
         )
-    except (ValueError, hikari.NotFoundError, hikari.ForbiddenError) as exc:
-        return panel(state, str(exc) if isinstance(exc, ValueError) else "The bot cannot update that message. Your draft is still available.")
+    except (ValueError, hikari.HTTPError, OSError) as exc:
+        reason = str(exc) if isinstance(exc, ValueError) else "The bot cannot update that message."
+        return panel(state, f"{reason} The template was saved, but the post is unchanged." if saved_template else f"{reason} Your draft is still available.")
     finally:
         await mongo.bot_config.delete_one({"_id": lease_key, "token": token})
     return panel(
@@ -1121,5 +1343,5 @@ async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bo
                 original_media=media_snapshot(getattr(updated_message, "components", ())),
             ),
         )),
-        "Selected post updated.",
+        "Template saved and selected post updated." if saved_template else "Selected post updated.",
     )

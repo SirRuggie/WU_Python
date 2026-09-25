@@ -7,7 +7,7 @@ choice opens the FWA submenu. This private editor manages the **Win**, **Lose**,
 ## Workflow
 
 1. Choose a war outcome.
-2. Select a named text block and edit its Markdown. The compact copy text is
+2. Select a named section and edit its heading and body together. The compact copy text is
    separate so instructions copied into clan chat can stay concise.
 3. Optionally upload footer artwork or edit the six-digit accent color.
 4. Use Message preview or Copy preview to check the draft with example war details.

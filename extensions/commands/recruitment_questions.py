@@ -15,6 +15,7 @@ from extensions.components import register_action
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
 from utils.manage_ui import breadcrumb, button_emoji
+from utils.manage_text_sections import apply_modal, by_key, groups, legacy_single, modal_fields
 from utils.discord_file_upload import (
     FileUploadModalComponentBuilder,
     install_file_upload_capture,
@@ -128,6 +129,11 @@ def _dirty(state: dict) -> bool:
     return state.get("template") != state.get("saved_template")
 
 
+def _text_groups(variant: str):
+    native = content.default_template(variant)
+    return groups(content.BLOCK_LABELS[variant], native["sections"])
+
+
 def _editor(state: dict, notice: str | None = None) -> list:
     variant, sid, template = state["variant"], state["_id"], state["template"]
     selector = hikari.impl.MessageActionRowBuilder()
@@ -135,8 +141,8 @@ def _editor(state: dict, notice: str | None = None) -> list:
         f"recruit_question_block:{sid}", min_values=1, max_values=1,
         placeholder="Choose a text block",
     )
-    for index, label in enumerate(content.BLOCK_LABELS[variant]):
-        menu.add_option(label, str(index))
+    for group in _text_groups(variant):
+        menu.add_option(group.label[:100], group.key)
 
     multi_image = "media" in template
     selected_slot = state.get("selected_media_slot")
@@ -304,20 +310,21 @@ async def block(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     if problem:
         await ctx.respond(problem, ephemeral=True)
         return
-    key = _selected(ctx, {str(index) for index in range(len(state["template"]["sections"]))})
-    if key is None:
+    edit_groups = _text_groups(state["variant"])
+    key = _selected(ctx, {group.key for group in edit_groups})
+    group = by_key(edit_groups, key or "")
+    if group is None:
         await _ack_modal(ctx)
         await _modal_edit(ctx, _editor(state, "Choose one editable text block."))
         return
-    text = state["template"]["sections"][int(key)]
-    limit = 2000
+    fields = modal_fields(group, state["template"]["sections"])
     await ctx.respond_with_modal(
-        title=content.BLOCK_LABELS[state["variant"]][int(key)][:45],
+        title=group.label[:45],
         custom_id=f"recruit_question_submit:{action_id}|{key}",
         components=[hikari.impl.ModalActionRowBuilder().add_text_input(
-            "text", "Text", value=text, required=True, min_length=1,
-            max_length=limit, style=hikari.TextInputStyle.PARAGRAPH,
-        )],
+            field, label, value=value, required=True, min_length=1,
+            max_length=2000, style=hikari.TextInputStyle.PARAGRAPH,
+        ) for field, label, value in fields],
     )
 
 
@@ -333,13 +340,21 @@ async def submit(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
     if problem:
         await _modal_edit(ctx, _error(problem))
         return
-    options = {str(index) for index in range(len(state["template"]["sections"]))}
-    value = _modal_value(ctx, "text")
-    if key not in options or not value.strip():
+    group = by_key(_text_groups(state["variant"]), key) or legacy_single(
+        content.BLOCK_LABELS[state["variant"]], content.default_template(state["variant"])["sections"], key,
+    )
+    if group is None:
         await _modal_edit(ctx, _editor(state, "Choose one supported block and enter text."))
         return
+    try:
+        sections = apply_modal(group, state["template"]["sections"], {
+            field: _modal_value(ctx, field) for field, _label, _value in modal_fields(group, state["template"]["sections"])
+        })
+    except ValueError as exc:
+        await _modal_edit(ctx, _editor(state, str(exc)))
+        return
     template = copy.deepcopy(state["template"])
-    template["sections"][int(key)] = value
+    template["sections"] = sections
     try:
         content.validate_template(state["variant"], template)
     except ValueError as exc:

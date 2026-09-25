@@ -792,7 +792,7 @@ def test_modal_submit_updates_its_source_panel_without_a_followup(monkeypatch):
 
         assert events[0] == ("ack", hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
         assert events[1][0] == "edit"
-        assert any("Block updated." in text for text in _panel_texts(events[1][1]["components"]))
+        assert any("Section updated." in text for text in _panel_texts(events[1][1]["components"]))
         ctx.respond.assert_not_awaited()
         ctx.defer.assert_not_awaited()
 

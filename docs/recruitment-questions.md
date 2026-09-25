@@ -23,7 +23,7 @@ reusable templates. Saving does not send a message or rewrite previous posts.
 
 Manage Server or Administrator permission is required. Each editor action checks
 permissions, draft ownership, and server membership. Choose a message, edit its
-named text blocks, preview it privately, and save when ready. The editor uses
+named sections with heading and body together, preview it privately, and save when ready. The editor uses
 gold styling and includes Back and Management Home navigation. Leaving unsaved
 changes requires confirmation.
 

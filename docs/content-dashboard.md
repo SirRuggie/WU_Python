@@ -6,7 +6,7 @@ See [Server Management](manage-dashboard.md) for navigation and permissions.
 
 Recruit Gauntlet is a private, per-server Components V2 editor for Join the Family, About Us,
 WU Strike System, and Family Particulars. Administrators with Manage Server can
-edit named Markdown blocks, replace images in R2, preview the public layout,
+edit named sections with heading and body together, replace images in R2, preview the public layout,
 save a reusable template, and send the current draft to a selected channel.
 
 Manage CWL messages, artwork, destinations, and timing through **CWL** in
@@ -24,7 +24,10 @@ from template text under `content_destination:<server id>:<document>` in
 **Send to channel** publishes the current draft, including its text and artwork.
 **Save template** separately saves those edits as the starting point for future
 editing. Sending does not overwrite earlier posts or save the draft as a template.
-After a successful send, the editor provides a link to the new post.
+After a successful send, the editor provides a link and remembers the posted message
+under `content_published:<server id>:<document>` in `bot_config`. Reopening the
+document loads that exact bot-authored post as the update target. Changing the
+posting channel never silently retargets an unrelated message.
 
 The acknowledgement buttons and their role grants remain attached to the posted
 messages. The selected destination controls where this document is posted; it
@@ -34,6 +37,23 @@ Bot access to the destination and acknowledgement setup are checked before sendi
 The dashboard replaces `/setup recruit-aboutus`, `/setup recruit-strikesystem`,
 and `/setup recruit-familyparticulars`; those three slash commands are retired.
 `/setup recruit-check` remains available for onboarding diagnostics.
+
+## Edit a section and update its post
+
+The dropdown lists logical sections rather than separate heading/body entries.
+A section's modal puts **Heading / Title** above **Body**. Decorations are preserved;
+a section that genuinely contains only a heading does not invent a body.
+Existing stored text layouts remain compatible.
+
+After a text edit, the editor offers to update the linked published message.
+The confirmation identifies that post; updates edit its existing message ID,
+retain acknowledgement buttons and needed attachments, and guard against a post
+that changed elsewhere. Deleted or inaccessible posts produce actionable feedback,
+not an automatic duplicate. Template saving and publishing results are reported
+separately when one succeeds and the other fails.
+
+Existing Join the Family, About Us, and WU Strike System posts have been linked.
+Family Particulars will be tracked on its first successful **Send to channel**.
 
 ## Replace an image
 

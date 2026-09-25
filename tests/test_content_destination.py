@@ -140,6 +140,9 @@ def test_native_channel_select_persists_per_document_and_posts_current_draft_onc
     run(content.send_to_channel(context(), selected_id, mongo=db, bot=client))
     client.rest.create_message.assert_awaited_once()
     assert "content_send:" + selected_id in db.bot_config.rows
+    published = db.bot_config.rows["content_published:20:about-us"]
+    assert (published["guild_id"], published["document"], published["channel_id"], published["message_id"]) == (20, "about-us", 123, 777)
+    assert run(content.published_for(db, 20, "about-us")) == {"channel_id": 123, "message_id": 777}
 
 
 def test_invalid_selection_permission_and_cross_guild_state_cannot_send(monkeypatch):
