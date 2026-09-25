@@ -15,7 +15,7 @@ def _count_components(items):
 
 def test_native_document_baselines_keep_original_layout_and_text_totals():
     async def check():
-        expected = {"about-us": (12, 2754), "strike-system": (12, 3585), "family-particulars": (28, 3992)}
+        expected = {"about-us": (12, 2754), "strike-system": (12, 3461), "family-particulars": (28, 3992)}
         expected_components = {"about-us": 22, "strike-system": 29, "family-particulars": 40}
         for key in expected:
             document = content.DOCUMENTS[key]

@@ -180,3 +180,10 @@ changing it. This convention currently applies to:
 
 - Join the Family role `1551011479577165844` in About Us `1547241886954168430`.
 - About Us role `1553110276251979937` in WU Strike System `1547242610819604560`.
+
+
+WU Strike System grants role `1553110508746448956` and privately offers
+**Continue to Family Particulars** for channel `1547242699873325116`.
+The role follows the same read-only convention: View Channel and Read Message
+History allowed, Send Messages denied. Its saved template and future posts use
+button-based next-step instructions, and the handler survives restarts.

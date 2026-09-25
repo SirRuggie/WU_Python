@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.manage_ui import ICONS
 from utils.recruit_setup_checks import require_manage_server, require_ready
 
 from hikari.impl import (
@@ -21,11 +22,13 @@ from hikari.impl import (
     SeparatorComponentBuilder as Separator,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
+    LinkButtonBuilder as LinkButton,
 )
 
 # Configuration
-STRIKE_SYSTEM_ROLE_ID = 1078723854303756302  # Strike system accepted role
-FAMILY_PARTICULARS_CHANNEL_ID = 1078723854316355603  # Channel to direct users to
+STRIKE_SYSTEM_ROLE_ID = 1553110508746448956
+FAMILY_PARTICULARS_CHANNEL_ID = 1547242699873325116
+STRIKE_SYSTEM_GUILD_ID = 644963518025826315
 
 
 def build_strikesystem(sections=None, *, media=None, action_id="preview", preview=False):
@@ -160,11 +163,8 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     text("## 📜 **ACKNOWLEDGMENT**"),
                     Separator(divider=True),
                     text((
-                        "To acknowledge you have read and agree to abide by the Warriors United Strike System, "
-                        "react to the ✅ below and follow this link...\n\n"
-                        "https://discord.com/channels/1078723854303756298/1078723854316355603\n\n"
-                        "and head on over to check out our day-to-day family particulars\n"
-                        "**Read through and follow the next prompt!**"
+                        "Choose **I understand - Continue** to confirm you have read and agree to follow the Warriors United Strike System, "
+                        "then continue to Family Particulars for the next Recruit Gauntlet step."
                     )),
                     ActionRow(
                         components=[
@@ -172,7 +172,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                                 style=hikari.ButtonStyle.SUCCESS,
                                 custom_id=f"strikesystem_acknowledge:{action_id}",
                                 label="I understand - Continue",
-                                emoji="✅"
+                                emoji=hikari.Snowflake(ICONS["yes"])
                             )
                         ]
                     )
@@ -225,55 +225,95 @@ class RecruitStrikeSystem(
         await ctx.respond("WU Strike System posted.", ephemeral=True)
 
 
-@register_action("strikesystem_acknowledge", no_return=True)
+def _continue_components(guild_id: int, message: str):
+    """Build the private V2 prompt that sends members to the next step."""
+    return [
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                Text(content="## :shield: Next step unlocked"),
+                Text(content=message),
+                ActionRow(components=[
+                    LinkButton(
+                        url=f"https://discord.com/channels/{guild_id}/{FAMILY_PARTICULARS_CHANNEL_ID}",
+                        label="Continue to Family Particulars",
+                        emoji=hikari.Snowflake(ICONS["open"]),
+                    )
+                ]),
+            ],
+        )
+    ]
+
+
+async def _private_continue(ctx, guild_id: int, message: str) -> None:
+    """Respond privately without altering the published onboarding panel."""
+    await ctx.interaction.execute(
+        components=_continue_components(guild_id, message),
+        flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
+    )
+
+
+async def _private_error(ctx, message: str) -> None:
+    """Send an actionable private error without exposing internal failures."""
+    await ctx.interaction.execute(content=message, flags=hikari.MessageFlag.EPHEMERAL)
+
+
+@register_action("strikesystem_acknowledge", no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def on_strikesystem_acknowledge(
     action_id: str,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    **kwargs
-):
-    """Handle the acknowledge button click"""
-    ctx = kwargs.get("ctx")
-    
-    guild_id = ctx.interaction.guild_id
-    user_id = ctx.user.id
-    
-    # Get the guild and member
-    guild = bot.cache.get_guild(guild_id)
-    if not guild:
-        await ctx.respond("❌ Unable to find the server.", ephemeral=True)
-        return
-    
-    member = guild.get_member(user_id)
-    if not member:
-        await ctx.respond("❌ Unable to find your member profile.", ephemeral=True)
-        return
-    
-    # Check if user already has the role
-    if STRIKE_SYSTEM_ROLE_ID in member.role_ids:
-        await ctx.respond(
-            f"✅ You already have access! Please continue to <#{FAMILY_PARTICULARS_CHANNEL_ID}>",
-            ephemeral=True
-        )
-        return
-    
-    # Add the role
+    **kwargs,
+) -> None:
+    """Grant Family Particulars access and privately offer the Family Particulars link."""
+    del action_id
+    ctx = kwargs["ctx"]
+    interaction_guild_id = getattr(ctx.interaction, "guild_id", None)
+    user_id = int(ctx.user.id)
+
     try:
-        await bot.rest.add_role_to_member(
-            guild=guild_id,
-            user=user_id,
-            role=STRIKE_SYSTEM_ROLE_ID
-        )
-        
-        await ctx.respond(
-            f"✅ Role assigned! Please continue to <#{FAMILY_PARTICULARS_CHANNEL_ID}> to check out our day-to-day family particulars.",
-            ephemeral=True
-        )
-    except Exception as e:
-        await ctx.respond(
-            f"❌ Failed to assign role: {str(e)}",
-            ephemeral=True
-        )
+        target_channel = await bot.rest.fetch_channel(FAMILY_PARTICULARS_CHANNEL_ID)
+    except hikari.HTTPError:
+        await _private_error(ctx, "I could not open the next onboarding channel right now. Please try again shortly.")
+        return
+    except Exception:
+        await _private_error(ctx, "I could not verify the next onboarding channel right now. Please try again shortly.")
+        return
+
+    target_guild_id = getattr(target_channel, "guild_id", None)
+    if (
+        interaction_guild_id is None
+        or target_guild_id is None
+        or int(interaction_guild_id) != int(target_guild_id)
+        or int(target_guild_id) != STRIKE_SYSTEM_GUILD_ID
+    ):
+        await _private_error(ctx, "This Strike System panel can only be used in the Warriors United server.")
+        return
+
+    guild_id = int(target_guild_id)
+    try:
+        member = await bot.rest.fetch_member(guild_id, user_id)
+    except hikari.HTTPError:
+        await _private_error(ctx, "I could not find your member profile in this server. Please try again shortly.")
+        return
+    except Exception:
+        await _private_error(ctx, "I could not verify your member profile right now. Please try again shortly.")
+        return
+
+    if STRIKE_SYSTEM_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
+        await _private_continue(ctx, guild_id, "You already have access to Family Particulars. Continue to Family Particulars for the next Recruit Gauntlet step.")
+        return
+
+    try:
+        await bot.rest.add_role_to_member(guild=guild_id, user=user_id, role=STRIKE_SYSTEM_ROLE_ID)
+    except hikari.HTTPError:
+        await _private_error(ctx, "I could not grant access to Family Particulars right now. Please try again shortly.")
+        return
+    except Exception:
+        await _private_error(ctx, "I could not grant access to Family Particulars right now. Please try again shortly.")
+        return
+
+    await _private_continue(ctx, guild_id, "Continue to Family Particulars for the next Recruit Gauntlet step.")
 
 
 loader.command(setup)
