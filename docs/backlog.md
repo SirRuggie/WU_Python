@@ -223,7 +223,7 @@ outage, and emit a recovery marker after the next successful poll. Shutdown
 cancels and awaits both startup recovery and the poll task.
 
 Administrators can inspect actual task, startup, key, and poll state with
-`/band-monitor-status`. Search the bot journal with:
+`/manage` → **FWA** → **Sync & Reminders** → **BAND Monitor**. Search the bot journal with:
 
 ```bash
 sudo journalctl -u wu-bot -o cat --since "24 hours ago" | grep -E "band_post_monitor|monitor_started|monitor_poll_failed|monitor_poll_recovered|monitor_stopped"

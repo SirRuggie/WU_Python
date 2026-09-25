@@ -98,7 +98,8 @@ base-link, image, description, and Town Hall editor. **War Messages** edits the
 four reusable war-announcement templates. **Blacklist** browses the shared
 blacklist and lets FWA Clan Reps add or remove clans. **Points Monitor** controls automatic
 points monitoring and shows current status and watched-clan results.
-**Sync & Reminders** controls the BAND calendar poller and signup-panel destination.
+**Sync & Reminders** controls the BAND calendar poller and signup-panel destination,
+and links to the separate BAND post monitor.
 
 The FWA entry is available to server members for read-only Blacklist access;
 other sections remain locked unless their existing role or permission gate is met. Each section returns with **Back to FWA** and the
@@ -119,6 +120,14 @@ results, Enable/Disable, a feed check that sends no messages, an explicit test D
 to the clicking administrator, a native signup-channel dropdown, and a BAND
 fallback-link editor. Channel selection checks the bot's destination permissions.
 Return with **Back to FWA** or **Management Home**.
+
+**BAND Monitor** replaces `/band-monitor-status` and `/toggle-debug`. Its private
+Administrator-only screen shows task status, startup recovery, BAND key availability
+(without exposing the key), poll health, last successful poll, and last error.
+Refresh reads current runtime state. Explicit Enable debug / Disable debug controls
+set verbose post-monitor logging; they do not change calendar reminders. Debug
+is runtime-only and resets to the `BAND_DEBUG` environment default on restart.
+Back returns to Sync & Reminders; Management Home returns to the main dashboard.
 
 Members keep choosing their own reminders: one hour before, ten minutes before,
 and at sync time. These are displayed as information, not an arbitrary offset

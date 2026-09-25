@@ -12,6 +12,7 @@ import lightbulb
 
 from extensions.components import register_action
 from extensions.tasks import band_sync_ical as sync
+from extensions.tasks import band_monitor as monitor
 from utils.band_ical_parser import DISCOVERY_OFFSET, discord_timestamp
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT
@@ -176,12 +177,71 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
     rows.append(channel_row)
     rows.append(_buttons(
         (f"fwa_sync_url:{sid}", "Set BAND fallback link", hikari.ButtonStyle.SECONDARY, False),
+        (f"fwa_band_monitor:{sid}", "BAND Monitor", hikari.ButtonStyle.SECONDARY, False),
     ))
     rows.append(hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL))
     rows.append(_buttons(
         (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
     ))
+    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+
+
+def _monitor_timestamp(value: Any) -> str:
+    """Render a runtime timestamp without exposing untrusted object details."""
+    if not isinstance(value, datetime):
+        return "Never"
+    try:
+        return discord_timestamp(value, "R")
+    except (OverflowError, OSError, ValueError):
+        return "Unknown"
+
+
+async def _band_monitor_panel(state: dict, notice: str | None = None) -> list:
+    """Render runtime-only BAND post monitor controls without touching Mongo."""
+    task_running = bool(monitor.band_check_task and not monitor.band_check_task.done())
+    startup_status = (
+        monitor.startup_reconciler.status_text()
+        if monitor.startup_reconciler is not None else "Stopped"
+    )
+    health = monitor.poll_health
+    debug = bool(monitor.DEBUG_MODE)
+    rows = [
+        hikari.impl.TextDisplayComponentBuilder(content=(
+            breadcrumb("FWA", "Sync & Reminders", "BAND Post Monitor")
+            + "\n## BAND Post Monitor"
+        )),
+        hikari.impl.TextDisplayComponentBuilder(content=(
+            f"**Task:** {'Running' if task_running else 'Not running'} · "
+            f"**Startup recovery:** {_safe(startup_status, 110)}\n"
+            f"**BAND key:** {'Resolved' if monitor.BAND_KEY else 'Missing'} · "
+            f"**Poll health:** {_safe(getattr(health, 'state', 'unknown'), 35)}"
+        )),
+        hikari.impl.TextDisplayComponentBuilder(content=(
+            f"**Last successful poll:** {_monitor_timestamp(getattr(health, 'last_success_at', None))}\n"
+            f"**Last error:** {_safe(getattr(health, 'last_error', None) or 'None', 180)}"
+        )),
+        hikari.impl.TextDisplayComponentBuilder(content=(
+            f"**Debug logging:** {'ON' if debug else 'OFF'}\n"
+            "Debug logging resets to the startup default when the bot restarts. "
+            "It affects post monitor logging only, not reminders."
+        )),
+    ]
+    if notice:
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {_safe(notice, 350)}"))
+    sid = state["_id"]
+    rows.extend([
+        _buttons(
+            (f"fwa_band_monitor_debug:{sid}|on", "Enable debug", hikari.ButtonStyle.SECONDARY, debug),
+            (f"fwa_band_monitor_debug:{sid}|off", "Disable debug", hikari.ButtonStyle.SECONDARY, not debug),
+            (f"fwa_band_monitor_refresh:{sid}", "Refresh", hikari.ButtonStyle.SECONDARY, False),
+        ),
+        hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
+        _buttons(
+            (f"fwa_sync_refresh:{sid}", "Back to Sync & Reminders", hikari.ButtonStyle.SECONDARY, False),
+            (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
+        ),
+    ])
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
 
 
@@ -405,3 +465,37 @@ async def url_submit(ctx: Any, action_id: str,
     await ctx.interaction.edit_initial_response(components=response, **NO_MENTIONS)
 
 
+@register_action("fwa_band_monitor", preload_state=False)
+@lightbulb.di.with_di
+async def band_monitor_panel(ctx: Any, action_id: str,
+                             mongo: MongoClient = lightbulb.di.INJECTED, **_: Any) -> list:
+    state, problem = await _state(ctx, mongo, action_id)
+    return _error(problem) if problem else await _band_monitor_panel(await _next(mongo, state))
+
+
+@register_action("fwa_band_monitor_refresh", preload_state=False)
+@lightbulb.di.with_di
+async def band_monitor_refresh(ctx: Any, action_id: str,
+                               mongo: MongoClient = lightbulb.di.INJECTED, **_: Any) -> list:
+    state, problem = await _state(ctx, mongo, action_id)
+    return (_error(problem) if problem else
+            await _band_monitor_panel(state, "Status refreshed."))
+
+
+@register_action("fwa_band_monitor_debug", preload_state=False)
+@lightbulb.di.with_di
+async def band_monitor_debug(ctx: Any, action_id: str,
+                             mongo: MongoClient = lightbulb.di.INJECTED, **_: Any) -> list:
+    sid, sep, choice = action_id.partition("|")
+    state, problem = await _state(ctx, mongo, sid)
+    if problem:
+        return _error(problem)
+    if not sep or choice not in {"on", "off"}:
+        return await _band_monitor_panel(state, "Choose Enable debug or Disable debug.")
+    desired = choice == "on"
+    already_set = bool(monitor.DEBUG_MODE) == desired
+    monitor.DEBUG_MODE = desired
+    status = "ON" if desired else "OFF"
+    notice = (f"Debug logging is already {status}." if already_set
+              else f"Debug logging set to {status}.")
+    return await _band_monitor_panel(await _next(mongo, state), notice)

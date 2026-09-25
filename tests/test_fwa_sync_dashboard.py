@@ -8,6 +8,7 @@ import hikari
 
 from extensions.commands import fwa_sync_dashboard as dashboard
 from extensions.tasks import band_sync_ical as sync
+from extensions.tasks import band_monitor as monitor
 
 
 def run(coroutine):
@@ -233,3 +234,63 @@ def test_feed_check_result_is_bounded_under_discord_limits(monkeypatch):
     assert all(len(item) <= 2000 for item in texts)
     assert sum(map(len, texts)) <= 4000
     assert len([item for item in texts if "<t:" in item]) == 10
+
+
+
+def test_band_monitor_panel_reports_runtime_only_status_and_sanitizes(monkeypatch):
+    env = fixture(monkeypatch)
+    monkeypatch.setattr(monitor, "band_check_task", None)
+    monkeypatch.setattr(monitor, "startup_reconciler", SimpleNamespace(status_text=lambda: "Recovering <details>"))
+    monkeypatch.setattr(monitor, "BAND_KEY", "private-key-must-not-render")
+    monkeypatch.setattr(monitor, "DEBUG_MODE", True)
+    monkeypatch.setattr(monitor, "poll_health", SimpleNamespace(
+        state="unhealthy", last_success_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        last_error="bad @error <private>",
+    ))
+    text = built(run(dashboard._band_monitor_panel(env.state)))
+    assert "Task:** Not running" in text
+    assert "Startup recovery:** Recovering ‹details›" in text
+    assert "BAND key:** Resolved" in text and "private-key-must-not-render" not in text
+    assert "Poll health:** unhealthy" in text and "Last successful poll:** <t:" in text
+    assert "bad ＠error ‹private›" in text
+    assert "Debug logging:** ON" in text and "resets to the startup default" in text
+    assert "post monitor logging only, not reminders" in text
+    assert "fwa_band_monitor_refresh:start" in text
+    assert "fwa_sync_refresh:start" in text and "manage_home:home" in text
+
+
+def test_band_monitor_controls_guard_state_refresh_without_db_write_and_set_debug(monkeypatch):
+    env = fixture(monkeypatch)
+    monkeypatch.setattr(monitor, "band_check_task", None)
+    monkeypatch.setattr(monitor, "startup_reconciler", None)
+    monkeypatch.setattr(monitor, "BAND_KEY", None)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    monkeypatch.setattr(monitor, "poll_health", SimpleNamespace(state="stopped", last_success_at=None, last_error=None))
+    before = set(env.states)
+    refreshed = run(dashboard.band_monitor_refresh(env.ctx, "start", mongo=env.mongo))
+    assert set(env.states) == before
+    assert "Status refreshed" in built(refreshed)
+    assert not env.mongo.fwa_sync_config.updates
+    enabled = run(dashboard.band_monitor_debug(env.ctx, "start|on", mongo=env.mongo))
+    assert monitor.DEBUG_MODE is True and "set to ON" in built(enabled)
+    repeated = run(dashboard.band_monitor_debug(env.ctx, "start|on", mongo=env.mongo))
+    assert monitor.DEBUG_MODE is True and "already ON" in built(repeated)
+    disabled = run(dashboard.band_monitor_debug(env.ctx, "start|off", mongo=env.mongo))
+    assert monitor.DEBUG_MODE is False and "set to OFF" in built(disabled)
+    invalid = run(dashboard.band_monitor_debug(env.ctx, "start|toggle", mongo=env.mongo))
+    assert "Choose Enable debug or Disable debug" in built(invalid)
+    env.ctx.user.id = 2
+    denied = run(dashboard.band_monitor_debug(env.ctx, "start|on", mongo=env.mongo))
+    assert "Open your own" in built(denied) and monitor.DEBUG_MODE is False
+
+    env.ctx.user.id = 1
+    env.ctx.interaction.guild_id = 101
+    assert "Open your own" in built(run(dashboard.band_monitor_debug(env.ctx, "start|on", mongo=env.mongo)))
+    env.ctx.interaction.guild_id = 100
+    env.ctx.member.permissions = hikari.Permissions.NONE
+    assert "Administrator permission" in built(run(dashboard.band_monitor_debug(env.ctx, "start|on", mongo=env.mongo)))
+    env.ctx.member.permissions = hikari.Permissions.ADMINISTRATOR
+    del env.states["start"]
+    assert "Open your own" in built(run(dashboard.band_monitor_debug(env.ctx, "start|on", mongo=env.mongo)))
+    assert monitor.DEBUG_MODE is False
+    assert not env.mongo.fwa_sync_config.updates

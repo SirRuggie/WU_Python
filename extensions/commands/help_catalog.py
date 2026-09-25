@@ -126,7 +126,6 @@ HELP_CATEGORIES = {
             ("/say", "Send a message as the bot. Restricted role only."),
             ("/steal", "Copy an emoji into the bot application."),
             ("/reboot", "Restart the bot process. Owner only."),
-            ("/toggle-debug", "Toggle verbose BAND monitor logging. Admin only."),
         ],
     },
 }

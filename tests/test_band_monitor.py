@@ -332,3 +332,11 @@ def test_shutdown_awaits_band_monitor_task(monkeypatch):
         assert band_monitor.band_check_task is None
 
     asyncio.run(scenario())
+
+
+def test_band_monitor_slash_commands_retired():
+    assert not hasattr(band_monitor, "BandMonitorStatus")
+    assert not hasattr(band_monitor, "ToggleDebug")
+    from extensions.commands.help_catalog import command_paths
+    assert "/toggle-debug" not in command_paths()
+    assert "/band-monitor-status" not in command_paths()
