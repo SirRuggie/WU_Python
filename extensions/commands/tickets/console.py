@@ -1398,6 +1398,8 @@ async def request_hub_refresh(
 ) -> int:
     """Durably request one coalesced refresh and return its revision."""
 
+    if testing_service.is_test_scope(mongo):
+        return 0
     revision = await _mark_hub_dirty(mongo, reason=reason, force=force)
     _schedule_hub_refresh(bot, mongo)
     return revision
@@ -4644,7 +4646,7 @@ async def ticket_console_search_again(
     await _open_find_modal(ctx, action_id)
 
 
-@register_action("ticket_v2_test_detail", preload_state=False)
+@register_action("ticket_v2_test_detail", preload_state=False, opens_modal=True, no_return=True)
 @lightbulb.di.with_di
 async def ticket_test_detail(
     ctx: lightbulb.components.MenuContext,
@@ -4652,18 +4654,22 @@ async def ticket_test_detail(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ):
-    """Open the same private staff detail controls from an isolated test thread."""
+    """Keep the shared entry button while opening private per-tester controls."""
+    await ctx.defer(ephemeral=True)
     if not testing_service.is_test_scope(mongo):
-        return _notice("Test ticket unavailable", "This is not a test ticket.", accent=ACCENT_RED)
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
-        return _notice("Test access required", "This test window is closed or you are not allowlisted.", accent=ACCENT_RED)
-    ticket_doc = await store.find_one(mongo, {"_id": action_id, "mode": testing_service.MODE})
-    if (ticket_doc is None or not testing_service.is_test_ticket(ticket_doc)
-        or _location_id(ticket_doc, staff=True) != _int(getattr(ctx, "channel_id", 0))):
-        return _notice("Test ticket unavailable", "Open the controls in its test staff thread.", accent=ACCENT_RED)
-    return await _ticket_detail_panel(
-        mongo, ticket_doc, owner_id=int(ctx.user.id), guild_id=int(ctx.guild_id),
-    )
+        panel = _notice("Test ticket unavailable", "This is not a test ticket.", accent=ACCENT_RED)
+    elif not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        panel = _notice("Test access required", "This test window is closed or you are not allowlisted.", accent=ACCENT_RED)
+    else:
+        ticket_doc = await store.find_one(mongo, {"_id": action_id, "mode": testing_service.MODE})
+        if (ticket_doc is None or not testing_service.is_test_ticket(ticket_doc)
+            or _location_id(ticket_doc, staff=True) != _int(getattr(ctx, "channel_id", 0))):
+            panel = _notice("Test ticket unavailable", "Open the controls in its test staff thread.", accent=ACCENT_RED)
+        else:
+            panel = await _ticket_detail_panel(
+                mongo, ticket_doc, owner_id=int(ctx.user.id), guild_id=int(ctx.guild_id),
+            )
+    await ctx.interaction.edit_initial_response(components=panel)
 
 
 @register_action("ticket_v2_console_view", requires_state=True)

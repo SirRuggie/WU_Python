@@ -25,7 +25,7 @@ from hikari.impl import (
 
 from extensions.components import register_action
 from extensions.commands.tickets import perms, ticket
-from extensions.commands.tickets import testing_service
+from extensions.commands.tickets import testing_service, thread_service
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
 from utils.manage_ui import button_emoji
@@ -342,7 +342,7 @@ async def _open_ticket(ctx: Any, action_id: str, mongo: MongoClient, bot: hikari
         # The control path owns the interaction acknowledgement and response so
         # ticket creation retains the same parent and permission checks as prod.
         await control.open_test_ticket(ctx, bot, mongo, ticket_type)
-    except ValueError as exc:
+    except (ValueError, thread_service.ThreadTicketError) as exc:
         await ctx.respond(str(exc), ephemeral=True)
 
 

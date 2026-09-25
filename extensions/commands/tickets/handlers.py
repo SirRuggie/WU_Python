@@ -18,7 +18,7 @@ from pymongo.errors import DuplicateKeyError
 from extensions.commands.tickets import loader, thread_intake_ready, ticket
 from extensions.commands.tickets import resolve
 from extensions.commands.tickets import store
-from extensions.commands.tickets import thread_service
+from extensions.commands.tickets import thread_service, testing_service
 from extensions.commands import ticket_runtime
 from extensions.components import register_action
 from utils.mongo import MongoClient
@@ -227,6 +227,8 @@ async def handle_ticket_thread_deleted(
         return
     if role == "candidate" and ticket.get("status") == "open":
         await _release_slot_for_missing_thread(mongo, ticket["_id"])
+    if testing_service.is_test_scope(mongo):
+        return  # Test cleanup owns both threads; do not recreate staff context.
     await thread_service.notify_console_after_change(
         bot, mongo, ticket, reason="ticket thread removed"
     )

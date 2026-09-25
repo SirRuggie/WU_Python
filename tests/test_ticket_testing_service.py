@@ -297,3 +297,41 @@ def test_actual_opening_delivery_reuses_questions_and_deduplicates():
     assert "Candidate cannot see" not in staff_text
     assert all(message.kwargs.get("role_mentions") is False
                for messages in rest.messages.values() for message in messages)
+
+
+def test_cleanup_of_reused_applicant_lease_deletes_each_new_test_pair():
+    scoped=Scope(PARENTS)
+    channels={20:SimpleNamespace(id=20,guild_id=10,topic=PARENTS['marker']),
+              21:SimpleNamespace(id=21,guild_id=10,topic=PARENTS['marker'])}
+    for number in (1,2):
+        channels[number*100+1]=SimpleNamespace(id=number*100+1,guild_id=10,parent_id=20,name=f'Main TEST00{number}')
+        channels[number*100+2]=SimpleNamespace(id=number*100+2,guild_id=10,parent_id=21,name=f'Main TEST00{number} staff')
+    rest=Rest(channels)
+    async def check():
+        for number in (1,2):
+            row={'_id':'thread:30:main','mode':'test','window_generation':'window',
+                 'ticket_number':number,'candidate_thread_id':number*100+1,
+                 'staff_thread_id':number*100+2,'candidate_parent_id':20,'staff_parent_id':21}
+            assert await testing_service._cleanup_row(SimpleNamespace(rest=rest),scoped,'lease',row)
+    asyncio.run(check())
+    assert rest.deleted==[101,102,201,202]
+
+
+def test_expired_orphan_reservation_is_cleaned_without_discord_mutations():
+    scoped=Scope(PARENTS)
+    orphan={'_id':'ticket-open:30:main','mode':'test','state':'reserved',
+            'workflow_id':'thread:30:main','owner_token':'orphan-owner',
+            'window_generation':'old','cleanup_at':datetime(2000,1,1,tzinfo=timezone.utc)}
+    class Cursor:
+        def __init__(self,rows): self.rows=rows
+        def limit(self,_):return self
+        async def to_list(self,**_):return self.rows
+    scoped.tickets.find=lambda query:Cursor([])
+    scoped.ticket_creation_state.find=lambda query:Cursor([])
+    scoped.ticket_open_slots.find=lambda query:Cursor([orphan])
+    rest=Rest({})
+    asyncio.run(testing_service.cleanup_due(SimpleNamespace(rest=rest),scoped))
+    assert rest.deleted==[]
+    assert scoped.ticket_open_slots.deleted==[{
+        '_id':'ticket-open:30:main','mode':'test','state':'reserved',
+        'owner_token':'orphan-owner','window_generation':'old'}]

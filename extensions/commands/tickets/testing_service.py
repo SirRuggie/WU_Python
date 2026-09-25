@@ -183,6 +183,9 @@ async def request_clear(scoped: TestTicketMongo) -> None:
     await scoped.ticket_creation_state.update_many(
         {"mode": MODE}, {"$set": {"cleanup_at": now}},
     )
+    await scoped.ticket_open_slots.update_many(
+        {"mode": MODE}, {"$set": {"cleanup_at": now}},
+    )
 
 
 class TestRESTGuard:
@@ -351,6 +354,7 @@ async def claim_test_slot(
         document = {
             "_id": slot_id, "schema_version": 1, "mode": MODE,
             "window_generation": window.get("generation"),
+            "cleanup_at": window.get("cleanup_at"),
             "user_id": int(user_id), "ticket_type": ticket_type,
             "route": ticket_runtime.ROUTE_THREAD, "guild_id": int(guild_id),
             "workflow_id": workflow_id, "rollout_revision": 1,
@@ -397,12 +401,37 @@ async def cleanup_due(bot: Any, scoped: TestTicketMongo, *, now: datetime | None
                 completed += 1
         except Exception as error:
             await _record_cleanup_error(scoped, "lease", row, error)
+    # A crash between the slot claim and creation lease must not permanently
+    # block this tester. Remove expired reservations only if no durable pair
+    # or ticket owns them; ordinary pair cleanup handles all other slots.
+    slots = await scoped.ticket_open_slots.find(query).limit(100).to_list(length=100)
+    for slot in slots:
+        if slot.get("ticket_id") or slot.get("state") != "reserved":
+            continue
+        lease = await scoped.ticket_creation_state.find_one({
+            "_id": slot.get("workflow_id"), "mode": MODE,
+        })
+        if lease is None:
+            await scoped.ticket_open_slots.delete_one({
+                "_id": slot["_id"], "mode": MODE, "state": "reserved",
+                "owner_token": slot.get("owner_token"),
+                "window_generation": slot.get("window_generation"),
+            })
     return completed
+
+
+def _cleanup_checkpoint_id(source, row):
+    suffix = str(row['_id'])
+    if source == "lease":
+        # Applicant lease IDs are reused; a later TEST pair must get fresh
+        # deletion checkpoints instead of inheriting an earlier pair's success.
+        suffix += f":{row.get('window_generation')}:{row.get('ticket_number')}"
+    return f"test_cleanup:{source}:{suffix}"
 
 
 async def _record_cleanup_error(scoped, source, row, error):
     await scoped.ticket_automation_state.update_one(
-        {"_id": f"test_cleanup:{source}:{row['_id']}"},
+        {"_id": _cleanup_checkpoint_id(source, row)},
         {"$set": {"mode": MODE, "kind": "test_cleanup", "state": "retry",
                   "last_error": type(error).__name__,
                   "updated_at": datetime.now(timezone.utc)},
@@ -416,7 +445,7 @@ async def _cleanup_row(bot: Any, scoped: TestTicketMongo, source: str, row: Mapp
 
     if row.get("mode") != MODE:
         return False
-    checkpoint_id = f"test_cleanup:{source}:{row['_id']}"
+    checkpoint_id = _cleanup_checkpoint_id(source, row)
     checkpoint = await scoped.ticket_automation_state.find_one({"_id": checkpoint_id}) or {}
     candidate_id = int(
         (row.get("location") or {}).get("id") or row.get("candidate_thread_id") or 0
@@ -465,6 +494,10 @@ async def _cleanup_row(bot: Any, scoped: TestTicketMongo, source: str, row: Mapp
             upsert=True,
         )
     if source == "ticket":
+        await scoped.ticket_automation_state.delete_many({
+            "kind": "ticket_staff_context", "ticket_id": row["_id"],
+        })
+        await scoped.component_state.delete_many({"ticket_id": row["_id"]})
         await scoped.tickets.delete_one({"_id": row["_id"], "mode": MODE})
         await scoped.ticket_open_slots.delete_many({"ticket_id": row["_id"], "mode": MODE})
     else:

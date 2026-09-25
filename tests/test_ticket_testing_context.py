@@ -104,3 +104,22 @@ def test_current_window_routes_state_and_nested_di_to_test_database(monkeypatch)
     ctx=SimpleNamespace(interaction=interaction,defer=AsyncMock())
     asyncio.run(components._dispatch(ctx,object()))
     assert seen==[('ticket_v2_console_view:new',scope_db,scope_db,True)]
+
+
+def test_shared_staff_button_opens_private_controls_for_each_tester(monkeypatch):
+    from extensions.commands.tickets import console
+    from extensions import components
+    mongo=SimpleNamespace(is_ticket_test_scope=True)
+    ctx=SimpleNamespace(defer=AsyncMock(),interaction=SimpleNamespace(edit_initial_response=AsyncMock()),
+                        user=SimpleNamespace(id=3),guild_id=10,channel_id=20,member=object())
+    doc={'_id':'ticket_1','mode':'test','location':{'staff_space_id':20}}
+    monkeypatch.setattr(console.perms,'is_recruiter',AsyncMock(return_value=True))
+    monkeypatch.setattr(console.store,'find_one',AsyncMock(return_value=doc))
+    panel=AsyncMock(return_value=['private panel'])
+    monkeypatch.setattr(console,'_ticket_detail_panel',panel)
+    asyncio.run(console.ticket_test_detail(ctx=ctx,action_id='ticket_1',mongo=mongo))
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    ctx.interaction.edit_initial_response.assert_awaited_once_with(components=['private panel'])
+    assert panel.call_args.kwargs['owner_id']==3
+    action=components._resolve('ticket_v2_test_detail')
+    assert action.opens_modal and action.no_return
