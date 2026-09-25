@@ -614,9 +614,9 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
 @pytest.mark.parametrize(
     ("key", "command_type", "expected_total"),
     [
-        ("about-us", recruit_aboutus.RecruitAboutUs, 2754),
-        ("strike-system", recruit_strikesystem.RecruitStrikeSystem, 3461),
-        ("family-particulars", recruit_familyparticulars.RecruitFamilyParticulars, 3943),
+        ("about-us", recruit_aboutus.RecruitAboutUs, 2752),
+        ("strike-system", recruit_strikesystem.RecruitStrikeSystem, 3483),
+        ("family-particulars", recruit_familyparticulars.RecruitFamilyParticulars, 3926),
     ],
 )
 def test_setup_posters_fall_back_from_malformed_saved_template(

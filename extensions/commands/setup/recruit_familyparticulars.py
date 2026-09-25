@@ -60,21 +60,21 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
                     Separator(divider=True),
                     Text(content="### **GOLDEN RULE**\n"),
                     Text(content=(
-                        "The main rule for any Group or Gathering is \"To treat and speak to others as you would expect to be "
+                        "The main rule for any group or gathering is: \"Treat and speak to others as you would expect to be "
                         "treated or spoken to.\" We understand that not every day is a good day. Just don't bring your bad day in here."
                     )),
                     Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **FRIENDLY CHALLENGES**\n"),
                     Text(content=(
-                        "Everytime you come into the game, put up a Friendly Challenge. No matter what Town Hall Level you are. "
-                        "This gives anyone and everyone a chance to practice."
+                        "Every time you come into the game, put up a Friendly Challenge, no matter what Town Hall level you are. "
+                        "This gives everyone a chance to practice."
                     )),
                     Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **CLAN GAMES**\n"),
                     Text(content=(
-                        "Simple and easy achievement here...each member has to achieve at least 1000 point minimum as a goal for "
-                        "Clan Games. Builder Base challenges will get you there in no time. Giving you a math figure, if 40 participate "
-                        "and achieve 1,250 points that will equal out to the needed 50,000."
+                        "A simple, achievable goal: each member must earn at least 1,000 points for Clan Games. Builder Base challenges "
+                        "will get you there in no time. For context, if 40 members participate and earn 1,250 points each, that "
+                        "will equal the needed 50,000."
                     )),
                     Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                 ]
@@ -88,28 +88,28 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
                     Separator(divider=True),
                     Text(content="### 🛡 **WAR ELIGIBILITY**\n"),
                     Text(content=(
-                        "To be included in war you must have a GREEN ✅ 🛡️ (opt-in) as your War Status. FWA/No Stress is explained below\n\n"
-                        "If for any personal reason, you cannot participate in war or you have Heroes upgrading in a Clan that requires "
-                        "Heroes in War; RED ❌ 🛡️ (opt-out) should be your War Status.\n\n"
+                        "To be included in war, you must have GREEN ✅ 🛡️ (opt-in) as your War Status. FWA/No Stress is explained below.\n\n"
+                        "If, for any personal reason, you cannot participate in war or have Heroes upgrading in a clan that requires "
+                        "Heroes in war, RED ❌ 🛡️ (opt-out) should be your War Status.\n\n"
                         "Failure to communicate or change your war availability in any of the above scenarios will result in a strike "
-                        "within the WU_Strike System.\n\n"
-                        "If you are in one of our FWA Clans or one of our No Stress Clans, it's 50v50 Wars so no matter what your "
-                        "base is upgrading you should be ✅ with your War Status."
+                        "within the Warriors United Strike System.\n\n"
+                        "If you are in one of our FWA Clans or one of our No Stress Clans, it's 50v50 wars, so no matter what your "
+                        "base is upgrading, you should be ✅ with your War Status."
                     )),
                     Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **PREP DAY**\n"),
                     Text(content=(
-                        "Everyone is expected to help fill Defensive CC. You are responsible for filling the member below you with "
-                        "the Troops they desire. No need to let one person fill all when it can be a joint effort."
+                        "Everyone is expected to help fill Defensive CCs. You are responsible for filling the member below you with "
+                        "the troops they request. There is no need to let one person fill them all when it can be a joint effort."
                     )),
                     Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Text(content="### 🛡 **BATTLE DAY**\n"),
                     Text(content=(
-                        "Our Clan War General will provide a scripted War Plan detailing your war assignment. Don't always assume "
-                        "you will be attacking your Mirror/Equal. Wait for the War Plan before attacking. If one is not provided "
-                        "in a timely fashion ping your Clan's War General Role and ask. Don't just go rogue. 24hrs is plenty of "
-                        "time to plan and attack. Always attack for stars, not for loot or hero status. (Unless given specific "
-                        "direction by the War General)"
+                        "Our Clan War General will provide a scripted War Plan detailing your war assignment. Don't assume "
+                        "you will be attacking your mirror/equal. Wait for the War Plan before attacking. If one is not provided "
+                        "in a timely fashion, ping your clan's War General role and ask. Don't just go rogue. Twenty-four hours is plenty of "
+                        "time to plan and attack. Always attack for stars, not for loot or Hero status (unless given specific "
+                        "direction by the War General)."
                     )),
                     Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                 ]
@@ -122,28 +122,28 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
                     Text(content="## <:warriorcat:947992348971905035> **Warriors United Clan War League**"),
                     Separator(divider=True),
                     Text(content=(
-                        "CWL is our pinnacle team event. Your clan is expecting and counting on you to ensure the entire team has "
+                        "CWL is our pinnacle team event. Your clan expects and counts on you to ensure the entire team has "
                         "the best shot at success. We split up into different clans for this event. Three factors determine the "
-                        "League you'll be placed:\n"
+                        "league in which you'll be placed:\n"
                         "1) War activity\n"
                         "2) War performance\n"
                         "3) Account strength.\n\n"
-                        "Participation is not mandatory but the completion of a simple Google \"CWL Form\" before the given deadline "
-                        "is mandatory for participation. No exceptions to the deadline. The data compiled from this form allows Clan "
-                        "Leaders and War General's to produce Clan Rosters. We have several Clans in the Family so everyone can have "
-                        "a shot at some medals. If you have multiple accounts, only three are allotted to be in one Clan Roster.\n\n"
-                        "No form, No Play...pretty simple."
+                        "Participation is not mandatory, but completing a simple Google \"CWL Form\" by the given deadline "
+                        "is mandatory for participation. No exceptions to the deadline. The data compiled from this form allows clan "
+                        "Leaders and War Generals to produce clan rosters. We have several clans in the family, so everyone can have "
+                        "a shot at some medals. If you have multiple accounts, only three are allotted to be in one clan roster.\n\n"
+                        "No form, no play... Pretty simple."
                     )),
                     Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                    Text(content="### 🛡 **Principles for every CWL Battle**\n"),
+                    Text(content="### 🛡 **Principles for Every CWL Battle**\n"),
                     Text(content=(
-                        "--Be available to attack and make sure you request offensive CC Troops.\n\n"
-                        "--Have you heroes ready for battle.\n\n"
-                        "--Have your defensive CC Troop Request laid out plainly. (e.g. Ice Golem/ Dragon or IG/Drag)\n\n"
-                        "--Donate Defensive CC Troops to the player below you and/or at least one or more of your teammates, "
-                        "making sure they are Max Troops.\n\n"
-                        "--Make a plan of attack. You have 24hrs for one attack.\n\n"
-                        "Make use of our Attack Trainer's in the \"Help-Me-Attack-This-Base\" Channels."
+                        "• Be available to attack and make sure you request offensive CC troops.\n\n"
+                        "• Have your heroes ready for battle.\n\n"
+                        "• Have your defensive CC troop request laid out plainly. (e.g., Ice Golem/Dragon or IG/Drag)\n\n"
+                        "• Donate Defensive CC troops to the player below you and/or at least one of your teammates, "
+                        "making sure they are max-level troops.\n\n"
+                        "• Make a plan of attack. You have 24 hours for one attack.\n\n"
+                        "Make use of our Attack Trainers in the \"Help-Me-Attack-This-Base\" channels."
                     )),
                     Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
                     Media(
@@ -163,7 +163,7 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
                     Text(content="## 📜 **ACKNOWLEDGMENT**"),
                     Separator(divider=True),
                     Text(content=(
-                        "Click **I understand - Continue** to confirm you have read and acknowledge our Family Particulars, then continue to Apply to open an application ticket.\n\nChoose only one application ticket option."
+                        "Click **I understand - Continue** to confirm that you have read and acknowledge our Family Particulars. Then continue to Apply to open an application ticket.\n\nChoose only one application ticket option."
                     )),
                     ActionRow(
                         components=[

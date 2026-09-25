@@ -48,16 +48,17 @@ def build_join_family(sections=None, *, media=None, action_id="preview", preview
                 text("## :shield: **Join the Warriors United Family** :shield:"),
                 Separator(divider=True),
                 text(
-                    "Welcome, Warrior. You are joining the Warriors United family in this server—"
-                    "your home for clanmates, wars, learning, and plenty of good company."
+                    "Welcome, Warrior. The Recruit Gauntlet begins here—your guide to the Warriors United "
+                    "family, its clans, wars, and community."
                 ),
                 text(
                     "### **What happens next**\n"
-                    "Tap the button below to unlock the family welcome area. From there, take a moment "
-                    "to learn who we are, read the server guide, and then continue to recruitment when you are ready."
+                    "Tap the button below to unlock the family welcome area. From there, learn who we are, "
+                    "read the required steps, and continue through recruitment. When you have completed the "
+                    "Recruit Gauntlet, open an application ticket to apply."
                 ),
                 text(
-                    "### **Ready to join?**\n"
+                    "### **Ready to begin?**\n"
                     "Choose **Join the Family** to get access to the next step."
                 ),
                 ActionRow(components=[
