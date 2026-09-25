@@ -15,6 +15,7 @@ from extensions.components import register_action
 from extensions.commands.fwa.war_plans import FWA_WAR_PLANS_CONFIG
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
+from utils.manage_ui import breadcrumb, button_emoji
 from utils.discord_file_upload import (
     FileUploadModalComponentBuilder,
     install_file_upload_capture,
@@ -108,7 +109,7 @@ def _error(message: str) -> list:
 def _buttons(*items: tuple[str, str, hikari.ButtonStyle, bool]) -> hikari.impl.MessageActionRowBuilder:
     row = hikari.impl.MessageActionRowBuilder()
     for custom_id, label, style, disabled in items:
-        row.add_interactive_button(style, custom_id, label=label, is_disabled=disabled)
+        row.add_interactive_button(style, custom_id, label=label, emoji=button_emoji(label), is_disabled=disabled)
     return row
 
 
@@ -119,6 +120,7 @@ def _home(state: dict, notice: str | None = None) -> list:
     for variant in content.VARIANTS:
         menu.add_option(VARIANT_LABELS[variant], variant)
     rows = [
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Messages")),
         hikari.impl.TextDisplayComponentBuilder(content="## FWA War Messages"),
         hikari.impl.TextDisplayComponentBuilder(content="Edit the win, lose, mismatch, and blacklisted messages used by `/fwa war-plans`."),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
@@ -128,7 +130,10 @@ def _home(state: dict, notice: str | None = None) -> list:
     rows.extend([
         selector,
         hikari.impl.TextDisplayComponentBuilder(content="-# Changes affect future posts only after you save."),
-        _buttons((f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False)),
+        _buttons(
+            (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
+            (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
+        ),
     ])
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
 
@@ -147,8 +152,10 @@ def _editor(state: dict, notice: str | None = None) -> list:
     native_footer = content.default_template(variant)["footer_url"]
     footer_status = "Original artwork" if template["footer_url"] == native_footer else "Custom artwork"
     rows = [
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Messages", VARIANT_LABELS[variant])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## {VARIANT_LABELS[variant]} War Message"),
         hikari.impl.TextDisplayComponentBuilder(content=f"{'Unsaved changes' if _dirty(state) else 'Saved'} · {len(template['sections'])} text blocks · {footer_status}"),
+        hikari.impl.TextDisplayComponentBuilder(content="Posting target: Future `/fwa war-plans` messages after Save changes."),
         hikari.impl.TextDisplayComponentBuilder(content="Use `{opponent}`, `{author}`, `{clan_role}`, and `{fwa_rep_role}` for values filled in when a war plan is posted."),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
     ]
@@ -171,18 +178,21 @@ def _editor(state: dict, notice: str | None = None) -> list:
         ),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         _buttons(
-            (f"fwa_war_leave_variants:{sid}", "Back to war results", hikari.ButtonStyle.SECONDARY, False),
+            (f"fwa_war_leave_variants:{sid}", "Back to War Messages", hikari.ButtonStyle.SECONDARY, False),
             (f"{'fwa_war_leave' if _dirty(state) else 'manage_fwa'}:{sid if _dirty(state) else state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
+            (f"{'fwa_war_leave_home' if _dirty(state) else 'manage_home'}:{sid if _dirty(state) else state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
 
 
-def _leave_review(state: dict, *, management: bool) -> list:
+def _leave_review(state: dict, *, management: bool, home: bool = False) -> list:
     sid = state["_id"]
-    destination = "FWA" if management else "war results"
-    leave_id = f"manage_fwa:{state['manage_token']}" if management else f"fwa_war_back:{sid}"
+    destination = "Management Home" if home else ("FWA" if management else "War Messages")
+    leave_id = (f"manage_home:{state['manage_token']}" if home else
+                f"manage_fwa:{state['manage_token']}" if management else f"fwa_war_back:{sid}")
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Messages", VARIANT_LABELS[state["variant"]])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## Return to {destination}?"),
         hikari.impl.TextDisplayComponentBuilder(content="Unsaved changes in this draft will not be restored. Save them first if you want future war posts to use them."),
         _buttons(
@@ -318,7 +328,10 @@ async def preview(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.IN
         await _modal_edit(ctx, _editor(state, str(exc)))
         return
     nav = hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
-        _buttons((f"fwa_war_back_editor:{action_id}", "Back to editor", hikari.ButtonStyle.SECONDARY, False)),
+        _buttons(
+            (f"fwa_war_back_editor:{action_id}", "Back to editor", hikari.ButtonStyle.SECONDARY, False),
+            (f"{'fwa_war_leave_home' if _dirty(state) else 'manage_home'}:{action_id if _dirty(state) else state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
+        ),
     ])
     await _modal_edit(ctx, [*components, nav])
 
@@ -339,7 +352,10 @@ async def copy_preview(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
         hikari.impl.TextDisplayComponentBuilder(content="## Copy text preview"),
         hikari.impl.TextDisplayComponentBuilder(content=copy_text),
         hikari.impl.TextDisplayComponentBuilder(content="-# This private preview does not send a war message."),
-        _buttons((f"fwa_war_back_editor:{action_id}", "Back to editor", hikari.ButtonStyle.SECONDARY, False)),
+        _buttons(
+            (f"fwa_war_back_editor:{action_id}", "Back to editor", hikari.ButtonStyle.SECONDARY, False),
+            (f"{'fwa_war_leave_home' if _dirty(state) else 'manage_home'}:{action_id if _dirty(state) else state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
+        ),
     ])])
 
 
@@ -377,6 +393,18 @@ async def leave(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     if problem:
         return _error(problem)
     return _leave_review(state, management=True)
+
+
+@register_action("fwa_war_leave_home", preload_state=False)
+@lightbulb.di.with_di
+async def leave_home(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any) -> list:
+    state, problem = await _state(ctx, mongo, action_id, view="editor")
+    if problem:
+        return _error(problem)
+    if _dirty(state):
+        return _leave_review(state, management=False, home=True)
+    from extensions.commands.manage import home
+    return await home(ctx=ctx, action_id=state["manage_token"], mongo=mongo)
 
 
 @register_action("fwa_war_save", preload_state=False)

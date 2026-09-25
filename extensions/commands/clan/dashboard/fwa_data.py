@@ -12,6 +12,7 @@ import asyncio
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
+from utils.manage_ui import breadcrumb, button_emoji
 from utils.media_store import FWA_ACTIVE_BASE_NAME, FWA_WAR_BASE_NAME, MediaStore, fwa_base_folder
 from utils.media_urls import DETAIL, optimized
 from utils.constants import RED_ACCENT, GREEN_ACCENT, BLUE_ACCENT, GOLDENROD_ACCENT, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
@@ -59,7 +60,9 @@ def _return_to_fwa_id(ctx) -> str:
 def _home_button(ctx) -> list[Button]:
     token = _management_token(ctx)
     return [Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_fwa:{token}",
-                   label="Back to FWA")] if token else []
+                   label="Back to FWA", emoji=button_emoji("Back to FWA")),
+            Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{token}",
+                   label="Management Home", emoji=button_emoji("Management Home"))] if token else []
 
 
 async def _require_fwa_representative(ctx) -> bool:
@@ -201,7 +204,7 @@ async def build_fwa_management_screen(
         Container(
             accent_color=GOLDENROD_ACCENT,
             components=[
-                Text(content="## 🏰 **FWA Bases & Guidance**"),
+                Text(content=breadcrumb("FWA", "Bases & Guidance") + "\n## FWA Bases & Guidance"),
                 Text(content="Manage base links and images for each Town Hall level"),
                 Separator(divider=True),
                 Text(content=(
@@ -235,8 +238,9 @@ async def build_fwa_management_screen(
         components[0].add_component(ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"manage_fwa:{manage_token}",
-            label="Back to FWA",
-        )]))
+            label="Back to FWA", emoji=button_emoji("Back to FWA"),
+        ), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}",
+                  label="Management Home", emoji=button_emoji("Management Home"))]))
     return components
 
 
@@ -296,7 +300,7 @@ def build_th_edit_components(th_level: str, base_link: str, base_info: str,
 
     # Build components
     component_list = [
-        Text(content=f"## {emoji_str} **Editing TH{th_num} FWA Data**"),
+        Text(content=breadcrumb("FWA", "Bases & Guidance", f"TH{th_num}") + f"\n## {emoji_str} **Editing TH{th_num} FWA Data**"),
         Separator(divider=True),
     ]
 
@@ -341,19 +345,19 @@ def build_th_edit_components(th_level: str, base_link: str, base_info: str,
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
                     label="Update Link",
-                    emoji="🔗",
+                    emoji=button_emoji("Update Link"),
                     custom_id=f"fwa_update_link:{th_level}",
                 ),
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
                     label="Update Images",
-                    emoji="🖼️",
+                    emoji=button_emoji("Update Images"),
                     custom_id=f"fwa_update_images:{th_level}",
                 ),
                 Button(
                     style=hikari.ButtonStyle.PRIMARY,
                     label="Update Descriptions",
-                    emoji="📝",
+                    emoji=button_emoji("Update Descriptions"),
                     custom_id=f"fwa_update_descriptions:{th_level}",
                 ),
             ]
@@ -362,8 +366,8 @@ def build_th_edit_components(th_level: str, base_link: str, base_info: str,
             components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    label="Back",
-                    emoji="◀️",
+                    label="Back to Bases & Guidance",
+                    emoji=button_emoji("Back to Bases & Guidance"),
                     custom_id=f"fwa_back_to_main:{manage_token or 'main'}",
                 ),
             ]
@@ -381,8 +385,9 @@ def build_th_edit_components(th_level: str, base_link: str, base_info: str,
         components[0].add_component(ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
             custom_id=f"manage_fwa:{manage_token}",
-            label="Back to FWA",
-        )]))
+            label="Back to FWA", emoji=button_emoji("Back to FWA"),
+        ), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}",
+                  label="Management Home", emoji=button_emoji("Management Home"))]))
     return components
 
 
@@ -553,12 +558,12 @@ async def fwa_link_submit(
                         components=[
                             Button(
                                 style=hikari.ButtonStyle.PRIMARY,
-                                label=f"Back to TH{th_num} Edit",
+                                label=f"Back to TH{th_num} Edit", emoji=button_emoji(f"Back to TH{th_num} Edit"),
                                 custom_id=_return_to_th_id(ctx, th_level),
                             ),
                             Button(
                                 style=hikari.ButtonStyle.SECONDARY,
-                                label="Back to Main Menu",
+                                label="Back to Bases & Guidance", emoji=button_emoji("Back to Bases & Guidance"),
                                 custom_id=_return_to_fwa_id(ctx),
                             ),
                             *_home_button(ctx),
@@ -610,7 +615,7 @@ async def fwa_update_images(
                         Button(
                             style=hikari.ButtonStyle.SECONDARY,
                             label="Back",
-                            emoji="◀️",
+                            emoji=button_emoji("Back"),
                             custom_id=_return_to_th_id(ctx, th_level),
                         ),
                         *_home_button(ctx),
@@ -780,12 +785,12 @@ async def fwa_images_submit(
                             components=[
                                 Button(
                                     style=hikari.ButtonStyle.PRIMARY,
-                                    label=f"Back to TH{th_num} Edit",
+                                    label=f"Back to TH{th_num} Edit", emoji=button_emoji(f"Back to TH{th_num} Edit"),
                                     custom_id=_return_to_th_id(ctx, th_level),
                                 ),
                                 Button(
                                     style=hikari.ButtonStyle.SECONDARY,
-                                    label="Back to Main Menu",
+                                    label="Back to Bases & Guidance", emoji=button_emoji("Back to Bases & Guidance"),
                                     custom_id=_return_to_fwa_id(ctx),
                                 ),
                                 *_home_button(ctx),
@@ -808,7 +813,7 @@ async def fwa_images_submit(
                             components=[
                                 Button(
                                     style=hikari.ButtonStyle.SECONDARY,
-                                    label="Back",
+                                    label="Back", emoji=button_emoji("Back"),
                                     custom_id=_return_to_th_id(ctx, th_level),
                                 )
                             ]

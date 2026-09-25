@@ -73,10 +73,10 @@ def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
     assert len(nodes) <= 40
     assert len(sections) == 6
     assert [button["custom_id"] for button in buttons] == [
-        f"manage_server_roles:{token}", f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}",
-        f"manage_cwl:{token}", f"manage_cwl_rosters:{token}",
+        f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}",
+        f"manage_cwl:{token}", f"manage_cwl_rosters:{token}", f"manage_server_roles:{token}",
     ]
-    assert [button["disabled"] for button in buttons] == [True, False, False, True, True, True]
+    assert [button["disabled"] for button in buttons] == [False, False, True, True, True, True]
     assert all(len(button["custom_id"]) <= 100 for button in buttons)
 
 
@@ -275,7 +275,8 @@ def test_fwa_war_messages_home_button_routes_through_dispatcher(monkeypatch):
     assert saved["user_id"] == 1 and saved["guild_id"] == 2
     assert ctx.events[-1][0] == "edit"
     rendered = ctx.events[-1][1]["components"][0].build()[0]
-    assert rendered["components"][0]["content"] == "## FWA War Messages"
+    assert any(node.get("content") == "## FWA War Messages" for node in walk(rendered))
+    assert any("Management › FWA › War Messages" in node.get("content", "") for node in walk(rendered))
 
 
 def test_old_dashboard_slash_entries_are_absent_but_manage_and_actions_remain():
@@ -315,7 +316,8 @@ def test_recruitment_questions_button_opens_real_editor(monkeypatch):
     stored.assert_awaited_once()
     assert stored.await_args.args[1]["manage_token"] == "token"
     rendered = ctx.interaction.edit_initial_response.await_args.kwargs["components"][0].build()[0]
-    assert rendered["components"][0]["content"] == "## Recruitment Questions"
+    assert any(node.get("content") == "## Recruitment Questions" for node in walk(rendered))
+    assert any("Management › Recruitment Questions" in node.get("content", "") for node in walk(rendered))
 
 
 def test_roles_access_checks_configured_recruiter_roles(monkeypatch):

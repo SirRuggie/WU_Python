@@ -22,6 +22,11 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _panel_texts(panel):
+    """Read visible panel copy without tying assertions to its layout order."""
+    return [node.content for node in content.text_nodes(panel)]
+
+
 def _as_discord_models(builders):
     """Convert native builders to the concrete models returned by REST fetches."""
     ids = itertools.count(1)
@@ -352,7 +357,7 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
         assert content.acknowledgement_id(kwargs["components"], document)
         assert published[-1]["target"]["original_media"] == content.media_snapshot(models)
         assert config.deletes and config.deletes[-1]["token"]
-        assert "Selected post updated." in panel[0].components[2].content
+        assert any("Selected post updated." in text for text in _panel_texts(panel))
 
     _run(check())
 
@@ -694,7 +699,7 @@ def test_document_select_and_back_edit_the_same_ephemeral_panel(monkeypatch):
         assert ctx.events[0] == ("defer", True)
         assert len(ctx.events) == 2 and ctx.events[-1][2]["edit"] is True
         document_panel = ctx.events[-1][2]["components"]
-        assert document_panel[0].components[0].content == "## About Us"
+        assert "## About Us" in _panel_texts(document_panel)
         ids = _custom_ids(document_panel)
         assert any(custom_id.startswith("content_block:document") for custom_id in ids)
         assert any(custom_id.startswith("content_back_root:document") for custom_id in ids)
@@ -740,7 +745,7 @@ def test_preview_reuses_the_acknowledgement_slot_for_back_at_the_component_limit
 
         back = _PanelContext("content_back_document:family")
         await components._dispatch(back, mongo=mongo)
-        assert back.events[-1][2]["components"][0].components[0].content == "## Family Particulars"
+        assert "## Family Particulars" in _panel_texts(back.events[-1][2]["components"])
 
     _run(check())
 
@@ -787,7 +792,7 @@ def test_modal_submit_updates_its_source_panel_without_a_followup(monkeypatch):
 
         assert events[0] == ("ack", hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
         assert events[1][0] == "edit"
-        assert "Block updated." in events[1][1]["components"][0].components[2].content
+        assert any("Block updated." in text for text in _panel_texts(events[1][1]["components"]))
         ctx.respond.assert_not_awaited()
         ctx.defer.assert_not_awaited()
 
@@ -812,7 +817,7 @@ def test_link_error_replaces_the_initial_ephemeral_response(monkeypatch):
         await command.invoke(ctx, mongo=SimpleNamespace(), bot=SimpleNamespace(rest=SimpleNamespace()))
 
         assert ctx.events == [("defer", {"ephemeral": True})]
-        assert "Paste a message link from this server." in captured[0]["components"][0].components[1].content
+        assert any("Paste a message link from this server." in text for text in _panel_texts(captured[0]["components"]))
 
     _run(check())
 
@@ -841,7 +846,7 @@ def test_save_and_publish_navigate_with_dispatcher_edits_not_followups(monkeypat
         await components._dispatch(save, mongo=mongo)
         assert save.events[0] == ("defer", True)
         assert len(save.events) == 2 and save.events[-1][2]["edit"] is True
-        assert "Template saved for future posts in this server." in save.events[-1][2]["components"][0].components[2].content
+        assert any("Template saved for future posts in this server." in text for text in _panel_texts(save.events[-1][2]["components"]))
         assert save.interaction.app.rest.edit_message.await_count == 0
 
         models = _as_discord_models(await content.baseline(document))

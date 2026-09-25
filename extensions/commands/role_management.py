@@ -16,6 +16,7 @@ from extensions.components import register_action
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.manage_ui import breadcrumb, button_emoji
 
 
 loader = lightbulb.Loader()
@@ -76,7 +77,7 @@ async def _next(mongo: MongoClient, state: dict, **changes: Any) -> dict:
 def _buttons(*items: tuple[str, str, hikari.ButtonStyle, bool]) -> hikari.impl.MessageActionRowBuilder:
     row = hikari.impl.MessageActionRowBuilder()
     for custom_id, label, style, disabled in items:
-        row.add_interactive_button(style, custom_id, label=label, is_disabled=disabled)
+        row.add_interactive_button(style, custom_id, label=label, emoji=button_emoji(label), is_disabled=disabled)
     return row
 
 
@@ -84,7 +85,7 @@ def _panel(state: dict, notice: str | None = None) -> list:
     sid = state["_id"]
     selected = len(state.get("role_ids", ()))
     rows = [
-        hikari.impl.TextDisplayComponentBuilder(content="## Roles"),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Roles") + "\n## Roles"),
         hikari.impl.TextDisplayComponentBuilder(content=(
             "Choose one member and up to 25 roles. Add or Remove applies only to those roles."
         )),
@@ -298,7 +299,7 @@ def _browse_panel(state: dict, page: int, notice: str | None = None) -> list:
         for index, (member_id, name, is_bot) in enumerate(current)
     ) or "No members currently have this role."
     rows = [
-        hikari.impl.TextDisplayComponentBuilder(content=f"## Role members · {state['browse_role_name']}"),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Roles", "Members") + f"\n## Role members · {state['browse_role_name']}"),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"**{len(entries)} total** · {humans} people · {bots} bots · Page {page + 1}/{pages}"
         )),

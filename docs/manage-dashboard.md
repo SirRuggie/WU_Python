@@ -131,3 +131,21 @@ sending. Existing signup responses and explicit **DM me the time** remain intact
 
 Management dashboards use the shared `GOLDENROD_ACCENT` (`#EEEEAA`), matching
 the About Us onboarding message.
+
+### Navigation and visual conventions
+
+The home screen groups its six workspaces under Recruitment, War Operations,
+and Server without adding an intermediate screen. All management screens use
+pale goldenrod (`#EEEEAA`). Breadcrumbs identify the workspace and editor.
+
+Navigation buttons retain readable labels alongside the shared custom emojis:
+Back returns to the parent screen; Management Home returns to `/manage`;
+Previous/Next change the page, with the current page shown separately. Refresh,
+search, settings, and editing use their matching action icons. Confirmation and
+cancellation use the supplied Yes and No emojis. Emoji IDs live in
+`utils/manage_ui.py`; the supplied icons are WU Wizard application emojis.
+
+Editors distinguish Saved from Unsaved changes using the existing saved baseline.
+Save retains the template; Send posts the current draft to the selected channel.
+Posting targets remain visible beside the channel picker. Navigation stays below
+editing actions, and leaving an unsaved template still requires confirmation.

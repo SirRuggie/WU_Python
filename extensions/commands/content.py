@@ -25,6 +25,7 @@ from utils.mongo import MongoClient
 from utils.constants import GOLDENROD_ACCENT
 from utils.url_safety import MAX_IMAGE_BYTES
 from utils.recruit_setup_checks import require_ready
+from utils.manage_ui import breadcrumb, button_emoji
 
 
 loader = lightbulb.Loader()
@@ -412,6 +413,7 @@ def panel(state, notice=None):
         for document in DOCUMENTS.values():
             menu.add_option(document.label, document.key)
         rows = [
+            hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet")),
             hikari.impl.TextDisplayComponentBuilder(
                 content=("## Recruit Gauntlet\nManage onboarding content." if state.get("manage_token") else "## :shield: Warriors United Content Dashboard\nChoose an onboarding document to edit.")
             ),
@@ -421,16 +423,17 @@ def panel(state, notice=None):
         rows.append(choose)
         if state.get("manage_token"):
             home = hikari.impl.MessageActionRowBuilder()
-            home.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{state['manage_token']}", label="Management Home")
+            home.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{state['manage_token']}", label="Management Home", emoji=button_emoji("Management Home"))
             rows.append(home)
         return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
 
     document = DOCUMENTS[state["document"]]
     overrides = normal_media(document, state.get("media"))
     rows = [
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", document.label)),
         hikari.impl.TextDisplayComponentBuilder(content=f"## {document.label}"),
         hikari.impl.TextDisplayComponentBuilder(
-            content=f"{sum(map(len, state['sections']))}/4,000 characters · draft expires in 30 minutes."
+            content=f"{'Unsaved changes' if has_unsaved_edits(state) else 'Saved'} · {sum(map(len, state['sections']))}/4,000 characters · draft expires in 30 minutes."
         ),
     ]
     if notice:
@@ -455,33 +458,38 @@ def panel(state, notice=None):
         placeholder="Choose a posting channel", min_values=1, max_values=1,
     )
     destination_status = (
-        f"Posting channel: <#{destination}>. Send to channel posts this draft; Save template keeps it for future editing."
+        f"Posting target: <#{destination}>. Send to channel posts this draft; Save template keeps it for future editing."
         if destination else
-        "Choose a posting channel for this document. Send to channel posts this draft; Save template keeps it for future editing."
+        "Posting target: No channel selected. Choose a channel below to send this draft; Save template keeps it for future editing."
     )
     send_buttons = hikari.impl.MessageActionRowBuilder()
     send_buttons.add_interactive_button(
-        hikari.ButtonStyle.PRIMARY, f"content_send:{sid}", label="Send to channel",
+        hikari.ButtonStyle.PRIMARY, f"content_send:{sid}", label="Send to channel", emoji=button_emoji("Send to channel"),
         is_disabled=not destination,
     )
     buttons = hikari.impl.MessageActionRowBuilder()
-    buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_preview:{sid}", label="Preview")
-    buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_save:{sid}", label="Save template")
+    buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_preview:{sid}", label="Preview", emoji=button_emoji("Preview"))
+    buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_save:{sid}", label="Save template", emoji=button_emoji("Save template"))
     if state.get("target"):
-        buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update selected post")
+        buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_publish:{sid}", label="Update selected post", emoji=button_emoji("Update selected post"))
     selected_buttons = None
     if state.get("selected_media_slot"):
         selected_buttons = hikari.impl.MessageActionRowBuilder()
         selected_buttons.add_interactive_button(
-            hikari.ButtonStyle.PRIMARY, f"content_upload:{sid}", label="Upload replacement"
+            hikari.ButtonStyle.PRIMARY, f"content_upload:{sid}", label="Upload replacement", emoji=button_emoji("Upload replacement")
         )
         selected_buttons.add_interactive_button(
-            hikari.ButtonStyle.SECONDARY, f"content_reset_media:{sid}", label="Restore default image",
+            hikari.ButtonStyle.SECONDARY, f"content_reset_media:{sid}", label="Restore default image", emoji=button_emoji("Restore default image"),
             is_disabled=selected_slot not in overrides,
         )
-    buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
+    footer = hikari.impl.MessageActionRowBuilder()
+    footer.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back to Recruit Gauntlet", emoji=button_emoji("Back to Recruit Gauntlet"))
     if state.get("manage_token"):
-        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_manage_review:{sid}", label="Management Home")
+        footer.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_manage_review:{sid}", label="Management Home", emoji=button_emoji("Management Home"))
+    target = state.get("target")
+    if target:
+        target_url = f"https://discord.com/channels/{state['guild_id']}/{target['channel_id']}/{target['message_id']}"
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"Selected post to update: [View post]({target_url}) in <#{target['channel_id']}>."))
     controls = [
         blocks, images,
         hikari.impl.SeparatorComponentBuilder(divider=True),
@@ -506,6 +514,7 @@ def panel(state, notice=None):
     controls.append(buttons)
     if selected_buttons is not None:
         controls.append(selected_buttons)
+    controls.extend([hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL), footer])
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows + controls)]
 
 
@@ -530,7 +539,7 @@ async def preview_panel(state):
                         # all text/media/separators visible and makes Back available.
                         button.set_custom_id(f"content_back_document:{state['_id']}")
                         button.set_label("Back to editor")
-                        button.set_emoji("↩️")
+                        button.set_emoji(button_emoji("Back to editor"))
                         button.set_is_disabled(False)
                         return components
     raise ValueError("This preview is missing its acknowledgement control.")
@@ -634,9 +643,10 @@ async def manage_review(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECT
         from extensions.commands.manage import home
         return await home(ctx=ctx, action_id=token, mongo=mongo)
     buttons = hikari.impl.MessageActionRowBuilder()
-    buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing")
-    buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Leave without saving")
+    buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing", emoji=button_emoji("Keep editing"))
+    buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Leave without saving", emoji=button_emoji("Leave without saving"))
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", DOCUMENTS[state["document"]].label)),
         hikari.impl.TextDisplayComponentBuilder(content="## Leave content editor?"),
         hikari.impl.TextDisplayComponentBuilder(content="Reopening Recruit Gauntlet starts a new draft. Unsaved edits in this draft will not be restored. Save the template before leaving if you want to keep them."),
         buttons,
@@ -784,9 +794,10 @@ async def back_to_root(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
         return error_panel(problem)
     if state.get("manage_token") and state.get("document") and has_unsaved_edits(state):
         buttons = hikari.impl.MessageActionRowBuilder()
-        buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing")
-        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root_confirm:{state['_id']}", label="Leave without saving")
+        buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing", emoji=button_emoji("Keep editing"))
+        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root_confirm:{state['_id']}", label="Leave without saving", emoji=button_emoji("Leave without saving"))
         return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+            hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", DOCUMENTS[state["document"]].label)),
             hikari.impl.TextDisplayComponentBuilder(content="## Return to Recruit Gauntlet?"),
             hikari.impl.TextDisplayComponentBuilder(content="Reopening this document starts a new draft. Unsaved edits in this draft will not be restored. Save the template first if you want to keep them."),
             buttons,

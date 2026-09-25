@@ -13,6 +13,7 @@ from extensions.components import register_action
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.manage_ui import breadcrumb, button_emoji
 
 
 loader = lightbulb.Loader()
@@ -20,12 +21,12 @@ TTL = timedelta(minutes=30)
 NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
 FWA_REP_ROLE_ID = 993015846442127420
 DESTINATIONS = (
-    ("Roles", "roles", "Add or remove member roles, browse members, and see role counts"),
-    ("Recruit Gauntlet", "recruit", "Onboarding messages, rules, and artwork"),
-    ("Recruitment Questions", "recruitment_questions", "Primary questions, FWA, explanations, and quick prompts"),
+    ("Roles", "roles", "Add or remove roles and see who has each role"),
+    ("Recruit Gauntlet", "recruit", "Edit onboarding messages and choose where to post them"),
+    ("Recruitment Questions", "recruitment_questions", "Edit reusable questions, explanations, and quick prompts"),
     ("FWA", "fwa", "Bases, war messages, points, and sync reminders"),
-    ("CWL", "cwl", "Announcements, schedules, and delivery"),
-    ("CWL Rosters", "cwl_rosters", "Saved rosters and return reminders"),
+    ("CWL", "cwl", "Edit announcements and manage scheduled delivery"),
+    ("CWL Rosters", "cwl_rosters", "Manage saved rosters and player return reminders"),
 )
 SECTION_CHOICES = (
     lightbulb.Choice("Server", "server"),
@@ -150,7 +151,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
     )
     detail = description if allowed else f"{description} · Requires {requirements[key]}"
     return hikari.impl.SectionComponentBuilder(
-        components=[hikari.impl.TextDisplayComponentBuilder(content=f"### {label}\n{detail}")],
+        components=[hikari.impl.TextDisplayComponentBuilder(content=f"**{label}**\n{detail}")],
         accessory=button,
     )
 
@@ -161,15 +162,23 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
         token = (await _new_state(ctx, mongo))["_id"]
     children: list = [
         hikari.impl.TextDisplayComponentBuilder(content="## Server Management"),
-        hikari.impl.TextDisplayComponentBuilder(content="Choose a workspace to manage Warriors United content and operations."),
+        hikari.impl.TextDisplayComponentBuilder(content="Choose a workspace below. Each opens its tools and settings."),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
     ]
     if notice:
         children.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
-    for index, (label, key, description) in enumerate(DESTINATIONS):
+    entries = {key: (label, description) for label, key, description in DESTINATIONS}
+    for index, (heading, keys) in enumerate((
+        ("Recruitment", ("recruit", "recruitment_questions")),
+        ("War Operations", ("fwa", "cwl", "cwl_rosters")),
+        ("Server", ("roles",)),
+    )):
         if index:
             children.append(hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL))
-        children.append(_destination_section(label, key, description, token, await _can_access(ctx, mongo, key)))
+        children.append(hikari.impl.TextDisplayComponentBuilder(content=f"### {heading}"))
+        for key in keys:
+            label, description = entries[key]
+            children.append(_destination_section(label, key, description, token, await _can_access(ctx, mongo, key)))
     children += [
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         hikari.impl.TextDisplayComponentBuilder(content="-# Private to you · expires after 30 minutes"),
@@ -187,7 +196,7 @@ FWA_SECTIONS = (
 
 def fwa_home_components(ctx: Any, token: str) -> list:
     children = [
-        hikari.impl.TextDisplayComponentBuilder(content="## FWA"),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA") + "\n## FWA"),
         hikari.impl.TextDisplayComponentBuilder(content="Choose the FWA tools you want to manage."),
     ]
     for label, key, description in FWA_SECTIONS:
@@ -196,7 +205,7 @@ def fwa_home_components(ctx: Any, token: str) -> list:
     children.extend([
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         hikari.impl.MessageActionRowBuilder().add_interactive_button(
-            hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Management Home",
+            hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Management Home", emoji=button_emoji("Management Home"),
         ),
     ])
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=children)]

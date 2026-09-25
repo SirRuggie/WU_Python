@@ -65,6 +65,9 @@ def test_panel_has_three_workspaces_without_duplicate_settings(monkeypatch):
         assert label in encoded
     assert "'label': 'Settings'" not in encoded
     assert "Save posts" in encoded
+    assert "Management › CWL › Overview" in encoded
+    tabs = dashboard._tabs("draft", "overview").components
+    assert all(button.emoji == dashboard.button_emoji(button.label) for button in tabs)
 
 
 def test_discord_component_nesting_for_all_dashboard_panels():

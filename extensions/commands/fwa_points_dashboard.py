@@ -17,6 +17,7 @@ from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT
 from utils.fwa_points_parser import sanitize_tag
 from utils.mongo import MongoClient
+from utils.manage_ui import breadcrumb, button_emoji
 
 
 loader = lightbulb.Loader()
@@ -86,7 +87,7 @@ async def _next(mongo: MongoClient, state: dict, **changes: Any) -> dict:
 def _buttons(*options: tuple[str, str, hikari.ButtonStyle, bool]) -> hikari.impl.MessageActionRowBuilder:
     row = hikari.impl.MessageActionRowBuilder()
     for custom_id, label, style, disabled in options:
-        row.add_interactive_button(style, custom_id, label=label, is_disabled=disabled)
+        row.add_interactive_button(style, custom_id, label=label, emoji=button_emoji(label), is_disabled=disabled)
     return row
 
 
@@ -116,7 +117,7 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
     selected = state.get("selected_extra")
     extra_options = [entry for entry in showing if entry["source"] == "extra"]
     rows = [
-        hikari.impl.TextDisplayComponentBuilder(content="## FWA Points Monitor"),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "Points Monitor") + "\n## FWA Points Monitor"),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"**Monitor:** {'Enabled' if config['enabled'] else 'Disabled'} · "
             f"**Detector:** {detector} · **Active retries:** {retries}\n"

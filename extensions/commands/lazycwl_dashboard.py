@@ -27,6 +27,7 @@ from extensions.commands.fwa import lazy_cwl_service as service
 from utils.mongo import MongoClient
 from utils.constants import BLUE_ACCENT, GREEN_ACCENT, GOLDENROD_ACCENT, RED_ACCENT
 from utils import lazy_cwl_store as store
+from utils.manage_ui import breadcrumb, button_emoji
 
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
@@ -38,6 +39,10 @@ _SESSION_TTL = timedelta(minutes=20)
 
 def is_admin(member: Optional[hikari.Member]) -> bool:
     return bool(member and member.permissions & hikari.Permissions.ADMINISTRATOR)
+
+
+def _button(*, label: str, **kwargs: Any) -> Button:
+    return Button(label=label, emoji=button_emoji(label), **kwargs)
 
 
 def _tag(value: str | None) -> str:
@@ -96,7 +101,7 @@ def _section(token):
 
 
 def _section_buttons(token):
-    return ActionRow(components=[Button(
+    return ActionRow(components=[_button(
         style=hikari.ButtonStyle.PRIMARY if _section(token) == section else hikari.ButtonStyle.SECONDARY,
         custom_id=_id("lazycwl_section", token, section), label=label,
     ) for section, label in SECTION_LABELS.items()])
@@ -170,7 +175,7 @@ def _header(clans, lists, chosen, tab, token):
         options.append(SelectOption(label=_name(clan.get("name") or tag), value=tag,
                                     description=_roster_description(by_tag.get(tag)),
                                     is_default=tag == chosen))
-    heading = Text(content=f"## CWL Rosters · {label} · {tab.title()}")
+    heading = Text(content=f"{breadcrumb('CWL Rosters', label, tab.title())}\n## CWL Rosters · {label} · {tab.title()}")
     clan = next((clan for clan in clans if _tag(clan["tag"]) == chosen), {})
     logo = clan.get("logo")
     if isinstance(logo, str) and logo.startswith("https://"):
@@ -181,9 +186,10 @@ def _header(clans, lists, chosen, tab, token):
             _tab_button(label, key, tab, token, chosen)
             for label, key in (("Overview", "overview"), ("Players", "players"), ("Return reminders", "reminders")) if section == "FWA" or key != "reminders"])]
     if pages > 1:
+        body.append(Text(content=f"-# Clan list · Page {page + 1} of {pages}"))
         body.append(ActionRow(components=[
-            Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_clans_page", token, str(page - 1)), label="Previous clans", is_disabled=page == 0),
-            Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_clans_page", token, str(page + 1)), label=f"Next clans ({page + 1}/{pages})", is_disabled=page == pages - 1),
+            _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_clans_page", token, str(page - 1)), label="Previous clans", is_disabled=page == 0),
+            _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_clans_page", token, str(page + 1)), label="Next clans", is_disabled=page == pages - 1),
         ]))
     return body
 
@@ -198,12 +204,12 @@ def _selected_docs(lists: list[dict], tag: str) -> list[dict]:
 
 
 def _tab_button(label: str, tab: str, current: str, token: str, tag: str) -> Button:
-    return Button(style=hikari.ButtonStyle.PRIMARY if tab == current else hikari.ButtonStyle.SECONDARY,
+    return _button(style=hikari.ButtonStyle.PRIMARY if tab == current else hikari.ButtonStyle.SECONDARY,
                   custom_id=_id("lazycwl_tab", token, f"{tab},{tag}"), label=label)
 
 
 def _back(token: str, tag: str, tab: str = "overview") -> ActionRow:
-    return ActionRow(components=[Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_home", token, f"{tab},{tag}"), label="Back")])
+    return ActionRow(components=[_button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_home", token, f"{tab},{tag}"), label="Back to Rosters")])
 
 
 def render_home(lists: list, clans: list, selected_tag: Optional[str], now: datetime | None = None,
@@ -262,12 +268,12 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
                     f"Players captured: {len(doc.get('players', []))}\nExpires: {_fmt_time(doc.get('expires_at'))}\n")
                 details += (f"Players away: {away_text}\nStatus: {status}\nReturn reminders: {reminders}" if section == "FWA" else "Status: Saved roster")
                 body.append(Text(content=details))
-        buttons = [Button(style=hikari.ButtonStyle.SECONDARY if capture_disabled else hikari.ButtonStyle.PRIMARY,
+        buttons = [_button(style=hikari.ButtonStyle.SECONDARY if capture_disabled else hikari.ButtonStyle.PRIMARY,
             custom_id=_id("lazycwl_replace" if chosen != "ALL" and docs else "lazycwl_capture", token, chosen), label=capture_label, is_disabled=capture_disabled)]
-        buttons.append(Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen),
+        buttons.append(_button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen),
                               label="Send return reminders" if section == "FWA" else "Send Reminders Now",
                               is_disabled=not docs))
-        buttons.append(Button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_close", token, chosen), label=f"Clear all {label} Rosters" if chosen == "ALL" else "Clear roster", is_disabled=not docs))
+        buttons.append(_button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_close", token, chosen), label=f"Clear all {label} Rosters" if chosen == "ALL" else "Clear roster", is_disabled=not docs))
         body.append(ActionRow(components=buttons))
     elif tab == "players":
         if chosen == "ALL" or not docs:
@@ -276,7 +282,7 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
             doc = docs[0]; players = doc.get("players", []); page = 0
             rows = [f"• **{p.get('name') or p.get('tag')}** · {p.get('tag')}" for p in players[:20]]
             body.append(Text(content=f"### Players ({len(players)}) · page 1 of {max(1, (len(players)+19)//20)}\n" + ("\n".join(rows) if rows else "No players captured.")))
-            body.append(ActionRow(components=[Button(style=hikari.ButtonStyle.SUCCESS, custom_id=_id("lazycwl_add", token, _bind(token, chosen, [doc], operation="add")), label="Add player"), Button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_remove", token, f"{chosen},0"), label="Remove players", is_disabled=not players), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{chosen},1"), label="Next", is_disabled=len(players) <= 20)]))
+            body.append(ActionRow(components=[_button(style=hikari.ButtonStyle.SUCCESS, custom_id=_id("lazycwl_add", token, _bind(token, chosen, [doc], operation="add")), label="Add player"), _button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_remove", token, f"{chosen},0"), label="Remove players", is_disabled=not players), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{chosen},1"), label="Next", is_disabled=len(players) <= 20)]))
     else:
         if not docs:
             body.append(Text(content="No saved lists are selected."))
@@ -288,10 +294,10 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
                 lines.append(f"**{_name(doc.get('clan_name') or doc.get('clan_tag'))}** · {'On' if enabled else 'Off'}" + (f" · {settings.get('every_minutes')} min · next {_fmt_time(next_run)}" if enabled else ""))
             body.append(Text(content="### Reminders\nDestination: <#%s>\n%s" % (service.reminder_channel(_section(token)), "\n".join(lines))))
             body.append(Text(content="Choose a frequency to enable or update reminders. Changes apply when you confirm. Reminders stop after seven days."))
-            body.append(ActionRow(components=[Button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_enable", token, chosen), label="Enable reminders"), Button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_disable", token, chosen), label="Disable reminders", is_disabled=not any(d.get("reminders", {}).get("enabled") for d in docs)), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen), label="Send reminder now")]))
-    footer_buttons = [Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_refresh", token, f"{tab},{chosen}"), label="Refresh")]
+            body.append(ActionRow(components=[_button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_enable", token, chosen), label="Enable reminders"), _button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_disable", token, chosen), label="Disable reminders", is_disabled=not any(d.get("reminders", {}).get("enabled") for d in docs)), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen), label="Send reminder now")]))
+    footer_buttons = [_button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_refresh", token, f"{tab},{chosen}"), label="Refresh")]
     if manage_token := _sessions.get(token, {}).get("manage_token"):
-        footer_buttons.append(Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}", label="Management Home"))
+        footer_buttons.append(_button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}", label="Management Home"))
     body.append(ActionRow(components=footer_buttons))
     return [Container(accent_color=GOLDENROD_ACCENT, components=body)]
 
@@ -377,7 +383,7 @@ def _confirm(title, lines, action, token, value, accent):
     tag = bound.get("tag", value)
     tab = "players" if bound.get("operation") == "remove" else ("reminders" if bound.get("operation") in {"send", "enable", "disable"} and _section(token) == "FWA" else "overview")
     bound["tab"] = tab
-    return [Container(accent_color=accent, components=[Text(content=f"## {title} · {SECTION_LABELS[_section(token)]}"), Text(content="\n".join(lines)), Separator(), ActionRow(components=[Button(style=hikari.ButtonStyle.SUCCESS if accent != RED_ACCENT else hikari.ButtonStyle.DANGER, custom_id=_id(action, token, value), label="Confirm"), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_cancel", token, value), label="Cancel")])])]
+    return [Container(accent_color=accent, components=[Text(content=f"## {title} · {SECTION_LABELS[_section(token)]}"), Text(content="\n".join(lines)), Separator(), ActionRow(components=[_button(style=hikari.ButtonStyle.SUCCESS if accent != RED_ACCENT else hikari.ButtonStyle.DANGER, custom_id=_id(action, token, value), label="Confirm"), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_cancel", token, value), label="Cancel")])])]
 
 
 def _notice(title, text, token, tag, *, accent=GOLDENROD_ACCENT):
@@ -454,9 +460,9 @@ async def _player_page(mongo, token: str, tag: str, page: int, note: str | None 
         body.append(ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_remove_pick", token, f"{tag},{page}"), placeholder="Choose players to remove", min_values=1, max_values=len(page_players), options=[SelectOption(label=(p.get("name") or p.get("tag"))[:100], value=p.get("tag", "")) for p in page_players])]))
     nonce = _bind(token, tag, [doc], operation="add")
     _sessions[token]["pending"][nonce]["page"] = page
-    body.append(ActionRow(components=[Button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_add", token, nonce), label="Add player"), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page - 1}"), label="Previous", is_disabled=page == 0), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page + 1}"), label="Next", is_disabled=page >= pages - 1), Button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page}"), label="Refresh")]))
+    body.append(ActionRow(components=[_button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_add", token, nonce), label="Add player"), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page - 1}"), label="Previous", is_disabled=page == 0), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page + 1}"), label="Next", is_disabled=page >= pages - 1), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_players_page", token, f"{tag},{page}"), label="Refresh")]))
     if manage_token := _sessions.get(token, {}).get("manage_token"):
-        body.append(ActionRow(components=[Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}", label="Management Home")]))
+        body.append(ActionRow(components=[_button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}", label="Management Home")]))
     return [Container(accent_color=GOLDENROD_ACCENT, components=body)]
 
 

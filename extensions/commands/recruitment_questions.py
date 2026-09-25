@@ -14,6 +14,7 @@ import lightbulb
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT, RED_ACCENT
+from utils.manage_ui import breadcrumb, button_emoji
 from utils.discord_file_upload import (
     FileUploadModalComponentBuilder,
     install_file_upload_capture,
@@ -96,13 +97,14 @@ def _error(message: str) -> list:
 def _buttons(*items: tuple[str, str, hikari.ButtonStyle, bool]) -> hikari.impl.MessageActionRowBuilder:
     row = hikari.impl.MessageActionRowBuilder()
     for custom_id, label, style, disabled in items:
-        row.add_interactive_button(style, custom_id, label=label, is_disabled=disabled)
+        row.add_interactive_button(style, custom_id, label=label, emoji=button_emoji(label), is_disabled=disabled)
     return row
 
 
 def _home(state: dict, notice: str | None = None) -> list:
     sid = state["_id"]
     rows = [
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruitment Questions")),
         hikari.impl.TextDisplayComponentBuilder(content="## Recruitment Questions"),
         hikari.impl.TextDisplayComponentBuilder(content="Choose a question from the same four groups used by `/recruit questions`."),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
@@ -149,11 +151,13 @@ def _editor(state: dict, notice: str | None = None) -> list:
         )
 
     rows = [
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruitment Questions", content.VARIANT_LABELS[variant])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## {content.VARIANT_LABELS[variant]}"),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"{'Unsaved changes' if _dirty(state) else 'Saved'} · "
             f"{len(template['sections'])} text blocks · {media_status}"
         )),
+        hikari.impl.TextDisplayComponentBuilder(content="Posting target: Future `/recruit questions` messages after Save changes."),
         hikari.impl.TextDisplayComponentBuilder(content=(
             "Use `{recruit}` and `{recruiter}` for live mentions."
             + (" Keep `{family_codes}` for the three valid clan codes." if variant == "family_codes" else "")
@@ -198,7 +202,7 @@ def _editor(state: dict, notice: str | None = None) -> list:
         _buttons((f"recruit_question_reset:{sid}", "Reset defaults", hikari.ButtonStyle.DANGER, False)),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         _buttons(
-            (f"recruit_question_leave_variants:{sid}", "Back to messages", hikari.ButtonStyle.SECONDARY, False),
+            (f"recruit_question_leave_variants:{sid}", "Back to Questions", hikari.ButtonStyle.SECONDARY, False),
             (f"{'recruit_question_leave' if _dirty(state) else 'manage_home'}:{sid if _dirty(state) else state['manage_token']}",
              "Management Home", hikari.ButtonStyle.SECONDARY, False),
         ),
@@ -211,6 +215,7 @@ def _leave_review(state: dict, *, management: bool) -> list:
     destination = "Management Home" if management else "message list"
     leave_id = f"manage_home:{state['manage_token']}" if management else f"recruit_question_back:{sid}"
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruitment Questions", content.VARIANT_LABELS[state["variant"]])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## Return to {destination}?"),
         hikari.impl.TextDisplayComponentBuilder(content="Unsaved changes in this draft will not be restored. Save them first if you want future recruitment messages to use them."),
         _buttons(

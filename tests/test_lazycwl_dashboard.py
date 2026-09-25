@@ -59,7 +59,10 @@ def test_selector_exposes_clans_on_later_pages_without_exceeding_discord_limit()
     token = dashboard._session(44, 55)
     clans = [_clan(i) for i in range(30)]
     first = dashboard.render_home([], clans, None, NOW, token=token)
-    assert any(getattr(node, "label", "").startswith("Next clans (1/2)") for node in _nodes(first))
+    paging = [node for node in _nodes(first) if getattr(node, "label", "").startswith(("Previous clans", "Next clans"))]
+    assert [node.label for node in paging] == ["Previous clans", "Next clans"]
+    assert all(node.emoji == dashboard.button_emoji(node.label) for node in paging)
+    assert any("Page 1 of 2" in getattr(node, "content", "") for node in _nodes(first))
     dashboard._sessions[token]["clan_page"] = 1
     second = dashboard.render_home([], clans, None, NOW, token=token)
     select = next(node for node in _nodes(second) if hasattr(node, "options"))

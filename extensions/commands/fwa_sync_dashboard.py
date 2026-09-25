@@ -16,6 +16,7 @@ from utils.band_ical_parser import DISCOVERY_OFFSET, discord_timestamp
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.manage_ui import breadcrumb, button_emoji
 
 
 loader = lightbulb.Loader()
@@ -46,7 +47,7 @@ def _safe(value: Any, limit: int = 130) -> str:
 def _buttons(*items: tuple[str, str, hikari.ButtonStyle, bool]) -> hikari.impl.MessageActionRowBuilder:
     row = hikari.impl.MessageActionRowBuilder()
     for custom_id, label, style, disabled in items:
-        row.add_interactive_button(style, custom_id, label=label, is_disabled=disabled)
+        row.add_interactive_button(style, custom_id, label=label, emoji=button_emoji(label), is_disabled=disabled)
     return row
 
 
@@ -134,7 +135,7 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
     channel_id = config.get("panel_channel_id")
     channel_label = f"<#{int(channel_id)}>" if channel_id else "Not configured"
     rows = [
-        hikari.impl.TextDisplayComponentBuilder(content="## FWA Sync & Reminders"),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "Sync & Reminders") + "\n## FWA Sync & Reminders"),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"**Reminders:** {'Enabled' if config['enabled'] else 'Disabled'} · "
             f"**Poller:** {poller} · **Startup recovery:** {_safe(recovery, 110)}\n"
@@ -227,7 +228,7 @@ async def toggle(ctx: Any, action_id: str,
 
 def _check_panel(state: dict, events: list[dict], errors: list[str]) -> list:
     rows = [
-        hikari.impl.TextDisplayComponentBuilder(content="## FWA feed check"),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "Sync & Reminders", "Feed Check") + "\n## FWA feed check"),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"**{len(events)} upcoming sync(s)** · Dry run only; No DMs sent."
         )),

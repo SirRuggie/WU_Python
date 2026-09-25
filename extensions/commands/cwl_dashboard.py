@@ -27,6 +27,7 @@ from utils import cwl_media
 from utils import cwl_forms
 from utils import cwl_review
 from utils import cwl_sequence
+from utils.manage_ui import breadcrumb, button_emoji
 
 
 loader = lightbulb.Loader()
@@ -342,7 +343,7 @@ async def _saved_defaults_campaign(mongo: MongoClient, guild_id: int) -> dict:
 
 def _button(custom_id: str, label: str, *, style: hikari.ButtonStyle = hikari.ButtonStyle.SECONDARY) -> hikari.impl.MessageActionRowBuilder:
     row = hikari.impl.MessageActionRowBuilder()
-    row.add_interactive_button(style, custom_id, label=label)
+    row.add_interactive_button(style, custom_id, label=label, emoji=button_emoji(label))
     return row
 
 
@@ -352,7 +353,7 @@ def _button_group(*items: tuple) -> hikari.impl.MessageActionRowBuilder:
     for item in items:
         custom_id, label, style = item[:3]
         disabled = bool(item[3]) if len(item) == 4 else False
-        row.add_interactive_button(style, custom_id, label=label, is_disabled=disabled)
+        row.add_interactive_button(style, custom_id, label=label, emoji=button_emoji(label), is_disabled=disabled)
     return row
 
 
@@ -363,6 +364,7 @@ def _tabs(draft_id: str, active: str) -> hikari.impl.MessageActionRowBuilder:
             hikari.ButtonStyle.PRIMARY if tab == active else hikari.ButtonStyle.SECONDARY,
             f"cwl_tab:{draft_id}|{tab}",
             label=label,
+            emoji=button_emoji(label),
         )
     return row
 
@@ -374,6 +376,16 @@ def error_panel(message: str) -> list:
     )]
 
 
+def _navigation_last(components: list) -> list:
+    """Keep the shared home control after page actions on every CWL screen."""
+    footer, body = [], []
+    for component in components:
+        children = getattr(component, "components", ())
+        is_home = any(str(getattr(child, "custom_id", "")).startswith("manage_home:") for child in children)
+        (footer if is_home else body).append(component)
+    return body + footer
+
+
 def _header(draft: dict, tab: str, notice: str | None = None, *, navigation: bool = False) -> list:
     campaign = _campaign(draft)
     scope = str(draft.get("scope") or "cycle")
@@ -381,7 +393,7 @@ def _header(draft: dict, tab: str, notice: str | None = None, *, navigation: boo
     month = datetime.strptime(target, "%Y-%m").strftime("%B %Y")
     target_label = f"For future months, starting **{month}**" if scope == "defaults" else f"For **{month}**"
     rows: list = [
-        hikari.impl.TextDisplayComponentBuilder(content="## <:CWL:1399013745598009375> CWL announcements"),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("CWL", tab.title()) + "\n## CWL announcements"),
         hikari.impl.TextDisplayComponentBuilder(
             content=f"{target_label} · **{campaign.get('timezone', 'America/New_York')}**\nRepeats monthly until changed."
         ),
@@ -544,7 +556,7 @@ async def panel(draft: dict, tab: str = "overview", notice: str | None = None, m
             (f"cwl_advanced:{draft_id}", "More options", hikari.ButtonStyle.SECONDARY),
         ))
 
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(rows))]
 
 
 def message_editor(draft: dict, key: str, audience: str, notice: str | None = None) -> list:
@@ -567,10 +579,11 @@ def message_editor(draft: dict, key: str, audience: str, notice: str | None = No
         hikari.ComponentType.ROLE_SELECT_MENU, f"cwl_roles:{ref}",
         placeholder="Choose roles to ping", min_values=0, max_values=10,
     )
+    posting_target = f"<#{template['destination_channel_id']}>" if template.get("destination_channel_id") else "No channel selected"
     rows.extend([
         hikari.impl.SeparatorComponentBuilder(divider=True),
         hikari.impl.TextDisplayComponentBuilder(content=f"### {_message_label(key)} · {audience.title()}\n**{_short(template.get('title') or 'Untitled', 160)}**\n{_short(template.get('body') or 'No body text yet.', 500)}"),
-        hikari.impl.TextDisplayComponentBuilder(content=f"Buttons: {len(template.get('buttons') or [])} · Destination: {'set' if template.get('destination_channel_id') else 'not set'} · Pings: {len(template.get('role_ids') or [])}"),
+        hikari.impl.TextDisplayComponentBuilder(content=f"Buttons: {len(template.get('buttons') or [])} · Posting target: {posting_target} · Pings: {len(template.get('role_ids') or [])}"),
         destination,
         ping_roles,
         _button_group(
@@ -599,7 +612,7 @@ def message_editor(draft: dict, key: str, audience: str, notice: str | None = No
         rows.insert(7, hikari.impl.TextDisplayComponentBuilder(
             content="-# Save posts from Overview to use this artwork."
         ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(rows))]
 
 
 async def _modal_source(ctx: Any, components: list) -> None:
@@ -735,7 +748,7 @@ async def advanced(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.I
         _button(f"cwl_discard_review:{action_id}", "Discard changes…", style=hikari.ButtonStyle.DANGER),
         _button(f"cwl_tab:{action_id}|schedule", "Back to Schedule"),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(rows))]
 
 
 @register_action("cwl_schedule", preload_state=False)
@@ -776,7 +789,7 @@ def closing_editor(draft: dict, notice: str | None = None) -> list:
         ),
         _button(f"cwl_tab:{_draft_token(draft)}|schedule", "Back to Schedule"),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(rows))]
 
 
 @register_action("cwl_edit_closing", preload_state=False)
@@ -822,7 +835,7 @@ def sequence_panel(draft: dict, notice: str | None = None) -> list:
             (f"cwl_tab:{draft_id}|schedule", "Back to Schedule", hikari.ButtonStyle.SECONDARY),
         ),
     ])
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(rows))]
 
 
 def _sequence_modal_components(mode: str, config: dict | None = None) -> list:
@@ -921,11 +934,11 @@ async def sequence_times(ctx: Any, action_id: str, mongo: MongoClient = lightbul
     except ValueError as exc:
         return sequence_panel(draft, str(exc))
     lines = [f"• **{_message_label(str(item['message_id']))}**: {_discord_time(item.get('run_at'))}" for item in occurrences]
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_header(draft, "schedule") + [
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(_header(draft, "schedule") + [
         hikari.impl.TextDisplayComponentBuilder(content="### All reminder send times\n" + ("\n".join(lines) or "No active reminder send times.")),
         hikari.impl.TextDisplayComponentBuilder(content="-# These times will be used after you save. Messages already sent or skipped will not be sent again."),
         _button(f"cwl_tab:{_draft_token(draft)}|schedule", "Back to Schedule"),
-    ])]
+    ]))]
 
 
 def schedule_editor(draft: dict, key: str, notice: str | None = None) -> list:
@@ -945,7 +958,7 @@ def schedule_editor(draft: dict, key: str, notice: str | None = None) -> list:
     for value, label in (("monthly", "Monthly"), ("after_open", "After signups open"), ("before_close", "Before signup deadline"), ("specific", "One-time date"), ("legacy_chain", "After previous reminder"), ("manual", "Manual")):
         modes.add_option(label, value, is_default=value == schedule.get("mode", "manual"))
     rows.insert(-1, modes_row)
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(rows))]
 
 
 def monthly_editor(draft: dict, key: str) -> list:
@@ -962,7 +975,7 @@ def monthly_editor(draft: dict, key: str) -> list:
         ),
         _button(f"cwl_tab:{_draft_token(draft)}|schedule", "Back to Schedule"),
     ]
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(rows))]
 
 
 async def _open_message_modal(ctx: Any, action_id: str, mongo: MongoClient, kind: str) -> None:
@@ -1046,7 +1059,7 @@ def links_editor(draft: dict, key: str, audience: str, notice: str | None = None
         rows.append(menu_row)
     rows.append(_button(f"cwl_button_add:{ref}", "Add button", style=hikari.ButtonStyle.PRIMARY))
     rows.append(_button(f"cwl_open_message:{ref}", "Back to message"))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=rows)]
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(rows))]
 
 
 @register_action("cwl_button_choose", preload_state=False)
@@ -1065,12 +1078,12 @@ async def choose_button(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
     if not 0 <= index < len(buttons):
         return links_editor(draft, ref[1], ref[2], "That button no longer exists.")
     button = buttons[index]; full = f"{action_id}|{index}"
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_header(draft, "messages") + [
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last(_header(draft, "messages") + [
         hikari.impl.TextDisplayComponentBuilder(content=f"### {_short(button.get('label'), 100)}\n{_short(button.get('url'), 300)}"),
         _button(f"cwl_button_edit:{full}", "Edit button", style=hikari.ButtonStyle.PRIMARY),
         _button(f"cwl_button_remove:{full}", "Remove button", style=hikari.ButtonStyle.DANGER),
         _button(f"cwl_links:{action_id}", "Back to buttons"),
-    ])]
+    ]))]
 
 
 async def _button_modal(ctx: Any, action_id: str, mongo: MongoClient, *, index: int | None) -> None:
@@ -1448,13 +1461,13 @@ async def preview(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.IN
     # sits after it and has no effect on the exact campaign post being reviewed.
     return list(rendered) + [hikari.impl.ContainerComponentBuilder(
         accent_color=ACCENT,
-        components=[
+        components=_navigation_last([
             _button_group(
                 (f"cwl_preview:{_draft_token(draft)}|{ref[1]}|main", "Main", hikari.ButtonStyle.PRIMARY),
                 (f"cwl_preview:{_draft_token(draft)}|{ref[1]}|lazy", "Lazy", hikari.ButtonStyle.PRIMARY),
                 (f"cwl_open_message:{action_id}", "Back to editor", hikari.ButtonStyle.SECONDARY),
             ),
-        ],
+        ]),
     )]
 
 
@@ -1670,14 +1683,14 @@ async def review_apply(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.
         "draft_updated_at": draft.get("updated_at"), "scope": ref[1], "affected_cycle": affected_cycle,
     }, ttl=timedelta(minutes=10))
     scope_label = f"future months, starting {affected_cycle}. Months you edited separately keep their own settings" if ref[1] == "defaults" else f"messages not yet sent for {_cycle(draft)}"
-    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=[
+    return [hikari.impl.ContainerComponentBuilder(accent_color=ACCENT, components=_navigation_last([
         hikari.impl.TextDisplayComponentBuilder(content=f"## Review CWL changes\nApplies to **{scope_label}**."),
         hikari.impl.TextDisplayComponentBuilder(content=summary),
         _button_group(
             (f"cwl_apply_confirm:{review_id}", "Save changes", hikari.ButtonStyle.SUCCESS),
             (f"cwl_save_options:{_draft_token(draft)}|{ref[2] if len(ref) == 3 else 'schedule'}", "Back", hikari.ButtonStyle.SECONDARY),
         ),
-    ])]
+    ]))]
 
 
 @register_action("cwl_apply_confirm", preload_state=False)
