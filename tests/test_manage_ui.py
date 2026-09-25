@@ -6,6 +6,7 @@ from utils.manage_ui import button_emoji, breadcrumb
 
 def test_navigation_buttons_serialize_custom_icons_without_changing_labels():
     expected = {
+        'Open': 1553088187902071034,
         'Back to FWA': 1536796427198668911,
         'Management Home': 1536924506147524730,
         'Previous': 1536793616863862784,
@@ -25,6 +26,5 @@ def test_navigation_buttons_serialize_custom_icons_without_changing_labels():
         assert button['label'] == label
         assert int(button['emoji']['id']) == emoji_id
     assert button_emoji('Next step') is hikari.UNDEFINED
-    assert button_emoji('Open') is hikari.UNDEFINED
     assert button_emoji('Send reminder now') is hikari.UNDEFINED
     assert breadcrumb('FWA', 'Points Monitor') == '-# Management › FWA › Points Monitor'

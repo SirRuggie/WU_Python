@@ -150,6 +150,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
         style=hikari.ButtonStyle.SECONDARY,
         custom_id=action,
         label="Open" if allowed else "Locked",
+        emoji=button_emoji("Open") if allowed else hikari.UNDEFINED,
         is_disabled=not allowed,
     )
     detail = description if allowed else f"{description} · Requires {requirements[key]}"

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hikari
 
 ICONS = {
+    "open": 1553088187902071034,
     "yes": 1397096942907166831,
     "no": 1397096986506825778,
     "back": 1536796427198668911,
@@ -25,6 +26,8 @@ def button_emoji(label: str):
         kind = "yes"
     elif text in {"no", "deny", "cancel"} or text.startswith(("cancel ", "deny ", "no, ")):
         kind = "no"
+    elif text == "open":
+        kind = "open"
     elif text == "management home":
         kind = "home"
     elif text == "back" or text.startswith("back to "):
