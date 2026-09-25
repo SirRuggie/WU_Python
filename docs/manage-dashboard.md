@@ -39,7 +39,9 @@ publishing content or sending announcements still requires the destination
 editor's explicit action.
 
 Leaving a Recruit Gauntlet document for its document list or Management Home
-requires confirmation.
+requires confirmation only when its text or artwork differs from the last saved
+(or initially opened) version. Unchanged drafts return immediately. Channel
+selections are saved immediately and do not trigger the unsaved-edit warning.
 Save the template first to retain edits; reopening starts a new content draft.
 CWL campaign drafts are retained and resumed by the existing campaign editor.
 

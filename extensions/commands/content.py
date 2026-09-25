@@ -374,6 +374,28 @@ async def _ready_for_destination(ctx, bot, channel, permissions, document_key: s
     return ready, messages[0] if messages else None
 
 
+def draft_snapshot(state):
+    """Snapshot only template fields, excluding immediately saved channel settings."""
+    document = DOCUMENTS[state["document"]]
+    media = normal_media(document, state.get("media"))
+    return {
+        "sections": copy.deepcopy(state["sections"]),
+        "media": {slot: canonical_media_url(url) for slot, url in media.items()},
+    }
+
+
+def has_unsaved_edits(state):
+    saved = state.get("saved_snapshot")
+    if not isinstance(saved, dict) or set(saved) != {"sections", "media"}:
+        # Older live panels did not record their starting version. Warn rather
+        # than silently discarding a draft whose origin cannot be proved.
+        return True
+    try:
+        return draft_snapshot(state) != saved
+    except (KeyError, ValueError, TypeError):
+        return True
+
+
 async def new_draft(mongo, state):
     state = {key: value for key, value in state.items() if key not in {"_id", "created_at", "expires_at", "component_state"}}
     state["_id"] = uuid.uuid4().hex
@@ -595,6 +617,7 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
                 },
                 destination_channel_id=await destination_for(mongo, state["guild_id"], document.key),
             )
+            state["saved_snapshot"] = draft_snapshot(state)
         await initial_panel(ctx, mongo, state)
 
 
@@ -607,6 +630,9 @@ async def manage_review(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECT
     token = state.get("manage_token")
     if not token:
         return panel(state)
+    if not has_unsaved_edits(state):
+        from extensions.commands.manage import home
+        return await home(ctx=ctx, action_id=token, mongo=mongo)
     buttons = hikari.impl.MessageActionRowBuilder()
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing")
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"manage_home:{token}", label="Leave without saving")
@@ -641,11 +667,13 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
     sections, media, revision = await template_for(mongo, document, state["guild_id"])
     destination_channel_id = await destination_for(mongo, state["guild_id"], document.key)
     target = state.get("target") if state.get("document") == document.key else None
-    return panel(await new_draft(mongo, dict(
+    draft_state = dict(
         state, view="document", document=document.key, sections=sections,
         revision=revision, media=media, target=target,
         destination_channel_id=destination_channel_id, selected_media_slot=None,
-    )))
+    )
+    draft_state["saved_snapshot"] = draft_snapshot(draft_state)
+    return panel(await new_draft(mongo, draft_state))
 
 
 @register_action("content_destination", preload_state=False)
@@ -754,7 +782,7 @@ async def back_to_root(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
     state, problem = await load(ctx, mongo, action_id)
     if problem:
         return error_panel(problem)
-    if state.get("manage_token") and state.get("document"):
+    if state.get("manage_token") and state.get("document") and has_unsaved_edits(state):
         buttons = hikari.impl.MessageActionRowBuilder()
         buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_back_document:{state['_id']}", label="Keep editing")
         buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root_confirm:{state['_id']}", label="Leave without saving")
@@ -997,7 +1025,9 @@ async def save(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
         return panel(state, "Choose a document before saving.")
     if not await _save(ctx, state, mongo):
         return panel(state, "The template changed. Reopen the dashboard to avoid overwriting it.")
-    return panel(await new_draft(mongo, dict(state, revision=state["revision"] + 1)), "Template saved for future posts in this server.")
+    saved_state = dict(state, revision=state["revision"] + 1)
+    saved_state["saved_snapshot"] = draft_snapshot(saved_state)
+    return panel(await new_draft(mongo, saved_state), "Template saved for future posts in this server.")
 
 
 @register_action("content_preview", preload_state=False)
