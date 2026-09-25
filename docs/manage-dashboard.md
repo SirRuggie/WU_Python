@@ -9,6 +9,7 @@ on one command, not separate subcommands.
 | Command | Workspace | Purpose |
 | --- | --- | --- |
 | `/manage` | Server Management | Choose a management workspace |
+| `/manage section:Roles` | Roles | Add or remove roles for a member; browse a role’s complete member list and count |
 | `/manage section:Recruit Gauntlet` | Recruit Gauntlet | Edit onboarding text and artwork, choose each section’s channel, and send About Us, WU Strike System, or Family Particulars |
 | `/manage section:Recruitment Questions` | Recruitment Questions | Edit all Primary, FWA, Explanation, and Keep It Moving messages |
 | `/manage section:FWA` | FWA | Manage base links, images, descriptions, and Town Hall upgrade notes |
@@ -71,3 +72,22 @@ message templates and the recruit-specific sending flow.
 The legacy `/clan info` and `/clan list` commands and their public info/list
 component handlers are also disabled. The active FWA workspace and recruitment
 workflows retain their shared clan data and dashboard helpers.
+
+## Roles
+
+`/manage section:Roles` replaces `/role add`, `/role remove`, and `/role manage`.
+Use the member and role selectors to prepare a change, then explicitly add or
+remove the selected roles. The recruitment-specific **Apply Recruit Setup** shortcut remains in
+`/recruit dashboard`. Multiple roles may be selected; each role is checked
+individually, and unrelated roles are left intact.
+
+Access remains limited to configured Main/FWA recruiters, the Recruitment Team,
+and administrators. Each action rechecks access and role/member hierarchy;
+integration roles, @everyone, and roles the bot cannot manage cannot be changed.
+
+The role browser lists everyone holding a selected role, including bot accounts,
+with a total and paginated member list. It fetches the complete server membership
+instead of counting a potentially incomplete cache. Refresh updates the snapshot.
+If Discord refuses the lookup, the panel reports the failure rather than showing
+a misleading zero. These panels are private, with Back and Management Home
+navigation, and expire after 30 minutes.

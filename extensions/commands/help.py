@@ -92,7 +92,7 @@ async def create_help_view(guild_id: int | None = None) -> list:
                 Separator(divider=True),
                 _category_select(categories),
                 Text(content=(
-                    "-# Fast starts: `/role` for member roles • `/recruit` for onboarding "
+                    "-# Fast starts: `/manage section:Roles` for member roles • `/recruit` for onboarding "
                     "• `/ticket` for tickets • `/fwa` for FWA tools "
                     "• `/accounts` for your players • `/todo` for outstanding work"
                 )),

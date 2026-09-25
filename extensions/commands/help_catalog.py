@@ -33,9 +33,6 @@ HELP_CATEGORIES = {
         "emoji": "👥",
         "description": "Member roles and recruit onboarding",
         "commands": [
-            ("/role add", "Add one server role to a member. Recruiter/Admin only."),
-            ("/role remove", "Remove one server role from a member. Recruiter/Admin only."),
-            ("/role manage", "Open bulk role management for a member. Recruiter/Admin only."),
             ("/recruit questions", "Send the recruitment questionnaire to a recruit."),
             ("/recruit dashboard", "Open the complete new-member onboarding dashboard."),
         ],
@@ -43,7 +40,7 @@ HELP_CATEGORIES = {
     "manage": {
         "name": "Management", "emoji": "🛡️", "description": "Private dashboards for server staff",
         "commands": [
-            ("/manage", "Open management home or choose Server, Recruit Gauntlet, FWA, FWA War Messages, Recruitment Questions, CWL, or CWL Rosters."),
+            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA, FWA War Messages, Recruitment Questions, CWL, or CWL Rosters."),
         ],
     },
     "clan_fwa": {

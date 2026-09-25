@@ -53,7 +53,7 @@ class FakeCollection:
 
 def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     paths = command_paths()
-    expected_catalog_total = 77
+    expected_catalog_total = 74
 
     # /cards is retired along with the Clash of Cards event (see
     # utils.startup.RETIRED_EXTENSIONS) and hidden from the catalog, so the
@@ -71,7 +71,7 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     assert "/cards" not in paths
     assert "/ping" in paths
     assert "/clear-my-dms" in paths
-    assert {"/role add", "/role remove", "/role manage"} <= paths
+    assert {"/role add", "/role remove", "/role manage"}.isdisjoint(paths)
     assert {"/poll create", "/poll view", "/poll active"} <= paths
     assert not any(path == "/cwl-announcement" or path.startswith("/cwl-reminder ") for path in paths)
     assert "/lazyprep" not in paths
@@ -79,8 +79,8 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     assert not any(path.startswith("/fwa lazycwl-") for path in paths)
 
 
-def test_role_group_registers_the_three_public_subcommands():
-    assert set(role_commands.role.subcommands) == {"add", "remove", "manage"}
+def test_legacy_role_group_is_not_registered():
+    assert not any(hasattr(item, "_command") for item in role_commands.loader._loadables)
 
 
 def test_cached_member_permissions_include_everyone_and_explicit_roles():

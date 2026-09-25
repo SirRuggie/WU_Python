@@ -41,6 +41,8 @@ def test_document_open_records_saved_copy_and_clean_back_skips_warning(monkeypat
 
 
 def test_home_warns_only_for_real_text_or_media_edits_and_reverts(monkeypatch):
+    from extensions.commands.recruit import perms
+    monkeypatch.setattr(perms, "is_recruiter", AsyncMock(return_value=False))
     document = content.DOCUMENTS["about-us"]
     sections = [node.content for node in content.text_nodes(run(content.baseline(document)))]
     state = {

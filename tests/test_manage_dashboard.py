@@ -52,16 +52,18 @@ def test_single_manage_command_has_optional_section_and_is_loaded():
     assert set(manage.Manage._command_data.options) == {"section"}
     choices = manage.Manage._command_data.options['section'].choices
     assert [(choice.name, choice.value) for choice in choices] == [
-        ("Server", "server"), ("Recruit Gauntlet", "recruit-gauntlet"),
+        ("Server", "server"), ("Roles", "roles"), ("Recruit Gauntlet", "recruit-gauntlet"),
         ("Recruitment Questions", "recruitment-questions"),
         ("FWA", "fwa"), ("FWA War Messages", "fwa-war-messages"),
         ("CWL", "cwl"), ("CWL Rosters", "cwl-rosters"),
     ]
 
 
-def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
+def test_home_has_seven_sections_valid_discord_shape_and_access(monkeypatch):
     token = "x" * 32
     ctx = context(permissions=hikari.Permissions.MANAGE_GUILD)
+    from extensions.commands.recruit import perms
+    monkeypatch.setattr(perms, "is_recruiter", AsyncMock(return_value=False))
     built = run(manage.manage_home_components(ctx, object(), token=token))[0].build()[0]
     nodes = list(walk(built))
     buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
@@ -69,18 +71,20 @@ def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
     assert built["type"] == hikari.ComponentType.CONTAINER
     assert built["accent_color"] == manage.GOLD_ACCENT
     assert len(nodes) <= 40
-    assert len(sections) == 6
+    assert len(sections) == 7
     assert [button["custom_id"] for button in buttons] == [
-        f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}", f"manage_fwa_war_messages:{token}",
+        f"manage_server_roles:{token}", f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}", f"manage_fwa_war_messages:{token}",
         f"manage_cwl:{token}", f"manage_cwl_rosters:{token}",
     ]
-    assert [button["disabled"] for button in buttons] == [False, False, True, True, True, True]
+    assert [button["disabled"] for button in buttons] == [True, False, False, True, True, True, True]
     assert all(len(button["custom_id"]) <= 100 for button in buttons)
 
 
-def test_fwa_role_opens_only_fwa_without_server_manage_permission():
+def test_fwa_role_opens_only_fwa_without_server_manage_permission(monkeypatch):
+    from extensions.commands.recruit import perms
+    monkeypatch.setattr(perms, "is_recruiter", AsyncMock(return_value=False))
     ctx = context(permissions=hikari.Permissions.NONE, roles=(manage.FWA_REP_ROLE_ID,))
-    assert [key for _, key, _ in manage.destinations(ctx)] == ["fwa"]
+    assert [key for _, key, _ in run(manage.destinations(ctx, object()))] == ["fwa"]
 
 
 def test_state_rejects_expired_other_owner_and_other_guild(monkeypatch):
@@ -312,3 +316,50 @@ def test_recruitment_questions_button_opens_real_editor(monkeypatch):
     assert stored.await_args.args[1]["manage_token"] == "token"
     rendered = ctx.interaction.edit_initial_response.await_args.kwargs["components"][0].build()[0]
     assert rendered["components"][0]["content"] == "## Recruitment Questions"
+
+
+def test_roles_access_checks_configured_recruiter_roles(monkeypatch):
+    from extensions.commands.recruit import perms
+    ctx = context(permissions=hikari.Permissions.NONE)
+    checker = AsyncMock(return_value=True)
+    monkeypatch.setattr(perms, "is_recruiter", checker)
+    assert run(manage._can_access(ctx, object(), "roles"))
+    checker.assert_awaited_once()
+    checker.return_value = False
+    assert not run(manage._can_access(ctx, object(), "roles"))
+
+
+def test_roles_destination_opens_workspace_and_preserves_home_token(monkeypatch):
+    from extensions.commands import role_management
+    opener = AsyncMock()
+    monkeypatch.setattr(role_management, "open_dashboard", opener)
+    ctx = context()
+    db = object()
+    run(manage._open(ctx, db, "roles", "home-token", deferred=True))
+    opener.assert_awaited_once_with(ctx, db, manage_token="home-token", deferred=True)
+
+
+def test_roles_button_opens_real_workspace_without_double_ack(monkeypatch):
+    from extensions.commands import role_management
+    from extensions.commands.recruit import perms
+    ctx = context(custom_id="manage_server_roles:token")
+    ctx.interaction.app = SimpleNamespace(cache=SimpleNamespace(get_guild=lambda _id: SimpleNamespace(id=2)))
+    source = components.registered_functions["manage_server_roles"]
+    monkeypatch.setitem(components.registered_functions, "manage_server_roles",
+                        replace(source, fn=source.fn.__wrapped__._func))
+    monkeypatch.setattr(manage, "get_state", AsyncMock(return_value={
+        "view": "home", "guild_id": 2, "user_id": 1,
+    }))
+    monkeypatch.setattr(perms, "is_recruiter", AsyncMock(return_value=True))
+    stored = AsyncMock()
+    monkeypatch.setattr(role_management, "insert_state", stored)
+    run(components._dispatch(ctx, mongo=object()))
+    assert ctx.events[0] == ("defer", {"edit": True})
+    assert ctx.defer.await_count == 1
+    stored.assert_awaited_once()
+    assert stored.await_args.args[1]["manage_token"] == "token"
+    sent = ctx.interaction.edit_initial_response.await_args.kwargs
+    nodes = list(walk([part.build()[0] for part in sent["components"]]))
+    assert any(node.get("type") == hikari.ComponentType.USER_SELECT_MENU for node in nodes)
+    assert any(node.get("type") == hikari.ComponentType.ROLE_SELECT_MENU for node in nodes)
+    assert sent["user_mentions"] is False and sent["role_mentions"] is False

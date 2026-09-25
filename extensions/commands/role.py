@@ -285,4 +285,5 @@ class ManageRoles(
         await ctx.respond(components=components, ephemeral=True)
 
 
-loader.command(role)
+# Public /role commands are replaced by /manage section:Roles.
+# Helpers remain available to existing recruiter integrations and tests.

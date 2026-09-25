@@ -20,6 +20,7 @@ TTL = timedelta(minutes=30)
 NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
 FWA_REP_ROLE_ID = 993015846442127420
 DESTINATIONS = (
+    ("Roles", "roles", "Add or remove member roles, browse members, and see role counts"),
     ("Recruit Gauntlet", "recruit", "Onboarding messages, rules, and artwork"),
     ("Recruitment Questions", "recruitment_questions", "Primary questions, FWA, explanations, and quick prompts"),
     ("FWA", "fwa", "Base links, images, and Town Hall guidance"),
@@ -29,6 +30,7 @@ DESTINATIONS = (
 )
 SECTION_CHOICES = (
     lightbulb.Choice("Server", "server"),
+    lightbulb.Choice("Roles", "roles"),
     lightbulb.Choice("Recruit Gauntlet", "recruit-gauntlet"),
     lightbulb.Choice("Recruitment Questions", "recruitment-questions"),
     lightbulb.Choice("FWA", "fwa"),
@@ -37,6 +39,7 @@ SECTION_CHOICES = (
     lightbulb.Choice("CWL Rosters", "cwl-rosters"),
 )
 SECTION_DESTINATION = {
+    "roles": "roles",
     "recruit-gauntlet": "recruit",
     "recruitment-questions": "recruitment_questions",
     "fwa": "fwa",
@@ -80,6 +83,19 @@ def _allowed(ctx: Any, destination: str) -> bool:
     raise ValueError(f"Unknown management destination: {destination}")
 
 
+async def _can_access(ctx: Any, mongo: MongoClient, destination: str) -> bool:
+    if destination != "roles":
+        return _allowed(ctx, destination)
+    from extensions.commands.recruit import perms
+    member = _member(ctx)
+    if member is None:
+        return False
+    # Recruiter roles are configured in MongoDB; evaluate them at each entry.
+    if getattr(member, "permissions", hikari.Permissions.NONE) & hikari.Permissions.ADMINISTRATOR:
+        return True
+    return await perms.is_recruiter(member, mongo)
+
+
 async def _new_state(ctx: Any, mongo: MongoClient) -> dict:
     guild_id, user_id = _guild_id(ctx), _user_id(ctx)
     if guild_id is None or user_id is None:
@@ -105,13 +121,14 @@ def error(message: str) -> list:
     )]
 
 
-def destinations(ctx: Any) -> list[tuple[str, str, str]]:
-    return [entry for entry in DESTINATIONS if _allowed(ctx, entry[1])]
+async def destinations(ctx: Any, mongo: MongoClient) -> list[tuple[str, str, str]]:
+    return [entry for entry in DESTINATIONS if await _can_access(ctx, mongo, entry[1])]
 
 
 def _destination_section(label: str, key: str, description: str, token: str, allowed: bool) -> hikari.impl.SectionComponentBuilder:
-    action = f"manage_{key}:{token}"
+    action = f"manage_server_roles:{token}" if key == "roles" else f"manage_{key}:{token}"
     requirements = {
+        "roles": "Recruiter or Administrator access",
         "recruit": "Manage Server permission",
         "recruitment_questions": "Manage Server permission",
         "fwa": "FWA Representative role",
@@ -146,7 +163,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
     for index, (label, key, description) in enumerate(DESTINATIONS):
         if index:
             children.append(hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL))
-        children.append(_destination_section(label, key, description, token, _allowed(ctx, key)))
+        children.append(_destination_section(label, key, description, token, await _can_access(ctx, mongo, key)))
     children += [
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         hikari.impl.TextDisplayComponentBuilder(content="-# Private to you · expires after 30 minutes"),
@@ -156,7 +173,10 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
 
 async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
                 deferred: bool) -> None:
-    if destination == "recruitment_questions":
+    if destination == "roles":
+        from extensions.commands import role_management
+        await role_management.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
+    elif destination == "recruitment_questions":
         from extensions.commands import recruitment_questions
         await recruitment_questions.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
     elif destination == "recruit":
@@ -196,12 +216,12 @@ class Manage(lightbulb.SlashCommand, name="manage", description="Open Warriors U
         if self.section not in {None, "server", *SECTION_DESTINATION}:
             await ctx.respond("Choose one of the available management sections.", ephemeral=True)
             return
+        await ctx.defer(ephemeral=True)
         destination = SECTION_DESTINATION.get(self.section)
-        if destination and not _allowed(ctx, destination):
-            await ctx.respond("You do not have access to that workspace.", ephemeral=True)
+        if destination and not await _can_access(ctx, mongo, destination):
+            await ctx.interaction.edit_initial_response(content="You do not have access to that workspace.")
             return
 
-        await ctx.defer(ephemeral=True)
         try:
             state = await _new_state(ctx, mongo)
         except ValueError as exc:
@@ -227,7 +247,7 @@ async def _destination_action(ctx: Any, action_id: str, mongo: MongoClient, dest
     if problem:
         await ctx.interaction.edit_initial_response(components=error(problem), **NO_MENTIONS)
         return
-    if not _allowed(ctx, destination):
+    if not await _can_access(ctx, mongo, destination):
         await ctx.interaction.edit_initial_response(
             components=error("Your access to this workspace changed. Run `/manage` to see the sections available to you."),
             **NO_MENTIONS,
@@ -244,6 +264,7 @@ def _register_destination(name: str, destination: str):
     return handler
 
 
+roles_destination = _register_destination("manage_server_roles", "roles")
 recruit_destination = _register_destination("manage_recruit", "recruit")
 recruitment_questions_destination = _register_destination("manage_recruitment_questions", "recruitment_questions")
 fwa_destination = _register_destination("manage_fwa", "fwa")
