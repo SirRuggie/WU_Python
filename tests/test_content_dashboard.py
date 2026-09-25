@@ -17,7 +17,8 @@ def test_native_document_baselines_keep_original_layout_and_text_totals():
     async def check():
         expected = {"about-us": (12, 2819), "strike-system": (12, 3585), "family-particulars": (28, 3992)}
         expected_components = {"about-us": 22, "strike-system": 29, "family-particulars": 40}
-        for key, document in content.DOCUMENTS.items():
+        for key in expected:
+            document = content.DOCUMENTS[key]
             components = await content.baseline(document)
             nodes = content.text_nodes(components)
             assert (len(nodes), sum(len(node.content) for node in nodes)) == expected[key]
@@ -29,10 +30,11 @@ def test_native_document_baselines_keep_original_layout_and_text_totals():
 
 
 def test_registry_baselines_use_the_public_pure_renderers(monkeypatch):
-    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem
+    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family
 
     calls = []
     originals = {
+        "join-family": recruit_join_family.build_join_family,
         "about-us": recruit_aboutus.build_aboutus,
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
@@ -44,6 +46,7 @@ def test_registry_baselines_use_the_public_pure_renderers(monkeypatch):
             return originals[key](*args, **kwargs)
         return build
 
+    monkeypatch.setattr(recruit_join_family, "build_join_family", tracked("join-family"))
     monkeypatch.setattr(recruit_aboutus, "build_aboutus", tracked("about-us"))
     monkeypatch.setattr(recruit_strikesystem, "build_strikesystem", tracked("strike-system"))
     monkeypatch.setattr(recruit_familyparticulars, "build_familyparticulars", tracked("family-particulars"))
@@ -54,7 +57,7 @@ def test_registry_baselines_use_the_public_pure_renderers(monkeypatch):
             await content.baseline(document)
 
     asyncio.run(check())
-    assert calls == [("about-us", (), {}), ("strike-system", (), {}), ("family-particulars", (), {})]
+    assert calls == [("join-family", (), {}), ("about-us", (), {}), ("strike-system", (), {}), ("family-particulars", (), {})]
 
 
 def test_pure_setup_renderers_accept_sections_without_changing_the_component_shape():

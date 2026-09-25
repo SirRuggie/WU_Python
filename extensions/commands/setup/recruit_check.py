@@ -1,4 +1,4 @@
-"""Private, read-only diagnostics for the three recruit setup posts."""
+"""Private, read-only diagnostics for the recruit setup posts."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from hikari.impl import (
 from extensions.commands.setup import setup
 from extensions.commands.setup import (
     recruit_aboutus,
+    recruit_join_family,
     recruit_familyparticulars,
     recruit_strikesystem,
 )
@@ -23,6 +24,7 @@ from utils.recruit_setup_checks import inspect_recruit_setup, require_manage_ser
 
 
 _STEPS = (
+    ("Join the Family", recruit_join_family.JOIN_FAMILY_ROLE_ID, recruit_join_family.ABOUT_US_CHANNEL_ID),
     ("About Us", recruit_aboutus.ABOUT_US_ROLE_ID, recruit_aboutus.STRIKE_SYSTEM_CHANNEL_ID),
     ("WU Strike System", recruit_strikesystem.STRIKE_SYSTEM_ROLE_ID,
      recruit_strikesystem.FAMILY_PARTICULARS_CHANNEL_ID),

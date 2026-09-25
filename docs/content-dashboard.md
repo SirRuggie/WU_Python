@@ -4,7 +4,7 @@ The shared management home is `/manage`; choose **Recruit Gauntlet** for this
 onboarding editor, or use the optional `section` choice to open it directly.
 See [Server Management](manage-dashboard.md) for navigation and permissions.
 
-Recruit Gauntlet is a private, per-server Components V2 editor for About Us,
+Recruit Gauntlet is a private, per-server Components V2 editor for Join the Family, About Us,
 WU Strike System, and Family Particulars. Administrators with Manage Server can
 edit named Markdown blocks, replace images in R2, preview the public layout,
 save a reusable template, and send the current draft to a selected channel.
@@ -14,7 +14,7 @@ Manage CWL messages, artwork, destinations, and timing through **CWL** in
 
 ## Choose a channel and send
 
-Each document (About Us, WU Strike System, and Family Particulars) has its own
+Each document (Join the Family, About Us, WU Strike System, and Family Particulars) has its own
 native Discord channel dropdown and **Send to channel** button. Choose a text
 or announcement channel in this server. The choice is saved per server and
 document and is shown in the editor when reopened. MongoDB stores it separately
@@ -60,6 +60,7 @@ The selection stays active and the editor immediately shows the restored default
 
 | Document | Editable images |
 | --- | --- |
+| Join the Family | Welcome banner |
 | About Us | Welcome banner |
 | WU Strike System | Basic rules banner; main clan strike chart; FWA strike chart |
 | Family Particulars | Welcome banner; CWL banner |
@@ -140,3 +141,23 @@ Verification on 2026-09-22:
 
 These tests exercise application/SDK behavior with simulated Discord uploads;
 they do not establish a successful upload from a live Discord client.
+
+
+## Join the Family
+
+The first Gauntlet section is **Join the Family**, followed by About Us, WU Strike
+System, and Family Particulars. Its goldenrod welcome card uses the shared Warriors
+United banner and editable welcome/next-step copy. Choose its posting channel,
+preview, save the template, and send it through the same editor as the other sections.
+
+The public **Join the Family** button grants role `1551011479577165844` in the
+server containing About Us (`1547241886954168430`). It then responds privately
+with **Continue to About Us**. Discord cannot force a client to switch channels;
+the recruit presses that link to continue. Existing role holders can use the
+button again without a duplicate grant. Failed grants do not show a success link.
+The shared public card is never replaced with one recruit's result.
+
+The role has View Channel and Read Message History access to About Us. No
+standalone setup command is added. Text and image changes are saved in
+`bot_config` as `content:join-family:<guild id>`; the destination uses
+`content_destination:<guild id>:join-family`.

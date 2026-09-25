@@ -250,12 +250,12 @@ def test_recruit_post_commands_deny_before_defer_storage_or_discord_reads():
 def test_recruit_check_panel_is_components_v2_and_reports_r2_status():
     ready = _run(inspect_recruit_setup(_ctx(), _bot(), role_id=200, next_channel_id=300))
 
-    panel = recruit_check.check_panel((ready, ready, ready), media_configured=False)
+    panel = recruit_check.check_panel((ready, ready, ready, ready), media_configured=False)
 
     assert len(panel) == 1
     assert panel[0].type == hikari.ComponentType.CONTAINER
     text = "\n".join(item.content for item in panel[0].components)
-    assert text.count("ready") == 3
+    assert text.count("ready") == 4
     assert "R2 is not configured" in text
 
 
@@ -271,6 +271,6 @@ def test_recruit_check_returns_private_components_v2_result_after_reads():
     assert content is None
     assert kwargs["ephemeral"] is True
     assert kwargs["components"][0].type == hikari.ComponentType.CONTAINER
-    assert bot.rest.fetch_roles.await_count == 3
-    assert bot.rest.fetch_my_member.await_count == 3
-    assert bot.rest.fetch_channel.await_count == 3
+    assert bot.rest.fetch_roles.await_count == 4
+    assert bot.rest.fetch_my_member.await_count == 4
+    assert bot.rest.fetch_channel.await_count == 4

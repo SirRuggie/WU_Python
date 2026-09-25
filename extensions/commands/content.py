@@ -43,16 +43,19 @@ class Document:
 
 
 DOCUMENTS = {
+    "join-family": Document("join-family", "Join the Family", "join_family_acknowledge"),
     "about-us": Document("about-us", "About Us", "aboutus_acknowledge", "recruit_aboutus"),
     "strike-system": Document("strike-system", "WU Strike System", "strikesystem_acknowledge"),
     "family-particulars": Document("family-particulars", "Family Particulars", "familyparticulars_acknowledge"),
 }
 BLOCK_LABELS = {
+    "join-family": ("Heading", "Welcome", "What happens next", "Call to action"),
     "about-us": ("Welcome heading", "Welcome overview", "Tactical heading", "Tactical details", "Flexible Fun heading", "Flexible Fun details", "FWA heading", "FWA details", "Disclaimer heading", "Disclaimer", "Next step heading", "Next step"),
     "strike-system": ("Basic rules heading", "Basic rules", "Strike overview heading", "Strike overview", "Main clan heading", "Main clan note", "FWA heading", "FWA note", "Terms heading", "Terms", "Acknowledgement heading", "Acknowledgement"),
     "family-particulars": ("Family heading", "Golden rule heading", "Golden rule", "Friendly challenges heading", "Friendly challenges", "Clan games heading", "Clan games", "War rules heading", "War eligibility heading", "War eligibility", "Prep day heading", "Prep day", "Battle day heading", "Battle day", "CWL heading", "CWL overview", "CWL principles heading", "CWL principles", "Acknowledgement heading", "Acknowledgement"),
 }
 MEDIA_SLOTS = {
+    "join-family": (("welcome", "Welcome banner"),),
     "about-us": (("welcome", "Welcome banner"),),
     "strike-system": (
         ("rules", "Basic rules banner"),
@@ -72,8 +75,10 @@ def acknowledgement_setup(document_key: str) -> tuple[int, int]:
         recruit_aboutus,
         recruit_strikesystem,
         recruit_familyparticulars,
+        recruit_join_family,
     )
     return {
+        "join-family": (recruit_join_family.JOIN_FAMILY_ROLE_ID, recruit_join_family.ABOUT_US_CHANNEL_ID),
         "about-us": (recruit_aboutus.ABOUT_US_ROLE_ID, recruit_aboutus.STRIKE_SYSTEM_CHANNEL_ID),
         "strike-system": (recruit_strikesystem.STRIKE_SYSTEM_ROLE_ID, recruit_strikesystem.FAMILY_PARTICULARS_CHANNEL_ID),
         "family-particulars": (recruit_familyparticulars.CLAN_RULES_READ_ROLE_ID, recruit_familyparticulars.APPLY_HERE_CHANNEL_ID),
@@ -197,8 +202,9 @@ def media_slots(document: Document):
 async def baseline(document: Document):
     if document.key in _baselines:
         return copy.deepcopy(_baselines[document.key])
-    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem
+    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family
     build = {
+        "join-family": recruit_join_family.build_join_family,
         "about-us": recruit_aboutus.build_aboutus,
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
@@ -208,8 +214,9 @@ async def baseline(document: Document):
 
 
 def document_renderer(document: Document):
-    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem
+    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family
     return {
+        "join-family": recruit_join_family.build_join_family,
         "about-us": recruit_aboutus.build_aboutus,
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
