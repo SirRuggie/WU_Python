@@ -10,6 +10,7 @@ on one command, not separate subcommands.
 | --- | --- | --- |
 | `/manage` | Server Management | Choose a management workspace |
 | `/manage section:Recruit Gauntlet` | Recruit Gauntlet | Edit onboarding messages and artwork: About Us, WU Strike System, and Family Particulars |
+| `/manage section:Recruitment Questions` | Recruitment Questions | Edit the reusable main recruitment question messages |
 | `/manage section:FWA` | FWA | Manage base links, images, descriptions, and Town Hall upgrade notes |
 | `/manage section:FWA War Messages` | FWA War Messages | Edit Win, Lose, Mismatch, and Blacklisted war-plan templates |
 | `/manage section:CWL` | CWL | Manage campaign messages, schedules, and delivery settings |
@@ -22,11 +23,11 @@ points have been removed. Open these management workspaces through `/manage`.
 
 ## Permissions and interaction design
 
-The home shows five named workspaces with separators and Open buttons.
+The home shows six named workspaces with separators and Open buttons.
 Workspaces outside the current member's access are locked. Back returns to
 the previous screen; Management Home returns to the central dashboard. Each
 workspace rechecks its existing authorization rules: Manage Server or
-Administrator for onboarding content, Administrator for CWL campaigns and
+Administrator for onboarding content and recruitment questions, Administrator for CWL campaigns and
 rosters, the FWA Representative role for FWA data, and the FWA Clan Rep role
 used by `/fwa war-plans` for FWA War Messages. Opening the management
 home does not grant new privileges.
@@ -61,3 +62,6 @@ and [CWL rosters](lazycwl-dashboard.md).
 
 [FWA War Messages](fwa-war-messages.md) documents the war-template editor,
 preview behavior, and how saved changes reach future war-plan posts.
+
+[Recruitment Questions](recruitment-questions.md) documents the main-question
+message templates and the recruit-specific sending flow.

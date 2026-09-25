@@ -1,0 +1,83 @@
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+import hikari
+from extensions.commands import recruitment_questions as editor
+
+
+def run(coro): return asyncio.run(coro)
+
+def ctx(user=1, guild=2, permissions=hikari.Permissions.MANAGE_GUILD):
+    member = SimpleNamespace(permissions=permissions)
+    interaction = SimpleNamespace(guild_id=guild, member=member, values=("attack_strategies",))
+    return SimpleNamespace(user=SimpleNamespace(id=user), member=member, interaction=interaction)
+
+
+def test_editor_is_manage_guild_gated_and_discord_basic_disables_artwork():
+    assert editor.allowed(ctx())
+    assert not editor.allowed(ctx(permissions=hikari.Permissions.NONE))
+    template = {"variant": "discord_basic_skills", "sections": ["a", "b", "c"], "footer_url": None, "accent": 1, "revision": 0}
+    state = {"_id":"x", "manage_token":"home", "variant":"discord_basic_skills", "template":template, "saved_template":template}
+    payload = editor._editor(state)[0].build()[0]
+    buttons = [b for row in payload["components"] if row["type"] == 1 for b in row["components"]]
+    upload = next(b for b in buttons if b["custom_id"] == "recruit_question_footer:x")
+    assert upload["disabled"] is True
+
+
+def test_preview_uses_private_renderer_without_pings(monkeypatch):
+    state = {"_id":"x", "user_id":1, "guild_id":2, "manage_token":"home", "view":"editor", "variant":"attack_strategies", "template": {}}
+    monkeypatch.setattr(editor, "_state", AsyncMock(return_value=(state, None)))
+    rendered = [hikari.impl.ContainerComponentBuilder(components=[hikari.impl.TextDisplayComponentBuilder(content="Preview")])]
+    monkeypatch.setattr(editor.content, "preview_template", lambda template: rendered)
+    interaction = SimpleNamespace(edit_initial_response=AsyncMock())
+    context = ctx(); context.interaction = interaction
+    run(editor.preview(context, "x", mongo=object()))
+    sent = interaction.edit_initial_response.await_args.kwargs
+    assert sent["user_mentions"] is False and sent["role_mentions"] is False and sent["mentions_everyone"] is False
+
+
+def test_editor_select_edit_save_and_owner_guard(monkeypatch):
+    """A private draft must become public copy only after Save."""
+    from tests.test_recruit_question_content import mongo
+    db = mongo()
+    states = {}
+
+    async def insert_state(_mongo, state, ttl=None):
+        if state["_id"] in states:
+            raise AssertionError("duplicate editor state ID")
+        states[state["_id"]] = state
+
+    async def get_state(_mongo, token):
+        return states.get(token)
+
+    monkeypatch.setattr(editor, "insert_state", insert_state)
+    monkeypatch.setattr(editor, "get_state", get_state)
+    context = ctx()
+    context.interaction.custom_id = None
+    context.interaction.edit_initial_response = AsyncMock()
+    run(editor.open_dashboard(context, db, manage_token="home", deferred=True))
+    assert len(states) == 1
+    home_id = next(iter(states))
+
+    context.interaction.values = ("attack_strategies",)
+    run(editor.variant(context, home_id, mongo=db))
+    draft = next(state for state in states.values() if state.get("view") == "editor")
+    context.interaction.message = None
+    context.interaction.components = [[SimpleNamespace(custom_id="text", value="## Updated · {recruit}")]]
+    context.defer = AsyncMock()
+    run(editor.submit(context, f"{draft['_id']}|0", mongo=db))
+    assert not db.bot_config.rows
+    updated = next(state for state in states.values()
+                   if state.get("view") == "editor" and state["_id"] != draft["_id"])
+    assert "Updated" in updated["template"]["sections"][0]
+    assert "Updated" not in updated["saved_template"]["sections"][0]
+
+    intruder = ctx(user=99)
+    denied = run(editor.save(intruder, updated["_id"], mongo=db))
+    assert "Open your own" in str(denied[0].build())
+    assert not db.bot_config.rows
+
+    run(editor.save(context, updated["_id"], mongo=db))
+    stored = db.bot_config.rows["recruit_question_template:2:attack_strategies"]
+    assert stored["sections"][0] == "## Updated · {recruit}"
+    assert stored["revision"] == 1

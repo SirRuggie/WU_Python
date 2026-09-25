@@ -21,6 +21,7 @@ NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyon
 FWA_REP_ROLE_ID = 993015846442127420
 DESTINATIONS = (
     ("Recruit Gauntlet", "recruit", "Onboarding messages, rules, and artwork"),
+    ("Recruitment Questions", "recruitment_questions", "Six reusable recruitment messages"),
     ("FWA", "fwa", "Base links, images, and Town Hall guidance"),
     ("FWA War Messages", "fwa_war_messages", "Win, lose, mismatch, and blacklist announcements"),
     ("CWL", "cwl", "Announcements, schedules, and delivery"),
@@ -29,6 +30,7 @@ DESTINATIONS = (
 SECTION_CHOICES = (
     lightbulb.Choice("Server", "server"),
     lightbulb.Choice("Recruit Gauntlet", "recruit-gauntlet"),
+    lightbulb.Choice("Recruitment Questions", "recruitment-questions"),
     lightbulb.Choice("FWA", "fwa"),
     lightbulb.Choice("FWA War Messages", "fwa-war-messages"),
     lightbulb.Choice("CWL", "cwl"),
@@ -36,6 +38,7 @@ SECTION_CHOICES = (
 )
 SECTION_DESTINATION = {
     "recruit-gauntlet": "recruit",
+    "recruitment-questions": "recruitment_questions",
     "fwa": "fwa",
     "fwa-war-messages": "fwa_war_messages",
     "cwl": "cwl",
@@ -61,6 +64,8 @@ def _allowed(ctx: Any, destination: str) -> bool:
     member = _member(ctx)
     permissions = getattr(member, "permissions", hikari.Permissions.NONE)
     admin = bool(permissions & hikari.Permissions.ADMINISTRATOR)
+    if destination == "recruitment_questions":
+        return admin or bool(permissions & hikari.Permissions.MANAGE_GUILD)
     if destination == "recruit":
         return admin or bool(permissions & hikari.Permissions.MANAGE_GUILD)
     if destination == "fwa_war_messages":
@@ -108,6 +113,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
     action = f"manage_{key}:{token}"
     requirements = {
         "recruit": "Manage Server permission",
+        "recruitment_questions": "Manage Server permission",
         "fwa": "FWA Representative role",
         "fwa_war_messages": "FWA Clan Rep role",
         "cwl": "Administrator permission",
@@ -150,7 +156,10 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
 
 async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
                 deferred: bool) -> None:
-    if destination == "recruit":
+    if destination == "recruitment_questions":
+        from extensions.commands import recruitment_questions
+        await recruitment_questions.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
+    elif destination == "recruit":
         from extensions.commands import content
         await content.open_dashboard(
             ctx, mongo, bot=getattr(ctx.interaction, "app", None),
@@ -236,6 +245,7 @@ def _register_destination(name: str, destination: str):
 
 
 recruit_destination = _register_destination("manage_recruit", "recruit")
+recruitment_questions_destination = _register_destination("manage_recruitment_questions", "recruitment_questions")
 fwa_destination = _register_destination("manage_fwa", "fwa")
 fwa_war_messages_destination = _register_destination("manage_fwa_war_messages", "fwa_war_messages")
 cwl_destination = _register_destination("manage_cwl", "cwl")

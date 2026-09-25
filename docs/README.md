@@ -44,7 +44,8 @@ before changing durable documentation.
 ## Features
 
 - [manage-dashboard.md](manage-dashboard.md) — `/manage`, the private
-  management home for Recruit Gauntlet, FWA data, FWA War Messages, CWL campaigns, and CWL rosters.
+  management home for Recruit Gauntlet, Recruitment Questions, FWA data,
+  FWA War Messages, CWL campaigns, and CWL rosters.
 
 - [accounts.md](accounts.md) — `/accounts`, the private linked-player inventory:
   row fields, ordering, pagination, stale-link policy, and failure accounting.
@@ -58,6 +59,9 @@ before changing durable documentation.
   vs inferred. **Contains the `str()`-on-a-coc.py-enum trap — read it before
   touching any Clash state comparison anywhere in this repo; also the coc.py
   naive-UTC timestamp rule for every Clash deadline.**
+
+- [recruitment-questions.md](recruitment-questions.md) — edit the reusable main
+  recruitment question messages through `/manage`.
 
 - [fwa-war-messages.md](fwa-war-messages.md) — edit and preview the four
   FWA war-plan templates through `/manage`, with server-scoped saves.

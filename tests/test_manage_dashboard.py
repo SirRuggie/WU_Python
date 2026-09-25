@@ -53,12 +53,13 @@ def test_single_manage_command_has_optional_section_and_is_loaded():
     choices = manage.Manage._command_data.options['section'].choices
     assert [(choice.name, choice.value) for choice in choices] == [
         ("Server", "server"), ("Recruit Gauntlet", "recruit-gauntlet"),
+        ("Recruitment Questions", "recruitment-questions"),
         ("FWA", "fwa"), ("FWA War Messages", "fwa-war-messages"),
         ("CWL", "cwl"), ("CWL Rosters", "cwl-rosters"),
     ]
 
 
-def test_home_has_five_sections_valid_discord_shape_and_access(monkeypatch):
+def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
     token = "x" * 32
     ctx = context(permissions=hikari.Permissions.MANAGE_GUILD)
     built = run(manage.manage_home_components(ctx, object(), token=token))[0].build()[0]
@@ -68,12 +69,12 @@ def test_home_has_five_sections_valid_discord_shape_and_access(monkeypatch):
     assert built["type"] == hikari.ComponentType.CONTAINER
     assert built["accent_color"] == manage.GOLD_ACCENT
     assert len(nodes) <= 40
-    assert len(sections) == 5
+    assert len(sections) == 6
     assert [button["custom_id"] for button in buttons] == [
-        f"manage_recruit:{token}", f"manage_fwa:{token}", f"manage_fwa_war_messages:{token}",
+        f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}", f"manage_fwa_war_messages:{token}",
         f"manage_cwl:{token}", f"manage_cwl_rosters:{token}",
     ]
-    assert [button["disabled"] for button in buttons] == [False, True, True, True, True]
+    assert [button["disabled"] for button in buttons] == [False, False, True, True, True, True]
     assert all(len(button["custom_id"]) <= 100 for button in buttons)
 
 
@@ -290,3 +291,24 @@ def test_old_dashboard_slash_entries_are_absent_but_manage_and_actions_remain():
         "content_document", "content_save", "cwl_tab", "cwl_apply_review",
         "lazycwl_home", "manage_recruit", "manage_cwl", "manage_cwl_rosters",
     } <= components.registered_functions.keys()
+
+
+def test_recruitment_questions_button_opens_real_editor(monkeypatch):
+    from extensions.commands import recruitment_questions
+    action = "manage_recruitment_questions"
+    ctx = context(custom_id=f"{action}:token", permissions=hikari.Permissions.MANAGE_GUILD)
+    source = components.registered_functions[action]
+    monkeypatch.setitem(components.registered_functions, action,
+                        replace(source, fn=source.fn.__wrapped__._func))
+    monkeypatch.setattr(manage, "get_state", AsyncMock(return_value={
+        "view": "home", "guild_id": 2, "user_id": 1,
+    }))
+    stored = AsyncMock()
+    monkeypatch.setattr(recruitment_questions, "insert_state", stored)
+    run(components._dispatch(ctx, mongo=object()))
+    assert ctx.events[0] == ("defer", {"edit": True})
+    assert ctx.defer.await_count == 1
+    stored.assert_awaited_once()
+    assert stored.await_args.args[1]["manage_token"] == "token"
+    rendered = ctx.interaction.edit_initial_response.await_args.kwargs["components"][0].build()[0]
+    assert rendered["components"][0]["content"] == "## Recruitment Questions"

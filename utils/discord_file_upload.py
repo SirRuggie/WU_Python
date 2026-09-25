@@ -24,7 +24,7 @@ _SUBMISSIONS: OrderedDict[int, tuple[float, dict[str, Any]]] = OrderedDict()
 _INSTALLED = False
 _MAX_SUBMISSIONS = 256
 _SUBMISSION_TTL_SECONDS = 20 * 60
-_UPLOAD_PREFIXES = ("content_upload_submit:", "dashboard_image_submit:", "fwa_war_footer_submit:")
+_UPLOAD_PREFIXES = ("content_upload_submit:", "dashboard_image_submit:", "fwa_war_footer_submit:", "recruit_question_footer_submit:")
 
 
 @dataclass(frozen=True)

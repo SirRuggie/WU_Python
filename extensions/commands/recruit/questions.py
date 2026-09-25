@@ -27,6 +27,7 @@ from hikari.impl import (
 from extensions.commands.recruit import loader, recruit
 from extensions.commands.fwa.helpers import get_fwa_base_object
 from utils.component_state import insert_state
+from utils import recruit_question_content as question_content
 from utils.constants import (
     GOLDENROD_ACCENT,
     RED_ACCENT,
@@ -56,11 +57,7 @@ FAMILY_CODE_TYPE = "family_codes"
 # runs on that token - this value must stay comfortably under that ceiling.
 PANEL_REFRESH_DELAY_SECONDS = 600
 
-VALID_EMOJI_CODES = (
-    "⚔️⚔️⚔️",
-    "⚔️🍻⚔️",
-    "⚔️☠️⚔️",
-)
+VALID_EMOJI_CODES = question_content.VALID_EMOJI_CODES
 
 _IGNORABLE_CODEPOINTS = {"\ufe0e", "\ufe0f", "\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"}
 _IGNORABLE_MARKUP = {"*", "_", "~", "`", ">", "|"}
@@ -190,73 +187,8 @@ async def primary_questions(
     ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
-    mention_allowed = {
-        # don’t auto-parse @everyone or @here
-        "parse": [],
-        # only ping this one user
-        "users": [user.id],
-        # no role pings
-        "roles": []
-    }
     family_code_session: tuple[str, str] | None = None
-    if choice == "attack_strategies":
-        components = [
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content=f"## ⚔️ **Attack Strategy Breakdown** · {user.mention}"),
-                    Separator(divider=True),
-                    Text(content=(
-                        "Help us understand your go-to attack strategies!\n\n"
-                        f"{emojis.red_arrow_right} **Main Village strategies**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} _e.g. Hybrid, Queen Charge w/ Hydra, Lalo_\n\n"
-                        f"{emojis.red_arrow_right} **Clan Capital Attack Strategies**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} _e.g. Super Miners w/ Freeze_\n\n"
-                        f"{emojis.red_arrow_right} **Highest Clan Capital Hall level you’ve attacked**\n"
-                        f"{emojis.blank}{emojis.white_arrow_right} _e.g. CH 8, CH 9, etc.\n\n_"
-                        "*Your detailed breakdown helps us match you to the perfect clan!*"
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Gold_Footer.png"),
-                    ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
-            )
-        ]
-
-    elif choice == "discord_basic_skills":
-        components = [
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content=f"## 🎓 **Discord Basics Check** · {user.mention}"),
-                    Separator(divider=True),
-                    Text(
-                        content=(
-                            "We utilize three main methods to communicate within the Warriors United Server:\n\n"
-                            "1️⃣ A comment\n"
-                            "2️⃣ A ping within that comment to a specific person/role.\n"
-                            "3️⃣ An emoji reaction to a comment.\n\n"
-                            "**You've proven #1. Now prove to us you can do #2 and #3...👍🏼**\n\n"
-                            "**Click/touch the🛡below to begin.**"
-                        )
-                    ),
-                    Separator(divider=True),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
-            ),
-            ActionRow(
-                components=[
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        emoji="🛡",
-                        custom_id=f"shield_basics:{user.id}:{ctx.member.id}",
-                    )
-                ]
-            ),
-        ]
-    elif choice == "age_bracket":
+    if choice == "age_bracket":
         components = [
             Container(
                 accent_color=GOLDENROD_ACCENT,
@@ -321,128 +253,36 @@ async def primary_questions(
             ),
 
         ]
-    elif choice == "family_codes":
-        # One deterministic row per recruit/channel means re-running the prompt
-        # replaces an abandoned attempt instead of leaking another listener.
-        family_code_session = await open_family_code_challenge(
-            mongo,
-            interaction_id=ctx.interaction.id,
-            guild_id=ctx.guild_id,
-            channel_id=ctx.channel_id,
-            user_id=user_id,
-            moderator_id=ctx.member.id,
-        )
-        
-        components = [
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content=f"## 🏰 **Keeping it in the Family** · {user.mention}"),
-                    Separator(divider=True),
-                    Text(content=(
-                        "Warriors United family members may move around the family for "
-                        "donations, a Friendly Challenge with an available member, helping "
-                        "with Clan Games, or participation in a Family Event. When sending "
-                        "a Clan Request use one of these three emoji combos as your "
-                        "request message....\n\n"
-                        "**⚔️⚔️⚔️**\n"
-                        "**⚔️🍻⚔️**\n"
-                        "**⚔️☠️⚔️**\n\n"
-                        "**DO NOT** use the default join message... I'd like to join your clan.\n\n"
-                        "Acknowledge you understand this by sending one of the above "
-                        "three codes down below in chat. Just as you would if you were "
-                        "going to request to join!"
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Gold_Footer.png"),
-                        ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
+    elif choice in question_content.VARIANTS:
+        # Read and validate saved copy before starting any family-code challenge.
+        # Invalid configuration fails closed without leaving a live listener.
+        try:
+            template = await question_content.load_template(mongo, int(ctx.guild_id), choice)
+            components = question_content.render_template(
+                template, user_id=int(user.id), recruiter_id=int(ctx.member.id),
             )
-        ]
-    elif choice == "leaders_checking_you_out":
-        components = [
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content=f"## 🔍 **Application Under Review** · {user.mention}"),
-                    Separator(divider=True),
-                    Text(
-                        content=(
-                            "Thank you for completing your application! 🎉\n\n"
-                            "Our leadership team is now reviewing your responses to find the perfect clan match. "
-                            "Please sit tight, we’ll be with you shortly! ⏳\n\n"
-                            "We truly appreciate your interest in Warrior's United and can’t wait to welcome you aboard!"
-                        )
-                    ),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Red_Footer.png"),
-                        ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
+        except ValueError as exc:
+            await ctx.respond(str(exc), ephemeral=True)
+            return
+        if choice == "family_codes":
+            family_code_session = await open_family_code_challenge(
+                mongo,
+                interaction_id=ctx.interaction.id,
+                guild_id=ctx.guild_id,
+                channel_id=ctx.channel_id,
+                user_id=user_id,
+                moderator_id=ctx.member.id,
             )
-        ]
-    elif choice == "welcome_to_family":
-        components = [
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content=f"## 🛡️ **Welcome to the Family!** · {user.mention}"),
-                    Separator(divider=True),
-                    Text(content=(
-                        f"Welcome to the Family!\n\n"
-                        f"You are all good to go {user.mention}! Several channels will be available to you on the Main Server shortly. "
-                        f"You will receive a ping in the <#1128966424082255872> and all the appropriate server roles you will need: "
-                        f"as well as a link to assigned Clan.\n\n"
-                        f"**Once you receive the aforementioned ping, __ping__ your Recruiter to acknowledge you're there.**\n\n"
-                        f"They will in turn kick off a server walkthrough guiding you to important channels related to your day to day play.\n\n"
-                        f"# Welcome to the Family...here's your 🛡️! Let's get you into Battle!"
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/Gold_Footer.png"),
-                        ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
-            )
-        ]
-    elif choice == "warriors_united_cwl":
-        components = [
-            Container(
-                accent_color=GOLDENROD_ACCENT,
-                components=[
-                    Text(content=f"## <:warriorcat:947992348971905035> Warriors United CWL <:warriorcat:947992348971905035> · {user.mention}"),
-                    Separator(divider=True),
-                    Text(content=(
-                        f"We have 20 Clans that we utilize for CWL; with League's ranging from Master 1 to Gold 1. "
-                        f"All but our High Tactical Clans split up into these clans for CWL.\n\n"
-                        f"Three factors determine the League you'll be placed in:\n\n"
-                        f"1) War activity\n"
-                        f"2) War performance\n"
-                        f"3) Account strength\n\n"
-                        f"All are relative to the League you'll be placed in.\n\n"
-                        f"If you are new to the family with no war history then your first CWL season might be lower league "
-                        f"for support and/or strength. Nothing personal, your new so we don't know you yet. *Exceptions may be granted*\n\n"
-                        f"Signing up for CWL is mandatory and is done by way of a Google Form. Sign-ups go live around Clan Games "
-                        f"every month so we can prepare Rosters. It's a super easy form that takes less then a minute.\n\n"
-                        f"## Any issues with filling out a simple form and moving to another clan for CWL?"
-                    )),
-                    Media(
-                        items=[
-                            MediaItem(media="assets/recruit/static/CW_Leagues.png"),
-                        ]),
-                    Text(content=f"-# Requested by {ctx.member.mention}"),
-                ]
-            )
-        ]
+    else:
+        await ctx.respond("This recruitment question is unavailable. Reopen /recruit questions.", ephemeral=True)
+        return
     try:
         message = await bot.rest.create_message(
             components=components,
             channel=ctx.channel_id,
             user_mentions=[user.id],
-            role_mentions=True,
+            role_mentions=False,
+            mentions_everyone=False,
         )
     except Exception:
         if family_code_session is not None:
@@ -610,29 +450,31 @@ async def on_shield_basics_button(
     # Try to edit the message to remove the button
     if message_id:
         try:
-            # Create the same message but without the button
-            components_without_button = [
-                Container(
-                    accent_color=GOLDENROD_ACCENT,
-                    components=[
-                        Text(content=f"## 🎓 **Discord Basics Check** · <@{user_id}>"),
-                        Separator(divider=True),
-                        Text(
-                            content=(
-                                "We utilize three main methods to communicate within the Warriors United Server:\n\n"
-                                "1️⃣ A comment\n"
-                                "2️⃣ A ping within that comment to a specific person/role.\n"
-                                "3️⃣ An emoji reaction to a comment.\n\n"
-                                "**You've proven #1. Now prove to us you can do #2 and #3...👍🏼**\n\n"
-                                "**Shield challenge started!**"
-                            )
-                        ),
-                        Separator(divider=True),
-                        Text(content=f"-# Requested by <@{original_recruiter_id}>"),
-                    ]
-                ),
-            ]
-            await bot.rest.edit_message(ctx.channel_id, message_id, components=components_without_button)
+            # Preserve the message that the recruit actually received, including
+            # any later-edited saved wording. Only remove its Shield action row.
+            original = next(
+                (part for part in ctx.interaction.message.components
+                 if isinstance(part, hikari.ContainerComponent)),
+                None,
+            )
+            if original is None:
+                raise ValueError("The original Discord Basics message is unavailable.")
+            kept_parts = []
+            for part in original.components:
+                if isinstance(part, hikari.TextDisplayComponent):
+                    kept_parts.append(Text(content=part.content))
+                elif isinstance(part, hikari.SeparatorComponent):
+                    kept_parts.append(Separator(divider=part.divider, spacing=part.spacing))
+                else:
+                    raise ValueError("The Discord Basics message has an unexpected layout.")
+            components_without_button = [Container(
+                accent_color=original.accent_color,
+                components=kept_parts,
+            )]
+            await bot.rest.edit_message(
+                ctx.channel_id, message_id, components=components_without_button,
+                user_mentions=False, role_mentions=False, mentions_everyone=False,
+            )
         except Exception as e:
             print(f"[ShieldBasics] Could not edit message to remove button: {e}")
     
