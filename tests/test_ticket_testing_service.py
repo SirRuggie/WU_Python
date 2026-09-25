@@ -98,7 +98,7 @@ def test_counter_and_names_are_separate_from_live():
 def test_test_ticket_creation_then_simulated_approval_stays_in_scope(monkeypatch):
     import hikari
     from extensions.commands import ticket_runtime
-    from extensions.commands.tickets import account_sync, resolve, store, thread_service
+    from extensions.commands.tickets import account_sync, console, resolve, store, thread_service
 
     scoped = Scope(PARENTS)
     scoped.ticket_setup = Collection()
@@ -156,7 +156,8 @@ def test_test_ticket_creation_then_simulated_approval_stays_in_scope(monkeypatch
     monkeypatch.setattr(thread_service.store, "insert_one", insert)
     monkeypatch.setattr(thread_service, "_finish_committed_creation", finish)
     monkeypatch.setattr(thread_service, "_send_ticket_creation_dm", forbidden)
-    monkeypatch.setattr(thread_service, "notify_console_after_change", forbidden)
+    monkeypatch.setattr(console, "deliver_staff_identity_context", none)
+    monkeypatch.setattr(console, "request_hub_refresh_best_effort", forbidden)
     monkeypatch.setattr(ticket_runtime, "bind_open_slot", bind)
     monkeypatch.setattr(account_sync, "configured_coc_client", lambda: None)
     bot = SimpleNamespace(get_me=lambda: SimpleNamespace(id=99), rest=SimpleNamespace())

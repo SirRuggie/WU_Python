@@ -325,6 +325,8 @@ def _ticket_type(ticket_doc: Mapping) -> str:
 def _ticket_number(ticket_doc: Mapping) -> str:
     value = ticket_doc.get("ticket_number")
     try:
+        if testing_service.is_test_ticket(ticket_doc):
+            return testing_service.number_label(int(value))
         return str(int(value))
     except (TypeError, ValueError):
         return "?"
@@ -343,7 +345,11 @@ def _ticket_label(ticket_doc: Mapping, *, username: bool = False, markdown: bool
     """
     kind = _ticket_type(ticket_doc)
     prefix = "FWA" if kind == "fwa" else "Main" if kind == "main" else "Ticket"
-    label = f"{prefix} #{_ticket_number(ticket_doc)}"
+    label = (
+        f"{prefix} {_ticket_number(ticket_doc)}"
+        if testing_service.is_test_ticket(ticket_doc)
+        else f"{prefix} #{_ticket_number(ticket_doc)}"
+    )
     if username:
         if markdown:
             label += f" · {_mention(ticket_doc.get('user_id'))}"
@@ -2570,7 +2576,11 @@ def build_ticket_detail(
         f"({_timestamp(ticket_doc.get('created_at'))})"
     )
     title = f"## {status_emoji} {_ticket_label(ticket_doc, username=True)}"
-    footer = "-# This panel is private to you. Ticket history is permanent."
+    footer = (
+        "-# TEST MODE. This private panel affects only the isolated test ticket."
+        if testing_service.is_test_ticket(ticket_doc) else
+        "-# This panel is private to you. Ticket history is permanent."
+    )
     blacklist_warning = (
         "⛔ **Approve is blocked.** This applicant has an active blacklist flag. "
         "You can still deny the ticket."
@@ -2730,8 +2740,9 @@ def build_ticket_detail(
     components.append(ActionRow(components=[Button(
         style=hikari.ButtonStyle.SECONDARY,
         custom_id=f"ticket_v2_console_manage_flags:{action_id}",
-        label="Manage flags",
+        label="Manage flags" if not testing_service.is_test_ticket(ticket_doc) else "Flags unavailable in test",
         emoji="🚩",
+        is_disabled=testing_service.is_test_ticket(ticket_doc),
     )]))
 
     if flag_conflict_notice:
