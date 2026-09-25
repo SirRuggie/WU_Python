@@ -15,7 +15,6 @@ from . import blacklist
 from . import chocolate
 from . import links
 from . import new_th_upgrade
-from . import points
 from . import war_plans
 from . import weight
 

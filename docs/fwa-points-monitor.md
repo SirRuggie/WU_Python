@@ -115,7 +115,9 @@ itself, since the opponent's FWA status is supplementary to our own verdict.
 ## Administration (Administrator-only)
 
 Open `/manage` → **FWA** → **Points Monitor**. This replaces the five old
-`/fwapoints` admin commands while retaining the same MongoDB configuration.
+`/fwapoints` admin commands and the separate `/fwa points` results command,
+while retaining the same MongoDB configuration. This private panel requires
+Administrator permission.
 
 - **Enable / Disable** changes the saved monitor flag; Disable also stops
   in-progress catch-up retries.
@@ -123,9 +125,10 @@ Open `/manage` → **FWA** → **Points Monitor**. This replaces the five old
   Clans marked FWA in clan data are automatically included and cannot be
   removed through the extras control.
 - The panel shows detector/startup state, active retries, and paginated watched
-  clans with their latest stored results. **Refresh** reloads this information.
-- **Back to FWA** returns to the FWA submenu. The public `/fwa points` command,
-  live board, `/todo` data, and war-plan opponent autocomplete remain active.
+  clans with their latest verdict, war and sync numbers, point balance, update
+  time, and an **Open Page** link. **Refresh** reloads this information.
+- **Back to FWA** returns to the FWA submenu. The live board, `/todo` data, and
+  war-plan opponent autocomplete remain active.
 
 ## What is NOT available
 

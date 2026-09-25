@@ -22,7 +22,8 @@ class Collection:
         self.config = {"_id": "config", "enabled": True,
                        "watch_list": [{"tag": "EXTRA1", "name": "Extra One"}]}
         self.records = {"AUTO1": {"raw_verdict": "Win", "war_number": 4,
-                                  "scraped_at": "recently"}}
+                                  "sync_number": 7, "point_balance": 0,
+                                  "scraped_at": "2026-09-25T12:00:00+00:00"}}
         self.updates = []
 
     async def find_one(self, query, projection=None):
@@ -100,6 +101,9 @@ def test_status_effective_watch_rows_and_private_navigation(monkeypatch):
     assert "Enabled" in content and "Not running" in content
     assert "Automatic FWA" in content and "Extra" in content
     assert "Win" in content and "War #4" in content
+    assert "Sync #7" in content and "Balance 0" in content
+    assert "<t:1790337600:R>" in content
+    assert "https://points.fwafarm.com/clan?tag=AUTO1" in content
     assert "manage_fwa:home" in content and "manage_home:home" in content
     assert len(response[0].build()[0]["components"]) <= 40
 
@@ -179,10 +183,10 @@ def test_remove_requires_selected_extra_and_automatic_is_protected(monkeypatch):
 def test_pagination_caps_watch_rows_and_refresh_rechecks_state(monkeypatch):
     env = fixture(monkeypatch, automatic=18)
     first = run(dashboard._panel(env.mongo, env.state))
-    assert "Page 1/3" in built(first)
+    assert "Page 1/4" in built(first)
     assert len(first[0].build()[0]["components"]) <= 40
     later = run(dashboard.page(env.ctx, "start|2", mongo=env.mongo))
-    assert "Page 3/3" in built(later)
+    assert "Page 3/4" in built(later)
     fresh = run(dashboard.refresh(env.ctx, "start", mongo=env.mongo))
     assert "Status refreshed" in built(fresh)
 
@@ -209,3 +213,23 @@ def test_clan_source_outage_blocks_extra_mutations(monkeypatch):
         env.ctx.interaction.edit_initial_response.await_args.kwargs["components"]
     )
     assert not env.mongo.fwa_points.updates
+
+
+def test_full_extra_page_stays_within_discord_component_limit(monkeypatch):
+    env = fixture(monkeypatch, automatic=0)
+    env.mongo.fwa_points.config["watch_list"] = [
+        {"tag": f"EXTRA{i}", "name": f"Extra {i}"} for i in range(10)
+    ]
+    payload = run(dashboard._panel(env.mongo, env.state, notice="Refreshed"))[0].build()[0]
+
+    def count(node):
+        return 1 + sum(count(child) for child in node.get("components", [])) + (
+            count(node["accessory"]) if "accessory" in node else 0
+        )
+
+    assert count(payload) <= 40
+
+
+def test_old_points_subcommand_is_not_registered():
+    from extensions.commands.fwa import fwa
+    assert "points" not in fwa.subcommands

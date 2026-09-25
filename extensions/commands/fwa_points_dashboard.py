@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 import math
 import re
 from typing import Any
@@ -21,7 +21,7 @@ from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
 TTL = timedelta(minutes=30)
-PAGE_SIZE = 8
+PAGE_SIZE = 6
 NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
 _RAW_TAG = re.compile(r"#?[0-9A-Za-z]{3,15}\Z")
 
@@ -43,6 +43,13 @@ def _safe(value: Any, limit: int = 80) -> str:
     return (str(value).replace("@", "＠").replace("`", "ˋ")
             .replace("<", "‹").replace(">", "›")
             .replace("\n", " ").replace("\r", " ")[:limit])
+
+
+def _updated_stamp(iso: str) -> str:
+    try:
+        return f"<t:{int(datetime.fromisoformat(iso).timestamp())}:R>"
+    except (TypeError, ValueError):
+        return "unknown"
 
 
 def _error(message: str, state: dict | None = None) -> list:
@@ -128,13 +135,23 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
         record = await mongo.fwa_points.find_one({"_id": tag})
         if record and record.get("raw_verdict"):
             verdict = _safe(record["raw_verdict"], 90)
-            last = f"{verdict} · War #{record.get('war_number', '?')} · {_safe(record.get('scraped_at', '?'), 50)}"
+            last = (
+                f"{verdict}\nWar #{record.get('war_number', '?')} · "
+                f"Sync #{record.get('sync_number', '?')} · "
+                f"Balance {_safe(record.get('point_balance', '?'), 50)} · "
+                f"updated {_updated_stamp(record.get('scraped_at', ''))}"
+            )
         else:
             last = "No verdict yet"
         source = "Automatic FWA" if entry["source"] == "clan_type" else "Extra"
-        rows.append(hikari.impl.TextDisplayComponentBuilder(content=(
-            f"**{_safe(entry['name'], 55)}** (`{tag}`) · {source}\n-# {last}"
-        )))
+        rows.append(hikari.impl.SectionComponentBuilder(
+            components=[hikari.impl.TextDisplayComponentBuilder(content=(
+                f"**{_safe(entry['name'], 55)}** (`{tag}`) · {source}\n-# {last}"
+            ))],
+            accessory=hikari.impl.LinkButtonBuilder(
+                url=f"https://points.fwafarm.com/clan?tag={tag}", label="Open Page",
+            ),
+        ))
     if not showing:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="No clans are watched yet."))
     rows.append(_buttons(

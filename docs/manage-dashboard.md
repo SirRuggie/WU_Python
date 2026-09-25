@@ -107,8 +107,9 @@ unsaved edits.
 Points Monitor replaces `/fwapoints enable`, `disable`, `watch-add`,
 `watch-remove`, and `status`. These controls use the existing monitor configuration
 and do not create a second monitor. Automatic FWA clans stay sourced from clan
-data; only manually added extras can be removed from this panel. `/fwa points`
-remains the public results command. See [FWA points monitor](fwa-points-monitor.md).
+data; only manually added extras can be removed from this panel. The former
+`/fwa points` results are also included here: verdict, war and sync numbers,
+point balance, update time, and a link to each clan’s points page. See [FWA points monitor](fwa-points-monitor.md).
 
 ### Sync & Reminders
 

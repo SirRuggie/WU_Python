@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from extensions.commands.fwa import points as points_cmd
+from extensions.commands import fwa_points_dashboard as points_dashboard
 from extensions.tasks import fwa_points_monitor as monitor
 
 
@@ -417,7 +417,7 @@ def test_startup_recovers_from_mongo_failure_and_starts_one_detector(monkeypatch
 
 
 # ---------------------------------------------------------------------------
-# /fwa points must reflect effective_watch_list(), not config.watch_list alone
+# Points results must reflect effective_watch_list(), not config.watch_list alone
 # ---------------------------------------------------------------------------
 
 def _walk(value):
@@ -835,38 +835,18 @@ class _FwaPointsConfigCollection(_PointsCollection):
         return None
 
 
-class _PointsContext:
-    def __init__(self):
-        self.responses = []
-
-    async def defer(self, **kwargs):
-        pass
-
-    async def respond(self, *args, **kwargs):
-        self.responses.append((args, kwargs))
-
-
-def test_fwa_points_command_lists_fwa_clans_when_config_watch_list_is_empty(monkeypatch):
+def test_points_dashboard_lists_fwa_clans_when_config_watch_list_is_empty():
     clans_collection = _ClansCollection([
         {"tag": "#2PPCL2GYP", "name": "Edrag Rush", "type": "FWA"},
     ])
-    # effective_watch_list() reads mongo.clans off the monitor module's own
-    # global, which is what makes this the regression: /fwa points must go
-    # through that function rather than trusting config.watch_list alone.
-    monkeypatch.setattr(monitor, "mongo_client", _Mongo(_PointsCollection(), clans_collection))
-
     fwa_points = _FwaPointsConfigCollection({"_id": "config", "watch_list": []})
     mongo = _Mongo(fwa_points, clans_collection)
-
-    ctx = _PointsContext()
-    asyncio.run(points_cmd.Points().invoke(ctx, mongo=mongo))
-
-    assert len(ctx.responses) == 1
-    payload = [component.build() for component in ctx.responses[0][1]["components"]]
-    text = _payload_text(payload)
-
+    components = asyncio.run(points_dashboard._panel(
+        mongo, {"_id": "points", "manage_token": "home"},
+    ))
+    text = _payload_text([component.build() for component in components])
     assert "Edrag Rush" in text
-    assert "No clans are being watched yet." not in text
+    assert "No clans are watched yet." not in text
 
 
 # ---------------------------------------------------------------------------

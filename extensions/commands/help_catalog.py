@@ -52,7 +52,6 @@ HELP_CATEGORIES = {
             ("/fwa chocolate", "Look up a player or clan on FWA Chocolate."),
             ("/fwa links", "Open FWA verification and war-weight links."),
             ("/fwa new-th-upgrade", "Display FWA Town Hall upgrade notes."),
-            ("/fwa points", "Show the latest stored FWA points verdicts."),
             ("/fwa war-plans", "Generate a war plan for win, loss, blacklist, or mismatch."),
             ("/fwa weight", "Calculate war weight from a storage value."),
         ],
