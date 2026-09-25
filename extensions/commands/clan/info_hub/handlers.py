@@ -20,7 +20,6 @@ from hikari.impl import (
     ThumbnailComponentBuilder as Thumbnail,
 )
 
-from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.classes import Clan
 from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT, MAGENTA_ACCENT
@@ -174,7 +173,6 @@ async def build_clan_list_components(
 
 
 # Handler for Competitive/Main clans
-@register_action("show_competitive", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def show_competitive_clans(
         ctx: lightbulb.components.MenuContext,
@@ -192,7 +190,6 @@ async def show_competitive_clans(
 
 
 # Handler for Casual/Feeder clans
-@register_action("show_casual", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def show_casual_clans(
         ctx: lightbulb.components.MenuContext,
@@ -210,7 +207,6 @@ async def show_casual_clans(
 
 
 # Handler for Zen clans
-@register_action("show_zen", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def show_zen_clans(
         ctx: lightbulb.components.MenuContext,
@@ -228,7 +224,6 @@ async def show_zen_clans(
 
 
 # Handler for FWA clans
-@register_action("show_fwa", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def show_fwa_clans(
         ctx: lightbulb.components.MenuContext,
@@ -246,7 +241,6 @@ async def show_fwa_clans(
 
 
 # Handler for Trial clans
-@register_action("show_trial", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def show_trial_clans(
         ctx: lightbulb.components.MenuContext,

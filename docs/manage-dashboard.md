@@ -65,3 +65,7 @@ preview behavior, and how saved changes reach future war-plan posts.
 
 [Recruitment Questions](recruitment-questions.md) documents the main-question
 message templates and the recruit-specific sending flow.
+
+The legacy `/clan info` and `/clan list` commands and their public info/list
+component handlers are also disabled. The active FWA workspace and recruitment
+workflows retain their shared clan data and dashboard helpers.

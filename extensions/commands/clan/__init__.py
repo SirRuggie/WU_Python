@@ -4,8 +4,8 @@ import lightbulb
 loader = lightbulb.Loader()
 clan = lightbulb.Group("clan", "All Clan-related commands")
 
-# One package extension owns the shared loader. Import every clan command here
-# so main.py does not have to load the same Loader once per child module.
-from . import dashboard, info_hub, list  # noqa: E402,F401,A004
+# Keep the dashboard component handlers for /manage FWA. The old /clan
+# command group has no public subcommands and is deliberately not loaded.
+from . import dashboard  # noqa: E402,F401
 
-__all__ = ["loader", "clan", "dashboard", "info_hub", "list"]
+__all__ = ["loader", "clan", "dashboard"]

@@ -53,7 +53,7 @@ class FakeCollection:
 
 def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     paths = command_paths()
-    expected_catalog_total = 82
+    expected_catalog_total = 80
 
     # /cards is retired along with the Clash of Cards event (see
     # utils.startup.RETIRED_EXTENSIONS) and hidden from the catalog, so the
@@ -66,6 +66,7 @@ def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     )
     assert "/accounts" in paths
     assert "/manage" in paths
+    assert "/clan info" not in paths and "/clan list" not in paths
     assert {"/content dashboard", "/cwl dashboard", "/cwl rosters", "/clan dashboard"}.isdisjoint(paths)
     assert "/cards" not in paths
     assert "/ping" in paths

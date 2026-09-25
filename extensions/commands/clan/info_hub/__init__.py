@@ -1,7 +1,1 @@
-# extensions/commands/clan/info_hub/__init__.py
-
-from .info import loader, clan
-from . import handlers
-from . import explanations
-
-__all__ = ["loader", "clan"]
+"""Retired /clan info feature. Kept only for historical source reference."""

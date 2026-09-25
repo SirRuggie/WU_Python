@@ -54,8 +54,6 @@ HELP_CATEGORIES = {
         "emoji": "⚔️",
         "description": "Clan information, FWA tools, bases, and LazyCWL",
         "commands": [
-            ("/clan info", "View information about every family clan."),
-            ("/clan list", "Pick a clan to view or assign to a recruit."),
             ("/fwa bases", "Select and display an FWA base layout."),
             ("/fwa chocolate", "Look up a player or clan on FWA Chocolate."),
             ("/fwa links", "Open FWA verification and war-weight links."),

@@ -4,7 +4,6 @@ import lightbulb
 import coc
 
 from extensions.commands.clan   import loader, clan
-from extensions.components      import register_action
 from utils.mongo                import MongoClient
 from utils.classes              import Clan
 from utils.constants            import RED_ACCENT
@@ -26,7 +25,6 @@ from hikari.impl import (
 )
 
 
-@clan.register()
 class ListCommand(
     lightbulb.SlashCommand,
     name="list",
@@ -84,7 +82,6 @@ class ListCommand(
         await ctx.respond(components=components, ephemeral=True)
 
 
-@register_action("clan_select_menu", no_return=True)
 @lightbulb.di.with_di
 async def on_clan_chosen(
     action_id: str,
@@ -188,5 +185,3 @@ async def on_clan_chosen(
         user_mentions = [user.id, db_clan.leader_id],
         role_mentions = True,
     )
-
-loader.command(clan)

@@ -203,6 +203,8 @@ def test_tickets_guild_id_falls_back_on_a_bad_value(monkeypatch, capsys):
 def test_retired_extensions_are_kept_but_not_loaded():
     retired_command_sources = {
         "extensions.commands.cards": "extensions/commands/cards.py",
+        "extensions.commands.clan.list": "extensions/commands/clan/list.py",
+        "extensions.commands.clan.info_hub.info": "extensions/commands/clan/info_hub/info.py",
         "extensions.tasks.cards_sticky": "extensions/tasks/cards_sticky.py",
         "extensions.tasks.cards_deadlines": "extensions/tasks/cards_deadlines.py",
     }

@@ -25,6 +25,8 @@ DISABLED_PREVIEW_EXTENSIONS = frozenset({
 # ended in September 2026; remove its three entries here to run it again.
 RETIRED_EXTENSIONS = frozenset({
     "extensions.commands.cards",
+    "extensions.commands.clan.list",
+    "extensions.commands.clan.info_hub.info",
     "extensions.tasks.cards_sticky",
     "extensions.tasks.cards_deadlines",
 })

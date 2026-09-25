@@ -285,7 +285,7 @@ def test_old_dashboard_slash_entries_are_absent_but_manage_and_actions_remain():
     assert command_names == set()
     assert not content.content.subcommands
     assert not cwl_dashboard.cwl.subcommands
-    assert set(clan.clan.subcommands) == {"info", "list"}
+    assert not clan.clan.subcommands
     assert manage.Manage._command_data.name == "manage"
     assert {
         "content_document", "content_save", "cwl_tab", "cwl_apply_review",

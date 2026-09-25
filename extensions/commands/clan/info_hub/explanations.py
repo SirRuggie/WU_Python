@@ -18,14 +18,12 @@ from hikari.impl import (
     MediaGalleryItemBuilder as MediaItem,
 )
 
-from extensions.components import register_action
 from utils.constants import GREEN_ACCENT, BLUE_ACCENT
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 
 
 # Handler for "What is Zen?" button
-@register_action("what_is_zen_info", ephemeral=True, no_return=True)
 async def show_what_is_zen(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
@@ -109,7 +107,6 @@ async def show_what_is_zen(
 
 
 # Handler for "What is FWA?" button
-@register_action("what_is_fwa_info", ephemeral=True, no_return=True)
 async def show_what_is_fwa(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
@@ -194,7 +191,6 @@ async def show_what_is_fwa(
 
 
 # Handler for back to Zen clans
-@register_action("back_to_zen_clans", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def back_to_zen_clans(
         ctx: lightbulb.components.MenuContext,
@@ -215,7 +211,6 @@ async def back_to_zen_clans(
 
 
 # Handler for back to FWA clans
-@register_action("back_to_fwa_clans", ephemeral=True, no_return=True)
 @lightbulb.di.with_di
 async def back_to_fwa_clans(
         ctx: lightbulb.components.MenuContext,

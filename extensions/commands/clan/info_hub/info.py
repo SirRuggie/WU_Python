@@ -13,11 +13,9 @@ from hikari.impl import (
 )
 
 from extensions.commands.clan import loader, clan
-from extensions.components import register_action
 from utils.constants import RED_ACCENT, GOLD_ACCENT, BLUE_ACCENT, GREEN_ACCENT, MAGENTA_ACCENT
 
 
-@clan.register()
 class Info(
     lightbulb.SlashCommand,
     name="info",
@@ -147,10 +145,3 @@ class Info(
 
         # Delete the ephemeral "thinking" message
         await ctx.interaction.delete_initial_response()
-
-
-# Import handlers to register their actions
-from . import handlers
-
-# Add the command to the loader
-loader.command(clan)

@@ -43,6 +43,9 @@ before changing durable documentation.
 
 ## Features
 
+- [legacy-clan-commands.md](legacy-clan-commands.md) — disabled legacy clan info
+  and list commands, including their old message controls.
+
 - [manage-dashboard.md](manage-dashboard.md) — `/manage`, the private
   management home for Recruit Gauntlet, Recruitment Questions, FWA data,
   FWA War Messages, CWL campaigns, and CWL rosters.
