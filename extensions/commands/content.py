@@ -5,6 +5,7 @@ import copy
 import re
 import uuid
 from dataclasses import dataclass
+from types import SimpleNamespace
 from datetime import timedelta
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -23,6 +24,7 @@ from utils.media_store import MediaStore, MediaStoreError, recruit_content_folde
 from utils.mongo import MongoClient
 from utils.constants import GOLD_ACCENT
 from utils.url_safety import MAX_IMAGE_BYTES
+from utils.recruit_setup_checks import require_ready
 
 
 loader = lightbulb.Loader()
@@ -59,6 +61,23 @@ MEDIA_SLOTS = {
     "family-particulars": (("welcome", "Welcome banner"), ("cwl", "CWL banner")),
 }
 _baselines: dict[str, list] = {}
+_DESTINATION_TYPES = frozenset((hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS))
+
+
+def acknowledgement_setup(document_key: str) -> tuple[int, int]:
+    # Pull from the live acknowledgement handlers; a posting destination does
+    # not change their role assignments or fixed next-step channels.
+    from extensions.commands.setup import (
+        recruit_aboutus,
+        recruit_strikesystem,
+        recruit_familyparticulars,
+    )
+    return {
+        "about-us": (recruit_aboutus.ABOUT_US_ROLE_ID, recruit_aboutus.STRIKE_SYSTEM_CHANNEL_ID),
+        "strike-system": (recruit_strikesystem.STRIKE_SYSTEM_ROLE_ID, recruit_strikesystem.FAMILY_PARTICULARS_CHANNEL_ID),
+        "family-particulars": (recruit_familyparticulars.CLAN_RULES_READ_ROLE_ID, recruit_familyparticulars.APPLY_HERE_CHANNEL_ID),
+    }[document_key]
+
 
 # Hikari 2.6 predates Discord's modal Label/File Upload models. Install the
 # narrow deserialization adapter before the gateway receives interactions.
@@ -270,6 +289,91 @@ def acknowledgement_id(components, document):
     return None
 
 
+def destination_key(guild_id: int, document_key: str) -> str:
+    if document_key not in DOCUMENTS or int(guild_id) <= 0:
+        raise ValueError("Choose a Recruit Gauntlet document in this server.")
+    return f"content_destination:{int(guild_id)}:{document_key}"
+
+
+async def destination_for(mongo, guild_id: int, document_key: str) -> int | None:
+    row = await mongo.bot_config.find_one({"_id": destination_key(guild_id, document_key)})
+    if row is None:
+        return None
+    try:
+        channel_id = int(row["channel_id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if row.get("guild_id") != int(guild_id) or row.get("document") != document_key or channel_id <= 0:
+        return None
+    return channel_id
+
+
+def _apply_overwrite(base: hikari.Permissions, overwrite) -> hikari.Permissions:
+    return hikari.Permissions(
+        (int(base) & ~int(getattr(overwrite, "deny", 0)))
+        | int(getattr(overwrite, "allow", 0))
+    )
+
+
+async def destination_permissions(bot, guild_id: int, channel) -> hikari.Permissions:
+    """Resolve the bot's permissions in the selected channel, including overwrites."""
+    roles = tuple(await bot.rest.fetch_roles(guild_id))
+    member = await bot.rest.fetch_my_member(guild_id)
+    role_ids = {int(value) for value in getattr(member, "role_ids", ())}
+    role_ids.add(guild_id)
+    roles_by_id = {int(role.id): role for role in roles}
+    if guild_id not in roles_by_id:
+        raise ValueError("I cannot verify my permissions in that channel.")
+    base = hikari.Permissions.NONE
+    for role_id in role_ids:
+        role = roles_by_id.get(role_id)
+        if role is not None:
+            base |= hikari.Permissions(getattr(role, "permissions", 0))
+    if base & hikari.Permissions.ADMINISTRATOR:
+        return base
+    overwrites = getattr(channel, "permission_overwrites", None)
+    if overwrites is None:
+        raise ValueError("I cannot verify my permissions in that channel.")
+    by_id = {int(key): value for key, value in overwrites.items()}
+    everyone = by_id.get(guild_id)
+    if everyone is not None:
+        base = _apply_overwrite(base, everyone)
+    role_overwrites = [by_id[role_id] for role_id in role_ids - {guild_id} if role_id in by_id]
+    if role_overwrites:
+        denied = 0
+        allowed = 0
+        for overwrite in role_overwrites:
+            denied |= int(getattr(overwrite, "deny", 0))
+            allowed |= int(getattr(overwrite, "allow", 0))
+        base = hikari.Permissions((int(base) & ~denied) | allowed)
+    member_id = getattr(member, "id", None) or getattr(getattr(member, "user", None), "id", None)
+    if member_id is None:
+        raise ValueError("I cannot verify my permissions in that channel.")
+    personal = by_id.get(int(member_id))
+    if personal is not None:
+        base = _apply_overwrite(base, personal)
+    return base
+
+
+async def _ready_for_destination(ctx, bot, channel, permissions, document_key: str) -> tuple[bool, str | None]:
+    """Run the existing role and next-channel check against destination permissions."""
+    messages = []
+    async def capture(message, **_):
+        messages.append(message)
+    proxy = SimpleNamespace(
+        interaction=SimpleNamespace(
+            guild_id=ctx.interaction.guild_id,
+            channel=channel,
+            app_permissions=permissions,
+            member=ctx.interaction.member,
+        ),
+        respond=capture,
+    )
+    role_id, next_channel_id = acknowledgement_setup(document_key)
+    ready = await require_ready(proxy, bot, role_id=role_id, next_channel_id=next_channel_id)
+    return ready, messages[0] if messages else None
+
+
 async def new_draft(mongo, state):
     state = {key: value for key, value in state.items() if key not in {"_id", "created_at", "expires_at", "component_state"}}
     state["_id"] = uuid.uuid4().hex
@@ -321,6 +425,23 @@ def panel(state, notice=None):
     for slot, label in media_slots(document):
         source = "custom image" if slot in overrides else "default image"
         image_menu.add_option(f"{label} ({source})", slot, is_default=slot == selected_slot)
+    destination = state.get("destination_channel_id")
+    destination_menu = hikari.impl.MessageActionRowBuilder()
+    destination_menu.add_channel_menu(
+        f"content_destination:{sid}",
+        channel_types=(hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS),
+        placeholder="Choose a posting channel", min_values=1, max_values=1,
+    )
+    destination_status = (
+        f"Posting channel: <#{destination}>. Send to channel posts this draft; Save template keeps it for future editing."
+        if destination else
+        "Choose a posting channel for this document. Send to channel posts this draft; Save template keeps it for future editing."
+    )
+    send_buttons = hikari.impl.MessageActionRowBuilder()
+    send_buttons.add_interactive_button(
+        hikari.ButtonStyle.PRIMARY, f"content_send:{sid}", label="Send to channel",
+        is_disabled=not destination,
+    )
     buttons = hikari.impl.MessageActionRowBuilder()
     buttons.add_interactive_button(hikari.ButtonStyle.PRIMARY, f"content_preview:{sid}", label="Preview")
     buttons.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_save:{sid}", label="Save template")
@@ -339,7 +460,12 @@ def panel(state, notice=None):
     buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
     if state.get("manage_token"):
         buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_manage_review:{sid}", label="Management Home")
-    controls = [blocks, images]
+    controls = [
+        blocks, images,
+        hikari.impl.SeparatorComponentBuilder(divider=True),
+        hikari.impl.TextDisplayComponentBuilder(content=destination_status),
+        destination_menu, send_buttons,
+    ]
     slots = dict(media_slots(document))
     if selected_slot in slots:
         # Use the public renderer's exact slot/default resolution so linked,
@@ -467,6 +593,7 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
                     "channel_id": int(match[2]), "message_id": int(match[3]),
                     "original": sections, "original_media": original_media,
                 },
+                destination_channel_id=await destination_for(mongo, state["guild_id"], document.key),
             )
         await initial_panel(ctx, mongo, state)
 
@@ -512,11 +639,113 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
         return panel(state, "Choose one supported document.")
     document = DOCUMENTS[value[0]]
     sections, media, revision = await template_for(mongo, document, state["guild_id"])
+    destination_channel_id = await destination_for(mongo, state["guild_id"], document.key)
     target = state.get("target") if state.get("document") == document.key else None
     return panel(await new_draft(mongo, dict(
         state, view="document", document=document.key, sections=sections,
-        revision=revision, media=media, target=target, selected_media_slot=None,
+        revision=revision, media=media, target=target,
+        destination_channel_id=destination_channel_id, selected_media_slot=None,
     )))
+
+
+@register_action("content_destination", preload_state=False)
+@lightbulb.di.with_di
+async def choose_destination(
+    ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_,
+):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    document_key = state.get("document")
+    values = getattr(ctx.interaction, "values", ()) or ()
+    if document_key not in DOCUMENTS or len(values) != 1:
+        return panel(state, "Choose one text or announcement channel.")
+    try:
+        channel_id = int(values[0])
+        if channel_id <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return panel(state, "Choose one text or announcement channel.")
+    try:
+        channel = await bot.rest.fetch_channel(channel_id)
+    except (hikari.HTTPError, OSError):
+        return panel(state, "I cannot read that channel. Choose another channel.")
+    if (int(getattr(channel, "guild_id", 0)) != state["guild_id"]
+            or getattr(channel, "type", None) not in _DESTINATION_TYPES):
+        return panel(state, "Choose a text or announcement channel in this server.")
+    await mongo.bot_config.update_one(
+        {"_id": destination_key(state["guild_id"], document_key)},
+        {"$set": {
+            "guild_id": state["guild_id"], "document": document_key,
+            "channel_id": channel_id, "updated_by": int(ctx.user.id),
+            "updated_at": utcnow(),
+        }},
+        upsert=True,
+    )
+    draft = await new_draft(mongo, dict(state, destination_channel_id=channel_id))
+    return panel(draft, f"Posting channel saved as <#{channel_id}> for {DOCUMENTS[document_key].label}.")
+
+
+@register_action("content_send", preload_state=False)
+@lightbulb.di.with_di
+async def send_to_channel(
+    ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_,
+):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    document_key = state.get("document")
+    channel_id = state.get("destination_channel_id")
+    if document_key not in DOCUMENTS or not isinstance(channel_id, int) or channel_id <= 0:
+        return panel(state, "Choose and save a posting channel before sending.")
+    try:
+        channel = await bot.rest.fetch_channel(channel_id)
+    except (hikari.HTTPError, OSError):
+        return panel(state, "I cannot read the selected posting channel. Your draft is unchanged.")
+    if (int(getattr(channel, "guild_id", 0)) != state["guild_id"]
+            or getattr(channel, "type", None) not in _DESTINATION_TYPES):
+        return panel(state, "The selected posting channel must be a text or announcement channel in this server.")
+    try:
+        permissions = await destination_permissions(bot, state["guild_id"], channel)
+    except (ValueError, hikari.HTTPError, OSError) as exc:
+        return panel(state, str(exc) if isinstance(exc, ValueError) else "I cannot verify my permissions in that channel.")
+    needed = (hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES
+              | hikari.Permissions.ATTACH_FILES)
+    if not (permissions & hikari.Permissions.ADMINISTRATOR) and permissions & needed != needed:
+        return panel(state, "I need View Channel, Send Messages, and Attach Files permissions in the selected channel.")
+    ready, issue = await _ready_for_destination(ctx, bot, channel, permissions, document_key)
+    if not ready:
+        return panel(state, issue or "The acknowledgement role or next onboarding channel needs attention.")
+    try:
+        rendered = await render(
+            DOCUMENTS[document_key], state["sections"], media=state.get("media"),
+            action_id=uuid.uuid4().hex,
+        )
+    except ValueError as exc:
+        return panel(state, str(exc))
+    # One unique claim per editor token. It survives a process restart and
+    # prevents two clicks on the same stale panel from posting twice.
+    claim_key = f"content_send:{action_id}"
+    try:
+        await mongo.bot_config.insert_one({
+            "_id": claim_key, "guild_id": state["guild_id"],
+            "document": document_key, "channel_id": channel_id,
+            "requested_by": int(ctx.user.id), "created_at": utcnow(),
+        })
+    except DuplicateKeyError:
+        return panel(state, "This Send action was already used. Reopen the document to send another post.")
+    try:
+        message = await bot.rest.create_message(
+            channel=channel_id, components=rendered, **NO_MENTIONS,
+        )
+    except (hikari.HTTPError, OSError):
+        draft = await new_draft(mongo, state)
+        return panel(draft, "I could not confirm the post. Check the channel before sending again; this draft is still available.")
+    draft = await new_draft(mongo, state)
+    link = f"https://discord.com/channels/{state['guild_id']}/{channel_id}/{message.id}"
+    return panel(draft, f"Sent the current draft to <#{channel_id}>: [View posted message]({link}).")
 
 
 @register_action("content_back_root", preload_state=False)

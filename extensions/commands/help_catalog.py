@@ -38,9 +38,6 @@ HELP_CATEGORIES = {
             ("/role manage", "Open bulk role management for a member. Recruiter/Admin only."),
             ("/recruit questions", "Send the recruitment questionnaire to a recruit."),
             ("/recruit dashboard", "Open the complete new-member onboarding dashboard."),
-            ("/setup recruit-aboutus", "Post the family overview and onboarding flow."),
-            ("/setup recruit-familyparticulars", "Post family particulars and war rules."),
-            ("/setup recruit-strikesystem", "Post the strike-system rules."),
         ],
     },
     "manage": {

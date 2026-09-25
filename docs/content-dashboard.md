@@ -7,10 +7,33 @@ See [Server Management](manage-dashboard.md) for navigation and permissions.
 Recruit Gauntlet is a private, per-server Components V2 editor for About Us,
 WU Strike System, and Family Particulars. Administrators with Manage Server can
 edit named Markdown blocks, replace images in R2, preview the public layout,
-and save a template for future posts.
+save a reusable template, and send the current draft to a selected channel.
 
 Manage CWL messages, artwork, destinations, and timing through **CWL** in
 `/manage` (or its optional `section` choice); see [CWL dashboard](cwl-dashboard.md).
+
+## Choose a channel and send
+
+Each document (About Us, WU Strike System, and Family Particulars) has its own
+native Discord channel dropdown and **Send to channel** button. Choose a text
+or announcement channel in this server. The choice is saved per server and
+document and is shown in the editor when reopened. MongoDB stores it separately
+from template text under `content_destination:<server id>:<document>` in
+`bot_config`.
+
+**Send to channel** publishes the current draft, including its text and artwork.
+**Save template** separately saves those edits as the starting point for future
+editing. Sending does not overwrite earlier posts or save the draft as a template.
+After a successful send, the editor provides a link to the new post.
+
+The acknowledgement buttons and their role grants remain attached to the posted
+messages. The selected destination controls where this document is posted; it
+does not change the existing acknowledgement roles or next-step channel links.
+Bot access to the destination and acknowledgement setup are checked before sending.
+
+The dashboard replaces `/setup recruit-aboutus`, `/setup recruit-strikesystem`,
+and `/setup recruit-familyparticulars`; those three slash commands are retired.
+`/setup recruit-check` remains available for onboarding diagnostics.
 
 ## Replace an image
 

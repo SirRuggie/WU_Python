@@ -193,7 +193,6 @@ def build_familyparticulars(sections=None, *, media=None, action_id="preview", p
     return components
 
 
-@setup.register()
 class RecruitFamilyParticulars(
     lightbulb.SlashCommand,
     name="recruit-familyparticulars",

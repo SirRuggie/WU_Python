@@ -184,7 +184,6 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
     return components
 
 
-@setup.register()
 class RecruitStrikeSystem(
     lightbulb.SlashCommand,
     name="recruit-strikesystem",

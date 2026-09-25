@@ -181,7 +181,6 @@ def configured_sections(document):
     return list(sections)
 
 
-@setup.register()
 class RecruitAboutUs(
     lightbulb.SlashCommand,
     name="recruit-aboutus",
