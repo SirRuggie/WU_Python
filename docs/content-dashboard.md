@@ -168,3 +168,15 @@ About Us now grants role `1553110276251979937` and privately offers
 This continues the Gauntlet; it does not imply recruitment acceptance.
 The role can view and read that channel. The saved template and existing
 About Us post use the updated next-step instructions rather than the old direct link.
+
+
+## Standing Gauntlet channel permission convention
+
+Each acknowledgement role must have an explicit overwrite on its next-step channel:
+**View Channel: allow**, **Read Message History: allow**, and
+**Send Messages: deny**. Apply this same read-only configuration to future
+Gauntlet steps, preserving unrelated permission bits. Verify the overwrite after
+changing it. This convention currently applies to:
+
+- Join the Family role `1551011479577165844` in About Us `1547241886954168430`.
+- About Us role `1553110276251979937` in WU Strike System `1547242610819604560`.
