@@ -207,3 +207,12 @@ WU Strike System grants role `1553110508746448956` and privately offers
 The role follows the same read-only convention: View Channel and Read Message
 History allowed, Send Messages denied. Its saved template and future posts use
 button-based next-step instructions, and the handler survives restarts.
+
+
+Family Particulars completes the reading steps by granting role
+`1553110621711634502` and privately offering **Continue to Apply** for the main
+tickets application channel `1547242779711766528`. Recruits open one application
+ticket there; this does not imply acceptance into the family. The acknowledgement
+uses the same persistent, fresh-member role checks as the other Gauntlet steps.
+The application-channel role overwrite allows View Channel and Read Message
+History and denies Send Messages, preserving other permission settings.

@@ -15,7 +15,7 @@ def _count_components(items):
 
 def test_native_document_baselines_keep_original_layout_and_text_totals():
     async def check():
-        expected = {"about-us": (12, 2754), "strike-system": (12, 3461), "family-particulars": (28, 3992)}
+        expected = {"about-us": (12, 2754), "strike-system": (12, 3461), "family-particulars": (28, 3943)}
         expected_components = {"about-us": 22, "strike-system": 29, "family-particulars": 40}
         for key in expected:
             document = content.DOCUMENTS[key]
@@ -89,7 +89,7 @@ def test_render_rejects_a_full_document_over_discord_limit():
     async def check():
         document = content.DOCUMENTS["family-particulars"]
         sections = [node.content for node in content.text_nodes(await content.baseline(document))]
-        sections[0] += "over limit"
+        sections[0] += "x" * (4001 - sum(map(len, sections)))
         with pytest.raises(ValueError, match="4,000"):
             await content.render(document, sections)
     asyncio.run(check())

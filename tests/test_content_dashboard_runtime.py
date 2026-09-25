@@ -616,7 +616,7 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
     [
         ("about-us", recruit_aboutus.RecruitAboutUs, 2754),
         ("strike-system", recruit_strikesystem.RecruitStrikeSystem, 3461),
-        ("family-particulars", recruit_familyparticulars.RecruitFamilyParticulars, 3992),
+        ("family-particulars", recruit_familyparticulars.RecruitFamilyParticulars, 3943),
     ],
 )
 def test_setup_posters_fall_back_from_malformed_saved_template(
