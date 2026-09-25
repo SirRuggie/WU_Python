@@ -80,9 +80,8 @@ def _continue_components(guild_id: int, message: str):
         Container(
             accent_color=GOLDENROD_ACCENT,
             components=[
-                Text(content="## :shield: Welcome to the Family!"),
+                Text(content="## :shield: Gauntlet access unlocked"),
                 Text(content=message),
-                Text(content="Your access is ready. Continue to About Us to start exploring Warriors United."),
                 ActionRow(components=[
                     LinkButton(
                         url=f"https://discord.com/channels/{guild_id}/{ABOUT_US_CHANNEL_ID}",
@@ -156,7 +155,7 @@ async def on_join_family_acknowledge(
         return
 
     if JOIN_FAMILY_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
-        await _private_continue(ctx, guild_id, "You already have family access. Continue when you are ready.")
+        await _private_continue(ctx, guild_id, "You already have access to the Recruit Gauntlet. Continue to About Us to work through the required steps.")
         return
 
     try:
@@ -168,4 +167,4 @@ async def on_join_family_acknowledge(
         await _private_error(ctx, "I could not grant family access right now. Please try again shortly.")
         return
 
-    await _private_continue(ctx, guild_id, "You are in—welcome to the Warriors United family!")
+    await _private_continue(ctx, guild_id, "Continue to About Us to begin the Recruit Gauntlet and work through the required steps.")

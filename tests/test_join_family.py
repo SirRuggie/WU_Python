@@ -71,7 +71,7 @@ def test_join_family_grants_the_configured_role_after_rest_guild_check():
     sent = ctx.interaction.execute.await_args.kwargs
     assert sent["flags"] & hikari.MessageFlag.EPHEMERAL
     assert sent["flags"] & hikari.MessageFlag.IS_COMPONENTS_V2
-    assert any("welcome" in child.content.lower() for child in sent["components"][0].components if hasattr(child, "content"))
+    assert any("Gauntlet access unlocked" in child.content for child in sent["components"][0].components if hasattr(child, "content"))
     button = sent["components"][0].components[-1].components[0]
     assert button.url == f"https://discord.com/channels/{GUILD_ID}/{join_family.ABOUT_US_CHANNEL_ID}"
     assert button.label == "Continue to About Us"
