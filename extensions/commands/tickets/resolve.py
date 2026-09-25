@@ -45,6 +45,7 @@ from extensions.commands.tickets import (
     schema,
     store,
     thread_service,
+    testing_service,
 )
 from extensions.components import register_action
 from utils.constants import GREEN_ACCENT, RED_ACCENT
@@ -131,6 +132,8 @@ _LEGACY_APPROVAL_CARD_TITLE = "Congratulations on being accepted to Warriors Uni
 DENIAL_CARD_TITLE = (
     "we regret to inform you that currently your application has been denied."
 )
+TEST_APPROVAL_CARD_TITLE = "TEST MODE: Simulated approval."
+TEST_DENIAL_CARD_TITLE = "TEST MODE: Simulated denial."
 
 
 async def apply_denial(
@@ -149,6 +152,8 @@ async def apply_denial(
     """
     channel_id, user_id = _thread_identity(ticket)
     body = reason if kind == KIND_DENY_CUSTOM else _DENIAL_BODY[kind]
+    if testing_service.is_test_ticket(ticket):
+        body = reason or "This is a simulated decision."
     components = [
         Container(
             accent_color=RED_ACCENT,
@@ -156,6 +161,10 @@ async def apply_denial(
                 Section(
                     components=[
                         Text(content=(
+                            f"{TEST_DENIAL_CARD_TITLE}\n<@{user_id}> "
+                            f"This decision affects only the test ticket.\n\n"
+                            f"## **Reason:**\n{body}"
+                            if testing_service.is_test_ticket(ticket) else
                             f"<@{user_id}>, we regret to inform you that currently your "
                             f"application has been denied.\n\n"
                             f"## **Reason:**\n{body}"
@@ -200,6 +209,9 @@ async def apply_approval(
                 Section(
                     components=[
                         Text(content=(
+                            f"{TEST_APPROVAL_CARD_TITLE}\n<@{user_id}> "
+                            "No role, membership, invitation, or permanent history was changed."
+                            if testing_service.is_test_ticket(ticket) else
                             f"<@{user_id}> **Congratulations!** You have been "
                             f"accepted to Warriors United. A recruiter will "
                             f"contact you with your clan invite. This ticket "
@@ -274,9 +286,9 @@ def _is_notification_card(message, kind: str) -> bool:
     """
 
     titles = (
-        (APPROVAL_CARD_TITLE, _LEGACY_APPROVAL_CARD_TITLE)
+        (APPROVAL_CARD_TITLE, _LEGACY_APPROVAL_CARD_TITLE, TEST_APPROVAL_CARD_TITLE)
         if kind == KIND_APPROVE
-        else (DENIAL_CARD_TITLE,)
+        else (DENIAL_CARD_TITLE, TEST_DENIAL_CARD_TITLE)
     )
     content = str(getattr(message, "content", "") or "")
     if any(title in content for title in titles):
@@ -790,7 +802,11 @@ async def _process_resolution_effects_owned(
         pending.append(("staff account context", exc))
 
     try:
-        if (effects.get("hub") or {}).get("state") != "requested":
+        if testing_service.is_test_scope(mongo):
+            await _checkpoint_effect(
+                mongo, ticket["_id"], marker, step="hub", state="skipped"
+            )
+        elif (effects.get("hub") or {}).get("state") != "requested":
             from extensions.commands.tickets import console
 
             queued = await console.request_hub_refresh_best_effort(
@@ -1169,6 +1185,33 @@ async def _resolve_ticket(
     ticket = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
     if ticket is None:
         return store.Transition(store.MISSING, None)
+    if testing_service.is_test_scope(mongo):
+        if not testing_service.is_test_ticket(ticket):
+            return store.Transition(store.BLOCKED, None, "unmarked test ticket")
+        window = await testing_service.active_window(mongo)
+        if window is None or ticket.get("window_generation") != window.get("generation"):
+            return store.Transition(store.BLOCKED, ticket, "this test window has ended")
+        extra = {}
+        if kind != KIND_APPROVE:
+            extra["denial_type"] = DENIAL_TYPE[kind]
+            if reason:
+                extra["denial_reason"] = reason
+        previous_message_id = store.as_int(
+            ((ticket.get("resolution_effects") or {}).get("notification") or {}).get("message_id")
+        ) or None
+        result = await store.transition(
+            mongo, ticket_id,
+            to_status="approved" if kind == KIND_APPROVE else "denied",
+            actor_id=member.id, actor_name=actor_name,
+            expect=expected_status, expected_rev=expected_rev,
+            extra=extra, overrides=override, effect_kind=kind,
+            prior_effect_marker=prior_effect_marker,
+            prior_effects_legacy_baseline=prior_effects_legacy_baseline,
+            previous_notification_message_id=previous_message_id,
+        )
+        if result.won:
+            _schedule_resolution_effects(testing_service.test_bot(bot, mongo), mongo, result.doc)
+        return result
     # Only meaningful on an override (overturn): the card this resolution's
     # own effects will delete before posting a replacement. Read here,
     # before store.transition() replaces resolution_effects wholesale.
@@ -1596,7 +1639,7 @@ async def overturn_ticket(
             store.BLOCKED, current, "custom denial reason must be 5-1000 characters"
         )
     result = await deny_ticket(bot, mongo, kind=KIND_DENY_CUSTOM, reason=reason, **common)
-    if result.won:
+    if result.won and not testing_service.is_test_scope(mongo):
         await _remove_granted_roles(bot, current)
     return result
 

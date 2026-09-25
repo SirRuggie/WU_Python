@@ -136,6 +136,21 @@ def _candidate_message_snapshot(message: hikari.Message) -> str:
     return content
 
 
+async def _ticket_scope_for_location(mongo, bot, location_id):
+    """Live and test records are queried independently; never merge stores."""
+    ticket = await store.find_by_location(mongo, location_id)
+    if ticket is not None:
+        return mongo, bot, ticket
+    if not callable(getattr(mongo, "get_database", None)):
+        return mongo, bot, None
+    from extensions.commands.tickets import testing_service
+    scoped = testing_service.test_mongo(mongo)
+    ticket = await store.find_by_location(scoped, location_id)
+    if not testing_service.is_test_ticket(ticket):
+        return mongo, bot, None
+    return scoped, testing_service.test_bot(bot, scoped), ticket
+
+
 @loader.listener(hikari.GuildMessageCreateEvent)
 @lightbulb.di.with_di
 async def capture_candidate_thread_activity(
@@ -151,7 +166,7 @@ async def capture_candidate_thread_activity(
     """
     if not event.is_human:
         return
-    ticket = await store.find_by_location(mongo, int(event.channel_id))
+    mongo, bot, ticket = await _ticket_scope_for_location(mongo, bot, int(event.channel_id))
     if ticket is None or ticket.get("status") != "open":
         return
     if _ticket_location(ticket) != int(event.channel_id):
@@ -195,7 +210,7 @@ async def handle_ticket_thread_deleted(
     the applicant's slot instead of pointing at a dead thread forever, and
     resolution effects that need that thread skip instead of retrying.
     """
-    ticket = await store.find_by_location(mongo, int(event.thread_id))
+    mongo, bot, ticket = await _ticket_scope_for_location(mongo, bot, int(event.thread_id))
     if ticket is None:
         return
     location = ticket.get("location") or {}

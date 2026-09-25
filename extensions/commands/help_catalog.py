@@ -89,6 +89,7 @@ HELP_CATEGORIES = {
             ("/tickets flags", "View active applicant flags. Recruiter/Admin only."),
             ("/tickets flag-add", "Add or update an applicant flag. Recruiter/Admin only."),
             ("/tickets flag-remove", "Deactivate an applicant flag. Recruiter/Admin only."),
+            ("/tickets testing", "Open isolated test tickets. Admins manage temporary tester access."),
             ("/tickets setup", "Post and bind the restricted pilot panel. Admin only."),
             ("/tickets configure-threads", "Validate candidate/staff thread parents. Admin only."),
             ("/tickets thread-config", "Revalidate thread configuration. Admin only."),

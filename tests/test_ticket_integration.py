@@ -15,6 +15,7 @@ from utils.startup import tickets_guild_id
 ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED_COMMANDS = {
+    "testing",
     "approve",
     "approve-migration-pilot",
     "config",

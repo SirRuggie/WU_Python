@@ -10,6 +10,7 @@ inherit trust from the command that rendered it.
 import hikari
 
 from utils.mongo import MongoClient
+from extensions.commands.tickets import testing_service
 
 
 def _as_int(value) -> int:
@@ -49,6 +50,17 @@ async def is_recruiter(member: hikari.Member | None, mongo: MongoClient) -> bool
     """
     if member is None:
         return False  # DM or uncached member; nothing to authorise against
+    if testing_service.is_test_scope(mongo):
+        window = await testing_service.active_window(mongo)
+        return bool(
+            window
+            and _as_int(getattr(member, "guild_id", 0)) == _as_int(window.get("guild_id"))
+            and testing_service.user_allowed(
+                window, _as_int(getattr(member, "id", 0)),
+                getattr(member, "role_ids", ()) or (),
+                bool(getattr(member, "permissions", 0) & hikari.Permissions.ADMINISTRATOR),
+            )
+        )
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
     target_guild_id = _as_int(config.get("ticket_target_guild_id"))
     member_guild_id = _as_int(getattr(member, "guild_id", 0))

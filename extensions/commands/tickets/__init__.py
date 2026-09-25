@@ -379,6 +379,7 @@ from . import flags
 from . import legacy_migration
 from . import legacy_bulk
 from . import rollout
+from . import testing
 
 
 loader.command(ticket, guilds=[tickets_guild_id()])

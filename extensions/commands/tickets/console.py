@@ -52,6 +52,7 @@ from extensions.commands.tickets import (
     store,
     thread_service,
     ticket,
+    testing_service,
 )
 from extensions.commands.tickets.console_render import (
     GHOSTED,
@@ -4630,6 +4631,28 @@ async def ticket_console_search_again(
     **_kwargs,
 ) -> None:
     await _open_find_modal(ctx, action_id)
+
+
+@register_action("ticket_v2_test_detail", preload_state=False)
+@lightbulb.di.with_di
+async def ticket_test_detail(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+):
+    """Open the same private staff detail controls from an isolated test thread."""
+    if not testing_service.is_test_scope(mongo):
+        return _notice("Test ticket unavailable", "This is not a test ticket.", accent=ACCENT_RED)
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        return _notice("Test access required", "This test window is closed or you are not allowlisted.", accent=ACCENT_RED)
+    ticket_doc = await store.find_one(mongo, {"_id": action_id, "mode": testing_service.MODE})
+    if (ticket_doc is None or not testing_service.is_test_ticket(ticket_doc)
+        or _location_id(ticket_doc, staff=True) != _int(getattr(ctx, "channel_id", 0))):
+        return _notice("Test ticket unavailable", "Open the controls in its test staff thread.", accent=ACCENT_RED)
+    return await _ticket_detail_panel(
+        mongo, ticket_doc, owner_id=int(ctx.user.id), guild_id=int(ctx.guild_id),
+    )
 
 
 @register_action("ticket_v2_console_view", requires_state=True)

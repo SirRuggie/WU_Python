@@ -36,7 +36,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import ticket_runtime
-from extensions.commands.tickets import account_sync, schema, store
+from extensions.commands.tickets import account_sync, schema, store, testing_service
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
 
@@ -220,13 +220,15 @@ def thread_names(
     *,
     status: str = "open",
     ghosted: bool = False,
+    test: bool = False,
 ) -> tuple[str, str]:
     """Return the pair's canonical Discord names for one durable status.
 
     ``closed`` deliberately has no prefix: it is a legacy/no-decision state,
     while the three permanent v2 decisions remain visible in Discord.
     """
-    suffix = f"{ticket_type}-{int(ticket_number)}-{_slug(username)}"
+    number = (testing_service.number_label(ticket_number) if test else str(int(ticket_number)))
+    suffix = f"{ticket_type}-{number}-{_slug(username)}"
     # A current ghost report is deliberately more visible than the durable
     # decision. Removing it immediately restores the status prefix.
     prefix = _GHOSTED_NAME_PREFIX if ghosted else _STATUS_NAME_PREFIXES.get(str(status), "")
@@ -254,6 +256,7 @@ async def thread_names_for_ticket(mongo: MongoClient, ticket: Mapping[str, Any])
         str(ticket.get("username") or "candidate"),
         status=str(ticket.get("status") or ""),
         ghosted=ghosted,
+        test=testing_service.is_test_ticket(ticket),
     )
 
 
@@ -358,6 +361,7 @@ async def validate_thread_parents(
     bot_user_id: int,
     require_webhooks: bool = False,
     applicant_user_id: int | None = None,
+    test_window: Mapping[str, Any] | None = None,
 ) -> tuple[Any, Any]:
     """Fail closed unless both parents and bot/recruiter access are safe."""
     if parents.candidate_parent_id == parents.staff_parent_id:
@@ -403,6 +407,66 @@ async def validate_thread_parents(
             raise ThreadConfigurationError(
                 f"bot is missing {_permission_names(missing)} in the {label} parent"
             )
+
+    if test_window is not None:
+        # The test parents are private to this opt-in window. The production
+        # recruiter role is only a copied display value, not an access grant.
+        allowed_users = {_as_int(value) for value in test_window.get("allowed_user_ids") or ()}
+        allowed_roles = {_as_int(value) for value in test_window.get("allowed_role_ids") or ()}
+        bot_role_ids = {_as_int(value) for value in getattr(bot_member, "role_ids", ())}
+        roles_by_id = {_as_int(role.id): role for role in roles}
+        for label, channel in (("candidate", candidate), ("staff", staff)):
+            everyone = type("EveryoneMember", (), {"id": 0, "role_ids": ()})()
+            everyone_role = roles_by_id.get(parents.guild_id)
+            if everyone_role is None:
+                raise ThreadConfigurationError("target guild @everyone role could not be verified")
+            public_permissions = _effective_permissions(
+                guild_id=parents.guild_id, owner_id=owner_id,
+                member=everyone, roles=(everyone_role,), channel=channel,
+            )
+            if public_permissions & hikari.Permissions.VIEW_CHANNEL:
+                raise ThreadConfigurationError(f"test {label} parent is visible to @everyone")
+            for overwrite in _overwrite_values(getattr(channel, "permission_overwrites", ())):
+                if not hikari.Permissions(getattr(overwrite, "allow", 0)) & hikari.Permissions.VIEW_CHANNEL:
+                    continue
+                identity = _as_int(getattr(overwrite, "id", 0))
+                if identity in {bot_user_id, owner_id} | allowed_users | allowed_roles | bot_role_ids:
+                    continue
+                role = roles_by_id.get(identity)
+                if role is not None and hikari.Permissions(getattr(role, "permissions", 0)) & hikari.Permissions.ADMINISTRATOR:
+                    continue
+                if role is None:
+                    try:
+                        member = await rest.fetch_member(parents.guild_id, identity)
+                    except hikari.NotFoundError:
+                        continue
+                    if getattr(member, "permissions", hikari.Permissions.NONE) & hikari.Permissions.ADMINISTRATOR:
+                        continue
+                raise ThreadConfigurationError(f"test {label} parent grants access outside the allowlist")
+        if applicant_user_id is not None:
+            applicant = await rest.fetch_member(parents.guild_id, int(applicant_user_id))
+            role_ids = getattr(applicant, "role_ids", ()) or ()
+            admin_by_role = int(applicant_user_id) == owner_id or any(
+                hikari.Permissions(getattr(roles_by_id.get(_as_int(role_id)), "permissions", 0))
+                & hikari.Permissions.ADMINISTRATOR
+                for role_id in role_ids
+            )
+            if not testing_service.user_allowed(
+                test_window, applicant_user_id, role_ids, admin_by_role,
+            ):
+                raise ThreadConfigurationError("applicant is not in the active test allowlist")
+            applicant_permissions = _effective_permissions(
+                guild_id=parents.guild_id, owner_id=owner_id,
+                member=applicant, roles=roles, channel=candidate,
+            )
+            required = (
+                hikari.Permissions.VIEW_CHANNEL
+                | hikari.Permissions.READ_MESSAGE_HISTORY
+                | hikari.Permissions.SEND_MESSAGES_IN_THREADS
+            )
+            if required & ~applicant_permissions:
+                raise ThreadConfigurationError("test applicant cannot access candidate parent")
+        return candidate, staff
 
     recruiter_role = next(
         (role for role in roles if _as_int(getattr(role, "id", 0)) == parents.recruiter_role_id),
@@ -586,9 +650,10 @@ def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: s
 async def ensure_creation_indexes(mongo: MongoClient) -> None:
     global _creation_index_ready, _creation_index_failed
     global _creation_index_retry_at, _creation_index_last_error
-    if _creation_index_ready:
+    if _creation_index_ready and not testing_service.is_test_scope(mongo):
         return
-    if _creation_index_failed and time.monotonic() < _creation_index_retry_at:
+    if (not testing_service.is_test_scope(mongo)
+        and _creation_index_failed and time.monotonic() < _creation_index_retry_at):
         assert _creation_index_last_error is not None
         raise _creation_index_last_error
     try:
@@ -604,25 +669,32 @@ async def ensure_creation_indexes(mongo: MongoClient) -> None:
         # transient Atlas outage must not block ticket intake for the retry
         # window after Mongo has already recovered. See
         # store.is_cacheable_index_error.
-        if store.is_cacheable_index_error(exc):
+        if not testing_service.is_test_scope(mongo) and store.is_cacheable_index_error(exc):
             _creation_index_failed = True
             _creation_index_retry_at = time.monotonic() + CREATION_INDEX_RETRY_SECONDS
             _creation_index_last_error = exc
         raise
-    _creation_index_ready = True
-    _creation_index_failed = False
-    _creation_index_last_error = None
+    if not testing_service.is_test_scope(mongo):
+        _creation_index_ready = True
+    if not testing_service.is_test_scope(mongo):
+        _creation_index_failed = False
+        _creation_index_last_error = None
 
 
 async def ensure_canonical_ticket_store(mongo: MongoClient) -> None:
     """Install indexes on the thread runtime's fixed authoritative store."""
-    await store.ensure_indexes(mongo)
+    if testing_service.is_test_scope(mongo):
+        await store._install_indexes(mongo)
+    else:
+        await store.ensure_indexes(mongo)
 
 
 async def reserve_ticket_number(mongo: MongoClient, ticket_type: str) -> int:
     """Use the cross-runtime allocator shared with the legacy runtime."""
     if ticket_type not in {"main", "fwa"}:
         raise ThreadConfigurationError("ticket type must be main or fwa")
+    if testing_service.is_test_scope(mongo):
+        return await testing_service.reserve_test_ticket_number(mongo)
     return await ticket_runtime.reserve_ticket_number(mongo, ticket_type)
 
 
@@ -649,9 +721,15 @@ async def _claim_creation(
         ticket_type=ticket_type,
     )
     owner = uuid.uuid4().hex
+    test_window = await testing_service.active_window(mongo) if testing_service.is_test_scope(mongo) else None
+    if testing_service.is_test_scope(mongo) and test_window is None:
+        raise ThreadConfigurationError("ticket test window is closed")
     base = {
         "schema_version": 2,
         "kind": "thread_ticket_creation",
+        "mode": testing_service.MODE if testing_service.is_test_scope(mongo) else "live",
+        "cleanup_at": test_window.get("cleanup_at") if test_window else None,
+        "window_generation": test_window.get("generation") if test_window else None,
         "guild_id": int(guild_id),
         "user_id": int(user_id),
         "username": username,
@@ -680,6 +758,12 @@ async def _claim_creation(
             except DuplicateKeyError:
                 continue
 
+        if current.get("mode", "live") != base["mode"]:
+            raise ThreadConfigurationError("ticket creation mode cannot change during recovery")
+        if testing_service.is_test_scope(mongo) and current.get("window_generation") != base["window_generation"]:
+            raise ThreadConfigurationError("ticket creation belongs to another test window")
+        if testing_service.is_test_scope(mongo) and current.get("cleanup_at") is not None:
+            base["cleanup_at"] = current["cleanup_at"]
         if current.get("state") == "complete":
             result = await collection.update_one(
                 {"_id": creation_id, "state": "complete", "ticket_id": current.get("ticket_id")},
@@ -985,6 +1069,7 @@ async def _ensure_live_thread_pair(
             "ticket_type": state["ticket_type"], "ticket_number": ticket_number,
             "username": state["username"], "status": "open",
             "user_id": state.get("user_id"), "player_tags": state.get("player_tags") or (),
+            "mode": state.get("mode"),
         })
         state = await _state_update(
             mongo,
@@ -995,10 +1080,12 @@ async def _ensure_live_thread_pair(
             staff_name=staff_name,
         )
     candidate_name = state.get("candidate_name") or thread_names(
-        state["ticket_type"], ticket_number, state["username"]
+        state["ticket_type"], ticket_number, state["username"],
+        test=state.get("mode") == testing_service.MODE,
     )[0]
     staff_name = state.get("staff_name") or thread_names(
-        state["ticket_type"], ticket_number, state["username"]
+        state["ticket_type"], ticket_number, state["username"],
+        test=state.get("mode") == testing_service.MODE,
     )[1]
 
     candidate = staff = None
@@ -1278,6 +1365,8 @@ def _candidate_welcome_components(ticket: Mapping[str, Any]) -> list:
         accent_color=GOLDENROD_ACCENT,
         components=[
             Text(content=f"## 👋 Welcome to your {ticket_type} interest ticket"),
+            *([Text(content="🧪 TEST MODE — this is a simulated ticket; no live application is created.")]
+              if testing_service.is_test_ticket(ticket) else []),
             Text(content=(
                 f"<@{user_id}> Thank you for your interest in Warriors United. "
                 "A recruiter will reply soon. Please answer the questions below "
@@ -1294,6 +1383,8 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
         (ticket.get("location") or {}).get("id") or ticket.get("channel_id")
     )
     recruiter_role = _as_int(ticket.get("recruiter_role_id"))
+    if testing_service.is_test_ticket(ticket):
+        recruiter_role = 0
     raw_username = ticket.get("username") or "unknown"
     username = _safe_markdown(raw_username, limit=80)
     display_name = _safe_markdown(
@@ -1303,12 +1394,14 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
     notification = (
         f"<@&{recruiter_role}> a new applicant is ready for review."
         if recruiter_role else
+        "A test applicant is ready for a simulated review."
+        if testing_service.is_test_ticket(ticket) else
         "A new applicant is ready for recruiter review."
     )
     return [Container(
         accent_color=hikari.Color.from_hex_code("0066FF"),
         components=[
-            Text(content=f"## 🔒 {ticket_type} recruiter workspace · #{ticket_number}"),
+            Text(content=f"## 🔒 {ticket_type} recruiter workspace · #{testing_service.number_label(ticket_number) if testing_service.is_test_ticket(ticket) else ticket_number}"),
             Text(content=notification),
             Separator(divider=True),
             Text(content=(
@@ -1317,9 +1410,17 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
                 f"**Candidate thread:** <#{public_id}>"
             )),
             Text(content=(
+                "🧪 **TEST MODE:** Selected testers may see both test spaces. "
+                "Decisions here do not affect live applications."
+                if testing_service.is_test_ticket(ticket) else
                 "⚠️ **Recruiter-only:** The candidate cannot see this thread. "
                 "Do not mention or add them here."
             )),
+            *([ActionRow(components=[hikari.impl.InteractiveButtonBuilder(
+                style=hikari.ButtonStyle.PRIMARY,
+                custom_id=f"ticket_v2_test_detail:{ticket['_id']}",
+                label="Review test ticket",
+            )])] if testing_service.is_test_ticket(ticket) else []),
         ],
     )]
 
@@ -1364,7 +1465,11 @@ def _questionnaire_components(
             accent_color=GOLDENROD_ACCENT,
             components=[
                 Section(
-                    components=[Text(content=title), Text(content=questions)],
+                    components=[
+                        *([Text(content="🧪 TEST MODE — practice form; answers stay in the isolated test database.")]
+                          if ticket is not None and testing_service.is_test_ticket(ticket) else []),
+                        Text(content=title), Text(content=questions),
+                    ],
                     accessory=Thumbnail(media=logo),
                 ),
                 Separator(divider=True),
@@ -1416,7 +1521,10 @@ async def _deliver_opening_messages(
     ticket_number = int(ticket["ticket_number"])
     ticket_type = ticket["ticket_type"]
     user_id = _as_int(ticket["user_id"])
-    recruiter_role = _as_int(ticket.get("recruiter_role_id"))
+    recruiter_role = (
+        0 if testing_service.is_test_ticket(ticket)
+        else _as_int(ticket.get("recruiter_role_id"))
+    )
     candidate_marker = f"ticket-setup:{public_id}:candidate"
     staff_marker = f"ticket-setup:{public_id}:staff"
     # Internal bookkeeping keys only -- never posted to Discord. Both opening
@@ -1669,6 +1777,9 @@ async def _set_committed_creation_state(
         "state": state,
         "kind": "thread_ticket_creation",
         "schema_version": 2,
+        "mode": ticket.get("mode", "live"),
+        "cleanup_at": ticket.get("cleanup_at"),
+        "window_generation": ticket.get("window_generation"),
         "ticket_id": ticket["_id"],
         "ticket_number": int(ticket["ticket_number"]),
         "guild_id": _as_int(ticket.get("guild_id")),
@@ -1849,6 +1960,8 @@ async def notify_console_after_change(
         await console.deliver_staff_identity_context(bot, mongo, ticket)
     except Exception:
         _log.exception("ticket staff-context update failed for %s", ticket.get("_id"))
+    if testing_service.is_test_scope(mongo):
+        return
     try:
         await console.request_hub_refresh_best_effort(
             bot, mongo, reason=reason, force=force,
@@ -1907,10 +2020,16 @@ async def create_live_thread_ticket(
         user_id=user_id,
         ticket_type=ticket_type,
     )
+    if testing_service.is_test_scope(mongo):
+        window = await testing_service.active_window(mongo)
+        if window is None or slot.get("window_generation") != window.get("generation"):
+            raise ThreadConfigurationError("test slot belongs to an inactive window")
     # Everything through parent validation is pre-side-effect and therefore
     # safe to cancel if configuration/readiness fails.
     try:
-        if coc_client is None:
+        if testing_service.is_test_scope(mongo):
+            coc_client = None
+        elif coc_client is None:
             coc_client = account_sync.configured_coc_client()
         await ensure_creation_indexes(mongo)
         parents = parents_from_config(config, guild_id, ticket_type)
@@ -1938,11 +2057,18 @@ async def create_live_thread_ticket(
         me = bot.get_me()
         if me is None:
             raise ThreadTicketError("bot identity is not available")
+        test_window = (
+            await testing_service.active_window(mongo)
+            if testing_service.is_test_scope(mongo) else None
+        )
+        if testing_service.is_test_scope(mongo) and test_window is None:
+            raise ThreadConfigurationError("ticket test window is closed")
         await validate_thread_parents(
             bot.rest,
             parents,
             bot_user_id=int(me.id),
             applicant_user_id=int(user_id),
+            test_window=test_window,
         )
     except Exception:
         await ticket_runtime.cancel_open_slot(
@@ -2036,6 +2162,10 @@ async def create_live_thread_ticket(
                     username=username,
                     display_name=display_name,
                 )
+                ticket["mode"] = testing_service.MODE if testing_service.is_test_scope(mongo) else "live"
+                if testing_service.is_test_scope(mongo):
+                    ticket["cleanup_at"] = state.get("cleanup_at")
+                    ticket["window_generation"] = state.get("window_generation")
                 ticket["recruiter_role_id"] = parents.recruiter_role_id
                 ticket.update(ticket_runtime.thread_ticket_fields(slot))
                 try:
@@ -2046,8 +2176,9 @@ async def create_live_thread_ticket(
                         raise
                     ticket = committed
                 committed_ticket = ticket
-                from utils.gauntlet_tracking import ticket_opened
-                await ticket_opened(mongo, ticket)
+                if not testing_service.is_test_scope(mongo):
+                    from utils.gauntlet_tracking import ticket_opened
+                    await ticket_opened(mongo, ticket)
                 try:
                     await ticket_runtime.bind_open_slot(
                         mongo,
@@ -2088,7 +2219,7 @@ async def create_live_thread_ticket(
                 delivery_complete = await _finish_committed_creation(
                     bot, mongo, ticket, reconcile_pair=False
                 )
-                if delivery_complete:
+                if delivery_complete and not testing_service.is_test_scope(mongo):
                     await _send_ticket_creation_dm(bot.rest, mongo, ticket, bot=bot)
                 await notify_console_after_change(
                     bot, mongo, ticket, reason="ticket created"
@@ -2225,6 +2356,7 @@ async def rename_ticket_pair_for_status(
         _as_int(ticket.get("ticket_number")),
         str(ticket.get("username") or "candidate"),
         status=status,
+        test=testing_service.is_test_ticket(ticket),
     )
     targets = (
         ("candidate", public_id, public_name),

@@ -251,7 +251,47 @@ async def component_handler(
         await _refuse(ctx, MSG_INTERNAL_ERROR.format(ref=ref))
 
 
-async def _dispatch(
+async def _dispatch(ctx, mongo):
+    """Test-prefixed controls enter isolation before any state or action lookup."""
+    from utils.ticket_testing_context import PREFIX, test_dependencies
+    raw = ctx.interaction.custom_id
+    if not raw.startswith(PREFIX):
+        return await _dispatch_impl(ctx, mongo)
+    inner = raw[len(PREFIX):]
+    action_name = inner.partition(":")[0]
+    if not action_name.startswith("ticket_v2_"):
+        await _refuse(ctx, "That control is not available in ticket testing.")
+        return
+    action = _resolve(action_name)
+    if action is None:
+        await _refuse(ctx, MSG_STALE_PANEL)
+        return
+    deferred = not action.is_modal and not action.opens_modal
+    if deferred:
+        await ctx.defer(edit=True)
+    from utils.ticket_testing_control import require_test_access
+    bot = ctx.interaction.app
+    try:
+        scoped, window = await require_test_access(ctx, mongo, bot)
+        channel_id = int(getattr(ctx, "channel_id", None) or ctx.interaction.channel_id)
+        test_ticket = await scoped.tickets.find_one({
+            "mode": "test", "window_generation": window.get("generation"),
+            "$or": [{"location.id": channel_id}, {"location.staff_space_id": channel_id}],
+        })
+        if not test_ticket:
+            raise ValueError("This ticket belongs to an earlier test window. Open a new test ticket.")
+    except ValueError as exc:
+        if deferred:
+            await ctx.interaction.execute(content=str(exc), flags=hikari.MessageFlag.EPHEMERAL)
+        else:
+            await _refuse(ctx, str(exc))
+        return
+    async with test_dependencies(scoped, bot, ctx) as (test_ctx, _test_bot):
+        test_ctx._test_already_deferred = deferred
+        return await _dispatch_impl(test_ctx, scoped)
+
+
+async def _dispatch_impl(
         ctx: lightbulb.components.MenuContext | lightbulb.components.ModalContext,
         mongo: MongoClient,
 ):
@@ -294,7 +334,7 @@ async def _dispatch(
     # before ANY other await (state load, handler) on purpose: it is the
     # 3-second acknowledgement, and everything after it has 15 minutes.
     token_dead = False
-    if not action.is_modal and not action.opens_modal:
+    if not action.is_modal and not action.opens_modal and not getattr(ctx, "_test_already_deferred", False):
         try:
             await ctx.defer(edit=True)
         except hikari.NotFoundError:
