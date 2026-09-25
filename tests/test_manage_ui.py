@@ -6,7 +6,7 @@ from utils.manage_ui import button_emoji, breadcrumb
 
 def test_navigation_buttons_serialize_custom_icons_without_changing_labels():
     expected = {
-        'Open': 1553090771542868080,
+        'Open': 1553091643639468213,
         'Back to FWA': 1536796427198668911,
         'Management Home': 1536924506147524730,
         'Previous': 1536793616863862784,
