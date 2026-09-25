@@ -48,18 +48,17 @@ accident, because a URL does not look like a password.
   recipients who already succeeded; a pending lease can be reclaimed after a
   crash. Transient failures back off for 5, 15, 30, 60, then 180 minutes and
   stop after six failures or 24 hours. Permanent Discord failures stop on the
-  first attempt. Terminal `abandoned` state is shown by `/fwasync status` and
+  first attempt. Terminal `abandoned` state is shown by Sync & Reminders and
   expires with the existing 30-day delivery TTL.
-- A reschedule queues per-recipient change notifications before advancing the
-  stored event time. If no recipients are configured, the old timing remains so
-  the reschedule is detected again instead of being silently consumed.
-- Recipient IDs are stored once each in configured order. Older global claim
-  documents are migrated as already-seen offsets so deployment does not replay
-  historical alerts.
+- A reschedule resets the event's responses and queued deliveries and replaces
+  its signup panel. Members choose availability and reminders for the new time.
+- Reminder recipients come from current per-event opt-ins, never a fixed list.
+  Eligibility is checked again just before sending queued work; withdrawn or
+  legacy-only recipients are abandoned without a DM.
 - **The task ships disabled.** The config document is seeded with
   `enabled=False` on first run regardless of the `SYNC_DM_ENABLED` seed value,
   and only if the document does not already exist. Turn it on from Discord with
-  `/fwasync enable` once the feeds check out.
+  `/manage` → **FWA** → **Sync & Reminders** → **Enable** once the feeds check out.
 - It shares no state, schedule or collection with `band_monitor.py`. The two are
   independent by design.
 

@@ -23,7 +23,7 @@ DESTINATIONS = (
     ("Roles", "roles", "Add or remove member roles, browse members, and see role counts"),
     ("Recruit Gauntlet", "recruit", "Onboarding messages, rules, and artwork"),
     ("Recruitment Questions", "recruitment_questions", "Primary questions, FWA, explanations, and quick prompts"),
-    ("FWA", "fwa", "Bases and guidance, war messages, and points monitoring"),
+    ("FWA", "fwa", "Bases, war messages, points, and sync reminders"),
     ("CWL", "cwl", "Announcements, schedules, and delivery"),
     ("CWL Rosters", "cwl_rosters", "Saved rosters and return reminders"),
 )
@@ -74,8 +74,8 @@ def _allowed(ctx: Any, destination: str) -> bool:
         role_ids = {int(role.id) for role in roles} | {int(role) for role in getattr(member, "role_ids", ())}
         return 769130325460254740 in role_ids
     if destination == "fwa":
-        return any(_allowed(ctx, section) for section in ("fwa_bases", "fwa_war_messages", "fwa_points"))
-    if destination == "fwa_points":
+        return any(_allowed(ctx, section) for section in ("fwa_bases", "fwa_war_messages", "fwa_points", "fwa_sync"))
+    if destination in {"fwa_points", "fwa_sync"}:
         return admin
     if destination == "fwa_bases":
         roles = member.get_roles() if member and hasattr(member, "get_roles") else ()
@@ -137,6 +137,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
         "fwa": "Access to an FWA section",
         "fwa_bases": "FWA Representative role",
         "fwa_points": "Administrator permission",
+        "fwa_sync": "Administrator permission",
         "fwa_war_messages": "FWA Clan Rep role",
         "cwl": "Administrator permission",
         "cwl_rosters": "Administrator permission",
@@ -180,6 +181,7 @@ FWA_SECTIONS = (
     ("Bases & Guidance", "fwa_bases", "Base links, artwork, Town Hall instructions, and upgrade notes"),
     ("War Messages", "fwa_war_messages", "Edit win, lose, mismatch, and blacklist announcements"),
     ("Points Monitor", "fwa_points", "Monitor status, watched clans, and latest points results"),
+    ("Sync & Reminders", "fwa_sync", "BAND sync schedules, signup channel, and reminder settings"),
 )
 
 
@@ -218,6 +220,9 @@ async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
         if not deferred:
             await ctx.defer(ephemeral=True)
         await ctx.interaction.edit_initial_response(components=fwa_home_components(ctx, token), **NO_MENTIONS)
+    elif destination == "fwa_sync":
+        from extensions.commands import fwa_sync_dashboard
+        await fwa_sync_dashboard.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
     elif destination == "fwa_points":
         from extensions.commands import fwa_points_dashboard
         await fwa_points_dashboard.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
@@ -306,6 +311,7 @@ recruitment_questions_destination = _register_destination("manage_recruitment_qu
 fwa_destination = _register_destination("manage_fwa", "fwa")
 fwa_bases_destination = _register_destination("manage_fwa_bases", "fwa_bases")
 fwa_points_destination = _register_destination("manage_fwa_points", "fwa_points")
+fwa_sync_destination = _register_destination("manage_fwa_sync", "fwa_sync")
 fwa_war_messages_destination = _register_destination("manage_fwa_war_messages", "fwa_war_messages")
 cwl_destination = _register_destination("manage_cwl", "cwl")
 cwl_rosters_destination = _register_destination("manage_cwl_rosters", "cwl_rosters")

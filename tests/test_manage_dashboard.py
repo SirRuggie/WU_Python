@@ -368,7 +368,7 @@ def test_roles_button_opens_real_workspace_without_double_ack(monkeypatch):
 @pytest.mark.parametrize("permissions,roles,unlocked", [
     (hikari.Permissions.NONE, (manage.FWA_REP_ROLE_ID,), {"manage_fwa_bases"}),
     (hikari.Permissions.NONE, (769130325460254740,), {"manage_fwa_war_messages"}),
-    (hikari.Permissions.ADMINISTRATOR, (), {"manage_fwa_points"}),
+    (hikari.Permissions.ADMINISTRATOR, (), {"manage_fwa_points", "manage_fwa_sync"}),
     (hikari.Permissions.NONE, (), set()),
 ])
 def test_fwa_hub_preserves_distinct_section_permissions(permissions, roles, unlocked):
@@ -377,7 +377,7 @@ def test_fwa_hub_preserves_distinct_section_permissions(permissions, roles, unlo
     nodes = list(walk([item.build()[0] for item in panel]))
     choices = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON
                and node.get("custom_id") != "manage_home:home-token"]
-    assert len(choices) == 3
+    assert len(choices) == 4
     assert {item["custom_id"].split(":")[0] for item in choices if not item["disabled"]} == unlocked
     assert all(item["custom_id"].split(":")[0] in components.registered_functions for item in choices)
     assert manage._allowed(ctx, "fwa") == bool(unlocked)
@@ -423,5 +423,34 @@ def test_points_button_opens_real_admin_panel_and_preserves_fwa_return(monkeypat
     assert "manage_fwa:token" in _button_ids(sent["components"])
     assert sent["user_mentions"] is False and sent["role_mentions"] is False
     nodes = list(walk([part.build()[0] for part in sent["components"]]))
+    assert all(node["custom_id"].split(":")[0] in components.registered_functions
+               for node in nodes if "custom_id" in node)
+
+
+def test_sync_button_opens_real_admin_panel_with_private_native_channel_picker(monkeypatch):
+    from extensions.commands import fwa_sync_dashboard as sync_panel
+    from extensions.tasks import band_sync_schema
+    ctx = context(custom_id="manage_fwa_sync:token")
+    source = components.registered_functions["manage_fwa_sync"]
+    monkeypatch.setitem(components.registered_functions, "manage_fwa_sync",
+                        replace(source, fn=source.fn.__wrapped__._func))
+    monkeypatch.setattr(manage, "get_state", AsyncMock(return_value={
+        "view": "home", "guild_id": 2, "user_id": 1,
+    }))
+    stored = AsyncMock()
+    monkeypatch.setattr(sync_panel, "insert_state", stored)
+    monkeypatch.setattr(sync_panel.sync, "load_config", AsyncMock(return_value=band_sync_schema.new_config_doc()))
+    monkeypatch.setattr(sync_panel, "_recent_rows", AsyncMock(return_value=[]))
+    monkeypatch.setattr(sync_panel, "_recent_failures", AsyncMock(return_value=[]))
+    monkeypatch.setattr(sync_panel.sync, "feed_urls", lambda: {})
+    run(components._dispatch(ctx, mongo=object()))
+    assert ctx.defer.await_count == 1
+    stored.assert_awaited_once()
+    assert stored.await_args.args[1]["manage_token"] == "token"
+    sent = ctx.interaction.edit_initial_response.await_args.kwargs
+    assert "manage_fwa:token" in _button_ids(sent["components"])
+    assert sent["user_mentions"] is False and sent["role_mentions"] is False
+    nodes = list(walk([part.build()[0] for part in sent["components"]]))
+    assert any(node.get("type") == hikari.ComponentType.CHANNEL_SELECT_MENU for node in nodes)
     assert all(node["custom_id"].split(":")[0] in components.registered_functions
                for node in nodes if "custom_id" in node)

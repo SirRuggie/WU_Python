@@ -8,7 +8,7 @@
 # schedule and no collection with it.
 #
 # SHIPS DISABLED. The config doc is seeded with enabled=False on first run, only if the
-# doc does not already exist. Turn it on from Discord with /fwasync enable once the
+# doc does not already exist. Turn it on from /manage → FWA → Sync & Reminders once the
 # feeds check out.
 #
 # Feed URLs are CREDENTIALS - they grant unauthenticated read access to the calendar.
@@ -112,15 +112,8 @@ def _seed_from_env():
     """Initial config values, read from env ONCE to seed the Mongo doc on first run.
 
     After seeding, Mongo is authoritative and these are ignored - editing .env will not
-    change a running bot. Use /fwasync enable|disable|set-recipients|set-offsets.
+    change a running bot. Use /manage → FWA → Sync & Reminders.
     """
-    raw_ids = os.getenv("SYNC_DM_USER_IDS", "")
-    user_ids = []
-    for chunk in raw_ids.replace(";", ",").split(","):
-        chunk = chunk.strip()
-        if chunk.isdigit():
-            user_ids.append(int(chunk))
-
     offsets = []
     for chunk in os.getenv("SYNC_DM_OFFSETS", "").replace(";", ",").split(","):
         chunk = chunk.strip()
@@ -128,9 +121,8 @@ def _seed_from_env():
             offsets.append(int(chunk))
 
     return schema.new_config_doc(
-        # Always seeded off. Confirm the feeds with /fwasync check, then /fwasync enable.
+        # Always seeded off. Check the feeds in Sync & Reminders, then select Enable.
         enabled=False,
-        dm_user_ids=user_ids,
         offsets=offsets or list(schema.DEFAULT_OFFSETS),
         announce_on_discovery=os.getenv("SYNC_DM_ANNOUNCE_ON_DISCOVERY", "true").lower() == "true",
         summary_filter=os.getenv("SYNC_DM_SUMMARY_FILTER", DEFAULT_SUMMARY_FILTER),
@@ -454,9 +446,9 @@ async def deliver_outstanding(mongo, event, now=None):
 
     A recipient with an fwa_sync_responses row (opted in through the panel) gets the
     full interactive DM via band_sync_panel.send_dm, which also replaces their
-    previous DM for this event (D001 in DECISIONS.md). A legacy_broadcast-only
-    recipient (dm_user_ids, no response row - see band_sync_schema.recipients_for_offset)
-    keeps the old plain embed, unchanged.
+    previous DM for this event (D001 in DECISIONS.md). Eligibility is checked
+    again before delivery: old fixed-recipient work and withdrawn reminders
+    are abandoned without sending a message.
     """
     coll = mongo.fwa_sync_deliveries
     now = normalize_start(now) or datetime.now(timezone.utc)
@@ -476,7 +468,12 @@ async def deliver_outstanding(mongo, event, now=None):
             {"_id": schema.response_id(event["uid"], user_id)},
             {"user_id": 1, "status": 1, "reminders": 1, "dm_channel_id": 1, "dm_message_id": 1},
         )
-        if response is not None:
+        eligible = (
+            response is not None
+            and response.get("status") in schema.REMINDER_STATUSES
+            and _offset_key(delivery["offset"]) in (response.get("reminders") or ())
+        )
+        if eligible:
             if config is None:
                 config = await load_config(mongo)
             response = schema.normalize_response(response)
@@ -493,8 +490,15 @@ async def deliver_outstanding(mongo, event, now=None):
             result = _DmResult(panel_result.sent, panel_result.permanent,
                                panel_result.error_type, panel_result.detail)
         else:
-            embed = build_embed(delivery_event, delivery["offset"])
-            result = await _try_dm(user_id, embed)
+            # Retired fixed-recipient broadcasts must never send a plain embed.
+            # A queued row without a live opt-in response is terminally ineligible.
+            await coll.update_one(
+                {"_id": delivery["_id"], "status": "pending"},
+                {"$set": {"status": "abandoned", "terminal_reason": "opt_in_removed",
+                          "status_updated_at": now, "abandoned_at": now},
+                 "$unset": {"lease_until": "", "next_attempt_at": ""}},
+            )
+            continue
 
         if result.sent:
             await coll.update_one(
@@ -620,7 +624,7 @@ async def _migrate_legacy_config(mongo):
     does not also seed from env). The old collection is never deleted or written to.
     """
     legacy = await _legacy_alerts(mongo).find_one({"_id": CONFIG_ID}, {
-        "enabled": 1, "offsets": 1, "announce_on_discovery": 1, "dm_user_ids": 1,
+        "enabled": 1, "offsets": 1, "announce_on_discovery": 1,
     })
     if not legacy:
         return False
@@ -628,14 +632,12 @@ async def _migrate_legacy_config(mongo):
         enabled=bool(legacy.get("enabled", False)),
         offsets=list(legacy.get("offsets") or schema.DEFAULT_OFFSETS),
         announce_on_discovery=bool(legacy.get("announce_on_discovery", True)),
-        dm_user_ids=list(legacy.get("dm_user_ids") or []),
-        legacy_broadcast=False,
     )
     try:
         await mongo.fwa_sync_config.insert_one(doc)
     except DuplicateKeyError:
         return True  # lost the race with another seed/migration; a config doc exists
-    print("[FWA Sync ICS] Migrated legacy config from fwa_sync_alerts (legacy_broadcast=False)")
+    print("[FWA Sync ICS] Migrated legacy config from fwa_sync_alerts (opt-in reminders only)")
     return True
 
 
@@ -736,19 +738,25 @@ async def process_event(mongo, event, config, now):
             existing = refreshed
 
     claimed = set(existing.get("closed_offsets") or ())
+    responses = await _responses_for_uid(mongo, event["uid"], status=schema.REMINDER_STATUSES)
+    # Honor every supported member choice even when an older server config
+    # omitted it (notably "at sync time", added after the original broadcast).
+    offsets = set(config["offsets"])
+    offsets.update(
+        offset for response in responses for offset in response.get("reminders", ())
+        if offset in schema.DEFAULT_OFFSETS
+    )
 
     to_send, to_retire = due_offsets(
-        event["start"], now, claimed, config["offsets"],
+        event["start"], now, claimed, offsets,
         announce_on_discovery=config["announce_on_discovery"],
         first_seen=forced_first_seen if forced_first_seen is not None else first_seen,
     )
 
     # Work items must exist before the event-level offset closes. That ordering makes
     # the operation crash-safe: duplicate inserts are harmless, absent work is not.
-    # Recipients are computed per offset: legacy dm_user_ids broadcast to every offset
-    # (gated by config["legacy_broadcast"]) plus, per offset, whoever opted in and chose
-    # that reminder - see band_sync_schema.recipients_for_offset.
-    responses = await _responses_for_uid(mongo, event["uid"], status=schema.REMINDER_STATUSES)
+    # Recipients are exclusively members who opted in and chose this reminder.
+    # See band_sync_schema.recipients_for_offset.
     recipients_by_offset = {
         offset: schema.recipients_for_offset(config, responses, _offset_key(offset))
         for offset in to_send
@@ -941,7 +949,7 @@ async def _reconcile_ical_startup() -> None:
             await mongo_client.fwa_sync_config.update_one(
                 {"_id": CONFIG_ID}, {"$setOnInsert": _seed_from_env()}, upsert=True
             )
-            print("[FWA Sync ICS] Seeded config (disabled; enable with /fwasync enable)")
+            print("[FWA Sync ICS] Seeded config (disabled; enable in Sync & Reminders)")
 
     configured = ", ".join(feed_urls().keys()) or "NONE"
     print(f"[FWA Sync ICS] Feeds configured: {configured}")
@@ -986,275 +994,3 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     # sleeping task behind.
     await panel.cancel_dm_delete_tasks()
     print("[FWA Sync ICS] Poller cancelled")
-
-
-# ---- Admin controls (ADMINISTRATOR only) ----
-fwasync = lightbulb.Group("fwasync", "Admin controls for the BAND FWA sync DM alerts",
-                          default_member_permissions=hikari.Permissions.ADMINISTRATOR)
-loader.command(fwasync)
-
-
-@fwasync.register()
-class Enable(lightbulb.SlashCommand, name="enable", description="Turn the FWA sync DM alerts ON"):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await mongo.fwa_sync_config.update_one({"_id": CONFIG_ID}, {"$set": {"enabled": True}}, upsert=True)
-        await ctx.respond("✅ FWA sync DM alerts **enabled**. Takes effect within one poll "
-                          "(≤5 min).", ephemeral=True)
-
-
-@fwasync.register()
-class Disable(lightbulb.SlashCommand, name="disable", description="Turn the FWA sync DM alerts OFF"):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await mongo.fwa_sync_config.update_one({"_id": CONFIG_ID}, {"$set": {"enabled": False}}, upsert=True)
-        await ctx.respond("🛑 FWA sync DM alerts **disabled**. Takes effect within one poll "
-                          "(≤5 min). No restart needed.", ephemeral=True)
-
-
-@fwasync.register()
-class Status(lightbulb.SlashCommand, name="status", description="Show config and recent alert state"):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        # Mongo is remote; two round trips can outrun the 3s deadline on a slow link.
-        await ctx.defer(ephemeral=True)
-        try:
-            config = await load_config(mongo)
-        except Exception as exc:
-            poller_state = "running" if poller_task and not poller_task.done() else "not running"
-            recovery_state = (
-                startup_reconciler.status_text()
-                if startup_reconciler is not None
-                else "stopped"
-            )
-            await ctx.respond(
-                "**FWA Sync Calendar Status**\n"
-                f"**Poller:** {poller_state}\n"
-                f"**Startup recovery:** {recovery_state}\n"
-                f"**MongoDB:** unavailable ({type(exc).__name__})"
-            )
-            return
-        coll = mongo.fwa_sync_deliveries
-        recipients = ", ".join(f"<@{u}>" for u in config["dm_user_ids"]) or "_none configured_"
-        recipients += " (legacy broadcast OFF)" if not config["legacy_broadcast"] else ""
-        poller_running = bool(poller_task and not poller_task.done())
-        recovery_status = (
-            startup_reconciler.status_text()
-            if startup_reconciler is not None
-            else "⏹️ Stopped"
-        )
-        lines = [
-            f"**Enabled:** {'yes' if config['enabled'] else 'no'}",
-            f"**Poller:** {'✅ Running' if poller_running else '❌ Not running'}",
-            f"**Startup recovery:** {recovery_status}",
-            f"**Feeds set:** {', '.join(feed_urls().keys()) or '_none_'}",
-            f"**Recipients:** {recipients}",
-            f"**Offsets:** {', '.join(str(o) for o in config['offsets'])} min"
-            f"{' + on discovery' if config['announce_on_discovery'] else ''}",
-            f"**Poll:** every {config['poll_seconds']}s",
-            f"**Summary filter:** `{config['summary_filter']}`",
-        ]
-        lines.append("**Terminal delivery failures:**")
-        terminal_cursor = coll.find(
-            {"status": "abandoned"},
-            {"recipient_id": 1, "offset": 1, "terminal_reason": 1, "failure_count": 1},
-        ).sort("abandoned_at", -1).limit(5)
-        terminal_found = False
-        async for doc in terminal_cursor:
-            terminal_found = True
-            failure_count = int(doc.get("failure_count") or 0)
-            failure_word = "failure" if failure_count == 1 else "failures"
-            lines.append(
-                f"• <@{doc.get('recipient_id')}> `{doc.get('offset')}` — "
-                f"{doc.get('terminal_reason') or 'terminal'}, "
-                f"{failure_count} {failure_word}"
-            )
-        if not terminal_found:
-            lines.append("_(none)_")
-
-        lines.append("**Recent alerts:**")
-        cursor = coll.find(
-            {},
-            {"uid": 1, "event_version": 1, "offset": 1, "status": 1, "calendar": 1,
-             "start_at": 1, "terminal_reason": 1, "failure_count": 1},
-        ).sort("status_updated_at", -1).limit(50)
-        found = False
-        shown = set()
-        async for doc in cursor:
-            # Delivery state is per recipient, but the command has always presented
-            # alert occurrences. Collapse recipient rows to preserve that UX.
-            alert_key = (
-                doc.get("uid"), doc.get("event_version"), doc.get("offset")
-            )
-            if alert_key in shown:
-                continue
-            shown.add(alert_key)
-            found = True
-            status = str(doc.get("status") or "unknown")
-            if status == "abandoned":
-                status += (
-                    f" ({doc.get('terminal_reason') or 'terminal'}, "
-                    f"{int(doc.get('failure_count') or 0)} failures)"
-                )
-            lines.append(f"• `{doc.get('offset')}` {status} — "
-                         f"{doc.get('calendar')} {discord_timestamp(doc.get('start_at'), 'f')}")
-            if len(shown) >= 5:
-                break
-        if not found:
-            lines.append("_(none yet)_")
-        await ctx.respond("\n".join(lines))
-
-
-@fwasync.register()
-class Check(lightbulb.SlashCommand, name="check",
-            description="Dry run: fetch all feeds and report what is upcoming. Sends no DMs."):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        # defer + respond, not respond + edit: fetching three feeds can take up to 45s,
-        # well past Discord's 3s initial-response deadline.
-        await ctx.defer(ephemeral=True)
-        config = await load_config(mongo)
-        try:
-            events, errors = await collect_events(config["summary_filter"])
-        except Exception as e:
-            await ctx.respond(f"❌ Fetch failed: `{type(e).__name__}: {e}`")
-            return
-
-        lines = [f"**Feeds set:** {', '.join(feed_urls().keys()) or '_none_'}"]
-        if errors:
-            lines.append("**Errors:**")
-            lines.extend(f"• ⚠️ {e}" for e in errors)
-        lines.append(f"**Upcoming syncs:** {len(events)}")
-        for event in events[:10]:
-            lines.append(
-                f"• **{event['calendar']}** — {discord_timestamp(event['start'], 'F')} "
-                f"({discord_timestamp(event['start'], 'R')})\n"
-                f"  {event['summary'][:120]}"
-            )
-        if not events:
-            lines.append("_(nothing upcoming - normal on a quiet day, but check the feeds "
-                         "if this persists)_")
-        await ctx.respond("\n".join(lines)[:1900])
-
-
-@fwasync.register()
-class Preview(lightbulb.SlashCommand, name="preview",
-              description="DM yourself the alert embed for the next sync. Touches no dedupe state."):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await ctx.defer(ephemeral=True)
-        config = await load_config(mongo)
-        events, _errors = await collect_events(config["summary_filter"])
-
-        if events:
-            event = events[0]
-            note = "real next sync"
-        else:
-            event = {
-                "uid": "preview",
-                "start": datetime.now(timezone.utc) + timedelta(minutes=61),
-                "end": datetime.now(timezone.utc) + timedelta(minutes=101),
-                "summary": "⚀⚀ PREVIEW — Tie Breaker High Sync ➡️ Closest to Z wins",
-                "calendar": "Sync3",
-            }
-            note = "synthetic (no upcoming sync in the feeds)"
-
-        offset = str(config["offsets"][0]) if config["offsets"] else DISCOVERY_OFFSET
-        sent = await dm_all([ctx.user.id], build_embed(event, offset))
-        if sent:
-            await ctx.respond(f"✅ Preview DMed to you ({note}). No dedupe state written.")
-        else:
-            await ctx.respond("❌ Could not DM you — your DMs are likely closed.")
-
-
-@fwasync.register()
-class SetRecipients(lightbulb.SlashCommand, name="set-recipients",
-                    description="Replace the DM recipient list (comma-separated user IDs)"):
-    user_ids = lightbulb.string("user_ids", "Comma-separated Discord user IDs")
-
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        parsed = []
-        for chunk in self.user_ids.replace(";", ",").split(","):
-            chunk = chunk.strip()
-            if chunk.isdigit():
-                parsed.append(int(chunk))
-        parsed = ordered_user_ids(parsed)
-        if not parsed:
-            await ctx.respond("❌ No valid user IDs found.", ephemeral=True)
-            return
-        await mongo.fwa_sync_config.update_one({"_id": CONFIG_ID}, {"$set": {"dm_user_ids": parsed}}, upsert=True)
-        await ctx.respond("✅ Recipients set to " + ", ".join(f"<@{u}>" for u in parsed), ephemeral=True)
-
-
-@fwasync.register()
-class SetOffsets(lightbulb.SlashCommand, name="set-offsets",
-                 description="Replace the alert offsets, in minutes before the sync"):
-    minutes = lightbulb.string("minutes", "Comma-separated minutes, e.g. 60,10")
-
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        parsed = sorted({int(c.strip()) for c in self.minutes.replace(";", ",").split(",")
-                         if c.strip().isdigit() and int(c.strip()) > 0}, reverse=True)
-        if not parsed:
-            await ctx.respond("❌ No valid positive offsets found.", ephemeral=True)
-            return
-        await mongo.fwa_sync_config.update_one({"_id": CONFIG_ID}, {"$set": {"offsets": parsed}}, upsert=True)
-        await ctx.respond(f"✅ Offsets set to {', '.join(str(p) for p in parsed)} minutes. "
-                          f"Applies to events not yet alerted.", ephemeral=True)
-
-
-@fwasync.register()
-class SetChannel(lightbulb.SlashCommand, name="set-channel",
-                 description="Set this channel as the FWA sync panel channel"):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await mongo.fwa_sync_config.update_one(
-            {"_id": CONFIG_ID}, {"$set": {"panel_channel_id": ctx.channel_id}}, upsert=True
-        )
-        await ctx.respond(f"✅ Panel channel set to <#{ctx.channel_id}>.", ephemeral=True)
-
-
-@fwasync.register()
-class SetBandUrl(lightbulb.SlashCommand, name="set-band-url",
-                 description="Set the Open BAND link button's fallback URL"):
-    url = lightbulb.string("url", "Full http(s):// URL to the BAND page")
-
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        url = self.url.strip()
-        if not (url.startswith("https://") or url.startswith("http://")):
-            await ctx.respond("❌ URL must start with http:// or https://", ephemeral=True)
-            return
-        await mongo.fwa_sync_config.update_one({"_id": CONFIG_ID}, {"$set": {"band_url": url}}, upsert=True)
-        await ctx.respond(f"✅ Open BAND URL set to {url}", ephemeral=True)
-
-
-@fwasync.register()
-class LegacyBroadcast(lightbulb.SlashCommand, name="legacy-broadcast",
-                      description="Turn the old broadcast-to-dm_user_ids DMs on or off"):
-    state = lightbulb.string("state", "on or off", choices=[
-        lightbulb.Choice("On", "on"),
-        lightbulb.Choice("Off", "off"),
-    ])
-
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        enabled = self.state == "on"
-        await mongo.fwa_sync_config.update_one(
-            {"_id": CONFIG_ID}, {"$set": {"legacy_broadcast": enabled}}, upsert=True
-        )
-        await ctx.respond(
-            f"{'✅' if enabled else '🛑'} Legacy broadcast DMs **{'ON' if enabled else 'OFF'}**. "
-            "Takes effect within one poll (≤5 min).", ephemeral=True,
-        )

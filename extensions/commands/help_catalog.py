@@ -40,7 +40,7 @@ HELP_CATEGORIES = {
     "manage": {
         "name": "Management", "emoji": "🛡️", "description": "Private dashboards for server staff",
         "commands": [
-            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA (bases, war messages, points monitor), Recruitment Questions, CWL, or CWL Rosters."),
+            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA (bases, war messages, points, sync reminders), Recruitment Questions, CWL, or CWL Rosters."),
         ],
     },
     "clan_fwa": {
@@ -128,13 +128,6 @@ HELP_CATEGORIES = {
             ("/steal", "Copy an emoji into the bot application."),
             ("/reboot", "Restart the bot process. Owner only."),
             ("/toggle-debug", "Toggle verbose BAND monitor logging. Admin only."),
-            ("/fwasync enable", "Enable BAND iCal sync alerts. Admin only."),
-            ("/fwasync disable", "Disable BAND iCal sync alerts. Admin only."),
-            ("/fwasync status", "Show BAND sync configuration and state. Admin only."),
-            ("/fwasync check", "Fetch feeds and report upcoming syncs without DMs. Admin only."),
-            ("/fwasync preview", "Preview the next sync alert in your DMs. Admin only."),
-            ("/fwasync set-recipients", "Replace sync-alert recipients. Admin only."),
-            ("/fwasync set-offsets", "Replace sync-alert timing offsets. Admin only."),
         ],
     },
 }

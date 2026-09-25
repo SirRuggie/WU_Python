@@ -44,8 +44,6 @@ def test_new_config_doc_defaults():
     assert doc["panel_channel_id"] == band_monitor.NOTIFICATION_CHANNEL_ID
     assert doc["current_panel"] is None
     assert doc["offsets"] == [60, 10, 0]
-    assert doc["legacy_broadcast"] is False
-    assert doc["dm_user_ids"] == []
     assert doc["schema_version"] == schema.SCHEMA_VERSION
 
 
@@ -56,10 +54,8 @@ def test_normalize_config_carries_current_panel_through():
 
 
 def test_new_config_doc_overrides_apply_last():
-    doc = schema.new_config_doc(enabled=True, dm_user_ids=[1, 2], legacy_broadcast=True)
+    doc = schema.new_config_doc(enabled=True)
     assert doc["enabled"] is True
-    assert doc["dm_user_ids"] == [1, 2]
-    assert doc["legacy_broadcast"] is True
 
 
 def test_normalize_config_fills_missing_fields_and_pins_schema_version():
@@ -67,7 +63,6 @@ def test_normalize_config_fills_missing_fields_and_pins_schema_version():
     normalized = schema.normalize_config(partial)
     assert normalized["enabled"] is True
     assert normalized["offsets"] == [60, 10, 0]  # missing -> default
-    assert normalized["legacy_broadcast"] is False
     assert normalized["schema_version"] == schema.SCHEMA_VERSION  # never trust a raw read
 
 
@@ -178,3 +173,13 @@ def test_normalize_delivery_fills_missing_fields():
     normalized = schema.normalize_delivery({"_id": "delivery:x"})
     assert normalized["failure_count"] == 0
     assert normalized["delivery_type"] == "reminder"
+
+
+def test_retired_broadcast_fields_are_ignored_even_when_saved_enabled():
+    stored = {"enabled": True, "legacy_broadcast": True, "dm_user_ids": [123]}
+    normalized = schema.normalize_config(stored)
+    assert normalized["enabled"] is True
+    assert "legacy_broadcast" not in normalized and "dm_user_ids" not in normalized
+    created = schema.new_config_doc(**stored)
+    assert "legacy_broadcast" not in created and "dm_user_ids" not in created
+    assert schema.recipients_for_offset(stored, [], 60) == []

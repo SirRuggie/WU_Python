@@ -157,7 +157,7 @@ TICKETS_GUILD_ID=644963518025826315
 ```
 
 The BAND iCal feature also reads `BAND_ICAL_SYNC1`, `BAND_ICAL_SYNC2`,
-`BAND_ICAL_SYNC3`, `SYNC_DM_USER_IDS`, `SYNC_DM_OFFSETS`,
+`BAND_ICAL_SYNC3`, `SYNC_DM_OFFSETS`,
 `SYNC_DM_ANNOUNCE_ON_DISCOVERY`, and `SYNC_DM_SUMMARY_FILTER`. Whether each is
 currently populated is deployment state and must be checked on the host without
 printing its value into chat or logs.

@@ -3,8 +3,8 @@
 Replaces the old "DM a fixed list of user IDs" alert (`extensions/tasks/band_sync_ical.py`,
 pre-panel design) with a self-service channel panel: members opt themselves in per
 BAND sync event and choose their own reminders, instead of an admin maintaining a
-recipient list. The old broadcast path (`dm_user_ids`) still exists behind a flag - see
-Deploy note below.
+recipient list. Fixed-recipient broadcasts are retired; old saved recipient fields
+are ignored, even if their former enable flag is set.
 
 Owning modules:
 
@@ -13,18 +13,18 @@ Owning modules:
 - `extensions/tasks/band_sync_schema.py` - `SCHEMA_VERSION`, constructors and
   `normalize_*` for the four `fwa_sync_*` collections, plus the pure recipient helpers.
 - `extensions/tasks/band_sync_ical.py` - the poller: fetches feeds, tracks per-event
-  state, queues and sends deliveries, owns the `/fwasync` admin commands.
+  state, queues and sends deliveries, exposes shared helpers for the Sync & Reminders management panel.
 - `extensions/tasks/band_sync_panel.py` - the panel: every component builder and
   `register_action` handler a user clicks, plus `post_or_replace_panel`/`send_dm`,
   called by the poller.
 
 ## The panel
 
-One message per event, posted to the channel set by `/fwasync set-channel`
+One message per event, posted to the channel selected in `/manage` → **FWA** → **Sync & Reminders**
 (`fwa_sync_config.panel_channel_id`). `normalize_config` falls back to
 `NOTIFICATION_CHANNEL_ID` whenever the stored value is `None` or the key is missing,
 not only on a brand-new doc, so an existing config that predates this field still gets
-a working panel channel without an admin having to run `/fwasync set-channel` first
+a working panel channel without an admin having to select a channel first
 (refuter-01 must-fix 3; `0` is the one value that stays "no panel"). Posted by the
 poller the first poll it discovers a new event (`process_event`, when the event's
 `panel_message_id` is still unset).
@@ -93,9 +93,9 @@ time" (one-time, no schedule, available without opting in) and opted-in reminder
 the only two DMs that exist. Anyone with a response row gets the interactive DM (the
 same Container as the panel, minus the role ping and the Rep Availability list, with
 a "**Your response:**" line and the same Yes/Maybe/No/DM Me the Sync Time/reminders
-row in their place). A `legacy_broadcast` recipient (`dm_user_ids`, no response row -
-see below) still gets the old plain, buttonless embed; they never opted in through the
-panel, so there is nowhere to store a replaceable message id for them.
+row in their place). Queued work without an eligible current response is abandoned;
+there is no automatic plain-embed broadcast fallback. Administrator test DMs are
+explicit diagnostics and do not create reminder subscriptions.
 
 There is no reschedule "change" DM (DECISIONS.md D009 supersedes the old D003 change-
 alert behaviour and the earlier restyle's D003 change-DM title): a time change deletes
@@ -157,17 +157,25 @@ event's start - `due_offsets()` in `utils/band_ical_parser.py` now treats it spe
 keeps an event visible to the poller for the same hour the purge below runs on, so a
 poll landing right at start still has the event to act on.
 
-## Config commands (`/fwasync`, ADMINISTRATOR only)
+## Management controls (Administrator only)
 
-| Command | Effect |
+Open `/manage` → **FWA** → **Sync & Reminders**. The former `/fwasync`
+commands are retired.
+
+| Control | Effect |
 |---|---|
-| `enable` / `disable` | Turn the poller's delivery on/off |
-| `set-channel` | Set the invoking channel as the panel channel |
-| `set-band-url` | Set the "Check FWA Sync Time" link button's fallback URL (`fwa_sync_config.band_url`) - used whenever an event carries no `url` of its own, which is always today (the iCal parser does not extract one) |
-| `set-recipients` | Replace the legacy broadcast list (`dm_user_ids`) |
-| `set-offsets` | Replace the reminder offsets available config-wide |
-| `legacy-broadcast on\|off` | Gate the old fixed-list broadcast (see Deploy note) |
-| `status` / `check` / `preview` | Diagnostics; unchanged by this panel |
+| Enable / Disable | Turn the poller's delivery on/off within one polling interval |
+| Channel dropdown | Select and validate the signup-panel channel |
+| Set BAND fallback link | Set the link used when an event has no URL of its own |
+| Refresh | Reload poller, feed-name, and recent-delivery status |
+| Check feeds | Read upcoming events without posting or sending DMs |
+| Send me test DM | Send an explicit preview only to the clicking administrator |
+
+Member reminder choices remain one hour, ten minutes, and at sync time. The old
+arbitrary offsets editor is omitted because the public panel offers those fixed
+choices. The scheduler includes supported member-selected offsets even when an
+older configuration omitted them. The legacy recipient and broadcast controls
+are removed entirely.
 
 ## Collections and cleanup
 
@@ -189,11 +197,15 @@ an event's responses, deliveries, and each response's last DM one hour after the
 started, then the event row itself. **The panel message is never deleted by purge**
 (D003) - only the next event's discovery replaces it.
 
-## Deploy note
+## Legacy retirement
 
-The migration from the old single `fwa_sync_alerts` collection
-(`_migrate_legacy_config`) always sets `legacy_broadcast: False`, so production DMs are
-silent until an admin runs `/fwasync legacy-broadcast on` - the flag exists so the
-panel can be verified live before the old fixed-list broadcast resumes alongside it.
-The old broadcast code itself is intentionally still present (not removed by this
-brief); it is retired in a later pass once the panel has run in production.
+The one-time migration from `fwa_sync_alerts` still preserves non-recipient
+configuration when needed. It does not migrate a fixed recipient list or enable
+broadcasts. Existing obsolete recipient fields may remain in MongoDB but are
+ignored. No historical collection is deleted by this retirement.
+
+Before sending queued work, the worker rechecks the current member response and
+selected reminder. Removed subscriptions and queued legacy-only rows become
+terminal `abandoned` deliveries with `opt_in_removed`, and their leases are cleared.
+Manual **DM me the time**, normal opted-in reminders, retries, and automatic DM
+cleanup keep their existing behavior.

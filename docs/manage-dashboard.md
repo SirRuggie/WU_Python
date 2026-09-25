@@ -12,7 +12,7 @@ on one command, not separate subcommands.
 | `/manage section:Roles` | Roles | Add or remove roles for a member; browse a role’s complete member list and count |
 | `/manage section:Recruit Gauntlet` | Recruit Gauntlet | Edit onboarding text and artwork, choose each section’s channel, and send About Us, WU Strike System, or Family Particulars |
 | `/manage section:Recruitment Questions` | Recruitment Questions | Edit all Primary, FWA, Explanation, and Keep It Moving messages |
-| `/manage section:FWA` | FWA | Choose Bases & Guidance, War Messages, or Points Monitor |
+| `/manage section:FWA` | FWA | Choose Bases & Guidance, War Messages, Points Monitor, or Sync & Reminders |
 | `/manage section:CWL` | CWL | Manage campaign messages, schedules, and delivery settings |
 | `/manage section:CWL Rosters` | CWL Rosters | Manage saved Main/FWA rosters and FWA return reminders |
 
@@ -29,7 +29,7 @@ the previous screen; Management Home returns to the central dashboard. Each
 workspace rechecks its existing authorization rules: Manage Server or
 Administrator for onboarding content and recruitment questions, Administrator for CWL campaigns and
 rosters, the FWA Representative role for FWA data, and the FWA Clan Rep role
-used by `/fwa war-plans` for War Messages, and Administrator for Points Monitor. Opening the management
+used by `/fwa war-plans` for War Messages, and Administrator for Points Monitor and Sync & Reminders. Opening the management
 home does not grant new privileges.
 
 Normal management screens use the bot's gold accent. Labels and explanatory
@@ -93,10 +93,11 @@ navigation, and expire after 30 minutes.
 
 ## FWA
 
-FWA opens a gold submenu with three sections. **Bases & Guidance** is the existing
+FWA opens a gold submenu with four sections. **Bases & Guidance** is the existing
 base-link, image, description, and Town Hall editor. **War Messages** edits the
 four reusable war-announcement templates. **Points Monitor** controls automatic
 points monitoring and shows current status and watched-clan results.
+**Sync & Reminders** controls the BAND calendar poller and signup-panel destination.
 
 The FWA entry is available when staff can access at least one of its sections;
 other sections remain locked. Each section returns with **Back to FWA** and the
@@ -108,3 +109,21 @@ Points Monitor replaces `/fwapoints enable`, `disable`, `watch-add`,
 and do not create a second monitor. Automatic FWA clans stay sourced from clan
 data; only manually added extras can be removed from this panel. `/fwa points`
 remains the public results command. See [FWA points monitor](fwa-points-monitor.md).
+
+### Sync & Reminders
+
+This Administrator-only panel replaces `/fwasync`. It offers status and recent
+results, Enable/Disable, a feed check that sends no messages, an explicit test DM
+to the clicking administrator, a native signup-channel dropdown, and a BAND
+fallback-link editor. Channel selection checks the bot's destination permissions.
+Return with **Back to FWA** or **Management Home**.
+
+Members keep choosing their own reminders: one hour before, ten minutes before,
+and at sync time. These are displayed as information, not an arbitrary offset
+editor that could disagree with the public signup panel. The scheduler honors
+supported member selections even if an older config omitted one of those times.
+
+Legacy fixed-recipient broadcasts and their two settings are removed. Old saved
+recipient fields are ignored; no historical data is deleted. Queued deliveries
+without a current opt-in, or whose reminder was withdrawn, are abandoned without
+sending. Existing signup responses and explicit **DM me the time** remain intact.

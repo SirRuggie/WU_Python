@@ -275,9 +275,14 @@ def test_partial_delivery_retries_only_failed_recipient(monkeypatch):
     # value post_or_replace_panel's `if not channel_id` still reads as "no panel".
     mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
     event = _event()
-    now = event["start"] - timedelta(hours=2)
+    state = sync._event_state_doc(event, [sync.DISCOVERY_OFFSET])
+    state.update(panel_message_id=111, panel_version=sync._event_version(event))
+    mongo.fwa_sync_events = FakeCollection([state])
+    now = event["start"] - timedelta(minutes=59)
+    _store_response(mongo, event, 1, "in", [60])
+    _store_response(mongo, event, 2, "in", [60])
 
-    asyncio.run(sync.process_event(mongo, event, _config([1, 2]), now))
+    asyncio.run(sync.process_event(mongo, event, _config([]), now))
 
     statuses = {document["recipient_id"]: document["status"]
                 for document in _deliveries(mongo)}
@@ -334,24 +339,48 @@ def test_only_numeric_reminder_delivery_uses_countdown_dm(monkeypatch):
 
     asyncio.run(sync.deliver_outstanding(mongo, event, event["start"]))
 
-    assert render_types == ["reminder", "timed_reminder", "timed_reminder", "once"]
-    assert all(delivery["status"] == "sent" for delivery in _deliveries(mongo))
+    assert render_types == ["timed_reminder", "timed_reminder", "once"]
+    stored = _deliveries(mongo)
+    assert stored[0]["status"] == "abandoned"
+    assert stored[0]["terminal_reason"] == "opt_in_removed"
+    assert all(delivery["status"] == "sent" for delivery in stored[1:])
 
 
 def test_stale_pending_lease_is_reclaimed(monkeypatch):
     rest = FakeRest()
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
     event = _event()
-    delivery = sync._delivery_doc(event, sync.DISCOVERY_OFFSET, 7)
+    delivery = sync._delivery_doc(event, "60", 7)
     delivery.update({
         "status": "pending",
         "lease_until": datetime.now(timezone.utc) - timedelta(seconds=1),
     })
     mongo = FakeMongo(deliveries=[delivery])
+    _store_response(mongo, event, 7, reminders=[60])
 
     asyncio.run(sync.deliver_outstanding(mongo, event))
 
     assert mongo.fwa_sync_deliveries.documents[delivery["_id"]]["status"] == "sent"
+    assert rest.attempts == [7]
+
+
+def test_at_sync_reminder_is_sent_even_when_absent_from_legacy_config(monkeypatch):
+    rest = FakeRest()
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    event = _event()
+    state = sync._event_state_doc(event, [sync.DISCOVERY_OFFSET])
+    state.update(panel_message_id=111, panel_version=sync._event_version(event))
+    mongo = FakeMongo(events=[state])
+    mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
+    _store_response(mongo, event, 7, "in", [0])
+
+    asyncio.run(sync.process_event(
+        mongo, event, _config([]), event["start"]
+    ))
+
+    sent = [delivery for delivery in _deliveries(mongo) if delivery["offset"] == "0"]
+    assert len(sent) == 1
+    assert sent[0]["status"] == "sent"
     assert rest.attempts == [7]
 
 
@@ -549,15 +578,19 @@ def test_permanent_dm_failure_is_abandoned_immediately(monkeypatch):
     rest = FakeRest({7: forbidden})
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
     event = _event()
-    now = event["start"] - timedelta(hours=2)
+    now = event["start"] - timedelta(minutes=59)
     mongo = FakeMongo()
     # A pure delivery-queue test - see test_partial_delivery_retries_only_failed_recipient.
     # 0, not None: normalize_config now treats a stored None as "not yet configured"
     # and falls back to NOTIFICATION_CHANNEL_ID (refuter-01 must-fix 3); 0 is the one
     # value post_or_replace_panel's `if not channel_id` still reads as "no panel".
     mongo.fwa_sync_config.documents["config"] = schema.new_config_doc(panel_channel_id=0)
+    state = sync._event_state_doc(event, [sync.DISCOVERY_OFFSET])
+    state.update(panel_message_id=111, panel_version=sync._event_version(event))
+    mongo.fwa_sync_events = FakeCollection([state])
 
-    asyncio.run(sync.process_event(mongo, event, _config([7]), now))
+    _store_response(mongo, event, 7, "in", [60])
+    asyncio.run(sync.process_event(mongo, event, _config([]), now))
 
     delivery = _deliveries(mongo)[0]
     assert delivery["status"] == "abandoned"
@@ -572,12 +605,53 @@ def test_permanent_dm_failure_is_abandoned_immediately(monkeypatch):
     assert rest.attempts == [7]
 
 
+def test_queued_delivery_without_live_opt_in_is_abandoned_without_dm(monkeypatch):
+    rest = FakeRest()
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    event = _event()
+    delivery = sync._delivery_doc(event, "60", 7)
+    delivery.update({
+        "status": "pending",
+        "lease_until": datetime.now(timezone.utc) - timedelta(seconds=1),
+        "next_attempt_at": datetime.now(timezone.utc),
+    })
+    mongo = FakeMongo(deliveries=[delivery])
+
+    asyncio.run(sync.deliver_outstanding(mongo, event))
+
+    stored = mongo.fwa_sync_deliveries.documents[delivery["_id"]]
+    assert stored["status"] == "abandoned"
+    assert stored["terminal_reason"] == "opt_in_removed"
+    assert "lease_until" not in stored
+    assert "next_attempt_at" not in stored
+    assert rest.attempts == []
+
+
+@pytest.mark.parametrize(("status", "reminders"), [("no", [60]), ("in", [10])])
+def test_queued_delivery_with_withdrawn_or_removed_reminder_is_abandoned(
+    monkeypatch, status, reminders
+):
+    rest = FakeRest()
+    monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
+    event = _event()
+    delivery = sync._delivery_doc(event, "60", 7)
+    mongo = FakeMongo(deliveries=[delivery])
+    _store_response(mongo, event, 7, status, reminders)
+
+    asyncio.run(sync.deliver_outstanding(mongo, event))
+
+    stored = mongo.fwa_sync_deliveries.documents[delivery["_id"]]
+    assert stored["status"] == "abandoned"
+    assert stored["terminal_reason"] == "opt_in_removed"
+    assert rest.attempts == []
+
+
 def test_transient_dm_failure_stops_at_failure_limit(monkeypatch):
     rest = FakeRest({7: 1})
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
     event = _event()
     now = event["start"] - timedelta(hours=2)
-    delivery = sync._delivery_doc(event, sync.DISCOVERY_OFFSET, 7)
+    delivery = sync._delivery_doc(event, "60", 7)
     delivery.update({
         "status": "failed",
         "failure_count": sync.DELIVERY_MAX_FAILURES - 1,
@@ -585,6 +659,7 @@ def test_transient_dm_failure_stops_at_failure_limit(monkeypatch):
         "next_attempt_at": now,
     })
     mongo = FakeMongo(deliveries=[delivery])
+    _store_response(mongo, event, 7, reminders=[60])
 
     asyncio.run(sync.deliver_outstanding(mongo, event, now))
 
@@ -601,7 +676,7 @@ def test_transient_dm_failure_stops_after_maximum_age(monkeypatch):
     monkeypatch.setattr(sync, "bot_instance", SimpleNamespace(rest=rest))
     event = _event()
     now = event["start"] - timedelta(hours=2)
-    delivery = sync._delivery_doc(event, sync.DISCOVERY_OFFSET, 7)
+    delivery = sync._delivery_doc(event, "60", 7)
     delivery.update({
         "status": "failed",
         "failure_count": 1,
@@ -609,6 +684,7 @@ def test_transient_dm_failure_stops_after_maximum_age(monkeypatch):
         "next_attempt_at": now,
     })
     mongo = FakeMongo(deliveries=[delivery])
+    _store_response(mongo, event, 7, reminders=[60])
 
     asyncio.run(sync.deliver_outstanding(mongo, event, now))
 
@@ -620,6 +696,15 @@ def test_transient_dm_failure_stops_after_maximum_age(monkeypatch):
 # ---- band_sync_schema.recipients_for_offset ----
 def _response(user_id, status, reminders=()):
     return {"user_id": user_id, "status": status, "reminders": list(reminders)}
+
+
+def _store_response(mongo, event, user_id, status="in", reminders=()):
+    """Seed a complete response row with the same shape as the production upsert."""
+    response = schema.new_response_doc(
+        event["uid"], user_id, event["start"], schema.event_version(event),
+        status, reminders=reminders,
+    )
+    mongo.fwa_sync_responses.documents[response["_id"]] = response
 
 
 def test_recipients_for_offset_only_counts_opted_in_users_with_that_reminder():
@@ -648,20 +733,15 @@ def test_recipients_for_offset_no_user_never_counts():
     assert schema.recipients_for_offset(config, responses, 60) == []
 
 
-def test_recipients_for_offset_legacy_flag_gates_dm_user_ids():
+def test_recipients_for_offset_ignores_retired_fixed_recipient_fields():
     responses = [_response(1, "in", [60])]
-    config_on = {"dm_user_ids": [1, 5], "legacy_broadcast": True}
-    config_off = {"dm_user_ids": [1, 5], "legacy_broadcast": False}
-
-    # legacy_broadcast True: response-based recipient 1 is not duplicated, 5 is added.
-    assert schema.recipients_for_offset(config_on, responses, 60) == [1, 5]
-    # legacy_broadcast False: only the opted-in response counts.
-    assert schema.recipients_for_offset(config_off, responses, 60) == [1]
+    config = {"dm_user_ids": [1, 5], "legacy_broadcast": True}
+    assert schema.recipients_for_offset(config, responses, 60) == [1]
 
 
-def test_recipients_for_offset_dedupes_and_ignores_invalid_ids():
+def test_recipients_for_offset_without_opt_ins_is_empty_even_with_legacy_ids():
     config = {"dm_user_ids": [0, -1, "not-a-number", 9, 9], "legacy_broadcast": True}
-    assert schema.recipients_for_offset(config, [], 60) == [9]
+    assert schema.recipients_for_offset(config, [], 60) == []
 
 
 # ---- Purge ----
@@ -801,8 +881,8 @@ def test_migration_copies_legacy_config_when_new_collection_is_empty():
     assert doc["enabled"] is True
     assert doc["offsets"] == [60, 10]
     assert doc["announce_on_discovery"] is False
-    assert doc["dm_user_ids"] == [5, 6]
-    assert doc["legacy_broadcast"] is False
+    assert "dm_user_ids" not in doc
+    assert "legacy_broadcast" not in doc
 
 
 def test_migration_is_a_noop_when_no_legacy_doc_exists():

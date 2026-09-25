@@ -69,20 +69,18 @@ def new_config_doc(**overrides) -> dict:
         "enabled": False,
         # Defaults to the post-monitor's old notification channel so a brand-new
         # install posts the one restyled panel somewhere sane without an admin having
-        # to run /fwasync set-channel first (band-sync-panel-restyle).
+        # to run Sync & Reminders channel selection first (band-sync-panel-restyle).
         "panel_channel_id": NOTIFICATION_CHANNEL_ID,
         # {uid, channel_id, message_id} of the panel currently posted, or None. Lives on
         # the config singleton (not the event row) so it survives purge_finished_events()
         # deleting the old event's row - see DECISIONS.md D013.
         "current_panel": None,
-        # Open BAND link button target, settable via /fwasync set-band-url. Falls back
+        # Open BAND link button target, settable via Sync & Reminders. Falls back
         # to this BAND page whenever an event carries no url of its own (the iCal
         # parser does not extract one today - see docs/band-sync-panel.md).
         "band_url": "https://www.band.us/band/94643112",
         "offsets": list(DEFAULT_OFFSETS),
         "announce_on_discovery": True,
-        "legacy_broadcast": False,
-        "dm_user_ids": [],
         # Kept for load_config()/poll_once() - not part of the panel design, but
         # already-live operational knobs this schema must not drop.
         "summary_filter": "sync",
@@ -91,6 +89,8 @@ def new_config_doc(**overrides) -> dict:
         "schema_version": SCHEMA_VERSION,
     }
     doc.update(overrides)
+    doc.pop("legacy_broadcast", None)
+    doc.pop("dm_user_ids", None)
     return doc
 
 
@@ -105,7 +105,6 @@ def normalize_config(doc) -> dict:
             merged[key] = doc[key]
     merged["_id"] = CONFIG_ID
     merged["schema_version"] = SCHEMA_VERSION
-    merged["dm_user_ids"] = list(merged.get("dm_user_ids") or [])
     merged["offsets"] = list(merged.get("offsets") or DEFAULT_OFFSETS)
     # new_config_doc()'s NOTIFICATION_CHANNEL_ID default only ever lands on a
     # brand-new doc; an existing doc stored with panel_channel_id: None (or the key
@@ -223,34 +222,12 @@ def normalize_delivery(doc) -> dict:
 
 
 # ---- Pure helpers ----
-def _legacy_recipients(config, seen) -> list:
-    """`config["dm_user_ids"]` valid/deduped against `seen`, only when
-    config["legacy_broadcast"] is true (refuter-02 carry-over: this used to be
-    duplicated across every recipient helper that needed it)."""
-    if not config.get("legacy_broadcast"):
-        return []
-    ids = []
-    for raw_id in config.get("dm_user_ids") or ():
-        try:
-            user_id = int(raw_id)
-        except (TypeError, ValueError):
-            continue
-        if user_id <= 0 or user_id in seen:
-            continue
-        seen.add(user_id)
-        ids.append(user_id)
-    return ids
-
-
 def recipients_for_offset(config, responses, offset) -> list:
     """Who gets the reminder DM for this offset, in a stable order.
 
     `responses` is an iterable of (already status-filtered or not) response docs; only
     ones with status in REMINDER_STATUSES ("in" or "maybe", D007) and this offset in
-    their own `reminders` count. Legacy broadcast recipients (`config["dm_user_ids"]`)
-    are appended only when `config["legacy_broadcast"]` is true - this is the flag that
-    lets the automatic broadcast be switched off while the panel is unverified in
-    production (see .claude/scratch/band-sync-panel/STATE.md).
+    their own `reminders` count. Saved fixed-recipient lists are ignored.
     """
     ids = []
     seen = set()
@@ -269,5 +246,4 @@ def recipients_for_offset(config, responses, offset) -> list:
         seen.add(user_id)
         ids.append(user_id)
 
-    ids.extend(_legacy_recipients(config, seen))
     return ids
