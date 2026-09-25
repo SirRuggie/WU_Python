@@ -42,7 +42,7 @@ def _management_token(ctx) -> str | None:
         for row in getattr(container, "components", ()):
             for button in getattr(row, "components", ()):
                 custom_id = getattr(button, "custom_id", "") or ""
-                if custom_id.startswith("manage_home:"):
+                if custom_id.startswith(("manage_fwa:", "manage_home:")):
                     return custom_id.partition(":")[2]
     return None
 
@@ -58,8 +58,8 @@ def _return_to_fwa_id(ctx) -> str:
 
 def _home_button(ctx) -> list[Button]:
     token = _management_token(ctx)
-    return [Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{token}",
-                   label="Management Home")] if token else []
+    return [Button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_fwa:{token}",
+                   label="Back to FWA")] if token else []
 
 
 async def _require_fwa_representative(ctx) -> bool:
@@ -201,7 +201,7 @@ async def build_fwa_management_screen(
         Container(
             accent_color=GOLD_ACCENT,
             components=[
-                Text(content="## 🏰 **FWA Data Management**"),
+                Text(content="## 🏰 **FWA Bases & Guidance**"),
                 Text(content="Manage base links and images for each Town Hall level"),
                 Separator(divider=True),
                 Text(content=(
@@ -234,8 +234,8 @@ async def build_fwa_management_screen(
     if manage_token:
         components[0].add_component(ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"manage_home:{manage_token}",
-            label="Management Home",
+            custom_id=f"manage_fwa:{manage_token}",
+            label="Back to FWA",
         )]))
     return components
 
@@ -380,8 +380,8 @@ def build_th_edit_components(th_level: str, base_link: str, base_info: str,
     if manage_token:
         components[0].add_component(ActionRow(components=[Button(
             style=hikari.ButtonStyle.SECONDARY,
-            custom_id=f"manage_home:{manage_token}",
-            label="Management Home",
+            custom_id=f"manage_fwa:{manage_token}",
+            label="Back to FWA",
         )]))
     return components
 

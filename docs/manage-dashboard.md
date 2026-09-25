@@ -12,8 +12,7 @@ on one command, not separate subcommands.
 | `/manage section:Roles` | Roles | Add or remove roles for a member; browse a role’s complete member list and count |
 | `/manage section:Recruit Gauntlet` | Recruit Gauntlet | Edit onboarding text and artwork, choose each section’s channel, and send About Us, WU Strike System, or Family Particulars |
 | `/manage section:Recruitment Questions` | Recruitment Questions | Edit all Primary, FWA, Explanation, and Keep It Moving messages |
-| `/manage section:FWA` | FWA | Manage base links, images, descriptions, and Town Hall upgrade notes |
-| `/manage section:FWA War Messages` | FWA War Messages | Edit Win, Lose, Mismatch, and Blacklisted war-plan templates |
+| `/manage section:FWA` | FWA | Choose Bases & Guidance, War Messages, or Points Monitor |
 | `/manage section:CWL` | CWL | Manage campaign messages, schedules, and delivery settings |
 | `/manage section:CWL Rosters` | CWL Rosters | Manage saved Main/FWA rosters and FWA return reminders |
 
@@ -30,7 +29,7 @@ the previous screen; Management Home returns to the central dashboard. Each
 workspace rechecks its existing authorization rules: Manage Server or
 Administrator for onboarding content and recruitment questions, Administrator for CWL campaigns and
 rosters, the FWA Representative role for FWA data, and the FWA Clan Rep role
-used by `/fwa war-plans` for FWA War Messages. Opening the management
+used by `/fwa war-plans` for War Messages, and Administrator for Points Monitor. Opening the management
 home does not grant new privileges.
 
 Normal management screens use the bot's gold accent. Labels and explanatory
@@ -91,3 +90,21 @@ instead of counting a potentially incomplete cache. Refresh updates the snapshot
 If Discord refuses the lookup, the panel reports the failure rather than showing
 a misleading zero. These panels are private, with Back and Management Home
 navigation, and expire after 30 minutes.
+
+## FWA
+
+FWA opens a gold submenu with three sections. **Bases & Guidance** is the existing
+base-link, image, description, and Town Hall editor. **War Messages** edits the
+four reusable war-announcement templates. **Points Monitor** controls automatic
+points monitoring and shows current status and watched-clan results.
+
+The FWA entry is available when staff can access at least one of its sections;
+other sections remain locked. Each section returns with **Back to FWA** and the
+submenu has **Management Home**. War-message drafts still warn before abandoning
+unsaved edits.
+
+Points Monitor replaces `/fwapoints enable`, `disable`, `watch-add`,
+`watch-remove`, and `status`. These controls use the existing monitor configuration
+and do not create a second monitor. Automatic FWA clans stay sourced from clan
+data; only manually added extras can be removed from this panel. `/fwa points`
+remains the public results command. See [FWA points monitor](fwa-points-monitor.md).

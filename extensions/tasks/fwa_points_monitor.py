@@ -12,7 +12,7 @@
 # the site answers normally with these same headers - so DEFAULT_ENABLED is
 # now True. The Mongo config doc still decides at runtime and is only seeded
 # with the default on first boot, so an existing database that was seeded
-# while this shipped disabled needs `/fwapoints enable` run once. Do not reach
+# while this shipped disabled needs Enable in `/manage` → FWA → Points Monitor once. Do not reach
 # for a Cloudflare-bypass library: those defeat TLS/JS challenges, not
 # IP-reputation blocks, so they would not have helped here anyway.
 
@@ -57,7 +57,7 @@ STAGGER_JITTER_MAX_SECONDS = 5  # extra random slack added on top of the step
 DEFAULT_ENABLED = True
 # Extras only. The bulk of the watch list now comes from mongo.clans (every
 # clan of type FWA) - see effective_watch_list(). This stays empty; a clan
-# outside that set is added via /fwapoints watch-add.
+# outside that set is added via the Points Monitor panel.
 DEFAULT_WATCH_LIST = []
 
 # Cloudflare here rejects non-browser User-Agents (verified: honest UA -> 403,
@@ -92,8 +92,9 @@ BOARD_TITLE = "## ⚔️ War board"
 
 
 # ---- Config helpers ----
-async def load_config():
-    doc = await mongo_client.fwa_points.find_one({"_id": "config"})
+async def load_config(mongo=None):
+    client = mongo or mongo_client
+    doc = await client.fwa_points.find_one({"_id": "config"})
     if not doc:
         return {"enabled": DEFAULT_ENABLED, "watch_list": list(DEFAULT_WATCH_LIST)}
     return {
@@ -108,7 +109,7 @@ async def feature_enabled():
     return bool(doc and doc.get("enabled"))
 
 
-async def effective_watch_list(config=None):
+async def effective_watch_list(config=None, mongo=None, *, strict=False):
     """Every clan of type FWA, plus the config doc's watch_list as extras.
 
     Resolved fresh on every call (never cached alongside config) because clan
@@ -116,13 +117,16 @@ async def effective_watch_list(config=None):
     De-duplicated by tag; a clan-type entry wins over an extra with the same
     tag since it is the source of truth for FWA membership.
     """
+    client = mongo or mongo_client
     if config is None:
-        config = await load_config()
+        config = await load_config(client)
 
     entries: dict[str, dict] = {}
     try:
-        fwa_clans = await mongo_client.clans.find({"type": "FWA"}).to_list(length=None)
+        fwa_clans = await client.clans.find({"type": "FWA"}).to_list(length=None)
     except Exception as e:
+        if strict:
+            raise
         print(f"[FWA Points] Failed to load FWA clan list: {type(e).__name__}: {e}")
         fwa_clans = []
     for doc in fwa_clans:
@@ -814,7 +818,7 @@ async def detector_loop():
             config = await load_config()
             if config["enabled"]:
                 # Resolved fresh every tick: mongo.clans membership can change
-                # without anyone touching /fwapoints.
+                # without anyone touching the management panel.
                 launched = 0  # position among catch-ups actually started this pass, for staggering
                 for clan in await effective_watch_list(config):
                     our_tag = sanitize_tag(clan.get("tag", ""))
@@ -936,118 +940,18 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     print("[FWA Points] Tasks cancelled")
 
 
-# ---- Admin controls (ADMINISTRATOR only) ----
-fwapoints = lightbulb.Group("fwapoints", "Admin controls for the FWA points monitor",
-                            default_member_permissions=hikari.Permissions.ADMINISTRATOR)
-loader.command(fwapoints)
-
-
-@fwapoints.register()
-class Enable(lightbulb.SlashCommand, name="enable", description="Turn the FWA points monitor ON"):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await mongo.fwa_points.update_one({"_id": "config"}, {"$set": {"enabled": True}}, upsert=True)
-        await ctx.respond("✅ FWA points monitor **enabled**.", ephemeral=True)
-
-
-@fwapoints.register()
-class Disable(lightbulb.SlashCommand, name="disable",
-              description="Turn the FWA points monitor OFF (stops in-progress retries)"):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await mongo.fwa_points.update_one({"_id": "config"}, {"$set": {"enabled": False}}, upsert=True)
-        cancelled = 0
-        for t in list(active_catchups.values()):
-            if not t.done():
-                t.cancel()
-                cancelled += 1
-        await ctx.respond(f"🛑 FWA points monitor **disabled**. Stopped {cancelled} in-progress retr"
-                          f"{'y' if cancelled == 1 else 'ies'}.", ephemeral=True)
-
-
-@fwapoints.register()
-class WatchAdd(lightbulb.SlashCommand, name="watch-add", description="Add a clan to the watch list"):
-    tag = lightbulb.string("tag", "Clan tag (with or without #)")
-    name = lightbulb.string("name", "Display name used in logs")
-
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        t = sanitize_tag(self.tag)
-        if not t:
-            await ctx.respond("❌ Invalid tag.", ephemeral=True)
-            return
-        # One aggregation-pipeline update avoids the brief missing/duplicate
-        # state produced by the old $pull followed by $push pair.
-        await mongo.fwa_points.update_one(
-            {"_id": "config"},
-            watch_list_replacement_pipeline(t, self.name),
-            upsert=True,
-        )
-        await ctx.respond(f"✅ Added **{self.name}** (`{t}`) to the watch list.", ephemeral=True)
-
-
-@fwapoints.register()
-class WatchRemove(lightbulb.SlashCommand, name="watch-remove", description="Remove a clan from the watch list"):
-    tag = lightbulb.string("tag", "Clan tag to remove")
-
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        t = sanitize_tag(self.tag)
-        await mongo.fwa_points.update_one({"_id": "config"}, {"$pull": {"watch_list": {"tag": t}}})
-        task = active_catchups.get(t)
-        if task and not task.done():
-            task.cancel()
-        await ctx.respond(f"✅ Removed `{t}` from the watch list.", ephemeral=True)
-
-
-@fwapoints.register()
-class Status(lightbulb.SlashCommand, name="status", description="Show monitor status and last records"):
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-        await ctx.defer(ephemeral=True)
-        try:
-            config = await load_config()
-        except Exception as exc:
-            detector_state = "running" if detector_task and not detector_task.done() else "not running"
-            recovery_state = (
-                startup_reconciler.status_text()
-                if startup_reconciler is not None
-                else "stopped"
-            )
-            await ctx.respond(
-                "**FWA Points Status**\n"
-                f"**Detector:** {detector_state}\n"
-                f"**Startup recovery:** {recovery_state}\n"
-                f"**MongoDB:** unavailable ({type(exc).__name__})",
-                ephemeral=True,
-            )
-            return
-        active = sum(1 for t in active_catchups.values() if not t.done())
-        detector_running = bool(detector_task and not detector_task.done())
-        recovery_status = (
-            startup_reconciler.status_text()
-            if startup_reconciler is not None
-            else "⏹️ Stopped"
-        )
-        watch_list = await effective_watch_list(config)
-        lines = [f"**Enabled:** {'yes' if config['enabled'] else 'no'}",
-                 f"**Detector:** {'✅ Running' if detector_running else '❌ Not running'}",
-                 f"**Startup recovery:** {recovery_status}",
-                 f"**Active retries:** {active}", "**Watch list (effective):**"]
-        if not watch_list:
-            lines.append("_(empty)_")
-        for clan in watch_list:
-            t = sanitize_tag(clan.get("tag", ""))
-            source_tag = "FWA clan" if clan.get("source") == "clan_type" else "extra"
-            rec = await mongo.fwa_points.find_one({"_id": t})
-            if rec and rec.get("raw_verdict"):
-                lines.append(f"• {clan.get('name')} (`{t}`) [{source_tag}]: {rec['raw_verdict']} "
-                             f"(war #{rec.get('war_number')}, scraped {rec.get('scraped_at', '?')})")
-            else:
-                lines.append(f"• {clan.get('name')} (`{t}`) [{source_tag}]: no data yet")
-        await ctx.respond("\n".join(lines), ephemeral=True)
+# Admin controls now live in /manage -> FWA -> Points Monitor. Keep the
+# lifecycle listeners above loaded so the background detector remains active.
+async def set_monitor_enabled(mongo: MongoClient, enabled: bool) -> int:
+    """Persist a switch and stop in-progress retries when turning it off."""
+    await mongo.fwa_points.update_one(
+        {"_id": "config"}, {"$set": {"enabled": bool(enabled)}}, upsert=True,
+    )
+    if enabled:
+        return 0
+    pending = [task for task in list(active_catchups.values()) if not task.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+    return len(pending)

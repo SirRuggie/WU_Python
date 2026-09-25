@@ -56,7 +56,7 @@ Since 2026-09-08 the bot runs on **Ruggie's Zone**, a residential machine, and
 the site answers normally from it with the same headers. `DEFAULT_ENABLED` is
 now `True`, but the Mongo `fwa_points` config doc is only seeded with the
 default on first boot — an existing database that was seeded while this
-shipped disabled needs `/fwapoints enable` run once.
+shipped disabled needs **Enable** in `/manage` → **FWA** → **Points Monitor** selected once.
 
 Do not reach for a Cloudflare-bypass library if this ever regresses: those
 defeat TLS/JS challenges, not IP-reputation blocks, so they would not help
@@ -68,14 +68,14 @@ The **effective watch list** on every detector tick is:
 
 1. Every clan of type `FWA` in `mongo.clans` (tag sanitized, name from the
    document) — the source of truth for FWA membership. Clan-type membership
-   can change at any time without anyone touching `/fwapoints`, so this is
+   can change at any time without anyone changing the monitor settings, so this is
    resolved fresh on every tick rather than cached.
 2. Plus the config doc's `watch_list` array, as **extras** — clans outside
    `mongo.clans` type FWA that should still be watched (added via
-   `/fwapoints watch-add`, removed via `/fwapoints watch-remove`).
+   **Add extra clan** in Points Monitor, removed via **Remove extra clan** in Points Monitor).
 
 The two are merged and de-duplicated by tag; a clan-type entry wins over an
-extra with the same tag. `/fwapoints status` shows the effective list and
+extra with the same tag. **Points Monitor** shows the effective list and
 marks each entry `[FWA clan]` or `[extra]`.
 
 ## How catch-up works
@@ -112,15 +112,20 @@ itself, since the opponent's FWA status is supplementary to our own verdict.
 | `coc_war_end_time` | ISO string of that same war's `end_time`, from the CoC API. This is what `/todo` compares against `Row.ends_at` to decide whether the record still matches the war being rendered. |
 | `scraped_at`, `attempts`, `status`, `last_attempt_*` | Bookkeeping — see the retry/cooldown logic in the module itself. |
 
-## Commands (`/fwapoints`, ADMINISTRATOR-gated)
+## Administration (Administrator-only)
 
-- `enable` / `disable` — flip the Mongo config flag; `disable` also cancels
-  any in-progress catch-up retries.
-- `watch-add <tag> <name>` / `watch-remove <tag>` — manage the **extras** only;
-  a clan of type FWA in `mongo.clans` does not need to be added here.
-- `status` — detector/startup-recovery state, active retries, and the
-  effective watch list with each entry's last stored verdict (or "no data
-  yet").
+Open `/manage` → **FWA** → **Points Monitor**. This replaces the five old
+`/fwapoints` admin commands while retaining the same MongoDB configuration.
+
+- **Enable / Disable** changes the saved monitor flag; Disable also stops
+  in-progress catch-up retries.
+- **Add extra clan / Remove extra clan** manages manually watched extras.
+  Clans marked FWA in clan data are automatically included and cannot be
+  removed through the extras control.
+- The panel shows detector/startup state, active retries, and paginated watched
+  clans with their latest stored results. **Refresh** reloads this information.
+- **Back to FWA** returns to the FWA submenu. The public `/fwa points` command,
+  live board, `/todo` data, and war-plan opponent autocomplete remain active.
 
 ## What is NOT available
 

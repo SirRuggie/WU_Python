@@ -1,7 +1,7 @@
 # FWA War Messages
 
-Open `/manage` and choose **FWA War Messages**, or select it in the command's
-optional `section` field. This private editor manages the **Win**, **Lose**,
+Open `/manage` → **FWA** → **War Messages**. The optional `section:FWA`
+choice opens the FWA submenu. This private editor manages the **Win**, **Lose**,
 **Mismatch**, and **Blacklisted** templates used by `/fwa war-plans`.
 
 ## Workflow

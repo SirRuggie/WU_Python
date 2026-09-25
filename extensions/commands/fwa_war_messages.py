@@ -128,7 +128,7 @@ def _home(state: dict, notice: str | None = None) -> list:
     rows.extend([
         selector,
         hikari.impl.TextDisplayComponentBuilder(content="-# Changes affect future posts only after you save."),
-        _buttons((f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False)),
+        _buttons((f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False)),
     ])
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=rows)]
 
@@ -172,7 +172,7 @@ def _editor(state: dict, notice: str | None = None) -> list:
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         _buttons(
             (f"fwa_war_leave_variants:{sid}", "Back to war results", hikari.ButtonStyle.SECONDARY, False),
-            (f"{'fwa_war_leave' if _dirty(state) else 'manage_home'}:{sid if _dirty(state) else state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
+            (f"{'fwa_war_leave' if _dirty(state) else 'manage_fwa'}:{sid if _dirty(state) else state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=rows)]
@@ -180,8 +180,8 @@ def _editor(state: dict, notice: str | None = None) -> list:
 
 def _leave_review(state: dict, *, management: bool) -> list:
     sid = state["_id"]
-    destination = "Management Home" if management else "war results"
-    leave_id = f"manage_home:{state['manage_token']}" if management else f"fwa_war_back:{sid}"
+    destination = "FWA" if management else "war results"
+    leave_id = f"manage_fwa:{state['manage_token']}" if management else f"fwa_war_back:{sid}"
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLD_ACCENT, components=[
         hikari.impl.TextDisplayComponentBuilder(content=f"## Return to {destination}?"),
         hikari.impl.TextDisplayComponentBuilder(content="Unsaved changes in this draft will not be restored. Save them first if you want future war posts to use them."),

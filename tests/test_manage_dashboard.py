@@ -54,12 +54,12 @@ def test_single_manage_command_has_optional_section_and_is_loaded():
     assert [(choice.name, choice.value) for choice in choices] == [
         ("Server", "server"), ("Roles", "roles"), ("Recruit Gauntlet", "recruit-gauntlet"),
         ("Recruitment Questions", "recruitment-questions"),
-        ("FWA", "fwa"), ("FWA War Messages", "fwa-war-messages"),
+        ("FWA", "fwa"),
         ("CWL", "cwl"), ("CWL Rosters", "cwl-rosters"),
     ]
 
 
-def test_home_has_seven_sections_valid_discord_shape_and_access(monkeypatch):
+def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
     token = "x" * 32
     ctx = context(permissions=hikari.Permissions.MANAGE_GUILD)
     from extensions.commands.recruit import perms
@@ -71,12 +71,12 @@ def test_home_has_seven_sections_valid_discord_shape_and_access(monkeypatch):
     assert built["type"] == hikari.ComponentType.CONTAINER
     assert built["accent_color"] == manage.GOLD_ACCENT
     assert len(nodes) <= 40
-    assert len(sections) == 7
+    assert len(sections) == 6
     assert [button["custom_id"] for button in buttons] == [
-        f"manage_server_roles:{token}", f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}", f"manage_fwa_war_messages:{token}",
+        f"manage_server_roles:{token}", f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}",
         f"manage_cwl:{token}", f"manage_cwl_rosters:{token}",
     ]
-    assert [button["disabled"] for button in buttons] == [True, False, False, True, True, True, True]
+    assert [button["disabled"] for button in buttons] == [True, False, False, True, True, True]
     assert all(len(button["custom_id"]) <= 100 for button in buttons)
 
 
@@ -163,17 +163,17 @@ def test_fwa_managed_overview_detail_and_image_back_preserve_home(monkeypatch):
     monkeypatch.setattr(fwa_data, "get_fwa_data", AsyncMock(return_value={}))
     ctx = context(roles=(manage.FWA_REP_ROLE_ID,))
     overview = run(fwa_data.build_fwa_management_screen(ctx, object(), manage_token="home-token"))
-    assert "manage_home:home-token" in _button_ids(overview)
+    assert "manage_fwa:home-token" in _button_ids(overview)
     menu = [node for node in walk([item.build()[0] for item in overview])
             if node.get("type") == hikari.ComponentType.ACTION_ROW and node.get("components")
             and node["components"][0].get("type") == hikari.ComponentType.TEXT_SELECT_MENU][0]
     assert menu["components"][0]["custom_id"] == "fwa_th_select:home-token"
 
     detail = fwa_data.build_th_edit_components("th16", "", "", "", "", "", manage_token="home-token")
-    assert {"manage_home:home-token", "fwa_back_to_main:home-token"} <= set(_button_ids(detail))
+    assert {"manage_fwa:home-token", "fwa_back_to_main:home-token"} <= set(_button_ids(detail))
     ctx.interaction.message = SimpleNamespace(components=detail)
     images = run(fwa_data.fwa_update_images.__wrapped__._func(ctx=ctx, action_id="th16"))
-    assert {"manage_home:home-token", "fwa_th_select_return:th16|home-token"} <= set(_button_ids(images))
+    assert {"manage_fwa:home-token", "fwa_th_select_return:th16|home-token"} <= set(_button_ids(images))
 
 
 def test_bare_manage_defers_once_and_edits_home(monkeypatch):
@@ -363,3 +363,65 @@ def test_roles_button_opens_real_workspace_without_double_ack(monkeypatch):
     assert any(node.get("type") == hikari.ComponentType.USER_SELECT_MENU for node in nodes)
     assert any(node.get("type") == hikari.ComponentType.ROLE_SELECT_MENU for node in nodes)
     assert sent["user_mentions"] is False and sent["role_mentions"] is False
+
+
+@pytest.mark.parametrize("permissions,roles,unlocked", [
+    (hikari.Permissions.NONE, (manage.FWA_REP_ROLE_ID,), {"manage_fwa_bases"}),
+    (hikari.Permissions.NONE, (769130325460254740,), {"manage_fwa_war_messages"}),
+    (hikari.Permissions.ADMINISTRATOR, (), {"manage_fwa_points"}),
+    (hikari.Permissions.NONE, (), set()),
+])
+def test_fwa_hub_preserves_distinct_section_permissions(permissions, roles, unlocked):
+    ctx = context(permissions=permissions, roles=roles)
+    panel = manage.fwa_home_components(ctx, "home-token")
+    nodes = list(walk([item.build()[0] for item in panel]))
+    choices = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON
+               and node.get("custom_id") != "manage_home:home-token"]
+    assert len(choices) == 3
+    assert {item["custom_id"].split(":")[0] for item in choices if not item["disabled"]} == unlocked
+    assert all(item["custom_id"].split(":")[0] in components.registered_functions for item in choices)
+    assert manage._allowed(ctx, "fwa") == bool(unlocked)
+    assert len(nodes) <= 40
+
+
+def test_fwa_home_button_opens_hub_without_opening_base_editor(monkeypatch):
+    from extensions.commands.clan.dashboard import fwa_data
+    ctx = context(custom_id="manage_fwa:token")
+    source = components.registered_functions["manage_fwa"]
+    monkeypatch.setitem(components.registered_functions, "manage_fwa",
+                        replace(source, fn=source.fn.__wrapped__._func))
+    monkeypatch.setattr(manage, "get_state", AsyncMock(return_value={
+        "view": "home", "guild_id": 2, "user_id": 1,
+    }))
+    opened = AsyncMock()
+    monkeypatch.setattr(fwa_data, "build_fwa_management_screen", opened)
+    run(components._dispatch(ctx, mongo=object()))
+    opened.assert_not_awaited()
+    sent = ctx.interaction.edit_initial_response.await_args.kwargs
+    assert {"manage_fwa_bases:token", "manage_fwa_war_messages:token", "manage_fwa_points:token"} <= set(_button_ids(sent["components"]))
+    assert ctx.defer.await_count == 1
+
+
+def test_points_button_opens_real_admin_panel_and_preserves_fwa_return(monkeypatch):
+    from extensions.commands import fwa_points_dashboard as points
+    ctx = context(custom_id="manage_fwa_points:token")
+    source = components.registered_functions["manage_fwa_points"]
+    monkeypatch.setitem(components.registered_functions, "manage_fwa_points",
+                        replace(source, fn=source.fn.__wrapped__._func))
+    monkeypatch.setattr(manage, "get_state", AsyncMock(return_value={
+        "view": "home", "guild_id": 2, "user_id": 1,
+    }))
+    stored = AsyncMock()
+    monkeypatch.setattr(points, "insert_state", stored)
+    monkeypatch.setattr(points, "_snapshot", AsyncMock(return_value=({"enabled": True}, [])))
+    run(components._dispatch(ctx, mongo=object()))
+    assert ctx.events[0] == ("defer", {"edit": True})
+    assert ctx.defer.await_count == 1
+    stored.assert_awaited_once()
+    assert stored.await_args.args[1]["manage_token"] == "token"
+    sent = ctx.interaction.edit_initial_response.await_args.kwargs
+    assert "manage_fwa:token" in _button_ids(sent["components"])
+    assert sent["user_mentions"] is False and sent["role_mentions"] is False
+    nodes = list(walk([part.build()[0] for part in sent["components"]]))
+    assert all(node["custom_id"].split(":")[0] in components.registered_functions
+               for node in nodes if "custom_id" in node)

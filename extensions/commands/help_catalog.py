@@ -40,7 +40,7 @@ HELP_CATEGORIES = {
     "manage": {
         "name": "Management", "emoji": "🛡️", "description": "Private dashboards for server staff",
         "commands": [
-            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA, FWA War Messages, Recruitment Questions, CWL, or CWL Rosters."),
+            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA (bases, war messages, points monitor), Recruitment Questions, CWL, or CWL Rosters."),
         ],
     },
     "clan_fwa": {
@@ -135,11 +135,6 @@ HELP_CATEGORIES = {
             ("/fwasync preview", "Preview the next sync alert in your DMs. Admin only."),
             ("/fwasync set-recipients", "Replace sync-alert recipients. Admin only."),
             ("/fwasync set-offsets", "Replace sync-alert timing offsets. Admin only."),
-            ("/fwapoints enable", "Enable the FWA points monitor. Admin only."),
-            ("/fwapoints disable", "Disable the FWA points monitor. Admin only."),
-            ("/fwapoints watch-add", "Add a clan to the points watch list. Admin only."),
-            ("/fwapoints watch-remove", "Remove a clan from the watch list. Admin only."),
-            ("/fwapoints status", "Show points-monitor status and records. Admin only."),
         ],
     },
 }
