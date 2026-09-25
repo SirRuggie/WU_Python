@@ -1,28 +1,28 @@
-"""Tests for the bulk troop-emoji sync and its lookup cache."""
+"""Retired uploader and preserved troop emoji lookup cache."""
 
 from __future__ import annotations
 
-import io
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import hikari
-import pytest
-from PIL import Image
 
 from extensions.commands import emoji_sync
 from utils import troop_emoji
 from utils.cards import CARDS
 
 
-def test_every_bundled_troop_produces_a_valid_emoji_payload():
-    sources = emoji_sync.collect_sources()
-
-    assert set(sources) == {card.id for card in CARDS}
-    for slug, data in sources.items():
-        assert len(data) <= emoji_sync.MAX_EMOJI_BYTES, slug
-        # Discord accepts PNG/JPEG/GIF, not the WebP the repo stores.
-        assert data.startswith(b"\x89PNG\r\n\x1a\n"), slug
-        with Image.open(io.BytesIO(data)) as image:
-            assert max(image.size) <= emoji_sync.EMOJI_EDGE, slug
+def test_uploader_is_retired_but_saved_registry_still_loads():
+    assert not hasattr(emoji_sync, "EmojiSync")
+    rows = [{"slug": "barbarian", "emoji_id": 123456789012345678, "name": "troop_barbarian"}]
+    collection = SimpleNamespace(find=Mock(return_value=SimpleNamespace(to_list=AsyncMock(return_value=rows))))
+    try:
+        assert asyncio.run(emoji_sync.refresh_cache(SimpleNamespace(emoji_registry=collection))) == 1
+        collection.find.assert_called_once_with({"kind": "troop"})
+        assert troop_emoji.markup("barbarian") == "<:troop_barbarian:123456789012345678>"
+    finally:
+        troop_emoji.clear()
 
 
 def test_every_managed_name_is_a_legal_discord_emoji_name():
