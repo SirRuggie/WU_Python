@@ -569,6 +569,8 @@ def test_dm_actions_keep_delete_footer_and_deadline(handler, values, delete_at):
 
     asyncio.run(handler(ctx, "sync-1", bot=bot, mongo=mongo))
 
+    if handler is not panel.fwa_sync_reminders:
+        assert ctx.interaction.executed == []
     texts = _texts(ctx.responses[0]["components"][0])
     expected = datetime(2026, 8, 5, 18, 10, tzinfo=timezone.utc)
     assert texts[-1] == f"-# This message will be deleted <t:{int(expected.timestamp())}:R>"
@@ -921,3 +923,17 @@ def test_panel_time_row_holds_band_link_and_dm_me_button():
     assert [getattr(b, "label", None) for b in time_row.components] == [panel.BAND_LINK_LABEL, panel.DM_ME_LABEL]
     assert getattr(time_row.components[1], "custom_id", "") == "fwa_sync_dm_once:sync-1"
     assert "BAND" in panel.BAND_LINK_LABEL
+
+
+@pytest.mark.parametrize("handler,status", [
+    (panel.fwa_sync_in, "in"), (panel.fwa_sync_maybe, "maybe"), (panel.fwa_sync_no, "no"),
+])
+def test_availability_updates_panel_without_private_confirmation(handler, status):
+    mongo = FakeMongo(events=[_event_row()])
+    ctx = FakeCtx(user_id=42, guild_id=555)
+    asyncio.run(handler(ctx, "sync-1", bot=None, mongo=mongo))
+    stored = mongo.fwa_sync_responses.documents[schema.response_id("sync-1", 42)]
+    assert stored["status"] == status
+    assert len(ctx.responses) == 1 and ctx.responses[0]["edit"] is True
+    assert "<@42>" in "\n".join(_texts(ctx.responses[0]["components"][0]))
+    assert ctx.interaction.executed == []

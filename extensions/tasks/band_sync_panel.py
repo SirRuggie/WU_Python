@@ -36,13 +36,6 @@ from utils.constants import RED_ACCENT
 from utils.emoji import EmojiType, emojis
 from utils.mongo import MongoClient
 
-STATUS_ANSWER = {
-    "in": "You're in. Pick reminders below if you want them.",
-    "maybe": "You're marked maybe.",
-    "no": "You're marked not going.",
-}
-# The DM's "**Your response:**" line (item 13's DM substitute in the brief mockup,
-# DECISIONS.md D001) - unlike STATUS_ANSWER above, this is rendered, not spoken once.
 BAND_LINK_LABEL = "Check Sync Time on BAND"
 BAND_LINK_EMOJI = EmojiType("<:BAND:1549523677337358436>")
 DM_ME_EMOJI = EmojiType("<a:mail:1549528319760924722>")
@@ -651,7 +644,6 @@ async def _apply_status(ctx, mongo, bot, uid, status):
     config = await config_row(mongo)
     url = band_url(event, config)
     await _render_after_change(ctx, mongo, bot, uid, event, url, user_id)
-    await _answer(ctx, STATUS_ANSWER[status])
 
 
 @register_action("fwa_sync_in", no_return=True)
