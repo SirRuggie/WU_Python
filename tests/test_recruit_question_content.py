@@ -43,7 +43,7 @@ def mongo():
     )
 
 
-@pytest.mark.parametrize("variant", content.VARIANTS)
+@pytest.mark.parametrize("variant", content.PRIMARY_VARIANTS)
 def test_each_default_renders_original_layout_and_safe_preview(variant):
     template = content.default_template(variant)
     public = content.render_template(template, user_id=123, recruiter_id=456)

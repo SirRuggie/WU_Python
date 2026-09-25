@@ -1,21 +1,23 @@
 # Recruitment Questions
 
 Open `/manage` and choose **Recruitment Questions**, or use the optional
-`section` choice. This private workspace edits the reusable messages in the
-**Primary Questions** menu of `/recruit questions`:
+`section` choice. The editor mirrors all four dropdowns in `/recruit questions`
+and includes every enabled option:
 
-- Attack Strategies
-- Discord Basics
-- Family Codes
-- Application Under Review
-- Welcome to the Family
-- Warriors United CWL
+| Dropdown | Editable choices |
+| --- | --- |
+| Primary Questions | Attack Strategies; Discord Basic Skills; Family Codes; Leaders Checking You Out; Welcome to the Family; Warriors United CWL |
+| FWA Questions | FWA Clan Chat; Get War Weight; Heard of Lazy CWL?; Lazy CWL Explanation; FWA Leaders Reviewing; FWA Bases (Upon Approval) |
+| Explanations | What is FWA; FWA War Plans; What is Flexible Fun; What is Tactical |
+| Keep It Moving | Waiting for Response...; Going in Circles...; Today Jr...; Chop Chop... |
+
+Select a message to continue into its text, artwork, preview, and save controls.
+Back returns to the four dropdowns. This covers 20 enabled choices; the disabled
+Age Bracket question stays disabled.
 
 The existing `/recruit questions` command still selects a recruit and sends
 messages in the recruitment channel. The management editor only changes
 reusable templates. Saving does not send a message or rewrite previous posts.
-FWA question menus remain separate, and the disabled Age Bracket question
-stays disabled.
 
 ## Editing and access
 
@@ -26,8 +28,9 @@ gold styling and includes Back and Management Home navigation. Leaving unsaved
 changes requires confirmation.
 
 Artwork and accent changes are staged until Save. Messages with artwork support
-native image uploads and restoration of their original artwork. Discord Basics
-keeps its button layout without an artwork slot. Reset defaults asks for
+native image uploads and restoration of their original artwork. For messages
+with multiple images, choose the image slot before uploading or restoring it.
+Discord Basics keeps its button layout without an artwork slot. Reset defaults asks for
 confirmation before restoring the selected message's original template.
 
 Previews suppress mentions and disable interactive challenge buttons. They do
@@ -45,7 +48,13 @@ answer validation, and completion behavior remain part of the recruitment
 workflow. Discord Basics retains its recruit-specific shield button and
 challenge behavior when the reusable wording changes. The subsequent Goblin
 challenge instructions and completion messages remain part of the existing
-challenge workflow, outside this six-message editor.
+challenge workflow, outside these recruitment prompt templates.
+
+FWA Bases uses live Town Hall data from the FWA workspace. Its base links,
+per-Town-Hall descriptions, and base images remain in that shared data source;
+recruitment templates edit the surrounding wording. Previews use example data
+and disable the Town Hall selector so they cannot send messages to recruits.
+Separate preview buttons show the selector and the public base message.
 
 ## Storage
 

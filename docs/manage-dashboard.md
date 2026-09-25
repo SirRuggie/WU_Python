@@ -10,7 +10,7 @@ on one command, not separate subcommands.
 | --- | --- | --- |
 | `/manage` | Server Management | Choose a management workspace |
 | `/manage section:Recruit Gauntlet` | Recruit Gauntlet | Edit onboarding text and artwork, choose each section’s channel, and send About Us, WU Strike System, or Family Particulars |
-| `/manage section:Recruitment Questions` | Recruitment Questions | Edit the reusable main recruitment question messages |
+| `/manage section:Recruitment Questions` | Recruitment Questions | Edit all Primary, FWA, Explanation, and Keep It Moving messages |
 | `/manage section:FWA` | FWA | Manage base links, images, descriptions, and Town Hall upgrade notes |
 | `/manage section:FWA War Messages` | FWA War Messages | Edit Win, Lose, Mismatch, and Blacklisted war-plan templates |
 | `/manage section:CWL` | CWL | Manage campaign messages, schedules, and delivery settings |

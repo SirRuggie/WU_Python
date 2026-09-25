@@ -63,8 +63,8 @@ before changing durable documentation.
   touching any Clash state comparison anywhere in this repo; also the coc.py
   naive-UTC timestamp rule for every Clash deadline.**
 
-- [recruitment-questions.md](recruitment-questions.md) — edit the reusable main
-  recruitment question messages through `/manage`.
+- [recruitment-questions.md](recruitment-questions.md) — edit all four groups of reusable
+  recruitment messages through `/manage`.
 
 - [fwa-war-messages.md](fwa-war-messages.md) — edit and preview the four
   FWA war-plan templates through `/manage`, with server-scoped saves.

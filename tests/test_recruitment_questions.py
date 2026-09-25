@@ -81,3 +81,65 @@ def test_editor_select_edit_save_and_owner_guard(monkeypatch):
     stored = db.bot_config.rows["recruit_question_template:2:attack_strategies"]
     assert stored["sections"][0] == "## Updated · {recruit}"
     assert stored["revision"] == 1
+
+
+def test_expanded_image_slot_is_selected_and_restored_in_private_draft(monkeypatch):
+    from utils import recruit_question_content as content
+    variant = "lazy_cwl_explanation"
+    original = content.default_template(variant)
+    slot = next(iter(original["media"]))
+    states = {}
+
+    async def insert_state(_mongo, state, ttl=None):
+        if state["_id"] in states:
+            raise AssertionError("duplicate editor state ID")
+        states[state["_id"]] = state
+
+    async def get_state(_mongo, token):
+        return states.get(token)
+
+    monkeypatch.setattr(editor, "insert_state", insert_state)
+    monkeypatch.setattr(editor, "get_state", get_state)
+    state = {
+        "_id": "first", "user_id": 1, "guild_id": 2, "manage_token": "home",
+        "view": "editor", "variant": variant,
+        "template": original, "saved_template": original,
+    }
+    states["first"] = state
+    context = ctx()
+    context.interaction.values = (slot,)
+    rendered = run(editor.choose_media(context, "first", mongo=object()))
+    selected = next(item for item in states.values() if item.get("selected_media_slot") == slot)
+    assert f"{content.MEDIA_LABELS[variant][slot]} selected" in str(rendered[0].build())
+    assert not editor._dirty(selected)
+
+    changed = content.default_template(variant)
+    changed["media"][slot] = "https://example.com/replacement.png"
+    selected["template"] = changed
+    assert editor._dirty(selected)
+    run(editor.restore_footer(context, selected["_id"], mongo=object()))
+    restored = next(item for item in states.values() if item["_id"] not in {"first", selected["_id"]})
+    assert restored["template"]["media"][slot] == original["media"][slot]
+    assert not editor._dirty(restored)
+
+
+def test_fwa_base_preview_is_separate_and_has_no_pings(monkeypatch):
+    from utils import recruit_question_content as content
+    template = content.default_template("fwa_bases_upon_approval")
+    state = {
+        "_id": "base", "user_id": 1, "guild_id": 2, "manage_token": "home",
+        "view": "editor", "variant": "fwa_bases_upon_approval",
+        "template": template, "saved_template": template,
+    }
+    monkeypatch.setattr(editor, "_state", AsyncMock(return_value=(state, None)))
+    context = ctx()
+    context.interaction.edit_initial_response = AsyncMock()
+    run(editor.preview(context, "base", mongo=object()))
+    selector = context.interaction.edit_initial_response.await_args.kwargs
+    assert selector["user_mentions"] is False
+    assert "recruit_question_base_preview:base" in str(selector["components"][-1].build())
+    run(editor.base_preview(context, "base", mongo=object()))
+    result = context.interaction.edit_initial_response.await_args.kwargs
+    assert result["user_mentions"] is False and result["role_mentions"] is False
+    assert "example.org" in str([part.build() for part in result["components"]])
+    assert "recruit_question_preview:base" in str(result["components"][-1].build())

@@ -1,4 +1,4 @@
-"""Guild-scoped editable copy for the six active primary recruit questions."""
+"""Guild-scoped editable recruitment messages across all four question groups."""
 from __future__ import annotations
 
 import ipaddress
@@ -8,7 +8,8 @@ from urllib.parse import urlparse
 import hikari
 from hikari.impl import (
     ContainerComponentBuilder as Container, InteractiveButtonBuilder as Button,
-    MessageActionRowBuilder as ActionRow, MediaGalleryComponentBuilder as Media,
+    MessageActionRowBuilder as ActionRow, TextSelectMenuBuilder as TextSelectMenu,
+    MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem, SeparatorComponentBuilder as Separator,
     TextDisplayComponentBuilder as Text,
 )
@@ -117,7 +118,7 @@ _MAX_TOTAL_TEXT = 4000
 class TemplateConflict(ValueError):
     """The saved template changed after this editor loaded it."""
 
-def default_template(variant: str) -> dict:
+def _primary_default_template(variant: str) -> dict:
     if variant not in VARIANTS:
         raise ValueError("Choose an active recruitment question.")
     return {"variant": variant, "sections": list(_DEFAULT_SECTIONS[variant]),
@@ -156,7 +157,7 @@ def _footer_ok(value: str | None, variant: str) -> bool:
         return False
     return True
 
-def validate_template(variant: str, template: dict) -> dict:
+def _primary_validate_template(variant: str, template: dict) -> dict:
     if variant not in VARIANTS or not isinstance(template, dict) or template.get("variant") != variant:
         raise ValueError("Choose an active recruitment question.")
     sections = template.get("sections")
@@ -227,7 +228,7 @@ async def reset_template(mongo, guild_id: int, variant: str,
                          expected_revision: int, updated_by: int) -> dict:
     return await save_template(mongo, guild_id, variant, default_template(variant), expected_revision, updated_by)
 
-def render_template(template: dict, *, user_id: int, recruiter_id: int, preview: bool = False) -> list:
+def _primary_render_template(template: dict, *, user_id: int, recruiter_id: int, preview: bool = False) -> list:
     variant = template.get("variant")
     validated = validate_template(variant, template)
     values = {"recruit": f"<@{int(user_id)}>", "recruiter": f"<@{int(recruiter_id)}>", "family_codes": FAMILY_CODES_DISPLAY}
@@ -248,5 +249,293 @@ def render_template(template: dict, *, user_id: int, recruiter_id: int, preview:
         )]))
     return components
 
-def preview_template(template: dict) -> list:
-    return render_template(template, user_id=111111111111111111, recruiter_id=222222222222222222, preview=True)
+# The six primary records above remain schema-1 compatible. Additional sender
+# groups use the same revisioned collection, with ordered text and image slots.
+PRIMARY_VARIANTS = VARIANTS
+
+GROUPS = {
+    "primary": {
+        "label": "Primary Questions",
+        "variants": PRIMARY_VARIANTS,
+    },
+    "fwa": {
+        "label": "FWA Questions",
+        "variants": (
+            "fwa_clan_chat", "get_war_weight", "heard_of_lazy_cwl",
+            "lazy_cwl_explanation", "fwa_leaders_reviewing", "fwa_bases_upon_approval",
+        ),
+    },
+    "explanations": {
+        "label": "Explanations",
+        "variants": ("what_is_fwa", "fwa_war_plans", "what_is_flexible_fun", "what_is_tactical"),
+    },
+    "keep_it_moving": {
+        "label": "Keep It Moving",
+        "variants": ("waiting_response", "circles", "today", "chop_chop"),
+    },
+}
+VARIANTS = tuple(variant for group in GROUPS.values() for variant in group["variants"])
+VARIANT_LABELS.update({
+    "attack_strategies": "Attack Strategies",
+    "discord_basic_skills": "Discord Basic Skills",
+    "family_codes": "Family Codes",
+    "leaders_checking_you_out": "Leaders Checking You Out",
+    "fwa_clan_chat": "FWA Clan Chat",
+    "get_war_weight": "Get War Weight",
+    "heard_of_lazy_cwl": "Heard of Lazy CWL?",
+    "lazy_cwl_explanation": "Lazy CWL Explanation",
+    "fwa_leaders_reviewing": "FWA Leaders Reviewing",
+    "fwa_bases_upon_approval": "FWA Bases (Upon Approval)",
+    "what_is_fwa": "What is FWA",
+    "fwa_war_plans": "FWA War Plans",
+    "what_is_flexible_fun": "What is Flexible Fun",
+    "what_is_tactical": "What is Tactical",
+    "waiting_response": "Waiting for Response...",
+    "circles": "Going in Circles...",
+    "today": "Today Jr...",
+    "chop_chop": "Chop Chop...",
+})
+
+from utils.recruit_question_native import native_components, native_base_result
+
+
+def _walk(items):
+    for item in items:
+        yield item
+        yield from _walk(getattr(item, "components", ()))
+
+
+def _text_nodes(items):
+    return [item for item in _walk(items) if item.type == hikari.ComponentType.TEXT_DISPLAY]
+
+
+def _media_nodes(items):
+    return [item for item in _walk(items) if item.type == hikari.ComponentType.MEDIA_GALLERY]
+
+
+def _media_value(item) -> str:
+    value = item.items[0].media
+    return str(getattr(value, "url", value))
+
+
+def _base_example():
+    return native_base_result(
+        recruit_mention="{recruit}", recruiter_mention="{recruiter}",
+        friendly_name="{town_hall}", th_number="{th_number}", base_info="{base_info}",
+        base_link="https://example.org/fwa-base",
+        war_base_media="https://example.org/war-base.png",
+        active_war_base_media="https://example.org/active-base.png",
+    )
+
+
+def _native_for(variant: str, *, action_id: str = "preview"):
+    return native_components(
+        variant, recruit_mention="{recruit}", recruiter_mention="{recruiter}",
+        action_id=action_id,
+    )
+
+
+def _new_default(variant: str) -> dict:
+    native = _native_for(variant)
+    text = [node.content for node in _text_nodes(native)]
+    media = {f"image_{index}": _media_value(node) for index, node in enumerate(_media_nodes(native))}
+    if variant == "fwa_bases_upon_approval":
+        text += [node.content for node in _text_nodes(_base_example())]
+    containers = [node for node in _walk(native) if node.type == hikari.ComponentType.CONTAINER]
+    return {
+        "variant": variant, "sections": text, "media": media,
+        "footer_url": None, "accent": int(containers[0].accent_color), "revision": 0,
+    }
+
+
+def _section_labels(variant: str) -> tuple[str, ...]:
+    sections = _new_default(variant)["sections"]
+    if variant == "fwa_bases_upon_approval":
+        return (
+            "Selector heading", "Selector instructions", "Selector request credit",
+            "Public recruit mention", "Public town hall heading", "Public war base heading",
+            "Public base instructions", "Public request credit",
+        )
+    return tuple(
+        f"Text {index + 1}: {value.splitlines()[0].strip('# *-')[:28]}"[:45]
+        for index, value in enumerate(sections)
+    )
+
+
+BLOCK_LABELS.update({variant: _section_labels(variant) for variant in VARIANTS if variant not in PRIMARY_VARIANTS})
+MEDIA_LABELS = {
+    variant: {slot: f"Image {index + 1}" for index, slot in enumerate(_new_default(variant)["media"])}
+    for variant in VARIANTS if variant not in PRIMARY_VARIANTS
+}
+
+
+def default_template(variant: str) -> dict:
+    if variant in PRIMARY_VARIANTS:
+        return _primary_default_template(variant)
+    if variant not in VARIANTS:
+        raise ValueError("Choose an active recruitment question.")
+    return _new_default(variant)
+
+
+def _public_media_ok(value: str, original: str) -> bool:
+    if value == original:
+        return True
+    if not isinstance(value, str) or len(value) > 2048:
+        return False
+    try:
+        parsed = urlparse(value)
+        host = parsed.hostname
+        if parsed.scheme != "https" or not host or parsed.username or parsed.password or parsed.port not in (None, 443):
+            return False
+        if "." not in host or host.lower() == "localhost" or host.lower().endswith((".local", ".internal")):
+            return False
+        if not parsed.path.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+            return False
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            address = None
+        if address and not address.is_global:
+            return False
+    except ValueError:
+        return False
+    return True
+
+
+def _replace_extended(value: str, replacements: dict[str, str]) -> str:
+    tokens = _TOKEN.findall(value)
+    if any(token not in replacements for token in tokens):
+        raise ValueError("Use only supported recruitment placeholders.")
+    if "{" in _TOKEN.sub("", value) or "}" in _TOKEN.sub("", value):
+        raise ValueError("Use only supported placeholders inside braces.")
+    return _TOKEN.sub(lambda match: replacements[match.group(1)], value)
+
+
+def validate_template(variant: str, template: dict) -> dict:
+    if variant in PRIMARY_VARIANTS:
+        return _primary_validate_template(variant, template)
+    if variant not in VARIANTS or not isinstance(template, dict) or template.get("variant") != variant:
+        raise ValueError("Choose an active recruitment question.")
+    sections = template.get("sections")
+    if not isinstance(sections, list) or len(sections) != len(BLOCK_LABELS[variant]):
+        raise ValueError("This question has the wrong number of text blocks.")
+    if any(not isinstance(value, str) or not value.strip() for value in sections):
+        raise ValueError("Every question text block needs content.")
+    original_media = _new_default(variant)["media"]
+    media = template.get("media")
+    if not isinstance(media, dict) or set(media) != set(original_media):
+        raise ValueError("This question has the wrong number of image slots.")
+    if any(not _public_media_ok(media[slot], original) for slot, original in original_media.items()):
+        raise ValueError("Choose a public HTTPS image URL or the original artwork.")
+    accent = template.get("accent")
+    if isinstance(accent, bool) or not isinstance(accent, int) or not 0 <= accent <= 0xFFFFFF:
+        raise ValueError("Choose a valid six-digit accent color.")
+    if variant == "fwa_bases_upon_approval":
+        required = {3: "{recruit}", 4: "{town_hall}", 5: "{th_number}",
+                    6: "{base_info}", 7: "{recruiter}"}
+        if any(sections[index].count(token) != 1 for index, token in required.items()):
+            raise ValueError("Keep the dynamic FWA base placeholders in the public message.")
+    example = {"recruit": "<@" + "9" * 20 + ">", "recruiter": "<@" + "8" * 20 + ">",
+               "town_hall": "Town Hall 18", "th_number": "18", "base_info": "Example FWA base instructions"}
+    rendered = [
+        _replace_extended(
+            value,
+            example if variant == "fwa_bases_upon_approval" and index >= 3
+            else {"recruit": example["recruit"], "recruiter": example["recruiter"]},
+        )
+        for index, value in enumerate(sections)
+    ]
+    groups = (rendered[:3], rendered[3:]) if variant == "fwa_bases_upon_approval" else (rendered,)
+    if any(len(value) > _MAX_BLOCK for value in rendered) or any(sum(map(len, group)) > _MAX_TOTAL_TEXT for group in groups):
+        raise ValueError("Question text exceeds Discord's display limit.")
+    return {"variant": variant, "sections": list(sections), "media": dict(media),
+            "footer_url": None, "accent": accent}
+
+
+def _replace_native(items, sections: list[str], media: dict, accent: int,
+                    replacements: dict[str, str], *, preview: bool) -> list:
+    """Rebuild text/media nodes while leaving controls and link buttons intact."""
+    from hikari.impl import SectionComponentBuilder as Section
+    from hikari.impl import LinkButtonBuilder as Link
+    import copy
+    text_index = 0
+    media_index = 0
+
+    def transform(item):
+        nonlocal text_index, media_index
+        if isinstance(item, Text):
+            value = _replace_extended(sections[text_index], replacements)
+            text_index += 1
+            return Text(content=value)
+        if isinstance(item, Media):
+            slot = f"image_{media_index}"
+            media_index += 1
+            return Media(items=[MediaItem(media=media[slot])])
+        if isinstance(item, Container):
+            return Container(accent_color=accent, components=[transform(child) for child in item.components])
+        if isinstance(item, Section):
+            return Section(components=[transform(child) for child in item.components], accessory=copy.deepcopy(item.accessory))
+        if isinstance(item, ActionRow):
+            children = [copy.deepcopy(child) for child in item.components]
+            if preview:
+                for child in children:
+                    if isinstance(child, (TextSelectMenu, Link)):
+                        child.set_is_disabled(True)
+            return ActionRow(components=children)
+        return copy.deepcopy(item)
+
+    result = [transform(item) for item in items]
+    if text_index != len(sections) or media_index != len(media):
+        raise RuntimeError("Native recruitment layout changed; update editable slots.")
+    return result
+
+
+def render_template(template: dict, *, user_id: int, recruiter_id: int,
+                    preview: bool = False, action_id: str = "preview",
+                    stage: str = "selector", town_hall: str | None = None,
+                    th_number: str | None = None, base_info: str | None = None,
+                    base_link: str | None = None, war_base_media: str | None = None,
+                    active_war_base_media: str | None = None) -> list:
+    variant = template.get("variant")
+    if variant in PRIMARY_VARIANTS:
+        return _primary_render_template(template, user_id=user_id, recruiter_id=recruiter_id, preview=preview)
+    validated = validate_template(variant, template)
+    replacements = {"recruit": f"<@{int(user_id)}>", "recruiter": f"<@{int(recruiter_id)}>"}
+    if variant == "fwa_bases_upon_approval" and stage == "result":
+        if any(value is None for value in (town_hall, th_number, base_info, base_link, war_base_media, active_war_base_media)):
+            raise ValueError("FWA base data is incomplete.")
+        replacements.update(town_hall=town_hall, th_number=th_number, base_info=base_info)
+        native = native_base_result(
+            recruit_mention="{recruit}", recruiter_mention="{recruiter}",
+            friendly_name="{town_hall}", th_number="{th_number}", base_info="{base_info}",
+            base_link=base_link, war_base_media=war_base_media, active_war_base_media=active_war_base_media,
+        )
+        # The two live FWA images are managed by /manage FWA, not this editor.
+        sections = validated["sections"][3:]
+        media = {f"image_{index}": _media_value(node) for index, node in enumerate(_media_nodes(native))}
+    elif stage == "selector":
+        native = _native_for(variant, action_id=action_id)
+        sections = validated["sections"][:3] if variant == "fwa_bases_upon_approval" else validated["sections"]
+        media = validated["media"]
+    else:
+        raise ValueError("Choose a supported FWA base preview stage.")
+    rendered = _replace_native(native, sections, media, validated["accent"], replacements, preview=preview)
+    texts = [node.content for node in _text_nodes(rendered)]
+    if any(len(text) > _MAX_BLOCK for text in texts) or sum(map(len, texts)) > _MAX_TOTAL_TEXT:
+        raise ValueError("Rendered question exceeds Discord's display limit.")
+    return rendered
+
+
+def preview_template(template: dict, *, stage: str = "selector") -> list:
+    sample = dict(user_id=111111111111111111, recruiter_id=222222222222222222, preview=True)
+    if template.get("variant") != "fwa_bases_upon_approval" or stage == "selector":
+        return render_template(template, **sample)
+    if stage != "result":
+        raise ValueError("Choose a supported FWA base preview stage.")
+    return render_template(
+        template, **sample, stage="result", town_hall="Town Hall 18", th_number="18",
+        base_info="Example FWA base instructions from clan data.",
+        base_link="https://example.org/fwa-base",
+        war_base_media="assets/Blue_Footer.png",
+        active_war_base_media="assets/Blue_Footer.png",
+    )

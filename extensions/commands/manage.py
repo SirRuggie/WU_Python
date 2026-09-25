@@ -21,7 +21,7 @@ NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyon
 FWA_REP_ROLE_ID = 993015846442127420
 DESTINATIONS = (
     ("Recruit Gauntlet", "recruit", "Onboarding messages, rules, and artwork"),
-    ("Recruitment Questions", "recruitment_questions", "Six reusable recruitment messages"),
+    ("Recruitment Questions", "recruitment_questions", "Primary questions, FWA, explanations, and quick prompts"),
     ("FWA", "fwa", "Base links, images, and Town Hall guidance"),
     ("FWA War Messages", "fwa_war_messages", "Win, lose, mismatch, and blacklist announcements"),
     ("CWL", "cwl", "Announcements, schedules, and delivery"),
