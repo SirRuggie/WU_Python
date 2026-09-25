@@ -161,3 +161,10 @@ The role has View Channel and Read Message History access to About Us. No
 standalone setup command is added. Text and image changes are saved in
 `bot_config` as `content:join-family:<guild id>`; the destination uses
 `content_destination:<guild id>:join-family`.
+
+
+About Us now grants role `1553110276251979937` and privately offers
+**Continue to WU Strike System** for channel `1547242610819604560`.
+This continues the Gauntlet; it does not imply recruitment acceptance.
+The role can view and read that channel. The saved template and existing
+About Us post use the updated next-step instructions rather than the old direct link.

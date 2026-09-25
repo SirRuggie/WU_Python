@@ -10,6 +10,7 @@ import uuid
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
+from utils.manage_ui import ICONS
 from utils.mongo import MongoClient
 from utils.recruit_setup_checks import require_manage_server, require_ready
 
@@ -20,12 +21,14 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
     SeparatorComponentBuilder as Separator,
     MediaGalleryComponentBuilder as Media,
+    LinkButtonBuilder as LinkButton,
     MediaGalleryItemBuilder as MediaItem,
 )
 
 # Configuration
-ABOUT_US_ROLE_ID = 1078723854303756301  # Role to assign when user acknowledges
-STRIKE_SYSTEM_CHANNEL_ID = 1078723854316355602  # Channel to direct users to
+ABOUT_US_ROLE_ID = 1553110276251979937
+STRIKE_SYSTEM_CHANNEL_ID = 1547242610819604560
+ABOUT_US_GUILD_ID = 644963518025826315
 
 
 def build_aboutus(sections=None, *, media=None, action_id="preview", preview=False):
@@ -140,9 +143,8 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
             components=[
                 text("## ⏩ **NEXT STEP**"),
                 text((
-                    "Now react to the ✅ below and follow this link...\n\n"
-                    "https://discord.com/channels/1078723854303756298/1078723854316355602\n\n"
-                    "over to the WU Strike System Channel. Read through and follow the next prompt"
+                    "Choose **I understand - Continue** to unlock WU Strike System, then read its rules "
+                    "and follow the next step of the Recruit Gauntlet."
                 )),
                 ActionRow(
                     components=[
@@ -150,7 +152,7 @@ def build_aboutus(sections=None, *, media=None, action_id="preview", preview=Fal
                             style=hikari.ButtonStyle.SUCCESS,
                             custom_id=f"aboutus_acknowledge:{action_id}",
                             label="I understand - Continue",
-                            emoji="✅"
+                            emoji=hikari.Snowflake(ICONS["yes"])
                         )
                     ]
                 )
@@ -222,55 +224,94 @@ class RecruitAboutUs(
         await ctx.respond("About Us posted.", ephemeral=True)
 
 
-@register_action("aboutus_acknowledge", no_return=True)
+def _continue_components(guild_id: int, message: str):
+    """Build the private V2 prompt that sends members to the next step."""
+    return [
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                Text(content="## :shield: Next step unlocked"),
+                Text(content=message),
+                ActionRow(components=[
+                    LinkButton(
+                        url=f"https://discord.com/channels/{guild_id}/{STRIKE_SYSTEM_CHANNEL_ID}",
+                        label="Continue to WU Strike System",
+                        emoji=hikari.Snowflake(ICONS["open"]),
+                    )
+                ]),
+            ],
+        )
+    ]
+
+
+async def _private_continue(ctx, guild_id: int, message: str) -> None:
+    """Respond privately without altering the published onboarding panel."""
+    await ctx.interaction.execute(
+        components=_continue_components(guild_id, message),
+        flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
+    )
+
+
+async def _private_error(ctx, message: str) -> None:
+    """Send an actionable private error without exposing internal failures."""
+    await ctx.interaction.execute(content=message, flags=hikari.MessageFlag.EPHEMERAL)
+
+
+@register_action("aboutus_acknowledge", no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def on_aboutus_acknowledge(
     action_id: str,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    **kwargs
-):
-    """Handle the acknowledge button click"""
-    ctx = kwargs.get("ctx")
-    
-    guild_id = ctx.interaction.guild_id
-    user_id = ctx.user.id
-    
-    # Get the guild and member
-    guild = bot.cache.get_guild(guild_id)
-    if not guild:
-        await ctx.respond("❌ Unable to find the server.", ephemeral=True)
-        return
-    
-    member = guild.get_member(user_id)
-    if not member:
-        await ctx.respond("❌ Unable to find your member profile.", ephemeral=True)
-        return
-    
-    # Check if user already has the role
-    if ABOUT_US_ROLE_ID in member.role_ids:
-        await ctx.respond(
-            f"✅ You already have access! Please continue to <#{STRIKE_SYSTEM_CHANNEL_ID}>",
-            ephemeral=True
-        )
-        return
-    
-    # Add the role
-    try:
-        await bot.rest.add_role_to_member(
-            guild=guild_id,
-            user=user_id,
-            role=ABOUT_US_ROLE_ID
-        )
-        
-        await ctx.respond(
-            f"✅ Role assigned! Please continue to <#{STRIKE_SYSTEM_CHANNEL_ID}> to read about our strike system.",
-            ephemeral=True
-        )
-    except Exception as e:
-        await ctx.respond(
-            f"❌ Failed to assign role: {str(e)}",
-            ephemeral=True
-        )
+    **kwargs,
+) -> None:
+    """Grant Strike System access and offer the WU Strike System link privately."""
+    del action_id
+    ctx = kwargs["ctx"]
+    interaction_guild_id = getattr(ctx.interaction, "guild_id", None)
+    user_id = int(ctx.user.id)
 
+    try:
+        target_channel = await bot.rest.fetch_channel(STRIKE_SYSTEM_CHANNEL_ID)
+    except hikari.HTTPError:
+        await _private_error(ctx, "I could not open the next onboarding channel right now. Please try again shortly.")
+        return
+    except Exception:
+        await _private_error(ctx, "I could not verify the next onboarding channel right now. Please try again shortly.")
+        return
+
+    target_guild_id = getattr(target_channel, "guild_id", None)
+    if (
+        interaction_guild_id is None
+        or target_guild_id is None
+        or int(interaction_guild_id) != int(target_guild_id)
+        or int(target_guild_id) != ABOUT_US_GUILD_ID
+    ):
+        await _private_error(ctx, "This About Us panel can only be used in the Warriors United server.")
+        return
+
+    guild_id = int(target_guild_id)
+    try:
+        member = await bot.rest.fetch_member(guild_id, user_id)
+    except hikari.HTTPError:
+        await _private_error(ctx, "I could not find your member profile in this server. Please try again shortly.")
+        return
+    except Exception:
+        await _private_error(ctx, "I could not verify your member profile right now. Please try again shortly.")
+        return
+
+    if ABOUT_US_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
+        await _private_continue(ctx, guild_id, "You already have access to WU Strike System. Continue to the WU Strike System and work through the required Recruit Gauntlet steps.")
+        return
+
+    try:
+        await bot.rest.add_role_to_member(guild=guild_id, user=user_id, role=ABOUT_US_ROLE_ID)
+    except hikari.HTTPError:
+        await _private_error(ctx, "I could not grant access to WU Strike System right now. Please try again shortly.")
+        return
+    except Exception:
+        await _private_error(ctx, "I could not grant access to WU Strike System right now. Please try again shortly.")
+        return
+
+    await _private_continue(ctx, guild_id, "Continue to the WU Strike System and work through the required Recruit Gauntlet steps.")
 
 loader.command(setup)
