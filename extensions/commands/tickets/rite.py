@@ -20,7 +20,7 @@ from utils.mongo import MongoClient
 def path_panel(session_id="preview", sections=None, *, media=None, preview=False):
     def button(kind, label):
         return Row().add_interactive_button(
-            hikari.ButtonStyle.PRIMARY, f"ticket_v2_rite_choose:{session_id}:{kind}",
+            hikari.ButtonStyle.SECONDARY, f"ticket_v2_rite_choose:{session_id}:{kind}",
             label=label, is_disabled=preview,
         )
     panel = [Container(accent_color=GOLDENROD_ACCENT, components=[
@@ -49,7 +49,7 @@ def path_panel(session_id="preview", sections=None, *, media=None, preview=False
         button("fwa", "Rite of Passage to FWA"),
         Separator(divider=True),
         Text(content=(
-            "## 🛡️ **Your Choice Defines Your Destiny**\n"
+            "## <a:orangeflame:1553250319134363732> **Your Choice Defines Your Destiny**\n"
             "**“Every warrior begins as the Unproven.\n"
             "Your Rite of Passage determines whether you rise… or fall.”**"
         )),
