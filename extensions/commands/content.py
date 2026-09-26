@@ -49,7 +49,7 @@ DOCUMENTS = {
     "family-particulars": Document("family-particulars", "Family Particulars", "familyparticulars_acknowledge"),
 }
 BLOCK_LABELS = {
-    "join-family": ("Welcome", "What happens next", "Call to action"),
+    "join-family": ("Heading", "Welcome", "What happens next", "Call to action"),
     "about-us": ("Welcome heading", "Welcome overview", "Tactical heading", "Tactical details", "Flexible Fun heading", "Flexible Fun details", "FWA heading", "FWA details", "Disclaimer heading", "Disclaimer", "Next step heading", "Next step"),
     "strike-system": ("Basic rules heading", "Basic rules", "Strike overview heading", "Strike overview", "Main clan heading", "Main clan note", "FWA heading", "FWA note", "Terms heading", "Terms", "Acknowledgement heading", "Acknowledgement"),
     "family-particulars": ("Family heading", "Golden rule heading", "Golden rule", "Friendly challenges heading", "Friendly challenges", "Clan games heading", "Clan games", "War rules heading", "War eligibility heading", "War eligibility", "Prep day heading", "Prep day", "Battle day heading", "Battle day", "CWL heading", "CWL overview", "CWL principles heading", "CWL principles", "Acknowledgement heading", "Acknowledgement"),
@@ -224,8 +224,6 @@ def document_renderer(document: Document):
 
 
 async def render(document: Document, sections, *, media=None, action_id="preview", preview=False):
-    if document.key == "join-family" and len(sections) == 4:
-        sections = sections[1:]  # Older saved templates included the removed heading.
     baseline_components = await baseline(document)
     if component_count(baseline_components) > 40:
         raise ValueError("This document exceeds Discord's 40-component message limit.")
@@ -248,8 +246,6 @@ async def template_for(mongo, document: Document, guild_id: int):
     """Read text, image overrides, and revision from the same stored version."""
     saved = await mongo.bot_config.find_one({"_id": f"content:{document.key}:{guild_id}"})
     if saved and isinstance(saved.get("sections"), list):
-        if document.key == "join-family" and len(saved["sections"]) == 4:
-            saved["sections"] = saved["sections"][1:]
         try:
             media = normal_media(document, saved.get("media"))
             await render(document, saved["sections"], media=media)
@@ -296,9 +292,9 @@ def editable_groups(document, sections):
     blocks = editable_blocks(document, sections)
     if document.key == "join-family":
         return (
-            ("Welcome", ((blocks[0][0], "Body", "full"),)),
-            ("What happens next", ((blocks[1][0], "Title", "title"), (blocks[1][0], "Body", "body"))),
-            ("Call to action", ((blocks[2][0], "Title", "title"), (blocks[2][0], "Body", "body"))),
+            ("Welcome", ((blocks[0][0], "Heading", "full"), (blocks[1][0], "Body", "full"))),
+            ("What happens next", ((blocks[2][0], "Title", "title"), (blocks[2][0], "Body", "body"))),
+            ("Call to action", ((blocks[3][0], "Title", "title"), (blocks[3][0], "Body", "body"))),
         )
     groups = []
     position = 0

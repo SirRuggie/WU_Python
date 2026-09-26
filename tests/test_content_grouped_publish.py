@@ -32,9 +32,9 @@ def test_join_combined_sections_split_and_reassemble_title_body():
         document = content.DOCUMENTS["join-family"]
         sections = [node.content for node in content.text_nodes(await content.baseline(document))]
         groups = content.editable_groups(document, sections)
-        assert groups[1][1] == ((1, "Title", "title"), (1, "Body", "body"))
-        assert content.modal_field_value(sections[1], "title").startswith("###")
-        assert content.modal_field_value(sections[1], "body").startswith("Tap")
+        assert groups[1][1] == ((2, "Title", "title"), (2, "Body", "body"))
+        assert content.modal_field_value(sections[2], "title").startswith("###")
+        assert content.modal_field_value(sections[2], "body").startswith("Tap")
     run(check())
 
 
