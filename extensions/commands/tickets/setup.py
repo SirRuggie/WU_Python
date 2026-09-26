@@ -98,9 +98,9 @@ def public_binding_change_allowed(
     return not changes or state.phase in SAFE_PUBLIC_REBIND_PHASES
 
 
-def create_public_ticket_embed() -> List[Container]:
+def create_public_ticket_embed(sections=None, *, media=None, action_id="preview", preview=False) -> List[Container]:
     """Create the target-guild public v2 intake panel."""
-    return [Container(
+    panel = [Container(
         accent_color=GOLDENROD_ACCENT,
         components=[
             Text(content="## Warriors United Clan Entry"),
@@ -127,6 +127,26 @@ def create_public_ticket_embed() -> List[Container]:
             ]),
         ],
     )]
+    components = list(panel[0].components)
+    if sections is not None:
+        values = iter(sections)
+        for index, component in enumerate(components):
+            if component.type == hikari.ComponentType.TEXT_DISPLAY:
+                components[index] = Text(content=next(values))
+    if media and media.get("footer"):
+        components[3] = Media(items=[MediaItem(media=media["footer"])])
+    if preview:
+        for button in components[-1].components:
+            button.set_is_disabled(True)
+    panel = [Container(accent_color=GOLDENROD_ACCENT, components=components)]
+    return panel
+
+
+async def saved_public_ticket_embed(mongo, guild_id):
+    from extensions.commands import content
+    sections, media, _ = await content.template_for(mongo, content.DOCUMENTS["apply"], guild_id)
+    return create_public_ticket_embed(sections, media=media)
+
 
 
 def create_ticket_embed() -> List[Container]:
@@ -483,7 +503,7 @@ class Setup(
         try:
             public_message = await bot.rest.create_message(
                 channel=public_channel_id,
-                components=create_public_ticket_embed(),
+                components=await saved_public_ticket_embed(mongo, guild_id),
                 mentions_everyone=False,
                 user_mentions=False,
                 role_mentions=False,

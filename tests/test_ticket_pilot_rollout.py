@@ -2,6 +2,7 @@ import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import hikari
 import pytest
@@ -382,7 +383,7 @@ def test_cross_server_setup_verifies_both_admins_and_binds_two_owned_panels(monk
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert admin_checks == [(10, 7)]
@@ -434,7 +435,7 @@ def test_setup_refuses_a_public_channel_fetched_from_a_different_guild(monkeypat
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert rest.created == []
@@ -467,7 +468,7 @@ def test_setup_refuses_a_stale_single_guild_target_binding(monkeypatch):
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert rest.created == []
@@ -503,7 +504,7 @@ def test_setup_refuses_a_pilot_channel_that_is_not_a_guild_text_channel(monkeypa
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert rest.created == []
@@ -557,7 +558,7 @@ def test_setup_warns_but_still_posts_when_everyone_can_view_the_pilot_channel(
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert len(rest.created) == 2
@@ -616,7 +617,7 @@ def test_safe_phase_target_panel_relocation_precedes_parent_reconfiguration(
     asyncio.run(command.invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert configured[0]["thread_intake"] == ticket_runtime.IntakeSource(11, 41, 51)
@@ -673,7 +674,7 @@ def test_target_panel_relocation_rejects_unsafe_phase_before_post_or_write(
     asyncio.run(command.invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert rest.created == []
@@ -711,7 +712,7 @@ def test_cross_server_setup_restores_config_and_compensates_when_rollout_fails(
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert config.document == original
@@ -737,7 +738,7 @@ def test_cross_server_setup_requires_old_server_admin_before_any_post(monkeypatc
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert rest.created == []
@@ -769,7 +770,7 @@ def test_cross_server_setup_rejects_legacy_guild_before_post_or_config_write(
     asyncio.run(_setup_command().invoke(
         ctx,
         bot=SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
-        mongo=SimpleNamespace(ticket_setup=config),
+        mongo=SimpleNamespace(ticket_setup=config, bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None))),
     ))
 
     assert rest.created == []

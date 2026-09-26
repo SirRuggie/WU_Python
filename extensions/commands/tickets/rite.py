@@ -17,13 +17,13 @@ from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
 
 
-def path_panel(session_id):
+def path_panel(session_id="preview", sections=None, *, media=None, preview=False):
     def button(kind, label, emoji):
         return Row().add_interactive_button(
             hikari.ButtonStyle.PRIMARY, f"ticket_v2_rite_choose:{session_id}:{kind}",
-            label=label, emoji=emoji,
+            label=label, emoji=emoji, is_disabled=preview,
         )
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[
+    panel = [Container(accent_color=GOLDENROD_ACCENT, components=[
         Text(content="## ⚔️ **Warriors United – Your Rite of Passage Begins**"),
         Text(content=(
             '**“Warrior, your first steps within Warriors United are more than a simple entry… '
@@ -55,6 +55,26 @@ def path_panel(session_id):
         )),
         Media(items=[MediaItem(media="assets/tickets/static/Rite_of_Passage.jpg")]),
     ])]
+    components = list(panel[0].components)
+    if sections is not None:
+        values = iter(sections)
+        for index, component in enumerate(components):
+            if component.type == hikari.ComponentType.TEXT_DISPLAY:
+                components[index] = Text(content=next(values))
+    if media and media.get("guide"):
+        components[-1] = Media(items=[MediaItem(media=media["guide"])])
+    panel = [Container(accent_color=GOLDENROD_ACCENT, components=components)]
+    return panel
+
+
+def build_rite(sections=None, *, media=None, action_id="preview", preview=False):
+    return path_panel(action_id, sections, media=media, preview=preview)
+
+
+async def saved_path_panel(mongo, guild_id, session_id):
+    from extensions.commands import content
+    sections, media, _ = await content.template_for(mongo, content.DOCUMENTS["rite-of-passage"], guild_id)
+    return path_panel(session_id, sections, media=media)
 
 
 @register_action("ticket_v2_rite_open", opens_modal=True, no_return=True, preload_state=False)
@@ -76,7 +96,7 @@ async def open_paths(ctx, mongo: MongoClient = lightbulb.di.INJECTED, **_):
         "_id": session_id, "type": "ticket_rite_paths", "owner_id": int(ctx.user.id),
         "guild_id": int(ctx.guild_id), "channel_id": int(ctx.channel_id), "source_message_id": source_id,
     }, ttl=timedelta(minutes=30))
-    await ctx.interaction.edit_initial_response(components=path_panel(session_id))
+    await ctx.interaction.edit_initial_response(components=await saved_path_panel(mongo, int(ctx.guild_id), session_id))
 
 
 @register_action("ticket_v2_rite_choose", opens_modal=True, no_return=True, preload_state=False)

@@ -240,3 +240,21 @@ deletions live in `settings.bot_config` with `gauntlet_help` namespaces so norma
 restarts preserve timers and message cleanup. The worker checks roughly once a
 minute. Failed message deletions are retried; uncertain sends are reconciled
 without blindly repeating recruit pings.
+
+### Apply and Rite of Passage
+
+Recruit Gauntlet also includes **Apply / Clan Entry** and **Rite of Passage**.
+Both support grouped heading/body editing, image replacement, preview, and saved
+per-server templates in `bot_config` (`content:apply:<guild id>` and
+`content:rite-of-passage:<guild id>`).
+
+Apply loads the authoritative public ticket post from the ticket rollout binding.
+Use **Update published post**, or the save-and-update prompt after editing, to
+refresh that same post. No resend is needed. Changing its posting channel or
+creating a replacement belongs to ticket setup; the content editor cannot create
+an unbound ticket panel. A changed binding requires reopening the editor.
+
+Rite of Passage is private. **Save template** updates the text and guide image for
+future chooser openings. Existing private messages remain unchanged; reopen
+**Earn Your Rite of Passage** to see the latest template. Preview ticket buttons
+are disabled. The editor does not alter ticket routing, categories, or counters.

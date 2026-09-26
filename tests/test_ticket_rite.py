@@ -32,6 +32,7 @@ def test_gateway_is_private_and_remembers_authorized_original_message(monkeypatc
     save=AsyncMock()
     monkeypatch.setattr(rite.ticket_runtime,'route_public_intake',gate)
     monkeypatch.setattr(rite,'insert_state',save)
+    monkeypatch.setattr(rite,'saved_path_panel',AsyncMock(return_value=rite.path_panel('session')))
     asyncio.run(rite.open_paths(ctx=ctx,mongo=mongo))
     ctx.defer.assert_awaited_once_with(ephemeral=True)
     assert gate.call_args.kwargs['message_id']==30
@@ -58,3 +59,24 @@ def test_expired_or_other_members_chooser_cannot_create_ticket(monkeypatch,state
     asyncio.run(rite.choose_path(ctx=ctx,action_id='session:main',mongo=object(),bot=object()))
     create.assert_not_awaited()
     assert ctx.respond.call_args.kwargs['ephemeral'] is True
+
+
+def test_saved_ticket_panels_use_guild_templates_and_preserve_buttons(monkeypatch):
+    from extensions.commands import content
+    async def template(mongo, document, guild_id):
+        assert guild_id == 10
+        if document.key == 'apply':
+            return ['## Updated entry', 'Updated instructions'], {'footer': 'https://example.com/footer.png'}, 1
+        return ['## Updated rite', 'Intro', '### Main\nMain body', '### FWA\nFWA body', '## Closing\nEnd'], {'guide': 'https://example.com/guide.png'}, 2
+    monkeypatch.setattr(content, 'template_for', template)
+    public = asyncio.run(setup.saved_public_ticket_embed(object(), 10))[0]
+    private = asyncio.run(rite.saved_path_panel(object(), 10, 'live-session'))[0]
+    assert public.components[0].content == '## Updated entry'
+    assert public.components[-1].components[0].custom_id == 'ticket_v2_rite_open'
+    assert private.components[0].content == '## Updated rite'
+    rows = [c for c in private.components if c.type == hikari.ComponentType.ACTION_ROW]
+    assert rows[0].components[0].custom_id == 'ticket_v2_rite_choose:live-session:main'
+    for builder in (setup.create_public_ticket_embed, rite.build_rite):
+        preview = builder(preview=True)[0]
+        buttons = [button for row in preview.components if row.type == hikari.ComponentType.ACTION_ROW for button in row.components]
+        assert buttons and all(button.is_disabled for button in buttons)
