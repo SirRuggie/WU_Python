@@ -32,8 +32,8 @@ JOIN_FAMILY_GUILD_ID = 644963518025826315
 
 def build_join_family(sections=None, *, media=None, action_id="preview", preview=False):
     """Render the Join the Family panel for publishing or editor previews."""
-    if sections is not None and len(sections) != 4:
-        raise ValueError("Join the Family requires exactly four editable text fields.")
+    if sections is not None and len(sections) != 3:
+        raise ValueError("Join the Family requires exactly three editable text fields.")
     values = iter(sections) if sections is not None else None
     media = media or {}
 
@@ -45,8 +45,6 @@ def build_join_family(sections=None, *, media=None, action_id="preview", preview
         Container(
             accent_color=GOLDENROD_ACCENT,
             components=[
-                text("## :shield: **Join the Warriors United Family** :shield:"),
-                Separator(divider=True),
                 text(
                     "Welcome, Warrior. The Recruit Gauntlet begins here—your guide to the Warriors United "
                     "family, its clans, wars, and community."

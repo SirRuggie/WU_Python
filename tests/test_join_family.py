@@ -42,9 +42,9 @@ def test_join_family_renderer_and_editor_schema_are_stable():
     rendered = join_family.build_join_family(action_id="published")
     sections = [node.content for node in content.text_nodes(rendered)]
 
-    assert len(sections) == 4
+    assert len(sections) == 3
     assert content.editable_blocks(document, sections) == (
-        (0, "Heading"), (1, "Welcome"), (2, "What happens next"), (3, "Call to action"),
+        (0, "Welcome"), (1, "What happens next"), (2, "Call to action"),
     )
     assert content.media_slots(document) == (("welcome", "Welcome banner"),)
     button = rendered[-1].components[-1].components[0]
