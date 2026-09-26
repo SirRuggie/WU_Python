@@ -18,9 +18,14 @@ MISSING = object()
 def _get(document, path, default=MISSING):
     value = document
     for part in path.split("."):
-        if not isinstance(value, dict) or part not in value:
+        if isinstance(value, list):
+            value = [item[part] for item in value if isinstance(item, dict) and part in item]
+            if not value:
+                return default
+        elif isinstance(value, dict) and part in value:
+            value = value[part]
+        else:
             return default
-        value = value[part]
     return value
 
 
@@ -46,7 +51,7 @@ def _condition(actual, expected):
     if not isinstance(expected, dict) or not any(
         str(key).startswith("$") for key in expected
     ):
-        return exists and actual == expected
+        return exists and (expected in actual if isinstance(actual, list) else actual == expected)
     for operator, operand in expected.items():
         if operator == "$exists":
             if exists != bool(operand):
@@ -1133,18 +1138,6 @@ def test_legacy_monitor_schema_and_open_conflicts_block_promotion_and_drain():
             )
 
         mongo.ticket_open_slots.documents.clear()
-        with pytest.raises(runtime.RuntimeReadinessBlocked):
-            await runtime.transition_rollout(
-                mongo,
-                expected_phase=runtime.PHASE_PILOT,
-                expected_revision=4,
-                to_phase=runtime.PHASE_THREAD_DEFAULT,
-                actor_id=1,
-                now=NOW,
-            )
-        for row in mongo.ticket_automation_state.documents.values():
-            if row["_id"].isdigit():
-                row["initial_delivery"]["status"] = "complete"
         state = await runtime.transition_rollout(
             mongo,
             expected_phase=runtime.PHASE_PILOT,
@@ -1157,6 +1150,72 @@ def test_legacy_monitor_schema_and_open_conflicts_block_promotion_and_drain():
 
     asyncio.run(scenario())
 
+
+
+@pytest.mark.parametrize(
+    ("slot_route", "conflict_routes", "blocks_promotion"),
+    [
+        (runtime.ROUTE_LEGACY, (runtime.ROUTE_LEGACY, runtime.ROUTE_LEGACY), False),
+        (runtime.ROUTE_THREAD, (runtime.ROUTE_LEGACY, runtime.ROUTE_LEGACY), True),
+        (runtime.ROUTE_LEGACY, (runtime.ROUTE_LEGACY, runtime.ROUTE_THREAD), True),
+    ],
+)
+def test_thread_default_promotion_only_blocks_thread_conflicts(
+    slot_route, conflict_routes, blocks_promotion
+):
+    async def scenario():
+        slot = {
+            "_id": "ticket-open:20:main",
+            "route": slot_route,
+            "state": runtime.SLOT_CLEANUP_REQUIRED,
+            "cleanup_reason": "multiple_authoritative_open_tickets",
+            "conflicting_tickets": [
+                {"route": route, "ticket_id": str(index)}
+                for index, route in enumerate(conflict_routes)
+            ],
+        }
+        pending_delivery = {
+            "_id": "201",
+            "channel_id": 201,
+            "automation_state": {"current_step": "initial"},
+            "ticket_info": {"user_id": 20},
+            "initial_delivery": {"status": "retry"},
+        }
+        mongo = _mongo(
+            rollout=[_rollout()], slots=[slot], automation=[pending_delivery]
+        )
+        if blocks_promotion:
+            with pytest.raises(runtime.RuntimeReadinessBlocked):
+                await runtime.transition_rollout(
+                    mongo,
+                    expected_phase=runtime.PHASE_PILOT,
+                    expected_revision=4,
+                    to_phase=runtime.PHASE_THREAD_DEFAULT,
+                    actor_id=1,
+                    now=NOW,
+                )
+            assert mongo.ticket_rollout.documents[runtime.ROLLOUT_ID]["phase"] == runtime.PHASE_PILOT
+        else:
+            state = await runtime.transition_rollout(
+                mongo,
+                expected_phase=runtime.PHASE_PILOT,
+                expected_revision=4,
+                to_phase=runtime.PHASE_THREAD_DEFAULT,
+                actor_id=1,
+                now=NOW,
+            )
+            assert state.phase == runtime.PHASE_THREAD_DEFAULT
+            with pytest.raises(runtime.LegacyDrainBlocked):
+                await runtime.transition_rollout(
+                    mongo,
+                    expected_phase=state.phase,
+                    expected_revision=state.revision,
+                    to_phase=runtime.PHASE_THREAD_ONLY,
+                    actor_id=1,
+                    now=NOW,
+                )
+
+    asyncio.run(scenario())
 
 def test_rollout_cas_and_thread_only_drain_barrier():
     async def scenario():

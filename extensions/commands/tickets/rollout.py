@@ -493,7 +493,7 @@ class RolloutPromote(
     description="Make thread tickets the public intake default (Admin only)",
 ):
     confirm = lightbulb.boolean(
-        "confirm", "Retire old intake and enable the target public v2 panel", default=False
+        "confirm", "Enable public thread tickets while keeping old-server intake active", default=False
     )
 
     @lightbulb.invoke
@@ -543,7 +543,7 @@ class RolloutPromote(
             return
         await ctx.respond(
             f"✅ Target-server thread intake is now public at revision `{state.revision}`. "
-            "Existing legacy tickets remain active.",
+            "The old server continues accepting legacy tickets.",
             ephemeral=True,
         )
 

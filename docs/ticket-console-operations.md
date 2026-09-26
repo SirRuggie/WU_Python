@@ -11,11 +11,10 @@ the [thread ticket command README](ticket-console/README.md).
 
 ## Current delivery status
 
-As of 2026-08-24, the cross-server implementation is pushed on the feature
-branch but is **not deployed or configured live**. Production remains on the
-existing legacy runtime. Deploying the code does not switch intake by itself:
-the old panel stays authoritative until setup, preparation, pilot testing, and
-an explicit confirmed promotion are completed.
+The legacy and thread runtimes are deployed in separate servers. Public thread
+intake is enabled by promotion; this does not retire the legacy server. Both
+may accept tickets while the new panel is being developed. Legacy retirement
+is a separate, explicitly requested operation.
 
 ## Coexistence contract
 
@@ -27,9 +26,9 @@ an explicit confirmed promotion are completed.
 - Legacy recruiter claim/release remains only for operating channel tickets
   during coexistence. Thread v2 has no recruiter claim, release, close, or
   reopen action; its only terminal decisions are approved and denied.
-- The runtimes share one-open-ticket slots and ticket-number counters. An
-  applicant cannot bypass the guard, and the two runtimes cannot allocate the
-  same number, by racing the other intake path.
+- Thread intake checks open tickets across both runtimes to prevent duplicate
+  applications of the same type. The counters are separate: legacy uses
+  `ticket_setup`, and thread tickets use `ticket_rollout`.
 - Legacy recruiter-role settings remain old-server-only. The target server has
   separate Main and FWA thread-recruiter settings; neither runtime falls back to
   the other server's role IDs.
@@ -86,9 +85,9 @@ channel. The pilot channel is not a thread parent.
 | `legacy_only` | Legacy intake active | Disabled | Disabled |
 | `prepared` | Legacy intake active | Disabled | Disabled; validation has passed |
 | `pilot` | Legacy intake active | Disabled | V2 for an exact allowlisted user or role |
-| `thread_default` | Retired | V2 public intake active | Retired |
+| `thread_default` | Legacy intake active | V2 public intake active | Retired |
 | `rollback_legacy` | Legacy intake active | Disabled | Disabled; existing v2 tickets remain manageable |
-| `thread_only` | Retired | V2 public intake active | Retired; legacy drain is complete |
+| `thread_only` | Retirement managed separately | V2 public intake active | Retired; legacy drain is complete |
 
 Every route is bound to an exact guild, channel, and message. Copied, stale, and
 wrong-server panels are rejected. Promotion and rollback change only which
@@ -234,10 +233,12 @@ following before promotion:
 ```
 
 Promotion requires `pilot`. The dry run repeats readiness checks. Confirmation
-enters `thread_default`, disables new intake from the old legacy and private
-pilot panels, and enables the exact target public-v2 panel. Existing legacy
-tickets remain authoritative and must still be completed in the old server with
-`/ticket`.
+enters `thread_default`, enables the exact target public-v2 panel, and disables
+the private pilot panel. The old server continues accepting legacy tickets.
+Legacy-only delivery retries or conflicts do not block this activation; an
+unresolved conflict involving a thread ticket still blocks it. The usual
+per-applicant duplicate-ticket guard remains in place. Existing legacy tickets
+remain authoritative and must still be completed in the old server with `/ticket`.
 
 ### 7. Roll back new intake when needed
 
@@ -245,8 +246,8 @@ tickets remain authoritative and must still be completed in the old server with
 /tickets rollout-rollback confirm:true
 ```
 
-Rollback disables the target public-v2 and pilot panels and re-enables the exact
-old-server legacy panel for **new** tickets. From `prepared` it returns to
+Rollback disables the target public-v2 and pilot panels. The old-server legacy
+panel continues accepting **new** tickets. From `prepared` it returns to
 `legacy_only`; from a live v2 phase it enters `rollback_legacy`. It does not
 change existing thread tickets, which remain manageable through the target
 console and `/tickets` commands. Retry only through prepare, pilot, and

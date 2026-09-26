@@ -83,17 +83,7 @@ async def recover_ticket_workflows(
         thread_route_conflicts = 0
         thread_conflict_query: dict = {}
         if blockers.unresolved_conflicts:
-            thread_conflict_query = {
-                "$and": [
-                    ticket_runtime.unresolved_open_conflict_query(),
-                    {
-                        "$or": [
-                            {"route": ticket_runtime.ROUTE_THREAD},
-                            {"conflicting_tickets.route": ticket_runtime.ROUTE_THREAD},
-                        ]
-                    },
-                ]
-            }
+            thread_conflict_query = ticket_runtime.thread_open_conflict_query()
             thread_route_conflicts = await mongo.ticket_open_slots.count_documents(
                 thread_conflict_query
             )

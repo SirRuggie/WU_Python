@@ -499,6 +499,22 @@ def unresolved_open_conflict_query() -> dict[str, Any]:
     }
 
 
+def thread_open_conflict_query() -> dict[str, Any]:
+    """Match unresolved slots involving a thread ticket."""
+
+    return {
+        "$and": [
+            unresolved_open_conflict_query(),
+            {
+                "$or": [
+                    {"route": ROUTE_THREAD},
+                    {"conflicting_tickets.route": ROUTE_THREAD},
+                ]
+            },
+        ]
+    }
+
+
 async def _bounded_document_ids(
     collection: Any, query: Mapping[str, Any], *, limit: int = 10
 ) -> tuple[str, ...]:
@@ -575,7 +591,7 @@ async def _transition_rollout(
     actor_id: int,
     now: datetime | None = None,
 ) -> RolloutState:
-    """CAS a legal phase transition, enforcing the legacy drain barrier."""
+    """CAS a legal phase transition, enforcing its safety barriers."""
 
     if expected_phase not in VALID_PHASES or to_phase not in VALID_PHASES:
         raise InvalidRolloutTransition("unknown rollout phase")
@@ -584,10 +600,12 @@ async def _transition_rollout(
             f"transition {expected_phase!r} -> {to_phase!r} is not permitted"
         )
     if to_phase == PHASE_THREAD_DEFAULT:
-        blockers = await runtime_blocker_status(mongo)
-        if blockers.blocked:
+        thread_conflicts = await mongo.ticket_open_slots.count_documents(
+            thread_open_conflict_query()
+        )
+        if thread_conflicts:
             raise RuntimeReadinessBlocked(
-                "legacy delivery or shared open-ticket conflict remains"
+                "thread open-ticket conflict remains"
             )
     if to_phase == PHASE_THREAD_ONLY:
         drain = await legacy_drain_status(mongo)
@@ -2082,6 +2100,7 @@ __all__ = [
     "runtime_blocker_status",
     "seed_rollout",
     "thread_collection",
+    "thread_open_conflict_query",
     "thread_ticket_fields",
     "transition_rollout",
     "unresolved_open_conflict_query",
