@@ -106,23 +106,17 @@ def create_public_ticket_embed() -> List[Container]:
             Text(content="## Warriors United Clan Entry"),
             Separator(divider=True),
             Text(content=(
-                "Create an entry ticket from one of the categories below.\n\n"
-                "Once you have created one, please wait patiently for one of our "
+                "Begin your Rite of Passage and choose your path to Main or FWA.\n\n"
+                "Once your ticket is open, please wait patiently for one of our "
                 "Recruiters to respond."
             )),
             Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id="ticket_v2_create:public:main",
-                    label="Main Clan Interest",
-                    emoji="🏆",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id="ticket_v2_create:public:fwa",
-                    label="FWA Clan Interest",
-                    emoji="💎",
+                    custom_id="ticket_v2_rite_open",
+                    label="Earn Your Rite of Passage",
+                    emoji="⚔️",
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,

@@ -380,6 +380,7 @@ from . import legacy_migration
 from . import legacy_bulk
 from . import rollout
 from . import testing
+from . import rite
 
 
 loader.command(ticket, guilds=[tickets_guild_id()])

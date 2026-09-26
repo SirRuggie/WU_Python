@@ -243,6 +243,7 @@ async def handle_create_ticket(
     action_id: str,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
+    _source_message_id: int | None = None,
     **_kwargs,
 ) -> None:
     """Create or safely resume a private candidate/public staff thread pair."""
@@ -270,7 +271,7 @@ async def handle_create_ticket(
         return
 
     interaction_message = getattr(ctx.interaction, "message", None)
-    message_id = store.as_int(getattr(interaction_message, "id", 0))
+    message_id = _source_message_id or store.as_int(getattr(interaction_message, "id", 0))
     member_roles = tuple(
         int(role_id)
         for role_id in (getattr(getattr(ctx, "member", None), "role_ids", ()) or ())

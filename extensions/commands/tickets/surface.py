@@ -7,8 +7,7 @@ from collections.abc import Iterable
 
 LEGACY_PANEL_ACTIONS = frozenset({"create_ticket:main", "create_ticket:fwa"})
 THREAD_PUBLIC_PANEL_ACTIONS = frozenset({
-    "ticket_v2_create:public:main",
-    "ticket_v2_create:public:fwa",
+    "ticket_v2_rite_open",
 })
 PILOT_PANEL_ACTIONS = frozenset({
     "ticket_v2_create:pilot:main",
