@@ -24,7 +24,7 @@ def path_panel(session_id="preview", sections=None, *, media=None, preview=False
             label=label, emoji=emoji, is_disabled=preview,
         )
     panel = [Container(accent_color=GOLDENROD_ACCENT, components=[
-        Text(content="## ⚔️ **Warriors United – Your Rite of Passage Begins**"),
+        Text(content="## <:warriors_united:1553249482836025425> **Warriors United – Your Rite of Passage Begins**"),
         Text(content=(
             '**“Warrior, your first steps within Warriors United are more than a simple entry… '
             'they mark the beginning of your Rite of Passage.”**\n\n'
