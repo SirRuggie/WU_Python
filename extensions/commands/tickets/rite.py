@@ -33,20 +33,20 @@ def path_panel(session_id="preview", sections=None, *, media=None, preview=False
         )),
         Separator(divider=True),
         Text(content=(
-            "### 🔱 **Rite of Passage to Main**\n"
+            "### <a:sword_fighting:1533860863147114769> **Rite of Passage to Main**\n"
             "**This path is for those who seek honor, unity, and the strength of the brotherhood.**\n"
             "It is the road toward becoming **Sworn** — a warrior recognized, trusted, and bound to the clan’s code.\n"
             "Choose this path if you are ready to prove your worth and rise among your fellow warriors."
         )),
-        button("main", "Rite of Passage to Main", "🔱"),
+        button("main", "Rite of Passage to Main", hikari.CustomEmoji.parse("<a:sword_fighting:1533860863147114769>")),
         Separator(divider=True),
         Text(content=(
-            "### 🩸 **Rite of Passage to FWA**\n"
+            "### <a:money_bag:1553248264042586142> **Rite of Passage to FWA**\n"
             "**This path leads into the fires of challenge and conflict.**\n"
             "It is for those who wish to test themselves in the crucible of battle, competition, or elite trials.\n"
             "Only the bold walk this road, and only the relentless endure it."
         )),
-        button("fwa", "Rite of Passage to FWA", "🩸"),
+        button("fwa", "Rite of Passage to FWA", hikari.CustomEmoji.parse("<a:money_bag:1553248264042586142>")),
         Separator(divider=True),
         Text(content=(
             "## 🛡️ **Your Choice Defines Your Destiny**\n"
