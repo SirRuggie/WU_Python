@@ -19,7 +19,9 @@ def _get(document, path, default=MISSING):
     value = document
     for part in path.split("."):
         if isinstance(value, list):
-            value = [item[part] for item in value if isinstance(item, dict) and part in item]
+            value = [
+                item[part] for item in value if isinstance(item, dict) and part in item
+            ]
             if not value:
                 return default
         elif isinstance(value, dict) and part in value:
@@ -51,7 +53,9 @@ def _condition(actual, expected):
     if not isinstance(expected, dict) or not any(
         str(key).startswith("$") for key in expected
     ):
-        return exists and (expected in actual if isinstance(actual, list) else actual == expected)
+        return exists and (
+            expected in actual if isinstance(actual, list) else actual == expected
+        )
     for operator, operand in expected.items():
         if operator == "$exists":
             if exists != bool(operand):
@@ -1039,7 +1043,7 @@ def test_expired_slot_cannot_be_taken_from_a_live_creation_worker(
     asyncio.run(scenario())
 
 
-def test_legacy_monitor_schema_and_open_conflicts_block_promotion_and_drain():
+def test_legacy_monitor_schema_and_mixed_conflicts_gate_promotion_and_drain():
     async def scenario():
         historical = {
             "channel_id": 201,
@@ -1151,7 +1155,6 @@ def test_legacy_monitor_schema_and_open_conflicts_block_promotion_and_drain():
     asyncio.run(scenario())
 
 
-
 @pytest.mark.parametrize(
     ("slot_route", "conflict_routes", "blocks_promotion"),
     [
@@ -1194,7 +1197,10 @@ def test_thread_default_promotion_only_blocks_thread_conflicts(
                     actor_id=1,
                     now=NOW,
                 )
-            assert mongo.ticket_rollout.documents[runtime.ROLLOUT_ID]["phase"] == runtime.PHASE_PILOT
+            assert (
+                mongo.ticket_rollout.documents[runtime.ROLLOUT_ID]["phase"]
+                == runtime.PHASE_PILOT
+            )
         else:
             state = await runtime.transition_rollout(
                 mongo,
@@ -1216,6 +1222,7 @@ def test_thread_default_promotion_only_blocks_thread_conflicts(
                 )
 
     asyncio.run(scenario())
+
 
 def test_rollout_cas_and_thread_only_drain_barrier():
     async def scenario():
