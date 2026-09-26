@@ -110,7 +110,7 @@ def create_public_ticket_embed() -> List[Container]:
                 "Once you have created one, please wait patiently for one of our "
                 "Recruiters to respond."
             )),
-            Media(items=[MediaItem(media="assets/Red_Footer.png")]),
+            Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
             ActionRow(components=[
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
