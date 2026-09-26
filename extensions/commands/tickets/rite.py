@@ -18,10 +18,10 @@ from utils.mongo import MongoClient
 
 
 def path_panel(session_id="preview", sections=None, *, media=None, preview=False):
-    def button(kind, label, emoji):
+    def button(kind, label):
         return Row().add_interactive_button(
             hikari.ButtonStyle.PRIMARY, f"ticket_v2_rite_choose:{session_id}:{kind}",
-            label=label, emoji=emoji, is_disabled=preview,
+            label=label, is_disabled=preview,
         )
     panel = [Container(accent_color=GOLDENROD_ACCENT, components=[
         Text(content="## <:warriors_united:1553249482836025425> **Warriors United – Your Rite of Passage Begins**"),
@@ -38,7 +38,7 @@ def path_panel(session_id="preview", sections=None, *, media=None, preview=False
             "It is the road toward becoming **Sworn** — a warrior recognized, trusted, and bound to the clan’s code.\n"
             "Choose this path if you are ready to prove your worth and rise among your fellow warriors."
         )),
-        button("main", "Rite of Passage to Main", hikari.CustomEmoji.parse("<a:sword_fighting:1533860863147114769>")),
+        button("main", "Rite of Passage to Main"),
         Separator(divider=True),
         Text(content=(
             "### <a:money_bag:1553248264042586142> **Rite of Passage to FWA**\n"
@@ -46,7 +46,7 @@ def path_panel(session_id="preview", sections=None, *, media=None, preview=False
             "It is for those who wish to test themselves in the crucible of battle, competition, or elite trials.\n"
             "Only the bold walk this road, and only the relentless endure it."
         )),
-        button("fwa", "Rite of Passage to FWA", hikari.CustomEmoji.parse("<a:money_bag:1553248264042586142>")),
+        button("fwa", "Rite of Passage to FWA"),
         Separator(divider=True),
         Text(content=(
             "## 🛡️ **Your Choice Defines Your Destiny**\n"
