@@ -844,7 +844,7 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
         await destination_for(mongo, state["guild_id"], document.key)
         if document.key not in {"apply", "rite-of-passage"} else None
     )
-    target = state.get("target") if state.get("document") == document.key else None
+    target = state.get("target") if state.get("document") == document.key and document.key != "apply" else None
     notice = None
     if target is None:
         coordinates = await published_for(mongo, state["guild_id"], document.key)
