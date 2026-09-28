@@ -1418,6 +1418,11 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
                 "⚠️ **Recruiter-only:** The candidate cannot see this thread. "
                 "Do not mention or add them here."
             )),
+            ActionRow(components=[LinkButton(
+                label="Open Recruit Ticket",
+                url=f"https://discord.com/channels/{_as_int(ticket.get('guild_id'))}/{public_id}",
+                emoji=hikari.CustomEmoji.parse("<:open_new:1553091643639468213>"),
+            )]),
             *([ActionRow(components=[hikari.impl.InteractiveButtonBuilder(
                 style=hikari.ButtonStyle.PRIMARY,
                 custom_id=f"ticket_v2_test_detail:{ticket['_id']}",
