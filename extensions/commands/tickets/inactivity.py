@@ -79,7 +79,7 @@ def card(ticket, token, role, period=PERIOD):
     for choice, label, emoji in (("yes", "Yes - Deny", YES_EMOJI), ("no", "No - Wait", NO_EMOJI)):
         row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=hikari.CustomEmoji(id=emoji, name=choice.title(), is_animated=False))
     wording = f"There has been no activity within the last {period_label(period)}. Apply Ghosted and deny?"
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nDenial reason: **{REASON}**"), row])]
+    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nYou will be prompted for a denial reason."), row])]
 
 
 async def record_human_activity(mongo, ticket, message):
@@ -224,6 +224,7 @@ async def finish_ghosted(bot, mongo, ticket):
                 if entry.get("inactivity_token") == prompt.get("token") and entry.get("to") == "denied"), None)
     if won is None:
         return False
+    reason = str(won.get("reason") or prompt.get("reason") or REASON)
     ids = flag_store._discord_ids(ticket.get("user_id"))
     tags = ticket.get("player_tags") or ()
     async with flag_store.identity_guard(mongo, discord_ids=ids, player_tags=tags):
@@ -233,11 +234,11 @@ async def finish_ghosted(bot, mongo, ticket):
         if not existing:
             flag_doc = await flag_store._set_flag_unlocked(mongo, kind=flag_store.FLAG_GHOSTED, discord_ids=ids,
                 player_tags=tags, source="Recruiter confirmed ticket inactivity",
-                added_by=won["actor"], added_by_name=won.get("actor_name") or str(won["actor"]), reason=REASON)
+                added_by=won["actor"], added_by_name=won.get("actor_name") or str(won["actor"]), reason=reason)
     from extensions.commands.tickets import thread_service, console
     await console._refresh_after_flag_mutation(bot, mongo, flag_doc)
     await thread_service.notify_console_after_change(bot, mongo, ticket, reason="Ghosted inactivity flag")
-    await retire_prompt(bot, ticket, "Ghosted applied and ticket denied: Recruit stopped responding.")
+    await retire_prompt(bot, ticket, "Ghosted applied and ticket denied with the reason you provided.")
     await mongo.tickets.update_one({"_id": ticket["_id"], "inactivity.prompt.token": prompt["token"]},
         {"$set": {"inactivity.prompt.state": "complete"}})
     return True
@@ -247,6 +248,35 @@ async def finish_ghosted(bot, mongo, ticket):
 @lightbulb.di.with_di
 async def handle_inactivity(ctx, action_id: str, bot: hikari.GatewayBot = lightbulb.di.INJECTED,
                             mongo: MongoClient = lightbulb.di.INJECTED, **_kwargs):
+    parts = action_id.split(":")
+    if len(parts) == 3 and parts[2] == "yes":
+        # Acknowledge with the form immediately. Submission rechecks the live
+        # prompt, recruiter permission, activity and ticket status before acting.
+        await ctx.respond_with_modal(
+            title="Ghosted - Deny ticket",
+            custom_id=f"ticket_inactivity_reason:{action_id}",
+            components=[hikari.impl.ModalActionRowBuilder().add_text_input(
+                "reason", "Denial reason shown to the recruit",
+                style=hikari.TextInputStyle.PARAGRAPH,
+                placeholder="Explain why this application is being denied.",
+                required=True, min_length=5, max_length=1000,
+            )],
+        )
+        return
+    await _handle_inactivity_decision(ctx, action_id, bot=bot, mongo=mongo)
+
+
+@register_action("ticket_inactivity_reason", is_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def handle_inactivity_reason(ctx, action_id: str,
+                                   bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+                                   mongo: MongoClient = lightbulb.di.INJECTED, **_kwargs):
+    from extensions.commands.tickets.console import _modal_value
+    reason = _modal_value(ctx, "reason").strip()
+    await _handle_inactivity_decision(ctx, action_id, bot=bot, mongo=mongo, reason=reason)
+
+
+async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None):
     await ctx.defer(ephemeral=True)
     if not await perms.is_recruiter(ctx.member, mongo) or testing_service.is_test_scope(mongo):
         await ctx.interaction.edit_initial_response(content="Recruiter permission required.")
@@ -256,6 +286,9 @@ async def handle_inactivity(ctx, action_id: str, bot: hikari.GatewayBot = lightb
         await ctx.interaction.edit_initial_response(content="This inactivity prompt is out of date.")
         return
     ticket_id, token, choice = parts
+    if (reason is not None and choice != "yes") or (choice == "yes" and (reason is None or not 5 <= len(reason) <= 1000)):
+        await ctx.interaction.edit_initial_response(content="Enter a denial reason between 5 and 1,000 characters. No decision was made.")
+        return
     ticket = await mongo.tickets.find_one({"_id": ticket_id, **store.RUNTIME_FILTER})
     if eligible(ticket):
         ticket = await verify_baseline(bot, mongo, ticket)
@@ -282,13 +315,14 @@ async def handle_inactivity(ctx, action_id: str, bot: hikari.GatewayBot = lightb
         actor_name = str(getattr(ctx.user, "display_name", None) or getattr(ctx.user, "username", None) or ctx.user.id)
         claimed = await mongo.tickets.find_one_and_update(query, {"$set": {"inactivity.prompt.state": "yes",
             "inactivity.prompt.actor_id": int(ctx.user.id), "inactivity.prompt.actor_name": actor_name,
+            "inactivity.prompt.reason": reason,
             "inactivity.prompt.expected_rev": int(ticket.get("rev") or 0),
             "inactivity.prompt.lease_until": now() + LEASE}}, return_document=ReturnDocument.AFTER)
         if not claimed:
             wording = "This inactivity prompt is out of date."
         else:
             result = await resolve.deny_ticket(bot, mongo, ticket_id=ticket_id, member=ctx.member,
-                actor_name=actor_name, kind=resolve.KIND_DENY_CUSTOM, reason=REASON,
+                actor_name=actor_name, kind=resolve.KIND_DENY_CUSTOM, reason=reason,
                 expected_rev=int(ticket.get("rev") or 0), expected_activity_revision=int(prompt.get("activity_revision") or 0),
                 expected_inactivity_token=token)
             if result.won or result.outcome == store.EFFECT_FAILED:
@@ -297,7 +331,7 @@ async def handle_inactivity(ctx, action_id: str, bot: hikari.GatewayBot = lightb
                 except Exception:
                     _log.exception("Ghosted flag pending after won inactivity denial ticket=%s", ticket_id)
                     complete = False
-                wording = ("Ghosted applied and ticket denied: Recruit stopped responding." if complete else
+                wording = ("Ghosted applied and ticket denied with the reason you provided." if complete else
                            "Ticket denied; Ghosted flag update is pending and will retry automatically.")
             else:
                 await mongo.tickets.update_one({"_id": ticket_id, "inactivity.prompt.token": token}, {"$unset": {"inactivity.prompt": ""}})

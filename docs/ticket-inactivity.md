@@ -8,11 +8,15 @@ Bot messages and discussion in the private staff thread do not reset this clock.
 The prompt appears in that ticket's staff thread and mentions its configured
 recruitment role. It asks whether to apply **Ghosted** and deny the ticket:
 
-- **Yes** uses the normal denial workflow with the exact reason
-  `Recruit stopped responding`, and ensures a persistent Ghosted flag exists.
-- **No** leaves the ticket open and starts a new seven-day interval from the click.
+- **Yes - Deny** opens a required denial-reason form. Submitting it uses the normal
+  denial workflow with the entered reason and ensures a persistent Ghosted flag
+  exists. New flags use the entered reason; existing Ghosted reasons are preserved.
+  Closing the form makes no decision and leaves the review pending.
+- **No - Wait** leaves the ticket open and starts a new configured interval from the click.
 
-Only authorized recruiters can act. A new applicant-thread message, replacement
+Only authorized recruiters can act. Form submission rechecks permission and the
+current prompt before saving the reason and denying; opening a form alone never
+reserves or resolves the ticket. A new applicant-thread message, replacement
 prompt, or completed decision makes an older prompt ineligible. Activity and prompt
 identity are checked in the same MongoDB conditional update that commits a denial,
 so a message arriving during a slow account lookup prevents a stale denial.
