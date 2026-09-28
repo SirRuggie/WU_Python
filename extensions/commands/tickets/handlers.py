@@ -587,19 +587,32 @@ def _my_ticket_history_line(prior: dict) -> str:
         number = int(prior.get("ticket_number"))
     except (TypeError, ValueError):
         number = "?"
-    status = str(prior.get("status") or "unknown").replace("_", " ").title()
-    at = (
-        prior.get("approved_at")
-        or prior.get("denied_at")
-        or prior.get("updated_at")
-        or prior.get("created_at")
-    )
-    line = f"{kind} #{number} · {status} · {resolve.ts(at)}"
-    guild_id = store.as_int(prior.get("guild_id"))
-    location_id = _ticket_location(prior)
-    if guild_id and location_id:
-        line += f" · https://discord.com/channels/{guild_id}/{location_id}"
-    return line
+    raw_status = str(prior.get("status") or "unknown")
+    status = raw_status.replace("_", " ").title()
+    # Only label the decision's own timestamp as its date. Updates and ticket
+    # creation are not the time an applicant was approved or denied.
+    at = prior.get(f"{raw_status}_at") if raw_status in {"approved", "denied", "closed"} else None
+    when = resolve.ts(at, "f") if at is not None else "Date unavailable"
+    return f"### {kind} #{number} · {status}\n**{status}:** {when}"
+
+
+def _my_ticket_history_components(history: list[dict]):
+    items = [
+        hikari.impl.TextDisplayComponentBuilder(content="## 🎟️ Your ticket history"),
+        hikari.impl.TextDisplayComponentBuilder(content="You have no open ticket."),
+    ]
+    for prior in history:
+        items.append(hikari.impl.SeparatorComponentBuilder())
+        items.append(hikari.impl.TextDisplayComponentBuilder(content=_my_ticket_history_line(prior)))
+        guild_id = store.as_int(prior.get("guild_id"))
+        location_id = store.as_int((prior.get("location") or {}).get("id") or prior.get("channel_id"))
+        if guild_id and location_id:
+            items.append(hikari.impl.MessageActionRowBuilder().add_link_button(
+                f"https://discord.com/channels/{guild_id}/{location_id}",
+                label="View Ticket", emoji=hikari.Snowflake(ICONS["open"]),
+            ))
+    return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=items)]
+
 
 
 @register_action(
@@ -691,9 +704,9 @@ async def handle_my_ticket(
         )
         return
 
-    lines = "\n".join(_my_ticket_history_line(prior) for prior in history)
     await ctx.interaction.edit_initial_response(
-        content=f"🎟️ You have no open ticket. Earlier tickets:\n{lines}"
+        components=_my_ticket_history_components(history),
+        user_mentions=False, role_mentions=False, mentions_everyone=False,
     )
 
 

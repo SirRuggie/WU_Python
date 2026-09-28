@@ -23,7 +23,7 @@ import coc
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Mapping
 from utils.component_state import delete_state, get_state, insert_state
 
@@ -104,6 +104,9 @@ DENIAL_TYPE = {
 def ts(value, style: str = "R") -> str:
     """<t:unix:R> - ages itself, and renders in the reader's own timezone."""
     try:
+        # PyMongo returns naive UTC datetimes by default, never host-local time.
+        if isinstance(value, datetime) and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
         return f"<t:{int(value.timestamp())}:{style}>"
     except (AttributeError, TypeError, ValueError):
         return "earlier"

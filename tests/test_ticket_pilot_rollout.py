@@ -1891,10 +1891,13 @@ def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch):
         ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
     ))
 
-    content = edits[-1]["content"]
+    panel = edits[-1]["components"][0]
+    content = "\n".join(getattr(item, "content", "") for item in panel.components)
     assert "Main #198" in content
     assert "Denied" in content
-    assert "555" in content
+    assert ":f>" in content
+    assert panel.components[-1].components[0].url == "https://discord.com/channels/11/555"
+    assert edits[-1]["role_mentions"] is False
 
 
 def test_my_ticket_button_hints_when_nothing_found(monkeypatch):
