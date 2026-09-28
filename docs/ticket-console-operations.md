@@ -866,3 +866,12 @@ the mention; the bot does not add recruiters individually, avoiding those
 explicit member-add notices. Existing system notices cannot be deleted. Delivery is
 idempotent, test tickets skip it, and older tickets are not mass-pinged on rollout.
 The existing staff workspace and shared console remain in place.
+
+### Manual intake access
+
+Recruiter-created live tickets validate the candidate/staff parents first. If the
+selected recruit lacks access, the bot grants that member View Channel, Read
+Message History, Send Messages in Threads, Embed Links, and Attach Files on the
+candidate parent while denying Send Messages in the parent itself. Existing
+unrelated member overrides are preserved. No staff access or Gauntlet completion
+roles are granted. Isolated testing never makes this live permission change.

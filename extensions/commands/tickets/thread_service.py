@@ -354,6 +354,38 @@ def _effective_permissions(
     return permissions
 
 
+async def grant_manual_applicant_access(rest, parents, *, user_id, actor_id):
+    """Give one staff-selected recruit access to the candidate parent only."""
+    channel, guild, member, roles = await asyncio.gather(
+        rest.fetch_channel(parents.candidate_parent_id),
+        rest.fetch_guild(parents.guild_id),
+        rest.fetch_member(parents.guild_id, user_id),
+        rest.fetch_roles(parents.guild_id),
+    )
+    if (getattr(channel, "type", None) != hikari.ChannelType.GUILD_TEXT
+            or int(channel.guild_id) != parents.guild_id
+            or parents.candidate_parent_id == parents.staff_parent_id):
+        raise ThreadConfigurationError("manual applicant access requires a validated candidate parent")
+    required = (hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.READ_MESSAGE_HISTORY
+                | hikari.Permissions.SEND_MESSAGES_IN_THREADS | hikari.Permissions.EMBED_LINKS
+                | hikari.Permissions.ATTACH_FILES)
+    effective = _effective_permissions(guild_id=parents.guild_id, owner_id=int(guild.owner_id),
+                                      member=member, roles=roles, channel=channel)
+    if effective & required == required:
+        return
+    existing = next((item for item in _overwrite_values(channel.permission_overwrites)
+                     if int(item.id) == user_id), None)
+    allow = hikari.Permissions(getattr(existing, "allow", 0))
+    deny = hikari.Permissions(getattr(existing, "deny", 0))
+    # Thread replies use their own permission. Keep the Apply panel read-only.
+    await rest.edit_permission_overwrite(
+        parents.candidate_parent_id, user_id, target_type=hikari.PermissionOverwriteType.MEMBER,
+        allow=(allow | required) & ~hikari.Permissions.SEND_MESSAGES,
+        deny=(deny & ~required) | hikari.Permissions.SEND_MESSAGES,
+        reason=f"Recruiter {actor_id} opened an application for this recruit",
+    )
+
+
 async def validate_thread_parents(
     rest: hikari.api.RESTClient,
     parents: ThreadParents,
@@ -2078,8 +2110,8 @@ async def create_live_thread_ticket(
         window = await testing_service.active_window(mongo)
         if window is None or slot.get("window_generation") != window.get("generation"):
             raise ThreadConfigurationError("test slot belongs to an inactive window")
-    # Everything through parent validation is pre-side-effect and therefore
-    # safe to cancel if configuration/readiness fails.
+    # Staff-created tickets may grant candidate-parent access after validating
+    # parent safety. Slot reservations are still released on setup failure.
     try:
         if testing_service.is_test_scope(mongo):
             coc_client = None
@@ -2117,6 +2149,12 @@ async def create_live_thread_ticket(
         )
         if testing_service.is_test_scope(mongo) and test_window is None:
             raise ThreadConfigurationError("ticket test window is closed")
+        if opened_by is not None and not testing_service.is_test_scope(mongo):
+            # Validate staff privacy and bot capabilities before changing access.
+            await validate_thread_parents(bot.rest, parents, bot_user_id=int(me.id))
+            await grant_manual_applicant_access(
+                bot.rest, parents, user_id=int(user_id), actor_id=int(opened_by),
+            )
         await validate_thread_parents(
             bot.rest,
             parents,
