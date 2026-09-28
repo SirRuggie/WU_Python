@@ -420,3 +420,33 @@ def test_no_open_ticket_means_no_welcome_or_saved_walkthrough(monkeypatch):
     with pytest.raises(core.SetupError):
         run(walkthrough.prepare(object(), m, c, {}, {}))
     m.warrior_walkthroughs.update_one.assert_not_awaited()
+
+
+def test_home_displays_assigned_roles_and_setup_guidance(monkeypatch):
+    c = context()
+    cfg = run(core.settings(mongo(), 10))
+    assigned = [*cfg["roles"].values(), cfg["townhalls"]["15"], 61]
+    c["member"].role_ids = assigned
+    monkeypatch.setattr(
+        core,
+        "clans",
+        AsyncMock(
+            return_value=[{"role_id": 61, "name": "Four and Twenty", "emoji": "🏰"}]
+        ),
+    )
+    built = run(ui.home({"_id": "1"}, c, mongo()))[0].build()[0]
+    text = repr(built)
+    for expected in (
+        "Information to Have Ready",
+        "Accounts and Town Halls",
+        "Current Roles",
+        "TH15",
+        "🏰 Four and Twenty",
+        "Family",
+        "New Recruit",
+        "Strike System Accepted",
+        "Set Server Nickname",
+        "Setup Progress",
+    ):
+        assert expected in text
+    assert "**Member roles:** Ready" not in text

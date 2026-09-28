@@ -17,6 +17,7 @@ from hikari.impl import (
 from extensions.components import register_action
 from extensions.warrior import core, walkthrough
 from utils.mongo import MongoClient
+from utils.emoji import emojis
 from utils.component_state import insert_state, update_state
 from utils.constants import GOLDENROD_ACCENT, RED_ACCENT, GREEN_ACCENT
 
@@ -75,7 +76,33 @@ async def home(data, c, mongo, note=""):
     member = c["member"]
     held = set(member.role_ids)
     th = [k for k, v in cfg["townhalls"].items() if int(v) in held]
-    names = [str(r["name"]) for r in clans if int(r["role_id"]) in held]
+    names = [
+        f"{r.get('emoji') or ''} {r['name']}".strip()
+        for r in clans
+        if int(r["role_id"]) in held
+    ]
+    role_names = {int(role.id): role.name for role in c["roles"]}
+    standard = {
+        "family": ("👨‍👩‍👧‍👦", "Family"),
+        "recruit": ("🆕", "New Recruit"),
+        "strike_accepted": ("✅", "Strike System Accepted"),
+        "visitor": ("👋", "Visitor"),
+    }
+    member_roles = [
+        f"{icon} {role_names.get(int(cfg['roles'][key]), label)}"
+        for key, (icon, label) in standard.items()
+        if int(cfg["roles"][key]) in held
+    ]
+    town_halls = [f"{getattr(emojis, 'TH' + str(level))} TH{level}" for level in th]
+
+    def listing(values, empty, budget=450):
+        shown = []
+        for value in values:
+            if len(", ".join(shown + [value])) > budget:
+                return ", ".join(shown) + f" · +{len(values) - len(shown)} more"
+            shown.append(value)
+        return ", ".join(shown) or empty
+
     needed = [
         key
         for key in ("family", "recruit", "strike_accepted")
@@ -91,39 +118,62 @@ async def home(data, c, mongo, note=""):
         if not run
         else f'{run["state"].title()} · {run.get("next_step",0)}/7 messages delivered'
     )
-    details = (
-        f"<@{member.id}> · **{member.display_name}**\n"
-        f'**Nickname:** {member.nickname or "Not set"}\n**Member roles:** '
-        + (
-            "Ready"
-            if not needed
-            else "Missing " + ", ".join(x.replace("_", " ") for x in needed)
-        )
-        + f'\n**Town Halls:** {", ".join(th) or "Not set"}\n**Clans:** {(", ".join(names)[:500]) or "Not assigned"}\n**Walkthrough:** {tour}'
+    details = f"<@{member.id}>\n" f'**Nickname:** {member.nickname or "Not set"}'
+    readiness = (
+        "✅ Required member roles assigned."
+        if not needed
+        else "⚠️ Missing: " + ", ".join(standard[key][1] for key in needed)
     )
     items = [
+        Text(
+            content=(
+                "Set up this warrior’s nickname and roles, then start their server walkthrough "
+                "from their open ticket. Review the current roles below before making changes."
+            )
+        ),
+        Separator(),
+        Text(
+            content=(
+                "### 📋 Information to Have Ready\n"
+                "• **In-Game Name (IGN):** The recruit’s in-game name.\n"
+                "• **Time Zone and Country:** Used in their server nickname.\n"
+                "• **Accounts and Town Halls:** Number of accounts and each Town Hall level.\n"
+                "• **Clan:** The clan they are joining."
+            )
+        ),
+        Separator(),
         Section(
             components=[Text(content=details)],
             accessory=Thumbnail(media=str(member.display_avatar_url)),
         ),
+        Text(
+            content=(
+                "### 📋 Current Roles\n"
+                f"**Town Hall Roles:** {listing(town_halls, 'Not set', 800)}\n\n"
+                f"**Clan Roles:** {listing(names, 'Not assigned')}\n\n"
+                f"**Member Roles:** {listing(member_roles, 'Not assigned')}"
+            )
+        ),
+        Separator(),
+        Text(content=f"### Setup Progress\n{readiness}\n**Walkthrough:** {tour}"),
         Separator(),
     ]
     if note:
-        items.append(Text(content=note[:1800]))
+        items.append(Text(content=note[:450]))
     if run and run.get("error"):
-        items.append(Text(content="**Needs attention:** " + run["error"]))
+        items.append(Text(content="**Needs attention:** " + run["error"][:200]))
     items += [
         button(
-            button(Row(), sid, "nick", "1 · Nickname", "edit"),
+            button(Row(), sid, "nick", "1 · Set Server Nickname", "edit"),
             sid,
             "roles",
-            "2 · Member Roles",
+            "2 · Manage Member Roles",
         ),
         button(
-            button(Row(), sid, "th", "3 · Town Hall Roles"),
+            button(Row(), sid, "th", "3 · Set Town Hall Roles"),
             sid,
             "clans:0",
-            "4 · Clan Roles",
+            "4 · Assign Clan Roles",
         ),
         button(
             Row(),
