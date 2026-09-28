@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.gauntlet_diagnostics import observed, event as gauntlet_event
 from utils.gauntlet_routes import start_url
 from utils.gauntlet_routes import route_for, NEW_GUILD_ID
 from utils.gauntlet_tracking import track_progress
@@ -56,7 +57,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     )
                 ]
             ),
-            
+
             # Embed 1: Basic Rules
             Container(
                 accent_color=GOLDENROD_ACCENT,
@@ -83,7 +84,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     )),
                 ]
             ),
-            
+
             # Embed 2: Strike System Overview
             Container(
                 accent_color=GOLDENROD_ACCENT,
@@ -108,7 +109,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     )),
                 ]
             ),
-            
+
             # Embed 3: Main Clan Strike System
             Container(
                 accent_color=GOLDENROD_ACCENT,
@@ -125,7 +126,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     ),
                 ]
             ),
-            
+
             # Embed 4: FWA Strike System
             Container(
                 accent_color=GOLDENROD_ACCENT,
@@ -142,7 +143,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     ),
                 ]
             ),
-            
+
             # Embed 5: Terms and Conditions
             Container(
                 accent_color=GOLDENROD_ACCENT,
@@ -158,7 +159,7 @@ def build_strikesystem(sections=None, *, media=None, action_id="preview", previe
                     )),
                 ]
             ),
-            
+
             # Embed 6: Acknowledgment
             Container(
                 accent_color=GOLDENROD_ACCENT,
@@ -250,15 +251,16 @@ def _continue_components(guild_id: int, message: str, *, url: str | None = None)
 
 async def _private_continue(ctx, guild_id: int, message: str, *, bot) -> None:
     """Respond privately without altering the published onboarding panel."""
-    await ctx.interaction.execute(
-        components=_continue_components(guild_id, message, url=await start_url(bot.rest, "strike-system", guild_id)),
+    await observed("reply", ctx.interaction.execute,
+        components=_continue_components(guild_id, message, url=await observed("destination_lookup", start_url, bot.rest, "strike-system", guild_id)),
         flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
     )
 
 
 async def _private_error(ctx, message: str) -> None:
     """Send an actionable private error without exposing internal failures."""
-    await ctx.interaction.execute(content=message, flags=hikari.MessageFlag.EPHEMERAL)
+    gauntlet_event("rejected", reason=message)
+    await observed("reply", ctx.interaction.execute, content=message, flags=hikari.MessageFlag.EPHEMERAL)
 
 
 @register_action("strikesystem_acknowledge", no_return=True, preload_state=False)
@@ -281,7 +283,7 @@ async def on_strikesystem_acknowledge(
     role_id, next_channel_id = route
 
     try:
-        target_channel = await bot.rest.fetch_channel(next_channel_id)
+        target_channel = await observed("channel_check", bot.rest.fetch_channel, next_channel_id)
     except hikari.HTTPError:
         await _private_error(ctx, "I could not open the next onboarding channel right now. Please try again shortly.")
         return
@@ -300,7 +302,7 @@ async def on_strikesystem_acknowledge(
 
     guild_id = int(target_guild_id)
     try:
-        member = await bot.rest.fetch_member(guild_id, user_id)
+        member = await observed("member_check", bot.rest.fetch_member, guild_id, user_id)
     except hikari.HTTPError:
         await _private_error(ctx, "I could not find your member profile in this server. Please try again shortly.")
         return
@@ -309,13 +311,14 @@ async def on_strikesystem_acknowledge(
         return
 
     if role_id in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
+        gauntlet_event("role_already_present")
         if guild_id == NEW_GUILD_ID:
-            await track_progress(mongo, guild_id, user_id, 3)
+            await observed("reminder_tracking", track_progress, mongo, guild_id, user_id, 3)
         await _private_continue(ctx, guild_id, "You already have access to Family Particulars. Continue to Family Particulars for the next Recruit Gauntlet step.", bot=bot)
         return
 
     try:
-        await bot.rest.add_role_to_member(guild=guild_id, user=user_id, role=role_id)
+        await observed("role_assignment", bot.rest.add_role_to_member, guild=guild_id, user=user_id, role=role_id)
     except hikari.HTTPError:
         await _private_error(ctx, "I could not grant access to Family Particulars right now. Please try again shortly.")
         return
@@ -324,7 +327,7 @@ async def on_strikesystem_acknowledge(
         return
 
     if guild_id == NEW_GUILD_ID:
-        await track_progress(mongo, guild_id, user_id, 3)
+        await observed("reminder_tracking", track_progress, mongo, guild_id, user_id, 3)
     await _private_continue(ctx, guild_id, "Continue to Family Particulars for the next Recruit Gauntlet step.", bot=bot)
 
 

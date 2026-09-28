@@ -275,3 +275,17 @@ including Join the Family → About Us in the new server. This starts the reader
 at the beginning and follows replacement posts without storing a stale message
 ID. If history is empty or temporarily unavailable, the link falls back to the
 channel. This changes navigation only; it cannot enforce reading or scrolling.
+
+### Gauntlet click diagnostics
+
+`journalctl -u wu-bot.service` includes `gauntlet_click` records for all four
+acknowledgement buttons. Each click is correlated by interaction ID, with guild,
+channel, source message, and user IDs. Stages cover receipt (including interaction
+age), Discord acknowledgement, channel/member checks, role assignment or existing
+role, reminder tracking, first-message lookup, and private reply. Awaited steps
+record start, success/failure, duration, and total elapsed milliseconds. Failure
+records include exception class and Discord code, not raw HTTP exception text.
+No interaction tokens, message bodies, or component-state suffixes are recorded.
+`finished` means processing ended, not that every operation succeeded: inspect
+stage results. A missing `received` record means this process did not log receipt;
+it does not alone establish whether Discord, the client, or delivery failed.

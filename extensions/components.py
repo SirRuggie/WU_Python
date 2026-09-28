@@ -15,6 +15,7 @@ import pendulum as pend
 from hikari.events.interaction_events import ComponentInteractionCreateEvent
 from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
+from utils.gauntlet_diagnostics import click_trace, observed, event as gauntlet_event
 from utils.component_state import get_state, prepare_storage
 
 loader = lightbulb.Loader()
@@ -243,6 +244,7 @@ async def component_handler(
     try:
         await _dispatch(ctx, mongo)
     except Exception:
+        gauntlet_event("dispatch_failed")
         ref = uuid.uuid4().hex[:8]
         _log.exception(
             "component dispatch failed ref=%s custom_id=%r user=%s",
@@ -268,7 +270,7 @@ async def _dispatch(ctx, mongo):
         return
     deferred = not action.is_modal and not action.opens_modal
     if deferred:
-        await ctx.defer(edit=True)
+        await observed("acknowledgement", ctx.defer, edit=True)
     from utils.ticket_testing_control import require_test_access
     bot = ctx.interaction.app
     try:
@@ -336,7 +338,7 @@ async def _dispatch_impl(
     token_dead = False
     if not action.is_modal and not action.opens_modal and not getattr(ctx, "_test_already_deferred", False):
         try:
-            await ctx.defer(edit=True)
+            await observed("acknowledgement", ctx.defer, edit=True)
         except hikari.NotFoundError:
             # (10062) Unknown interaction: the 3-second window was already
             # gone when the defer arrived - on a busy host the event loop can
@@ -344,6 +346,7 @@ async def _dispatch_impl(
             # time" on Save confirmed cards. The button still sits on a real
             # message, so the work continues and the result is delivered by
             # editing that message over REST instead of dying silently.
+            gauntlet_event("acknowledgement_token_expired")
             token_dead = True
             _log.warning(
                 "interaction token dead before defer custom_id=%r user=%s; "
@@ -413,8 +416,9 @@ async def component_interaction(
         event: ComponentInteractionCreateEvent,
         client: lightbulb.Client = lightbulb.di.INJECTED,
 ):
-    ctx = build_ctx(event.interaction, client)
-    await component_handler(ctx=ctx)
+    with click_trace(event.interaction):
+        ctx = build_ctx(event.interaction, client)
+        await component_handler(ctx=ctx)
 
 
 @loader.listener(hikari.events.ModalInteractionCreateEvent)

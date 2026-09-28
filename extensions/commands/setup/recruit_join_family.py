@@ -9,6 +9,7 @@ from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.manage_ui import ICONS
 from utils.mongo import MongoClient
+from utils.gauntlet_diagnostics import observed, event as gauntlet_event
 from utils.gauntlet_routes import start_url
 from utils.gauntlet_tracking import track_progress
 
@@ -100,8 +101,8 @@ def _continue_components(guild_id: int, message: str, *, url: str | None = None)
 
 async def _private_continue(ctx, guild_id: int, message: str, *, bot) -> None:
     """Send a private V2 followup, never edit the public panel that was clicked."""
-    components = _continue_components(guild_id, message, url=await start_url(bot.rest, "join-family", guild_id))
-    await ctx.interaction.execute(
+    components = _continue_components(guild_id, message, url=await observed("destination_lookup", start_url, bot.rest, "join-family", guild_id))
+    await observed("reply", ctx.interaction.execute,
         components=components,
         flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
     )
@@ -109,7 +110,8 @@ async def _private_continue(ctx, guild_id: int, message: str, *, bot) -> None:
 
 async def _private_error(ctx, message: str) -> None:
     """Errors are private and never promise access that was not granted."""
-    await ctx.interaction.execute(content=message, flags=hikari.MessageFlag.EPHEMERAL)
+    gauntlet_event("rejected", reason=message)
+    await observed("reply", ctx.interaction.execute, content=message, flags=hikari.MessageFlag.EPHEMERAL)
 
 
 @register_action("join_family_acknowledge", no_return=True, preload_state=False)
@@ -130,7 +132,7 @@ async def on_join_family_acknowledge(
     # after a restart, and this prevents a panel copied into another server from
     # assigning the role there.
     try:
-        target_channel = await bot.rest.fetch_channel(ABOUT_US_CHANNEL_ID)
+        target_channel = await observed("channel_check", bot.rest.fetch_channel, ABOUT_US_CHANNEL_ID)
     except hikari.HTTPError:
         await _private_error(ctx, "I could not open the next onboarding channel right now. Please try again shortly.")
         return
@@ -151,7 +153,7 @@ async def on_join_family_acknowledge(
     guild_id = int(target_guild_id)
     # Use REST even when cache has a member: cached role_ids can lag a recent role change.
     try:
-        member = await bot.rest.fetch_member(guild_id, user_id)
+        member = await observed("member_check", bot.rest.fetch_member, guild_id, user_id)
     except hikari.HTTPError:
         await _private_error(ctx, "I could not find your member profile in this server. Please try again shortly.")
         return
@@ -160,12 +162,13 @@ async def on_join_family_acknowledge(
         return
 
     if JOIN_FAMILY_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
-        await track_progress(mongo, guild_id, user_id, 1)
+        gauntlet_event("role_already_present")
+        await observed("reminder_tracking", track_progress, mongo, guild_id, user_id, 1)
         await _private_continue(ctx, guild_id, "You already have access to the Recruit Gauntlet. Continue to About Us to work through the required steps.", bot=bot)
         return
 
     try:
-        await bot.rest.add_role_to_member(guild=guild_id, user=user_id, role=JOIN_FAMILY_ROLE_ID)
+        await observed("role_assignment", bot.rest.add_role_to_member, guild=guild_id, user=user_id, role=JOIN_FAMILY_ROLE_ID)
     except hikari.HTTPError:
         await _private_error(ctx, "I could not grant family access right now. Please try again shortly.")
         return
@@ -173,5 +176,5 @@ async def on_join_family_acknowledge(
         await _private_error(ctx, "I could not grant family access right now. Please try again shortly.")
         return
 
-    await track_progress(mongo, guild_id, user_id, 1)
+    await observed("reminder_tracking", track_progress, mongo, guild_id, user_id, 1)
     await _private_continue(ctx, guild_id, "Continue to About Us to begin the Recruit Gauntlet and work through the required steps.", bot=bot)
