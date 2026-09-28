@@ -787,11 +787,13 @@ class ConfigureThreadParents(
                 ephemeral=True,
             )
             return
-        parents = thread_service.ThreadParents(
-            guild_id=int(ctx.guild_id),
-            candidate_parent_id=int(self.candidate_parent.id),
-            staff_parent_id=int(self.staff_parent.id),
-            recruiter_role_id=int(self.recruiter_role.id),
+        parents = thread_service.parents_from_config(
+            dict(config, **{
+                "ticket_target_guild_id": int(ctx.guild_id),
+                f"{self.ticket_type}_candidate_parent": int(self.candidate_parent.id),
+                f"{self.ticket_type}_staff_parent": int(self.staff_parent.id),
+                f"{self.ticket_type}_thread_recruiter_role": int(self.recruiter_role.id),
+            }), int(ctx.guild_id), self.ticket_type,
         )
         me = bot.get_me()
         if me is None:

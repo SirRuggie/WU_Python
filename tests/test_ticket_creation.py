@@ -4336,3 +4336,23 @@ def test_recruiter_ping_is_first_regular_message_and_recovery_does_not_repeat_it
     counts = {key: len(messages) for key, messages in rest.channels.items()}
     asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7))
     assert {key: len(messages) for key, messages in rest.channels.items()} == counts
+
+
+def test_shared_staff_parent_accepts_other_configured_recruitment_role():
+    config = dict(ticket_target_guild_id=10, main_candidate_parent=20,
+                  main_staff_parent=21, main_thread_recruiter_role=40,
+                  fwa_staff_parent=21, fwa_thread_recruiter_role=50)
+    parents = thread_service.parents_from_config(config, 10, "main")
+    assert parents.shared_staff_role_ids == (50,)
+    asyncio.run(thread_service.validate_thread_parents(
+        _valid_parent_rest(mentionable=True, bot_can_mention=False, staff_role_leak=True),
+        parents, bot_user_id=99,
+    ))
+    config["fwa_staff_parent"] = 22
+    parents = thread_service.parents_from_config(config, 10, "main")
+    assert parents.shared_staff_role_ids == ()
+    with pytest.raises(thread_service.ThreadConfigurationError, match="non-recruiter role"):
+        asyncio.run(thread_service.validate_thread_parents(
+            _valid_parent_rest(mentionable=True, bot_can_mention=False, staff_role_leak=True),
+            parents, bot_user_id=99,
+        ))

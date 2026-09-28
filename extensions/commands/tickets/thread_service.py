@@ -124,6 +124,7 @@ class ThreadParents:
     candidate_parent_id: int
     staff_parent_id: int
     recruiter_role_id: int
+    shared_staff_role_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -563,8 +564,9 @@ async def validate_thread_parents(
         if _as_int(getattr(role, "id", 0))
     }
     bot_role_ids = {_as_int(value) for value in getattr(bot_member, "role_ids", ())}
+    authorized_staff_roles = {parents.recruiter_role_id, *parents.shared_staff_role_ids}
     for role_id, role in roles_by_id.items():
-        if role_id in {parents.guild_id, parents.recruiter_role_id}:
+        if role_id in {parents.guild_id, *authorized_staff_roles}:
             continue
         role_permissions = hikari.Permissions(getattr(role, "permissions", 0))
         if role_permissions & hikari.Permissions.ADMINISTRATOR:
@@ -611,7 +613,7 @@ async def validate_thread_parents(
                 "staff parent member overwrites could not be inspected"
             ) from error
         role_ids = {_as_int(value) for value in getattr(member, "role_ids", ())}
-        authorized = bool(role_ids & {parents.recruiter_role_id}) or any(
+        authorized = bool(role_ids & authorized_staff_roles) or any(
             hikari.Permissions(getattr(roles_by_id[role_id], "permissions", 0))
             & hikari.Permissions.ADMINISTRATOR
             for role_id in role_ids
@@ -678,7 +680,13 @@ def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: s
     ]
     if missing:
         raise ThreadConfigurationError("missing ticket configuration: " + ", ".join(missing))
-    return ThreadParents(int(guild_id), candidate_parent, staff_parent, recruiter_role)
+    shared_roles = tuple(sorted({
+        _as_int(config.get(f"{kind}_thread_recruiter_role"))
+        for kind in ("main", "fwa")
+        if _as_int(config.get(f"{kind}_staff_parent")) == staff_parent
+        and _as_int(config.get(f"{kind}_thread_recruiter_role"))
+    } - {recruiter_role}))
+    return ThreadParents(int(guild_id), candidate_parent, staff_parent, recruiter_role, shared_roles)
 
 
 async def ensure_creation_indexes(mongo: MongoClient) -> None:
@@ -773,6 +781,7 @@ async def _claim_creation(
         "candidate_parent_id": parents.candidate_parent_id,
         "staff_parent_id": parents.staff_parent_id,
         "recruiter_role_id": parents.recruiter_role_id,
+        "shared_staff_role_ids": list(parents.shared_staff_role_ids),
         "route": ticket_runtime.ROUTE_THREAD,
         "runtime": ticket_runtime.THREAD_RUNTIME,
         "open_slot_id": str(slot["_id"]),
@@ -1865,6 +1874,7 @@ async def _set_committed_creation_state(
         "candidate_parent_id": _as_int(location.get("public_parent_id")),
         "staff_parent_id": _as_int(location.get("staff_parent_id")),
         "recruiter_role_id": _as_int(ticket.get("recruiter_role_id")),
+        "shared_staff_role_ids": list(ticket.get("shared_staff_role_ids") or ()),
         "candidate_thread_id": _as_int(location.get("id") or ticket.get("channel_id")),
         "staff_thread_id": _as_int(
             location.get("staff_space_id") or ticket.get("thread_id")
@@ -2288,6 +2298,7 @@ async def create_live_thread_ticket(
                     ticket["window_generation"] = state.get("window_generation")
                 ticket["candidate_recruiter_notification"] = True
                 ticket["recruiter_role_id"] = parents.recruiter_role_id
+                ticket["shared_staff_role_ids"] = list(parents.shared_staff_role_ids)
                 ticket.update(ticket_runtime.thread_ticket_fields(slot))
                 try:
                     ticket = await store.insert_one(mongo, ticket)
@@ -2968,6 +2979,11 @@ async def recover_pending_thread_ticket_creations(
             f"{ticket_type}_staff_parent": state.get("staff_parent_id"),
             f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
         }
+        shared_roles = state.get("shared_staff_role_ids") or ()
+        if shared_roles:
+            other_type = "fwa" if ticket_type == "main" else "main"
+            config[f"{other_type}_staff_parent"] = state.get("staff_parent_id")
+            config[f"{other_type}_thread_recruiter_role"] = shared_roles[0]
         result: CreatedThreadTicket | None = None
         degraded_reason: str | None = None
         try:
