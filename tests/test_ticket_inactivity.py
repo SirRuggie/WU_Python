@@ -72,13 +72,13 @@ async def test_unproven_bounded_baseline_never_prompts():
     mongo.tickets.find_one_and_update.assert_not_awaited()
 
 
-def test_prompt_card_has_exact_copy_and_custom_emojis():
+def test_prompt_card_has_exact_copy_and_requested_emojis():
     card = inactivity.card(ticket(), "abc", 987)[0]
     assert card.accent_color == inactivity.GOLDENROD_ACCENT
     assert inactivity.PROMPT in card.components[0].content
     buttons = card.components[1].components
     assert [button.label for button in buttons] == ["Yes - Deny", "No - Wait"]
-    assert [int(button.emoji.id) for button in buttons] == [inactivity.YES_EMOJI, inactivity.NO_EMOJI]
+    assert [str(button.emoji) for button in buttons] == [inactivity.YES_EMOJI, inactivity.NO_EMOJI]
     assert buttons[0].custom_id == "ticket_inactivity:ticket_123:abc:yes"
 
 

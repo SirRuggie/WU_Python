@@ -22,8 +22,8 @@ LEASE = timedelta(minutes=5)
 SEND_TIMEOUT_SECONDS = 60
 PROMPT = "There has been no activity within the last 7 days. Apply Ghosted and deny?"
 REASON = "Recruit stopped responding"
-YES_EMOJI = 1397096942907166831
-NO_EMOJI = 1397096986506825778
+YES_EMOJI = "🥾"
+NO_EMOJI = "🫶🏻"
 _task: asyncio.Task | None = None
 
 
@@ -77,7 +77,7 @@ def custom_id(ticket, token, choice):
 def card(ticket, token, role, period=PERIOD):
     row = hikari.impl.MessageActionRowBuilder()
     for choice, label, emoji in (("yes", "Yes - Deny", YES_EMOJI), ("no", "No - Wait", NO_EMOJI)):
-        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=hikari.CustomEmoji(id=emoji, name=choice.title(), is_animated=False))
+        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=emoji)
     wording = f"There has been no activity within the last {period_label(period)}. Apply Ghosted and deny?"
     return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nYou will be prompted for a denial reason."), row])]
 
