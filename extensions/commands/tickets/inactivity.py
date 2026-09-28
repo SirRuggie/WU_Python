@@ -37,6 +37,29 @@ def aware(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
+def configured_period(config):
+    """Persistent override for operator testing; absence means seven days."""
+    try:
+        minutes = int(config.get("ticket_inactivity_minutes", 10080))
+    except (TypeError, ValueError):
+        return PERIOD
+    return timedelta(minutes=minutes) if 1 <= minutes <= 525600 else PERIOD
+
+
+def period_label(period):
+    minutes = int(period.total_seconds() // 60)
+    amount, unit = (minutes // 1440, "day") if minutes % 1440 == 0 else (minutes, "minute")
+    return f"{amount} {unit}{'' if amount == 1 else 's'}"
+
+
+def activity_baseline(ticket):
+    state = ticket.get("inactivity") or {}
+    return max(value for value in (
+        aware(state.get("last_human_at")), aware(state.get("reset_at")),
+        aware(ticket.get("created_at")),
+    ) if value is not None)
+
+
 def eligible(ticket):
     return bool(ticket and all(ticket.get(k) == v for k, v in store.RUNTIME_FILTER.items())
                 and ticket.get("status") == "open" and not ticket.get("thread_missing")
@@ -51,11 +74,12 @@ def custom_id(ticket, token, choice):
     return f"ticket_inactivity:{ticket['_id']}:{token}:{choice}"
 
 
-def card(ticket, token, role):
+def card(ticket, token, role, period=PERIOD):
     row = hikari.impl.MessageActionRowBuilder()
     for choice, label, emoji in (("yes", "Yes", YES_EMOJI), ("no", "No", NO_EMOJI)):
         row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=hikari.CustomEmoji(id=emoji, name=label, is_animated=False))
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## 7-day inactivity review\n<@&{role}> · <#{ticket['location']['id']}>\n\n{PROMPT}\n\nDenial reason: **{REASON}**"), row])]
+    wording = f"There has been no activity within the last {period_label(period)}. Apply Ghosted and deny?"
+    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nDenial reason: **{REASON}**"), row])]
 
 
 async def record_human_activity(mongo, ticket, message):
@@ -98,7 +122,7 @@ async def verify_baseline(bot, mongo, ticket):
     if previous is None or latest > previous:
         changed = await record_human_activity(mongo, ticket, SimpleMessage(latest))
         if changed and (ticket.get("inactivity") or {}).get("prompt"):
-            await retire_prompt(bot, ticket, "New conversation activity reset the seven-day inactivity timer.")
+            await retire_prompt(bot, ticket, "New conversation activity reset the inactivity timer.")
         return await mongo.tickets.find_one({"_id": ticket["_id"], **store.RUNTIME_FILTER, "status": "open"})
     revision = int(ticket.get("activity_revision") or 0)
     return await mongo.tickets.find_one_and_update({"_id": ticket["_id"], **store.RUNTIME_FILTER,
@@ -125,8 +149,9 @@ def _message_has_id(message, wanted):
 
 async def publish_prompt(bot, mongo, ticket, config):
     state = ticket.get("inactivity") or {}
-    baseline = max(value for value in (aware(state.get("last_human_at")), aware(state.get("reset_at")), aware(ticket.get("created_at"))) if value is not None)
-    if now() - baseline < PERIOD:
+    baseline = activity_baseline(ticket)
+    period = configured_period(config)
+    if now() - baseline < period:
         return
     role = store.as_int(config.get(f"{ticket.get('ticket_type')}_thread_recruiter_role"))
     channel = staff_id(ticket)
@@ -178,7 +203,7 @@ async def publish_prompt(bot, mongo, ticket, config):
         # another worker cannot reclaim it while this sender is still waiting.
         message = await asyncio.wait_for(
             bot.rest.create_message(
-                channel, components=card(ticket, token, role),
+                channel, components=card(ticket, token, role, period),
                 flags=hikari.MessageFlag.IS_COMPONENTS_V2,
                 nonce=f"inact-{token}", role_mentions=[role],
                 user_mentions=False, mentions_everyone=False,
@@ -207,7 +232,7 @@ async def finish_ghosted(bot, mongo, ticket):
         flag_doc = existing[0] if existing else None
         if not existing:
             flag_doc = await flag_store._set_flag_unlocked(mongo, kind=flag_store.FLAG_GHOSTED, discord_ids=ids,
-                player_tags=tags, source="Recruiter confirmed seven-day inactivity",
+                player_tags=tags, source="Recruiter confirmed ticket inactivity",
                 added_by=won["actor"], added_by_name=won.get("actor_name") or str(won["actor"]), reason=REASON)
     from extensions.commands.tickets import thread_service, console
     await console._refresh_after_flag_mutation(bot, mongo, flag_doc)
@@ -244,11 +269,15 @@ async def handle_inactivity(ctx, action_id: str, bot: hikari.GatewayBot = lightb
     if not await perms.is_recruiter(ctx.member, mongo):
         await ctx.interaction.edit_initial_response(content="Recruiter permission required.")
         return
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    if now() - activity_baseline(ticket) < configured_period(config):
+        await ctx.interaction.edit_initial_response(content="This ticket is not due for inactivity review under the current timer.")
+        return
     query = {"_id": ticket_id, **store.RUNTIME_FILTER, "status": "open", "inactivity.prompt.token": token,
         "inactivity.prompt.state": "ready", "activity_revision": store._rev_filter(int(prompt.get("activity_revision") or 0))}
     if choice == "no":
         result = await mongo.tickets.update_one(query, {"$set": {"inactivity.reset_at": now()}, "$unset": {"inactivity.prompt": ""}})
-        wording = "The seven-day inactivity timer has been reset." if result.modified_count else "This inactivity prompt is out of date."
+        wording = "The inactivity timer has been reset." if result.modified_count else "This inactivity prompt is out of date."
     else:
         actor_name = str(getattr(ctx.user, "display_name", None) or getattr(ctx.user, "username", None) or ctx.user.id)
         claimed = await mongo.tickets.find_one_and_update(query, {"$set": {"inactivity.prompt.state": "yes",
@@ -308,8 +337,8 @@ async def sweep(bot, mongo, *, after=None, limit=50):
                     {"$set": {"inactivity.prompt.state": "ready"}})
                 continue
             state = ticket.get("inactivity") or {}
-            baseline = max(value for value in (aware(state.get("last_human_at")), aware(state.get("reset_at")), aware(ticket.get("created_at"))) if value is not None)
-            if not state.get("baseline_verified") or now() - baseline >= PERIOD:
+            baseline = activity_baseline(ticket)
+            if not state.get("baseline_verified") or now() - baseline >= configured_period(config):
                 ticket = await verify_baseline(bot, mongo, ticket)
                 if ticket is None:
                     continue

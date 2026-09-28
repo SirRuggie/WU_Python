@@ -93,7 +93,8 @@ async def test_recent_activity_or_no_reset_prevents_prompt():
 def click_fixture():
     t = ticket(inactivity={"prompt": {"token": "abc", "state": "ready", "message_id": 999, "activity_revision": 3}})
     t["activity_revision"] = 3
-    mongo = SimpleNamespace(tickets=SimpleNamespace(find_one=AsyncMock(return_value=t),
+    mongo = SimpleNamespace(ticket_setup=SimpleNamespace(find_one=AsyncMock(return_value={})),
+        tickets=SimpleNamespace(find_one=AsyncMock(return_value=t),
         find_one_and_update=AsyncMock(return_value=t), update_one=AsyncMock(return_value=SimpleNamespace(modified_count=1))))
     ctx = SimpleNamespace(defer=AsyncMock(), member=SimpleNamespace(id=7), user=SimpleNamespace(id=7, username="Recruiter"),
         channel_id=456, guild_id=1, interaction=SimpleNamespace(message=SimpleNamespace(id=999), edit_initial_response=AsyncMock()))
@@ -270,3 +271,41 @@ async def test_first_prompt_mentions_only_recruiters_with_recoverable_nonce():
     assert options["user_mentions"] is False
     assert options["mentions_everyone"] is False
     assert collection.update_one.call_args.args[1]["$set"]["inactivity.prompt.message_id"] == 9876
+
+
+def test_five_minute_override_changes_prompt_text_and_default_stays_seven_days():
+    assert inactivity.configured_period({}) == timedelta(days=7)
+    period = inactivity.configured_period({"ticket_inactivity_minutes": 5})
+    assert period == timedelta(minutes=5)
+    text = inactivity.card(ticket(), "abc", 77, period)[0].components[0].content
+    assert "last 5 minutes" in text
+    assert "7 days" not in text
+
+
+@run_async
+async def test_five_minute_window_sends_when_seven_day_window_would_not():
+    t = ticket(ticket_type="main", created_at=datetime.now(timezone.utc) - timedelta(minutes=6))
+    collection = SimpleNamespace(find_one_and_update=AsyncMock(return_value=t),
+        find_one=AsyncMock(return_value=t), update_one=AsyncMock())
+    send = AsyncMock(return_value=SimpleNamespace(id=9876))
+    bot = SimpleNamespace(rest=SimpleNamespace(create_message=send))
+    mongo = SimpleNamespace(tickets=collection)
+    await inactivity.publish_prompt(bot, mongo, t, {"main_thread_recruiter_role": 77})
+    send.assert_not_awaited()
+    await inactivity.publish_prompt(bot, mongo, t, {
+        "main_thread_recruiter_role": 77, "ticket_inactivity_minutes": 5,
+    })
+    send.assert_awaited_once()
+
+
+@run_async
+async def test_restoring_seven_days_blocks_old_five_minute_yes(monkeypatch):
+    t, mongo, ctx = click_fixture()
+    t["created_at"] = datetime.now(timezone.utc) - timedelta(minutes=6)
+    monkeypatch.setattr(inactivity.perms, "is_recruiter", AsyncMock(return_value=True))
+    monkeypatch.setattr(inactivity, "verify_baseline", AsyncMock(return_value=t))
+    deny = AsyncMock()
+    monkeypatch.setattr(inactivity.resolve, "deny_ticket", deny)
+    await inactivity.handle_inactivity(ctx, "ticket_123:abc:yes", bot=object(), mongo=mongo)
+    deny.assert_not_awaited()
+    assert "not due" in ctx.interaction.edit_initial_response.call_args.kwargs["content"]

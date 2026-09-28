@@ -25,3 +25,13 @@ and isolated testing tickets are excluded.
 Activity and prompt state live with the existing ticket document in MongoDB. Flags
 remain in the existing persistent flag storage; changing ticket status does not
 remove a Ghosted flag. Pending work is recoverable after a bot restart.
+
+## Temporary testing interval
+
+`ticket_setup` → `_id: config` → `ticket_inactivity_minutes` can override the
+seven-day default. It is currently set to **5 minutes** at the operator's request
+for testing. Keep this override until the operator explicitly requests restoration;
+setting it to `10080` or removing it restores seven days. Prompt text uses the same
+configured interval, and No starts a fresh interval. The worker checks about once
+a minute. Existing prompts cannot deny a ticket that is not yet due under a newly
+increased interval.
