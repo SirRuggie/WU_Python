@@ -54,22 +54,29 @@ current operating behavior during coexistence.
 Keep the existing legacy intake channel and exact panel message in the old
 server. Do not move, replace, or delete either during setup or pilot.
 
-The target server uses three long-lived channels:
+The target server uses two long-lived workspaces:
 
-1. A public candidate thread parent containing the separate public-v2 panel.
-2. A private recruiter-only staff thread parent. It must differ from the
-   candidate parent.
-3. A private recruiter console channel, separate from both parents.
+1. A public candidate thread parent containing the public-v2 panel.
+2. Recruiter HQ: a private recruiter-only staff thread parent containing the
+   pinned recruiter console. It must differ from the candidate parent.
 
-Main and FWA must share the public-v2 candidate parent and the recruiter-only
-staff parent. Separate Main/FWA candidate parents are invalid. Deny public access
-to the staff parent and console, and grant the bot and target-server
-thread-recruiter role every permission reported by command validation.
+Main and FWA share the candidate parent and the recruiter-only staff parent.
+Deny public access to Recruiter HQ, and grant the bot and target-server
+thread-recruiter role every permission reported by command validation. Console
+privacy validation applies equally when the console shares the staff parent.
 
-Shared staff-parent use and console separation are operational release
-requirements, but current readiness code enforces only shared candidate-parent
-use. Manually compare both saved staff-parent IDs and verify console separation
-before pilot and again before promotion.
+Bot-owned thread-created notices are removed from the staff parent's message
+feed after validating the notice and its referenced thread. This deletes only
+parent messages, never ticket threads or their contents. Discord may still show
+joined threads in the sidebar. Recruiters can open tickets from the pinned
+console and use the staff opening card's **Open Recruit Ticket** button.
+
+The original Recruiter Desk channel is retained after the September 28, 2026
+consolidation; its old console message is removed once the HQ console is verified.
+The normal setup command still repairs the one saved console binding rather than
+silently relocating it. Administrative relocation requires a snapshot, publishing
+and verifying the destination, and updating the saved binding before retiring the
+old message.
 
 The rollout binds three distinct intake messages: the old-server legacy panel,
 the target-server private pilot panel, and the target-server public-v2 panel.

@@ -7,6 +7,7 @@ read-only inputs by the explicit legacy migration command.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 import re
 from typing import Dict
 
@@ -31,6 +32,7 @@ TICKET_BOOTSTRAP_OWNER_ID = 505227988229554179
 
 user_cooldowns: Dict[int, datetime] = {}
 last_cleanup = datetime.now(timezone.utc)
+_log = logging.getLogger(__name__)
 
 
 def cleanup_expired_cooldowns() -> None:
@@ -151,6 +153,50 @@ def _candidate_message_snapshot(message: hikari.Message) -> str:
     return content
 
 
+async def _remove_bot_thread_created_notice(event, bot, mongo) -> None:
+    """Remove only a bot-owned type 18 notice in a configured staff parent."""
+    message = event.message
+    reference = getattr(message, "message_reference", None)
+    reference_channel_id = getattr(reference, "channel_id", None)
+    try:
+        if message.type != hikari.MessageType.THREAD_CREATED or reference_channel_id is None:
+            return
+        me = bot.get_me()
+        bot_id = int(me.id) if me is not None else 0
+        if not bot_id or int(message.author.id) != bot_id:
+            return
+        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+        target_guild_id = store.as_int(config.get("ticket_target_guild_id"))
+        staff_parent_ids = {
+            value for value in (
+                store.as_int(config.get("main_staff_parent")),
+                store.as_int(config.get("fwa_staff_parent")),
+            ) if value
+        }
+        if (
+            not target_guild_id
+            or int(getattr(event, "guild_id", 0) or 0) != target_guild_id
+            or int(event.channel_id) not in staff_parent_ids
+        ):
+            return
+        thread = await bot.rest.fetch_channel(int(reference_channel_id))
+        if (
+            int(getattr(thread, "id", 0)) != int(reference_channel_id)
+            or int(getattr(thread, "parent_id", 0) or 0) != int(event.channel_id)
+            or int(getattr(thread, "guild_id", 0) or 0) != target_guild_id
+            or int(getattr(thread, "owner_id", 0) or 0) != bot_id
+            or getattr(thread, "type", None) != hikari.ChannelType.GUILD_PUBLIC_THREAD
+        ):
+            return
+        await bot.rest.delete_message(int(event.channel_id), int(event.message_id))
+    except Exception as error:
+        _log.warning(
+            "ticket thread-created notice cleanup failed (guild=%s parent=%s message=%s error=%s)",
+            getattr(event, "guild_id", None), getattr(event, "channel_id", None),
+            getattr(event, "message_id", None), type(error).__name__,
+        )
+
+
 async def _ticket_scope_for_location(mongo, bot, location_id):
     """Live and test records are queried independently; never merge stores."""
     ticket = await store.find_by_location(mongo, location_id)
@@ -180,6 +226,7 @@ async def capture_candidate_thread_activity(
     verified ``player_tags`` identity used for flag and blacklist matching.
     """
     if not event.is_human:
+        await _remove_bot_thread_created_notice(event, bot, mongo)
         return
     mongo, bot, ticket = await _ticket_scope_for_location(mongo, bot, int(event.channel_id))
     if ticket is None or ticket.get("status") != "open":
