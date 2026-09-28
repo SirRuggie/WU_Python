@@ -128,3 +128,30 @@ def test_cleanup_failures_are_logged_and_ignored(caplog):
     assert "ticket thread-created notice cleanup failed" in caplog.text
     assert "delete failed" not in caplog.text
     assert rest.deleted == []
+
+
+def test_creation_race_retries_fetch_and_notice_delete(monkeypatch):
+    from unittest.mock import AsyncMock
+    rest = _Rest(_thread())
+    missing = hikari.NotFoundError(url='https://discord.com/api', headers={}, raw_body='not ready')
+    rest.fetch_channel = AsyncMock(side_effect=[missing, _thread(), _thread()])
+    rest.delete_message = AsyncMock(side_effect=[missing, None])
+    sleep = AsyncMock()
+    monkeypatch.setattr(handlers.asyncio, 'sleep', sleep)
+    _cleanup(rest=rest)
+    assert rest.fetch_channel.await_count == 3
+    assert rest.delete_message.await_count == 2
+    assert [call.args[0] for call in sleep.await_args_list] == [0.5, 1.0]
+    rest.delete_message.assert_awaited_with(100, 300)
+
+
+def test_persistent_missing_thread_has_bounded_retries(monkeypatch, caplog):
+    from unittest.mock import AsyncMock
+    rest = _Rest(_thread())
+    rest.fetch_channel = AsyncMock(side_effect=hikari.NotFoundError(
+        url='https://discord.com/api', headers={}, raw_body='missing'))
+    monkeypatch.setattr(handlers.asyncio, 'sleep', AsyncMock())
+    _cleanup(rest=rest)
+    assert rest.fetch_channel.await_count == 4
+    assert rest.deleted == []
+    assert 'NotFoundError' in caplog.text

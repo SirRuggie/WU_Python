@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import logging
+import asyncio
 import re
 from typing import Dict
 
@@ -181,16 +182,24 @@ async def _remove_bot_thread_created_notice(event, bot, mongo) -> None:
             or int(event.channel_id) not in staff_parent_ids
         ):
             return
-        thread = await bot.rest.fetch_channel(int(reference_channel_id))
-        if (
-            int(getattr(thread, "id", 0)) != int(reference_channel_id)
-            or int(getattr(thread, "parent_id", 0) or 0) != int(event.channel_id)
-            or int(getattr(thread, "guild_id", 0) or 0) != target_guild_id
-            or int(getattr(thread, "owner_id", 0) or 0) != bot_id
-            or getattr(thread, "type", None) != hikari.ChannelType.GUILD_PUBLIC_THREAD
-        ):
-            return
-        await bot.rest.delete_message(int(event.channel_id), int(event.message_id))
+        # Discord can emit THREAD_CREATED before the thread/notice is REST-visible.
+        for attempt in range(4):
+            try:
+                thread = await bot.rest.fetch_channel(int(reference_channel_id))
+                if (
+                    int(getattr(thread, "id", 0)) != int(reference_channel_id)
+                    or int(getattr(thread, "parent_id", 0) or 0) != int(event.channel_id)
+                    or int(getattr(thread, "guild_id", 0) or 0) != target_guild_id
+                    or int(getattr(thread, "owner_id", 0) or 0) != bot_id
+                    or getattr(thread, "type", None) != hikari.ChannelType.GUILD_PUBLIC_THREAD
+                ):
+                    return
+                await bot.rest.delete_message(int(event.channel_id), int(event.message_id))
+                return
+            except hikari.NotFoundError:
+                if attempt == 3:
+                    raise
+                await asyncio.sleep(0.5 * (2 ** attempt))
     except Exception as error:
         _log.warning(
             "ticket thread-created notice cleanup failed (guild=%s parent=%s message=%s error=%s)",
