@@ -711,6 +711,7 @@ async def _claim_creation(
     parents: ThreadParents,
     open_slot_claim: ticket_runtime.SlotClaim,
     now: datetime,
+    opened_by: int | None = None,
 ) -> tuple[str, dict, bool]:
     """Acquire or resume a reusable applicant lease."""
     await ensure_creation_indexes(mongo)
@@ -751,6 +752,9 @@ async def _claim_creation(
         "updated_at": now,
     }
 
+    if opened_by is not None:
+        base["opened_by"] = int(opened_by)
+
     while True:
         current = await collection.find_one({"_id": creation_id})
         if current is None:
@@ -772,6 +776,7 @@ async def _claim_creation(
                 {
                     "$set": base,
                     "$unset": {
+                        **({"opened_by": ""} if opened_by is None else {}),
                         "ticket_id": "",
                         "ticket_number": "",
                         "candidate_thread_id": "",
@@ -825,6 +830,10 @@ async def _claim_creation(
         lease_until = _aware(current.get("lease_until"))
         if lease_until is not None and lease_until > now:
             raise ThreadCreationBusy("this ticket is already being created")
+        if current.get("opened_by") is not None:
+            base["opened_by"] = current["opened_by"]
+        else:
+            base.pop("opened_by", None)
         resumed = bool(current.get("ticket_number") or current.get("candidate_thread_id"))
         claimed = await collection.find_one_and_update(
             {
@@ -2057,6 +2066,7 @@ async def create_live_thread_ticket(
     open_slot_claim: ticket_runtime.SlotClaim,
     coc_client: coc.Client | None = None,
     on_ready: Callable[[dict], Awaitable[None]] | None = None,
+    opened_by: int | None = None,
 ) -> CreatedThreadTicket:
     """Create or resume one live thread ticket without duplicating resources."""
     if ticket_type not in {"main", "fwa"}:
@@ -2127,6 +2137,31 @@ async def create_live_thread_ticket(
         raise
 
     async with _creation_lock_for(user_id):
+        if opened_by is not None:
+            # Staff intake must reuse an existing application across clan types.
+            existing_authorities = await ticket_runtime._open_authoritative_tickets(
+                mongo, user_id=int(user_id), limit=10
+            )
+            for existing_route, existing_ticket in existing_authorities:
+                if ticket_runtime.thread_missing_has_role(existing_ticket, "candidate"):
+                    continue
+                if existing_route == ticket_runtime.ROUTE_LEGACY:
+                    await ticket_runtime.cancel_open_slot(
+                        mongo, slot_id=str(slot["_id"]),
+                        owner_token=str(open_slot_claim.owner_token),
+                        workflow_id=str(slot["workflow_id"]),
+                    )
+                    return CreatedThreadTicket(dict(existing_ticket), resumed=True)
+                if existing_route == ticket_runtime.ROUTE_THREAD:
+                    await ticket_runtime.cancel_open_slot(
+                        mongo, slot_id=str(slot["_id"]),
+                        owner_token=str(open_slot_claim.owner_token),
+                        workflow_id=str(slot["workflow_id"]),
+                    )
+                    return await _reconcile_existing_ticket(
+                        bot, mongo, dict(existing_ticket),
+                        coc_client=coc_client, on_ready=on_ready,
+                    )
         # At most one iteration retires a terminal committed pair; the next
         # iteration allocates a new number and pair for the repeat application.
         for _pair_attempt in range(2):
@@ -2172,6 +2207,7 @@ async def create_live_thread_ticket(
                     parents=parents,
                     open_slot_claim=open_slot_claim,
                     now=utcnow(),
+                    opened_by=opened_by,
                 )
             except Exception:
                 # A durable workflow row may already represent Discord work in
@@ -2209,6 +2245,8 @@ async def create_live_thread_ticket(
                     username=username,
                     display_name=display_name,
                 )
+                if state.get("opened_by") is not None:
+                    ticket["opened_by"] = int(state["opened_by"])
                 ticket["mode"] = testing_service.MODE if testing_service.is_test_scope(mongo) else "live"
                 if testing_service.is_test_scope(mongo):
                     ticket["cleanup_at"] = state.get("cleanup_at")

@@ -887,10 +887,17 @@ def build_hub_actions(
                         label="Refresh",
                         emoji=hikari.Snowflake(1536798918858514502),
                     ),
+
                 ]
             ),
         ]
     )
+    children.append(ActionRow(components=[Button(
+        style=hikari.ButtonStyle.SECONDARY,
+        custom_id="ticket_v2_staff_create:hub",
+        label="Create for Recruit",
+        emoji="➕",
+    )]))
     if pages > 1:
         children.append(
             ActionRow(
@@ -1019,7 +1026,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 11
+HUB_LAYOUT_VERSION = 12
 
 
 async def _chart_signature(mongo: MongoClient) -> str:

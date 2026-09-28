@@ -345,7 +345,7 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
 def test_shared_actions_three_ticket_page_separates_rows_within_limit():
     tickets = [_ticket(index, _console_name=f"fwa-{index}-candidate") for index in range(1, 4)]
     view = console.build_hub_actions(tickets, page=6, total=30)
-    assert len(_component_nodes(view)) == 38
+    assert len(_component_nodes(view)) == 40
     nodes = _nodes(view)
     assert not any(node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU for node in nodes)
     assert any(str(node.get("content", "")).startswith("Page 7/10 · **30 open tickets** · Oldest first") for node in nodes)
@@ -373,7 +373,7 @@ def test_empty_actions_retains_tools_without_unneeded_navigation():
     view = console.build_hub_actions([], page=0, total=0)
     nodes = _nodes(view)
     buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
-    assert [button["label"] for button in buttons] == ["Find Ticket", "Browse Tickets", "Refresh"]
+    assert [button["label"] for button in buttons] == ["Find Ticket", "Browse Tickets", "Refresh", "Create for Recruit"]
     _assert_component_limits(view)
 
 
@@ -385,6 +385,7 @@ def test_single_ticket_groups_navigation_decisions_and_console_tools():
         ["View Details", "Recruit Thread", "Staff Thread"],
         ["Approve", "Deny"],
         ["Find Ticket", "Browse Tickets", "Refresh"],
+        ["Create for Recruit"],
     ]
     tools_index = next(i for i, child in enumerate(children) if getattr(child, "content", "") == "### Console tools")
     assert children[tools_index - 1].type == hikari.ComponentType.SEPARATOR

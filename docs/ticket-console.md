@@ -50,7 +50,7 @@ entry shows the ticket's readable name and applicable Ghosted prefix, followed b
 
 Each ticket has one row for Details and thread links, then a separate row for
 Approve/Deny. Separators divide tickets and the Console tools section.
-Previous/Next appear only when multiple pages exist and navigate the shared ticket list. Find, Browse, and Refresh remain
+Previous/Next appear only when multiple pages exist and navigate the shared ticket list. Find, Browse, Refresh, and Create for Recruit remain
 available below it. The update timestamp and total-ticket footer appear only in
 this second panel. Pagination keeps every open ticket reachable within Discord's
 component limits; it does not truncate the queue at 25 tickets.
@@ -65,6 +65,24 @@ approval, denial, and flag changes refresh the shared panels automatically.
 Interrupted publishing and missing messages are repaired without creating another
 console. Private detail panels remain snapshots; reopen View Details to see the
 latest state.
+
+## Staff-created tickets
+
+**Console tools → Create for Recruit** opens a private form owned by the clicking
+recruiter. Select a server member, choose Main or FWA, then select Create Ticket.
+The button is disabled until both selections are made. Cancel closes the form
+without creating a ticket.
+
+Live creation uses the regular ticket workflow: the selected recruit owns the
+candidate thread, receives the normal questions and access, and gets the usual
+recruiter workspace and notifications. The recruiter who initiated creation is
+recorded separately as `opened_by`. An existing open ticket is linked rather than
+creating another. The completion panel links both the recruit and staff threads.
+
+Isolated test creation requires an active testing window and permitted participants.
+It uses separate test storage, numbering and guarded thread parents, keeping the
+normal console counts and notifications unchanged. The form identifies its mode
+before creation; being a tester does not silently convert a live request into a test.
 
 ## 3. Native overview with a readable status strip
 

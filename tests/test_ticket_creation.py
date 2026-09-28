@@ -4274,3 +4274,29 @@ def test_ready_callback_failure_does_not_abort_ticket_recovery(monkeypatch):
 
     monkeypatch.setattr(thread_service._log, "exception", lambda *args: None)
     asyncio.run(thread_service._acknowledge_ready_ticket(_ticket(), failed))
+
+
+@pytest.mark.parametrize("phase, original_actor, new_actor, expected", [
+    (None, None, 90, 90),
+    ("complete", 90, None, None),
+    ("retry", 90, 91, 90),
+    ("retry", None, 91, None),
+])
+def test_staff_creation_attribution_survives_recovery_without_leaking_to_new_ticket(
+    monkeypatch, phase, original_actor, new_actor, expected,
+):
+    document = None if phase is None else {
+        "_id": "thread:30:main", "state": phase,
+        "lease_until": NOW - timedelta(minutes=1),
+        **({"opened_by": original_actor} if original_actor is not None else {}),
+    }
+    collection = CreationStateCollection(document)
+    mongo = SimpleNamespace(ticket_creation_state=collection)
+    monkeypatch.setattr(thread_service, "_creation_index_ready", True)
+    _, state, _ = asyncio.run(thread_service._claim_creation(
+        mongo, guild_id=10, user_id=30, username="Applicant", display_name=None,
+        ticket_type="main", parents=thread_service.ThreadParents(10, 20, 21, 40),
+        open_slot_claim=_slot_claim(), now=NOW, opened_by=new_actor,
+    ))
+    assert state.get("opened_by") == expected
+    assert collection.document.get("opened_by") == expected
