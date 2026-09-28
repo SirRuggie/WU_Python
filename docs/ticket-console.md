@@ -39,16 +39,18 @@ bot-owned messages: a read-only statistics panel and an open-ticket action panel
 The first panel contains the current totals, Main/FWA breakdowns, charts, and
 flag summaries. It has no buttons, dropdowns, or footer.
 
-The second panel lists open tickets directly, oldest first, four per page. Each
+The second panel lists open tickets directly, oldest first, three per page. Each
 entry shows the ticket's readable name and applicable Ghosted prefix, followed by:
 
 - **View Details** — the same private ticket details formerly opened by the dropdown.
-- **Open Ticket** — a direct link to the applicant's thread.
+- **Recruit Thread** — a direct link to the applicant's thread.
 - **Staff Thread** — a direct link to its recruiter workspace.
 - **Approve** — the existing private approval confirmation and decision safeguards.
 - **Deny** — the reason form, followed by the existing authorized denial workflow.
 
-Previous/Next navigate the shared ticket list. Find, Browse, and Refresh remain
+Each ticket has one row for Details and thread links, then a separate row for
+Approve/Deny. Separators divide tickets and the Console tools section.
+Previous/Next appear only when multiple pages exist and navigate the shared ticket list. Find, Browse, and Refresh remain
 available below it. The update timestamp and total-ticket footer appear only in
 this second panel. Pagination keeps every open ticket reachable within Discord's
 component limits; it does not truncate the queue at 25 tickets.

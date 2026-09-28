@@ -5074,7 +5074,7 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
         and child["components"][0].get("custom_id", "").startswith("ticket_v2_hub_details:")
     ]
     assert len(ticket_rows) == 3
-    assert all(len(row["components"]) == 5 for row in ticket_rows)
+    assert all(len(row["components"]) == 3 for row in ticket_rows)
 
 
 def test_open_console_pages_reach_tickets_beyond_old_picker_limit():

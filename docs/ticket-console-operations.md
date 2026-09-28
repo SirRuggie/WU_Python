@@ -188,7 +188,7 @@ Discord messages to reconcile names and flags changed while offline; a missing
 panel is repaired. Applicant activity can trigger a check without changing the
 hub. When the visible hub is unchanged, its **Updated** footer stays at the last
 edit time. Ticket counts, visible ticket rows, or meaningful
-state changes still refresh the panels. Each action page shows up to four tickets;
+state changes still refresh the panels. Each action page shows up to three tickets;
 Previous/Next reaches the rest. View Details opens the former dropdown detail
 panel, while Open Ticket and Staff Thread jump directly to the corresponding
 thread. Approve still requires confirmation; Deny opens the reason form.

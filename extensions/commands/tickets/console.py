@@ -138,7 +138,7 @@ REQUIRED_HUB_RECRUITER_PERMISSIONS = (
 )
 
 MAX_OPEN_PICKER = 25
-HUB_PAGE_SIZE = 4
+HUB_PAGE_SIZE = 3
 HUB_STATS_COMPONENT_ID = 809001
 HUB_ACTIONS_COMPONENT_ID = 809002
 MAX_SEARCH_RESULTS = 10
@@ -824,7 +824,7 @@ def build_hub_actions(
                 emoji="📋",
             )
         ]
-        for staff, label in ((False, "Open Ticket"), (True, "Staff Thread")):
+        for staff, label in ((False, "Recruit Thread"), (True, "Staff Thread")):
             url = ticket_jump_url(doc, staff=staff)
             buttons.append(
                 LinkButton(
@@ -833,78 +833,94 @@ def build_hub_actions(
                 if url
                 else Button(
                     style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"ticket_v2_hub_details:{ticket_id}",
+                    custom_id=f"ticket_v2_console_unavailable:{ticket_id}:{staff}",
                     label=label,
                     is_disabled=True,
                 )
             )
-        buttons.extend(
-            [
-                Button(
-                    style=hikari.ButtonStyle.SUCCESS,
-                    custom_id=f"ticket_v2_hub_approve:{ticket_id}",
-                    label="Approve",
-                    emoji=hikari.Snowflake(1397096942907166831),
-                ),
-                Button(
-                    style=hikari.ButtonStyle.DANGER,
-                    custom_id=f"ticket_v2_hub_deny:{ticket_id}",
-                    label="Deny",
-                    emoji=hikari.Snowflake(1397096986506825778),
-                ),
-            ]
-        )
         children.append(ActionRow(components=buttons))
+        children.append(
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.SUCCESS,
+                        custom_id=f"ticket_v2_hub_approve:{ticket_id}",
+                        label="Approve",
+                        emoji=hikari.Snowflake(1397096942907166831),
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.DANGER,
+                        custom_id=f"ticket_v2_hub_deny:{ticket_id}",
+                        label="Deny",
+                        emoji=hikari.Snowflake(1397096986506825778),
+                    ),
+                ]
+            )
+        )
     if not open_tickets:
         children.append(
             Text(
                 content="No open tickets right now. Find and Browse still search ticket history."
             )
         )
-    children.append(
-        ActionRow(
-            components=[
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id="ticket_v2_hub_page:previous",
-                    emoji=hikari.Snowflake(1536793616863862784),
-                    is_disabled=page <= 0,
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id="ticket_v2_hub_page:next",
-                    emoji=hikari.Snowflake(1536793616004022403),
-                    is_disabled=page >= pages - 1,
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"ticket_v2_console_find:{HUB_ACTION_ID}",
-                    label="Find",
-                    emoji=hikari.Snowflake(1536797595089899540),
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"ticket_v2_console_browse:{HUB_ACTION_ID}",
-                    label="Browse",
-                    emoji="📋",
-                ),
-                Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id="ticket_v2_hub_page:refresh",
-                    label="Refresh",
-                    emoji=hikari.Snowflake(1536798918858514502),
-                ),
-            ]
-        )
+    children.extend(
+        [
+            Separator(divider=True),
+            Text(content="### Console tools"),
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"ticket_v2_console_find:{HUB_ACTION_ID}",
+                        label="Find Ticket",
+                        emoji=hikari.Snowflake(1536797595089899540),
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id=f"ticket_v2_console_browse:{HUB_ACTION_ID}",
+                        label="Browse Tickets",
+                        emoji="📋",
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id="ticket_v2_hub_page:refresh",
+                        label="Refresh",
+                        emoji=hikari.Snowflake(1536798918858514502),
+                    ),
+                ]
+            ),
+        ]
     )
+    if pages > 1:
+        children.append(
+            ActionRow(
+                components=[
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id="ticket_v2_hub_page:previous",
+                        label="Previous",
+                        emoji=hikari.Snowflake(1536793616863862784),
+                        is_disabled=page <= 0,
+                    ),
+                    Button(
+                        style=hikari.ButtonStyle.SECONDARY,
+                        custom_id="ticket_v2_hub_page:next",
+                        label="Next",
+                        emoji=hikari.Snowflake(1536793616004022403),
+                        is_disabled=page >= pages - 1,
+                    ),
+                ]
+            )
+        )
     freshness = (
         f"Updated {_timestamp(updated_at)}" if updated_at else "Updated just now"
     )
     total_copy = total if total_tickets is None else total_tickets
     open_label = "open ticket" if total == 1 else "open tickets"
+    page_copy = f"Page {page + 1}/{pages} · " if pages > 1 else ""
     children.append(
         Text(
-            content=f"Page {page + 1}/{pages} · **{total} {open_label}** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
+            content=f"{page_copy}**{total} {open_label}** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
         )
     )
     return [
@@ -912,7 +928,6 @@ def build_hub_actions(
             id=HUB_ACTIONS_COMPONENT_ID, accent_color=ACCENT_BLUE, components=children
         )
     ]
-
 
 async def _hub_actions_payload(mongo: MongoClient, state: Mapping) -> list[Container]:
     raw_counts = await store.console_counts(mongo)
@@ -1004,7 +1019,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 10
+HUB_LAYOUT_VERSION = 11
 
 
 async def _chart_signature(mongo: MongoClient) -> str:
