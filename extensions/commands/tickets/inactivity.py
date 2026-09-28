@@ -76,8 +76,8 @@ def custom_id(ticket, token, choice):
 
 def card(ticket, token, role, period=PERIOD):
     row = hikari.impl.MessageActionRowBuilder()
-    for choice, label, emoji in (("yes", "Yes", YES_EMOJI), ("no", "No", NO_EMOJI)):
-        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=hikari.CustomEmoji(id=emoji, name=label, is_animated=False))
+    for choice, label, emoji in (("yes", "Yes - Deny", YES_EMOJI), ("no", "No - Wait", NO_EMOJI)):
+        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=hikari.CustomEmoji(id=emoji, name=choice.title(), is_animated=False))
     wording = f"There has been no activity within the last {period_label(period)}. Apply Ghosted and deny?"
     return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nDenial reason: **{REASON}**"), row])]
 
