@@ -79,6 +79,8 @@ def bot(*, destination_guild=20, destination_type=hikari.ChannelType.GUILD_TEXT,
 
 
 def state(monkeypatch, sections):
+    from utils.gauntlet_routes import ROUTES, NEW_GUILD_ID
+    monkeypatch.setitem(ROUTES, 20, ROUTES[NEW_GUILD_ID])
     states = {}
     initial = {
         "_id": "initial", "user_id": 10, "guild_id": 20, "view": "document",

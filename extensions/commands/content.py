@@ -74,21 +74,12 @@ _baselines: dict[str, list] = {}
 _DESTINATION_TYPES = frozenset((hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS))
 
 
-def acknowledgement_setup(document_key: str) -> tuple[int, int]:
-    # Pull from the live acknowledgement handlers; a posting destination does
-    # not change their role assignments or fixed next-step channels.
-    from extensions.commands.setup import (
-        recruit_aboutus,
-        recruit_strikesystem,
-        recruit_familyparticulars,
-        recruit_join_family,
-    )
-    return {
-        "join-family": (recruit_join_family.JOIN_FAMILY_ROLE_ID, recruit_join_family.ABOUT_US_CHANNEL_ID),
-        "about-us": (recruit_aboutus.ABOUT_US_ROLE_ID, recruit_aboutus.STRIKE_SYSTEM_CHANNEL_ID),
-        "strike-system": (recruit_strikesystem.STRIKE_SYSTEM_ROLE_ID, recruit_strikesystem.FAMILY_PARTICULARS_CHANNEL_ID),
-        "family-particulars": (recruit_familyparticulars.CLAN_RULES_READ_ROLE_ID, recruit_familyparticulars.APPLY_HERE_CHANNEL_ID),
-    }[document_key]
+def acknowledgement_setup(document_key: str, guild_id: int = 644963518025826315) -> tuple[int, int]:
+    from utils.gauntlet_routes import route_for
+    route = route_for(document_key, guild_id)
+    if route is None:
+        raise ValueError("This onboarding step is not configured for this server.")
+    return route
 
 
 # Hikari 2.6 predates Discord's modal Label/File Upload models. Install the
@@ -504,7 +495,10 @@ async def _ready_for_destination(ctx, bot, channel, permissions, document_key: s
         ),
         respond=capture,
     )
-    role_id, next_channel_id = acknowledgement_setup(document_key)
+    try:
+        role_id, next_channel_id = acknowledgement_setup(document_key, ctx.interaction.guild_id)
+    except ValueError as exc:
+        return False, str(exc)
     ready = await require_ready(proxy, bot, role_id=role_id, next_channel_id=next_channel_id)
     return ready, messages[0] if messages else None
 

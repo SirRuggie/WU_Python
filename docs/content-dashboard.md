@@ -258,3 +258,14 @@ Rite of Passage is private. **Save template** updates the text and guide image f
 future chooser openings. Existing private messages remain unchanged; reopen
 **Earn Your Rite of Passage** to see the latest template. Preview ticket buttons
 are disabled. The editor does not alter ticket routing, categories, or counters.
+
+### Parallel original and new Gauntlets
+
+The original recruitment server (`1078723854303756298`) and new Warriors United
+server (`644963518025826315`) can run simultaneously. `utils/gauntlet_routes.py`
+selects roles and next channels by the interaction's server for About Us, Strike
+System, and Family Particulars. Existing published buttons remain valid without
+reposting. Destination channels are checked against that same server before any
+role assignment. The original server keeps its original access roles and Apply
+channel; the new server keeps its new progression and reminder tracking. Join the
+Family and the new help reminders remain specific to the new server.

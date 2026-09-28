@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.gauntlet_routes import route_for, NEW_GUILD_ID
 from utils.gauntlet_tracking import track_progress
 from utils.manage_ui import ICONS
 from utils.recruit_setup_checks import require_manage_server, require_ready
@@ -236,7 +237,7 @@ def _continue_components(guild_id: int, message: str):
                 Text(content=message),
                 ActionRow(components=[
                     LinkButton(
-                        url=f"https://discord.com/channels/{guild_id}/{FAMILY_PARTICULARS_CHANNEL_ID}",
+                        url=f"https://discord.com/channels/{guild_id}/{route_for('strike-system', guild_id)[1]}",
                         label="Continue to Family Particulars",
                         emoji=hikari.Snowflake(ICONS["open"]),
                     )
@@ -272,9 +273,14 @@ async def on_strikesystem_acknowledge(
     ctx = kwargs["ctx"]
     interaction_guild_id = getattr(ctx.interaction, "guild_id", None)
     user_id = int(ctx.user.id)
+    route = route_for("strike-system", interaction_guild_id)
+    if route is None:
+        await _private_error(ctx, "This panel can only be used in a configured Warriors United server.")
+        return
+    role_id, next_channel_id = route
 
     try:
-        target_channel = await bot.rest.fetch_channel(FAMILY_PARTICULARS_CHANNEL_ID)
+        target_channel = await bot.rest.fetch_channel(next_channel_id)
     except hikari.HTTPError:
         await _private_error(ctx, "I could not open the next onboarding channel right now. Please try again shortly.")
         return
@@ -287,7 +293,6 @@ async def on_strikesystem_acknowledge(
         interaction_guild_id is None
         or target_guild_id is None
         or int(interaction_guild_id) != int(target_guild_id)
-        or int(target_guild_id) != STRIKE_SYSTEM_GUILD_ID
     ):
         await _private_error(ctx, "This Strike System panel can only be used in the Warriors United server.")
         return
@@ -302,13 +307,14 @@ async def on_strikesystem_acknowledge(
         await _private_error(ctx, "I could not verify your member profile right now. Please try again shortly.")
         return
 
-    if STRIKE_SYSTEM_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
-        await track_progress(mongo, guild_id, user_id, 3)
+    if role_id in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
+        if guild_id == NEW_GUILD_ID:
+            await track_progress(mongo, guild_id, user_id, 3)
         await _private_continue(ctx, guild_id, "You already have access to Family Particulars. Continue to Family Particulars for the next Recruit Gauntlet step.")
         return
 
     try:
-        await bot.rest.add_role_to_member(guild=guild_id, user=user_id, role=STRIKE_SYSTEM_ROLE_ID)
+        await bot.rest.add_role_to_member(guild=guild_id, user=user_id, role=role_id)
     except hikari.HTTPError:
         await _private_error(ctx, "I could not grant access to Family Particulars right now. Please try again shortly.")
         return
@@ -316,7 +322,8 @@ async def on_strikesystem_acknowledge(
         await _private_error(ctx, "I could not grant access to Family Particulars right now. Please try again shortly.")
         return
 
-    await track_progress(mongo, guild_id, user_id, 3)
+    if guild_id == NEW_GUILD_ID:
+        await track_progress(mongo, guild_id, user_id, 3)
     await _private_continue(ctx, guild_id, "Continue to Family Particulars for the next Recruit Gauntlet step.")
 
 
