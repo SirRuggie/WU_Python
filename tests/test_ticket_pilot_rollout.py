@@ -1819,8 +1819,12 @@ def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
     assert reaccess_calls == [("ticket_9", 50)]
     # A bare <#id> mention only resolves in the channel's own guild; a jump
     # URL resolves everywhere, including outside the ticket's server.
-    assert "https://discord.com/channels/11/777" in edits[-1]["content"]
-    assert "flag" not in edits[-1]["content"].lower()
+    panel = edits[-1]["components"][0]
+    button = panel.components[-1].components[0]
+    assert button.url == "https://discord.com/channels/11/777"
+    assert button.label == "Open My Ticket"
+    assert panel.accent_color == handlers.GOLDENROD_ACCENT
+    assert all("flag" not in getattr(item, "content", "").lower() for item in panel.components)
 
 
 def test_my_ticket_button_links_the_tickets_own_server_not_the_viewers(monkeypatch):
@@ -1855,9 +1859,8 @@ def test_my_ticket_button_links_the_tickets_own_server_not_the_viewers(monkeypat
         ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
     ))
 
-    message = edits[-1]["content"]
-    assert "https://discord.com/channels/77/777" in message
-    assert "<#777>" not in message
+    button = edits[-1]["components"][0].components[-1].components[0]
+    assert button.url == "https://discord.com/channels/77/777"
 
 
 def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch):
@@ -2125,5 +2128,6 @@ def test_my_ticket_button_with_staff_thread_missing_keeps_the_candidate_link(
 
     assert released == []
     assert reaccess_calls == [True]
-    assert "removed" not in edits[-1]["content"]
-    assert "https://discord.com/channels/11/777" in edits[-1]["content"]
+    panel = edits[-1]["components"][0]
+    assert all("removed" not in getattr(item, "content", "") for item in panel.components)
+    assert panel.components[-1].components[0].url == "https://discord.com/channels/11/777"

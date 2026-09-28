@@ -23,6 +23,8 @@ from extensions.commands.tickets import thread_service, testing_service
 from extensions.commands import ticket_runtime
 from extensions.components import register_action
 from utils.mongo import MongoClient
+from utils.constants import GOLDENROD_ACCENT
+from utils.manage_ui import ICONS
 
 
 COOLDOWN_DURATION = 30
@@ -662,10 +664,21 @@ async def handle_my_ticket(
             store.as_int(open_ticket.get("guild_id")) or int(ctx.guild_id)
         )
         await ctx.interaction.edit_initial_response(
-            content=(
-                "🎟️ Your open ticket: "
-                f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
-            )
+            components=[hikari.impl.ContainerComponentBuilder(
+                accent_color=GOLDENROD_ACCENT,
+                components=[
+                    hikari.impl.TextDisplayComponentBuilder(content="## 🎟️ Your open ticket"),
+                    hikari.impl.TextDisplayComponentBuilder(
+                        content="Continue your application using the button below."
+                    ),
+                    hikari.impl.MessageActionRowBuilder().add_link_button(
+                        f"https://discord.com/channels/{ticket_guild_id}/{location_id}",
+                        label="Open My Ticket",
+                        emoji=hikari.Snowflake(ICONS["open"]),
+                    ),
+                ],
+            )],
+            user_mentions=False, role_mentions=False, mentions_everyone=False,
         )
         return
 
