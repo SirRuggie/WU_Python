@@ -857,7 +857,9 @@ recovery continues to own setup retries. Existing ephemeral messages from before
 a bot restart cannot be recovered without their interaction token; applicants
 can use **My ticket** to retrieve their ticket.
 
-New live tickets also invite members of the configured recruiter role to the
-private applicant thread and send a role notification there. Delivery is
+New live tickets post the configured recruiter role notification before the
+welcome and questionnaire. Discord handles eligible role members joining through
+the mention; the bot does not add recruiters individually, avoiding those
+explicit member-add notices. Existing system notices cannot be deleted. Delivery is
 idempotent, test tickets skip it, and older tickets are not mass-pinged on rollout.
 The existing staff workspace and shared console remain in place.

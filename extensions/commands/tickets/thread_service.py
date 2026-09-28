@@ -1532,7 +1532,7 @@ async def _questionnaire_exists(
 async def _notify_candidate_recruiters(
     rest: hikari.api.RESTClient, ticket: Mapping[str, Any], *, bot_id: int,
 ) -> None:
-    """Join recruiters before the private-thread ping, once per ticket."""
+    """Mention the recruiter role once; Discord handles thread subscriptions."""
     if testing_service.is_test_ticket(ticket) or not ticket.get("candidate_recruiter_notification"):
         return
     role_id = _as_int(ticket.get("recruiter_role_id"))
@@ -1544,12 +1544,6 @@ async def _notify_candidate_recruiters(
     match = _bot_authored_content_match(bot_id, content)
     if await _message_marker_exists(rest, channel_id, marker, is_match=match):
         return
-    # MANAGE_THREADS grants visibility but does not subscribe role members to
-    # private-thread mentions. Explicit membership makes this ping deliverable.
-    members = await _collect_rest_iterator(rest.fetch_members(_as_int(ticket.get("guild_id"))))
-    for member in members:
-        if role_id in {_as_int(value) for value in getattr(member, "role_ids", ())}:
-            await rest.add_thread_member(channel_id, int(member.id))
     await _send_once(
         rest, channel_id, marker, content, role_mentions=[role_id],
         post_marker=False, is_match=match,
@@ -1591,6 +1585,10 @@ async def _deliver_opening_messages(
             and _is_staff_opening_card(message)
         )
 
+    # The role mention invites eligible recruiters without explicit member-add
+    # calls and is the first regular candidate-thread message.
+    await _notify_candidate_recruiters(rest, ticket, bot_id=bot_id)
+
     await _send_components_once(
         rest,
         public_id,
@@ -1629,7 +1627,6 @@ async def _deliver_opening_messages(
     await _deliver_staff_talking_points(
         rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id
     )
-    await _notify_candidate_recruiters(rest, ticket, bot_id=bot_id)
 
 
 async def _deliver_staff_talking_points(

@@ -4199,7 +4199,7 @@ def test_conflicting_source_records_across_stores_fail_preview():
         asyncio.run(legacy_migration._legacy_source_ticket(mongo, 1, 2))
 
 
-def test_candidate_recruiter_ping_joins_only_recruiters_and_recovers_once():
+def test_candidate_recruiter_ping_uses_role_without_manual_adds_and_recovers_once():
     class Rest:
         def __init__(self):
             self.messages = []
@@ -4220,7 +4220,7 @@ def test_candidate_recruiter_ping_joins_only_recruiters_and_recovers_once():
             self.joins.append((channel_id, user_id))
 
         async def create_message(self, channel_id, **kwargs):
-            assert self.joins == [(101, 41)]
+            assert self.joins == []
             self.sends.append((channel_id, kwargs))
             self.messages.append(SimpleNamespace(author=SimpleNamespace(id=7), content=kwargs["content"], components=[]))
 
@@ -4229,7 +4229,7 @@ def test_candidate_recruiter_ping_joins_only_recruiters_and_recovers_once():
     rest = Rest()
     asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
     asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
-    assert rest.joins == [(101, 41)]
+    assert rest.joins == []
     assert len(rest.sends) == 1
     assert rest.sends[0][0] == 101
     assert rest.sends[0][1]["role_mentions"] == [40]
@@ -4300,3 +4300,39 @@ def test_staff_creation_attribution_survives_recovery_without_leaking_to_new_tic
     ))
     assert state.get("opened_by") == expected
     assert collection.document.get("opened_by") == expected
+
+
+def test_recruiter_ping_is_first_regular_message_and_recovery_does_not_repeat_it():
+    class Rest:
+        def __init__(self):
+            self.channels = {101: [], 102: []}
+
+        def fetch_messages(self, channel_id):
+            async def collect():
+                return list(self.channels[channel_id])
+            return SimpleNamespace(to_list=collect)
+
+        async def fetch_guild(self, guild_id):
+            return SimpleNamespace(make_icon_url=lambda: None)
+
+        async def create_message(self, channel_id, **kwargs):
+            message = SimpleNamespace(
+                id=1000 + sum(map(len, self.channels.values())),
+                author=SimpleNamespace(id=7), content=kwargs.get("content", ""),
+                components=kwargs.get("components", []),
+            )
+            self.channels[channel_id].append(message)
+            return message
+
+    rest = Rest()
+    ticket = _ticket()
+    ticket.update(recruiter_role_id=40, candidate_recruiter_notification=True)
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7))
+    candidate = rest.channels[101]
+    assert len(candidate) == 3
+    assert candidate[0].content == "<@&40> — a new applicant ticket is ready for your review."
+    assert thread_service._is_candidate_welcome_card(candidate[1])
+    assert "Clan Entry Ticket" in repr(candidate[2].components)
+    counts = {key: len(messages) for key, messages in rest.channels.items()}
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7))
+    assert {key: len(messages) for key, messages in rest.channels.items()} == counts
