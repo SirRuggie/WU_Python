@@ -57,17 +57,17 @@ def _ticket_location(ticket: dict) -> int:
     return int(location.get("id") or ticket.get("channel_id"))
 
 
-async def _show_created_ticket(ctx, ticket, *, resumed=False, pending=False):
+async def _show_created_ticket(ctx, ticket, *, resumed=False):
     location_id = _ticket_location(ticket)
     guild_id = int(ticket.get("guild_id") or ctx.guild_id)
     kind = str(ticket.get("ticket_type") or "main").upper()
     wording = "already open" if resumed else "created"
-    note = " Setup is finishing; you can open your ticket now." if pending else ""
+    number = f" #{ticket['ticket_number']}" if ticket.get("ticket_number") is not None else ""
     row = hikari.impl.MessageActionRowBuilder().add_link_button(
         f"https://discord.com/channels/{guild_id}/{location_id}", label="Open your ticket"
     )
     await ctx.interaction.edit_initial_response(
-        content=f"✅ Your {kind} ticket is {wording}: <#{location_id}>.{note}",
+        content=f"✅ Your {kind} ticket{number} is {wording}.",
         components=[row], user_mentions=False, role_mentions=False, mentions_everyone=False,
     )
 
@@ -523,7 +523,7 @@ async def handle_create_ticket(
     async def on_ready(ticket):
         nonlocal ready_ticket
         ready_ticket = ticket
-        await _show_created_ticket(ctx, ticket, pending=True)
+        await _show_created_ticket(ctx, ticket)
 
     try:
         result = await thread_service.create_live_thread_ticket(
@@ -562,7 +562,7 @@ async def handle_create_ticket(
             f"guild={ctx.guild_id} user={user_id} type={ticket_type} error={type(error).__name__}"
         )
         if ready_ticket is not None:
-            await _show_created_ticket(ctx, ready_ticket, pending=True)
+            await _show_created_ticket(ctx, ready_ticket)
             return
         await ctx.interaction.edit_initial_response(
             content=(
@@ -573,7 +573,7 @@ async def handle_create_ticket(
         return
 
     await _show_created_ticket(
-        ctx, result.ticket, resumed=result.resumed, pending=result.delivery_pending
+        ctx, result.ticket, resumed=result.resumed
     )
 
 

@@ -12,7 +12,7 @@ def test_ticket_link_shown_before_post_commit_work_and_retained_on_failure(monke
     ctx=SimpleNamespace(guild_id=11,channel_id=22,user=SimpleNamespace(id=50,username='Tester'),
         member=SimpleNamespace(role_ids=(),display_name='Tester'),defer=AsyncMock(),
         interaction=SimpleNamespace(message=SimpleNamespace(id=32),edit_initial_response=edit))
-    ticket={'guild_id':11,'ticket_type':'fwa','location':{'id':99}}
+    ticket={'guild_id':11,'ticket_type':'fwa','ticket_number':810,'location':{'id':99}}
     monkeypatch.setattr(handlers,'thread_intake_ready',lambda:True)
     monkeypatch.setattr(handlers.ticket_runtime,'route_public_intake',AsyncMock(return_value=SimpleNamespace(allowed=True,route='thread',revision=1)))
     monkeypatch.setattr(handlers.ticket_runtime,'claim_open_slot',AsyncMock(return_value=SimpleNamespace(won=True)))
@@ -20,7 +20,7 @@ def test_ticket_link_shown_before_post_commit_work_and_retained_on_failure(monke
         assert edits[-1]['content']=='🎫 Creating your ticket…'
         await kwargs['on_ready'](ticket)
         assert edits[-1]['components'][0].components[0].url=='https://discord.com/channels/11/99'
-        assert 'created' in edits[-1]['content']
+        assert edits[-1]['content']=='✅ Your FWA ticket #810 is created.'
         if post_commit_failure: raise RuntimeError('account lookup failed after commit')
         return SimpleNamespace(ticket=ticket,resumed=False,delivery_pending=False)
     monkeypatch.setattr(handlers.thread_service,'create_live_thread_ticket',create)
