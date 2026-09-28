@@ -2595,9 +2595,8 @@ def build_ticket_detail(
         if str(flag_id)
     ]
     flag_conflict_notice = (
-        "🟡 **Two flags overlap for this applicant:** "
-        + ", ".join(f"`{flag_id}`" for flag_id in conflict_flag_ids)
-        + ". Merge or remove one in Manage flags."
+        "🟡 **Two flags overlap for this applicant.** "
+        "Review their reasons and remove the duplicate in Manage flags."
         if conflict_flag_ids else None
     )
     history_heading = (
@@ -2616,11 +2615,7 @@ def build_ticket_detail(
         )
         reason = _clean(flag.get("reason"), limit=300)
         rule = " · blocks approve" if blocks else " · caution only"
-        # IDs are shown in code spans specifically so staff can copy the exact
-        # value into /tickets flag-remove. _clean_code_span truncates but
-        # never escapes, since escaping underscores would change that ID.
-        flag_id = _clean_code_span(flag.get("_id"), limit=80)
-        flag_lines.append(f"{glyph} **{label}**{rule} · `{flag_id}`\n{reason}")
+        flag_lines.append(f"{glyph} **{label}**{rule}\n**Reason:** {reason}")
 
     tag_prefix = "**Player tags:** "
     tag_copy = (
@@ -2838,12 +2833,11 @@ def _flag_manager_content(
             _flag_kind(flag), ("Unknown flag", "⚠️", False)
         )
         rule = "blocks approve" if blocks else "caution only"
-        flag_id = str(flag.get("_id") or "")[:80] or "Unknown"
         source = _clean(flag.get("source"), limit=180)
         reason = _clean(flag.get("reason"), limit=500)
         addition = (
             f"\n\n{glyph} **{label}** · {rule}\n"
-            f"`{flag_id}`\n**Source:** {source}\n**Reason:** {reason}"
+            f"**Reason:** {reason}\n**Source:** {source}"
         )
         if len(content) + len(addition) <= limit:
             content += addition
@@ -6169,10 +6163,10 @@ async def _transition_result_panel(
                 reason,
                 accent=ACCENT_YELLOW,
             )
-        flag_id = _clean_code_span(blocker.get("_id"), limit=80)
+        reason = _clean(blocker.get("reason") or "No reason recorded.", limit=500)
         return _notice(
             "Approval blocked",
-            f"This applicant has an active blacklist flag (`{flag_id}`). You can still deny.",
+            f"This applicant has an active blacklist flag.\n**Reason:** {reason}\nYou can still deny.",
             accent=ACCENT_RED,
         )
     if result.outcome == store.UNAUTHORIZED:

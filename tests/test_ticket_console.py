@@ -1425,7 +1425,7 @@ def test_detail_shows_flag_conflict_notice_and_leaves_approve_enabled():
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
     assert "Two flags overlap" in content
-    assert "flag_a" in content and "flag_b" in content
+    assert "flag_a" not in content and "flag_b" not in content
     buttons = [
         node for node in _nodes(view)
         if int(node.get("type", -1)) == int(hikari.ComponentType.BUTTON)
@@ -1556,7 +1556,7 @@ def test_ticket_detail_manage_flags_panel_binds_37_tags_without_manual_ids():
         str(node["content"]) for node in _nodes(panel) if "content" in node
     )
     assert "Stored player tags (37)" in content
-    assert "flag_blacklist" in content
+    assert "flag_blacklist" not in content
     assert "Verified ban-list match" in content
     assert "FWA Chocolate" in content
     remove = next(
@@ -2025,13 +2025,13 @@ def test_lock_contention_panel_does_not_claim_a_blacklist_exists():
     assert "blacklist" not in content.casefold()
 
 
-def test_blocked_panel_flag_id_in_code_span_has_no_backslash_escape():
+def test_blocked_panel_shows_reason_instead_of_internal_flag_id():
     view = asyncio.run(console._transition_result_panel(
         console.store.Transition(
             console.store.BLOCKED,
             _ticket(20),
             "blacklisted",
-            blocker={"_id": "flag_2PP0JCCLU"},
+            blocker={"_id": "flag_2PP0JCCLU", "reason": "Verified ban-list match"},
         ),
         verb="approved",
         mongo=object(),
@@ -2041,7 +2041,8 @@ def test_blocked_panel_flag_id_in_code_span_has_no_backslash_escape():
     content = "\n".join(
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
-    assert "`flag_2PP0JCCLU`" in content
+    assert "flag_2PP0JCCLU" not in content
+    assert "Verified ban-list match" in content
     assert "\\_" not in content
 
 

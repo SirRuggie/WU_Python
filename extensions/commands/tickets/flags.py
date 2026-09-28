@@ -182,7 +182,7 @@ class FlagAddCommand(
             ctx,
             "Flag saved",
             (
-                f"**Flag:** `{document.get('_id')}` · {FLAG_LABELS[self.kind]}\n"
+                f"**Flag:** {FLAG_LABELS[self.kind]}\n"
                 f"**Discord IDs:** {ids}\n"
                 f"**Player tags:** {tags}\n"
                 f"**Why:** {_safe(document.get('reason'))}"
@@ -262,7 +262,7 @@ class FlagRemoveCommand(
         await _reply(
             ctx,
             "Flag removed",
-            f"`{self.flag_id}` is inactive. Its audit history was kept.",
+            "The selected flag is inactive. Its audit history was kept.",
             accent=ACCENT_GREEN,
         )
 
@@ -335,8 +335,7 @@ class FlagsCommand(
         for record in records[:10]:
             kind = str(record.get("kind") or "")
             lines.append(
-                f"**{FLAG_LABELS.get(kind, kind.replace('_', ' ').title())}** · "
-                f"`{record.get('_id')}`\n"
+                f"**{FLAG_LABELS.get(kind, kind.replace('_', ' ').title())}**\n"
                 f"{_safe(record.get('reason'))}\n"
                 f"Source: {_safe(record.get('source'), 120)}"
             )
