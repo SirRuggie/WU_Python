@@ -57,7 +57,7 @@ def panel(title, *items, color=GOLDENROD_ACCENT):
 
 
 def back(sid):
-    return button(Row(), sid, "home", "Warrior Setup", "home")
+    return Separator(), button(Row(), sid, "home", "Return to Warrior Setup", "back")
 
 
 async def show(ctx, components):
@@ -250,7 +250,7 @@ def role_menu(sid, operation):
             content="Only roles you and the bot are permitted to manage can be changed."
         ),
         row,
-        back(sid),
+        *back(sid),
     )
 
 
@@ -274,7 +274,7 @@ def th_menu(data, c, cfg):
         ),
         row,
         button(Row(), sid, "confirm:clear_th", "Clear Town Hall Roles"),
-        back(sid),
+        *back(sid),
     )
 
 
@@ -333,7 +333,7 @@ async def clan_menu(data, c, mongo, page=0, tour=False):
             )
         )
         items.append(Text(content=f"Page {page+1}/{pages}"))
-    return panel("Server Walkthrough" if tour else "Clan Roles", *items, back(sid))
+    return panel("Server Walkthrough" if tour else "Clan Roles", *items, *back(sid))
 
 
 def confirm(data, action, text):
@@ -360,9 +360,7 @@ def confirm(data, action, text):
 async def advanced(data, c, mongo):
     sid = data["_id"]
     rows = [
-        Text(
-            content="Bulk actions require confirmation. Server settings are administrator-only."
-        ),
+        Text(content="Bulk actions require confirmation."),
         button(
             button(Row(), sid, "confirm:all_clans", "Add All Clan Roles"),
             sid,
@@ -371,9 +369,7 @@ async def advanced(data, c, mongo):
         ),
         button(Row(), sid, "confirm:restart", "Restart Completed Walkthrough"),
     ]
-    if c["actor_permissions"] & hikari.Permissions.ADMINISTRATOR:
-        rows.append(button(Row(), sid, "settings", "Server Settings", "advanced"))
-    return panel("Advanced Setup", *rows, back(sid))
+    return panel("Advanced Setup", *rows, *back(sid))
 
 
 async def settings_page(data, c, mongo, page=0):
@@ -417,7 +413,7 @@ async def settings_page(data, c, mongo, page=0):
                 disabled=page == 1,
             )
         )
-    return panel("Warrior Server Settings", *items, back(data["_id"]))
+    return panel("Warrior Server Settings", *items, *back(data["_id"]))
 
 
 def modal_value(ctx, name):
@@ -492,7 +488,7 @@ async def action(
                     "Remove Roles",
                 ),
                 button(Row(), sid, "quick", "Quick Set-up"),
-                back(sid),
+                *back(sid),
             )
         elif verb in ("add_roles", "remove_roles"):
             output = role_menu(sid, "add" if verb == "add_roles" else "remove")
@@ -664,7 +660,7 @@ async def action(
                         label="Open Recruit Ticket",
                     )
                 )
-                output = panel("Walkthrough Progress", *items, back(sid))
+                output = panel("Walkthrough Progress", *items, *back(sid))
             else:
                 await core.open_ticket(mongo, c["guild"].id, c["member"].id)
                 output = await clan_menu(
@@ -691,7 +687,7 @@ async def action(
                 Text(
                     content=f'The welcome will be posted in <#{run["ticket_channel"]}>. A recruiter can press Begin Walkthrough there.'
                 ),
-                back(sid),
+                *back(sid),
             )
         elif verb == "retry":
             ticket = await core.open_ticket(mongo, c["guild"].id, c["member"].id)
@@ -737,7 +733,7 @@ async def action(
                         else "The operation could not finish. Refresh to check which changes succeeded, then retry."
                     )
                 ),
-                back(sid),
+                *back(sid),
                 color=RED_ACCENT,
             ),
         )
@@ -835,7 +831,7 @@ async def form(
                         else "The operation could not finish. Refresh to check which changes succeeded, then retry."
                     )
                 ),
-                back(sid),
+                *back(sid),
                 color=RED_ACCENT,
             ),
         )

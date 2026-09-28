@@ -49,8 +49,8 @@ members through this command.
 
 ## Settings and persistence
 
-Administrator-only **Advanced → Server Settings** changes one role/channel ID
-at a time. Settings live in `warrior_settings` as `warrior_settings:<guild_id>`:
+Server Settings is no longer offered in the dashboard. Existing configuration
+is preserved. Settings live in `warrior_settings` as `warrior_settings:<guild_id>`:
 standard roles, Town Hall roles, Help and Lounge channels. Defaults copy the old
 recruit dashboard. These overrides never affect the old command. Clan roles and
 clan announcement/chat IDs continue to come from existing clan configuration.
