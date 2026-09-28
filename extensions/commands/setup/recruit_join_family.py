@@ -9,6 +9,7 @@ from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.manage_ui import ICONS
 from utils.mongo import MongoClient
+from utils.gauntlet_routes import start_url
 from utils.gauntlet_tracking import track_progress
 
 from hikari.impl import (
@@ -77,7 +78,7 @@ def build_join_family(sections=None, *, media=None, action_id="preview", preview
     return components
 
 
-def _continue_components(guild_id: int, message: str):
+def _continue_components(guild_id: int, message: str, *, url: str | None = None):
     """A private, clickable next step. Discord cannot open a channel for a user."""
     return [
         Container(
@@ -87,7 +88,7 @@ def _continue_components(guild_id: int, message: str):
                 Text(content=message),
                 ActionRow(components=[
                     LinkButton(
-                        url=f"https://discord.com/channels/{guild_id}/{ABOUT_US_CHANNEL_ID}",
+                        url=url or f"https://discord.com/channels/{guild_id}/{ABOUT_US_CHANNEL_ID}",
                         label="Continue to About Us",
                         emoji=hikari.Snowflake(ICONS["open"]),
                     )
@@ -97,9 +98,9 @@ def _continue_components(guild_id: int, message: str):
     ]
 
 
-async def _private_continue(ctx, guild_id: int, message: str) -> None:
+async def _private_continue(ctx, guild_id: int, message: str, *, bot) -> None:
     """Send a private V2 followup, never edit the public panel that was clicked."""
-    components = _continue_components(guild_id, message)
+    components = _continue_components(guild_id, message, url=await start_url(bot.rest, "join-family", guild_id))
     await ctx.interaction.execute(
         components=components,
         flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
@@ -160,7 +161,7 @@ async def on_join_family_acknowledge(
 
     if JOIN_FAMILY_ROLE_ID in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
         await track_progress(mongo, guild_id, user_id, 1)
-        await _private_continue(ctx, guild_id, "You already have access to the Recruit Gauntlet. Continue to About Us to work through the required steps.")
+        await _private_continue(ctx, guild_id, "You already have access to the Recruit Gauntlet. Continue to About Us to work through the required steps.", bot=bot)
         return
 
     try:
@@ -173,4 +174,4 @@ async def on_join_family_acknowledge(
         return
 
     await track_progress(mongo, guild_id, user_id, 1)
-    await _private_continue(ctx, guild_id, "Continue to About Us to begin the Recruit Gauntlet and work through the required steps.")
+    await _private_continue(ctx, guild_id, "Continue to About Us to begin the Recruit Gauntlet and work through the required steps.", bot=bot)

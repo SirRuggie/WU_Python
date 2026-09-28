@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.gauntlet_routes import start_url
 from utils.gauntlet_routes import route_for, NEW_GUILD_ID
 from utils.gauntlet_tracking import track_progress
 from utils.manage_ui import ICONS
@@ -236,7 +237,7 @@ class RecruitFamilyParticulars(
         await ctx.respond("Family Particulars posted.", ephemeral=True)
 
 
-def _continue_components(guild_id: int):
+def _continue_components(guild_id: int, *, url: str | None = None):
     """Build the private V2 prompt that sends members to the application tickets."""
     return [
         Container(
@@ -246,7 +247,7 @@ def _continue_components(guild_id: int):
                 Text(content="Open an application ticket to continue the Recruit Gauntlet."),
                 ActionRow(components=[
                     LinkButton(
-                        url=f"https://discord.com/channels/{guild_id}/{route_for('family-particulars', guild_id)[1]}",
+                        url=url or f"https://discord.com/channels/{guild_id}/{route_for('family-particulars', guild_id)[1]}",
                         label="Continue to Apply",
                         emoji=hikari.Snowflake(ICONS["open"]),
                     )
@@ -256,10 +257,10 @@ def _continue_components(guild_id: int):
     ]
 
 
-async def _private_continue(ctx, guild_id: int) -> None:
+async def _private_continue(ctx, guild_id: int, bot) -> None:
     """Respond privately without altering the published onboarding panel."""
     await ctx.interaction.execute(
-        components=_continue_components(guild_id),
+        components=_continue_components(guild_id, url=await start_url(bot.rest, "family-particulars", guild_id)),
         flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
     )
 
@@ -330,7 +331,7 @@ async def on_familyparticulars_acknowledge(
 
     if guild_id == NEW_GUILD_ID:
         await track_progress(mongo, guild_id, user_id, 4)
-    await _private_continue(ctx, guild_id)
+    await _private_continue(ctx, guild_id, bot)
 
 
 loader.command(setup)

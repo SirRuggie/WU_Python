@@ -269,3 +269,9 @@ reposting. Destination channels are checked against that same server before any
 role assignment. The original server keeps its original access roles and Apply
 channel; the new server keeps its new progression and reminder tracking. Join the
 Family and the new help reminders remain specific to the new server.
+
+Continue links resolve the oldest message in the next channel when clicked,
+including Join the Family → About Us in the new server. This starts the reader
+at the beginning and follows replacement posts without storing a stale message
+ID. If history is empty or temporarily unavailable, the link falls back to the
+channel. This changes navigation only; it cannot enforce reading or scrolling.

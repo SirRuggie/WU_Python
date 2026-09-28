@@ -20,3 +20,27 @@ ROUTES = {
 
 def route_for(document: str, guild_id: int | None) -> tuple[int, int] | None:
     return ROUTES.get(int(guild_id or 0), {}).get(document)
+
+
+async def start_url(rest, document: str, guild_id: int) -> str:
+    """Jump to the destination's first message, resolving again after reposts."""
+    import asyncio
+    import logging
+
+    route = route_for(document, guild_id)
+    if route is None:
+        raise ValueError("This onboarding step is not configured for this server.")
+    channel_id = route[1]
+    url = f"https://discord.com/channels/{guild_id}/{channel_id}"
+    try:
+        # `after` makes Hikari iterate oldest first. Only retrieve one message.
+        async with asyncio.timeout(3):
+            messages = await rest.fetch_messages(channel_id, after=0).limit(1)
+        if messages:
+            return f"{url}/{int(messages[0].id)}"
+    except Exception:
+        # Access has already been granted; history lookup must not break it.
+        logging.getLogger(__name__).warning(
+            "Could not resolve Gauntlet first message for channel %s", channel_id
+        )
+    return url

@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.gauntlet_routes import start_url
 from utils.gauntlet_routes import route_for, NEW_GUILD_ID
 from utils.gauntlet_tracking import track_progress
 from utils.manage_ui import ICONS
@@ -227,7 +228,7 @@ class RecruitStrikeSystem(
         await ctx.respond("WU Strike System posted.", ephemeral=True)
 
 
-def _continue_components(guild_id: int, message: str):
+def _continue_components(guild_id: int, message: str, *, url: str | None = None):
     """Build the private V2 prompt that sends members to the next step."""
     return [
         Container(
@@ -237,7 +238,7 @@ def _continue_components(guild_id: int, message: str):
                 Text(content=message),
                 ActionRow(components=[
                     LinkButton(
-                        url=f"https://discord.com/channels/{guild_id}/{route_for('strike-system', guild_id)[1]}",
+                        url=url or f"https://discord.com/channels/{guild_id}/{route_for('strike-system', guild_id)[1]}",
                         label="Continue to Family Particulars",
                         emoji=hikari.Snowflake(ICONS["open"]),
                     )
@@ -247,10 +248,10 @@ def _continue_components(guild_id: int, message: str):
     ]
 
 
-async def _private_continue(ctx, guild_id: int, message: str) -> None:
+async def _private_continue(ctx, guild_id: int, message: str, *, bot) -> None:
     """Respond privately without altering the published onboarding panel."""
     await ctx.interaction.execute(
-        components=_continue_components(guild_id, message),
+        components=_continue_components(guild_id, message, url=await start_url(bot.rest, "strike-system", guild_id)),
         flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
     )
 
@@ -310,7 +311,7 @@ async def on_strikesystem_acknowledge(
     if role_id in {int(role_id) for role_id in getattr(member, "role_ids", ())}:
         if guild_id == NEW_GUILD_ID:
             await track_progress(mongo, guild_id, user_id, 3)
-        await _private_continue(ctx, guild_id, "You already have access to Family Particulars. Continue to Family Particulars for the next Recruit Gauntlet step.")
+        await _private_continue(ctx, guild_id, "You already have access to Family Particulars. Continue to Family Particulars for the next Recruit Gauntlet step.", bot=bot)
         return
 
     try:
@@ -324,7 +325,7 @@ async def on_strikesystem_acknowledge(
 
     if guild_id == NEW_GUILD_ID:
         await track_progress(mongo, guild_id, user_id, 3)
-    await _private_continue(ctx, guild_id, "Continue to Family Particulars for the next Recruit Gauntlet step.")
+    await _private_continue(ctx, guild_id, "Continue to Family Particulars for the next Recruit Gauntlet step.", bot=bot)
 
 
 loader.command(setup)
