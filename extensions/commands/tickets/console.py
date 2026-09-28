@@ -901,9 +901,10 @@ def build_hub_actions(
         f"Updated {_timestamp(updated_at)}" if updated_at else "Updated just now"
     )
     total_copy = total if total_tickets is None else total_tickets
+    open_label = "open ticket" if total == 1 else "open tickets"
     children.append(
         Text(
-            content=f"Page {page + 1}/{pages} · **{total} open tickets** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
+            content=f"Page {page + 1}/{pages} · **{total} {open_label}** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
         )
     )
     return [
