@@ -249,6 +249,21 @@ async def list_open(mongo: MongoClient, *, limit: int = 25) -> list[dict]:
     return _normalized_many(raw)
 
 
+async def list_open_page(
+    mongo: MongoClient, *, offset: int = 0, limit: int = 4
+) -> list[dict]:
+    """Reach every open ticket in stable oldest-first shared-console pages."""
+    amount = max(1, min(int(limit), 25))
+    cursor = (await _reader(mongo)).find({**RUNTIME_FILTER, "status": "open"})
+    raw = (
+        await cursor.sort([("created_at", 1), ("_id", 1)])
+        .skip(max(0, int(offset)))
+        .limit(amount)
+        .to_list(length=amount)
+    )
+    return _normalized_many(raw)
+
+
 class SearchQueryError(ValueError):
     pass
 

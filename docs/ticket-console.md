@@ -29,50 +29,44 @@ link-out rather than an automatic verdict.
 
 ---
 
-## 1. The one console, no split
+## 1. One console for both clan types
 
-Rejected: a second, FWA-only console. One shared message serves both clan
-types. Splitting by type was considered and rejected as bad UX — FWA is ~90%
-of volume, so a Main-only *filter* is genuinely useful (it isolates a small
-minority); a permanent Main-only *console* is not.
+Main and FWA share the Recruiter HQ console. It consists of two stacked,
+bot-owned messages: a read-only statistics panel and an open-ticket action panel.
 
-## 2. Architecture — one persistent message, ephemeral drill-down
+## 2. Two persistent panels with private ticket actions
 
-```
-#recruiter-hub  ─ ONE persistent message, bot-owned, in-channel
-                  ├ Native title, total, freshness, clan and flag Sections
-                  ├ Media Gallery: ticket_overview.png (status strip, §3)
-                  ├ String Select: up to 25 open tickets, newest first
-                  └ Button: 🔍 Find a ticket
-                                │
-                  picking a row │  or clicking Find a ticket
-                  mints a fresh ▼  action_id, per Structural rule below
-                          EPHEMERAL per-user panel
-                          (ticket detail, or search results — §4)
-```
+The first panel contains the current totals, Main/FWA breakdowns, charts, and
+flag summaries. It has no buttons, dropdowns, or footer.
 
-No "Open Console" gateway button. The original proposal (§2.2) gated *all*
-interaction behind one entry button on the shared message; that gate is
-gone — the shared message's own picker and search button are the entry
-points now. The structural rule underneath is unchanged and still holds:
-**state keyed by `action_id` belongs to the message, not the viewer**, so
-every personal action (pick a ticket, search, page a result set) opens a
-fresh ephemeral panel rather than mutating the shared one.
+The second panel lists open tickets directly, oldest first, four per page. Each
+entry shows the ticket's readable name and applicable Ghosted prefix, followed by:
 
-Discord's real ephemeral banner is part of the contract, not decoration:
-"🚫 Only you can see this · Dismiss message" on every drill-down.
+- **View Details** — the same private ticket details formerly opened by the dropdown.
+- **Open Ticket** — a direct link to the applicant's thread.
+- **Staff Thread** — a direct link to its recruiter workspace.
+- **Approve** — the existing private approval confirmation and decision safeguards.
+- **Deny** — the reason form, followed by the existing authorized denial workflow.
 
-**Auto-update, no manual refresh.** Ticket creation, approve/deny, and flag
-changes request a hub recount, chart redraw, and persistent-message edit. That
-refresh state is durable and retried after a transient Discord failure or bot
-restart. A manual "⟳ Refresh" button was removed because operators do not need
-to drive recovery. Someone's already-open ephemeral panel is still a snapshot
-and does not live-update; open the ticket details again from the hub to read
-current state.
+Previous/Next navigate the shared ticket list. Find, Browse, and Refresh remain
+available below it. The update timestamp and total-ticket footer appear only in
+this second panel. Pagination keeps every open ticket reachable within Discord's
+component limits; it does not truncate the queue at 25 tickets.
+
+Ticket decisions and details are private to the clicking recruiter. They never
+replace the shared action panel with a personal result. Each private action gets
+its own authorization and state checks. Concurrent decisions still use the normal
+status/revision safeguards.
+
+Both messages have durable bindings in the console's MongoDB state. Creation,
+approval, denial, and flag changes refresh the shared panels automatically.
+Interrupted publishing and missing messages are repaired without creating another
+console. Private detail panels remain snapshots; reopen View Details to see the
+latest state.
 
 ## 3. Native overview with a readable status strip
 
-The shared message keeps its title, Main/FWA breakdown, and controls as
+The statistics message keeps its title and Main/FWA breakdown as
 Components V2 text. Main/FWA retain their crest thumbnails. The supplied flag
 artwork appears in four separate slim, full-width Pillow rows, with a real
 native Separator after each row: this keeps each icon, label, and count large
@@ -80,8 +74,8 @@ on mobile without the oversized footprint Discord gives a Section thumbnail.
 Gallery descriptions carry the flag counts for assistive technology. Only the
 three Approved/Open/Denied totals are rendered as a compact 720×250 Pillow
 strip; this prevents a full dashboard image from being shrunk until its labels
-are unreadable on mobile. The complete total, Main/FWA totals, relative update
-time, and closed count sit together in a footer below the controls. Each
+are unreadable on mobile. The statistics panel has no footer. The action panel carries the relative
+update time and total ticket count below its controls. Each
 current native clan-bar image scales its segments to that clan's own total, so
 a nonempty bar reaches its rounded right edge.
 
@@ -240,10 +234,8 @@ ephemeral results panel, and Status/Clan-type live there as two ordinary
 message string selects (`min_values: 0`, clearable), each re-rendering the
 panel in place — the exact mechanism §2.4 already specified for the old
 in-console filters, just relocated to the results panel instead of the
-shared console or the modal. This keeps every constraint everyone actually
-asked for: the shared console stays at three elements (image, picker, Find a
-ticket), status/type filtering still exists, and it is real hikari code, not
-aspirational Discord-platform code.
+shared console or the modal. Search filtering stays in its private results
+panel; the shared console now uses the two-message layout described above.
 
 Budget check on the results panel, worst case (10 results, the existing cap
 from §2.6, unchanged): container 1 + heading Text 1 + 2 filter-select rows
@@ -268,7 +260,7 @@ mechanism Find already uses. From there, the three selects
 each re-render the panel in place and reset to page 1; Prev/Next re-render
 one page over, clamped at the ends. Choosing a ticket from the **Open a
 ticket** select opens the same ticket detail panel Search's View buttons and
-the hub picker already open (`_ticket_detail_panel`).
+the shared console’s View Details buttons open (`_ticket_detail_panel`).
 
 Each row: `{TYPE} #{number} · {mention} · {status emoji + word} · <t:created:R>`,
 one page per Text block (not a Section per row — Browse has no per-row

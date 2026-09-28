@@ -173,7 +173,8 @@ thread-recruiter roles and never overwrite old-server legacy recruiter roles.
 /tickets console channel:<private recruiter channel>
 ```
 
-Verify the returned message link, chart, open-ticket picker, and **Find** action.
+Verify both stacked panels: read-only charts above, open-ticket rows and actions
+below. Only the action panel has the update/footer text.
 One console channel is durably bound. Re-running the command repairs or reuses
 that hub; it does not relocate it. If the saved channel is missing, the command
 reports its exact channel ID. A deleted channel cannot be restored by this
@@ -182,12 +183,15 @@ retrying. If the channel still exists but the bot cannot access it, restore the
 bot's access and retry there. Do not create a second console elsewhere.
 
 The hub compares its saved semantic signature (counts, flags, and the visible
-open-ticket picker) before rendering and editing. Startup also reads the bound
-Discord message once when the signature is unchanged; a missing message is
-recreated. Applicant activity or a restart can therefore trigger a check
-without changing the hub. When the visible hub is unchanged, its **Updated**
-footer stays at the last edit time. Ticket counts, picker choices, or meaningful
-visible state changes still publish a new hub.
+open-ticket rows) before rendering and editing. Startup refreshes both bound
+Discord messages to reconcile names and flags changed while offline; a missing
+panel is repaired. Applicant activity can trigger a check without changing the
+hub. When the visible hub is unchanged, its **Updated** footer stays at the last
+edit time. Ticket counts, visible ticket rows, or meaningful
+state changes still refresh the panels. Each action page shows up to four tickets;
+Previous/Next reaches the rest. View Details opens the former dropdown detail
+panel, while Open Ticket and Staff Thread jump directly to the corresponding
+thread. Approve still requires confirmation; Deny opens the reason form.
 
 Manage the allowlist and inspect all bindings with:
 

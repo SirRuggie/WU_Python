@@ -275,22 +275,9 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
     assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 2
     assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 7
     assert len(attachments) == 9
-    select = _hub_picker_component(container)
-    assert len(select["options"]) == 25
-    assert all(option["value"].startswith("ticket_") for option in select["options"])
-    buttons = next(
-        child["components"]
-        for child in container["components"]
-        if child["type"] == hikari.ComponentType.ACTION_ROW
-        and child["components"][0].get("custom_id") == "ticket_v2_console_find:hub"
-    )
-    assert [button["custom_id"] for button in buttons] == [
-        "ticket_v2_console_find:hub",
-        "ticket_v2_console_browse:hub",
-    ]
-    assert buttons[1]["label"] == "Browse tickets"
-    assert container["components"][-2]["type"] == hikari.ComponentType.SEPARATOR
-    assert container["components"][-1]["content"] == "Updated just now · **0 tickets**"
+    assert container["id"] == console.HUB_STATS_COMPONENT_ID
+    assert not any(child["type"] == hikari.ComponentType.ACTION_ROW for child in container["components"])
+    assert container["components"][-1]["type"] == hikari.ComponentType.MEDIA_GALLERY
     flag_indices = [
         index for index, child in enumerate(container["components"])
         if child["type"] == hikari.ComponentType.MEDIA_GALLERY
@@ -300,8 +287,7 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
         ))
     ]
     assert len(flag_indices) == 4
-    assert [container["components"][index + 1]["type"] for index in flag_indices] == [
-        hikari.ComponentType.SEPARATOR,
+    assert [container["components"][index + 1]["type"] for index in flag_indices[:-1]] == [
         hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
@@ -356,23 +342,15 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
     _assert_component_limits(view)
 
 
-def test_hub_picker_with_more_than_25_open_shows_oldest_and_says_how_many():
-    """The picker only ever holds 25 options. Given an oldest-first list (as
-    `store.list_open` now returns) of 30 open tickets, the 25 shown must be
-    the 25 oldest -- not the 25 newest, which would drop the
-    longest-waiting applicants off the list -- and the placeholder must
-    tell the recruiter there are more."""
-    tickets = [_ticket(index) for index in range(1, 31)]  # oldest (1) first
-    view = console.build_hub_components(tickets, b"png", total_open=30)
-    container, _attachments = view[0].build()
-
-    select = _hub_picker_component(container)
-    assert len(select["options"]) == 25
-    shown_ids = {option["value"] for option in select["options"]}
-    assert shown_ids == {console._ticket_id(_ticket(index)) for index in range(1, 26)}
-    assert select["placeholder"] == (
-        "Choose a ticket (25 of 30 shown, oldest first; use Find for the rest)"
-    )
+def test_shared_actions_four_ticket_page_fits_exactly_40_components():
+    tickets = [_ticket(index, _console_name=f"fwa-{index}-candidate") for index in range(1, 5)]
+    view = console.build_hub_actions(tickets, page=6, total=30)
+    assert len(_component_nodes(view)) == 40
+    nodes = _nodes(view)
+    assert not any(node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU for node in nodes)
+    assert any(str(node.get("content", "")).startswith("Page 7/8 · **30 open tickets** · Oldest first") for node in nodes)
+    assert len([node for node in nodes if str(node.get("custom_id", "")).startswith("ticket_v2_hub_details:")]) == 4
+    assert len([node for node in nodes if node.get("url")]) == 8
     _assert_component_limits(view)
 
 
@@ -391,34 +369,19 @@ def test_hub_clan_lines_keep_closed_counts_native_when_present():
     _assert_component_limits(view)
 
 
-def test_hub_picker_placeholder_stays_plain_when_25_or_fewer_open():
-    tickets = [_ticket(index) for index in range(1, 26)]
-    view = console.build_hub_components(tickets, b"png", total_open=25)
-    container, _attachments = view[0].build()
-    select = _hub_picker_component(container)
-    assert select["placeholder"] == "Choose an open ticket"
-
-
-def test_empty_hub_keeps_a_valid_disabled_picker():
-    view = console.build_hub_components([], b"png")
-    container, _attachments = view[0].build()
-    select = _hub_picker_component(container)
-    assert select["disabled"] is True
-    assert [option["label"] for option in select["options"]] == ["No open tickets"]
+def test_empty_actions_retains_find_browse_refresh_and_disabled_navigation():
+    view = console.build_hub_actions([], page=0, total=0)
+    nodes = _nodes(view)
+    buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
+    assert len(buttons) == 5
+    assert buttons[0]["disabled"] and buttons[1]["disabled"]
+    assert [button["label"] for button in buttons[2:]] == ["Find", "Browse", "Refresh"]
     _assert_component_limits(view)
 
 
-def test_hub_picker_option_label_is_not_markdown_escaped():
-    """Select-option labels are plain text Discord never renders as
-    markdown, so `_escape_markdown`'s backslashes would show up literally
-    instead of staying inert."""
-    ticket = _ticket(1, username="_Weird*Name_")
-    view = console.build_hub_components([ticket], b"png")
-    container, _attachments = view[0].build()
-    select = _hub_picker_component(container)
-
-    assert select["options"][0]["label"] == "FWA #1 · _Weird*Name_"
-    assert "\\" not in select["options"][0]["label"]
+def test_shared_action_name_is_escaped_and_ghost_marker_is_preserved():
+    view = console.build_hub_actions([_ticket(1, _console_name="👻fwa-809-akl_07")], page=0, total=1)
+    assert any(node.get("content") == "### 👻fwa-809-akl\\_07" for node in _nodes(view))
 
 
 def test_search_worst_case_uses_exact_safe_budget_and_unknown_status_fallback():
@@ -4350,6 +4313,9 @@ def test_deleted_hub_message_is_recreated_and_new_id_is_saved(monkeypatch):
 
     monkeypatch.setattr(console.hikari, "NotFoundError", MissingMessage)
     monkeypatch.setattr(console, "_hub_payload", payload)
+    async def actions_payload(_mongo, _state):
+        return ["actions payload"]
+    monkeypatch.setattr(console, "_hub_actions_payload", actions_payload)
     monkeypatch.setattr(console, "_chart_signature", signature)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     collection = Collection()
@@ -4364,7 +4330,7 @@ def test_deleted_hub_message_is_recreated_and_new_id_is_saved(monkeypatch):
     ))
 
     assert message_id == 999
-    assert (rest.edits, rest.creates) == (1, 1)
+    assert (rest.edits, rest.creates) == (1, 2)
     # The message binding is written unconditionally; the settle that clears
     # force_pending is a separate, revision-guarded write.
     sets = [update["$set"] for _query, update in collection.updates]
@@ -4372,7 +4338,7 @@ def test_deleted_hub_message_is_recreated_and_new_id_is_saved(monkeypatch):
     settle_query, settle_update = collection.updates[-1]
     assert "desired_revision" in settle_query
     assert settle_update["$set"]["force_pending"] is False
-    assert settle_update["$set"]["chart_signature"] == "sig"
+    assert settle_update["$set"]["chart_signature"] == "sig:page=0"
 
 
 def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
@@ -4437,6 +4403,9 @@ def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
         return "sig"
 
     monkeypatch.setattr(console, "_hub_payload", payload)
+    async def actions_payload(_mongo, _state):
+        return ["actions payload"]
+    monkeypatch.setattr(console, "_hub_actions_payload", actions_payload)
     monkeypatch.setattr(console, "_chart_signature", signature)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     rest = Rest()
@@ -4444,7 +4413,7 @@ def test_orphaned_hub_is_reused_after_create_checkpoint_loss(monkeypatch):
     message_id = asyncio.run(console._publish_hub(
         SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7)),
         SimpleNamespace(ticket_setup=collection),
-        {"guild_id": 321, "channel_id": 123},
+        {"guild_id": 321, "channel_id": 123, "actions_message_id": 778},
     ))
     assert message_id == 777
     assert rest.creates == 0
@@ -4568,7 +4537,7 @@ def test_hub_skips_render_when_chart_signature_is_unchanged_and_not_forced(
         object(),
         {
             "guild_id": 321, "channel_id": 123, "message_id": 456,
-            "force_pending": False, "chart_signature": signature,
+            "actions_message_id": 457, "force_pending": False, "chart_signature": signature + ":page=0",
         },
     ))
 
@@ -4637,17 +4606,20 @@ def test_hub_forces_a_redraw_when_force_pending_even_if_counts_would_match(
     monkeypatch.setattr(console.flag_store, "count_active", flags)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     monkeypatch.setattr(console, "_hub_payload", payload)
+    async def actions_payload(_mongo, _state):
+        return ["actions payload"]
+    monkeypatch.setattr(console, "_hub_actions_payload", actions_payload)
 
     rest = Rest()
     collection = Collection()
     message_id = asyncio.run(console._publish_hub(
         SimpleNamespace(rest=rest),
         SimpleNamespace(ticket_setup=collection),
-        {"guild_id": 321, "channel_id": 123, "message_id": 456, "force_pending": True},
+        {"guild_id": 321, "channel_id": 123, "message_id": 456, "actions_message_id": 457, "force_pending": True},
     ))
 
     assert message_id == 456
-    assert rest.edits == 1
+    assert rest.edits == 2
     query, update = collection.updates[0][0]
     assert query == {"_id": console.HUB_STATE_ID, "desired_revision": 0}
     assert update["$set"]["force_pending"] is False
@@ -4703,11 +4675,14 @@ def test_force_raised_mid_publish_survives_the_settle_write(monkeypatch):
     monkeypatch.setattr(console.flag_store, "count_active", flags)
     monkeypatch.setattr(console, "validate_console_channel", valid)
     monkeypatch.setattr(console, "_hub_payload", payload)
+    async def actions_payload(_mongo, _state):
+        return ["actions payload"]
+    monkeypatch.setattr(console, "_hub_actions_payload", actions_payload)
 
     rest = Rest()
     document = {
         "_id": console.HUB_STATE_ID,
-        "guild_id": 321, "channel_id": 123, "message_id": 456,
+        "guild_id": 321, "channel_id": 123, "message_id": 456, "actions_message_id": 457,
         "force_pending": True, "desired_revision": 5,
     }
     collection = Collection(document)
@@ -4726,7 +4701,7 @@ def test_force_raised_mid_publish_survives_the_settle_write(monkeypatch):
     ))
 
     assert message_id == 456
-    assert rest.edits == 1
+    assert rest.edits == 2
     # The settle write's filter (desired_revision == 5, the entry snapshot)
     # no longer matches the document (now at 6), so it must not apply.
     assert document["force_pending"] is True
@@ -4821,3 +4796,222 @@ def test_no_ticket_component_emoji_uses_a_bare_arrow_codepoint():
             if any(0x2190 <= ord(ch) <= 0x21FF for ch in value):
                 offenders.append((path.name, value))
     assert offenders == []
+
+
+def test_shared_deny_modal_never_updates_origin_and_uses_normal_cas(monkeypatch):
+    events = []
+    state = {"guild_id": 33, "channel_id": 44, "actions_message_id": 55}
+    doc = _ticket(1, guild_id=999)  # imported tickets can belong to the old guild
+
+    class Interaction:
+        message = SimpleNamespace(id=55, channel_id=44)
+        components = [[SimpleNamespace(custom_id="reason", value="Clear reason")]]
+
+        async def create_initial_response(self, *args, **kwargs):
+            raise AssertionError("shared modal must not update the source")
+
+        async def edit_initial_response(self, **kwargs):
+            events.append(("private-response", kwargs))
+
+    class Context:
+        interaction = Interaction()
+        user = SimpleNamespace(id=22, username="Recruiter")
+        guild_id = 33
+        member = object()
+
+        async def defer(self, **kwargs):
+            events.append(("ack", kwargs))
+
+    async def hub_state(_mongo):
+        events.append(("state", {}))
+        return state
+
+    async def allowed(*args):
+        return True
+
+    async def find(*args):
+        return doc
+
+    async def deny(*args, **kwargs):
+        events.append(("decision", kwargs))
+        return console.store.Transition(console.store.MISSING, None)
+
+    monkeypatch.setattr(console, "_hub_state", hub_state)
+    monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.store, "find_one", find)
+    monkeypatch.setattr(console.resolve, "deny_ticket", deny)
+    asyncio.run(
+        console.ticket_hub_deny_submit(
+            Context(), "ticket_1", mongo=object(), bot=object()
+        )
+    )
+    assert events[0] == ("ack", {"ephemeral": True})
+    decision = next(kwargs for name, kwargs in events if name == "decision")
+    assert decision["expected_status"] == "open"
+    assert decision["kind"] == console.resolve.KIND_DENY_CUSTOM
+    assert decision["reason"] == "Clear reason"
+    assert events[-1][0] == "private-response"
+
+
+def test_shared_ticket_rejects_copied_source_before_reading_ticket(monkeypatch):
+    ctx = SimpleNamespace(
+        guild_id=33,
+        interaction=SimpleNamespace(message=SimpleNamespace(id=99, channel_id=44)),
+    )
+
+    async def state(_mongo):
+        return {"guild_id": 33, "channel_id": 44, "actions_message_id": 55}
+
+    async def forbidden(*args):
+        raise AssertionError("copied source must be refused before private reads")
+
+    monkeypatch.setattr(console, "_hub_state", state)
+    monkeypatch.setattr(console.store, "find_one", forbidden)
+    monkeypatch.setattr(console.perms, "is_recruiter", forbidden)
+    assert asyncio.run(console._shared_ticket(ctx, object(), "ticket_1")) is None
+
+
+def test_publish_checkpoints_first_message_before_second_publish_failure(monkeypatch):
+    checkpoints = []
+
+    class Collection:
+        async def update_one(self, query, update, **kwargs):
+            checkpoints.append(update["$set"])
+
+    class Rest:
+        async def create_message(self, **kwargs):
+            if checkpoints:
+                raise RuntimeError("second message failed")
+            return SimpleNamespace(id=101)
+
+    async def valid(*args, **kwargs):
+        pass
+
+    async def payload(*args):
+        return []
+
+    async def signature(*args):
+        return "sig"
+
+    async def orphan(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(console, "validate_console_channel", valid)
+    monkeypatch.setattr(console, "_hub_payload", payload)
+    monkeypatch.setattr(console, "_hub_actions_payload", payload)
+    monkeypatch.setattr(console, "_chart_signature", signature)
+    monkeypatch.setattr(console, "_find_orphaned_hub", orphan)
+    with pytest.raises(RuntimeError, match="second message failed"):
+        asyncio.run(
+            console._publish_hub(
+                SimpleNamespace(rest=Rest()),
+                SimpleNamespace(ticket_setup=Collection()),
+                {"guild_id": 33, "channel_id": 44, "desired_revision": 7},
+            )
+        )
+    assert checkpoints == [{"message_id": 101}]
+
+
+def test_readonly_and_actions_orphans_recover_by_distinct_stable_component_ids():
+    messages = [
+        SimpleNamespace(
+            id=idx,
+            author=SimpleNamespace(id=7),
+            components=[SimpleNamespace(id=marker)],
+        )
+        for idx, marker in (
+            (101, console.HUB_STATS_COMPONENT_ID),
+            (102, console.HUB_ACTIONS_COMPONENT_ID),
+        )
+    ]
+
+    async def result():
+        return messages
+
+    rest = SimpleNamespace(
+        fetch_messages=lambda channel: SimpleNamespace(to_list=result)
+    )
+    bot = SimpleNamespace(rest=rest, get_me=lambda: SimpleNamespace(id=7))
+    assert asyncio.run(console._find_orphaned_hub(bot, 44)).id == 101
+    assert (
+        asyncio.run(
+            console._find_orphaned_hub(bot, 44, marker=console.HUB_ACTIONS_COMPONENT_ID)
+        ).id
+        == 102
+    )
+
+
+def test_open_page_can_reach_rows_after_25_with_stable_sort(monkeypatch):
+    calls = []
+
+    class Cursor:
+        def sort(self, order):
+            calls.append(("sort", order))
+            return self
+
+        def skip(self, offset):
+            calls.append(("skip", offset))
+            return self
+
+        def limit(self, amount):
+            calls.append(("limit", amount))
+            return self
+
+        async def to_list(self, *, length):
+            return []
+
+    class Collection:
+        def find(self, query):
+            calls.append(("find", query))
+            return Cursor()
+
+    assert (
+        asyncio.run(
+            console.store.list_open_page(
+                SimpleNamespace(tickets=Collection()), offset=28, limit=4
+            )
+        )
+        == []
+    )
+    assert ("skip", 28) in calls
+    assert ("sort", [("created_at", 1), ("_id", 1)]) in calls
+    assert ("limit", 4) in calls
+
+
+def test_paired_publish_refuses_writes_after_lease_owner_changed(monkeypatch):
+    class Collection:
+        async def update_one(self, query, update):
+            assert query["lease_owner"] == "old-worker"
+            return SimpleNamespace(matched_count=0)
+
+    class Rest:
+        async def edit_message(self, **kwargs):
+            raise AssertionError("lost lease must stop before a Discord write")
+
+    async def valid(*args, **kwargs):
+        pass
+
+    async def payload(*args):
+        return []
+
+    async def signature(*args):
+        return "sig"
+
+    monkeypatch.setattr(console, "validate_console_channel", valid)
+    monkeypatch.setattr(console, "_hub_payload", payload)
+    monkeypatch.setattr(console, "_hub_actions_payload", payload)
+    monkeypatch.setattr(console, "_chart_signature", signature)
+    with pytest.raises(RuntimeError, match="lease was lost"):
+        asyncio.run(
+            console._publish_hub(
+                SimpleNamespace(rest=Rest()),
+                SimpleNamespace(ticket_setup=Collection()),
+                {
+                    "guild_id": 33,
+                    "channel_id": 44,
+                    "message_id": 101,
+                    "actions_message_id": 102,
+                    "lease_owner": "old-worker",
+                },
+            )
+        )

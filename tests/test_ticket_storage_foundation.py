@@ -5061,13 +5061,38 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
     }
 
     container, _attachments = components[0].build()
-    select = next(
-        child["components"][0]
+    assert not any(
+        child["type"] == hikari.ComponentType.ACTION_ROW
         for child in container["components"]
-        if child["type"] == hikari.ComponentType.ACTION_ROW
-        and child["components"][0].get("custom_id") == "ticket_v2_console_pick:hub"
     )
-    assert len(select["options"]) == 3
+    mongo.ticket_setup = Collection([{"_id": console.HUB_STATE_ID, "page": 0}])
+    actions = asyncio.run(console._hub_actions_payload(mongo, {"page": 0}))
+    action_container, _ = actions[0].build()
+    ticket_rows = [
+        child for child in action_container["components"]
+        if child["type"] == hikari.ComponentType.ACTION_ROW
+        and child["components"][0].get("custom_id", "").startswith("ticket_v2_hub_details:")
+    ]
+    assert len(ticket_rows) == 3
+    assert all(len(row["components"]) == 5 for row in ticket_rows)
+
+
+def test_open_console_pages_reach_tickets_beyond_old_picker_limit():
+    documents = [
+        schema.new_ticket_document(
+            ticket_type="fwa", ticket_number=number, guild_id=10,
+            public_thread_id=100 + number, public_parent_id=20,
+            staff_thread_id=200 + number, staff_parent_id=21,
+            user_id=1000 + number, username=f"Applicant {number}",
+            created_at=NOW + timedelta(minutes=number), status="open",
+        )
+        for number in range(1, 32)
+    ]
+    for document in documents:
+        document["runtime"] = ticket_runtime.THREAD_RUNTIME
+    mongo = SimpleNamespace(tickets=Collection(list(reversed(documents))))
+    rows = asyncio.run(store.list_open_page(mongo, offset=28, limit=4))
+    assert [row["ticket_number"] for row in rows] == [29, 30, 31]
 
 
 def test_search_identity_field_names_match_what_schema_writes():

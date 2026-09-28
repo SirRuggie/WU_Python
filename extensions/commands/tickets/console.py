@@ -138,6 +138,9 @@ REQUIRED_HUB_RECRUITER_PERMISSIONS = (
 )
 
 MAX_OPEN_PICKER = 25
+HUB_PAGE_SIZE = 4
+HUB_STATS_COMPONENT_ID = 809001
+HUB_ACTIONS_COMPONENT_ID = 809002
 MAX_SEARCH_RESULTS = 10
 MAX_HISTORY_RESULTS = 10
 MAX_DETAIL_HISTORY = 5
@@ -729,8 +732,6 @@ def build_hub_components(
             media=hikari.Bytes(clan_bars[kind], HUB_CLAN_BAR_ATTACHMENTS[kind], "image/png"),
             description=f"{kind.title()} clan ticket status distribution.",
         )])
-    has_open = bool(open_tickets)
-    shown = min(len(open_tickets), MAX_OPEN_PICKER)
     counts = counts or OverviewCounts(statuses={}, by_type={}, flags={})
     clan_bars = clan_bars or {
         kind: render_clan_status_bar_sync(
@@ -747,10 +748,6 @@ def build_hub_components(
         )
         for kind, label, color, filename in HUB_FLAG_ROWS
     }
-    total = sum(_int(value) for value in counts.statuses.values())
-    updated = int(counts.updated_at.timestamp()) if counts.updated_at else None
-    freshness = f"Updated <t:{updated}:R>" if updated else "Updated just now"
-    total_copy = f"{freshness} · **{total:,} tickets**"
     def clan_line(kind: str, label: str, icon: str) -> str:
         values = counts.by_type.get(kind, {})
         line = (
@@ -772,6 +769,7 @@ def build_hub_components(
                          f"{count} active {suffix}."),
         )])
     return [Container(
+        id=HUB_STATS_COMPONENT_ID,
         accent_color=ACCENT_BLUE,
         components=[
             Text(content="# Ticket Console"),
@@ -795,35 +793,149 @@ def build_hub_components(
             flag_row("not_loyal"),
             Separator(divider=True),
             flag_row("ghosted"),
-            Separator(divider=True),
-            *([Text(content="No open tickets right now. Find and Browse still search ticket history.")]
-              if not has_open else []),
-            ActionRow(components=[TextSelectMenu(
-                custom_id=f"ticket_v2_console_pick:{HUB_ACTION_ID}",
-                placeholder=_hub_picker_placeholder(has_open, shown, total_open),
-                min_values=1,
-                max_values=1,
-                is_disabled=not has_open,
-                options=_open_picker_options(open_tickets),
-            )]),
-            ActionRow(components=[
+
+        ],
+    )]
+
+
+
+def build_hub_actions(
+    open_tickets: Sequence[Mapping],
+    *,
+    page: int,
+    total: int,
+    total_tickets: int | None = None,
+    updated_at: datetime | None = None,
+) -> list[Container]:
+    pages = max(1, (total + HUB_PAGE_SIZE - 1) // HUB_PAGE_SIZE)
+    children = [Text(content="## Open tickets")]
+    for index, doc in enumerate(open_tickets):
+        if index:
+            children.append(Separator(divider=True))
+        ticket_id = _ticket_id(doc)
+        children.append(
+            Text(content=f"### {_clean(doc.get('_console_name'), limit=100)}")
+        )
+        buttons = [
+            Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"ticket_v2_hub_details:{ticket_id}",
+                label="View Details",
+                emoji="📋",
+            )
+        ]
+        for staff, label in ((False, "Open Ticket"), (True, "Staff Thread")):
+            url = ticket_jump_url(doc, staff=staff)
+            buttons.append(
+                LinkButton(
+                    url=url, label=label, emoji=hikari.Snowflake(1553091643639468213)
+                )
+                if url
+                else Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id=f"ticket_v2_hub_details:{ticket_id}",
+                    label=label,
+                    is_disabled=True,
+                )
+            )
+        buttons.extend(
+            [
+                Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"ticket_v2_hub_approve:{ticket_id}",
+                    label="Approve",
+                    emoji=hikari.Snowflake(1397096942907166831),
+                ),
+                Button(
+                    style=hikari.ButtonStyle.DANGER,
+                    custom_id=f"ticket_v2_hub_deny:{ticket_id}",
+                    label="Deny",
+                    emoji=hikari.Snowflake(1397096986506825778),
+                ),
+            ]
+        )
+        children.append(ActionRow(components=buttons))
+    if not open_tickets:
+        children.append(
+            Text(
+                content="No open tickets right now. Find and Browse still search ticket history."
+            )
+        )
+    children.append(
+        ActionRow(
+            components=[
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id="ticket_v2_hub_page:previous",
+                    emoji=hikari.Snowflake(1536793616863862784),
+                    is_disabled=page <= 0,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id="ticket_v2_hub_page:next",
+                    emoji=hikari.Snowflake(1536793616004022403),
+                    is_disabled=page >= pages - 1,
+                ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"ticket_v2_console_find:{HUB_ACTION_ID}",
-                    label="Find a ticket",
-                    emoji="🔍",
+                    label="Find",
+                    emoji=hikari.Snowflake(1536797595089899540),
                 ),
                 Button(
                     style=hikari.ButtonStyle.SECONDARY,
                     custom_id=f"ticket_v2_console_browse:{HUB_ACTION_ID}",
-                    label="Browse tickets",
+                    label="Browse",
                     emoji="📋",
                 ),
-            ]),
-            Separator(divider=True),
-            Text(content=total_copy),
-        ],
-    )]
+                Button(
+                    style=hikari.ButtonStyle.SECONDARY,
+                    custom_id="ticket_v2_hub_page:refresh",
+                    label="Refresh",
+                    emoji=hikari.Snowflake(1536798918858514502),
+                ),
+            ]
+        )
+    )
+    freshness = (
+        f"Updated {_timestamp(updated_at)}" if updated_at else "Updated just now"
+    )
+    total_copy = total if total_tickets is None else total_tickets
+    children.append(
+        Text(
+            content=f"Page {page + 1}/{pages} · **{total} open tickets** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
+        )
+    )
+    return [
+        Container(
+            id=HUB_ACTIONS_COMPONENT_ID, accent_color=ACCENT_BLUE, components=children
+        )
+    ]
+
+
+async def _hub_actions_payload(mongo: MongoClient, state: Mapping) -> list[Container]:
+    raw_counts = await store.console_counts(mongo)
+    statuses, _ = _coerce_counts(raw_counts)
+    total = statuses.get("open", 0)
+    page = max(0, min(_int(state.get("page")), max(0, (total - 1) // HUB_PAGE_SIZE)))
+    tickets = await store.list_open_page(
+        mongo, offset=page * HUB_PAGE_SIZE, limit=HUB_PAGE_SIZE
+    )
+    names = await asyncio.gather(
+        *(thread_service.thread_names_for_ticket(mongo, doc) for doc in tickets)
+    )
+    for doc, names_pair in zip(tickets, names):
+        doc['_console_name'] = names_pair[0]
+    await mongo.ticket_setup.update_one(
+        {"_id": HUB_STATE_ID, "page": state.get("page", 0)}, {"$set": {"page": page}}
+    )
+    return build_hub_actions(
+        tickets,
+        page=page,
+        total=total,
+        total_tickets=sum(statuses.values()),
+        updated_at=utcnow(),
+    )
 
 
 def _coerce_counts(raw) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
@@ -891,7 +1003,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 9
+HUB_LAYOUT_VERSION = 10
 
 
 async def _chart_signature(mongo: MongoClient) -> str:
@@ -961,6 +1073,7 @@ async def _ensure_hub_state(mongo: MongoClient) -> None:
             "desired_revision": 0,
             "applied_revision": -1,
             "force_pending": True,
+            "page": 0,
             "created_at": utcnow(),
         }},
         upsert=True,
@@ -1101,7 +1214,9 @@ async def _message_history(rest, channel_id: int, *, limit: int | None = None) -
     return list(await iterator)
 
 
-async def _find_orphaned_hub(bot: hikari.GatewayBot, channel_id: int):
+async def _find_orphaned_hub(
+    bot: hikari.GatewayBot, channel_id: int, *, marker: int = HUB_STATS_COMPONENT_ID
+):
     """Recover a hub whose Discord create committed before its Mongo checkpoint."""
     me = bot.get_me()
     if me is None:
@@ -1120,7 +1235,11 @@ async def _find_orphaned_hub(bot: hikari.GatewayBot, channel_id: int):
         action_ids: set[str] = set()
         for component in getattr(message, "components", ()) or ():
             action_ids.update(_hub_action_ids(component))
-        if required <= action_ids:
+        marked = any(
+            _int(getattr(component, "id", 0)) == marker
+            for component in getattr(message, "components", ()) or ()
+        )
+        if marked or (marker == HUB_STATS_COMPONENT_ID and required <= action_ids):
             matches.append(message)
     return max(matches, key=lambda item: int(item.id), default=None)
 
@@ -1143,127 +1262,106 @@ async def _publish_hub(
         channel_id=channel_id,
     )
 
-    message_id = _int(state.get("message_id"))
-    # The revision read at entry -- a ticket change that lands mid-publish
-    # bumps desired_revision (and re-raises force_pending via
-    # _mark_hub_dirty) past this value, and the settle write below must not
-    # clobber that.
+    async def renew_lease() -> None:
+        owner = state.get("lease_owner")
+        if owner:
+            result = await mongo.ticket_setup.update_one(
+                {"_id": HUB_STATE_ID, "lease_owner": owner},
+                {"$set": {"lease_until": utcnow() + HUB_LEASE}},
+            )
+            if not result.matched_count:
+                raise RuntimeError("ticket console publish lease was lost")
+
+    # Only clear dirty flags for the entry revision: a ticket or page change
+    # during either Discord publish must survive for the next drain.
     entry_revision = _int(state.get("desired_revision"))
-    # Missing force_pending (a state row predating this field, or a caller
-    # that never went through _mark_hub_dirty) means "unknown baseline" and
-    # must default to a full redraw, not a skip.
-    signature: str | None = None
-    if message_id and not state.get("force_pending", True):
-        signature = await _chart_signature(mongo)
-        if signature == state.get("chart_signature"):
-            if state.get("verify_message_pending"):
-                try:
-                    await bot.rest.fetch_message(channel_id, message_id)
-                except hikari.NotFoundError:
-                    message_id = 0
-                else:
-                    await mongo.ticket_setup.update_one(
-                        {"_id": HUB_STATE_ID, "desired_revision": entry_revision},
-                        {"$set": {
-                            "force_pending": False,
-                            "verify_message_pending": False,
-                            "chart_signature": signature,
-                        }},
-                    )
-                    return message_id
-            else:
-                # Every applicant message dirties the hub, but the chart and
-                # open-ticket picker only ever change on a create/decide/flag
-                # event -- those always set force_pending, so an unchanged
-                # signature here means there is nothing new to draw. Skip the
-                # Pillow render and Discord PNG re-upload.
-                return message_id
-    # Always store the signature of what is actually drawn (the forced path
-    # used to leave it unwritten), so a later non-forced publish compares
-    # against the right baseline instead of stale or missing data.
-    if signature is None:
-        signature = await _chart_signature(mongo)
-    settle_fields: dict = {
-        "force_pending": False,
-        "verify_message_pending": False,
-        "chart_signature": signature,
-    }
-
-    async def _settle() -> None:
-        # Conditioned on the revision read at entry: if a ticket change
-        # landed mid-publish and bumped desired_revision (re-raising
-        # force_pending), that force must survive this settle so the next
-        # drain redraws instead of silently clearing the flag on data this
-        # publish never saw. Shared by the edit, orphan and create paths.
-        await mongo.ticket_setup.update_one(
-            {"_id": HUB_STATE_ID, "desired_revision": entry_revision},
-            {"$set": settle_fields},
-        )
-
-    components = await _hub_payload(mongo)
-    if message_id:
+    signature = await _chart_signature(mongo)
+    signature += ":page=" + str(_int(state.get("page")))
+    bindings = (
+        ("message_id", HUB_STATS_COMPONENT_ID),
+        ("actions_message_id", HUB_ACTIONS_COMPONENT_ID),
+    )
+    if (
+        not state.get("force_pending", True)
+        and signature == state.get("chart_signature")
+        and all(_int(state.get(key)) for key, _ in bindings)
+    ):
+        if not state.get("verify_message_pending"):
+            return _int(state.get("message_id"))
         try:
-            await bot.rest.edit_message(
-                channel=channel_id,
-                message=message_id,
-                components=components,
-                user_mentions=False,
-                role_mentions=False,
-                mentions_everyone=False,
-            )
-            await _settle()
-            return message_id
+            for key, _ in bindings:
+                await renew_lease()
+                await bot.rest.fetch_message(channel_id, _int(state.get(key)))
         except hikari.NotFoundError:
-            # The channel may still exist while the bot-owned hub message was
-            # deleted. Creation below is the durable self-healing path.
             pass
-
-    orphan = await _find_orphaned_hub(bot, channel_id)
-    if orphan is not None:
-        try:
-            await bot.rest.edit_message(
+        else:
+            await mongo.ticket_setup.update_one(
+                {"_id": HUB_STATE_ID, "desired_revision": entry_revision},
+                {"$set": {"verify_message_pending": False}},
+            )
+            return _int(state.get("message_id"))
+    payloads = [await _hub_payload(mongo), await _hub_actions_payload(mongo, state)]
+    result_ids = {}
+    for (key, marker), components in zip(bindings, payloads):
+        await renew_lease()
+        message_id = _int(state.get(key))
+        if message_id:
+            try:
+                await bot.rest.edit_message(
+                    channel=channel_id,
+                    message=message_id,
+                    components=components,
+                    user_mentions=False,
+                    role_mentions=False,
+                    mentions_everyone=False,
+                )
+                result_ids[key] = message_id
+                continue
+            except hikari.NotFoundError:
+                pass
+        await renew_lease()
+        orphan = await _find_orphaned_hub(bot, channel_id, marker=marker)
+        await renew_lease()
+        if orphan:
+            try:
+                await bot.rest.edit_message(
+                    channel=channel_id,
+                    message=int(orphan.id),
+                    components=components,
+                    user_mentions=False,
+                    role_mentions=False,
+                    mentions_everyone=False,
+                )
+            except hikari.NotFoundError:
+                orphan = None
+        if orphan is None:
+            await renew_lease()
+            orphan = await bot.rest.create_message(
                 channel=channel_id,
-                message=int(orphan.id),
                 components=components,
+                flags=hikari.MessageFlag.IS_COMPONENTS_V2,
                 user_mentions=False,
                 role_mentions=False,
                 mentions_everyone=False,
             )
-        except hikari.NotFoundError:
-            orphan = None
-        else:
-            message_id = int(orphan.id)
-            # The message binding must never be conditional (a lost write
-            # would orphan the message and duplicate the hub); only the
-            # settle is revision-guarded.
-            await mongo.ticket_setup.update_one(
-                {"_id": HUB_STATE_ID},
-                {"$set": {
-                    "message_id": message_id,
-                    "message_recovered_at": utcnow(),
-                }},
-            )
-            await _settle()
-            return message_id
-
-    message = await bot.rest.create_message(
-        channel=channel_id,
-        components=components,
-        flags=hikari.MessageFlag.IS_COMPONENTS_V2,
-        user_mentions=False,
-        role_mentions=False,
-        mentions_everyone=False,
-    )
-    message_id = int(message.id)
+        message_id = int(orphan.id)
+        # Checkpoint each successful creation independently: a failed second
+        # publish must repair the pair without duplicating the first message.
+        await mongo.ticket_setup.update_one(
+            {"_id": HUB_STATE_ID}, {"$set": {key: message_id}}
+        )
+        result_ids[key] = message_id
     await mongo.ticket_setup.update_one(
-        {"_id": HUB_STATE_ID},
-        {"$set": {
-            "message_id": message_id,
-            "message_created_at": utcnow(),
-        }},
+        {"_id": HUB_STATE_ID, "desired_revision": entry_revision},
+        {
+            "$set": {
+                "force_pending": False,
+                "verify_message_pending": False,
+                "chart_signature": signature,
+            }
+        },
     )
-    await _settle()
-    return message_id
+    return result_ids["message_id"]
 
 
 async def _drain_hub_refreshes(
@@ -4566,6 +4664,212 @@ async def _open_find_modal(
     )
 
 
+def _is_shared_actions_source(ctx, state: Mapping) -> bool:
+    message = getattr(ctx.interaction, "message", None)
+    return bool(
+        message
+        and _int(getattr(message, "id", 0)) == _int(state.get("actions_message_id"))
+        and _int(getattr(message, "channel_id", 0)) == _int(state.get("channel_id"))
+    )
+
+
+async def _shared_ticket(ctx, mongo: MongoClient, ticket_id: str) -> Mapping | None:
+    state = await _hub_state(mongo)
+    guild_id = _int(getattr(ctx, "guild_id", 0))
+    if (
+        not guild_id
+        or guild_id != _int(state.get("guild_id"))
+        or not _is_shared_actions_source(ctx, state)
+    ):
+        return None
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        return None
+    doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
+    if doc is None or str(doc.get("status")) != "open":
+        return None
+    return doc
+
+
+async def _shared_detail_state(ctx, mongo: MongoClient, doc: Mapping) -> str:
+    action_id = uuid.uuid4().hex
+    await insert_state(
+        mongo,
+        {
+            "_id": action_id,
+            "type": "ticket_v2_console_detail",
+            "owner_id": int(ctx.user.id),
+            "guild_id": _int(ctx.guild_id),
+            "ticket_id": _ticket_id(doc),
+            "expected_status": "open",
+        },
+    )
+    return action_id
+
+
+@register_action("ticket_v2_hub_details", no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def ticket_hub_details(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    doc = await _shared_ticket(ctx, mongo, action_id)
+    components = (
+        await _ticket_detail_panel(
+            mongo, doc, owner_id=int(ctx.user.id), guild_id=_int(ctx.guild_id)
+        )
+        if doc
+        else _notice(
+            "Ticket unavailable",
+            "Recruiter access is required and the ticket must still be open.",
+        )
+    )
+    await _execute_private_panel(ctx, components)
+
+
+@register_action("ticket_v2_hub_approve", no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def ticket_hub_approve(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    doc = await _shared_ticket(ctx, mongo, action_id)
+    components = (
+        _approve_confirm_panel(
+            doc, action_id=await _shared_detail_state(ctx, mongo, doc)
+        )
+        if doc
+        else _notice(
+            "Ticket unavailable",
+            "Recruiter access is required and the ticket must still be open.",
+        )
+    )
+    await _execute_private_panel(ctx, components)
+
+
+@register_action(
+    "ticket_v2_hub_deny", opens_modal=True, no_return=True, preload_state=False
+)
+@lightbulb.di.with_di
+async def ticket_hub_deny(
+    ctx: lightbulb.components.MenuContext, action_id: str, **_kwargs
+) -> None:
+    # No database work before the modal acknowledgement. Submit independently
+    # validates guild, recruiter access and the current status before the CAS.
+    await ctx.respond_with_modal(
+        title="Deny ticket",
+        custom_id=f"ticket_v2_hub_deny_submit:{action_id}",
+        components=[
+            ModalActionRow().add_text_input(
+                "reason",
+                "Reason shown to the applicant",
+                placeholder="Use short, clear language",
+                required=True,
+                style=hikari.TextInputStyle.PARAGRAPH,
+                min_length=5,
+                max_length=1000,
+            )
+        ],
+    )
+
+
+@register_action(
+    "ticket_v2_hub_deny_submit", is_modal=True, no_return=True, preload_state=False
+)
+@lightbulb.di.with_di
+async def ticket_hub_deny_submit(
+    ctx: lightbulb.components.ModalContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    # A modal originating on the shared message MUST create an ephemeral
+    # response; DEFERRED_MESSAGE_UPDATE would overwrite that shared message.
+    await ctx.defer(ephemeral=True)
+    doc = await _shared_ticket(ctx, mongo, action_id)
+    reason = _modal_value(ctx, "reason")
+    if doc is None:
+        components = _notice(
+            "Ticket unavailable",
+            "Recruiter access is required and the ticket must still be open.",
+        )
+    elif not 5 <= len(reason) <= 1000:
+        components = _notice(
+            "Ticket not denied", "Write a clear reason with 5 to 1000 characters."
+        )
+    else:
+        try:
+            result = await resolve.deny_ticket(
+                bot,
+                mongo,
+                ticket_id=action_id,
+                member=ctx.member,
+                actor_name=ctx.user.username,
+                kind=resolve.KIND_DENY_CUSTOM,
+                reason=reason,
+                expected_status="open",
+            )
+            if result.outcome in {store.WON, store.EFFECT_FAILED}:
+                await request_hub_refresh_best_effort(
+                    bot, mongo, reason="ticket denied"
+                )
+            components = await _transition_result_panel(
+                result,
+                verb="denied",
+                mongo=mongo,
+                owner_id=int(ctx.user.id),
+                guild_id=_int(ctx.guild_id),
+            )
+        except Exception:
+            _log.exception("shared console denial failed ticket=%s", action_id)
+            components = _notice(
+                "Decision not saved",
+                "Open the ticket again and retry.",
+                accent=ACCENT_RED,
+            )
+    await ctx.interaction.edit_initial_response(
+        components=components,
+        user_mentions=False,
+        role_mentions=False,
+        mentions_everyone=False,
+    )
+
+
+@register_action("ticket_v2_hub_page", no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def ticket_hub_page(
+    ctx: lightbulb.components.MenuContext,
+    action_id: str,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    **_kwargs,
+) -> None:
+    state = await _hub_state(mongo)
+    if (
+        not _is_shared_actions_source(ctx, state)
+        or _int(state.get("guild_id")) != _int(getattr(ctx, "guild_id", 0))
+        or not await perms.is_recruiter(getattr(ctx, "member", None), mongo)
+    ):
+        await _execute_private_panel(
+            ctx,
+            _notice(
+                "Recruiter access required",
+                "Only recruiters can use the ticket console.",
+            ),
+        )
+        return
+    delta = {"next": 1, "previous": -1}.get(action_id, 0)
+    if delta:
+        await mongo.ticket_setup.update_one(
+            {"_id": HUB_STATE_ID}, {"$inc": {"page": delta}}
+        )
+    await request_hub_refresh(bot, mongo, reason="console page", force=True)
+
+
 @register_action("ticket_v2_console_pick", no_return=True)
 @lightbulb.di.with_di
 async def ticket_console_pick(
@@ -6864,7 +7168,7 @@ async def _recover_ticket_console_once(
     if not _int(state.get("channel_id")):
         return
     await _mark_hub_dirty(
-        mongo, reason="startup recovery", force=False, verify_message=True,
+        mongo, reason="startup recovery", force=True, verify_message=True,
     )
     _schedule_hub_refresh(bot, mongo)
 
