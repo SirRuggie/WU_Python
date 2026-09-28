@@ -78,7 +78,7 @@ def test_prompt_card_has_exact_copy_and_requested_emojis():
     assert inactivity.PROMPT in card.components[0].content
     buttons = card.components[1].components
     assert [button.label for button in buttons] == ["Yes - Deny", "No - Wait"]
-    assert [str(button.emoji) for button in buttons] == [inactivity.YES_EMOJI, inactivity.NO_EMOJI]
+    assert [int(button.emoji.id) for button in buttons] == [inactivity.YES_EMOJI, inactivity.NO_EMOJI]
     assert buttons[0].custom_id == "ticket_inactivity:ticket_123:abc:yes"
 
 

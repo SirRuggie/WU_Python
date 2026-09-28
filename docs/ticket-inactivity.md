@@ -33,9 +33,8 @@ remove a Ghosted flag. Pending work is recoverable after a bot restart.
 ## Temporary testing interval
 
 `ticket_setup` → `_id: config` → `ticket_inactivity_minutes` can override the
-seven-day default. It is currently set to **5 minutes** at the operator's request
-for testing. Keep this override until the operator explicitly requests restoration;
-setting it to `10080` or removing it restores seven days. Prompt text uses the same
+seven-day default. The testing interval was restored to **7 days (10080 minutes)**
+on September 28, 2026, after testing was confirmed complete. Prompt text uses the same
 configured interval, and No starts a fresh interval. The worker checks about once
 a minute. Existing prompts cannot deny a ticket that is not yet due under a newly
 increased interval.
