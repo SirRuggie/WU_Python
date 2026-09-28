@@ -85,7 +85,8 @@ def test_command_is_separate_and_legacy_remains():
     from extensions.commands.recruit.dashboard.dashboard import RecruitDashboard
     from extensions.components import registered_functions
 
-    assert ui.Warrior._command_data.name == "warrior"
+    assert ui.warrior.name == "warrior"
+    assert ui.WarriorSetup._command_data.name == "setup"
     assert RecruitDashboard._command_data.name == "dashboard"
     assert {
         "warrior",

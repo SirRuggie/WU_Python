@@ -89,7 +89,7 @@ def top(member, roles):
 async def context(bot, mongo, guild_id, actor_id, user_id):
     if testing_service.is_test_scope(mongo):
         raise SetupError(
-            "Warrior Set-up changes live members; it is unavailable in isolated ticket testing."
+            "Warrior Setup changes live members; it is unavailable in isolated ticket testing."
         )
     guild = await bot.rest.fetch_guild(guild_id)
     roles = await bot.rest.fetch_roles(guild_id)
@@ -202,7 +202,7 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
                     c["guild"].id,
                     c["member"].id,
                     rid,
-                    reason=f'Warrior Set-up by {c["actor"].id}',
+                    reason=f'Warrior Setup by {c["actor"].id}',
                 )
                 result[operation].append(name)
             except hikari.HTTPError as error:

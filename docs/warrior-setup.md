@@ -1,6 +1,6 @@
-# Warrior Set-up
+# Warrior Setup
 
-`/warrior discord-user:` opens a private, recruiter-owned onboarding checklist.
+`/warrior setup discord-user:` opens a private, recruiter-owned onboarding checklist.
 The existing `/recruit dashboard` and its action IDs remain unchanged. Warrior
 uses separate action IDs, sessions, settings, walkthrough records, and worker.
 
@@ -66,7 +66,7 @@ lease, errors, and completion. Role-change audit records live in `warrior_audit`
 The worker resumes from the saved checkpoint after restart. Each message has a
 stable component ID scoped to its run and step; recovery checks for an already
 sent message before posting. Delivery is time-bounded within a durable lease.
-Failed steps pause, display the failure in Warrior Set-up, and support **Retry
+Failed steps pause, display the failure in Warrior Setup, and support **Retry
 unfinished steps**. Completed steps are never intentionally replayed. A completed
 run can be explicitly restarted from Advanced; its prior record is archived in `warrior_history`.
 

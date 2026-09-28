@@ -1,4 +1,4 @@
-"""Independent /warrior set-up. The legacy /recruit dashboard stays registered."""
+"""Independent /warrior setup. The legacy /recruit dashboard stays registered."""
 
 import asyncio
 import logging
@@ -21,6 +21,8 @@ from utils.component_state import insert_state, update_state
 from utils.constants import GOLDENROD_ACCENT, RED_ACCENT, GREEN_ACCENT
 
 loader = lightbulb.Loader()
+warrior = lightbulb.Group("warrior", "Warrior setup and onboarding commands")
+loader.command(warrior)
 log = logging.getLogger(__name__)
 ICONS = {
     "back": 1536796427198668911,
@@ -54,7 +56,7 @@ def panel(title, *items, color=GOLDENROD_ACCENT):
 
 
 def back(sid):
-    return button(Row(), sid, "home", "Warrior Set-up", "home")
+    return button(Row(), sid, "home", "Warrior Setup", "home")
 
 
 async def show(ctx, components):
@@ -139,13 +141,13 @@ async def home(data, c, mongo, note=""):
             "advanced",
         ),
     ]
-    return panel("Warrior Set-up", *items)
+    return panel("Warrior Setup", *items)
 
 
-@loader.command
-class Warrior(
+@warrior.register()
+class WarriorSetup(
     lightbulb.SlashCommand,
-    name="warrior",
+    name="setup",
     description="Set up a warrior’s nickname, roles, clans and server walkthrough",
 ):
     user = lightbulb.user("discord-user", "Member to set up")
@@ -161,7 +163,7 @@ class Warrior(
         await ctx.defer(ephemeral=True)
         try:
             if not ctx.guild_id:
-                raise core.SetupError("Run /warrior in the server.")
+                raise core.SetupError("Run /warrior setup in the server.")
             c = await core.context(
                 bot, mongo, int(ctx.guild_id), int(ctx.user.id), int(self.user.id)
             )
@@ -321,7 +323,7 @@ async def advanced(data, c, mongo):
     ]
     if c["actor_permissions"] & hikari.Permissions.ADMINISTRATOR:
         rows.append(button(Row(), sid, "settings", "Server Settings", "advanced"))
-    return panel("Advanced Set-up", *rows, back(sid))
+    return panel("Advanced Setup", *rows, back(sid))
 
 
 async def settings_page(data, c, mongo, page=0):
@@ -719,7 +721,7 @@ async def form(
                 c["guild"].id,
                 c["member"].id,
                 nickname=value,
-                reason=f"Warrior Set-up by {ctx.user.id}",
+                reason=f"Warrior Setup by {ctx.user.id}",
             )
             note = "Nickname updated."
         elif verb.startswith("setting:"):
