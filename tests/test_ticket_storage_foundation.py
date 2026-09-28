@@ -89,6 +89,9 @@ def _condition(values, expected):
             if any(_equal(value, operand) for value in values):
                 return False
         elif operator == "$in":
+            # MongoDB null equality also matches an absent field.
+            if not values and None in operand:
+                continue
             if not any(any(_equal(value, choice) for choice in operand) for value in values):
                 return False
         elif operator == "$lte":
@@ -5096,3 +5099,57 @@ def test_search_identity_field_names_match_what_schema_writes():
     # schema and is not something `new_ticket_document` writes; every other
     # branch here must be a field the current schema actually writes.
     assert (tag_fields - {"tag"}) <= written_fields
+
+
+@pytest.mark.parametrize("change", ["activity", "prompt", "approved"])
+def test_inactivity_denial_rejects_changes_between_read_and_commit(change):
+    ticket = _ticket()
+    ticket["activity_revision"] = 4
+    ticket["inactivity"] = {"prompt": {"token": "pending-prompt"}}
+
+    class RacingCollection(Collection):
+        async def find_one_and_update(self, query, update, **kwargs):
+            current = self.documents[ticket["_id"]]
+            if change == "activity":
+                current["activity_revision"] += 1
+            elif change == "prompt":
+                current["inactivity"]["prompt"]["token"] = "replacement-prompt"
+            else:
+                current["status"] = "approved"
+                current["rev"] += 1
+            return await super().find_one_and_update(query, update, **kwargs)
+
+    mongo = _mongo()
+    mongo.tickets = RacingCollection([ticket])
+    result = asyncio.run(store.transition(
+        mongo, ticket["_id"], to_status="denied", actor_id=99,
+        actor_name="Recruiter", expected_rev=0,
+        expected_activity_revision=4,
+        expected_inactivity_token="pending-prompt",
+        extra={"denial_reason": "Recruit stopped responding"},
+        effect_kind=resolve.KIND_DENY_CUSTOM,
+    ))
+    assert result.outcome == store.LOST
+    assert result.doc["status"] == ("approved" if change == "approved" else "open")
+    assert "denial_reason" not in result.doc
+
+
+@pytest.mark.parametrize("revision", [None, 0, 4])
+def test_current_inactivity_prompt_can_commit_denial(revision):
+    ticket = _ticket()
+    if revision is not None:
+        ticket["activity_revision"] = revision
+    ticket["inactivity"] = {"prompt": {"token": "pending-prompt"}}
+    mongo = _mongo(ticket)
+    result = asyncio.run(store.transition(
+        mongo, ticket["_id"], to_status="denied", actor_id=99,
+        actor_name="Recruiter", expected_rev=0,
+        expected_activity_revision=revision or 0,
+        expected_inactivity_token="pending-prompt",
+        extra={"denial_reason": "Recruit stopped responding"},
+        effect_kind=resolve.KIND_DENY_CUSTOM,
+    ))
+    assert result.won
+    assert result.doc["status"] == "denied"
+    assert result.doc["denial_reason"] == "Recruit stopped responding"
+    assert result.doc["audit"][-1]["inactivity_token"] == "pending-prompt"

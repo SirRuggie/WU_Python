@@ -233,6 +233,13 @@ async def capture_candidate_thread_activity(
         return
     if _ticket_location(ticket) != int(event.channel_id):
         return
+    from extensions.commands.tickets import inactivity
+    try:
+        activity_changed = await inactivity.record_human_activity(mongo, ticket, event.message)
+        if activity_changed and (ticket.get("inactivity") or {}).get("prompt"):
+            await inactivity.retire_prompt(bot, ticket, "New conversation activity reset the seven-day inactivity timer.")
+    except Exception:
+        _log.exception("ticket inactivity activity capture failed ticket=%s", ticket.get("_id"))
     if int(ticket.get("user_id") or 0) != int(event.author_id):
         return
     snapshot = _candidate_message_snapshot(event.message)

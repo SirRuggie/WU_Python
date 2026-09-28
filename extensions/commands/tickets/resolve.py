@@ -1165,6 +1165,8 @@ async def _resolve_ticket(
         reason: str | None = None,
         expected_status: str = "open",
         expected_rev: int | None = None,
+        expected_activity_revision: int | None = None,
+        expected_inactivity_token: str | None = None,
         override: dict | None = None,
         prior_effect_marker: str | None = None,
         prior_effects_legacy_baseline: bool = False,
@@ -1204,6 +1206,8 @@ async def _resolve_ticket(
             to_status="approved" if kind == KIND_APPROVE else "denied",
             actor_id=member.id, actor_name=actor_name,
             expect=expected_status, expected_rev=expected_rev,
+            expected_activity_revision=expected_activity_revision,
+            expected_inactivity_token=expected_inactivity_token,
             extra=extra, overrides=override, effect_kind=kind,
             prior_effect_marker=prior_effect_marker,
             prior_effects_legacy_baseline=prior_effects_legacy_baseline,
@@ -1421,6 +1425,10 @@ async def _resolve_ticket(
         ).revision,
         "previous_notification_message_id": previous_notification_message_id,
     }
+    if expected_activity_revision is not None:
+        transition_kwargs["expected_activity_revision"] = expected_activity_revision
+    if expected_inactivity_token is not None:
+        transition_kwargs["expected_inactivity_token"] = expected_inactivity_token
     if kind == KIND_APPROVE:
         try:
             async with flag_store.identity_guard(
@@ -1515,6 +1523,8 @@ async def deny_ticket(
         reason: str | None = None,
         expected_status: str = "open",
         expected_rev: int | None = None,
+        expected_activity_revision: int | None = None,
+        expected_inactivity_token: str | None = None,
         override: dict | None = None,
         prior_effect_marker: str | None = None,
         prior_effects_legacy_baseline: bool = False,
@@ -1526,6 +1536,8 @@ async def deny_ticket(
         bot, mongo, ticket_id=ticket_id, member=member, actor_name=actor_name,
         kind=kind, reason=reason, expected_status=expected_status,
         expected_rev=expected_rev, override=override,
+        expected_activity_revision=expected_activity_revision,
+        expected_inactivity_token=expected_inactivity_token,
         prior_effect_marker=prior_effect_marker,
         prior_effects_legacy_baseline=prior_effects_legacy_baseline,
         coc_client=coc_client,

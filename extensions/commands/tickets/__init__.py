@@ -305,6 +305,7 @@ async def on_started(
     """Start retrying runtime preparation and workflow recovery."""
     global _capability_heartbeat_task
     start_ticket_workflow_recovery(bot, mongo)
+    inactivity.start(bot, mongo)
     if _capability_heartbeat_task is None or _capability_heartbeat_task.done():
         _capability_heartbeat_task = asyncio.create_task(
             _heartbeat_thread_name_capability(mongo), name="ticket-name-capability-heartbeat",
@@ -321,6 +322,7 @@ async def on_stopping(
     global _startup_complete, _staff_context_sweep_after, _staff_context_sweep_complete
     global _thread_intake_ready, _capability_heartbeat_task
     try:
+        await inactivity.stop()
         if _capability_heartbeat_task is not None:
             _capability_heartbeat_task.cancel()
             await asyncio.gather(_capability_heartbeat_task, return_exceptions=True)
@@ -371,6 +373,7 @@ from . import legacy_bulk
 from . import rollout
 from . import testing
 from . import rite
+from . import inactivity
 
 
 loader.command(ticket, guilds=[tickets_guild_id()])

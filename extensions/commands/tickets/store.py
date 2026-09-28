@@ -740,6 +740,8 @@ async def transition(
     actor_name: str,
     expect: str | None = "open",
     expected_rev: int | None = None,
+    expected_activity_revision: int | None = None,
+    expected_inactivity_token: str | None = None,
     extra: dict | None = None,
     overrides: dict | None = None,
     effect_kind: str | None = None,
@@ -798,6 +800,10 @@ async def transition(
         "rev_after": expected_rev + 1,
         "effect_marker": marker,
     }
+    if expected_inactivity_token is not None:
+        # Durable proof that this specific staff confirmation won the decision,
+        # including if a later authorized overturn precedes flag recovery.
+        audit["inactivity_token"] = str(expected_inactivity_token)
     if overrides is not None:
         # An override always overturns a prior terminal decision (open cannot
         # be a `from` here - transition() below refuses re-opening). Record it
@@ -892,6 +898,15 @@ async def transition(
         "status": expected_status,
         "rev": _rev_filter(expected_rev),
     }
+    # Inactivity decisions must fail atomically if someone speaks or the
+    # prompt is replaced while the normal denial pipeline is doing I/O.
+    # Ordinary recruiter decisions retain their existing rev-only behavior.
+    if expected_activity_revision is not None:
+        transition_filter["activity_revision"] = _rev_filter(
+            max(0, int(expected_activity_revision))
+        )
+    if expected_inactivity_token is not None:
+        transition_filter["inactivity.prompt.token"] = str(expected_inactivity_token)
     if expected_linked_account_revision is not None:
         # A terminal decision is based on the just-refreshed account view.  Do
         # not let a concurrent refresh replace that view between the flag gate
