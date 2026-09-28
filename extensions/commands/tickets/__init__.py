@@ -27,6 +27,7 @@ startup_index_errors: dict[str, str] = {}
 _startup_complete = False
 _thread_intake_ready = False
 _workflow_recovery: StartupReconciler | None = None
+_history_recovery: StartupReconciler | None = None
 _capability_heartbeat_task: asyncio.Task | None = None
 _staff_context_sweep_after: str | None = None
 _staff_context_sweep_complete = False
@@ -117,7 +118,6 @@ async def recover_ticket_workflows(
     # changes any partial migration checkpoints. This is best-effort only.
     legacy_bulk.request_migration_overview_startup_verification()
     await legacy_bulk.refresh_migration_overview(bot, mongo)
-    prior_denials = await console.reconcile_prior_denial_flags(bot, mongo)
     creation_kwargs = {
         "bot": bot,
         "mongo": mongo,
@@ -177,7 +177,6 @@ async def recover_ticket_workflows(
             staff_context,
             account_identities,
             open_context,
-            prior_denials,
         )
     )
     print(
@@ -190,8 +189,6 @@ async def recover_ticket_workflows(
         f"{account_identities.get('processed', 0)} "
         f"open_context={open_context.get('completed', 0)}/"
         f"{open_context.get('processed', 0)} "
-        f"prior_denials={prior_denials.get('created', 0)}/"
-        f"{prior_denials.get('checked', 0)} "
         f"failed={failed}"
     )
     if failed:
@@ -295,6 +292,27 @@ def start_ticket_workflow_recovery(
     return _workflow_recovery
 
 
+async def _recover_ticket_history(bot, mongo):
+    """Backfill historical cautions after essential recovery, without gating intake."""
+    while not thread_intake_ready():
+        await asyncio.sleep(1)
+    result = await console.reconcile_prior_denial_flags(bot, mongo)
+    _log.info("ticket history reconciliation checked=%s created=%s failed=%s",
+              result.get("checked", 0), result.get("created", 0), result.get("failed", 0))
+    if result.get("failed", 0):
+        raise RuntimeError(f"{result['failed']} historical flag checks remain pending")
+
+
+def start_ticket_history_recovery(bot, mongo):
+    global _history_recovery
+    if _history_recovery is None:
+        _history_recovery = StartupReconciler(
+            "ticket-history", lambda: _recover_ticket_history(bot, mongo),
+        )
+    _history_recovery.start()
+    return _history_recovery
+
+
 @loader.listener(hikari.StartedEvent)
 @lightbulb.di.with_di
 async def on_started(
@@ -305,6 +323,7 @@ async def on_started(
     """Start retrying runtime preparation and workflow recovery."""
     global _capability_heartbeat_task
     start_ticket_workflow_recovery(bot, mongo)
+    start_ticket_history_recovery(bot, mongo)
     inactivity.start(bot, mongo)
     if _capability_heartbeat_task is None or _capability_heartbeat_task.done():
         _capability_heartbeat_task = asyncio.create_task(
@@ -323,6 +342,8 @@ async def on_stopping(
     global _thread_intake_ready, _capability_heartbeat_task
     try:
         await inactivity.stop()
+        if _history_recovery is not None:
+            await _history_recovery.stop()
         if _capability_heartbeat_task is not None:
             _capability_heartbeat_task.cancel()
             await asyncio.gather(_capability_heartbeat_task, return_exceptions=True)

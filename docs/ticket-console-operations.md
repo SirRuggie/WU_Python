@@ -413,7 +413,10 @@ Automatic warnings keep their automatic source and the earlier-ticket reason;
 an existing recruiter-added reason is never overwritten. Removing an automatic
 warning is honored, and recovery does not recreate it. Startup reconciliation
 also checks existing canonical ticket history, so eligible records created or
-imported before this behavior was enabled are covered.
+imported before this behavior was enabled are covered. This scan runs in the
+separate `ticket-history` background worker after essential ticket recovery.
+Failures retry without blocking manual or self-service ticket creation. Durable
+workflow recovery and thread duplicate protection still gate startup readiness.
 
 ### Approve or deny
 

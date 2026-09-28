@@ -188,8 +188,10 @@ def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch
         await asyncio.sleep(0)
         workflow = Workflow()
         console_startup = Workflow()
+        history = Workflow()
         mongo = Mongo()
         monkeypatch.setattr(ticket_extension, "_workflow_recovery", workflow)
+        monkeypatch.setattr(ticket_extension, "_history_recovery", history)
         monkeypatch.setattr(ticket_extension, "_capability_heartbeat_task", heartbeat)
         monkeypatch.setattr(resolve, "_resolution_reconciler_task", resolution_task)
         monkeypatch.setattr(console, "_refresh_tasks", {
@@ -202,6 +204,7 @@ def test_ticket_stopping_cancels_awaits_and_resets_all_owned_workers(monkeypatch
 
         await ticket_extension.on_stopping(None, mongo)
         assert workflow.stops == 1
+        assert history.stops == 1
         assert console_startup.stops == 1
         assert resolve._resolution_reconciler_task is None
         assert console._refresh_tasks == {}
@@ -860,7 +863,7 @@ def test_console_startup_retries_hub_state_and_dirty_write_once(monkeypatch):
 
     async def mark_dirty(_mongo, *, reason, force, verify_message):
         assert reason == "startup recovery"
-        assert force is False
+        assert force is True
         assert verify_message is True
         attempts["dirty"] += 1
         if attempts["dirty"] == 1:
