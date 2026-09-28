@@ -53,6 +53,21 @@ def _ticket_location(ticket: dict) -> int:
     return int(location.get("id") or ticket.get("channel_id"))
 
 
+async def _show_created_ticket(ctx, ticket, *, resumed=False, pending=False):
+    location_id = _ticket_location(ticket)
+    guild_id = int(ticket.get("guild_id") or ctx.guild_id)
+    kind = str(ticket.get("ticket_type") or "main").upper()
+    wording = "already open" if resumed else "created"
+    note = " Setup is finishing; you can open your ticket now." if pending else ""
+    row = hikari.impl.MessageActionRowBuilder().add_link_button(
+        f"https://discord.com/channels/{guild_id}/{location_id}", label="Open your ticket"
+    )
+    await ctx.interaction.edit_initial_response(
+        content=f"✅ Your {kind} ticket is {wording}: <#{location_id}>.{note}",
+        components=[row], user_mentions=False, role_mentions=False, mentions_everyone=False,
+    )
+
+
 async def _cancel_untouched_slot(
     mongo: MongoClient,
     claim: ticket_runtime.SlotClaim,
@@ -447,6 +462,13 @@ async def handle_create_ticket(
         )
         return
     display_name = getattr(ctx.member, "display_name", None) if getattr(ctx, "member", None) else None
+    ready_ticket = None
+
+    async def on_ready(ticket):
+        nonlocal ready_ticket
+        ready_ticket = ticket
+        await _show_created_ticket(ctx, ticket, pending=True)
+
     try:
         result = await thread_service.create_live_thread_ticket(
             bot=bot,
@@ -458,6 +480,7 @@ async def handle_create_ticket(
             ticket_type=ticket_type,
             config=config,
             open_slot_claim=slot_claim,
+            on_ready=on_ready,
         )
     except thread_service.ThreadCreationBusy:
         user_cooldowns.pop(user_id, None)
@@ -482,6 +505,9 @@ async def handle_create_ticket(
             "[Tickets] thread_creation_failed "
             f"guild={ctx.guild_id} user={user_id} type={ticket_type} error={type(error).__name__}"
         )
+        if ready_ticket is not None:
+            await _show_created_ticket(ctx, ready_ticket, pending=True)
+            return
         await ctx.interaction.edit_initial_response(
             content=(
                 "❌ Your ticket could not be completed safely. The attempt was saved and can resume "
@@ -490,18 +516,8 @@ async def handle_create_ticket(
         )
         return
 
-    location_id = _ticket_location(result.ticket)
-    wording = "already open" if result.resumed else "created"
-    delivery_note = (
-        " Setup messages are retrying automatically."
-        if result.delivery_pending
-        else ""
-    )
-    await ctx.interaction.edit_initial_response(
-        content=(
-            f"✅ Your {ticket_type.upper()} ticket is {wording}: <#{location_id}>"
-            f"{delivery_note}"
-        )
+    await _show_created_ticket(
+        ctx, result.ticket, resumed=result.resumed, pending=result.delivery_pending
     )
 
 

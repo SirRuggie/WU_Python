@@ -835,3 +835,18 @@ on the slot or inside `conflicting_tickets`); that raises
 `shared ticket recovery remains blocked by a thread-route conflict` naming the
 offending slot IDs, and the startup reconciler retries until it is repaired.
 Legacy blockers still matter for `rollout-drain`, which fails closed on them.
+
+## Applicant handoff and recruiter notification
+
+New ticket interactions show an **Open your ticket** link as soon as the thread
+pair, ticket row, and open-slot binding are durable. Account lookups, opening
+message delivery, and console refresh no longer need to finish before that link
+appears. A later setup failure preserves the usable ticket link; durable delivery
+recovery continues to own setup retries. Existing ephemeral messages from before
+a bot restart cannot be recovered without their interaction token; applicants
+can use **My ticket** to retrieve their ticket.
+
+New live tickets also invite members of the configured recruiter role to the
+private applicant thread and send a role notification there. Delivery is
+idempotent, test tickets skip it, and older tickets are not mass-pinged on rollout.
+The existing staff workspace and shared console remain in place.

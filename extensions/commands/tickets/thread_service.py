@@ -17,7 +17,7 @@ import uuid
 import weakref
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
 
 import hikari
 import coc
@@ -476,11 +476,13 @@ async def validate_thread_parents(
         raise ThreadConfigurationError("configured recruiter role is not in the target guild")
     if (
         not bool(getattr(recruiter_role, "is_mentionable", False))
-        and not bot_parent_permissions["staff"]
-        & hikari.Permissions.MENTION_ROLES
+        and any(
+            not permissions & hikari.Permissions.MENTION_ROLES
+            for permissions in bot_parent_permissions.values()
+        )
     ):
         raise ThreadConfigurationError(
-            "recruiter role must be mentionable or bot needs Mention Roles in the staff parent"
+            "recruiter role must be mentionable or bot needs Mention Roles in both ticket parents"
         )
     required_recruiter = (
         hikari.Permissions.VIEW_CHANNEL
@@ -1513,6 +1515,33 @@ async def _questionnaire_exists(
     )
 
 
+async def _notify_candidate_recruiters(
+    rest: hikari.api.RESTClient, ticket: Mapping[str, Any], *, bot_id: int,
+) -> None:
+    """Join recruiters before the private-thread ping, once per ticket."""
+    if testing_service.is_test_ticket(ticket) or not ticket.get("candidate_recruiter_notification"):
+        return
+    role_id = _as_int(ticket.get("recruiter_role_id"))
+    if not role_id:
+        return
+    channel_id = _as_int(ticket.get("location", {}).get("id") or ticket.get("channel_id"))
+    marker = f"ticket-setup:{channel_id}:candidate-recruiters"
+    content = f"<@&{role_id}> — a new applicant ticket is ready for your review."
+    match = _bot_authored_content_match(bot_id, content)
+    if await _message_marker_exists(rest, channel_id, marker, is_match=match):
+        return
+    # MANAGE_THREADS grants visibility but does not subscribe role members to
+    # private-thread mentions. Explicit membership makes this ping deliverable.
+    members = await _collect_rest_iterator(rest.fetch_members(_as_int(ticket.get("guild_id"))))
+    for member in members:
+        if role_id in {_as_int(value) for value in getattr(member, "role_ids", ())}:
+            await rest.add_thread_member(channel_id, int(member.id))
+    await _send_once(
+        rest, channel_id, marker, content, role_mentions=[role_id],
+        post_marker=False, is_match=match,
+    )
+
+
 async def _deliver_opening_messages(
     rest: hikari.api.RESTClient, ticket: dict, *, bot_id: int | None = None
 ) -> None:
@@ -1586,6 +1615,7 @@ async def _deliver_opening_messages(
     await _deliver_staff_talking_points(
         rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id
     )
+    await _notify_candidate_recruiters(rest, ticket, bot_id=bot_id)
 
 
 async def _deliver_staff_talking_points(
@@ -1908,14 +1938,25 @@ async def _finish_committed_creation(
     return state_durable
 
 
+async def _acknowledge_ready_ticket(ticket: dict, callback: Callable[[dict], Awaitable[None]] | None) -> None:
+    if callback is None:
+        return
+    try:
+        await asyncio.wait_for(callback(ticket), timeout=5)
+    except Exception:
+        _log.exception("failed to acknowledge committed ticket %s", ticket.get("_id"))
+
+
 async def _reconcile_existing_ticket(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
     ticket: dict,
     *,
     coc_client: coc.Client | None = None,
+    on_ready: Callable[[dict], Awaitable[None]] | None = None,
 ) -> CreatedThreadTicket:
     """Heal every post-commit Discord/state step before returning an open ticket."""
+    await _acknowledge_ready_ticket(ticket, on_ready)
     snapshot = account_sync.snapshot_from_ticket(ticket)
     if coc_client is not None and snapshot.retry_required:
         synced = await account_sync.sync_ticket_accounts(
@@ -2010,6 +2051,7 @@ async def create_live_thread_ticket(
     config: Mapping[str, Any],
     open_slot_claim: ticket_runtime.SlotClaim,
     coc_client: coc.Client | None = None,
+    on_ready: Callable[[dict], Awaitable[None]] | None = None,
 ) -> CreatedThreadTicket:
     """Create or resume one live thread ticket without duplicating resources."""
     if ticket_type not in {"main", "fwa"}:
@@ -2051,7 +2093,7 @@ async def create_live_thread_ticket(
                 workflow_id=str(slot["workflow_id"]),
             )
             return await _reconcile_existing_ticket(
-                bot, mongo, existing, coc_client=coc_client
+                bot, mongo, existing, coc_client=coc_client, on_ready=on_ready
             )
 
         me = bot.get_me()
@@ -2098,7 +2140,7 @@ async def create_live_thread_ticket(
                     workflow_id=str(slot["workflow_id"]),
                 )
                 return await _reconcile_existing_ticket(
-                    bot, mongo, existing, coc_client=coc_client
+                    bot, mongo, existing, coc_client=coc_client, on_ready=on_ready
                 )
 
             bound_ticket = await _committed_ticket_for_creation_state(
@@ -2110,7 +2152,7 @@ async def create_live_thread_ticket(
             if bound_ticket is not None:
                 if bound_ticket.get("status") == "open":
                     return await _reconcile_existing_ticket(
-                        bot, mongo, bound_ticket, coc_client=coc_client
+                        bot, mongo, bound_ticket, coc_client=coc_client, on_ready=on_ready
                     )
                 await _mark_committed_creation_complete(mongo, bound_ticket)
 
@@ -2166,6 +2208,7 @@ async def create_live_thread_ticket(
                 if testing_service.is_test_scope(mongo):
                     ticket["cleanup_at"] = state.get("cleanup_at")
                     ticket["window_generation"] = state.get("window_generation")
+                ticket["candidate_recruiter_notification"] = True
                 ticket["recruiter_role_id"] = parents.recruiter_role_id
                 ticket.update(ticket_runtime.thread_ticket_fields(slot))
                 try:
@@ -2200,6 +2243,8 @@ async def create_live_thread_ticket(
                 if ticket.get("status") != "open":
                     await _mark_committed_creation_complete(mongo, ticket)
                     continue
+
+                await _acknowledge_ready_ticket(ticket, on_ready)
 
                 # The Discord pair and ticket row are durable before any external
                 # identity lookup. A timeout therefore resumes this exact pair.

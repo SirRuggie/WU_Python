@@ -4197,3 +4197,80 @@ def test_conflicting_source_records_across_stores_fail_preview():
     )
     with pytest.raises(legacy_migration.LegacyMigrationError, match="conflicting"):
         asyncio.run(legacy_migration._legacy_source_ticket(mongo, 1, 2))
+
+
+def test_candidate_recruiter_ping_joins_only_recruiters_and_recovers_once():
+    class Rest:
+        def __init__(self):
+            self.messages = []
+            self.joins = []
+            self.sends = []
+
+        def fetch_messages(self, channel_id):
+            async def collect():
+                return self.messages
+            return SimpleNamespace(to_list=collect)
+
+        def fetch_members(self, guild_id):
+            async def collect():
+                return [SimpleNamespace(id=41, role_ids=[40]), SimpleNamespace(id=42, role_ids=[99])]
+            return SimpleNamespace(to_list=collect)
+
+        async def add_thread_member(self, channel_id, user_id):
+            self.joins.append((channel_id, user_id))
+
+        async def create_message(self, channel_id, **kwargs):
+            assert self.joins == [(101, 41)]
+            self.sends.append((channel_id, kwargs))
+            self.messages.append(SimpleNamespace(author=SimpleNamespace(id=7), content=kwargs["content"], components=[]))
+
+    ticket = _ticket()
+    ticket.update(recruiter_role_id=40, candidate_recruiter_notification=True)
+    rest = Rest()
+    asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+    asyncio.run(thread_service._notify_candidate_recruiters(rest, ticket, bot_id=7))
+    assert rest.joins == [(101, 41)]
+    assert len(rest.sends) == 1
+    assert rest.sends[0][0] == 101
+    assert rest.sends[0][1]["role_mentions"] == [40]
+    assert rest.sends[0][1]["user_mentions"] is False
+    assert rest.sends[0][1]["mentions_everyone"] is False
+
+
+def test_candidate_recruiter_ping_skips_existing_and_test_tickets():
+    ticket = _ticket()
+    ticket["recruiter_role_id"] = 40
+    asyncio.run(thread_service._notify_candidate_recruiters(SimpleNamespace(), ticket, bot_id=7))
+    ticket.update(candidate_recruiter_notification=True, mode="test")
+    asyncio.run(thread_service._notify_candidate_recruiters(SimpleNamespace(), ticket, bot_id=7))
+
+
+def test_committed_ticket_ready_callback_precedes_recovery_delivery(monkeypatch):
+    events = []
+
+    async def ready(ticket):
+        events.append(("ready", ticket["_id"]))
+
+    async def finish(*args, **kwargs):
+        events.append(("delivery", args[2]["_id"]))
+        return True
+
+    async def console(*args, **kwargs):
+        events.append(("console", args[2]["_id"]))
+
+    monkeypatch.setattr(thread_service, "_finish_committed_creation", finish)
+    monkeypatch.setattr(thread_service, "notify_console_after_change", console)
+    ticket = _ticket()
+    result = asyncio.run(thread_service._reconcile_existing_ticket(
+        SimpleNamespace(), SimpleNamespace(), ticket, on_ready=ready,
+    ))
+    assert [event[0] for event in events] == ["ready", "delivery", "console"]
+    assert result.ticket is ticket
+
+
+def test_ready_callback_failure_does_not_abort_ticket_recovery(monkeypatch):
+    async def failed(_ticket):
+        raise RuntimeError("expired interaction")
+
+    monkeypatch.setattr(thread_service._log, "exception", lambda *args: None)
+    asyncio.run(thread_service._acknowledge_ready_ticket(_ticket(), failed))
