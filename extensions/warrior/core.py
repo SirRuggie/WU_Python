@@ -7,6 +7,7 @@ import hikari
 from extensions.commands.recruit import perms
 from extensions.commands.tickets import store, testing_service
 from utils.component_state import get_state
+from .schema import SCHEMA_VERSION
 
 log = logging.getLogger(__name__)
 STANDARD = {
@@ -56,7 +57,8 @@ def aware(value):
 
 async def settings(mongo, guild_id):
     saved = (
-        await mongo.ticket_setup.find_one({"_id": f"warrior_settings:{guild_id}"}) or {}
+        await mongo.warrior_settings.find_one({"_id": f"warrior_settings:{guild_id}"})
+        or {}
     )
     return {
         "roles": STANDARD | saved.get("roles", {}),
@@ -212,9 +214,14 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
                     type(error).__name__,
                 )
                 result["failed"].append(f"{name} ({type(error).__name__})")
-    await mongo.recruit_onboarding.update_one(
+    await mongo.warrior_audit.update_one(
         {"_id": f'warrior_audit:{c["guild"].id}:{c["member"].id}'},
         {
+            "$setOnInsert": {
+                "schema_version": SCHEMA_VERSION,
+                "guild_id": int(c["guild"].id),
+                "user_id": int(c["member"].id),
+            },
             "$push": {
                 "events": {
                     "$each": [
@@ -222,7 +229,7 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
                     ],
                     "$slice": -100,
                 }
-            }
+            },
         },
         upsert=True,
     )

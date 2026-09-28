@@ -61,7 +61,9 @@ def context():
 def mongo():
     return S(
         ticket_setup=S(find_one=AsyncMock(return_value={})),
-        recruit_onboarding=S(
+        warrior_settings=S(find_one=AsyncMock(return_value={})),
+        warrior_audit=S(update_one=AsyncMock()),
+        warrior_walkthroughs=S(
             update_one=AsyncMock(), find_one=AsyncMock(return_value=None)
         ),
         component_state=S(find_one_and_update=AsyncMock(return_value=None)),
@@ -297,7 +299,7 @@ def test_delivery_recovers_send_before_checkpoint_without_duplicate(monkeypatch)
     monkeypatch.setattr(walkthrough, "validate_destination", AsyncMock())
     run(walkthrough.deliver(bot, m, r, "owner"))
     rest.create_message.assert_not_awaited()
-    saved = m.recruit_onboarding.update_one.call_args.args[1]["$set"]
+    saved = m.warrior_walkthroughs.update_one.call_args.args[1]["$set"]
     assert (
         saved["next_step"] == 1
         and saved["state"] == "awaiting"
@@ -308,7 +310,7 @@ def test_delivery_recovers_send_before_checkpoint_without_duplicate(monkeypatch)
 def test_begin_checks_current_ticket_and_is_idempotent(monkeypatch):
     r = record()
     m = mongo()
-    m.recruit_onboarding.find_one_and_update = AsyncMock(side_effect=[r, None])
+    m.warrior_walkthroughs.find_one_and_update = AsyncMock(side_effect=[r, None])
     monkeypatch.setattr(core, "context", AsyncMock(return_value=context()))
     monkeypatch.setattr(
         core, "open_ticket", AsyncMock(return_value={"_id": "ticket_1"})
@@ -316,7 +318,7 @@ def test_begin_checks_current_ticket_and_is_idempotent(monkeypatch):
     assert run(walkthrough.begin(object(), m, r, 20, 100))
     assert not run(walkthrough.begin(object(), m, r, 20, 100))
     assert (
-        m.recruit_onboarding.find_one_and_update.call_args.args[0]["state"]
+        m.warrior_walkthroughs.find_one_and_update.call_args.args[0]["state"]
         == "awaiting"
     )
     with pytest.raises(core.SetupError):
@@ -345,7 +347,7 @@ def test_walkthrough_pause_keeps_completed_checkpoint(monkeypatch):
         "deliver",
         AsyncMock(side_effect=core.SetupError("Missing channel access")),
     )
-    run(walkthrough.sweep(object(), S(recruit_onboarding=collection)))
+    run(walkthrough.sweep(object(), S(warrior_walkthroughs=collection)))
     update = collection.update_one.call_args.args[1]
     assert update["$set"]["state"] == "paused"
     assert "next_step" not in update["$set"]
@@ -416,4 +418,4 @@ def test_no_open_ticket_means_no_welcome_or_saved_walkthrough(monkeypatch):
     )
     with pytest.raises(core.SetupError):
         run(walkthrough.prepare(object(), m, c, {}, {}))
-    m.recruit_onboarding.update_one.assert_not_awaited()
+    m.warrior_walkthroughs.update_one.assert_not_awaited()

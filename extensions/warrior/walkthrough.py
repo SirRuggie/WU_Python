@@ -18,7 +18,7 @@ from hikari.impl import (
 from extensions.commands.tickets import thread_service
 from utils.constants import GOLDENROD_ACCENT
 from utils.media_urls import GALLERY, optimized
-from . import core, content
+from . import core, content, schema
 
 log = logging.getLogger(__name__)
 _task = None
@@ -158,6 +158,7 @@ async def prepare(bot, mongo, c, clan, cfg):
         )
     run = {
         "_id": run_id(c["guild"].id, c["member"].id),
+        "schema_version": schema.SCHEMA_VERSION,
         "kind": KIND,
         "guild_id": int(c["guild"].id),
         "user_id": int(c["member"].id),
@@ -189,7 +190,7 @@ async def prepare(bot, mongo, c, clan, cfg):
     await thread_service.ensure_candidate_thread_access(
         bot.rest, ticket, user_id=c["member"].id
     )
-    existing = await mongo.recruit_onboarding.find_one({"_id": run["_id"]})
+    existing = await mongo.warrior_walkthroughs.find_one({"_id": run["_id"]})
     if existing:
         if existing.get("state") == "complete":
             raise core.SetupError(
@@ -197,9 +198,9 @@ async def prepare(bot, mongo, c, clan, cfg):
             )
         return existing
     try:
-        await mongo.recruit_onboarding.insert_one(run)
+        await mongo.warrior_walkthroughs.insert_one(run)
     except Exception:
-        existing = await mongo.recruit_onboarding.find_one({"_id": run["_id"]})
+        existing = await mongo.warrior_walkthroughs.find_one({"_id": run["_id"]})
         if existing:
             return existing
         raise
@@ -215,7 +216,7 @@ async def begin(bot, mongo, run, actor_id, channel_id):
         raise core.SetupError(
             "The original ticket is no longer open. Start from /warrior in the current ticket."
         )
-    updated = await mongo.recruit_onboarding.find_one_and_update(
+    updated = await mongo.warrior_walkthroughs.find_one_and_update(
         {"_id": run["_id"], "token": run["token"], "state": "awaiting"},
         {
             "$set": {
@@ -244,7 +245,7 @@ async def deliver(bot, mongo, run, owner):
     found = None
     step_started = run.get("step_started_at") or core.now()
     if not run.get("step_started_at"):
-        await mongo.recruit_onboarding.update_one(
+        await mongo.warrior_walkthroughs.update_one(
             {"_id": run["_id"], "token": run["token"], "lease_owner": owner},
             {"$set": {"step_started_at": step_started}},
         )
@@ -279,7 +280,7 @@ async def deliver(bot, mongo, run, owner):
         values.update(
             completed_at=core.now(), cleanup_at=core.now() + timedelta(hours=2)
         )
-    await mongo.recruit_onboarding.update_one(
+    await mongo.warrior_walkthroughs.update_one(
         {"_id": run["_id"], "token": run["token"], "lease_owner": owner},
         {
             "$set": values,
@@ -290,7 +291,7 @@ async def deliver(bot, mongo, run, owner):
 
 async def sweep(bot, mongo):
     rows = (
-        await mongo.recruit_onboarding.find(
+        await mongo.warrior_walkthroughs.find(
             {
                 "kind": KIND,
                 "state": {"$in": ["preparing", "running"]},
@@ -302,7 +303,7 @@ async def sweep(bot, mongo):
     )
     for row in rows:
         owner = uuid4().hex
-        run = await mongo.recruit_onboarding.find_one_and_update(
+        run = await mongo.warrior_walkthroughs.find_one_and_update(
             {
                 "_id": row["_id"],
                 "token": row["token"],
@@ -334,7 +335,7 @@ async def sweep(bot, mongo):
                 run["_id"],
                 run["next_step"],
             )
-            await mongo.recruit_onboarding.update_one(
+            await mongo.warrior_walkthroughs.update_one(
                 {"_id": run["_id"], "lease_owner": owner},
                 {
                     "$set": {"state": "paused", "error": str(error)[:500]},
@@ -344,7 +345,7 @@ async def sweep(bot, mongo):
     # The legacy cleanup remains untouched. New runs remove their configured
     # New Recruit role two hours after successfully finishing the tour.
     complete = (
-        await mongo.recruit_onboarding.find(
+        await mongo.warrior_walkthroughs.find(
             {
                 "kind": KIND,
                 "state": "complete",
@@ -364,13 +365,13 @@ async def sweep(bot, mongo):
                 role,
                 reason="Warrior walkthrough completed over two hours ago",
             )
-            await mongo.recruit_onboarding.update_one(
+            await mongo.warrior_walkthroughs.update_one(
                 {"_id": run["_id"], "token": run["token"]},
                 {"$set": {"cleanup_done": True}},
             )
         except Exception as error:
             log.exception("warrior recruit-role cleanup pending run=%s", run["_id"])
-            await mongo.recruit_onboarding.update_one(
+            await mongo.warrior_walkthroughs.update_one(
                 {"_id": run["_id"], "token": run["token"]},
                 {
                     "$set": {
@@ -386,8 +387,17 @@ async def loop(bot, mongo):
     while True:
         try:
             if not indexed:
-                await mongo.recruit_onboarding.create_index(
+                await schema.migrate_early_records(mongo)
+                await mongo.warrior_walkthroughs.create_index(
                     [("kind", 1), ("state", 1), ("due_at", 1)], name="warrior_progress"
+                )
+                await mongo.warrior_walkthroughs.create_index(
+                    [("kind", 1), ("state", 1), ("cleanup_done", 1), ("cleanup_at", 1)],
+                    name="warrior_cleanup",
+                )
+                await mongo.warrior_history.create_index(
+                    [("guild_id", 1), ("user_id", 1), ("completed_at", -1)],
+                    name="warrior_member_history",
                 )
                 indexed = True
                 log.info("Warrior walkthrough worker ready")

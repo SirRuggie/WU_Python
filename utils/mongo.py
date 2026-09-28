@@ -30,6 +30,17 @@ class MongoClient(AsyncMongoClient):
         self.fwa_data = self.__settings.get_collection("fwa_data")
         self.fwa_band_data = self.__settings.get_collection("fwa_band_data")
         self.ticket_setup = self.__settings.get_collection("ticket_setup")
+        # Warrior owner: extensions/warrior/schema.py. Follow the configured
+        # production database; do not mix new setup records with legacy recruit
+        # onboarding or ticket configuration. All four are permanent (no TTL).
+        # Settings: warrior_settings:<guild>; runs: warrior:<guild>:<user>;
+        # history: run key + run token; audit: warrior_audit:<guild>:<user>,
+        # retaining the latest 100 events per member.
+        warrior_db = self.ticket_setup.database
+        self.warrior_settings = warrior_db.get_collection("warrior_settings")
+        self.warrior_walkthroughs = warrior_db.get_collection("warrior_walkthroughs")
+        self.warrior_history = warrior_db.get_collection("warrior_history")
+        self.warrior_audit = warrior_db.get_collection("warrior_audit")
         # Durable ticket records. Historically these lived in button_store next to
         # ephemeral component state; see extensions/commands/tickets/store.py.
         # NO TTL INDEX ON THIS COLLECTION - ticket history is permanent.

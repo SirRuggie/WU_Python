@@ -79,7 +79,7 @@ async def home(data, c, mongo, note=""):
         for key in ("family", "recruit", "strike_accepted")
         if int(cfg["roles"][key]) not in held
     ]
-    run = await mongo.recruit_onboarding.find_one(
+    run = await mongo.warrior_walkthroughs.find_one(
         {"_id": walkthrough.run_id(c["guild"].id, member.id)}
     )
     if run and run.get("cleanup_done") and "recruit" in needed:
@@ -552,7 +552,7 @@ async def action(
                 )
             if operation == "restart":
                 key = walkthrough.run_id(c["guild"].id, c["member"].id)
-                old = await mongo.recruit_onboarding.find_one(
+                old = await mongo.warrior_walkthroughs.find_one(
                     {"_id": key, "state": "complete"}
                 )
                 if not old:
@@ -564,10 +564,10 @@ async def action(
                     _id=key + ":" + old["token"],
                     kind="warrior_walkthrough_history",
                 )
-                await mongo.recruit_onboarding.replace_one(
+                await mongo.warrior_history.replace_one(
                     {"_id": archive["_id"]}, archive, upsert=True
                 )
-                await mongo.recruit_onboarding.delete_one(
+                await mongo.warrior_walkthroughs.delete_one(
                     {"_id": key, "token": old["token"], "state": "complete"}
                 )
                 output = await clan_menu(data, c, mongo, tour=True)
@@ -592,7 +592,7 @@ async def action(
                 )
                 output = await home(data, c, mongo, core.result_text(result))
         elif verb == "tour" or verb.startswith("tourpage:"):
-            run = await mongo.recruit_onboarding.find_one(
+            run = await mongo.warrior_walkthroughs.find_one(
                 {"_id": walkthrough.run_id(c["guild"].id, c["member"].id)}
             )
             if run:
@@ -643,7 +643,7 @@ async def action(
             )
         elif verb == "retry":
             ticket = await core.open_ticket(mongo, c["guild"].id, c["member"].id)
-            await mongo.recruit_onboarding.update_one(
+            await mongo.warrior_walkthroughs.update_one(
                 {
                     "_id": walkthrough.run_id(c["guild"].id, c["member"].id),
                     "state": "paused",
@@ -752,11 +752,13 @@ async def form(
                 raise core.SetupError(
                     "This role is already assigned to another Warrior setting."
                 )
-            await mongo.ticket_setup.update_one(
+            await mongo.warrior_settings.update_one(
                 {"_id": f'warrior_settings:{c["guild"].id}'},
                 {
                     "$set": {
                         f"{group}.{key}": value,
+                        "schema_version": core.SCHEMA_VERSION,
+                        "guild_id": int(c["guild"].id),
                         "updated_by": int(ctx.user.id),
                         "updated_at": core.now(),
                     }
@@ -798,7 +800,7 @@ async def begin(
 ):
     await ctx.defer(ephemeral=True)
     try:
-        run = await mongo.recruit_onboarding.find_one(
+        run = await mongo.warrior_walkthroughs.find_one(
             {"_id": action_id, "kind": walkthrough.KIND}
         )
         if not run or run["guild_id"] != int(ctx.guild_id):
