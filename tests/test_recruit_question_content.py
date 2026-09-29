@@ -169,9 +169,10 @@ def test_shield_click_keeps_original_edited_copy(monkeypatch, fail_create):
     )
     rest = SimpleNamespace(
         fetch_member=AsyncMock(side_effect=[SimpleNamespace(id=123, mention="<@123>"), SimpleNamespace(id=456, mention="<@456>")]),
-        edit_message=AsyncMock(), create_message=AsyncMock(),
+        edit_message=AsyncMock(), create_message=AsyncMock(return_value=SimpleNamespace(id=888)),
     )
-    db = SimpleNamespace(recruit_challenges=SimpleNamespace(update_one=AsyncMock()))
+    from tests.test_recruit_goblin_challenges import db as goblin_db
+    db = goblin_db()
     ctx = SimpleNamespace(
         guild_id=10, channel_id=20, user=SimpleNamespace(id=123, mention="<@123>"),
         member=SimpleNamespace(id=456),

@@ -169,3 +169,74 @@ async def prepare_storage(mongo):
         await mongo.button_store.delete_one(row)
         migrated += 1
     return migrated
+
+
+async def claim_shield(mongo, *, message_id, channel_id, user_id, guild_id):
+    """Keep a durable receipt per Shield message, independent of challenge TTL."""
+    receipt_id = f"goblin_prompt:{int(message_id)}"
+    now = utcnow()
+    await mongo.recruit_challenges.update_one(
+        {"_id": receipt_id},
+        {
+            "$setOnInsert": {
+                "type": "goblin_prompt",
+                "schema_version": 1,
+                "guild_id": int(guild_id),
+                "channel_id": int(channel_id),
+                "user_id": int(user_id),
+                "source_message_id": int(message_id),
+                "created_at": now,
+                "status": "ready",
+            }
+        },
+        upsert=True,
+    )
+    token = uuid.uuid4().hex
+    row = await mongo.recruit_challenges.find_one_and_update(
+        {
+            "_id": receipt_id,
+            "type": "goblin_prompt",
+            "guild_id": int(guild_id),
+            "channel_id": int(channel_id),
+            "user_id": int(user_id),
+            "$or": [
+                {"status": "ready"},
+                {"status": "sending", "processing_until": {"$lte": now}},
+            ],
+        },
+        {
+            "$set": {
+                "status": "sending",
+                "claim_id": token,
+                "processing_until": now + LEASE,
+            }
+        },
+        return_document=ReturnDocument.BEFORE,
+    )
+    return (receipt_id, token) if row else None
+
+
+async def release_shield(mongo, receipt):
+    receipt_id, token = receipt
+    await mongo.recruit_challenges.update_one(
+        {"_id": receipt_id, "claim_id": token, "status": "sending"},
+        {
+            "$set": {"status": "ready"},
+            "$unset": {"claim_id": "", "processing_until": ""},
+        },
+    )
+
+
+async def complete_shield(mongo, receipt, prompt_id):
+    receipt_id, token = receipt
+    await mongo.recruit_challenges.update_one(
+        {"_id": receipt_id, "claim_id": token, "status": "sending"},
+        {
+            "$set": {
+                "status": "sent",
+                "prompt_message_id": int(prompt_id),
+                "sent_at": utcnow(),
+            },
+            "$unset": {"claim_id": "", "processing_until": ""},
+        },
+    )

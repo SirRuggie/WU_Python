@@ -266,3 +266,142 @@ def test_migration_preserves_naive_utc_expiry_and_does_not_revive_old_prompt(
         assert not await handler.check_goblin_challenge(event())
 
     asyncio.run(run())
+
+
+def test_shield_receipt_is_atomic_and_survives_challenge_expiry():
+    async def run():
+        mongo = db()
+        args = dict(message_id=777, channel_id=44, user_id=22, guild_id=1)
+        claims = await asyncio.gather(
+            *[storage.claim_shield(mongo, **args) for _ in range(8)]
+        )
+        receipts = [c for c in claims if c]
+        assert len(receipts) == 1
+        await storage.complete_shield(mongo, receipts[0], 888)
+        # The receipt is durable Mongo state, not an in-process flag or the
+        # expiring challenge. Recreating a handler cannot re-enable it.
+        receipt = mongo.recruit_challenges.documents["goblin_prompt:777"]
+        assert receipt["status"] == "sent" and "expires_at" not in receipt
+        assert await storage.claim_shield(mongo, **args) is None
+        assert await storage.claim_shield(mongo, **{**args, "message_id": 778})
+
+    asyncio.run(run())
+
+
+def test_shield_failed_attempt_can_retry_and_old_worker_cannot_finish_new_claim():
+    async def run():
+        mongo = db()
+        args = dict(message_id=777, channel_id=44, user_id=22, guild_id=1)
+        first = await storage.claim_shield(mongo, **args)
+        await storage.release_shield(mongo, first)
+        retry = await storage.claim_shield(mongo, **args)
+        assert retry and retry != first
+        await storage.complete_shield(mongo, first, 888)
+        assert (
+            mongo.recruit_challenges.documents["goblin_prompt:777"]["status"]
+            == "sending"
+        )
+        await storage.complete_shield(mongo, retry, 889)
+        assert (
+            mongo.recruit_challenges.documents["goblin_prompt:777"]["prompt_message_id"]
+            == 889
+        )
+
+    asyncio.run(run())
+
+
+def test_shield_abandoned_claim_is_recoverable_after_restart():
+    async def run():
+        mongo = db()
+        args = dict(message_id=777, channel_id=44, user_id=22, guild_id=1)
+        await storage.claim_shield(mongo, **args)
+        mongo.recruit_challenges.documents["goblin_prompt:777"][
+            "processing_until"
+        ] = storage.utcnow() - timedelta(seconds=1)
+        assert await storage.claim_shield(mongo, **args)
+
+    asyncio.run(run())
+
+
+def test_repeated_shield_handler_does_not_reset_or_resend(monkeypatch):
+    from extensions.commands.recruit import questions
+
+    async def run():
+        mongo = db()
+        rest = NS(
+            fetch_member=AsyncMock(return_value=NS(id=22, mention="<@22>")),
+            create_message=AsyncMock(return_value=NS(id=888)),
+            edit_message=AsyncMock(),
+        )
+        context = NS(
+            user=NS(id=22),
+            member=NS(id=33),
+            guild_id=1,
+            channel_id=44,
+            interaction=NS(message=NS(id=777, components=[])),
+            respond=AsyncMock(),
+        )
+        # An uneditable source deliberately leaves the visible button behind.
+        await questions.on_shield_basics_button(
+            "22:33", bot=NS(rest=rest), mongo=mongo, ctx=context
+        )
+        session = mongo.recruit_challenges.documents[storage.key(44, 22)]["session_id"]
+        for _ in range(3):
+            await questions.on_shield_basics_button(
+                "22:33", bot=NS(rest=rest), mongo=mongo, ctx=context
+            )
+        assert rest.create_message.await_count == 1
+        assert (
+            mongo.recruit_challenges.documents[storage.key(44, 22)]["session_id"]
+            == session
+        )
+        # A deliberately new Discord Basics message starts a fresh challenge.
+        context.interaction.message.id = 779
+        await questions.on_shield_basics_button(
+            "22:33", bot=NS(rest=rest), mongo=mongo, ctx=context
+        )
+        assert rest.create_message.await_count == 2
+        assert (
+            mongo.recruit_challenges.documents[storage.key(44, 22)]["session_id"]
+            != session
+        )
+
+    asyncio.run(run())
+
+
+def test_shield_handler_send_failure_allows_another_click():
+    from extensions.commands.recruit import questions
+
+    async def run():
+        mongo = db()
+        rest = NS(
+            fetch_member=AsyncMock(return_value=NS(id=22, mention="<@22>")),
+            create_message=AsyncMock(side_effect=RuntimeError("failed")),
+            edit_message=AsyncMock(),
+        )
+        context = NS(
+            user=NS(id=22),
+            member=NS(id=33),
+            guild_id=1,
+            channel_id=44,
+            interaction=NS(message=NS(id=777, components=[])),
+            respond=AsyncMock(),
+        )
+        with pytest.raises(RuntimeError):
+            await questions.on_shield_basics_button(
+                "22:33", bot=NS(rest=rest), mongo=mongo, ctx=context
+            )
+        assert (
+            mongo.recruit_challenges.documents["goblin_prompt:777"]["status"] == "ready"
+        )
+        rest.edit_message.assert_not_awaited()
+        rest.create_message.side_effect = None
+        rest.create_message.return_value = NS(id=888)
+        await questions.on_shield_basics_button(
+            "22:33", bot=NS(rest=rest), mongo=mongo, ctx=context
+        )
+        assert (
+            mongo.recruit_challenges.documents["goblin_prompt:777"]["status"] == "sent"
+        )
+
+    asyncio.run(run())

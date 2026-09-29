@@ -478,10 +478,12 @@ async def on_shield_basics_button(
         )
         return
     
-    await goblin_storage.open_challenge(
-        mongo, guild_id=ctx.guild_id, channel_id=ctx.channel_id,
-        user_id=user_id, recruiter_id=original_recruiter_id,
+    receipt = await goblin_storage.claim_shield(
+        mongo, message_id=ctx.interaction.message.id, channel_id=ctx.channel_id,
+        user_id=user_id, guild_id=ctx.guild_id,
     )
+    if receipt is None:
+        return
 
     # Send the message with goblin gif
     components = [
@@ -507,12 +509,22 @@ async def on_shield_basics_button(
         )
     ]
     
-    await bot.rest.create_message(
-        components=components,
-        channel=ctx.channel_id,
-        user_mentions=[user.id],
-        role_mentions=True,
-    )
+    try:
+        async with asyncio.timeout(60):
+            await goblin_storage.open_challenge(
+                mongo, guild_id=ctx.guild_id, channel_id=ctx.channel_id,
+                user_id=user_id, recruiter_id=original_recruiter_id,
+            )
+            prompt = await bot.rest.create_message(
+                components=components, channel=ctx.channel_id,
+                user_mentions=[user.id], role_mentions=True,
+            )
+    except Exception:
+        await goblin_storage.release_shield(mongo, receipt)
+        raise
+    # Save success before editing the source. Even if that edit fails, this
+    # message's Shield cannot replace the challenge or send another prompt.
+    await goblin_storage.complete_shield(mongo, receipt, prompt.id)
 
     # Remove the Shield button only after storage and prompt delivery succeed.
     # Try to get the message ID from the interaction message

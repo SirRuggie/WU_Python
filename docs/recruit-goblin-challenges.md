@@ -39,3 +39,25 @@ are logged and leave unprocessed source records intact for a subsequent startup.
 The Shield button is removed only after storage and the follow-up prompt succeed.
 “How to ping” only responds for the recruit's own active challenge. Message text,
 component layouts, colors, GIFs, and footer artwork remain unchanged.
+
+## Shield message receipts
+
+A separate `type: goblin_prompt` record in the same recruitment collection uses
+`goblin_prompt:<source_message_id>` as its natural key. It atomically claims the
+original Shield message before creating a challenge or sending its prompt.
+Repeated clicks on a sending/sent receipt do not replace the challenge or send
+another prompt. A different source message has its own receipt and may start a
+fresh challenge. Known send failures release the receipt for retry; interrupted
+claims can be reclaimed after two minutes. Successful delivery is recorded before
+removing the button, so failure to edit the source cannot re-enable it.
+
+Sent receipts deliberately have no TTL: an old Discord button can remain visible
+indefinitely, and expiring its receipt would allow it to restart the challenge.
+They contain only message/member/guild IDs, state and timestamps. Challenge
+content and responses are not copied into these receipts. The separate active
+Goblin challenge still expires after 24 hours.
+
+As with completion delivery, Discord sends and Mongo writes are not transactional.
+If the process stops after Discord accepts the prompt but before its receipt is
+marked sent, a later retry can repeat that prompt. Normal repeated clicks and
+restarts after the sent receipt is recorded remain suppressed.
