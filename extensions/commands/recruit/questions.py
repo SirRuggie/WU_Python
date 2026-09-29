@@ -28,6 +28,7 @@ from extensions.commands.recruit import loader, recruit
 from extensions.commands.fwa.helpers import get_fwa_base_object
 from utils.component_state import insert_state
 from utils import recruit_question_content as question_content
+from utils import recruit_goblin_challenges as goblin_storage
 from utils.constants import (
     GOLDENROD_ACCENT,
     RED_ACCENT,
@@ -459,7 +460,6 @@ async def on_shield_basics_button(
     user_id = int(parts[0])
     original_recruiter_id = int(parts[1]) if len(parts) > 1 else ctx.member.id
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
-    original_recruiter = await bot.rest.fetch_member(ctx.guild_id, original_recruiter_id)
 
     if int(ctx.user.id) != user_id:
         await ctx.respond(
@@ -468,9 +468,43 @@ async def on_shield_basics_button(
         )
         return
     
-    # Get the original interaction ID from the custom_id
-    original_interaction_id = ctx.interaction.custom_id.split(":")[0].replace("shield_basics", "primary_questions")
+    await goblin_storage.open_challenge(
+        mongo, guild_id=ctx.guild_id, channel_id=ctx.channel_id,
+        user_id=user_id, recruiter_id=original_recruiter_id,
+    )
+
+    # Send the message with goblin gif
+    components = [
+        Container(
+            accent_color=GOLDENROD_ACCENT,
+            components=[
+                Text(content=f"Excellent!! {user.mention} You in essence reacted to a reaction."),
+                Separator(divider=True),
+                Text(
+                    content=(
+                        "You've proven to be 50% smarter than the average discord user....👍🏻\n\n"
+                        "Now respond with the word Goblin and actually ping the Recruiter helping you with your ticket.\n\n"
+                        "If you don't now how to ping a person/role in Discord, no worries... respond with How to ping."
+                    )
+                ),
+                Media(
+                    items=[
+                        MediaItem(media="https://c.tenor.com/QU6S8dijTV4AAAAC/tenor.gif")
+                    ]
+                ),
+                Text(content=f"-# Requested by <@{original_recruiter_id}>"),
+            ]
+        )
+    ]
     
+    await bot.rest.create_message(
+        components=components,
+        channel=ctx.channel_id,
+        user_mentions=[user.id],
+        role_mentions=True,
+    )
+
+    # Remove the Shield button only after storage and prompt delivery succeed.
     # Try to get the message ID from the interaction message
     message_id = ctx.interaction.message.id
     
@@ -505,59 +539,7 @@ async def on_shield_basics_button(
         except Exception as e:
             print(f"[ShieldBasics] Could not edit message to remove button: {e}")
     
-    # Clean up any existing challenges for this user/channel combination
-    delete_result = await mongo.button_store.delete_many({
-        "channel_id": ctx.channel_id,
-        "user_id": user_id,
-        "challenge_type": "goblin_ping"
-    })
-    
-    if delete_result.deleted_count > 0:
-        print(f"[ShieldBasics] Cleaned up {delete_result.deleted_count} existing challenge(s) for user {user_id}")
-    
-    # Store the new goblin challenge in MongoDB
-    challenge_data = {
-        "channel_id": ctx.channel_id,
-        "user_id": user_id,
-        "recruiter_id": original_recruiter_id,  # The original recruiter who initiated the questions
-        "challenge_type": "goblin_ping",
-        "status": "pending",
-        "created_at": datetime.now(timezone.utc)
-    }
-    result = await mongo.button_store.insert_one(challenge_data)
-    print(f"[ShieldBasics] Stored goblin challenge: channel={ctx.channel_id}, user={user_id}, recruiter={original_recruiter_id}, id={result.inserted_id}")
-    
-    # Send the message with goblin gif
-    components = [
-        Container(
-            accent_color=GOLDENROD_ACCENT,
-            components=[
-                Text(content=f"Excellent!! {user.mention} You in essence reacted to a reaction."),
-                Separator(divider=True),
-                Text(
-                    content=(
-                        "You've proven to be 50% smarter than the average discord user....👍🏻\n\n"
-                        "Now respond with the word Goblin and actually ping the Recruiter helping you with your ticket.\n\n"
-                        "If you don't now how to ping a person/role in Discord, no worries... respond with How to ping."
-                    )
-                ),
-                Media(
-                    items=[
-                        MediaItem(media="https://c.tenor.com/QU6S8dijTV4AAAAC/tenor.gif")
-                    ]
-                ),
-                Text(content=f"-# Requested by <@{original_recruiter_id}>"),
-            ]
-        )
-    ]
-    
-    await bot.rest.create_message(
-        components=components,
-        channel=ctx.channel_id,
-        user_mentions=[user.id],
-        role_mentions=True,
-    )
-    
+
 
 ### FWA Questions Section
 @register_action("fwa_questions", no_return=True, requires_state=True)

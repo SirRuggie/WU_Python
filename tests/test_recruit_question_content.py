@@ -146,7 +146,8 @@ def test_primary_sender_uses_saved_copy_and_starts_family_challenge_after_valida
     ctx.respond.assert_awaited_once()
 
 
-def test_shield_click_keeps_original_edited_copy(monkeypatch):
+@pytest.mark.parametrize("fail_create", [False, True])
+def test_shield_click_keeps_original_edited_copy(monkeypatch, fail_create):
     message = SimpleNamespace(
         id=777,
         components=[hikari.ContainerComponent(
@@ -170,16 +171,19 @@ def test_shield_click_keeps_original_edited_copy(monkeypatch):
         fetch_member=AsyncMock(side_effect=[SimpleNamespace(id=123, mention="<@123>"), SimpleNamespace(id=456, mention="<@456>")]),
         edit_message=AsyncMock(), create_message=AsyncMock(),
     )
-    db = SimpleNamespace(button_store=SimpleNamespace(
-        delete_many=AsyncMock(return_value=SimpleNamespace(deleted_count=0)),
-        insert_one=AsyncMock(return_value=SimpleNamespace(inserted_id="challenge")),
-    ))
+    db = SimpleNamespace(recruit_challenges=SimpleNamespace(update_one=AsyncMock()))
     ctx = SimpleNamespace(
         guild_id=10, channel_id=20, user=SimpleNamespace(id=123, mention="<@123>"),
         member=SimpleNamespace(id=456),
         interaction=SimpleNamespace(custom_id="shield_basics:123:456", message=message),
         respond=AsyncMock(),
     )
+    if fail_create:
+        rest.create_message.side_effect = RuntimeError("Discord unavailable")
+        with pytest.raises(RuntimeError):
+            run(questions.on_shield_basics_button("123:456", bot=SimpleNamespace(rest=rest), mongo=db, ctx=ctx))
+        rest.edit_message.assert_not_awaited()
+        return
     run(questions.on_shield_basics_button("123:456", bot=SimpleNamespace(rest=rest), mongo=db, ctx=ctx))
     edited = rest.edit_message.await_args.kwargs["components"]
     payload = edited[0].build()[0]

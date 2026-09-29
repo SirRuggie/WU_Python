@@ -16,6 +16,7 @@ from hikari.impl import (
 )
 from utils.constants import BLUE_ACCENT
 from utils.mongo import MongoClient
+from utils import recruit_goblin_challenges as storage
 
 # Global instances
 bot_instance: Optional[hikari.GatewayBot] = None
@@ -51,12 +52,10 @@ async def check_how_to_ping(event: hikari.GuildMessageCreateEvent) -> bool:
     # Check for "how to ping" in the message
     if "how to ping" in content_lower:
         # Only respond if there's an active goblin challenge in this channel
-        challenge = await mongo_client.button_store.find_one({
-            "channel_id": event.channel_id,
-            "challenge_type": "goblin_ping",
-            "status": "pending"
-        })
-        
+        challenge = await mongo_client.recruit_challenges.find_one(
+            storage.active_query(event.channel_id, event.author_id)
+        )
+
         if not challenge:
             # No active challenge, don't respond
             return False
