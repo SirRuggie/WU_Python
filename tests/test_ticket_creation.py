@@ -4356,3 +4356,16 @@ def test_shared_staff_parent_accepts_other_configured_recruitment_role():
             _valid_parent_rest(mentionable=True, bot_can_mention=False, staff_role_leak=True),
             parents, bot_user_id=99,
         ))
+
+
+def test_explicit_staff_viewer_access_does_not_change_recruiter_role():
+    config = dict(ticket_target_guild_id=10, main_candidate_parent=20,
+                  main_staff_parent=21, main_thread_recruiter_role=40,
+                  ticket_staff_viewer_role_ids=[50])
+    parents = thread_service.parents_from_config(config, 10, "main")
+    assert parents.recruiter_role_id == 40
+    assert parents.staff_viewer_role_ids == (50,)
+    asyncio.run(thread_service.validate_thread_parents(
+        _valid_parent_rest(mentionable=True, bot_can_mention=False, staff_role_leak=True),
+        parents, bot_user_id=99,
+    ))

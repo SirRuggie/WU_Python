@@ -125,6 +125,7 @@ class ThreadParents:
     staff_parent_id: int
     recruiter_role_id: int
     shared_staff_role_ids: tuple[int, ...] = ()
+    staff_viewer_role_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -564,7 +565,7 @@ async def validate_thread_parents(
         if _as_int(getattr(role, "id", 0))
     }
     bot_role_ids = {_as_int(value) for value in getattr(bot_member, "role_ids", ())}
-    authorized_staff_roles = {parents.recruiter_role_id, *parents.shared_staff_role_ids}
+    authorized_staff_roles = {parents.recruiter_role_id, *parents.shared_staff_role_ids, *parents.staff_viewer_role_ids}
     for role_id, role in roles_by_id.items():
         if role_id in {parents.guild_id, *authorized_staff_roles}:
             continue
@@ -686,7 +687,11 @@ def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: s
         if _as_int(config.get(f"{kind}_staff_parent")) == staff_parent
         and _as_int(config.get(f"{kind}_thread_recruiter_role"))
     } - {recruiter_role}))
-    return ThreadParents(int(guild_id), candidate_parent, staff_parent, recruiter_role, shared_roles)
+    viewer_roles = tuple(sorted({
+        _as_int(value) for value in (config.get("ticket_staff_viewer_role_ids") or ())
+        if _as_int(value)
+    }))
+    return ThreadParents(int(guild_id), candidate_parent, staff_parent, recruiter_role, shared_roles, viewer_roles)
 
 
 async def ensure_creation_indexes(mongo: MongoClient) -> None:
@@ -782,6 +787,7 @@ async def _claim_creation(
         "staff_parent_id": parents.staff_parent_id,
         "recruiter_role_id": parents.recruiter_role_id,
         "shared_staff_role_ids": list(parents.shared_staff_role_ids),
+        "staff_viewer_role_ids": list(parents.staff_viewer_role_ids),
         "route": ticket_runtime.ROUTE_THREAD,
         "runtime": ticket_runtime.THREAD_RUNTIME,
         "open_slot_id": str(slot["_id"]),
@@ -1875,6 +1881,7 @@ async def _set_committed_creation_state(
         "staff_parent_id": _as_int(location.get("staff_parent_id")),
         "recruiter_role_id": _as_int(ticket.get("recruiter_role_id")),
         "shared_staff_role_ids": list(ticket.get("shared_staff_role_ids") or ()),
+        "staff_viewer_role_ids": list(ticket.get("staff_viewer_role_ids") or ()),
         "candidate_thread_id": _as_int(location.get("id") or ticket.get("channel_id")),
         "staff_thread_id": _as_int(
             location.get("staff_space_id") or ticket.get("thread_id")
@@ -2299,6 +2306,7 @@ async def create_live_thread_ticket(
                 ticket["candidate_recruiter_notification"] = True
                 ticket["recruiter_role_id"] = parents.recruiter_role_id
                 ticket["shared_staff_role_ids"] = list(parents.shared_staff_role_ids)
+                ticket["staff_viewer_role_ids"] = list(parents.staff_viewer_role_ids)
                 ticket.update(ticket_runtime.thread_ticket_fields(slot))
                 try:
                     ticket = await store.insert_one(mongo, ticket)
@@ -2975,6 +2983,7 @@ async def recover_pending_thread_ticket_creations(
         state_guild_id = _as_int(state.get("guild_id"))
         config = {
             "ticket_target_guild_id": state_guild_id,
+            "ticket_staff_viewer_role_ids": state.get("staff_viewer_role_ids") or (),
             f"{ticket_type}_candidate_parent": state.get("candidate_parent_id"),
             f"{ticket_type}_staff_parent": state.get("staff_parent_id"),
             f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
