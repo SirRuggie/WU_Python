@@ -6,12 +6,8 @@ import hikari
 import lightbulb
 
 from extensions.commands.recruit import perms
-from extensions.commands.recruit.dashboard.manage_roles import (
-    manage_roles_handler,
-    role_is_manageable,
-)
+from utils.role_permissions import role_is_manageable
 from utils.constants import GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
-from utils.component_state import insert_state
 from utils.mongo import MongoClient
 
 from hikari.impl import (
@@ -233,54 +229,6 @@ class RemoveRole(
         await ctx.defer(ephemeral=True)
         components = await _change_one_role(
             ctx, self.member, self.selected_role, False, mongo, bot,
-        )
-        await ctx.respond(components=components, ephemeral=True)
-
-
-@role.register()
-class ManageRoles(
-    lightbulb.SlashCommand,
-    name="manage",
-    description="Open bulk role management for a member",
-):
-    member = lightbulb.user("member", "Member whose roles you want to change")
-
-    @lightbulb.invoke
-    @lightbulb.di.with_di
-    async def invoke(
-            self,
-            ctx: lightbulb.Context,
-            mongo: MongoClient = lightbulb.di.INJECTED,
-            bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    ) -> None:
-        await ctx.defer(ephemeral=True)
-        guild, member, problem = await _command_context(ctx, self.member, mongo, bot)
-        if problem is not None:
-            await ctx.respond(components=problem, ephemeral=True)
-            return
-
-        action_id = str(ctx.interaction.id)
-        data = {
-            "_id": action_id,
-            "user_id": member.id,
-            "recruiter_id": ctx.user.id,
-            "guild_id": guild.id,
-            "channel_id": ctx.channel_id,
-            "origin": "role_command",
-            "remove_roles_page": 0,
-        }
-        await insert_state(mongo, data)
-
-        components = await manage_roles_handler(
-            ctx=ctx,
-            action_id=action_id,
-            user_id=member.id,
-            mongo=mongo,
-            bot=bot,
-            guild_id=guild.id,
-            recruiter_id=ctx.user.id,
-            channel_id=ctx.channel_id,
-            origin="role_command",
         )
         await ctx.respond(components=components, ephemeral=True)
 

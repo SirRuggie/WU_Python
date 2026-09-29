@@ -16,11 +16,13 @@ the commit message when the item is completed so the fix remains traceable.
 - **`SECRET-002` — Rotate the Kawaii API token and load it from the environment.**
   A live token is hard-coded in `extensions/commands/slap.py` and exists in Git
   history. Revoke/rotate it before removing it from source.
-- **`AUTH-001` — Restrict `/recruit dashboard`.** The command is currently open
-  to every member and lets the caller target another member. Several component
-  paths can change that member's nickname, Town Hall roles, and clan roles or
-  post onboarding messages. Add both command visibility permissions and a
-  runtime recruiter/admin check shared by every mutating component.
+- **`AUTH-001` — Completed 2026-09-29: retire `/recruit dashboard`.** Audited
+  the old command and nickname, role, clan, and walkthrough controls. Removed
+  the command and all legacy mutation handlers in favor of `/warrior setup`.
+  Old buttons return only a retirement notice; they cannot load sessions or
+  modify members. Preserved `/recruit questions`, current Roles management,
+  and outstanding legacy role-cleanup records. See
+  [retirement audit](recruit-dashboard-retirement.md).
 - **`AUTH-002` / `AUTH-003` — Closed 2026-09-23.** Removed the legacy
   `/clan upload-images` and `/fwa upload-images` commands. Their replacements
   are dashboard upload dialogs with the existing management-role checks on

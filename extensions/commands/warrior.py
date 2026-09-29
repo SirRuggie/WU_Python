@@ -1,4 +1,4 @@
-"""Independent /warrior setup. The legacy /recruit dashboard stays registered."""
+"""Warrior Setup, the supported replacement for the retired recruit dashboard."""
 
 import asyncio
 import logging

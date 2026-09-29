@@ -34,7 +34,7 @@ HELP_CATEGORIES = {
         "description": "Member roles and recruit onboarding",
         "commands": [
             ("/recruit questions", "Send the recruitment questionnaire to a recruit."),
-            ("/recruit dashboard", "Open the complete new-member onboarding dashboard."),
+            ("/warrior setup", "Open the new-member onboarding dashboard."),
         ],
     },
     "manage": {

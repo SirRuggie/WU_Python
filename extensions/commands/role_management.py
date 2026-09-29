@@ -11,7 +11,7 @@ import hikari
 import lightbulb
 
 from extensions.commands.recruit import perms
-from extensions.commands.recruit.dashboard.manage_roles import role_is_manageable
+from utils.role_permissions import role_is_manageable
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state
 from utils.constants import GOLDENROD_ACCENT

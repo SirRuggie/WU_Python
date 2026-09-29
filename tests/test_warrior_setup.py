@@ -81,13 +81,14 @@ class Cursor:
         return self
 
 
-def test_command_is_separate_and_legacy_remains():
-    from extensions.commands.recruit.dashboard.dashboard import RecruitDashboard
+def test_warrior_setup_replaces_legacy_dashboard():
+    from extensions.commands.recruit import recruit
     from extensions.components import registered_functions
 
     assert ui.warrior.name == "warrior"
     assert ui.WarriorSetup._command_data.name == "setup"
-    assert RecruitDashboard._command_data.name == "dashboard"
+    assert "dashboard" not in recruit.subcommands
+    assert "questions" in recruit.subcommands
     assert {
         "warrior",
         "warrior_form",

@@ -1,7 +1,7 @@
 # Warrior Setup
 
 `/warrior setup discord-user:` opens a private, recruiter-owned onboarding checklist.
-The existing `/recruit dashboard` and its action IDs remain unchanged. Warrior
+The legacy `/recruit dashboard` was retired on 2026-09-29 (AUTH-001). Warrior
 uses separate action IDs, sessions, settings, walkthrough records, and worker.
 
 ## Workflow

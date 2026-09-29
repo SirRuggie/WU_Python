@@ -133,7 +133,6 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.commands.clan",
         "extensions.commands.fwa",
         "extensions.commands.recruit",
-        "extensions.commands.recruit.dashboard.server_walkthrough",
         "extensions.commands.setup",
         "extensions.context_menus.get_message_id",
         "extensions.context_menus.get_user_id",

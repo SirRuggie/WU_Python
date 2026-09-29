@@ -6,7 +6,7 @@ import hikari
 from extensions.commands import role as role_commands
 from extensions.commands.help_catalog import HELP_CATEGORIES, command_paths
 from extensions.commands.recruit import perms
-from extensions.commands.recruit.dashboard.manage_roles import role_is_manageable
+from utils.role_permissions import role_is_manageable
 
 
 class FakeRole:

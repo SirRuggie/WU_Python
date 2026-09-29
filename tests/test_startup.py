@@ -143,7 +143,6 @@ def test_shared_loader_command_families_use_one_package_entry_point():
         "extensions.commands.clan",
         "extensions.commands.fwa",
         "extensions.commands.recruit",
-        "extensions.commands.recruit.dashboard.server_walkthrough",
         "extensions.commands.setup",
         "extensions.commands.tickets",
     ]
