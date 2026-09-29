@@ -494,7 +494,7 @@ async def on_shield_basics_button(
                     content=(
                         "You've proven to be 50% smarter than the average discord user....👍🏻\n\n"
                         "Now respond with the word Goblin and actually ping the Recruiter helping you with your ticket.\n\n"
-                        "If you don't now how to ping a person/role in Discord, no worries... respond with How to ping."
+                        "If you don't know how to ping a person/role in Discord, no worries... respond with How to ping."
                     )
                 ),
                 Media(
@@ -763,7 +763,7 @@ async def recruit_questions_page(
                     f"{emojis.red_arrow_right} Explanations: Summarise FWA\n"
                     f"{emojis.red_arrow_right} FWA Questions: Send core FWA questions.\n"
                     f"{emojis.red_arrow_right} Keep It Moving: Send quick “hurry up” GIFs.\n\n"
-                    "Stay organized, efficient, and aligned with Warrior's United recruitment standards.\n\n"
+                    "Stay organized, efficient, and aligned with Warriors United recruitment standards.\n\n"
                 )),
                 ActionRow(
                     components=[

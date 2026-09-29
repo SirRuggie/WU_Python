@@ -76,35 +76,35 @@ _DEFAULT_SECTIONS = {
         "Thank you for completing your application! 🎉\n\n"
         "Our leadership team is now reviewing your responses to find the perfect clan match. "
         "Please sit tight, we’ll be with you shortly! ⏳\n\n"
-        "We truly appreciate your interest in Warrior's United and can’t wait to welcome you aboard!",
+        "We truly appreciate your interest in Warriors United and can’t wait to welcome you aboard!",
         "-# Requested by {recruiter}",
     ),
     "welcome_to_family": (
         "## 🛡️ **Welcome to the Family!** · {recruit}",
         "Welcome to the Family!\n\n"
-        "You are all good to go {recruit}! Several channels will be available to you "
-        "on the Main Server shortly. You will receive a ping in the "
-        "<#1128966424082255872> and all the appropriate server roles you will need: "
-        "as well as a link to assigned Clan.\n\n"
-        "**Once you receive the aforementioned ping, __ping__ your Recruiter to acknowledge you're there.**\n\n"
-        "They will in turn kick off a server walkthrough guiding you to important "
-        "channels related to your day to day play.\n\n"
+        "You are all good to go, {recruit}! Your recruiter will help you finish "
+        "setting up your server nickname, roles, and assigned clan.\n\n"
+        "You will receive a welcome message and a **Begin Walkthrough** button "
+        "in your application ticket.\n\n"
+        "**Once you receive the welcome message, __ping__ your recruiter to let them know you're ready.**\n\n"
+        "Your recruiter will then start a server walkthrough to guide you through "
+        "the important channels for your day-to-day play.\n\n"
         "# Welcome to the Family...here's your 🛡️! Let's get you into Battle!",
         "-# Requested by {recruiter}",
     ),
     "warriors_united_cwl": (
         "## <:warriorcat:947992348971905035> Warriors United CWL <:warriorcat:947992348971905035> · {recruit}",
-        "We have 20 Clans that we utilize for CWL; with League's ranging from Master 1 to Gold 1. "
+        "We use 20 clans for CWL, with leagues ranging from Master 1 to Gold 1. "
         "All but our High Tactical Clans split up into these clans for CWL.\n\n"
         "Three factors determine the League you'll be placed in:\n\n"
         "1) War activity\n2) War performance\n3) Account strength\n\n"
         "All are relative to the League you'll be placed in.\n\n"
         "If you are new to the family with no war history then your first CWL season "
-        "might be lower league for support and/or strength. Nothing personal, your "
-        "new so we don't know you yet. *Exceptions may be granted*\n\n"
+        "might be in a lower league for support and/or strength. Nothing personal—you’re "
+        "new, so we don't know you yet. *Exceptions may be granted*\n\n"
         "Signing up for CWL is mandatory and is done by way of a Google Form. "
         "Sign-ups go live around Clan Games every month so we can prepare Rosters. "
-        "It's a super easy form that takes less then a minute.\n\n"
+        "It's a super easy form that takes less than a minute.\n\n"
         "## Any issues with filling out a simple form and moving to another clan for CWL?",
         "-# Requested by {recruiter}",
     ),
