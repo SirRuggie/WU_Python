@@ -4098,6 +4098,9 @@ def test_console_channel_validation_is_private_typed_and_permission_complete(mon
     async def recruiter_roles(_mongo):
         return recruiter_role_id, None
 
+    async def viewer_roles(_mongo):
+        return set()
+    monkeypatch.setattr(console.perms, "staff_viewer_role_ids", viewer_roles)
     monkeypatch.setattr(console.perms, "recruiter_role_ids", recruiter_roles)
     bot = SimpleNamespace(rest=Rest(), get_me=lambda: SimpleNamespace(id=10))
 
@@ -4120,6 +4123,13 @@ def test_console_channel_validation_is_private_typed_and_permission_complete(mon
         asyncio.run(console.validate_console_channel(
             bot, object(), guild_id=guild_id, channel_id=444,
         ))
+    async def allow_viewer(_mongo):
+        return {rogue_role_id}
+    monkeypatch.setattr(console.perms, "staff_viewer_role_ids", allow_viewer)
+    assert asyncio.run(console.validate_console_channel(
+        bot, object(), guild_id=guild_id, channel_id=444,
+    )) is channel
+    monkeypatch.setattr(console.perms, "staff_viewer_role_ids", viewer_roles)
     roles.pop()
     channel.permission_overwrites.pop()
 

@@ -29,6 +29,12 @@ async def recruiter_role_ids(mongo: MongoClient) -> tuple[int | None, int | None
     )
 
 
+async def staff_viewer_role_ids(mongo: MongoClient) -> set[int]:
+    """Explicit private-channel viewers; these roles do not authorize actions."""
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    return {_as_int(value) for value in (config.get("ticket_staff_viewer_role_ids") or ()) if _as_int(value)}
+
+
 async def is_target_admin(member: hikari.Member | None, mongo: MongoClient) -> bool:
     """Administrator acting inside the one guild bound to global ticket data."""
     if member is None:

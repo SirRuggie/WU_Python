@@ -1675,9 +1675,10 @@ async def validate_console_channel(
                 "recruiter role is missing " + _permission_names(missing)
             )
 
+    viewer_ids = recruiter_ids | await perms.staff_viewer_role_ids(mongo)
     bot_role_ids = {_int(value) for value in getattr(bot_member, "role_ids", ())}
     for role_id, role in roles_by_id.items():
-        if role_id == int(guild_id) or role_id in recruiter_ids:
+        if role_id == int(guild_id) or role_id in viewer_ids:
             continue
         if _role_permissions(role) & hikari.Permissions.ADMINISTRATOR:
             continue
@@ -1736,7 +1737,7 @@ async def validate_console_channel(
             and not _member_can_view_private_hub(
                 member,
                 owner_id=owner_id,
-                recruiter_ids=recruiter_ids,
+                recruiter_ids=viewer_ids,
                 roles_by_id=roles_by_id,
             )
         ):
