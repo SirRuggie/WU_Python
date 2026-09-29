@@ -19,7 +19,7 @@ across restarts too. Existing processing records already have the required lease
 field, so no Mongo migration is needed.
 
 The displayed text, artwork, code parsing, warning cooldown, and warning deletion
-behavior are unchanged. Discord delivery and Mongo completion are separate
-operations; a crash after delivery but before completion can still produce a
-repeat confirmation on a later valid reply. Recovery preserves the challenge
-rather than silently losing it.
+behavior are unchanged. Confirmations now use a durable delivery ID and receipt;
+short retries reuse Discord's nonce and longer interruptions require a history
+check. See [Recruitment message delivery IDs](recruit-message-delivery.md) for
+record lookup, restart behavior, and `needs_review` handling.

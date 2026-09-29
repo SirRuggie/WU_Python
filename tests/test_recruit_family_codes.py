@@ -89,7 +89,7 @@ class _Collection:
                 return _Result(matched=1)
         if not upsert:
             return _Result()
-        document = {"_id": query["_id"]}
+        document = {"_id": query["_id"], **deepcopy(update.get("$setOnInsert", {}))}
         self._apply(document, update)
         self.documents[document["_id"]] = document
         return _Result(upserted_id=document["_id"])
@@ -136,6 +136,8 @@ class _Mongo:
     def __init__(self, *, challenges=(), legacy=(), index_error=None):
         self.recruit_challenges = _Collection(challenges, index_error=index_error)
         self.recruit_onboarding = _Collection(legacy)
+        self.deliveries = _Collection()
+        self.recruit_challenges.database = SimpleNamespace(get_collection=lambda name: self.deliveries)
 
 
 class _Rest:

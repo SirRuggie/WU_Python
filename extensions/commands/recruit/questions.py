@@ -31,6 +31,7 @@ from utils.component_state import insert_state
 from utils import recruit_question_content as question_content
 from utils import recruit_goblin_challenges as goblin_storage
 from utils import recruit_panel_refresh as panel_refresh
+from utils import recruit_message_delivery as delivery
 from utils.constants import (
     GOLDENROD_ACCENT,
     RED_ACCENT,
@@ -66,12 +67,13 @@ async def refresh_questions_panel(ctx, user_id: int, mongo: MongoClient) -> None
 
 @loader.listener(hikari.StartedEvent)
 @lightbulb.di.with_di
-async def start_question_panel_refresh(
+async def start_question_recovery_services(
     _: hikari.StartedEvent,
     mongo: MongoClient = lightbulb.di.INJECTED,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
 ) -> None:
     panel_refresh.start(mongo, bot.rest, recruit_questions_page)
+    await delivery.prepare(mongo)
 
 
 VALID_EMOJI_CODES = question_content.VALID_EMOJI_CODES
@@ -503,9 +505,12 @@ async def on_shield_basics_button(
             await goblin_storage.open_challenge(
                 mongo, guild_id=ctx.guild_id, channel_id=ctx.channel_id,
                 user_id=user_id, recruiter_id=original_recruiter_id,
+                source_message_id=ctx.interaction.message.id,
             )
-            prompt = await bot.rest.create_message(
-                components=components, channel=ctx.channel_id,
+            prompt = await delivery.deliver(
+                mongo, bot.rest, kind="goblin_prompt",
+                session_id=str(ctx.interaction.message.id), guild_id=ctx.guild_id,
+                channel_id=ctx.channel_id, user_id=user_id, components=components,
                 user_mentions=[user.id], role_mentions=True,
             )
     except Exception:
@@ -1212,8 +1217,10 @@ async def on_family_code_response(
                             exc_info=True,
                         )
 
-                await bot.rest.create_message(
-                    channel=event.channel_id,
+                await delivery.deliver(
+                    mongo, bot.rest, kind="family_code_confirmation",
+                    session_id=claimed["session_id"], guild_id=event.guild_id,
+                    channel_id=event.channel_id, user_id=event.author_id,
                     components=_family_code_success_components(
                         event.author.mention,
                         code_found,

@@ -9,6 +9,7 @@ import hikari
 import logging
 from typing import Optional
 from utils import recruit_goblin_challenges as storage
+from utils import recruit_message_delivery as delivery
 
 
 from utils.mongo import MongoClient
@@ -91,7 +92,7 @@ async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
             # Bound delivery below the durable claim lease. A stopped process
             # leaves a claim that becomes eligible again after two minutes.
             async with asyncio.timeout(60):
-                message = await send_success_message(event.channel_id, event.author_id, recruiter_id)
+                message = await send_success_message(event.channel_id, event.author_id, recruiter_id, challenge=challenge)
         except Exception:
             await storage.release(mongo_client, challenge, claim_id)
             _log.exception("Goblin confirmation failed; challenge retained channel=%s user=%s",
@@ -136,7 +137,7 @@ async def check_goblin_challenge(event: hikari.GuildMessageCreateEvent) -> bool:
     return False
 
 
-async def send_success_message(channel_id: int, user_id: int, recruiter_id: int):
+async def send_success_message(channel_id: int, user_id: int, recruiter_id: int, *, challenge: dict):
     """Send a success message when the goblin challenge is completed"""
     if not bot_instance:
         raise RuntimeError("Goblin bot is not initialized")
@@ -174,8 +175,10 @@ async def send_success_message(channel_id: int, user_id: int, recruiter_id: int)
         )
     ]
 
-    return await bot_instance.rest.create_message(
-        channel=channel_id,
+    return await delivery.deliver(
+        mongo_client, bot_instance.rest, kind="goblin_confirmation",
+        session_id=challenge["session_id"], guild_id=challenge.get("guild_id"),
+        channel_id=channel_id, user_id=user_id,
         components=components,
         user_mentions=[user_id, recruiter_id]
     )

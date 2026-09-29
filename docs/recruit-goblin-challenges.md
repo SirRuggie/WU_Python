@@ -23,10 +23,9 @@ A stopped process leaves a durable claim that can be reclaimed by the next valid
 reply after its lease expires. This recovery does not require an in-memory timer
 or a bot restart. A replacement prompt cannot be cleared by an older completion.
 
-Discord delivery and Mongo writes are not one transaction: a crash after Discord
-accepts a message but before completion is recorded can result in a repeated
-confirmation on a subsequent valid reply. The design preserves the recruit's
-ability to finish instead of silently losing their challenge.
+Prompts and confirmations use durable delivery IDs and receipts. See
+[Recruitment message delivery IDs](recruit-message-delivery.md) for nonce reuse,
+restart reconciliation, record lookup, and uncertain-delivery handling.
 
 On startup, create/check the TTL index before migration. Copy valid legacy
 `challenge_type: goblin_ping` records using `$setOnInsert`, newest first, before
@@ -57,7 +56,7 @@ They contain only message/member/guild IDs, state and timestamps. Challenge
 content and responses are not copied into these receipts. The separate active
 Goblin challenge still expires after 24 hours.
 
-As with completion delivery, Discord sends and Mongo writes are not transactional.
-If the process stops after Discord accepts the prompt but before its receipt is
-marked sent, a later retry can repeat that prompt. Normal repeated clicks and
-restarts after the sent receipt is recorded remain suppressed.
+A retry from the same Shield message preserves its challenge session. Delivery
+receipts in `settings.recruit_message_deliveries` cover the gap between Discord
+accepting a prompt and the Shield receipt being marked sent. Unconfirmed older
+deliveries are held for review rather than blindly repeated.

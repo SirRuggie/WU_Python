@@ -21,7 +21,9 @@ class Collection(_Collection):
 
 
 def db(legacy=()):
-    return NS(recruit_challenges=Collection(), button_store=Collection(legacy))
+    mongo = NS(recruit_challenges=Collection(), button_store=Collection(legacy), deliveries=Collection())
+    mongo.recruit_challenges.database = NS(get_collection=lambda name: mongo.deliveries)
+    return mongo
 
 
 def event(user=22, content="Goblin <@33>"):

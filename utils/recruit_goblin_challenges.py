@@ -32,9 +32,15 @@ def active_query(channel_id, user_id, now=None):
     }
 
 
-async def open_challenge(mongo, *, guild_id, channel_id, user_id, recruiter_id):
+async def open_challenge(mongo, *, guild_id, channel_id, user_id, recruiter_id, source_message_id=None):
     now = utcnow()
-    session = uuid.uuid4().hex
+    session = f"shield:{int(source_message_id)}" if source_message_id is not None else uuid.uuid4().hex
+    if source_message_id is not None:
+        current = await mongo.recruit_challenges.find_one({"_id": key(channel_id, user_id)})
+        if current and current.get("session_id") == session:
+            return session
+        if current and current.get("source_message_id", 0) > int(source_message_id):
+            raise ValueError("A newer Discord Basics prompt already exists")
     await mongo.recruit_challenges.update_one(
         {"_id": key(channel_id, user_id)},
         {
@@ -42,6 +48,7 @@ async def open_challenge(mongo, *, guild_id, channel_id, user_id, recruiter_id):
                 "type": KIND,
                 "schema_version": 1,
                 "session_id": session,
+                "source_message_id": int(source_message_id) if source_message_id is not None else 0,
                 "guild_id": int(guild_id),
                 "channel_id": int(channel_id),
                 "user_id": int(user_id),
