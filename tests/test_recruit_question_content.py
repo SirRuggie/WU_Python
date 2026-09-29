@@ -106,7 +106,7 @@ def test_corrupt_saved_template_fails_closed():
 def _ctx(choice):
     interaction = SimpleNamespace(
         values=[choice], id=100, custom_id="primary_questions:panel",
-        delete_initial_response=AsyncMock(),
+        delete_initial_response=AsyncMock(), message=SimpleNamespace(id=777),
     )
     return SimpleNamespace(
         interaction=interaction, guild_id=10, channel_id=20,

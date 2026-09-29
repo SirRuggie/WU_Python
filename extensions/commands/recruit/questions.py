@@ -58,6 +58,34 @@ FAMILY_CODE_TYPE = "family_codes"
 # runs on that token - this value must stay comfortably under that ceiling.
 PANEL_REFRESH_DELAY_SECONDS = 600
 
+# Message IDs distinguish separate panels even when they reuse session state.
+_panel_refresh_tasks: dict[int, asyncio.Task] = {}
+
+
+async def refresh_questions_panel(ctx, user_id: int) -> None:
+    """Move a used panel to the bottom once, ten minutes after its first pick."""
+    panel_id = int(ctx.interaction.message.id)
+    if panel_id in _panel_refresh_tasks:
+        return
+    task = asyncio.current_task()
+    _panel_refresh_tasks[panel_id] = task
+    try:
+        await asyncio.sleep(PANEL_REFRESH_DELAY_SECONDS)
+        action_id = ctx.interaction.custom_id.split(":", 1)[1]
+        new_components = await recruit_questions_page(
+            action_id=action_id, user_id=user_id, ctx=ctx,
+        )
+        try:
+            await ctx.interaction.delete_initial_response()
+        except hikari.NotFoundError:
+            # The panel is already gone; do not add a replacement.
+            return
+        await ctx.respond(components=new_components, ephemeral=True)
+    finally:
+        if _panel_refresh_tasks.get(panel_id) is task:
+            _panel_refresh_tasks.pop(panel_id, None)
+
+
 VALID_EMOJI_CODES = question_content.VALID_EMOJI_CODES
 
 _IGNORABLE_CODEPOINTS = {"\ufe0e", "\ufe0f", "\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"}
@@ -322,25 +350,7 @@ async def primary_questions(
         raise
     
     
-    await asyncio.sleep(PANEL_REFRESH_DELAY_SECONDS)
-
-    action_id = ctx.interaction.custom_id.split(":", 1)[1]
-    new_components = await recruit_questions_page(
-        action_id=action_id,
-        user_id=user_id,
-        ctx=ctx,
-    )
-    try:
-        await ctx.interaction.delete_initial_response()
-    except hikari.NotFoundError:
-        # Panel already gone: a later pick refreshed it, or the recruiter
-        # dismissed it. Re-sending here would stack duplicate panels.
-        return
-
-    await ctx.respond(
-        components=new_components,
-        ephemeral=True,
-    )
+    await refresh_questions_panel(ctx, user_id)
 
 @register_action("age", no_return=True)
 @lightbulb.di.with_di
@@ -578,23 +588,7 @@ async def fwa_questions(
             user_mentions=[user.id], role_mentions=False, mentions_everyone=False,
         )
 
-    await asyncio.sleep(PANEL_REFRESH_DELAY_SECONDS)
-    action_id = ctx.interaction.custom_id.split(":", 1)[1]
-    new_components = await recruit_questions_page(
-        action_id=action_id,
-        user_id=user_id,
-        ctx=ctx,
-    )
-    try:
-        await ctx.interaction.delete_initial_response()
-    except hikari.NotFoundError:
-        # Panel already gone: a later pick refreshed it, or the recruiter
-        # dismissed it. Re-sending here would stack duplicate panels.
-        return
-    await ctx.respond(
-        components=new_components,
-        ephemeral=True,
-    )
+    await refresh_questions_panel(ctx, user_id)
 
 @register_action("th_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
@@ -716,23 +710,7 @@ async def explanations(
         user_mentions=[user.id], role_mentions=False, mentions_everyone=False,
     )
 
-    await asyncio.sleep(PANEL_REFRESH_DELAY_SECONDS)
-    action_id = ctx.interaction.custom_id.split(":", 1)[1]
-    new_components = await recruit_questions_page(
-        action_id=action_id,
-        user_id=user_id,
-        ctx=ctx,
-    )
-    try:
-        await ctx.interaction.delete_initial_response()
-    except hikari.NotFoundError:
-        # Panel already gone: a later pick refreshed it, or the recruiter
-        # dismissed it. Re-sending here would stack duplicate panels.
-        return
-    await ctx.respond(
-        components=new_components,
-        ephemeral=True,
-    )
+    await refresh_questions_panel(ctx, user_id)
 
 
 ### HURRY TF UP Section
@@ -768,23 +746,7 @@ async def keep_it_moving(
         user_mentions=[user.id], role_mentions=False, mentions_everyone=False,
     )
 
-    await asyncio.sleep(PANEL_REFRESH_DELAY_SECONDS)
-    action_id = ctx.interaction.custom_id.split(":", 1)[1]
-    new_components = await recruit_questions_page(
-        action_id=action_id,
-        user_id=user_id,
-        ctx=ctx,
-    )
-    try:
-        await ctx.interaction.delete_initial_response()
-    except hikari.NotFoundError:
-        # Panel already gone: a later pick refreshed it, or the recruiter
-        # dismissed it. Re-sending here would stack duplicate panels.
-        return
-    await ctx.respond(
-        components=new_components,
-        ephemeral=True,
-    )
+    await refresh_questions_panel(ctx, user_id)
 
 async def recruit_questions_page(
     action_id: str,
@@ -1377,12 +1339,13 @@ async def on_family_code_response(
 
 @loader.listener(hikari.StoppingEvent)
 async def stop_family_code_warning_tasks(_: hikari.StoppingEvent) -> None:
-    tasks = list(_warning_delete_tasks)
+    tasks = list(_warning_delete_tasks | set(_panel_refresh_tasks.values()))
     for task in tasks:
         task.cancel()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
     _warning_delete_tasks.clear()
+    _panel_refresh_tasks.clear()
 
 
 loader.command(recruit)

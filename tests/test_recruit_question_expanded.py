@@ -67,7 +67,7 @@ def test_fwa_base_required_tokens_and_safe_separate_previews():
 def _ctx(group, variant):
     interaction = SimpleNamespace(
         values=[variant], id=100, custom_id=f"{group}:panel",
-        delete_initial_response=AsyncMock(), guild_id=10,
+        delete_initial_response=AsyncMock(), message=SimpleNamespace(id=777), guild_id=10,
     )
     return SimpleNamespace(
         interaction=interaction, guild_id=10, channel_id=20,
