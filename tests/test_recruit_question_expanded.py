@@ -90,7 +90,7 @@ def test_expanded_sender_handlers_use_saved_copy_and_selected_recruit(monkeypatc
         fetch_member=AsyncMock(return_value=SimpleNamespace(id=123, mention="<@123>")),
         create_message=AsyncMock(return_value=SimpleNamespace(id=777)),
     )
-    monkeypatch.setattr(questions.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(questions, "refresh_questions_panel", AsyncMock())
     monkeypatch.setattr(questions, "recruit_questions_page", AsyncMock(return_value=[]))
     handler = {
         "fwa": questions.fwa_questions,
@@ -115,7 +115,7 @@ def test_fwa_base_selector_and_public_th_result_use_saved_copy_with_live_base_da
         fetch_member=AsyncMock(return_value=SimpleNamespace(id=123, mention="<@123>")),
         create_message=AsyncMock(return_value=SimpleNamespace(id=777)),
     )
-    monkeypatch.setattr(questions.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(questions, "refresh_questions_panel", AsyncMock())
     monkeypatch.setattr(questions, "recruit_questions_page", AsyncMock(return_value=[]))
     selector_ctx = _ctx("fwa_questions", "fwa_bases_upon_approval")
     run(questions.fwa_questions(user_id=123, bot=SimpleNamespace(rest=rest), mongo=db, ctx=selector_ctx))

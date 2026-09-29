@@ -125,7 +125,7 @@ def test_primary_sender_uses_saved_copy_and_starts_family_challenge_after_valida
         create_message=AsyncMock(return_value=SimpleNamespace(id=777)),
     )
     bot = SimpleNamespace(rest=rest)
-    monkeypatch.setattr(questions.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(questions, "refresh_questions_panel", AsyncMock())
     monkeypatch.setattr(questions, "recruit_questions_page", AsyncMock(return_value=[]))
     ctx = _ctx("family_codes")
     run(questions.primary_questions(user_id=123, bot=bot, mongo=db, ctx=ctx))

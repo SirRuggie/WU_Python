@@ -1,103 +1,258 @@
-"""A single ten-minute countdown per source panel, shared by all dropdowns."""
+"""Durable refresh countdowns and send-before-delete recovery for private panels."""
+
 import asyncio
-from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 
 import hikari
 import pytest
 
 from extensions.commands.recruit import questions
+from utils import recruit_panel_refresh as refresh
+from tests.test_recruit_goblin_challenges import Collection
+
+NOW = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
 
 
-def ctx(message_id=10, action='primary_questions'):
-    return SimpleNamespace(
-        interaction=SimpleNamespace(
-            message=SimpleNamespace(id=message_id), custom_id=f'{action}:session',
-            delete_initial_response=AsyncMock(),
-        ), respond=AsyncMock(),
+def database():
+    jobs = Collection()
+    database = NS(
+        get_collection=lambda name: jobs if name == "recruit_panel_refreshes" else None
+    )
+    return NS(component_state=NS(database=database)), jobs
+
+
+def ctx(message_id=10, created=NOW):
+    return NS(
+        guild_id=1,
+        channel_id=2,
+        user=NS(id=3),
+        interaction=NS(
+            message=NS(id=message_id),
+            created_at=created,
+            application_id=4,
+            token="test-secret",
+            custom_id="primary_questions:session",
+        ),
     )
 
 
-def test_delay_remains_ten_minutes():
-    assert questions.PANEL_REFRESH_DELAY_SECONDS == 600
+def rest(source_id=10):
+    return NS(
+        fetch_interaction_response=AsyncMock(return_value=NS(id=source_id)),
+        execute_webhook=AsyncMock(return_value=NS(id=100)),
+        fetch_webhook_message=AsyncMock(return_value=NS(id=100)),
+        delete_interaction_response=AsyncMock(),
+    )
 
 
-def test_repeated_choices_share_first_countdown_and_new_panel_gets_own(monkeypatch):
+def missing():
+    return hikari.NotFoundError(
+        url="https://discord.com", headers={}, raw_body=b"", message="gone", code=10008
+    )
+
+
+def test_delay_stays_ten_minutes():
+    assert questions.PANEL_REFRESH_DELAY_SECONDS == refresh.DELAY_SECONDS == 600
+
+
+def test_first_pick_is_durable_and_later_picks_do_not_slide_countdown(monkeypatch):
     async def run():
-        gate = asyncio.Event()
-        async def delay(seconds):
-            assert seconds == 600
-            await gate.wait()
-        sleep = AsyncMock(side_effect=delay)
-        monkeypatch.setattr(questions.asyncio, 'sleep', sleep)
-        panel = [object()]
-        monkeypatch.setattr(questions, 'recruit_questions_page', AsyncMock(return_value=panel))
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
         first = ctx()
-        task = asyncio.create_task(questions.refresh_questions_panel(first, 22))
-        # Let the first timer register without relying on a real sleep.
-        while not sleep.await_count:
-            await asyncio.wait({task}, timeout=0)
-        for action in ('fwa_questions', 'explanations', 'keep_it_moving', 'primary_questions'):
-            another = ctx(action=action)
-            await questions.refresh_questions_panel(another, 22)
-            another.respond.assert_not_awaited()
-        assert sleep.await_count == 1
-        first.respond.assert_not_awaited()
-        first.interaction.delete_initial_response.assert_not_awaited()
-        gate.set(); await task
-        first.interaction.delete_initial_response.assert_awaited_once()
-        first.respond.assert_awaited_once_with(components=panel, ephemeral=True)
-        assert not questions._panel_refresh_tasks
-        await questions.refresh_questions_panel(ctx(11), 22)
-        assert sleep.await_count == 2
+        await questions.refresh_questions_panel(first, 22, mongo)
+        await questions.refresh_questions_panel(
+            ctx(created=NOW + timedelta(minutes=3)), 22, mongo
+        )
+        assert len(jobs.documents) == 1
+        assert jobs.documents["10"]["due_at"] == NOW + timedelta(minutes=10)
+        api = rest()
+        render = AsyncMock(return_value=[])
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=9))
+        await refresh.run_due(mongo, api, render)
+        api.execute_webhook.assert_not_awaited()
+        # A fresh worker uses only persisted Mongo state, no old ctx or task.
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=10))
+        order = []
+
+        async def send(*args, **kwargs):
+            order.append("send")
+            return NS(id=100)
+
+        async def delete(*args, **kwargs):
+            order.append("delete")
+
+        api.execute_webhook.side_effect = send
+        api.delete_interaction_response.side_effect = delete
+        await refresh.run_due(mongo, api, render)
+        assert order == ["send", "delete"]
+        job = jobs.documents["10"]
+        assert job["status"] == "done" and "interaction_token" not in job
+        flags = api.execute_webhook.call_args.kwargs["flags"]
+        assert (
+            flags & hikari.MessageFlag.EPHEMERAL
+            and flags & hikari.MessageFlag.IS_COMPONENTS_V2
+        )
+        await refresh.run_due(mongo, api, render)
+        assert api.execute_webhook.await_count == 1
+
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('failure', ['deleted', 'send', 'cancel'])
-def test_timer_slot_is_released_on_failure_or_shutdown(monkeypatch, failure):
+def test_send_failure_keeps_original_and_next_selection_can_retry(monkeypatch):
     async def run():
-        context = ctx()
-        monkeypatch.setattr(questions, 'recruit_questions_page', AsyncMock(return_value=[]))
-        if failure == 'cancel':
-            entered = asyncio.Event()
-            async def delay(_):
-                entered.set(); await asyncio.Event().wait()
-            monkeypatch.setattr(questions.asyncio, 'sleep', delay)
-            task = asyncio.create_task(questions.refresh_questions_panel(context, 22))
-            await entered.wait()
-            await questions.stop_family_code_warning_tasks(None)
-            assert task.cancelled()
-            context.respond.assert_not_awaited()
-        else:
-            monkeypatch.setattr(questions.asyncio, 'sleep', AsyncMock())
-            if failure == 'deleted':
-                context.interaction.delete_initial_response.side_effect = hikari.NotFoundError(
-                    url='https://discord.com', headers={}, raw_body=b'', message='Unknown message', code=10008)
-                await questions.refresh_questions_panel(context, 22)
-                context.respond.assert_not_awaited()
-            else:
-                context.respond.side_effect = RuntimeError('send failed')
-                with pytest.raises(RuntimeError):
-                    await questions.refresh_questions_panel(context, 22)
-        assert not questions._panel_refresh_tasks
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
+        await refresh.schedule(mongo, ctx(), 22)
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=10))
+        api = rest()
+        api.execute_webhook.side_effect = RuntimeError("do not log test-secret")
+        await refresh.run_due(mongo, api, AsyncMock(return_value=[]))
+        api.delete_interaction_response.assert_not_awaited()
+        assert jobs.documents["10"]["status"] == "failed"
+        assert "interaction_token" not in jobs.documents["10"]
+        await refresh.schedule(mongo, ctx(created=NOW + timedelta(minutes=11)), 22)
+        assert jobs.documents["10"]["status"] == "pending"
+        assert jobs.documents["10"]["due_at"] == NOW + timedelta(minutes=21)
+
     asyncio.run(run())
 
 
-def test_separate_panels_have_independent_countdowns(monkeypatch):
+def test_cleanup_retries_without_resending_and_survives_restart(monkeypatch):
     async def run():
-        gate = asyncio.Event(); both = asyncio.Event(); count = 0
-        async def delay(_):
-            nonlocal count
-            count += 1
-            if count == 2: both.set()
-            await gate.wait()
-        monkeypatch.setattr(questions.asyncio, 'sleep', delay)
-        monkeypatch.setattr(questions, 'recruit_questions_page', AsyncMock(return_value=[]))
-        a, b = ctx(10), ctx(20)
-        tasks = [asyncio.create_task(questions.refresh_questions_panel(c, 22)) for c in (a, b)]
-        await both.wait()
-        assert len(questions._panel_refresh_tasks) == 2
-        gate.set(); await asyncio.gather(*tasks)
-        a.respond.assert_awaited_once(); b.respond.assert_awaited_once()
-        assert not questions._panel_refresh_tasks
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
+        await refresh.schedule(mongo, ctx(), 22)
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=10))
+        api = rest()
+        api.delete_interaction_response.side_effect = RuntimeError("temporary")
+        render = AsyncMock(return_value=[])
+        await refresh.run_due(mongo, api, render)
+        assert jobs.documents["10"]["status"] == "cleanup"
+        assert jobs.documents["10"]["replacement_id"] == 100
+        api.delete_interaction_response.side_effect = None
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=11))
+        await refresh.run_due(mongo, api, render)
+        assert (
+            api.execute_webhook.await_count == 1
+            and jobs.documents["10"]["status"] == "done"
+        )
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("target", ["source", "replacement"])
+def test_missing_panel_is_handled_without_deleting_a_usable_source(monkeypatch, target):
+    async def run():
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
+        await refresh.schedule(mongo, ctx(), 22)
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=10))
+        api = rest()
+        getattr(
+            api,
+            (
+                "fetch_interaction_response"
+                if target == "source"
+                else "fetch_webhook_message"
+            ),
+        ).side_effect = missing()
+        await refresh.run_due(mongo, api, AsyncMock(return_value=[]))
+        api.delete_interaction_response.assert_not_awaited()
+        assert jobs.documents["10"]["status"] == "failed"
+        if target == "source":
+            api.execute_webhook.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_long_outage_expires_token_and_next_pick_rearms(monkeypatch):
+    async def run():
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
+        await refresh.schedule(mongo, ctx(), 22)
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=16))
+        api = rest()
+        await refresh.run_due(mongo, api, AsyncMock(return_value=[]))
+        api.execute_webhook.assert_not_awaited()
+        api.delete_interaction_response.assert_not_awaited()
+        assert (
+            jobs.documents["10"]["status"] == "expired"
+            and "interaction_token" not in jobs.documents["10"]
+        )
+        await refresh.schedule(mongo, ctx(created=NOW + timedelta(minutes=16)), 22)
+        assert jobs.documents["10"]["due_at"] == NOW + timedelta(minutes=26)
+
+    asyncio.run(run())
+
+
+def test_unknown_delivery_after_crash_does_not_blindly_send_again(monkeypatch):
+    async def run():
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
+        await refresh.schedule(mongo, ctx(), 22)
+        jobs.documents["10"].update(
+            status="sending", lease_until=NOW + timedelta(minutes=11)
+        )
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=12))
+        api = rest()
+        await refresh.run_due(mongo, api, AsyncMock(return_value=[]))
+        api.execute_webhook.assert_not_awaited()
+        api.delete_interaction_response.assert_not_awaited()
+        assert jobs.documents["10"]["failure"] == "delivery_unknown_after_restart"
+
+    asyncio.run(run())
+
+
+def test_two_workers_cannot_send_same_refresh(monkeypatch):
+    async def run():
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
+        await refresh.schedule(mongo, ctx(), 22)
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW + timedelta(minutes=10))
+        api = rest()
+        entered = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def send(*a, **kw):
+            entered.set()
+            await finish.wait()
+            return NS(id=100)
+
+        api.execute_webhook.side_effect = send
+        render = AsyncMock(return_value=[])
+        first = asyncio.create_task(refresh.run_due(mongo, api, render))
+        await entered.wait()
+        await refresh.run_due(mongo, api, render)
+        finish.set()
+        await first
+        assert api.execute_webhook.await_count == 1
+
+    asyncio.run(run())
+
+
+def test_worker_shutdown_leaves_pending_job_intact(monkeypatch):
+    async def run():
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
+        await refresh.schedule(mongo, ctx(), 22)
+        refresh.start(mongo, rest(), AsyncMock(return_value=[]))
+        await refresh.stop()
+        assert jobs.documents["10"]["status"] == "pending"
+        assert refresh._worker is None
+
+    asyncio.run(run())
+
+
+def test_separate_panel_has_its_own_countdown(monkeypatch):
+    async def run():
+        mongo, jobs = database()
+        monkeypatch.setattr(refresh, "utcnow", lambda: NOW)
+        await refresh.schedule(mongo, ctx(), 22)
+        await refresh.schedule(mongo, ctx(11, created=NOW + timedelta(minutes=3)), 23)
+        assert jobs.documents["10"]["due_at"] != jobs.documents["11"]["due_at"]
+        assert len(jobs.documents) == 2
+
     asyncio.run(run())

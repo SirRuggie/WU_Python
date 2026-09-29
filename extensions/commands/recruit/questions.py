@@ -30,6 +30,7 @@ from extensions.commands.fwa.helpers import get_fwa_base_object
 from utils.component_state import insert_state
 from utils import recruit_question_content as question_content
 from utils import recruit_goblin_challenges as goblin_storage
+from utils import recruit_panel_refresh as panel_refresh
 from utils.constants import (
     GOLDENROD_ACCENT,
     RED_ACCENT,
@@ -55,38 +56,22 @@ FAMILY_CODE_DELETE_ATTEMPTS = 3
 FAMILY_CODE_TTL_INDEX = "family_code_expiry"
 FAMILY_CODE_TYPE = "family_codes"
 
-# One shared delay for every questions-panel refresh, so all four dropdown
-# sections behave identically. Discord invalidates a component interaction's
-# token 15 minutes after the click, and the delete/re-send after this sleep
-# runs on that token - this value must stay comfortably under that ceiling.
-PANEL_REFRESH_DELAY_SECONDS = 600
-
-# Message IDs distinguish separate panels even when they reuse session state.
-_panel_refresh_tasks: dict[int, asyncio.Task] = {}
+PANEL_REFRESH_DELAY_SECONDS = panel_refresh.DELAY_SECONDS
 
 
-async def refresh_questions_panel(ctx, user_id: int) -> None:
-    """Move a used panel to the bottom once, ten minutes after its first pick."""
-    panel_id = int(ctx.interaction.message.id)
-    if panel_id in _panel_refresh_tasks:
-        return
-    task = asyncio.current_task()
-    _panel_refresh_tasks[panel_id] = task
-    try:
-        await asyncio.sleep(PANEL_REFRESH_DELAY_SECONDS)
-        action_id = ctx.interaction.custom_id.split(":", 1)[1]
-        new_components = await recruit_questions_page(
-            action_id=action_id, user_id=user_id, ctx=ctx,
-        )
-        try:
-            await ctx.interaction.delete_initial_response()
-        except hikari.NotFoundError:
-            # The panel is already gone; do not add a replacement.
-            return
-        await ctx.respond(components=new_components, ephemeral=True)
-    finally:
-        if _panel_refresh_tasks.get(panel_id) is task:
-            _panel_refresh_tasks.pop(panel_id, None)
+async def refresh_questions_panel(ctx, user_id: int, mongo: MongoClient) -> None:
+    """Persist one countdown per private panel; the worker handles delivery."""
+    await panel_refresh.schedule(mongo, ctx, user_id)
+
+
+@loader.listener(hikari.StartedEvent)
+@lightbulb.di.with_di
+async def start_question_panel_refresh(
+    _: hikari.StartedEvent,
+    mongo: MongoClient = lightbulb.di.INJECTED,
+    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+) -> None:
+    panel_refresh.start(mongo, bot.rest, recruit_questions_page)
 
 
 VALID_EMOJI_CODES = question_content.VALID_EMOJI_CODES
@@ -354,7 +339,7 @@ async def primary_questions(
         raise
     
     
-    await refresh_questions_panel(ctx, user_id)
+    await refresh_questions_panel(ctx, user_id, mongo)
 
 @register_action("age", no_return=True)
 @lightbulb.di.with_di
@@ -604,7 +589,7 @@ async def fwa_questions(
             user_mentions=[user.id], role_mentions=False, mentions_everyone=False,
         )
 
-    await refresh_questions_panel(ctx, user_id)
+    await refresh_questions_panel(ctx, user_id, mongo)
 
 @register_action("th_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
@@ -726,7 +711,7 @@ async def explanations(
         user_mentions=[user.id], role_mentions=False, mentions_everyone=False,
     )
 
-    await refresh_questions_panel(ctx, user_id)
+    await refresh_questions_panel(ctx, user_id, mongo)
 
 
 ### HURRY TF UP Section
@@ -762,7 +747,7 @@ async def keep_it_moving(
         user_mentions=[user.id], role_mentions=False, mentions_everyone=False,
     )
 
-    await refresh_questions_panel(ctx, user_id)
+    await refresh_questions_panel(ctx, user_id, mongo)
 
 async def recruit_questions_page(
     action_id: str,
@@ -1357,13 +1342,13 @@ async def on_family_code_response(
 
 @loader.listener(hikari.StoppingEvent)
 async def stop_family_code_warning_tasks(_: hikari.StoppingEvent) -> None:
-    tasks = list(_warning_delete_tasks | set(_panel_refresh_tasks.values()))
+    await panel_refresh.stop()
+    tasks = list(_warning_delete_tasks)
     for task in tasks:
         task.cancel()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
     _warning_delete_tasks.clear()
-    _panel_refresh_tasks.clear()
 
 
 loader.command(recruit)
