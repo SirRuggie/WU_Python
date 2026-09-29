@@ -147,6 +147,29 @@ async def open_family_code_challenge(
     )
     return state_id, session_id
 
+QUESTION_RECRUITER_ROLE_IDS = frozenset({
+    1554256650817511447,  # Main recruitment
+    1554257110794244196,  # FWA recruitment
+})
+
+
+async def require_question_recruiter(ctx) -> bool:
+    """Authorize the actor from each fresh Discord interaction, not panel state."""
+    member = getattr(ctx, "member", None)
+    if getattr(ctx, "guild_id", None) is not None and member is not None:
+        permissions = getattr(member, "permissions", hikari.Permissions.NONE)
+        roles = getattr(member, "role_ids", ())
+        if (permissions & hikari.Permissions.ADMINISTRATOR
+                or QUESTION_RECRUITER_ROLE_IDS.intersection(roles)):
+            return True
+    await ctx.respond(
+        "Only administrators or members of the Main or FWA recruitment roles "
+        "can send recruit questions.",
+        ephemeral=True,
+    )
+    return False
+
+
 @recruit.register()
 class RecruitQuestions(
     lightbulb.SlashCommand,
@@ -166,6 +189,8 @@ class RecruitQuestions(
         bot: hikari.GatewayBot = lightbulb.di.INJECTED
     ) -> None:
         await ctx.defer(ephemeral=True)
+        if not await require_question_recruiter(ctx):
+            return
         data = {
             "_id": str(ctx.interaction.id),
             "user_id" : self.user.id
@@ -185,6 +210,8 @@ async def primary_questions(
 ):
 
     ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
+    if not await require_question_recruiter(ctx):
+        return
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
     family_code_session: tuple[str, str] | None = None
@@ -543,6 +570,8 @@ async def fwa_questions(
 ):
 
     ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
+    if not await require_question_recruiter(ctx):
+        return
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
@@ -595,6 +624,8 @@ async def th_select(
 ):
 
     ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
+    if not await require_question_recruiter(ctx):
+        return
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
     fwa = await get_fwa_base_object(mongo)
@@ -681,6 +712,8 @@ async def explanations(
 ):
 
     ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
+    if not await require_question_recruiter(ctx):
+        return
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
@@ -731,6 +764,8 @@ async def keep_it_moving(
 ):
 
     ctx: lightbulb.components.MenuContext = kwargs.get("ctx")
+    if not await require_question_recruiter(ctx):
+        return
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 

@@ -71,7 +71,7 @@ def _ctx(group, variant):
     )
     return SimpleNamespace(
         interaction=interaction, guild_id=10, channel_id=20,
-        member=SimpleNamespace(id=456, mention="<@456>"), respond=AsyncMock(),
+        member=SimpleNamespace(id=456, mention="<@456>", role_ids=[1554256650817511447], permissions=hikari.Permissions.NONE), respond=AsyncMock(),
     )
 
 
