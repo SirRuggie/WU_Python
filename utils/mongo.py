@@ -30,6 +30,9 @@ class MongoClient(AsyncMongoClient):
         self.fwa_data = self.__settings.get_collection("fwa_data")
         self.fwa_band_data = self.__settings.get_collection("fwa_band_data")
         self.ticket_setup = self.__settings.get_collection("ticket_setup")
+        # Owner: utils.ticket_staff_content, schema version 1. Permanent guild/type
+        # configuration, _id="<guild_id>:<main|fwa>"; no ticket data or session TTL.
+        self.ticket_staff_templates = self.ticket_setup.database.get_collection("ticket_staff_templates")
         # Warrior owner: extensions/warrior/schema.py. Follow the configured
         # production database; do not mix new setup records with legacy recruit
         # onboarding or ticket configuration. All four are permanent (no TTL).

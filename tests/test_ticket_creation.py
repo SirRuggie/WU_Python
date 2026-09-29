@@ -97,6 +97,9 @@ def _shared_slot_mutations(monkeypatch):
     async def cancel(_mongo, **_kwargs):
         return True
 
+    async def staff_template(_mongo, _guild, kind):
+        return thread_service.ticket_staff_content.defaults(kind)
+    monkeypatch.setattr(thread_service.ticket_staff_content, "load", staff_template)
     monkeypatch.setattr(ticket_runtime, "bind_open_slot", bind)
     monkeypatch.setattr(ticket_runtime, "cancel_open_slot", cancel)
 

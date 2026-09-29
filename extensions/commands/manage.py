@@ -23,6 +23,7 @@ FWA_REP_ROLE_ID = 993015846442127420
 DESTINATIONS = (
     ("Roles", "roles", "Add or remove roles and see who has each role"),
     ("Recruit Gauntlet", "recruit", "Edit onboarding messages and choose where to post them"),
+    ("Recruitment Staff Thread", "recruitment_staff_thread", "Edit Main and FWA staff-thread notices and talking points"),
     ("Recruitment Questions", "recruitment_questions", "Edit reusable questions, explanations, and quick prompts"),
     ("FWA", "fwa", "Bases, war messages, blacklist, points, and sync reminders"),
     ("CWL", "cwl", "Edit announcements and manage scheduled delivery"),
@@ -32,6 +33,7 @@ SECTION_CHOICES = (
     lightbulb.Choice("Server", "server"),
     lightbulb.Choice("Roles", "roles"),
     lightbulb.Choice("Recruit Gauntlet", "recruit-gauntlet"),
+    lightbulb.Choice("Recruitment Staff Thread", "recruitment-staff-thread"),
     lightbulb.Choice("Recruitment Questions", "recruitment-questions"),
     lightbulb.Choice("FWA", "fwa"),
     lightbulb.Choice("CWL", "cwl"),
@@ -41,6 +43,7 @@ SECTION_DESTINATION = {
     "roles": "roles",
     "recruit-gauntlet": "recruit",
     "recruitment-questions": "recruitment_questions",
+    "recruitment-staff-thread": "recruitment_staff_thread",
     "fwa": "fwa",
     "fwa-war-messages": "fwa_war_messages",
     "cwl": "cwl",
@@ -66,7 +69,7 @@ def _allowed(ctx: Any, destination: str) -> bool:
     member = _member(ctx)
     permissions = getattr(member, "permissions", hikari.Permissions.NONE)
     admin = bool(permissions & hikari.Permissions.ADMINISTRATOR)
-    if destination == "recruitment_questions":
+    if destination in {"recruitment_questions", "recruitment_staff_thread"}:
         return admin or bool(permissions & hikari.Permissions.MANAGE_GUILD)
     if destination == "recruit":
         return admin or bool(permissions & hikari.Permissions.MANAGE_GUILD)
@@ -137,6 +140,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
         "roles": "Recruiter or Administrator access",
         "recruit": "Manage Server permission",
         "recruitment_questions": "Manage Server permission",
+        "recruitment_staff_thread": "Manage Server permission",
         "fwa": "Access to an FWA section",
         "fwa_bases": "FWA Representative role",
         "fwa_blacklist": "Server membership to view; FWA Clan Rep role to edit",
@@ -173,7 +177,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
         children.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     entries = {key: (label, description) for label, key, description in DESTINATIONS}
     for index, (heading, keys) in enumerate((
-        ("Recruitment", ("recruit", "recruitment_questions")),
+        ("Recruitment", ("recruit", "recruitment_questions", "recruitment_staff_thread")),
         ("War Operations", ("fwa", "cwl", "cwl_rosters")),
         ("Server", ("roles",)),
     )):
@@ -221,6 +225,9 @@ async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
     if destination == "roles":
         from extensions.commands import role_management
         await role_management.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
+    elif destination == "recruitment_staff_thread":
+        from extensions.commands import recruitment_staff_thread
+        await recruitment_staff_thread.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
     elif destination == "recruitment_questions":
         from extensions.commands import recruitment_questions
         await recruitment_questions.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
@@ -324,6 +331,7 @@ def _register_destination(name: str, destination: str):
 
 roles_destination = _register_destination("manage_server_roles", "roles")
 recruit_destination = _register_destination("manage_recruit", "recruit")
+recruitment_staff_thread_destination = _register_destination("manage_recruitment_staff_thread", "recruitment_staff_thread")
 recruitment_questions_destination = _register_destination("manage_recruitment_questions", "recruitment_questions")
 fwa_destination = _register_destination("manage_fwa", "fwa")
 fwa_bases_destination = _register_destination("manage_fwa_bases", "fwa_bases")

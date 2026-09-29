@@ -53,13 +53,14 @@ def test_single_manage_command_has_optional_section_and_is_loaded():
     choices = manage.Manage._command_data.options['section'].choices
     assert [(choice.name, choice.value) for choice in choices] == [
         ("Server", "server"), ("Roles", "roles"), ("Recruit Gauntlet", "recruit-gauntlet"),
+        ("Recruitment Staff Thread", "recruitment-staff-thread"),
         ("Recruitment Questions", "recruitment-questions"),
         ("FWA", "fwa"),
         ("CWL", "cwl"), ("CWL Rosters", "cwl-rosters"),
     ]
 
 
-def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
+def test_home_has_seven_sections_valid_discord_shape_and_access(monkeypatch):
     token = "x" * 32
     ctx = context(permissions=hikari.Permissions.MANAGE_GUILD)
     from extensions.commands.recruit import perms
@@ -71,12 +72,12 @@ def test_home_has_six_sections_valid_discord_shape_and_access(monkeypatch):
     assert built["type"] == hikari.ComponentType.CONTAINER
     assert built["accent_color"] == manage.GOLDENROD_ACCENT
     assert len(nodes) <= 40
-    assert len(sections) == 6
+    assert len(sections) == 7
     assert [button["custom_id"] for button in buttons] == [
-        f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_fwa:{token}",
+        f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_recruitment_staff_thread:{token}", f"manage_fwa:{token}",
         f"manage_cwl:{token}", f"manage_cwl_rosters:{token}", f"manage_server_roles:{token}",
     ]
-    assert [button["disabled"] for button in buttons] == [False, False, False, True, True, True]
+    assert [button["disabled"] for button in buttons] == [False, False, False, False, True, True, True]
     assert all(len(button["custom_id"]) <= 100 for button in buttons)
 
 

@@ -39,6 +39,7 @@ from extensions.commands import ticket_runtime
 from extensions.commands.tickets import account_sync, schema, store, testing_service
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils import ticket_staff_content
 
 
 _log = logging.getLogger(__name__)
@@ -1345,16 +1346,10 @@ _STAFF_OPENING_TITLE_INFIX = " recruiter workspace · #"
 # second, legacy-server-only role mention; the staff opening card already
 # pings the recruiter role in its notification line, so this one does not
 # ping a second time.
-_STAFF_TALKING_POINTS_HOW_HEARD_MAIN = "Hello there 👋🏻...how you hear about Warriors United?"
-_STAFF_TALKING_POINTS_HOW_HEARD_FWA = "Hello there 👋🏻...how you hear about our FWA Operation?"
-_STAFF_TALKING_POINTS_HOOK = (
-    "What was the hook that reeled you in? The thing that said "
-    "\"yeah, I need to check these guys out!!!\""
-)
-_STAFF_TALKING_POINTS_FWA_DONATIONS = (
-    "Donations are better with the update allowing loot to be used "
-    "but clan chats are and can be sporadic."
-)
+_STAFF_TALKING_POINTS_HOW_HEARD_MAIN = ticket_staff_content.defaults("main")["sections"]["how_heard"]["body"]
+_STAFF_TALKING_POINTS_HOW_HEARD_FWA = ticket_staff_content.defaults("fwa")["sections"]["how_heard"]["body"]
+_STAFF_TALKING_POINTS_HOOK = ticket_staff_content.HOOK
+_STAFF_TALKING_POINTS_FWA_DONATIONS = ticket_staff_content.DONATIONS
 
 
 def _bot_authored_content_match(bot_id: int, content: str) -> Callable[[Any], bool]:
@@ -1672,7 +1667,8 @@ async def _deliver_opening_messages(
         is_match=staff_card_match,
     )
     await _deliver_staff_talking_points(
-        rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id
+        rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id,
+        template=ticket.get("staff_thread_content"),
     )
 
 
@@ -1683,69 +1679,19 @@ async def _deliver_staff_talking_points(
     *,
     recruiter_role: int,
     bot_id: int,
+    template: Mapping[str, Any] | None = None,
 ) -> None:
-    """Recruiter talking points, posted right after the staff opening card.
+    """Separate staff messages, using the immutable ticket-time template snapshot.
 
-    Each is a separate idempotent plain-content send (see
-    `_bot_authored_content_match`), so a retried delivery -- an outer
-    recovery pass rerunning `_deliver_opening_messages` after a crash --
-    never duplicates one already posted.
+    Recovery uses the same copy, so later template edits cannot duplicate earlier
+    deliveries. Pre-template tickets retain the original defaults.
     """
-
-    if recruiter_role:
-        role_line = (
-            f"<@&{recruiter_role}> "
-            "this is a private thread for the candidate. They cannot see this thread, "
-            "so DO NOT ping them, as it will add them.\n\n"
-        )
+    markers = {"notice": "role-line", "how_heard": "how-heard", "hook": "hook", "donations": "fwa-donations"}
+    for key, text in ticket_staff_content.messages(ticket_type, template, recruiter_role):
         await _send_once(
-            rest,
-            staff_id,
-            "ticket-setup:staff:role-line",
-            role_line,
-            user_mentions=False,
-            role_mentions=False,
-            post_marker=False,
-            is_match=_bot_authored_content_match(bot_id, role_line),
-        )
-
-    how_heard = (
-        _STAFF_TALKING_POINTS_HOW_HEARD_FWA
-        if ticket_type == "fwa"
-        else _STAFF_TALKING_POINTS_HOW_HEARD_MAIN
-    )
-    await _send_once(
-        rest,
-        staff_id,
-        "ticket-setup:staff:how-heard",
-        how_heard,
-        user_mentions=False,
-        role_mentions=False,
-        post_marker=False,
-        is_match=_bot_authored_content_match(bot_id, how_heard),
-    )
-    await _send_once(
-        rest,
-        staff_id,
-        "ticket-setup:staff:hook",
-        _STAFF_TALKING_POINTS_HOOK,
-        user_mentions=False,
-        role_mentions=False,
-        post_marker=False,
-        is_match=_bot_authored_content_match(bot_id, _STAFF_TALKING_POINTS_HOOK),
-    )
-    if ticket_type == "fwa":
-        await _send_once(
-            rest,
-            staff_id,
-            "ticket-setup:staff:fwa-donations",
-            _STAFF_TALKING_POINTS_FWA_DONATIONS,
-            user_mentions=False,
-            role_mentions=False,
-            post_marker=False,
-            is_match=_bot_authored_content_match(
-                bot_id, _STAFF_TALKING_POINTS_FWA_DONATIONS
-            ),
+            rest, staff_id, f"ticket-setup:staff:{markers[key]}", text,
+            user_mentions=False, role_mentions=False, post_marker=False,
+            is_match=_bot_authored_content_match(bot_id, text),
         )
 
 
@@ -2278,6 +2224,7 @@ async def create_live_thread_ticket(
             candidate = staff = None
             committed_ticket: dict | None = None
             try:
+                staff_template = await ticket_staff_content.load(mongo, guild_id, ticket_type)
                 candidate, staff, state = await _ensure_live_thread_pair(
                     rest=bot.rest,
                     mongo=mongo,
@@ -2303,6 +2250,7 @@ async def create_live_thread_ticket(
                 if testing_service.is_test_scope(mongo):
                     ticket["cleanup_at"] = state.get("cleanup_at")
                     ticket["window_generation"] = state.get("window_generation")
+                ticket["staff_thread_content"] = staff_template
                 ticket["candidate_recruiter_notification"] = True
                 ticket["recruiter_role_id"] = parents.recruiter_role_id
                 ticket["shared_staff_role_ids"] = list(parents.shared_staff_role_ids)
