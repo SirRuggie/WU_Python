@@ -77,13 +77,16 @@ def test_questionnaire_preserves_production_prompts_and_keeps_chocolate_staff_on
         "fwa", None, ticket=_ticket(count=37)
     ))
 
-    assert "how you hear about Warriors United?" in main
-    assert "What was the hook that reeled you in?" in main
-    assert "We found **1 linked account**" in main
-    assert "how you hear about our FWA Operation?" in fwa
-    assert "Donations are better with the update" in fwa
-    assert "We found **37 linked accounts**" in fwa
-    assert "cc.fwafarm.com" not in fwa
+    for panel in (main, fwa):
+        assert "Your in-game name and player tag" in panel
+        assert "What are you looking for in a clan?" in panel
+        for staff_only in (
+            "How did you hear about us?", "What hooked you?", "FWA expectations",
+            "how you hear", "What was the hook", "Donations are better",
+            "linked account", "ClashKing", "cc.fwafarm.com",
+        ):
+            assert staff_only not in panel
+    assert "LazyCWL and the daily FWA process?" in fwa
 
 
 @pytest.mark.parametrize(

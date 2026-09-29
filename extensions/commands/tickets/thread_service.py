@@ -1508,15 +1508,6 @@ def _questionnaire_components(
             else ""
         )
     )
-    how_heard = (
-        "Hello there 👋🏻...how you hear about our FWA Operation?"
-        if is_fwa else
-        "Hello there 👋🏻...how you hear about Warriors United?"
-    )
-    hooked = (
-        'What was the hook that reeled you in? The thing that said '
-        '"yeah, I need to check these guys out!!!"'
-    )
     hero = "assets/tickets/static/WU_FWA_Ticket.jpg" if is_fwa else logo
     return [
         Container(
@@ -1531,17 +1522,6 @@ def _questionnaire_components(
                     accessory=Thumbnail(media=logo),
                 ),
                 Separator(divider=True),
-                Text(content=f"### How did you hear about us?\n{how_heard}"),
-                Text(content=f"### What hooked you?\n{hooked}"),
-                *(
-                    [Text(content=(
-                        "### FWA expectations\n"
-                        "Donations are better with the update allowing loot to be "
-                        "used, but clan chats are and can be sporadic."
-                    ))]
-                    if is_fwa else []
-                ),
-                Text(content=_candidate_account_copy(ticket)),
                 Media(items=[MediaItem(media=hero)]),
                 Text(content="-# A recruiter will reply as soon as possible."),
             ],
