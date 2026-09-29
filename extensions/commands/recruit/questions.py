@@ -4,6 +4,7 @@ import hikari
 import logging
 import re
 import unicodedata
+import uuid
 from datetime import datetime, timedelta, timezone
 from aiohttp.web_routedef import delete
 from hikari import GatewayBot
@@ -44,6 +45,8 @@ from extensions.components import register_action
 
 _log = logging.getLogger(__name__)
 
+FAMILY_CODE_PROCESSING_LEASE = timedelta(minutes=2)
+FAMILY_CODE_DELIVERY_TIMEOUT_SECONDS = 60
 FAMILY_CODE_TTL = timedelta(hours=24)
 FAMILY_CODE_WARNING_COOLDOWN = timedelta(minutes=2)
 FAMILY_CODE_WARNING_LIFETIME_SECONDS = 30
@@ -167,6 +170,7 @@ async def open_family_code_challenge(
                 "warning_available_at": "",
                 "warning_message_id": "",
                 "warning_delete_at": "",
+                "processing_claim_id": "",
                 "processing_message_id": "",
                 "processing_until": "",
                 "code_used": "",
@@ -1054,15 +1058,8 @@ async def prepare_family_code_storage(
             {"$unset": {"warning_message_id": "", "warning_delete_at": ""}},
         )
 
-    # A process can stop after atomically claiming a response but before sending
-    # its confirmation. Re-open only those unfinished claims on the next boot.
-    await mongo.recruit_challenges.update_many(
-        {"type": FAMILY_CODE_TYPE, "status": "processing"},
-        {
-            "$set": {"status": "active"},
-            "$unset": {"processing_message_id": "", "processing_until": ""},
-        },
-    )
+    # Claims persist through restarts. An expired lease is reclaimed atomically
+    # by the next valid reply; a live claim is never reset by startup.
     counts = await migrate_legacy_family_codes(mongo)
     _log.info("family-code storage ready: %s", counts)
 
@@ -1187,8 +1184,11 @@ async def on_family_code_response(
     active_query = {
         "_id": state_id,
         "type": FAMILY_CODE_TYPE,
-        "status": "active",
         "expires_at": {"$gt": now},
+        "$or": [
+            {"status": "active"},
+            {"status": "processing", "processing_until": {"$lte": now}},
+        ],
     }
     challenge = await mongo.recruit_challenges.find_one(active_query)
     if challenge is None:
@@ -1197,12 +1197,14 @@ async def on_family_code_response(
     code_found = match_family_code(event.content)
     if code_found is not None:
         message_id = str(event.message.id)
+        claim_id = uuid.uuid4().hex
         claimed = await mongo.recruit_challenges.find_one_and_update(
-            active_query,
+            {**active_query, "session_id": challenge.get("session_id")},
             {"$set": {
                 "status": "processing",
+                "processing_claim_id": claim_id,
                 "processing_message_id": message_id,
-                "processing_until": now + FAMILY_CODE_WARNING_COOLDOWN,
+                "processing_until": now + FAMILY_CODE_PROCESSING_LEASE,
                 "code_used": code_found,
             }},
             return_document=ReturnDocument.BEFORE,
@@ -1210,37 +1212,39 @@ async def on_family_code_response(
         if claimed is None:
             return
 
-        moderator_id = claimed.get("moderator_id")
-        moderator_name = "Unknown"
-        if moderator_id is not None:
-            try:
-                moderator = await bot.rest.fetch_member(event.guild_id, moderator_id)
-                moderator_name = moderator.display_name
-            except Exception:
-                _log.warning(
-                    "could not fetch family-code moderator %s",
-                    moderator_id,
-                    exc_info=True,
-                )
-
         try:
-            await bot.rest.create_message(
-                channel=event.channel_id,
-                components=_family_code_success_components(
-                    event.author.mention,
-                    code_found,
-                    moderator_name,
-                ),
-                user_mentions=[event.author_id],
-            )
+            async with asyncio.timeout(FAMILY_CODE_DELIVERY_TIMEOUT_SECONDS):
+                moderator_id = claimed.get("moderator_id")
+                moderator_name = "Unknown"
+                if moderator_id is not None:
+                    try:
+                        moderator = await bot.rest.fetch_member(event.guild_id, moderator_id)
+                        moderator_name = moderator.display_name
+                    except Exception:
+                        _log.warning(
+                            "could not fetch family-code moderator %s",
+                            moderator_id,
+                            exc_info=True,
+                        )
+
+                await bot.rest.create_message(
+                    channel=event.channel_id,
+                    components=_family_code_success_components(
+                        event.author.mention,
+                        code_found,
+                        moderator_name,
+                    ),
+                    user_mentions=[event.author_id],
+                )
         except Exception:
             # Restore this exact claim so the recruit can retry after a transient
             # Discord failure. A concurrent/new prompt cannot be overwritten.
             await mongo.recruit_challenges.update_one(
-                {"_id": state_id, "processing_message_id": message_id},
+                {"_id": state_id, "processing_claim_id": claim_id},
                 {
                     "$set": {"status": "active"},
                     "$unset": {
+                        "processing_claim_id": "",
                         "processing_message_id": "",
                         "processing_until": "",
                         "code_used": "",
@@ -1265,7 +1269,7 @@ async def on_family_code_response(
 
         await mongo.recruit_challenges.delete_one({
             "_id": state_id,
-            "processing_message_id": message_id,
+            "processing_claim_id": claim_id,
         })
         return
 
@@ -1282,6 +1286,8 @@ async def on_family_code_response(
     warning_claim = await mongo.recruit_challenges.find_one_and_update(
         {
             **active_query,
+            "status": "active",
+            "session_id": challenge.get("session_id"),
             "$or": [
                 {"warning_available_at": {"$exists": False}},
                 {"warning_available_at": {"$lte": now}},

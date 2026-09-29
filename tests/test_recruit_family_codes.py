@@ -450,3 +450,75 @@ def test_startup_removes_warning_left_by_prior_process():
         "expires_at",
         {"expireAfterSeconds": 0, "name": questions.FAMILY_CODE_TTL_INDEX},
     )]
+
+
+@pytest.mark.parametrize('lease_expired,challenge_expired,expected', [
+    (True, False, 1), (False, False, 0), (True, True, 0),
+])
+def test_processing_lease_recovers_on_next_reply_without_restart(monkeypatch, lease_expired, challenge_expired, expected):
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(questions, 'utcnow', lambda: now)
+    state = {
+        '_id': 'family_codes:33:22', 'type': questions.FAMILY_CODE_TYPE,
+        'session_id': 'session', 'status': 'processing',
+        'processing_until': now + timedelta(seconds=-1 if lease_expired else 60),
+        'expires_at': now + timedelta(hours=-1 if challenge_expired else 1),
+        'moderator_id': 11,
+    }
+    mongo = _Mongo(challenges=[state]); rest = _Rest()
+    asyncio.run(questions.on_family_code_response(_event('⚔⚔⚔'), mongo=mongo, bot=SimpleNamespace(rest=rest)))
+    assert len(rest.created) == expected
+    assert bool(mongo.recruit_challenges.documents) is (not bool(expected))
+
+
+def test_concurrent_valid_replies_only_confirm_once():
+    async def run():
+        mongo = _Mongo(); rest = _Rest(); entered = asyncio.Event(); finish = asyncio.Event()
+        original = rest.create_message
+        async def send(**kwargs):
+            entered.set(); await finish.wait(); return await original(**kwargs)
+        rest.create_message = send
+        await questions.open_family_code_challenge(mongo, interaction_id=1, guild_id=44, channel_id=33, user_id=22, moderator_id=11)
+        first = asyncio.create_task(questions.on_family_code_response(_event('⚔⚔⚔'), mongo=mongo, bot=SimpleNamespace(rest=rest)))
+        await entered.wait()
+        await questions.on_family_code_response(_event('⚔⚔⚔', message_id=501), mongo=mongo, bot=SimpleNamespace(rest=rest))
+        finish.set(); await first
+        assert len(rest.created) == 1 and not mongo.recruit_challenges.documents
+    asyncio.run(run())
+
+
+def test_delivery_timeout_releases_claim_and_next_reply_works(monkeypatch):
+    async def run():
+        mongo = _Mongo(); rest = _Rest(); original = rest.create_message
+        async def hung(**kwargs): await asyncio.Event().wait()
+        rest.create_message = hung
+        monkeypatch.setattr(questions, 'FAMILY_CODE_DELIVERY_TIMEOUT_SECONDS', 0.01)
+        await questions.open_family_code_challenge(mongo, interaction_id=1, guild_id=44, channel_id=33, user_id=22, moderator_id=11)
+        with pytest.raises(TimeoutError):
+            await questions.on_family_code_response(_event('⚔⚔⚔'), mongo=mongo, bot=SimpleNamespace(rest=rest))
+        row = mongo.recruit_challenges.documents['family_codes:33:22']
+        assert row['status'] == 'active' and 'processing_claim_id' not in row
+        rest.create_message = original
+        await questions.on_family_code_response(_event('⚔⚔⚔'), mongo=mongo, bot=SimpleNamespace(rest=rest))
+        assert len(rest.created) == 1 and not mongo.recruit_challenges.documents
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_old_completion_cannot_clear_or_reset_replacement_prompt(fail):
+    async def run():
+        mongo = _Mongo(); rest = _Rest(); original = rest.create_message
+        async def replace_during_send(**kwargs):
+            await questions.open_family_code_challenge(mongo, interaction_id=2, guild_id=44, channel_id=33, user_id=22, moderator_id=12)
+            if fail: raise RuntimeError('send failed')
+            return await original(**kwargs)
+        rest.create_message = replace_during_send
+        await questions.open_family_code_challenge(mongo, interaction_id=1, guild_id=44, channel_id=33, user_id=22, moderator_id=11)
+        if fail:
+            with pytest.raises(RuntimeError):
+                await questions.on_family_code_response(_event('⚔⚔⚔'), mongo=mongo, bot=SimpleNamespace(rest=rest))
+        else:
+            await questions.on_family_code_response(_event('⚔⚔⚔'), mongo=mongo, bot=SimpleNamespace(rest=rest))
+        row = mongo.recruit_challenges.documents['family_codes:33:22']
+        assert row['session_id'] == '2' and row['status'] == 'active'
+    asyncio.run(run())
