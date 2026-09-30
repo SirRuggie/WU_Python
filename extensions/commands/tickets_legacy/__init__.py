@@ -53,7 +53,7 @@ from . import close
 from . import migrate
 from . import claim
 
-# Register the ticket group with the loader
-loader.command(ticket)
+# Slash commands retired 2026-09-30. Keep listeners and persistent controls
+# available for existing Recruit 4 tickets; never register the old /ticket group.
 
 __all__ = ["loader", "ticket", "ticket_config"]

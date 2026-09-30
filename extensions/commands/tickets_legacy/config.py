@@ -25,7 +25,6 @@ DEFAULT_FWA_CATEGORY = 1395653165470191667
 DEFAULT_ADMIN_TO_NOTIFY = 505227988229554179
 
 
-@ticket.register()
 class Config(
     lightbulb.SlashCommand,
     name="config",
@@ -144,7 +143,6 @@ class Config(
             await ctx.respond(config_text, ephemeral=True)
 
 
-@ticket.register()
 class ChangeCategory(
     lightbulb.SlashCommand,
     name="change-category",
@@ -238,7 +236,6 @@ class ChangeCategory(
         )
 
 
-@ticket.register()
 class ResetCounter(
     lightbulb.SlashCommand,
     name="reset-counter",

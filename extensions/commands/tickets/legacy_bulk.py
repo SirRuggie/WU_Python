@@ -1414,7 +1414,7 @@ async def _category_choices(ctx: lightbulb.AutocompleteContext[str]) -> None:
     await ctx.respond(choices)
 
 
-@ticket.register()
+# Retired slash entry point; engine retained for history recovery.
 class MigrateAllLegacyTickets(
     lightbulb.SlashCommand,
     name="migrate-all",

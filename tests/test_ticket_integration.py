@@ -17,7 +17,6 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_COMMANDS = {
     "testing",
     "approve",
-    "approve-migration-pilot",
     "config",
     "configure-threads",
     "console",
@@ -27,36 +26,18 @@ EXPECTED_COMMANDS = {
     "flag-remove",
     "flags",
     "history",
-    "migrate-all",
-    "migrate-legacy",
     "pilot-role",
     "pilot-user",
     "rollout-drain",
     "rollout-pilot",
     "rollout-prepare",
     "rollout-promote",
-    "rollout-rollback",
     "rollout-status",
     "setup",
     "thread-config",
 }
 
-EXPECTED_LEGACY_COMMANDS = {
-    "approve",
-    "change-category",
-    "claim",
-    "cleanup-ghosts",
-    "config",
-    "dashboard",
-    "deny",
-    "diagnostics",
-    "fix-mismatched",
-    "list",
-    "migrate-store",
-    "release",
-    "reset-counter",
-    "setup",
-}
+EXPECTED_LEGACY_COMMANDS = set()
 
 OBSOLETE_COMMANDS = {
     "claim",
@@ -118,10 +99,10 @@ def test_tickets_group_is_registered_only_in_the_configured_guild():
     assert tickets_loadable._global is None
     assert tickets_loadable._defer_guilds is False
 
-    legacy_loadable = _command_loadable(legacy_extension.loader, legacy_extension.ticket)
-    assert legacy_loadable._guilds is None
-    assert legacy_loadable._global is None
-    assert legacy_loadable._defer_guilds is False
+    assert not any(
+        getattr(item, "_command", None) is legacy_extension.ticket
+        for item in legacy_extension.loader._loadables
+    )
 
 
 def test_ticket_package_registers_console_and_creation_actions():

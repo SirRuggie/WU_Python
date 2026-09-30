@@ -548,7 +548,7 @@ class RolloutPromote(
         )
 
 
-@ticket.register()
+# Legacy intake rollback command retired 2026-09-30.
 class RolloutRollback(
     lightbulb.SlashCommand,
     name="rollout-rollback",

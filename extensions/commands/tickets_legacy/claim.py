@@ -35,7 +35,6 @@ async def _current_ticket(mongo: MongoClient, channel_id):
     return await store.find_one(mongo, {"type": "ticket", "channel_id": channel_id})
 
 
-@ticket.register()
 class Claim(
     lightbulb.SlashCommand,
     name="claim",
@@ -98,7 +97,6 @@ class Claim(
             )
 
 
-@ticket.register()
 class Release(
     lightbulb.SlashCommand,
     name="release",

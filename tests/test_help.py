@@ -27,7 +27,7 @@ def test_category_view_falls_back_when_tickets_v2_is_out_of_guild():
     pilot_category = asyncio.run(
         help_command.create_category_view("tickets_v2", tickets_guild_id())
     )
-    assert pilot_category[0].components[0].content == "# 🧪 Ticket Pilot"
+    assert pilot_category[0].components[0].content == "# 🧪 Tickets"
 
     other_category = asyncio.run(help_command.create_category_view("tickets_v2", 123))
     assert other_category[0].components[0].content == "# 🧭 Warriors United Command Guide"

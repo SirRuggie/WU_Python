@@ -89,7 +89,6 @@ def _count_lines(label: str, total: int, by_status: dict[str, int]) -> str:
     return f"• {label}: **{total}** — {parts or '(none)'}"
 
 
-@ticket.register()
 class MigrateStore(
     lightbulb.SlashCommand,
     name="migrate-store",

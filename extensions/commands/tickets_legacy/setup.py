@@ -62,7 +62,6 @@ def create_ticket_embed() -> List[Container]:
     return components
 
 
-@ticket.register()
 class Setup(
     lightbulb.SlashCommand,
     name="setup",

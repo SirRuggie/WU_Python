@@ -41,7 +41,6 @@ def _status_write_warning(result, doc_id) -> str:
     )
 
 
-@ticket.register()
 class Deny(
     lightbulb.SlashCommand,
     name="deny",
@@ -153,7 +152,6 @@ class Deny(
         )
 
 
-@ticket.register()
 class Approve(
     lightbulb.SlashCommand,
     name="approve",

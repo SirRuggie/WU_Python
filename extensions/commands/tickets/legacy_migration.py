@@ -2855,7 +2855,7 @@ async def _source_staff_choices(ctx: lightbulb.AutocompleteContext[str]) -> None
     ][:25])
 
 
-@ticket.register()
+# Retired slash entry point; engine retained for history recovery.
 class MigrateLegacyTicket(
     lightbulb.SlashCommand,
     name="migrate-legacy",
@@ -3004,7 +3004,7 @@ class MigrateLegacyTicket(
             )
 
 
-@ticket.register()
+# Retired slash entry point; engine retained for history recovery.
 class ApproveLegacyMigrationPilot(
     lightbulb.SlashCommand,
     name="approve-migration-pilot",

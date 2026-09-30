@@ -61,7 +61,6 @@ def safe_text_content(body: str, empty_fallback: str) -> str:
     return "\n".join(kept) + f"\n\n-# …truncated, {hidden} more line(s) not shown."
 
 
-@ticket.register()
 class ListTickets(
     lightbulb.SlashCommand,
     name="list",
@@ -170,7 +169,6 @@ class ListTickets(
         )
 
 
-@ticket.register()
 class Dashboard(
     lightbulb.SlashCommand,
     name="dashboard",
@@ -288,7 +286,6 @@ async def _active_thread_ids(bot: hikari.GatewayBot, guild_id: int) -> set[int]:
     return {_as_int(t.id) for t in threads}
 
 
-@ticket.register()
 class Diagnostics(
     lightbulb.SlashCommand,
     name="diagnostics",
@@ -417,7 +414,6 @@ class Diagnostics(
         )
 
 
-@ticket.register()
 class CleanupGhosts(
     lightbulb.SlashCommand,
     name="cleanup-ghosts",
@@ -556,7 +552,6 @@ class CleanupGhosts(
         )
 
 
-@ticket.register()
 class FixMismatched(
     lightbulb.SlashCommand,
     name="fix-mismatched",

@@ -33,7 +33,7 @@ RETIRED_EXTENSIONS = frozenset({
 
 # The one guild that ever sees the permanent `/tickets` thread-ticket group.
 # Owner decision: registered only in Warriors United (644963518025826315) so
-# the legacy servers never see it; the legacy `/ticket` group stays global.
+# the legacy servers never see it. The old `/ticket` group is retired.
 # See docs/deployment.md "Configuration".
 TICKETS_GUILD_ID_DEFAULT = 644963518025826315
 

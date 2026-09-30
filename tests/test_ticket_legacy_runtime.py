@@ -92,12 +92,10 @@ def test_open_or_incomplete_legacy_attempt_still_blocks(monkeypatch, attempt_sta
     assert collection.update_calls == []
 
 
-def test_legacy_commands_and_persistent_actions_are_preserved():
-    assert tickets_legacy.ticket.name == "ticket"
-    assert {
-        "setup", "config", "approve", "deny", "list", "dashboard",
-        "reset-counter",
-    } <= set(tickets_legacy.ticket.subcommands)
+def test_legacy_slash_commands_retired_but_existing_controls_preserved():
+    assert not tickets_legacy.ticket.subcommands
+    assert not any(getattr(item, "_command", None) is tickets_legacy.ticket
+                   for item in tickets_legacy.loader._loadables)
     assert LEGACY_ACTIONS <= set(registered_functions)
     for action_name in LEGACY_ACTIONS:
         assert "tickets_legacy" in registered_functions[action_name].declared_at
