@@ -218,7 +218,6 @@ async def migration_allowed(mongo: MongoClient) -> tuple[bool, str]:
     return True, ""
 
 
-@ticket.register()
 class PilotUser(
     lightbulb.SlashCommand,
     name="pilot-user",
@@ -266,7 +265,6 @@ class PilotUser(
         )
 
 
-@ticket.register()
 class PilotRole(
     lightbulb.SlashCommand,
     name="pilot-role",
@@ -314,7 +312,6 @@ class PilotRole(
         )
 
 
-@ticket.register()
 class RolloutStatus(
     lightbulb.SlashCommand,
     name="rollout-status",
@@ -362,7 +359,6 @@ class RolloutStatus(
         await ctx.respond("\n".join(lines), ephemeral=True)
 
 
-@ticket.register()
 class RolloutPrepare(
     lightbulb.SlashCommand,
     name="rollout-prepare",
@@ -425,7 +421,6 @@ class RolloutPrepare(
         )
 
 
-@ticket.register()
 class RolloutPilot(
     lightbulb.SlashCommand,
     name="rollout-pilot",
@@ -486,7 +481,6 @@ class RolloutPilot(
         )
 
 
-@ticket.register()
 class RolloutPromote(
     lightbulb.SlashCommand,
     name="rollout-promote",
@@ -615,7 +609,6 @@ class RolloutRollback(
         )
 
 
-@ticket.register()
 class RolloutDrain(
     lightbulb.SlashCommand,
     name="rollout-drain",

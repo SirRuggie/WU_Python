@@ -396,6 +396,7 @@ from . import testing
 from . import rite
 from . import inactivity
 from . import staff_creation
+from . import settings
 
 
 loader.command(ticket, guilds=[tickets_guild_id()])

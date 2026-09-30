@@ -208,7 +208,6 @@ def inactive_pilot_embed() -> List[Container]:
     )]
 
 
-@ticket.register()
 class Setup(
     lightbulb.SlashCommand,
     name="setup",

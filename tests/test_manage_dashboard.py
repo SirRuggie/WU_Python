@@ -10,6 +10,14 @@ from extensions import components
 from extensions.commands import manage
 
 
+@pytest.fixture(autouse=True)
+def ticket_management_access(monkeypatch):
+    from extensions.commands.tickets import perms, testing_service
+    monkeypatch.setattr(perms, "is_target_admin", AsyncMock(return_value=False))
+    monkeypatch.setattr(testing_service, "test_mongo", lambda m: m)
+    monkeypatch.setattr(testing_service, "active_window", AsyncMock(return_value=None))
+
+
 def run(coro):
     return asyncio.run(coro)
 
@@ -55,6 +63,7 @@ def test_single_manage_command_has_optional_section_and_is_loaded():
         ("Server", "server"), ("Roles", "roles"), ("Recruit Gauntlet", "recruit-gauntlet"),
         ("Recruitment Staff Thread", "recruitment-staff-thread"),
         ("Recruitment Questions", "recruitment-questions"),
+        ("Ticket Settings", "ticket-settings"), ("Ticket Testing", "ticket-testing"),
         ("FWA", "fwa"),
         ("CWL", "cwl"), ("CWL Rosters", "cwl-rosters"),
     ]
@@ -72,12 +81,12 @@ def test_home_has_seven_sections_valid_discord_shape_and_access(monkeypatch):
     assert built["type"] == hikari.ComponentType.CONTAINER
     assert built["accent_color"] == manage.GOLDENROD_ACCENT
     assert len(nodes) <= 40
-    assert len(sections) == 7
+    assert len(sections) == 9
     assert [button["custom_id"] for button in buttons] == [
-        f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_recruitment_staff_thread:{token}", f"manage_fwa:{token}",
+        f"manage_recruit:{token}", f"manage_recruitment_questions:{token}", f"manage_recruitment_staff_thread:{token}", f"manage_ticket_settings:{token}", f"manage_ticket_testing:{token}", f"manage_fwa:{token}",
         f"manage_cwl:{token}", f"manage_cwl_rosters:{token}", f"manage_server_roles:{token}",
     ]
-    assert [button["disabled"] for button in buttons] == [False, False, False, False, True, True, True]
+    assert [button["disabled"] for button in buttons] == [False, False, False, True, True, False, True, True, True]
     assert all(len(button["custom_id"]) <= 100 for button in buttons)
 
 

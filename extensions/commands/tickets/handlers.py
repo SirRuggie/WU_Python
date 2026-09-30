@@ -719,7 +719,6 @@ async def handle_my_ticket(
     )
 
 
-@ticket.register()
 class ConfigureThreadParents(
     lightbulb.SlashCommand,
     name="configure-threads",
@@ -838,7 +837,6 @@ class ConfigureThreadParents(
         )
 
 
-@ticket.register()
 class InspectThreadConfiguration(
     lightbulb.SlashCommand,
     name="thread-config",

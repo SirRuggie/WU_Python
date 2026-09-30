@@ -1,5 +1,8 @@
 # Ticket command retirement — 2026-09-30
 
+**Later consolidation:** [Ticket Settings](ticket-settings.md) records the additional
+15 slash-command removals and the final five-command interface.
+
 Owner request: remove old ticketing commands, record the removal, and audit current commands.
 
 ## Removed from slash registration and help (18)

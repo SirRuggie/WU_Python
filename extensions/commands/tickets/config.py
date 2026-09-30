@@ -87,13 +87,12 @@ def configuration_summary(
         "**Shared console**",
         f"Channel: {_channel(console_channel)}",
         "",
-        "Use `/tickets configure-threads` to validate and save a thread pair.",
+        "Use Manage → Recruitment → Ticket Settings to edit and validate these settings.",
         "Use `/tickets console` in the private recruiter channel to post or repair the hub.",
     ])
     return "\n".join(rows)
 
 
-@ticket.register()
 class Config(
     lightbulb.SlashCommand,
     name="config",

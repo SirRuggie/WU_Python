@@ -25,6 +25,8 @@ DESTINATIONS = (
     ("Recruit Gauntlet", "recruit", "Edit onboarding messages and choose where to post them"),
     ("Recruitment Staff Thread", "recruitment_staff_thread", "Edit Main and FWA staff-thread notices and talking points"),
     ("Recruitment Questions", "recruitment_questions", "Edit reusable questions, explanations, and quick prompts"),
+    ("Ticket Settings", "ticket_settings", "Configure Main/FWA channels, staff roles, panels, and inactivity timing"),
+    ("Ticket Testing", "ticket_testing", "Open an isolated test window or use your tester access"),
     ("FWA", "fwa", "Bases, war messages, blacklist, points, and sync reminders"),
     ("CWL", "cwl", "Edit announcements and manage scheduled delivery"),
     ("CWL Rosters", "cwl_rosters", "Manage saved rosters and player return reminders"),
@@ -35,6 +37,8 @@ SECTION_CHOICES = (
     lightbulb.Choice("Recruit Gauntlet", "recruit-gauntlet"),
     lightbulb.Choice("Recruitment Staff Thread", "recruitment-staff-thread"),
     lightbulb.Choice("Recruitment Questions", "recruitment-questions"),
+    lightbulb.Choice("Ticket Settings", "ticket-settings"),
+    lightbulb.Choice("Ticket Testing", "ticket-testing"),
     lightbulb.Choice("FWA", "fwa"),
     lightbulb.Choice("CWL", "cwl"),
     lightbulb.Choice("CWL Rosters", "cwl-rosters"),
@@ -44,6 +48,8 @@ SECTION_DESTINATION = {
     "recruit-gauntlet": "recruit",
     "recruitment-questions": "recruitment_questions",
     "recruitment-staff-thread": "recruitment_staff_thread",
+    "ticket-settings": "ticket_settings",
+    "ticket-testing": "ticket_testing",
     "fwa": "fwa",
     "fwa-war-messages": "fwa_war_messages",
     "cwl": "cwl",
@@ -93,6 +99,15 @@ def _allowed(ctx: Any, destination: str) -> bool:
 
 
 async def _can_access(ctx: Any, mongo: MongoClient, destination: str) -> bool:
+    if destination in {"ticket_settings", "ticket_testing"}:
+        from extensions.commands.tickets import perms as ticket_perms, testing_service
+        if await ticket_perms.is_target_admin(_member(ctx), mongo):
+            return True
+        if destination == "ticket_settings":
+            return False
+        window = await testing_service.active_window(testing_service.test_mongo(mongo))
+        return bool(window and window.get("guild_id") == _guild_id(ctx)
+            and testing_service.user_allowed(window, _user_id(ctx), getattr(_member(ctx), "role_ids", ()) or (), is_admin=False))
     if destination != "roles":
         return _allowed(ctx, destination)
     from extensions.commands.recruit import perms
@@ -138,6 +153,8 @@ def _destination_section(label: str, key: str, description: str, token: str, all
     action = f"manage_server_roles:{token}" if key == "roles" else f"manage_{key}:{token}"
     requirements = {
         "roles": "Recruiter or Administrator access",
+        "ticket_settings": "Administrator access in the ticket server",
+        "ticket_testing": "An active tester invitation or ticket administrator access",
         "recruit": "Manage Server permission",
         "recruitment_questions": "Manage Server permission",
         "recruitment_staff_thread": "Manage Server permission",
@@ -177,7 +194,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
         children.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     entries = {key: (label, description) for label, key, description in DESTINATIONS}
     for index, (heading, keys) in enumerate((
-        ("Recruitment", ("recruit", "recruitment_questions", "recruitment_staff_thread")),
+        ("Recruitment", ("recruit", "recruitment_questions", "recruitment_staff_thread", "ticket_settings", "ticket_testing")),
         ("War Operations", ("fwa", "cwl", "cwl_rosters")),
         ("Server", ("roles",)),
     )):
@@ -225,6 +242,12 @@ async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
     if destination == "roles":
         from extensions.commands import role_management
         await role_management.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
+    elif destination == "ticket_settings":
+        from extensions.commands.tickets import settings
+        await settings.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
+    elif destination == "ticket_testing":
+        from extensions.commands.tickets import testing
+        await testing.open_dashboard(ctx, mongo, deferred=deferred, return_action=f"manage_home:{token}")
     elif destination == "recruitment_staff_thread":
         from extensions.commands import recruitment_staff_thread
         await recruitment_staff_thread.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
@@ -329,6 +352,8 @@ def _register_destination(name: str, destination: str):
     return handler
 
 
+ticket_settings_destination = _register_destination("manage_ticket_settings", "ticket_settings")
+ticket_testing_destination = _register_destination("manage_ticket_testing", "ticket_testing")
 roles_destination = _register_destination("manage_server_roles", "roles")
 recruit_destination = _register_destination("manage_recruit", "recruit")
 recruitment_staff_thread_destination = _register_destination("manage_recruitment_staff_thread", "recruitment_staff_thread")

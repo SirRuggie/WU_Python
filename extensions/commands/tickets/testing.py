@@ -81,7 +81,7 @@ def _button(
     )
 
 
-def _panel(state_id: str, window: dict | None, *, admin: bool, notice: str | None = None) -> list[Container]:
+def _panel(state_id: str, window: dict | None, *, admin: bool, notice: str | None = None, return_action: str | None = None) -> list[Container]:
     # active_window returns None for expired, cleared, or closed windows.
     active = window is not None
     expires = _when(window.get("expires_at")) if window else "not open"
@@ -113,7 +113,7 @@ def _panel(state_id: str, window: dict | None, *, admin: bool, notice: str | Non
             Text(content="### Administrator controls"),
             Text(content=(
                 "Opening a window adds you automatically. Selected testers can use "
-                "`/tickets testing` and try both applicant and staff actions.\n"
+                "`/manage section:Ticket Testing` and try both applicant and staff actions.\n"
                 f"**Members:** {', '.join(f'<@{uid}>' for uid in (window or {}).get('allowed_user_ids', [])) or 'None'}\n"
                 f"**Roles:** {', '.join(f'<@&{rid}>' for rid in (window or {}).get('allowed_role_ids', [])) or 'None'}\n"
                 f"**Include administrators:** {'Yes' if (window or {}).get('allow_admins') else 'No'}\n"
@@ -139,15 +139,18 @@ def _panel(state_id: str, window: dict | None, *, admin: bool, notice: str | Non
                 _button(hikari.ButtonStyle.DANGER, _id("clear", state_id), "Clear test tickets", icon="No"),
             ]),
         ])
+    if return_action:
+        body.extend([Separator(divider=True), ActionRow().add_interactive_button(
+            hikari.ButtonStyle.SECONDARY, return_action, label="Return to Management")])
     return [Container(accent_color=GOLDENROD_ACCENT, components=body)]
 
 
-async def _new_state(mongo: MongoClient, ctx: Any, *, admin: bool) -> str:
+async def _new_state(mongo: MongoClient, ctx: Any, *, admin: bool, return_action: str | None = None) -> str:
     state_id = uuid.uuid4().hex
     await insert_state(testing_service.test_mongo(mongo), {
         "_id": state_id, "type": "ticket_testing_panel",
         "owner_id": int(ctx.user.id), "guild_id": _int(getattr(ctx, "guild_id", 0)),
-        "admin": bool(admin),
+        "admin": bool(admin), "return_action": return_action,
     }, ttl=PANEL_TTL)
     return state_id
 
@@ -155,7 +158,7 @@ async def _new_state(mongo: MongoClient, ctx: Any, *, admin: bool) -> str:
 async def _access(ctx: Any, mongo: MongoClient, state_id: str) -> tuple[dict | None, dict | None, bool, str | None]:
     state = await get_state(testing_service.test_mongo(mongo), state_id)
     if not state or state.get("type") != "ticket_testing_panel":
-        return None, None, False, "This testing panel has expired. Run `/tickets testing` again."
+        return None, None, False, "This testing panel has expired. Run `/manage section:Ticket Testing` again."
     if _int(state.get("owner_id")) != _int(ctx.user.id):
         return state, None, False, "This private panel belongs to another member."
     if _int(state.get("guild_id")) != _int(getattr(ctx, "guild_id", 0)):
@@ -179,29 +182,33 @@ async def _refresh(ctx: Any, mongo: MongoClient, state_id: str, notice: str | No
     state, window, admin, problem = await _access(ctx, mongo, state_id)
     if problem:
         return [Container(accent_color=RED_ACCENT, components=[Text(content=problem)])]
-    return _panel(state_id, window, admin=admin, notice=notice)
+    return _panel(state_id, window, admin=admin, notice=notice, return_action=state.get("return_action"))
 
 
-@ticket.register()
 class Testing(lightbulb.SlashCommand, name="testing", description="Open the isolated ticket testing panel"):
     @lightbulb.invoke
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+        await open_dashboard(ctx, mongo)
+
+
+async def open_dashboard(ctx, mongo, *, deferred=False, return_action=None):
+    if not deferred:
         await ctx.defer(ephemeral=True)
-        admin = await perms.is_target_admin(getattr(ctx, "member", None), mongo)
-        scoped = testing_service.test_mongo(mongo)
-        window = await testing_service.active_window(scoped)
-        if not admin:
-            role_ids = tuple(getattr(getattr(ctx, "member", None), "role_ids", ()) or ())
-            if (
-                not window
-                or _int(window.get("guild_id")) != _int(getattr(ctx, "guild_id", 0))
-                or not testing_service.user_allowed(window, _int(ctx.user.id), role_ids, is_admin=False)
-            ):
-                await ctx.respond("You are not allowed to use the current ticket test window.", ephemeral=True)
-                return
-        state_id = await _new_state(mongo, ctx, admin=admin)
-        await ctx.respond(components=_panel(state_id, window, admin=admin), ephemeral=True)
+    admin = await perms.is_target_admin(getattr(ctx, "member", None), mongo)
+    scoped = testing_service.test_mongo(mongo)
+    window = await testing_service.active_window(scoped)
+    if not admin:
+        role_ids = tuple(getattr(getattr(ctx, "member", None), "role_ids", ()) or ())
+        if (
+            not window
+            or _int(window.get("guild_id")) != _int(getattr(ctx, "guild_id", 0))
+            or not testing_service.user_allowed(window, _int(ctx.user.id), role_ids, is_admin=False)
+        ):
+            await ctx.respond("You are not allowed to use the current ticket test window.", ephemeral=True)
+            return
+    state_id = await _new_state(mongo, ctx, admin=admin, return_action=return_action)
+    await ctx.interaction.edit_initial_response(components=_panel(state_id, window, admin=admin, return_action=return_action), user_mentions=False, role_mentions=False, mentions_everyone=False)
 
 
 @register_action("ticket_testing_open_window", opens_modal=True, no_return=True, preload_state=False)

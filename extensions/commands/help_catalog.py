@@ -40,7 +40,7 @@ HELP_CATEGORIES = {
     "manage": {
         "name": "Management", "emoji": "🛡️", "description": "Private dashboards for server staff",
         "commands": [
-            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA (bases, war messages, blacklist, points, sync reminders), Recruitment Questions, CWL, or CWL Rosters."),
+            ("/manage", "Open management home or choose Server, Roles, Recruit Gauntlet, FWA (bases, war messages, blacklist, points, sync reminders), Recruitment Questions, Ticket Settings, Ticket Testing, CWL, or CWL Rosters."),
         ],
     },
     "clan_fwa": {
@@ -63,24 +63,9 @@ HELP_CATEGORIES = {
         "commands": [
             ("/tickets approve", "Approve the current thread ticket. Recruiter/Admin only."),
             ("/tickets deny", "Deny the current thread ticket. Recruiter/Admin only."),
-            ("/tickets find", "Search permanent thread-ticket history. Recruiter/Admin only."),
-            ("/tickets history", "Open one member's ticket history. Recruiter/Admin only."),
-            ("/tickets flags", "View active applicant flags. Recruiter/Admin only."),
             ("/tickets flag-add", "Add or update an applicant flag. Recruiter/Admin only."),
             ("/tickets flag-remove", "Deactivate an applicant flag. Recruiter/Admin only."),
-            ("/tickets testing", "Open isolated test tickets. Admins manage temporary tester access."),
-            ("/tickets setup", "Post and bind the restricted pilot panel. Admin only."),
-            ("/tickets configure-threads", "Validate candidate/staff thread parents. Admin only."),
-            ("/tickets thread-config", "Revalidate thread configuration. Admin only."),
             ("/tickets console", "Post or repair the recruiter console. Admin only."),
-            ("/tickets config", "Inspect thread-ticket settings. Admin only."),
-            ("/tickets pilot-user", "Manage pilot user access. Admin only."),
-            ("/tickets pilot-role", "Manage pilot role access. Admin only."),
-            ("/tickets rollout-status", "Show phase, bindings, and drain blockers. Admin only."),
-            ("/tickets rollout-prepare", "Validate and stage the pilot. Admin only."),
-            ("/tickets rollout-pilot", "Enable allowlisted pilot intake. Admin only."),
-            ("/tickets rollout-promote", "Promote thread intake publicly. Admin only."),
-            ("/tickets rollout-drain", "Verify legacy drain and enter thread-only. Admin only."),
         ],
     },
     "cwl": {

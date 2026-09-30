@@ -267,7 +267,6 @@ class FlagRemoveCommand(
         )
 
 
-@ticket.register()
 class FlagsCommand(
     lightbulb.SlashCommand,
     name="flags",
@@ -287,61 +286,65 @@ class FlagsCommand(
         ctx: lightbulb.Context,
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
-        await ctx.defer(ephemeral=True)
-        # The read is staff-only too: reasons can contain private recruiter notes.
-        from extensions.commands.tickets import perms
+        await show_flags(ctx, mongo, self.identity)
 
-        if not await perms.is_recruiter(ctx.member, mongo):
-            await _reply(
-                ctx,
-                "Recruiter access required",
-                "Only recruiters can read applicant flags.",
-                accent=ACCENT_RED,
-            )
-            return
-        identity = str(self.identity).strip()
-        try:
-            discord_ids = _discord_ids(identity) if identity.isdigit() else ()
-            player_tags = _tags(identity) if identity.startswith("#") else ()
-        except ValueError as exc:
-            await _reply(ctx, "Flag search not run", str(exc), accent=ACCENT_RED)
-            return
-        if not discord_ids and not player_tags:
-            await _reply(
-                ctx,
-                "Flag search not run",
-                "Use a Discord ID or a player tag that starts with #.",
-                accent=ACCENT_RED,
-            )
-            return
-        try:
-            records = await flag_store.list_for_identity(
-                mongo,
-                discord_ids=discord_ids,
-                player_tags=player_tags,
-            )
-        except ValueError as exc:
-            await _reply(ctx, "Flag search not run", str(exc), accent=ACCENT_RED)
-            return
-        if not records:
-            await _reply(
-                ctx,
-                "No active flags",
-                "No staff flag matches that Discord ID or player tag.",
-                accent=ACCENT_BLUE,
-            )
-            return
-        lines: list[str] = []
-        for record in records[:10]:
-            kind = str(record.get("kind") or "")
-            lines.append(
-                f"**{FLAG_LABELS.get(kind, kind.replace('_', ' ').title())}**\n"
-                f"{_safe(record.get('reason'))}\n"
-                f"Source: {_safe(record.get('source'), 120)}"
-            )
+
+async def show_flags(ctx, mongo, identity):
+    await ctx.defer(ephemeral=True)
+    # The read is staff-only too: reasons can contain private recruiter notes.
+    from extensions.commands.tickets import perms
+
+    if not await perms.is_recruiter(ctx.member, mongo):
         await _reply(
             ctx,
-            "Active applicant flags",
-            "\n\n".join(lines),
+            "Recruiter access required",
+            "Only recruiters can read applicant flags.",
+            accent=ACCENT_RED,
+        )
+        return
+    identity = str(identity).strip()
+    try:
+        discord_ids = _discord_ids(identity) if identity.isdigit() else ()
+        player_tags = _tags(identity) if identity.startswith("#") else ()
+    except ValueError as exc:
+        await _reply(ctx, "Flag search not run", str(exc), accent=ACCENT_RED)
+        return
+    if not discord_ids and not player_tags:
+        await _reply(
+            ctx,
+            "Flag search not run",
+            "Use a Discord ID or a player tag that starts with #.",
+            accent=ACCENT_RED,
+        )
+        return
+    try:
+        records = await flag_store.list_for_identity(
+            mongo,
+            discord_ids=discord_ids,
+            player_tags=player_tags,
+        )
+    except ValueError as exc:
+        await _reply(ctx, "Flag search not run", str(exc), accent=ACCENT_RED)
+        return
+    if not records:
+        await _reply(
+            ctx,
+            "No active flags",
+            "No staff flag matches that Discord ID or player tag.",
             accent=ACCENT_BLUE,
         )
+        return
+    lines: list[str] = []
+    for record in records[:10]:
+        kind = str(record.get("kind") or "")
+        lines.append(
+            f"**{FLAG_LABELS.get(kind, kind.replace('_', ' ').title())}**\n"
+            f"{_safe(record.get('reason'))}\n"
+            f"Source: {_safe(record.get('source'), 120)}"
+        )
+    await _reply(
+        ctx,
+        "Active applicant flags",
+        "\n\n".join(lines),
+        accent=ACCENT_BLUE,
+    )

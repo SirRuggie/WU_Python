@@ -14,28 +14,7 @@ from utils.startup import tickets_guild_id
 
 ROOT = Path(__file__).resolve().parents[1]
 
-EXPECTED_COMMANDS = {
-    "testing",
-    "approve",
-    "config",
-    "configure-threads",
-    "console",
-    "deny",
-    "find",
-    "flag-add",
-    "flag-remove",
-    "flags",
-    "history",
-    "pilot-role",
-    "pilot-user",
-    "rollout-drain",
-    "rollout-pilot",
-    "rollout-prepare",
-    "rollout-promote",
-    "rollout-status",
-    "setup",
-    "thread-config",
-}
+EXPECTED_COMMANDS = {"approve", "deny", "flag-add", "flag-remove", "console"}
 
 EXPECTED_LEGACY_COMMANDS = set()
 

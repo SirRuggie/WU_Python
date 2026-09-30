@@ -873,6 +873,8 @@ def build_hub_actions(
                         label="Browse Tickets",
                         emoji="📋",
                     ),
+                    Button(style=hikari.ButtonStyle.SECONDARY, custom_id="ticket_v2_member_history:hub", label="Member History"),
+                    Button(style=hikari.ButtonStyle.SECONDARY, custom_id="ticket_v2_flags_lookup:hub", label="Flags"),
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         custom_id="ticket_v2_hub_page:refresh",
@@ -1018,7 +1020,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 13
+HUB_LAYOUT_VERSION = 14
 
 
 async def _chart_signature(mongo: MongoClient) -> str:
@@ -7082,7 +7084,6 @@ class ConsoleCommand(
         )
 
 
-@ticket.register()
 class FindCommand(
     lightbulb.SlashCommand,
     name="find",
@@ -7149,7 +7150,6 @@ class FindCommand(
         )
 
 
-@ticket.register()
 class HistoryCommand(
     lightbulb.SlashCommand,
     name="history",
@@ -7320,3 +7320,50 @@ async def ticket_hub_close_submit(ctx, action_id: str,
             components = _notice("Ticket update interrupted", "Open the ticket details again to check its current status before retrying.")
     await ctx.interaction.edit_initial_response(components=components,
         user_mentions=False, role_mentions=False, mentions_everyone=False)
+
+
+@register_action('ticket_v2_member_history', opens_modal=True, preload_state=False, no_return=True)
+@lightbulb.di.with_di
+async def member_history_open(ctx, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    await ctx.defer(ephemeral=True)
+    if not await perms.is_recruiter(getattr(ctx, 'member', None), mongo):
+        await ctx.interaction.edit_initial_response(components=_notice('Recruiter access required','Only recruiters can view member history.'))
+        return
+    token=uuid.uuid4().hex
+    await insert_state(mongo, {'_id':token,'type':'ticket_member_history','owner_id':int(ctx.user.id),'guild_id':int(ctx.guild_id)})
+    await ctx.interaction.edit_initial_response(components=[Container(accent_color=ACCENT_BLUE,components=[
+        Text(content='## Member Ticket History\nSelect a member to see their tickets.'),
+        ActionRow(components=[hikari.impl.SelectMenuBuilder(type=hikari.ComponentType.USER_SELECT_MENU,
+            custom_id=f'ticket_v2_member_history_pick:{token}',placeholder='Select a member',min_values=1,max_values=1)])])],
+        user_mentions=False,role_mentions=False,mentions_everyone=False)
+
+
+@register_action('ticket_v2_member_history_pick', preload_state=False, no_return=True)
+@lightbulb.di.with_di
+async def member_history_pick(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
+    data=await get_state(mongo,action_id)
+    if (not data or data.get('type')!='ticket_member_history' or data.get('owner_id')!=int(ctx.user.id)
+        or data.get('guild_id')!=int(ctx.guild_id) or not await perms.is_recruiter(getattr(ctx,'member',None),mongo)):
+        await ctx.respond('Open your own Member History panel from the recruiter console.',ephemeral=True)
+        return
+    user_id=int(ctx.interaction.values[0])
+    history=await store.history_for(mongo,user_id=user_id,limit=MAX_HISTORY_RESULTS)
+    await ctx.interaction.edit_initial_response(components=build_history_panel(user_id,history),user_mentions=False,role_mentions=False,mentions_everyone=False)
+
+
+@register_action('ticket_v2_flags_lookup', opens_modal=True, preload_state=False, no_return=True)
+@lightbulb.di.with_di
+async def flags_lookup_open(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
+    if not await perms.is_recruiter(getattr(ctx,'member',None),mongo):
+        await ctx.respond('Only recruiters can view applicant flags.',ephemeral=True);return
+    await ctx.respond_with_modal(title='Find Applicant Flags',custom_id=f'ticket_v2_flags_lookup_submit:{int(ctx.guild_id)}',components=[
+        ModalActionRow().add_text_input('identity','Discord ID or player tag',min_length=3,max_length=20)])
+
+
+@register_action('ticket_v2_flags_lookup_submit', is_modal=True, preload_state=False, no_return=True)
+@lightbulb.di.with_di
+async def flags_lookup_submit(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
+    if _int(action_id)!=_int(getattr(ctx,'guild_id',0)):
+        await ctx.respond('Open Flags in the ticket server.',ephemeral=True);return
+    from extensions.commands.tickets import flags
+    await flags.show_flags(ctx,mongo,_modal_value(ctx,'identity'))
