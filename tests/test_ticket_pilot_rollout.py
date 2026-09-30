@@ -1863,7 +1863,8 @@ def test_my_ticket_button_links_the_tickets_own_server_not_the_viewers(monkeypat
     assert button.url == "https://discord.com/channels/77/777"
 
 
-def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch):
+@pytest.mark.parametrize("status", ["denied", "closed"])
+def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch, status):
     edits = []
 
     async def find_open(_mongo, *, user_id, ticket_type):
@@ -1872,8 +1873,8 @@ def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch):
     history = [{
         "ticket_type": "main",
         "ticket_number": 198,
-        "status": "denied",
-        "denied_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+        "status": status,
+        f"{status}_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
         "guild_id": 11,
         "location": {"id": 555},
     }]
@@ -1894,7 +1895,7 @@ def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch):
     panel = edits[-1]["components"][0]
     content = "\n".join(getattr(item, "content", "") for item in panel.components)
     assert "Main #198" in content
-    assert "Denied" in content
+    assert status.title() in content
     assert ":f>" in content
     assert panel.components[-1].components[0].url == "https://discord.com/channels/11/555"
     assert edits[-1]["role_mentions"] is False

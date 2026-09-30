@@ -769,7 +769,7 @@ async def transition(
 ) -> Transition:
     """CAS a ticket status using the status and revision the actor observed."""
     target = schema.ticket_status(to_status)
-    if target == "open":
+    if target == "open" and not (effect_kind == "reopen" and expect == "closed"):
         raise schema.TicketSchemaError("resolved tickets cannot be reopened")
     actor = schema.snowflake(actor_id, field="actor_id")
     name = str(actor_name or "").strip() or str(actor)
@@ -856,7 +856,7 @@ async def transition(
         "kind": str(effect_kind or ("approve" if target == "approved" else "deny_custom")),
         "notification": {"state": "pending"},
         "staff_notification": {"state": "pending"},
-        "staff_context": {"state": "pending"},
+        "staff_context": {"state": "skipped" if effect_kind in {"close", "reopen"} else "pending"},
         "hub": {"state": "pending"},
         "complete": False,
         "updated_at": now,
@@ -900,13 +900,22 @@ async def transition(
             "denied_at": "", "denied_by": "", "denied_by_name": "",
             "denial_type": "", "denial_reason": "",
         })
-    else:
+    elif target == "denied":
         set_fields.setdefault("denied_at", now)
         set_fields.setdefault("denied_by", actor)
         set_fields.setdefault("denied_by_name", name)
         unset_fields.update({
             "approved_at": "", "approved_by": "", "approved_by_name": "",
         })
+
+    if target == "closed":
+        set_fields.update(closed_at=now, closed_by=actor, closed_by_name=name)
+        audit["reason"] = supplied.get("closure_reason")
+    elif target == "open":
+        set_fields.update(reopened_at=now, reopened_by=actor, reopened_by_name=name,
+                          **{"inactivity.reset_at": now})
+        unset_fields["inactivity.prompt"] = ""
+        audit["reason"] = supplied.get("reopen_reason")
 
     transition_filter = {
         "_id": ticket_id,
@@ -989,7 +998,7 @@ async def transition(
         },
         ticket_id,
     )
-    if outcome.won:
+    if outcome.won and target != "open":
         try:
             await ticket_runtime.mark_slot_release_pending(
                 mongo,

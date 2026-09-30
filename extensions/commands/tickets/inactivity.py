@@ -20,10 +20,8 @@ _log = logging.getLogger(__name__)
 PERIOD = timedelta(days=7)
 LEASE = timedelta(minutes=5)
 SEND_TIMEOUT_SECONDS = 60
-PROMPT = "There has been no activity within the last 7 days. Apply Ghosted and deny?"
+PROMPT = "There has been no activity within the last 7 days. Apply Ghosted and close this ticket?"
 REASON = "Recruit stopped responding"
-YES_EMOJI = 1397096942907166831
-NO_EMOJI = 1397096986506825778
 _task: asyncio.Task | None = None
 
 
@@ -76,10 +74,10 @@ def custom_id(ticket, token, choice):
 
 def card(ticket, token, role, period=PERIOD):
     row = hikari.impl.MessageActionRowBuilder()
-    for choice, label, emoji in (("yes", "Yes - Deny", YES_EMOJI), ("no", "No - Wait", NO_EMOJI)):
-        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=hikari.CustomEmoji(id=emoji, name=choice.title(), is_animated=False))
-    wording = f"There has been no activity within the last {period_label(period)}. Apply Ghosted and deny?"
-    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nYou will be prompted for a denial reason."), row])]
+    for choice, label, emoji in (("yes", "Close as Ghosted", "👻"), ("no", "Wait", "🫶")):
+        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, custom_id(ticket, token, choice), label=label, emoji=emoji)
+    wording = f"There has been no activity within the last {period_label(period)}. Apply Ghosted and close this ticket?"
+    return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content=f"## Inactivity review · {period_label(period)}\n<@&{role}> · <#{ticket['location']['id']}>\n\n{wording}\n\nYou will be prompted for a closing reason."), row])]
 
 
 async def record_human_activity(mongo, ticket, message):
@@ -221,7 +219,7 @@ async def finish_ghosted(bot, mongo, ticket):
     # Only our won denial may author the independent permanent flag. The
     # decision CAS is durable even if the process died before deny returned.
     won = next((entry for entry in ticket.get("audit", ())
-                if entry.get("inactivity_token") == prompt.get("token") and entry.get("to") == "denied"), None)
+                if entry.get("inactivity_token") == prompt.get("token") and entry.get("to") in {"denied", "closed"}), None)
     if won is None:
         return False
     reason = str(won.get("reason") or prompt.get("reason") or REASON)
@@ -238,7 +236,7 @@ async def finish_ghosted(bot, mongo, ticket):
     from extensions.commands.tickets import thread_service, console
     await console._refresh_after_flag_mutation(bot, mongo, flag_doc)
     await thread_service.notify_console_after_change(bot, mongo, ticket, reason="Ghosted inactivity flag")
-    await retire_prompt(bot, ticket, "Ghosted applied and ticket denied with the reason you provided.")
+    await retire_prompt(bot, ticket, "Ghosted applied and ticket " + ("closed" if won.get("to") == "closed" else "denied") + " with the reason you provided.")
     await mongo.tickets.update_one({"_id": ticket["_id"], "inactivity.prompt.token": prompt["token"]},
         {"$set": {"inactivity.prompt.state": "complete"}})
     return True
@@ -253,12 +251,12 @@ async def handle_inactivity(ctx, action_id: str, bot: hikari.GatewayBot = lightb
         # Acknowledge with the form immediately. Submission rechecks the live
         # prompt, recruiter permission, activity and ticket status before acting.
         await ctx.respond_with_modal(
-            title="Ghosted - Deny ticket",
+            title="Ghosted - Close ticket",
             custom_id=f"ticket_inactivity_reason:{action_id}",
             components=[hikari.impl.ModalActionRowBuilder().add_text_input(
-                "reason", "Denial reason shown to the recruit",
+                "reason", "Closing reason shown to the recruit",
                 style=hikari.TextInputStyle.PARAGRAPH,
-                placeholder="Explain why this application is being denied.",
+                placeholder="Recruit stopped responding.",
                 required=True, min_length=5, max_length=1000,
             )],
         )
@@ -287,7 +285,7 @@ async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None
         return
     ticket_id, token, choice = parts
     if (reason is not None and choice != "yes") or (choice == "yes" and (reason is None or not 5 <= len(reason) <= 1000)):
-        await ctx.interaction.edit_initial_response(content="Enter a denial reason between 5 and 1,000 characters. No decision was made.")
+        await ctx.interaction.edit_initial_response(content="Enter a closing reason between 5 and 1,000 characters. No decision was made.")
         return
     ticket = await mongo.tickets.find_one({"_id": ticket_id, **store.RUNTIME_FILTER})
     if eligible(ticket):
@@ -321,8 +319,9 @@ async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None
         if not claimed:
             wording = "This inactivity prompt is out of date."
         else:
-            result = await resolve.deny_ticket(bot, mongo, ticket_id=ticket_id, member=ctx.member,
-                actor_name=actor_name, kind=resolve.KIND_DENY_CUSTOM, reason=reason,
+            from . import lifecycle
+            result = await lifecycle.change(bot, mongo, ticket_id=ticket_id, member=ctx.member,
+                actor_name=actor_name, kind="close", reason=reason,
                 expected_rev=int(ticket.get("rev") or 0), expected_activity_revision=int(prompt.get("activity_revision") or 0),
                 expected_inactivity_token=token)
             if result.won or result.outcome == store.EFFECT_FAILED:
@@ -331,11 +330,11 @@ async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None
                 except Exception:
                     _log.exception("Ghosted flag pending after won inactivity denial ticket=%s", ticket_id)
                     complete = False
-                wording = ("Ghosted applied and ticket denied with the reason you provided." if complete else
-                           "Ticket denied; Ghosted flag update is pending and will retry automatically.")
+                wording = ("Ghosted applied and ticket closed with the reason you provided." if complete else
+                           "Ticket closed; Ghosted flag update is pending and will retry automatically.")
             else:
                 await mongo.tickets.update_one({"_id": ticket_id, "inactivity.prompt.token": token}, {"$unset": {"inactivity.prompt": ""}})
-                wording = "The ticket changed; no inactivity denial was applied."
+                wording = "The ticket changed; no inactivity closure was applied."
     await retire_prompt(bot, ticket, wording)
     await ctx.interaction.edit_initial_response(content=wording)
 

@@ -1001,8 +1001,8 @@ async def mark_slot_release_pending(
     """Durably mark a terminal ticket's slot before attempting deletion."""
 
     terminal = str(terminal_status).strip().lower()
-    if terminal not in {"approved", "denied"}:
-        raise ValueError("terminal_status must be approved or denied")
+    if terminal not in {"approved", "denied", "closed"}:
+        raise ValueError("terminal_status must be approved, denied, or closed")
     slot = await mongo.ticket_open_slots.find_one(
         {"ticket_id": ticket_id, "state": SLOT_OPEN}
     )
@@ -1048,7 +1048,7 @@ async def release_open_slot(
     if slot is None:
         return False
     ticket = await _ticket_for_slot(mongo, slot)
-    if str((ticket or {}).get("status") or "") not in {"approved", "denied"}:
+    if str((ticket or {}).get("status") or "") not in {"approved", "denied", "closed"}:
         return False
     result = await mongo.ticket_open_slots.delete_one(
         {
@@ -1751,6 +1751,7 @@ async def _release_terminal_slot_collision(
     if str((ticket or {}).get("status") or "").strip().lower() not in {
         "approved",
         "denied",
+        "closed",
     }:
         return False
     result = await mongo.ticket_open_slots.delete_one(
@@ -1794,6 +1795,7 @@ async def _all_conflict_refs_terminal(
         if str((ticket or {}).get("status") or "").strip().lower() not in {
             "approved",
             "denied",
+            "closed",
         }:
             return False
     return True
@@ -1938,7 +1940,7 @@ async def reconcile_open_slots(
             continue
         ticket = await _ticket_for_slot(mongo, slot)
         status = str((ticket or {}).get("status") or "").strip().lower()
-        if ticket is not None and status in {"approved", "denied"}:
+        if ticket is not None and status in {"approved", "denied", "closed"}:
             result = await mongo.ticket_open_slots.delete_one(
                 {
                     "_id": slot.get("_id"),

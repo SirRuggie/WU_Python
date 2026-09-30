@@ -1,3 +1,4 @@
+from extensions.commands.tickets import lifecycle
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -77,8 +78,8 @@ def test_prompt_card_has_exact_copy_and_requested_emojis():
     assert card.accent_color == inactivity.GOLDENROD_ACCENT
     assert inactivity.PROMPT in card.components[0].content
     buttons = card.components[1].components
-    assert [button.label for button in buttons] == ["Yes - Deny", "No - Wait"]
-    assert [int(button.emoji.id) for button in buttons] == [inactivity.YES_EMOJI, inactivity.NO_EMOJI]
+    assert [button.label for button in buttons] == ["Close as Ghosted", "Wait"]
+    assert [str(button.emoji) for button in buttons] == ["👻", "🫶"]
     assert buttons[0].custom_id == "ticket_inactivity:ticket_123:abc:yes"
 
 
@@ -128,12 +129,12 @@ async def test_yes_uses_normal_deny_exact_reason_and_activity_cas(monkeypatch):
     monkeypatch.setattr(inactivity, "retire_prompt", AsyncMock())
     deny = AsyncMock(return_value=store.Transition(store.WON, t))
     finish = AsyncMock(return_value=True)
-    monkeypatch.setattr(inactivity.resolve, "deny_ticket", deny)
+    monkeypatch.setattr(lifecycle, "change", deny)
     monkeypatch.setattr(inactivity, "finish_ghosted", finish)
     await inactivity.handle_inactivity_reason(ctx, "ticket_123:abc:yes", bot=object(), mongo=mongo)
     assert deny.await_count == 1
     assert deny.call_args.kwargs["reason"] == "No response after three follow-ups"
-    assert deny.call_args.kwargs["kind"] == inactivity.resolve.KIND_DENY_CUSTOM
+    assert deny.call_args.kwargs["kind"] == "close"
     assert deny.call_args.kwargs["expected_activity_revision"] == 3
     assert deny.call_args.kwargs["expected_inactivity_token"] == "abc"
     finish.assert_awaited_once()
@@ -149,7 +150,7 @@ async def test_invalid_submitted_reason_makes_no_database_decision(monkeypatch):
     set_modal_reason(monkeypatch, " ")
     monkeypatch.setattr(inactivity.perms, "is_recruiter", AsyncMock(return_value=True))
     await inactivity.handle_inactivity_reason(ctx, "ticket_123:abc:yes", bot=object(), mongo=mongo)
-    assert "Enter a denial reason" in ctx.interaction.edit_initial_response.call_args.kwargs["content"]
+    assert "Enter a closing reason" in ctx.interaction.edit_initial_response.call_args.kwargs["content"]
     mongo.tickets.find_one.assert_not_awaited()
     mongo.tickets.find_one_and_update.assert_not_awaited()
 
@@ -161,7 +162,7 @@ async def test_no_only_resets_timer_leaving_status_and_flags(monkeypatch):
     monkeypatch.setattr(inactivity, "verify_baseline", AsyncMock(return_value=t))
     monkeypatch.setattr(inactivity, "retire_prompt", AsyncMock())
     deny = AsyncMock()
-    monkeypatch.setattr(inactivity.resolve, "deny_ticket", deny)
+    monkeypatch.setattr(lifecycle, "change", deny)
     await inactivity.handle_inactivity(ctx, "ticket_123:abc:no", bot=object(), mongo=mongo)
     update = mongo.tickets.update_one.call_args.args[1]
     assert set(update["$set"]) == {"inactivity.reset_at"}
@@ -173,7 +174,7 @@ async def test_no_only_resets_timer_leaving_status_and_flags(monkeypatch):
 async def test_unauthorized_stale_duplicate_wrong_source_and_crossguild_refuse(monkeypatch):
     deny = AsyncMock()
     set_modal_reason(monkeypatch)
-    monkeypatch.setattr(inactivity.resolve, "deny_ticket", deny)
+    monkeypatch.setattr(lifecycle, "change", deny)
     retire = AsyncMock()
     monkeypatch.setattr(inactivity, "retire_prompt", retire)
     allowed = AsyncMock(return_value=False)
@@ -208,7 +209,7 @@ async def test_offline_human_activity_invalidates_click(monkeypatch):
     monkeypatch.setattr(inactivity.perms, "is_recruiter", AsyncMock(return_value=True))
     monkeypatch.setattr(inactivity, "retire_prompt", AsyncMock())
     deny = AsyncMock()
-    monkeypatch.setattr(inactivity.resolve, "deny_ticket", deny)
+    monkeypatch.setattr(lifecycle, "change", deny)
     await inactivity.handle_inactivity_reason(ctx, "ticket_123:abc:yes", bot=bot, mongo=mongo)
     deny.assert_not_awaited()
     update = mongo.tickets.update_one.call_args.args[1]
@@ -286,11 +287,11 @@ async def test_won_denial_flag_failure_reports_pending_and_keeps_durable_yes(mon
     monkeypatch.setattr(inactivity.perms, "is_recruiter", AsyncMock(return_value=True))
     monkeypatch.setattr(inactivity, "verify_baseline", AsyncMock(return_value=t))
     monkeypatch.setattr(inactivity, "retire_prompt", AsyncMock())
-    monkeypatch.setattr(inactivity.resolve, "deny_ticket", AsyncMock(return_value=store.Transition(store.WON, t)))
+    monkeypatch.setattr(lifecycle, "change", AsyncMock(return_value=store.Transition(store.WON, t)))
     monkeypatch.setattr(inactivity, "finish_ghosted", AsyncMock(side_effect=RuntimeError("Mongo unavailable")))
     await inactivity.handle_inactivity_reason(ctx, "ticket_123:abc:yes", bot=object(), mongo=mongo)
     wording = ctx.interaction.edit_initial_response.call_args.kwargs["content"]
-    assert wording == "Ticket denied; Ghosted flag update is pending and will retry automatically."
+    assert wording == "Ticket closed; Ghosted flag update is pending and will retry automatically."
     claim_update = mongo.tickets.find_one_and_update.call_args.args[1]
     assert claim_update["$set"]["inactivity.prompt.state"] == "yes"
     mongo.tickets.update_one.assert_not_awaited()
@@ -350,7 +351,7 @@ async def test_restoring_seven_days_blocks_old_five_minute_yes(monkeypatch):
     monkeypatch.setattr(inactivity.perms, "is_recruiter", AsyncMock(return_value=True))
     monkeypatch.setattr(inactivity, "verify_baseline", AsyncMock(return_value=t))
     deny = AsyncMock()
-    monkeypatch.setattr(inactivity.resolve, "deny_ticket", deny)
+    monkeypatch.setattr(lifecycle, "change", deny)
     await inactivity.handle_inactivity_reason(ctx, "ticket_123:abc:yes", bot=object(), mongo=mongo)
     deny.assert_not_awaited()
     assert "not due" in ctx.interaction.edit_initial_response.call_args.kwargs["content"]

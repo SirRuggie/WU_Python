@@ -241,7 +241,7 @@ def test_thread_names_encode_the_permanent_status_and_keep_closed_unprefixed():
     assert staff == "🆕 staff-main-7-shaun-example"
     assert thread_service.thread_names("main", 7, "Shaun Example", status="approved")[0] == "✅ main-7-shaun-example"
     assert thread_service.thread_names("main", 7, "Shaun Example", status="denied")[0] == "❌ main-7-shaun-example"
-    assert thread_service.thread_names("main", 7, "Shaun Example", status="closed")[0] == "main-7-shaun-example"
+    assert thread_service.thread_names("main", 7, "Shaun Example", status="closed")[0] == "📁 main-7-shaun-example"
 
 
 def test_ghosted_thread_names_override_status_for_both_ticket_threads():

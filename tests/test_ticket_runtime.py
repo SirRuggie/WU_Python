@@ -671,13 +671,14 @@ def test_claim_does_not_ignore_a_preexisting_ticket_whose_staff_thread_is_missin
     asyncio.run(scenario())
 
 
-def test_next_claim_repairs_exact_terminal_slot_when_release_checkpoint_failed():
+@pytest.mark.parametrize("terminal_status", ["denied", "closed"])
+def test_next_claim_repairs_exact_terminal_slot_when_release_checkpoint_failed(terminal_status):
     async def scenario():
         terminal = _ticket(
             "legacy-terminal",
             user=92,
             route=runtime.ROUTE_LEGACY,
-            status="denied",
+            status=terminal_status,
             location=921,
         )
         terminal.update({

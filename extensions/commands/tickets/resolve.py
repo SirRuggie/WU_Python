@@ -248,6 +248,9 @@ async def run_side_effects(
     ``marker`` is no longer rendered into the card -- it stays only as the
     resolution-effects idempotency key threaded through Mongo checkpoints.
     """
+    if kind in {"close", "reopen"}:
+        from . import lifecycle
+        return await lifecycle.deliver_candidate(bot, ticket, kind, marker)
     if kind == KIND_APPROVE:
         return await apply_approval(
             bot, mongo, ticket=ticket, marker=marker,
@@ -335,6 +338,11 @@ async def _notification_exists(
     carries the old ``-# {marker}`` line is still recognised.
     """
 
+    if kind in {"close", "reopen"}:
+        nonce = hashlib.sha256(f"candidate:{marker}".encode()).hexdigest()[:24]
+        return any(int(getattr(getattr(m, "author", None), "id", 0)) == bot_user_id
+                   and str(getattr(m, "nonce", None)) == nonce
+                   for m in await _all_messages(rest, channel_id))
     if message_id:
         try:
             message = await rest.fetch_message(channel_id, message_id)
@@ -473,7 +481,7 @@ async def _finalize_effects(
 def _resolution_kind(ticket: dict) -> str:
     effects = ticket.get("resolution_effects") or {}
     kind = effects.get("kind")
-    if kind in {KIND_APPROVE, *DENIAL_TYPE}:
+    if kind in {KIND_APPROVE, *DENIAL_TYPE, "close", "reopen"}:
         return kind
     if ticket.get("status") == "approved":
         return KIND_APPROVE
@@ -630,6 +638,9 @@ async def _release_resolution_effect_lease(
 
 
 def _staff_decision_components(ticket: dict, kind: str) -> list:
+    if kind in {"close", "reopen"}:
+        from . import lifecycle
+        return lifecycle.components(ticket, kind, staff=True)
     approved = kind == KIND_APPROVE
     decision = "Approved" if approved else "Denied"
     number = testing_service.number_label(int(ticket.get("ticket_number") or 0)) if testing_service.is_test_ticket(ticket) else ticket.get("ticket_number")
@@ -893,6 +904,13 @@ async def _process_resolution_effects_owned(
         )
         pending.append(("console refresh", exc))
 
+    if kind in {"close", "reopen"} and not pending:
+        try:
+            from . import lifecycle
+            await lifecycle.finish_effects(bot, mongo, ticket, kind)
+        except Exception as exc:
+            pending.append(("ticket archive/access updates", exc))
+
     if pending:
         latest = await store.find_one(
             mongo, {"_id": ticket["_id"], **store.RUNTIME_FILTER}
@@ -1039,7 +1057,7 @@ async def reconcile_pending_resolution_effects(
 ) -> dict[str, int]:
     pending = await store.find(mongo, {
         **store.RUNTIME_FILTER,
-        "status": {"$in": ["approved", "denied"]},
+        "status": {"$in": ["approved", "denied", "closed", "open"]},
         "resolution_effects.complete": {"$ne": True},
         "resolution_effects.marker": {"$exists": True},
     })
@@ -1257,6 +1275,9 @@ async def _resolve_ticket(
     ticket = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
     if ticket is None:
         return store.Transition(store.MISSING, None)
+    lifecycle_effects = ticket.get("resolution_effects") or {}
+    if lifecycle_effects.get("kind") in {"close", "reopen"} and not lifecycle_effects.get("complete"):
+        return store.Transition(store.BLOCKED, ticket, "The close/reopen update is still finishing. Try again shortly.")
     if testing_service.is_test_scope(mongo):
         if not testing_service.is_test_ticket(ticket):
             return store.Transition(store.BLOCKED, None, "unmarked test ticket")

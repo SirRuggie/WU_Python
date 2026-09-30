@@ -207,6 +207,7 @@ _STATUS_NAME_PREFIXES = {
     "open": "🆕 ",
     "approved": "✅ ",
     "denied": "❌ ",
+    "closed": "📁 ",
 }
 _GHOSTED_NAME_PREFIX = "👻 "
 _KNOWN_NAME_PREFIXES = (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX)
@@ -227,8 +228,8 @@ def thread_names(
 ) -> tuple[str, str]:
     """Return the pair's canonical Discord names for one durable status.
 
-    ``closed`` deliberately has no prefix: it is a legacy/no-decision state,
-    while the three permanent v2 decisions remain visible in Discord.
+    Closed applications use a folder; an active Ghosted flag takes priority
+    over every status on both thread names.
     """
     number = (testing_service.number_label(ticket_number) if test else str(int(ticket_number)))
     suffix = f"{ticket_type}-{number}-{_slug(username)}"

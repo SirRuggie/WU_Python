@@ -164,7 +164,7 @@ STATUS_META = {
     "denied": ("Denied", "❌", ACCENT_RED),
     # Legacy import with no ✅/❌ prefix and no decision embed in history; see
     # docs/handoff-legacy-migration.md "Owner rules" #1.
-    "closed": ("Closed · no decision recorded", "🔒", ACCENT_GREY),
+    "closed": ("Closed · no decision recorded", "📁", ACCENT_GREY),
 }
 FLAG_META = {
     flag_store.FLAG_BLACKLISTED: ("Blacklisted", "⛔", True),
@@ -2695,6 +2695,8 @@ def build_ticket_detail(
         f"**Applicant:** {_mention(user_id)}",
         f"**Discord ID:** `{user_id}`" if user_id else "**Discord ID:** unavailable",
     ]
+    if status == "closed" and ticket_doc.get("closure_reason"):
+        details_before_tags.append(f"**Closing reason:** {str(ticket_doc['closure_reason'])[:1000]}")
     opened = (
         f"**Opened:** {_timestamp(ticket_doc.get('created_at'), 'F')} "
         f"({_timestamp(ticket_doc.get('created_at'))})"
@@ -2882,7 +2884,16 @@ def build_ticket_detail(
                 custom_id=f"ticket_v2_console_deny:{action_id}",
                 label="Deny",
             ),
+            Button(style=hikari.ButtonStyle.SECONDARY,
+                   custom_id=f"ticket_lifecycle_open:close|{action_id}",
+                   label="Close without a decision", emoji="📁"),
         ]))
+    elif status == "closed":
+        components.append(ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SECONDARY,
+            custom_id=f"ticket_lifecycle_open:reopen|{action_id}",
+            label="Reopen ticket", emoji="🆕",
+        )]))
     elif status in schema.TERMINAL_STATUSES:
         # Nothing is ever closed for good: any recruiter can overturn a
         # decided ticket the other way, and every overturn is logged.
@@ -2933,6 +2944,7 @@ async def _ticket_detail_panel(
         "guild_id": int(guild_id),
         "ticket_id": _ticket_id(ticket_doc),
         "expected_status": str(ticket_doc.get("status") or "open"),
+        "expected_rev": _int(ticket_doc.get("rev")),
     })
     return build_ticket_detail(
         ticket_doc,
@@ -7221,3 +7233,48 @@ async def recover_ticket_console(
 ) -> None:
     """Start retrying recovery of the bot-owned shared console hub."""
     start_ticket_console_recovery(bot, mongo)
+
+
+@register_action("ticket_lifecycle_open", opens_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def ticket_lifecycle_open(ctx, action_id: str, **_kwargs):
+    kind, _, state_id = action_id.partition("|")
+    if kind not in {"close", "reopen"}:
+        return
+    await ctx.respond_with_modal(
+        title="Close without a decision" if kind == "close" else "Reopen ticket",
+        custom_id=f"ticket_lifecycle_submit:{kind}|{state_id}",
+        components=[ModalActionRow().add_text_input("reason", "Reason shown in both threads",
+            required=True, style=hikari.TextInputStyle.PARAGRAPH, min_length=5, max_length=1000)],
+    )
+
+
+@register_action("ticket_lifecycle_submit", is_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def ticket_lifecycle_submit(ctx, action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_kwargs):
+    from . import lifecycle
+    await ctx.defer(ephemeral=True)
+    kind, _, state_id = action_id.partition("|")
+    data = await get_state(mongo, state_id)
+    if (not data or data.get("type") != "ticket_v2_console_detail"
+        or _int(data.get("owner_id")) != int(ctx.user.id)
+        or _int(data.get("guild_id")) != _int(ctx.guild_id)
+        or kind not in {"close", "reopen"}
+        or data.get("expected_status") != ("open" if kind == "close" else "closed")):
+        await ctx.interaction.edit_initial_response(components=_notice("Panel expired", "Open the ticket details again."))
+        return
+    try:
+        result = await lifecycle.change(bot, mongo, ticket_id=data["ticket_id"], member=ctx.member,
+            actor_name=ctx.user.username, kind=kind, reason=_modal_value(ctx, "reason"),
+            expected_rev=data.get("expected_rev"))
+    except Exception:
+        _log.exception("Ticket lifecycle update failed ticket=%s", data.get("ticket_id"))
+        await ctx.interaction.edit_initial_response(components=_notice(
+            "Ticket update interrupted", "Open the ticket details again to check its current status before retrying."))
+        return
+    await ctx.interaction.edit_initial_response(components=await _transition_result_panel(
+        result, verb="closed" if kind == "close" else "reopened", mongo=mongo,
+        owner_id=int(ctx.user.id), guild_id=int(ctx.guild_id)),
+        user_mentions=False, role_mentions=False, mentions_everyone=False)
