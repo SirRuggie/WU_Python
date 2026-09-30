@@ -66,3 +66,12 @@ Registered only in Warriors United (configured TICKETS_GUILD_ID).
 - `/tickets testing` — open isolated ticket testing; administrators manage test windows, and allowlisted testers can use an active window.
 
 Close/reopen, Create for Recruit, ticket links, and inactivity review remain console/button actions, not separate slash commands. `/manage` remains the entry point for editable recruitment content.
+
+## Verification completed
+
+- Code deployment: `132fca7`; bot restarted successfully September 30, 2026 at 15:46 EDT.
+- 341 targeted tests passed (registration, help, startup, console, rollout, legacy compatibility, migration/recovery).
+- Discord REST confirmed no global `/ticket` or `/tickets` command.
+- Warriors United exposes exactly the 20 `/tickets` subcommands above.
+- All four legacy recruitment guilds expose no guild-local `/ticket` or `/tickets` command.
+- Startup reported `thread_runtime_ready configured_fields=6/6 index_errors=0`.
