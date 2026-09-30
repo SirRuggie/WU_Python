@@ -103,3 +103,122 @@ def test_message_lengths_reject_overflow():
     template["sections"]["hook"]["body"] = "x" * 1801
     with pytest.raises(ValueError):
         content.validate("main", template)
+
+
+def test_additional_messages_are_independent_and_delivered_in_order(monkeypatch):
+    main, fwa = content.defaults("main"), content.defaults("fwa")
+    key = "custom_0123456789abcdef"
+    main["sections"][key] = {"title": "Availability", "body": "When can you join us?"}
+    content.validate("main", main)
+    assert key not in fwa["sections"]
+    sent = []
+
+    async def send(*args, **kwargs):
+        sent.append((args, kwargs))
+
+    monkeypatch.setattr(thread_service, "_send_once", send)
+    asyncio.run(
+        thread_service._deliver_staff_talking_points(
+            object(), 102, "main", recruiter_role=40, bot_id=7, template=main
+        )
+    )
+    assert sent[-1][0][2] == "ticket-setup:staff:" + key
+    assert sent[-1][0][3] == "**Availability**\nWhen can you join us?"
+    assert all(not kw["user_mentions"] and not kw["role_mentions"] for _, kw in sent)
+    assert list(content.messages("fwa", fwa, 40))[-1][0] == "donations"
+
+
+def test_maximum_editor_template_is_paginated_within_discord_limits():
+    template = content.defaults("fwa")
+    for index in range(content.MAX_SECTIONS - len(template["sections"])):
+        template["sections"][f"custom_{index:016x}"] = {
+            "title": "Question " + str(index),
+            "body": "Body",
+        }
+    content.validate("fwa", template)
+
+    def walk(components):
+        for component in components:
+            yield component
+            yield from walk(getattr(component, "components", ()) or ())
+
+    for page in range(5):
+        view = editor.page(
+            dict(
+                _id="token",
+                manage_token="manage",
+                kind="fwa",
+                template=template,
+                section_page=page,
+            )
+        )
+        nodes = list(walk(view))
+        assert len(nodes) <= 40
+        assert (
+            len([n for n in nodes if ":edit:" in str(getattr(n, "custom_id", ""))]) == 5
+        )
+        add = next(
+            n for n in nodes if str(getattr(n, "custom_id", "")).endswith(":add")
+        )
+        assert add.is_disabled
+        assert any(getattr(n, "label", None) == "Next" for n in nodes)
+    template["sections"]["custom_ffffffffffffffff"] = {
+        "title": "Overflow",
+        "body": "Body",
+    }
+    with pytest.raises(ValueError, match="at most"):
+        content.validate("fwa", template)
+
+
+def test_add_form_creates_only_selected_type_draft(monkeypatch):
+    async def run():
+        data = dict(
+            _id="token",
+            manage_token="manage",
+            kind="main",
+            template=content.defaults("main"),
+        )
+        original = deepcopy(data["template"])
+        monkeypatch.setattr(editor, "state", AsyncMock(return_value=data))
+
+        async def new_state(_mongo, old, **changes):
+            return {**old, **changes}
+
+        monkeypatch.setattr(editor, "new_state", new_state)
+        ctx = S(
+            interaction=S(
+                create_initial_response=AsyncMock(),
+                edit_initial_response=AsyncMock(),
+                components=[
+                    S(
+                        components=[
+                            S(custom_id="title", value="Availability"),
+                            S(custom_id="body", value="When can you join us?"),
+                        ]
+                    )
+                ],
+            )
+        )
+        await editor.form(ctx, "token:new", mongo=object())
+        view = repr(
+            ctx.interaction.edit_initial_response.call_args.kwargs["components"]
+        )
+        assert "Availability" in view and "When can you join us?" in view
+        assert data["template"] == original
+        assert "Availability" not in repr(content.defaults("fwa"))
+
+    asyncio.run(run())
+
+
+def test_custom_sections_save_under_only_selected_kind_key():
+    template = content.defaults("fwa")
+    template["sections"]["custom_0123456789abcdef"] = {
+        "title": "Extra",
+        "body": "Extra FWA question",
+    }
+    coll = S(update_one=AsyncMock(return_value=S(matched_count=1, upserted_id=None)))
+    saved = asyncio.run(
+        content.save(S(ticket_staff_templates=coll), 10, "fwa", template, 30)
+    )
+    assert coll.update_one.call_args.args[0]["_id"] == "10:fwa"
+    assert saved["sections"]["custom_0123456789abcdef"]["body"] == "Extra FWA question"

@@ -1670,7 +1670,7 @@ async def _deliver_staff_talking_points(
     markers = {"notice": "role-line", "how_heard": "how-heard", "hook": "hook", "donations": "fwa-donations"}
     for key, text in ticket_staff_content.messages(ticket_type, template, recruiter_role):
         await _send_once(
-            rest, staff_id, f"ticket-setup:staff:{markers[key]}", text,
+            rest, staff_id, f"ticket-setup:staff:{markers.get(key, key)}", text,
             user_mentions=False, role_mentions=False, post_marker=False,
             is_match=_bot_authored_content_match(bot_id, text),
         )

@@ -19,6 +19,7 @@ from utils.mongo import MongoClient
 from utils import ticket_staff_content as content
 
 loader = lightbulb.Loader()
+PAGE_SIZE = 5
 NO_MENTIONS = dict(user_mentions=False, role_mentions=False, mentions_everyone=False)
 
 
@@ -70,18 +71,45 @@ def page(data, notice=""):
                 content=f"### {kind.upper()} staff thread\nChanges apply to new tickets. Existing threads keep their original messages."
             ),
         ]
-        for key, section in data["template"]["sections"].items():
+        sections = list(data["template"]["sections"].items())
+        last_page = (len(sections) - 1) // PAGE_SIZE
+        selected_page = max(0, min(int(data.get("section_page", 0)), last_page))
+        if last_page:
+            items.append(
+                Text(
+                    content=f"Page {selected_page + 1}/{last_page + 1} · {len(sections)} messages"
+                )
+            )
+        for key, section in sections[
+            selected_page * PAGE_SIZE : (selected_page + 1) * PAGE_SIZE
+        ]:
             excerpt = section["body"][:180]
             items.append(
                 Text(
-                    content=f"**{content.LABELS[key]}**\n{excerpt}{'…' if len(section['body']) > 180 else ''}"
+                    content=f"**{content.section_label(key, section)}**\n{excerpt}{'…' if len(section['body']) > 180 else ''}"
                 )
             )
             items.append(
                 Row().add_interactive_button(
                     hikari.ButtonStyle.SECONDARY,
                     f"stafftpl:{token}:edit:{key}",
-                    label=f"Edit {content.LABELS[key]}"[:80],
+                    label=f"Edit {content.section_label(key, section)}"[:80],
+                )
+            )
+        if last_page:
+            items.append(
+                Row()
+                .add_interactive_button(
+                    hikari.ButtonStyle.SECONDARY,
+                    f"stafftpl:{token}:previous",
+                    label="Previous",
+                    is_disabled=selected_page == 0,
+                )
+                .add_interactive_button(
+                    hikari.ButtonStyle.SECONDARY,
+                    f"stafftpl:{token}:next",
+                    label="Next",
+                    is_disabled=selected_page == last_page,
                 )
             )
         items += [
@@ -99,6 +127,13 @@ def page(data, notice=""):
                 hikari.ButtonStyle.SUCCESS,
                 f"stafftpl:{token}:save",
                 label="Save template",
+            )
+            .add_interactive_button(
+                hikari.ButtonStyle.SECONDARY,
+                f"stafftpl:{token}:add",
+                label="Add new",
+                emoji="➕",
+                is_disabled=len(sections) >= content.MAX_SECTIONS,
             ),
             Row().add_interactive_button(
                 hikari.ButtonStyle.SECONDARY,
@@ -158,18 +193,31 @@ async def error(ctx, message):
 @lightbulb.di.with_di
 async def action(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     token, _, verb = action_id.partition(":")
-    is_edit = verb.startswith("edit:")
+    is_edit = verb.startswith("edit:") or verb == "add"
     if not is_edit:
         await ctx.defer(edit=True)
     try:
         data = await state(ctx, mongo, token)
         if is_edit:
-            key = verb.split(":", 1)[1]
-            if key not in data.get("template", {}).get("sections", {}):
-                raise ValueError("Reopen the template before editing.")
-            section = data["template"]["sections"][key]
+            if not data.get("kind"):
+                raise ValueError("Choose Main or FWA first.")
+            key = "new" if verb == "add" else verb.split(":", 1)[1]
+            if verb == "add":
+                if len(data["template"]["sections"]) >= content.MAX_SECTIONS:
+                    raise ValueError(
+                        f"This template already has {content.MAX_SECTIONS} messages."
+                    )
+                section = {"title": "", "body": ""}
+            else:
+                if key not in data.get("template", {}).get("sections", {}):
+                    raise ValueError("Reopen the template before editing.")
+                section = data["template"]["sections"][key]
             await ctx.respond_with_modal(
-                title=content.LABELS[key],
+                title=(
+                    "Add new staff question"
+                    if verb == "add"
+                    else content.section_label(key, section)
+                )[:45],
                 custom_id=f"stafftpl_form:{token}:{key}",
                 components=[
                     ModalRow().add_text_input(
@@ -196,8 +244,19 @@ async def action(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_
                 mongo,
                 data,
                 kind=verb,
+                section_page=0,
                 template=await content.load(mongo, data["guild_id"], verb),
             )
+        elif verb in {"previous", "next"}:
+            last_page = (len(data["template"]["sections"]) - 1) // PAGE_SIZE
+            page_index = max(
+                0,
+                min(
+                    int(data.get("section_page", 0)) + (1 if verb == "next" else -1),
+                    last_page,
+                ),
+            )
+            data = await new_state(mongo, data, section_page=page_index)
         elif verb == "home":
             data = await new_state(
                 mongo, {k: v for k, v in data.items() if k not in ("kind", "template")}
@@ -240,7 +299,9 @@ async def form(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     try:
         token, _, key = action_id.partition(":")
         data = await state(ctx, mongo, token)
-        if key not in data.get("template", {}).get("sections", {}):
+        if not data.get("kind") or (
+            key != "new" and key not in data.get("template", {}).get("sections", {})
+        ):
             raise ValueError("Reopen the template before editing.")
         values = {
             item.custom_id: item.value
@@ -248,12 +309,24 @@ async def form(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
             for item in row.components
         }
         template = deepcopy(data["template"])
+        adding = key == "new"
+        if adding:
+            key = "custom_" + uuid4().hex[:16]
         template["sections"][key] = {
             "title": values.get("title", "").strip(),
             "body": values.get("body", ""),
         }
         content.validate(data["kind"], template)
-        data = await new_state(mongo, data, template=template)
+        data = await new_state(
+            mongo,
+            data,
+            template=template,
+            section_page=(
+                (len(template["sections"]) - 1) // PAGE_SIZE
+                if adding
+                else data.get("section_page", 0)
+            ),
+        )
         await ctx.interaction.edit_initial_response(
             components=page(
                 data, "Draft updated. Choose Save template to use these changes."

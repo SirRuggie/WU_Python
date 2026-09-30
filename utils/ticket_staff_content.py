@@ -1,10 +1,12 @@
 """Versioned, guild-scoped staff-thread templates, separate from ticket records."""
 
+import re
 from copy import deepcopy
 from datetime import datetime, timezone
 from pymongo.errors import DuplicateKeyError
 
 SCHEMA_VERSION = 1
+MAX_SECTIONS = 25
 LABELS = {
     "notice": "Private-thread notice",
     "how_heard": "How they heard about us",
@@ -34,8 +36,21 @@ def defaults(kind):
 def validate(kind, template):
     if template.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("Unsupported staff-thread template version.")
-    if set(template.get("sections", {})) != set(defaults(kind)["sections"]):
+    sections = template.get("sections", {})
+    required = set(defaults(kind)["sections"])
+    if (
+        not isinstance(sections, dict)
+        or not required <= set(sections)
+        or any(
+            not re.fullmatch(r"custom_[0-9a-f]{16}", key)
+            for key in set(sections) - required
+        )
+    ):
         raise ValueError("The template has invalid sections.")
+    if len(sections) > MAX_SECTIONS:
+        raise ValueError(
+            f"Use at most {MAX_SECTIONS} staff-thread messages per ticket type."
+        )
     for section in template["sections"].values():
         if not isinstance(section, dict) or set(section) != {"title", "body"}:
             raise ValueError("Each section needs a title and body.")
@@ -100,3 +115,7 @@ def messages(kind, template=None, recruiter_role=0):
         if key == "notice":
             text = f"<@&{int(recruiter_role)}> " + text
         yield key, text
+
+
+def section_label(key, section):
+    return LABELS.get(key) or section.get("title", "").strip() or "Additional question"
