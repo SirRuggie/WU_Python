@@ -23,6 +23,7 @@ import coc
 import asyncio
 import logging
 import uuid
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Mapping
 from utils.component_state import delete_state, get_state, insert_state
@@ -628,6 +629,53 @@ async def _release_resolution_effect_lease(
         _log.exception("resolution effect lease release failed ticket=%s", ticket_id)
 
 
+def _staff_decision_components(ticket: dict, kind: str) -> list:
+    approved = kind == KIND_APPROVE
+    decision = "Approved" if approved else "Denied"
+    number = testing_service.number_label(int(ticket.get("ticket_number") or 0)) if testing_service.is_test_ticket(ticket) else ticket.get("ticket_number")
+    title = f"## {'✅' if approved else '❌'} {str(ticket.get('ticket_type') or 'main').upper()} #{number} · {decision}"
+    body = "The recruit has been accepted to Warriors United." if approved else (
+        ticket.get("denial_reason") if kind == KIND_DENY_CUSTOM else _DENIAL_BODY[kind]
+    )
+    if testing_service.is_test_ticket(ticket):
+        body = "TEST MODE — simulated decision.\n" + (ticket.get("denial_reason") or decision)
+    return [Container(
+        accent_color=GREEN_ACCENT if approved else RED_ACCENT,
+        components=[
+            Section(components=[Text(content=title), Text(content=(
+                f"**Recruit:** <@{ticket['user_id']}>\n"
+                f"**Handled by:** <@{ticket.get('handled_by')}>\n"
+                f"**Decision time:** {ts(ticket.get('handled_at'), 'F')}"
+            ))], accessory=Thumbnail(media=APPROVAL_THUMB if approved else DENIED_THUMB)),
+            Text(content=str(body or "No denial reason recorded.")),
+            *([Text(content="This decision replaces the earlier decision. The earlier staff record is retained.")]
+              if (ticket.get("resolution_effects") or {}).get("overturn") else []),
+            Media(items=[MediaItem(media="assets/Green_Footer.png" if approved else "assets/Red_Footer.png")]),
+        ],
+    )]
+
+
+async def _deliver_staff_decision(bot, ticket: dict, kind: str, marker: str):
+    """Keep an append-only staff record, identified per resolution, without pings."""
+    staff_id = int((ticket.get("location") or {}).get("staff_space_id") or 0)
+    nonce = hashlib.sha256(f"staff:{marker}".encode()).hexdigest()[:24]
+    me = bot.get_me()
+    if me is None:
+        raise RuntimeError("bot identity is unavailable")
+    for message in await _all_messages(bot.rest, staff_id):
+        if (int(getattr(getattr(message, "author", None), "id", 0)) == int(me.id)
+                and str(getattr(message, "nonce", None)) == nonce):
+            return message
+    await _ensure_notification_thread_writable(
+        bot.rest, {**ticket, "location": {**ticket['location'], "id": staff_id}}
+    )
+    return await bot.rest.create_message(
+        channel=staff_id, components=_staff_decision_components(ticket, kind),
+        mentions_everyone=False, user_mentions=False, role_mentions=False,
+        nonce=nonce,
+    )
+
+
 async def _process_resolution_effects_owned(
         bot: hikari.GatewayBot,
         mongo: MongoClient,
@@ -750,6 +798,25 @@ async def _process_resolution_effects_owned(
             mongo, ticket["_id"], marker, step="notification", state="failed", error=exc
         )
         pending.append(("applicant notification", exc))
+
+    # New decisions carry this obligation in Mongo. Historical completed
+    # decisions are not retroactively announced during deployment.
+    staff_notice = effects.get("staff_notification")
+    if staff_notice is not None and staff_notice.get("state") not in {"delivered", "skipped"}:
+        try:
+            staff_id = int((ticket.get("location") or {}).get("staff_space_id") or 0)
+            if staff_thread_missing or not staff_id:
+                await _checkpoint_effect(mongo, ticket["_id"], marker,
+                    step="staff_notification", state="skipped")
+            else:
+                sent = await _deliver_staff_decision(bot, ticket, kind, marker)
+                if not await _checkpoint_effect(mongo, ticket["_id"], marker,
+                    step="staff_notification", state="delivered", message_id=int(sent.id)):
+                    raise RuntimeError("staff decision checkpoint failed")
+        except Exception as exc:
+            await _checkpoint_effect(mongo, ticket["_id"], marker,
+                step="staff_notification", state="failed", error=exc)
+            pending.append(("staff decision notification", exc))
 
     try:
         staff_context_state = (effects.get("staff_context") or {}).get("state")

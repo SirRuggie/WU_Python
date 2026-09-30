@@ -38,6 +38,7 @@ class Scope:
         self.ticket_automation_state = Collection({"test_parents": parent})
         self.tickets = Collection()
         self.ticket_creation_state = Collection()
+        self.ticket_staff_templates = Collection()
         self.ticket_open_slots = Collection()
 
 
