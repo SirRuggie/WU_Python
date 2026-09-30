@@ -839,24 +839,16 @@ def build_hub_actions(
                 )
             )
         children.append(ActionRow(components=buttons))
-        children.append(
-            ActionRow(
-                components=[
-                    Button(
-                        style=hikari.ButtonStyle.SUCCESS,
-                        custom_id=f"ticket_v2_hub_approve:{ticket_id}",
-                        label="Approve",
-                        emoji=hikari.Snowflake(1397096942907166831),
-                    ),
-                    Button(
-                        style=hikari.ButtonStyle.DANGER,
-                        custom_id=f"ticket_v2_hub_deny:{ticket_id}",
-                        label="Deny",
-                        emoji=hikari.Snowflake(1397096986506825778),
-                    ),
-                ]
-            )
-        )
+        children.append(ActionRow(components=[TextSelectMenu(
+            custom_id=f"ticket_v2_hub_closure:{ticket_id}",
+            placeholder="Closure options",
+            min_values=1, max_values=1,
+            options=[
+                SelectOption(label="Approve", value="approve", description="Accept this recruit", emoji="✅"),
+                SelectOption(label="Deny", value="deny", description="Deny with a reason", emoji="❌"),
+                SelectOption(label="Close", value="close", description="Close without an approval or denial", emoji="📁"),
+            ],
+        )]))
     if not open_tickets:
         children.append(
             Text(
@@ -1026,7 +1018,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 12
+HUB_LAYOUT_VERSION = 13
 
 
 async def _chart_signature(mongo: MongoClient) -> str:
@@ -7277,4 +7269,54 @@ async def ticket_lifecycle_submit(ctx, action_id: str,
     await ctx.interaction.edit_initial_response(components=await _transition_result_panel(
         result, verb="closed" if kind == "close" else "reopened", mongo=mongo,
         owner_id=int(ctx.user.id), guild_id=int(ctx.guild_id)),
+        user_mentions=False, role_mentions=False, mentions_everyone=False)
+
+
+@register_action("ticket_v2_hub_closure", opens_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def ticket_hub_closure(ctx, action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED, **_kwargs):
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    choice = values[0] if len(values) == 1 else None
+    if choice == "approve":
+        await ctx.defer(edit=True)
+        await ticket_hub_approve(ctx, action_id, mongo=mongo)
+    elif choice == "deny":
+        await ticket_hub_deny(ctx, action_id)
+    elif choice == "close":
+        await ctx.respond_with_modal(
+            title="Close without a decision",
+            custom_id=f"ticket_v2_hub_close_submit:{action_id}",
+            components=[ModalActionRow().add_text_input(
+                "reason", "Reason shown in both threads", required=True,
+                style=hikari.TextInputStyle.PARAGRAPH, min_length=5, max_length=1000,
+            )],
+        )
+    else:
+        await ctx.defer(ephemeral=True)
+        await ctx.interaction.edit_initial_response(components=_notice(
+            "Choose an option", "Select Approve, Deny, or Close for this ticket."))
+
+
+@register_action("ticket_v2_hub_close_submit", is_modal=True, no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def ticket_hub_close_submit(ctx, action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_kwargs):
+    from . import lifecycle
+    await ctx.defer(ephemeral=True)
+    doc = await _shared_ticket(ctx, mongo, action_id)
+    if doc is None:
+        components = _notice("Ticket unavailable", "Recruiter access is required and the ticket must still be open.")
+    else:
+        try:
+            result = await lifecycle.change(bot, mongo, ticket_id=action_id, member=ctx.member,
+                actor_name=ctx.user.username, kind="close", reason=_modal_value(ctx, "reason"),
+                expected_rev=_int(doc.get("rev")))
+            components = await _transition_result_panel(result, verb="closed", mongo=mongo,
+                owner_id=int(ctx.user.id), guild_id=_int(ctx.guild_id))
+        except Exception:
+            _log.exception("Shared console closure failed ticket=%s", action_id)
+            components = _notice("Ticket update interrupted", "Open the ticket details again to check its current status before retrying.")
+    await ctx.interaction.edit_initial_response(components=components,
         user_mentions=False, role_mentions=False, mentions_everyone=False)

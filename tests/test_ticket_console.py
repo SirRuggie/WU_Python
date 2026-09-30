@@ -345,9 +345,9 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
 def test_shared_actions_three_ticket_page_separates_rows_within_limit():
     tickets = [_ticket(index, _console_name=f"fwa-{index}-candidate") for index in range(1, 4)]
     view = console.build_hub_actions(tickets, page=6, total=30)
-    assert len(_component_nodes(view)) == 40
+    assert len(_component_nodes(view)) == 37
     nodes = _nodes(view)
-    assert not any(node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU for node in nodes)
+    assert sum(node.get("type") == hikari.ComponentType.TEXT_SELECT_MENU for node in nodes) == 3
     assert any(str(node.get("content", "")).startswith("Page 7/10 · **30 open tickets** · Oldest first") for node in nodes)
     assert len([node for node in nodes if str(node.get("custom_id", "")).startswith("ticket_v2_hub_details:")]) == 3
     assert len([node for node in nodes if node.get("url")]) == 6
@@ -381,12 +381,15 @@ def test_single_ticket_groups_navigation_decisions_and_console_tools():
     view = console.build_hub_actions([_ticket(1, _console_name="fwa-1-candidate")], page=0, total=1)
     children = view[0].components
     rows = [child for child in children if child.type == hikari.ComponentType.ACTION_ROW]
-    assert [[button.label for button in row.components] for row in rows] == [
+    assert [[getattr(button, "label", getattr(button, "placeholder", None)) for button in row.components] for row in rows] == [
         ["View Details", "Recruit Thread", "Staff Thread"],
-        ["Approve", "Deny"],
+        ["Closure options"],
         ["Find Ticket", "Browse Tickets", "Refresh"],
         ["Create for Recruit"],
     ]
+    dropdown = rows[1].components[0]
+    assert [option.label for option in dropdown.options] == ["Approve", "Deny", "Close"]
+    assert dropdown.custom_id == "ticket_v2_hub_closure:ticket_1001"
     tools_index = next(i for i, child in enumerate(children) if getattr(child, "content", "") == "### Console tools")
     assert children[tools_index - 1].type == hikari.ComponentType.SEPARATOR
     _assert_component_limits(view)
